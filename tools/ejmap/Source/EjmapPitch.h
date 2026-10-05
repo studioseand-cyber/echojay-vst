@@ -163,12 +163,17 @@ inline SpeedResult deriveSpeed (const PitchPosition& p, double detune, double ra
         for (size_t i = i0; i < i1; ++i) if (readable (W[i]) && std::abs (W[i].outC - target) > peak) { peak = std::abs (W[i].outC - target); ip = i; }
         if (peak < kMinExcursionCents) { excursions.push_back (peak); continue; }
         size_t iStart = i0; while (iStart < ip && ! (readable (W[iStart]) && std::abs (W[iStart].outC - target) >= 0.5 * peak)) ++iStart;
+        // THE WINDOW THAT STRADDLES THE NEXT FLIP IS NOT PART OF THIS HALF PERIOD (5 Oct, R8d): the pitch tracker's last
+        // window already holds the start of the next step (Artist at Retune Speed 36 / 17 / 6: +9.2 / +2.9 cents in the
+        // final window of a plateau that sat at -0.02 for 3.8 s), which read as "had not settled" on every fast position.
+        // The stay check stops one window short of the edge.
+        const size_t iStay = i1 > i0 + 1 ? i1 - 1 : i1;
         size_t iEnd = ip; bool settled = false;
-        for (size_t i = ip; i < i1; ++i)
+        for (size_t i = ip; i < iStay; ++i)
             if (readable (W[i]) && std::abs (W[i].outC - target) <= 0.1 * peak)
             {
                 bool stays = true;
-                for (size_t j = i; j < i1; ++j) if (readable (W[j]) && std::abs (W[j].outC - target) > 0.2 * peak) { stays = false; break; }
+                for (size_t j = i; j < iStay; ++j) if (readable (W[j]) && std::abs (W[j].outC - target) > 0.2 * peak) { stays = false; break; }
                 if (stays) { iEnd = i; settled = true; break; }
             }
         if (! settled) { r.reason = "the output had not settled before the next flip (half period " + juce::String (halfMs, 0) + " ms)"; return r; }

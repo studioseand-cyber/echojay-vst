@@ -2384,3 +2384,33 @@ inert check runs inside the follow-up (8 flat records are projected to get it: N
 RCompressor (m)/(s), dbx-160 (m), SSL Fusion HF Compressor), so the count can move by up to 8 in his zipped-back
 folder, by measurement. On a hand-edited copy of RCompressor (m) set to inert, `--cert-states` files it
 `needs_licence` with the reason above (`cert-traces/2026-10-05-zip-review/inert-demo.txt`).
+
+## 53. Loose ends (5 Oct, overnight run 2, R8)
+
+- **(a) EQ band engage search** (`eq::engageCandidates`, `runEq`): a band whose gain sweep is flat at every position gets its
+  switches tried, at most four, closest name first — the two-step or word-valued controls every one of whose name tokens is
+  the band key's or a switch word (on / in / enable / active / bypass / power / mute); the ON position by text, inverted for a
+  bypass. The first switch that makes the band move is written on the band's freq and Q sweeps too and named on the record
+  (`engaged_by`). Pins E10 / E11. Live on bx_digital V3: the search found and wrote every second-channel band's own
+  "Active" switch and the global "EQ Active", and the bands STAYED flat — the "2" bands are the second channel of an M/S
+  unit, and an identical signal on both inputs has no Side to shape. The search did its job; the signal is the reason, and a
+  stereo-decorrelated (or L-only) response run is what those bands need (`cert-traces/2026-10-05-loose-ends/`).
+- **(b) Timing segments scaled to the label** (`timing::segmentFor`, `runTiming`): the burst's loud segment = 5 × an attack
+  label, the post segment = 5 × a release label (labels in ms / s; a word or a bare number keeps the 2 / 4 s defaults;
+  capped at 30 s), read before the burst from the landing texts or the fixture's displayAt. Pins T1–T4. Live on Lindell SBC:
+  Release 3.000 (a bare number: no unit, so the default post stood) measured 2066 ms inside the 4 s post; a unit whose label
+  says "1.2 s" gets a 6 s post.
+- **(c) A third level for input gains** (`gaincal::kInputLevelsDbfs`, `kInputRefDbfs`): input-role controls are measured at
+  −20 / −40 / −60 dBFS and judged at −60 (an input gain drives the detector; −40 can already be inside the compression path),
+  the note saying so; the level dependence over all three is still reported. Pins G7–G9. Live on Lindell SBC: Input Gain
+  `display_matches` at −60 (worst 0.00 dB over 21 points) while level-dependent by 3.79 dB across −20 / −40 / −60 — the
+  label is honest, the path is not, and the record now says which.
+- **(d) Auto-Tune Artist's Retune Speed 36 / 17 / 6**: re-measured tonight under plan v2 and read window by window. Neither
+  drift nor oscillation: at every one of those positions the output reaches 0 cents within 150 ms and sits at −0.02 ± 0.00
+  cents for the rest of the 4 s half period. What refused them was the **last window of each half period**, which the pitch
+  tracker fills from both sides of the next flip (+9.2 / +2.9 cents on a plateau at 0) — a straddle artefact, the same shape
+  as the burst mode's step window. `deriveSpeed` now stops its stay check one window short of the edge (pin V7, mutant
+  red). Under the fix all eight positions measure: 400 → 1115 ms (2 s half period), 226 → 597, 126 → 427, 69 → 256,
+  **36 → 144, 17 → 85, 6 → 43**, 0 → faster than 21 ms. A record swept under the old rule carries `pitchPlan.version 2`
+  already, so `planDiffers` will not re-sweep it on its own — Sean's Artist row needs a `--retry-refused` or a plan-version
+  bump before his follow-up picks it up (not done tonight: a plan-version bump re-sweeps every tuner).

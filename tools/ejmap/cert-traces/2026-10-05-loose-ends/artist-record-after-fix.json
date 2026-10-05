@@ -1,0 +1,1180 @@
+{
+  "identity": "AudioUnit|7672410a|9.5.0",
+  "product": "Auto-Tune Artist",
+  "format": "AudioUnit",
+  "manufacturer": "Antares",
+  "uid": "7672410a",
+  "version": "9.5.0",
+  "sampledAt": "2026-10-05",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 29837685103d520267adb3fa32f419184daf8c12",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "param_count": 35,
+  "map_fp": "696fa3c119ecd89f2225f227f7b4f052da46ff839a4d393afd7e20557165c102",
+  "controls": [
+    {
+      "index": 0,
+      "name": "Input Type",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Soprano",
+        "0.500": "Low Male",
+        "1.000": "Bass Inst."
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Soprano",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Key",
+      "unit": null,
+      "displayAt": {
+        "0.000": "C",
+        "0.500": "F#",
+        "1.000": "B"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "C",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Scale",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Major",
+        "0.500": "Barnes",
+        "1.000": "Harmonic"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.071429,
+        "display": "Chromatic",
+        "declaredDefault": 0.071429,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Detune",
+      "unit": null,
+      "displayAt": {
+        "0.000": "-100",
+        "0.500": "0",
+        "1.000": "100"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.5,
+          "value": 0.0
+        },
+        "min": -100.0,
+        "max": 100.0,
+        "at0": -100.0,
+        "at0_5": 0.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Throat Length",
+      "unit": null,
+      "displayAt": {
+        "0.000": "50",
+        "0.500": "100",
+        "1.000": "180"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.5,
+          "value": 100.0
+        },
+        "min": 50.0,
+        "max": 180.0,
+        "at0": 50.0,
+        "at0_5": 100.0,
+        "at1": 180.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "100",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Formant Correction",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "On",
+        "1.000": "On"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Retune Speed",
+      "unit": null,
+      "displayAt": {
+        "0.000": "400",
+        "0.500": "50",
+        "1.000": "0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.685552,
+          "value": 20.0
+        },
+        "min": 0.0,
+        "max": 400.0,
+        "at0": 400.0,
+        "at0_5": 50.0,
+        "at1": 0.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.685552,
+        "display": "20",
+        "declaredDefault": 0.685552,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Humanize",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "50",
+        "1.000": "100"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.0,
+          "value": 0.0
+        },
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Natural Vibrato",
+      "unit": null,
+      "displayAt": {
+        "0.000": "-12.0",
+        "0.500": "0.0",
+        "1.000": "12.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.5,
+          "value": 0.0
+        },
+        "min": -12.0,
+        "max": 12.0,
+        "at0": -12.0,
+        "at0_5": 0.0,
+        "at1": 12.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 9,
+      "name": "Ignore Vibrato",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "On",
+        "1.000": "On"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 10,
+      "name": "Target Notes via MIDI",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "On",
+        "1.000": "On"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 11,
+      "name": "MIDI Octaves",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "On",
+        "1.000": "On"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 12,
+      "name": "Vibrato Shape",
+      "unit": null,
+      "displayAt": {
+        "0.000": "(No Vibrato)",
+        "0.500": "Square",
+        "1.000": "Sawtooth"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "(No Vibrato)",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 13,
+      "name": "Vibrato Rate",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.1",
+        "0.500": "5.0",
+        "1.000": "10.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.545455,
+          "value": 5.5
+        },
+        "min": 0.1,
+        "max": 10.0,
+        "at0": 0.1,
+        "at0_5": 5.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.545455,
+        "display": "5.5",
+        "declaredDefault": 0.545455,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 14,
+      "name": "Vibrato Variation",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "50",
+        "1.000": "100"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.2,
+          "value": 20.0
+        },
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.2,
+        "display": "20",
+        "declaredDefault": 0.2,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 15,
+      "name": "V.Onset Delay",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "750",
+        "1.000": "1500"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.333333,
+          "value": 500.0
+        },
+        "min": 0.0,
+        "max": 1500.0,
+        "at0": 0.0,
+        "at0_5": 750.0,
+        "at1": 1500.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.333333,
+        "display": "500",
+        "declaredDefault": 0.333333,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 16,
+      "name": "V.Onset Rate",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "750",
+        "1.000": "1500"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.333333,
+          "value": 500.0
+        },
+        "min": 0.0,
+        "max": 1500.0,
+        "at0": 0.0,
+        "at0_5": 750.0,
+        "at1": 1500.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.333333,
+        "display": "500",
+        "declaredDefault": 0.333333,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 17,
+      "name": "Vibrato Pitch",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "50",
+        "1.000": "100"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.18,
+          "value": 18.0
+        },
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.18,
+        "display": "18",
+        "declaredDefault": 0.18,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 18,
+      "name": "Vibrato Amplitude",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "15",
+        "1.000": "30"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.333333,
+          "value": 10.0
+        },
+        "min": 0.0,
+        "max": 30.0,
+        "at0": 0.0,
+        "at0_5": 15.0,
+        "at1": 30.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.333333,
+        "display": "10",
+        "declaredDefault": 0.333333,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 19,
+      "name": "Vibrato Formant",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "50",
+        "1.000": "100"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.7,
+          "value": 70.0
+        },
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.7,
+        "display": "70",
+        "declaredDefault": 0.7,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 23,
+      "name": "Learn Scale from MIDI",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "On",
+        "1.000": "On"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 27,
+      "name": "Flex-Tune",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "50",
+        "1.000": "100"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.0,
+          "value": 0.0
+        },
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 34,
+      "name": "Transpose",
+      "unit": null,
+      "displayAt": {
+        "0.000": "-12",
+        "0.500": "0",
+        "1.000": "12"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "at_instantiate": {
+          "norm": 0.5,
+          "value": 0.0
+        },
+        "min": -12.0,
+        "max": 12.0,
+        "at0": -12.0,
+        "at0_5": 0.0,
+        "at1": 12.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-10-05",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 29837685103d520267adb3fa32f419184daf8c12",
+  "schema": "ej_cert_tuner/1",
+  "category": "pitch",
+  "pitchCandidates": [
+    {
+      "measuredAt": "20261005T135432.077+0100",
+      "control": 6,
+      "controlName": "Retune Speed",
+      "generator": {
+        "note_hz": 220.0,
+        "detune_cents": 30.0,
+        "vibrato": "square 0.50 Hz",
+        "speed_half_periods_s": [
+          1.0,
+          2.0
+        ],
+        "latency_samples": 2780
+      },
+      "keyScale": {
+        "index": 1,
+        "asInstantiated": "C",
+        "note": "A3, in every major scale and chromatic: no write needed"
+      },
+      "positions": [
+        {
+          "norm": 0.0,
+          "display": "400",
+          "strength": {
+            "result": "measured",
+            "strength": 0.994,
+            "residual_cents": 0.2,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.3,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "half_period_s": 2.0,
+            "duration_ms": 1115.0,
+            "edges": 4,
+            "excursion_cents": 52.700000000000003,
+            "edge_durations_ms": [
+              1109.0,
+              1120.0,
+              1109.0,
+              1120.0
+            ]
+          }
+        },
+        {
+          "norm": 0.142857000231743,
+          "display": "226",
+          "strength": {
+            "result": "measured",
+            "strength": 1.0,
+            "residual_cents": -0.0,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "half_period_s": 1.0,
+            "duration_ms": 597.0,
+            "edges": 4,
+            "excursion_cents": 48.899999999999999,
+            "edge_durations_ms": [
+              597.0,
+              597.0,
+              587.0,
+              597.0
+            ]
+          }
+        },
+        {
+          "norm": 0.285714000463486,
+          "display": "126",
+          "strength": {
+            "result": "measured",
+            "strength": 1.0,
+            "residual_cents": -0.0,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "half_period_s": 1.0,
+            "duration_ms": 427.0,
+            "edges": 4,
+            "excursion_cents": 52.5,
+            "edge_durations_ms": [
+              416.0,
+              427.0,
+              427.0,
+              427.0
+            ]
+          }
+        },
+        {
+          "norm": 0.428570985794067,
+          "display": "69",
+          "strength": {
+            "result": "measured",
+            "strength": 1.0,
+            "residual_cents": -0.0,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "half_period_s": 1.0,
+            "duration_ms": 256.0,
+            "edges": 4,
+            "excursion_cents": 48.299999999999997,
+            "edge_durations_ms": [
+              256.0,
+              256.0,
+              256.0,
+              256.0
+            ]
+          }
+        },
+        {
+          "norm": 0.571429014205933,
+          "display": "36",
+          "strength": {
+            "result": "measured",
+            "strength": 1.0,
+            "residual_cents": -0.0,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "half_period_s": 1.0,
+            "duration_ms": 144.0,
+            "edges": 4,
+            "excursion_cents": 38.600000000000001,
+            "edge_durations_ms": [
+              139.0,
+              149.0,
+              149.0,
+              139.0
+            ]
+          }
+        },
+        {
+          "norm": 0.714286029338837,
+          "display": "17",
+          "strength": {
+            "result": "measured",
+            "strength": 1.0,
+            "residual_cents": -0.0,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "half_period_s": 1.0,
+            "duration_ms": 85.0,
+            "edges": 4,
+            "excursion_cents": 27.699999999999999,
+            "edge_durations_ms": [
+              85.0,
+              85.0,
+              75.0,
+              85.0
+            ]
+          }
+        },
+        {
+          "norm": 0.857142984867096,
+          "display": "6",
+          "strength": {
+            "result": "measured",
+            "strength": 1.0,
+            "residual_cents": -0.0,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "half_period_s": 2.0,
+            "duration_ms": 43.0,
+            "edges": 4,
+            "excursion_cents": 13.6,
+            "edge_durations_ms": [
+              43.0,
+              43.0,
+              43.0,
+              53.0
+            ]
+          }
+        },
+        {
+          "norm": 1.0,
+          "display": "0",
+          "strength": {
+            "result": "measured",
+            "strength": 1.0,
+            "residual_cents": -0.0,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "bound",
+            "half_period_s": 1.0,
+            "faster_than_ms": 21.399999999999999,
+            "reason": "no transition longer than one window: the correction completes within 21.4 ms",
+            "edges": 0,
+            "excursion_cents": 3.0,
+            "edge_durations_ms": []
+          }
+        }
+      ],
+      "strengthMeasured": 8,
+      "speedMeasured": 7,
+      "procedure": "static detuned note (strength: fraction of the detune removed at steady state) and square vibrato (speed: duration of each output transition, read off the output trace alone)",
+      "index": 6,
+      "name": "Retune Speed",
+      "detentsBy": "even8",
+      "speedHalfPeriodsTried": "1 s, 2 s"
+    }
+  ],
+  "pitchExtras": {
+    "flex": [
+      {
+        "index": 27,
+        "name": "Flex-Tune",
+        "positions": [
+          {
+            "norm": 0.0,
+            "display": "0",
+            "strength_by_detune": {
+              "5": 1.002,
+              "10": 1.002,
+              "20": 1.001,
+              "30": 1.0,
+              "40": 1.001,
+              "45": 1.0
+            },
+            "window_cents": "over_45",
+            "window_note": "everything corrected up to 45 cents (the ladder's top)"
+          },
+          {
+            "norm": 0.142857,
+            "display": "14",
+            "strength_by_detune": {
+              "5": 1.002,
+              "10": 1.002,
+              "20": 1.001,
+              "30": 1.0,
+              "40": 1.001,
+              "45": 0.578
+            },
+            "window_cents": "over_45",
+            "window_note": "everything corrected up to 45 cents (the ladder's top)"
+          },
+          {
+            "norm": 0.285714,
+            "display": "29",
+            "strength_by_detune": {
+              "5": 1.002,
+              "10": 1.002,
+              "20": 1.001,
+              "30": 1.0,
+              "40": 0.562,
+              "45": 0.231
+            },
+            "window_cents": 40.0,
+            "window_note": "detunes up to 40 cents are corrected to at least half; beyond, left alone (strength 0.56 at 40)"
+          },
+          {
+            "norm": 0.428571,
+            "display": "43",
+            "strength_by_detune": {
+              "5": 1.002,
+              "10": 1.002,
+              "20": 1.001,
+              "30": 0.841,
+              "40": 0.305,
+              "45": 0.125
+            },
+            "window_cents": 30.0,
+            "window_note": "detunes up to 30 cents are corrected to at least half; beyond, left alone (strength 0.84 at 30)"
+          },
+          {
+            "norm": 0.571429,
+            "display": "57",
+            "strength_by_detune": {
+              "5": 1.002,
+              "10": 1.002,
+              "20": 1.001,
+              "30": 0.48,
+              "40": 0.174,
+              "45": 0.071
+            },
+            "window_cents": 20.0,
+            "window_note": "detunes up to 20 cents are corrected to at least half; beyond, left alone (strength 1.00 at 20)"
+          },
+          {
+            "norm": 0.714286,
+            "display": "71",
+            "strength_by_detune": {
+              "5": 1.002,
+              "10": 1.002,
+              "20": 0.591,
+              "30": 0.26,
+              "40": 0.094,
+              "45": 0.039
+            },
+            "window_cents": 20.0,
+            "window_note": "detunes up to 20 cents are corrected to at least half; beyond, left alone (strength 0.59 at 20)"
+          },
+          {
+            "norm": 0.857143,
+            "display": "86",
+            "strength_by_detune": {
+              "5": 1.002,
+              "10": 0.631,
+              "20": 0.236,
+              "30": 0.104,
+              "40": 0.037,
+              "45": 0.015
+            },
+            "window_cents": 10.0,
+            "window_note": "detunes up to 10 cents are corrected to at least half; beyond, left alone (strength 0.63 at 10)"
+          },
+          {
+            "norm": 1.0,
+            "display": "100",
+            "strength_by_detune": {
+              "5": 0.0,
+              "10": 0.0,
+              "20": 0.0,
+              "30": 0.0,
+              "40": 0.0,
+              "45": 0.0
+            },
+            "window_cents": "none",
+            "window_note": "nothing corrected, not even 5 cents"
+          }
+        ]
+      }
+    ],
+    "humanize": [
+      {
+        "index": 7,
+        "name": "Humanize",
+        "positions": [
+          {
+            "norm": 0.0,
+            "display": "0",
+            "held_note_correction": 1.0,
+            "short_note_correction": 0.979,
+            "short_notes": 14,
+            "held_over_short": 1.021
+          },
+          {
+            "norm": 0.142857,
+            "display": "14",
+            "held_note_correction": 1.0,
+            "short_note_correction": 0.974,
+            "short_notes": 14,
+            "held_over_short": 1.027
+          },
+          {
+            "norm": 0.285714,
+            "display": "29",
+            "held_note_correction": 1.0,
+            "short_note_correction": 0.97,
+            "short_notes": 14,
+            "held_over_short": 1.031
+          },
+          {
+            "norm": 0.428571,
+            "display": "43",
+            "held_note_correction": 1.0,
+            "short_note_correction": 0.968,
+            "short_notes": 14,
+            "held_over_short": 1.033
+          },
+          {
+            "norm": 0.571429,
+            "display": "57",
+            "held_note_correction": 1.0,
+            "short_note_correction": 0.968,
+            "short_notes": 14,
+            "held_over_short": 1.033
+          },
+          {
+            "norm": 0.714286,
+            "display": "71",
+            "held_note_correction": 1.0,
+            "short_note_correction": 0.967,
+            "short_notes": 14,
+            "held_over_short": 1.034
+          },
+          {
+            "norm": 0.857143,
+            "display": "86",
+            "held_note_correction": 1.0,
+            "short_note_correction": 0.967,
+            "short_notes": 14,
+            "held_over_short": 1.034
+          },
+          {
+            "norm": 1.0,
+            "display": "100",
+            "held_note_correction": 1.0,
+            "short_note_correction": 0.966,
+            "short_notes": 14,
+            "held_over_short": 1.035
+          }
+        ]
+      }
+    ],
+    "readbacks": {
+      "1": {
+        "index": 1,
+        "name": "Key",
+        "kind": "key",
+        "values": {
+          "C": 0.0,
+          "C#": 0.090899996459484,
+          "D": 0.181799992918968,
+          "D#": 0.272700011730194,
+          "E": 0.363599985837936,
+          "F": 0.454499989748001,
+          "F#": 0.545499980449677,
+          "G": 0.636399984359741,
+          "G#": 0.727299988269806,
+          "A": 0.818199992179871,
+          "A#": 0.909099996089935,
+          "B": 1.0
+        },
+        "count": 12
+      },
+      "2": {
+        "index": 2,
+        "name": "Scale",
+        "kind": "scale",
+        "values": {
+          "Major": 0.0,
+          "Minor": 0.035700000822544,
+          "Chromatic": 0.071400001645088,
+          "Ling Ln": 0.107100002467632,
+          "Scholar's": 0.142900004982948,
+          "Greek Dia": 0.178599998354912,
+          "Greek Chr": 0.214300006628036,
+          "Greek En": 0.25,
+          "Pythagor": 0.285699993371964,
+          "Just Major": 0.321399986743927,
+          "Just Minor": 0.357100009918213,
+          "Meantone": 0.392899990081787,
+          "Werck III": 0.428600013256073,
+          "Vallotti": 0.464300006628036,
+          "Barnes": 0.5,
+          "Indian": 0.535700023174286,
+          "Slendro": 0.571399986743927,
+          "Pelog": 0.607100009918213,
+          "Arabic 1": 0.642899990081787,
+          "Arabic 2": 0.678600013256073,
+          "19 Tone": 0.714299976825714,
+          "24 Tone": 0.75,
+          "31 Tone": 0.785700023174286,
+          "53 Tone": 0.821399986743927,
+          "Partch": 0.857100009918213,
+          "Carlos A": 0.892899990081787,
+          "Carlos B": 0.928600013256073,
+          "Carlos G": 0.964299976825714,
+          "Harmonic": 1.0
+        },
+        "count": 29
+      }
+    },
+    "spec": "TUNER_PROFILE_SPEC_v0_1 section 4 - PROPOSAL, not for publication"
+  },
+  "pitchPlan": {
+    "version": 2,
+    "candidates": [
+      {
+        "index": 6,
+        "name": "Retune Speed",
+        "detentsBy": "even8",
+        "norms": [
+          0.0,
+          0.142857,
+          0.285714,
+          0.428571,
+          0.571429,
+          0.714286,
+          0.857143,
+          1.0
+        ]
+      }
+    ],
+    "speedHalfPeriodsS": [
+      1.0,
+      2.0,
+      4.0
+    ]
+  },
+  "pitchReview": {
+    "candidates": 1,
+    "measured": 15,
+    "windowSeen": false,
+    "note": "every control holding the strength role was swept with a static detuned note and a square vibrato; a control whose static residual moves across positions is a strength control, one whose transition duration moves is a speed control; the server half reads both"
+  }
+}

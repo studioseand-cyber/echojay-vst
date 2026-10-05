@@ -147,6 +147,40 @@ inline juce::String bandKey (const juce::String& name)
     }
     return keep.joinIntoString (" ").trim();
 }
+// ENGAGE CANDIDATES (5 Oct R8a): a band that reads flat at every gain position may be switched off (bx_digital's second
+// channel: "EQ Band HF 2 On"). The switch-like controls (two steps or word-valued) that share the band key's tokens, the
+// closest first (most shared tokens), then global on / in / enable / bypass switches that share the key's first token (the
+// channel). The ON norm by text: on / in / active / enable / engage -> that position; bypass / off -> the other.
+struct EngageCandidate { int index = -1; juce::String name; float onNorm = 1.0f; juce::String onText; int shared = 0; };
+inline std::vector<EngageCandidate> engageCandidates (const juce::String& bandKey, const std::vector<std::tuple<int, juce::String, bool, std::map<juce::String, float>>>& switches, const std::vector<int>& exclude)
+{
+    // switches: (index, name, isSwitch, texts -> norm)
+    std::vector<EngageCandidate> out;
+    juce::StringArray keyToks = juce::StringArray::fromTokens (bandKey.toLowerCase(), " -_/", "\"'"); keyToks.removeEmptyStrings();
+    for (const auto& [idx, name, isSwitch, texts] : switches)
+    {
+        if (! isSwitch || std::find (exclude.begin(), exclude.end(), idx) != exclude.end()) continue;
+        juce::StringArray nameToks = juce::StringArray::fromTokens (name.toLowerCase(), " -_/", "\"'"); nameToks.removeEmptyStrings();
+        int shared = 0; for (const auto& t : keyToks) if (nameToks.contains (t)) ++shared;
+        // every token of the switch's name must be the band's or a switch word: "EQ Band LF 2 On" is another band's, "Master Bypass" is global
+        int foreign = 0; for (const auto& t : nameToks) { const bool sw = t == "on" || t == "in" || t == "enable" || t == "enabled" || t == "active" || t == "bypass" || t == "engage" || t == "power" || t == "mute" || t == "off" || t == "out"; if (! sw && ! keyToks.contains (t)) ++foreign; }
+        if (shared == 0 || foreign > 0) continue;
+        EngageCandidate c; c.index = idx; c.name = name; c.shared = shared;
+        bool bypassName = nameToks.contains ("bypass") || nameToks.contains ("mute");
+        bool found = false;
+        for (const auto& [text, norm] : texts)
+        {
+            const auto t = text.toLowerCase().trim();
+            const bool onLike = t == "on" || t == "in" || t == "active" || t == "enabled" || t == "enable" || t == "engaged" || t == "yes";
+            const bool offLike = t == "off" || t == "out" || t == "bypass" || t == "bypassed" || t == "no" || t == "inactive";
+            if ((! bypassName && onLike) || (bypassName && offLike)) { c.onNorm = norm; c.onText = text; found = true; }
+        }
+        if (! found) { c.onNorm = bypassName ? 0.0f : 1.0f; for (const auto& [text, norm] : texts) if (std::abs (norm - c.onNorm) < 1e-6) c.onText = text; }
+        out.push_back (c);
+    }
+    std::sort (out.begin(), out.end(), [] (const EngageCandidate& a, const EngageCandidate& b) { return a.shared != b.shared ? a.shared > b.shared : a.index < b.index; });
+    return out;
+}
 struct BandControls { juce::String key; std::vector<int> gains, freqs, qs; std::vector<juce::String> gainNames, freqNames, qNames; };
 inline std::vector<BandControls> bandsFrom (const std::vector<std::pair<int, juce::String>>& controls)
 {

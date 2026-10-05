@@ -1,0 +1,25 @@
+=== TIMING Lindell SBC
+TIMING: Lindell SBC 1.0.3: amount [13] Threshold at norm 0.867 (1 dB point -29.28 dBFS peak); burst -35.3 -> -19.3
+  release [16] Release = 0.050: measured attack 8.9 ms release 27.3 ms (GR step 4.28)
+  release [16] Release = 0.121: measured attack 8.9 ms release 38.8 ms (GR step 4.28)
+  release [16] Release = 0.193: measured attack 8.8 ms release 50.1 ms (GR step 4.28)
+  release [16] Release = 0.321: measured attack 8.8 ms release 81.6 ms (GR step 4.28)
+  release [16] Release = 0.679: measured attack 8.8 ms release 208.2 ms (GR step 4.28)
+  release [16] Release = 1.179: measured attack 8.8 ms release 434.1 ms (GR step 4.28)
+  release [16] Release = 1.929: measured attack 8.8 ms release 799.7 ms (GR step 4.28)
+  release [16] Release = 3.000: measured attack 8.8 ms release 2066.3 ms (GR step 4.28)
+  attack [19] Attack = 0.03 ms: measured attack < 6.4 ms release 143.7 ms (GR step 4.29)
+  attack [19] Attack = 0.1 ms: measured attack < 6.4 ms release 143.9 ms (GR step 4.28)
+  attack [19] Attack = 0.3 ms: measured attack < 6.4 ms release 145.7 ms (GR step 4.28)
+  attack [19] Attack = 1 ms: measured attack 8.8 ms release 152.0 ms (GR step 4.28)
+  attack [19] Attack = 3 ms: measured attack 14.2 ms release 159.9 ms (GR step 4.29)
+  attack [19] Attack = 10 ms: measured attack 19.8 ms release 167.6 ms (GR step 4.29)
+  attack [19] Attack = 30 ms: measured attack 48.4 ms release 205.7 ms (GR step 4.29)
+  program dependence: release after 0.3 s 60.787 ms, after 3 s 157.278 ms (ratio 2.59) - PROGRAM-DEPENDENT
+TIMING: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/r8b/timing/AudioUnit_6f747363_1.0.3.timing.json
+=== GAINCAL Lindell SBC
+GAINCAL: Lindell SBC 1.0.3: 3 gain-role control(s) (amount [13] Threshold excluded)
+  [3] Gain (gain): not_db_scale - the label is not called dB (unit '') and the output does not track it: a scale, listed, not judged; relative to the control's own 0.0 point (-0.01 dB out-in); worst |measured - display| 4.40 dB over 21 numeric point(s) (bar 0.10, the label's resolution); LEVEL-DEPENDENT: the levels disagree by up to 7.15 dB
+  [7] Input Gain (input): display_matches - relative to the control's own 0.0 point (-0.01 dB out-in); worst |measured - display| 0.00 dB over 21 numeric point(s) (bar 0.10, the label's resolution); LEVEL-DEPENDENT: the levels disagree by up to 3.79 dB; judged at -60 dBFS (an input gain: -40 can sit inside the compression path)
+  [14] Output Gain (output): display_matches - relative to the control's own 0.0 point (-0.01 dB out-in); worst |measured - display| 0.00 dB over 21 numeric point(s) (bar 0.10, the label's resolution); LEVEL-DEPENDENT: the levels disagree by up to 0.67 dB
+GAINCAL: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/r8b/gaincal/AudioUnit_6f747363_1.0.3.gaincal.json

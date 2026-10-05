@@ -31,6 +31,10 @@ inline constexpr double kLevelDepDb = 0.5;       // two levels disagreeing by mo
 inline constexpr double kSilentDb = -60.0;       // out - in below this is silence (7X-500's output with its Input at minimum), not a reading
 inline constexpr double kNoEffectDb = 0.1;       // a control whose readings span less than this does nothing to the output
 inline const std::vector<double> kLevelsDbfs { -20.0, -40.0 };
+// A THIRD LEVEL FOR INPUT GAINS (5 Oct R8c): an input gain sits in front of the detector, so at -40 dBFS a +10 dB label can
+// already be inside the compression path (the 4 Oct finding); inputs are measured at -60 too and judged there.
+inline const std::vector<double> kInputLevelsDbfs { -20.0, -40.0, -60.0 };
+inline constexpr double kInputRefDbfs = -60.0;
 inline constexpr int kNorms = 21;
 
 struct Reading { double norm = 0.0; juce::String display; std::map<double, double> measuredDb; bool landed = true; };   // level -> out - in
@@ -139,7 +143,8 @@ inline Curve judge (const std::vector<Reading>& rows, const juce::String& unit =
     c.note = (c.verdict == "not_db_scale" ? "the label is not called dB (unit '" + unit + "') and the output does not track it: a scale, listed, not judged; " : juce::String())
            + (c.hasZeroPoint ? "relative to the control's own 0.0 point (" + juce::String (c.zeroRefDb, 2) + " dB out-in)" : "absolute out-in (no 0.0 display point)")
            + "; worst |measured - display| " + juce::String (c.worstOffDb, 2) + " dB over " + juce::String (c.numericPoints) + " numeric point(s) (bar " + juce::String (c.barDb, 2) + ", the label's resolution)"
-           + (c.levelDependent ? "; LEVEL-DEPENDENT: the two levels disagree by up to " + juce::String (c.worstLevelDepDb, 2) + " dB" : "; level-independent within " + juce::String (c.worstLevelDepDb, 2) + " dB");
+           + (c.levelDependent ? "; LEVEL-DEPENDENT: the levels disagree by up to " + juce::String (c.worstLevelDepDb, 2) + " dB" : "; level-independent within " + juce::String (c.worstLevelDepDb, 2) + " dB")
+           + (refLevel != -40.0 ? "; judged at " + juce::String (refLevel, 0) + " dBFS (an input gain: -40 can sit inside the compression path)" : juce::String());
     return c;
 }
 

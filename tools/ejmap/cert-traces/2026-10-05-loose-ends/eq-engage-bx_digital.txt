@@ -1,0 +1,36 @@
+=== EQ bx_digital V3
+EQ: bx_digital V3 3.10.1: 10 band(s) by name
+  band 'EQ Band HF 1': gain [52] EQ Band HF 1 Gain, freq [54] EQ Band HF 1 Frequency, q [53] EQ Band HF 1 Q
+  band 'EQ Band HF 2': gain [77] EQ Band HF 2 Gain, freq [79] EQ Band HF 2 Frequency, q [78] EQ Band HF 2 Q
+    engage search: [80] EQ Band HF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+  band 'EQ Band HMF 1': gain [47] EQ Band HMF 1 Gain, freq [49] EQ Band HMF 1 Frequency, q [48] EQ Band HMF 1 Q
+  band 'EQ Band HMF 2': gain [72] EQ Band HMF 2 Gain, freq [74] EQ Band HMF 2 Frequency, q [73] EQ Band HMF 2 Q
+    engage search: [75] EQ Band HMF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+  band 'EQ Band LF 1': gain [32] EQ Band LF 1 Gain, freq [34] EQ Band LF 1 Frequency, q [33] EQ Band LF 1 Q
+  band 'EQ Band LF 2': gain [57] EQ Band LF 2 Gain, freq [59] EQ Band LF 2 Frequency, q [58] EQ Band LF 2 Q
+    engage search: [60] EQ Band LF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+  band 'EQ Band LMF 1': gain [37] EQ Band LMF 1 Gain, freq [39] EQ Band LMF 1 Frequency, q [38] EQ Band LMF 1 Q
+  band 'EQ Band LMF 2': gain [62] EQ Band LMF 2 Gain, freq [64] EQ Band LMF 2 Frequency, q [63] EQ Band LMF 2 Q
+    engage search: [65] EQ Band LMF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+  band 'EQ Band MF 1': gain [42] EQ Band MF 1 Gain, freq [44] EQ Band MF 1 Frequency, q [43] EQ Band MF 1 Q
+  band 'EQ Band MF 2': gain [67] EQ Band MF 2 Gain, freq [69] EQ Band MF 2 Frequency, q [68] EQ Band MF 2 Q
+    engage search: [70] EQ Band MF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+EQ: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/r8/eq/AudioUnit_417f7533_3.10.1.eq.json
+=== TIMING Lindell SBC
+TIMING: no record for Lindell SBC in /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/r8/fixtures (sweep it first)
+=== GAINCAL Acme Opticom XLA-3
+GAINCAL: Acme Opticom XLA-3 1.10.1: 3 gain-role control(s) (amount [3] Input Gain excluded)
+  [4] Output Gain (output): not_db_scale - the label is not called dB (unit '') and the output does not track it: a scale, listed, not judged; relative to the control's own 0.0 point (-51.53 dB out-in); worst |measured - display| 60.87 dB over 21 numeric point(s) (bar 0.10, the label's resolution); LEVEL-DEPENDENT: the levels disagree by up to 5.09 dB
+  [8] Level Trim (gain): display_matches - relative to the control's own 0.0 point (9.40 dB out-in); worst |measured - display| 0.00 dB over 21 numeric point(s) (bar 0.10, the label's resolution); LEVEL-DEPENDENT: the levels disagree by up to 5.09 dB
+  [10] Noise Level (gain): no_effect - the control does not move the output (span 0.00 dB over 21 positions)
+GAINCAL: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/r8/gaincal/AudioUnit_62485258_1.10.1.gaincal.json

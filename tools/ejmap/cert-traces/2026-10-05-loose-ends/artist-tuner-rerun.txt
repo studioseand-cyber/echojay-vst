@@ -1,0 +1,7 @@
+TUNER: Auto-Tune Artist 9.5.0: 1 strength candidate(s), key/scale [1] as instantiated 'C'
+  [6] Retune Speed: strength measured at 8 position(s), speed at 7
+  readback [1] Key: 12 value(s)
+  readback [2] Scale: 29 value(s)
+  humanize [7] Humanize: held vs short notes at 8 position(s)
+  flex [27] Flex-Tune: window measured at 8 position(s) x 6 detunes
+TUNER: Auto-Tune Artist -> AudioUnit_7672410a_9.5.0.json

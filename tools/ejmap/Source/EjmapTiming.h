@@ -51,6 +51,27 @@ inline Burst parseBurst (const juce::String& out)
     return b;
 }
 
+// THE HOLD SCALED TO THE LABEL (5 Oct R8b): a slow release (SBC 1.2 s, opto units in seconds) never recovered inside a fixed
+// 4 s post, and a slow attack never settled inside 2 s. The burst's loud segment and post segment are kFoldLabel times the
+// control's own label where it is a time, never shorter than the fixed defaults, never longer than kMaxSegmentS.
+inline constexpr double kFoldLabel = 5.0, kDefaultHoldS = 2.0, kDefaultPostS = 4.0, kMaxSegmentS = 30.0;
+inline std::optional<double> labelMs (const juce::String& display)
+{
+    const auto t = display.trim().toLowerCase(); juce::String num;
+    for (int i = 0; i < t.length(); ++i) { const auto c = t[i]; if (juce::CharacterFunctions::isDigit (c) || c == '.' ) num << c; else if (num.isNotEmpty()) break; }
+    if (num.isEmpty() || num == ".") return {};
+    const double v = num.getDoubleValue();
+    if (t.contains ("ms")) return v;
+    if (t.contains ("us") || t.contains ("\xc2\xb5s")) return v / 1000.0;
+    if (t.endsWith ("s") || t.contains (" s") || t.contains ("sec")) return v * 1000.0;
+    return {};   // a bare number is not a time (a ratio, a percentage: the default segment)
+}
+inline double segmentFor (const juce::String& display, double defaultS)
+{
+    const auto ms = labelMs (display);
+    if (! ms) return defaultS;
+    return juce::jlimit (defaultS, kMaxSegmentS, kFoldLabel * *ms / 1000.0);
+}
 inline double medianOf (std::vector<double> v) { if (v.empty()) return 0.0; std::sort (v.begin(), v.end()); return v.size() % 2 ? v[v.size() / 2] : 0.5 * (v[v.size() / 2 - 1] + v[v.size() / 2]); }
 inline double iqrOf (std::vector<double> v) { if (v.size() < 4) return 0.0; std::sort (v.begin(), v.end()); return v[(v.size() * 3) / 4] - v[v.size() / 4]; }
 

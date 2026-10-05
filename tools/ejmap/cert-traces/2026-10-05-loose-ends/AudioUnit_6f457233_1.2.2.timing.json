@@ -1,0 +1,169 @@
+{
+  "schema": "ej_timing_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.3, not exported, not published",
+  "product": "Lindell 254E",
+  "version": "1.2.2",
+  "identity": "AudioUnit|6f457233|1.2.2",
+  "amount_control": "Threshold",
+  "amount_norm": 0.333333,
+  "one_db_point_dbfs_peak": -29.241669810134539,
+  "quiet_dbfs": -35.241669810134539,
+  "loud_dbfs": -19.241669810134539,
+  "method": "997 Hz sine, 1 s at quiet, step to loud, step back; gain per 5 ms window; attack = 63 % of the GR step, release = 63 % recovery",
+  "controls": [
+    {
+      "index": 8,
+      "control": "Compress Recovery",
+      "role": "release",
+      "positionsBy": "landing",
+      "positions": [
+        {
+          "result": "measured",
+          "baseline_gain_db": 2.28,
+          "final_gain_db": -2.71,
+          "gr_step_db": 4.99,
+          "attack_ms": 11.800000000000001,
+          "release_ms": 163.599999999999994,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.0,
+          "display": "100mS"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 2.28,
+          "final_gain_db": -3.35,
+          "gr_step_db": 5.63,
+          "attack_ms": 14.5,
+          "release_ms": 740.0,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.25,
+          "display": "400mS"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 2.28,
+          "final_gain_db": -3.5,
+          "gr_step_db": 5.78,
+          "attack_ms": 15.199999999999999,
+          "release_ms": 1534.700000000000045,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.5,
+          "display": "800mS"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 2.28,
+          "final_gain_db": -3.6,
+          "gr_step_db": 5.88,
+          "attack_ms": 15.699999999999999,
+          "release_ms": 3338.599999999999909,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.75,
+          "display": "1.5S"
+        },
+        {
+          "result": "bound",
+          "reason": "the release had not recovered 63 % by the end of the post segment: longer than 3997.5 ms",
+          "baseline_gain_db": 2.28,
+          "final_gain_db": -3.37,
+          "gr_step_db": 5.65,
+          "attack_ms": 17.0,
+          "release_longer_than_ms": 3998.0,
+          "loud_late_iqr_db": 0.05,
+          "window_ms": 5.0,
+          "norm": 1.0,
+          "display": "Auto"
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "control": "Limit Recovery",
+      "role": "release",
+      "positionsBy": "landing",
+      "positions": [
+        {
+          "result": "bound",
+          "reason": "the release had not recovered 63 % by the end of the post segment: longer than 3997.5 ms",
+          "baseline_gain_db": 2.28,
+          "final_gain_db": -3.37,
+          "gr_step_db": 5.65,
+          "attack_ms": 17.0,
+          "release_longer_than_ms": 3998.0,
+          "loud_late_iqr_db": 0.05,
+          "window_ms": 5.0,
+          "norm": 0.0,
+          "display": "100mS"
+        },
+        {
+          "result": "bound",
+          "reason": "the release had not recovered 63 % by the end of the post segment: longer than 3997.5 ms",
+          "baseline_gain_db": 2.28,
+          "final_gain_db": -3.37,
+          "gr_step_db": 5.65,
+          "attack_ms": 17.0,
+          "release_longer_than_ms": 3998.0,
+          "loud_late_iqr_db": 0.05,
+          "window_ms": 5.0,
+          "norm": 0.3333,
+          "display": "200mS"
+        },
+        {
+          "result": "bound",
+          "reason": "the release had not recovered 63 % by the end of the post segment: longer than 3997.5 ms",
+          "baseline_gain_db": 2.28,
+          "final_gain_db": -3.37,
+          "gr_step_db": 5.65,
+          "attack_ms": 17.0,
+          "release_longer_than_ms": 3998.0,
+          "loud_late_iqr_db": 0.05,
+          "window_ms": 5.0,
+          "norm": 0.6667,
+          "display": "800mS"
+        },
+        {
+          "result": "bound",
+          "reason": "the release had not recovered 63 % by the end of the post segment: longer than 3997.5 ms",
+          "baseline_gain_db": 2.28,
+          "final_gain_db": -3.37,
+          "gr_step_db": 5.65,
+          "attack_ms": 17.0,
+          "release_longer_than_ms": 3998.0,
+          "loud_late_iqr_db": 0.05,
+          "window_ms": 5.0,
+          "norm": 1.0,
+          "display": "Auto"
+        }
+      ]
+    }
+  ],
+  "program_dependence": {
+    "short_burst": {
+      "result": "measured",
+      "baseline_gain_db": 2.28,
+      "final_gain_db": -2.52,
+      "gr_step_db": 4.8,
+      "attack_ms": 11.6,
+      "release_ms": 2773.800000000000182,
+      "loud_late_iqr_db": 0.05,
+      "window_ms": 5.0
+    },
+    "long_burst": {
+      "result": "bound",
+      "reason": "the release had not recovered 63 % by the end of the post segment: longer than 3997.5 ms",
+      "baseline_gain_db": 2.28,
+      "final_gain_db": -3.45,
+      "gr_step_db": 5.73,
+      "attack_ms": 17.600000000000001,
+      "release_longer_than_ms": 3998.0,
+      "loud_late_iqr_db": 0.02,
+      "window_ms": 5.0
+    },
+    "program_dependent": null
+  },
+  "measuredAt": "20261004T233920"
+}

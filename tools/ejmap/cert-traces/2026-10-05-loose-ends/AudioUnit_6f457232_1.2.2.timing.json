@@ -1,0 +1,336 @@
+{
+  "schema": "ej_timing_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.3, not exported, not published",
+  "product": "Lindell 7X-500",
+  "version": "1.2.2",
+  "identity": "AudioUnit|6f457232|1.2.2",
+  "amount_control": "Input",
+  "amount_norm": 0.666667,
+  "one_db_point_dbfs_peak": -29.100000000000001,
+  "quiet_dbfs": -35.100000000000001,
+  "loud_dbfs": -19.100000000000001,
+  "method": "997 Hz sine, 1 s at quiet, step to loud, step back; gain per 5 ms window; attack = 63 % of the GR step, release = 63 % recovery",
+  "controls": [
+    {
+      "index": 2,
+      "control": "Attack",
+      "role": "attack",
+      "positionsBy": "text",
+      "positions": [
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.59,
+          "final_gain_db": 0.59,
+          "gr_step_db": 13.0,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 17.100000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.0,
+          "display": "Fast"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 1.88,
+          "gr_step_db": 11.720000000000001,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 15.4,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.5,
+          "display": "Medium"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 1.0,
+          "display": "Slow"
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "control": "Release",
+      "role": "release",
+      "positionsBy": "text",
+      "positions": [
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.0,
+          "display": "Fast"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 2.02,
+          "gr_step_db": 11.58,
+          "attack_ms": 10.1,
+          "release_ms": 51.899999999999999,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.5,
+          "display": "Medium"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.59,
+          "final_gain_db": 0.8,
+          "gr_step_db": 12.789999999999999,
+          "attack_ms": 9.199999999999999,
+          "release_ms": 231.099999999999994,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 1.0,
+          "display": "Slow"
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "control": "Continuous Attack",
+      "role": "attack",
+      "positionsBy": "even8",
+      "positions": [
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.0,
+          "display": "0.0"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.142857,
+          "display": "1.4"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.285714,
+          "display": "2.9"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.428571,
+          "display": "4.3"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.571429,
+          "display": "5.7"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.714286,
+          "display": "7.1"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.857143,
+          "display": "8.6"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 1.0,
+          "display": "10.0"
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "control": "Continuous Release",
+      "role": "release",
+      "positionsBy": "even8",
+      "positions": [
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.0,
+          "display": "0.0"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.142857,
+          "display": "1.4"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.285714,
+          "display": "2.9"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.428571,
+          "display": "4.3"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.571429,
+          "display": "5.7"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.714286,
+          "display": "7.1"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.857143,
+          "display": "8.6"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 1.0,
+          "display": "10.0"
+        }
+      ]
+    }
+  ],
+  "program_dependence": {
+    "short_burst": {
+      "result": "measured",
+      "baseline_gain_db": 13.6,
+      "final_gain_db": 4.76,
+      "gr_step_db": 8.84,
+      "attack_ms": 10.800000000000001,
+      "release_ms": 11.199999999999999,
+      "loud_late_iqr_db": 0.14,
+      "window_ms": 5.0
+    },
+    "long_burst": {
+      "result": "measured",
+      "baseline_gain_db": 13.6,
+      "final_gain_db": 4.01,
+      "gr_step_db": 9.59,
+      "attack_ms": 11.5,
+      "release_ms": 12.800000000000001,
+      "loud_late_iqr_db": 0.0,
+      "window_ms": 5.0
+    },
+    "release_ratio_long_over_short": 1.14,
+    "program_dependent": false
+  },
+  "measuredAt": "20261004T233624"
+}

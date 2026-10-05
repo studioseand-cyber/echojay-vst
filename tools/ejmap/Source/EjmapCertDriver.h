@@ -2723,14 +2723,14 @@ inline int runGainCal (const SweepOptions& opt)
     for (const auto& t : targets)
     {
         std::vector<std::vector<gaincal::Reading>> runs;
-        for (double L : gaincal::kLevelsDbfs)
+        for (double L : t.role == "input" ? gaincal::kInputLevelsDbfs : gaincal::kLevelsDbfs)   // inputs get -60 too (R8c)
         {
             const auto r = run ("c" + juce::String (t.index) + ".L" + juce::String ((int) -L), { "--sweep", "thr=" + juce::String (t.index), "norms=" + norms.joinIntoString (","), "levels=" + juce::String ((int) L), "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
             if (r.kind == ChildResult::Kind::uiShown) { say ("GAINCAL: a window appeared on [" + juce::String (t.index) + "] " + t.name + "; stopping"); return 5; }
             runs.push_back (gaincal::parseLevelRun (r.cleanExit() ? r.out : juce::String(), L));
         }
         const auto rows = gaincal::mergeLevels (runs);
-        const auto c = gaincal::judge (rows, sweep::findControl (base, t.index).getProperty ("unit", "").toString());
+        const auto c = gaincal::judge (rows, sweep::findControl (base, t.index).getProperty ("unit", "").toString(), t.role == "input" ? gaincal::kInputRefDbfs : -40.0);
         if (c.measuredPoints > 0) ++measured;
         say ("  [" + juce::String (t.index) + "] " + t.name + " (" + t.role + "): " + c.verdict + " - " + c.note);
         controls.add (gaincal::toVar (t.index, t.name, t.role, rows, c));
@@ -2800,7 +2800,7 @@ inline int runTiming (const SweepOptions& opt)
     {
         if (r.role != "attack" && r.role != "release") continue;
         const auto ctl = sweep::findControl (record, r.index);
-        juce::StringArray cn; juce::String positionsBy = "even8";
+        juce::StringArray cn; juce::String positionsBy = "even8"; std::vector<std::pair<float, juce::String>> landed;   // the landing read's norm -> text (R8b reads the label from it)
         if (sweep::isSteppedControl (ctl)) { positionsBy = "declared"; const int n = (int) ctl.getProperty ("numSteps", 0); for (int k = 0; k < n; ++k) cn.add (juce::String ((float) k / (float) juce::jmax (1, n - 1), 6)); }
         else
         {
@@ -2810,14 +2810,29 @@ inline int runTiming (const SweepOptions& opt)
             juce::StringArray gs; for (int k = 0; k <= 32; ++k) gs.add (juce::String ((float) k / 32.0f, 6));
             const auto tg = runChild ({ opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--text-at-norms", juce::String (r.index), gs.joinIntoString (",") }, opt.timeoutMs);
             const auto det = pitch::detentsFromTextGrid (pitch::parseTextGrid (tg.cleanExit() ? tg.out : juce::String()));
+            landed = det;
             if (! det.empty() && (int) det.size() < 33) { positionsBy = "landing"; for (const auto& [n, tx] : det) cn.add (juce::String (n, 6)); }
             else for (int k = 0; k < 8; ++k) cn.add (juce::String ((float) k / 7.0f, 6));
         }
         auto* co = new juce::DynamicObject(); co->setProperty ("index", r.index); co->setProperty ("control", r.name); co->setProperty ("role", r.role); co->setProperty ("positionsBy", positionsBy);
         juce::Array<juce::var> positions;
+        // the label at each position BEFORE the burst (the landing read's texts, else the fixture's displayAt nearest the norm), so
+        // the loud and post segments can be scaled to it (R8b): hold = 5 x an attack label, post = 5 x a release label, 2 / 4 s at least
+        auto textAt = [&] (const juce::String& normText) -> juce::String
+        {
+            const double n = normText.getDoubleValue();
+            for (const auto& [dn, tx] : landed) if (std::abs (dn - n) < 1e-4) return tx;
+            const auto at = ctl.getProperty ("displayAt", {}); juce::String best; double bd = 1e9;
+            if (at.isObject()) for (const auto& kv : at.getDynamicObject()->getProperties()) { const double d = std::abs (kv.name.toString().getDoubleValue() - n); if (d < bd) { bd = d; best = kv.value.toString(); } }
+            return bd <= 0.05 ? best : juce::String();
+        };
         for (int k = 0; k < cn.size(); ++k)
         {
-            auto [t, cr] = burst (r.role + juce::String (r.index) + ".p" + juce::String (k).paddedLeft ('0', 2), { juce::String (r.index) + ":" + cn[k] }, r.role == "attack" ? 2.0 : 2.0, r.role == "release" ? 4.0 : 2.0);
+            const auto label = textAt (cn[k]);
+            const double holdS = r.role == "attack" ? timing::segmentFor (label, timing::kDefaultHoldS) : timing::kDefaultHoldS;
+            const double postS = r.role == "release" ? timing::segmentFor (label, timing::kDefaultPostS) : timing::kDefaultHoldS;
+            if (holdS > timing::kDefaultHoldS + 1e-9 || postS > timing::kDefaultPostS + 1e-9) say ("    segments scaled to the label '" + label + "': hold " + juce::String (holdS, 1) + " s, post " + juce::String (postS, 1) + " s");
+            auto [t, cr] = burst (r.role + juce::String (r.index) + ".p" + juce::String (k).paddedLeft ('0', 2), { juce::String (r.index) + ":" + cn[k] }, holdS, postS);
             if (cr.kind == ChildResult::Kind::uiShown) { say ("TIMING: a window appeared; stopping"); return 5; }
             juce::String display; for (const auto& line : juce::StringArray::fromLines (cr.out)) { const auto f = juce::StringArray::fromTokens (line, "\t", ""); if (f.size() > 2 && f[0] == "set" && f[1].getIntValue() == r.index) { const int tx = f.indexOf ("text"); if (tx >= 0 && tx + 1 < f.size()) display = f[tx + 1]; } }
             auto pv = timing::toVar (t); pv.getDynamicObject()->setProperty ("norm", cn[k].getDoubleValue()); pv.getDynamicObject()->setProperty ("display", display);
@@ -3003,11 +3018,21 @@ inline int runEq (const SweepOptions& opt)
         if (b.result == "shelf" && b.cornerHz > 0.0) o->setProperty ("corner_hz", std::round (b.cornerHz * 10.0) / 10.0);
         if (b.result == "measured") { o->setProperty ("bandwidth_oct", std::round (b.bandwidthOct * 1000.0) / 1000.0); o->setProperty ("low_3db_hz", std::round (b.lowHz * 10.0) / 10.0); o->setProperty ("high_3db_hz", std::round (b.highHz * 10.0) / 10.0); }
         o->setProperty ("tones", b.tonesUsed); return juce::var (o); };
-    juce::Array<juce::var> bandRows; int measured = 0;
+    // THE SWITCHES (5 Oct R8a): every two-step or word-valued control with its texts, for the band engage search
+    std::vector<std::tuple<int, juce::String, bool, std::map<juce::String, float>>> switches; std::vector<int> bandControlIdx;
+    if (const auto* cs = base.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            std::map<juce::String, float> texts; if (const auto at = c.getProperty ("displayAt", {}); at.isObject()) for (const auto& kv : at.getDynamicObject()->getProperties()) texts[kv.value.toString()] = (float) kv.name.toString().getDoubleValue();
+            switches.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", "").toString(), sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2, texts });
+        }
+    for (const auto& b : bands) { bandControlIdx.insert (bandControlIdx.end(), b.gains.begin(), b.gains.end()); bandControlIdx.insert (bandControlIdx.end(), b.freqs.begin(), b.freqs.end()); bandControlIdx.insert (bandControlIdx.end(), b.qs.begin(), b.qs.end()); }
+    juce::Array<juce::var> bandRows; int measured = 0, engaged = 0;
     for (const auto& band : bands)
     {
         const int gIdx = band.gains.front(), fIdx = band.freqs.front();
         const auto tag = "b" + juce::String (gIdx);
+        juce::StringArray engageSets; juce::String engagedBy;   // a switch the engage search found for this band: written on every sweep of it
         say ("  band '" + band.key + "': gain [" + juce::String (gIdx) + "] " + band.gainNames.front() + ", freq [" + juce::String (fIdx) + "] " + band.freqNames.front() + (band.qs.empty() ? juce::String() : ", q [" + juce::String (band.qs.front()) + "] " + band.qNames.front()));
         // baseline: the gain control at its instantiate norm (one position) = everything as instantiated
         auto [baseR, br] = response (tag + ".base", gIdx, { "current" }, {});   // the control at its instantiate value, no write
@@ -3018,6 +3043,23 @@ inline int runEq (const SweepOptions& opt)
         // GAIN sweep
         juce::Array<juce::var> gainRows; float boostNorm = -1.0f; double boostDb = 0.0; std::optional<double> bestBoostDist;
         { auto [gr, r] = response (tag + ".gain", gIdx, normsFor (gIdx, 7), {});
+          // THE ENGAGE SEARCH (R8a): flat at every position -> try the band's switches, closest name first, at most four
+          { bool allFlat = ! gr.positions.empty(); for (const auto& p : gr.positions) if (eq::deriveBand (eq::deviation (p, baseline)).result != "flat") allFlat = false;
+            if (allFlat)
+            {
+                int tried = 0;
+                for (const auto& c : eq::engageCandidates (band.key, switches, bandControlIdx))
+                {
+                    if (++tried > 4) break;
+                    const juce::StringArray sets { juce::String (c.index) + ":" + juce::String (c.onNorm, 6) };
+                    auto [gr2, r2] = response (tag + ".gain.e" + juce::String (c.index), gIdx, normsFor (gIdx, 7), sets);
+                    if (r2.kind == ChildResult::Kind::uiShown) { say ("EQ: a window appeared; stopping"); return 5; }
+                    bool moved = false; for (const auto& p : gr2.positions) if (eq::deriveBand (eq::deviation (p, baseline)).result != "flat") moved = true;
+                    say ("    engage search: [" + juce::String (c.index) + "] " + c.name + " -> '" + c.onText + "' (norm " + juce::String (c.onNorm, 2) + "): " + (moved ? "the band now moves" : "still flat"));
+                    if (moved) { gr = gr2; engageSets = sets; engagedBy = c.name + " = '" + c.onText + "'"; ++engaged; break; }
+                }
+                if (engagedBy.isEmpty()) say ("    engage search: " + juce::String (tried) + " switch(es) tried, the band stays flat");
+            } }
           for (const auto& p : gr.positions)
           {
               const auto b = eq::deriveBand (eq::deviation (p, baseline));
@@ -3028,12 +3070,13 @@ inline int runEq (const SweepOptions& opt)
           }
           if (boostNorm < 0.0f && ! gr.positions.empty()) { boostNorm = gr.positions.back().norm; }
         }
-        bo->setProperty ("gain_sweep", gainRows);
+        bo->setProperty ("gain_sweep", gainRows); if (engagedBy.isNotEmpty()) bo->setProperty ("engaged_by", engagedBy);
         // FREQ sweep at the boost
         juce::Array<juce::var> freqRows;
         if (boostNorm >= 0.0f)
         {
-            auto [fr, r] = response (tag + ".freq", fIdx, normsFor (fIdx, 7), { juce::String (gIdx) + ":" + juce::String (boostNorm, 6) });
+            juce::StringArray fsets = engageSets; fsets.add (juce::String (gIdx) + ":" + juce::String (boostNorm, 6));
+            auto [fr, r] = response (tag + ".freq", fIdx, normsFor (fIdx, 7), fsets);
             for (const auto& p : fr.positions)
             {
                 const auto b = eq::deriveBand (eq::deviation (p, baseline));
@@ -3048,7 +3091,8 @@ inline int runEq (const SweepOptions& opt)
         juce::Array<juce::var> qRows;
         if (! band.qs.empty() && boostNorm >= 0.0f)
         {
-            auto [qr, r] = response (tag + ".q", band.qs.front(), normsFor (band.qs.front(), 5), { juce::String (gIdx) + ":" + juce::String (boostNorm, 6) });
+            juce::StringArray qsets = engageSets; qsets.add (juce::String (gIdx) + ":" + juce::String (boostNorm, 6));
+            auto [qr, r] = response (tag + ".q", band.qs.front(), normsFor (band.qs.front(), 5), qsets);
             for (const auto& p : qr.positions)
             {
                 const auto b = eq::deriveBand (eq::deviation (p, baseline));
@@ -3065,7 +3109,7 @@ inline int runEq (const SweepOptions& opt)
     o->setProperty ("method", "121-tone log multitone 20 Hz-20 kHz at -12 dBFS peak, 1 s hold, 0.5 s discard; deviation against the band's baseline; centre = largest deviation (parabolic in log f), bandwidth = -3 dB span; the grid is 1/12 octave: a centre is known to about 3 %, a bandwidth to about 0.1 octave");
     o->setProperty ("bands", bandRows); o->setProperty ("measuredAt", nowStamp());
     outDir.getChildFile (stem + ".eq.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
-    say ("EQ: -> " + outDir.getChildFile (stem + ".eq.json").getFullPathName());
+    say ("EQ: -> " + outDir.getChildFile (stem + ".eq.json").getFullPathName() + (engaged > 0 ? " (" + juce::String (engaged) + " band(s) engaged by a switch the search found)" : juce::String()));
     return measured > 0 ? 0 : 4;
 }
 

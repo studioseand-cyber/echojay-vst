@@ -1,0 +1,39 @@
+{
+  "schema": "ej_timing_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.3, not exported, not published",
+  "product": "bx_opto",
+  "version": "1.10.1",
+  "identity": "AudioUnit|417f7e74|1.10.1",
+  "amount_control": "Peak Reduction",
+  "amount_norm": 0.666667,
+  "one_db_point_dbfs_peak": -30.800000000000001,
+  "quiet_dbfs": -36.799999999999997,
+  "loud_dbfs": -20.800000000000001,
+  "method": "997 Hz sine, 1 s at quiet, step to loud, step back; gain per 5 ms window; attack = 63 % of the GR step, release = 63 % recovery",
+  "controls": [],
+  "program_dependence": {
+    "short_burst": {
+      "result": "measured",
+      "baseline_gain_db": -0.01,
+      "final_gain_db": -7.41,
+      "gr_step_db": 7.39,
+      "attack_faster_than_ms": 7.5,
+      "release_ms": 592.200000000000045,
+      "loud_late_iqr_db": 0.0,
+      "window_ms": 5.0
+    },
+    "long_burst": {
+      "result": "measured",
+      "baseline_gain_db": -0.01,
+      "final_gain_db": -7.41,
+      "gr_step_db": 7.4,
+      "attack_faster_than_ms": 7.5,
+      "release_ms": 592.399999999999977,
+      "loud_late_iqr_db": 0.0,
+      "window_ms": 5.0
+    },
+    "release_ratio_long_over_short": 1.0,
+    "program_dependent": false
+  },
+  "measuredAt": "20261004T233123"
+}

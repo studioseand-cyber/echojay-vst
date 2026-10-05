@@ -5301,6 +5301,14 @@ void testTunerDerivations()
     check (v3.result == "bound" && v3.boundMs > 0.0, "tuner V3: a correction that completes within one window is a BOUND (faster than " + juce::String (v3.boundMs, 1) + " ms), not a number (" + v3.result + ": " + v3.reason + ", excursion " + juce::String (v3.excursionCents, 2) + ")");
     const auto v4 = deriveSpeed (vibPos (30.0, 60.0, 1.0, 0.2, [] (int seg) { return seg % 2 ? 60.0 : 400.0; }), 30.0, 0.5);
     check (v4.result == "refused" && v4.reason.contains ("disagree"), "tuner V4: edges whose durations differ by more than 2x refuse (" + v4.reason + ")");
+    // THE WINDOW STRADDLING THE NEXT FLIP (5 Oct R8d, Auto-Tune Artist 36 / 17 / 6): the last window of each half period already
+    // holds the next step (+9 cents on a plateau at 0); it is not this half period's business and must not read as unsettled
+    {
+        auto straddle = vibPos (30.0, 20.0, 1.0, 0.2);   // a fast retune (tau 20 ms): settled within ~60 ms, flat for the rest
+        for (size_t i = 1; i < straddle.windows.size(); ++i) if (straddle.windows[i].target != straddle.windows[i - 1].target) straddle.windows[i - 1].outC += 9.0;
+        const auto v7 = deriveSpeed (straddle, 30.0, 0.5);
+        check (v7.result == "measured" && v7.durationMs < 120.0, "tuner V7: a +9 cent reading in the window straddling the next flip does not make a settled fast retune 'not settled' (" + v7.result + ": " + v7.reason + ", " + juce::String (v7.durationMs, 0) + " ms)");
+    }
     // LATENCY MUST NOT CORRUPT THE DURATION: the same retune with the output 150 ms behind the input (a plugin latency).
     auto late = vibPos (30.0, 60.0, 1.0, 0.2);
     { std::vector<double> outs; for (const auto& w : late.windows) outs.push_back (w.outC);
@@ -6950,6 +6958,13 @@ void testGainCal()
     const auto c = judge (rows, "dB");
     check (c.verdict == "display_matches" && std::abs (c.worstOffDb - 0.41) < 0.02 && std::abs (c.barDb - 0.5) < 1e-9 && ! c.levelDependent, "gaincal G2: whole-dB labels judged at half a dB (bx_opto: 0.41 off, matches) - " + c.note);
     check (displayResolution ("5 dB") == 1.0 && displayResolution ("6.00") == 0.01 && std::abs (displayResolution ("4.8") - 0.1) < 1e-9, "gaincal G3: the label's resolution from its decimals");
+    // AN INPUT GAIN INSIDE THE COMPRESSION PATH (R8c): honest at -60, compressed by 4 dB at the top at -40 and by 8 at -20 - judged at -60 it matches; at -40 it is "off"
+    std::vector<std::tuple<double, const char*, double>> in60 { { 0.0, "0 dB", 0.0 }, { 0.5, "10 dB", 10.0 }, { 1.0, "20 dB", 20.0 } }, in40 { { 0.0, "0 dB", 0.0 }, { 0.5, "10 dB", 9.0 }, { 1.0, "20 dB", 16.0 } }, in20 { { 0.0, "0 dB", 0.0 }, { 0.5, "10 dB", 7.0 }, { 1.0, "20 dB", 12.0 } };
+    const auto inRows = mergeLevels ({ parseLevelRun (run (-20.0, in20), -20.0), parseLevelRun (run (-40.0, in40), -40.0), parseLevelRun (run (-60.0, in60), -60.0) });
+    check (kInputLevelsDbfs.size() == 3 && kInputRefDbfs == -60.0, "gaincal G7: inputs get a third level, -60 dBFS, and are judged there");
+    const auto j60 = judge (inRows, "dB", kInputRefDbfs), j40 = judge (inRows, "dB", -40.0);
+    check (j60.verdict == "display_matches" && j60.levelDependent && j60.note.contains ("judged at -60 dBFS"), "gaincal G8: at -60 the input label is honest and the level dependence is said (" + j60.verdict + ")");
+    check (j40.verdict == "display_off", "gaincal G9: the same control judged at -40 reads 'off' - the compression path, not the label (" + j40.verdict + ")");
     check (displayDb ("+6.0 dB") && *displayDb ("+6.0 dB") == 6.0 && displayDb ("-10.00") && ! displayDb ("Off") && ! displayDb ("Max"), "gaincal G4: numeric labels parse, words do not");
     // SBC's Output Gain: unit-less "6.00" that the output tracks IS a dB label
     std::vector<std::tuple<double, const char*, double>> sbc { { 0.0, "-10.00", -10.01 }, { 0.5, "0.00", -0.01 }, { 1.0, "10.00", 9.99 } };
@@ -7021,6 +7036,16 @@ void testTiming()
     }
 }
 
+/** THE HOLD SCALED TO THE LABEL (EjmapTiming.h, 5 Oct R8b): segments from the control's own time label, never shorter than the defaults, capped. */
+void testTimingSegments()
+{
+    using namespace ejmap::timing;
+    check (labelMs ("1.2 s") && std::abs (*labelMs ("1.2 s") - 1200.0) < 1e-9 && labelMs ("300 ms") && *labelMs ("300 ms") == 300.0 && labelMs ("50mS") && *labelMs ("50mS") == 50.0 && ! labelMs ("Auto") && ! labelMs ("4:1") && ! labelMs ("7"), "timing T1: time labels in s / ms parse; words, ratios and bare numbers are not times");
+    check (std::abs (segmentFor ("1.2 s", kDefaultPostS) - 6.0) < 1e-9, "timing T2: a 1.2 s release gets a 6 s post (5x the label)");
+    check (std::abs (segmentFor ("100 ms", kDefaultPostS) - kDefaultPostS) < 1e-9 && std::abs (segmentFor ("Auto", kDefaultHoldS) - kDefaultHoldS) < 1e-9, "timing T3: a short or wordy label keeps the default segment");
+    check (std::abs (segmentFor ("20 s", kDefaultPostS) - kMaxSegmentS) < 1e-9, "timing T4: the segment is capped at 30 s");
+}
+
 /** LIMITER CEILINGS (EjmapLimiter.h, roadmap 2.4 PROTOTYPE, 5 Oct B3): the hold line's peaks, the ceiling positions from labels, the verdict with the 5 Oct cases. */
 void testLimiter()
 {
@@ -7083,6 +7108,21 @@ void testEq()
     check (bands.size() == 4 && keys.contains ("EQ Band HF 1") && keys.contains ("Low") && keys.contains ("Hi") && keys.contains ("High Shelf 1") && ! keys.contains ("Output"), "eq E7: bands by shared key with a gain and a frequency; a lone Output Gain is no band (" + keys.joinIntoString (",") + ")");
     for (const auto& b : bands) if (b.key == "EQ Band HF 1") check (b.gains == std::vector<int> { 52 } && b.freqs == std::vector<int> { 54 } && b.qs == std::vector<int> { 53 }, "eq E8: gain / freq / q by token (bx_digital's HF 1)");
     for (const auto& b : bands) if (b.key == "Hi") check (b.gains == std::vector<int> { 1 } && b.qs == std::vector<int> { 4 }, "eq E9: Pultec 'attenuation' is a gain, 'bandwidth' a Q");
+    // THE ENGAGE SEARCH (R8a): the switches that share the band key's tokens, closest first; the ON norm by text; bypass inverted; band controls excluded
+    {
+        std::vector<std::tuple<int, juce::String, bool, std::map<juce::String, float>>> sw {
+            { 10, "EQ Band HF 2 On", true, { { "Off", 0.0f }, { "On", 1.0f } } },
+            { 11, "EQ Band HF 2 Bypass", true, { { "Off", 0.0f }, { "On", 1.0f } } },
+            { 12, "Channel 2 In", true, { { "Out", 0.0f }, { "In", 1.0f } } },
+            { 13, "EQ Band LF 2 On", true, { { "Off", 0.0f }, { "On", 1.0f } } },
+            { 14, "EQ Band HF 2 Gain", false, {} },
+            { 15, "Master Bypass", true, { { "Off", 0.0f }, { "On", 1.0f } } } };
+        const auto cands = ejmap::eq::engageCandidates ("EQ Band HF 2", sw, { 14 });
+        check (cands.size() == 2 && cands[0].index == 10 && cands[0].onNorm == 1.0f && cands[0].onText == "On" && cands[1].index == 11 && cands[1].onNorm == 0.0f && cands[1].onText == "Off",
+               "eq E10: the band's own On switch first (On -> norm 1), its Bypass second with the ON position inverted (Off -> norm 0); another band's switch, a plain gain and a master bypass are out (" + juce::String ((int) cands.size()) + ")");
+        const auto ch = ejmap::eq::engageCandidates ("Channel 2 HF", sw, {});
+        check (ch.size() == 1 && ch[0].index == 12 && ch[0].onText == "In", "eq E11: a channel-level 'In' switch sharing the key's channel token is a candidate for a band that has no switch of its own");
+    }
 }
 
 /** SATURATION HARMONICS (EjmapSaturation.h, roadmap 2.5 PROTOTYPE, 5 Oct R3): the rharm trace, THD / even-odd / onset / inert. */
@@ -7530,6 +7570,7 @@ int main (int, char**)
     testSteppedExport();
     testGainCal();
     testTiming();
+    testTimingSegments();
     testLimiter();
     testEq();
     testCertReview();

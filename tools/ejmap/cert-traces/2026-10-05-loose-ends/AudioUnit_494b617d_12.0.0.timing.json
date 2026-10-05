@@ -1,0 +1,247 @@
+{
+  "schema": "ej_timing_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.3, not exported, not published",
+  "product": "C1 comp (s)",
+  "version": "12.0.0",
+  "identity": "AudioUnit|494b617d|12.0.0",
+  "amount_control": "Threshold",
+  "amount_norm": 0.733333,
+  "one_db_point_dbfs_peak": -30.998648648648651,
+  "quiet_dbfs": -36.998648648648654,
+  "loud_dbfs": -20.998648648648651,
+  "method": "997 Hz sine, 1 s at quiet, step to loud, step back; gain per 5 ms window; attack = 63 % of the GR step, release = 63 % recovery",
+  "controls": [
+    {
+      "index": 1,
+      "control": "Attack",
+      "role": "attack",
+      "positions": [
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.24,
+          "final_gain_db": -6.5,
+          "gr_step_db": 6.26,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 36.399999999999999,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.0,
+          "display": "0.01"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.23,
+          "final_gain_db": -6.47,
+          "gr_step_db": 6.23,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 36.5,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.142857,
+          "display": "0.05"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.21,
+          "final_gain_db": -6.3,
+          "gr_step_db": 6.08,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 36.799999999999997,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.285714,
+          "display": "0.27"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.07,
+          "final_gain_db": -5.29,
+          "gr_step_db": 5.22,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 39.100000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.428571,
+          "display": "1.39"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 0.05,
+          "final_gain_db": -4.28,
+          "gr_step_db": 4.33,
+          "attack_ms": 9.4,
+          "release_ms": 42.0,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.571429,
+          "display": "7.20"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 0.07,
+          "final_gain_db": -4.07,
+          "gr_step_db": 4.14,
+          "attack_ms": 42.399999999999999,
+          "release_ms": 43.200000000000003,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.714286,
+          "display": "37.28"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 0.07,
+          "final_gain_db": -4.04,
+          "gr_step_db": 4.11,
+          "attack_ms": 219.300000000000011,
+          "release_ms": 43.600000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.857143,
+          "display": "193.07"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 0.07,
+          "final_gain_db": -3.14,
+          "gr_step_db": 3.22,
+          "attack_ms": 798.600000000000023,
+          "release_ms": 48.100000000000001,
+          "loud_late_iqr_db": 0.26,
+          "window_ms": 5.0,
+          "norm": 1.0,
+          "display": "1000.00"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "control": "Release",
+      "role": "release",
+      "positions": [
+        {
+          "result": "measured",
+          "baseline_gain_db": 0.08,
+          "final_gain_db": -3.3,
+          "gr_step_db": 3.38,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 3.8,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.0,
+          "display": "1"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 0.04,
+          "final_gain_db": -4.27,
+          "gr_step_db": 4.3,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 3.8,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.142857,
+          "display": "4"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.0,
+          "final_gain_db": -4.7,
+          "gr_step_db": 4.7,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 11.6,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.285714,
+          "display": "14"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.03,
+          "final_gain_db": -4.98,
+          "gr_step_db": 4.95,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 41.5,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.428571,
+          "display": "52"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.04,
+          "final_gain_db": -5.12,
+          "gr_step_db": 5.08,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 152.599999999999994,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.571429,
+          "display": "193"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -5.18,
+          "gr_step_db": 5.13,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 566.100000000000023,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.714286,
+          "display": "720"
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -5.21,
+          "gr_step_db": 5.16,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 2112.699999999999818,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.857143,
+          "display": "2683"
+        },
+        {
+          "result": "bound",
+          "reason": "the release had not recovered 63 % by the end of the post segment: longer than 3997.5 ms",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -5.22,
+          "gr_step_db": 5.17,
+          "attack_faster_than_ms": 7.5,
+          "release_longer_than_ms": 3998.0,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 1.0,
+          "display": "10000"
+        }
+      ]
+    }
+  ],
+  "program_dependence": {
+    "short_burst": {
+      "result": "measured",
+      "baseline_gain_db": -0.03,
+      "final_gain_db": -4.97,
+      "gr_step_db": 4.95,
+      "attack_faster_than_ms": 7.5,
+      "release_ms": 39.899999999999999,
+      "loud_late_iqr_db": 0.0,
+      "window_ms": 5.0
+    },
+    "long_burst": {
+      "result": "measured",
+      "baseline_gain_db": -0.03,
+      "final_gain_db": -4.97,
+      "gr_step_db": 4.95,
+      "attack_faster_than_ms": 7.5,
+      "release_ms": 39.899999999999999,
+      "loud_late_iqr_db": 0.0,
+      "window_ms": 5.0
+    },
+    "release_ratio_long_over_short": 1.0,
+    "program_dependent": false
+  },
+  "measuredAt": "20261004T233316"
+}
