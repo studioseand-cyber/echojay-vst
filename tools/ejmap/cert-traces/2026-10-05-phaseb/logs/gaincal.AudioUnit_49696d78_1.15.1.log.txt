@@ -1,0 +1,10 @@
+GAINCAL: text pass: 9 of 18 controls sampled in 2.5 s (timeout 120 s, scaled to the count)
+GAINCAL: elysia mpressor 1.15.1: 3 gain-role control(s) (amount [3] Threshold excluded)
+  [10] EQ Gain (gain): no_effect - the control does not move the output (span 0.00 dB over 21 positions)
+  [16] Gain (gain): display_matches - relative to the control's own 0.0 point (-0.02 dB out-in); worst |measured - display| 0.05 dB over 21 numeric point(s) (bar 0.10, the label's resolution); LEVEL-DEPENDENT: the levels disagree by up to 0.51 dB
+  [17] Gain Reduction (gain): few_numeric_points - only 1 numeric label(s): listed, not judged (span 0.00 dB)
+  ROLES BY MEASUREMENT: 3 verdict(s), 5 unnamed control(s) probed without the signature
+    role gain DROPPED    [10] EQ Gain - the level moves 0.00 dB between the ends (needs 1.0)
+    role gain CONFIRMED  [16] Gain - the level moves 19.98 dB, the same at the quieter level
+    role gain DROPPED    [17] Gain Reduction - not measured at both positions
+GAINCAL: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/gaincal/.tmp-AudioUnit_49696d78_1.15.1/gaincal/AudioUnit_49696d78_1.15.1.gaincal.json

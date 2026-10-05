@@ -1,0 +1,26 @@
+DYN: text pass: 7 of 8 controls sampled in 5.5 s (timeout 120 s, scaled to the count)
+DYN: C1 gate (s) 12.0.0 (gate): threshold [5] Gate Open; range [4] Floor; attack [2] Attack; hold [1] Hold; release [3] Release
+  Gate Open = '-Inf' (norm 0.00): the quiet end is attenuated only 0.00 dB more than the loud end: not gating at this setting
+  Gate Open = '-75.0' (norm 0.25): the quiet end is attenuated only 0.00 dB more than the loud end: not gating at this setting
+  Gate Open = '-50.0' (norm 0.50): range 80.2 dB, opens at -52.2 dBFS RMS, closes at -55.1 (-49.1 dBFS peak), hysteresis 2.9 dB
+  Gate Open = '-25.0' (norm 0.75): range 80.2 dB, opens at -27.1 dBFS RMS, closes at -30.1 (-24.1 dBFS peak), hysteresis 3.0 dB
+  Gate Open = '0.0' (norm 1.00): the quiet end is attenuated only -57.60 dB more than the loud end: not gating at this setting
+  Floor = '-10.0 N' (threshold at norm 0.5): closed -80.2 dB
+  Floor = '-5.7' (threshold at norm 0.5): closed -5.7 dB
+  Floor = '12.0' (threshold at norm 0.5): closed 12.0 dB
+  Attack = '0.01' (norm 0.00): range 85.9 dB in the burst, opened in 0.5 ms, held 19.7 ms, fell 20 dB in 65.7 ms | this control's figure 0.5 ms vs label 0.0 ms (ratio 50.00)
+  Attack = '3.16' (norm 0.50): range 85.9 dB in the burst, opened in 7.3 ms, held 18.3 ms, fell 20 dB in 65.7 ms | this control's figure 7.3 ms vs label 3.2 ms (ratio 2.32)
+  Attack = '1000.00': the burst did not open the gate by 3 dB (range -24.00): threshold above the loud level, or no gating
+  Hold = '0.01' (norm 0.00): range 85.9 dB in the burst, opened in 4.7 ms, held 18.7 ms, fell 20 dB in 65.7 ms | this control's figure 18.7 ms vs label 0.0 ms (ratio 1867.65)
+  Hold = '7.07' (norm 0.50): range 85.9 dB in the burst, opened in 4.7 ms, held 18.7 ms, fell 20 dB in 65.7 ms | this control's figure 18.7 ms vs label 7.1 ms (ratio 2.64)
+  Hold = '5000.00' (norm 1.00): range 85.9 dB in the burst, opened in 4.7 ms, never began to close
+  Release = '1' (norm 0.00): range 85.9 dB in the burst, opened in 4.7 ms, held 0.5 ms, fell 20 dB in 2.2 ms | this control's figure 2.2 ms vs label 1.0 ms (ratio 2.18)
+  Release = '100' (norm 0.50): range 85.9 dB in the burst, opened in 4.7 ms, held 64.4 ms, fell 20 dB in 218.9 ms | this control's figure 218.9 ms vs label 100.0 ms (ratio 2.19)
+  Release = '10000' (norm 1.00): range 40.3 dB in the burst, opened in 4.7 ms, never began to close
+  ROLES BY MEASUREMENT: 5 verdict(s), 4 unnamed control(s) probed without the signature; unnamed controls are probed for the threshold and range signatures (a burst pair per control is not run)
+    role gate_threshold CONFIRMED  [5] Gate Open - the open level moves 25.0 dB
+    role range CONFIRMED  [4] Floor - the closed level moves 92.2 dB, the open level put (0.0)
+    role attack DROPPED    [2] Attack - not measured at both positions
+    role hold DROPPED    [1] Hold - the hold figure was not measured at both ends
+    role release DROPPED    [3] Release - the release figure was not measured at both ends
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/gate/.tmp-AudioUnit_4d47657d_12.0.0/dynamics/AudioUnit_4d47657d_12.0.0.dynamics.json (21 processes)

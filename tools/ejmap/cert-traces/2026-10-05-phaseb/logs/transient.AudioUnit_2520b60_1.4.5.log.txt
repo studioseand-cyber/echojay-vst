@@ -1,0 +1,23 @@
+DYN: text pass: 3 of 5 controls sampled in 0.9 s (timeout 120 s, scaled to the count)
+DYN: Transient Master 1.4.5 (transient): attack [0] Attack; sustain [1] Sustain
+  neutral (as instantiated, short hit): transient 0.03 dB, sustain -0.00 dB against the input, over 3 hits
+  neutral (long hit, 500 ms decay): transient 0.07 dB, sustain -0.00 dB
+  Attack = '-100.0 %' (norm 0.00): transient -12.88 dB, sustain -0.37 dB against neutral
+  Attack = '-50.0 %' (norm 0.25): transient -6.72 dB, sustain -0.19 dB against neutral
+  Attack = '0.0 %' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Attack = '50.0 %' (norm 0.75): transient 5.98 dB, sustain 0.19 dB against neutral
+  Attack = '100.0 %' (norm 1.00): transient 5.98 dB, sustain 0.39 dB against neutral
+  Sustain = '-100.0 %' (norm 0.00): transient 3.15 dB, sustain -5.44 dB against neutral
+  Sustain = '-50.0 %' (norm 0.25): transient 1.41 dB, sustain -2.81 dB against neutral
+  Sustain = '0.0 %' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Sustain = '50.0 %' (norm 0.75): transient -0.22 dB, sustain 3.01 dB against neutral
+  Sustain = '100.0 %' (norm 1.00): transient -0.37 dB, sustain 6.23 dB against neutral
+  Sustain [long hit] = '-100.0 %' (norm 0.00): transient 3.20 dB, sustain -2.03 dB against neutral
+  Sustain [long hit] = '-50.0 %' (norm 0.25): transient 1.54 dB, sustain -1.02 dB against neutral
+  Sustain [long hit] = '0.0 %' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Sustain [long hit] = '50.0 %' (norm 0.75): transient -0.23 dB, sustain 1.05 dB against neutral
+  Sustain [long hit] = '100.0 %' (norm 1.00): transient -0.43 dB, sustain 2.12 dB against neutral
+  ROLES BY MEASUREMENT: 2 verdict(s), 2 unnamed control(s) probed without the signature
+    role transient CONFIRMED  [0] Attack - the transient moves 18.86 dB (the sustain 0.76)
+    role sustain CONFIRMED  [1] Sustain - the sustain moves 11.67 dB (the transient 3.52)
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/transient/.tmp-AudioUnit_2520b60_1.4.5/dynamics/AudioUnit_2520b60_1.4.5.dynamics.json (19 processes)

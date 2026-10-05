@@ -1,0 +1,22 @@
+[gaincal 1/2 | all 1/22] elysia mpressor: ok 51.7273 s | elapsed 0:00:52 | ETA 0:18:06
+[gaincal 2/2 | all 2/22] Lindell SBC: ok 18.9375 s | elapsed 0:01:11 | ETA 0:11:47
+[timing 1/2 | all 3/22] elysia mpressor: ok 11.1471 s | elapsed 0:01:22 | ETA 0:05:52
+[timing 2/2 | all 4/22] Lindell SBC: ok 9.7917 s | elapsed 0:01:32 | ETA 0:04:31
+[limiter 1/2 | all 5/22] bx_limiter True Peak: ok 19.9985 s | elapsed 0:01:52 | ETA 0:05:23
+[limiter 2/2 | all 6/22] L2 (s): ok 69.7248 s | elapsed 0:03:01 | ETA 0:05:11
+[eq 1/2 | all 7/22] AMEK EQ 200: ok 57.488 s | elapsed 0:03:59 | ETA 0:05:37
+[eq 2/2 | all 8/22] bx_digital V3: ok 92.7562 s | elapsed 0:05:32 | ETA 0:08:22
+[deesser 1/2 | all 9/22] DeEsser (s): ok 67.1306 s | elapsed 0:06:39 | ETA 0:11:28
+[deesser 2/2 | all 10/22] Lindell 902 De-esser: ok 15.7939 s | elapsed 0:06:55 | ETA 0:07:10
+[saturation 1/2 | all 11/22] J37 (s): ok 134.921 s | elapsed 0:09:10 | ETA 0:10:52
+[saturation 2/2 | all 12/22] NEOLD BIG AL: ok 6.41946 s | elapsed 0:09:16 | ETA 0:05:59
+[reverb 1/2 | all 13/22] Abbey Road Plates (s): ok 196.151 s | elapsed 0:12:32 | ETA 0:10:10
+[reverb 2/2 | all 14/22] ValhallaVintageVerb: ok 11.84 s | elapsed 0:12:45 | ETA 0:04:47
+[delay 1/2 | all 15/22] bx_delay2500: ok 43.9596 s | elapsed 0:13:29 | ETA 0:05:08
+[delay 2/2 | all 16/22] H-Delay (s): ok 170.159 s | elapsed 0:16:19 | ETA 0:04:47
+[transient 1/2 | all 17/22] Smack Attack (s): ok 135.325 s | elapsed 0:18:35 | ETA 0:05:42
+[transient 2/2 | all 18/22] Transient Master: ok 11.8339 s | elapsed 0:18:47 | ETA 0:03:11
+[gate 1/2 | all 19/22] C1 gate (s): ok 96.4353 s | elapsed 0:20:23 | ETA 0:03:20
+[gate 2/2 | all 20/22] Unfiltered Audio G8: ok 33.2313 s | elapsed 0:20:57 | ETA 0:01:36
+[multiband 1/2 | all 21/22] C4 (s): ok 180.276 s | elapsed 0:23:57 | ETA 0:03:00
+[multiband 2/2 | all 22/22] LinMB (s): ok 194.73 s | elapsed 0:27:12 | ETA 0:00:00

@@ -1,0 +1,18 @@
+THE SIDECHAIN RE-SWEEP REPEATED (found by kill test 3's third and fourth runs): C1 comp (s) re-swept on every follow-up run, 318 s each.
+folder: the kill-test folder after two full follow-up runs (C1 comp's record swept under 'unconnected', carrying a sidechainPolicyCheck verdict 'resweep')
+
+fixed build, --derive-only:
+SIDECHAIN POLICY CHECK: 4 product(s) swept under enabled_silent with a second input bus (derive-only: nothing read)
+RE-SWEEP (the plan under this build differs from the plan the record was swept under): 0 product(s) before the re-derive (a measured pick that still needs refinement joins after its re-derive)
+=== tone checks: C1 comp (s)
+RE-DERIVED from traces (nothing measured) - C1 comp (s) -> AudioUnit_494b617d_12.0.0.rederived.json
+RE-SWEEP: 0 product(s) (derive-only: projected, not run)
+
+MUTANT (the cached verdict read first, as 17ebf114 does), --derive-only on the same folder:
+  C1 comp (s): keys from a connected sidechain (norm 1.000 at -6 dBFS: -9.01 -> -9.54 dB) (from an earlier run)
+RE-SWEEP (the plan under this build differs from the plan the record was swept under): 1 product(s) before the re-derive (a measured pick that still needs refinement joins after its re-derive)
+  C1 comp (s): keys from a connected sidechain (norm 1.000 at -6 dBFS: -9.01 -> -9.54 dB) (from an earlier run)
+RE-SWEEP: 1 product(s) (derive-only: projected, not run)
+  C1 comp (s): keys from a connected sidechain (norm 1.000 at -6 dBFS: -9.01 -> -9.54 dB) (from an earlier run)
+
+restored: the fixed order; suite green.

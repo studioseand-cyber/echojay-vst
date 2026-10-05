@@ -1,0 +1,543 @@
+{
+  "categories": {
+    "gaincal": [
+      {
+        "product": "elysia mpressor",
+        "identity": "AudioUnit|49696d78|1.15.1",
+        "category": "gaincal",
+        "mode": "--cert-gain-cal",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.0,
+        "records": [
+          "gaincal/AudioUnit_49696d78_1.15.1.gaincal.json"
+        ],
+        "raw_files": 13,
+        "outcome": "ok",
+        "seconds": 52.0,
+        "at": "20261005T162540",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      },
+      {
+        "product": "Lindell SBC",
+        "identity": "AudioUnit|6f747363|1.0.3",
+        "category": "gaincal",
+        "mode": "--cert-gain-cal",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000208258628845,
+        "records": [
+          "gaincal/AudioUnit_6f747363_1.0.3.gaincal.json"
+        ],
+        "raw_files": 17,
+        "outcome": "ok",
+        "seconds": 19.0,
+        "at": "20261005T162559",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      }
+    ],
+    "timing": [
+      {
+        "product": "elysia mpressor",
+        "identity": "AudioUnit|49696d78|1.15.1",
+        "category": "timing",
+        "mode": "--cert-timing",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000208258628845,
+        "records": [
+          "timing/AudioUnit_49696d78_1.15.1.timing.json"
+        ],
+        "raw_files": 18,
+        "outcome": "ok",
+        "seconds": 11.0,
+        "at": "20261005T162610",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      },
+      {
+        "product": "Lindell SBC",
+        "identity": "AudioUnit|6f747363|1.0.3",
+        "category": "timing",
+        "mode": "--cert-timing",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000208258628845,
+        "records": [
+          "timing/AudioUnit_6f747363_1.0.3.timing.json"
+        ],
+        "raw_files": 17,
+        "outcome": "ok",
+        "seconds": 10.0,
+        "at": "20261005T162620",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      }
+    ],
+    "limiter": [
+      {
+        "product": "bx_limiter True Peak",
+        "identity": "AudioUnit|417f6e6e|1.2.1",
+        "category": "limiter",
+        "mode": "--cert-limiter",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000208258628845,
+        "records": [
+          "limiter/AudioUnit_417f6e6e_1.2.1.limiter.json"
+        ],
+        "raw_files": 30,
+        "outcome": "ok",
+        "seconds": 20.0,
+        "at": "20261005T162640",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      },
+      {
+        "product": "L2 (s)",
+        "identity": "AudioUnit|46347c7d|12.0.0",
+        "category": "limiter",
+        "mode": "--cert-limiter",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.0,
+        "records": [
+          "limiter/AudioUnit_46347c7d_12.0.0.limiter.json"
+        ],
+        "raw_files": 16,
+        "outcome": "ok",
+        "seconds": 70.0,
+        "at": "20261005T162750",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      }
+    ],
+    "eq": [
+      {
+        "product": "AMEK EQ 200",
+        "identity": "AudioUnit|426a7f6f|1.4.1",
+        "category": "eq",
+        "mode": "--cert-eq",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000166893005371,
+        "records": [
+          "eq/AudioUnit_426a7f6f_1.4.1.eq.json"
+        ],
+        "raw_files": 55,
+        "outcome": "ok",
+        "seconds": 57.0,
+        "at": "20261005T162847",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      },
+      {
+        "product": "bx_digital V3",
+        "identity": "AudioUnit|417f7533|3.10.1",
+        "category": "eq",
+        "mode": "--cert-eq",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000166654586792,
+        "records": [
+          "eq/AudioUnit_417f7533_3.10.1.eq.json"
+        ],
+        "raw_files": 89,
+        "outcome": "ok",
+        "seconds": 93.0,
+        "at": "20261005T163020",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      }
+    ],
+    "deesser": [
+      {
+        "product": "DeEsser (s)",
+        "identity": "AudioUnit|4e55707d|12.0.0",
+        "category": "deesser",
+        "mode": "--cert-deesser",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000291705131531,
+        "records": [
+          "deesser/AudioUnit_4e55707d_12.0.0.deesser.json"
+        ],
+        "raw_files": 15,
+        "outcome": "ok",
+        "seconds": 67.0,
+        "at": "20261005T163127",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      },
+      {
+        "product": "Lindell 902 De-esser",
+        "identity": "AudioUnit|6f636231|1.0.2",
+        "category": "deesser",
+        "mode": "--cert-deesser",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000250101089478,
+        "records": [
+          "deesser/AudioUnit_6f636231_1.0.2.deesser.json"
+        ],
+        "raw_files": 23,
+        "outcome": "ok",
+        "seconds": 16.0,
+        "at": "20261005T163143",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      }
+    ],
+    "saturation": [
+      {
+        "product": "J37 (s)",
+        "identity": "AudioUnit|5e35067d|12.0.0",
+        "category": "saturation",
+        "mode": "--cert-saturation",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.0,
+        "records": [
+          "saturation/AudioUnit_5e35067d_12.0.0.saturation.json"
+        ],
+        "raw_files": 25,
+        "outcome": "ok",
+        "seconds": 135.0,
+        "at": "20261005T163358",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      },
+      {
+        "product": "NEOLD BIG AL",
+        "identity": "AudioUnit|61754b75|1.3.0",
+        "category": "saturation",
+        "mode": "--cert-saturation",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.0,
+        "records": [
+          "saturation/AudioUnit_61754b75_1.3.0.saturation.json"
+        ],
+        "raw_files": 9,
+        "outcome": "ok",
+        "seconds": 6.0,
+        "at": "20261005T163405",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      }
+    ],
+    "reverb": [
+      {
+        "product": "Abbey Road Plates (s)",
+        "identity": "AudioUnit|5a4a657d|12.0.0",
+        "category": "reverb",
+        "mode": "--cert-reverb-delay",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000083208084106,
+        "records": [
+          "reverbdelay/AudioUnit_5a4a657d_12.0.0.reverbdelay.json"
+        ],
+        "raw_files": 39,
+        "outcome": "ok",
+        "seconds": 196.0,
+        "at": "20261005T163721",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      },
+      {
+        "product": "ValhallaVintageVerb",
+        "identity": "AudioUnit|78546a25|4.0.5",
+        "category": "reverb",
+        "mode": "--cert-reverb-delay",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000208258628845,
+        "records": [
+          "reverbdelay/AudioUnit_78546a25_4.0.5.reverbdelay.json"
+        ],
+        "raw_files": 52,
+        "outcome": "ok",
+        "seconds": 12.0,
+        "at": "20261005T163733",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      }
+    ],
+    "delay": [
+      {
+        "product": "bx_delay2500",
+        "identity": "AudioUnit|417f756c|1.8.1",
+        "category": "delay",
+        "mode": "--cert-reverb-delay",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.0,
+        "records": [
+          "reverbdelay/AudioUnit_417f756c_1.8.1.reverbdelay.json"
+        ],
+        "raw_files": 80,
+        "outcome": "ok",
+        "seconds": 44.0,
+        "at": "20261005T163817",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      },
+      {
+        "product": "H-Delay (s)",
+        "identity": "AudioUnit|42447e63|12.0.0",
+        "category": "delay",
+        "mode": "--cert-reverb-delay",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.005500078201294,
+        "records": [
+          "reverbdelay/AudioUnit_42447e63_12.0.0.reverbdelay.json"
+        ],
+        "raw_files": 41,
+        "outcome": "ok",
+        "seconds": 170.0,
+        "at": "20261005T164108",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      }
+    ],
+    "transient": [
+      {
+        "product": "Smack Attack (s)",
+        "identity": "AudioUnit|5e556a63|12.0.0",
+        "category": "transient",
+        "mode": "--cert-dynamics",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000083208084106,
+        "records": [
+          "dynamics/AudioUnit_5e556a63_12.0.0.dynamics.json"
+        ],
+        "raw_files": 33,
+        "outcome": "ok",
+        "seconds": 135.0,
+        "at": "20261005T164323",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      },
+      {
+        "product": "Transient Master",
+        "identity": "AudioUnit|2520b60|1.4.5",
+        "category": "transient",
+        "mode": "--cert-dynamics",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000124931335449,
+        "records": [
+          "dynamics/AudioUnit_2520b60_1.4.5.dynamics.json"
+        ],
+        "raw_files": 21,
+        "outcome": "ok",
+        "seconds": 12.0,
+        "at": "20261005T164335",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      }
+    ],
+    "gate": [
+      {
+        "product": "C1 gate (s)",
+        "identity": "AudioUnit|4d47657d|12.0.0",
+        "category": "gate",
+        "mode": "--cert-dynamics",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000208139419556,
+        "records": [
+          "dynamics/AudioUnit_4d47657d_12.0.0.dynamics.json"
+        ],
+        "raw_files": 23,
+        "outcome": "ok",
+        "seconds": 96.0,
+        "at": "20261005T164512",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      },
+      {
+        "product": "Unfiltered Audio G8",
+        "identity": "AudioUnit|737a5876|1.6.2",
+        "category": "gate",
+        "mode": "--cert-dynamics",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000166654586792,
+        "records": [
+          "dynamics/AudioUnit_737a5876_1.6.2.dynamics.json"
+        ],
+        "raw_files": 59,
+        "outcome": "ok",
+        "seconds": 33.0,
+        "at": "20261005T164545",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      }
+    ],
+    "multiband": [
+      {
+        "product": "C4 (s)",
+        "identity": "AudioUnit|4e43607d|12.0.0",
+        "category": "multiband",
+        "mode": "--cert-multiband",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000249981880188,
+        "records": [
+          "multiband/AudioUnit_4e43607d_12.0.0.multiband.json"
+        ],
+        "raw_files": 40,
+        "outcome": "ok",
+        "seconds": 180.0,
+        "at": "20261005T164845",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      },
+      {
+        "product": "LinMB (s)",
+        "identity": "AudioUnit|4645047d|12.0.0",
+        "category": "multiband",
+        "mode": "--cert-multiband",
+        "child": "exit 0",
+        "exit_code": 0,
+        "slept_ms": 0.000250101089478,
+        "records": [
+          "multiband/AudioUnit_4645047d_12.0.0.multiband.json"
+        ],
+        "raw_files": 42,
+        "outcome": "ok",
+        "seconds": 195.0,
+        "at": "20261005T165200",
+        "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef"
+      }
+    ]
+  },
+  "progress": {
+    "startedAt": "20261005T162448",
+    "updatedAt": "20261005T165200",
+    "elapsed_s": 1632.0,
+    "eta_s": 0.0,
+    "current": "",
+    "categories": {
+      "deesser": {
+        "total": 2,
+        "done": 2,
+        "ok": 2,
+        "timed_out": 0,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": [
+          67.0,
+          16.0
+        ]
+      },
+      "delay": {
+        "total": 2,
+        "done": 2,
+        "ok": 2,
+        "timed_out": 0,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": [
+          44.0,
+          170.0
+        ]
+      },
+      "eq": {
+        "total": 2,
+        "done": 2,
+        "ok": 2,
+        "timed_out": 0,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": [
+          57.0,
+          93.0
+        ]
+      },
+      "gaincal": {
+        "total": 2,
+        "done": 2,
+        "ok": 2,
+        "timed_out": 0,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": [
+          52.0,
+          19.0
+        ]
+      },
+      "gate": {
+        "total": 2,
+        "done": 2,
+        "ok": 2,
+        "timed_out": 0,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": [
+          96.0,
+          33.0
+        ]
+      },
+      "limiter": {
+        "total": 2,
+        "done": 2,
+        "ok": 2,
+        "timed_out": 0,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": [
+          20.0,
+          70.0
+        ]
+      },
+      "multiband": {
+        "total": 2,
+        "done": 2,
+        "ok": 2,
+        "timed_out": 0,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": [
+          180.0,
+          195.0
+        ]
+      },
+      "reverb": {
+        "total": 2,
+        "done": 2,
+        "ok": 2,
+        "timed_out": 0,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": [
+          196.0,
+          12.0
+        ]
+      },
+      "saturation": {
+        "total": 2,
+        "done": 2,
+        "ok": 2,
+        "timed_out": 0,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": [
+          135.0,
+          6.0
+        ]
+      },
+      "timing": {
+        "total": 2,
+        "done": 2,
+        "ok": 2,
+        "timed_out": 0,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": [
+          11.0,
+          10.0
+        ]
+      },
+      "transient": {
+        "total": 2,
+        "done": 2,
+        "ok": 2,
+        "timed_out": 0,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": [
+          135.0,
+          12.0
+        ]
+      }
+    }
+  },
+  "probe": "36e1198a1cfba740cf80234b3755bc6023eea6ef",
+  "writtenAt": "20261005T165200"
+}

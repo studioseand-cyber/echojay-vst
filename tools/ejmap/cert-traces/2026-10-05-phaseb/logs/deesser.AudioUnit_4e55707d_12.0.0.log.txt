@@ -1,0 +1,25 @@
+DS: text pass: 2 of 5 controls sampled in 4.3 s (timeout 120 s, scaled to the count)
+DS: DeEsser (s) 12.0.0: threshold [0] Threshold; frequency [1] Freq; mode -
+  ladder at 6500 Hz: open end at norm 1.000, max GR 11.72 dB
+      Threshold = '-80.0':  -12 dBFS GR 11.72  -18 dBFS GR 11.72  -24 dBFS GR 11.72  -30 dBFS GR 11.72  -6 dBFS GR 11.72
+      Threshold = '-64.0':  -12 dBFS GR 11.72  -18 dBFS GR 11.72  -24 dBFS GR 11.72  -30 dBFS GR 11.72  -6 dBFS GR 11.72
+      Threshold = '-48.0':  -12 dBFS GR 11.72  -18 dBFS GR 11.60  -24 dBFS GR 10.99  -30 dBFS GR 9.46  -6 dBFS GR 11.72
+      Threshold = '-32.0':  -12 dBFS GR 10.11  -18 dBFS GR 7.65  -24 dBFS GR 3.84  -30 dBFS GR 0.00  -6 dBFS GR 11.27
+      Threshold = '-16.0':  -12 dBFS GR 0.89  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 5.31
+      Threshold = '0.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  ladder at 997 Hz: open end at norm 0.200, max GR 0.00 dB
+      Threshold = '-80.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Threshold = '-64.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Threshold = '-48.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR -0.00  -30 dBFS GR -0.00  -6 dBFS GR 0.00
+      Threshold = '-32.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Threshold = '-16.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Threshold = '0.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  band selectivity on the ladder: max GR 11.72 dB at 6.5 kHz vs 0.00 dB at 997 Hz
+  noise ladder (4-10 kHz, 30 readings): max GR 10.98 dB (the 6.5 kHz tone gave 11.72)
+  centre (Freq = '2000'): deepest -25.38 dB at 20000 Hz, shelf with its half-depth corner at 2709.03 Hz; at 997 Hz -5.40 dB -> partial | label 2000 Hz vs the corner 2709.03: 35.5 % off
+  centre (Freq = '5657'): deepest -24.14 dB at 20000 Hz, shelf with its half-depth corner at 6938.03 Hz; at 997 Hz -1.09 dB -> partial | label 5657 Hz vs the corner 6938.03: 22.6 % off
+  centre (Freq = '16000'): deepest -16.23 dB at 20000 Hz, shelf with its half-depth corner at 13939.1 Hz; at 997 Hz -0.06 dB -> split_band | label 16000 Hz vs the corner 13939.1: -12.9 % off
+  ROLES BY MEASUREMENT: 2 verdict(s); unnamed controls probed for the threshold signature only
+    role threshold CONFIRMED  [0] Threshold - GR moves 11.72 dB between the ends
+    role frequency CONFIRMED  [1] Freq - the centre moves 2709.03 -> 13939.1 Hz (2.36 oct)
+DS: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/deesser/.tmp-AudioUnit_4e55707d_12.0.0/deesser/AudioUnit_4e55707d_12.0.0.deesser.json (13 processes)

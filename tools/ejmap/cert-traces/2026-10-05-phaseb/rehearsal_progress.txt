@@ -1,0 +1,13 @@
+PHASE B PROGRESS (started 20261005T162448, updated 20261005T165200)
+all: 22/22 done; elapsed 0:27:12; ETA 0:00:00; idle
+  gaincal      2/2   ok 2 timed_out 0 failed 0 skipped 0  median 35.3324 s over 2  complete
+  timing       2/2   ok 2 timed_out 0 failed 0 skipped 0  median 10.4694 s over 2  complete
+  limiter      2/2   ok 2 timed_out 0 failed 0 skipped 0  median 44.8617 s over 2  complete
+  eq           2/2   ok 2 timed_out 0 failed 0 skipped 0  median 75.1221 s over 2  complete
+  deesser      2/2   ok 2 timed_out 0 failed 0 skipped 0  median 41.4623 s over 2  complete
+  saturation   2/2   ok 2 timed_out 0 failed 0 skipped 0  median 70.6703 s over 2  complete
+  reverb       2/2   ok 2 timed_out 0 failed 0 skipped 0  median 103.995 s over 2  complete
+  delay        2/2   ok 2 timed_out 0 failed 0 skipped 0  median 107.059 s over 2  complete
+  transient    2/2   ok 2 timed_out 0 failed 0 skipped 0  median 73.5792 s over 2  complete
+  gate         2/2   ok 2 timed_out 0 failed 0 skipped 0  median 64.8333 s over 2  complete
+  multiband    2/2   ok 2 timed_out 0 failed 0 skipped 0  median 187.503 s over 2  complete

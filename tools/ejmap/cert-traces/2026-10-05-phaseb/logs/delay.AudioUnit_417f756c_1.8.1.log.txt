@@ -1,0 +1,35 @@
+RD: text pass: 39 of 61 controls sampled in 9.0 s (timeout 120 s, scaled to the count)
+RD: bx_delay2500 1.8.1 (delay): mix [8] Modulation Mix; time [14] Time L; feedback [19] Feedback L; sync -; note [17] Note L
+  wet-only (mix 1.0): onset 191.5 ms; 14 repeat(s) above -70.0 dB; repeats every 192.0 ms falling -4.50 dB each; decay the tail starts less than 25 dB above the floor (-999.0 vs -90.0): no decay to read; floor -90.0 dB
+  mix law: unknown (no dry at the dry end or no wet at the wet end); dry at 0 -999.00 dB, wet at 1 -9.37 dB (wet = the first repeat's head)
+      mix 0.0 '0 %': dry floor  wet -9.37
+      mix 0.1 '10 %': dry floor  wet -9.37
+      mix 0.2 '20 %': dry floor  wet -9.37
+      mix 0.3 '30 %': dry floor  wet -9.37
+      mix 0.4 '40 %': dry floor  wet -9.37
+      mix 0.5 '50 %': dry floor  wet -9.37
+      mix 0.6 '60 %': dry floor  wet -9.37
+      mix 0.7 '70 %': dry floor  wet -9.37
+      mix 0.8 '80 %': dry floor  wet -9.37
+      mix 0.9 '90 %': dry floor  wet -9.37
+      mix 1.0 '100 %': dry floor  wet -9.37
+  Time L = '15 ms' (norm 0.00): onset 14.5 ms vs label 15.0 ms -> within 2 % / 2 ms (the onset)
+  Time L = '54 ms' (norm 0.25): onset 53.5 ms vs label 54.0 ms -> within 2 % / 2 ms (the onset)
+  Time L = '194 ms' (norm 0.50): onset 191.5 ms (repeats every 192.0 ms) vs label 194.0 ms -> within 2 % / 2 ms (the onset)
+  Time L = '696 ms' (norm 0.75): onset 688.5 ms (repeats every 689.0 ms) vs label 696.0 ms -> within 2 % / 2 ms (the onset)
+  Time L = '2500 ms' (norm 1.00): onset 2475.5 ms (repeats every 2475.0 ms) vs label 2500.0 ms -> within 2 % / 2 ms (the onset)
+  Feedback L = '0 %' (norm 0.00): 1 repeat(s) above -70.0 dB
+  Feedback L = '25 %' (norm 0.25): 6 repeat(s) above -70.0 dB, fall -10.45 dB per repeat vs 20 log10 (label) -12.04 dB, repeats reach -60 dB in 1.10 s
+  Feedback L = '50 %' (norm 0.50): 14 repeat(s) above -70.0 dB, fall -4.50 dB per repeat vs 20 log10 (label) -6.02 dB, repeats reach -60 dB in 2.56 s
+  Feedback L = '75 %' (norm 0.75): 31 repeat(s) above -70.0 dB, fall -0.99 dB per repeat vs 20 log10 (label) -2.50 dB, repeats reach -60 dB in 11.61 s
+  Feedback L = '100 %' (norm 1.00): 32 repeat(s) above -70.0 dB, fall 0.01 dB per repeat vs 20 log10 (label) 0.00 dB
+  ROLES BY MEASUREMENT: 8 verdict(s), 109 unnamed control(s) probed without the signature
+    role mix DROPPED    [8] Modulation Mix - no dry reading at either end
+    role time CONFIRMED  [14] Time L - the onset moves 14.5 -> 2475.5 ms
+    role feedback CONFIRMED  [19] Feedback L - the repeat count moves 1 -> 32 with the first repeat put (0.00 dB)
+    measured role time, UNNAMED  [15] Time R - the onset moves 14.5 -> 2475.5 ms
+    measured role feedback, UNNAMED  [20] Feedback R - the repeat count moves 1 -> 32 with the first repeat put (0.00 dB)
+    measured role tone (feedback path), UNNAMED  [29] Feedback Low Pass - the onset holds at 191.5 ms while the first repeat moves -19.72 -> -3.81 dB: tone in the feedback path, not time
+    measured role tone (feedback path), UNNAMED  [30] Feedback Hi Pass - the onset holds at 191.5 ms while the first repeat moves -3.81 -> -14.09 dB: tone in the feedback path, not time
+    measured role feedback, UNNAMED  [50] Transient Shaping Threshold - the fall per repeat moves -30.81 -> -4.50 dB with the first repeat put
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/delay/.tmp-AudioUnit_417f756c_1.8.1/reverbdelay/AudioUnit_417f756c_1.8.1.reverbdelay.json (78 processes)

@@ -4384,15 +4384,13 @@ inline SidechainCheckResult sidechainPolicyCheck (const SweepOptions& opt, const
         view = chosen->getProperty ("thresholdSweep", {}); prefix = ".c" + juce::String ((int) chosen->getProperty ("index", -1)) + "."; candidateName = chosen->getProperty ("name", "").toString();
     }
     if (! view.isObject()) return res;
+    // the record's own evidence FIRST (a record swept under the new policy, or with no second bus, is not in the set) - before
+    // any verdict cached by an earlier run, which the re-sweep carries over and which would otherwise re-sweep the record every run
+    if (sweptUnderPolicyNow (view)) return res;
+    if (const auto sc = view.getProperty ("sidechain", {}); sc.isObject() && sc.getProperty ("extraInputBuses", {}).size() == 0) return res;
     // already decided for this policy on an earlier run
     if (const auto prev = record.getProperty ("sidechainPolicyCheck", {}); prev.isObject() && prev.getProperty ("policyNow", "").toString() == kPolicyNow)
     { res.inSet = true; res.resweep = prev.getProperty ("verdict", "").toString() == "resweep"; res.why = prev.getProperty ("why", "").toString() + " (from an earlier run)"; return res; }
-    // the record's own evidence first (a record swept under the new policy, or with no second bus, is not in the set)
-    if (const auto sc = view.getProperty ("sidechain", {}); sc.isObject())
-    {
-        if (sc.getProperty ("policy", "").toString() == kPolicyNow) return res;
-        if (sc.getProperty ("extraInputBuses", {}).size() == 0) return res;
-    }
     // the traces
     const auto stem = recordFile.getFileNameWithoutExtension();
     std::vector<Trace> traces; std::vector<juce::File> files;

@@ -1,0 +1,257 @@
+EQ: text pass: 95 of 137 controls sampled in 24.4 s (timeout 120 s, scaled to the count)
+EQ: bx_digital V3 3.10.1: 10 band(s) by name
+  band 'EQ Band HF 1': gain [52] EQ Band HF 1 Gain, freq [54] EQ Band HF 1 Frequency, q [53] EQ Band HF 1 Q
+    gain -12.0 dB: shelf centre 20000 Hz, gain -11.69 dB (high_shelf)
+    gain -8.0 dB: shelf centre 20000 Hz, gain -7.71 dB (high_shelf)
+    gain -4.0 dB: shelf centre 20000 Hz, gain -3.81 dB (high_shelf)
+    gain 0.0 dB: flat - the largest deviation is 0.00 dB
+    gain +4.0 dB: shelf centre 20000 Hz, gain 3.81 dB (high_shelf)
+    gain +8.0 dB: shelf centre 20000 Hz, gain 7.71 dB (high_shelf)
+    gain +12.0 dB: shelf centre 20000 Hz, gain 11.69 dB (high_shelf)
+    freq 2.00k Hz (gain at 4.0): shelf high_shelf corner 1782.23 Hz, plateau 4.00
+    freq 3.30k Hz (gain at 4.0): shelf high_shelf corner 2935.61 Hz, plateau 4.00
+    freq 5.43k Hz (gain at 4.0): shelf high_shelf corner 4831.57 Hz, plateau 3.99
+    freq 8.94k Hz (gain at 4.0): shelf high_shelf corner 7903.35 Hz, plateau 3.94
+    freq 14.74k Hz (gain at 4.0): shelf high_shelf corner 12530.3 Hz, plateau 3.59
+    freq 24.28k Hz (gain at 4.0): shelf high_shelf corner 17723.2 Hz, plateau 1.72
+    freq 40.00k Hz (gain at 4.0): flat - the largest deviation is 0.34 dB
+    q 0.3: shelf (high_shelf)
+    q 0.8: shelf (high_shelf)
+    q 2.0: measured bw 1.41 oct (centre 11990.1, gain 4.00)
+    q 5.5: measured bw 0.57 oct (centre 11976.1, gain 3.98)
+    q 15.0: measured bw 0.26 oct (centre 11942.3, gain 3.88)
+  band 'EQ Band HF 2': gain [77] EQ Band HF 2 Gain, freq [79] EQ Band HF 2 Frequency, q [78] EQ Band HF 2 Q
+    engage search: [80] EQ Band HF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+    gain -12.0 dB: flat - the largest deviation is 0.00 dB
+    gain -8.0 dB: flat - the largest deviation is 0.00 dB
+    gain -4.0 dB: flat - the largest deviation is 0.00 dB
+    gain 0.0 dB: flat - the largest deviation is 0.00 dB
+    gain +4.0 dB: flat - the largest deviation is 0.00 dB
+    gain +8.0 dB: flat - the largest deviation is 0.00 dB
+    gain +12.0 dB: flat - the largest deviation is 0.00 dB
+    freq 2.00k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 3.30k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 5.43k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 8.94k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 14.74k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 24.28k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 40.00k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    q 0.3: flat - the largest deviation is 0.00 dB
+    q 0.8: flat - the largest deviation is 0.00 dB
+    q 2.0: flat - the largest deviation is 0.00 dB
+    q 5.5: flat - the largest deviation is 0.00 dB
+    q 15.0: flat - the largest deviation is 0.00 dB
+  band 'EQ Band HMF 1': gain [47] EQ Band HMF 1 Gain, freq [49] EQ Band HMF 1 Frequency, q [48] EQ Band HMF 1 Q
+    gain -12.0 dB: measured centre 5796.42 Hz, gain -15.32 dB, bw 0.14 oct
+    gain -8.0 dB: measured centre 5799.7 Hz, gain -7.89 dB, bw 0.59 oct
+    gain -4.0 dB: measured centre 5799.31 Hz, gain -3.92 dB, bw 1.08 oct
+    gain 0.0 dB: flat - the largest deviation is 0.00 dB
+    gain +4.0 dB: measured centre 5799.31 Hz, gain 3.92 dB, bw 1.08 oct
+    gain +8.0 dB: measured centre 5799.7 Hz, gain 7.89 dB, bw 0.59 oct
+    gain +12.0 dB: measured centre 5799.81 Hz, gain 11.88 dB, bw 0.52 oct
+    freq 400 Hz (gain at 4.0): measured centre 401.438 Hz, gain 4.00, bw 1.04 oct
+    freq 780 Hz (gain at 4.0): measured centre 779.952 Hz, gain 3.96, bw 1.06 oct
+    freq 1.52k Hz (gain at 4.0): measured centre 1520.21 Hz, gain 3.98, bw 1.05 oct
+    freq 2.97k Hz (gain at 4.0): measured centre 2967.02 Hz, gain 3.99, bw 1.04 oct
+    freq 5.78k Hz (gain at 4.0): measured centre 5782.28 Hz, gain 3.94, bw 1.07 oct
+    freq 11.28k Hz (gain at 4.0): measured centre 11271.6 Hz, gain 4.00, bw 1.00 oct
+    freq 22.00k Hz (gain at 4.0): shelf high_shelf corner 16853 Hz, plateau 3.17
+    q 0.3: shelf (high_shelf)
+    q 0.8: measured bw 3.24 oct (centre 5792.46, gain 3.99)
+    q 2.0: measured bw 1.49 oct (centre 5800.6, gain 3.96)
+    q 5.5: measured bw 0.69 oct (centre 5799.51, gain 3.75)
+    q 15.0: shelf (broad)
+  band 'EQ Band HMF 2': gain [72] EQ Band HMF 2 Gain, freq [74] EQ Band HMF 2 Frequency, q [73] EQ Band HMF 2 Q
+    engage search: [75] EQ Band HMF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+    gain -12.0 dB: flat - the largest deviation is 0.00 dB
+    gain -8.0 dB: flat - the largest deviation is 0.00 dB
+    gain -4.0 dB: flat - the largest deviation is 0.00 dB
+    gain 0.0 dB: flat - the largest deviation is 0.00 dB
+    gain +4.0 dB: flat - the largest deviation is 0.00 dB
+    gain +8.0 dB: flat - the largest deviation is 0.00 dB
+    gain +12.0 dB: flat - the largest deviation is 0.00 dB
+    freq 400 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 780 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 1.52k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 2.97k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 5.78k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 11.28k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 22.00k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    q 0.3: flat - the largest deviation is 0.00 dB
+    q 0.8: flat - the largest deviation is 0.00 dB
+    q 2.0: flat - the largest deviation is 0.00 dB
+    q 5.5: flat - the largest deviation is 0.00 dB
+    q 15.0: flat - the largest deviation is 0.00 dB
+  band 'EQ Band LF 1': gain [32] EQ Band LF 1 Gain, freq [34] EQ Band LF 1 Frequency, q [33] EQ Band LF 1 Q
+    gain -12.0 dB: shelf centre 20 Hz, gain -11.99 dB (low_shelf)
+    gain -8.0 dB: shelf centre 20 Hz, gain -8.00 dB (low_shelf)
+    gain -4.0 dB: shelf centre 20 Hz, gain -4.00 dB (low_shelf)
+    gain 0.0 dB: flat - the largest deviation is 0.00 dB
+    gain +4.0 dB: shelf centre 20 Hz, gain 4.00 dB (low_shelf)
+    gain +8.0 dB: shelf centre 20 Hz, gain 7.99 dB (low_shelf)
+    gain +12.0 dB: shelf centre 20 Hz, gain 11.99 dB (low_shelf)
+    freq 20 Hz (gain at 4.0): shelf low_shelf corner 27.6227 Hz, plateau 2.43
+    freq 43 Hz (gain at 4.0): shelf low_shelf corner 49.0893 Hz, plateau 3.88
+    freq 93 Hz (gain at 4.0): shelf low_shelf corner 104.248 Hz, plateau 3.99
+    freq 200 Hz (gain at 4.0): shelf low_shelf corner 224.4 Hz, plateau 4.00
+    freq 431 Hz (gain at 4.0): shelf low_shelf corner 483.402 Hz, plateau 4.00
+    freq 928 Hz (gain at 4.0): shelf low_shelf corner 1041.43 Hz, plateau 4.00
+    freq 2.00k Hz (gain at 4.0): shelf low_shelf corner 2243.43 Hz, plateau 4.00
+    q 0.3: shelf (low_shelf)
+    q 0.8: measured bw 3.37 oct (centre 100.133, gain 4.00)
+    q 2.0: measured bw 1.48 oct (centre 100.152, gain 4.00)
+    q 5.5: measured bw 0.58 oct (centre 100.126, gain 4.00)
+    q 15.0: measured bw 0.23 oct (centre 100.053, gain 4.00)
+  band 'EQ Band LF 2': gain [57] EQ Band LF 2 Gain, freq [59] EQ Band LF 2 Frequency, q [58] EQ Band LF 2 Q
+    engage search: [60] EQ Band LF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+    gain -12.0 dB: flat - the largest deviation is 0.00 dB
+    gain -8.0 dB: flat - the largest deviation is 0.00 dB
+    gain -4.0 dB: flat - the largest deviation is 0.00 dB
+    gain 0.0 dB: flat - the largest deviation is 0.00 dB
+    gain +4.0 dB: flat - the largest deviation is 0.00 dB
+    gain +8.0 dB: flat - the largest deviation is 0.00 dB
+    gain +12.0 dB: flat - the largest deviation is 0.00 dB
+    freq 20 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 43 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 93 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 200 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 431 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 928 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 2.00k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    q 0.3: flat - the largest deviation is 0.00 dB
+    q 0.8: flat - the largest deviation is 0.00 dB
+    q 2.0: flat - the largest deviation is 0.00 dB
+    q 5.5: flat - the largest deviation is 0.00 dB
+    q 15.0: flat - the largest deviation is 0.00 dB
+  band 'EQ Band LMF 1': gain [37] EQ Band LMF 1 Gain, freq [39] EQ Band LMF 1 Frequency, q [38] EQ Band LMF 1 Q
+    gain -12.0 dB: measured centre 315.532 Hz, gain -43.94 dB, bw 0.02 oct
+    gain -8.0 dB: measured centre 313.329 Hz, gain -8.00 dB, bw 1.65 oct
+    gain -4.0 dB: measured centre 313.262 Hz, gain -4.00 dB, bw 2.74 oct
+    gain 0.0 dB: flat - the largest deviation is 0.00 dB
+    gain +4.0 dB: measured centre 313.262 Hz, gain 4.00 dB, bw 2.74 oct
+    gain +8.0 dB: measured centre 313.329 Hz, gain 8.00 dB, bw 1.65 oct
+    gain +12.0 dB: measured centre 313.333 Hz, gain 12.00 dB, bw 1.47 oct
+    freq 20 Hz (gain at 4.0): shelf low_shelf corner 36.1516 Hz, plateau 4.00
+    freq 43 Hz (gain at 4.0): shelf low_shelf corner 78.1226 Hz, plateau 3.99
+    freq 93 Hz (gain at 4.0): measured centre 91.9328 Hz, gain 4.00, bw 2.74 oct
+    freq 200 Hz (gain at 4.0): measured centre 200.307 Hz, gain 4.00, bw 2.74 oct
+    freq 431 Hz (gain at 4.0): measured centre 430.29 Hz, gain 3.99, bw 2.75 oct
+    freq 928 Hz (gain at 4.0): measured centre 927.776 Hz, gain 4.00, bw 2.74 oct
+    freq 2.00k Hz (gain at 4.0): measured centre 2000 Hz, gain 4.00, bw 2.73 oct
+    q 0.3: measured bw 5.99 oct (centre 312.784, gain 4.00)
+    q 0.8: measured bw 3.37 oct (centre 313.585, gain 4.00)
+    q 2.0: measured bw 1.48 oct (centre 313.437, gain 4.00)
+    q 5.5: measured bw 0.58 oct (centre 313.884, gain 4.00)
+    q 15.0: measured bw 0.24 oct (centre 315.03, gain 3.98)
+  band 'EQ Band LMF 2': gain [62] EQ Band LMF 2 Gain, freq [64] EQ Band LMF 2 Frequency, q [63] EQ Band LMF 2 Q
+    engage search: [65] EQ Band LMF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+    gain -12.0 dB: flat - the largest deviation is 0.00 dB
+    gain -8.0 dB: flat - the largest deviation is 0.00 dB
+    gain -4.0 dB: flat - the largest deviation is 0.00 dB
+    gain 0.0 dB: flat - the largest deviation is 0.00 dB
+    gain +4.0 dB: flat - the largest deviation is 0.00 dB
+    gain +8.0 dB: flat - the largest deviation is 0.00 dB
+    gain +12.0 dB: flat - the largest deviation is 0.00 dB
+    freq 20 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 43 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 93 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 200 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 431 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 928 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 2.00k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    q 0.3: flat - the largest deviation is 0.00 dB
+    q 0.8: flat - the largest deviation is 0.00 dB
+    q 2.0: flat - the largest deviation is 0.00 dB
+    q 5.5: flat - the largest deviation is 0.00 dB
+    q 15.0: flat - the largest deviation is 0.00 dB
+  band 'EQ Band MF 1': gain [42] EQ Band MF 1 Gain, freq [44] EQ Band MF 1 Frequency, q [43] EQ Band MF 1 Q
+    gain -12.0 dB: measured centre 3165.61 Hz, gain -31.89 dB, bw 0.03 oct
+    gain -8.0 dB: measured centre 3150.83 Hz, gain -8.00 dB, bw 0.86 oct
+    gain -4.0 dB: measured centre 3151.12 Hz, gain -4.00 dB, bw 1.51 oct
+    gain 0.0 dB: flat - the largest deviation is 0.00 dB
+    gain +4.0 dB: measured centre 3151.12 Hz, gain 4.00 dB, bw 1.51 oct
+    gain +8.0 dB: measured centre 3150.54 Hz, gain 8.00 dB, bw 0.86 oct
+    gain +12.0 dB: measured centre 3150.68 Hz, gain 12.00 dB, bw 0.76 oct
+    freq 20 Hz (gain at 4.0): shelf low_shelf corner 27.2341 Hz, plateau 4.00
+    freq 64 Hz (gain at 4.0): measured centre 64.7348 Hz, gain 4.00, bw 1.52 oct
+    freq 206 Hz (gain at 4.0): measured centre 206.807 Hz, gain 3.97, bw 1.55 oct
+    freq 663 Hz (gain at 4.0): measured centre 663.651 Hz, gain 3.99, bw 1.52 oct
+    freq 2.13k Hz (gain at 4.0): measured centre 2130.18 Hz, gain 4.00, bw 1.52 oct
+    freq 6.85k Hz (gain at 4.0): measured centre 6845.84 Hz, gain 3.98, bw 1.50 oct
+    freq 22.00k Hz (gain at 4.0): shelf high_shelf corner 15432.5 Hz, plateau 3.54
+    q 0.3: shelf (high_shelf)
+    q 0.8: measured bw 3.32 oct (centre 3149, gain 4.00)
+    q 2.0: measured bw 1.48 oct (centre 3151.02, gain 4.00)
+    q 5.5: measured bw 0.58 oct (centre 3154.28, gain 3.99)
+    q 15.0: measured bw 0.25 oct (centre 3162.87, gain 3.91)
+  band 'EQ Band MF 2': gain [67] EQ Band MF 2 Gain, freq [69] EQ Band MF 2 Frequency, q [68] EQ Band MF 2 Q
+    engage search: [70] EQ Band MF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+    gain -12.0 dB: flat - the largest deviation is 0.00 dB
+    gain -8.0 dB: flat - the largest deviation is 0.00 dB
+    gain -4.0 dB: flat - the largest deviation is 0.00 dB
+    gain 0.0 dB: flat - the largest deviation is 0.00 dB
+    gain +4.0 dB: flat - the largest deviation is 0.00 dB
+    gain +8.0 dB: flat - the largest deviation is 0.00 dB
+    gain +12.0 dB: flat - the largest deviation is 0.00 dB
+    freq 20 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 64 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 206 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 663 Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 2.13k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 6.85k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    freq 22.00k Hz (gain at 4.0): flat - the largest deviation is 0.00 dB
+    q 0.3: flat - the largest deviation is 0.00 dB
+    q 0.8: flat - the largest deviation is 0.00 dB
+    q 2.0: flat - the largest deviation is 0.00 dB
+    q 5.5: flat - the largest deviation is 0.00 dB
+    q 15.0: flat - the largest deviation is 0.00 dB
+  ROLES BY MEASUREMENT: 38 verdict(s), 28 unnamed control(s) probed without the signature; frequency and q signatures need a boosted band: unnamed controls are probed for the gain signature only
+    role eq_gain CONFIRMED  [52] EQ Band HF 1 Gain - the band's gain moves 23.39 dB
+    role frequency DROPPED    [54] EQ Band HF 1 Frequency - no centre at both ends (the band must be audible at both)
+    role q DROPPED    [53] EQ Band HF 1 Q - no bandwidth at both ends
+    role eq_gain DROPPED    [77] EQ Band HF 2 Gain - the band's gain moves 0.00 dB (needs 1)
+    role frequency DROPPED    [79] EQ Band HF 2 Frequency - no centre at both ends (the band must be audible at both)
+    role q DROPPED    [78] EQ Band HF 2 Q - no bandwidth at both ends
+    role eq_gain CONFIRMED  [47] EQ Band HMF 1 Gain - the band's gain moves 27.20 dB
+    role frequency CONFIRMED  [49] EQ Band HMF 1 Frequency - the centre moves 401.438 -> 16853 Hz (5.39 oct)
+    role q DROPPED    [48] EQ Band HMF 1 Q - no bandwidth at both ends
+    role eq_gain DROPPED    [72] EQ Band HMF 2 Gain - the band's gain moves 0.00 dB (needs 1)
+    role frequency DROPPED    [74] EQ Band HMF 2 Frequency - no centre at both ends (the band must be audible at both)
+    role q DROPPED    [73] EQ Band HMF 2 Q - no bandwidth at both ends
+    role eq_gain CONFIRMED  [32] EQ Band LF 1 Gain - the band's gain moves 23.99 dB
+    role frequency CONFIRMED  [34] EQ Band LF 1 Frequency - the centre moves 27.6227 -> 2243.43 Hz (6.34 oct)
+    role q DROPPED    [33] EQ Band LF 1 Q - no bandwidth at both ends
+    role eq_gain DROPPED    [57] EQ Band LF 2 Gain - the band's gain moves 0.00 dB (needs 1)
+    role frequency DROPPED    [59] EQ Band LF 2 Frequency - no centre at both ends (the band must be audible at both)
+    role q DROPPED    [58] EQ Band LF 2 Q - no bandwidth at both ends
+    role eq_gain CONFIRMED  [37] EQ Band LMF 1 Gain - the band's gain moves 55.94 dB
+    role frequency CONFIRMED  [39] EQ Band LMF 1 Frequency - the centre moves 36.1516 -> 2000 Hz (5.79 oct)
+    role q CONFIRMED  [38] EQ Band LMF 1 Q - the bandwidth moves 5.99 -> 0.24 oct
+    role eq_gain DROPPED    [62] EQ Band LMF 2 Gain - the band's gain moves 0.00 dB (needs 1)
+    role frequency DROPPED    [64] EQ Band LMF 2 Frequency - no centre at both ends (the band must be audible at both)
+    role q DROPPED    [63] EQ Band LMF 2 Q - no bandwidth at both ends
+    role eq_gain CONFIRMED  [42] EQ Band MF 1 Gain - the band's gain moves 43.88 dB
+    role frequency CONFIRMED  [44] EQ Band MF 1 Frequency - the centre moves 27.2341 -> 15432.5 Hz (9.15 oct)
+    role q DROPPED    [43] EQ Band MF 1 Q - no bandwidth at both ends
+    role eq_gain DROPPED    [67] EQ Band MF 2 Gain - the band's gain moves 0.00 dB (needs 1)
+    role frequency DROPPED    [69] EQ Band MF 2 Frequency - no centre at both ends (the band must be audible at both)
+    role q DROPPED    [68] EQ Band MF 2 Q - no bandwidth at both ends
+    measured role eq_gain, UNNAMED  [2] Input Gain - the band's gain moves 12.04 dB
+    measured role eq_gain, UNNAMED  [3] Output Gain - the band's gain moves 12.04 dB
+    measured role eq_gain, UNNAMED  [23] High-pass 1 Slope - the band's gain moves 2.94 dB
+    measured role eq_gain, UNNAMED  [24] High-pass 1 Frequency - the band's gain moves 61.28 dB
+    measured role eq_gain, UNNAMED  [26] Low-pass 1 Frequency - the band's gain moves 60.87 dB
+    measured role eq_gain, UNNAMED  [82] Bass Shift 1 Gain - the band's gain moves 20.41 dB
+    measured role eq_gain, UNNAMED  [85] Presence Shift 1 Gain - the band's gain moves 16.36 dB
+    measured role eq_gain, UNNAMED  [94] Dynamic EQ 1 Range - the band's gain moves 24.12 dB
+EQ: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/eq/.tmp-AudioUnit_417f7533_3.10.1/eq/AudioUnit_417f7533_3.10.1.eq.json

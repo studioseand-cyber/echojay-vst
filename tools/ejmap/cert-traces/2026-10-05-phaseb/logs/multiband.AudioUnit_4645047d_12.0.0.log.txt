@@ -1,0 +1,55 @@
+MB: text pass: 32 of 47 controls sampled in 11.7 s (timeout 120 s, scaled to the count)
+MB: LinMB (s) 12.0.0: 5 band threshold(s) [Band 1 Thresh @ '0.0', Band 2 Thresh @ '0.0', Band 3 Thresh @ '0.0', Band 4 Thresh @ '0.0', Band 5 Thresh @ '0.0']; crossovers [Low Crossover, LoMid Crossover, HiMid Crossover, High Crossover] -> 5 band(s); global amount none
+  pairing [8] Band 1 Thresh: cuts 20-80 Hz (deepest -5.6 dB, centre 40.0146) -> band 1
+  pairing [15] Band 2 Thresh: cuts 100-532 Hz (deepest -5.2 dB, centre 230.846) -> band 2
+  pairing [22] Band 3 Thresh: cuts 598-3768 Hz (deepest -5.5 dB, centre 1499.88) -> band 3
+  pairing [29] Band 4 Thresh: cuts 3990-11246 Hz (deepest -4.4 dB, centre 6699.12) -> band 4
+  pairing [36] Band 5 Thresh: cuts 11914-20000 Hz (deepest -5.9 dB, centre 15435.9) -> band 5
+  band 1 (20-92 Hz, tone 42.8952) Band 1 Thresh: open end at norm 1.000, max GR 4.89 dB
+      '-80.0':  -12 dBFS GR 4.84  -18 dBFS GR 4.88  -24 dBFS GR 4.89  -30 dBFS GR 4.84  -6 dBFS GR 4.74
+      '-64.0':  -12 dBFS GR 4.84  -18 dBFS GR 4.87  -24 dBFS GR 4.85  -30 dBFS GR 4.81  -6 dBFS GR 4.75
+      '-48.0':  -12 dBFS GR 4.73  -18 dBFS GR 4.66  -24 dBFS GR 4.47  -30 dBFS GR 4.20  -6 dBFS GR 4.67
+      '-32.0':  -12 dBFS GR 4.08  -18 dBFS GR 3.64  -24 dBFS GR 2.97  -30 dBFS GR 2.11  -6 dBFS GR 4.29
+      '-16.0':  -12 dBFS GR 2.29  -18 dBFS GR 1.06  -24 dBFS GR 0.11  -30 dBFS GR 0.05  -6 dBFS GR 3.03
+      '0.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  band 2 (92-545 Hz, tone 223.92) Band 2 Thresh: open end at norm 1.000, max GR 5.16 dB
+      '-80.0':  -12 dBFS GR 4.93  -18 dBFS GR 5.11  -24 dBFS GR 5.15  -30 dBFS GR 5.16  -6 dBFS GR 4.06
+      '-64.0':  -12 dBFS GR 4.92  -18 dBFS GR 5.09  -24 dBFS GR 5.11  -30 dBFS GR 5.08  -6 dBFS GR 4.06
+      '-48.0':  -12 dBFS GR 4.85  -18 dBFS GR 4.95  -24 dBFS GR 4.84  -30 dBFS GR 4.62  -6 dBFS GR 4.02
+      '-32.0':  -12 dBFS GR 4.43  -18 dBFS GR 4.22  -24 dBFS GR 3.58  -30 dBFS GR 2.63  -6 dBFS GR 3.80
+      '-16.0':  -12 dBFS GR 2.73  -18 dBFS GR 1.80  -24 dBFS GR 0.74  -30 dBFS GR 0.15  -6 dBFS GR 2.75
+      '0.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  band 3 (545-4000 Hz, tone 1476.48) Band 3 Thresh: open end at norm 1.000, max GR 5.30 dB
+      '-80.0':  -12 dBFS GR 4.66  -18 dBFS GR 5.08  -24 dBFS GR 5.25  -30 dBFS GR 5.30  -6 dBFS GR 3.85
+      '-64.0':  -12 dBFS GR 4.65  -18 dBFS GR 5.07  -24 dBFS GR 5.22  -30 dBFS GR 5.23  -6 dBFS GR 3.85
+      '-48.0':  -12 dBFS GR 4.60  -18 dBFS GR 4.96  -24 dBFS GR 5.00  -30 dBFS GR 4.81  -6 dBFS GR 3.82
+      '-32.0':  -12 dBFS GR 4.26  -18 dBFS GR 4.32  -24 dBFS GR 3.84  -30 dBFS GR 2.93  -6 dBFS GR 3.65
+      '-16.0':  -12 dBFS GR 2.63  -18 dBFS GR 1.95  -24 dBFS GR 1.09  -30 dBFS GR 0.47  -6 dBFS GR 2.69
+      '0.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  band 4 (4000-11071 Hz, tone 6654.62) Band 4 Thresh: open end at norm 1.000, max GR 4.27 dB
+      '-80.0':  -12 dBFS GR 3.83  -18 dBFS GR 4.13  -24 dBFS GR 4.24  -30 dBFS GR 4.27  -6 dBFS GR 3.24
+      '-64.0':  -12 dBFS GR 3.83  -18 dBFS GR 4.11  -24 dBFS GR 4.21  -30 dBFS GR 4.20  -6 dBFS GR 3.24
+      '-48.0':  -12 dBFS GR 3.78  -18 dBFS GR 4.02  -24 dBFS GR 4.02  -30 dBFS GR 3.84  -6 dBFS GR 3.21
+      '-32.0':  -12 dBFS GR 3.48  -18 dBFS GR 3.45  -24 dBFS GR 3.00  -30 dBFS GR 2.21  -6 dBFS GR 3.06
+      '-16.0':  -12 dBFS GR 2.07  -18 dBFS GR 1.45  -24 dBFS GR 0.77  -30 dBFS GR 0.32  -6 dBFS GR 2.21
+      '0.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  band 5 (11071-20000 Hz, tone 14880.2) Band 5 Thresh: open end at norm 1.000, max GR 4.91 dB
+      '-80.0':  -12 dBFS GR 4.35  -18 dBFS GR 4.72  -24 dBFS GR 4.87  -30 dBFS GR 4.91  -6 dBFS GR 3.63
+      '-64.0':  -12 dBFS GR 4.34  -18 dBFS GR 4.71  -24 dBFS GR 4.83  -30 dBFS GR 4.84  -6 dBFS GR 3.62
+      '-48.0':  -12 dBFS GR 4.29  -18 dBFS GR 4.60  -24 dBFS GR 4.63  -30 dBFS GR 4.44  -6 dBFS GR 3.59
+      '-32.0':  -12 dBFS GR 3.97  -18 dBFS GR 3.99  -24 dBFS GR 3.52  -30 dBFS GR 2.66  -6 dBFS GR 3.43
+      '-16.0':  -12 dBFS GR 2.42  -18 dBFS GR 1.76  -24 dBFS GR 0.97  -30 dBFS GR 0.41  -6 dBFS GR 2.51
+      '0.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  whole unit, as instantiated (open): gain  -30 dBFS -0.00  -24 dBFS -0.00  -18 dBFS -0.01  -12 dBFS -0.02  -6 dBFS -0.06
+  offset 0 dB on every band (0.0 / 0.0 / 0.0 / 0.0 / 0.0): whole-unit GR  -30 dBFS 0.00  -24 dBFS 0.00  -18 dBFS 0.00  -12 dBFS 0.00  -6 dBFS 0.00
+  offset -6 dB on every band (-6.0 / -6.0 / -6.0 / -6.0 / -6.0): whole-unit GR  -30 dBFS 0.00  -24 dBFS 0.00  -18 dBFS 0.01  -12 dBFS 0.04  -6 dBFS 0.10
+  offset -12 dB on every band (-12.0 / -12.0 / -12.0 / -12.0 / -12.0): whole-unit GR  -30 dBFS 0.00  -24 dBFS 0.02  -18 dBFS 0.05  -12 dBFS 0.14  -6 dBFS 0.44
+  offset -18 dB on every band (-18.0 / -18.0 / -18.0 / -18.0 / -18.0): whole-unit GR  -30 dBFS 0.02  -24 dBFS 0.06  -18 dBFS 0.15  -12 dBFS 0.48  -6 dBFS 1.67
+  offset -24 dB on every band (-24.0 / -24.0 / -24.0 / -24.0 / -24.0): whole-unit GR  -30 dBFS 0.06  -24 dBFS 0.16  -18 dBFS 0.49  -12 dBFS 1.71  -6 dBFS 3.01
+  ROLES BY MEASUREMENT: 5 verdict(s); unnamed controls not probed in this mode (the pairing response per nominee is the measurement step)
+    role band_threshold CONFIRMED  [8] Band 1 Thresh - GR moves 4.84 dB between the ends
+    role band_threshold CONFIRMED  [15] Band 2 Thresh - GR moves 4.93 dB between the ends
+    role band_threshold CONFIRMED  [22] Band 3 Thresh - GR moves 4.66 dB between the ends
+    role band_threshold CONFIRMED  [29] Band 4 Thresh - GR moves 3.83 dB between the ends
+    role band_threshold CONFIRMED  [36] Band 5 Thresh - GR moves 4.35 dB between the ends
+MB: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/multiband/.tmp-AudioUnit_4645047d_12.0.0/multiband/AudioUnit_4645047d_12.0.0.multiband.json (40 processes)

@@ -1,0 +1,23 @@
+DYN: text pass: 11 of 11 controls sampled in 6.4 s (timeout 120 s, scaled to the count)
+DYN: Smack Attack (s) 12.0.0 (transient): attack [0] Attack; sustain [4] Sustain
+  neutral (as instantiated, short hit): transient 0.00 dB, sustain 0.00 dB against the input, over 3 hits
+  neutral (long hit, 500 ms decay): transient 0.00 dB, sustain 0.00 dB
+  Attack = '-100' (norm 0.00): transient -24.00 dB, sustain -0.14 dB against neutral
+  Attack = '-50' (norm 0.25): transient -12.00 dB, sustain -0.14 dB against neutral
+  Attack = '0' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Attack = '50' (norm 0.75): transient 12.00 dB, sustain 0.31 dB against neutral
+  Attack = '100' (norm 1.00): transient 24.00 dB, sustain 0.31 dB against neutral
+  Sustain = '-100' (norm 0.00): transient 0.00 dB, sustain -6.95 dB against neutral
+  Sustain = '-50' (norm 0.25): transient 0.00 dB, sustain -5.78 dB against neutral
+  Sustain = '0' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Sustain = '50' (norm 0.75): transient 0.00 dB, sustain 4.32 dB against neutral
+  Sustain = '100' (norm 1.00): transient 0.00 dB, sustain 7.69 dB against neutral
+  Sustain [long hit] = '-100' (norm 0.00): transient 0.00 dB, sustain -2.37 dB against neutral
+  Sustain [long hit] = '-50' (norm 0.25): transient 0.00 dB, sustain -1.76 dB against neutral
+  Sustain [long hit] = '0' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Sustain [long hit] = '50' (norm 0.75): transient 0.00 dB, sustain 1.39 dB against neutral
+  Sustain [long hit] = '100' (norm 1.00): transient 0.00 dB, sustain 2.09 dB against neutral
+  ROLES BY MEASUREMENT: 2 verdict(s), 14 unnamed control(s) probed without the signature
+    role transient CONFIRMED  [0] Attack - the transient moves 48.00 dB (the sustain 0.44)
+    role sustain CONFIRMED  [4] Sustain - the sustain moves 14.64 dB (the transient 0.00)
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/transient/.tmp-AudioUnit_5e556a63_12.0.0/dynamics/AudioUnit_5e556a63_12.0.0.dynamics.json (31 processes)

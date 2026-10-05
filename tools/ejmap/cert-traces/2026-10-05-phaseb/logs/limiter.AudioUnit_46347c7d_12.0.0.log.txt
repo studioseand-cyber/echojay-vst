@@ -1,0 +1,12 @@
+LIMITER: text pass: 6 of 7 controls sampled in 5.2 s (timeout 120 s, scaled to the count)
+LIMITER: L2 (s) 12.0.0: ceiling [1] Ceiling Slider, amount [0] Thresh Slider, no oversampling switch
+  hard end: norm 0.0 (true peak -1.90 at 0.0 vs -2.90 at 1.0; the end pinned at the ceiling -1.9)
+  ceiling 0.0 (0.0): sample peak -0.01 (-0.01), true peak -0.01 (-0.01)
+  ceiling -0.9 (-0.9): sample peak -0.90 (0.00), true peak -0.90 (0.00)
+  ceiling -1.9 (-1.9): sample peak -1.90 (0.00), true peak -1.90 (0.00)
+  ceiling -2.8 (-2.8): sample peak -2.80 (0.00), true peak -2.80 (0.00)
+  ceiling -5.6 (-5.6): sample peak -5.60 (0.00), true peak -5.60 (0.00)
+  ROLES BY MEASUREMENT: 1 verdict(s), 3 unnamed control(s) probed without the signature
+    role ceiling CONFIRMED  [1] Ceiling Slider - the output peak moves 5.59 dB
+  verdict: sample holds, true peak holds - worst sample-peak overshoot 0.00 dB, worst true-peak overshoot 0.00 dB over 5 driven position(s) (bar 0.1)
+LIMITER: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/limiter/.tmp-AudioUnit_46347c7d_12.0.0/limiter/AudioUnit_46347c7d_12.0.0.limiter.json

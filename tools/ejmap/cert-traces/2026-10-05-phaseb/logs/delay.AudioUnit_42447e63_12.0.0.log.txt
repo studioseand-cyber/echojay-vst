@@ -1,0 +1,37 @@
+RD: text pass: 12 of 16 controls sampled in 6.7 s (timeout 120 s, scaled to the count)
+RD: H-Delay (s) 12.0.0 (delay): mix [5] Mix; time [0] Delay Sec; feedback [2] Feedback; sync [4] Sync (off = 'ms' @1.00, on = 'Host' @0.50); note [1] Delay BPM
+  wet-only (mix 1.0): onset 375.5 ms; 11 repeat(s) above -65.2 dB; repeats every 375.0 ms falling -4.42 dB each; decay the tail starts less than 25 dB above the floor (-85.4 vs -85.2): no decay to read; floor -85.2 dB
+  mix law: equal_power (worst deviation: linear 3.89 dB, equal power 0.00 dB (fit within 1.0)); dry at 0 -15.81 dB, wet at 1 -17.57 dB (wet = the first repeat's head)
+      mix 0.0 '0': dry -15.81  wet -85.62
+      mix 0.1 '10': dry -15.92  wet -33.68
+      mix 0.2 '20': dry -16.25  wet -27.77
+      mix 0.3 '30': dry -16.82  wet -24.42
+      mix 0.4 '40': dry -17.66  wet -22.18
+      mix 0.5 '50': dry -18.83  wet -20.58
+      mix 0.6 '60': dry -20.43  wet -19.41
+      mix 0.7 '70': dry -22.67  wet -18.57
+      mix 0.8 '80': dry -26.01  wet -18.00
+      mix 0.9 '90': dry -31.93  wet -17.67
+      mix 1.0 '100': dry -86.06  wet -17.57
+  Delay Sec = '1' (norm 0.00): onset 1.5 ms vs label 1.0 ms -> within 2 % / 2 ms (the onset)
+  Delay Sec = '251' (norm 0.25): onset 257.5 ms (repeats every 251.0 ms) vs label 251.0 ms -> OFF by 6.5 ms (the onset)
+  Delay Sec = '501' (norm 0.50): onset 483.5 ms (repeats every 501.0 ms) vs label 501.0 ms -> OFF by -17.5 ms (the onset)
+  Delay Sec = '1540' (norm 0.75): onset 1138.5 ms (repeats every 1477.0 ms) vs label 1540.0 ms -> OFF by -401.5 ms (the onset)
+  Delay Sec = '3500' (norm 1.00): onset 1947.5 ms (repeats every 2803.0 ms) vs label 3500.0 ms -> OFF by -1552.5 ms (the onset)
+  Feedback = '0' (norm 0.00): 1 repeat(s) above -66.6 dB
+  Feedback = '50' (norm 0.25): 9 repeat(s) above -65.6 dB, fall -5.96 dB per repeat, repeats reach -60 dB in 3.77 s
+  Feedback = '100' (norm 0.50): 16 repeat(s) above -63.5 dB, fall -0.68 dB per repeat, repeats reach -60 dB in 33.14 s
+  Feedback = '150' (norm 0.75): 15 repeat(s) above -61.8 dB, fall 0.20 dB per repeat
+  Feedback = '200' (norm 1.00): 9 repeat(s) above -60.3 dB, fall 0.79 dB per repeat
+  sync on at 90 bpm (note '1/8D'): 500.0 ms = 0.750 beat(s) vs 500.0 ms expected (0.0 ms off)
+  sync on at 120 bpm (note '1/8D'): 375.0 ms = 0.750 beat(s) vs 375.0 ms expected (0.0 ms off)
+  sync on at 140 bpm (note '1/8D'): 322.0 ms = 0.751 beat(s) vs 321.4 ms expected (0.6 ms off)
+  ROLES BY MEASUREMENT: 7 verdict(s), 27 unnamed control(s) probed without the signature
+    role mix CONFIRMED  [5] Mix - the wet/dry ratio moves 138.31 dB, dry and wet opposite
+    role time CONFIRMED  [0] Delay Sec - the onset moves 1.5 -> 1947.5 ms
+    role feedback CONFIRMED  [2] Feedback - the repeat count moves 1 -> 9 with the first repeat put (-0.00 dB)
+    measured role tone (feedback path), UNNAMED  [6] Output - the onset holds at 375.5 ms while the first repeat moves -32.53 -> 3.48 dB: tone in the feedback path, not time
+    measured role time, UNNAMED  [10] Depth - the onset moves 375.5 -> 456.5 ms
+    measured role tone (feedback path), UNNAMED  [11] HiPass - the onset holds at 375.5 ms while the first repeat moves -14.52 -> -44.30 dB: tone in the feedback path, not time
+    measured role tone (feedback path), UNNAMED  [12] LoPass - the onset holds at 375.5 ms while the first repeat moves -55.56 -> -14.53 dB: tone in the feedback path, not time
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/delay/.tmp-AudioUnit_42447e63_12.0.0/reverbdelay/AudioUnit_42447e63_12.0.0.reverbdelay.json (39 processes)

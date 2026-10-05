@@ -1,0 +1,13 @@
+LIMITER: text pass: 19 of 48 controls sampled in 4.9 s (timeout 120 s, scaled to the count)
+LIMITER: bx_limiter True Peak 1.2.1: ceiling [2] Ceiling, amount [20] Input Trim, no oversampling switch
+  hard end: norm 1.0 (true peak -13.02 at 0.0 vs -1.07 at 1.0; the end pinned at the ceiling -1.05 dB)
+  ceiling -0.12 dB (-0.1): sample peak -1.02 (-0.90), true peak -1.02 (-0.90)
+  ceiling -0.26 dB (-0.3): sample peak -1.02 (-0.76), true peak -1.02 (-0.76)
+  ceiling -1.05 dB (-1.1): sample peak -1.07 (-0.02), true peak -1.07 (-0.02)
+  ceiling -2.93 dB (-2.9): sample peak -2.94 (-0.01), true peak -2.94 (-0.01)
+  ceiling -5.74 dB (-5.7): sample peak -5.75 (-0.01), true peak -5.75 (-0.01)
+  ROLES BY MEASUREMENT: 2 verdict(s), 8 unnamed control(s) probed without the signature
+    role ceiling CONFIRMED  [2] Ceiling - the output peak moves 4.73 dB
+    measured role ceiling, UNNAMED  [3] Gain - the output peak moves 5.95 dB and holds against a 6 dB drive change (0.00)
+  verdict: sample holds, true peak holds - worst sample-peak overshoot -0.01 dB, worst true-peak overshoot -0.01 dB over 3 driven position(s) (bar 0.1); 2 position(s) not driven (the signal never reached that ceiling)
+LIMITER: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/limiter/.tmp-AudioUnit_417f6e6e_1.2.1/limiter/AudioUnit_417f6e6e_1.2.1.limiter.json

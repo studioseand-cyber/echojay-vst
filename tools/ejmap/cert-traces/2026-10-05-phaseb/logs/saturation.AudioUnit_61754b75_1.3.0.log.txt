@@ -1,0 +1,17 @@
+SAT: text pass: 6 of 13 controls sampled in 1.5 s (timeout 120 s, scaled to the count)
+SAT: NEOLD BIG AL 1.3.0: 1 drive-type control(s)
+  [3] Drive: -20 dBFS: max THD -17.3 dB, gain span 2.62 dB, 1 % onset '50.4' (norm 0.90); -12 dBFS: max THD -10.6 dB, gain span 8.21 dB, 1 % onset '50.4' (norm 0.90); -6 dBFS: max THD -8.8 dB, gain span 13.55 dB, 1 % onset '22.4' (norm 0.40)
+      @-12 0.0        gain    0.09 dB  THD -52.7 dB (0.232 %)  h2 -52.7 h3 -77.0 h4 -143.5 h5 -149.6  mixed (even/odd 24.3 dB)
+      @-12 5.6        gain    0.09 dB  THD -52.7 dB (0.232 %)  h2 -52.7 h3 -77.0 h4 -143.5 h5 -149.6  mixed (even/odd 24.3 dB)
+      @-12 11.2       gain    0.09 dB  THD -52.7 dB (0.232 %)  h2 -52.7 h3 -77.0 h4 -143.5 h5 -149.6  mixed (even/odd 24.3 dB)
+      @-12 16.8       gain    0.09 dB  THD -52.7 dB (0.232 %)  h2 -52.7 h3 -77.0 h4 -143.5 h5 -149.6  mixed (even/odd 24.3 dB)
+      @-12 22.4       gain    0.07 dB  THD -44.1 dB (0.624 %)  h2 -44.2 h3 -60.1 h4 -95.1 h5 -122.0  mixed (even/odd 15.9 dB)
+      @-12 28.0       gain    0.07 dB  THD -44.1 dB (0.624 %)  h2 -44.2 h3 -60.1 h4 -95.1 h5 -122.0  mixed (even/odd 15.9 dB)
+      @-12 33.6       gain    0.07 dB  THD -44.1 dB (0.624 %)  h2 -44.2 h3 -60.1 h4 -95.1 h5 -122.0  mixed (even/odd 15.9 dB)
+      @-12 39.2       gain    0.07 dB  THD -44.1 dB (0.624 %)  h2 -44.2 h3 -60.1 h4 -95.1 h5 -122.0  mixed (even/odd 15.9 dB)
+      @-12 44.8       gain    0.07 dB  THD -44.1 dB (0.624 %)  h2 -44.2 h3 -60.1 h4 -95.1 h5 -122.0  mixed (even/odd 15.9 dB)
+      @-12 50.4       gain   -8.12 dB  THD -10.6 dB (29.627 %)  h2 -26.4 h3 -11.4 h4 -27.9 h5 -19.6  mixed (even/odd -13.3 dB)
+      @-12 56.0       gain   -8.12 dB  THD -10.6 dB (29.624 %)  h2 -26.4 h3 -11.4 h4 -27.9 h5 -19.6  mixed (even/odd -13.3 dB)
+  ROLES BY MEASUREMENT: 1 verdict(s), 4 unnamed control(s) probed without the signature
+    role drive CONFIRMED  [3] Drive - THD moves -52.7 -> -10.6 dB
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/saturation/.tmp-AudioUnit_61754b75_1.3.0/saturation/AudioUnit_61754b75_1.3.0.saturation.json

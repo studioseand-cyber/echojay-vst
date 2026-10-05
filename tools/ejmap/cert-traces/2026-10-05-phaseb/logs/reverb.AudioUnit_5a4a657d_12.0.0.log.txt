@@ -1,0 +1,25 @@
+RD: text pass: 13 of 15 controls sampled in 6.6 s (timeout 120 s, scaled to the count)
+RD: Abbey Road Plates (s) 12.0.0 (reverb): mix [10] Dry/Wet; pre-delay [4] Predelay; decay -
+  wet-only (mix 1.0): onset 0.5 ms; 0 repeat(s) above -70.0 dB; decay RT60 1.34 s (T20), 1.46 s (T30); floor -90.0 dB
+  mix law: other (worst deviation: linear 6.66 dB, equal power 2.77 dB (fit within 1.0)); dry at 0 -15.00 dB, wet at 1 -14.27 dB (dry = the first 2 ms of the burst, before any wet; wet = the 4 ms after the burst ends)
+      mix 0.0 '0': dry -15.00  wet floor
+      mix 0.1 '10': dry -15.05  wet -31.29
+      mix 0.2 '20': dry -15.29  wet -25.33
+      mix 0.3 '30': dry -15.71  wet -21.92
+      mix 0.4 '40': dry -16.37  wet -19.59
+      mix 0.5 '50': dry -17.30  wet -17.86
+      mix 0.6 '60': dry -18.61  wet -16.56
+      mix 0.7 '70': dry -20.48  wet -15.58
+      mix 0.8 '80': dry -23.31  wet -14.88
+      mix 0.9 '90': dry -28.34  wet -14.43
+      mix 1.0 '100': dry -46.75  wet -14.27
+  Predelay = '0' (norm 0.00): onset 0.5 ms vs label 0.0 ms -> within 2 % / 2 ms (the onset)
+  Predelay = '125' (norm 0.25): onset 125.5 ms vs label 125.0 ms -> within 2 % / 2 ms (the onset)
+  Predelay = '250' (norm 0.50): onset 250.5 ms vs label 250.0 ms -> within 2 % / 2 ms (the onset)
+  Predelay = '375' (norm 0.75): onset 375.5 ms vs label 375.0 ms -> within 2 % / 2 ms (the onset)
+  Predelay = '500' (norm 1.00): onset 500.5 ms vs label 500.0 ms -> within 2 % / 2 ms (the onset)
+  ROLES BY MEASUREMENT: 3 verdict(s), 39 unnamed control(s) probed without the signature
+    role mix CONFIRMED  [10] Dry/Wet - the wet/dry ratio moves 137.48 dB, dry and wet opposite
+    role time CONFIRMED  [4] Predelay - the onset moves 0.5 -> 500.5 ms
+    measured role decay, UNNAMED  [1] Damper - RT60 0.77 -> 3.36 s (x4.36)
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/reverb/.tmp-AudioUnit_5a4a657d_12.0.0/reverbdelay/AudioUnit_5a4a657d_12.0.0.reverbdelay.json (37 processes)

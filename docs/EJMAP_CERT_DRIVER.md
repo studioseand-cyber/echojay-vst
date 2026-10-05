@@ -2521,3 +2521,24 @@ product, resume, the product re-measured exactly once, no half-done record) are 
 products left × its median so far (the overall median where a category has nothing timed yet; pins P6–P10).
 `"$BIN" --phaseb-status` prints `progress.txt`'s content (done/total per category, time spent, ETA, what is next) and loads
 nothing.
+
+## 58. The kill tests, and two things they found (5 Oct evening, amendment 2)
+
+`cert-traces/2026-10-05-phaseb/kill_tests.txt`: (1) SIGINT to the process group (Ctrl-C) 20 s into a two-product gain-cal
+batch — no row, a six-file temp folder, `--phaseb-status` reads 0/2 with "now: gaincal: elysia mpressor"; the resume throws
+the folder away, measures mpressor ONCE (one header in its log, 52 s, 30 of 30 traces) and finishes. (2) SIGKILL to the parent
+alone — the child keeps measuring as an orphan; the resume's `pkill -f` on the temp folder's path kills it (one fresh child
+4 s later), mpressor measured once. (3) The compressor follow-up, SIGINT 12 s into Lindell SBC's tone checks — no
+`tonecheck.json`, the record and `outcomes.json` whole (every write is JUCE's temp-and-rename), the resume runs SBC's tone
+check once and a later run skips it at v1.7.
+
+**Found 1 — the traces were not gzip files.** `gunzip -t` refused every `.gz` of test 2: JUCE's `GZIPCompressorOutputStream`
+at `windowBits 0` writes a bare zlib stream (`78 9c`). `kGzipWindowBits = 15 + 16` writes a gzip file (`1f 8b`; pin P15, the
+mutant red); `file` and `gunzip -t` agree on the fixed binary's traces. The rehearsal's own traces were zlib.
+
+**Found 2 — the sidechain re-sweep repeated** (`sidechain_repeat.txt`). Kill test 3's third and fourth runs each re-swept
+C1 comp (s) again (318 s): `sidechainPolicyCheck` read the verdict cached on the record ("keys from a connected sidechain",
+`resweep`) BEFORE the record's own evidence, and the re-sweep carries the cached verdict over — so a record swept under
+`unconnected` was re-swept on every follow-up run. This is in 17ebf114. The order is now: the sweep view's own policy
+(`sweptUnderPolicyNow`, pin SC-R) and bus count first, the cached verdict after. Derive-only on the kill-test folder: fixed
+build 0 re-sweeps, the old order 1 (C1 comp). No certification result changes; a product is re-swept once, not nightly.

@@ -58,12 +58,13 @@ inline void writeAtomic (const juce::File& f, const juce::String& text)
     f.deleteFile(); tmp.moveFileTo (f);   // rename: the file is either absent or whole
 }
 // THE RAW TRACE, gzipped beside the records; the target is cleared first because a FileOutputStream APPENDS
+constexpr int kGzipWindowBits = 15 + 16;   // a real gzip file (gunzip opens it); 0 would be a bare zlib stream, which gunzip refuses
 inline void gzipInto (const juce::File& src, const juce::File& dstDir)
 {
     const auto dst = dstDir.getChildFile (src.getFileName() + ".gz"); dst.deleteFile();   // a FileOutputStream APPENDS: a re-run's trace never lands behind an interrupted run's half
     juce::FileOutputStream fo (dst);
     if (! fo.openedOk()) return;
-    { juce::GZIPCompressorOutputStream gz (fo, 6); juce::FileInputStream fi (src); if (fi.openedOk()) gz.writeFromInputStream (fi, -1); gz.flush(); }
+    { juce::GZIPCompressorOutputStream gz (fo, 6, kGzipWindowBits); juce::FileInputStream fi (src); if (fi.openedOk()) gz.writeFromInputStream (fi, -1); gz.flush(); }
 }
 
 // PROGRESS: counts per category, measured seconds per product, the ETA from the medians so far

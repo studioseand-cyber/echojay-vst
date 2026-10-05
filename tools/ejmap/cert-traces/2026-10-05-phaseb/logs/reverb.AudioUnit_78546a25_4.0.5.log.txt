@@ -1,0 +1,42 @@
+RD: text pass: 17 of 17 controls sampled in 3.9 s (timeout 120 s, scaled to the count)
+RD: ValhallaVintageVerb 4.0.5 (reverb): mix [0] Mix; pre-delay [1] PreDelay; decay [2] Decay
+  wet-only (mix 1.0): onset 25.5 ms; 0 repeat(s) above -65.5 dB; decay RT60 2.54 s (T20), 5.25 s (T30); floor -85.5 dB
+  mix law: equal_power (worst deviation: linear 3.89 dB, equal power 0.00 dB (fit within 1.0)); dry at 0 -15.00 dB, wet at 1 -15.39 dB (dry = the first 2 ms of the burst, before any wet; wet = the 4 ms after the burst ends)
+      mix 0.0 '0': dry -15.00  wet floor
+      mix 0.1 '0.1': dry -15.11  wet -31.51
+      mix 0.2 '0.2': dry -15.43  wet -25.59
+      mix 0.3 '0.3': dry -16.00  wet -22.25
+      mix 0.4 '0.4': dry -16.84  wet -20.01
+      mix 0.5 '0.5': dry -18.01  wet -18.40
+      mix 0.6 '0.6': dry -19.61  wet -17.23
+      mix 0.7 '0.7': dry -21.86  wet -16.40
+      mix 0.8 '0.8': dry -25.20  wet -15.83
+      mix 0.9 '0.9': dry -31.11  wet -15.50
+      mix 1.0 '1': dry -166.44  wet -15.39
+  PreDelay = '0' (norm 0.00): onset 5.5 ms vs label 0.0 ms -> OFF by 5.5 ms (the onset)
+  PreDelay = '0.25' (norm 0.25): onset 25.5 ms vs label 0.2 ms -> OFF by 25.2 ms (the onset)
+  PreDelay = '0.5' (norm 0.50): onset 105.5 ms vs label 0.5 ms -> OFF by 105.0 ms (the onset)
+  PreDelay = '0.75' (norm 0.75): onset 262.5 ms vs label 0.8 ms -> OFF by 261.8 ms (the onset)
+  PreDelay = '1' (norm 1.00): onset 505.5 ms vs label 1.0 ms -> OFF by 504.5 ms (the onset)
+  Decay = '0' (norm 0.00): RT60 1.22 s (T20), 1.16 s (T30) vs label 0.00 s (ratio 1224348.15)
+  Decay = '0.25' (norm 0.25): RT60 1.53 s (T20), 1.22 s (T30) vs label 0.25 s (ratio 6.10)
+  Decay = '0.5' (norm 0.50): RT60 9.63 s (T20), 8.43 s (T30) vs label 0.50 s (ratio 19.27)
+  Decay = '0.75' (norm 0.75): RT60 29.15 s (T20) vs label 0.75 s (ratio 38.87)
+  Decay = '1' (norm 1.00): RT60 11.97 s (T20) vs label 1.00 s (ratio 11.97)
+  ROLES BY MEASUREMENT: 15 verdict(s), 44 unnamed control(s) probed without the signature
+    role mix CONFIRMED  [0] Mix - the wet/dry ratio moves 256.05 dB, dry and wet opposite
+    role time CONFIRMED  [1] PreDelay - the onset moves 5.5 -> 505.5 ms
+    role decay CONFIRMED  [2] Decay - RT60 1.22 -> 11.97 s (x9.77)
+    measured role decay, UNNAMED  [3] Size - RT60 4.40 -> 2.54 s (x1.73)
+    measured role mix, UNNAMED  [4] Attack - the wet/dry ratio moves -14.20 dB, dry and wet opposite
+    measured role time, UNNAMED  [4] Attack - the onset moves 25.5 -> 70.5 ms
+    measured role decay, UNNAMED  [5] BassMult - RT60 4.72 -> 2.62 s (x1.80)
+    measured role decay, UNNAMED  [6] BassXover - RT60 2.75 -> 7.15 s (x2.60)
+    measured role mix, UNNAMED  [8] HighFreq - the wet/dry ratio moves 18.51 dB, dry and wet opposite
+    measured role decay, UNNAMED  [8] HighFreq - RT60 1.29 -> 2.96 s (x2.29)
+    measured role time, UNNAMED  [9] EarlyDiffusion - the onset moves 41.5 -> 25.5 ms
+    measured role decay, UNNAMED  [9] EarlyDiffusion - RT60 3.93 -> 2.55 s (x1.54)
+    measured role decay, UNNAMED  [10] LateDiffusion - RT60 5.43 -> 2.55 s (x2.13)
+    measured role mix, UNNAMED  [13] HighCut - the wet/dry ratio moves 19.96 dB, dry and wet opposite
+    measured role decay, UNNAMED  [15] ColorMode - RT60 2.90 -> 4.77 s (x1.65)
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/reverb/.tmp-AudioUnit_78546a25_4.0.5/reverbdelay/AudioUnit_78546a25_4.0.5.reverbdelay.json (50 processes)

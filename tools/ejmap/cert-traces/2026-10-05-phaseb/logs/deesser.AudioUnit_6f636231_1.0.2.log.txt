@@ -1,0 +1,30 @@
+DS: text pass: 7 of 10 controls sampled in 1.9 s (timeout 120 s, scaled to the count)
+DS: Lindell 902 De-esser 1.0.2: threshold [4] Range; frequency [3] Frequency; mode [9] Mode HF Only (Off / On)
+  ladder at 6500 Hz: open end at norm 0.000, max GR 18.99 dB
+      Range = '0.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '4.00':  -12 dBFS GR 2.98  -18 dBFS GR 2.98  -24 dBFS GR 2.98  -30 dBFS GR 2.98  -6 dBFS GR 2.98
+      Range = '8.00':  -12 dBFS GR 6.98  -18 dBFS GR 6.98  -24 dBFS GR 6.98  -30 dBFS GR 6.98  -6 dBFS GR 6.99
+      Range = '12.00':  -12 dBFS GR 10.98  -18 dBFS GR 10.98  -24 dBFS GR 10.98  -30 dBFS GR 10.98  -6 dBFS GR 10.99
+      Range = '16.00':  -12 dBFS GR 14.98  -18 dBFS GR 14.98  -24 dBFS GR 14.98  -30 dBFS GR 14.98  -6 dBFS GR 14.99
+      Range = '20.00':  -12 dBFS GR 18.98  -18 dBFS GR 18.98  -24 dBFS GR 18.98  -30 dBFS GR 18.98  -6 dBFS GR 18.99
+  ladder at 997 Hz: open end at norm 0.000, max GR 0.00 dB
+      Range = '0.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '4.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '8.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '12.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '16.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '20.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  band selectivity on the ladder: max GR 18.99 dB at 6.5 kHz vs 0.00 dB at 997 Hz
+  noise ladder (4-10 kHz, 30 readings): max GR 18.56 dB (the 6.5 kHz tone gave 18.99)
+  centre (Frequency = '800'): deepest -12.94 dB at 214.749 Hz, shelf with its half-depth corner at 20 Hz; at 997 Hz -12.70 dB -> wideband | label 800 Hz vs the corner 20: -97.5 % off
+  centre (Frequency = '2500'): deepest -13.61 dB at 215.065 Hz, shelf with its half-depth corner at 20 Hz; at 997 Hz -13.37 dB -> wideband | label 2500 Hz vs the corner 20: -99.2 % off
+  centre (Frequency = '8000'): deepest -12.86 dB at 215.308 Hz, shelf with its half-depth corner at 20 Hz; at 997 Hz -12.63 dB -> wideband | label 8000 Hz vs the corner 20: -99.8 % off
+  Mode HF Only = 'Off': deepest -17.38 dB at 12730.6 Hz, shelf with its half-depth corner at 7065.16 Hz; at 997 Hz -0.10 dB -> split_band
+  Mode HF Only = 'On': deepest -17.38 dB at 12730.6 Hz, shelf with its half-depth corner at 7065.16 Hz; at 997 Hz -0.10 dB -> split_band
+  ROLES BY MEASUREMENT: 5 verdict(s), 1 unnamed control(s) probed without the signature; unnamed controls probed for the threshold signature only
+    role threshold CONFIRMED  [4] Range - GR moves 18.98 dB between the ends
+    role frequency DROPPED    [3] Frequency - the centre moves 20 -> 20 Hz (0.00 oct, needs 1/3)
+    measured role threshold, UNNAMED  [2] Mix - GR moves 5.98 dB between the ends
+    measured role threshold, UNNAMED  [6] In Gain - GR moves 20.01 dB between the ends
+    measured role threshold, UNNAMED  [7] Out Gain - GR moves 20.00 dB between the ends
+DS: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/deesser/.tmp-AudioUnit_6f636231_1.0.2/deesser/AudioUnit_6f636231_1.0.2.deesser.json (21 processes)

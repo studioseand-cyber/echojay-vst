@@ -119,6 +119,14 @@ inline juce::StringArray argsFor (const Trace& t, double level)
     return a;
 }
 
+// THE RECORD'S OWN EVIDENCE comes before any cached verdict (5 Oct evening): a sweep view whose sidechain policy is the policy
+// now was swept under it, so the record is out of the set whatever an earlier run decided - the earlier run's "resweep" verdict is
+// carried over by the re-sweep itself, and read first it re-swept C1 comp (s) on every follow-up run (318 s each, the kill tests).
+inline bool sweptUnderPolicyNow (const juce::var& sweepView)
+{
+    const auto sc = sweepView.getProperty ("sidechain", {});
+    return sc.isObject() && sc.getProperty ("policy", "").toString() == kPolicyNow;
+}
 struct Verdict { bool resweep = false; juce::String verdict, why; double deltaDb = 0.0; };
 inline Verdict verdict (double beforeDb, double afterDb, double norm, double level)
 {

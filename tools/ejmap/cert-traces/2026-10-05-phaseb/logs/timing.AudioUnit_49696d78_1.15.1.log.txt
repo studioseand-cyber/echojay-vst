@@ -1,0 +1,23 @@
+TIMING: elysia mpressor 1.15.1: amount [3] Threshold at norm 0.667 (1 dB point -29.98 dBFS peak); burst -36.0 -> -20.0
+  attack [5] Attack = 0.0 ms: measured attack < 6.8 ms release 124.3 ms (GR step 8.14)
+  attack [5] Attack = 3.3 ms: measured attack < 6.8 ms release 120.5 ms (GR step 7.90)
+  attack [5] Attack = 9.6 ms: measured attack < 6.8 ms release 116.8 ms (GR step 7.66)
+  attack [5] Attack = 15.9 ms: measured attack 8.1 ms release 114.1 ms (GR step 7.49)
+  attack [5] Attack = 26.4 ms: measured attack 12.9 ms release 110.6 ms (GR step 7.26)
+  attack [5] Attack = 65.7 ms: measured attack 29.5 ms release 102.0 ms (GR step 6.72)
+  attack [5] Attack = 117.1 ms: measured attack 48.9 ms release 94.9 ms (GR step 6.27)
+  attack [5] Attack = 150.0 ms: measured attack 59.5 ms release 91.9 ms (GR step 6.01)
+  release [7] Release = 5.0 ms: measured attack < 6.8 ms release 3.4 ms (GR step 5.10)
+  release [7] Release = 9.9 ms: measured attack < 6.8 ms release 6.9 ms (GR step 5.62)
+  release [7] Release = 29.4 ms: measured attack 8.3 ms release 24.6 ms (GR step 6.61)
+  release [7] Release = 75.0 ms: measured attack 9.3 ms release 69.7 ms (GR step 7.20)
+  release [7] Release = 175.7 ms: measured attack 10.0 ms release 172.5 ms (GR step 7.57)
+  release [7] Release = 360.0 ms: measured attack 10.4 ms release 364.2 ms (GR step 7.77)
+  release [7] Release = 741.4 ms: measured attack 10.7 ms release 763.7 ms (GR step 7.91)
+    segments scaled to the label '1200.0 ms': hold 2.0 s, post 6.0 s
+  release [7] Release = 1200.0 ms: measured attack 10.8 ms release 1249.7 ms (GR step 7.97)
+  program dependence: release after 0.3 s 112.949 ms, after 3 s 112.978 ms (ratio 1.00)
+  ROLES BY MEASUREMENT: 2 verdict(s); unnamed controls not probed in this mode (a burst pair per control costs ~12 s; the roles' lexicon nominates)
+    role attack CONFIRMED  [5] Attack - the attack moves 6.8 -> 59.5 ms
+    role release CONFIRMED  [7] Release - the release moves 3.4 -> 1249.7 ms
+TIMING: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/pb/phaseb/timing/.tmp-AudioUnit_49696d78_1.15.1/timing/AudioUnit_49696d78_1.15.1.timing.json

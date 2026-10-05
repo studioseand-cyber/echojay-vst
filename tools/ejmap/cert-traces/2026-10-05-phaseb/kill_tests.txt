@@ -1,0 +1,70 @@
+KILL TEST 1: SIGINT to the process group (what Ctrl-C does) mid-product
+start 16:53:11: --phaseb-all --category gaincal --only 'elysia mpressor' --only 'Lindell SBC' (mpressor first, ~52 s)
+at +20 s: processes in the group:
+11564 ejmap --phaseb-all --out EchoJayProbe --category gaincal --only elysia mpressor --only Lindell SBC
+11578 ejmap --cert-gain-cal elysia mpressor --out EchoJayProbe --ejmap-ledger /Users/SeanD/Library/ejmap
+11617 EchoJayProbe elysia mpressor AudioUnit:Effects/aufx,mprs,Elys 49696d78 --sweep thr=17 norms=0.000000,0.050000,0.10
+"$E" --phaseb-all --out "$SC/kt" --probe "$P" --category gaincal --only "elysia mpressor" --only "Lindell SBC" > "$SC/kt
+tmp folder: .tmp-AudioUnit_49696d78_1.15.1  rows: 0
+after SIGINT: alive = 0  exit status of the batch: 130
+rows: 0  tmp folder: .tmp-AudioUnit_49696d78_1.15.1  gaincal records: 0  raw gz: 0
+what the tmp folder holds (the half-done product, to be thrown away): 6 file(s)
+progress.txt: all: 0/2 done; elapsed 0:00:00; ETA 0:00:00; now: gaincal: elysia mpressor
+--phaseb-status:
+PHASE B PROGRESS (started 20261005T165312, updated 20261005T165312)
+all: 0/2 done; elapsed 0:00:00; ETA 0:00:00; now: gaincal: elysia mpressor
+  gaincal      0/2   ok 0 timed_out 0 failed 0 skipped 0  (nothing timed yet)  left 2
+next: gaincal
+resume 16:53:33: the same command
+exit 0
+  gaincal      2 product(s), 0 already done; hang guard 10 min (21 norms x 2-3 levels per gain control + the unnamed pool: ~2-4 min measured
+[gaincal 1/2 | all 1/2] elysia mpressor: ok 51.7531 s | elapsed 0:00:52 | ETA 0:00:52
+[gaincal 2/2 | all 2/2] Lindell SBC: ok 18.7851 s | elapsed 0:01:11 | ETA 0:00:00
+rows: 2  tmp folders: 0  records: 2  raw gz: 30 (the full run had 13 + 17 = 30)
+mpressor measured ONCE on the resume: GAINCAL header lines in its log = 1; row seconds 52.0 (a whole measurement, 52 s in the rehearsal); progress seconds list: [52.0, 19.0]
+the mpressor record parses and holds its controls: 3 control(s)
+
+KILL TEST 2: SIGKILL to the parent ONLY (a crash / force quit) mid-product - the child keeps measuring as an orphan
+start 16:55:05: same two products
+at +20 s: parent 11926; children: 3
+after SIGKILL of the parent: parent alive = 0; orphan child ejmap alive = 1 (pid 11930 ), probe alive = 2
+rows: 0  tmp folder: .tmp-AudioUnit_49696d78_1.15.1
+resume 16:55:27 with the orphan still measuring:
+at resume +4 s: ejmap --cert-gain-cal processes = 1 (pid 12027 ) - the orphan was killed by the resume's pkill, one fresh child runs
+resume exit 0
+[gaincal 1/2 | all 1/2] elysia mpressor: ok 51.6837 s | elapsed 0:00:52 | ETA 0:00:52
+[gaincal 2/2 | all 2/2] Lindell SBC: ok 18.6913 s | elapsed 0:01:10 | ETA 0:00:00
+rows: 2  tmp folders: 0  records: 2  raw gz: 30 (30 expected)
+mpressor measured ONCE: GAINCAL header lines in its log = 1; row seconds 52.0; progress seconds: [52.0, 19.0]
+every gz decompresses whole: 30 bad of 30
+stray processes after both tests: 0
+
+FINDING from test 2's last line: every .gz was 'bad' to gunzip -t - JUCE's GZIPCompressorOutputStream at windowBits 0 writes a bare zlib stream (78 9c), not a gzip file. Fixed: windowBits 15+16 (pin P15 on the 1f 8b magic, mutant red). The rehearsal's traces (zlib) are re-run below on one product with the fixed binary.
+[saturation 1/1 | all 1/1] NEOLD BIG AL: ok 6.49764 s | elapsed 0:00:07 | ETA 0:00:00
+gunzip -t on the fixed binary's traces: 0 bad of 9; file says: gzip compressed data, original size modu
+
+KILL TEST 3: the compressor follow-up (--cert-tonecheck-all) - SIGINT to the group mid-product
+setup: the rehearsal cert folder (cert_sc), Lindell SBC's tonecheck.json removed so its tone check runs again (every other product is at v1.7 and skipped)
+before: record 6bffb1a3bf61 outcomes.json e49608155570; tonecheck absent
+start 17:03:51
+at 17:04:23 (12 s into SBC's tone checks): processes: 2 probe(s); last log line: RESAMPLE: [0] SC HPF read at 21 norms: 20.199999999999999..400.0
+after SIGINT: alive = 0
+after: record 3fa06464bb4b (parses: yes) outcomes.json e49608155570 (parses: 91 rows); tonecheck.json present: 0; stray temp files: 0
+resume 17:04:25: the same command
+exit 0
+tone checks run on the resume: 5 ( Lindell SBC
+ bx_opto
+ Lindell 7X-500
+ Lindell 254E
+ EMO-D5 (s)); TONECHECK-ALL: 4 re-checked, 2 already at v1.7 (skipped), 0 needs_licence, 0 not exported now, 1 without traces
+tonecheck.json now: v1.7 True True
+a third run: 1 tone check(s) run (SBC is at v1.7: skipped)
+record changed by the resume vs before the kill: before 6bffb1a3bf61 after 3fa06464bb4b (the re-derive rewrites the record from the traces; same content = same hash)
+=== tone checks: EMO-D5 (s)
+  -> needs_review: 5 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+=== re-sweep [1/1] C1 comp (s)
+  -> exported: profile exported with its tone check
+TONECHECK-ALL: 0 re-checked, 6 already at v1.7 (skipped), 0 needs_licence, 0 not exported now, 0 without traces
+the one tone check on a third/fourth run is EMO-D5's re-derive (needs_review: five candidates, no rule decides, no tonecheck.json is ever written for it - the follow-up's standing behaviour, not the kill's); Lindell SBC is skipped at v1.7
+
+VERDICT: three kill tests pass - an interrupted product leaves no record (batch: no row, a temp folder thrown away on resume; follow-up: no tonecheck.json, the record and outcomes.json whole), is re-measured exactly once on resume, and a parent killed outright has its orphan child killed by the resume.

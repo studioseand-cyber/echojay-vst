@@ -6681,6 +6681,13 @@ void testSidechainCheck()
     const auto view = juce::JSON::parse (R"json({"preconditions": [{"index": 28, "norm": 1.0}, {"index": 41, "norm": 0.5}], "engageWrites": {"writes": [{"index": 15, "norm": 1.0}]}})json");
     const auto w = recordWrites (view);
     check (w.size() == 3 && sameWrites (w, { { 15, 1.0 }, { 28, 1.0 }, { 41, 0.5 } }) && ! sameWrites (w, { { 28, 1.0 }, { 41, 0.5 } }), "sidechain S14: the record's writes are its preconditions plus its engage writes, order-free");
+    // SC-R the record's own evidence beats a cached verdict: a view swept under the policy now is out of the set even with a stale
+    // "resweep" verdict on the record (the re-sweep carries it over; read first it re-swept C1 comp (s) on every follow-up run)
+    { const auto viewNow = juce::JSON::parse ("{\"sidechain\":{\"policy\":\"unconnected\",\"extraInputBuses\":[{\"index\":1}]}}");
+      const auto viewOld = juce::JSON::parse ("{\"sidechain\":{\"policy\":\"enabled_silent\",\"extraInputBuses\":[{\"index\":1}]}}");
+      check (sweptUnderPolicyNow (viewNow), "sidechain SC-R: a view with policy 'unconnected' was swept under the policy now");
+      check (! sweptUnderPolicyNow (viewOld), "sidechain SC-R: a view under enabled_silent was not");
+      check (! sweptUnderPolicyNow (juce::JSON::parse ("{}")), "sidechain SC-R: no sidechain field = not under the policy now (the traces decide)"); }
 }
 
 /** THE INERT CHECK (EjmapSweep.h inertCandidates / inertVerdict, ruled 4 Oct): NEOLD V76U73's control list and its
@@ -7523,8 +7530,9 @@ void testPhaseB()
       const auto raw = d2.getChildFile ("x.raw.txt"); raw.replaceWithText ("trace line\n", false, false, "\n");
       const auto gzDir = d2.getChildFile ("gz"); gzDir.createDirectory(); gzipInto (raw, gzDir); const auto size1 = gzDir.getChildFile ("x.raw.txt.gz").getSize(); gzipInto (raw, gzDir);
       check (gzDir.getChildFile ("x.raw.txt.gz").getSize() == size1, "phaseb P13: the second gzip leaves the file the size of one (a decompressor stops at the first member, so the size is the tell)");
-      juce::String back; { juce::FileInputStream fi (gzDir.getChildFile ("x.raw.txt.gz")); juce::GZIPDecompressorInputStream gz (fi); back = gz.readEntireStreamAsString(); }
+      juce::String back; juce::MemoryBlock head; { juce::FileInputStream fi (gzDir.getChildFile ("x.raw.txt.gz")); fi.readIntoMemoryBlock (head, 2); fi.setPosition (0); juce::GZIPDecompressorInputStream gz (&fi, false, juce::GZIPDecompressorInputStream::gzipFormat); back = gz.readEntireStreamAsString(); }
       check (back == "trace line\n", "phaseb P13: a re-gzipped trace holds one copy of the content, not two (got " + juce::String (back.length()) + " chars)");
+      check (head.getSize() == 2 && (juce::uint8) head[0] == 0x1f && (juce::uint8) head[1] == 0x8b, "phaseb P15: the trace is a gzip FILE (magic 1f 8b), not a bare zlib stream - gunzip must open it");
       // P14 a half-done temp folder is not a DONE marker: only the row file is
       d2.getChildFile ("eq").getChildFile (".tmp-AudioUnit_1_1.0").createDirectory();
       check (! isDone (d2, "eq", "AudioUnit_1_1.0"), "phaseb P14: a .tmp folder without a row is not done");
