@@ -81,6 +81,7 @@
 #include "EjmapSaturation.h"
 #include "EjmapReverbDelay.h"
 #include "EjmapDynamics.h"
+#include "EjmapDeesser.h"
 
 namespace
 {
@@ -7284,6 +7285,40 @@ void testDynamics()
     check (labelMs ("12.5 ms") && *labelMs ("12.5 ms") == 12.5 && labelMs ("1.20 s") && std::abs (*labelMs ("1.20 s") - 1200.0) < 1e-9 && labelNumber ("-30.0 dB") && *labelNumber ("-30.0 dB") == -30.0 && ! labelNumber ("Off"), "dyn L1: labels");
 }
 
+/** DE-ESSERS (EjmapDeesser.h, roadmap 2.9 PROTOTYPE, 5 Oct R6): the ladder against the open end, the centre and the mode from a deviation. */
+void testDeesser()
+{
+    using namespace ejmap::deesser;
+    // a ladder: three threshold positions x two levels; the open end (norm 0) at unity gain; GR grows with norm and with level
+    ejmap::sweep::Measured m;
+    for (int k = 0; k < 3; ++k)
+    {
+        ejmap::sweep::PositionReading p; p.k = k; p.norm = k / 2.0f; p.text = juce::String (-10 * k) + " dB";
+        for (double L : { -18.0, -6.0 }) { ejmap::sweep::HoldReading h; h.present = true; h.inRmsDb = L - 3.01; h.levelDb = h.inRmsDb - k * (L == -6.0 ? 4.0 : 2.0); p.holds[ejmap::sweep::levelKey (L)] = h; }
+        m.positions.push_back (p);
+    }
+    const auto L = ladderOf (m, 6500.0);
+    check (L.ok && L.openIndex >= 0 && L.cells[(size_t) L.openIndex].norm == 0.0f && std::abs (L.maxGrDb - 8.0) < 1e-9, "ds L1: the open end is the position with the most gain at the loudest level; max GR 8 dB");
+    { double gr = -1.0; for (const auto& c : L.cells) if (c.norm == 1.0f && std::abs (c.levelDbfs + 18.0) < 0.01) gr = c.grDb; check (std::abs (gr - 4.0) < 1e-9, "ds L2: GR at a position and level = open gain minus its gain (4 dB at norm 1, -18)"); }
+    check (hardestNorm (L, -6.0) && *hardestNorm (L, -6.0) == 1.0f && ! hardestNorm (L, -30.0), "ds L3: the hardest norm at a level; none at a level not swept");
+    // a deviation: a 6 kHz notch of -8 dB on the 1/12-octave grid, flat at 997 Hz -> split band, centre near 6 kHz
+    std::vector<std::pair<double, double>> split, wide;
+    for (int k = 0; k < 121; ++k) { const double f = 20.0 * std::pow (1000.0, k / 120.0); const double x = std::log2 (f / 6000.0) / 0.5; const double notch = -8.0 * std::pow (2.0, -x * x); split.push_back ({ f, notch }); wide.push_back ({ f, -8.0 + notch * 0.1 }); }
+    const auto cs = centreOf (split);
+    check (cs.ok && cs.shape == "notch" && std::abs (cs.hz - 6000.0) < 150.0 && std::abs (cs.figureHz() - 6000.0) < 150.0 && std::abs (cs.depthDb + 8.0) < 0.05 && std::abs (cs.at997Db) < 0.3 && modeWord (cs) == "split_band", "ds C1: a notch: the centre is the deepest deviation refined to within 2.5 % (" + juce::String (cs.hz, 0) + "), 997 Hz untouched -> split band");
+    // a shelf-shaped reduction (a high-pass detector: the cut holds to the top): the figure is the half-depth corner, not the deepest point
+    std::vector<std::pair<double, double>> shelf; for (int k = 0; k < 121; ++k) { const double f = 20.0 * std::pow (1000.0, k / 120.0); shelf.push_back ({ f, -8.0 / (1.0 + std::pow (5000.0 / f, 2.0)) }); }
+    const auto sh = centreOf (shelf);
+    check (sh.ok && sh.shape == "shelf" && sh.hz > 15000.0 && std::abs (sh.cornerHz - 5000.0) < 300.0 && std::abs (sh.figureHz() - 5000.0) < 300.0, "ds C1b: a shelf: the deepest point sits at the top of the grid, the figure is the half-depth corner (" + juce::String (sh.cornerHz, 0) + " for 5 kHz)");
+    const auto cw = centreOf (wide);
+    check (cw.ok && modeWord (cw) == "wideband", "ds C2: the whole band cut within 1.5 dB of the deepest point -> wideband (997 at " + juce::String (cw.at997Db, 2) + ")");
+    std::vector<std::pair<double, double>> partial = split; for (auto& d : partial) if (d.first < 2000.0) d.second = -4.0;
+    check (modeWord (centreOf (partial)) == "partial", "ds C3: 997 Hz cut 4 dB under an 8 dB band is partial");
+    std::vector<std::pair<double, double>> flat; for (int k = 0; k < 121; ++k) flat.push_back ({ 20.0 * std::pow (1000.0, k / 120.0), -0.5 });
+    check (! centreOf (flat).ok && modeWord (centreOf (flat)) == "unknown", "ds C4: nothing cut 3 dB -> no centre, mode unknown");
+    check (labelHz ("6.50 kHz") && std::abs (*labelHz ("6.50 kHz") - 6500.0) < 1e-6 && labelHz ("7200 Hz") && *labelHz ("7200 Hz") == 7200.0 && labelHz ("5.2k") && *labelHz ("5.2k") == 5200.0 && ! labelHz ("Wide"), "ds H1: frequency labels");
+}
+
 /** THE ZIP REVIEW (EjmapCertReview.h, 5 Oct R1): hand-built records, outcomes and entry lists; every section's reading pinned. */
 void testCertReview()
 {
@@ -7478,6 +7513,7 @@ int main (int, char**)
     testSaturation();
     testReverbDelay();
     testDynamics();
+    testDeesser();
     testLoopOutcomes();
     testCategoriesMerge();
 

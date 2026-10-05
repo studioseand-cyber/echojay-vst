@@ -1,0 +1,26 @@
+{
+  "schema": "ej_deesser_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.9, not exported, not published",
+  "product": "smartDeess",
+  "version": "1.0.1",
+  "identity": "AudioUnit|415e6d62|1.0.1",
+  "ladders": [
+    {
+      "hz": 997.0,
+      "ok": false,
+      "note": "no readings",
+      "max_gr_db": 0.0,
+      "cells": []
+    },
+    {
+      "hz": 6500.0,
+      "ok": false,
+      "note": "no readings",
+      "max_gr_db": 0.0,
+      "cells": []
+    }
+  ],
+  "processes": 4,
+  "measuredAt": "20261005T133641",
+  "method": "ladder: probe --sweep with a 6.5 kHz sine (and 997 Hz as the control), the threshold at 6 norms, levels -30..-6 dBFS, GR = gain at the open end minus gain at the position; centre and mode: probe --response (121-tone multitone at -12 dBFS) at the hardest threshold against the open end, the deepest deviation's frequency (parabolic) is the centre; split_band = within 1 dB at 997 Hz while the band is cut 3 dB or more, wideband = 997 Hz cut within 1.5 dB of the band, else partial"
+}

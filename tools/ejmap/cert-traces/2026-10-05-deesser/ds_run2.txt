@@ -1,0 +1,120 @@
+=== DeEsser (s)
+DS: DeEsser (s) 12.0.0: threshold [0] Threshold; frequency [1] Freq; mode [3] Audio (Split / Wideband)
+  ladder at 6500 Hz: open end at norm 1.000, max GR 11.72 dB
+      Threshold = '-80.0':  -12 dBFS GR 11.72  -18 dBFS GR 11.72  -24 dBFS GR 11.72  -30 dBFS GR 11.72  -6 dBFS GR 11.72
+      Threshold = '-64.0':  -12 dBFS GR 11.72  -18 dBFS GR 11.72  -24 dBFS GR 11.72  -30 dBFS GR 11.72  -6 dBFS GR 11.72
+      Threshold = '-48.0':  -12 dBFS GR 11.72  -18 dBFS GR 11.60  -24 dBFS GR 10.99  -30 dBFS GR 9.46  -6 dBFS GR 11.72
+      Threshold = '-32.0':  -12 dBFS GR 10.11  -18 dBFS GR 7.65  -24 dBFS GR 3.84  -30 dBFS GR 0.00  -6 dBFS GR 11.27
+      Threshold = '-16.0':  -12 dBFS GR 0.89  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 5.31
+      Threshold = '0.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  ladder at 997 Hz: open end at norm 0.200, max GR 0.00 dB
+      Threshold = '-80.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Threshold = '-64.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Threshold = '-48.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR -0.00  -30 dBFS GR -0.00  -6 dBFS GR 0.00
+      Threshold = '-32.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Threshold = '-16.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Threshold = '0.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  band selectivity on the ladder: max GR 11.72 dB at 6.5 kHz vs 0.00 dB at 997 Hz
+  centre (Freq = '2000'): deepest -25.38 dB at 20000 Hz, shelf with its half-depth corner at 2709.03 Hz; at 997 Hz -5.40 dB -> partial | label 2000 Hz vs the corner 2709.03: 35.5 % off
+  centre (Freq = '5657'): deepest -24.14 dB at 20000 Hz, shelf with its half-depth corner at 6938.03 Hz; at 997 Hz -1.09 dB -> partial | label 5657 Hz vs the corner 6938.03: 22.6 % off
+  centre (Freq = '16000'): deepest -16.23 dB at 20000 Hz, shelf with its half-depth corner at 13939.1 Hz; at 997 Hz -0.06 dB -> split_band | label 16000 Hz vs the corner 13939.1: -12.9 % off
+  Audio = 'Split': deepest -25.57 dB at 20 Hz, shelf with its half-depth corner at 20 Hz; at 997 Hz -25.57 dB -> wideband
+  Audio = 'Wideband': deepest -25.57 dB at 20 Hz, shelf with its half-depth corner at 20 Hz; at 997 Hz -25.57 dB -> wideband
+DS: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/ds/deesser/AudioUnit_4e55707d_12.0.0.deesser.json (14 processes)
+=== RDeEsser (m)
+DS: RDeEsser (m) 12.0.0: threshold [3] Range; frequency [0] Freq; mode [1] FilterType (BandPass / HighPass)
+  ladder at 6500 Hz: open end at norm 1.000, max GR 18.49 dB
+      Range = '-48.0':  -12 dBFS GR 16.62  -18 dBFS GR 13.78  -24 dBFS GR 9.94  -30 dBFS GR 5.26  -6 dBFS GR 18.49
+      Range = '-38.4':  -12 dBFS GR 16.62  -18 dBFS GR 13.78  -24 dBFS GR 9.94  -30 dBFS GR 5.26  -6 dBFS GR 18.49
+      Range = '-28.8':  -12 dBFS GR 16.62  -18 dBFS GR 13.78  -24 dBFS GR 9.94  -30 dBFS GR 5.26  -6 dBFS GR 18.47
+      Range = '-19.2':  -12 dBFS GR 14.59  -18 dBFS GR 13.78  -24 dBFS GR 9.94  -30 dBFS GR 5.26  -6 dBFS GR 14.59
+      Range = '-9.6':  -12 dBFS GR 8.21  -18 dBFS GR 8.21  -24 dBFS GR 8.21  -30 dBFS GR 5.26  -6 dBFS GR 8.21
+      Range = '0.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  ladder at 997 Hz: open end at norm 0.400, max GR 0.00 dB
+      Range = '-48.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '-38.4':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '-28.8':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '-19.2':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR -0.00  -6 dBFS GR 0.00
+      Range = '-9.6':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '0.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  band selectivity on the ladder: max GR 18.49 dB at 6.5 kHz vs 0.00 dB at 997 Hz
+  centre (Freq = '2000'): deepest -11.35 dB at 15886.7 Hz, shelf with its half-depth corner at 1453.46 Hz; at 997 Hz -2.90 dB -> partial | label 2000 Hz vs the corner 1453.46: -27.3 % off
+  centre (Freq = '5657'): deepest -8.07 dB at 20000 Hz, shelf with its half-depth corner at 3955.33 Hz; at 997 Hz -0.24 dB -> split_band | label 5657 Hz vs the corner 3955.33: -30.1 % off
+  centre (Freq = '16000'): no tone is cut by 3 dB (deepest -1.57)
+  FilterType = 'BandPass': deepest -5.65 dB at 5501.69 Hz, notch; at 997 Hz -0.35 dB -> split_band
+  FilterType = 'HighPass': deepest -5.65 dB at 5501.69 Hz, notch; at 997 Hz -0.35 dB -> split_band
+DS: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/ds/deesser/AudioUnit_58426263_12.0.0.deesser.json (14 processes)
+=== Lindell 902 De-esser
+DS: Lindell 902 De-esser 1.0.2: threshold [4] Range; frequency [3] Frequency; mode [9] Mode HF Only (Off / On)
+  ladder at 6500 Hz: open end at norm 0.000, max GR 18.99 dB
+      Range = '0.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '4.00':  -12 dBFS GR 2.98  -18 dBFS GR 2.98  -24 dBFS GR 2.98  -30 dBFS GR 2.98  -6 dBFS GR 2.98
+      Range = '8.00':  -12 dBFS GR 6.98  -18 dBFS GR 6.98  -24 dBFS GR 6.98  -30 dBFS GR 6.98  -6 dBFS GR 6.99
+      Range = '12.00':  -12 dBFS GR 10.98  -18 dBFS GR 10.98  -24 dBFS GR 10.98  -30 dBFS GR 10.98  -6 dBFS GR 10.99
+      Range = '16.00':  -12 dBFS GR 14.98  -18 dBFS GR 14.98  -24 dBFS GR 14.98  -30 dBFS GR 14.98  -6 dBFS GR 14.99
+      Range = '20.00':  -12 dBFS GR 18.98  -18 dBFS GR 18.98  -24 dBFS GR 18.98  -30 dBFS GR 18.98  -6 dBFS GR 18.99
+  ladder at 997 Hz: open end at norm 0.000, max GR 0.00 dB
+      Range = '0.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '4.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '8.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '12.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '16.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '20.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  band selectivity on the ladder: max GR 18.99 dB at 6.5 kHz vs 0.00 dB at 997 Hz
+  centre (Frequency = '800'): deepest -12.94 dB at 214.749 Hz, shelf with its half-depth corner at 20 Hz; at 997 Hz -12.70 dB -> wideband | label 800 Hz vs the corner 20: -97.5 % off
+  centre (Frequency = '2500'): deepest -13.61 dB at 215.065 Hz, shelf with its half-depth corner at 20 Hz; at 997 Hz -13.37 dB -> wideband | label 2500 Hz vs the corner 20: -99.2 % off
+  centre (Frequency = '8000'): deepest -12.86 dB at 215.308 Hz, shelf with its half-depth corner at 20 Hz; at 997 Hz -12.63 dB -> wideband | label 8000 Hz vs the corner 20: -99.8 % off
+  Mode HF Only = 'Off': deepest -17.38 dB at 12730.6 Hz, shelf with its half-depth corner at 7065.16 Hz; at 997 Hz -0.10 dB -> split_band
+  Mode HF Only = 'On': deepest -17.38 dB at 12730.6 Hz, shelf with its half-depth corner at 7065.16 Hz; at 997 Hz -0.10 dB -> split_band
+DS: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/ds/deesser/AudioUnit_6f636231_1.0.2.deesser.json (14 processes)
+=== SPL De-Esser
+DS: SPL De-Esser 1.15.1: threshold [3] S-Reduction; frequency -; mode [1] Mode (Left/Right / Mid/Side / Side)
+  ladder at 6500 Hz: open end at norm 0.000, max GR 17.59 dB
+      S-Reduction = '0.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      S-Reduction = '4.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.96
+      S-Reduction = '8.00':  -12 dBFS GR 8.55  -18 dBFS GR 7.84  -24 dBFS GR 7.70  -30 dBFS GR 7.41  -6 dBFS GR 11.74
+      S-Reduction = '12.00':  -12 dBFS GR 11.40  -18 dBFS GR 10.92  -24 dBFS GR 10.81  -30 dBFS GR 10.61  -6 dBFS GR 15.28
+      S-Reduction = '16.00':  -12 dBFS GR 13.58  -18 dBFS GR 13.11  -24 dBFS GR 13.00  -30 dBFS GR 12.80  -6 dBFS GR 17.33
+      S-Reduction = '20.00':  -12 dBFS GR 13.86  -18 dBFS GR 13.39  -24 dBFS GR 13.29  -30 dBFS GR 13.08  -6 dBFS GR 17.59
+  ladder at 997 Hz: open end at norm 0.200, max GR 1.47 dB
+      S-Reduction = '0.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      S-Reduction = '4.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      S-Reduction = '8.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR -0.00  -30 dBFS GR -0.00  -6 dBFS GR 0.00
+      S-Reduction = '12.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.78
+      S-Reduction = '16.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 1.32
+      S-Reduction = '20.00':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 1.47
+  band selectivity on the ladder: max GR 17.59 dB at 6.5 kHz vs 1.47 dB at 997 Hz
+  centre: deepest -10.97 dB at 6361.94 Hz, notch; at 997 Hz -0.94 dB -> split_band
+  Mode = 'Left/Right': deepest -10.97 dB at 6361.94 Hz, notch; at 997 Hz -0.94 dB -> split_band
+  Mode = 'Mid/Side': deepest -10.97 dB at 6361.94 Hz, notch; at 997 Hz -0.94 dB -> split_band
+  Mode = 'Side': the response did not run (set_unlanded 1 / set_unlanded 1)
+DS: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/ds/deesser/AudioUnit_61756e78_1.15.1.deesser.json (12 processes)
+=== TB_Sibalance_v4
+DS: TB_Sibalance_v4 4.2.2: threshold [1] Range; frequency [22] Stop freq; mode -
+  ladder at 6500 Hz: open end at norm 0.000, max GR 5.12 dB
+      Range = '0.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '6.0':  -12 dBFS GR 2.60  -18 dBFS GR 2.60  -24 dBFS GR 2.60  -30 dBFS GR 2.60  -6 dBFS GR 2.60
+      Range = '12.0':  -12 dBFS GR 4.27  -18 dBFS GR 4.27  -24 dBFS GR 4.27  -30 dBFS GR 4.27  -6 dBFS GR 4.27
+      Range = '18.0':  -12 dBFS GR 4.97  -18 dBFS GR 4.97  -24 dBFS GR 4.97  -30 dBFS GR 4.97  -6 dBFS GR 4.97
+      Range = '24.0':  -12 dBFS GR 5.12  -18 dBFS GR 5.12  -24 dBFS GR 5.12  -30 dBFS GR 5.01  -6 dBFS GR 5.12
+      Range = '30.0':  -12 dBFS GR 5.05  -18 dBFS GR 5.05  -24 dBFS GR 5.05  -30 dBFS GR 5.12  -6 dBFS GR 5.05
+  ladder at 997 Hz: open end at norm 0.000, max GR 0.00 dB
+      Range = '0.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '6.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '12.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '18.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '24.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+      Range = '30.0':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  band selectivity on the ladder: max GR 5.12 dB at 6.5 kHz vs 0.00 dB at 997 Hz
+  centre (Stop freq = '10000'): no tone is cut by 3 dB (deepest 0.00)
+  centre (Stop freq = '14500'): no tone is cut by 3 dB (deepest 0.00)
+  centre (Stop freq = '19000'): no tone is cut by 3 dB (deepest 0.00)
+DS: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/ds/deesser/AudioUnit_610e7b78_4.2.2.deesser.json (10 processes)
+=== AVOX SYBIL
+DS: --list-params exit 3
+=== smartDeess
+DS: smartDeess 1.0.1: threshold [1] Max. Gain Reduction; frequency -; mode [11] Processing Mode (Full Range / Split Band)
+  ladder at 6500 Hz: no readings (exit 0)
+  ladder at 997 Hz: no readings (exit 0)
+  centre / mode not read: the ladder at 6.5 kHz shows 0.00 dB of GR at most (needs 3)
+DS: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/ds/deesser/AudioUnit_415e6d62_1.0.1.deesser.json (4 processes)

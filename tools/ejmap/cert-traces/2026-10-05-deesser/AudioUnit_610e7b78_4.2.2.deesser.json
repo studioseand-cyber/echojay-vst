@@ -1,0 +1,449 @@
+{
+  "schema": "ej_deesser_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.9, not exported, not published",
+  "product": "TB_Sibalance_v4",
+  "version": "4.2.2",
+  "identity": "AudioUnit|610e7b78|4.2.2",
+  "ladders": [
+    {
+      "hz": 997.0,
+      "ok": true,
+      "note": "open end at norm 0.000, max GR 0.00 dB",
+      "max_gr_db": 0.0,
+      "cells": [
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "level_dbfs": -12.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "level_dbfs": -18.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "level_dbfs": -24.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "level_dbfs": -30.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "level_dbfs": -6.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "6.0",
+          "level_dbfs": -12.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "6.0",
+          "level_dbfs": -18.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "6.0",
+          "level_dbfs": -24.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "6.0",
+          "level_dbfs": -30.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "6.0",
+          "level_dbfs": -6.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "12.0",
+          "level_dbfs": -12.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "12.0",
+          "level_dbfs": -18.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "12.0",
+          "level_dbfs": -24.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "12.0",
+          "level_dbfs": -30.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "12.0",
+          "level_dbfs": -6.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "18.0",
+          "level_dbfs": -12.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "18.0",
+          "level_dbfs": -18.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "18.0",
+          "level_dbfs": -24.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "18.0",
+          "level_dbfs": -30.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "18.0",
+          "level_dbfs": -6.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "24.0",
+          "level_dbfs": -12.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "24.0",
+          "level_dbfs": -18.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "24.0",
+          "level_dbfs": -24.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "24.0",
+          "level_dbfs": -30.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "24.0",
+          "level_dbfs": -6.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "30.0",
+          "level_dbfs": -12.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "30.0",
+          "level_dbfs": -18.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "30.0",
+          "level_dbfs": -24.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "30.0",
+          "level_dbfs": -30.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "30.0",
+          "level_dbfs": -6.0,
+          "gain_db": -0.0,
+          "gr_db": 0.0
+        }
+      ]
+    },
+    {
+      "hz": 6500.0,
+      "ok": true,
+      "note": "open end at norm 0.000, max GR 5.12 dB",
+      "max_gr_db": 5.12,
+      "cells": [
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "level_dbfs": -12.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "level_dbfs": -18.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "level_dbfs": -24.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "level_dbfs": -30.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "level_dbfs": -6.0,
+          "gain_db": 0.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "6.0",
+          "level_dbfs": -12.0,
+          "gain_db": -2.6,
+          "gr_db": 2.6
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "6.0",
+          "level_dbfs": -18.0,
+          "gain_db": -2.6,
+          "gr_db": 2.6
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "6.0",
+          "level_dbfs": -24.0,
+          "gain_db": -2.6,
+          "gr_db": 2.6
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "6.0",
+          "level_dbfs": -30.0,
+          "gain_db": -2.6,
+          "gr_db": 2.6
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "6.0",
+          "level_dbfs": -6.0,
+          "gain_db": -2.6,
+          "gr_db": 2.6
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "12.0",
+          "level_dbfs": -12.0,
+          "gain_db": -4.27,
+          "gr_db": 4.27
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "12.0",
+          "level_dbfs": -18.0,
+          "gain_db": -4.27,
+          "gr_db": 4.27
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "12.0",
+          "level_dbfs": -24.0,
+          "gain_db": -4.27,
+          "gr_db": 4.27
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "12.0",
+          "level_dbfs": -30.0,
+          "gain_db": -4.27,
+          "gr_db": 4.27
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "12.0",
+          "level_dbfs": -6.0,
+          "gain_db": -4.27,
+          "gr_db": 4.27
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "18.0",
+          "level_dbfs": -12.0,
+          "gain_db": -4.97,
+          "gr_db": 4.97
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "18.0",
+          "level_dbfs": -18.0,
+          "gain_db": -4.97,
+          "gr_db": 4.97
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "18.0",
+          "level_dbfs": -24.0,
+          "gain_db": -4.97,
+          "gr_db": 4.97
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "18.0",
+          "level_dbfs": -30.0,
+          "gain_db": -4.97,
+          "gr_db": 4.97
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "18.0",
+          "level_dbfs": -6.0,
+          "gain_db": -4.97,
+          "gr_db": 4.97
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "24.0",
+          "level_dbfs": -12.0,
+          "gain_db": -5.12,
+          "gr_db": 5.12
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "24.0",
+          "level_dbfs": -18.0,
+          "gain_db": -5.12,
+          "gr_db": 5.12
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "24.0",
+          "level_dbfs": -24.0,
+          "gain_db": -5.12,
+          "gr_db": 5.12
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "24.0",
+          "level_dbfs": -30.0,
+          "gain_db": -5.01,
+          "gr_db": 5.01
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "24.0",
+          "level_dbfs": -6.0,
+          "gain_db": -5.12,
+          "gr_db": 5.12
+        },
+        {
+          "norm": 1.0,
+          "display": "30.0",
+          "level_dbfs": -12.0,
+          "gain_db": -5.05,
+          "gr_db": 5.05
+        },
+        {
+          "norm": 1.0,
+          "display": "30.0",
+          "level_dbfs": -18.0,
+          "gain_db": -5.05,
+          "gr_db": 5.05
+        },
+        {
+          "norm": 1.0,
+          "display": "30.0",
+          "level_dbfs": -24.0,
+          "gain_db": -5.05,
+          "gr_db": 5.05
+        },
+        {
+          "norm": 1.0,
+          "display": "30.0",
+          "level_dbfs": -30.0,
+          "gain_db": -5.12,
+          "gr_db": 5.12
+        },
+        {
+          "norm": 1.0,
+          "display": "30.0",
+          "level_dbfs": -6.0,
+          "gain_db": -5.05,
+          "gr_db": 5.05
+        }
+      ]
+    }
+  ],
+  "centre": [],
+  "processes": 10,
+  "measuredAt": "20261005T133633",
+  "method": "ladder: probe --sweep with a 6.5 kHz sine (and 997 Hz as the control), the threshold at 6 norms, levels -30..-6 dBFS, GR = gain at the open end minus gain at the position; centre and mode: probe --response (121-tone multitone at -12 dBFS) at the hardest threshold against the open end, the deepest deviation's frequency (parabolic) is the centre; split_band = within 1 dB at 997 Hz while the band is cut 3 dB or more, wideband = 997 Hz cut within 1.5 dB of the band, else partial"
+}

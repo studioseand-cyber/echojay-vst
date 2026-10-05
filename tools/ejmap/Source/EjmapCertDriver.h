@@ -59,6 +59,7 @@
 #include "EjmapSaturation.h"
 #include "EjmapReverbDelay.h"
 #include "EjmapDynamics.h"
+#include "EjmapDeesser.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -3488,6 +3489,136 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
                                                  : juce::String ("probe --ramp: a 997 Hz sine rising -70 -> -6 dBFS over 3 s and back; closed / open gain = medians at the quiet / loud tenth, range = their difference (gating when >= 3 dB), open / close level = the input RMS where the gain crosses midway up / down, hysteresis = open - close; probe --burst for attack (90 % open after the step up), hold (to 1 dB of fall after the step down) and release (from there to 90 % closed), interpolated between 1 ms windows"));
     outDir.getChildFile (stem + ".dynamics.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
     say ("DYN: -> " + outDir.getChildFile (stem + ".dynamics.json").getFullPathName() + " (" + juce::String (processN) + " processes)");
+    return measured > 0 ? 0 : 4;
+}
+
+// DE-ESSERS PROTOTYPE (roadmap 2.9, 5 Oct R6): --cert-deesser <product>. The threshold ladder at 6.5 kHz (and at 997 Hz as the
+// control), the frequency control's display against the measured centre of the reduction (multitone response, hard
+// threshold against the open end), split-band against wideband from the same response (reduction at 997 Hz vs the band).
+inline int runDeesser (const SweepOptions& opt)
+{
+    using namespace deesser;
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("DS: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    if (hits.size() != 1) { say ("DS: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
+    const auto& desc = hits[0].desc;
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
+    { say ("DS: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("deesser"); outDir.createDirectory();
+    int processN = 0;
+    auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
+        const auto r = runChild (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".deesser." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
+    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("DS: --list-params " + lp.describe()); return 1; }
+    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("DS: --text-at " + ta.describe()); return 1; }
+    Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
+    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
+    struct Ctl { int index = -1; juce::String name; std::map<juce::String, double> texts; };
+    Ctl threshold, freq, mode;
+    auto answers = [] (const juce::String& name, std::initializer_list<const char*> terms) { for (const char* t : terms) if (nametokens::controlAnswersTerm (name, t)) return true; return false; };
+    if (const auto* cs = base.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            const int idx = (int) c.getProperty ("index", -1); const auto n = c.getProperty ("name", "").toString();
+            if (sweep::neverTouchName (n)) continue;
+            const bool word = sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2;
+            if (! word && threshold.index < 0 && answers (n, { "threshold", "thresh", "thr", "sensitivity", "amount", "reduction", "range" })) threshold = { idx, n, {} };
+            else if (! word && freq.index < 0 && answers (n, { "frequency", "freq", "hz", "center", "centre", "tune" })) freq = { idx, n, {} };
+            else if (word && mode.index < 0 && (answers (n, { "mode", "type", "split", "wide", "band" }) || [&] { const auto at = c.getProperty ("displayAt", {}); if (! at.isObject()) return false; for (const auto& kv : at.getDynamicObject()->getProperties()) { const auto t = kv.value.toString().toLowerCase(); if (t.contains ("split") || t.contains ("wide") || t.contains ("broad")) return true; } return false; }()))
+            { mode = { idx, n, {} }; if (const auto at = c.getProperty ("displayAt", {}); at.isObject()) for (const auto& kv : at.getDynamicObject()->getProperties()) mode.texts[kv.value.toString()] = kv.name.toString().getDoubleValue(); }
+        }
+    auto named = [] (const Ctl& c) { return c.index < 0 ? juce::String ("-") : "[" + juce::String (c.index) + "] " + c.name; };
+    say ("DS: " + opt.product + " " + desc.version + ": threshold " + named (threshold) + "; frequency " + named (freq) + "; mode " + named (mode) + (mode.index >= 0 ? " (" + [&] { juce::StringArray t; for (const auto& [k, v] : mode.texts) t.add (k); return t.joinIntoString (" / "); }() + ")" : juce::String()));
+    if (threshold.index < 0) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  no threshold control by name; controls: " + names.joinIntoString (", ")); return 4; }
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("schema", "ej_deesser_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.9, not exported, not published");
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    auto setOf = [] (int idx, double norm) { return juce::String (idx) + ":" + juce::String (norm, 6); };
+    juce::StringArray norms; for (int k = 0; k <= 5; ++k) norms.add (juce::String (k / 5.0f, 6));
+    int measured = 0;
+    // 1. THE LADDER at 6.5 kHz and at 997 Hz: threshold at 6 norms, five levels, one process each
+    std::map<double, Ladder> ladders;
+    for (double hz : { 6500.0, 997.0 })
+    {
+        const auto r = run ("ladder" + juce::String (hz, 0), { "--sweep", "thr=" + juce::String (threshold.index), "norms=" + norms.joinIntoString (","), "levels=-30,-24,-18,-12,-6", "hz=" + juce::String (hz, 0), "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
+        if (r.kind == ChildResult::Kind::uiShown) { say ("DS: a window appeared; stopping"); return 5; }
+        const auto m = sweep::parseSweep (r.cleanExit() ? r.out : juce::String());
+        const auto L = ladderOf (m, hz); ladders[hz] = L;
+        if (! L.ok) { say ("  ladder at " + juce::String (hz, 0) + " Hz: " + L.why + " (" + r.describe() + ")"); continue; }
+        ++measured;
+        say ("  ladder at " + juce::String (hz, 0) + " Hz: " + L.why);
+        juce::StringArray texts; for (const auto& c : L.cells) texts.addIfNotAlreadyThere (c.text);
+        for (const auto& t : texts)
+        {
+            juce::String line = "      " + threshold.name + " = '" + t + "':";
+            for (const auto& c : L.cells) if (c.text == t && c.ok) line << "  " << juce::String (c.levelDbfs, 0) << " dBFS GR " << juce::String (c.grDb, 2);
+            say (line);
+        }
+    }
+    {
+        juce::Array<juce::var> lv;
+        for (const auto& [hz, L] : ladders)
+        {
+            auto* lo = new juce::DynamicObject(); lo->setProperty ("hz", hz); lo->setProperty ("ok", L.ok); lo->setProperty ("note", L.why); lo->setProperty ("max_gr_db", std::round (L.maxGrDb * 100.0) / 100.0);
+            juce::Array<juce::var> cells; for (const auto& c : L.cells) { auto* co = new juce::DynamicObject(); co->setProperty ("norm", c.norm); co->setProperty ("display", c.text); co->setProperty ("level_dbfs", c.levelDbfs); co->setProperty ("gain_db", std::round (c.gainDb * 100.0) / 100.0); co->setProperty ("gr_db", std::round (c.grDb * 100.0) / 100.0); cells.add (juce::var (co)); }
+            lo->setProperty ("cells", cells); lv.add (juce::var (lo));
+        }
+        o->setProperty ("ladders", lv);
+        if (ladders.count (6500.0) && ladders.count (997.0) && ladders.at (6500.0).ok && ladders.at (997.0).ok)
+            say ("  band selectivity on the ladder: max GR " + juce::String (ladders.at (6500.0).maxGrDb, 2) + " dB at 6.5 kHz vs " + juce::String (ladders.at (997.0).maxGrDb, 2) + " dB at 997 Hz");
+    }
+    // 2. THE CENTRE and 3. THE MODE from the multitone response: hard threshold (most GR at -12) against the open end
+    const auto& L65 = ladders[6500.0];
+    const auto hard = hardestNorm (L65, -12.0);
+    if (! L65.ok || ! hard || L65.maxGrDb < kBandCutDb) say ("  centre / mode not read: the ladder at 6.5 kHz shows " + juce::String (L65.maxGrDb, 2) + " dB of GR at most (needs " + juce::String (kBandCutDb, 0) + ")");
+    else
+    {
+        const float openNorm = L65.openIndex >= 0 ? L65.cells[(size_t) L65.openIndex].norm : 0.0f;
+        auto response = [&] (const juce::String& tag, const juce::StringArray& sets) {
+            juce::StringArray a { "--response", "ctl=" + juce::String (threshold.index), "norms=current", "tones=121", "lo=20", "hi=20000", "db=-12", "hold=1.5", "discard=0.75" }; if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (","));
+            const auto r = run (tag, a); return eq::parseResponse (r.cleanExit() ? r.out : juce::String()); };
+        auto centreFor = [&] (const juce::String& tag, const juce::StringArray& extra) -> Centre
+        {
+            juce::StringArray openSets = extra; openSets.add (setOf (threshold.index, openNorm)); juce::StringArray hardSets = extra; hardSets.add (setOf (threshold.index, *hard));
+            const auto open = response (tag + ".open", openSets), hardR = response (tag + ".hard", hardSets);
+            Centre c; if (! open.ok || open.positions.empty() || ! hardR.ok || hardR.positions.empty()) { c.why = "the response did not run (" + open.refused + " / " + hardR.refused + ")"; return c; }
+            return centreOf (eq::deviation (hardR.positions[0], open.positions[0]));
+        };
+        // the frequency control at three positions (or the unit as it is)
+        juce::Array<juce::var> fr;
+        std::vector<double> fnorms = freq.index >= 0 ? std::vector<double> { 0.0, 0.5, 1.0 } : std::vector<double> { -1.0 };
+        for (double fn : fnorms)
+        {
+            juce::StringArray extra; if (fn >= 0.0) extra.add (setOf (freq.index, fn));
+            const auto c = centreFor ("centre" + (fn >= 0.0 ? juce::String (fn, 2) : juce::String ("")), extra);
+            juce::String text; if (fn >= 0.0) { const auto r = juce::File (raw.getChildFile (stem + ".deesser.centre" + juce::String (fn, 2) + ".hard.1.txt")).loadFileAsString(); for (const auto& line : juce::StringArray::fromLines (r)) { const auto f = juce::StringArray::fromTokens (line, "\t", ""); if (f.size() > 2 && f[0] == "set" && f[1].getIntValue() == freq.index) for (int i = 2; i + 1 < f.size(); ++i) if (f[i] == "text") text = f[i + 1]; } }
+            const auto lab = labelHz (text);
+            if (! c.ok) { say ("  centre" + (fn >= 0.0 ? " (" + freq.name + " = '" + text + "')" : juce::String()) + ": " + c.why); continue; }
+            ++measured;
+            say ("  centre" + (fn >= 0.0 ? " (" + freq.name + " = '" + text + "')" : juce::String ("")) + ": " + c.why + " -> " + modeWord (c) + (lab ? " | label " + juce::String (*lab, 0) + " Hz vs the " + (c.shape == "notch" ? "centre" : "corner") + " " + juce::String (c.figureHz(), 0) + ": " + juce::String (100.0 * (c.figureHz() - *lab) / *lab, 1) + " % off" : juce::String()));
+            auto* ro = new juce::DynamicObject(); ro->setProperty ("freq_norm", fn >= 0.0 ? juce::var (fn) : juce::var()); ro->setProperty ("display", text); ro->setProperty ("label_hz", lab ? juce::var (*lab) : juce::var()); ro->setProperty ("shape", c.shape); ro->setProperty ("deepest_hz", std::round (c.hz)); ro->setProperty ("corner_hz", std::round (c.cornerHz)); ro->setProperty ("figure_hz", std::round (c.figureHz())); ro->setProperty ("depth_db", std::round (c.depthDb * 100.0) / 100.0); ro->setProperty ("at_997_db", std::round (c.at997Db * 100.0) / 100.0); ro->setProperty ("mode_read", modeWord (c)); fr.add (juce::var (ro));
+        }
+        o->setProperty ("centre", fr);
+        // the mode switch, each text
+        if (mode.index >= 0)
+        {
+            juce::Array<juce::var> mr;
+            for (const auto& [text, norm] : mode.texts)
+            {
+                const auto c = centreFor ("mode" + juce::String (norm, 2), { setOf (mode.index, norm) });
+                if (! c.ok) { say ("  " + mode.name + " = '" + text + "': " + c.why); continue; }
+                ++measured;
+                say ("  " + mode.name + " = '" + text + "': " + c.why + " -> " + modeWord (c));
+                auto* ro = new juce::DynamicObject(); ro->setProperty ("display", text); ro->setProperty ("norm", norm); ro->setProperty ("shape", c.shape); ro->setProperty ("deepest_hz", std::round (c.hz)); ro->setProperty ("corner_hz", std::round (c.cornerHz)); ro->setProperty ("depth_db", std::round (c.depthDb * 100.0) / 100.0); ro->setProperty ("at_997_db", std::round (c.at997Db * 100.0) / 100.0); ro->setProperty ("mode_read", modeWord (c)); mr.add (juce::var (ro));
+            }
+            o->setProperty ("mode", mr);
+        }
+    }
+    o->setProperty ("processes", processN); o->setProperty ("measuredAt", nowStamp());
+    o->setProperty ("method", "ladder: probe --sweep with a 6.5 kHz sine (and 997 Hz as the control), the threshold at 6 norms, levels -30..-6 dBFS, GR = gain at the open end minus gain at the position; centre and mode: probe --response (121-tone multitone at -12 dBFS) at the hardest threshold against the open end, the deepest deviation's frequency (parabolic) is the centre; split_band = within 1 dB at 997 Hz while the band is cut 3 dB or more, wideband = 997 Hz cut within 1.5 dB of the band, else partial");
+    outDir.getChildFile (stem + ".deesser.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    say ("DS: -> " + outDir.getChildFile (stem + ".deesser.json").getFullPathName() + " (" + juce::String (processN) + " processes)");
     return measured > 0 ? 0 : 4;
 }
 
