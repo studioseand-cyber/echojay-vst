@@ -224,5 +224,8 @@ inline std::optional<double> noteBeats (const juce::String& display)
     return beats;
 }
 inline double expectedSyncMs (double beats, double bpm) { return 60000.0 / bpm * beats; }
+// THE TAIL WINDOW SCALED TO THE DECAY LABEL (5 Oct evening): at least 1.5 x the label, never under the 6 s default, capped at 30 s
+inline constexpr double kTailDefaultS = 6.0, kTailFold = 1.5, kTailMaxS = 30.0;
+inline double tailForLabel (std::optional<double> labelS) { if (! labelS || *labelS <= 0.0) return kTailDefaultS; return juce::jlimit (kTailDefaultS, kTailMaxS, kTailFold * *labelS); }
 
 } // namespace ejmap::reverbdelay

@@ -7252,6 +7252,7 @@ void testReverbDelay()
            "rd L1: ms and s labels parse to ms and to s");
     check (noteBeats ("1/4") && *noteBeats ("1/4") == 1.0 && noteBeats ("1/8") && *noteBeats ("1/8") == 0.5 && noteBeats ("1/8 D") && std::abs (*noteBeats ("1/8 D") - 0.75) < 1e-9 && noteBeats ("1/8 T") && std::abs (*noteBeats ("1/8 T") - 1.0 / 3.0) < 1e-9 && ! noteBeats ("120 ms"),
            "rd L2: note values to beats (dotted x1.5, triplet x2/3)");
+    check (tailForLabel (std::nullopt) == 6.0 && tailForLabel (2.0) == 6.0 && std::abs (tailForLabel (8.0) - 12.0) < 1e-9 && tailForLabel (40.0) == 30.0, "rd L4: the tail is 1.5 x the decay label, 6 s at least, 30 s at most (Valhalla at 8 s gets 12 s)");
     check (std::abs (expectedSyncMs (1.0, 120.0) - 500.0) < 1e-9 && std::abs (expectedSyncMs (1.0, 90.0) - 666.667) < 0.01 && std::abs (expectedSyncMs (0.5, 140.0) - 214.286) < 0.01, "rd L3: a quarter at 120 = 500 ms, at 90 = 666.7 ms; an eighth at 140 = 214.3 ms");
 }
 

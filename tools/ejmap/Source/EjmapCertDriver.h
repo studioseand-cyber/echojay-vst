@@ -3403,6 +3403,9 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     say ("RD: " + opt.product + " " + desc.version + " (" + kind + "): mix " + named (mix) + "; " + (kind == "delay" ? "time " + named (timeCtl) + "; feedback " + named (feedback) + "; sync " + named (sync) + (sync.index >= 0 ? " (off = '" + sync.offText + "' @" + juce::String (sync.offNorm, 2) + ", on = '" + sync.onText + "' @" + juce::String (sync.onNorm, 2) + ")" : juce::String()) + "; note " + named (note) : "pre-delay " + named (timeCtl) + "; decay " + named (decayCtl)));
     if (mix.index < 0 && timeCtl.index < 0 && decayCtl.index < 0 && feedback.index < 0) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  controls: " + names.joinIntoString (", ")); return 4; }
     const juce::String burstMs = kind == "delay" ? "50" : "200";
+    // THE WINDOW SCALED TO THE DECAY LABEL (5 Oct evening, item 2): a decay run's tail is at least 1.5 x the label in seconds
+    // (6 s at least, 30 s at most); the label is read from the fixture's display nearest the norm before the write
+    auto tailFor = [&] (double labelS) { return tailForLabel (labelS); };
     auto tailArgs = [&] (const juce::StringArray& sets, double tempo = 0.0, double tailS = 6.0) { juce::StringArray a { "--tail", "db=-12", "burst_ms=" + burstMs, "tail_s=" + juce::String (tailS, 1), "hz=997", "win_ms=1" }; if (tempo > 0.0) a.add ("tempo=" + juce::String (tempo, 0)); if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (",")); return a; };
     auto setOf = [] (int idx, double norm) { return juce::String (idx) + ":" + juce::String (norm, 6); };
     auto* o = new juce::DynamicObject();
@@ -3490,7 +3493,9 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
         for (double norm : fiveNorms())
         {
             juce::StringArray sets = wetOnly; sets.add (setOf (decayCtl.index, norm));
-            const auto r = run ("decay" + juce::String (norm, 2), tailArgs (sets));
+            double tailS = 6.0; { const auto lab0 = labelSeconds (displayNear (base, decayCtl.index, norm)); if (lab0 && *lab0 > 0.0) tailS = tailFor (*lab0); }
+            if (tailS > 6.0) say ("    tail scaled to the label '" + displayNear (base, decayCtl.index, norm) + "': " + juce::String (tailS, 1) + " s");
+            const auto r = run ("decay" + juce::String (norm, 2), tailArgs (sets, 0.0, tailS));
             if (r.kind == ChildResult::Kind::uiShown) { say ("RD: a window appeared; stopping"); return 5; }
             const auto t = parseTail (r.cleanExit() ? r.out : juce::String()); if (! t.ok) { say ("  decay " + juce::String (norm, 2) + ": " + (t.refused.isNotEmpty() ? "refused " + t.refused : r.describe())); continue; }
             const auto dc = decayOf (t); const auto text = t.setTexts.count (decayCtl.index) ? t.setTexts.at (decayCtl.index) : juce::String(); const auto lab = labelSeconds (text); ++measured;
@@ -3632,18 +3637,33 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
     if (kind == "transient")
     {
         if (attack.index < 0 && sustain.index < 0) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  no attack / sustain control by name; controls: " + names.joinIntoString (", ")); return 4; }
+        // THE HIT LENGTH (5 Oct evening, item 2): the attack control is read on the short hit (150 ms decay); the sustain control on a
+        // LONG hit (500 ms decay, 1500 ms period) so the 80-250 ms sustain window sits in a body that is still there - MTransient's
+        // +-24 dB sustain lane read +-2.9 on the short hit. Each hit shape has its own neutral run.
         const juce::StringArray hitArgs { "--hits", "db=-6", "hz=997", "decay_ms=150", "period_ms=600", "hits=4", "win_ms=1" };
+        const juce::StringArray longHitArgs { "--hits", "db=-6", "hz=997", "decay_ms=500", "period_ms=1500", "hits=4", "win_ms=1" };
         const auto n0 = run ("neutral", hitArgs);
         if (n0.kind == ChildResult::Kind::uiShown) { say ("DYN: a window appeared; stopping"); return 5; }
         const auto neutral = hitFigures (parseHits (n0.cleanExit() ? n0.out : juce::String()));
         if (! neutral.ok) { say ("  neutral run: " + neutral.why + " (" + n0.describe() + ")"); return 4; }
         ++measured;
-        say ("  neutral (as instantiated): transient " + juce::String (neutral.transientDb, 2) + " dB, sustain " + juce::String (neutral.sustainDb, 2) + " dB against the input, over " + juce::String (neutral.hitsUsed) + " hits");
+        say ("  neutral (as instantiated, short hit): transient " + juce::String (neutral.transientDb, 2) + " dB, sustain " + juce::String (neutral.sustainDb, 2) + " dB against the input, over " + juce::String (neutral.hitsUsed) + " hits");
         auto* nv = new juce::DynamicObject(); nv->setProperty ("transient_db", std::round (neutral.transientDb * 100.0) / 100.0); nv->setProperty ("sustain_db", std::round (neutral.sustainDb * 100.0) / 100.0); o->setProperty ("neutral", juce::var (nv));
-        for (const auto& ctl : { attack, sustain })
+        HitFigures neutralLong;
+        if (sustain.index >= 0)
         {
-            if (ctl.index < 0) continue;
-            const bool longHit = false; const auto& hitArgsFor = hitArgs; const auto& neutralFor = neutral;
+            const auto n1 = run ("neutral.long", longHitArgs);
+            if (n1.kind == ChildResult::Kind::uiShown) { say ("DYN: a window appeared; stopping"); return 5; }
+            neutralLong = hitFigures (parseHits (n1.cleanExit() ? n1.out : juce::String()));
+            if (neutralLong.ok) say ("  neutral (long hit, 500 ms decay): transient " + juce::String (neutralLong.transientDb, 2) + " dB, sustain " + juce::String (neutralLong.sustainDb, 2) + " dB");
+            auto* nl = new juce::DynamicObject(); nl->setProperty ("transient_db", std::round (neutralLong.transientDb * 100.0) / 100.0); nl->setProperty ("sustain_db", std::round (neutralLong.sustainDb * 100.0) / 100.0); nl->setProperty ("hit", "500 ms decay, 1500 ms period"); o->setProperty ("neutral_long_hit", juce::var (nl));
+        }
+        // the sustain control is read on BOTH hits (the long hit read sustain SMALLER on Smack Attack and MTransient, not larger: the
+        // sustain window against the unit's own envelope is the open question, said in the proposal); the attack control on the short one
+        std::vector<std::pair<Ctl, bool>> passes; if (attack.index >= 0) passes.push_back ({ attack, false }); if (sustain.index >= 0) { passes.push_back ({ sustain, false }); if (neutralLong.ok) passes.push_back ({ sustain, true }); }
+        for (const auto& [ctl, longHit] : passes)
+        {
+            const auto& hitArgsFor = longHit ? longHitArgs : hitArgs; const auto& neutralFor = longHit ? neutralLong : neutral;
             juce::Array<juce::var> rows; int withinLabel = 0, labelled = 0; roleevidence::Figure endA, endB; nominated.push_back (ctl.index);
             for (double norm : fiveNorms())
             {
@@ -3852,6 +3872,28 @@ inline int runDeesser (const SweepOptions& opt)
         o->setProperty ("ladders", lv);
         if (ladders.count (6500.0) && ladders.count (997.0) && ladders.at (6500.0).ok && ladders.at (997.0).ok)
             say ("  band selectivity on the ladder: max GR " + juce::String (ladders.at (6500.0).maxGrDb, 2) + " dB at 6.5 kHz vs " + juce::String (ladders.at (997.0).maxGrDb, 2) + " dB at 997 Hz");
+    }
+    // 1b. THE NOISE LADDER (5 Oct evening, item 2): band-limited noise 4-10 kHz - 121 random-phase tones over that band through the
+    // probe's --response, the threshold at 6 norms per process, one process per level; GR = total output power against the open
+    // end's at that level (the de-esser's own band, not one tone)
+    {
+        juce::Array<juce::var> rows; double maxNoiseGr = 0.0; int readN = 0;
+        std::map<double, std::vector<std::pair<float, double>>> gainByLevel;   // level -> (norm, total gain)
+        for (double Lv : { -30.0, -24.0, -18.0, -12.0, -6.0 })
+        {
+            const auto r = run ("noise.L" + juce::String ((int) -Lv), { "--response", "ctl=" + juce::String (threshold.index), "norms=" + norms.joinIntoString (","), "tones=121", "lo=4000", "hi=10000", "db=" + juce::String (Lv, 0), "hold=1.5", "discard=0.75" });
+            if (r.kind == ChildResult::Kind::uiShown) { say ("DS: a window appeared; stopping"); return 5; }
+            const auto resp = eq::parseResponse (r.cleanExit() ? r.out : juce::String()); if (! resp.ok) continue;
+            for (const auto& p : resp.positions) if (p.landed) if (const auto g = multiband::totalGainDb (p)) gainByLevel[Lv].push_back ({ p.norm, *g });
+        }
+        for (auto& [Lv, v] : gainByLevel)
+        {
+            double open = -1e9; for (const auto& [n, g] : v) open = juce::jmax (open, g);
+            for (const auto& [n, g] : v) { const double gr = open - g; maxNoiseGr = juce::jmax (maxNoiseGr, gr); ++readN; auto* ro = new juce::DynamicObject(); ro->setProperty ("level_dbfs", Lv); ro->setProperty ("norm", n); ro->setProperty ("gr_db", std::round (gr * 100.0) / 100.0); rows.add (juce::var (ro)); }
+        }
+        auto* m = new juce::DynamicObject(); m->setProperty ("signal", "121 random-phase tones 4-10 kHz (band-limited noise), total power"); m->setProperty ("max_gr_db", std::round (maxNoiseGr * 100.0) / 100.0); m->setProperty ("cells", rows); o->setProperty ("noise_ladder", juce::var (m));
+        say ("  noise ladder (4-10 kHz, " + juce::String (readN) + " readings): max GR " + juce::String (maxNoiseGr, 2) + " dB" + (ladders.count (6500.0) && ladders.at (6500.0).ok ? " (the 6.5 kHz tone gave " + juce::String (ladders.at (6500.0).maxGrDb, 2) + ")" : juce::String()));
+        if (readN > 0) ++measured;
     }
     // ROLES BY MEASUREMENT: the threshold nominee by GR at -12 dBFS on the sibilance tone between its ends
     const auto& L65 = ladders[6500.0];

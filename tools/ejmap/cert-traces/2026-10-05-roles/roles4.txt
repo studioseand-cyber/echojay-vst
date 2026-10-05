@@ -1,0 +1,23 @@
+=== RD H-Reverb (s) mix again
+  mix law: other (worst deviation: linear 12.79 dB, equal power 8.90 dB (fit within 1.0)); dry at 0 -15.00 dB, wet at 1 -22.56 dB (dry = the first 2 ms of the burst, before any wet; wet = the 4 ms after the burst ends)
+  ROLES BY MEASUREMENT: 5 verdict(s), 158 unnamed control(s) probed without the signature
+    role mix CONFIRMED  [8] Dry/Wet - the wet/dry ratio moves 381.06 dB, dry and wet opposite
+    role time DROPPED    [0] Predelay Free - the onset moves 12.5 -> 12.5 ms (needs >= 10 ms and 20 %)
+    role decay CONFIRMED  [3] Buildup Time - RT60 3.67 -> 8.72 s (x2.37)
+    measured role time, UNNAMED  [7] ER/Tail Balance - the onset moves 11.5 -> 46.5 ms
+    measured role decay, UNNAMED  [11] XGain - RT60 2.54 -> 10.28 s (x4.04)
+=== DYN MTransient both hits
+DYN: MTransient 14.16.0 (transient): attack [8] Transient -> Attack; sustain [66] Basic - Sustain
+  Basic - Sustain = '-24.00 dB' (norm 0.00): transient 0.00 dB, sustain -2.91 dB against neutral | label -24.0 dB -> OFF by 21.09
+  Basic - Sustain = '-12.00 dB' (norm 0.25): transient 0.00 dB, sustain -1.46 dB against neutral | label -12.0 dB -> OFF by 10.54
+  Basic - Sustain = '0.00 dB' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral | label 0.0 dB -> within 1 dB
+  Basic - Sustain = '+12.00 dB' (norm 0.75): transient 0.00 dB, sustain 1.46 dB against neutral | label 12.0 dB -> OFF by -10.54
+  Basic - Sustain = '+24.00 dB' (norm 1.00): transient 0.00 dB, sustain 2.91 dB against neutral | label 24.0 dB -> OFF by -21.09
+  Basic - Sustain [long hit] = '-24.00 dB' (norm 0.00): transient 0.00 dB, sustain -0.88 dB against neutral | label -24.0 dB -> OFF by 23.12
+  Basic - Sustain [long hit] = '-12.00 dB' (norm 0.25): transient 0.00 dB, sustain -0.44 dB against neutral | label -12.0 dB -> OFF by 11.56
+  Basic - Sustain [long hit] = '0.00 dB' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral | label 0.0 dB -> within 1 dB
+  Basic - Sustain [long hit] = '+12.00 dB' (norm 0.75): transient 0.00 dB, sustain 0.44 dB against neutral | label 12.0 dB -> OFF by -11.56
+  Basic - Sustain [long hit] = '+24.00 dB' (norm 1.00): transient 0.00 dB, sustain 0.88 dB against neutral | label 24.0 dB -> OFF by -23.12
+  ROLES BY MEASUREMENT: 2 verdict(s), 80 unnamed control(s) probed without the signature
+    role transient CONFIRMED  [8] Transient -> Attack - the transient moves 30.89 dB (the sustain 0.00)
+    role sustain CONFIRMED  [66] Basic - Sustain - the sustain moves 5.82 dB (the transient 0.00)

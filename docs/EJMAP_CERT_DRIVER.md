@@ -2453,3 +2453,26 @@ processor-1 thresholds cut the same region as the band's own).
 Pins: `testRoleEvidence` (every run-2 name-wrong case: D1–D3, M1–M3, T1–T4, C1–C2, F1–F3, S1–S3, H1–H3, Q1–Q4, G1–G3, K1–K4,
 R1–R2, and the live lessons L1–L6); mutants: level independence dropped, drive floor dropped, feedback count without the
 first-repeat guard, shaper coupling guard dropped, time without the 20 % — all red. Live: `cert-traces/2026-10-05-roles/`.
+
+## 55. The gaps from run 2 (run 3 item 2)
+
+- **Band-limited noise for de-essers**: `--cert-deesser` adds a NOISE LADDER — 121 random-phase tones over 4–10 kHz through
+  the probe's `--response` (band-limited noise in effect: a dense random-phase multitone has noise's crest and spectrum
+  inside the band), the threshold at 6 norms per process, five levels; GR = total output power against the open end's.
+  DeEsser (s): max GR 10.98 dB on the noise against 11.72 on the 6.5 kHz tone — the band reads the same as the tone within
+  0.7 dB. Record field `noise_ladder`.
+- **The reverb window scaled to the decay label**: `reverbdelay::tailForLabel` — 1.5 × the label in seconds, 6 s at least,
+  30 s at most, the label read from the fixture's display nearest the norm before the write (pin L4). Live it was not
+  exercised: H-Reverb's "Buildup Time" labels top out at 2.0 s (→ 3 s < the 6 s floor) and ValhallaVintageVerb's labels are
+  norms; a unit labelled in seconds above 4 s gets the longer tail.
+- **The hit length for sustain labels**: the sustain control is read on the short hit (150 ms decay) AND on a long one
+  (500 ms decay, 1500 ms period, its own neutral run; record field `sustain_long_hit`). The finding is the opposite of the
+  expectation: the long hit reads sustain SMALLER — Smack Attack ±7 → ±2.4 dB, MTransient ±2.9 → ±0.9 for its ±24 dB
+  label. A sustain lane acts against the unit's own envelope follower, and the fixed 80–250 ms window reads a different
+  part of that envelope on each hit; the definition of "sustain" for a label comparison is Sean's question now, not a
+  window length.
+- **Saturn 2's `--text-at` timeout** (read-only): `--list-params` takes 0.17 s; `--text-at all` takes **221 s** wall with
+  0.6 s of CPU — Saturn 2 exposes **951 parameters** and the text pass samples three positions each (2,853 samples, ~78 ms
+  of wall time per sample: the write-and-settle wait, not FabFilter's speed). The 120 s per-process timeout is simply under
+  the count. A remedy, not built: time the text pass from the parameter count (`--list-params` first: 0.1 s × 3 × params,
+  120 s at least), or sample only the controls a mode nominates. `cert-traces/2026-10-05-roles/saturn2/`.
