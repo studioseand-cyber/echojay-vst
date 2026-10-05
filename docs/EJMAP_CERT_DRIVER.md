@@ -2486,3 +2486,38 @@ list, and samples nominees + pool in one instantiation (`--text-at 3,7,12`, the 
 scales with the count (`textPassTimeoutMs`: 200 ms x 3 samples x count + 30 s, the process timeout at least — pins T1–T3).
 The mode's nomination then runs on the sampled fixture as before, and its unnamed probe is restricted to the sampled set.
 Saturn 2 (951 parameters, 221 s whole) samples ~60 and runs; the certification path's two full text passes are untouched.
+
+## 57. The Phase B batch: `--phaseb-all` and `--phaseb-status` (Kathy's goal, 5 Oct evening)
+
+Sean's run gathers Phase B data after the compressor follow-up. `"$BIN" --phaseb-all` (defaults: `--out ~/Library/ejmap/cert`,
+the app's probe and ledger) discovers the installed products per category and runs that category's prototype mode on each as
+a CHILD ejmap process, in priority order, until every product is done. Results land in `cert/phaseb/<category>/`: the mode's
+record under `<mode>/`, the raw traces gzipped under `raw/`, the child's log under `logs/`, and ONE row per product
+`<stem>.phaseb.json` (outcome, seconds, records, reason) which is the DONE marker. `cert/phaseb/summary.json` holds every row
+by category; `progress.json` / `progress.txt` hold the counts, the measured seconds and the ETA.
+
+**Discovery.** gain-cal and timing: every row of `outcomes.json` in state `exported` whose product is installed (timing gets
+the product's latest record copied into the child's folder). multiband: the rows in state `multiband`. The rest: the ledger's
+`categories.json` category of each installed AU — eq → eq; limiter; de-esser; saturation + amp_sim → saturation; reverb;
+delay; transient_shaper → transient; gate. Products are alphabetical inside a category. `--category <name>` (repeatable)
+and `--only <product>` (repeatable) narrow a run; a licence stop known to the scan or an existing `needs_licence` row is
+`skipped` without a load.
+
+**The hang guard** is per category and generous — a product is never cut short by a budget, only a hung one is: gaincal 10
+min, timing 20, limiter 10, eq 30, deesser 10, saturation 15, reverb 20, delay 20, transient 10, gate 15, multiband 25 (the
+reasons are in `EjmapPhaseB.h`'s table, printed at the start). A product that hits it is recorded `timed_out` with whatever
+traces it wrote; the window watch (`window`), a crash (`failed`) and a sleep during the measurement (`slept`, the row says
+the data is not trusted) are the other outcomes; exit 0 or 4 (nothing to measure, said in the log) is `ok`.
+
+**Ctrl-C safe.** A product measures into `<category>/.tmp-<stem>/`; its records, traces and log are moved into place and
+the row is written LAST, by a temp-and-rename (`writeAtomic`, pins P12–P14). An interrupted product has no row and is run
+again from its start on the next `--phaseb-all`; its temp folder is deleted first, after a `pkill -f` on that folder's path
+(a parent killed outright leaves its child measuring; the child's arguments name the folder). The elapsed and the measured
+seconds carry over through `progress.json`; the totals are re-discovered each start. The kill tests (SIGINT and SIGKILL mid-
+product, resume, the product re-measured exactly once, no half-done record) are in `cert-traces/2026-10-05-phaseb/kill_tests.txt`.
+
+**Progress.** One line per product on stdout and in `progress.txt`:
+`[limiter 1/4 | all 3/14] bx_limiter True Peak: ok 100 s | elapsed 0:15:00 | ETA 1:05:00` — the ETA is each category's
+products left × its median so far (the overall median where a category has nothing timed yet; pins P6–P10).
+`"$BIN" --phaseb-status` prints `progress.txt`'s content (done/total per category, time spent, ETA, what is next) and loads
+nothing.

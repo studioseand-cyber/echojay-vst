@@ -84,6 +84,7 @@
 #include "EjmapDeesser.h"
 #include "EjmapMultiband.h"
 #include "EjmapRoleEvidence.h"
+#include "EjmapPhaseB.h"
 
 namespace
 {
@@ -7488,6 +7489,49 @@ void testTextPassTimeout()
     check (textPassTimeoutMs (0, 120000) == 120000, "text T3: nothing to sample still has the floor");
 }
 
+/** THE PHASE B BATCH (EjmapPhaseB.h, 5 Oct evening): the category table, the done marker, the progress and ETA arithmetic, the lines. */
+void testPhaseB()
+{
+    using namespace ejmap::phaseb;
+    check (categories().size() == 11 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories().back().name == "multiband", "phaseb P1: eleven categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband)");
+    for (const auto& c : categories()) check (c.guardS >= 600.0 && c.guardWhy.isNotEmpty(), "phaseb P2: " + c.name + " has a stated hang guard of at least 10 min (" + juce::String (c.guardS / 60.0, 0) + ")");
+    check (categoryNamed ("saturation")->ledgerCategories.contains ("amp_sim") && modeWord ("--cert-reverb-delay") == "reverbdelay" && modeWord ("--cert-gain-cal") == "gaincal", "phaseb P3: amp sims ride with saturation; the mode word is the record folder");
+    // the done marker: a row file, whole or absent
+    juce::TemporaryFile tf; const auto dir = tf.getFile().getSiblingFile ("phaseb-pin"); dir.deleteRecursively(); dir.createDirectory();
+    check (! isDone (dir, "eq", "AudioUnit_1_1.0"), "phaseb P4: nothing done before a row exists");
+    rowFile (dir, "eq", "AudioUnit_1_1.0").getParentDirectory().createDirectory(); rowFile (dir, "eq", "AudioUnit_1_1.0").replaceWithText ("{}");
+    check (isDone (dir, "eq", "AudioUnit_1_1.0") && ! isDone (dir, "eq", "AudioUnit_2_1.0") && ! isDone (dir, "limiter", "AudioUnit_1_1.0"), "phaseb P5: the row is the done marker, per category and stem");
+    dir.deleteRecursively();
+    // progress and ETA: medians per category, the overall median where a category has nothing timed yet
+    Progress p; p.cats["eq"].total = 10; p.cats["eq"].done = 2; p.cats["eq"].seconds = { 400.0, 500.0 }; p.cats["limiter"].total = 4; p.cats["limiter"].done = 0; p.elapsedS = 900.0;
+    check (std::abs (etaSeconds (p) - (8 * 450.0 + 4 * 450.0)) < 1e-9, "phaseb P6: ETA = products left x the category's median (450 s), the overall median (450) for a category not yet timed");
+    p.cats["limiter"].seconds = { 100.0 }; p.cats["limiter"].done = 1;
+    check (std::abs (etaSeconds (p) - (8 * 450.0 + 3 * 100.0)) < 1e-9, "phaseb P7: once a category is timed its own median rules");
+    const auto line = progressLine (p, "limiter", "bx_limiter True Peak", "ok", 100.0);
+    check (line.startsWith ("[limiter 1/4 | all 3/14] bx_limiter True Peak: ok 100 s | elapsed 0:15:00 | ETA 1:05:00"), "phaseb P8: the progress line (" + line + ")");
+    const auto text = progressText (p);
+    check (text.contains ("all: 3/14 done") && text.contains ("eq           2/10  ok 0") && text.contains ("median 450 s over 2") && text.contains ("next: limiter"), "phaseb P9: progress.txt says done/total per category, the medians, and what is next (limiter before eq in the priority order)");
+    const auto back = progressFromVar (progressVar (p));
+    check (back.cats.at ("eq").seconds.size() == 2 && back.cats.at ("limiter").total == 4 && std::abs (back.elapsedS - 900.0) < 1e-9, "phaseb P10: progress round-trips through its JSON (the resume carries the measured seconds)");
+    check (hms (3725.0) == "1:02:05" && hms (0.0) == "0:00:00", "phaseb P11: h:mm:ss");
+    // P12 the atomic write: the file is whole and its temp sibling is gone; a second write replaces, never appends
+    { const auto d2 = tf.getFile().getSiblingFile ("phaseb-pin2"); d2.deleteRecursively(); d2.createDirectory(); const auto f = d2.getChildFile ("row.json");
+      writeAtomic (f, "{\"a\":1}"); check (f.loadFileAsString() == "{\"a\":1}", "phaseb P12: writeAtomic writes the whole text");
+      check (! f.getSiblingFile ("row.json.tmp").exists(), "phaseb P12: no temp sibling is left behind");
+      writeAtomic (f, "{\"a\":2}"); check (f.loadFileAsString() == "{\"a\":2}", "phaseb P12: a second write replaces the first");
+      // P13 the gzip of a raw trace: twice gives ONE copy of the content (the target is cleared, not appended to)
+      const auto raw = d2.getChildFile ("x.raw.txt"); raw.replaceWithText ("trace line\n", false, false, "\n");
+      const auto gzDir = d2.getChildFile ("gz"); gzDir.createDirectory(); gzipInto (raw, gzDir); const auto size1 = gzDir.getChildFile ("x.raw.txt.gz").getSize(); gzipInto (raw, gzDir);
+      check (gzDir.getChildFile ("x.raw.txt.gz").getSize() == size1, "phaseb P13: the second gzip leaves the file the size of one (a decompressor stops at the first member, so the size is the tell)");
+      juce::String back; { juce::FileInputStream fi (gzDir.getChildFile ("x.raw.txt.gz")); juce::GZIPDecompressorInputStream gz (fi); back = gz.readEntireStreamAsString(); }
+      check (back == "trace line\n", "phaseb P13: a re-gzipped trace holds one copy of the content, not two (got " + juce::String (back.length()) + " chars)");
+      // P14 a half-done temp folder is not a DONE marker: only the row file is
+      d2.getChildFile ("eq").getChildFile (".tmp-AudioUnit_1_1.0").createDirectory();
+      check (! isDone (d2, "eq", "AudioUnit_1_1.0"), "phaseb P14: a .tmp folder without a row is not done");
+      writeAtomic (rowFile (d2, "eq", "AudioUnit_1_1.0"), "{}"); check (isDone (d2, "eq", "AudioUnit_1_1.0"), "phaseb P14: the row file is the only DONE marker");
+      d2.deleteRecursively(); }
+}
+
 /** THE ZIP REVIEW (EjmapCertReview.h, 5 Oct R1): hand-built records, outcomes and entry lists; every section's reading pinned. */
 void testCertReview()
 {
@@ -7687,6 +7731,7 @@ int main (int, char**)
     testMultiband();
     testRoleEvidence();
     testTextPassTimeout();
+    testPhaseB();
     testLoopOutcomes();
     testCategoriesMerge();
 

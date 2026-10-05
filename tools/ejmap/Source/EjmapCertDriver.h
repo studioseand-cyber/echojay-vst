@@ -62,6 +62,7 @@
 #include "EjmapDeesser.h"
 #include "EjmapMultiband.h"
 #include "EjmapRoleEvidence.h"
+#include "EjmapPhaseB.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -4167,6 +4168,157 @@ inline int runMultiband (const SweepOptions& opt)
     outDir.getChildFile (stem + ".multiband.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
     say ("MB: -> " + outDir.getChildFile (stem + ".multiband.json").getFullPathName() + " (" + juce::String (processN) + " processes)");
     return measured > 0 ? 0 : 4;
+}
+
+// THE PHASE B BATCH (5 Oct evening): --phaseb-all [--out <cert>] [--probe <path>] [--ejmap-ledger <dir>] [--category <name>]... [--only <product>]...
+// and --phaseb-status [--out <cert>]. See EjmapPhaseB.h for the rules. Results: <cert>/phaseb/<category>/<mode>/<stem>.<mode>.json
+// (the mode's record), <cert>/phaseb/<category>/raw/*.txt.gz (its traces, gzipped), <cert>/phaseb/<category>/<stem>.phaseb.json
+// (the batch's row - THE DONE MARKER, written last by rename), <cert>/phaseb/progress.{json,txt}, <cert>/phaseb/summary.json.
+using phaseb::writeAtomic; using phaseb::gzipInto;
+struct PhaseBProduct { juce::String product, stem, category; juce::PluginDescription desc; juce::String recordFile; };
+inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyCategories, const juce::StringArray& onlyProducts)
+{
+    using namespace phaseb;
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("PHASEB: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    const auto phasebDir = opt.out.getChildFile ("phaseb"); phasebDir.createDirectory();
+    const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
+    // DISCOVERY: installed AUs by category from the ledger; certified compressors from the cert folder; multibands from its outcomes
+    const auto in = loadDiscoveryInputs (opt.ledger);
+    const auto installed = installedAudioUnits();
+    const auto scanStops = quarantinedBundles (opt.ledger);
+    const auto outcomes = juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString());
+    std::map<juce::String, std::vector<PhaseBProduct>> work;
+    auto stemFor = [] (const juce::PluginDescription& d) { return "AudioUnit_" + juce::String::toHexString (d.uniqueId) + "_" + d.version; };
+    for (const auto& cat : categories())
+    {
+        if (! onlyCategories.isEmpty() && ! onlyCategories.contains (cat.name)) continue;
+        std::vector<PhaseBProduct> list;
+        if (cat.name == "gaincal" || cat.name == "timing")
+        {
+            // every certified compressor: an exported row, or a record whose sweep is certified
+            if (const auto* a = outcomes.getArray()) for (const auto& row : *a)
+            {
+                if (row.getProperty ("state", "").toString() != "exported") continue;
+                const auto product = row.getProperty ("product", "").toString();
+                for (const auto& ir : installed) if (ir.desc.name == product) { PhaseBProduct pp; pp.product = product; pp.stem = stemFor (ir.desc); pp.category = cat.name; pp.desc = ir.desc; pp.recordFile = latestRecordFor (opt.out.getChildFile ("fixtures"), product).getFullPathName(); list.push_back (pp); break; }
+            }
+        }
+        else if (cat.name == "multiband")
+        {
+            if (const auto* a = outcomes.getArray()) for (const auto& row : *a)
+            {
+                if (row.getProperty ("state", "").toString() != "multiband") continue;
+                const auto product = row.getProperty ("product", "").toString();
+                for (const auto& ir : installed) if (ir.desc.name == product) { PhaseBProduct pp; pp.product = product; pp.stem = stemFor (ir.desc); pp.category = cat.name; pp.desc = ir.desc; list.push_back (pp); break; }
+            }
+        }
+        else
+        {
+            for (const auto& ir : installed)
+            {
+                const auto it = in.categoryByUid.find (ir.uidKey); if (it == in.categoryByUid.end()) continue;
+                if (! cat.ledgerCategories.contains (it->second)) continue;
+                PhaseBProduct pp; pp.product = ir.desc.name; pp.stem = stemFor (ir.desc); pp.category = cat.name; pp.desc = ir.desc; list.push_back (pp);
+            }
+        }
+        if (! onlyProducts.isEmpty()) { std::vector<PhaseBProduct> f; for (const auto& pp : list) if (onlyProducts.contains (pp.product)) f.push_back (pp); list = f; }
+        std::sort (list.begin(), list.end(), [] (const PhaseBProduct& a, const PhaseBProduct& b) { return a.product.compareIgnoreCase (b.product) < 0; });
+        work[cat.name] = list;
+    }
+    // PROGRESS: resumed from the file (the elapsed and the measured seconds carry over); the totals are tonight's discovery
+    Progress prog = progressFromVar (juce::JSON::parse (phasebDir.getChildFile ("progress.json").loadFileAsString()));
+    if (prog.startedAt.isEmpty()) prog.startedAt = nowStamp();
+    const double elapsedBefore = prog.elapsedS; const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    int totalAll = 0;
+    for (const auto& cat : categories()) if (work.count (cat.name))
+    {
+        auto& c = prog.cats[cat.name]; c.total = (int) work[cat.name].size(); c.done = 0; c.ok = c.timedOut = c.failed = c.skipped = 0;
+        for (const auto& pp : work[cat.name]) if (isDone (phasebDir, cat.name, pp.stem)) { ++c.done; const auto row = juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()); const auto oc = row.getProperty ("outcome", "").toString(); if (oc == "ok") ++c.ok; else if (oc == "timed_out") ++c.timedOut; else if (oc == "skipped") ++c.skipped; else ++c.failed; }
+        totalAll += c.total;
+    }
+    auto saveProgress = [&] (const juce::String& current)
+    {
+        prog.current = current; prog.updatedAt = nowStamp(); prog.elapsedS = elapsedBefore + (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
+        writeAtomic (phasebDir.getChildFile ("progress.json"), juce::JSON::toString (progressVar (prog)));
+        writeAtomic (phasebDir.getChildFile ("progress.txt"), progressText (prog));
+    };
+    say ("PHASEB: " + juce::String (totalAll) + " product(s) over " + juce::String ((int) work.size()) + " categor" + (work.size() == 1 ? "y" : "ies") + " -> " + phasebDir.getFullPathName() + "  (resumable; Ctrl-C any time; a product's result lands only when it is complete)");
+    for (const auto& cat : categories()) if (work.count (cat.name)) say ("  " + cat.name.paddedRight (' ', 11) + juce::String ((int) work[cat.name].size()).paddedLeft (' ', 3) + " product(s), " + juce::String (prog.cats[cat.name].done) + " already done; hang guard " + juce::String (cat.guardS / 60.0, 0) + " min (" + cat.guardWhy + ")");
+    saveProgress ({});
+    // THE RUN: one child ejmap process per product into a temp folder, renamed into place when complete
+    for (const auto& cat : categories())
+    {
+        if (! work.count (cat.name)) continue;
+        for (const auto& pp : work[cat.name])
+        {
+            if (isDone (phasebDir, cat.name, pp.stem)) continue;
+            auto& c = prog.cats[cat.name];
+            const auto catDir = phasebDir.getChildFile (cat.name); catDir.createDirectory();
+            const auto tmp = catDir.getChildFile (".tmp-" + pp.stem);
+            // a half-done folder from an interrupted run is thrown away: the product starts again. A parent killed outright (SIGKILL,
+            // a crash) leaves its child measuring into that folder: the child is named by the folder in its arguments, killed first.
+            if (tmp.isDirectory()) { juce::ChildProcess pk; pk.start (juce::StringArray { "/usr/bin/pkill", "-f", tmp.getFullPathName() }); pk.waitForProcessToFinish (5000); }
+            tmp.deleteRecursively(); tmp.createDirectory();
+            saveProgress (cat.name + ": " + pp.product);
+            auto* row = new juce::DynamicObject(); row->setProperty ("product", pp.product); row->setProperty ("identity", "AudioUnit|" + juce::String::toHexString (pp.desc.uniqueId) + "|" + pp.desc.version); row->setProperty ("category", cat.name); row->setProperty ("mode", cat.mode);
+            juce::String outcome; double seconds = 0.0;
+            // licence: the scan's stop, or a needs_licence row in this folder - never loaded
+            if (const auto known = loop::knownLicenceStop (scanStops, outcomes, pp.product, false); known.isNotEmpty()) { outcome = "skipped"; row->setProperty ("reason", "licence: " + known); }
+            else
+            {
+                if (cat.name == "timing" && pp.recordFile.isNotEmpty()) { tmp.getChildFile ("fixtures").createDirectory(); juce::File (pp.recordFile).copyFileTo (tmp.getChildFile ("fixtures").getChildFile (juce::File (pp.recordFile).getFileName())); }
+                juce::StringArray args { exe.getFullPathName(), cat.mode, pp.product };
+                if (cat.kindArg.isNotEmpty()) { args.add ("--kind"); args.add (cat.kindArg); }
+                args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName() });
+                const auto t1 = juce::Time::getMillisecondCounterHiRes();
+                const auto r = runChild (args, (int) (cat.guardS * 1000.0));
+                seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0;
+                tmp.getChildFile ("log.txt").replaceWithText (r.out, false, false, "\n");
+                const bool slept = r.sleptMs > kSleptMs;
+                if (r.kind == ChildResult::Kind::timedOut) outcome = "timed_out";
+                else if (r.kind == ChildResult::Kind::uiShown) outcome = "window";
+                else if (r.kind == ChildResult::Kind::exited && (r.code == 0 || r.code == 4)) outcome = slept ? "slept" : "ok";   // 4 = the mode found nothing to measure (said in its log)
+                else outcome = "failed";
+                row->setProperty ("child", r.describe()); row->setProperty ("exit_code", r.code); row->setProperty ("slept_ms", r.sleptMs);
+                if (slept) row->setProperty ("reason", "the Mac slept during the measurement (" + juce::String (r.sleptMs / 1000.0, 1) + " s): recorded, the data is not trusted; delete this row to re-run");
+                // the mode's record(s) and raw traces, moved into place (the raw gzipped); the row is written LAST
+                juce::StringArray records; int rawN = 0;
+                for (const auto& d : tmp.findChildFiles (juce::File::findDirectories, false))
+                {
+                    if (d.getFileName() == "raw") { const auto rawDir = catDir.getChildFile ("raw"); rawDir.createDirectory(); for (const auto& f : d.findChildFiles (juce::File::findFiles, false)) { gzipInto (f, rawDir); ++rawN; } continue; }
+                    if (d.getFileName() == "fixtures") continue;
+                    const auto dst = catDir.getChildFile (d.getFileName()); dst.createDirectory();
+                    for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.json")) { const auto target = dst.getChildFile (f.getFileName()); target.deleteFile(); f.moveFileTo (target); records.add (d.getFileName() + "/" + f.getFileName()); }
+                }
+                { const auto lg = catDir.getChildFile ("logs"); lg.createDirectory(); const auto target = lg.getChildFile (pp.stem + ".log.txt"); target.deleteFile(); tmp.getChildFile ("log.txt").moveFileTo (target); }
+                row->setProperty ("records", records); row->setProperty ("raw_files", rawN);
+                if (outcome == "timed_out") row->setProperty ("reason", "hang guard " + juce::String (cat.guardS / 60.0, 0) + " min reached: partial data kept (" + juce::String (rawN) + " trace(s)), the record " + (records.isEmpty() ? juce::String ("not written") : juce::String ("written")));
+            }
+            row->setProperty ("outcome", outcome); row->setProperty ("seconds", std::round (seconds)); row->setProperty ("at", nowStamp()); row->setProperty ("probe", id.cdhash);
+            writeAtomic (rowFile (phasebDir, cat.name, pp.stem), juce::JSON::toString (juce::var (row)));   // the DONE marker, whole or absent
+            tmp.deleteRecursively();
+            ++c.done; if (outcome == "ok") c.ok++; else if (outcome == "timed_out") c.timedOut++; else if (outcome == "skipped") c.skipped++; else c.failed++;
+            if (outcome != "skipped") c.seconds.push_back (seconds);
+            saveProgress ({});
+            say (progressLine (prog, cat.name, pp.product, outcome, seconds));
+        }
+    }
+    saveProgress ({});
+    // THE SUMMARY: every row, by category
+    { auto* sm = new juce::DynamicObject(); auto* cats = new juce::DynamicObject();
+      for (const auto& cat : categories()) if (work.count (cat.name)) { juce::Array<juce::var> rows; for (const auto& pp : work[cat.name]) if (isDone (phasebDir, cat.name, pp.stem)) rows.add (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString())); cats->setProperty (cat.name, rows); }
+      sm->setProperty ("categories", juce::var (cats)); sm->setProperty ("progress", progressVar (prog)); sm->setProperty ("probe", id.cdhash); sm->setProperty ("writtenAt", nowStamp());
+      writeAtomic (phasebDir.getChildFile ("summary.json"), juce::JSON::toString (juce::var (sm))); }
+    say ("PHASEB: done - " + progressText (prog).upToFirstOccurrenceOf ("\n", false, false) + "; summary " + phasebDir.getChildFile ("summary.json").getFullPathName());
+    return 0;
+}
+inline int runPhaseBStatus (const SweepOptions& opt)
+{
+    const auto f = opt.out.getChildFile ("phaseb").getChildFile ("progress.json");
+    if (! f.existsAsFile()) { std::cout << "PHASEB STATUS: nothing yet at " << f.getFullPathName() << " (run --phaseb-all first)" << std::endl; return 2; }
+    std::cout << phaseb::progressText (phaseb::progressFromVar (juce::JSON::parse (f.loadFileAsString())));
+    return 0;
 }
 
 // THE INERT CHECK ON AN EXISTING RECORD (the follow-up, 4 Oct): a single-sweep record filed flat BECAUSE it passes audio
