@@ -6705,8 +6705,28 @@ void testInertCheck()
     const auto rec = composeThresholdSweep (d, {}, p, {});
     check (rec.getProperty ("result", "").toString() == "inert" && rec.getProperty ("reason", "").toString() == why && rec.getProperty ("inertCheck", {}).getProperty ("tried", {}).size() == 2,
            "inert I8: the record says inert with the check's reason, never flat");
-    check (ejmap::loop::outcomeForRecord (juce::JSON::parse (R"json({"product": "v", "controls": [], "thresholdSweep": {"result": "inert", "reason": "processing never runs: x"}})json")).reason.startsWith ("sweep result inert: processing never runs"),
+    check (ejmap::loop::outcomeForRecord (juce::JSON::parse (R"json({"product": "v", "controls": [], "thresholdSweep": {"result": "inert", "reason": "processing never runs: x"}})json")).reason.startsWith ("licence suspected: processing never runs"),
            "inert I9: the row carries the reason under its own result word");
+    // INERT = LICENCE (ruled 5 Oct): the state, the remedy in the reason, every-candidate inert, and --retry-licence's reach
+    {
+        const auto single = juce::JSON::parse (R"json({"product": "v", "controls": [], "thresholdSweep": {"result": "inert", "reason": "processing never runs: output unchanged by every control including Power"}})json");
+        const auto o = ejmap::loop::outcomeForRecord (single);
+        check (o.state == "needs_licence" && o.reason.contains ("activation and a re-run") && o.reason.contains ("--retry-licence") && o.reason.contains ("including Power"), "inert L1: an inert sweep is needs_licence, the reason names the remedy (activation, re-run) and what was measured");
+        const auto cands = juce::JSON::parse (R"json({"product": "c", "controls": [], "thresholdCandidates": [{"index": 1, "name": "A", "thresholdSweep": {"result": "inert", "reason": "processing never runs: p"}}, {"index": 2, "name": "B", "thresholdSweep": {"result": "inert", "reason": "processing never runs: p"}}]})json");
+        const auto oc = ejmap::loop::outcomeForRecord (cands);
+        check (oc.state == "needs_licence" && oc.reason.contains ("on every candidate (2)"), "inert L2: inert on every candidate is a licence row too");
+        const auto mixed = juce::JSON::parse (R"json({"product": "m", "controls": [], "thresholdCandidates": [{"index": 1, "name": "A", "thresholdSweep": {"result": "inert", "reason": "p"}}, {"index": 2, "name": "B", "thresholdSweep": {"result": "flat", "reason": "q"}}]})json");
+        check (ejmap::loop::outcomeForRecord (mixed).state != "needs_licence", "inert L3: one inert candidate beside a flat one is not a licence row (something ran)");
+        // the worklist: --retry-licence (licenceOnly) brings the inert record back; a plain run and --retry-refused leave it recorded
+        using namespace ejmap::cert;
+        Subject s; s.product = "v"; s.pushed = single; std::vector<Subject> store { s };
+        check (partitionStore (store, false).toSweep.empty() && partitionStore (store, false).recorded == 1, "inert L4: a plain batch leaves an inert record recorded (not re-swept)");
+        check (partitionStore (store, true, false, false).toSweep.empty(), "inert L5: --retry-refused does not touch it (it is not a refusal)");
+        check (partitionStore (store, true, false, true).toSweep.size() == 1, "inert L6: --retry-licence puts it back on the worklist");
+        Subject f; f.product = "f"; f.pushed = juce::JSON::parse (R"json({"product": "f", "controls": [], "thresholdSweep": {"result": "flat", "reason": "x"}})json");
+        check (partitionStore ({ f }, true, false, true).toSweep.empty(), "inert L7: --retry-licence leaves a flat record alone");
+        check (inertRecorded (cands) && ! inertRecorded (mixed) && ! inertRecorded (f.pushed), "inert L8: inertRecorded = the sweep, or every candidate");
+    }
 }
 
 /** THE TUNER PLAN v2 (EjmapPitch.h, 4 Oct A4): detents by evidence from the text grid, the adaptive speed half period. */

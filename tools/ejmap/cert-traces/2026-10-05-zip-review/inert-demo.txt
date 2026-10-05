@@ -1,0 +1,8 @@
+R2 demo: RCompressor (m) record from Sean's 4 Oct zip, as is and with result hand-set to inert (copy), through --cert-states
+needs_licence	RCompressor (m)	licence suspected: processing never runs: output unchanged by every control including Power (hand-edited copy, R2 demo); the remedy is activation and a re-run (ruled 5 Oct); --retry-licence re-checks it
+needs_review	RCompressor (m)	sweep result flat: passthrough: output equals input within 0.01 dB at every reading
+STATES: needs_licence 1
+STATES: needs_review 1
+
+projection over Sean's zip (--cert-tonecheck-all --derive-only) under the rule:
+OUTCOMES (/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/proj_r2/cert/outcomes.json): 181 rows - exported 0, recorded 6, refused 18, held 45, needs_review 81, quarantined_at_scan 2, needs_licence 10, multiband 17, surround 2

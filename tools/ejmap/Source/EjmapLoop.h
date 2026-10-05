@@ -148,6 +148,12 @@ inline Outcome outcomeForRecord (const juce::var& record)
                     if (sw.getProperty ("result", "").toString() == "certified" && profileGrade (sw)) { o.exportPending = true; o.state = "needs_review"; o.reason = "export pending (Rule 1 pick)"; return o; }
                 }
         }
+        // INERT ON EVERY CANDIDATE (ruled 5 Oct, with the single-sweep rule below): no stage ran its processing - a licence row
+        {
+            bool allInert = cands.size() > 0; juce::String inertWhy;
+            for (int i = 0; i < cands.size(); ++i) { const auto sw = cands[i].getProperty ("thresholdSweep", {}); if (sw.getProperty ("result", "").toString() != "inert") allInert = false; else if (inertWhy.isEmpty()) inertWhy = sw.getProperty ("reason", "").toString(); }
+            if (allInert) { o.state = "needs_licence"; o.reason = "licence suspected: " + (inertWhy.isNotEmpty() ? inertWhy : juce::String ("processing never runs (inert)")) + " on every candidate (" + juce::String (cands.size()) + "); the remedy is activation and a re-run (ruled 5 Oct); --retry-licence re-checks it"; return o; }
+        }
         // FLAT ON EVERY CANDIDATE (ruled 4 Oct, dbx-160 (s) and kHs Dynamics): nothing to pick from - filed with the flat-results
         // investigation, in the same words as a single-sweep flat, not as a review item
         {
@@ -162,6 +168,16 @@ inline Outcome outcomeForRecord (const juce::var& record)
     const auto sw = record.getProperty ("thresholdSweep", {});
     if (! sw.isObject()) { o.state = "needs_review"; o.reason = "record carries no sweep, no candidates and no refusal"; return o; }
     const auto result = sw.getProperty ("result", "").toString();
+    // INERT = LICENCE (Kathy's ruling, 5 Oct): a product whose output no control moves, Power included, never ran its
+    // processing; the remedy is activation and a re-run, so the row is needs_licence with that reason, and
+    // --retry-licence is what brings it back. The record keeps result "inert" and its inertCheck (what was measured).
+    if (result == "inert")
+    {
+        o.state = "needs_licence";
+        o.reason = "licence suspected: " + (sw.getProperty ("reason", "").toString().isNotEmpty() ? sw.getProperty ("reason", "").toString() : juce::String ("processing never runs (inert)"))
+                 + "; the remedy is activation and a re-run (ruled 5 Oct); --retry-licence re-checks it";
+        return o;
+    }
     if (result != "certified")
     {
         o.state = "needs_review";

@@ -1281,6 +1281,16 @@ inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vecto
 // stays in the fixture until the re-run replaces it.
 struct StorePartition { std::vector<Subject> toSweep; int recorded = 0, refused = 0, permanent = 0; };
 inline bool refusalAtWindow (const juce::var& fixture) { return refusalRecorded (fixture) && fixture.getProperty ("thresholdRefusal", {}).getProperty ("stage", "").toString() == "window"; }
+// INERT = LICENCE (ruled 5 Oct): a record whose sweep (or every candidate's) is inert is a licence row, and --retry-licence
+// re-sweeps it like a window refusal - the one way back once the product is activated
+inline bool inertRecorded (const juce::var& fixture)
+{
+    if (fixture.getProperty ("thresholdSweep", {}).getProperty ("result", "").toString() == "inert") return true;
+    const auto* cs = fixture.getProperty ("thresholdCandidates", {}).getArray();
+    if (cs == nullptr || cs->isEmpty()) return false;
+    for (const auto& c : *cs) if (c.getProperty ("thresholdSweep", {}).getProperty ("result", "").toString() != "inert") return false;
+    return true;
+}
 inline StorePartition partitionStore (const std::vector<Subject>& fromStore, bool retryRefused, bool retryAll = false, bool licenceOnly = false, const juce::StringArray* force = nullptr)
 {
     StorePartition p;
@@ -1292,7 +1302,9 @@ inline StorePartition partitionStore (const std::vector<Subject>& fromStore, boo
         // --retry-licence (ruled 2 Oct): only the refusals a licence window caused come back
         // THE FOLLOW-UP'S OWN RE-SWEEP SET (ruled 4 Oct): a product whose plan under this build differs from the plan it was
         // swept under is forced back onto the worklist, record or refusal alike (EjmapLoop.h planDiffers)
-        const bool retry = (retryRefused && refusal && (licenceOnly ? refusalAtWindow (s.pushed) : (retryAll || ! permanent))) || (force != nullptr && force->contains (s.product));
+        const bool retry = (retryRefused && refusal && (licenceOnly ? refusalAtWindow (s.pushed) : (retryAll || ! permanent)))
+                        || (retryRefused && licenceOnly && inertRecorded (s.pushed))                                    // inert = licence (5 Oct)
+                        || (force != nullptr && force->contains (s.product));
         if (sweepRecorded (s.pushed) && ! retry) ++p.recorded;
         else p.toSweep.push_back (s);
     }

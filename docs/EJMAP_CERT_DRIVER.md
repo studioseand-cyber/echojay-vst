@@ -2366,3 +2366,21 @@ Rehearsed on Sean's 4 Oct zip against itself (20 projected, 0 ran, 48 readings n
 RCompressor (s) new and exported, 3 readings `no effect`, deep points 61..223 per profile). Pure logic in
 `EjmapCertReview.h` (pins R/H/O/S/C/P/T/D/I/X/W, six mutants red). Nothing here changes the follow-up's path: the
 projection pointer is null in every batch.
+
+## 52. Inert = licence (5 Oct, Kathy's ruling; overnight run 2, R2)
+
+A record whose sweep result is `inert` (section 48: output unchanged by every control, Power included) is filed
+**`needs_licence`**, reason `licence suspected: <the inert reason>; the remedy is activation and a re-run (ruled 5 Oct);
+--retry-licence re-checks it` — never `needs_review`. The same when every candidate of a candidates record is inert; one
+inert candidate beside a flat or certified one is not a licence row (something ran). The record itself is unchanged
+(`result: inert`, `inertCheck` with what was tried) — the state is the loop's reading of it (`outcomeForRecord`).
+
+`--retry-licence` now reaches it: `partitionStore` puts an `inertRecorded` fixture back on the worklist under
+`licenceOnly`, beside the window refusals; a plain batch and `--retry-refused` leave it recorded. Pins L1–L8 (inert),
+mutants: inert kept as needs_review, one inert candidate enough, retry-licence ignoring inert — each red.
+
+Projection over Sean's 4 Oct zip under this rule: `needs_licence` 10 → 10. No record in that zip is inert yet — the
+inert check runs inside the follow-up (8 flat records are projected to get it: NEOLD U2A, U17, SSLComp (m)/(s),
+RCompressor (m)/(s), dbx-160 (m), SSL Fusion HF Compressor), so the count can move by up to 8 in his zipped-back
+folder, by measurement. On a hand-edited copy of RCompressor (m) set to inert, `--cert-states` files it
+`needs_licence` with the reason above (`cert-traces/2026-10-05-zip-review/inert-demo.txt`).
