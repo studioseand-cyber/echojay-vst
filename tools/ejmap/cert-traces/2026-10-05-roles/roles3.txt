@@ -1,0 +1,126 @@
+=== DYN Smack Attack (s) again
+DYN: Smack Attack (s) 12.0.0 (transient): attack [0] Attack; sustain [4] Sustain
+  neutral (as instantiated, short hit): transient 0.00 dB, sustain 0.00 dB against the input, over 3 hits
+  neutral (long hit, 500 ms decay): transient 0.00 dB, sustain 0.00 dB
+  Attack = '-100' (norm 0.00): transient -24.00 dB, sustain -0.14 dB against neutral
+  Attack = '-50' (norm 0.25): transient -12.00 dB, sustain -0.14 dB against neutral
+  Attack = '0' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Attack = '50' (norm 0.75): transient 12.00 dB, sustain 0.31 dB against neutral
+  Attack = '100' (norm 1.00): transient 24.00 dB, sustain 0.31 dB against neutral
+  Sustain = '-100' (norm 0.00): transient 0.00 dB, sustain -2.37 dB against neutral
+  Sustain = '-50' (norm 0.25): transient 0.00 dB, sustain -1.76 dB against neutral
+  Sustain = '0' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Sustain = '50' (norm 0.75): transient 0.00 dB, sustain 1.39 dB against neutral
+  Sustain = '100' (norm 1.00): transient 0.00 dB, sustain 2.09 dB against neutral
+  ROLES BY MEASUREMENT: 2 verdict(s), 14 unnamed control(s) probed without the signature
+    role transient CONFIRMED  [0] Attack - the transient moves 48.00 dB (the sustain 0.44)
+    role sustain CONFIRMED  [4] Sustain - the sustain moves 4.46 dB (the transient 0.00)
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/dynamics/AudioUnit_5e556a63_12.0.0.dynamics.json (28 processes)
+=== DYN MTransient (long hit)
+DYN: MTransient 14.16.0 (transient): attack [8] Transient -> Attack; sustain [66] Basic - Sustain
+  neutral (as instantiated, short hit): transient 0.00 dB, sustain 0.00 dB against the input, over 3 hits
+  neutral (long hit, 500 ms decay): transient 0.00 dB, sustain 0.00 dB
+  Transient -> Attack = '-24.00 dB' (norm 0.00): transient -6.92 dB, sustain 0.00 dB against neutral | label -24.0 dB -> OFF by 17.08
+  Transient -> Attack = '-12.00 dB' (norm 0.25): transient -5.75 dB, sustain 0.00 dB against neutral | label -12.0 dB -> OFF by 6.25
+  Transient -> Attack = '0.00 dB' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral | label 0.0 dB -> within 1 dB
+  Transient -> Attack = '+12.00 dB' (norm 0.75): transient 11.97 dB, sustain 0.00 dB against neutral | label 12.0 dB -> within 1 dB
+  Transient -> Attack = '+24.00 dB' (norm 1.00): transient 23.97 dB, sustain 0.00 dB against neutral | label 24.0 dB -> within 1 dB
+  Basic - Sustain = '-24.00 dB' (norm 0.00): transient 0.00 dB, sustain -0.88 dB against neutral | label -24.0 dB -> OFF by 23.12
+  Basic - Sustain = '-12.00 dB' (norm 0.25): transient 0.00 dB, sustain -0.44 dB against neutral | label -12.0 dB -> OFF by 11.56
+  Basic - Sustain = '0.00 dB' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral | label 0.0 dB -> within 1 dB
+  Basic - Sustain = '+12.00 dB' (norm 0.75): transient -34.00 dB, sustain -32.94 dB against neutral | label 12.0 dB -> OFF by -44.94
+  Basic - Sustain = '+24.00 dB' (norm 1.00): transient 0.00 dB, sustain 0.88 dB against neutral | label 24.0 dB -> OFF by -23.12
+  ROLES BY MEASUREMENT: 2 verdict(s), 80 unnamed control(s) probed without the signature
+    role transient CONFIRMED  [8] Transient -> Attack - the transient moves 30.89 dB (the sustain 0.00)
+    role sustain DROPPED    [66] Basic - Sustain - the sustain moves 1.76 dB (needs 2)
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/dynamics/AudioUnit_61447363_14.16.0.dynamics.json (94 processes)
+=== DYN G8 again
+DYN: Unfiltered Audio G8 1.6.2 (gate): threshold [13] Threshold; range [40] Reduction; attack [41] Attack; hold [0] Hold; release [17] Release
+  Threshold = '-inf dB' (norm 0.00): the quiet end is attenuated only 0.01 dB more than the loud end: not gating at this setting
+  Threshold = '-60.0 dB' (norm 0.25): range 80.2 dB, opens at -63.0 dBFS RMS, closes at -69.5 (-60.0 dBFS peak), hysteresis 6.5 dB | label -60.0 -> 0.0 dB above it (peak)
+  Threshold = '-40.0 dB' (norm 0.50): range 80.2 dB, opens at -43.0 dBFS RMS, closes at -49.5 (-40.0 dBFS peak), hysteresis 6.5 dB | label -40.0 -> -0.0 dB above it (peak)
+  Threshold = '-20.0 dB' (norm 0.75): range 80.2 dB, opens at -23.0 dBFS RMS, closes at -29.5 (-20.0 dBFS peak), hysteresis 6.5 dB | label -20.0 -> 0.0 dB above it (peak)
+  Threshold = '0 dB' (norm 1.00): the quiet end is attenuated only -57.60 dB more than the loud end: not gating at this setting
+  Reduction = '0 dB' (threshold at norm 0.5): closed -0.0 dB vs label 0.0 -> -0.0 dB off
+  Reduction = '-13.7 dB' (threshold at norm 0.5): closed -13.7 dB vs label -13.7 -> -0.0 dB off
+  Reduction = '-inf dB' (threshold at norm 0.5): closed -80.2 dB
+  Attack = '1.00 ms' (norm 0.00): range 95.0 dB in the burst, opened in 1.2 ms, held 129.6 ms, fell 20 dB in 85.8 ms | this control's figure 1.2 ms vs label 1.0 ms (ratio 1.21)
+  Attack = '126 ms' (norm 0.50): range 95.0 dB in the burst, opened in 71.7 ms, held 129.6 ms, fell 20 dB in 85.8 ms | this control's figure 71.7 ms vs label 126.0 ms (ratio 0.57)
+  Attack = '500 ms' (norm 1.00): range 95.0 dB in the burst, opened in 284.2 ms, held 129.6 ms, fell 20 dB in 85.8 ms | this control's figure 284.2 ms vs label 500.0 ms (ratio 0.57)
+  Hold = '0 ms': no trace
+  Hold = '125 ms' (norm 0.50): range 95.0 dB in the burst, opened in 3.6 ms, held 129.6 ms, fell 20 dB in 85.8 ms | this control's figure 129.6 ms vs label 125.0 ms (ratio 1.04)
+  Hold = '500 ms' (norm 1.00): range 55.3 dB in the burst, opened in 3.6 ms, held 504.5 ms, fell 20 dB in 86.0 ms | this control's figure 504.5 ms vs label 500.0 ms (ratio 1.01)
+  Release = '1.00 ms' (norm 0.00): range 95.0 dB in the burst, opened in 3.6 ms, held 124.6 ms, fell 20 dB in 1.2 ms | this control's figure 1.2 ms vs label 1.0 ms (ratio 1.16)
+  Release = '501 ms' (norm 0.50): range 49.9 dB in the burst, opened in 3.6 ms, held 137.5 ms, fell 20 dB in 237.8 ms | this control's figure 237.8 ms vs label 501.0 ms (ratio 0.47)
+  Release = '2.000 s' (norm 1.00): range 12.5 dB in the burst, opened in 3.4 ms, held 174.8 ms, fell 11.4925 dB in 525.1 ms | this control's figure 525.1 ms vs label 2000.0 ms (ratio 0.26)
+  ROLES BY MEASUREMENT: 6 verdict(s), 39 unnamed control(s) probed without the signature; unnamed controls are probed for the threshold and range signatures (a burst pair per control is not run)
+    role gate_threshold CONFIRMED  [13] Threshold - the open level moves 40.0 dB
+    role range CONFIRMED  [40] Reduction - the closed level moves 80.2 dB, the open level put (0.0)
+    role attack CONFIRMED  [41] Attack - the attack moves 1.2 -> 284.2 ms
+    role hold DROPPED    [0] Hold - not measured at both positions
+    role release CONFIRMED  [17] Release - the release moves 1.2 -> 525.1 ms
+    measured role range, UNNAMED  [34] Dry/Wet - the closed level moves 80.2 dB, the open level put (0.0)
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/dynamics/AudioUnit_737a5876_1.6.2.dynamics.json (59 processes)
+=== DS DeEsser (s) noise ladder
+DS: DeEsser (s) 12.0.0: threshold [0] Threshold; frequency [1] Freq; mode [3] Audio (Split / Wideband)
+  ladder at 6500 Hz: open end at norm 1.000, max GR 11.72 dB
+  ladder at 997 Hz: open end at norm 0.200, max GR 0.00 dB
+  band selectivity on the ladder: max GR 11.72 dB at 6.5 kHz vs 0.00 dB at 997 Hz
+  noise ladder (4-10 kHz, 30 readings): max GR 10.98 dB (the 6.5 kHz tone gave 11.72)
+  centre (Freq = '2000'): deepest -25.38 dB at 20000 Hz, shelf with its half-depth corner at 2709.03 Hz; at 997 Hz -5.40 dB -> partial | label 2000 Hz vs the corner 2709.03: 35.5 % off
+  centre (Freq = '5657'): deepest -24.14 dB at 20000 Hz, shelf with its half-depth corner at 6938.03 Hz; at 997 Hz -1.09 dB -> partial | label 5657 Hz vs the corner 6938.03: 22.6 % off
+  centre (Freq = '16000'): deepest -16.23 dB at 20000 Hz, shelf with its half-depth corner at 13939.1 Hz; at 997 Hz -0.06 dB -> split_band | label 16000 Hz vs the corner 13939.1: -12.9 % off
+  Audio = 'Split': deepest -25.57 dB at 20 Hz, shelf with its half-depth corner at 20 Hz; at 997 Hz -25.57 dB -> wideband
+  Audio = 'Wideband': deepest -25.57 dB at 20 Hz, shelf with its half-depth corner at 20 Hz; at 997 Hz -25.57 dB -> wideband
+  ROLES BY MEASUREMENT: 2 verdict(s); unnamed controls probed for the threshold signature only
+    role threshold CONFIRMED  [0] Threshold - GR moves 11.72 dB between the ends
+    role frequency CONFIRMED  [1] Freq - the centre moves 2709.03 -> 13939.1 Hz (2.36 oct)
+DS: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/deesser/AudioUnit_4e55707d_12.0.0.deesser.json (19 processes)
+=== RD H-Reverb (s) tail by label
+RD: H-Reverb (s) 12.0.0 (reverb): mix [8] Dry/Wet; pre-delay [0] Predelay Free; decay [3] Buildup Time
+  wet-only (mix 1.0): onset 12.5 ms; 0 repeat(s) above -70.0 dB; decay RT60 3.14 s (T20), 2.69 s (T30); floor -90.0 dB
+  mix law: other (worst deviation: linear 12.79 dB, equal power 8.90 dB (fit within 1.0)); dry at 0 -15.00 dB, wet at 1 -22.56 dB (dry = the first 2 ms of the burst, before any wet; wet = the 4 ms after the burst ends)
+  Predelay Free = '0' (norm 0.00): onset 12.5 ms vs label 0.0 ms -> OFF by 12.5 ms
+  Predelay Free = '125' (norm 0.25): onset 12.5 ms vs label 125.0 ms -> OFF by -112.5 ms
+  Predelay Free = '250' (norm 0.50): onset 12.5 ms vs label 250.0 ms -> OFF by -237.5 ms
+  Predelay Free = '375' (norm 0.75): onset 12.5 ms vs label 375.0 ms -> OFF by -362.5 ms
+  Predelay Free = '500' (norm 1.00): onset 12.5 ms vs label 500.0 ms -> OFF by -487.5 ms
+  the time control moved NOTHING across its positions (the same reading at every one): a sync mode may still be engaged, or the control is not the delay time
+  Buildup Time = '0.000' (norm 0.00): RT60 3.67 s (T20), 2.75 s (T30) vs label 0.00 s (ratio 3672691.38)
+  Buildup Time = '0.031' (norm 0.25): RT60 3.14 s (T20), 2.69 s (T30) vs label 0.03 s (ratio 101.32)
+  Buildup Time = '0.250' (norm 0.50): RT60 2.73 s (T20), 2.80 s (T30) vs label 0.25 s (ratio 10.93)
+  Buildup Time = '0.844' (norm 0.75): RT60 2.46 s (T20), 2.65 s (T30) vs label 0.84 s (ratio 2.91)
+  Buildup Time = '2.000' (norm 1.00): RT60 8.72 s (T20), 6.67 s (T30) vs label 2.00 s (ratio 4.36)
+  ROLES BY MEASUREMENT: 5 verdict(s), 158 unnamed control(s) probed without the signature
+    role mix DROPPED    [8] Dry/Wet - no dry or wet reading at both ends
+    role time DROPPED    [0] Predelay Free - the onset moves 12.5 -> 12.5 ms (needs >= 10 ms and 20 %)
+    role decay CONFIRMED  [3] Buildup Time - RT60 3.67 -> 8.72 s (x2.37)
+    measured role time, UNNAMED  [7] ER/Tail Balance - the onset moves 11.5 -> 46.5 ms
+    measured role decay, UNNAMED  [11] XGain - RT60 2.54 -> 10.28 s (x4.04)
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/reverbdelay/AudioUnit_4254627d_12.0.0.reverbdelay.json (104 processes)
+=== RD bx_delay2500 again
+RD: bx_delay2500 1.8.1 (delay): mix [8] Modulation Mix; time [14] Time L; feedback [19] Feedback L; sync -; note [17] Note L
+  wet-only (mix 1.0): onset 191.5 ms; 14 repeat(s) above -70.0 dB; repeats every 192.0 ms falling -4.50 dB each; decay the tail starts less than 25 dB above the floor (-999.0 vs -90.0): no decay to read; floor -90.0 dB
+  mix law: unknown (no dry at the dry end or no wet at the wet end); dry at 0 -999.00 dB, wet at 1 -9.37 dB (wet = the first repeat's head)
+  Time L = '15 ms' (norm 0.00): onset 14.5 ms vs label 15.0 ms -> within 2 % / 2 ms
+  Time L = '54 ms' (norm 0.25): onset 53.5 ms vs label 54.0 ms -> within 2 % / 2 ms
+  Time L = '194 ms' (norm 0.50): onset 191.5 ms, repeats every 192.0 ms vs label 194.0 ms -> within 2 % / 2 ms
+  Time L = '696 ms' (norm 0.75): onset 688.5 ms, repeats every 689.0 ms vs label 696.0 ms -> within 2 % / 2 ms
+  Time L = '2500 ms' (norm 1.00): onset 2475.5 ms, repeats every 2475.0 ms vs label 2500.0 ms -> within 2 % / 2 ms
+  Feedback L = '0 %' (norm 0.00): 1 repeat(s) above -70.0 dB
+  Feedback L = '25 %' (norm 0.25): 6 repeat(s) above -70.0 dB, fall -10.45 dB per repeat vs 20 log10 (label) -12.04 dB, repeats reach -60 dB in 1.10 s
+  Feedback L = '50 %' (norm 0.50): 14 repeat(s) above -70.0 dB, fall -4.50 dB per repeat vs 20 log10 (label) -6.02 dB, repeats reach -60 dB in 2.56 s
+  Feedback L = '75 %' (norm 0.75): 31 repeat(s) above -70.0 dB, fall -0.99 dB per repeat vs 20 log10 (label) -2.50 dB, repeats reach -60 dB in 11.61 s
+  Feedback L = '100 %' (norm 1.00): 32 repeat(s) above -70.0 dB, fall 0.01 dB per repeat vs 20 log10 (label) 0.00 dB
+  ROLES BY MEASUREMENT: 10 verdict(s), 105 unnamed control(s) probed without the signature
+    role mix DROPPED    [8] Modulation Mix - no dry or wet reading at both ends
+    role time CONFIRMED  [14] Time L - the onset moves 14.5 -> 2475.0 ms
+    role feedback CONFIRMED  [19] Feedback L - the repeat count moves 1 -> 32 with the first repeat put (0.00 dB)
+    measured role time, UNNAMED  [15] Time R - the onset moves 14.5 -> 2475.0 ms
+    measured role feedback, UNNAMED  [20] Feedback R - the repeat count moves 1 -> 32 with the first repeat put (0.00 dB)
+    measured role feedback, UNNAMED  [29] Feedback Low Pass - the fall per repeat moves -17.17 -> -4.50 dB
+    measured role time, UNNAMED  [30] Feedback Hi Pass - the onset moves 192.0 -> 142.0 ms
+    measured role feedback, UNNAMED  [32] Wah Amount - the repeat count moves 14 -> 16 with the first repeat put (0.83 dB)
+    measured role feedback, UNNAMED  [34] Level R - the repeat count moves 14 -> 16 with the first repeat put (1.32 dB)
+    measured role feedback, UNNAMED  [50] Transient Shaping Threshold - the fall per repeat moves -30.81 -> -4.50 dB
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/reverbdelay/AudioUnit_417f756c_1.8.1.reverbdelay.json (80 processes)

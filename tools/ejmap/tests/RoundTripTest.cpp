@@ -83,6 +83,7 @@
 #include "EjmapDynamics.h"
 #include "EjmapDeesser.h"
 #include "EjmapMultiband.h"
+#include "EjmapRoleEvidence.h"
 
 namespace
 {
@@ -7382,6 +7383,69 @@ void testMultiband()
     check (! totalGainDb (ejmap::eq::Position()), "mb W3: no tones, no figure");
 }
 
+/** NAMES PROPOSE, MEASUREMENT DECIDES (EjmapRoleEvidence.h, 5 Oct evening ruling): every case run 2 found where the name was wrong, as a pin. */
+void testRoleEvidence()
+{
+    using namespace ejmap::roleevidence;
+    auto fig = [] (std::function<void (Figure&)> fill) { Figure f; f.ok = true; fill (f); return f; };
+    // drive: Saphira's "Warmth Band1 Gain" nominated by "warmth": THD -36.3 / -36.3 across its ends -> dropped; J37's Saturation -63.7 -> -10.6 -> confirmed
+    check (! signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -36.3; }), fig ([] (Figure& f) { f.thdDb = -36.1; })).holds, "role D1: Saphira's band gain is not a drive (THD moves 0.2 dB)");
+    check (signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -63.7; }), fig ([] (Figure& f) { f.thdDb = -10.6; })).holds, "role D2: J37's Saturation is a drive (THD -63.7 -> -10.6)");
+    check (! signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -120.0; }), fig ([] (Figure& f) { f.thdDb = -95.0; })).holds, "role D3: MSaturator's per-harmonic trim: THD never above -60 is not a drive however much it 'moves' at the floor");
+    // mix: bx_delay2500's "Modulation Mix" - dry never present, wet moves: dropped; H-Delay's Mix dry -15.8 -> floor, wet floor -> -17.6: confirmed
+    check (! signatureHolds ("mix", fig ([] (Figure& f) { f.wetDb = -40.0; }), fig ([] (Figure& f) { f.wetDb = -9.4; })).holds, "role M1: bx_delay2500's Modulation Mix: no dry reading -> not a mix");
+    check (signatureHolds ("mix", fig ([] (Figure& f) { f.dryDb = -15.8; f.wetDb = -85.8; }), fig ([] (Figure& f) { f.dryDb = -85.7; f.wetDb = -17.6; })).holds, "role M2: H-Delay's Mix: dry falls while wet rises -> a mix");
+    check (! signatureHolds ("mix", fig ([] (Figure& f) { f.dryDb = -15.0; f.wetDb = -30.0; }), fig ([] (Figure& f) { f.dryDb = -25.0; f.wetDb = -40.0; })).holds, "role M3: dry and wet falling together is a level, not a mix");
+    check (signatureHolds ("mix", fig ([] (Figure& f) { f.dryDb = -15.0; }), fig ([] (Figure& f) { f.wetDb = -22.6; })).holds, "role M4: H-Reverb's Dry/Wet: no wet at the dry end and no dry at the wet end IS the mix shape (absent = floor)");
+    check (! signatureHolds ("feedback", fig ([] (Figure& f) { f.repeats = 14; f.firstRepeatDb = -17.0; }), fig ([] (Figure& f) { f.repeats = 16; f.firstRepeatDb = -17.8; })).holds, "role F4: 14 -> 16 repeats with the first put (bx_delay2500's Wah Amount) is a floor effect, not feedback (needs 3)");
+    // time: H-Reverb's "Predelay Free" 12.5 -> 12.5 ms: dropped; Abbey Road Plates' Predelay 0.5 -> 500.5: confirmed; MannyM's "Delay Left ms" 500 -> 500: dropped
+    check (! signatureHolds ("time", fig ([] (Figure& f) { f.onsetMs = 12.5; }), fig ([] (Figure& f) { f.onsetMs = 12.5; })).holds, "role T1: H-Reverb's Predelay Free moved nothing -> dropped");
+    check (signatureHolds ("time", fig ([] (Figure& f) { f.onsetMs = 0.5; }), fig ([] (Figure& f) { f.onsetMs = 500.5; })).holds, "role T2: Abbey Road Plates' Predelay 0.5 -> 500.5 ms -> confirmed");
+    check (! signatureHolds ("time", fig ([] (Figure& f) { f.onsetMs = 500.0; }), fig ([] (Figure& f) { f.onsetMs = 500.0; })).holds, "role T3: MannyM's Delay Left ms under its sync'd note -> dropped");
+    check (! signatureHolds ("time", fig ([] (Figure& f) { f.onsetMs = 2475.0; }), fig ([] (Figure& f) { f.onsetMs = 2490.0; })).holds, "role T4: an onset that moves 15 ms on 2.5 s (0.6 %) is a modulation or a filter's edge, not a time control (needs 20 %)");
+    // decay: H-Reverb's "Buildup Time" moved RT60 3.67 -> 8.72: the measurement says it IS a decay-affecting control (confirmed, whatever the name); Valhalla 1.22 -> 9.02 confirmed
+    check (signatureHolds ("decay", fig ([] (Figure& f) { f.rt60s = 3.67; }), fig ([] (Figure& f) { f.rt60s = 8.72; })).holds, "role C1: H-Reverb's Buildup Time moves RT60 x2.4 -> confirmed as a decay control by measurement");
+    check (! signatureHolds ("decay", fig ([] (Figure& f) { f.rt60s = 2.5; }), fig ([] (Figure& f) { f.rt60s = 2.8; })).holds, "role C2: RT60 2.5 -> 2.8 (x1.12) is not a decay control");
+    // feedback: bx_delay2500 -10.45 -> 0.01 dB per repeat: confirmed; CLA EchoSphere SlapFbK 0 -> 100: 1 -> 25 repeats: confirmed by count
+    check (signatureHolds ("feedback", fig ([] (Figure& f) { f.fallPerRepeatDb = -10.45; f.repeats = 6; }), fig ([] (Figure& f) { f.fallPerRepeatDb = 0.01; f.repeats = 32; })).holds, "role F1: feedback by the fall per repeat");
+    check (signatureHolds ("feedback", fig ([] (Figure& f) { f.repeats = 1; f.firstRepeatDb = -17.5; }), fig ([] (Figure& f) { f.repeats = 25; f.fallPerRepeatDb = 0.0; f.firstRepeatDb = -17.6; })).holds && ! signatureHolds ("feedback", fig ([] (Figure& f) { f.repeats = 3; f.firstRepeatDb = -17.0; }), fig ([] (Figure& f) { f.repeats = 5; f.firstRepeatDb = -17.0; })).holds, "role F2: feedback by the repeat count when the first repeat stays put; 3 -> 5 repeats is nothing");
+    check (! signatureHolds ("feedback", fig ([] (Figure& f) { f.repeats = 0; }), fig ([] (Figure& f) { f.repeats = 16; f.firstRepeatDb = -20.0; })).holds && ! signatureHolds ("feedback", fig ([] (Figure& f) { f.repeats = 9; f.firstRepeatDb = -30.0; }), fig ([] (Figure& f) { f.repeats = 11; f.firstRepeatDb = -12.0; })).holds, "role F3: bx_delay2500's Gain In (0 -> 16 repeats from silence) and H-Delay's Output (every repeat 18 dB louder) are levels, not feedback");
+    // transient / sustain: TransX's "Range" (unnamed) moving the transient by 10 dB -> measured role, unnamed; Quantum's "Attack - Vibrato - Mix" 0.00 -> dropped; Smack Attack confirmed
+    check (unnamed (5, "Range", "transient", signatureHolds ("transient", fig ([] (Figure& f) { f.transientDb = 0.0; }), fig ([] (Figure& f) { f.transientDb = 10.0; }))).verdict == "measured_unnamed", "role S1: TransX's Range shows the transient signature -> measured role, unnamed");
+    check (nominee (1, "Attack - Vibrato - Mix", "transient", signatureHolds ("transient", fig ([] (Figure& f) { f.transientDb = 0.0; }), fig ([] (Figure& f) { f.transientDb = 0.0; }))).verdict == "dropped", "role S2: Quantum's vibrato mix nominated as attack moves nothing -> dropped");
+    check (signatureHolds ("transient", fig ([] (Figure& f) { f.transientDb = -24.0; }), fig ([] (Figure& f) { f.transientDb = 24.0; })).holds && signatureHolds ("sustain", fig ([] (Figure& f) { f.sustainDb = -6.95; }), fig ([] (Figure& f) { f.sustainDb = 7.69; })).holds, "role S3: Smack Attack's Attack and Sustain confirmed");
+    // threshold: MannyM TripleD's "DeBoxy Thresh" GR 0 -> 0 at 6.5 kHz: dropped; DeEsser's Threshold 0 -> 11.7: confirmed; Melda's gate threshold on the wrong band's tone
+    check (! signatureHolds ("threshold", fig ([] (Figure& f) { f.grDb = 0.0; }), fig ([] (Figure& f) { f.grDb = 0.0; })).holds, "role H1: TripleD's DeBoxy Thresh moves no GR on the sibilance tone -> dropped");
+    check (signatureHolds ("threshold", fig ([] (Figure& f) { f.grDb = 0.0; }), fig ([] (Figure& f) { f.grDb = 11.7; })).holds, "role H2: DeEsser's Threshold -> confirmed");
+    check (! signatureHolds ("band_threshold", fig ([] (Figure& f) { f.grDb = 0.05; }), fig ([] (Figure& f) { f.grDb = 0.0; })).holds, "role H3: C6's Band 1 Threshold on a tone that is not its band moves 0.05 dB -> dropped (the pairing was wrong, the measurement says so)");
+    // frequency: DeEsser's Freq corner 2709 -> 13939 Hz -> confirmed; TB_Sibalance's "Stop freq" with no centre at either end -> dropped
+    check (signatureHolds ("frequency", fig ([] (Figure& f) { f.centreHz = 2709.0; f.bandGainDb = -25.4; }), fig ([] (Figure& f) { f.centreHz = 13939.0; f.bandGainDb = -16.2; })).holds == false, "role Q1: a frequency whose band depth moves 9 dB with it is not a frequency ALONE (DeEsser's Freq also sets the depth: said)");
+    check (signatureHolds ("frequency", fig ([] (Figure& f) { f.centreHz = 2709.0; }), fig ([] (Figure& f) { f.centreHz = 13939.0; })).holds, "role Q2: the corner moving 2.4 octaves is a frequency when the band's depth is not read");
+    check (! signatureHolds ("frequency", Figure(), fig ([] (Figure& f) { f.centreHz = 10000.0; })).holds, "role Q3: TB's Stop freq with no centre at one end -> dropped (not measured at both positions)");
+    check (signatureHolds ("q", fig ([] (Figure& f) { f.centreHz = 1000.0; f.bandwidthOct = 2.0; }), fig ([] (Figure& f) { f.centreHz = 1010.0; f.bandwidthOct = 0.5; })).holds && ! signatureHolds ("q", fig ([] (Figure& f) { f.centreHz = 1000.0; f.bandwidthOct = 1.0; }), fig ([] (Figure& f) { f.centreHz = 4000.0; f.bandwidthOct = 0.5; })).holds, "role Q4: a Q narrows the band with the centre still; a control that moves the centre too is a frequency");
+    // gain: SBC's Gain (a path) vs its Input Gain (plain) read at two levels; a trim that moves nothing
+    check (! signatureHolds ("gain", fig ([] (Figure& f) { f.levelDb = 0.0; f.levelDbQuiet = 0.0; }), fig ([] (Figure& f) { f.levelDb = 19.6; f.levelDbQuiet = 24.0; })).holds, "role G1: SBC's Gain moves 19.6 at one level and 24 at the quieter: a path, not a plain gain");
+    check (signatureHolds ("gain", fig ([] (Figure& f) { f.levelDb = 0.0; f.levelDbQuiet = 0.0; }), fig ([] (Figure& f) { f.levelDb = 23.9; f.levelDbQuiet = 24.0; })).holds, "role G2: a gain that moves the same at both levels is confirmed");
+    check (! signatureHolds ("gain", fig ([] (Figure& f) { f.levelDb = 0.0; }), fig ([] (Figure& f) { f.levelDb = 0.3; })).holds, "role G3: XLA-3's Noise Level moves 0.3 dB -> dropped");
+    // gates and timing
+    check (signatureHolds ("gate_threshold", fig ([] (Figure& f) { f.openLevelDb = -63.0; }), fig ([] (Figure& f) { f.openLevelDb = -23.0; })).holds && signatureHolds ("range", fig ([] (Figure& f) { f.rangeDb = 0.0; }), fig ([] (Figure& f) { f.rangeDb = -80.2; })).holds, "role K1: G8's Threshold and Reduction confirmed");
+    check (signatureHolds ("hold", fig ([] (Figure& f) { f.holdMs = 129.6; }), fig ([] (Figure& f) { f.holdMs = 504.5; })).holds && ! signatureHolds ("attack", fig ([] (Figure& f) { f.attackMs = 8.8; }), fig ([] (Figure& f) { f.attackMs = 8.9; })).holds, "role K2: G8's Hold confirmed; a control that leaves the attack at 8.8 -> 8.9 is not an attack");
+    check (! signatureHolds ("release", fig ([] (Figure& f) { f.releaseMs = 100.0; }), Figure()).holds, "role K3: a release not measured at both ends is dropped, never guessed");
+    check (signatureHolds ("ceiling", fig ([] (Figure& f) { f.peakDb = -0.1; }), fig ([] (Figure& f) { f.peakDb = -6.0; })).holds && signatureHolds ("global", fig ([] (Figure& f) { f.grDb = 0.0; }), fig ([] (Figure& f) { f.grDb = 11.9; })).holds, "role K4: a ceiling and a global depth by their signatures");
+    // the record: only the verdicts that say something are kept, the rest counted
+    std::vector<RoleVerdict> all { nominee (1, "A", "drive", signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -60.0; }), fig ([] (Figure& f) { f.thdDb = -10.0; }))), unnamed (2, "B", "drive", signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -120.0; }), fig ([] (Figure& f) { f.thdDb = -119.0; }))), unnamed (3, "C", "drive", signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -60.0; }), fig ([] (Figure& f) { f.thdDb = -20.0; }))) };
+    int notShown = 0; const auto kept = keep (all, notShown);
+    check (kept.size() == 2 && notShown == 1 && kept[0].verdict == "confirmed" && kept[1].verdict == "measured_unnamed" && line (kept[1]).startsWith ("measured role drive, UNNAMED"), "role R1: confirmed and unnamed are kept, a probed control without the signature is counted (" + juce::String (notShown) + ")");
+    check (signatureHolds ("nosuch", fig ([] (Figure&) {}), fig ([] (Figure&) {})).why.contains ("no signature defined"), "role R2: an unknown role has no signature, said");
+    // the live lessons of the first role run (5 Oct evening): a silent end, a level read as a band, a post gain read as a ceiling, a bound at one end
+    check (! signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -10.2; f.outputDb = -88.0; }), fig ([] (Figure& f) { f.thdDb = -88.2; f.outputDb = -12.0; })).holds, "role L1: J37's Output Level at minimum is silent: THD on noise is not a drive signature");
+    check (! signatureHolds ("eq_gain", fig ([] (Figure& f) { f.bandGainDb = 0.0; f.levelShiftDb = 0.0; }), fig ([] (Figure& f) { f.bandGainDb = 12.04; f.levelShiftDb = 12.0; })).holds, "role L2: bx_digital's Input Gain moves every tone alike: a level, not a band");
+    check (signatureHolds ("eq_gain", fig ([] (Figure& f) { f.bandGainDb = 0.0; f.levelShiftDb = 0.0; }), fig ([] (Figure& f) { f.bandGainDb = 12.0; f.levelShiftDb = 0.5; })).holds, "role L3: a band that stands 12 dB out of a grid that moved 0.5 is a band");
+    check (! signatureHolds ("transient", fig ([] (Figure& f) { f.transientDb = 0.0; f.sustainDb = 0.0; }), fig ([] (Figure& f) { f.transientDb = 48.0; f.sustainDb = 48.0; })).holds && signatureHolds ("transient", fig ([] (Figure& f) { f.transientDb = 0.0; f.sustainDb = 0.0; }), fig ([] (Figure& f) { f.transientDb = 17.2; f.sustainDb = 0.3; })).holds, "role L5: Smack Attack's Output moves transient and sustain alike (a level); TransX's Range moves the transient alone");
+    check (! signatureHolds ("range", fig ([] (Figure& f) { f.rangeDb = 0.0; f.openGainDb = 0.0; }), fig ([] (Figure& f) { f.rangeDb = -147.0; f.openGainDb = -147.0; })).holds && signatureHolds ("range", fig ([] (Figure& f) { f.rangeDb = 0.0; f.openGainDb = 0.0; }), fig ([] (Figure& f) { f.rangeDb = -80.2; f.openGainDb = 0.1; })).holds, "role L6: G8's Output Gain moves the open level with the closed one (a level); its Reduction leaves the open level put");
+    check (! signatureHolds ("ceiling", fig ([] (Figure& f) { f.peakDb = -1.0; }), fig ([] (Figure& f) { f.peakDb = -7.0; f.peakDriveDeltaDb = -5.9; })).holds && signatureHolds ("ceiling", fig ([] (Figure& f) { f.peakDb = -1.0; }), fig ([] (Figure& f) { f.peakDb = -6.0; f.peakDriveDeltaDb = 0.1; })).holds, "role L4: bx_limiter's Gain passes a 6 dB drive change through (a gain); its Ceiling holds it");
+}
+
 /** THE ZIP REVIEW (EjmapCertReview.h, 5 Oct R1): hand-built records, outcomes and entry lists; every section's reading pinned. */
 void testCertReview()
 {
@@ -7579,6 +7643,7 @@ int main (int, char**)
     testDynamics();
     testDeesser();
     testMultiband();
+    testRoleEvidence();
     testLoopOutcomes();
     testCategoriesMerge();
 

@@ -1,0 +1,261 @@
+=== RD H-Delay (s)
+RD: H-Delay (s) 12.0.0 (delay): mix [5] Mix; time [0] Delay Sec; feedback [2] Feedback; sync [4] Sync (off = 'ms' @1.00, on = 'Host' @0.50); note [1] Delay BPM
+  wet-only (mix 1.0): onset 375.5 ms; 11 repeat(s) above -65.2 dB; repeats every 375.0 ms falling -4.44 dB each; decay the tail starts less than 25 dB above the floor (-85.4 vs -85.2): no decay to read; floor -85.2 dB
+  mix law: equal_power (worst deviation: linear 3.89 dB, equal power 0.00 dB (fit within 1.0)); dry at 0 -15.81 dB, wet at 1 -17.57 dB (wet = the first repeat's head)
+  Delay Sec = '1' (norm 0.00): onset 1.5 ms vs label 1.0 ms -> within 2 % / 2 ms
+  Delay Sec = '251' (norm 0.25): onset 257.5 ms, repeats every 251.0 ms vs label 251.0 ms -> within 2 % / 2 ms
+  Delay Sec = '501' (norm 0.50): onset 483.5 ms, repeats every 501.0 ms vs label 501.0 ms -> within 2 % / 2 ms
+  Delay Sec = '1540' (norm 0.75): onset 1138.5 ms, repeats every 1477.0 ms vs label 1540.0 ms -> OFF by -63.0 ms
+  Delay Sec = '3500' (norm 1.00): onset 1947.5 ms, repeats every 2803.0 ms vs label 3500.0 ms -> OFF by -697.0 ms
+  Feedback = '0' (norm 0.00): 1 repeat(s) above -66.6 dB
+  Feedback = '50' (norm 0.25): 9 repeat(s) above -65.6 dB, fall -5.95 dB per repeat, repeats reach -60 dB in 3.78 s
+  Feedback = '100' (norm 0.50): 16 repeat(s) above -63.5 dB, fall -0.67 dB per repeat, repeats reach -60 dB in 33.53 s
+  Feedback = '150' (norm 0.75): 15 repeat(s) above -61.8 dB, fall 0.20 dB per repeat
+  Feedback = '200' (norm 1.00): 9 repeat(s) above -60.2 dB, fall 0.79 dB per repeat
+  sync on at 90 bpm (note '1/8D'): 500.0 ms = 0.750 beat(s) vs 500.0 ms expected (0.0 ms off)
+  sync on at 120 bpm (note '1/8D'): 375.0 ms = 0.750 beat(s) vs 375.0 ms expected (0.0 ms off)
+  sync on at 140 bpm (note '1/8D'): 322.0 ms = 0.751 beat(s) vs 321.4 ms expected (0.6 ms off)
+  ROLES BY MEASUREMENT: 6 verdict(s), 25 unnamed control(s) probed without the signature
+    role mix CONFIRMED  [5] Mix - the wet/dry ratio moves 137.00 dB, dry and wet opposite
+    role time CONFIRMED  [0] Delay Sec - the onset moves 1.5 -> 2803.0 ms
+    role feedback CONFIRMED  [2] Feedback - the repeat count moves 1 -> 9
+    measured role feedback, UNNAMED  [6] Output - the repeat count moves 9 -> 11
+    measured role feedback, UNNAMED  [11] HiPass - the repeat count moves 10 -> 12
+    measured role feedback, UNNAMED  [12] LoPass - the repeat count moves 1 -> 11
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/reverbdelay/AudioUnit_42447e63_12.0.0.reverbdelay.json (41 processes)
+=== RD bx_delay2500
+RD: bx_delay2500 1.8.1 (delay): mix [8] Modulation Mix; time [14] Time L; feedback [19] Feedback L; sync -; note [17] Note L
+  wet-only (mix 1.0): onset 191.5 ms; 14 repeat(s) above -70.0 dB; repeats every 192.0 ms falling -4.50 dB each; decay the tail starts less than 25 dB above the floor (-999.0 vs -90.0): no decay to read; floor -90.0 dB
+  mix law: unknown (no dry at the dry end or no wet at the wet end); dry at 0 -999.00 dB, wet at 1 -9.37 dB (wet = the first repeat's head)
+  Time L = '15 ms' (norm 0.00): onset 14.5 ms vs label 15.0 ms -> within 2 % / 2 ms
+  Time L = '54 ms' (norm 0.25): onset 53.5 ms vs label 54.0 ms -> within 2 % / 2 ms
+  Time L = '194 ms' (norm 0.50): onset 191.5 ms, repeats every 192.0 ms vs label 194.0 ms -> within 2 % / 2 ms
+  Time L = '696 ms' (norm 0.75): onset 688.5 ms, repeats every 689.0 ms vs label 696.0 ms -> within 2 % / 2 ms
+  Time L = '2500 ms' (norm 1.00): onset 2475.5 ms, repeats every 2475.0 ms vs label 2500.0 ms -> within 2 % / 2 ms
+  Feedback L = '0 %' (norm 0.00): 1 repeat(s) above -70.0 dB
+  Feedback L = '25 %' (norm 0.25): 6 repeat(s) above -70.0 dB, fall -10.45 dB per repeat vs 20 log10 (label) -12.04 dB, repeats reach -60 dB in 1.10 s
+  Feedback L = '50 %' (norm 0.50): 14 repeat(s) above -70.0 dB, fall -4.50 dB per repeat vs 20 log10 (label) -6.02 dB, repeats reach -60 dB in 2.56 s
+  Feedback L = '75 %' (norm 0.75): 31 repeat(s) above -70.0 dB, fall -0.99 dB per repeat vs 20 log10 (label) -2.50 dB, repeats reach -60 dB in 11.61 s
+  Feedback L = '100 %' (norm 1.00): 32 repeat(s) above -70.0 dB, fall 0.01 dB per repeat vs 20 log10 (label) 0.00 dB
+  ROLES BY MEASUREMENT: 23 verdict(s), 124 unnamed control(s) probed without the signature
+    role mix DROPPED    [8] Modulation Mix - no dry or wet reading at both ends
+    role time CONFIRMED  [14] Time L - the onset moves 14.5 -> 2475.0 ms
+    role feedback CONFIRMED  [19] Feedback L - the repeat count moves 1 -> 32
+    measured role feedback, UNNAMED  [2] Gain In - the repeat count moves 0 -> 16
+    measured role feedback, UNNAMED  [3] Gain Out - the repeat count moves 0 -> 14
+    measured role time, UNNAMED  [15] Time R - the onset moves 14.5 -> 2475.0 ms
+    measured role feedback, UNNAMED  [15] Time R - the repeat count moves 0 -> 2
+    measured role feedback, UNNAMED  [20] Feedback R - the repeat count moves 1 -> 32
+    measured role feedback, UNNAMED  [29] Feedback Low Pass - the fall per repeat moves -17.17 -> -4.50 dB
+    measured role time, UNNAMED  [30] Feedback Hi Pass - the onset moves 192.0 -> 142.0 ms
+    measured role feedback, UNNAMED  [30] Feedback Hi Pass - the repeat count moves 14 -> 16
+    measured role feedback, UNNAMED  [32] Wah Amount - the repeat count moves 14 -> 16
+    measured role feedback, UNNAMED  [34] Level R - the repeat count moves 14 -> 16
+    measured role feedback, UNNAMED  [50] Transient Shaping Threshold - the fall per repeat moves -30.81 -> -4.50 dB
+    measured role feedback, UNNAMED  [51] Transient Shaping Make Up - the repeat count moves 0 -> 37
+    measured role feedback, UNNAMED  [53] Input VU L - the repeat count moves 14 -> 0
+    measured role feedback, UNNAMED  [54] Input VU R - the repeat count moves 14 -> 0
+    measured role feedback, UNNAMED  [55] Output VU L - the repeat count moves 14 -> 0
+    measured role feedback, UNNAMED  [56] Output VU R - the repeat count moves 14 -> 0
+    measured role feedback, UNNAMED  [57]  - the repeat count moves 14 -> 0
+    measured role feedback, UNNAMED  [58]  - the repeat count moves 14 -> 0
+    measured role feedback, UNNAMED  [59]  - the repeat count moves 14 -> 0
+    measured role feedback, UNNAMED  [60]  - the repeat count moves 14 -> 0
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/reverbdelay/AudioUnit_417f756c_1.8.1.reverbdelay.json (96 processes)
+=== DYN Smack Attack (s)
+DYN: Smack Attack (s) 12.0.0 (transient): attack [0] Attack; sustain [4] Sustain
+  neutral (as instantiated, short hit): transient 0.00 dB, sustain 0.00 dB against the input, over 3 hits
+  neutral (long hit, 500 ms decay): transient 0.00 dB, sustain 0.00 dB
+  Attack = '-100' (norm 0.00): transient -24.00 dB, sustain -0.14 dB against neutral
+  Attack = '-50' (norm 0.25): transient -12.00 dB, sustain -0.14 dB against neutral
+  Attack = '0' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Attack = '50' (norm 0.75): transient 12.00 dB, sustain 0.31 dB against neutral
+  Attack = '100' (norm 1.00): transient 24.00 dB, sustain 0.31 dB against neutral
+  Sustain = '-100' (norm 0.00): transient 0.00 dB, sustain -2.37 dB against neutral
+  Sustain = '-50' (norm 0.25): transient 0.00 dB, sustain -1.76 dB against neutral
+  Sustain = '0' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Sustain = '50' (norm 0.75): transient 0.00 dB, sustain 1.39 dB against neutral
+  Sustain = '100' (norm 1.00): transient 0.00 dB, sustain 2.09 dB against neutral
+  ROLES BY MEASUREMENT: 4 verdict(s), 12 unnamed control(s) probed without the signature
+    role transient CONFIRMED  [0] Attack - the transient moves 48.00 dB
+    role sustain CONFIRMED  [4] Sustain - the sustain moves 4.46 dB
+    measured role transient, UNNAMED  [9] Output - the transient moves 48.00 dB
+    measured role sustain, UNNAMED  [9] Output - the sustain moves 48.00 dB
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/dynamics/AudioUnit_5e556a63_12.0.0.dynamics.json (28 processes)
+=== DYN TransX Wide (m)
+DYN: TransX Wide (m) 12.0.0 (transient): attack -; sustain [4] Release
+  neutral (as instantiated, short hit): transient 5.14 dB, sustain 0.00 dB against the input, over 3 hits
+  neutral (long hit, 500 ms decay): transient 4.10 dB, sustain 0.00 dB
+  Release = '0.50' (norm 0.00): transient 0.00 dB, sustain -0.00 dB against neutral
+  Release = '2.81' (norm 0.25): transient 0.00 dB, sustain -0.00 dB against neutral
+  Release = '15.81' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Release = '88.91' (norm 0.75): transient 0.00 dB, sustain 0.00 dB against neutral
+  Release = '500.00' (norm 1.00): transient 0.00 dB, sustain 0.00 dB against neutral
+  ROLES BY MEASUREMENT: 6 verdict(s), 3 unnamed control(s) probed without the signature
+    role sustain DROPPED    [4] Release - the sustain moves 0.00 dB (needs 2)
+    measured role transient, UNNAMED  [0] Output Gain - the transient moves 36.00 dB
+    measured role sustain, UNNAMED  [0] Output Gain - the sustain moves 36.00 dB
+    measured role transient, UNNAMED  [1] Range - the transient moves 17.18 dB
+    measured role transient, UNNAMED  [2] Sense - the transient moves 2.82 dB
+    measured role transient, UNNAMED  [3] Duration - the transient moves 5.58 dB
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/dynamics/AudioUnit_5e5e6663_12.0.0.dynamics.json (17 processes)
+=== DYN G8
+DYN: Unfiltered Audio G8 1.6.2 (gate): threshold [13] Threshold; range [40] Reduction; attack [41] Attack; hold [0] Hold; release [17] Release
+  Threshold = '-inf dB' (norm 0.00): the quiet end is attenuated only 0.01 dB more than the loud end: not gating at this setting
+  Threshold = '-60.0 dB' (norm 0.25): range 80.2 dB, opens at -63.0 dBFS RMS, closes at -69.5 (-60.0 dBFS peak), hysteresis 6.5 dB | label -60.0 -> 0.0 dB above it (peak)
+  Threshold = '-40.0 dB' (norm 0.50): range 80.2 dB, opens at -43.0 dBFS RMS, closes at -49.5 (-40.0 dBFS peak), hysteresis 6.5 dB | label -40.0 -> -0.0 dB above it (peak)
+  Threshold = '-20.0 dB' (norm 0.75): range 80.2 dB, opens at -23.0 dBFS RMS, closes at -29.5 (-20.0 dBFS peak), hysteresis 6.5 dB | label -20.0 -> 0.0 dB above it (peak)
+  Threshold = '0 dB' (norm 1.00): the quiet end is attenuated only -57.60 dB more than the loud end: not gating at this setting
+  Reduction = '0 dB' (threshold at norm 0.5): closed -0.0 dB vs label 0.0 -> -0.0 dB off
+  Reduction = '-13.7 dB' (threshold at norm 0.5): closed -13.7 dB vs label -13.7 -> -0.0 dB off
+  Reduction = '-inf dB' (threshold at norm 0.5): closed -80.2 dB
+  Attack = '1.00 ms' (norm 0.00): range 95.0 dB in the burst, opened in 1.2 ms, held 129.6 ms, fell 20 dB in 85.8 ms | this control's figure 1.2 ms vs label 1.0 ms (ratio 1.21)
+  Attack = '126 ms' (norm 0.50): range 95.0 dB in the burst, opened in 71.7 ms, held 129.6 ms, fell 20 dB in 85.8 ms | this control's figure 71.7 ms vs label 126.0 ms (ratio 0.57)
+  Attack = '500 ms' (norm 1.00): range 95.0 dB in the burst, opened in 284.2 ms, held 129.6 ms, fell 20 dB in 85.8 ms | this control's figure 284.2 ms vs label 500.0 ms (ratio 0.57)
+  Hold = '0 ms': no trace
+  Hold = '125 ms' (norm 0.50): range 95.0 dB in the burst, opened in 3.6 ms, held 129.6 ms, fell 20 dB in 85.8 ms | this control's figure 129.6 ms vs label 125.0 ms (ratio 1.04)
+  Hold = '500 ms' (norm 1.00): range 55.3 dB in the burst, opened in 3.6 ms, held 504.5 ms, fell 20 dB in 86.0 ms | this control's figure 504.5 ms vs label 500.0 ms (ratio 1.01)
+  Release = '1.00 ms' (norm 0.00): range 95.0 dB in the burst, opened in 3.6 ms, held 124.6 ms, fell 20 dB in 1.2 ms | this control's figure 1.2 ms vs label 1.0 ms (ratio 1.16)
+  Release = '501 ms' (norm 0.50): range 49.9 dB in the burst, opened in 3.6 ms, held 137.5 ms, fell 20 dB in 237.8 ms | this control's figure 237.8 ms vs label 501.0 ms (ratio 0.47)
+  Release = '2.000 s' (norm 1.00): range 12.5 dB in the burst, opened in 3.4 ms, held 174.8 ms, fell 11.4925 dB in 525.1 ms | this control's figure 525.1 ms vs label 2000.0 ms (ratio 0.26)
+  ROLES BY MEASUREMENT: 8 verdict(s), 37 unnamed control(s) probed without the signature; unnamed controls are probed for the threshold and range signatures (a burst pair per control is not run)
+    role gate_threshold CONFIRMED  [13] Threshold - the open level moves 40.0 dB
+    role range CONFIRMED  [40] Reduction - the closed level moves 80.2 dB
+    role attack CONFIRMED  [41] Attack - the attack moves 1.2 -> 284.2 ms
+    role hold DROPPED    [0] Hold - not measured at both positions
+    role release CONFIRMED  [17] Release - the release moves 1.2 -> 525.1 ms
+    measured role range, UNNAMED  [12] Analysis Gain - the closed level moves 137.8 dB
+    measured role range, UNNAMED  [21] Output Gain - the closed level moves 147.1 dB
+    measured role range, UNNAMED  [34] Dry/Wet - the closed level moves 80.2 dB
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/dynamics/AudioUnit_737a5876_1.6.2.dynamics.json (59 processes)
+=== DS DeEsser (s)
+DS: DeEsser (s) 12.0.0: threshold [0] Threshold; frequency [1] Freq; mode [3] Audio (Split / Wideband)
+  ladder at 6500 Hz: open end at norm 1.000, max GR 11.72 dB
+  ladder at 997 Hz: open end at norm 0.200, max GR 0.00 dB
+  band selectivity on the ladder: max GR 11.72 dB at 6.5 kHz vs 0.00 dB at 997 Hz
+  noise ladder (4-10 kHz, 30 readings): max GR 10.98 dB (the 6.5 kHz tone gave 11.72)
+  centre (Freq = '2000'): deepest -25.38 dB at 20000 Hz, shelf with its half-depth corner at 2709.03 Hz; at 997 Hz -5.40 dB -> partial | label 2000 Hz vs the corner 2709.03: 35.5 % off
+  centre (Freq = '5657'): deepest -24.14 dB at 20000 Hz, shelf with its half-depth corner at 6938.03 Hz; at 997 Hz -1.09 dB -> partial | label 5657 Hz vs the corner 6938.03: 22.6 % off
+  centre (Freq = '16000'): deepest -16.23 dB at 20000 Hz, shelf with its half-depth corner at 13939.1 Hz; at 997 Hz -0.06 dB -> split_band | label 16000 Hz vs the corner 13939.1: -12.9 % off
+  Audio = 'Split': deepest -25.57 dB at 20 Hz, shelf with its half-depth corner at 20 Hz; at 997 Hz -25.57 dB -> wideband
+  Audio = 'Wideband': deepest -25.57 dB at 20 Hz, shelf with its half-depth corner at 20 Hz; at 997 Hz -25.57 dB -> wideband
+  ROLES BY MEASUREMENT: 2 verdict(s); unnamed controls probed for the threshold signature only
+    role threshold CONFIRMED  [0] Threshold - GR moves 11.72 dB between the ends
+    role frequency CONFIRMED  [1] Freq - the centre moves 2709.03 -> 13939.1 Hz (2.36 oct)
+DS: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/deesser/AudioUnit_4e55707d_12.0.0.deesser.json (19 processes)
+=== MB C6 (s)
+MB: C6 (s) 12.0.0: 6 band threshold(s) [Band 1 Threshold @ '0.0', Band 2 Threshold @ '0.0', Band 3 Threshold @ '0.0', Band 4 Threshold @ '0.0', Band 5 Threshold @ '0.0', Band 6 Threshold @ '0.0']; crossovers [Low Crossover, Mid Crossover, High Crossover, Crossover Q, Band 1 Frequency, Band 6 Frequency] -> 6 band(s) (skipped: 0.60); global amount none
+  pairing [10] Band 1 Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [19] Band 2 Threshold: cuts 20-80 Hz (deepest -7.4 dB, centre 40.0146) -> band 1
+  pairing [26] Band 3 Threshold: cuts 112-3358 Hz (deepest -7.8 dB, centre 614.432) -> band 2
+  pairing [33] Band 4 Threshold: cuts 3768-11246 Hz (deepest -5.0 dB, centre 6509.13) -> band 5
+  pairing [40] Band 5 Threshold: cuts 12620-20000 Hz (deepest -7.9 dB, centre 15886.6) -> band 6
+  pairing [47] Band 6 Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  band 1 (20-92 Hz, tone 42.8952) Band 2 Threshold: open end at norm 1.000, max GR 6.45 dB
+  band 2 (92-1000 Hz, tone 303.315) Band 3 Threshold: open end at norm 1.000, max GR 7.70 dB
+  band 5 (5003-11071 Hz, tone 7442.33) Band 4 Threshold: open end at norm 1.000, max GR 4.92 dB
+  band 6 (11071-20000 Hz, tone 14880.2) Band 5 Threshold: open end at norm 1.000, max GR 6.00 dB
+  whole unit, as instantiated (open): gain  -30 dBFS 0.09  -24 dBFS 0.09  -18 dBFS 0.08  -12 dBFS 0.03  -6 dBFS -0.12
+  offset 0 dB on every band (0.0 / 0.0 / 0.0 / 0.0 / 0.0 / 0.0): whole-unit GR  -30 dBFS 0.00  -24 dBFS 0.00  -18 dBFS 0.00  -12 dBFS 0.00  -6 dBFS 0.00
+  offset -6 dB on every band (-6.0 / -6.0 / -6.0 / -6.0 / -6.0 / -6.0): whole-unit GR  -30 dBFS 0.00  -24 dBFS 0.01  -18 dBFS 0.05  -12 dBFS 0.14  -6 dBFS 0.36
+  offset -12 dB on every band (-12.0 / -12.0 / -12.0 / -12.0 / -12.0 / -12.0): whole-unit GR  -30 dBFS 0.02  -24 dBFS 0.06  -18 dBFS 0.19  -12 dBFS 0.51  -6 dBFS 1.08
+  offset -18 dB on every band (-18.0 / -18.0 / -18.0 / -18.0 / -18.0 / -18.0): whole-unit GR  -30 dBFS 0.07  -24 dBFS 0.20  -18 dBFS 0.55  -12 dBFS 1.23  -6 dBFS 2.17
+  offset -24 dB on every band (-24.0 / -24.0 / -24.0 / -24.0 / -24.0 / -24.0): whole-unit GR  -30 dBFS 0.21  -24 dBFS 0.57  -18 dBFS 1.28  -12 dBFS 2.31  -6 dBFS 3.41
+  ROLES BY MEASUREMENT: 6 verdict(s); unnamed controls not probed in this mode (the pairing response per nominee is the measurement step)
+    role band_threshold DROPPED    [10] Band 1 Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [47] Band 6 Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold CONFIRMED  [19] Band 2 Threshold - GR moves 6.31 dB between the ends
+    role band_threshold CONFIRMED  [26] Band 3 Threshold - GR moves 7.34 dB between the ends
+    role band_threshold CONFIRMED  [33] Band 4 Threshold - GR moves 4.76 dB between the ends
+    role band_threshold CONFIRMED  [40] Band 5 Threshold - GR moves 5.77 dB between the ends
+MB: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/multiband/AudioUnit_4930607d_12.0.0.multiband.json (42 processes)
+=== MB MDynamicsMB
+MB: MDynamicsMB 14.16.0: 22 band threshold(s) [Band 1 -> Threshold @ '-20.0 dB', Band 2 -> Threshold @ '-20.0 dB', Band 3 -> Threshold @ '-20.0 dB', Band 4 -> Threshold @ '-20.0 dB', Band 1 - Gate - Threshold @ '-28.0 dB', Band 1 - Processor 1 - Threshold @ '-20.0 dB', Band 1 - Processor 2 - Threshold @ '-24.1 dB', Band 2 - Gate - Threshold @ '-28.0 dB', Band 2 - Processor 1 - Threshold @ '-20.0 dB', Band 2 - Processor 2 - Threshold @ '-24.1 dB', Band 3 - Gate - Threshold @ '-28.0 dB', Band 3 - Processor 1 - Threshold @ '-20.0 dB', Band 3 - Processor 2 - Threshold @ '-24.1 dB', Band 4 - Gate - Threshold @ '-28.0 dB', Band 4 - Processor 1 - Threshold @ '-20.0 dB', Band 4 - Processor 2 - Threshold @ '-24.1 dB', Band 5 - Gate - Threshold @ '-28.0 dB', Band 5 - Processor 1 - Threshold @ '-12.0 dB', Band 5 - Processor 2 - Threshold @ '-24.1 dB', Band 6 - Gate - Threshold @ '-28.0 dB', Band 6 - Processor 1 - Threshold @ '-12.0 dB', Band 6 - Processor 2 - Threshold @ '-24.1 dB']; crossovers [Crossover -> Slope, Crossover -> Linear-phase, Crossover -> Cross 1, Crossover -> Cross 2, Crossover -> Cross 3, Crossover type, Crossover analog mode, Level crossover slope, Level crossover value, Crossover tone, Crossover smoothing, Crossover transient release, Crossover transient resolution, Crossover spectral resolution] -> 6 band(s) (skipped: 0.00%, Analog, silence, 0.00 dB, 0.00%); global amount [3] Globals -> Compression
+  pairing [16] Band 1 -> Threshold: cuts 20-120 Hz (deepest -34.6 dB, centre 48.9103) -> band 2
+  pairing [24] Band 2 -> Threshold: cuts 252-796 Hz (deepest -20.5 dB, centre 447.69) -> band 4
+  pairing [32] Band 3 -> Threshold: cuts 1262-3768 Hz (deepest -19.8 dB, centre 2180.32) -> band 5
+  pairing [40] Band 4 -> Threshold: cuts 7516-20000 Hz (deepest -33.7 dB, centre 12261.2) -> band 6
+  pairing [109] Band 1 - Gate - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [114] Band 1 - Processor 1 - Threshold: cuts 20-120 Hz (deepest -34.6 dB, centre 48.9103) -> band 2
+  pairing [119] Band 1 - Processor 2 - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [138] Band 2 - Gate - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [143] Band 2 - Processor 1 - Threshold: cuts 252-796 Hz (deepest -20.5 dB, centre 447.69) -> band 4
+  pairing [148] Band 2 - Processor 2 - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [167] Band 3 - Gate - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [172] Band 3 - Processor 1 - Threshold: cuts 1262-3768 Hz (deepest -19.8 dB, centre 2180.32) -> band 5
+  pairing [177] Band 3 - Processor 2 - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [196] Band 4 - Gate - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [201] Band 4 - Processor 1 - Threshold: cuts 7516-20000 Hz (deepest -33.7 dB, centre 12261.2) -> band 6
+  pairing [206] Band 4 - Processor 2 - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [225] Band 5 - Gate - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [230] Band 5 - Processor 1 - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [235] Band 5 - Processor 2 - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [254] Band 6 - Gate - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [259] Band 6 - Processor 1 - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  pairing [264] Band 6 - Processor 2 - Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+  band 2 (24-50 Hz, tone 34.641) Band 1 -> Threshold: open end at norm 0.800, max GR 38.22 dB
+  band 4 (200-1000 Hz, tone 447.214) Band 2 -> Threshold: open end at norm 0.600, max GR 35.77 dB
+  band 5 (1000-4634 Hz, tone 2152.67) Band 3 -> Threshold: open end at norm 0.600, max GR 35.73 dB
+  band 6 (4634-20000 Hz, tone 9627.05) Band 4 -> Threshold: open end at norm 0.600, max GR 27.16 dB
+  band 2 (24-50 Hz, tone 34.641) Band 1 - Processor 1 - Threshold: open end at norm 1.000, max GR 38.22 dB
+  band 4 (200-1000 Hz, tone 447.214) Band 2 - Processor 1 - Threshold: open end at norm 0.800, max GR 29.79 dB
+  band 5 (1000-4634 Hz, tone 2152.67) Band 3 - Processor 1 - Threshold: open end at norm 0.600, max GR 35.77 dB
+  band 6 (4634-20000 Hz, tone 9627.05) Band 4 - Processor 1 - Threshold: open end at norm 0.600, max GR 35.76 dB
+  whole unit, as instantiated (open): gain  -30 dBFS 0.00  -24 dBFS 0.00  -18 dBFS 0.00  -12 dBFS 0.00  -6 dBFS -0.14
+  Globals -> Compression = '-100.0%' (norm 0.00): whole-unit GR  -30 dBFS 0.00  -24 dBFS 0.00  -18 dBFS -0.00  -12 dBFS 0.00  -6 dBFS -0.14
+  Globals -> Compression = '-60.0%' (norm 0.20): whole-unit GR  -30 dBFS -0.00  -24 dBFS -0.00  -18 dBFS -0.00  -12 dBFS -0.00  -6 dBFS -0.14
+  Globals -> Compression = '-20.0%' (norm 0.40): whole-unit GR  -30 dBFS 0.00  -24 dBFS 0.00  -18 dBFS 0.00  -12 dBFS 0.00  -6 dBFS -0.14
+  Globals -> Compression = '+20.0%' (norm 0.60): whole-unit GR  -30 dBFS -2.40  -24 dBFS -2.40  -18 dBFS -2.40  -12 dBFS -2.39  -6 dBFS -0.47
+  Globals -> Compression = '+60.0%' (norm 0.80): whole-unit GR  -30 dBFS -7.20  -24 dBFS -7.20  -18 dBFS -6.38  -12 dBFS -3.28  -6 dBFS -0.78
+  Globals -> Compression = '+100.0%' (norm 1.00): whole-unit GR  -30 dBFS -11.85  -24 dBFS -9.28  -18 dBFS -6.46  -12 dBFS -3.96  -6 dBFS -1.61
+  ROLES BY MEASUREMENT: 23 verdict(s); unnamed controls not probed in this mode (the pairing response per nominee is the measurement step)
+    role band_threshold DROPPED    [109] Band 1 - Gate - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [119] Band 1 - Processor 2 - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [138] Band 2 - Gate - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [148] Band 2 - Processor 2 - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [167] Band 3 - Gate - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [177] Band 3 - Processor 2 - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [196] Band 4 - Gate - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [206] Band 4 - Processor 2 - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [225] Band 5 - Gate - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [230] Band 5 - Processor 1 - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [235] Band 5 - Processor 2 - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [254] Band 6 - Gate - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [259] Band 6 - Processor 1 - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold DROPPED    [264] Band 6 - Processor 2 - Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest 0.00)
+    role band_threshold CONFIRMED  [16] Band 1 -> Threshold - GR moves 37.30 dB between the ends
+    role band_threshold DROPPED    [24] Band 2 -> Threshold - GR moves 0.01 dB between the ends (needs 3.0)
+    role band_threshold CONFIRMED  [32] Band 3 -> Threshold - GR moves 20.53 dB between the ends
+    role band_threshold CONFIRMED  [40] Band 4 -> Threshold - GR moves 26.90 dB between the ends
+    role band_threshold CONFIRMED  [114] Band 1 - Processor 1 - Threshold - GR moves 37.30 dB between the ends
+    role band_threshold CONFIRMED  [143] Band 2 - Processor 1 - Threshold - GR moves 21.20 dB between the ends
+    role band_threshold CONFIRMED  [172] Band 3 - Processor 1 - Threshold - GR moves 29.77 dB between the ends
+    role band_threshold CONFIRMED  [201] Band 4 - Processor 1 - Threshold - GR moves 28.65 dB between the ends
+    role global CONFIRMED  [3] Globals -> Compression - the whole-unit GR moves 3.96 dB
+MB: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/multiband/AudioUnit_6151642a_14.16.0.multiband.json (67 processes)
+=== SAT J37 (s) again
+SAT: J37 (s) 12.0.0: 1 drive-type control(s)
+  [16] Saturation: -20 dBFS: max THD -14.5 dB, gain span 6.31 dB, 1 % onset '18.7' (norm 0.90); -12 dBFS: max THD -10.6 dB, gain span 2.11 dB, 1 % onset '9.4' (norm 0.60); -6 dBFS: max THD -9.8 dB, gain span 6.83 dB, 1 % onset '4.0' (norm 0.20)
+  ROLES BY MEASUREMENT: 8 verdict(s), 13 unnamed control(s) probed without the signature
+    role drive CONFIRMED  [16] Saturation - THD moves -63.7 -> -10.6 dB
+    measured role drive, UNNAMED  [3] Formula - THD moves -58.5 -> -63.7 dB
+    measured role drive, UNNAMED  [7] WOW Depth - THD moves -63.8 -> -11.4 dB
+    measured role drive, UNNAMED  [9] Flutter Depth - THD moves -63.7 -> -56.0 dB
+    measured role drive, UNNAMED  [10] Input Level - THD moves -87.0 -> -10.2 dB
+    measured role drive, UNNAMED  [12] Output Level - THD moves -10.2 -> -88.2 dB
+    measured role drive, UNNAMED  [18] Delay Slap Level L - THD moves -63.7 -> -56.1 dB
+    measured role drive, UNNAMED  [19] Delay Slap Level R - THD moves -63.7 -> -56.1 dB
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/saturation/AudioUnit_5e35067d_12.0.0.saturation.json
+=== LIMITER again
+LIMITER: bx_limiter True Peak 1.2.1: ceiling [2] Ceiling, amount [20] Input Trim, no oversampling switch
+  hard end: norm 1.0 (true peak -13.02 at 0.0 vs -1.07 at 1.0; the end pinned at the ceiling -1.05 dB)
+  ceiling -0.12 dB (-0.1): sample peak -1.02 (-0.90), true peak -1.02 (-0.90)
+  ceiling -0.26 dB (-0.3): sample peak -1.02 (-0.76), true peak -1.02 (-0.76)
+  ceiling -1.05 dB (-1.1): sample peak -1.07 (-0.02), true peak -1.07 (-0.02)
+  ceiling -2.93 dB (-2.9): sample peak -2.94 (-0.01), true peak -2.94 (-0.01)
+  ceiling -5.74 dB (-5.7): sample peak -5.75 (-0.01), true peak -5.75 (-0.01)
+  ROLES BY MEASUREMENT: 2 verdict(s), 8 unnamed control(s) probed without the signature
+    role ceiling CONFIRMED  [2] Ceiling - the output peak moves 4.73 dB
+    measured role ceiling, UNNAMED  [3] Gain - the output peak moves 5.95 dB and holds against a 6 dB drive change (0.00)
+  verdict: sample holds, true peak holds - worst sample-peak overshoot -0.01 dB, worst true-peak overshoot -0.01 dB over 3 driven position(s) (bar 0.1); 2 position(s) not driven (the signal never reached that ceiling)
+LIMITER: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/limiter/AudioUnit_417f6e6e_1.2.1.limiter.json

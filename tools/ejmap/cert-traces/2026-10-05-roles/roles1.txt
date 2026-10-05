@@ -1,0 +1,126 @@
+=== GAINCAL Lindell SBC
+GAINCAL: Lindell SBC 1.0.3: 3 gain-role control(s) (amount [13] Threshold excluded)
+  [3] Gain (gain): not_db_scale - the label is not called dB (unit '') and the output does not track it: a scale, listed, not judged; relative to the control's own 0.0 point (-0.01 dB out-in); worst |measured - display| 4.40 dB over 21 numeric point(s) (bar 0.10, the label's resolution); LEVEL-DEPENDENT: the levels disagree by up to 7.15 dB
+  [7] Input Gain (input): display_matches - relative to the control's own 0.0 point (-0.01 dB out-in); worst |measured - display| 0.00 dB over 21 numeric point(s) (bar 0.10, the label's resolution); LEVEL-DEPENDENT: the levels disagree by up to 3.79 dB; judged at -60 dBFS (an input gain: -40 can sit inside the compression path)
+  [14] Output Gain (output): display_matches - relative to the control's own 0.0 point (-0.01 dB out-in); worst |measured - display| 0.00 dB over 21 numeric point(s) (bar 0.10, the label's resolution); LEVEL-DEPENDENT: the levels disagree by up to 0.67 dB
+  ROLES BY MEASUREMENT: 3 verdict(s), 8 unnamed control(s) probed without the signature
+    role gain DROPPED    [3] Gain - the level moves 19.60 dB at one level and 13.12 at the quieter: a path, not a plain gain
+    role input CONFIRMED  [7] Input Gain - the level moves 19.99 dB, the same at the quieter level
+    role output CONFIRMED  [14] Output Gain - the level moves 20.00 dB, the same at the quieter level
+GAINCAL: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/gaincal/AudioUnit_6f747363_1.0.3.gaincal.json
+=== SAT J37 (s)
+SAT: J37 (s) 12.0.0: 1 drive-type control(s)
+  [16] Saturation: -20 dBFS: max THD -14.5 dB, gain span 6.31 dB, 1 % onset '18.7' (norm 0.90); -12 dBFS: max THD -10.6 dB, gain span 2.11 dB, 1 % onset '9.4' (norm 0.60); -6 dBFS: max THD -9.8 dB, gain span 6.83 dB, 1 % onset '4.0' (norm 0.20)
+  ROLES BY MEASUREMENT: 8 verdict(s), 13 unnamed control(s) probed without the signature
+    role drive CONFIRMED  [16] Saturation - THD moves -63.7 -> -10.6 dB
+    measured role drive, UNNAMED  [3] Formula - THD moves -58.5 -> -63.7 dB
+    measured role drive, UNNAMED  [7] WOW Depth - THD moves -63.8 -> -11.4 dB
+    measured role drive, UNNAMED  [9] Flutter Depth - THD moves -63.7 -> -56.0 dB
+    measured role drive, UNNAMED  [10] Input Level - THD moves -87.0 -> -10.2 dB
+    measured role drive, UNNAMED  [12] Output Level - THD moves -10.2 -> -88.2 dB
+    measured role drive, UNNAMED  [18] Delay Slap Level L - THD moves -63.7 -> -56.1 dB
+    measured role drive, UNNAMED  [19] Delay Slap Level R - THD moves -63.7 -> -56.1 dB
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/saturation/AudioUnit_5e35067d_12.0.0.saturation.json
+=== LIMITER bx_limiter True Peak
+LIMITER: bx_limiter True Peak 1.2.1: ceiling [2] Ceiling, amount [20] Input Trim, no oversampling switch
+  hard end: norm 1.0 (true peak -13.02 at 0.0 vs -1.07 at 1.0; the end pinned at the ceiling -1.05 dB)
+  ceiling -0.12 dB (-0.1): sample peak -1.02 (-0.90), true peak -1.02 (-0.90)
+  ceiling -0.26 dB (-0.3): sample peak -1.02 (-0.76), true peak -1.02 (-0.76)
+  ceiling -1.05 dB (-1.1): sample peak -1.07 (-0.02), true peak -1.07 (-0.02)
+  ceiling -2.93 dB (-2.9): sample peak -2.94 (-0.01), true peak -2.94 (-0.01)
+  ceiling -5.74 dB (-5.7): sample peak -5.75 (-0.01), true peak -5.75 (-0.01)
+  ROLES BY MEASUREMENT: 3 verdict(s), 34 unnamed control(s) probed without the signature
+    role ceiling CONFIRMED  [2] Ceiling - the output peak moves 4.73 dB
+    measured role ceiling, UNNAMED  [3] Gain - the output peak moves 5.95 dB
+    measured role ceiling, UNNAMED  [8] Output Dim - the output peak moves 9.00 dB
+  verdict: sample holds, true peak holds - worst sample-peak overshoot -0.01 dB, worst true-peak overshoot -0.01 dB over 3 driven position(s) (bar 0.1); 2 position(s) not driven (the signal never reached that ceiling)
+LIMITER: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/limiter/AudioUnit_417f6e6e_1.2.1.limiter.json
+=== EQ bx_digital V3
+EQ: bx_digital V3 3.10.1: 10 band(s) by name
+  band 'EQ Band HF 1': gain [52] EQ Band HF 1 Gain, freq [54] EQ Band HF 1 Frequency, q [53] EQ Band HF 1 Q
+  band 'EQ Band HF 2': gain [77] EQ Band HF 2 Gain, freq [79] EQ Band HF 2 Frequency, q [78] EQ Band HF 2 Q
+    engage search: [80] EQ Band HF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+  band 'EQ Band HMF 1': gain [47] EQ Band HMF 1 Gain, freq [49] EQ Band HMF 1 Frequency, q [48] EQ Band HMF 1 Q
+  band 'EQ Band HMF 2': gain [72] EQ Band HMF 2 Gain, freq [74] EQ Band HMF 2 Frequency, q [73] EQ Band HMF 2 Q
+    engage search: [75] EQ Band HMF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+  band 'EQ Band LF 1': gain [32] EQ Band LF 1 Gain, freq [34] EQ Band LF 1 Frequency, q [33] EQ Band LF 1 Q
+  band 'EQ Band LF 2': gain [57] EQ Band LF 2 Gain, freq [59] EQ Band LF 2 Frequency, q [58] EQ Band LF 2 Q
+    engage search: [60] EQ Band LF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+  band 'EQ Band LMF 1': gain [37] EQ Band LMF 1 Gain, freq [39] EQ Band LMF 1 Frequency, q [38] EQ Band LMF 1 Q
+  band 'EQ Band LMF 2': gain [62] EQ Band LMF 2 Gain, freq [64] EQ Band LMF 2 Frequency, q [63] EQ Band LMF 2 Q
+    engage search: [65] EQ Band LMF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+  band 'EQ Band MF 1': gain [42] EQ Band MF 1 Gain, freq [44] EQ Band MF 1 Frequency, q [43] EQ Band MF 1 Q
+  band 'EQ Band MF 2': gain [67] EQ Band MF 2 Gain, freq [69] EQ Band MF 2 Frequency, q [68] EQ Band MF 2 Q
+    engage search: [70] EQ Band MF 2 Active -> 'On' (norm 1.00): still flat
+    engage search: [13] EQ Active -> 'On' (norm 1.00): still flat
+    engage search: 2 switch(es) tried, the band stays flat
+  ROLES BY MEASUREMENT: 38 verdict(s), 28 unnamed control(s) probed without the signature; frequency and q signatures need a boosted band: unnamed controls are probed for the gain signature only
+    role eq_gain CONFIRMED  [52] EQ Band HF 1 Gain - the band's gain moves 23.39 dB
+    role frequency DROPPED    [54] EQ Band HF 1 Frequency - no centre at both ends (the band must be audible at both)
+    role q DROPPED    [53] EQ Band HF 1 Q - no bandwidth at both ends
+    role eq_gain DROPPED    [77] EQ Band HF 2 Gain - the band's gain moves 0.00 dB (needs 1)
+    role frequency DROPPED    [79] EQ Band HF 2 Frequency - no centre at both ends (the band must be audible at both)
+    role q DROPPED    [78] EQ Band HF 2 Q - no bandwidth at both ends
+    role eq_gain CONFIRMED  [47] EQ Band HMF 1 Gain - the band's gain moves 27.20 dB
+    role frequency CONFIRMED  [49] EQ Band HMF 1 Frequency - the centre moves 401.438 -> 16853 Hz (5.39 oct)
+    role q DROPPED    [48] EQ Band HMF 1 Q - no bandwidth at both ends
+    role eq_gain DROPPED    [72] EQ Band HMF 2 Gain - the band's gain moves 0.00 dB (needs 1)
+    role frequency DROPPED    [74] EQ Band HMF 2 Frequency - no centre at both ends (the band must be audible at both)
+    role q DROPPED    [73] EQ Band HMF 2 Q - no bandwidth at both ends
+    role eq_gain CONFIRMED  [32] EQ Band LF 1 Gain - the band's gain moves 23.99 dB
+    role frequency CONFIRMED  [34] EQ Band LF 1 Frequency - the centre moves 27.6227 -> 2243.43 Hz (6.34 oct)
+    role q DROPPED    [33] EQ Band LF 1 Q - no bandwidth at both ends
+    role eq_gain DROPPED    [57] EQ Band LF 2 Gain - the band's gain moves 0.00 dB (needs 1)
+    role frequency DROPPED    [59] EQ Band LF 2 Frequency - no centre at both ends (the band must be audible at both)
+    role q DROPPED    [58] EQ Band LF 2 Q - no bandwidth at both ends
+    role eq_gain CONFIRMED  [37] EQ Band LMF 1 Gain - the band's gain moves 55.94 dB
+    role frequency CONFIRMED  [39] EQ Band LMF 1 Frequency - the centre moves 36.1516 -> 2000 Hz (5.79 oct)
+    role q CONFIRMED  [38] EQ Band LMF 1 Q - the bandwidth moves 5.99 -> 0.24 oct
+    role eq_gain DROPPED    [62] EQ Band LMF 2 Gain - the band's gain moves 0.00 dB (needs 1)
+    role frequency DROPPED    [64] EQ Band LMF 2 Frequency - no centre at both ends (the band must be audible at both)
+    role q DROPPED    [63] EQ Band LMF 2 Q - no bandwidth at both ends
+    role eq_gain CONFIRMED  [42] EQ Band MF 1 Gain - the band's gain moves 43.88 dB
+    role frequency CONFIRMED  [44] EQ Band MF 1 Frequency - the centre moves 27.2341 -> 15432.5 Hz (9.15 oct)
+    role q DROPPED    [43] EQ Band MF 1 Q - no bandwidth at both ends
+    role eq_gain DROPPED    [67] EQ Band MF 2 Gain - the band's gain moves 0.00 dB (needs 1)
+    role frequency DROPPED    [69] EQ Band MF 2 Frequency - no centre at both ends (the band must be audible at both)
+    role q DROPPED    [68] EQ Band MF 2 Q - no bandwidth at both ends
+    measured role eq_gain, UNNAMED  [2] Input Gain - the band's gain moves 12.04 dB
+    measured role eq_gain, UNNAMED  [3] Output Gain - the band's gain moves 12.04 dB
+    measured role eq_gain, UNNAMED  [23] High-pass 1 Slope - the band's gain moves 2.94 dB
+    measured role eq_gain, UNNAMED  [24] High-pass 1 Frequency - the band's gain moves 61.28 dB
+    measured role eq_gain, UNNAMED  [26] Low-pass 1 Frequency - the band's gain moves 60.87 dB
+    measured role eq_gain, UNNAMED  [82] Bass Shift 1 Gain - the band's gain moves 20.41 dB
+    measured role eq_gain, UNNAMED  [85] Presence Shift 1 Gain - the band's gain moves 16.36 dB
+    measured role eq_gain, UNNAMED  [94] Dynamic EQ 1 Range - the band's gain moves 24.12 dB
+EQ: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/eq/AudioUnit_417f7533_3.10.1.eq.json
+=== TIMING Lindell SBC
+TIMING: Lindell SBC 1.0.3: amount [13] Threshold at norm 0.867 (1 dB point -29.28 dBFS peak); burst -35.3 -> -19.3
+  release [16] Release = 0.050: measured attack 8.9 ms release 27.3 ms (GR step 4.28)
+  release [16] Release = 0.121: measured attack 8.9 ms release 38.8 ms (GR step 4.28)
+  release [16] Release = 0.193: measured attack 8.8 ms release 50.1 ms (GR step 4.28)
+  release [16] Release = 0.321: measured attack 8.8 ms release 81.6 ms (GR step 4.28)
+  release [16] Release = 0.679: measured attack 8.8 ms release 208.2 ms (GR step 4.28)
+  release [16] Release = 1.179: measured attack 8.8 ms release 434.1 ms (GR step 4.28)
+  release [16] Release = 1.929: measured attack 8.8 ms release 799.7 ms (GR step 4.28)
+  release [16] Release = 3.000: measured attack 8.8 ms release 2066.3 ms (GR step 4.28)
+  attack [19] Attack = 0.03 ms: measured attack < 6.4 ms release 143.7 ms (GR step 4.29)
+  attack [19] Attack = 0.1 ms: measured attack < 6.4 ms release 143.9 ms (GR step 4.28)
+  attack [19] Attack = 0.3 ms: measured attack < 6.4 ms release 145.7 ms (GR step 4.28)
+  attack [19] Attack = 1 ms: measured attack 8.8 ms release 152.0 ms (GR step 4.28)
+  attack [19] Attack = 3 ms: measured attack 14.2 ms release 159.9 ms (GR step 4.29)
+  attack [19] Attack = 10 ms: measured attack 19.8 ms release 167.6 ms (GR step 4.29)
+  attack [19] Attack = 30 ms: measured attack 48.4 ms release 205.7 ms (GR step 4.29)
+  program dependence: release after 0.3 s 60.787 ms, after 3 s 157.278 ms (ratio 2.59) - PROGRAM-DEPENDENT
+  ROLES BY MEASUREMENT: 2 verdict(s); unnamed controls not probed in this mode (a burst pair per control costs ~12 s; the roles' lexicon nominates)
+    role release CONFIRMED  [16] Release - the release moves 27.3 -> 2066.3 ms
+    role attack DROPPED    [19] Attack - the attack figure was not measured at both ends
+TIMING: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/roles1/timing/AudioUnit_6f747363_1.0.3.timing.json

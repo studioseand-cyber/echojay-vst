@@ -61,6 +61,7 @@ struct Reading
     bool valid = false;                              // the fundamental was read (landed, finite, present at the output)
     bool silent = false;                             // landed, the input carried the tone, the output holds nothing (bx_yellowdrive here: -600 dB)
     double gainDb = 0.0;                             // fundamental out - in
+    double outDb = -999.0;                           // the fundamental's absolute output level (the role step's silence guard)
     double thdDb = -999.0, thdPct = 0.0;             // 2nd..5th power sum against the fundamental
     std::map<int, double> harmonicDb;                // order -> dB below the fundamental (negative)
     double evenOddDb = 0.0; bool evenOddKnown = false;   // (2nd + 4th) against (3rd + 5th), dB; known when BOTH sides are above the floor
@@ -72,7 +73,7 @@ inline Reading readingFor (const HarmPosition& p, double levelDbfs)
     Reading r; r.norm = p.norm; r.text = p.text; r.levelDbfs = levelDbfs;
     if (! p.landed || p.fundInDb < -200.0) return r;
     if (p.fundOutDb < kSilentDb) { r.silent = true; return r; }
-    r.valid = true; r.gainDb = p.fundOutDb - p.fundInDb;
+    r.valid = true; r.gainDb = p.fundOutDb - p.fundInDb; r.outDb = p.fundOutDb;
     double sum = 0.0, even = 0.0, odd = 0.0;
     for (const auto& h : p.harmonics)
     {

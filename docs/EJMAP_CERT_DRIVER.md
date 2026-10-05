@@ -2414,3 +2414,42 @@ folder, by measurement. On a hand-edited copy of RCompressor (m) set to inert, `
   **36 → 144, 17 → 85, 6 → 43**, 0 → faster than 21 ms. A record swept under the old rule carries `pitchPlan.version 2`
   already, so `planDiffers` will not re-sweep it on its own — Sean's Artist row needs a `--retry-refused` or a plan-version
   bump before his follow-up picks it up (not done tonight: a plan-version bump re-sweeps every tuner).
+
+## 54. Names propose, measurement decides (Kathy's ruling, 5 Oct evening; run 3 item 1)
+
+Every Phase B prototype mode now has a ROLE STEP. A name only nominates a control; the control keeps the role only when its
+two ends show the role's signature; a nominee that fails is `dropped` with the reason; an unnamed numeric control that shows
+the signature is `measured_unnamed` — reported on the record (`roles_by_measurement`), never swept as the role without a
+ruling. The signatures live in one place, `EjmapRoleEvidence.h` (`signatureHolds`), so every mode reads them the same way:
+
+| role | the signature on the control's two ends | the guard the live run taught |
+|---|---|---|
+| gain / output / makeup / input | the level moves ≥ 1 dB, the same at two levels (within 1 dB) | SBC's "Gain" moves 19.6 at −40 and 13.1 at −60: a path, dropped |
+| threshold / band_threshold | GR at a fixed level moves ≥ 3 dB | — |
+| global | the whole-unit GR moves ≥ 1 dB | — |
+| mix | the wet/dry ratio moves ≥ 6 dB, dry and wet opposite | bx_delay2500's "Modulation Mix" has no dry: dropped |
+| decay | RT60 moves ×1.5 | H-Reverb's "Buildup Time" moves RT60 ×2.4: confirmed, whatever the name |
+| time / predelay | the onset (or the repeat spacing) moves ≥ 10 ms and ≥ 20 % | H-Reverb's "Predelay Free" moved nothing: dropped; "Time R" on bx_delay2500: measured, unnamed |
+| feedback | the fall per repeat moves ≥ 3 dB; or the repeat count by ≥ 2 **with the first repeat put** (within 6 dB) | a gain lifts every repeat over the floor (bx_delay2500's Gain In 0 → 16, H-Delay's Output): a level |
+| drive | THD moves ≥ 3 dB and reaches −60; both ends with output above −60 dBFS | Saphira's band gains, MSaturator's per-harmonic trims: dropped |
+| frequency | the centre (or corner) moves ≥ 1/3 oct with the band's gain within 3 dB | DeEsser's Freq (a corner) confirmed |
+| q | the bandwidth moves ≥ 30 % with the centre within 1/3 oct | — |
+| eq_gain | the band's gain moves ≥ 1 dB **and stands out of the grid's median shift** | bx_digital's Input / Output Gain move every tone alike: a level |
+| attack / release / hold | the figure moves ≥ 50 % (a bound at an end counts as its bound) | SBC's Attack: < 6.4 ms → 48 ms, confirmed |
+| transient / sustain | the figure moves ≥ 2 dB **differently from the other one** | Smack Attack's Output moves both by 48: a level; TransX's Range moves the transient 17 dB alone: measured, unnamed |
+| gate_threshold / range | the open level moves ≥ 6 dB; the closed level moves ≥ 6 dB **with the open level put** | G8's Output Gain moves both: a level; its Reduction confirmed |
+| ceiling | the output peak moves ≥ 1 dB **and holds against a 6 dB drive change** (≤ 2 dB) | bx_limiter's "Gain" passed the drive change (first run); the Ceiling holds it |
+
+Per mode, what probes the unnamed pool (numeric, not nominated, not never-touch, meters and readouts out, at most 40):
+gain-cal one `--sweep` at −40 / −60; saturation one `--response tones=1 harmonics=5`; limiter two `--sweep` peaks (+ the
+drive test for a candidate that moved); EQ one `--response` at the ends for the gain signature only (frequency / q need a
+boosted band); reverb / delay one `--tail` pair read for mix, time, decay and feedback at once; shapers one `--hits` pair;
+gates one `--ramp` pair for threshold and range; de-essers one `--sweep` at 6.5 kHz for threshold. Timing and multiband
+do not probe the pool (a burst pair costs ~12 s; the multiband's measurement step is the PAIRING: every nominated threshold
+gets a flat multitone response at its ends, and the region it cuts names its band — C6's Band 2 → band 1, Band 3 → 2,
+Band 4 → 5, Band 5 → 6, Bands 1 and 6 cut nothing; Melda's gate and processor-2 thresholds cut nothing and are dropped, its
+processor-1 thresholds cut the same region as the band's own).
+
+Pins: `testRoleEvidence` (every run-2 name-wrong case: D1–D3, M1–M3, T1–T4, C1–C2, F1–F3, S1–S3, H1–H3, Q1–Q4, G1–G3, K1–K4,
+R1–R2, and the live lessons L1–L6); mutants: level independence dropped, drive floor dropped, feedback count without the
+first-repeat guard, shaper coupling guard dropped, time without the 20 % — all red. Live: `cert-traces/2026-10-05-roles/`.
