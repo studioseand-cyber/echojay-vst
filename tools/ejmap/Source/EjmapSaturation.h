@@ -34,7 +34,7 @@ inline constexpr double kNoEffectThdDb  = 0.5;
 inline constexpr double kSilentDb     = -150.0;  // a fundamental below this at the output while the input carried it = silent (no output at all)
 
 struct Harmonic { int order = 0; double hz = 0.0, inDb = -999.0, outDb = -999.0; };
-struct HarmPosition { int k = -1; float norm = 0.0f; juce::String text; bool landed = true; double fundHz = 0.0, fundInDb = -999.0, fundOutDb = -999.0; std::vector<Harmonic> harmonics; };
+struct HarmPosition { int k = -1; float norm = 0.0f; juce::String text; bool landed = true; double fundHz = 0.0, fundInDb = -999.0, fundOutDb = -999.0, totalOutRmsDb = -999.0; std::vector<Harmonic> harmonics; };
 struct HarmResponse { bool ok = false; juce::String refused; int ctl = -1; juce::String ctlName; std::vector<HarmPosition> positions; };
 
 // the response trace with its rharm lines (the EQ parser reads rtone only)
@@ -50,6 +50,7 @@ inline HarmResponse parseHarmonics (const juce::String& out)
         if (f[0] == "response") { r.ok = true; r.ctl = kv (f, 1, "ctl").getIntValue(); r.ctlName = kv (f, 1, "name"); }
         else if (f[0] == "rpos") { HarmPosition p; p.k = f[1].getIntValue(); p.norm = (float) kv (f, 2, "norm").getDoubleValue(); p.text = kv (f, 2, "text"); p.landed = kv (f, 2, "confirm_ms").getDoubleValue() >= 0.0; r.positions.push_back (p); cur = &r.positions.back(); }
         else if (f[0] == "rtone" && cur != nullptr) { cur->fundHz = kv (f, 2, "hz").getDoubleValue(); cur->fundInDb = kv (f, 2, "in_db").getDoubleValue(); cur->fundOutDb = kv (f, 2, "out_db").getDoubleValue(); }
+        else if (f[0] == "rtotal" && cur != nullptr) cur->totalOutRmsDb = kv (f, 2, "out_rms_db").getDoubleValue();
         else if (f[0] == "rharm" && cur != nullptr) { Harmonic h; h.order = kv (f, 2, "order").getIntValue(); h.hz = kv (f, 2, "hz").getDoubleValue(); h.inDb = kv (f, 2, "in_db").getDoubleValue(); h.outDb = kv (f, 2, "out_db").getDoubleValue(); cur->harmonics.push_back (h); }
     }
     return r;
@@ -62,6 +63,8 @@ struct Reading
     bool silent = false;                             // landed, the input carried the tone, the output holds nothing (bx_yellowdrive here: -600 dB)
     double gainDb = 0.0;                             // fundamental out - in
     double outDb = -999.0;                           // the fundamental's absolute output level (the role step's silence guard)
+    std::optional<double> sidebandDb;                // energy beside the fundamental AND the harmonic bins, relative to the fundamental (dB): modulation sidebands, noise
+                                                     // (total output power minus the fundamental's minus the harmonics'; absent when the probe printed no rtotal)
     double thdDb = -999.0, thdPct = 0.0;             // 2nd..5th power sum against the fundamental
     std::map<int, double> harmonicDb;                // order -> dB below the fundamental (negative)
     double evenOddDb = 0.0; bool evenOddKnown = false;   // (2nd + 4th) against (3rd + 5th), dB; known when BOTH sides are above the floor
@@ -82,6 +85,15 @@ inline Reading readingFor (const HarmPosition& p, double levelDbfs)
         const double pw = std::pow (10.0, rel / 10.0); sum += pw; (h.order % 2 == 0 ? even : odd) += pw;
     }
     if (sum > 0.0) { r.thdDb = 10.0 * std::log10 (sum); r.thdPct = 100.0 * std::sqrt (sum); }
+    // THE STEADY-TONE TEST (ruling 1, 5 Oct evening): a bin's dB is a sine amplitude (RMS power = amplitude power - 3.01 dB); the span's
+    // total is RMS already; what the total holds beyond the fundamental and its harmonics sits BESIDE them - sidebands, noise
+    if (p.totalOutRmsDb > -200.0)
+    {
+        const double fundPw = std::pow (10.0, (p.fundOutDb - 3.0103) / 10.0), totalPw = std::pow (10.0, p.totalOutRmsDb / 10.0);
+        double harmPw = 0.0; for (const auto& h : p.harmonics) if (h.outDb > -200.0) harmPw += std::pow (10.0, (h.outDb - 3.0103) / 10.0);
+        const double side = juce::jmax (0.0, totalPw - fundPw - harmPw);
+        r.sidebandDb = side > 0.0 ? 10.0 * std::log10 (side / juce::jmax (1e-30, fundPw)) : -200.0;
+    }
     const double floorPw = std::pow (10.0, kCharacterFloorDb / 10.0);
     const bool evenUp = even > floorPw, oddUp = odd > floorPw;
     if (evenUp && oddUp) { r.evenOddKnown = true; r.evenOddDb = 10.0 * std::log10 (even / odd); r.character = "mixed"; }
@@ -161,6 +173,7 @@ inline juce::var toVar (const ControlResult& c)
                 ro->setProperty ("gain_db", std::round (r.gainDb * 100.0) / 100.0); ro->setProperty ("thd_db", r.thdDb > -200.0 ? juce::var (std::round (r.thdDb * 10.0) / 10.0) : juce::var()); ro->setProperty ("thd_pct", std::round (r.thdPct * 1000.0) / 1000.0);
                 auto* h = new juce::DynamicObject(); for (const auto& [order, db] : r.harmonicDb) h->setProperty ("h" + juce::String (order), std::round (db * 10.0) / 10.0); ro->setProperty ("harmonics_db", juce::var (h));
                 ro->setProperty ("even_odd_db", r.evenOddKnown ? juce::var (std::round (r.evenOddDb * 10.0) / 10.0) : juce::var()); ro->setProperty ("character", r.character);
+                ro->setProperty ("sideband_db", r.sidebandDb ? juce::var (std::round (juce::jmax (-200.0, *r.sidebandDb) * 10.0) / 10.0) : juce::var());
             }
             curve.add (juce::var (ro));
         }

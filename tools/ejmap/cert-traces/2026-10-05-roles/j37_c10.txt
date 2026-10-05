@@ -1,0 +1,53 @@
+probe: "J37 (s)" | AudioUnit:Effects/aufx,T37S,ksWV | uid=5e35067d | arch=arm64 | format=AudioUnit
+
+response	proto	1	ctl	10	name	Input Level	positions	2	tones	1	lo	997.00	hi	997.00	db	-12.00	hold_s	1.000	discard_s	0.500	shape	flat
+stage	configure
+policy	sidechain	unconnected	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	101
+param	0	0.000000	Delay Mode	Insert
+param	1	0.000000	Noise Level	Off
+param	2	1.000000	Speed	15
+param	3	1.000000	Formula	815
+param	4	0.500000	Modeled Tracks	2+3
+param	5	0.000000	Bias	Nom
+param	6	0.500000	WOW Rate	0.0
+param	7	0.500000	WOW Depth	0.0dB
+param	8	0.500000	Flutter Rate	0.0
+param	9	0.500000	Flutter Depth	0.0dB
+param	10	0.250000	Input Level	-9.0dB
+param	11	1.000000	Level Link	On
+param	12	0.750000	Output Level	9.0dB
+param	13	0.000000	Delay HP	Off
+param	14	1.000000	Delay LP	Off
+param	15	0.000000	Delay Type	Slap
+param	16	0.000000	Saturation	0.0
+param	17	0.000000	Delay Feedback Level L	Off
+param	18	0.000000	Delay Slap Level L	Off
+param	19	0.000000	Delay Slap Level R	Off
+param	20	0.000000	Delay Feedback Level R	Off
+param	21	0.000000	Delay Sync	Off
+param	22	0.091546	Delay Time L	184
+param	23	0.000000	Delay Time Sync L	1/64T
+param	24	0.091546	Delay Time R	184
+param	25	0.000000	Delay Time Sync R	1/64T
+param	26	1.000000	Delay Link	On
+rpos	0	norm	0.000000	confirm_ms	48.8	landed_by	pump	text	-18.0dB
+rtone	0	hz	998.000	in_db	-12.000	out_db	-11.516
+rharm	0	order	2	hz	1996.000	in_db	-323.757	out_db	-104.958
+rharm	0	order	3	hz	2994.000	in_db	-205.892	out_db	-99.889
+rharm	0	order	4	hz	3992.000	in_db	-331.435	out_db	-113.574
+rharm	0	order	5	hz	4990.000	in_db	-205.217	out_db	-116.398
+rtotal	0	in_rms_db	-15.010	out_rms_db	-14.525
+rdone	0	tones	1	nonfinite	0
+rpos	1	norm	1.000000	confirm_ms	55.3	landed_by	pump	text	18.0dB
+rtone	1	hz	998.000	in_db	-12.000	out_db	-21.976
+rharm	1	order	2	hz	1996.000	in_db	-323.757	out_db	-114.886
+rharm	1	order	3	hz	2994.000	in_db	-205.892	out_db	-32.532
+rharm	1	order	4	hz	3992.000	in_db	-331.435	out_db	-119.835
+rharm	1	order	5	hz	4990.000	in_db	-205.217	out_db	-42.641
+rtotal	1	in_rms_db	-15.010	out_rms_db	-24.577
+rdone	1	tones	1	nonfinite	0
+stage	done

@@ -7184,6 +7184,13 @@ void testSaturation()
     // an unlanded position is not a reading; a refused trace is not ok
     const juce::String unl = "response\tproto\t1\tctl\t4\tname\tDrive\tpositions\t1\ttones\t1\nrpos\t0\tnorm\t0.500000\tconfirm_ms\t-1.0\tlanded_by\tnone\ttext\t5\nrdone\t0\ttones\t0\tunlanded\n";
     check (! deriveLevel (parseHarmonics (unl), -12.0).readings[0].valid && judge (4, "Drive", { deriveLevel (parseHarmonics (unl), -12.0) }).note.startsWith ("no position read"), "sat S11: an unlanded position is invalid; nothing read is said");
+    {   // the sideband figure from an rtotal line (ruling 1): a -12 dB fundamental (RMS -15.01) with harmonics at -40 rel and a total of -14.54 dB RMS
+        const juce::String withTotal = "response\tproto\t1\tctl\t4\tname\tDrive\tpositions\t1\ttones\t1\n" + pos (0, 1.0, "10", -12.0, -40.0, -46.0, -52.0, -58.0) + "rtotal\t0\tin_rms_db\t-15.010\tout_rms_db\t-14.540\n";
+        const auto rd = readingFor (parseHarmonics (withTotal).positions[0], -12.0);
+        // total power 10^-1.454 = 0.03516; fundamental 10^-1.501 = 0.03155; harmonics ~0.000011; sideband = 0.00360 -> -9.4 dB relative to the fundamental
+        check (rd.sidebandDb && std::abs (*rd.sidebandDb + 9.4) < 0.3, "sat S16: the energy beside the fundamental and its harmonics, relative to the fundamental, from the total (" + juce::String (rd.sidebandDb ? *rd.sidebandDb : -999.0, 2) + ")");
+        check (! readingFor (parseHarmonics (pos (0, 1.0, "10", -12.0, -40.0, -46.0, -52.0, -58.0)).positions[0], -12.0).sidebandDb, "sat S17: no rtotal line (an older probe) -> no sideband figure, never a guess");
+    }
     check (! parseHarmonics ("refused harmonics= needs tones=1 and 2..20\n").ok && parseHarmonics ("refused harmonics= needs tones=1 and 2..20\n").refused.startsWith ("harmonics="), "sat S12: a refusal line is carried");
     const auto v = toVar (c);
     check (v.getProperty ("control", "").toString() == "Drive" && v.getProperty ("levels", {}).size() == 1 && v.getProperty ("levels", {})[0].getProperty ("curve", {}).size() == 3 && (double) v.getProperty ("levels", {})[0].getProperty ("curve", {})[2].getProperty ("harmonics_db", {}).getProperty ("h3", 0.0) == -26.0 && v.getProperty ("levels", {})[0].getProperty ("onset_1pct", {}).getProperty ("display", "").toString() == "10",
@@ -7392,7 +7399,20 @@ void testRoleEvidence()
     // drive: Saphira's "Warmth Band1 Gain" nominated by "warmth": THD -36.3 / -36.3 across its ends -> dropped; J37's Saturation -63.7 -> -10.6 -> confirmed
     check (! signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -36.3; }), fig ([] (Figure& f) { f.thdDb = -36.1; })).holds, "role D1: Saphira's band gain is not a drive (THD moves 0.2 dB)");
     check (signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -63.7; }), fig ([] (Figure& f) { f.thdDb = -10.6; })).holds, "role D2: J37's Saturation is a drive (THD -63.7 -> -10.6)");
-    check (! signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -120.0; }), fig ([] (Figure& f) { f.thdDb = -95.0; })).holds, "role D3: MSaturator's per-harmonic trim: THD never above -60 is not a drive however much it 'moves' at the floor");
+    check (! signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -120.0; }), fig ([] (Figure& f) { f.thdDb = -95.0; })).holds && ! signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -63.7; }), fig ([] (Figure& f) { f.thdDb = -56.1; })).holds, "role D3: MSaturator's per-harmonic trim (THD at the floor) and J37's slap level (-63.7 -> -56.1, under 0.3 %) are not drives");
+    // DRIVE NEEDS A STEADY TONE (ruling 1, 5 Oct evening, measured on J37 (s) with the probe's rtotal line): WOW Depth at full leaves the
+    // fundamental's bin 31 dB down with +29.7 dB of energy beside it (relative) against -11.4 dB of "harmonics"; Saturation at full
+    // keeps the sidebands at -26.6 dB under its -10.6 dB of harmonics
+    {
+        const auto wow0 = fig ([] (Figure& f) { f.thdDb = -63.8; f.sidebandDb = -200.0; f.outputDb = -11.53; }), wow1 = fig ([] (Figure& f) { f.thdDb = -11.4; f.sidebandDb = 29.7; f.outputDb = -42.56; });
+        const auto sat0 = fig ([] (Figure& f) { f.thdDb = -63.7; f.sidebandDb = -35.2; f.outputDb = -11.53; }), sat1 = fig ([] (Figure& f) { f.thdDb = -10.6; f.sidebandDb = -26.6; f.outputDb = -12.45; });
+        check (modulationOf (wow0, wow1).holds && ! signatureHolds ("drive", wow0, wow1).holds && signatureHolds ("drive", wow0, wow1).why.contains ("modulation, not drive"), "role D4: J37's WOW Depth smears energy beside the fundamental (+29.7 dB) - modulation, not drive");
+        check (! modulationOf (sat0, sat1).holds && signatureHolds ("drive", sat0, sat1).holds, "role D5: J37's Saturation keeps its sidebands (-26.6) under its harmonics (-10.6): a steady tone with rising harmonics - drive");
+        const auto hiss0 = fig ([] (Figure& f) { f.thdDb = -63.7; f.sidebandDb = -32.8; }), hiss1 = fig ([] (Figure& f) { f.thdDb = -62.8; f.sidebandDb = -32.8; });
+        check (! modulationOf (hiss0, hiss1).holds && modulationOf (hiss0, hiss1).why.contains ("the unit's own floor"), "role D7: J37's Noise Level leaves the -32.8 dB tape hiss beside the tone where it was: the unit's floor, not a modulation control");
+        check (modulationOf (fig ([] (Figure& f) { f.thdDb = -63.7; f.sidebandDb = -32.8; }), fig ([] (Figure& f) { f.thdDb = -56.0; f.sidebandDb = -6.5; })).holds, "role D8: J37's Flutter Depth raises the sidebands 26 dB over the hiss: modulation");
+        check (unnamed (7, "WOW Depth", "modulation", modulationOf (wow0, wow1)).verdict == "measured_unnamed" && line (unnamed (7, "WOW Depth", "modulation", modulationOf (wow0, wow1))).startsWith ("measured role modulation, UNNAMED"), "role D6: the verdict word for it is 'modulation, unnamed'");
+    }
     // mix: bx_delay2500's "Modulation Mix" - dry never present, wet moves: dropped; H-Delay's Mix dry -15.8 -> floor, wet floor -> -17.6: confirmed
     check (! signatureHolds ("mix", fig ([] (Figure& f) { f.wetDb = -40.0; }), fig ([] (Figure& f) { f.wetDb = -9.4; })).holds, "role M1: bx_delay2500's Modulation Mix: no dry reading -> not a mix");
     check (signatureHolds ("mix", fig ([] (Figure& f) { f.dryDb = -15.8; f.wetDb = -85.8; }), fig ([] (Figure& f) { f.dryDb = -85.7; f.wetDb = -17.6; })).holds, "role M2: H-Delay's Mix: dry falls while wet rises -> a mix");

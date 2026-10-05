@@ -17,7 +17,7 @@
     decay      RT60 moves by a factor >= 1.5
     time       the onset (or the repeat spacing) moves >= 10 ms and >= 20 %
     feedback   the fall per repeat moves >= 3 dB (or the repeat count by >= 2)
-    drive      THD moves >= 3 dB and reaches at least -60 dB
+    drive      THD moves >= 3 dB and reaches at least -50 dB (0.3 %: J37's slap level and Formula move THD 5-8 dB under -56 - not a drive)
     frequency  the centre (or corner) moves >= 1/3 octave while the band stays (gain within 3 dB)
     q          the bandwidth moves >= 30 % while the centre stays within 1/3 octave
     attack / release / hold   the timing figure moves >= 50 % (both ends measured)
@@ -46,7 +46,7 @@ struct Figure
     std::optional<double> rt60s;                     // decay
     std::optional<double> onsetMs;                   // time (pre-delay / delay time / repeat spacing)
     std::optional<double> fallPerRepeatDb; std::optional<int> repeats; std::optional<double> firstRepeatDb;   // feedback (the first repeat's level: a count that grew because every repeat got louder is a gain)
-    std::optional<double> thdDb;                     // drive
+    std::optional<double> thdDb, sidebandDb;         // drive: THD at the harmonic bins; sidebandDb = energy beside the fundamental and the harmonics, relative to the fundamental (modulation)
     std::optional<double> centreHz, bandwidthOct, bandGainDb;   // frequency / q / eq gain
     std::optional<double> attackMs, releaseMs, holdMs;          // timing
     std::optional<double> transientDb, sustainDb;    // shapers
@@ -60,7 +60,7 @@ inline constexpr double kSilentOutputDb = -60.0, kCeilingHoldsDb = 2.0;
 inline constexpr int kRepeatCountMove = 3;   // a repeat count that moves by fewer than this (14 -> 16 on bx_delay2500's Wah Amount) is a floor effect
 
 inline constexpr double kGainMoveDb = 1.0, kGainSameDb = 1.0, kThresholdMoveDb = 3.0, kMixMoveDb = 6.0, kDecayRatio = 1.5, kTimeMoveMs = 10.0, kTimeMoveFrac = 0.2,
-                        kFeedbackMoveDb = 3.0, kDriveMoveDb = 3.0, kDriveFloorDb = -60.0, kFreqMoveOct = 1.0 / 3.0, kBandStayDb = 3.0, kQMoveFrac = 0.3,
+                        kFeedbackMoveDb = 3.0, kDriveMoveDb = 3.0, kDriveFloorDb = -50.0, kFreqMoveOct = 1.0 / 3.0, kBandStayDb = 3.0, kQMoveFrac = 0.3,
                         kTimingMoveFrac = 0.5, kShaperMoveDb = 2.0, kRangeMoveDb = 6.0, kCeilingMoveDb = 1.0, kGlobalMoveDb = 1.0;
 
 struct Signature { bool holds = false; juce::String why; };
@@ -68,6 +68,21 @@ struct Signature { bool holds = false; juce::String why; };
 inline juce::String f1 (double v) { return juce::String (v, 1); }
 inline juce::String f2 (double v) { return juce::String (v, 2); }
 
+// MODULATION (ruling 1): at the end with the more energy beside the bins, the sideband power exceeds the harmonic power and sits
+// above kSidebandFloorDb relative to the fundamental - energy smeared beside the tone (J37's WOW Depth), not harmonics on it.
+// The control must ADD the sidebands: they rise by kSidebandRiseDb between its ends (J37's instantiate state already carries
+// -32.8 dB of tape hiss beside the tone at every control - a constant floor is the unit's, not a modulation control's).
+inline constexpr double kSidebandFloorDb = -40.0, kSidebandRiseDb = 12.0;
+inline Signature modulationOf (const Figure& a, const Figure& b)
+{
+    Signature s;
+    if (! a.ok || ! b.ok) { s.why = "not measured at both positions"; return s; }
+    if (! a.sidebandDb || ! b.sidebandDb) { s.why = "no sideband reading at both ends (the probe printed no total)"; return s; }
+    const double lo = juce::jmin (*a.sidebandDb, *b.sidebandDb), hi = juce::jmax (*a.sidebandDb, *b.sidebandDb);
+    const Figure& e = *b.sidebandDb >= *a.sidebandDb ? b : a; const double harm = e.thdDb ? *e.thdDb : -200.0;
+    if (hi > kSidebandFloorDb && hi - juce::jmax (-200.0, lo) >= kSidebandRiseDb && hi > harm) { s.holds = true; s.why = "energy beside the fundamental rises " + f1 (lo) + " -> " + f1 (hi) + " dB (relative) over the harmonics' " + f1 (harm) + ": modulation, not drive"; return s; }
+    s.why = "sidebands " + f1 (lo) + " -> " + f1 (hi) + " dB" + (hi > harm && hi > kSidebandFloorDb ? " (the unit's own floor: no rise with the control)" : " under the harmonics' " + f1 (harm)); return s;
+}
 // Does the pair (a at one end, b at the other) show the role's movement?
 inline Signature signatureHolds (const juce::String& role, const Figure& a, const Figure& b)
 {
@@ -134,6 +149,9 @@ inline Signature signatureHolds (const juce::String& role, const Figure& a, cons
     {
         if (! both (a.thdDb, b.thdDb)) { s.why = "no THD reading at both ends"; return s; }
         if ((a.outputDb && *a.outputDb < kSilentOutputDb) || (b.outputDb && *b.outputDb < kSilentOutputDb)) { s.why = "the output is below " + f1 (kSilentOutputDb) + " dBFS at one end (J37's Output Level at minimum): THD there is noise, not a reading"; return s; }
+        // DRIVE NEEDS A STEADY TONE (ruling 1, 5 Oct evening): harmonics rise at exact multiples while the fundamental holds; energy
+        // smeared BESIDE the fundamental (modulation sidebands) is not drive - the driven end's sideband power must stay under its harmonic power
+        if (const auto m = modulationOf (a, b); m.holds) { s.why = m.why; return s; }
         const double d = std::abs (*b.thdDb - *a.thdDb), top = juce::jmax (*a.thdDb, *b.thdDb);
         if (top < kDriveFloorDb) { s.why = "THD never above " + f1 (kDriveFloorDb) + " dB (top " + f1 (top) + ")"; return s; }
         s.holds = d >= kDriveMoveDb; s.why = "THD moves " + f1 (*a.thdDb) + " -> " + f1 (*b.thdDb) + " dB" + (s.holds ? "" : " (needs " + f1 (kDriveMoveDb) + ")"); return s;

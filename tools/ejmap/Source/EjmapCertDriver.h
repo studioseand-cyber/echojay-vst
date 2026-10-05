@@ -3323,7 +3323,7 @@ inline int runSaturation (const SweepOptions& opt)
         roleevidence::Figure a, b;
         if (const auto* lv = c.getProperty ("levels", {}).getArray()) for (const auto& L : *lv) if (std::abs ((double) L.getProperty ("level_dbfs", 0.0) + 12.0) < 0.1)
             if (const auto* cv = L.getProperty ("curve", {}).getArray()) for (const auto& r : *cv) if ((bool) r.getProperty ("valid", false))
-            { const double n = (double) r.getProperty ("norm", 0.0); const auto t = r.getProperty ("thd_db", {}); roleevidence::Figure* f = n < 0.01 ? &a : n > 0.99 ? &b : nullptr; if (f) { f->ok = true; f->thdDb = (t.isDouble() || t.isInt()) ? (double) t : -200.0; } }
+            { const double n = (double) r.getProperty ("norm", 0.0); const auto t = r.getProperty ("thd_db", {}); const auto sb = r.getProperty ("sideband_db", {}); roleevidence::Figure* f = n < 0.01 ? &a : n > 0.99 ? &b : nullptr; if (f) { f->ok = true; f->thdDb = (t.isDouble() || t.isInt()) ? (double) t : -200.0; if (sb.isDouble() || sb.isInt()) f->sidebandDb = (double) sb; } }
         if ((bool) c.getProperty ("silent", false) || (bool) c.getProperty ("inert", false)) { roleevidence::RoleVerdict v; v.index = idx; v.name = c.getProperty ("control", "").toString(); v.role = "drive"; v.verdict = "dropped"; v.reason = c.getProperty ("note", "").toString().upToFirstOccurrenceOf (":", false, false) + ": nothing to decide"; roles.push_back (v); continue; }
         roles.push_back (roleevidence::nominee (idx, c.getProperty ("control", "").toString(), "drive", roleevidence::signatureHolds ("drive", a, b)));
     }
@@ -3332,7 +3332,9 @@ inline int runSaturation (const SweepOptions& opt)
         const auto r = run ("u" + juce::String (pc.index), { "--response", "ctl=" + juce::String (pc.index), "norms=0,1", "tones=1", "lo=997", "harmonics=5", "db=-12", "hold=1.0", "discard=0.5" });
         if (r.kind == ChildResult::Kind::uiShown) { say ("SAT: a window appeared; stopping"); return 5; }
         const auto L = saturation::deriveLevel (saturation::parseHarmonics (r.cleanExit() ? r.out : juce::String()), -12.0);
-        roleevidence::Figure a, b; for (const auto& rd : L.readings) { roleevidence::Figure* f = rd.norm < 0.01f ? &a : rd.norm > 0.99f ? &b : nullptr; if (f && (rd.valid || rd.silent)) { f->ok = true; f->thdDb = rd.valid && rd.thdDb > -200.0 ? rd.thdDb : -200.0; f->outputDb = rd.valid ? rd.outDb : -999.0; } }
+        roleevidence::Figure a, b; for (const auto& rd : L.readings) { roleevidence::Figure* f = rd.norm < 0.01f ? &a : rd.norm > 0.99f ? &b : nullptr; if (f && (rd.valid || rd.silent)) { f->ok = true; f->thdDb = rd.valid && rd.thdDb > -200.0 ? rd.thdDb : -200.0; f->outputDb = rd.valid ? rd.outDb : -999.0; if (rd.valid) f->sidebandDb = rd.sidebandDb; } }
+        // ruling 1: energy beside the tone is modulation, reported as such, never as drive
+        if (const auto m = roleevidence::modulationOf (a, b); m.holds) { roles.push_back (roleevidence::unnamed (pc.index, pc.name, "modulation", m)); continue; }
         roles.push_back (roleevidence::unnamed (pc.index, pc.name, "drive", roleevidence::signatureHolds ("drive", a, b)));
     }
     sayRoles (say, roles);

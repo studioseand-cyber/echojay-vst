@@ -1,0 +1,10 @@
+  ROLES BY MEASUREMENT: 9 verdict(s), 12 unnamed control(s) probed without the signature
+    role drive CONFIRMED  [16] Saturation - THD moves -63.7 -> -10.6 dB
+    measured role drive, UNNAMED  [3] Formula - THD moves -58.5 -> -63.7 dB
+    measured role modulation, UNNAMED  [6] WOW Rate - energy beside the fundamental rises -200.0 -> -32.8 dB (relative) over the harmonics' -63.8: modulation, not drive
+    measured role modulation, UNNAMED  [7] WOW Depth - energy beside the fundamental rises -200.0 -> 29.7 dB (relative) over the harmonics' -11.4: modulation, not drive
+    measured role modulation, UNNAMED  [9] Flutter Depth - energy beside the fundamental rises -35.2 -> -6.5 dB (relative) over the harmonics' -56.0: modulation, not drive
+    measured role drive, UNNAMED  [10] Input Level - THD moves -87.0 -> -10.2 dB
+    measured role drive, UNNAMED  [12] Output Level - THD moves -10.2 -> -88.2 dB
+    measured role drive, UNNAMED  [18] Delay Slap Level L - THD moves -63.7 -> -56.1 dB
+    measured role drive, UNNAMED  [19] Delay Slap Level R - THD moves -63.7 -> -56.1 dB

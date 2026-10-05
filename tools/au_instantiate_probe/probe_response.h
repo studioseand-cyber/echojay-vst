@@ -21,6 +21,8 @@
 //   param / set / rpos  as the sweep's param / set / pos lines
 //   rtone    <k> hz <f> in_db <d> out_db <d>        one per tone per position (power mean over the main outputs)
 //   rharm    <k> order <n> hz <f> in_db <d> out_db <d>   one per harmonic order 2..N per position (harmonics=N, tones=1 only)
+//   rtotal   <k> in_rms_db <d> out_rms_db <d>            the whole measured span's RMS, input and output (power mean over the main outputs):
+//                                                        what is in the output BESIDE the bins (modulation sidebands, noise) is total minus bins
 //   rdone    <k> tones <n> nonfinite <n>
 #pragma once
 
@@ -127,7 +129,7 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
         const int nb = (int) bins.size();
         std::vector<double> gi1 ((size_t) nb, 0.0), gi2 ((size_t) nb, 0.0), go1 ((size_t) nb, 0.0), go2 ((size_t) nb, 0.0), coef ((size_t) nb);
         for (int q = 0; q < nb; ++q) coef[(size_t) q] = 2.0 * std::cos (juce::MathConstants<double>::twoPi * bins[(size_t) q] / sr);
-        long long nonFinite = 0;
+        long long nonFinite = 0; double inSs = 0.0, outSs = 0.0; long long nSpan = 0;   // the span's total power, beside the bins (5 Oct evening, ruling 1)
         for (long long done = 0; done < total; done += rs.block)
         {
             r.io.clear();
@@ -147,6 +149,7 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
                 double out = 0.0; for (int ch = 0; ch < r.mainOut; ++ch) { const float d = r.io.getSample (ch, i); if (! std::isfinite (d)) { ++nonFinite; continue; } out += d; }
                 out /= juce::jmax (1, r.mainOut);
                 const double in = gen[(size_t) i];
+                inSs += in * in; outSs += out * out; ++nSpan;
                 for (int q = 0; q < nb; ++q)
                 {
                     const double si = in + coef[(size_t) q] * gi1[(size_t) q] - gi2[(size_t) q]; gi2[(size_t) q] = gi1[(size_t) q]; gi1[(size_t) q] = si;
@@ -160,6 +163,7 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
             if (order[(size_t) q] == 1) std::printf ("rtone\t%d\thz\t%.3f\tin_db\t%.3f\tout_db\t%.3f\n", (int) k, bins[(size_t) q], mag (gi1[(size_t) q], gi2[(size_t) q]), mag (go1[(size_t) q], go2[(size_t) q]));
             else std::printf ("rharm\t%d\torder\t%d\thz\t%.3f\tin_db\t%.3f\tout_db\t%.3f\n", (int) k, order[(size_t) q], bins[(size_t) q], mag (gi1[(size_t) q], gi2[(size_t) q]), mag (go1[(size_t) q], go2[(size_t) q]));
         }
+        std::printf ("rtotal\t%d\tin_rms_db\t%.3f\tout_rms_db\t%.3f\n", (int) k, 20.0 * std::log10 (std::sqrt (inSs / (double) juce::jmax (1LL, nSpan)) + 1e-30), 20.0 * std::log10 (std::sqrt (outSs / (double) juce::jmax (1LL, nSpan)) + 1e-30));
         std::printf ("rdone\t%d\ttones\t%d\tnonfinite\t%lld\n", (int) k, s.tones, nonFinite);
         std::fflush (stdout);
     }

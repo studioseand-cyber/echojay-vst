@@ -2431,7 +2431,7 @@ ruling. The signatures live in one place, `EjmapRoleEvidence.h` (`signatureHolds
 | decay | RT60 moves ×1.5 | H-Reverb's "Buildup Time" moves RT60 ×2.4: confirmed, whatever the name |
 | time / predelay | the onset (or the repeat spacing) moves ≥ 10 ms and ≥ 20 % | H-Reverb's "Predelay Free" moved nothing: dropped; "Time R" on bx_delay2500: measured, unnamed |
 | feedback | the fall per repeat moves ≥ 3 dB; or the repeat count by ≥ 2 **with the first repeat put** (within 6 dB) | a gain lifts every repeat over the floor (bx_delay2500's Gain In 0 → 16, H-Delay's Output): a level |
-| drive | THD moves ≥ 3 dB and reaches −60; both ends with output above −60 dBFS | Saphira's band gains, MSaturator's per-harmonic trims: dropped |
+| drive | THD moves ≥ 3 dB and reaches −50 (0.3 %); both ends with output above −60 dBFS; **and the tone stays steady** — energy beside the fundamental and its harmonics (from the probe's `rtotal` line) must not rise ≥ 12 dB over the harmonics, else the control is `modulation, unnamed` (ruling 1, 5 Oct evening) | Saphira's band gains, MSaturator's per-harmonic trims: dropped; J37's WOW Depth (+29.7 dB beside the tone), WOW Rate, Flutter Depth: modulation |
 | frequency | the centre (or corner) moves ≥ 1/3 oct with the band's gain within 3 dB | DeEsser's Freq (a corner) confirmed |
 | q | the bandwidth moves ≥ 30 % with the centre within 1/3 oct | — |
 | eq_gain | the band's gain moves ≥ 1 dB **and stands out of the grid's median shift** | bx_digital's Input / Output Gain move every tone alike: a level |
