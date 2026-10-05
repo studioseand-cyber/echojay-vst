@@ -7424,6 +7424,18 @@ void testRoleEvidence()
     check (signatureHolds ("time", fig ([] (Figure& f) { f.onsetMs = 0.5; }), fig ([] (Figure& f) { f.onsetMs = 500.5; })).holds, "role T2: Abbey Road Plates' Predelay 0.5 -> 500.5 ms -> confirmed");
     check (! signatureHolds ("time", fig ([] (Figure& f) { f.onsetMs = 500.0; }), fig ([] (Figure& f) { f.onsetMs = 500.0; })).holds, "role T3: MannyM's Delay Left ms under its sync'd note -> dropped");
     check (! signatureHolds ("time", fig ([] (Figure& f) { f.onsetMs = 2475.0; }), fig ([] (Figure& f) { f.onsetMs = 2490.0; })).holds, "role T4: an onset that moves 15 ms on 2.5 s (0.6 %) is a modulation or a filter's edge, not a time control (needs 20 %)");
+    // TIME IS THE ONSET (ruling 2, 5 Oct evening), pinned on bx_delay2500's Feedback Hi Pass [30]: the first repeat's onset 191.5 ms at both ends
+    // (the spacing read 192 -> 142 because a hi-pass rings inside each repeat and the edge detector counted the ringing); its first repeat
+    // -4.29 -> -15.90 dB - tone in the feedback path, never time; Feedback Low Pass [29]: onset 191.5 both ends, first repeat -22.92 -> -4.29 - tone too
+    {
+        const auto hp0 = fig ([] (Figure& f) { f.onsetMs = 191.5; f.firstRepeatDb = -4.29; f.fallPerRepeatDb = -4.5; f.repeats = 14; }), hp1 = fig ([] (Figure& f) { f.onsetMs = 191.5; f.firstRepeatDb = -15.90; f.fallPerRepeatDb = -5.8; f.repeats = 16; });
+        check (! signatureHolds ("time", hp0, hp1).holds && signatureHolds ("tone", hp0, hp1).holds && signatureHolds ("tone", hp0, hp1).why.contains ("tone in the feedback path, not time"), "role T5: Feedback Hi Pass: the onset holds at 191.5 ms while the first repeat moves 11.6 dB - tone, not time");
+        const auto lp0 = fig ([] (Figure& f) { f.onsetMs = 191.5; f.firstRepeatDb = -22.92; f.fallPerRepeatDb = -17.17; }), lp1 = fig ([] (Figure& f) { f.onsetMs = 191.5; f.firstRepeatDb = -4.29; f.fallPerRepeatDb = -4.50; });
+        check (! signatureHolds ("feedback", lp0, lp1).holds && signatureHolds ("feedback", lp0, lp1).why.contains ("first repeat moves") && signatureHolds ("tone", lp0, lp1).holds, "role T6: Feedback Low Pass moves the fall per repeat 12.7 dB but the first repeat 18.6 dB too: the path's tone, not feedback");
+        const auto fb0 = fig ([] (Figure& f) { f.onsetMs = 191.5; f.firstRepeatDb = -4.3; f.fallPerRepeatDb = -10.45; }), fb1 = fig ([] (Figure& f) { f.onsetMs = 191.5; f.firstRepeatDb = -4.3; f.fallPerRepeatDb = 0.01; });
+        check (signatureHolds ("feedback", fb0, fb1).holds, "role T7: Feedback L: the fall moves 10 dB with the first repeat put - feedback (the mode reports tone only where neither time nor feedback holds)");
+        check (signatureHolds ("time", fig ([] (Figure& f) { f.onsetMs = 14.5; }), fig ([] (Figure& f) { f.onsetMs = 2475.0; })).holds, "role T8: Time L: the onset itself moves - time");
+    }
     // decay: H-Reverb's "Buildup Time" moved RT60 3.67 -> 8.72: the measurement says it IS a decay-affecting control (confirmed, whatever the name); Valhalla 1.22 -> 9.02 confirmed
     check (signatureHolds ("decay", fig ([] (Figure& f) { f.rt60s = 3.67; }), fig ([] (Figure& f) { f.rt60s = 8.72; })).holds, "role C1: H-Reverb's Buildup Time moves RT60 x2.4 -> confirmed as a decay control by measurement");
     check (! signatureHolds ("decay", fig ([] (Figure& f) { f.rt60s = 2.5; }), fig ([] (Figure& f) { f.rt60s = 2.8; })).holds, "role C2: RT60 2.5 -> 2.8 (x1.12) is not a decay control");

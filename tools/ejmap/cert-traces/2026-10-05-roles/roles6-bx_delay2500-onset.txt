@@ -1,0 +1,14 @@
+  Time L = '15 ms' (norm 0.00): onset 14.5 ms vs label 15.0 ms -> within 2 % / 2 ms (the onset)
+  Time L = '54 ms' (norm 0.25): onset 53.5 ms vs label 54.0 ms -> within 2 % / 2 ms (the onset)
+  Time L = '194 ms' (norm 0.50): onset 191.5 ms (repeats every 192.0 ms) vs label 194.0 ms -> within 2 % / 2 ms (the onset)
+  Time L = '696 ms' (norm 0.75): onset 688.5 ms (repeats every 689.0 ms) vs label 696.0 ms -> within 2 % / 2 ms (the onset)
+  Time L = '2500 ms' (norm 1.00): onset 2475.5 ms (repeats every 2475.0 ms) vs label 2500.0 ms -> within 2 % / 2 ms (the onset)
+  ROLES BY MEASUREMENT: 8 verdict(s), 109 unnamed control(s) probed without the signature
+    role mix DROPPED    [8] Modulation Mix - no dry reading at either end
+    role time CONFIRMED  [14] Time L - the onset moves 14.5 -> 2475.5 ms
+    role feedback CONFIRMED  [19] Feedback L - the repeat count moves 1 -> 32 with the first repeat put (0.00 dB)
+    measured role time, UNNAMED  [15] Time R - the onset moves 14.5 -> 2475.5 ms
+    measured role feedback, UNNAMED  [20] Feedback R - the repeat count moves 1 -> 32 with the first repeat put (0.00 dB)
+    measured role tone (feedback path), UNNAMED  [29] Feedback Low Pass - the onset holds at 191.5 ms while the first repeat moves -19.72 -> -3.81 dB: tone in the feedback path, not time
+    measured role tone (feedback path), UNNAMED  [30] Feedback Hi Pass - the onset holds at 191.5 ms while the first repeat moves -3.81 -> -14.09 dB: tone in the feedback path, not time
+    measured role feedback, UNNAMED  [50] Transient Shaping Threshold - the fall per repeat moves -30.81 -> -4.50 dB with the first repeat put

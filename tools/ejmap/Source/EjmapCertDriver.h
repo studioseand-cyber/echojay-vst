@@ -3478,10 +3478,10 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
             if (r.kind == ChildResult::Kind::uiShown) { say ("RD: a window appeared; stopping"); return 5; }
             const auto t = parseTail (r.cleanExit() ? r.out : juce::String()); if (! t.ok) { say ("  time " + juce::String (norm, 2) + ": " + (t.refused.isNotEmpty() ? "refused " + t.refused : r.describe())); continue; }
             const auto on = onsetsOf (t); const auto text = t.setTexts.count (timeCtl.index) ? t.setTexts.at (timeCtl.index) : juce::String(); const auto lab = labelMs (text); ++measured; ++read;
-            const double meas = on.spacingMs && kind == "delay" ? *on.spacingMs : (on.onsetMs ? *on.onsetMs : -1.0);
+            const double meas = on.onsetMs ? *on.onsetMs : -1.0;   // ruling 2: time is the first repeat's onset (the spacing counts ringing inside a repeat as repeats: Feedback Hi Pass read 192 -> 142)
             const bool ok = lab && meas >= 0.0 && std::abs (meas - *lab) <= juce::jmax (2.0, 0.02 * *lab); if (ok) ++within;
             { roleevidence::Figure f; f.ok = true; if (meas >= 0.0) f.onsetMs = meas; if (norm < 0.01) timeA = f; if (norm > 0.99) timeB = f; }
-            say ("  " + timeCtl.name + " = '" + text + "' (norm " + juce::String (norm, 2) + "): onset " + (on.onsetMs ? juce::String (*on.onsetMs, 1) : juce::String ("none")) + " ms" + (on.spacingMs ? ", repeats every " + juce::String (*on.spacingMs, 1) + " ms" : juce::String()) + (lab ? " vs label " + juce::String (*lab, 1) + " ms -> " + juce::String (ok ? "within 2 % / 2 ms" : "OFF by " + juce::String (meas - *lab, 1) + " ms") : juce::String (" (label not a time)")));
+            say ("  " + timeCtl.name + " = '" + text + "' (norm " + juce::String (norm, 2) + "): onset " + (on.onsetMs ? juce::String (*on.onsetMs, 1) : juce::String ("none")) + " ms" + (on.spacingMs ? " (repeats every " + juce::String (*on.spacingMs, 1) + " ms)" : juce::String()) + (lab ? " vs label " + juce::String (*lab, 1) + " ms -> " + juce::String (ok ? "within 2 % / 2 ms (the onset)" : "OFF by " + juce::String (meas - *lab, 1) + " ms (the onset)") : juce::String (" (label not a time)")));
             auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", text); ro->setProperty ("label_ms", lab ? juce::var (*lab) : juce::var()); ro->setProperty ("onset_ms", on.onsetMs ? juce::var (*on.onsetMs) : juce::var()); ro->setProperty ("repeat_spacing_ms", on.spacingMs ? juce::var (*on.spacingMs) : juce::var()); ro->setProperty ("within", ok); rows.add (juce::var (ro));
         }
         { std::set<juce::String> distinct; for (const auto& r : rows) { const auto sp = r.getProperty ("repeat_spacing_ms", {}), on = r.getProperty ("onset_ms", {}); distinct.insert (juce::String (! sp.isVoid() ? (double) sp : ! on.isVoid() ? (double) on : -1.0, 0)); }
@@ -3565,10 +3565,13 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
             const auto t = parseTail (r.cleanExit() ? r.out : juce::String()); if (! t.ok) continue;
             auto& f = n < 0.5 ? ua : ub; f.ok = true;
             const auto lv = levelsOf (t); if (lv.ok) { if (lv.dryDb > -500.0) f.dryDb = lv.dryDb; if (lv.wetDb > -500.0) f.wetDb = lv.wetDb; }
-            const auto on = onsetsOf (t); f.onsetMs = on.spacingMs ? on.spacingMs : on.onsetMs; f.repeats = (int) on.repeats.size(); f.fallPerRepeatDb = on.fallPerRepeatDb; if (! on.repeats.empty()) f.firstRepeatDb = on.repeats.front().levelDb;
+            const auto on = onsetsOf (t); f.onsetMs = on.onsetMs; f.repeats = (int) on.repeats.size(); f.fallPerRepeatDb = on.fallPerRepeatDb; if (! on.repeats.empty()) f.firstRepeatDb = on.repeats.front().levelDb;
             const auto dc = decayOf (t); if (dc.ok) f.rt60s = dc.t20RT60s;
         }
         for (const char* role : { "mix", "time", "decay", "feedback" }) roles.push_back (roleevidence::unnamed (pc.index, pc.name, role, roleevidence::signatureHolds (role, ua, ub)));
+        // ruling 2: a control that holds the onset and is not feedback (the first repeat put) but changes the repeats' shape or level is the path's tone
+        if (! roleevidence::signatureHolds ("time", ua, ub).holds && ! roleevidence::signatureHolds ("feedback", ua, ub).holds)
+            if (const auto tn = roleevidence::signatureHolds ("tone", ua, ub); tn.holds) roles.push_back (roleevidence::unnamed (pc.index, pc.name, "tone (feedback path)", tn));
     }
     sayRoles (say, roles);
     setRoles (o, roles);

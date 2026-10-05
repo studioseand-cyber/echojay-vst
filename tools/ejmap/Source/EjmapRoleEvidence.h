@@ -15,8 +15,9 @@
     threshold  where the effect starts moves: GR at a fixed level moves >= 3 dB
     mix        the dry/wet ratio moves >= 6 dB, dry falling while wet rises
     decay      RT60 moves by a factor >= 1.5
-    time       the onset (or the repeat spacing) moves >= 10 ms and >= 20 %
-    feedback   the fall per repeat moves >= 3 dB (or the repeat count by >= 2)
+    time       the FIRST REPEAT'S ONSET (the rising-edge lag from the burst) moves >= 10 ms and >= 20 % (ruling 2: never the spacing)
+    tone       the onset stays while the repeats' shape or level moves (first repeat >= 3 dB, or the fall per repeat >= 3 dB): the feedback path's tone
+    feedback   the fall per repeat moves >= 3 dB with the first repeat put (within 6 dB), or the repeat count by >= 3 with the first repeat put
     drive      THD moves >= 3 dB and reaches at least -50 dB (0.3 %: J37's slap level and Formula move THD 5-8 dB under -56 - not a drive)
     frequency  the centre (or corner) moves >= 1/3 octave while the band stays (gain within 3 dB)
     q          the bandwidth moves >= 30 % while the centre stays within 1/3 octave
@@ -133,9 +134,25 @@ inline Signature signatureHolds (const juce::String& role, const Figure& a, cons
         const double d = std::abs (*b.onsetMs - *a.onsetMs), base = juce::jmax (1.0, juce::jmin (*a.onsetMs, *b.onsetMs));
         s.holds = d >= kTimeMoveMs && d / base >= kTimeMoveFrac; s.why = "the onset moves " + f1 (*a.onsetMs) + " -> " + f1 (*b.onsetMs) + " ms" + (s.holds ? "" : " (needs >= 10 ms and 20 %)"); return s;
     }
+    if (role == "tone")
+    {
+        // ruling 2: the onset holds, the repeats change - a filter or a level in the feedback path (bx_delay2500's Feedback Hi Pass / Low Pass)
+        if (! both (a.onsetMs, b.onsetMs)) { s.why = "no onset at both ends"; return s; }
+        const double d = std::abs (*b.onsetMs - *a.onsetMs), base = juce::jmax (1.0, juce::jmin (*a.onsetMs, *b.onsetMs));
+        if (d >= kTimeMoveMs && d / base >= kTimeMoveFrac) { s.why = "the onset moves (" + f1 (*a.onsetMs) + " -> " + f1 (*b.onsetMs) + " ms): a time, not a tone"; return s; }
+        if (both (a.firstRepeatDb, b.firstRepeatDb) && std::abs (*b.firstRepeatDb - *a.firstRepeatDb) >= kFeedbackMoveDb) { s.holds = true; s.why = "the onset holds at " + f1 (*a.onsetMs) + " ms while the first repeat moves " + f2 (*a.firstRepeatDb) + " -> " + f2 (*b.firstRepeatDb) + " dB: tone in the feedback path, not time"; return s; }
+        if (both (a.fallPerRepeatDb, b.fallPerRepeatDb) && std::abs (*b.fallPerRepeatDb - *a.fallPerRepeatDb) >= kFeedbackMoveDb) { s.holds = true; s.why = "the onset holds at " + f1 (*a.onsetMs) + " ms while the fall per repeat moves " + f2 (*a.fallPerRepeatDb) + " -> " + f2 (*b.fallPerRepeatDb) + " dB: tone in the feedback path, not time"; return s; }
+        s.why = "the onset holds and the repeats hold too"; return s;
+    }
     if (role == "feedback")
     {
-        if (both (a.fallPerRepeatDb, b.fallPerRepeatDb) && std::abs (*b.fallPerRepeatDb - *a.fallPerRepeatDb) >= kFeedbackMoveDb) { s.holds = true; s.why = "the fall per repeat moves " + f2 (*a.fallPerRepeatDb) + " -> " + f2 (*b.fallPerRepeatDb) + " dB"; return s; }
+        // ruling 2: a feedback control acts from the second repeat on - the first repeat stays put (a filter in the path moves it: tone)
+        const bool firstPut = both (a.firstRepeatDb, b.firstRepeatDb) && std::abs (*b.firstRepeatDb - *a.firstRepeatDb) <= kMixMoveDb;
+        if (both (a.fallPerRepeatDb, b.fallPerRepeatDb) && std::abs (*b.fallPerRepeatDb - *a.fallPerRepeatDb) >= kFeedbackMoveDb)
+        {
+            if (both (a.firstRepeatDb, b.firstRepeatDb) && ! firstPut) { s.why = "the fall per repeat moves " + f2 (*a.fallPerRepeatDb) + " -> " + f2 (*b.fallPerRepeatDb) + " dB but the first repeat moves " + f2 (*b.firstRepeatDb - *a.firstRepeatDb) + " too: the feedback path's tone or level, not feedback"; return s; }
+            s.holds = true; s.why = "the fall per repeat moves " + f2 (*a.fallPerRepeatDb) + " -> " + f2 (*b.fallPerRepeatDb) + " dB" + (firstPut ? " with the first repeat put" : ""); return s;
+        }
         // the count alone counts only when the FIRST repeat stayed put (within 6 dB): a gain lifts every repeat over the floor and the count grows too (bx_delay2500's Gain In 0 -> 16)
         if (both (a.repeats, b.repeats) && std::abs (*b.repeats - *a.repeats) >= kRepeatCountMove)
         {
