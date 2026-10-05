@@ -1,0 +1,205 @@
+{
+  "schema": "ej_reverb_delay_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.7, not exported, not published",
+  "product": "H-Reverb (s)",
+  "version": "12.0.0",
+  "identity": "AudioUnit|4254627d|12.0.0",
+  "kind": "reverb",
+  "mix_control": {
+    "index": 8,
+    "name": "Dry/Wet"
+  },
+  "time_control": {
+    "index": 0,
+    "name": "Predelay Free"
+  },
+  "decay_control": {
+    "index": 3,
+    "name": "Buildup Time"
+  },
+  "feedback_control": null,
+  "sync_control": null,
+  "note_control": {
+    "index": 1,
+    "name": "Predelay Sync"
+  },
+  "wet_only_baseline": {
+    "onset_ms": 12.5,
+    "repeats": 0,
+    "repeat_spacing_ms": null,
+    "fall_per_repeat_db": null,
+    "rt60_t20_s": 3.140881752437997,
+    "rt60_t30_s": 2.686662733203697,
+    "decay_note": "T20 fit -22.3 dB/s",
+    "floor_db": -90.0
+  },
+  "mix_law": {
+    "law": "other",
+    "why": "worst deviation: linear 12.79 dB, equal power 8.90 dB (fit within 1.0)",
+    "worst_linear_db": 12.789999999999999,
+    "worst_equal_power_db": 8.9,
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0.0",
+        "dry_db": -15.0,
+        "wet_db": null
+      },
+      {
+        "norm": 0.1,
+        "display": "10.0",
+        "dry_db": -15.039999999999999,
+        "wet_db": -42.560000000000002
+      },
+      {
+        "norm": 0.2,
+        "display": "20.0",
+        "dry_db": -15.18,
+        "wet_db": -36.539999999999999
+      },
+      {
+        "norm": 0.3,
+        "display": "30.0",
+        "dry_db": -15.41,
+        "wet_db": -33.020000000000003
+      },
+      {
+        "norm": 0.4,
+        "display": "40.0",
+        "dry_db": -15.76,
+        "wet_db": -30.52
+      },
+      {
+        "norm": 0.5,
+        "display": "50.0",
+        "dry_db": -16.25,
+        "wet_db": -28.579999999999998
+      },
+      {
+        "norm": 0.6,
+        "display": "60.0",
+        "dry_db": -16.940000000000001,
+        "wet_db": -27.0
+      },
+      {
+        "norm": 0.7,
+        "display": "70.0",
+        "dry_db": -17.920000000000002,
+        "wet_db": -25.66
+      },
+      {
+        "norm": 0.8,
+        "display": "80.0",
+        "dry_db": -19.43,
+        "wet_db": -24.5
+      },
+      {
+        "norm": 0.9,
+        "display": "90.0",
+        "dry_db": -22.210000000000001,
+        "wet_db": -23.469999999999999
+      },
+      {
+        "norm": 1.0,
+        "display": "100.0",
+        "dry_db": -298.620000000000005,
+        "wet_db": -22.559999999999999
+      }
+    ]
+  },
+  "time": {
+    "control": "Predelay Free",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0",
+        "label_ms": 0.0,
+        "onset_ms": 12.5,
+        "repeat_spacing_ms": null,
+        "within": false
+      },
+      {
+        "norm": 0.25,
+        "display": "125",
+        "label_ms": 125.0,
+        "onset_ms": 12.5,
+        "repeat_spacing_ms": null,
+        "within": false
+      },
+      {
+        "norm": 0.5,
+        "display": "250",
+        "label_ms": 250.0,
+        "onset_ms": 12.5,
+        "repeat_spacing_ms": null,
+        "within": false
+      },
+      {
+        "norm": 0.75,
+        "display": "375",
+        "label_ms": 375.0,
+        "onset_ms": 12.5,
+        "repeat_spacing_ms": null,
+        "within": false
+      },
+      {
+        "norm": 1.0,
+        "display": "500",
+        "label_ms": 500.0,
+        "onset_ms": 12.5,
+        "repeat_spacing_ms": null,
+        "within": false
+      }
+    ],
+    "within_count": 0,
+    "read_count": 5
+  },
+  "decay": {
+    "control": "Buildup Time",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0.000",
+        "label_s": 0.0,
+        "rt60_t20_s": 3.673,
+        "rt60_t30_s": 2.749,
+        "note": "T20 fit -21.8 dB/s"
+      },
+      {
+        "norm": 0.25,
+        "display": "0.031",
+        "label_s": 0.031,
+        "rt60_t20_s": 3.141,
+        "rt60_t30_s": 2.687,
+        "note": "T20 fit -22.3 dB/s"
+      },
+      {
+        "norm": 0.5,
+        "display": "0.250",
+        "label_s": 0.25,
+        "rt60_t20_s": 2.733,
+        "rt60_t30_s": 2.8,
+        "note": "T20 fit -21.4 dB/s"
+      },
+      {
+        "norm": 0.75,
+        "display": "0.844",
+        "label_s": 0.844,
+        "rt60_t20_s": 2.458,
+        "rt60_t30_s": 2.647,
+        "note": "T20 fit -22.7 dB/s"
+      },
+      {
+        "norm": 1.0,
+        "display": "2.000",
+        "label_s": 2.0,
+        "rt60_t20_s": 8.718999999999999,
+        "rt60_t30_s": 6.671,
+        "note": "T20 fit -9.0 dB/s"
+      }
+    ]
+  },
+  "processes": 24,
+  "measuredAt": "20261005T131431",
+  "method": "probe --tail: a 997 Hz burst (200 ms at -12 dBFS) then 6 s of silence, the output's RMS and peak per 1 ms window on the input's clock (latency taken out); dry = the burst's first 2 ms, wet = the 4 ms after the burst (reverb) or the first repeat's head (delay); mix law = worst deviation from linear / equal power over 11 positions, fit within 1 dB; decay = T20 / T30 least-squares on the 10 ms-smoothed tail, RT60 extrapolated; onset = the first window 20 dB above the measured floor; repeats = the tail's peak maxima, spacing and fall as medians; tempo sync = the probe's playhead (playing, 4/4) at 90 / 120 / 140"
+}

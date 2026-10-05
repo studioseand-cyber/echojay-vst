@@ -79,6 +79,7 @@
 #include "EjmapCertDriver.h"
 #include "EjmapCertReview.h"
 #include "EjmapSaturation.h"
+#include "EjmapReverbDelay.h"
 
 namespace
 {
@@ -7145,6 +7146,71 @@ void testSaturation()
            "sat S13: the JSON carries the curve per level with the harmonics and the onset");
 }
 
+/** REVERB AND DELAY (EjmapReverbDelay.h, roadmap 2.7 PROTOTYPE, 5 Oct R4): synthetic tails - a delay with repeats, a reverb with RT60 2 s - and the mix law. */
+void testReverbDelay()
+{
+    using namespace ejmap::reverbdelay;
+    // a synthetic --tail trace: burst 200 ms at -12 dBFS (RMS -15.01), 1 ms windows, tail 3 s; dryDb = the dry's level in the burst, wet = f(t) in the tail
+    auto trace = [] (double dryDb, std::function<double (double)> wetDbAt, double burstMs = 200.0, double tailMs = 3000.0, double tempo = 0.0)
+    {
+        juce::String s; s << "tail\tproto\t1\tdb\t-12.00\tburst_ms\t" << juce::String (burstMs, 2) << "\ttail_s\t" << juce::String (tailMs / 1000.0, 3) << "\thz\t997.000\twin_ms\t1.00\ttempo\t" << juce::String (tempo, 2) << "\nconfig\tmain_in\t2\tmain_out\t2\tlatency\t0\n";
+        auto db2p = [] (double db) { return db > -500.0 ? std::pow (10.0, db / 10.0) : 0.0; };
+        for (double t = 0.5; t < burstMs + tailMs; t += 1.0)
+        {
+            const bool burst = t < burstMs;
+            const double wet = wetDbAt (t);
+            const double out = 10.0 * std::log10 (db2p (burst ? dryDb : -999.0) + db2p (wet) + 1e-14);   // -140 dB floor
+            s << "twin\tt_ms\t" << juce::String (t, 3) << "\tseg\t" << (burst ? "burst" : "tail") << "\tin_db\t" << (burst ? "-15.010" : "-999.000") << "\tout_db\t" << juce::String (out, 3) << "\tout_peak_db\t" << juce::String (out + 3.01, 3) << "\n";
+        }
+        s << "tdone\twindows\t" << (int) (burstMs + tailMs) << "\tnonfinite\t0\n";
+        return s;
+    };
+    // A DELAY: 300 ms, feedback 50 % (-6.02 dB per repeat), wet level -21 dB at 100 % (the first repeat carries the burst's RMS -15 - 6)
+    auto delayWet = [] (double delayMs, double fallDb, double firstDb) { return [=] (double t) { if (t < delayMs) return -999.0; const int k = (int) std::floor (t / delayMs); const double within = t - k * delayMs; if (within >= 200.0) return -999.0; return firstDb + (k - 1) * fallDb; }; };
+    const auto dl = parseTail (trace (-999.0, delayWet (300.0, -6.02, -21.01)));
+    check (dl.ok && dl.windows.size() == 3200 && std::abs (dl.burstMs - 200.0) < 1e-9, "rd D1: the tail trace parses (3200 one-ms windows)");
+    const auto on = onsetsOf (dl);
+    check (on.onsetMs && std::abs (*on.onsetMs - 300.5) < 1.01, "rd D2: a wet-only delay's onset is the delay time from the burst's start (" + juce::String (on.onsetMs ? *on.onsetMs : -1.0, 1) + ")");
+    check (on.repeats.size() >= 5 && on.spacingMs && std::abs (*on.spacingMs - 300.0) < 1.5 && on.fallPerRepeatDb && std::abs (*on.fallPerRepeatDb + 6.02) < 0.1, "rd D3: repeats 300 ms apart, falling 6.0 dB each (" + juce::String (on.spacingMs ? *on.spacingMs : -1.0, 1) + " ms, " + juce::String (on.fallPerRepeatDb ? *on.fallPerRepeatDb : 0.0, 2) + " dB, " + juce::String ((int) on.repeats.size()) + " repeats)");
+    // FLAT-TOPPED REPEATS WITH RIPPLE (H-Delay, 5 Oct): a 50 ms burst echoed every 375 ms, +-0.4 dB ripple on each block - one repeat per block, not one per ripple
+    {
+        auto rippled = [] (double t) { if (t < 375.0) return -999.0; const int k = (int) std::floor (t / 375.0); const double within = t - k * 375.0; if (within >= 50.0) return -999.0; return -17.5 - 5.0 * (k - 1) + 0.4 * std::sin (within * 1.3); };
+        const auto rp = onsetsOf (parseTail (trace (-999.0, rippled, 50.0, 3000.0)));
+        check (rp.repeats.size() == 8 && rp.spacingMs && std::abs (*rp.spacingMs - 375.0) < 1.5 && rp.fallPerRepeatDb && std::abs (*rp.fallPerRepeatDb + 5.0) < 0.3, "rd D3b: flat-topped rippled echoes count once each: 8 repeats 375 ms apart falling 5 dB (" + juce::String ((int) rp.repeats.size()) + ", " + juce::String (rp.spacingMs ? *rp.spacingMs : -1.0, 1) + ", " + juce::String (rp.fallPerRepeatDb ? *rp.fallPerRepeatDb : 0.0, 2) + ")");
+    }
+    // A REVERB: wet starts at -30 dB at the burst's end and falls 30 dB/s (RT60 = 2.0 s); dry -15 dB
+    auto reverbWet = [] (double startDb, double dbPerS, double burstMs) { return [=] (double t) { if (t < 5.0) return -999.0; if (t < burstMs) return startDb; return startDb - dbPerS * (t - burstMs) / 1000.0; }; };
+    const auto rv = parseTail (trace (-15.01, reverbWet (-30.0, 30.0, 200.0)));
+    const auto dc = decayOf (rv);
+    check (dc.ok && std::abs (dc.t20RT60s - 2.0) < 0.05 && dc.t30 && std::abs (dc.t30RT60s - 2.0) < 0.05, "rd D4: RT60 from the T20 and T30 fits of a 30 dB/s tail = 2.0 s (" + juce::String (dc.t20RT60s, 3) + " / " + juce::String (dc.t30RT60s, 3) + ")");
+    const auto lv = levelsOf (rv);
+    check (lv.ok && std::abs (lv.dryDb + 15.01) < 0.05 && std::abs (lv.wetDb + 30.0) < 0.1, "rd D5: dry read in the burst's first 2 ms (before any wet), wet read just after the burst ends (" + juce::String (lv.dryDb, 2) + " / " + juce::String (lv.wetDb, 2) + ")");
+    check (! decayOf (parseTail (trace (-15.01, [] (double) { return -999.0; }))).ok, "rd D6: a tail at the floor has no decay to read");
+    // a tail longer than the window (RT60 12 s = 5 dB/s over a 3 s tail): fitted over what fell, said as such
+    { const auto lt = decayOf (parseTail (trace (-15.01, reverbWet (-30.0, 5.0, 200.0)))); check (lt.ok && lt.t10Only && std::abs (lt.t20RT60s - 12.0) < 0.6 && lt.why.contains ("longer than the window"), "rd D7: a tail that falls only 15 dB in the window is fitted over that fall and said to be longer than the window (" + juce::String (lt.t20RT60s, 2) + ")"); }
+    // the mix law: eleven positions, linear and equal power
+    {
+        std::vector<MixPoint> lin, eqp, odd;
+        for (int k = 0; k <= 10; ++k)
+        {
+            const double x = k / 10.0; MixPoint p; p.norm = (float) x; p.text = juce::String (k * 10) + " %";
+            p.dryDb = x < 1.0 ? -15.0 + 20.0 * std::log10 (1.0 - x) : -999.0; p.wetDb = x > 0.0 ? -30.0 + 20.0 * std::log10 (x) : -999.0; lin.push_back (p);
+            MixPoint q = p; q.dryDb = x < 1.0 ? -15.0 + 20.0 * std::log10 (std::cos (x * juce::MathConstants<double>::halfPi)) : -999.0; q.wetDb = x > 0.0 ? -30.0 + 20.0 * std::log10 (std::sin (x * juce::MathConstants<double>::halfPi)) : -999.0; eqp.push_back (q);
+            MixPoint o = p; o.dryDb = -15.0; o.wetDb = x > 0.0 ? -30.0 + 20.0 * std::log10 (x) : -999.0; odd.push_back (o);   // dry never falls: a "wet send" law
+        }
+        check (mixLaw (lin).law == "linear" && mixLaw (lin).worstLinearDb < 0.01, "rd M1: a linear mix is read as linear");
+        check (mixLaw (eqp).law == "equal_power" && mixLaw (eqp).worstEqualPowerDb < 0.01 && mixLaw (eqp).worstLinearDb > 1.0, "rd M2: an equal-power mix is read as equal power (linear misses by " + juce::String (mixLaw (eqp).worstLinearDb, 2) + " dB)");
+        check (mixLaw (odd).law == "other", "rd M3: a dry that never falls is neither law: other");
+        check (mixLaw ({ lin[0], lin[10] }).law == "unknown", "rd M4: fewer than three positions decide nothing");
+    }
+    // labels
+    check (labelMs ("120 ms") && *labelMs ("120 ms") == 120.0 && labelMs ("1.5 s") && *labelMs ("1.5 s") == 1500.0 && labelSeconds ("2.30s") && std::abs (*labelSeconds ("2.30s") - 2.3) < 1e-9 && labelSeconds ("450 ms") && std::abs (*labelSeconds ("450 ms") - 0.45) < 1e-9 && ! labelMs ("Off"),
+           "rd L1: ms and s labels parse to ms and to s");
+    check (noteBeats ("1/4") && *noteBeats ("1/4") == 1.0 && noteBeats ("1/8") && *noteBeats ("1/8") == 0.5 && noteBeats ("1/8 D") && std::abs (*noteBeats ("1/8 D") - 0.75) < 1e-9 && noteBeats ("1/8 T") && std::abs (*noteBeats ("1/8 T") - 1.0 / 3.0) < 1e-9 && ! noteBeats ("120 ms"),
+           "rd L2: note values to beats (dotted x1.5, triplet x2/3)");
+    check (std::abs (expectedSyncMs (1.0, 120.0) - 500.0) < 1e-9 && std::abs (expectedSyncMs (1.0, 90.0) - 666.667) < 0.01 && std::abs (expectedSyncMs (0.5, 140.0) - 214.286) < 0.01, "rd L3: a quarter at 120 = 500 ms, at 90 = 666.7 ms; an eighth at 140 = 214.3 ms");
+}
+
 /** THE ZIP REVIEW (EjmapCertReview.h, 5 Oct R1): hand-built records, outcomes and entry lists; every section's reading pinned. */
 void testCertReview()
 {
@@ -7337,6 +7403,7 @@ int main (int, char**)
     testEq();
     testCertReview();
     testSaturation();
+    testReverbDelay();
     testLoopOutcomes();
     testCategoriesMerge();
 

@@ -1,0 +1,210 @@
+{
+  "schema": "ej_reverb_delay_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.7, not exported, not published",
+  "product": "CLA EchoSphere (s)",
+  "version": "12.1.0",
+  "identity": "AudioUnit|4f55617d|12.1.0",
+  "kind": "delay",
+  "mix_control": {
+    "index": 2,
+    "name": "Mix"
+  },
+  "time_control": {
+    "index": 15,
+    "name": "SlapTime"
+  },
+  "decay_control": null,
+  "feedback_control": {
+    "index": 16,
+    "name": "SlapFbK"
+  },
+  "sync_control": null,
+  "note_control": {
+    "index": 18,
+    "name": "SlapSyn"
+  },
+  "wet_only_baseline": {
+    "onset_ms": 152.5,
+    "repeats": 1,
+    "repeat_spacing_ms": null,
+    "fall_per_repeat_db": null,
+    "rt60_t20_s": null,
+    "rt60_t30_s": null,
+    "decay_note": "the tail starts less than 25 dB above the floor (-999.0 vs -90.0): no decay to read",
+    "floor_db": -90.0
+  },
+  "mix_law": {
+    "law": "other",
+    "why": "worst deviation: linear 6.80 dB, equal power 9.69 dB (fit within 1.0)",
+    "worst_linear_db": 6.8,
+    "worst_equal_power_db": 9.69,
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0.0",
+        "dry_db": -14.99,
+        "wet_db": null
+      },
+      {
+        "norm": 0.1,
+        "display": "10.0",
+        "dry_db": -14.699999999999999,
+        "wet_db": -69.049999999999997
+      },
+      {
+        "norm": 0.2,
+        "display": "20.0",
+        "dry_db": -14.529999999999999,
+        "wet_db": -61.829999999999998
+      },
+      {
+        "norm": 0.3,
+        "display": "30.0",
+        "dry_db": -14.49,
+        "wet_db": -57.109999999999999
+      },
+      {
+        "norm": 0.4,
+        "display": "40.0",
+        "dry_db": -14.529999999999999,
+        "wet_db": -53.310000000000002
+      },
+      {
+        "norm": 0.5,
+        "display": "50.0",
+        "dry_db": -14.91,
+        "wet_db": -50.18
+      },
+      {
+        "norm": 0.6,
+        "display": "60.0",
+        "dry_db": -16.649999999999999,
+        "wet_db": -48.390000000000001
+      },
+      {
+        "norm": 0.7,
+        "display": "70.0",
+        "dry_db": -18.949999999999999,
+        "wet_db": -46.850000000000001
+      },
+      {
+        "norm": 0.8,
+        "display": "80.0",
+        "dry_db": -22.370000000000001,
+        "wet_db": -45.590000000000003
+      },
+      {
+        "norm": 0.9,
+        "display": "90.0",
+        "dry_db": -28.190000000000001,
+        "wet_db": -44.369999999999997
+      },
+      {
+        "norm": 1.0,
+        "display": "100.0",
+        "dry_db": null,
+        "wet_db": -43.25
+      }
+    ]
+  },
+  "time": {
+    "control": "SlapTime",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0",
+        "label_ms": 0.0,
+        "onset_ms": 1.5,
+        "repeat_spacing_ms": null,
+        "within": true
+      },
+      {
+        "norm": 0.25,
+        "display": "10224",
+        "label_ms": 10224.0,
+        "onset_ms": 152.5,
+        "repeat_spacing_ms": 4851.0,
+        "within": false
+      },
+      {
+        "norm": 0.5,
+        "display": "20448",
+        "label_ms": 20448.0,
+        "onset_ms": 152.5,
+        "repeat_spacing_ms": 4851.0,
+        "within": false
+      },
+      {
+        "norm": 0.75,
+        "display": "30672",
+        "label_ms": 30672.0,
+        "onset_ms": 152.5,
+        "repeat_spacing_ms": 4851.0,
+        "within": false
+      },
+      {
+        "norm": 1.0,
+        "display": "40896",
+        "label_ms": 40896.0,
+        "onset_ms": 152.5,
+        "repeat_spacing_ms": 4851.0,
+        "within": false
+      }
+    ],
+    "within_count": 1,
+    "read_count": 5
+  },
+  "feedback": {
+    "control": "SlapFbK",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0.0",
+        "repeats": 1,
+        "fall_per_repeat_db": null,
+        "expected_fall_db": null,
+        "repeat_spacing_ms": null,
+        "decay_to_minus_60_s": null
+      },
+      {
+        "norm": 0.25,
+        "display": "25.0",
+        "repeats": 1,
+        "fall_per_repeat_db": null,
+        "expected_fall_db": null,
+        "repeat_spacing_ms": null,
+        "decay_to_minus_60_s": null
+      },
+      {
+        "norm": 0.5,
+        "display": "50.0",
+        "repeats": 2,
+        "fall_per_repeat_db": -52.369999999999997,
+        "expected_fall_db": null,
+        "repeat_spacing_ms": 2136.0,
+        "decay_to_minus_60_s": 2.45
+      },
+      {
+        "norm": 0.75,
+        "display": "75.0",
+        "repeats": 20,
+        "fall_per_repeat_db": -2.5,
+        "expected_fall_db": null,
+        "repeat_spacing_ms": 229.0,
+        "decay_to_minus_60_s": 5.5
+      },
+      {
+        "norm": 1.0,
+        "display": "100.0",
+        "repeats": 25,
+        "fall_per_repeat_db": 0.0,
+        "expected_fall_db": null,
+        "repeat_spacing_ms": 229.0,
+        "decay_to_minus_60_s": null
+      }
+    ]
+  },
+  "processes": 24,
+  "measuredAt": "20261005T131221",
+  "method": "probe --tail: a 997 Hz burst (50 ms at -12 dBFS) then 6 s of silence, the output's RMS and peak per 1 ms window on the input's clock (latency taken out); dry = the burst's first 2 ms, wet = the 4 ms after the burst (reverb) or the first repeat's head (delay); mix law = worst deviation from linear / equal power over 11 positions, fit within 1 dB; decay = T20 / T30 least-squares on the 10 ms-smoothed tail, RT60 extrapolated; onset = the first window 20 dB above the measured floor; repeats = the tail's peak maxima, spacing and fall as medians; tempo sync = the probe's playhead (playing, 4/4) at 90 / 120 / 140"
+}

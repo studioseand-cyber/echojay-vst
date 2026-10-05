@@ -1,0 +1,154 @@
+{
+  "schema": "ej_reverb_delay_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.7, not exported, not published",
+  "product": "Abbey Road Plates (s)",
+  "version": "12.0.0",
+  "identity": "AudioUnit|5a4a657d|12.0.0",
+  "kind": "reverb",
+  "mix_control": {
+    "index": 10,
+    "name": "Dry/Wet"
+  },
+  "time_control": {
+    "index": 4,
+    "name": "Predelay"
+  },
+  "decay_control": null,
+  "feedback_control": null,
+  "sync_control": null,
+  "note_control": null,
+  "wet_only_baseline": {
+    "onset_ms": 0.5,
+    "repeats": 0,
+    "repeat_spacing_ms": null,
+    "fall_per_repeat_db": null,
+    "rt60_t20_s": 1.344822007820274,
+    "rt60_t30_s": 1.457449632366759,
+    "decay_note": "T20 fit -41.2 dB/s",
+    "floor_db": -90.0
+  },
+  "mix_law": {
+    "law": "other",
+    "why": "worst deviation: linear 6.66 dB, equal power 2.77 dB (fit within 1.0)",
+    "worst_linear_db": 6.66,
+    "worst_equal_power_db": 2.77,
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0",
+        "dry_db": -15.0,
+        "wet_db": null
+      },
+      {
+        "norm": 0.1,
+        "display": "10",
+        "dry_db": -15.050000000000001,
+        "wet_db": -31.289999999999999
+      },
+      {
+        "norm": 0.2,
+        "display": "20",
+        "dry_db": -15.289999999999999,
+        "wet_db": -25.329999999999998
+      },
+      {
+        "norm": 0.3,
+        "display": "30",
+        "dry_db": -15.720000000000001,
+        "wet_db": -21.920000000000002
+      },
+      {
+        "norm": 0.4,
+        "display": "40",
+        "dry_db": -16.370000000000001,
+        "wet_db": -19.59
+      },
+      {
+        "norm": 0.5,
+        "display": "50",
+        "dry_db": -17.300000000000001,
+        "wet_db": -17.859999999999999
+      },
+      {
+        "norm": 0.6,
+        "display": "60",
+        "dry_db": -18.609999999999999,
+        "wet_db": -16.559999999999999
+      },
+      {
+        "norm": 0.7,
+        "display": "70",
+        "dry_db": -20.48,
+        "wet_db": -15.58
+      },
+      {
+        "norm": 0.8,
+        "display": "80",
+        "dry_db": -23.309999999999999,
+        "wet_db": -14.880000000000001
+      },
+      {
+        "norm": 0.9,
+        "display": "90",
+        "dry_db": -28.34,
+        "wet_db": -14.43
+      },
+      {
+        "norm": 1.0,
+        "display": "100",
+        "dry_db": -46.75,
+        "wet_db": -14.27
+      }
+    ]
+  },
+  "time": {
+    "control": "Predelay",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0",
+        "label_ms": 0.0,
+        "onset_ms": 0.5,
+        "repeat_spacing_ms": null,
+        "within": true
+      },
+      {
+        "norm": 0.25,
+        "display": "125",
+        "label_ms": 125.0,
+        "onset_ms": 125.5,
+        "repeat_spacing_ms": null,
+        "within": true
+      },
+      {
+        "norm": 0.5,
+        "display": "250",
+        "label_ms": 250.0,
+        "onset_ms": 250.5,
+        "repeat_spacing_ms": null,
+        "within": true
+      },
+      {
+        "norm": 0.75,
+        "display": "375",
+        "label_ms": 375.0,
+        "onset_ms": 375.5,
+        "repeat_spacing_ms": null,
+        "within": true
+      },
+      {
+        "norm": 1.0,
+        "display": "500",
+        "label_ms": 500.0,
+        "onset_ms": 500.5,
+        "repeat_spacing_ms": null,
+        "within": true
+      }
+    ],
+    "within_count": 5,
+    "read_count": 5
+  },
+  "processes": 19,
+  "measuredAt": "20261005T131607",
+  "method": "probe --tail: a 997 Hz burst (200 ms at -12 dBFS) then 6 s of silence, the output's RMS and peak per 1 ms window on the input's clock (latency taken out); dry = the burst's first 2 ms, wet = the 4 ms after the burst (reverb) or the first repeat's head (delay); mix law = worst deviation from linear / equal power over 11 positions, fit within 1 dB; decay = T20 / T30 least-squares on the 10 ms-smoothed tail, RT60 extrapolated; onset = the first window 20 dB above the measured floor; repeats = the tail's peak maxima, spacing and fall as medians; tempo sync = the probe's playhead (playing, 4/4) at 90 / 120 / 140"
+}

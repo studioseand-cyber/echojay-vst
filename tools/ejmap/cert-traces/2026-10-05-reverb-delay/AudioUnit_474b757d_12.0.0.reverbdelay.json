@@ -1,0 +1,157 @@
+{
+  "schema": "ej_reverb_delay_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.7, not exported, not published",
+  "product": "MannyM Delay (s)",
+  "version": "12.0.0",
+  "identity": "AudioUnit|474b757d|12.0.0",
+  "kind": "delay",
+  "mix_control": {
+    "index": 7,
+    "name": "Dry/Wet"
+  },
+  "time_control": {
+    "index": 1,
+    "name": "Delay Left ms"
+  },
+  "decay_control": null,
+  "feedback_control": null,
+  "sync_control": null,
+  "note_control": {
+    "index": 2,
+    "name": "Delay Left Tempo"
+  },
+  "wet_only_baseline": {
+    "onset_ms": 500.5,
+    "repeats": 6,
+    "repeat_spacing_ms": 500.0,
+    "fall_per_repeat_db": -10.443999999999996,
+    "rt60_t20_s": null,
+    "rt60_t30_s": null,
+    "decay_note": "the tail starts less than 25 dB above the floor (-999.0 vs -90.0): no decay to read",
+    "floor_db": -90.0
+  },
+  "mix_law": {
+    "law": "linear",
+    "why": "worst deviation: linear 0.04 dB, equal power 3.89 dB (fit within 1.0)",
+    "worst_linear_db": 0.04,
+    "worst_equal_power_db": 3.89,
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0.0",
+        "dry_db": -15.0,
+        "wet_db": null
+      },
+      {
+        "norm": 0.1,
+        "display": "10.0",
+        "dry_db": -15.9,
+        "wet_db": -37.25
+      },
+      {
+        "norm": 0.2,
+        "display": "20.0",
+        "dry_db": -16.899999999999999,
+        "wet_db": -31.25
+      },
+      {
+        "norm": 0.3,
+        "display": "30.0",
+        "dry_db": -18.100000000000001,
+        "wet_db": -27.75
+      },
+      {
+        "norm": 0.4,
+        "display": "40.0",
+        "dry_db": -19.399999999999999,
+        "wet_db": -25.25
+      },
+      {
+        "norm": 0.5,
+        "display": "50.0",
+        "dry_db": -21.0,
+        "wet_db": -23.25
+      },
+      {
+        "norm": 0.6,
+        "display": "60.0",
+        "dry_db": -23.0,
+        "wet_db": -21.649999999999999
+      },
+      {
+        "norm": 0.7,
+        "display": "70.0",
+        "dry_db": -25.5,
+        "wet_db": -20.350000000000001
+      },
+      {
+        "norm": 0.8,
+        "display": "80.0",
+        "dry_db": -29.0,
+        "wet_db": -19.149999999999999
+      },
+      {
+        "norm": 0.9,
+        "display": "90.0",
+        "dry_db": -35.0,
+        "wet_db": -18.149999999999999
+      },
+      {
+        "norm": 1.0,
+        "display": "100.0",
+        "dry_db": null,
+        "wet_db": -17.25
+      }
+    ]
+  },
+  "time": {
+    "control": "Delay Left ms",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0",
+        "label_ms": 0.0,
+        "onset_ms": 500.5,
+        "repeat_spacing_ms": 500.0,
+        "within": false
+      },
+      {
+        "norm": 0.25,
+        "display": "500",
+        "label_ms": 500.0,
+        "onset_ms": 500.5,
+        "repeat_spacing_ms": 500.0,
+        "within": true
+      },
+      {
+        "norm": 0.5,
+        "display": "1000",
+        "label_ms": 1000.0,
+        "onset_ms": 500.5,
+        "repeat_spacing_ms": 500.0,
+        "within": false
+      },
+      {
+        "norm": 0.75,
+        "display": "1500",
+        "label_ms": 1500.0,
+        "onset_ms": 500.5,
+        "repeat_spacing_ms": 500.0,
+        "within": false
+      },
+      {
+        "norm": 1.0,
+        "display": "2000",
+        "label_ms": 2000.0,
+        "onset_ms": 500.5,
+        "repeat_spacing_ms": 500.0,
+        "within": false
+      }
+    ],
+    "within_count": 1,
+    "read_count": 5
+  },
+  "processes": 19,
+  "measuredAt": "20261005T130845",
+  "method": "probe --tail: a 997 Hz burst (50 ms at -12 dBFS) then 6 s of silence, the output's RMS and peak per 1 ms window on the input's clock (latency taken out); dry = the burst's first 2 ms, wet = the 4 ms after the burst (reverb) or the first repeat's head (delay); mix law = worst deviation from linear / equal power over 11 positions, fit within 1 dB; decay = T20 / T30 least-squares on the 10 ms-smoothed tail, RT60 extrapolated; onset = the first window 20 dB above the measured floor; repeats = the tail's peak maxima, spacing and fall as medians; tempo sync = the probe's playhead (playing, 4/4) at 90 / 120 / 140"
+}

@@ -1,0 +1,181 @@
+=== H-Delay (s)
+RD: H-Delay (s) 12.0.0 (delay): mix [5] Mix; time [0] Delay Sec; feedback [2] Feedback; sync [4] Sync (off = 'ms' @1.00, on = 'Host' @0.50); note [1] Delay BPM
+  wet-only (mix 1.0): onset 375.5 ms; 11 repeat(s) above -65.2 dB; repeats every 375.0 ms falling -4.38 dB each; decay the tail starts less than 25 dB above the floor (-85.3 vs -85.2): no decay to read; floor -85.2 dB
+  mix law: equal_power (worst deviation: linear 3.89 dB, equal power 0.00 dB (fit within 1.0)); dry at 0 -15.81 dB, wet at 1 -17.57 dB (wet = the first repeat's head)
+      mix 0.0 '0': dry -15.81  wet -85.43
+      mix 0.1 '10': dry -15.92  wet -33.68
+      mix 0.2 '20': dry -16.25  wet -27.77
+      mix 0.3 '30': dry -16.82  wet -24.42
+      mix 0.4 '40': dry -17.66  wet -22.18
+      mix 0.5 '50': dry -18.82  wet -20.58
+      mix 0.6 '60': dry -20.43  wet -19.41
+      mix 0.7 '70': dry -22.67  wet -18.57
+      mix 0.8 '80': dry -26.01  wet -18.00
+      mix 0.9 '90': dry -31.93  wet -17.67
+      mix 1.0 '100': dry -86.09  wet -17.57
+  Delay Sec = '1' (norm 0.00): onset 1.5 ms vs label 1.0 ms -> within 2 % / 2 ms
+  Delay Sec = '251' (norm 0.25): onset 257.5 ms, repeats every 251.0 ms vs label 251.0 ms -> within 2 % / 2 ms
+  Delay Sec = '501' (norm 0.50): onset 483.5 ms, repeats every 501.0 ms vs label 501.0 ms -> within 2 % / 2 ms
+  Delay Sec = '1540' (norm 0.75): onset 1138.5 ms, repeats every 1477.0 ms vs label 1540.0 ms -> OFF by -63.0 ms
+  Delay Sec = '3500' (norm 1.00): onset 1947.5 ms, repeats every 2803.0 ms vs label 3500.0 ms -> OFF by -697.0 ms
+  Feedback = '0' (norm 0.00): 1 repeat(s) above -66.6 dB
+  Feedback = '50' (norm 0.25): 9 repeat(s) above -65.7 dB, fall -5.95 dB per repeat, repeats reach -60 dB in 3.78 s
+  Feedback = '100' (norm 0.50): 16 repeat(s) above -63.5 dB, fall -0.67 dB per repeat, repeats reach -60 dB in 33.43 s
+  Feedback = '150' (norm 0.75): 15 repeat(s) above -61.8 dB, fall 0.20 dB per repeat
+  Feedback = '200' (norm 1.00): 9 repeat(s) above -60.3 dB, fall 0.79 dB per repeat
+  sync on at 90 bpm (note '1/8D'): 500.0 ms = 0.750 beat(s) vs 500.0 ms expected (0.0 ms off)
+  sync on at 120 bpm (note '1/8D'): 375.0 ms = 0.750 beat(s) vs 375.0 ms expected (0.0 ms off)
+  sync on at 140 bpm (note '1/8D'): 322.0 ms = 0.751 beat(s) vs 321.4 ms expected (0.6 ms off)
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rd/reverbdelay/AudioUnit_42447e63_12.0.0.reverbdelay.json (27 processes)
+=== MannyM Delay (s)
+RD: MannyM Delay (s) 12.0.0 (delay): mix [7] Dry/Wet; time [1] Delay Left ms; feedback -; sync -; note [2] Delay Left Tempo
+  wet-only (mix 1.0): onset 500.5 ms; 6 repeat(s) above -70.0 dB; repeats every 500.0 ms falling -10.44 dB each; decay the tail starts less than 25 dB above the floor (-999.0 vs -90.0): no decay to read; floor -90.0 dB
+  mix law: linear (worst deviation: linear 0.04 dB, equal power 3.89 dB (fit within 1.0)); dry at 0 -15.00 dB, wet at 1 -17.25 dB (wet = the first repeat's head)
+      mix 0.0 '0.0': dry -15.00  wet floor
+      mix 0.1 '10.0': dry -15.90  wet -37.25
+      mix 0.2 '20.0': dry -16.90  wet -31.25
+      mix 0.3 '30.0': dry -18.10  wet -27.75
+      mix 0.4 '40.0': dry -19.40  wet -25.25
+      mix 0.5 '50.0': dry -21.00  wet -23.25
+      mix 0.6 '60.0': dry -23.00  wet -21.65
+      mix 0.7 '70.0': dry -25.50  wet -20.35
+      mix 0.8 '80.0': dry -29.00  wet -19.15
+      mix 0.9 '90.0': dry -35.00  wet -18.15
+      mix 1.0 '100.0': dry floor  wet -17.25
+  Delay Left ms = '0' (norm 0.00): onset 500.5 ms, repeats every 500.0 ms vs label 0.0 ms -> OFF by 500.0 ms
+  Delay Left ms = '500' (norm 0.25): onset 500.5 ms, repeats every 500.0 ms vs label 500.0 ms -> within 2 % / 2 ms
+  Delay Left ms = '1000' (norm 0.50): onset 500.5 ms, repeats every 500.0 ms vs label 1000.0 ms -> OFF by -500.0 ms
+  Delay Left ms = '1500' (norm 0.75): onset 500.5 ms, repeats every 500.0 ms vs label 1500.0 ms -> OFF by -1000.0 ms
+  Delay Left ms = '2000' (norm 1.00): onset 500.5 ms, repeats every 500.0 ms vs label 2000.0 ms -> OFF by -1500.0 ms
+  the time control moved NOTHING across its positions (the same reading at every one): a sync mode may still be engaged, or the control is not the delay time
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rd/reverbdelay/AudioUnit_474b757d_12.0.0.reverbdelay.json (19 processes)
+=== bx_delay2500
+RD: bx_delay2500 1.8.1 (delay): mix [8] Modulation Mix; time [14] Time L; feedback [19] Feedback L; sync -; note [17] Note L
+  wet-only (mix 1.0): onset 191.5 ms; 14 repeat(s) above -70.0 dB; repeats every 192.0 ms falling -4.50 dB each; decay the tail starts less than 25 dB above the floor (-999.0 vs -90.0): no decay to read; floor -90.0 dB
+  mix law: unknown (no dry at the dry end or no wet at the wet end); dry at 0 -999.00 dB, wet at 1 -9.37 dB (wet = the first repeat's head)
+      mix 0.0 '0 %': dry floor  wet -9.37
+      mix 0.1 '10 %': dry floor  wet -9.37
+      mix 0.2 '20 %': dry floor  wet -9.37
+      mix 0.3 '30 %': dry floor  wet -9.37
+      mix 0.4 '40 %': dry floor  wet -9.37
+      mix 0.5 '50 %': dry floor  wet -9.37
+      mix 0.6 '60 %': dry floor  wet -9.37
+      mix 0.7 '70 %': dry floor  wet -9.37
+      mix 0.8 '80 %': dry floor  wet -9.37
+      mix 0.9 '90 %': dry floor  wet -9.37
+      mix 1.0 '100 %': dry floor  wet -9.37
+  Time L = '15 ms' (norm 0.00): onset 14.5 ms vs label 15.0 ms -> within 2 % / 2 ms
+  Time L = '54 ms' (norm 0.25): onset 53.5 ms vs label 54.0 ms -> within 2 % / 2 ms
+  Time L = '194 ms' (norm 0.50): onset 191.5 ms, repeats every 192.0 ms vs label 194.0 ms -> within 2 % / 2 ms
+  Time L = '696 ms' (norm 0.75): onset 688.5 ms, repeats every 689.0 ms vs label 696.0 ms -> within 2 % / 2 ms
+  Time L = '2500 ms' (norm 1.00): onset 2475.5 ms, repeats every 2475.0 ms vs label 2500.0 ms -> within 2 % / 2 ms
+  Feedback L = '0 %' (norm 0.00): 1 repeat(s) above -70.0 dB
+  Feedback L = '25 %' (norm 0.25): 6 repeat(s) above -70.0 dB, fall -10.45 dB per repeat vs 20 log10 (label) -12.04 dB, repeats reach -60 dB in 1.10 s
+  Feedback L = '50 %' (norm 0.50): 14 repeat(s) above -70.0 dB, fall -4.50 dB per repeat vs 20 log10 (label) -6.02 dB, repeats reach -60 dB in 2.56 s
+  Feedback L = '75 %' (norm 0.75): 31 repeat(s) above -70.0 dB, fall -0.99 dB per repeat vs 20 log10 (label) -2.50 dB, repeats reach -60 dB in 11.61 s
+  Feedback L = '100 %' (norm 1.00): 32 repeat(s) above -70.0 dB, fall 0.01 dB per repeat vs 20 log10 (label) 0.00 dB
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rd/reverbdelay/AudioUnit_417f756c_1.8.1.reverbdelay.json (24 processes)
+=== CLA EchoSphere (s)
+RD: CLA EchoSphere (s) 12.1.0 (delay): mix [2] Mix; time [15] SlapTime; feedback [16] SlapFbK; sync -; note [18] SlapSyn
+  wet-only (mix 1.0): onset 152.5 ms; 1 repeat(s) above -70.0 dB; decay the tail starts less than 25 dB above the floor (-999.0 vs -90.0): no decay to read; floor -90.0 dB
+  mix law: other (worst deviation: linear 6.80 dB, equal power 9.69 dB (fit within 1.0)); dry at 0 -14.99 dB, wet at 1 -43.25 dB (wet = the first repeat's head)
+      mix 0.0 '0.0': dry -14.99  wet floor
+      mix 0.1 '10.0': dry -14.70  wet -69.05
+      mix 0.2 '20.0': dry -14.53  wet -61.83
+      mix 0.3 '30.0': dry -14.49  wet -57.11
+      mix 0.4 '40.0': dry -14.53  wet -53.31
+      mix 0.5 '50.0': dry -14.91  wet -50.18
+      mix 0.6 '60.0': dry -16.65  wet -48.39
+      mix 0.7 '70.0': dry -18.95  wet -46.85
+      mix 0.8 '80.0': dry -22.37  wet -45.59
+      mix 0.9 '90.0': dry -28.19  wet -44.37
+      mix 1.0 '100.0': dry floor  wet -43.25
+  SlapTime = '0' (norm 0.00): onset 1.5 ms vs label 0.0 ms -> within 2 % / 2 ms
+  SlapTime = '10224' (norm 0.25): onset 152.5 ms, repeats every 4851.0 ms vs label 10224.0 ms -> OFF by -5373.0 ms
+  SlapTime = '20448' (norm 0.50): onset 152.5 ms, repeats every 4851.0 ms vs label 20448.0 ms -> OFF by -15597.0 ms
+  SlapTime = '30672' (norm 0.75): onset 152.5 ms, repeats every 4851.0 ms vs label 30672.0 ms -> OFF by -25821.0 ms
+  SlapTime = '40896' (norm 1.00): onset 152.5 ms, repeats every 4851.0 ms vs label 40896.0 ms -> OFF by -36045.0 ms
+  SlapFbK = '0.0' (norm 0.00): 1 repeat(s) above -70.0 dB
+  SlapFbK = '25.0' (norm 0.25): 1 repeat(s) above -70.0 dB
+  SlapFbK = '50.0' (norm 0.50): 2 repeat(s) above -70.0 dB, fall -52.37 dB per repeat, repeats reach -60 dB in 2.45 s
+  SlapFbK = '75.0' (norm 0.75): 20 repeat(s) above -70.0 dB, fall -2.50 dB per repeat, repeats reach -60 dB in 5.50 s
+  SlapFbK = '100.0' (norm 1.00): 25 repeat(s) above -70.0 dB, fall 0.00 dB per repeat
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rd/reverbdelay/AudioUnit_4f55617d_12.1.0.reverbdelay.json (24 processes)
+=== ValhallaVintageVerb
+RD: ValhallaVintageVerb 4.0.5 (reverb): mix [0] Mix; pre-delay [1] PreDelay; decay [2] Decay
+  wet-only (mix 1.0): onset 25.5 ms; 0 repeat(s) above -67.1 dB; decay RT60 2.43 s (T20), 4.84 s (T30); floor -87.1 dB
+  mix law: equal_power (worst deviation: linear 3.89 dB, equal power 0.00 dB (fit within 1.0)); dry at 0 -15.00 dB, wet at 1 -15.39 dB (dry = the first 2 ms of the burst, before any wet; wet = the 4 ms after the burst ends)
+      mix 0.0 '0': dry -15.00  wet floor
+      mix 0.1 '0.1': dry -15.11  wet -31.51
+      mix 0.2 '0.2': dry -15.43  wet -25.59
+      mix 0.3 '0.3': dry -16.00  wet -22.25
+      mix 0.4 '0.4': dry -16.84  wet -20.01
+      mix 0.5 '0.5': dry -18.01  wet -18.40
+      mix 0.6 '0.6': dry -19.61  wet -17.23
+      mix 0.7 '0.7': dry -21.86  wet -16.40
+      mix 0.8 '0.8': dry -25.20  wet -15.83
+      mix 0.9 '0.9': dry -31.11  wet -15.50
+      mix 1.0 '1': dry -166.44  wet -15.39
+  PreDelay = '0' (norm 0.00): onset 5.5 ms vs label 0.0 ms -> OFF by 5.5 ms
+  PreDelay = '0.25' (norm 0.25): onset 25.5 ms vs label 0.2 ms -> OFF by 25.2 ms
+  PreDelay = '0.5' (norm 0.50): onset 105.5 ms vs label 0.5 ms -> OFF by 105.0 ms
+  PreDelay = '0.75' (norm 0.75): onset 262.5 ms vs label 0.8 ms -> OFF by 261.8 ms
+  PreDelay = '1' (norm 1.00): onset 505.5 ms vs label 1.0 ms -> OFF by 504.5 ms
+  the time control moved NOTHING across its positions (the same reading at every one): a sync mode may still be engaged, or the control is not the delay time
+  Decay = '0' (norm 0.00): RT60 1.22 s (T20), 1.15 s (T30) vs label 0.00 s (ratio 1217198.81)
+  Decay = '0.25' (norm 0.25): RT60 1.47 s (T20), 1.18 s (T30) vs label 0.25 s (ratio 5.86)
+  Decay = '0.5' (norm 0.50): RT60 9.02 s (T20), 8.46 s (T30) vs label 0.50 s (ratio 18.05)
+  Decay = '0.75' (norm 0.75): the tail starts less than 25 dB above the floor (-14.3 vs -34.6): no decay to read
+  Decay = '1' (norm 1.00): the tail starts less than 25 dB above the floor (-14.3 vs -29.1): no decay to read
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rd/reverbdelay/AudioUnit_78546a25_4.0.5.reverbdelay.json (24 processes)
+=== H-Reverb (s)
+RD: H-Reverb (s) 12.0.0 (reverb): mix [8] Dry/Wet; pre-delay [0] Predelay Free; decay [3] Buildup Time
+  wet-only (mix 1.0): onset 12.5 ms; 0 repeat(s) above -70.0 dB; decay RT60 3.14 s (T20), 2.69 s (T30); floor -90.0 dB
+  mix law: other (worst deviation: linear 12.79 dB, equal power 8.90 dB (fit within 1.0)); dry at 0 -15.00 dB, wet at 1 -22.56 dB (dry = the first 2 ms of the burst, before any wet; wet = the 4 ms after the burst ends)
+      mix 0.0 '0.0': dry -15.00  wet floor
+      mix 0.1 '10.0': dry -15.04  wet -42.56
+      mix 0.2 '20.0': dry -15.18  wet -36.54
+      mix 0.3 '30.0': dry -15.41  wet -33.02
+      mix 0.4 '40.0': dry -15.76  wet -30.52
+      mix 0.5 '50.0': dry -16.25  wet -28.58
+      mix 0.6 '60.0': dry -16.94  wet -27.00
+      mix 0.7 '70.0': dry -17.92  wet -25.66
+      mix 0.8 '80.0': dry -19.43  wet -24.50
+      mix 0.9 '90.0': dry -22.21  wet -23.47
+      mix 1.0 '100.0': dry -298.62  wet -22.56
+  Predelay Free = '0' (norm 0.00): onset 12.5 ms vs label 0.0 ms -> OFF by 12.5 ms
+  Predelay Free = '125' (norm 0.25): onset 12.5 ms vs label 125.0 ms -> OFF by -112.5 ms
+  Predelay Free = '250' (norm 0.50): onset 12.5 ms vs label 250.0 ms -> OFF by -237.5 ms
+  Predelay Free = '375' (norm 0.75): onset 12.5 ms vs label 375.0 ms -> OFF by -362.5 ms
+  Predelay Free = '500' (norm 1.00): onset 12.5 ms vs label 500.0 ms -> OFF by -487.5 ms
+  the time control moved NOTHING across its positions (the same reading at every one): a sync mode may still be engaged, or the control is not the delay time
+  Buildup Time = '0.000' (norm 0.00): RT60 3.67 s (T20), 2.75 s (T30) vs label 0.00 s (ratio 3672691.38)
+  Buildup Time = '0.031' (norm 0.25): RT60 3.14 s (T20), 2.69 s (T30) vs label 0.03 s (ratio 101.32)
+  Buildup Time = '0.250' (norm 0.50): RT60 2.73 s (T20), 2.80 s (T30) vs label 0.25 s (ratio 10.93)
+  Buildup Time = '0.844' (norm 0.75): RT60 2.46 s (T20), 2.65 s (T30) vs label 0.84 s (ratio 2.91)
+  Buildup Time = '2.000' (norm 1.00): RT60 8.72 s (T20), 6.67 s (T30) vs label 2.00 s (ratio 4.36)
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rd/reverbdelay/AudioUnit_4254627d_12.0.0.reverbdelay.json (24 processes)
+=== Abbey Road Plates (s)
+RD: Abbey Road Plates (s) 12.0.0 (reverb): mix [10] Dry/Wet; pre-delay [4] Predelay; decay -
+  wet-only (mix 1.0): onset 0.5 ms; 0 repeat(s) above -70.0 dB; decay RT60 1.34 s (T20), 1.46 s (T30); floor -90.0 dB
+  mix law: other (worst deviation: linear 6.66 dB, equal power 2.77 dB (fit within 1.0)); dry at 0 -15.00 dB, wet at 1 -14.27 dB (dry = the first 2 ms of the burst, before any wet; wet = the 4 ms after the burst ends)
+      mix 0.0 '0': dry -15.00  wet floor
+      mix 0.1 '10': dry -15.05  wet -31.29
+      mix 0.2 '20': dry -15.29  wet -25.33
+      mix 0.3 '30': dry -15.71  wet -21.92
+      mix 0.4 '40': dry -16.37  wet -19.59
+      mix 0.5 '50': dry -17.30  wet -17.86
+      mix 0.6 '60': dry -18.61  wet -16.56
+      mix 0.7 '70': dry -20.48  wet -15.58
+      mix 0.8 '80': dry -23.31  wet -14.88
+      mix 0.9 '90': dry -28.34  wet -14.43
+      mix 1.0 '100': dry -46.75  wet -14.27
+  Predelay = '0' (norm 0.00): onset 0.5 ms vs label 0.0 ms -> within 2 % / 2 ms
+  Predelay = '125' (norm 0.25): onset 125.5 ms vs label 125.0 ms -> within 2 % / 2 ms
+  Predelay = '250' (norm 0.50): onset 250.5 ms vs label 250.0 ms -> within 2 % / 2 ms
+  Predelay = '375' (norm 0.75): onset 375.5 ms vs label 375.0 ms -> within 2 % / 2 ms
+  Predelay = '500' (norm 1.00): onset 500.5 ms vs label 500.0 ms -> within 2 % / 2 ms
+  the time control moved NOTHING across its positions (the same reading at every one): a sync mode may still be engaged, or the control is not the delay time
+RD: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rd/reverbdelay/AudioUnit_5a4a657d_12.0.0.reverbdelay.json (19 processes)
+=== bx_rooMS
+RD: --text-at killed by signal 11

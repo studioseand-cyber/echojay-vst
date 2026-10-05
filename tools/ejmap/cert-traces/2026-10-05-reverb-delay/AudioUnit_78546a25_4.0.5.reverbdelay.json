@@ -1,0 +1,202 @@
+{
+  "schema": "ej_reverb_delay_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.7, not exported, not published",
+  "product": "ValhallaVintageVerb",
+  "version": "4.0.5",
+  "identity": "AudioUnit|78546a25|4.0.5",
+  "kind": "reverb",
+  "mix_control": {
+    "index": 0,
+    "name": "Mix"
+  },
+  "time_control": {
+    "index": 1,
+    "name": "PreDelay"
+  },
+  "decay_control": {
+    "index": 2,
+    "name": "Decay"
+  },
+  "feedback_control": null,
+  "sync_control": null,
+  "note_control": null,
+  "wet_only_baseline": {
+    "onset_ms": 25.5,
+    "repeats": 0,
+    "repeat_spacing_ms": null,
+    "fall_per_repeat_db": null,
+    "rt60_t20_s": 2.43495857104574,
+    "rt60_t30_s": 4.844287142447408,
+    "decay_note": "T20 fit -12.4 dB/s",
+    "floor_db": -87.145658333333458
+  },
+  "mix_law": {
+    "law": "equal_power",
+    "why": "worst deviation: linear 3.89 dB, equal power 0.00 dB (fit within 1.0)",
+    "worst_linear_db": 3.89,
+    "worst_equal_power_db": 0.0,
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0",
+        "dry_db": -15.0,
+        "wet_db": null
+      },
+      {
+        "norm": 0.1,
+        "display": "0.1",
+        "dry_db": -15.109999999999999,
+        "wet_db": -31.510000000000002
+      },
+      {
+        "norm": 0.2,
+        "display": "0.2",
+        "dry_db": -15.43,
+        "wet_db": -25.59
+      },
+      {
+        "norm": 0.3,
+        "display": "0.3",
+        "dry_db": -16.0,
+        "wet_db": -22.25
+      },
+      {
+        "norm": 0.4,
+        "display": "0.4",
+        "dry_db": -16.84,
+        "wet_db": -20.010000000000002
+      },
+      {
+        "norm": 0.5,
+        "display": "0.5",
+        "dry_db": -18.010000000000002,
+        "wet_db": -18.399999999999999
+      },
+      {
+        "norm": 0.6,
+        "display": "0.6",
+        "dry_db": -19.609999999999999,
+        "wet_db": -17.23
+      },
+      {
+        "norm": 0.7,
+        "display": "0.7",
+        "dry_db": -21.859999999999999,
+        "wet_db": -16.399999999999999
+      },
+      {
+        "norm": 0.8,
+        "display": "0.8",
+        "dry_db": -25.199999999999999,
+        "wet_db": -15.83
+      },
+      {
+        "norm": 0.9,
+        "display": "0.9",
+        "dry_db": -31.109999999999999,
+        "wet_db": -15.5
+      },
+      {
+        "norm": 1.0,
+        "display": "1",
+        "dry_db": -166.439999999999998,
+        "wet_db": -15.390000000000001
+      }
+    ]
+  },
+  "time": {
+    "control": "PreDelay",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0",
+        "label_ms": 0.0,
+        "onset_ms": 5.5,
+        "repeat_spacing_ms": null,
+        "within": false
+      },
+      {
+        "norm": 0.25,
+        "display": "0.25",
+        "label_ms": 0.25,
+        "onset_ms": 25.5,
+        "repeat_spacing_ms": null,
+        "within": false
+      },
+      {
+        "norm": 0.5,
+        "display": "0.5",
+        "label_ms": 0.5,
+        "onset_ms": 105.5,
+        "repeat_spacing_ms": null,
+        "within": false
+      },
+      {
+        "norm": 0.75,
+        "display": "0.75",
+        "label_ms": 0.75,
+        "onset_ms": 262.5,
+        "repeat_spacing_ms": null,
+        "within": false
+      },
+      {
+        "norm": 1.0,
+        "display": "1",
+        "label_ms": 1.0,
+        "onset_ms": 505.5,
+        "repeat_spacing_ms": null,
+        "within": false
+      }
+    ],
+    "within_count": 0,
+    "read_count": 5
+  },
+  "decay": {
+    "control": "Decay",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0",
+        "label_s": 0.0,
+        "rt60_t20_s": 1.217,
+        "rt60_t30_s": 1.146,
+        "note": "T20 fit -52.3 dB/s"
+      },
+      {
+        "norm": 0.25,
+        "display": "0.25",
+        "label_s": 0.25,
+        "rt60_t20_s": 1.466,
+        "rt60_t30_s": 1.176,
+        "note": "T20 fit -51.0 dB/s"
+      },
+      {
+        "norm": 0.5,
+        "display": "0.5",
+        "label_s": 0.5,
+        "rt60_t20_s": 9.023999999999999,
+        "rt60_t30_s": 8.460000000000001,
+        "note": "T20 fit -7.1 dB/s"
+      },
+      {
+        "norm": 0.75,
+        "display": "0.75",
+        "label_s": 0.75,
+        "rt60_t20_s": null,
+        "rt60_t30_s": null,
+        "note": "the tail starts less than 25 dB above the floor (-14.3 vs -34.6): no decay to read"
+      },
+      {
+        "norm": 1.0,
+        "display": "1",
+        "label_s": 1.0,
+        "rt60_t20_s": null,
+        "rt60_t30_s": null,
+        "note": "the tail starts less than 25 dB above the floor (-14.3 vs -29.1): no decay to read"
+      }
+    ]
+  },
+  "processes": 24,
+  "measuredAt": "20261005T131230",
+  "method": "probe --tail: a 997 Hz burst (200 ms at -12 dBFS) then 6 s of silence, the output's RMS and peak per 1 ms window on the input's clock (latency taken out); dry = the burst's first 2 ms, wet = the 4 ms after the burst (reverb) or the first repeat's head (delay); mix law = worst deviation from linear / equal power over 11 positions, fit within 1 dB; decay = T20 / T30 least-squares on the 10 ms-smoothed tail, RT60 extrapolated; onset = the first window 20 dB above the measured floor; repeats = the tail's peak maxima, spacing and fall as medians; tempo sync = the probe's playhead (playing, 4/4) at 90 / 120 / 140"
+}
