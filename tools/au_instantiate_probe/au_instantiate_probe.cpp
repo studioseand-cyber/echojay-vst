@@ -239,13 +239,15 @@ int main (int argc, char** argv)
         {
             // "--text-at all" walks every settable control in ONE instantiation - 55 controls across the tuner
             // set is 55 launches otherwise, and a UAD instantiation is five seconds.
+            // 5 Oct 2026 (ruling 3, Saturn 2's 951 parameters): "--text-at 3,7,12" samples ONLY those indices, in one
+            // instantiation - the controls a mode needs, not the whole unit. "all" and a single index are unchanged.
             const bool everyone = juce::String (argv[5]) == "all";
-            const int  idx = everyone ? -1 : atoi (argv[5]);
-            if (! everyone && (idx < 0 || idx >= ps.size()))
-            { std::printf ("refused no parameter at index %d (%d parameters)\n", idx, ps.size()); std::fflush (stdout); std::_Exit (3); }
+            std::vector<int> wanted; if (! everyone) for (const auto& t : juce::StringArray::fromTokens (juce::String (argv[5]), ",", "")) if (t.trim().isNotEmpty()) wanted.push_back (t.trim().getIntValue());
+            if (! everyone && wanted.empty()) { std::printf ("refused no parameter index given\n"); std::fflush (stdout); std::_Exit (3); }
+            if (! everyone) for (int w : wanted) if (w < 0 || w >= ps.size()) { std::printf ("refused no parameter at index %d (%d parameters)\n", w, ps.size()); std::fflush (stdout); std::_Exit (3); }
             for (int pi = 0; pi < ps.size(); ++pi)
             {
-                if (! everyone && pi != idx) continue;
+                if (! everyone && std::find (wanted.begin(), wanted.end(), pi) == wanted.end()) continue;
                 auto* q = ps[pi]; if (q == nullptr) continue;
                 if (everyone && (! q->isAutomatable() || q->isMetaParameter())) continue;
                 const float before = q->getValue();

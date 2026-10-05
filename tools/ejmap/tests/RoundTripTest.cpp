@@ -7479,6 +7479,15 @@ void testRoleEvidence()
     check (! signatureHolds ("ceiling", fig ([] (Figure& f) { f.peakDb = -1.0; }), fig ([] (Figure& f) { f.peakDb = -7.0; f.peakDriveDeltaDb = -5.9; })).holds && signatureHolds ("ceiling", fig ([] (Figure& f) { f.peakDb = -1.0; }), fig ([] (Figure& f) { f.peakDb = -6.0; f.peakDriveDeltaDb = 0.1; })).holds, "role L4: bx_limiter's Gain passes a 6 dB drive change through (a gain); its Ceiling holds it");
 }
 
+/** THE TEXT PASS TIMEOUT (ruling 3, 5 Oct evening): scaled to the count sampled - Saturn 2's 951 controls would need 601 s; 60 sampled need 66 s, floored at the process timeout. */
+void testTextPassTimeout()
+{
+    using namespace ejmap::cert;
+    check (textPassTimeoutMs (951, 120000) == 600600, "text T1: 951 controls x 3 samples x 200 ms + 30 s = 600.6 s (Saturn 2 sampled whole would get it, not 120 s)");
+    check (textPassTimeoutMs (60, 120000) == 120000 && textPassTimeoutMs (200, 120000) == 150000, "text T2: a small count keeps the 120 s floor; 200 controls get 150 s");
+    check (textPassTimeoutMs (0, 120000) == 120000, "text T3: nothing to sample still has the floor");
+}
+
 /** THE ZIP REVIEW (EjmapCertReview.h, 5 Oct R1): hand-built records, outcomes and entry lists; every section's reading pinned. */
 void testCertReview()
 {
@@ -7677,6 +7686,7 @@ int main (int, char**)
     testDeesser();
     testMultiband();
     testRoleEvidence();
+    testTextPassTimeout();
     testLoopOutcomes();
     testCategoriesMerge();
 

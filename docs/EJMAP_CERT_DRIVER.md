@@ -2477,3 +2477,12 @@ first-repeat guard, shaper coupling guard dropped, time without the 20 % — all
   of wall time per sample: the write-and-settle wait, not FabFilter's speed). The 120 s per-process timeout is simply under
   the count. A remedy, not built: time the text pass from the parameter count (`--list-params` first: 0.1 s × 3 × params,
   120 s at least), or sample only the controls a mode nominates. `cert-traces/2026-10-05-roles/saturn2/`.
+
+## 56. The text pass samples only what the mode needs (Kathy's ruling 3, 5 Oct evening)
+
+Every Phase B mode's `--text-at all` is gone. `sampledFixture` runs `--list-params` (0.2 s), nominates on the names alone
+with the mode's own lexicon, draws the unnamed pool (first 40 numeric controls not nominated, meters out) from the same
+list, and samples nominees + pool in one instantiation (`--text-at 3,7,12`, the probe's new index-list form); the timeout
+scales with the count (`textPassTimeoutMs`: 200 ms x 3 samples x count + 30 s, the process timeout at least — pins T1–T3).
+The mode's nomination then runs on the sampled fixture as before, and its unnamed probe is restricted to the sampled set.
+Saturn 2 (951 parameters, 221 s whole) samples ~60 and runs; the certification path's two full text passes are untouched.

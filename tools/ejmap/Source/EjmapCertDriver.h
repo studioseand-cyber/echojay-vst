@@ -2677,7 +2677,7 @@ inline LandingRead readAmountLanding (const SweepOptions& opt, const juce::Plugi
 // unnamedPool: the numeric controls a name did not nominate (never-touch, word-valued and two-step ones out), capped.
 inline constexpr int kUnnamedCap = 40;
 struct PoolControl { int index; juce::String name; };
-inline std::vector<PoolControl> unnamedPool (const juce::var& base, const std::vector<int>& nominated)
+inline std::vector<PoolControl> unnamedPool (const juce::var& base, const std::vector<int>& nominated, const std::set<int>* onlySampled = nullptr)
 {
     std::vector<PoolControl> out;
     if (const auto* cs = base.getProperty ("controls", {}).getArray())
@@ -2685,6 +2685,7 @@ inline std::vector<PoolControl> unnamedPool (const juce::var& base, const std::v
         {
             const int idx = (int) c.getProperty ("index", -1); const auto n = c.getProperty ("name", "").toString();
             if (std::find (nominated.begin(), nominated.end(), idx) != nominated.end()) continue;
+            if (onlySampled != nullptr && ! onlySampled->count (idx)) continue;   // ruling 3: only what the text pass sampled is probed
             if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (n)) continue;
             // meters and readouts are not controls (bx_delay2500's Input VU L: writing it reads as a "mute"); an unnamed parameter is not probed
             const auto l = n.toLowerCase(); if (n.trim().isEmpty() || l.contains ("vu") || l.contains ("meter") || c.getProperty ("readout", {}).isObject() || (bool) c.getProperty ("readoutCheck", false)) continue;
@@ -2705,6 +2706,40 @@ inline void setRoles (juce::DynamicObject* o, const std::vector<roleevidence::Ro
     o->setProperty ("roles_by_measurement", roleevidence::toVar (kept)); o->setProperty ("unnamed_probed_without_signature", notShown);
     if (unprobedNote.isNotEmpty()) o->setProperty ("unnamed_not_probed", unprobedNote);
     o->setProperty ("role_rule", "names propose, measurement decides (5 Oct): a nominee keeps its role only when its two ends show the role's signature; an unnamed control that shows it is reported, not swept as the role");
+}
+// THE TEXT PASS SAMPLES ONLY WHAT THE MODE NEEDS (Kathy's ruling 3, 5 Oct evening; Saturn 2's 951 parameters took 221 s under a
+// 120 s timeout). list-params first (0.2 s); the mode NOMINATES on the names alone (its nominate lambda, run on a fixture with
+// no text); the unnamed pool is drawn from the same; the text pass then samples nominees + pool in one instantiation
+// ("--text-at 3,7,12"), with the timeout scaled to the count actually sampled; the mode nominates again on the sampled fixture.
+inline constexpr double kTextSampleMs = 200.0;   // the measured 78 ms per sample (6 run-loop spins) with room; three samples per control
+inline int textPassTimeoutMs (int sampled, int floorMs) { return juce::jmax (floorMs, (int) std::lround (sampled * 3.0 * kTextSampleMs) + 30000); }
+struct ModeFixture { bool ok = false; juce::String why, note; juce::var base; std::set<int> sampled; int params = 0; int timeoutMs = 0; double textSeconds = 0.0; };
+inline ModeFixture sampledFixture (const SweepOptions& opt, const juce::PluginDescription& desc, const juce::File& raw, const juce::String& stem, const juce::String& mode,
+                                   const Subject& s, const juce::String& probeNote, const std::vector<const char*>& terms)
+{
+    // the mode's lexicon nominates on the names list-params gives; its own nomination block then runs on the sampled fixture
+    auto nominate = [&] (const juce::var& b) { std::vector<int> idxs; if (const auto* cs = b.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) { const auto n = c.getProperty ("name", "").toString(); for (const char* t : terms) if (nametokens::controlAnswersTerm (n, t)) { idxs.push_back ((int) c.getProperty ("index", -1)); break; } } return idxs; };
+    ModeFixture fx;
+    auto run = [&] (const juce::String& tag, const juce::StringArray& extra, int timeoutMs) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
+        const auto r = runChild (args, timeoutMs); raw.getChildFile (stem + "." + mode + "." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
+    const auto lp = run ("list-params", { "--list-params" }, opt.timeoutMs); if (! lp.cleanExit()) { fx.why = "--list-params " + lp.describe(); return fx; }
+    const auto list = parseListParams (lp.out); fx.params = (int) list.size();
+    const auto date = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
+    // the names fixture: composeFixture builds controls from text rows, so before the text pass the list rows stand in (index, name, numSteps)
+    juce::var base0; { auto* o = new juce::DynamicObject(); juce::Array<juce::var> cs; for (const auto& [i, r] : list) { if (! r.automatable || r.meta) continue; auto* c = new juce::DynamicObject(); c->setProperty ("index", i); c->setProperty ("name", r.name); c->setProperty ("numSteps", r.numSteps); cs.add (juce::var (c)); } o->setProperty ("controls", cs); base0 = juce::var (o); }
+    std::set<int> needed; for (int i : nominate (base0)) needed.insert (i);
+    for (const auto& pc : unnamedPool (base0, std::vector<int> (needed.begin(), needed.end()))) needed.insert (pc.index);
+    if (needed.empty()) { fx.why = "no control to sample (nothing nominated, no numeric pool)"; return fx; }
+    juce::StringArray idx; for (int i : needed) idx.add (juce::String (i));
+    fx.timeoutMs = textPassTimeoutMs ((int) needed.size(), opt.timeoutMs);
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    const auto ta = run ("text-at", { "--text-at", idx.joinIntoString (",") }, fx.timeoutMs);
+    fx.textSeconds = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
+    if (! ta.cleanExit()) { fx.why = "--text-at (" + juce::String ((int) needed.size()) + " of " + juce::String (fx.params) + " controls, timeout " + juce::String (fx.timeoutMs / 1000) + " s) " + ta.describe(); return fx; }
+    fx.base = composeFixture (s, list, parseTextAt (ta.out), lp.code, ta.code, probeNote, date);
+    fx.sampled = needed; fx.ok = true;
+    fx.note = "text pass: " + juce::String ((int) needed.size()) + " of " + juce::String (fx.params) + " controls sampled in " + juce::String (fx.textSeconds, 1) + " s (timeout " + juce::String (fx.timeoutMs / 1000) + " s, scaled to the count)";
+    return fx;
 }
 // the fixture's display for a control at (nearest) a norm, before any write - for scaling a window to a label
 inline juce::String displayNear (const juce::var& base, int idx, double norm)
@@ -2744,10 +2779,10 @@ inline int runGainCal (const SweepOptions& opt)
         return r;
     };
     // the controls, from the plugin itself (list-params + text-at), roled with the compressor lexicon
-    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("GAINCAL: --list-params " + lp.describe()); return 1; }
-    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("GAINCAL: --text-at " + ta.describe()); return 1; }
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
-    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
+    const auto fx = sampledFixture (opt, desc, raw, stem, "gaincal", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "gain", "output", "makeup", "make-up", "trim", "level", "input", "threshold", "thresh" });
+    if (! fx.ok) { say ("GAINCAL: " + fx.why); return 1; }
+    const auto base = fx.base; say ("GAINCAL: " + fx.note);
     const auto plan = sweep::planFromFixture (base);
     std::vector<roles::NamedControl> named;
     if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) named.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", {}).toString(), false });
@@ -2790,7 +2825,7 @@ inline int runGainCal (const SweepOptions& opt)
         controls.add (gaincal::toVar (t.index, t.name, t.role, rows, c));
     }
     // the unnamed pool: one process per control at its two ends, -40 and -60 dBFS (below any compression path)
-    for (const auto& pc : unnamedPool (base, nominated))
+    for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
     {
         const auto r = run ("u" + juce::String (pc.index), { "--sweep", "thr=" + juce::String (pc.index), "norms=0,1", "levels=-60,-40", "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
         if (r.kind == ChildResult::Kind::uiShown) { say ("GAINCAL: a window appeared on [" + juce::String (pc.index) + "] " + pc.name + "; stopping"); return 5; }
@@ -2968,10 +3003,10 @@ inline int runLimiter (const SweepOptions& opt)
         raw.getChildFile (stem + ".limiter." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
         return r;
     };
-    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("LIMITER: --list-params " + lp.describe()); return 1; }
-    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("LIMITER: --text-at " + ta.describe()); return 1; }
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
-    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
+    const auto fx = sampledFixture (opt, desc, raw, stem, "limiter", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "ceiling", "margin", "oversampling", "oversample", "os", "threshold", "thresh", "input", "gain", "drive" });
+    if (! fx.ok) { say ("LIMITER: " + fx.why); return 1; }
+    const auto base = fx.base; say ("LIMITER: " + fx.note);
     const auto plan = sweep::planFromFixture (base);
     int ceilingIdx = -1, osIdx = -1; juce::String ceilingName, osName;
     if (const auto* cs = base.getProperty ("controls", {}).getArray())
@@ -3035,7 +3070,7 @@ inline int runLimiter (const SweepOptions& opt)
         if (first && first->reading.ok) { fa.ok = true; fa.peakDb = first->reading.peakDb; } if (last && last != first && last->reading.ok) { fb.ok = true; fb.peakDb = last->reading.peakDb; }
         roles.push_back (roleevidence::nominee (ceilingIdx, ceilingName, "ceiling", roleevidence::signatureHolds ("ceiling", fa, fb)));
         std::vector<int> nominated { ceilingIdx, amount }; if (osIdx >= 0) nominated.push_back (osIdx); for (auto [i, v] : plan.sets) nominated.push_back (i);
-        for (const auto& pc : unnamedPool (base, nominated))
+        for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
         {
             roleevidence::Figure ua, ub;
             for (float n : { 0.0f, 1.0f })
@@ -3104,10 +3139,10 @@ inline int runEq (const SweepOptions& opt)
         raw.getChildFile (stem + ".eq." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
         return r;
     };
-    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("EQ: --list-params " + lp.describe()); return 1; }
-    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("EQ: --text-at " + ta.describe()); return 1; }
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
-    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
+    const auto fx = sampledFixture (opt, desc, raw, stem, "eq", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "gain", "boost", "cut", "atten", "attenuation", "level", "freq", "frequency", "hz", "khz", "q", "width", "bandwidth", "bw", "shape", "slope", "on", "in", "enable", "active", "bypass" });
+    if (! fx.ok) { say ("EQ: " + fx.why); return 1; }
+    const auto base = fx.base; say ("EQ: " + fx.note);
     std::vector<std::pair<int, juce::String>> controls;
     if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) controls.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", "").toString() });
     const auto bands = eq::bandsFrom (controls);
@@ -3231,7 +3266,7 @@ inline int runEq (const SweepOptions& opt)
     {
         auto [b0, br0] = response ("u.base", bands.front().gains.front(), { "current" }, {});
         if (b0.ok && ! b0.positions.empty())
-            for (const auto& pc : unnamedPool (base, bandControlIdx))
+            for (const auto& pc : unnamedPool (base, bandControlIdx, &fx.sampled))
             {
                 auto [ur, r] = response ("u" + juce::String (pc.index), pc.index, { "0.000000", "1.000000" }, {});
                 if (r.kind == ChildResult::Kind::uiShown) { say ("EQ: a window appeared; stopping"); return 5; }
@@ -3272,20 +3307,25 @@ inline int runSaturation (const SweepOptions& opt)
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
         const auto r = runChild (args, opt.timeoutMs); raw.getChildFile (stem + ".saturation." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
-    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("SAT: --list-params " + lp.describe()); return 1; }
-    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("SAT: --text-at " + ta.describe()); return 1; }
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
-    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
     struct Target { int index; juce::String name; };
     std::vector<Target> targets;
-    if (const auto* cs = base.getProperty ("controls", {}).getArray())
-        for (const auto& c : *cs)
-        {
-            const int idx = (int) c.getProperty ("index", -1); const auto name = c.getProperty ("name", "").toString();
-            if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (name)) continue;
-            bool drive = false; for (const char* t : { "drive", "saturation", "sat", "saturate", "color", "colour", "harmonics", "warmth", "heat", "crush", "amount" }) if (nametokens::controlAnswersTerm (name, t)) drive = true;
-            if (drive && ! nametokens::controlAnswersTerm (name, "mix")) targets.push_back ({ idx, name });
-        }
+    auto nominate = [&] (const juce::var& b)
+    {
+        targets.clear(); std::vector<int> idxs;
+        if (const auto* cs = b.getProperty ("controls", {}).getArray())
+            for (const auto& c : *cs)
+            {
+                const int idx = (int) c.getProperty ("index", -1); const auto name = c.getProperty ("name", "").toString();
+                if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (name)) continue;
+                bool drive = false; for (const char* t : { "drive", "saturation", "sat", "saturate", "color", "colour", "harmonics", "warmth", "heat", "crush", "amount" }) if (nametokens::controlAnswersTerm (name, t)) drive = true;
+                if (drive && ! nametokens::controlAnswersTerm (name, "mix")) { targets.push_back ({ idx, name }); idxs.push_back (idx); }
+            }
+        return idxs;
+    };
+    const auto fx = sampledFixture (opt, desc, raw, stem, "saturation", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "drive", "saturation", "sat", "saturate", "color", "colour", "harmonics", "warmth", "heat", "crush", "amount" });
+    if (! fx.ok) { say ("SAT: " + fx.why); return 1; }
+    const auto base = fx.base; nominate (base); say ("SAT: " + fx.note);
     say ("SAT: " + opt.product + " " + desc.version + ": " + juce::String ((int) targets.size()) + " drive-type control(s)");
     if (targets.empty()) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  controls: " + names.joinIntoString (", ")); return 4; }
     // THE MEASUREMENT (R3, 5 Oct): one sine at 997 Hz (an exact bin), the drive at 11 norms, harmonics 2..5 read by exact
@@ -3327,7 +3367,7 @@ inline int runSaturation (const SweepOptions& opt)
         if ((bool) c.getProperty ("silent", false) || (bool) c.getProperty ("inert", false)) { roleevidence::RoleVerdict v; v.index = idx; v.name = c.getProperty ("control", "").toString(); v.role = "drive"; v.verdict = "dropped"; v.reason = c.getProperty ("note", "").toString().upToFirstOccurrenceOf (":", false, false) + ": nothing to decide"; roles.push_back (v); continue; }
         roles.push_back (roleevidence::nominee (idx, c.getProperty ("control", "").toString(), "drive", roleevidence::signatureHolds ("drive", a, b)));
     }
-    for (const auto& pc : unnamedPool (base, nominated))
+    for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
     {
         const auto r = run ("u" + juce::String (pc.index), { "--response", "ctl=" + juce::String (pc.index), "norms=0,1", "tones=1", "lo=997", "harmonics=5", "db=-12", "hold=1.0", "discard=0.5" });
         if (r.kind == ChildResult::Kind::uiShown) { say ("SAT: a window appeared; stopping"); return 5; }
@@ -3369,10 +3409,10 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     int processN = 0;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
         const auto r = runChild (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".reverbdelay." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
-    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("RD: --list-params " + lp.describe()); return 1; }
-    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("RD: --text-at " + ta.describe()); return 1; }
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
-    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
+    const auto fx = sampledFixture (opt, desc, raw, stem, "reverbdelay", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "mix", "dry/wet", "wet", "blend", "dry wet", "drywet", "sync", "tempo sync", "note", "division", "subdivision", "beat", "rate", "delay", "time", "pre-delay", "predelay", "pre delay", "pre", "decay", "reverb time", "rt60", "length", "size", "tail", "feedback", "regen", "regeneration", "repeats", "fb" });
+    if (! fx.ok) { say ("RD: " + fx.why); return 1; }
+    const auto base = fx.base; say ("RD: " + fx.note);
     // THE CONTROLS BY NAME (a prototype's rule, said in the proposal): the first match of each role
     struct Ctl { int index = -1; juce::String name; bool word = false; int steps = 0; double onNorm = 1.0, offNorm = 0.0; juce::String onText, offText; };
     Ctl mix, timeCtl, decayCtl, feedback, sync, note;
@@ -3555,7 +3595,7 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     if (timeCtl.index >= 0) roles.push_back (roleevidence::nominee (timeCtl.index, timeCtl.name, "time", roleevidence::signatureHolds ("time", timeA, timeB)));
     if (decayCtl.index >= 0) roles.push_back (roleevidence::nominee (decayCtl.index, decayCtl.name, "decay", roleevidence::signatureHolds ("decay", decayA, decayB)));
     if (feedback.index >= 0) roles.push_back (roleevidence::nominee (feedback.index, feedback.name, "feedback", roleevidence::signatureHolds ("feedback", fbA, fbB)));
-    for (const auto& pc : unnamedPool (base, nominated))
+    for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
     {
         roleevidence::Figure ua, ub;
         for (double n : { 0.0, 1.0 })
@@ -3604,10 +3644,10 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
     int processN = 0;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
         const auto r = runChild (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".dynamics." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
-    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("DYN: --list-params " + lp.describe()); return 1; }
-    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("DYN: --text-at " + ta.describe()); return 1; }
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
-    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
+    const auto fx = sampledFixture (opt, desc, raw, stem, "dynamics", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "attack", "transient", "punch", "transients", "sustain", "body", "release", "tail", "threshold", "thresh", "open", "range", "floor", "depth", "reduction", "hold", "decay" });
+    if (! fx.ok) { say ("DYN: " + fx.why); return 1; }
+    const auto base = fx.base; say ("DYN: " + fx.note);
     struct Ctl { int index = -1; juce::String name; };
     Ctl attack, sustain, threshold, range, gAttack, gHold, gRelease;
     auto answers = [] (const juce::String& name, std::initializer_list<const char*> terms) { for (const char* t : terms) if (nametokens::controlAnswersTerm (name, t)) return true; return false; };
@@ -3690,7 +3730,7 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
             if (! longHit) roles.push_back (roleevidence::nominee (ctl.index, ctl.name, ctl.index == attack.index ? "transient" : "sustain", roleevidence::signatureHolds (ctl.index == attack.index ? "transient" : "sustain", endA, endB)));
         }
         // the unnamed pool: one --hits pair per control, read for both signatures
-        for (const auto& pc : unnamedPool (base, nominated))
+        for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
         {
             roleevidence::Figure ua, ub;
             for (double n : { 0.0, 1.0 })
@@ -3777,7 +3817,7 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
             roles.push_back (roleevidence::nominee (ctl.index, ctl.name, role, roleevidence::signatureHolds (role, tA, tB)));
         }
         // the unnamed pool: one --ramp pair per control with the threshold at norm 0.5, read for the open level and the closed level
-        for (const auto& pc : unnamedPool (base, nominated))
+        for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
         {
             roleevidence::Figure ua, ub;
             for (double n : { 0.0, 1.0 })
@@ -3819,10 +3859,10 @@ inline int runDeesser (const SweepOptions& opt)
     int processN = 0;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
         const auto r = runChild (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".deesser." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
-    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("DS: --list-params " + lp.describe()); return 1; }
-    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("DS: --text-at " + ta.describe()); return 1; }
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
-    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
+    const auto fx = sampledFixture (opt, desc, raw, stem, "deesser", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "threshold", "thresh", "thr", "sensitivity", "amount", "reduction", "range", "frequency", "freq", "hz", "center", "centre", "tune", "mode", "type", "split", "wide", "band" });
+    if (! fx.ok) { say ("DS: " + fx.why); return 1; }
+    const auto base = fx.base; say ("DS: " + fx.note);
     struct Ctl { int index = -1; juce::String name; std::map<juce::String, double> texts; };
     Ctl threshold, freq, mode;
     auto answers = [] (const juce::String& name, std::initializer_list<const char*> terms) { for (const char* t : terms) if (nametokens::controlAnswersTerm (name, t)) return true; return false; };
@@ -3956,7 +3996,7 @@ inline int runDeesser (const SweepOptions& opt)
     }
     if (freq.index >= 0) roles.push_back (roleevidence::nominee (freq.index, freq.name, "frequency", roleevidence::signatureHolds ("frequency", freqA, freqB)));
     // the unnamed pool: one --sweep per control at its ends on the sibilance tone at -12 dBFS; GR between the ends = the threshold signature
-    for (const auto& pc : unnamedPool (base, nominated))
+    for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
     {
         const auto r = run ("u" + juce::String (pc.index), { "--sweep", "thr=" + juce::String (pc.index), "norms=0,1", "levels=-12", "hz=6500", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
         if (r.kind == ChildResult::Kind::uiShown) { say ("DS: a window appeared; stopping"); return 5; }
@@ -3992,10 +4032,10 @@ inline int runMultiband (const SweepOptions& opt)
     int processN = 0;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
         const auto r = runChild (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".multiband." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
-    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("MB: --list-params " + lp.describe()); return 1; }
-    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("MB: --text-at " + ta.describe()); return 1; }
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
-    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
+    const auto fx = sampledFixture (opt, desc, raw, stem, "multiband", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "threshold", "thresh", "thr", "crossover", "xover", "cross", "x-over", "freq", "frequency", "hz", "amount", "depth", "compression" });
+    if (! fx.ok) { say ("MB: " + fx.why); return 1; }
+    const auto base = fx.base; say ("MB: " + fx.note);
     // THE CONTROLS: band thresholds (threshold / thresh with a band word or number; never a sidechain "S" one), crossovers
     // (crossover / cross / xover / freq with low / high / a number), a global amount (amount / compression / depth; mix is not)
     struct Thr { int index; juce::String name, display0, display1, instantiate; double instNorm; };
