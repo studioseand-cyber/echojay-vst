@@ -2383,6 +2383,31 @@ inline void restoreEngage (sweep::Plan& q, const juce::var& oldSweep)
     if (const auto* tr = eg.getProperty ("tried", {}).getArray())
         for (const auto& t : *tr) q.engageTried.add (t.toString());
 }
+// THE WRITES THE SWEEP RAN AT (6 Oct, Sean's b0258a7b run): the plan's preconditions (a ratio raise, a make-up zero, a
+// mix at wet) were decided at sweep time by the two-sweep test, which a re-derive cannot repeat - so the re-derived plan
+// wrote NONE, the export fell back to the instantiate norm, and Zip's tone check wrote its ratio back at 1:1 (49 records
+// lost their writes, 7 tone checks failed on it). Restored from the old sweep's own list; where that is already empty (a
+// record the 5 Oct follow-up rewrote), from the position traces' `set` lines, which hold every write and its norm.
+inline void restoreWrites (sweep::Plan& q, const juce::var& oldSweep, const sweep::Measured& m)
+{
+    // a candidate's plan already holds the other candidates at their instantiate values: those stay, the rest is added
+    std::set<int> have; for (const auto& [idx, n] : q.sets) have.insert (idx);
+    if (const auto* pre = oldSweep.getProperty ("preconditions", {}).getArray(); pre != nullptr && ! pre->isEmpty())
+    {
+        for (const auto& x : *pre)
+        {
+            const int idx = (int) x.getProperty ("index", -1); if (idx < 0 || have.count (idx)) continue;
+            q.sets.push_back ({ idx, (float) (double) x.getProperty ("norm", 0.0) }); have.insert (idx);
+            if (x.hasProperty ("role")) q.setRoles[idx] = x.getProperty ("role", "").toString();
+        }
+    }
+    // then the traces, which hold every write that ran (a record the 5 Oct follow-up rewrote keeps only the plan's own
+    // auto-make-up write: Spherix's twelve ratio raises were in its traces alone); the engage writes are set lines too and
+    // have their own record (restoreEngage): they and the swept control stay out of the preconditions
+    std::set<int> engaged; for (const auto& e : q.engage) engaged.insert (e.index);
+    for (const auto& [idx, norm] : m.setNorms)
+        if (! engaged.count (idx) && ! have.count (idx) && idx != q.thr) { q.sets.push_back ({ idx, norm }); q.setRoles[idx] = "from_trace"; have.insert (idx); }
+}
 // The grid refinement rides the traces as ordinary positions; what the fixture restores is the record of it.
 inline void restoreRefinement (sweep::Plan& q, const juce::var& oldSweep)
 {
@@ -2433,7 +2458,9 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         sweep::ProcessOut ref2; std::vector<sweep::ProcessOut> pos2; std::optional<sweep::Derived> rpt;
         if (sweep::loadProcesses (processesJson, rawDir, ref2, pos2, "r2." + run.prefix) || (loadRepeatPositions (processesJson, rawDir, "r2." + run.prefix, pos2)))
             rpt = sweep::derive (sweep::mergeProcesses (ref, pos2), plan.testLevels(), plan.ratioIndex, plan.quietReference);
-        composeAndReport (base, plan, sweep::mergeProcesses (ref, pos), pv, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"), info, nullptr, rpt ? &*rpt : nullptr);
+        const auto merged = sweep::mergeProcesses (ref, pos);
+        restoreWrites (plan, old, merged);
+        composeAndReport (base, plan, merged, pv, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"), info, nullptr, rpt ? &*rpt : nullptr);
         return 0;
     }
     std::vector<std::pair<sweep::Plan, Derivation>> cands;
@@ -2454,7 +2481,9 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
             rpt = sweep::derive (sweep::mergeProcesses (ref, pos2), q.testLevels(), q.ratioIndex, q.quietReference);
         SweepRunInfo ci = info;
         ci.headline = "CANDIDATE [" + juce::String (q.thr) + "] " + q.thrName + " - re-derived";
-        auto one = deriveOne (q, sweep::mergeProcesses (ref, pos), pv, ci, fixtureOut.getFileName());
+        const auto mergedC = sweep::mergeProcesses (ref, pos);
+        restoreWrites (q, oldC, mergedC);
+        auto one = deriveOne (q, mergedC, pv, ci, fixtureOut.getFileName());
         if (one.written) sweep::attachRepeatQuality (one.sweepVar, one.d, rpt ? &*rpt : nullptr);
         cands.push_back ({ q, one });
     }
@@ -4527,7 +4556,10 @@ inline int runToneCheckAll (SweepOptions opt)
         const auto profileFile = opt.out.getChildFile ("profiles").getChildFile (stem0 + ".json");
         const auto tcFile = profileFile.getSiblingFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.json");
         const auto tc = juce::JSON::parse (tcFile.loadFileAsString());
-        if (! opt.deriveOnly && tc.getProperty ("spec", "").toString() == "v1.7" && tc.hasProperty ("deep_levels") && tc.hasProperty ("L_ref_dbfs")) { ++skipped; continue; }   // RESUME (a needs_licence product has no result file, so --retry-licence reaches exactly that set)
+        // RESUME: a PASSED v1.7 check with its deep levels and L_ref is done (a needs_licence product has no result file, so
+        // --retry-licence reaches exactly that set). A FAILED check is run again every time (6 Oct): the seven that failed on
+        // Sean's Mac failed on writes the re-derive had lost, and the fix above changes the writes, not the check's file.
+        if (! opt.deriveOnly && tc.getProperty ("spec", "").toString() == "v1.7" && tc.hasProperty ("deep_levels") && tc.hasProperty ("L_ref_dbfs") && (bool) tc.getProperty ("pass_within_0_5_db", true)) { ++skipped; continue; }
         if (! opt.deriveOnly && ! opt.retryLicence) if (const auto stop = loop::carriedLicenceStop (scanStops, product); stop) { std::cout << "  " << product << ": needs licence at the scan, not loaded" << std::endl; ++licence; continue; }
         std::cout << "\n=== tone checks: " << product << std::endl;
         // 1. RE-DERIVE from the traces (the deep points), carrying over what the traces do not hold

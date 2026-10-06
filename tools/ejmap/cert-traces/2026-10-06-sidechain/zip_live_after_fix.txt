@@ -1,0 +1,15 @@
+  Unfiltered Audio Zip: sidechain policy: no effect (norm 0.000 at -6 dBFS: -62.36 -> -62.36 dB) (from an earlier run)
+=== tone checks: Unfiltered Audio Zip
+RE-DERIVED from traces (nothing measured) - Unfiltered Audio Zip -> AudioUnit_417a7643_1.4.2.rederived.json
+TONE: Unfiltered Audio Zip - GR 1.98 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR 3.99 dB at L (target 4.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR 5.02 dB at L (target 5.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR 6.02 dB at L (target 6.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR 7.00 dB at L (target 7.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR 7.98 dB at L (target 8.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR 9.03 dB at L (target 9.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR 10.00 dB at L (target 10.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR 10.98 dB at L (target 11.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR 12.03 dB at L (target 12.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Unfiltered Audio Zip - g 2.0 PASS; deep levels checked 9, nulled 0 -> Unfiltered_Audio_Zip_1.4.2.tonecheck.json
+TONECHECK-ALL: 1 re-checked, 0 already at v1.7 (skipped), 0 needs_licence, 0 not exported now, 0 without traces

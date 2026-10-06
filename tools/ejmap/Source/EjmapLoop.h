@@ -533,7 +533,21 @@ inline juce::var carryOverAfterRederive (const juce::var& oldRecord, juce::var f
     auto* o = fresh.getDynamicObject(); if (o == nullptr) return fresh;
     for (const char* k : { "ruleDecided", "pickedCandidate", "mapState", "manufacturer", "category" })
         if (oldRecord.hasProperty (k) && ! fresh.hasProperty (k)) o->setProperty (k, oldRecord.getProperty (k, {}));
-    auto copyDetector = [] (const juce::var& from, juce::var to) { const auto d = from.getProperty ("detector", {}); if (d.isObject()) if (auto* t = to.getDynamicObject()) if (! to.hasProperty ("detector")) t->setProperty ("detector", d); };
+    // THE WRITES THE SWEEP RAN AT (6 Oct, from Sean's b0258a7b run): the preconditions (a ratio raise, a make-up zero, a mix
+    // at wet) come from the PLAN's two-sweep test at sweep time; the re-derive rebuilds the plan from the record without that
+    // test, so its list is empty - and the export then fell back to the instantiate norm (Zip's ratio written back at 1:1, its
+    // tone check 0.00 dB; 49 records lost their preconditions, 7 tone checks failed on it). The re-derived view keeps the
+    // record's own writes when its own are empty: the traces hold the points, the record holds what was written.
+    auto copyWrites = [] (const juce::var& from, juce::var to) {
+        if (auto* t = to.getDynamicObject())
+            for (const char* k : { "preconditions", "engageWrites", "thresholdPick", "passThroughAtDefaults", "passThroughOffset_db" })
+            {
+                const auto a = from.getProperty (k, {}); const auto b = to.getProperty (k, {});
+                const bool bEmpty = b.isVoid() || (b.isArray() && b.size() == 0);
+                const bool aFull = ! a.isVoid() && ! (a.isArray() && a.size() == 0);
+                if (aFull && bEmpty) t->setProperty (k, a);
+            } };
+    auto copyDetector = [copyWrites] (const juce::var& from, juce::var to) { copyWrites (from, to); const auto d = from.getProperty ("detector", {}); if (d.isObject()) if (auto* t = to.getDynamicObject()) if (! to.hasProperty ("detector")) t->setProperty ("detector", d); };
     if (oldRecord.getProperty ("thresholdSweep", {}).isObject() && fresh.getProperty ("thresholdSweep", {}).isObject())
         copyDetector (oldRecord.getProperty ("thresholdSweep", {}), fresh.getProperty ("thresholdSweep", {}));
     if (const auto* oc = oldRecord.getProperty ("thresholdCandidates", {}).getArray())

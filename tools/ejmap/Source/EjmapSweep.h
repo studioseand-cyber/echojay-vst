@@ -624,6 +624,7 @@ struct Measured
     std::vector<PositionReading> positions;
     double wallMs = 0.0, audioS = 0.0;
     std::map<int, juce::String> setTexts;        // precondition writes, the text READ BACK after each (probe "set" lines)
+    std::map<int, float> setNorms;               // the same writes' norms as ASKED (6 Oct: the re-derive restores the plan's writes from these)
     double holdS = 0.0, winS = 0.0;              // the probe's hold and read window, from its spec line
     juce::String setConflict;                    // processes that read a precondition back differently
     // THE SIDECHAIN POLICY THE PROCESS RAN UNDER (4 Oct): "enabled_silent" (28 Sep - 4 Oct) or "unconnected", from the
@@ -658,7 +659,7 @@ inline Measured parseSweep (const juce::String& out)
         else if (t == "param" && f.size() >= 5) m.params[f[1].getIntValue()] = { f[3], f[4] };
         else if (t == "param" && f.size() == 4) m.params[f[1].getIntValue()] = { f[3], {} };
         else if (t == "refpos") m.refText = kv (f, 1, "text");
-        else if (t == "set" && f.size() > 2) m.setTexts[f[1].getIntValue()] = kv (f, 2, "text");
+        else if (t == "set" && f.size() > 2) { m.setTexts[f[1].getIntValue()] = kv (f, 2, "text"); m.setNorms[f[1].getIntValue()] = f[2].getFloatValue(); }
         else if (t == "ref" && f.size() > 2)
         {
             const auto L = levelKey (f[1].getDoubleValue());
@@ -739,7 +740,7 @@ inline Measured mergeProcesses (const ProcessOut& reference, const std::vector<P
         for (const auto& [idx, text] : one.setTexts)
         {
             auto it = m.setTexts.find (idx);
-            if (it == m.setTexts.end()) m.setTexts[idx] = text;
+            if (it == m.setTexts.end()) { m.setTexts[idx] = text; if (one.setNorms.count (idx)) m.setNorms[idx] = one.setNorms.at (idx); }
             else if (it->second != text && m.setConflict.isEmpty())
                 m.setConflict = "[" + juce::String (idx) + "] read back '" + it->second + "' in one process and '" + text + "' in another";
         }

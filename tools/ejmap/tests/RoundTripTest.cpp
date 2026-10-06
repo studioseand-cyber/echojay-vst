@@ -6546,6 +6546,24 @@ void testLoopOutcomes()
         check (std::abs ((double) freshC.getProperty ("thresholdCandidates", {})[0].getProperty ("thresholdSweep", {}).getProperty ("detector", {}).getProperty ("fraction", 0.0) - 0.7) < 1e-9
                  && ! freshC.getProperty ("thresholdCandidates", {})[1].getProperty ("thresholdSweep", {}).hasProperty ("detector"),
                "loop L22b: a candidate's detector carries over by index, only where the old candidate had one");
+        // L22c (6 Oct, Sean's b0258a7b run): the sweep's WRITES ride over when the re-derived view's are empty - the preconditions
+        // (Zip's ratio raise 5 -> 0.4219 "4.14"), the engage writes, the pick, the pass-through fields; a fresh non-empty list wins
+        { juce::Array<juce::var> pre; pre.add (obj ({ { "index", 5 }, { "norm", 0.421875 }, { "set", "4.14" }, { "role", "ratio_raise" } }));
+          juce::Array<juce::var> none;
+          const auto oldW = obj ({ { "thresholdSweep", obj ({ { "preconditions", pre }, { "engageWrites", obj ({ { "found", true } }) }, { "passThroughAtDefaults", true } }) } });
+          const auto f1 = carryOverAfterRederive (oldW, obj ({ { "thresholdSweep", obj ({ { "result", "certified" }, { "preconditions", none } }) } }));
+          const auto sw1 = f1.getProperty ("thresholdSweep", {});
+          check (sw1.getProperty ("preconditions", {}).size() == 1 && (int) sw1.getProperty ("preconditions", {})[0].getProperty ("index", -1) == 5
+                   && std::abs ((double) sw1.getProperty ("preconditions", {})[0].getProperty ("norm", 0.0) - 0.421875) < 1e-9
+                   && (bool) sw1.getProperty ("engageWrites", {}).getProperty ("found", false) && (bool) sw1.getProperty ("passThroughAtDefaults", false),
+                 "loop L22c: an EMPTY re-derived preconditions list takes the record's own writes (the ratio raise survives the re-derive)");
+          juce::Array<juce::var> pre2; pre2.add (obj ({ { "index", 9 }, { "norm", 1.0 } }));
+          const auto f2 = carryOverAfterRederive (oldW, obj ({ { "thresholdSweep", obj ({ { "preconditions", pre2 } }) } }));
+          check ((int) f2.getProperty ("thresholdSweep", {}).getProperty ("preconditions", {})[0].getProperty ("index", -1) == 9, "loop L22c: a fresh non-empty list is kept as it is");
+          juce::Array<juce::var> oc2; oc2.add (obj ({ { "index", 7 }, { "thresholdSweep", obj ({ { "preconditions", pre } }) } }));
+          juce::Array<juce::var> nc2; nc2.add (obj ({ { "index", 7 }, { "thresholdSweep", obj ({ { "preconditions", none } }) } }));
+          const auto f3 = carryOverAfterRederive (obj ({ { "thresholdCandidates", oc2 } }), obj ({ { "thresholdCandidates", nc2 } }));
+          check (f3.getProperty ("thresholdCandidates", {})[0].getProperty ("thresholdSweep", {}).getProperty ("preconditions", {}).size() == 1, "loop L22c: a candidate's writes carry over by index too"); }
         // NEEDS LICENCE (L15, 2 Oct): a licence-stops entry becomes a row in its own state with the windows it saw
         juce::Array<juce::var> wins { "PACE [pid 123]" };
         juce::Array<juce::var> ls; ls.add (obj ({ { "plugin_id", "/Library/Audio/Plug-Ins/VST3/SSL Native Drumstrip v6.vst3" }, { "state", "needs_licence" }, { "pace", true }, { "windows", wins }, { "stage", "scan" }, { "at", "t" } }));

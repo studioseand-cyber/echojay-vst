@@ -2542,3 +2542,21 @@ C1 comp (s) again (318 s): `sidechainPolicyCheck` read the verdict cached on the
 `unconnected` was re-swept on every follow-up run. This is in 17ebf114. The order is now: the sweep view's own policy
 (`sweptUnderPolicyNow`, pin SC-R) and bus count first, the cached verdict after. Derive-only on the kill-test folder: fixed
 build 0 re-sweeps, the old order 1 (C1 comp). No certification result changes; a product is re-swept once, not nightly.
+
+## 59. The re-derive lost the sweep's writes (6 Oct, from Sean's b0258a7b run)
+
+Eleven tone checks failed on Sean's Mac reading 0.00 dB (C1 comp-gate/-sc m/s, Zip, VBC FG-Red/Grey/MU, VBC Rack, AMEK,
+MAGNUM-K). The sidechain was suspected; the experiment (`cert-traces/2026-10-06-sidechain/`) cleared it: every unit reads
+the same under unconnected, self-keyed and EchoJay's first-self-keyed policy. **The writes were the cause.** A sweep's
+preconditions (a ratio raise, a make-up zero, a mix at wet) are decided at sweep time by the plan's two-sweep test; the
+follow-up's re-derive rebuilds the plan from the record without that test, so its list came out empty, the export fell back
+to the control's instantiate norm, and the tone check wrote Zip's ratio back at 1:1 (`set 5 0.000000 … text 1`). 49 records
+lost their writes; seven of the eleven failures are exactly the `ratio_raise` products. (In 17ebf114 and b0258a7b.)
+
+Fixed in two places, no cut: `restoreWrites` (driver) gives the re-derived plan the record's own `preconditions` and then
+every `set` line of the position traces not already in the plan (the swept control and the engage writes stay out), so a
+record the 5 Oct follow-up already emptied is repaired from its traces; `carryOverAfterRederive` (pure, pin L22c) keeps the
+record's writes when the fresh view's are empty. Derive-only over Sean's folder: 118 of 118 same-sweep views carry their
+4 Oct write sets again, nothing spurious added; over his 4 Oct zip 159 of 159. Live on a copy of his folder, Zip: 1.98 /
+3.99 / 5.02 … 10.98 dB at g = 2 … 11, every level PASS. The resume rule changed with it: a FAILED v1.7 check is run again on
+the next follow-up (a passed one is still skipped), so his next run re-checks the eleven without touching anything.
