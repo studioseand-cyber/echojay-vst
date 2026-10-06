@@ -73,6 +73,7 @@
 #include "EjmapTunerProfile.h"
 #include "EjmapGainCal.h"
 #include "EjmapTiming.h"
+#include "EjmapCombined.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include <functional>
@@ -7014,6 +7015,15 @@ void testTunerV01()
     }
     check (ejmap::phaseb::categoryNamed ("tuners") != nullptr && ejmap::phaseb::categoryNamed ("tuners")->mode == "--cert-tuner" && ejmap::phaseb::categoryNamed ("tuners")->ledgerCategories.contains ("pitch") && ejmap::phaseb::rowToRedo (juce::JSON::parse ("{\"outcome\":\"ok\",\"records\":[\"tuner/x.json\"]}"), "tuners", { "tuners" }),
            "phaseb P17: 'tuners' is a Phase B category running --cert-tuner over the ledger's pitch products, and --redo tuners runs its finished rows again");
+    {   // P18 (6 Oct item 6): gain-all is opt-in: a bare --phaseb-all never runs it; --category gainall or --redo gainall does; the others always run unless --category names a different one
+        const auto* ga = ejmap::phaseb::categoryNamed ("gainall"); const auto* eq = ejmap::phaseb::categoryNamed ("eq");
+        check (ga && ga->optIn && ga->mode == "--cert-gain-cal" && ga->kindArg == "all" && ga->ledgerCategories.contains ("eq") && ga->ledgerCategories.contains ("amp_sim") && ga->ledgerCategories.contains ("gate") && ! ga->ledgerCategories.contains ("compressor") && ! ga->ledgerCategories.contains ("pitch"),
+               "phaseb P18: gain-all runs --cert-gain-cal over the other Phase B categories' products (never the compressors, never the tuners)");
+        const auto* cb = ejmap::phaseb::categoryNamed ("combined");
+        check (cb && cb->optIn && cb->mode == "--cert-combined" && ! ejmap::phaseb::categoryRuns (*cb, {}, {}) && ejmap::phaseb::categoryRuns (*cb, {}, { "combined" }), "phaseb P18c: combined (accuracy A1) is opt-in too: --redo combined");
+        check (! ejmap::phaseb::categoryRuns (*ga, {}, {}) && ejmap::phaseb::categoryRuns (*ga, {}, { "gainall" }) && ejmap::phaseb::categoryRuns (*ga, { "gainall" }, {}) && ejmap::phaseb::categoryRuns (*eq, {}, {}) && ! ejmap::phaseb::categoryRuns (*eq, { "gainall" }, {}) && ejmap::phaseb::categoryRuns (*eq, {}, { "gainall" }),
+               "phaseb P18b: a bare --phaseb-all leaves gain-all out; --redo gain-all or --category gainall brings it in; eq still runs unless --category names another");
+    }
     // tolerance: strengths at 5/10/20/30/50 cents
     // Auto-Tune Pro at Flex-Tune 86 (4 Oct): 5 -> 1.00, 10 -> 0.63, 20 -> 0.24, 30 -> 0.10, 40 -> 0.04, 45 -> 0.02: the window is 10 cents
     const auto t1 = toleranceFrom ({ { 5.0, 1.002 }, { 10.0, 0.631 }, { 20.0, 0.236 }, { 30.0, 0.104 }, { 40.0, 0.037 }, { 45.0, 0.015 } });
@@ -7267,6 +7277,43 @@ void testTiming()
 }
 
 /** THE HOLD SCALED TO THE LABEL (EjmapTiming.h, 5 Oct R8b): segments from the control's own time label, never shorter than the defaults, capped. */
+/** COMBINED SETTINGS (EjmapCombined.h; Kathy's NEXT BUILD A1, 6 Oct): the setting from the profile, the tone check's writes, the time
+    draft and the gain draft; the prediction; the miss. */
+void testCombined()
+{
+    using namespace ejmap::combined;
+    // a profile whose pick at g = 4 and L_ref (-18.4, f = 0) sits between norms 0.4 and 0.6; static gain +1 dB
+    const auto profile = juce::JSON::parse (R"json({"detector_f": 0.0, "static_gain_db": 1.0, "measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"control": "Threshold", "stepped": false, "curve": [
+        {"norm": 0.2, "display": "a", "in_at_gr_dbfs": {"1": -30.0, "2": -26.0, "3": -23.0, "4": -21.0}},
+        {"norm": 0.4, "display": "b", "in_at_gr_dbfs": {"1": -28.0, "2": -24.0, "3": -21.0, "4": -19.0}},
+        {"norm": 0.6, "display": "c", "in_at_gr_dbfs": {"1": -26.0, "2": -22.0, "3": -19.0, "4": -17.0}},
+        {"norm": 0.8, "display": "d", "in_at_gr_dbfs": {"1": -24.0, "2": -20.0, "3": -17.0, "4": -15.0}}]}})json");
+    const auto writes = juce::JSON::parse (R"json([{"control": "Mode", "index": 5, "norm": 1.0, "set": "On", "why": "engage"}, {"control": "Ratio", "index": 2, "norm": 0.5, "set": "4:1", "why": "ratio"},
+        {"control": "Threshold", "index": 0, "norm": 0.3, "set": "x", "why": "pick"}, {"control": "Makeup", "index": 4, "norm": 0.5, "set": "0.0 dB", "why": "neutral"}])json");
+    const auto timing = juce::JSON::parse (R"json({"attack": {"control": "Attack", "positions": [{"norm": 0.0, "display": "Fast", "gr_shift_db": 1.5}, {"norm": 1.0, "display": "Slow", "gr_shift_db": -0.4}]},
+        "release": {"control": "Release", "positions": [{"norm": 0.0, "display": "Fast", "gr_shift_db": 0.2}, {"norm": 1.0, "display": "Slow", "gr_shift_db": -2.0}]}})json");
+    const auto gain = juce::JSON::parse (R"json({"controls": [{"control": "Output", "role": "output", "writable": false, "curve": []}, {"control": "Makeup", "role": "makeup", "writable": true, "stepped": false, "curve": [
+        {"norm": 0.0, "display": "-12.0 dB", "measured_db": -12.0}, {"norm": 0.5, "display": "0.0 dB", "measured_db": 0.0}, {"norm": 1.0, "display": "12.0 dB", "measured_db": 12.0}]}],
+        "neutral": [{"control": "Makeup", "norm": 0.5}]})json");
+    const std::map<juce::String, int> idx { { "Threshold", 0 }, { "Attack", 1 }, { "Ratio", 2 }, { "Release", 3 }, { "Makeup", 4 }, { "Mode", 5 } };
+    const auto s = compose (profile, writes, timing, gain, idx);
+    check (s.ok && s.amountIndex == 0 && std::abs (s.Lrms - (-18.4)) < 1e-9 && std::abs (s.amountNorm - 0.46) < 1e-6,
+           "combined CB1: the pick at g = 4 and L_ref -18.4 interpolates between b (-19) and c (-17) at norm 0.46 (" + juce::String (s.amountNorm, 4) + (s.ok ? "" : "; " + s.refused) + ")");
+    check (s.attackDisplay == "Fast" && std::abs (s.attackShiftDb - 1.5) < 1e-9 && s.releaseDisplay == "Slow" && std::abs (s.releaseShiftDb + 2.0) < 1e-9 && std::abs (s.predictedGrDb - 3.5) < 1e-9,
+           "combined CB2: the attack and release with the largest |gr_shift| (Fast +1.5, Slow -2.0) are written; predicted GR = 4 + 1.5 - 2.0 = 3.5");
+    check (s.makeupControl == "Makeup" && std::abs (s.makeupTargetDb - 3.5) < 1e-9 && std::abs (s.makeupGivesDb - 3.5) < 1e-9 && ! s.makeupClamped && s.predictedOutDb && std::abs (*s.predictedOutDb - (-18.4 + 1.0 - 3.5 + 3.5)) < 1e-9,
+           "combined CB3: the make-up is the draft's writable makeup control inverted for +3.5 dB from its neutral (0.0); out = L + static - GR + make-up = -17.4");
+    auto writeOf = [&] (int i) { for (const auto& w : s.writes) if (w.index == i) return w; return Write(); };
+    check (s.writes.size() == 5 && writeOf (0).index < 0 && writeOf (5).norm == 1.0 && writeOf (2).norm == 0.5 && writeOf (1).norm == 0.0 && writeOf (3).norm == 1.0 && std::abs (writeOf (4).norm - (0.5 + 3.5 / 24.0)) < 1e-6 && writeOf (4).from.startsWith ("gain draft"),
+           "combined CB4: the writes are the tone check's (engage, ratio, neutral) minus the amount, plus attack 0.0, release 1.0, and the make-up at norm 0.646 replacing its neutral entry (" + juce::String ((int) s.writes.size()) + ")");
+    const auto none = compose (profile, writes, juce::var(), juce::JSON::parse (R"json({"controls": []})json"), idx);
+    const auto m = judge (s, 3.9, -17.0);
+    check (m.grRead && std::abs (m.grMissDb - 0.4) < 1e-9 && m.grPass && m.outRead && std::abs (m.outMissDb - 0.4) < 1e-9 && ! judge (s, 4.2, std::nullopt).grPass && ! judge (s, std::nullopt, -17.0).grRead && judge (none, 4.0, -20.0).outRead && ! judge (none, 4.0, -20.0).outPredicted,
+           "combined CB5: GR 3.9 against 3.5 is a 0.4 miss (within 0.5), out -17.0 against -17.4 a +0.4 miss; 4.2 is over; an unread GR is not a pass");
+    check (none.ok && std::abs (none.predictedGrDb - 4.0) < 1e-9 && ! none.predictedOutDb && none.makeupControl.isEmpty() && none.notes.size() == 3 && none.writes.size() == 3,
+           "combined CB6: no time draft and no writable make-up: the setting is the tone check's writes and the pick, GR predicted = g, no output prediction, each absence noted (" + juce::String (none.notes.size()) + ")");
+    check (! compose (juce::JSON::parse (R"json({"amount": {"control": "Threshold"}})json"), writes, timing, gain, { { "Other", 0 } }).ok, "combined CB7: an amount control not on the record's control list refuses");
+}
 void testTimingSegments()
 {
     using namespace ejmap::timing;
@@ -7769,7 +7816,7 @@ void testTextPassTimeout()
 void testPhaseB()
 {
     using namespace ejmap::phaseb;
-    check (categories().size() == 12 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories().back().name == "tuners", "phaseb P1: twelve categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners)");
+    check (categories().size() == 14 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories().back().name == "gainall", "phaseb P1: fourteen categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, gain-all)");
     for (const auto& c : categories()) check (c.guardS >= 600.0 && c.guardWhy.isNotEmpty(), "phaseb P2: " + c.name + " has a stated hang guard of at least 10 min (" + juce::String (c.guardS / 60.0, 0) + ")");
     check (categoryNamed ("saturation")->ledgerCategories.contains ("amp_sim") && modeWord ("--cert-reverb-delay") == "reverbdelay" && modeWord ("--cert-gain-cal") == "gaincal", "phaseb P3: amp sims ride with saturation; the mode word is the record folder");
     // the done marker: a row file, whole or absent
@@ -8005,6 +8052,7 @@ int main (int, char**)
     testSteppedExport();
     testGainCal();
     testTiming();
+    testCombined();
     testTimingSegments();
     testLimiter();
     testEq();

@@ -1,0 +1,4 @@
+COMBINED: elysia mpressor 1.15.1: g 4.0 at L -14.72 dBFS RMS; amount [3] Threshold norm 0.3283; attack '150.0 ms' (shift -1.41), release '5.0 ms' (shift -2.32); no make-up; predicted GR 0.27 dB, out (no prediction)
+  note: the gain draft has no writable make-up or output control: no make-up written, no output prediction
+COMBINED: elysia mpressor - GR 2.41 dB (miss 2.14, OVER 0.5); out not read
+COMBINED: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/combined/.tmp-AudioUnit_49696d78_1.15.1/combined/AudioUnit_49696d78_1.15.1.combined.json

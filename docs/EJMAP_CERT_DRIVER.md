@@ -2686,3 +2686,32 @@ the ledger's `pitch` products — the catalogue's category, or a local map's whe
 it; guard 30 min; pin P17, P1 twelve). Its record is the mode's fixture, moved to `phaseb/tuners/tuner/<stem>.json` beside the row;
 the one store `cert/fixtures/` is never written by Phase B. Here the ledger has crispytuner as category none, so the rehearsal
 ran against a scratch ledger copy marking it `pitch` (`~/Library/ejmap` untouched).
+
+## 66. Gain controls beyond compressors: `--redo gain-all` (Kathy's item 6, 6 Oct)
+
+A fourteenth Phase B category `gainall`, **opt-in** (`Category::optIn`, `phaseb::categoryRuns`, pins P1/P18/P18b): a bare
+`--phaseb-all` never runs it; `--redo gain-all` (or `--category gainall`) does. It runs `--cert-gain-cal <product> --kind all`
+over every product of the other ledger categories (eq, limiter, de-esser, saturation, amp_sim, reverb, delay, transient_shaper,
+gate — never the compressors, never the tuners); mix is never a target (the mode's roles are output, makeup, input, and the
+trim / gain / level words). `--kind all` tells the mode the product is not a compressor: the plan's amount is a target like any
+other, and an input the compressor lexicon re-roled as the threshold (Q10's In Gain) is measured as the input. Records land
+under `phaseb/gainall/gaincal/` and `phaseb/gainall/gain-cal/` (the `ej_gain_profile/1` drafts), apart from the compressors'.
+Rehearsed: bx_limiter (12 s: Gain Boost and Output Dim display_matches, XL a measured unnamed gain), Q10 (m) (260 s: In Gain and
+Out Gain display_matches, the ten band gains no_effect — every band off at instantiate). kHs 3-Band EQ is PACE here (a window,
+nothing measured).
+
+## 67. Accuracy pass A1, combined settings: `--redo combined` (Kathy's NEXT BUILD, 6 Oct)
+
+`--cert-combined <product>` (`EjmapCombined.h`, pins CB1–CB7; Phase B category `combined`, opt-in, after gain-cal and timing have
+run — it reads the profile, its tone check, `phaseb/timing/timing/<stem>.timing.json` (`time_draft`) and
+`phaseb/gaincal/gain-cal/<stem>.gain_profile.draft.json` from `--cert-root`, the real folder, and says which is missing).
+The setting: the section 6 pick at **g = 4** and the profile's own L (toneLevelFor), the tone check's writes (engage, neutrals,
+ratio) minus the amount, the ATTACK and RELEASE positions whose recorded `gr_shift_db` is largest, and a MAKE-UP from the
+draft's first writable makeup (else output) control inverted for +GR_pred from its neutral position. The prediction, stated on
+the record: GR = g + attack shift + release shift (additive — the miss tests that); out = L + static_gain − GR + make-up. One
+fresh process at L (the tone check's ladder), GR by `sweep::derive`, the output RMS from the hold's `level_db`; the miss and
+whether GR is within 0.5 dB on `phaseb/combined/combined/<stem>.combined.json`. Rehearsed on four local profiles with drafts:
+bx_opto GR miss −0.01 / out 0.00 (no timing positions: the tone check re-run with a +4 dB make-up — the make-up curve holds);
+Lindell SBC −0.02 (shifts ~0); **Lindell 7X-500 −2.78** (Fast attack +3.41 and Slow release +3.20 predicted 10.61, measured
+7.83: the shifts do not add); **elysia mpressor +2.14** (150 ms + 5 ms predicted 0.27, measured 2.41). That non-additivity is
+A1's first finding; nothing is changed by it (data only).

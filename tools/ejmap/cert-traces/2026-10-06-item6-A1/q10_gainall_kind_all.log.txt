@@ -1,0 +1,36 @@
+GAINCAL: text pass: 54 of 54 controls sampled in 16.4 s (timeout 120 s, scaled to the count)
+GAINCAL: Q10 (m) 12.0.0: 12 gain-role control(s) (--kind all: the plan's amount [50] In Gain is a target like any other)
+  [2] Band 1 Gain (gain): no_effect - the control does not move the output (span 0.00 dB over 21 positions)
+  [7] Band 2 Gain (gain): no_effect - the control does not move the output (span 0.00 dB over 21 positions)
+  [12] Band 3 Gain (gain): no_effect - the control does not move the output (span 0.00 dB over 21 positions)
+  [17] Band 4 Gain (gain): no_effect - the control does not move the output (span 0.00 dB over 21 positions)
+  [22] Band 5 Gain (gain): no_effect - the control does not move the output (span 0.00 dB over 21 positions)
+  [27] Band 6 Gain (gain): no_effect - the control does not move the output (span 0.00 dB over 21 positions)
+  [32] Band 7 Gain (gain): no_effect - the control does not move the output (span 0.00 dB over 21 positions)
+  [37] Band 8 Gain (gain): no_effect - the control does not move the output (span 0.00 dB over 21 positions)
+  [42] Band 9 Gain (gain): no_effect - the control does not move the output (span 0.00 dB over 21 positions)
+  [47] Band 10 Gain (gain): no_effect - the control does not move the output (span 0.00 dB over 21 positions)
+  [50] In Gain (input): display_matches - relative to the control's own 0.0 point (0.00 dB out-in); worst |measured - display| 0.00 dB over 21 numeric point(s) (bar 0.10, the label's resolution); level-independent within 0.00 dB; judged at -60 dBFS (an input gain: -40 can sit inside the compression path)
+    acceptance +3 dB from instantiate (0.00): norm 1.0000 promised 0.00, measured 0.00, miss 0.00 dB -> PASS (clamped to the span)
+    acceptance -3 dB from instantiate (0.00): norm 0.8750 promised -3.00, measured -3.00, miss 0.00 dB -> PASS
+  [51] Out Gain (output): display_matches - absolute out-in (no 0.0 display point); worst |measured - display| 0.00 dB over 21 numeric point(s) (bar 0.10, the label's resolution); level-independent within 0.00 dB
+    acceptance +3 dB from instantiate (-0.60): norm 0.7333 promised 2.40, measured 2.40, miss -0.00 dB -> PASS
+    acceptance -3 dB from instantiate (-0.60): norm 0.5667 promised -3.60, measured -3.60, miss -0.00 dB -> PASS
+  ROLES BY MEASUREMENT: 12 verdict(s), 20 unnamed control(s) probed without the signature
+    role gain DROPPED    [2] Band 1 Gain - the level moves 0.00 dB between the ends (needs 1.0)
+    role gain DROPPED    [7] Band 2 Gain - the level moves 0.00 dB between the ends (needs 1.0)
+    role gain DROPPED    [12] Band 3 Gain - the level moves 0.00 dB between the ends (needs 1.0)
+    role gain DROPPED    [17] Band 4 Gain - the level moves 0.00 dB between the ends (needs 1.0)
+    role gain DROPPED    [22] Band 5 Gain - the level moves 0.00 dB between the ends (needs 1.0)
+    role gain DROPPED    [27] Band 6 Gain - the level moves 0.00 dB between the ends (needs 1.0)
+    role gain DROPPED    [32] Band 7 Gain - the level moves 0.00 dB between the ends (needs 1.0)
+    role gain DROPPED    [37] Band 8 Gain - the level moves 0.00 dB between the ends (needs 1.0)
+    role gain DROPPED    [42] Band 9 Gain - the level moves 0.00 dB between the ends (needs 1.0)
+    role gain DROPPED    [47] Band 10 Gain - the level moves 0.00 dB between the ends (needs 1.0)
+    role input CONFIRMED  [50] In Gain - the level moves 24.00 dB, the same at the quieter level
+    role output CONFIRMED  [51] Out Gain - the level moves 36.00 dB, the same at the quieter level
+GAINCAL: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/ga3/gaincal/AudioUnit_4f577063_12.0.0.gaincal.json
+GAINCAL: draft ej_gain_profile/1 -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/ga3/gain-cal/AudioUnit_4f577063_12.0.0.gain_profile.draft.json
+real	4m20.701s
+user	0m4.608s
+sys	0m3.179s

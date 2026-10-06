@@ -707,11 +707,21 @@ namespace
             }
             // --cert-tone-levels <profile.json>: the tone-check L the rule would use per level, nothing loaded (a dry read of the rule)
             // --cert-gain-cal <product> [--out <cert dir>] [--probe <path>] [--ejmap-ledger <dir>]: roadmap 2.1 PROTOTYPE (B1), nothing exported
+            // --cert-combined <product> [--cert-root <cert dir>] [--out <dir>] [--probe <path>] [--ejmap-ledger <dir>]: accuracy pass A1 (6 Oct), data only
+            if (a == "--cert-combined" && i + 1 < argc)
+            {
+                ejmap::cert::SweepOptions o; o.product = argAt (argc, argv, i + 1);
+                for (int j = i + 2; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
+                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--cert-root") o.certRoot = cwdFile (v); }
+                if (o.out == juce::File()) o.out = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap/cert");
+                if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
+                return ejmap::cert::runCombined (o);
+            }
             if (a == "--cert-gain-cal" && i + 1 < argc)
             {
                 ejmap::cert::SweepOptions o; o.product = argAt (argc, argv, i + 1);
                 for (int j = i + 2; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
-                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); }
+                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--kind" && v == "all") o.gainAll = true; }   // --kind all: not a compressor, no amount to exclude (the gain-all rows)
                 if (o.out == juce::File()) o.out = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap/cert");
                 if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
                 return ejmap::cert::runGainCal (o);
@@ -734,7 +744,8 @@ namespace
                     if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--category") cats.add (v); else if (k == "--only") only.add (v);
                     else if (k == "--redo") { for (const auto& r : juce::StringArray::fromTokens (v, ",", "")) if (r.trim().isNotEmpty()) redo.add (r.trim()); } }
                 // --redo gain-cal,timing names categories (their rows run again); --redo nothing_nominated re-runs the rows that finished with no record
-                for (auto& r : redo) if (r == "gain-cal") r = "gaincal";
+                for (auto& r : redo) { if (r == "gain-cal") r = "gaincal"; if (r == "gain-all") r = "gainall"; }
+                for (auto& c : cats) { if (c == "gain-cal") c = "gaincal"; if (c == "gain-all") c = "gainall"; }
                 for (const auto& r : redo) if (r != "nothing_nominated" && ejmap::phaseb::categoryNamed (r) == nullptr) { std::cerr << "--redo: '" << r << "' is not a Phase B category or nothing_nominated" << std::endl; return 2; }
                 ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
                 return a == "--phaseb-status" ? ejmap::cert::runPhaseBStatus (o) : ejmap::cert::runPhaseBAll (o, cats, only, redo);

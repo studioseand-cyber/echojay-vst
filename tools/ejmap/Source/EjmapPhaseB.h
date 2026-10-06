@@ -26,7 +26,7 @@ namespace ejmap::phaseb
 
 // THE CATEGORIES in priority order. mode = the ejmap command; ledger = the categories.json names that feed it (empty = from
 // the cert folder: certified compressors for gaincal / timing, the multiband rows for multiband); guard = the hang guard.
-struct Category { juce::String name, mode, kindArg; juce::StringArray ledgerCategories; double guardS; juce::String guardWhy; };
+struct Category { juce::String name, mode, kindArg; juce::StringArray ledgerCategories; double guardS; juce::String guardWhy; bool optIn = false; };
 inline const std::vector<Category>& categories()
 {
     static const std::vector<Category> k {
@@ -43,7 +43,13 @@ inline const std::vector<Category>& categories()
         { "multiband",   "--cert-multiband",     "",          {},                              1500.0, "a pairing response per threshold, a ladder per band, 25-30 vocal responses: ~4-8 min measured" },
         // tuners (Kathy, 6 Oct item 5): the tuner certification run again for its data (Humanize with the vibrato held note); the record
         // lands beside the row (phaseb/tuners/tuner/), NEVER in the one store (cert/fixtures/), which --redo tuners leaves untouched
-        { "tuners",      "--cert-tuner",         "",          { "pitch" },                     1800.0, "strength + speed sweeps per strength control, flex ladder, humanize (three runs), key/scale grids: ~5-15 min" } };
+        { "tuners",      "--cert-tuner",         "",          { "pitch" },                     1800.0, "strength + speed sweeps per strength control, flex ladder, humanize (three runs), key/scale grids: ~5-15 min" },
+        // gain-all (Kathy, 6 Oct item 6, lowest priority): the gain spec's measurement on every other Phase B product's output / trim /
+        // input controls (mix never targeted: the mode's roles are output, makeup, input, trim/gain/level), data only, OPT-IN: runs only
+        // when named (--category gainall or --redo gain-all), never in a bare --phaseb-all; records under phaseb/gainall/
+        // combined settings (Kathy's NEXT BUILD A1, 6 Oct; accuracy pass, opt-in: --redo combined after gain-cal and timing have run)
+        { "combined",    "--cert-combined",      "",          {},                              600.0,  "one process at the composed setting: ~10-20 s", true },
+        { "gainall",     "--cert-gain-cal",      "all",       { "eq", "limiter", "de-esser", "saturation", "amp_sim", "reverb", "delay", "transient_shaper", "gate" }, 600.0, "21 norms x 2-3 levels per gain control + the unnamed pool: ~1-4 min", true } };
     return k;
 }
 inline const Category* categoryNamed (const juce::String& name) { for (const auto& c : categories()) if (c.name == name) return &c; return nullptr; }
@@ -73,6 +79,12 @@ inline void gzipInto (const juce::File& src, const juce::File& dstDir)
 // THE REDO (Kathy, 6 Oct): --phaseb-all --redo a,b,... names categories whose rows are ALL run again, and/or "nothing_nominated",
 // which re-runs exactly the rows that finished ok with no record (the lexicon nominated nothing). Everything else is untouched.
 inline bool rowIsNothingNominated (const juce::var& row) { return row.getProperty ("outcome", "").toString() == "ok" && (row.getProperty ("records", {}).size() == 0 || (bool) row.getProperty ("nothing_measured", false) || (int) row.getProperty ("exit_code", 0) == 4); }   // exit 4 = the mode measured nothing: Sean's b0258a7b rows carry no flag, only the code
+// an opt-in category runs only when named: by --category, or by --redo (its rows are then made and run)
+inline bool categoryRuns (const Category& c, const juce::StringArray& onlyCategories, const juce::StringArray& redo)
+{
+    if (! onlyCategories.isEmpty()) return onlyCategories.contains (c.name);
+    return ! c.optIn || redo.contains (c.name);
+}
 inline bool rowToRedo (const juce::var& row, const juce::String& category, const juce::StringArray& redo)
 {
     if (redo.contains (category)) return true;

@@ -1,0 +1,92 @@
+{
+  "g_db": 4.0,
+  "L_rms_dbfs": -12.609999999999999,
+  "L_peak_dbfs": -9.6,
+  "amount_control": "Peak Reduction",
+  "amount_norm": 0.419704772875455,
+  "attack": "",
+  "attack_gr_shift_db": 0.0,
+  "release": "",
+  "release_gr_shift_db": 0.0,
+  "makeup_control": "Output Gain",
+  "makeup_target_db": 3.99,
+  "makeup_gives_db": 3.99,
+  "static_gain_db": -0.01,
+  "predicted_gr_db": 4.0,
+  "predicted_out_rms_dbfs": -12.619999999999999,
+  "prediction": "GR = g + attack gr_shift + release gr_shift; out = L + static_gain - GR + (make-up written - make-up at neutral)",
+  "writes": [
+    {
+      "index": 1,
+      "control": "Speed",
+      "norm": 0.5,
+      "set": "50",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 3,
+      "control": "Output Gain",
+      "norm": 0.166666666666667,
+      "set": "0.1667",
+      "from": "gain draft make-up (+4.00 dB)"
+    },
+    {
+      "index": 4,
+      "control": "Sidechain Filter Type",
+      "norm": 0.0,
+      "set": "HP",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 5,
+      "control": "Sidechain Frequency",
+      "norm": 0.0,
+      "set": "20 Hz",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 6,
+      "control": "Mix",
+      "norm": 1.0,
+      "set": "100 %",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 7,
+      "control": "Sidechain Off/On/Solo",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 8,
+      "control": "Bank",
+      "norm": 0.0,
+      "set": "A",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 9,
+      "control": "",
+      "norm": 1.0,
+      "set": "",
+      "from": "tone check: neutral[] from the profile"
+    }
+  ],
+  "gr_measured_db": 3.99,
+  "gr_miss_db": -0.01,
+  "gr_within_0_5_db": true,
+  "out_measured_rms_dbfs": -12.619999999999999,
+  "out_miss_db": 0.0,
+  "notes": [
+    "no attack position in the time draft: left as the tone check has it",
+    "no release position in the time draft: left as the tone check has it"
+  ],
+  "schema": "ej_combined_setting/0",
+  "status": "ACCURACY PASS A1 (6 Oct): data only, not exported, not published",
+  "product": "bx_opto",
+  "version": "1.10.1",
+  "identity": "AudioUnit|417f7e74|1.10.1",
+  "inputs": "bx_opto_1.10.1.json; bx_opto_1.10.1.tonecheck.json; AudioUnit_417f7e74_1.10.1.timing.json; AudioUnit_417f7e74_1.10.1.gain_profile.draft.json",
+  "measuredAt": "20261006T183420"
+}

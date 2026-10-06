@@ -1,0 +1,5 @@
+COMBINED: bx_opto 1.10.1: g 4.0 at L -12.61 dBFS RMS; amount [2] Peak Reduction norm 0.4197; attack '' (shift 0.00), release '' (shift 0.00); make-up Output Gain -> 4.00 dB; predicted GR 4.00 dB, out -12.62 dBFS RMS
+  note: no attack position in the time draft: left as the tone check has it
+  note: no release position in the time draft: left as the tone check has it
+COMBINED: bx_opto - GR 3.99 dB (miss -0.01, within 0.5); out -12.62 dBFS RMS (miss 0.00)
+COMBINED: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/combined/.tmp-AudioUnit_417f7e74_1.10.1/combined/AudioUnit_417f7e74_1.10.1.combined.json

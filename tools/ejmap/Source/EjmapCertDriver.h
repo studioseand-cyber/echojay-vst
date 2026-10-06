@@ -53,6 +53,7 @@
 #include "EjmapSidechainCheck.h"
 #include "EjmapGainCal.h"
 #include "EjmapTiming.h"
+#include "EjmapCombined.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include "EjmapCertReview.h"
@@ -1421,6 +1422,8 @@ struct SweepOptions
     juce::StringArray slice;                         // the dress rehearsal only: product names the batch is limited to (empty = all)
     bool retryLicence = false;                       // --retry-licence: re-check the needs-licence set (the licence is back)
     bool ignoreCeilingName = false;                  // --cert-limiter --ignore-ceiling-name (test only): the measured-ceiling path on a product with the word
+    juce::File certRoot;                             // --cert-root: the real cert folder when --out is a Phase B temp folder (combined settings read their inputs there)
+    bool gainAll = false;                            // --cert-gain-cal --kind all (the gain-all rows, 6 Oct item 6): the product is not a compressor, so the plan's amount is a gain target too
     bool deriveOnly = false;                         // --derive-only (tone-check mode): re-derive, apply the rules and export, load NOTHING - the projection for a zipped-back folder
     juce::StringArray resweepProducts;               // the follow-up's own re-sweep set (planDiffers): forced back onto the worklist
     juce::String mapState;                           // INFORMATION for the record (ruled 2 Oct): set by the batch from the subject; the tuner path has no Subject of its own
@@ -2806,6 +2809,88 @@ inline juce::String setText (const juce::String& out, int idx)
 // its gain-role controls (output, makeup, input when not the amount control, and names answering trim / gain / level) each
 // at 21 norms, -20 then -40 dBFS, everything else as instantiated; writes cert/gaincal/<identity>.gaincal.json. Nothing
 // exported, nothing published. Returns 0 when at least one control was measured.
+// COMBINED SETTINGS (Kathy's NEXT BUILD item A1, 6 Oct; derivation in EjmapCombined.h): the certified profile + its tone check +
+// the time draft + the gain draft -> one server-style setting at g = 4 (pick, engage, neutrals, ratio, attack, release, make-up),
+// ONE fresh process at L, GR and output level against the prediction; the miss on the record. Data only, nothing exported.
+// Inputs are read from --cert-root (the real cert folder; under Phase B --out is the row's temp folder).
+inline int runCombined (const SweepOptions& opt)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("COMBINED: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    if (hits.size() != 1) { say ("COMBINED: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
+    const auto& desc = hits[0].desc;
+    const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (root.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
+    { say ("COMBINED: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
+    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto recordFile = latestRecordFor (root.getChildFile ("fixtures"), opt.product);
+    const auto record = juce::JSON::parse (recordFile.loadFileAsString());
+    const auto pstem = juce::File::createLegalFileName (opt.product).replaceCharacter (' ', '_') + "_" + desc.version;
+    const auto profileFile = root.getChildFile ("profiles").getChildFile (pstem + ".json"), tcFile = root.getChildFile ("profiles").getChildFile (pstem + ".tonecheck.json");
+    const auto timingFile = root.getChildFile ("phaseb/timing/timing").getChildFile (stem + ".timing.json"), gainFile = root.getChildFile ("phaseb/gaincal/gain-cal").getChildFile (stem + ".gain_profile.draft.json");
+    const auto profile = juce::JSON::parse (profileFile.loadFileAsString()), tc = juce::JSON::parse (tcFile.loadFileAsString());
+    const auto timing = juce::JSON::parse (timingFile.loadFileAsString()).getProperty ("time_draft", {}), gain = juce::JSON::parse (gainFile.loadFileAsString());
+    juce::StringArray missing;
+    if (! profile.isObject()) missing.add ("profile " + profileFile.getFileName()); if (! tc.isObject()) missing.add ("tone check " + tcFile.getFileName());
+    if (! timing.isObject()) missing.add ("time draft " + timingFile.getFileName() + " (run --redo timing first)"); if (! gain.isObject()) missing.add ("gain draft " + gainFile.getFileName() + " (run --redo gain-cal first)");
+    if (! missing.isEmpty()) { say ("COMBINED: " + opt.product + ": nothing to compose - missing " + missing.joinIntoString ("; ")); return 4; }
+    std::map<juce::String, int> controlIndex;
+    if (const auto* cs = record.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) controlIndex[c.getProperty ("name", "").toString()] = (int) c.getProperty ("index", -1);
+    if (controlIndex.empty()) { say ("COMBINED: " + opt.product + ": the record has no control list"); return 4; }
+    auto setting = combined::compose (profile, tc.getProperty ("writes", {}), timing, gain, controlIndex);
+    if (! setting.ok) { say ("COMBINED: " + opt.product + ": " + setting.refused); return 4; }
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("combined"); outDir.createDirectory();
+    say ("COMBINED: " + opt.product + " " + desc.version + ": g " + juce::String (setting.g, 1) + " at L " + juce::String (setting.Lrms, 2) + " dBFS RMS; amount [" + juce::String (setting.amountIndex) + "] " + setting.amountControl + " norm " + juce::String (setting.amountNorm, 4)
+         + "; attack '" + setting.attackDisplay + "' (shift " + juce::String (setting.attackShiftDb, 2) + "), release '" + setting.releaseDisplay + "' (shift " + juce::String (setting.releaseShiftDb, 2) + ")"
+         + (setting.makeupControl.isNotEmpty() ? "; make-up " + setting.makeupControl + " -> " + juce::String (setting.makeupGivesDb - setting.makeupNeutralDb, 2) + " dB" : juce::String ("; no make-up"))
+         + "; predicted GR " + juce::String (setting.predictedGrDb, 2) + " dB, out " + (setting.predictedOutDb ? juce::String (*setting.predictedOutDb, 2) + " dBFS RMS" : juce::String ("(no prediction)")));
+    for (const auto& n : setting.notes) say ("  note: " + n);
+    juce::String toneLevels; { std::vector<double> q; for (const auto& [lo, hi] : sweep::kQuietLadder) { q.push_back (lo); q.push_back (hi); } std::sort (q.begin(), q.end()); for (double L : q) toneLevels << juce::String ((int) L) << ","; }
+    juce::StringArray sets; for (const auto& w : setting.writes) sets.add (juce::String (w.index) + ":" + juce::String (w.norm, 6));
+    juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
+                             "--sweep", "thr=" + juce::String (setting.amountIndex), "norms=" + juce::String (setting.amountNorm, 6),
+                             "levels=" + toneLevels + juce::String (setting.Lpeak, 4), "hz=997", "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
+    if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
+    const auto r = runChild (args, opt.timeoutMs);
+    raw.getChildFile (stem + ".combined.1.txt").replaceWithText (r.out, false, false, "\n");
+    if (r.kind == ChildResult::Kind::uiShown) { say ("COMBINED: a window appeared; stopping"); return 5; }
+    std::optional<double> gr, outRms; juce::String unlanded;
+    if (r.cleanExit())
+    {
+        for (const auto& line : juce::StringArray::fromLines (r.out)) if (line.startsWith ("pos\t") && line.contains ("write_unlanded")) unlanded = line;
+        sweep::ProcessOut po { r.out, true, r.describe(), (float) setting.amountNorm };
+        const auto d = sweep::derive (sweep::mergeProcesses ({ juce::String(), true, "none", -1.0f }, { po }), { setting.Lpeak }, -1, true);
+        const auto key = sweep::levelKey (setting.Lpeak);
+        gr = d.reduction.count (key) && ! d.reduction.at (key).empty() ? d.reduction.at (key)[0] : std::nullopt;
+        for (const auto& line : juce::StringArray::fromLines (r.out))
+        {
+            if (! line.startsWith ("hold\t")) continue;
+            const auto f = juce::StringArray::fromTokens (line, "\t", "");
+            if (f.size() < 3 || std::abs (f[2].getDoubleValue() - setting.Lpeak) > 0.01) continue;
+            const int kl = f.indexOf ("level_db"); if (kl < 0) continue;
+            outRms = f[kl + 1].getDoubleValue();   // the hold's level_db is the OUTPUT RMS in dBFS (in_rms_db beside it is the input's)
+        }
+    }
+    const auto miss = combined::judge (setting, gr, outRms);
+    say ("COMBINED: " + opt.product + " - GR " + (miss.grRead ? juce::String (miss.grMeasuredDb, 2) + " dB (miss " + juce::String (miss.grMissDb, 2) + (miss.grPass ? ", within 0.5)" : ", OVER 0.5)") : juce::String ("unreadable (" + r.describe() + ")"))
+         + "; out " + (miss.outRead ? juce::String (miss.outMeasuredDb, 2) + " dBFS RMS" + (miss.outPredicted ? " (miss " + juce::String (miss.outMissDb, 2) + ")" : juce::String (" (no prediction)")) : juce::String ("not read")) + (unlanded.isNotEmpty() ? "; A WRITE DID NOT LAND: " + unlanded : juce::String()));
+    auto rec = combined::settingVar (setting, miss);
+    if (auto* o = rec.getDynamicObject())
+    {
+        o->setProperty ("schema", "ej_combined_setting/0"); o->setProperty ("status", "ACCURACY PASS A1 (6 Oct): data only, not exported, not published");
+        o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+        o->setProperty ("inputs", juce::StringArray { profileFile.getFileName(), tcFile.getFileName(), timingFile.getFileName(), gainFile.getFileName() }.joinIntoString ("; "));
+        if (unlanded.isNotEmpty()) o->setProperty ("write_unlanded", unlanded);
+        if (! r.cleanExit()) o->setProperty ("probe", r.describe());
+        o->setProperty ("measuredAt", nowStamp());
+    }
+    outDir.getChildFile (stem + ".combined.json").replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n");
+    say ("COMBINED: -> " + outDir.getChildFile (stem + ".combined.json").getFullPathName());
+    return 0;
+}
+
 inline int runGainCal (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
@@ -2838,16 +2923,17 @@ inline int runGainCal (const SweepOptions& opt)
     std::vector<Target> targets;
     for (const auto& r : cl.controls)
     {
-        if (r.index == plan.thr) continue;                                              // the amount control is the sweep's business
-        bool cand = false; for (const auto& c : plan.candidates) if (c.index == r.index) cand = true; if (cand) continue;
+        if (! opt.gainAll && r.index == plan.thr) continue;                             // the amount control is the sweep's business (not on a gain-all row: Q10's In Gain is a gain)
+        bool cand = false; for (const auto& c : plan.candidates) if (c.index == r.index) cand = true; if (cand && ! opt.gainAll) continue;
         const auto ctl = sweep::findControl (base, r.index);
         if (sweep::wordValued (ctl) || (int) ctl.getProperty ("numSteps", 0) == 2) continue;
         if (r.reason.startsWith ("veto")) continue;                                      // "EQ Gain" (filter), "Gain Reduction" (meter): the roles' vetoes stand
         if (r.role == "output" || r.role == "makeup" || r.role == "input") targets.push_back ({ r.index, r.name, r.role });
+        else if (opt.gainAll && r.role == "threshold" && (cl.cls == "input_as_threshold" || r.flags.contains ("input_as_threshold")) && r.index == plan.thr) targets.push_back ({ r.index, r.name, "input" });   // the compressor lexicon re-roled an input as the threshold (Q10's In Gain): on a gain-all row it is the input
         else if (r.role.isEmpty() && (nametokens::controlAnswersTerm (r.name, "trim") || nametokens::controlAnswersTerm (r.name, "gain") || nametokens::controlAnswersTerm (r.name, "level")) && ! sweep::neverTouchName (r.name))
             targets.push_back ({ r.index, r.name, "gain" });
     }
-    say ("GAINCAL: " + opt.product + " " + desc.version + ": " + juce::String ((int) targets.size()) + " gain-role control(s)" + (plan.thr >= 0 ? " (amount [" + juce::String (plan.thr) + "] " + plan.thrName + " excluded)" : juce::String()));
+    say ("GAINCAL: " + opt.product + " " + desc.version + ": " + juce::String ((int) targets.size()) + " gain-role control(s)" + (plan.thr >= 0 ? (opt.gainAll ? " (--kind all: the plan's amount [" + juce::String (plan.thr) + "] " + plan.thrName + " is a target like any other)" : " (amount [" + juce::String (plan.thr) + "] " + plan.thrName + " excluded)") : juce::String()));
     juce::StringArray norms; for (int k = 0; k < gaincal::kNorms; ++k) norms.add (juce::String ((float) k / (float) (gaincal::kNorms - 1), 6));
     juce::Array<juce::var> controls; int measured = 0; juce::Array<juce::var> gainNotes;
     std::vector<roleevidence::RoleVerdict> roles; std::vector<int> nominated; for (const auto& t : targets) nominated.push_back (t.index); if (plan.thr >= 0) nominated.push_back (plan.thr);
@@ -4480,9 +4566,9 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     auto stemFor = [] (const juce::PluginDescription& d) { return "AudioUnit_" + juce::String::toHexString (d.uniqueId) + "_" + d.version; };
     for (const auto& cat : categories())
     {
-        if (! onlyCategories.isEmpty() && ! onlyCategories.contains (cat.name)) continue;
+        if (! phaseb::categoryRuns (cat, onlyCategories, redo)) continue;
         std::vector<PhaseBProduct> list;
-        if (cat.name == "gaincal" || cat.name == "timing")
+        if (cat.name == "gaincal" || cat.name == "timing" || cat.name == "combined")
         {
             // every certified compressor: an exported row, or a record whose sweep is certified
             if (const auto* a = outcomes.getArray()) for (const auto& row : *a)
@@ -4568,6 +4654,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 if (cat.name == "timing" && pp.recordFile.isNotEmpty()) { tmp.getChildFile ("fixtures").createDirectory(); juce::File (pp.recordFile).copyFileTo (tmp.getChildFile ("fixtures").getChildFile (juce::File (pp.recordFile).getFileName())); }
                 juce::StringArray args { exe.getFullPathName(), cat.mode, pp.product };
                 if (cat.kindArg.isNotEmpty()) { args.add ("--kind"); args.add (cat.kindArg); }
+                if (cat.name == "combined") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts) live in the real folder
                 args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName() });
                 const auto t1 = juce::Time::getMillisecondCounterHiRes();
                 const auto r = runChild (args, (int) (cat.guardS * 1000.0));
