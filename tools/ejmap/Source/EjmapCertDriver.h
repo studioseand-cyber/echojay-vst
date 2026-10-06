@@ -1682,7 +1682,7 @@ inline juce::var decideByMeasurement (const std::vector<std::pair<sweep::Plan, D
     std::vector<candidaterules::CandidateFacts> facts;
     for (const auto& [q, one] : cands)
     {
-        candidaterules::CandidateFacts f; f.index = q.thr; f.name = q.thrName; f.certified = one.written && one.d.result == "certified";
+        candidaterules::CandidateFacts f; f.index = q.thr; f.name = q.thrName; f.certified = one.written && one.d.result == "certified"; f.pairWritten = q.pairIndex; f.pairWrittenName = q.pairName;
         for (size_t i = 0; i < one.d.inAtGr.size() && i < one.d.norms.size(); ++i) { const auto it = one.d.inAtGr[i].at.find (2); if (it != one.d.inAtGr[i].at.end() && (it->second.isDouble() || it->second.isInt())) f.curve2[std::round ((double) one.d.norms[i] * 1e4) / 1e4] = (double) it->second; }
         if (processesJson.existsAsFile()) if (const auto ch = channelAgreementFromTraces (processesJson, rawDir, "c" + juce::String (q.thr) + ".")) { f.channelWorstDb = ch->first; f.channelReadings = ch->second; }
         facts.push_back (f);
@@ -1693,6 +1693,7 @@ inline juce::var decideByMeasurement (const std::vector<std::pair<sweep::Plan, D
     rd->setProperty ("rule", d.rule); rd->setProperty ("ruleText", d.note);
     auto* pk = new juce::DynamicObject(); pk->setProperty ("index", d.pick); pk->setProperty ("name", d.pickName); rd->setProperty ("pick", juce::var (pk));
     juce::Array<juce::var> others; for (const auto& o : d.others) others.add (o); rd->setProperty (d.rule == "master_over_trims" ? "trims" : "twin", others);
+    if (d.pairWith >= 0) { auto* pw = new juce::DynamicObject(); pw->setProperty ("index", d.pairWith); pw->setProperty ("name", d.pairWithName); rd->setProperty ("pair_with", juce::var (pw)); }
     std::cout << "  " << d.rule << ": " << d.note << std::endl;
     return juce::var (rd);
 }
@@ -1996,6 +1997,7 @@ inline int runCertSweep (const SweepOptions& opt)
                                   juce::String ("reset=") + (opt.resetPerHold ? "1" : "0") };
             juce::StringArray all = sets;                                     // the plan's preconditions (ratio raise, auto make-up off)
             for (const auto& w : q.engage) all.add (juce::String (w.index) + ":" + juce::String (w.norm, 6));   // plus the engage writes
+            if (q.pairIndex >= 0 && norms.isNotEmpty()) all.add (juce::String (q.pairIndex) + ":" + norms);          // the dual-mono twin, WITH the amount (ruled 6 Oct)
             if (! all.isEmpty()) a.add ("set=" + all.joinIntoString (","));
             return a; };
         lastSweepPrefix = tagPrefix;
@@ -2122,6 +2124,7 @@ inline int runCertSweep (const SweepOptions& opt)
                                   "hold=" + juce::String (pl.holdS, 2), "discard=" + juce::String (pl.discardS, 2), "win=" + juce::String (pl.winS, 2), "ref=0", "moving_db=0.1",
                                   juce::String ("reset=") + (opt.resetPerHold ? "1" : "0") };
             juce::StringArray all = sets; for (const auto& w : q.engage) all.add (juce::String (w.index) + ":" + juce::String (w.norm, 6));
+            if (pl.pairIndex >= 0) all.add (juce::String (pl.pairIndex) + ":" + juce::String (norm, 6));
             if (! all.isEmpty()) a.add ("set=" + all.joinIntoString (","));
             return a; };
         for (int round = 1; round <= sweep::kRefineRounds && ! windowSeen && ! overBudget(); ++round)
@@ -2173,6 +2176,11 @@ inline int runCertSweep (const SweepOptions& opt)
             if (windowSeen || overBudget()) break;
             auto q = plan.forCandidate (c);
             sweep::applyCandidateControl (q, base);
+            // THE PAIR WRITE (ruled 6 Oct): a record decided dual_mono_pair (or review-picked "A + B as a pair") sweeps its pick with the
+            // twin written at every position; the store's fixture carries the decision
+            if (const auto rd = s.pushed.getProperty ("ruleDecided", {}); rd.getProperty ("pair_with", {}).isObject() && (int) rd.getProperty ("pick", {}).getProperty ("index", -1) == c.index)
+            { q.pairIndex = (int) rd.getProperty ("pair_with", {}).getProperty ("index", -1); q.pairName = rd.getProperty ("pair_with", {}).getProperty ("name", "").toString();
+              std::cout << "  PAIR WRITE: [" << q.pairIndex << "] " << q.pairName << " is written with [" << q.thr << "] " << q.thrName << " at every position (dual-mono pair)" << std::endl; }
             sweep::ProcessOut cr; std::vector<sweep::ProcessOut> cp;
             q = sweepWithFallback (q, "c" + juce::String (c.index) + ".", cr, cp);
             refineGrid (q, lastSweepPrefix, cr, cp);
@@ -2472,6 +2480,7 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         juce::var oldC;
         for (const auto& x : *fx.getProperty ("thresholdCandidates", {}).getArray()) if ((int) x.getProperty ("index", -1) == c.index) oldC = x.getProperty ("thresholdSweep", {});
         const auto run = resolveTraceRun (processesJson, "c" + juce::String (c.index) + ".");
+        if (const auto pw = oldC.getProperty ("pairWrite", {}); pw.isObject()) { q.pairIndex = (int) pw.getProperty ("index", -1); q.pairName = pw.getProperty ("name", "").toString(); }
         if (run.quiet) { q.quietReference = true; q.referenceFallbackNote = fallbackNote (oldC); }
         if (run.engageIndex >= 0 || oldC.hasProperty ("engageWrites")) restoreEngage (q, oldC);
         restoreRefinement (q, oldC);
@@ -5038,6 +5047,9 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     if (const auto why = profile::toneWrites (profile, record, sets, writes, ratioNote); why.isNotEmpty()) { say ("TONE: " + why); return 2; }
     auto plan = sweep::planFromFixture (record);
     if (! plan.ok) { say ("TONE: the record has no plan: " + plan.why); return 4; }
+    // THE DUAL-MONO TWIN (ruled 6 Oct): written with the amount at the pick's norm in every process below; both channels within 0.5 dB
+    const int pairIdx = (int) profile.getProperty ("amount", {}).getProperty ("pair_with", {}).getProperty ("index", -1);
+    if (pairIdx >= 0) say ("TONE: " + product + " - dual-mono pair: [" + juce::String (pairIdx) + "] " + profile.getProperty ("amount", {}).getProperty ("pair_with", {}).getProperty ("control", "").toString() + " is written with the amount at every pick; the check is gated on the worse channel");
     if (record.getProperty ("pickedCandidate", {}).isObject())
     { const int want = (int) record.getProperty ("pickedCandidate", {}).getProperty ("index", -1); std::optional<sweep::Plan::Candidate> pc; for (const auto& c : plan.candidates) if (c.index == want) pc = c; if (pc) plan = plan.forCandidate (*pc); plan.candidates.clear(); }   // copy first: the assignment destroys the vector being walked
     if (plan.thr < 0) { say ("TONE: the record has several threshold candidates; pass --candidate NAME"); return 4; }
@@ -5081,7 +5093,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
                                  "--sweep", "thr=" + juce::String (plan.thr), "norms=" + juce::String (lr.pick.norm, 6),
                                  "levels=" + toneLevels + juce::String (Lpeak, 4), "hz=997", "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
-        if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
+        { juce::StringArray all = sets; if (pairIdx >= 0) all.add (juce::String (pairIdx) + ":" + juce::String (lr.pick.norm, 6)); if (! all.isEmpty()) args.add ("set=" + all.joinIntoString (",")); }
         say ("TONE: " + product + " - L " + juce::String (lr.Lrms, 2) + " dBFS RMS (" + juce::String (Lpeak, 2) + " peak), g " + juce::String (gg, 1)
              + "; section 6 picks norm " + juce::String (lr.pick.norm, 4) + (lr.pick.i1 >= 0 ? " between points " + juce::String (lr.pick.i0) + " and " + juce::String (lr.pick.i1) : " at point " + juce::String (lr.pick.i0))
              + " (in_at_gr at g: " + juce::String (lr.pick.inAtG0, 2) + (lr.pick.i1 >= 0 ? " / " + juce::String (lr.pick.inAtG1, 2) : juce::String()) + "; pick's 1 dB point " + juce::String (lr.pick.pickOneDb, 2) + ")"
@@ -5168,7 +5180,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
             juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
                                      "--sweep", "thr=" + juce::String (plan.thr), "norms=" + juce::String (main.pick.norm, 6),
                                      "levels=" + toneLevels + juce::String (main.Lpeak, 4), "hz=997", "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
-            if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
+            { juce::StringArray all = sets; if (pairIdx >= 0) all.add (juce::String (pairIdx) + ":" + juce::String (main.pick.norm, 6)); if (! all.isEmpty()) args.add ("set=" + all.joinIntoString (",")); }
             args.add ("sidechain=" + sw);
             const auto r = runChild (args, opt.timeoutMs);
             auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();

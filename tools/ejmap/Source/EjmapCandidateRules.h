@@ -43,6 +43,7 @@ struct CandidateFacts
     std::map<double, double> curve2;             // norm -> in_at_gr["2"] (peak dBFS, the record's convention), numeric points only
     std::optional<double> channelWorstDb;        // from this candidate's OWN raw sweep: worst |ch0 - ch1| over every reading (readings above silence)
     int channelReadings = 0;
+    int pairWritten = -1; juce::String pairWrittenName;   // this candidate's sweep wrote a twin WITH it at every position (a pair re-sweep, ruled 6 Oct)
 };
 
 struct Decision
@@ -53,6 +54,7 @@ struct Decision
     juce::StringArray others;                    // the twin, or the trims
     juce::String note;                           // why, with the measurements
     juce::String whyNot;                         // the nearest rule that did not fire, for the row
+    int pairWith = -1; juce::String pairWithName; // dual_mono_pair: the twin written WITH the amount (ruled 6 Oct)
 };
 
 // THE CHANNEL TOKENS, literal (ruled 4 Oct): a name pair is a channel pair when the names are identical once one token
@@ -119,7 +121,29 @@ inline Decision decide (const std::vector<CandidateFacts>& c)
             const auto& first = c[0]; const auto& twin = c[1];
             juce::String why;
             if (! first.certified) { d.whyNot = "channel pair '" + base + "': the first candidate did not certify"; return d; }
-            if (! channelsAgree (first, why)) { d.whyNot = "channel pair '" + base + "': " + why + " - the channels are independent, no pair rule"; return d; }
+            // a pair RE-SWEEP (the twin written with the first at every position): the channels now agree because of that write; the
+            // decision stays dual_mono_pair, so the export and the tone check keep writing both
+            if (first.pairWritten == twin.index)
+            {
+                if (! twin.certified) { d.whyNot = "dual-mono pair '" + base + "': re-swept with '" + twin.name + "' written with '" + first.name + "', but the twin's own sweep did not certify"; return d; }
+                d.decided = true; d.rule = "dual_mono_pair"; d.pick = first.index; d.pickName = first.name; d.others.add (twin.name); d.pairWith = twin.index; d.pairWithName = twin.name;
+                d.note = "dual-mono pair '" + base + "' (measured): re-swept with '" + twin.name + "' written with '" + first.name + "' at every position; both channels measured" + (first.channelWorstDb ? " and within " + dbs (*first.channelWorstDb) + " dB of each other over " + juce::String (first.channelReadings) + " readings" : juce::String()) + "; the record is gated on the worse channel";
+                return d;
+            }
+            if (! channelsAgree (first, why))
+            {
+                // item dual_mono_pair (Kathy's ruling 3, 6 Oct - dbx-160 (s), Mixland Vac Attack, Maag MAGNUM-K): a channel pair whose
+                // first candidate moves only its own channel - both certify -> both thresholds are written together, both channels
+                // measured, the record gated on the worse channel. The pick is the first; the twin follows it at every write.
+                if (twin.certified && first.channelWorstDb)
+                {
+                    d.decided = true; d.rule = "dual_mono_pair"; d.pick = first.index; d.pickName = first.name; d.others.add (twin.name); d.pairWith = twin.index; d.pairWithName = twin.name;
+                    d.note = "dual-mono pair '" + base + "' (measured): both certified, and in the first's own sweep the output channels differ by up to " + dbs (*first.channelWorstDb) + " dB over " + juce::String (first.channelReadings)
+                           + " readings (bar " + dbs (kChannelAgreeDb) + ") - each threshold moves its own channel. '" + first.name + "' is the amount and '" + twin.name + "' is written WITH it at every position; both channels are measured and the record is gated on the worse";
+                    return d;
+                }
+                d.whyNot = "channel pair '" + base + "': " + why + " - the channels are independent, and the twin did not certify: no pair rule"; return d;
+            }
             if (twin.certified)
             {
                 int common = 0; double worst = 0.0;

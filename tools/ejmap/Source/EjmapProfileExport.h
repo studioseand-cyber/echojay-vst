@@ -542,12 +542,14 @@ inline Export exportCompProfile (const juce::var& f)
         if (const auto* ws = sweepVar.getProperty ("engageWrites", {}).getProperty ("writes", {}).getArray())
             for (const auto& w : *ws) engaged.insert ((int) w.getProperty ("index", -1));
         const auto nt = neverTouch (f);
+        // THE DUAL-MONO TWIN (ruled 6 Oct) is written with the amount, never as a neutral
+        const int pairIdx = (int) sweepVar.getProperty ("pairWrite", {}).getProperty ("index", (int) f.getProperty ("ruleDecided", {}).getProperty ("pair_with", {}).getProperty ("index", -1));
         if (const auto* cs = f.getProperty ("controls", {}).getArray())
             for (const auto& c : *cs)
             {
                 const int idx = (int) c.getProperty ("index", -1);
                 const auto name = c.getProperty ("name", "").toString();
-                if (idx == plan.thr || idx == plan.ratioIndex || engaged.count (idx) || nt.contains (name)) continue;
+                if (idx == plan.thr || idx == plan.ratioIndex || idx == pairIdx || engaged.count (idx) || nt.contains (name)) continue;
                 if (isReadoutOrMeter (c)) continue;
                 auto* o = new juce::DynamicObject();
                 o->setProperty ("control", name);
@@ -598,6 +600,10 @@ inline Export exportCompProfile (const juce::var& f)
         }
         // ... and the sweep's own landing (ruled 6 Oct, UnFairchild): decided above for the gate, said here
         if (! stepped && detentsByLanding >= 2) { stepped = true; a->setProperty ("stepped_by_evidence", "declared continuous; in its own sweep the writes landed only on " + juce::String (detentsByLanding) + " values (k/" + juce::String (detentsByLanding - 1) + "); the unlanded positions were dropped and the " + juce::String (detentsByLanding) + " that landed are those detents"); }
+        // THE PAIR (ruled 6 Oct): the server writes the twin WITH the amount, at the amount's norm, at every position
+        if (const auto pw = sweepVar.getProperty ("pairWrite", {}); pw.isObject())
+        { auto* po = new juce::DynamicObject(); po->setProperty ("control", pw.getProperty ("name", "")); po->setProperty ("index", pw.getProperty ("index", -1)); po->setProperty ("rule", "dual_mono_pair");
+          po->setProperty ("note", "written with the amount at the same norm at every position: each threshold moves its own channel; the sweep measured both channels this way and the tone check requires both within 0.5 dB of g"); a->setProperty ("pair_with", juce::var (po)); }
         if (dropped.dropped > 0) a->setProperty ("positions_dropped_unlanded", "dropped " + juce::String (dropped.dropped) + " position(s) whose write did not land (the control snapped): norms " + dropped.droppedNorms.joinIntoString (", "));
         a->setProperty ("stepped", stepped);
         P->setProperty ("amount", juce::var (a));

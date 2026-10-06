@@ -182,6 +182,9 @@ struct Plan
     // instantiate defaults, and a human reads curves instead of guessing from names. thr stays -1; the driver loops.
     struct Candidate { int index; juce::String name; juce::StringArray flags; bool quietReference; };
     std::vector<Candidate> candidates;
+    // THE PAIR WRITE (Kathy's ruling 3, 6 Oct - dbx-160 (s), Vac Attack, MAGNUM-K): a dual-mono pair's twin threshold is written
+    // WITH the amount at every position (the same norm), so both channels are measured and the record is gated on the worse one
+    int pairIndex = -1; juce::String pairName;
     Plan forCandidate (const Candidate& c) const
     {
         Plan q = *this;
@@ -1766,6 +1769,7 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     // WHAT WAS SWEPT, always (4 Oct): the control, its flags and the refinement rounds - what the follow-up compares its own
     // plan against to decide whether this record must be re-swept (EjmapLoop.h planDiffers)
     { auto* sc = new juce::DynamicObject(); sc->setProperty ("index", p.thr); sc->setProperty ("name", p.thrName); sc->setProperty ("flags", p.thrFlags.joinIntoString (",")); sc->setProperty ("refineRounds", p.refineRounds); s->setProperty ("sweptControl", juce::var (sc)); }
+    if (p.pairIndex >= 0) { auto* pw = new juce::DynamicObject(); pw->setProperty ("index", p.pairIndex); pw->setProperty ("name", p.pairName); pw->setProperty ("note", "the twin threshold was written with the amount at every position (dual-mono pair, ruled 6 Oct)"); s->setProperty ("pairWrite", juce::var (pw)); }
     // EVERY PRECONDITION THE PLAN WROTE (ratio raise, auto make-up off, the neutral set), with the text it read back as:
     // what the sweep actually ran at, never what was asked for.
     {

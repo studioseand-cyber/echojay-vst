@@ -4527,9 +4527,17 @@ void testCandidateRules()
     const auto vsc = decide ({ cand (4, "Threshold A", true, cv, 0.0, 665), cand (11, "Threshold B", true, cv, 0.0, 665) });
     check (vsc.decided && vsc.rule == "linked_pair" && vsc.pick == 4 && vsc.others == juce::StringArray { "Threshold B" } && vsc.note.contains ("measured, not by label") && vsc.note.contains ("0.00 dB over 17 common positions"),
            "pair P1 (Vertigo VSC-2): a channel-suffixed pair, both certified, curves equal, channels together -> linked_pair, the first is the amount, the twin named (" + vsc.note + ")");
-    // P2: the same names but the first's channels differ in its own sweep -> no rule (channels independent)
+    // P2 (ruled 6 Oct - dbx-160 (s), Mixland Vac Attack, MAGNUM-K): the same names but the first's channels differ in its own sweep ->
+    // the channels are independent: a DUAL-MONO PAIR, both certified - both thresholds written together, gated on the worse channel
     const auto indep = decide ({ cand (4, "Threshold A", true, cv, 3.2, 665), cand (11, "Threshold B", true, cv, 0.0, 665) });
-    check (! indep.decided && indep.whyNot.contains ("output channels differ by up to 3.20 dB") && indep.whyNot.contains ("channels are independent"), "pair P2: a pair whose first candidate's own sweep shows the channels apart is NOT a linked pair, and the row says why (" + indep.whyNot + ")");
+    check (indep.decided && indep.rule == "dual_mono_pair" && indep.pick == 4 && indep.pairWith == 11 && indep.pairWithName == "Threshold B" && indep.note.contains ("differ by up to 3.20 dB") && indep.note.contains ("written WITH it"),
+           "pair P2 (dual-mono): a pair whose first candidate's own sweep shows the channels apart, both certified -> dual_mono_pair, the twin written with the amount (" + indep.note + ")");
+    const auto indepTwinFlat = decide ({ cand (4, "Threshold A", true, cv, 3.2, 665), cand (11, "Threshold B", false, {}, 0.0, 665) });
+    check (! indepTwinFlat.decided && indepTwinFlat.whyNot.contains ("channels are independent") && indepTwinFlat.whyNot.contains ("twin did not certify"), "pair P2b: independent channels with a twin that did not certify: no rule (" + indepTwinFlat.whyNot + ")");
+    // P2c: the pair RE-SWEEP - the first's sweep wrote the twin with it, the channels now agree because of that write: still dual_mono_pair
+    { auto a = cand (4, "Threshold A", true, cv, 0.05, 665); a.pairWritten = 11; a.pairWrittenName = "Threshold B";
+      const auto re = decide ({ a, cand (11, "Threshold B", true, cv, 0.0, 665) });
+      check (re.decided && re.rule == "dual_mono_pair" && re.pairWith == 11 && re.note.contains ("re-swept with"), "pair P2c: a pair re-sweep (twin written with the first) stays dual_mono_pair, never linked_pair (" + re.note + ")"); }
     // P3: curves differ by 0.6 dB -> no rule; P3b: no per-channel readings -> no rule (never assumed)
     const auto diff = decide ({ cand (4, "Threshold A", true, cv, 0.0, 665), cand (11, "Threshold B", true, shifted, 0.0, 665) });
     check (! diff.decided && diff.whyNot.contains ("differ by up to 0.60 dB"), "pair P3: curves 0.6 dB apart are not a linked pair (" + diff.whyNot + ")");
@@ -5492,6 +5500,16 @@ void testProfileExport()
         const auto P = e.profile;
         check (P.getProperty ("measured", {}).getProperty ("sidechain", "").toString() == "self-keyed (as EchoJay 04e)" && P.getProperty ("measured", {}).getProperty ("extra_input_buses", {}).size() == 1,
                "export X-SC (ruled 6 Oct): the profile's measured block says the sidechain policy the sweep ran under, by the record's label, with the extra buses");
+        // X-PAIR (Kathy's ruling 3, 6 Oct): a sweep that wrote a twin with the amount exports amount.pair_with (control, index, rule) and keeps
+        // the twin OUT of neutral; the tone check's fixed writes then never write it as a neutral (it rides with the amount at every pick)
+        { auto pr = juce::JSON::parse (juce::JSON::toString (rec)); auto* pw = new juce::DynamicObject(); pw->setProperty ("index", 5); pw->setProperty ("name", "Attack"); pr.getProperty ("thresholdSweep", {}).getDynamicObject()->setProperty ("pairWrite", juce::var (pw));
+          const auto ep = exportCompProfile (pr);
+          bool attackNeutral = false; if (ep.ok) for (const auto& n : *ep.profile.getProperty ("neutral", {}).getArray()) if (n.getProperty ("control", "") == "Attack") attackNeutral = true;
+          check (ep.ok && (int) ep.profile.getProperty ("amount", {}).getProperty ("pair_with", {}).getProperty ("index", -1) == 5 && ep.profile.getProperty ("amount", {}).getProperty ("pair_with", {}).getProperty ("rule", "") == "dual_mono_pair" && ! attackNeutral,
+                 "export X-PAIR: pairWrite on the sweep -> amount.pair_with {Attack, 5, dual_mono_pair} and Attack is not a neutral (" + ep.refused + ")");
+          if (ep.ok) { juce::StringArray sp; juce::Array<juce::var> wp; juce::String np; toneWrites (ep.profile, pr, sp, wp, np); bool five = false; for (const auto& x : sp) if (x.startsWith ("5:")) five = true;
+                       check (! five, "export X-PAIR: the tone check's fixed writes do not write the twin (it is written with the amount at the pick's norm)"); }
+          check (! exportCompProfile (rec).profile.getProperty ("amount", {}).hasProperty ("pair_with"), "export X-PAIR: no pairWrite, no pair_with"); }
         const auto curve = P.getProperty ("amount", {}).getProperty ("curve", {});
         const double effPeak = (double) rec.getProperty ("thresholdSweep", {}).getProperty ("thresholdEffective1dB", {})[0];
         const auto steps = P.getProperty ("measured", {}).getProperty ("steps_dbfs", {});
@@ -6488,6 +6506,27 @@ void testLoopOutcomes()
             auto r2 = juce::JSON::parse (juce::JSON::toString (recJ)); check (applyReviewPick (r2, juce::var()).isEmpty() && ! r2.hasProperty ("pickedCandidate") && outcomeForRecord (r2).state == "needs_review", "loop L19n: without an entry nothing is ever picked");
             auto r3 = juce::JSON::parse (juce::JSON::toString (recJ)); const auto w3 = applyReviewPick (r3, juce::JSON::parse (R"json([{"product": "Shadow Hills Mastering Compressor", "candidate": "Discrete Threshold 1", "by": "KD", "date": "2026-10-04"}])json"));
             check (w3.contains ("but its sweep is flat: nothing picked") && ! r3.hasProperty ("pickedCandidate"), "loop L19o: an entry naming an uncertified candidate picks nothing and says why (" + w3 + ")");
+            // L19q (Kathy's ruling 3, 6 Oct - MAGNUM-K): "A + B as a pair" picks A and names B as the twin written WITH it; the record then
+            // owes a pair re-sweep until its picked sweep carries pairWrite for that twin
+            { auto r5 = juce::JSON::parse (juce::JSON::toString (recJ)); if (! r5.hasProperty ("controls")) r5.getDynamicObject()->setProperty ("controls", juce::Array<juce::var>());
+              const auto w5 = applyReviewPick (r5, juce::JSON::parse (R"json([{"product": "Shadow Hills Mastering Compressor", "candidate": "Optical Threshold 1 + Optical Threshold 2 as a pair", "by": "Kathy", "date": "2026-10-06", "note": "independent channels"}])json"));
+              const auto rd = r5.getProperty ("ruleDecided", {});
+              check (w5.startsWith ("review pick applied: 'Optical Threshold 1' + 'Optical Threshold 2' as a pair") && (int) r5.getProperty ("pickedCandidate", {}).getProperty ("index", -1) == 2
+                       && rd.getProperty ("pair_with", {}).getProperty ("name", "") == "Optical Threshold 2" && rd.getProperty ("ruleText", "").toString().contains ("written WITH"),
+                     "loop L19q: 'A + B as a pair' picks A with B as pair_with on ruleDecided (" + w5 + ")");
+              const auto pd = planDiffers (r5, ejmap::sweep::planFromFixture (r5));
+              check (pd.resweep && pd.why.contains ("the pair write") && pd.why.contains ("Optical Threshold 2"), "loop L19q: a pair-picked record whose sweep did not write the twin is re-swept for the pair write (" + pd.why + ")");
+              // the picked sweep carrying pairWrite for that twin closes it
+              for (const auto& c : *r5.getProperty ("thresholdCandidates", {}).getArray()) if ((int) c.getProperty ("index", -1) == 2) { auto* pw = new juce::DynamicObject(); pw->setProperty ("index", (int) rd.getProperty ("pair_with", {}).getProperty ("index", -1)); pw->setProperty ("name", "Optical Threshold 2"); c.getProperty ("thresholdSweep", {}).getDynamicObject()->setProperty ("pairWrite", juce::var (pw)); }
+              check (! planDiffers (r5, ejmap::sweep::planFromFixture (r5)).why.contains ("the pair write"), "loop L19q: once the picked sweep wrote the twin at every position the pair write is no longer owed");
+              // a changed entry (a later date) replaces an earlier review pick on the record; the same entry again changes nothing
+              { auto r7 = juce::JSON::parse (juce::JSON::toString (recJ)); applyReviewPick (r7, picks);
+                check (applyReviewPick (r7, picks).isEmpty() && (int) r7.getProperty ("pickedCandidate", {}).getProperty ("index", -1) == 2, "loop L19q2: the same review entry applied twice is applied once");
+                const auto w7 = applyReviewPick (r7, juce::JSON::parse (R"json([{"product": "Shadow Hills Mastering Compressor", "candidate": "Optical Threshold 1 + Optical Threshold 2 as a pair", "by": "Kathy", "date": "2026-10-06"}])json"));
+                check (w7.startsWith ("review pick applied") && r7.getProperty ("ruleDecided", {}).getProperty ("pair_with", {}).isObject() && r7.getProperty ("ruleDecided", {}).getProperty ("date", "") == "2026-10-06", "loop L19q2: a changed entry (later date, the pair) replaces the earlier review pick (" + w7 + ")"); }
+              auto r6 = juce::JSON::parse (juce::JSON::toString (recJ));
+              check (applyReviewPick (r6, juce::JSON::parse (R"json([{"product": "Shadow Hills Mastering Compressor", "candidate": "Optical Threshold 1 + Nothing as a pair", "by": "Kathy", "date": "2026-10-06"}])json")).contains ("not one of this record's candidates") && ! r6.hasProperty ("pickedCandidate"),
+                     "loop L19q: a pair naming a candidate the record does not have picks nothing"); }
             auto r4 = juce::JSON::parse (juce::JSON::toString (recJ)); check (applyReviewPick (r4, juce::JSON::parse (R"json([{"product": "Shadow Hills Mastering Compressor", "candidate": "Optical Threshold 1"}])json")).contains ("incomplete") && ! r4.hasProperty ("pickedCandidate"), "loop L19p: an entry without initials and a date is incomplete and picks nothing");
         }
         // OUT-OF-SCOPE STATES, ON (L19h-L19k, ruled 4 Oct): multiband by band-numbered or Low+Mid+High names; surround by Logic's (N->N), N > 2; neither needs_review; a decided record is never out of scope

@@ -404,11 +404,23 @@ inline juce::var reviewPickFor (const juce::var& picks, const juce::String& prod
 inline juce::String applyReviewPick (juce::var& record, const juce::var& picks)   // returns what happened, empty when no entry applies
 {
     const auto cands = record.getProperty ("thresholdCandidates", {});
-    if (! cands.isArray() || record.getProperty ("pickedCandidate", {}).isObject()) return {};
+    if (! cands.isArray()) return {};
     const auto pick = reviewPickFor (picks, record.getProperty ("product", "").toString());
     if (! pick.isObject()) return {};
-    const auto want = pick.getProperty ("candidate", "").toString(), by = pick.getProperty ("by", "").toString(), date = pick.getProperty ("date", "").toString();
+    // an earlier REVIEW pick on the record gives way to a changed entry (a later date, or another candidate - MAGNUM-K, 6 Oct);
+    // a measured rule's pick or an older entry's own pick stays
+    if (record.getProperty ("pickedCandidate", {}).isObject())
+    {
+        const auto rd = record.getProperty ("ruleDecided", {});
+        const bool byReview = rd.getProperty ("rule", "").toString() == "review_pick";
+        const bool changed = rd.getProperty ("date", "").toString() != pick.getProperty ("date", "").toString() || rd.getProperty ("entry", "").toString() != pick.getProperty ("candidate", "").toString();
+        if (! (byReview && changed)) return {};
+    }
+    auto want = pick.getProperty ("candidate", "").toString(); const auto by = pick.getProperty ("by", "").toString(), date = pick.getProperty ("date", "").toString();
     if (want.isEmpty() || by.isEmpty() || date.isEmpty()) return "review pick entry incomplete (needs candidate, by, date): nothing picked";
+    // "A + B as a pair" (ruled 6 Oct, MAGNUM-K): A is the amount, B is written WITH it at every position (a dual-mono pair)
+    juce::String pairName;
+    if (want.endsWith (" as a pair") && want.contains (" + ")) { const auto both = want.dropLastCharacters (10); want = both.upToFirstOccurrenceOf (" + ", false, false).trim(); pairName = both.fromFirstOccurrenceOf (" + ", false, false).trim(); }
     for (int i = 0; i < cands.size(); ++i)
     {
         if (cands[i].getProperty ("name", "").toString() != want) continue;
@@ -416,13 +428,20 @@ inline juce::String applyReviewPick (juce::var& record, const juce::var& picks) 
         if (res != "certified") return "review pick names '" + want + "' but its sweep is " + (res.isEmpty() ? juce::String ("absent") : res) + ": nothing picked";
         auto* pk = new juce::DynamicObject(); pk->setProperty ("index", cands[i].getProperty ("index", -1)); pk->setProperty ("name", want);
         pk->setProperty ("note", "review pick by " + by + " on " + date + " (cert/review_picks.json)");
-        auto* rd = new juce::DynamicObject(); rd->setProperty ("rule", "review_pick"); rd->setProperty ("by", by); rd->setProperty ("date", date);
+        auto* rd = new juce::DynamicObject(); rd->setProperty ("rule", "review_pick"); rd->setProperty ("by", by); rd->setProperty ("date", date); rd->setProperty ("entry", pick.getProperty ("candidate", ""));
         rd->setProperty ("ruleText", "picked by " + by + " on " + date + " from the candidates' 2 dB curves and verdicts (review_picks.json)" + (pick.getProperty ("note", "").toString().isNotEmpty() ? ": " + pick.getProperty ("note", "").toString() : juce::String())
                                      + "; the other candidates stay at their instantiate values (neutral); the tone check writes in the server's order and requires both output channels within 0.5 dB of g, as for a pair rule");
         auto* pv = new juce::DynamicObject(); pv->setProperty ("index", cands[i].getProperty ("index", -1)); pv->setProperty ("name", want); rd->setProperty ("pick", juce::var (pv));
         juce::Array<juce::var> others; for (int k = 0; k < cands.size(); ++k) if (k != i) others.add (cands[k].getProperty ("name", "")); rd->setProperty ("trims", others);
+        if (pairName.isNotEmpty())
+        {
+            int pi = -1; for (int k = 0; k < cands.size(); ++k) if (cands[k].getProperty ("name", "").toString() == pairName) pi = (int) cands[k].getProperty ("index", -1);
+            if (pi < 0) return "review pick names '" + pairName + "' as the pair, which is not one of this record's candidates: nothing picked";
+            auto* pw = new juce::DynamicObject(); pw->setProperty ("index", pi); pw->setProperty ("name", pairName); rd->setProperty ("pair_with", juce::var (pw));
+            rd->setProperty ("ruleText", rd->getProperty ("ruleText").toString() + "; PAIR: '" + pairName + "' is written WITH '" + want + "' at every position (dual-mono pair, ruled 6 Oct), both channels measured, gated on the worse");
+        }
         record.getDynamicObject()->setProperty ("pickedCandidate", juce::var (pk)); record.getDynamicObject()->setProperty ("ruleDecided", juce::var (rd));
-        return "review pick applied: '" + want + "' by " + by + " on " + date;
+        return "review pick applied: '" + want + "'" + (pairName.isNotEmpty() ? " + '" + pairName + "' as a pair" : juce::String()) + " by " + by + " on " + date;
     }
     return "review pick names '" + want + "', which is not one of this record's candidates: nothing picked";
 }
@@ -437,6 +456,17 @@ struct PlanDiff { bool resweep = false; juce::String why; };
 inline PlanDiff planDiffers (const juce::var& record, const sweep::Plan& now)
 {
     PlanDiff d;
+    // THE PAIR WRITE (Kathy's ruling 3, 6 Oct): a record decided as a dual-mono pair (measured, or a review pick "A + B as a pair")
+    // whose picked candidate was not swept with the twin written at every position is re-swept that way
+    if (const auto rd = record.getProperty ("ruleDecided", {}); rd.getProperty ("pair_with", {}).isObject() && record.getProperty ("controls", {}).isArray())
+    {
+        const int pick = (int) rd.getProperty ("pick", {}).getProperty ("index", -1), twin = (int) rd.getProperty ("pair_with", {}).getProperty ("index", -1);
+        juce::var view;
+        if (const auto* cs = record.getProperty ("thresholdCandidates", {}).getArray()) for (const auto& c : *cs) if ((int) c.getProperty ("index", -1) == pick) view = c.getProperty ("thresholdSweep", {});
+        if (! view.isObject()) view = record.getProperty ("thresholdSweep", {});
+        if (view.isObject() && (int) view.getProperty ("pairWrite", {}).getProperty ("index", -2) != twin)
+        { d.resweep = true; d.why = "the pair write: '" + rd.getProperty ("pair_with", {}).getProperty ("name", "").toString() + "' must be written with '" + rd.getProperty ("pick", {}).getProperty ("name", "").toString() + "' at every position (dual-mono pair, ruled 6 Oct) and this sweep did not"; return d; }
+    }
     if (! record.getProperty ("controls", {}).isArray()) return d;
     // A TUNER (4 Oct, A4): re-measured when it was measured under an older tuner procedure (no pitchPlan, or an earlier
     // version): detents by evidence and the adaptive speed half period are plan changes the record cannot show otherwise

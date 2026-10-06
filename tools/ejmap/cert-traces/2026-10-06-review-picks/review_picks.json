@@ -1,0 +1,51 @@
+[
+ {
+  "product": "MaxxVolume (m)",
+  "candidate": "High Level Thresh",
+  "by": "Kathy",
+  "date": "2026-10-05",
+  "note": "the downward compressor stage; Low Level (leveller) stays off at -96"
+ },
+ {
+  "product": "MaxxVolume (s)",
+  "candidate": "High Level Thresh",
+  "by": "Kathy",
+  "date": "2026-10-05",
+  "note": "the downward compressor stage; Low Level (leveller) stays off at -96"
+ },
+ {
+  "product": "VBC Rack",
+  "candidate": "MU Threshold Left",
+  "by": "Kathy",
+  "date": "2026-10-05",
+  "note": "the rack's MU compressor; Red and Grey off at default; L/R curves identical"
+ },
+ {
+  "product": "Maag MAGNUM-K",
+  "candidate": "Threshold 1 + Threshold 2 as a pair",
+  "by": "Kathy",
+  "date": "2026-10-06",
+  "note": "independent channels: the 5 Oct check on Threshold 1 alone read 0.67 / 0.32 dB per channel against 2.0 - the twin at its instantiate value left the other channel uncompressed; both thresholds are written together (dual-mono pair), both channels measured, gated on the worse (ruled 6 Oct)"
+ },
+ {
+  "product": "Shadow Hills Mastering Compressor",
+  "candidate": "Discrete Threshold 1",
+  "by": "Kathy",
+  "date": "2026-10-05",
+  "note": "discrete (VCA) stage: wider, even range; optical stage stays at its non-compressing default"
+ },
+ {
+  "product": "Shadow Hills Class A Mastering Comp",
+  "candidate": "Discrete Threshold 1",
+  "by": "Kathy",
+  "date": "2026-10-05",
+  "note": "discrete (VCA) stage: wider, even range; optical stage stays at its non-compressing default"
+ },
+ {
+  "product": "Auto-Tune Vocal Compressor",
+  "candidate": "Mod Comp 1 Thresh dB",
+  "by": "Kathy",
+  "date": "2026-10-05",
+  "note": "the only stage active at default; the other three are flat"
+ }
+]
