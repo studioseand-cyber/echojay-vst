@@ -7,8 +7,11 @@ re-derives each exported record from its traces, re-exports the profile with the
 certified plugin only for the tone checks. **The rows whose plan changed under this build are re-swept by the
 same command, which decides that itself** (below); you never name a product. It is resumable and uses the same window watch.
 
-**The follow-up build is commit `17ebf114`** (branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
-step 1 with that commit checked out — NOT `36397676`, which is the batch build and stays as it is). It carries v1.8–v2.1, the raw hold test, and the 4 Oct rules from your run (the measured pair rules, the licence row, the
+**The follow-up build is commit `804a0a56`** (6 Oct; branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
+step 1 with that commit checked out — NOT `36397676`, which is the batch build and stays as it is, and **NOT `17ebf114` or
+`b0258a7b`**: both carry the write bug — their re-derive dropped every record's sweep-time writes, so a tone check wrote Zip's
+ratio at 1:1 and the VBC profiles said mix 0 % — and the collapse bug, where the landing read wrote a picked candidate's view
+over its record; `804a0a56` repairs both from the records' own traces). It carries everything 17ebf114 did: v1.8–v2.1, the raw hold test, and the 4 Oct rules from your run (the measured pair rules, the licence row, the
 out-of-scope states, the review pick, the range re-sample, the repeat repair; round 2: input-drive and one-knob amount controls, stepped by evidence; round 3: multiband names, picks on stereo units, the re-sweeps it decides itself; the 4/5 Oct night: the sidechain left unconnected with the evidence-based re-sweep, `inert`, tuner plan v2 with the v0.1 measurements, Sean's stepped rule):
 targets 1..12 with the clamp to 30 and the saturation note, the reverse read, the depth-aware clamp, the vocal-anchored tone level, every deep null accounted for in `notes` (a list),
 out-of-order deep points nulled before export, the shallow-break refusal, the known-licence skip and the §11 guard.
@@ -82,14 +85,7 @@ cd ~/Library/ejmap && zip -rq ~/Desktop/ejmap-tonecheck-$(hostname -s)-$(date +%
 unzip -l ~/Desktop/ejmap-tonecheck-$(hostname -s)-$(date +%Y%m%d).zip | grep -c config.json      # must print 0
 ```
 
-```
-BIN=/Applications/ejmap.app/Contents/MacOS/ejmap
-"$BIN" --cert-preflight
-mkdir -p ~/Library/ejmap/cert                     # the folder exists after the batch; harmless, and tee needs it
-caffeinate -i "$BIN" --cert-tonecheck-all 2>&1 | tee -a ~/Library/ejmap/cert/tonecheck.log
-```
-
-Per exported product it: re-derives the record from `cert/<identity>.sweep.processes.json` + `cert/raw/`
+What that one command does, per exported product: re-derives the record from `cert/<identity>.sweep.processes.json` + `cert/raw/`
 (keeping the detector, Rule 1's decision, the map state); re-exports `cert/profiles/<Product>.json`
 with `in_at_gr_dbfs` 1–6 and `quality.deep_point_error_db`; runs the tone check at g = 2 with the v1.7
 pick, then one check per deep level the profile carries (4, 5, 6), each to 0.5 dB; a failing deep level
