@@ -1,0 +1,17 @@
+LIMITER: text pass: 10 of 13 controls sampled in 2.6 s (timeout 120 s, scaled to the count)
+LIMITER: bx_limiter: no ceiling control by name (ceiling / margin): measurement looks for one; controls: Bypass, Bank, Gain Boost, Threshold, Release, Channel Link, XL Active, XL, Output Dim, Mix
+  amount hard end without a ceiling: norm 0.0 (true peak -25.01 at 0.0 vs -1.03 at 1.0: the lower)
+  [2] Gain Boost: the output peak moves 0.00 dB (needs 1)
+  [4] Release: the output peak moves 0.00 dB (needs 1)
+  [5] Channel Link: the output peak moves 0.00 dB (needs 1)
+  [7] XL: the output peak moves 0.02 dB (needs 1)
+  [8] Output Dim: nominated by measurement (the lexicon found nothing): the output peak moves 9.00 dB and holds against a 6 dB drive change (0.00)
+  [9] Mix: nominated by measurement (the lexicon found nothing): the output peak moves 24.01 dB and holds against a 6 dB drive change (0.00)
+LIMITER: the lexicon nominated no ceiling; measurement probed 6 control(s) at their ends and nominated [9] Mix
+LIMITER: bx_limiter 1.15.2: ceiling [9] Mix, amount [3] Threshold, no oversampling switch
+  hard end: norm 0.0 (true peak -1.00 at 0.0 vs -1.00 at 1.0; the end pinned at the ceiling 0 %)
+  ceiling 0 % (0.0): sample peak -1.00 (-1.00), true peak -1.00 (-1.00)
+  ROLES BY MEASUREMENT: 1 verdict(s), 5 unnamed control(s) probed without the signature
+    measured role ceiling, UNNAMED  [9] Mix - nominated by measurement (the lexicon found nothing): the output peak moves 24.01 dB and holds against a 6 dB drive change (0.00)
+  verdict: sample OVER, true peak OVER - no ceiling position was driven (the output sat over 0.5 dB below every label)
+LIMITER: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/lm/phaseb/limiter/.tmp-AudioUnit_417f7d6d_1.15.2/limiter/AudioUnit_417f7d6d_1.15.2.limiter.json

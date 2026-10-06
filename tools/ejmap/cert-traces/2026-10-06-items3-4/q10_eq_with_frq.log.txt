@@ -1,0 +1,244 @@
+EQ: text pass: 54 of 54 controls sampled in 15.6 s (timeout 120 s, scaled to the count)
+EQ: Q10 (m) 12.0.0: 10 band(s) by name
+  band 'Band 1': gain [2] Band 1 Gain, freq [3] Band 1 Frq, q [4] Band 1 Q
+    engage search: [0] Band 1 On/Off -> 'In' (norm 1.00): the band now moves
+    gain -18.0: measured centre 31.0678 Hz, gain -17.48 dB, bw 0.29 oct
+    gain -12.0: measured centre 31.0645 Hz, gain -11.84 dB, bw 0.50 oct
+    gain -6.0: measured centre 31.0616 Hz, gain -5.95 dB, bw 1.07 oct
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 6.0: measured centre 31.0616 Hz, gain 5.95 dB, bw 1.07 oct
+    gain 12.0: measured centre 31.0627 Hz, gain 11.84 dB, bw 0.50 oct
+    gain 18.0: measured centre 31.0685 Hz, gain 17.48 dB, bw 0.29 oct
+    freq 16 (gain at 6.0): shelf low_shelf corner 25.8493 Hz, plateau 4.34
+    freq 52 (gain at 6.0): measured centre 53.0788 Hz, gain 5.93, bw 1.07 oct
+    freq 173 (gain at 6.0): measured centre 173.305 Hz, gain 5.96, bw 1.06 oct
+    freq 578 (gain at 6.0): measured centre 577.851 Hz, gain 5.97, bw 1.06 oct
+    freq 1924 (gain at 6.0): measured centre 1923.51 Hz, gain 5.98, bw 1.05 oct
+    freq 6411 (gain at 6.0): measured centre 6406.1 Hz, gain 5.99, bw 1.04 oct
+    freq 21357 (gain at 6.0): shelf high_shelf corner 11043.2 Hz, plateau 5.87
+    q 0.5: shelf (low_shelf)
+    q 1.9: shelf (low_shelf)
+    q 7.1: measured bw 1.05 oct (centre 31.0612, gain 5.95)
+    q 26.6: measured bw 0.36 oct (centre 31.0735, gain 5.39)
+    q 100.0: shelf (broad)
+  band 'Band 10': gain [47] Band 10 Gain, freq [48] Band 10 Frq, q [49] Band 10 Q
+    engage search: [45] Band 10 On/Off -> 'In' (norm 1.00): the band now moves
+    gain -18.0: measured centre 15934.3 Hz, gain -17.97 dB, bw 0.26 oct
+    gain -12.0: measured centre 15939.6 Hz, gain -11.99 dB, bw 0.48 oct
+    gain -6.0: shelf centre 15940.8 Hz, gain -6.00 dB (high_shelf)
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 6.0: shelf centre 15942.5 Hz, gain 6.00 dB (high_shelf)
+    gain 12.0: measured centre 15939.5 Hz, gain 11.99 dB, bw 0.48 oct
+    gain 18.0: measured centre 15934.3 Hz, gain 17.97 dB, bw 0.26 oct
+    freq 16 (gain at 6.0): shelf low_shelf corner 25.8493 Hz, plateau 4.34
+    freq 52 (gain at 6.0): measured centre 53.0788 Hz, gain 5.93, bw 1.07 oct
+    freq 173 (gain at 6.0): measured centre 173.305 Hz, gain 5.96, bw 1.06 oct
+    freq 578 (gain at 6.0): measured centre 577.851 Hz, gain 5.97, bw 1.06 oct
+    freq 1924 (gain at 6.0): measured centre 1923.51 Hz, gain 5.98, bw 1.05 oct
+    freq 6411 (gain at 6.0): measured centre 6406.1 Hz, gain 5.99, bw 1.04 oct
+    freq 21357 (gain at 6.0): shelf high_shelf corner 11043.2 Hz, plateau 5.87
+    q 0.5: shelf (high_shelf)
+    q 1.9: shelf (high_shelf)
+    q 7.1: shelf (high_shelf)
+    q 26.6: measured bw 0.29 oct (centre 15927.2, gain 5.97)
+    q 100.0: measured bw 0.11 oct (centre 15896.8, gain 5.55)
+  band 'Band 2': gain [7] Band 2 Gain, freq [8] Band 2 Frq, q [9] Band 2 Q
+    engage search: [5] Band 2 On/Off -> 'In' (norm 1.00): the band now moves
+    gain -18.0: measured centre 63.0739 Hz, gain -17.48 dB, bw 0.29 oct
+    gain -12.0: measured centre 63.0712 Hz, gain -11.84 dB, bw 0.50 oct
+    gain -6.0: measured centre 63.0663 Hz, gain -5.95 dB, bw 1.06 oct
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 6.0: measured centre 63.0663 Hz, gain 5.95 dB, bw 1.06 oct
+    gain 12.0: measured centre 63.0669 Hz, gain 11.84 dB, bw 0.50 oct
+    gain 18.0: measured centre 63.0724 Hz, gain 17.47 dB, bw 0.29 oct
+    freq 16 (gain at 6.0): shelf low_shelf corner 25.8493 Hz, plateau 4.34
+    freq 52 (gain at 6.0): measured centre 53.0788 Hz, gain 5.93, bw 1.07 oct
+    freq 173 (gain at 6.0): measured centre 173.305 Hz, gain 5.96, bw 1.06 oct
+    freq 578 (gain at 6.0): measured centre 577.851 Hz, gain 5.97, bw 1.06 oct
+    freq 1924 (gain at 6.0): measured centre 1923.51 Hz, gain 5.98, bw 1.05 oct
+    freq 6411 (gain at 6.0): measured centre 6406.1 Hz, gain 5.99, bw 1.04 oct
+    freq 21357 (gain at 6.0): shelf high_shelf corner 11043.2 Hz, plateau 5.87
+    q 0.5: shelf (low_shelf)
+    q 1.9: measured bw 3.23 oct (centre 61.9677, gain 6.00)
+    q 7.1: measured bw 1.05 oct (centre 63.065, gain 5.95)
+    q 26.6: measured bw 0.35 oct (centre 63.0802, gain 5.39)
+    q 100.0: shelf (broad)
+  band 'Band 3': gain [12] Band 3 Gain, freq [13] Band 3 Frq, q [14] Band 3 Q
+    engage search: [10] Band 3 On/Off -> 'In' (norm 1.00): the band now moves
+    gain -18.0: measured centre 124.319 Hz, gain -17.97 dB, bw 0.26 oct
+    gain -12.0: measured centre 124.175 Hz, gain -11.99 dB, bw 0.49 oct
+    gain -6.0: measured centre 124.115 Hz, gain -6.00 dB, bw 1.05 oct
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 6.0: measured centre 124.128 Hz, gain 6.00 dB, bw 1.05 oct
+    gain 12.0: measured centre 124.175 Hz, gain 11.99 dB, bw 0.49 oct
+    gain 18.0: measured centre 124.32 Hz, gain 17.96 dB, bw 0.26 oct
+    freq 16 (gain at 6.0): shelf low_shelf corner 25.8493 Hz, plateau 4.34
+    freq 52 (gain at 6.0): measured centre 53.0788 Hz, gain 5.93, bw 1.07 oct
+    freq 173 (gain at 6.0): measured centre 173.305 Hz, gain 5.96, bw 1.06 oct
+    freq 578 (gain at 6.0): measured centre 577.851 Hz, gain 5.97, bw 1.06 oct
+    freq 1924 (gain at 6.0): measured centre 1923.51 Hz, gain 5.98, bw 1.05 oct
+    freq 6411 (gain at 6.0): measured centre 6406.1 Hz, gain 5.99, bw 1.04 oct
+    freq 21357 (gain at 6.0): shelf high_shelf corner 11043.2 Hz, plateau 5.87
+    q 0.5: shelf (low_shelf)
+    q 1.9: measured bw 3.23 oct (centre 123.985, gain 6.00)
+    q 7.1: measured bw 1.04 oct (centre 124.127, gain 6.00)
+    q 26.6: measured bw 0.29 oct (centre 124.516, gain 5.96)
+    q 100.0: measured bw 0.11 oct (centre 125.54, gain 5.45)
+  band 'Band 4': gain [17] Band 4 Gain, freq [18] Band 4 Frq, q [19] Band 4 Q
+    engage search: [15] Band 4 On/Off -> 'In' (norm 1.00): the band now moves
+    gain -18.0: measured centre 250.647 Hz, gain -17.97 dB, bw 0.26 oct
+    gain -12.0: measured centre 250.503 Hz, gain -11.99 dB, bw 0.49 oct
+    gain -6.0: measured centre 250.459 Hz, gain -6.00 dB, bw 1.05 oct
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 6.0: measured centre 250.459 Hz, gain 6.00 dB, bw 1.05 oct
+    gain 12.0: measured centre 250.508 Hz, gain 11.99 dB, bw 0.49 oct
+    gain 18.0: measured centre 250.648 Hz, gain 17.96 dB, bw 0.26 oct
+    freq 16 (gain at 6.0): shelf low_shelf corner 25.8493 Hz, plateau 4.34
+    freq 52 (gain at 6.0): measured centre 53.0788 Hz, gain 5.93, bw 1.07 oct
+    freq 173 (gain at 6.0): measured centre 173.305 Hz, gain 5.96, bw 1.06 oct
+    freq 578 (gain at 6.0): measured centre 577.851 Hz, gain 5.97, bw 1.06 oct
+    freq 1924 (gain at 6.0): measured centre 1923.51 Hz, gain 5.98, bw 1.05 oct
+    freq 6411 (gain at 6.0): measured centre 6406.1 Hz, gain 5.99, bw 1.04 oct
+    freq 21357 (gain at 6.0): shelf high_shelf corner 11043.2 Hz, plateau 5.87
+    q 0.5: measured bw 6.76 oct (centre 252, gain 6.00)
+    q 1.9: measured bw 3.22 oct (centre 250.383, gain 6.00)
+    q 7.1: measured bw 1.03 oct (centre 250.454, gain 6.00)
+    q 26.6: measured bw 0.29 oct (centre 250.829, gain 5.96)
+    q 100.0: measured bw 0.11 oct (centre 251.671, gain 5.45)
+  band 'Band 5': gain [22] Band 5 Gain, freq [23] Band 5 Frq, q [24] Band 5 Q
+    engage search: [20] Band 5 On/Off -> 'In' (norm 1.00): the band now moves
+    gain -18.0: measured centre 500.173 Hz, gain -17.99 dB, bw 0.26 oct
+    gain -12.0: measured centre 499.96 Hz, gain -12.00 dB, bw 0.48 oct
+    gain -6.0: measured centre 499.869 Hz, gain -6.00 dB, bw 1.05 oct
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 6.0: measured centre 499.909 Hz, gain 6.00 dB, bw 1.05 oct
+    gain 12.0: measured centre 499.972 Hz, gain 12.00 dB, bw 0.48 oct
+    gain 18.0: measured centre 500.168 Hz, gain 17.99 dB, bw 0.26 oct
+    freq 16 (gain at 6.0): shelf low_shelf corner 25.8493 Hz, plateau 4.34
+    freq 52 (gain at 6.0): measured centre 53.0788 Hz, gain 5.93, bw 1.07 oct
+    freq 173 (gain at 6.0): measured centre 173.305 Hz, gain 5.96, bw 1.06 oct
+    freq 578 (gain at 6.0): measured centre 577.851 Hz, gain 5.97, bw 1.06 oct
+    freq 1924 (gain at 6.0): measured centre 1923.51 Hz, gain 5.98, bw 1.05 oct
+    freq 6411 (gain at 6.0): measured centre 6406.1 Hz, gain 5.99, bw 1.04 oct
+    freq 21357 (gain at 6.0): shelf high_shelf corner 11043.2 Hz, plateau 5.87
+    q 0.5: measured bw 6.73 oct (centre 502, gain 6.00)
+    q 1.9: measured bw 3.22 oct (centre 499.578, gain 6.00)
+    q 7.1: measured bw 1.03 oct (centre 499.923, gain 6.00)
+    q 26.6: measured bw 0.29 oct (centre 500.44, gain 5.99)
+    q 100.0: measured bw 0.10 oct (centre 501.611, gain 5.85)
+  band 'Band 6': gain [27] Band 6 Gain, freq [28] Band 6 Frq, q [29] Band 6 Q
+    engage search: [25] Band 6 On/Off -> 'In' (norm 1.00): the band now moves
+    gain -18.0: measured centre 1000.04 Hz, gain -18.00 dB, bw 0.26 oct
+    gain -12.0: measured centre 999.809 Hz, gain -12.00 dB, bw 0.48 oct
+    gain -6.0: measured centre 999.717 Hz, gain -6.00 dB, bw 1.05 oct
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 6.0: measured centre 999.717 Hz, gain 6.00 dB, bw 1.05 oct
+    gain 12.0: measured centre 999.809 Hz, gain 12.00 dB, bw 0.48 oct
+    gain 18.0: measured centre 1000.04 Hz, gain 18.00 dB, bw 0.26 oct
+    freq 16 (gain at 6.0): shelf low_shelf corner 25.8493 Hz, plateau 4.34
+    freq 52 (gain at 6.0): measured centre 53.0788 Hz, gain 5.93, bw 1.07 oct
+    freq 173 (gain at 6.0): measured centre 173.305 Hz, gain 5.96, bw 1.06 oct
+    freq 578 (gain at 6.0): measured centre 577.851 Hz, gain 5.97, bw 1.06 oct
+    freq 1924 (gain at 6.0): measured centre 1923.51 Hz, gain 5.98, bw 1.05 oct
+    freq 6411 (gain at 6.0): measured centre 6406.1 Hz, gain 5.99, bw 1.04 oct
+    freq 21357 (gain at 6.0): shelf high_shelf corner 11043.2 Hz, plateau 5.87
+    q 0.5: measured bw 6.61 oct (centre 1002, gain 6.00)
+    q 1.9: measured bw 3.21 oct (centre 999.575, gain 6.00)
+    q 7.1: measured bw 1.03 oct (centre 999.69, gain 6.00)
+    q 26.6: measured bw 0.29 oct (centre 1000.33, gain 6.00)
+    q 100.0: measured bw 0.10 oct (centre 1001.6, gain 5.96)
+  band 'Band 7': gain [32] Band 7 Gain, freq [33] Band 7 Frq, q [34] Band 7 Q
+    engage search: [30] Band 7 On/Off -> 'In' (norm 1.00): the band now moves
+    gain -18.0: measured centre 2000.19 Hz, gain -18.00 dB, bw 0.26 oct
+    gain -12.0: measured centre 2000.23 Hz, gain -12.00 dB, bw 0.48 oct
+    gain -6.0: measured centre 2000.19 Hz, gain -6.00 dB, bw 1.05 oct
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 6.0: measured centre 2000.19 Hz, gain 6.00 dB, bw 1.05 oct
+    gain 12.0: measured centre 2000.23 Hz, gain 12.00 dB, bw 0.48 oct
+    gain 18.0: measured centre 2000.21 Hz, gain 18.00 dB, bw 0.26 oct
+    freq 16 (gain at 6.0): shelf low_shelf corner 25.8493 Hz, plateau 4.34
+    freq 52 (gain at 6.0): measured centre 53.0788 Hz, gain 5.93, bw 1.07 oct
+    freq 173 (gain at 6.0): measured centre 173.305 Hz, gain 5.96, bw 1.06 oct
+    freq 578 (gain at 6.0): measured centre 577.851 Hz, gain 5.97, bw 1.06 oct
+    freq 1924 (gain at 6.0): measured centre 1923.51 Hz, gain 5.98, bw 1.05 oct
+    freq 6411 (gain at 6.0): measured centre 6406.1 Hz, gain 5.99, bw 1.04 oct
+    freq 21357 (gain at 6.0): shelf high_shelf corner 11043.2 Hz, plateau 5.87
+    q 0.5: measured bw 6.30 oct (centre 2000, gain 6.00)
+    q 1.9: measured bw 3.18 oct (centre 2000, gain 6.00)
+    q 7.1: measured bw 1.03 oct (centre 2000.18, gain 6.00)
+    q 26.6: measured bw 0.29 oct (centre 2000.16, gain 6.00)
+    q 100.0: measured bw 0.10 oct (centre 2000.04, gain 6.00)
+  band 'Band 8': gain [37] Band 8 Gain, freq [38] Band 8 Frq, q [39] Band 8 Q
+    engage search: [35] Band 8 On/Off -> 'In' (norm 1.00): the band now moves
+    gain -18.0: measured centre 3997.52 Hz, gain -18.00 dB, bw 0.26 oct
+    gain -12.0: measured centre 3998.34 Hz, gain -12.00 dB, bw 0.48 oct
+    gain -6.0: measured centre 3998.77 Hz, gain -6.00 dB, bw 1.04 oct
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 6.0: measured centre 3998.77 Hz, gain 6.00 dB, bw 1.04 oct
+    gain 12.0: measured centre 3998.44 Hz, gain 12.00 dB, bw 0.48 oct
+    gain 18.0: measured centre 3997.56 Hz, gain 18.00 dB, bw 0.26 oct
+    freq 16 (gain at 6.0): shelf low_shelf corner 25.8493 Hz, plateau 4.34
+    freq 52 (gain at 6.0): measured centre 53.0788 Hz, gain 5.93, bw 1.07 oct
+    freq 173 (gain at 6.0): measured centre 173.305 Hz, gain 5.96, bw 1.06 oct
+    freq 578 (gain at 6.0): measured centre 577.851 Hz, gain 5.97, bw 1.06 oct
+    freq 1924 (gain at 6.0): measured centre 1923.51 Hz, gain 5.98, bw 1.05 oct
+    freq 6411 (gain at 6.0): measured centre 6406.1 Hz, gain 5.99, bw 1.04 oct
+    freq 21357 (gain at 6.0): shelf high_shelf corner 11043.2 Hz, plateau 5.87
+    q 0.5: measured bw 5.84 oct (centre 3990, gain 6.00)
+    q 1.9: measured bw 3.08 oct (centre 3999.56, gain 6.00)
+    q 7.1: measured bw 1.03 oct (centre 3998.89, gain 6.00)
+    q 26.6: measured bw 0.29 oct (centre 3996.42, gain 5.99)
+    q 100.0: measured bw 0.10 oct (centre 3991.58, gain 5.94)
+  band 'Band 9': gain [42] Band 9 Gain, freq [43] Band 9 Frq, q [44] Band 9 Q
+    engage search: [40] Band 9 On/Off -> 'In' (norm 1.00): the band now moves
+    gain -18.0: measured centre 7989.87 Hz, gain -17.99 dB, bw 0.26 oct
+    gain -12.0: measured centre 7992.99 Hz, gain -12.00 dB, bw 0.48 oct
+    gain -6.0: measured centre 7993.95 Hz, gain -6.00 dB, bw 1.03 oct
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 6.0: measured centre 7994.6 Hz, gain 6.00 dB, bw 1.03 oct
+    gain 12.0: measured centre 7993.25 Hz, gain 12.00 dB, bw 0.48 oct
+    gain 18.0: measured centre 7989.87 Hz, gain 17.99 dB, bw 0.26 oct
+    freq 16 (gain at 6.0): shelf low_shelf corner 25.8493 Hz, plateau 4.34
+    freq 52 (gain at 6.0): measured centre 53.0788 Hz, gain 5.93, bw 1.07 oct
+    freq 173 (gain at 6.0): measured centre 173.305 Hz, gain 5.96, bw 1.06 oct
+    freq 578 (gain at 6.0): measured centre 577.851 Hz, gain 5.97, bw 1.06 oct
+    freq 1924 (gain at 6.0): measured centre 1923.51 Hz, gain 5.98, bw 1.05 oct
+    freq 6411 (gain at 6.0): measured centre 6406.1 Hz, gain 5.99, bw 1.04 oct
+    freq 21357 (gain at 6.0): shelf high_shelf corner 11043.2 Hz, plateau 5.87
+    q 0.5: shelf (high_shelf)
+    q 1.9: measured bw 2.85 oct (centre 7991.96, gain 6.00)
+    q 7.1: measured bw 1.02 oct (centre 7994.4, gain 6.00)
+    q 26.6: measured bw 0.29 oct (centre 7985.72, gain 5.98)
+    q 100.0: measured bw 0.11 oct (centre 7967.97, gain 5.79)
+  ROLES BY MEASUREMENT: 30 verdict(s), 2 unnamed control(s) probed without the signature; frequency and q signatures need a boosted band: unnamed controls are probed for the gain signature only
+    role eq_gain CONFIRMED  [2] Band 1 Gain - the band's gain moves 34.95 dB
+    role frequency CONFIRMED  [3] Band 1 Frq - the centre moves 25.8493 -> 11043.2 Hz (8.74 oct)
+    role q DROPPED    [4] Band 1 Q - no bandwidth at both ends
+    role eq_gain CONFIRMED  [47] Band 10 Gain - the band's gain moves 35.94 dB
+    role frequency CONFIRMED  [48] Band 10 Frq - the centre moves 25.8493 -> 11043.2 Hz (8.74 oct)
+    role q DROPPED    [49] Band 10 Q - no bandwidth at both ends
+    role eq_gain CONFIRMED  [7] Band 2 Gain - the band's gain moves 34.95 dB
+    role frequency CONFIRMED  [8] Band 2 Frq - the centre moves 25.8493 -> 11043.2 Hz (8.74 oct)
+    role q DROPPED    [9] Band 2 Q - no bandwidth at both ends
+    role eq_gain CONFIRMED  [12] Band 3 Gain - the band's gain moves 35.93 dB
+    role frequency CONFIRMED  [13] Band 3 Frq - the centre moves 25.8493 -> 11043.2 Hz (8.74 oct)
+    role q DROPPED    [14] Band 3 Q - no bandwidth at both ends
+    role eq_gain CONFIRMED  [17] Band 4 Gain - the band's gain moves 35.93 dB
+    role frequency CONFIRMED  [18] Band 4 Frq - the centre moves 25.8493 -> 11043.2 Hz (8.74 oct)
+    role q CONFIRMED  [19] Band 4 Q - the bandwidth moves 6.76 -> 0.11 oct
+    role eq_gain CONFIRMED  [22] Band 5 Gain - the band's gain moves 35.98 dB
+    role frequency CONFIRMED  [23] Band 5 Frq - the centre moves 25.8493 -> 11043.2 Hz (8.74 oct)
+    role q CONFIRMED  [24] Band 5 Q - the bandwidth moves 6.73 -> 0.10 oct
+    role eq_gain CONFIRMED  [27] Band 6 Gain - the band's gain moves 36.00 dB
+    role frequency CONFIRMED  [28] Band 6 Frq - the centre moves 25.8493 -> 11043.2 Hz (8.74 oct)
+    role q CONFIRMED  [29] Band 6 Q - the bandwidth moves 6.61 -> 0.10 oct
+    role eq_gain CONFIRMED  [32] Band 7 Gain - the band's gain moves 36.00 dB
+    role frequency CONFIRMED  [33] Band 7 Frq - the centre moves 25.8493 -> 11043.2 Hz (8.74 oct)
+    role q CONFIRMED  [34] Band 7 Q - the bandwidth moves 6.30 -> 0.10 oct
+    role eq_gain CONFIRMED  [37] Band 8 Gain - the band's gain moves 35.99 dB
+    role frequency CONFIRMED  [38] Band 8 Frq - the centre moves 25.8493 -> 11043.2 Hz (8.74 oct)
+    role q CONFIRMED  [39] Band 8 Q - the bandwidth moves 5.84 -> 0.10 oct
+    role eq_gain CONFIRMED  [42] Band 9 Gain - the band's gain moves 35.97 dB
+    role frequency CONFIRMED  [43] Band 9 Frq - the centre moves 25.8493 -> 11043.2 Hz (8.74 oct)
+    role q DROPPED    [44] Band 9 Q - no bandwidth at both ends
+EQ: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/nn2/phaseb/eq/.tmp-AudioUnit_4f577063_12.0.0/eq/AudioUnit_4f577063_12.0.0.eq.json (10 band(s) engaged by a switch the search found)

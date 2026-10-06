@@ -130,7 +130,7 @@ inline std::optional<double> labelNumber (const juce::String& display)
 enum class BandRole { none, gain, freq, q };
 inline BandRole bandRole (const juce::String& name)
 {
-    for (const char* t : { "freq", "frequency", "hz", "khz" }) if (nametokens::controlAnswersTerm (name, t)) return BandRole::freq;
+    for (const char* t : { "freq", "frequency", "frq", "hz", "khz" }) if (nametokens::controlAnswersTerm (name, t)) return BandRole::freq;   // "frq": Waves Q10 / REQ (6 Oct)
     for (const char* t : { "q", "width", "bandwidth", "bw", "shape", "slope" }) if (nametokens::controlAnswersTerm (name, t)) return BandRole::q;
     for (const char* t : { "gain", "boost", "cut", "atten", "attenuation", "level", "db" }) if (nametokens::controlAnswersTerm (name, t)) return BandRole::gain;
     return BandRole::none;
@@ -142,7 +142,7 @@ inline juce::String bandKey (const juce::String& name)
     {
         const auto l = tk.toLowerCase();
         bool roleWord = false;
-        for (const char* t : { "freq", "frequency", "hz", "khz", "q", "width", "bandwidth", "bw", "shape", "slope", "gain", "boost", "cut", "atten", "attenuation", "level", "db" }) if (l == t) roleWord = true;
+        for (const char* t : { "freq", "frequency", "frq", "hz", "khz", "q", "width", "bandwidth", "bw", "shape", "slope", "gain", "boost", "cut", "atten", "attenuation", "level", "db" }) if (l == t) roleWord = true;
         if (! roleWord && l.isNotEmpty()) keep.add (tk);
     }
     return keep.joinIntoString (" ").trim();
@@ -181,6 +181,9 @@ inline std::vector<EngageCandidate> engageCandidates (const juce::String& bandKe
     std::sort (out.begin(), out.end(), [] (const EngageCandidate& a, const EngageCandidate& b) { return a.shared != b.shared ? a.shared > b.shared : a.index < b.index; });
     return out;
 }
+// A pool control the MEASURED fallback may read as a band's gain: not one whose name already says frequency or Q (REQ 2's
+// "Band1 Frq" moves the tone's level by 92 dB as a low-cut's corner crosses it - a frequency, never a gain; 6 Oct)
+inline bool measuredGainCandidate (const juce::String& name) { const auto r = bandRole (name); return r != BandRole::freq && r != BandRole::q; }
 struct BandControls { juce::String key; std::vector<int> gains, freqs, qs; std::vector<juce::String> gainNames, freqNames, qNames; };
 inline std::vector<BandControls> bandsFrom (const std::vector<std::pair<int, juce::String>>& controls)
 {

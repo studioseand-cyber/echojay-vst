@@ -7283,6 +7283,21 @@ void testLimiter()
     check (bx.positions == 3 && bx.notDriven == 2 && bx.holdsSample && bx.holdsTrue && bx.note.contains ("2 position(s) not driven"), "limiter L7: ceilings the drive never reached are not counted as holding (bx TP at -0.12 / -0.26)");
     check (! judge ({ res (-0.1, -3.0, -3.0) }).holdsSample && judge ({ res (-0.1, -3.0, -3.0) }).note.contains ("no ceiling position was driven"), "limiter L8: nothing driven -> no verdict, said");
     check (! judge ({ res (-1.0, -0.85, -0.85) }).holdsSample && judge ({ res (-1.0, -0.9, -0.9) }).holdsSample, "limiter L9: the bar is 0.1 dB above the label (0.15 over fails, 0.10 holds)");
+    // THE CEILING BY MEASUREMENT (Kathy, 6 Oct item 4: limiters without a ceiling word): two dB labels (nearest -1, then nearest 6 dB
+    // below), the output true peak sitting at the label at both; a "%" label is never a ceiling; a post gain behind a hard-limited
+    // amount (bx_limiter's Output Dim: labels 0 / -6, peaks -25 / -31) moves the peak but never sits at its label
+    {
+        std::vector<std::pair<float, juce::String>> g; for (int k = 0; k <= 8; ++k) g.push_back ({ (float) k / 8.0f, juce::String (-20.0 + 20.0 * k / 8.0, 1) + " dB" });
+        const auto pos = measuredCeilingPositions (g);
+        check (pos.size() == 2 && std::abs (pos[0].labelDb + 2.5) < 1e-9 && std::abs (pos[1].labelDb + 7.5) < 1e-9, "limiter LM-M1: labels -20..0 in 2.5 dB steps: the highest label at or under the -1 dBFS drive is -2.5 (0.0 is never reached), the one nearest 6 dB below it is -7.5 (" + juce::String ((int) pos.size()) + ")");
+        std::vector<std::pair<float, juce::String>> pct { { 0.0f, "0 %" }, { 0.5f, "50 %" }, { 1.0f, "100 %" } }, one { { 0.0f, "-1.0 dB" }, { 1.0f, "-1.0 dB" } };
+        check (measuredCeilingPositions (pct).empty() && measuredCeilingPositions (one).empty(), "limiter LM-M2: a '%' grid and a grid with one dB value give no positions");
+        auto lp = [] (double label, double tp, bool ok = true) { LabelPeak r; r.pos.labelDb = label; r.pos.display = juce::String (label, 1); r.reading.ok = ok; r.reading.truePeakDb = tp; return r; };
+        const auto yes = judgeMeasuredCeiling ({ lp (-1.0, -1.04), lp (-7.0, -7.21) });
+        check (yes.holds && yes.worstErrDb < 0.25 && yes.why.contains ("sits at the label"), "limiter LM-M3: true peaks -1.04 / -7.21 at labels -1 / -7 = a ceiling (worst 0.21 dB)");
+        check (! judgeMeasuredCeiling ({ lp (0.0, -25.0), lp (-6.0, -31.0) }).holds && ! judgeMeasuredCeiling ({ lp (-1.0, -1.0), lp (-7.0, -7.0, false) }).holds && ! judgeMeasuredCeiling ({ lp (-1.0, -1.0), lp (-1.5, -1.5) }).holds,
+               "limiter LM-M4: a peak 25 dB under its label (a post gain behind a hard limit), one position unread, or labels under 1 dB apart: not a ceiling");
+    }
 }
 
 /** EQ RESPONSE (EjmapEq.h, roadmap 2.2 PROTOTYPE, 5 Oct B4): a synthetic peaking band and a shelf on the 61-tone grid; the band grouping on real names. */
@@ -7336,6 +7351,22 @@ void testEq()
                "eq E10: the band's own On switch first (On -> norm 1), its Bypass second with the ON position inverted (Off -> norm 0); another band's switch, a plain gain and a master bypass are out (" + juce::String ((int) cands.size()) + ")");
         const auto ch = ejmap::eq::engageCandidates ("Channel 2 HF", sw, {});
         check (ch.size() == 1 && ch[0].index == 12 && ch[0].onText == "In", "eq E11: a channel-level 'In' switch sharing the key's channel token is a candidate for a band that has no switch of its own");
+        // E12 (6 Oct item 3): a band found by MEASUREMENT has no lexicon key: the driver searches with the pool control's own name
+        // (Waves Q10 "Band 1 Gain", every band off at instantiate) and must find that band's "Band 1 On/Off" (In -> norm 1), never band 2's
+        std::vector<std::tuple<int, juce::String, bool, std::map<juce::String, float>>> q10 {
+            { 0, "Band 1 On/Off", true, { { "Out", 0.0f }, { "In", 1.0f } } },
+            { 2, "Band 1 Gain", false, {} },
+            { 5, "Band 2 On/Off", true, { { "Out", 0.0f }, { "In", 1.0f } } } };
+        // E13: Waves spells frequency "Frq" (Q10 "Band 1 Frq", REQ "Band1 Frq"): the lexicon pairs it with the band's gain; and the
+        // measured fallback never reads a control named a frequency or a Q as a band's gain (REQ 2: a low-cut's corner moved the tone 92 dB)
+        check (ejmap::eq::bandRole ("Band1 Frq") == ejmap::eq::BandRole::freq && ejmap::eq::bandsFrom ({ { 2, "Band1 Gain" }, { 3, "Band1 Frq" }, { 4, "Band1 Q" } }).size() == 1
+               && ejmap::eq::bandsFrom ({ { 2, "Band1 Gain" }, { 3, "Band1 Frq" } })[0].freqs == std::vector<int> { 3 },
+               "eq E13: 'Frq' is a frequency word: Band1 Gain + Band1 Frq make one band by name");
+        check (! ejmap::eq::measuredGainCandidate ("Band1 Frq") && ! ejmap::eq::measuredGainCandidate ("Band1 Q") && ejmap::eq::measuredGainCandidate ("Band1 Gain") && ejmap::eq::measuredGainCandidate ("Bass"),
+               "eq E13b: the measured fallback reads an unnamed or gain-named control as a band's gain, never one named a frequency or a Q");
+        const auto m = ejmap::eq::engageCandidates ("Band 1 Gain", q10, { 2 });
+        check (m.size() == 1 && m[0].index == 0 && m[0].onNorm == 1.0f && m[0].onText == "In",
+               "eq E12: a measured band keyed by its gain control's name finds its own On/Off switch (In -> norm 1) and not another band's (" + juce::String ((int) m.size()) + ")");
     }
 }
 
@@ -7622,6 +7653,7 @@ void testRoleEvidence()
         check (measurementNominates (5, "Volume", "drive", da, db) && measurementNominates (5, "Volume", "drive", da, db)->role == "drive", "role MN4: THD rising 48 dB between the ends nominates a drive (an amp sim's Volume)");
         Figure ma, mb; ma.ok = mb.ok = true; ma.thdDb = -60.0; mb.thdDb = -12.0; ma.outputDb = mb.outputDb = -20.0; ma.sidebandDb = -200.0; mb.sidebandDb = 20.0;
         check (! measurementNominates (7, "WOW Depth", "drive", ma, mb), "role MN5: energy beside the tone is modulation, never a drive nominee");
+        // (the ceiling by measurement is pinned under the limiter: LM-M1..M4)
     }
     using namespace ejmap::roleevidence;
     auto fig = [] (std::function<void (Figure&)> fill) { Figure f; f.ok = true; fill (f); return f; };
@@ -7760,7 +7792,9 @@ void testPhaseB()
       writeAtomic (rowFile (d2, "eq", "AudioUnit_1_1.0"), "{}"); check (isDone (d2, "eq", "AudioUnit_1_1.0"), "phaseb P14: the row file is the only DONE marker");
       // P16 (Kathy, 6 Oct): --redo names categories (every row) and/or nothing_nominated (ok rows with no record); nothing else is touched
       const auto okNoRec = juce::JSON::parse ("{\"outcome\":\"ok\",\"records\":[]}"), okRec = juce::JSON::parse ("{\"outcome\":\"ok\",\"records\":[\"eq/x.json\"]}"), failed = juce::JSON::parse ("{\"outcome\":\"failed\",\"records\":[]}");
-      check (rowIsNothingNominated (okNoRec) && ! rowIsNothingNominated (okRec) && ! rowIsNothingNominated (failed), "phaseb P16: nothing_nominated = ok with no record (a failed row is not it)");
+      const auto okRecNothing = juce::JSON::parse ("{\"outcome\":\"ok\",\"records\":[\"eq/x.json\"],\"nothing_measured\":true}");
+      const auto okRecExit4 = juce::JSON::parse ("{\"outcome\":\"ok\",\"exit_code\":4,\"records\":[\"eq/x.json\"]}");
+      check (rowIsNothingNominated (okNoRec) && ! rowIsNothingNominated (okRec) && ! rowIsNothingNominated (failed) && rowIsNothingNominated (okRecNothing) && rowIsNothingNominated (okRecExit4), "phaseb P16: nothing_nominated = ok with no record, or ok whose child measured nothing (exit 4, or the nothing_measured flag) even with a record saying so; a failed row is not it");
       check (rowToRedo (okNoRec, "eq", { "nothing_nominated" }) && ! rowToRedo (okRec, "eq", { "nothing_nominated" }) && rowToRedo (okRec, "timing", { "gaincal", "timing" }) && ! rowToRedo (okRec, "eq", { "gaincal", "timing" }) && ! rowToRedo (okNoRec, "eq", {}),
              "phaseb P16: a category in the list redoes every row of it; nothing_nominated only the empty ok rows; an empty list redoes nothing");
       { Progress pr; pr.redo = "gaincal,timing"; pr.cats["gaincal"].total = 3; check (progressText (pr).contains ("redo gaincal,timing") && progressFromVar (progressVar (pr)).redo == "gaincal,timing", "phaseb P16: the progress says what is being redone and it round-trips"); }

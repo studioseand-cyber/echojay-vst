@@ -1,0 +1,41 @@
+EQ: text pass: 14 of 14 controls sampled in 10.3 s (timeout 120 s, scaled to the count)
+EQ: REQ 2 (s) 12.0.0: 0 band(s) by name
+  [3] Band1 Frq: flat as instantiated; with [0] Band1 On/Off = 'On' it moves
+  [3] Band1 Frq: nominated by measurement (the lexicon found nothing): the band's gain moves 92.81 dB
+  [4] Band1 Q: flat as instantiated; with [0] Band1 On/Off = 'On' it moves
+  [4] Band1 Q: nominated by measurement (the lexicon found nothing): the band's gain moves 43.67 dB
+  [7] Band6 Gain: flat as instantiated; with [5] Band6 On/Off = 'On' it moves
+  [7] Band6 Gain: nominated by measurement (the lexicon found nothing): the band's gain moves 35.75 dB
+EQ: the lexicon nominated nothing; measurement probed 14 control(s) at their ends and nominated 3 band(s)
+  band 'measured [3] Band1 Frq': gain [3] Band1 Frq, freq [-1] (none)
+    engage search: [0] Band1 On/Off -> 'On' (norm 1.00): the band now moves
+    gain 16: shelf centre 20 Hz, gain -1.03 dB (low_shelf)
+    gain 52: shelf centre 20 Hz, gain -20.90 dB (low_shelf)
+    gain 173: shelf centre 20 Hz, gain -38.55 dB (low_shelf)
+    gain 578: shelf centre 20 Hz, gain -50.14 dB (low_shelf)
+    gain 1924: shelf centre 20 Hz, gain -60.73 dB (low_shelf)
+    gain 6411: shelf centre 20 Hz, gain -71.68 dB (low_shelf)
+    gain 21357: shelf centre 20 Hz, gain -93.84 dB (low_shelf)
+  band 'measured [4] Band1 Q': gain [4] Band1 Q, freq [-1] (none)
+    engage search: [0] Band1 On/Off -> 'On' (norm 1.00): the band now moves
+    gain 0.26: shelf centre 20 Hz, gain -13.97 dB (low_shelf)
+    gain 0.44: shelf centre 20 Hz, gain -13.97 dB (low_shelf)
+    gain 0.76: shelf centre 20 Hz, gain -15.89 dB (low_shelf)
+    gain 1.30: measured centre 30.0195 Hz, gain -51.64 dB, bw 0.03 oct
+    gain 2.22: measured centre 33.9474 Hz, gain -57.64 dB, bw 0.02 oct
+    gain 3.80: measured centre 33.9474 Hz, gain -57.64 dB, bw 0.02 oct
+    gain 6.50: measured centre 33.9474 Hz, gain -57.64 dB, bw 0.02 oct
+  band 'measured [7] Band6 Gain': gain [7] Band6 Gain, freq [-1] (none)
+    engage search: [5] Band6 On/Off -> 'On' (norm 1.00): the band now moves
+    gain -18.0: shelf centre 20000 Hz, gain -17.86 dB (high_shelf)
+    gain -12.0: shelf centre 20000 Hz, gain -11.96 dB (high_shelf)
+    gain -6.0: shelf centre 20000 Hz, gain -5.99 dB (high_shelf)
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 6.0: shelf centre 20000 Hz, gain 5.99 dB (high_shelf)
+    gain 12.0: shelf centre 20000 Hz, gain 11.97 dB (high_shelf)
+    gain 18.0: shelf centre 20000 Hz, gain 17.89 dB (high_shelf)
+  ROLES BY MEASUREMENT: 3 verdict(s), 5 unnamed control(s) probed without the signature; frequency and q signatures need a boosted band: unnamed controls are probed for the gain signature only
+    role eq_gain CONFIRMED  [3] Band1 Frq - the band's gain moves 92.81 dB
+    role eq_gain CONFIRMED  [4] Band1 Q - the band's gain moves 43.67 dB
+    role eq_gain CONFIRMED  [7] Band6 Gain - the band's gain moves 35.75 dB
+EQ: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/nn/phaseb/eq/.tmp-AudioUnit_5857037d_12.0.0/eq/AudioUnit_5857037d_12.0.0.eq.json (3 band(s) engaged by a switch the search found)

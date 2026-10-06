@@ -1,0 +1,29 @@
+LIMITER: text pass: 27 of 48 controls sampled in 6.9 s (timeout 120 s, scaled to the count)
+LIMITER: --ignore-ceiling-name: the ceiling word 'Ceiling' is set aside; measurement must find the ceiling
+LIMITER: bx_limiter True Peak: no ceiling control by name (ceiling / margin): measurement looks for one; controls: Power, Bank, Ceiling, Gain, Release, Channel Link, XL Active, XL Saturation, Output Dim, Limiter Mix, Limiter Mode, Monitoring, Stereo Swap, HighPass Active, HighPass Frequency, LowPass Active, LowPass Frequency, Foundation Active, Foundation, Solo in Place, Input Trim, Gain Reduction Meter L, Gain Reduction Meter R, Gain Reduction Meter Mono, Gain Reduction Hold Meter L, Gain Reduction Hold Meter R, Gain Reduction Hold Meter Mono
+  [2] Ceiling (amount at 1.0): nominated by measurement (the lexicon found nothing): the output true peak sits at the label at 2 positions (worst 0.00 dB off; -1.88 dB -> true peak -1.88, -7.50 dB -> true peak -7.50)
+  [3] Gain (amount at 1.0): the output peak does not sit at the label (worst 1.04 dB off; -2.25 dB -> true peak -3.29, -6.00 dB -> true peak -7.04)
+  [4] Release: labels do not read as two dB values a dB apart (0.01 ms .. 1000 ms)
+  [5] Channel Link: labels do not read as two dB values a dB apart (0 % .. 100 %)
+  [7] XL Saturation: labels do not read as two dB values a dB apart (0 % .. 100 %)
+  [8] Output Dim (amount at 1.0): the output peak does not sit at the label (worst 1.04 dB off; -1.12 dB -> true peak -2.16, -7.03 dB -> true peak -8.07)
+  [9] Limiter Mix: labels do not read as two dB values a dB apart (0 % .. 100 %)
+  [14] HighPass Frequency: labels do not read as two dB values a dB apart (5 Hz .. 120 Hz)
+  [16] LowPass Frequency: labels do not read as two dB values a dB apart (15 kHz .. 40 kHz)
+  [18] Foundation (amount at 1.0): the output peak does not sit at the label (worst 11.03 dB off; -5 -> true peak -1.03, -12 -> true peak -0.97)
+LIMITER: the lexicon nominated no ceiling; measurement probed 10 control(s) and nominated [2] Ceiling
+  hard end: norm 1.0 (true peak -13.02 at 0.0 vs -1.07 at 1.0; the end pinned at the ceiling -1.05 dB)
+  ceiling -0.12 dB (-0.1): sample peak -1.02 (-0.90), true peak -1.02 (-0.90)
+  ceiling -0.26 dB (-0.3): sample peak -1.02 (-0.76), true peak -1.02 (-0.76)
+  ceiling -1.05 dB (-1.1): sample peak -1.07 (-0.02), true peak -1.07 (-0.02)
+  ceiling -2.93 dB (-2.9): sample peak -2.94 (-0.01), true peak -2.94 (-0.01)
+  ceiling -5.74 dB (-5.7): sample peak -5.75 (-0.01), true peak -5.75 (-0.01)
+  ROLES BY MEASUREMENT: 2 verdict(s), 8 unnamed control(s) probed without the signature
+    measured role ceiling, UNNAMED  [2] Ceiling - nominated by measurement (the lexicon found nothing): the output true peak sits at the label at 2 positions (worst 0.00 dB off; -1.88 dB -> true peak -1.88, -7.50 dB -> true peak -7.50)
+    measured role ceiling, UNNAMED  [3] Gain - the output peak moves 5.95 dB and holds against a 6 dB drive change (0.00)
+  verdict: sample holds, true peak holds - worst sample-peak overshoot -0.01 dB, worst true-peak overshoot -0.01 dB over 3 driven position(s) (bar 0.1); 2 position(s) not driven (the signal never reached that ceiling)
+LIMITER: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/lm2/limiter/AudioUnit_417f6e6e_1.2.1.limiter.json
+
+real	0m33.453s
+user	0m18.441s
+sys	0m1.131s

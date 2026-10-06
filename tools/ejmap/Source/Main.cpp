@@ -795,6 +795,7 @@ namespace
                 ejmap::cert::SweepOptions o; o.product = argAt (argc, argv, i + 1);
                 for (int j = i + 2; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
                     if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); }
+                for (int j = i + 2; j < argc; ++j) if (argAt (argc, argv, j) == "--ignore-ceiling-name") o.ignoreCeilingName = true;   // test only: rehearse the measured ceiling on a product that has the word
                 if (o.out == juce::File()) o.out = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap/cert");
                 if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
                 return ejmap::cert::runLimiter (o);

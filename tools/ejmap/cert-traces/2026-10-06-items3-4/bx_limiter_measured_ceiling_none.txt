@@ -1,0 +1,13 @@
+LIMITER: text pass: 10 of 13 controls sampled in 2.8 s (timeout 120 s, scaled to the count)
+LIMITER: bx_limiter: no ceiling control by name (ceiling / margin): measurement looks for one; controls: Bypass, Bank, Gain Boost, Threshold, Release, Channel Link, XL Active, XL, Output Dim, Mix
+  [2] Gain Boost: labels do not read as two dB values a dB apart (0.00 dB .. 10.00 dB)
+  [4] Release: labels do not read as two dB values a dB apart (0.01 ms .. 1.00 s)
+  [5] Channel Link: labels do not read as two dB values a dB apart (0 % .. 100 %)
+  [7] XL: labels do not read as two dB values a dB apart (0 % .. 100 %)
+  [8] Output Dim (amount at 1.0): the output peak does not sit at the label (worst 1.03 dB off; -1.12 dB -> true peak -2.15, -6.75 dB -> true peak -7.78)
+  [9] Mix: labels do not read as two dB values a dB apart (0 % .. 100 %)
+LIMITER: the lexicon nominated no ceiling; measurement probed 6 control(s) and nominated none
+
+real	0m8.898s
+user	0m3.483s
+sys	0m0.416s

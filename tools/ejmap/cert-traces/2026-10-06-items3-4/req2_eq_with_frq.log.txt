@@ -1,0 +1,52 @@
+EQ: text pass: 14 of 14 controls sampled in 9.9 s (timeout 120 s, scaled to the count)
+EQ: REQ 2 (s) 12.0.0: 2 band(s) by name
+  band 'Band1': gain [2] Band1 Gain, freq [3] Band1 Frq, q [4] Band1 Q
+    engage search: [0] Band1 On/Off -> 'On' (norm 1.00): the band now moves
+    gain -18.0: shelf centre 20 Hz, gain -23.60 dB (low_shelf)
+    gain -12.0: shelf centre 20 Hz, gain -23.60 dB (low_shelf)
+    gain -6.0: shelf centre 20 Hz, gain -23.60 dB (low_shelf)
+    gain 0.0: shelf centre 20 Hz, gain -23.60 dB (low_shelf)
+    gain 6.0: shelf centre 20 Hz, gain -23.60 dB (low_shelf)
+    gain 12.0: shelf centre 20 Hz, gain -23.60 dB (low_shelf)
+    gain 18.0: shelf centre 20 Hz, gain -23.60 dB (low_shelf)
+    freq 16 (gain at 6.0): shelf low_shelf corner 22.9117 Hz, plateau -1.03
+    freq 52 (gain at 6.0): shelf low_shelf corner 33.5288 Hz, plateau -20.90
+    freq 173 (gain at 6.0): shelf low_shelf corner 72.5329 Hz, plateau -38.55
+    freq 578 (gain at 6.0): shelf low_shelf corner 177.757 Hz, plateau -50.14
+    freq 1924 (gain at 6.0): shelf low_shelf corner 427.673 Hz, plateau -60.73
+    freq 6411 (gain at 6.0): shelf low_shelf corner 997.976 Hz, plateau -71.68
+    freq 21357 (gain at 6.0): shelf low_shelf corner 4209.47 Hz, plateau -93.84
+    q 0.26: shelf (low_shelf)
+    q 0.58: shelf (low_shelf)
+    q 1.30: measured bw 0.03 oct (centre 30.0195, gain -51.64)
+    q 2.91: measured bw 0.02 oct (centre 33.9474, gain -57.64)
+    q 6.50: measured bw 0.02 oct (centre 33.9474, gain -57.64)
+  band 'Band6': gain [7] Band6 Gain, freq [8] Band6 Frq, q [9] Band6 Q
+    engage search: [5] Band6 On/Off -> 'On' (norm 1.00): the band now moves
+    gain -18.0: shelf centre 20000 Hz, gain -17.86 dB (high_shelf)
+    gain -12.0: shelf centre 20000 Hz, gain -11.96 dB (high_shelf)
+    gain -6.0: shelf centre 20000 Hz, gain -5.99 dB (high_shelf)
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 6.0: shelf centre 20000 Hz, gain 5.99 dB (high_shelf)
+    gain 12.0: shelf centre 20000 Hz, gain 11.97 dB (high_shelf)
+    gain 18.0: shelf centre 20000 Hz, gain 17.89 dB (high_shelf)
+    freq 16 (gain at 6.0): shelf broad, plateau 6.00
+    freq 52 (gain at 6.0): shelf high_shelf corner 42.2655 Hz, plateau 6.00
+    freq 173 (gain at 6.0): shelf high_shelf corner 140.552 Hz, plateau 6.00
+    freq 578 (gain at 6.0): shelf high_shelf corner 469.464 Hz, plateau 6.00
+    freq 1924 (gain at 6.0): shelf high_shelf corner 1560.99 Hz, plateau 6.00
+    freq 6411 (gain at 6.0): shelf high_shelf corner 5130.6 Hz, plateau 5.99
+    freq 21357 (gain at 6.0): shelf high_shelf corner 15235.9 Hz, plateau 5.83
+    q 0.26: shelf (high_shelf)
+    q 0.58: shelf (high_shelf)
+    q 1.30: shelf (high_shelf)
+    q 2.91: shelf (high_shelf)
+    q 6.50: shelf (high_shelf)
+  ROLES BY MEASUREMENT: 6 verdict(s), 2 unnamed control(s) probed without the signature; frequency and q signatures need a boosted band: unnamed controls are probed for the gain signature only
+    role eq_gain DROPPED    [2] Band1 Gain - the band's gain moves 0.00 dB (needs 1)
+    role frequency DROPPED    [3] Band1 Frq - the band's gain moves -92.81 dB with it: not a frequency alone
+    role q DROPPED    [4] Band1 Q - no bandwidth at both ends
+    role eq_gain CONFIRMED  [7] Band6 Gain - the band's gain moves 35.75 dB
+    role frequency CONFIRMED  [8] Band6 Frq - the centre moves 1031.56 -> 15235.9 Hz (3.88 oct)
+    role q DROPPED    [9] Band6 Q - no bandwidth at both ends
+EQ: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/nn2/phaseb/eq/.tmp-AudioUnit_5857037d_12.0.0/eq/AudioUnit_5857037d_12.0.0.eq.json (2 band(s) engaged by a switch the search found)

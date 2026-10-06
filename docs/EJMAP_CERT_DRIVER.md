@@ -2643,3 +2643,29 @@ with a null `detector_f` runs at BOTH L_ref values (f = 0: −18.4; f = 1: −9.
 both pass; both readings are on the check's file (`both_levels`). (3) The detector retries at the position whose 2 dB point is
 nearest −27 dBFS RMS when either signal falls short at the −18 position, records the position used, and records
 `unmeasurable` with the reason when both positions fail. Pins X16b–d, D4 (mutants: "assumed rms", a missing source, 0.0).
+
+## 64. Kathy's "everything for tonight" items 3 and 4 (6 Oct, no run tonight: one cut at the end)
+
+- **EQ engage for unnamed bands (item 3).** Waves spells frequency `Frq`; the lexicon did not know the word, so Q10 (50
+  controls) and REQ 2 found "0 bands by name" and the measurement fallback read every band flat (every Waves band is OFF at
+  instantiate). Built: `frq` is a frequency word (pin E13: Q10 now 10 bands by name, REQ 2 two, each with its `Band N On/Off`
+  found by the engage search, frequencies paired and measured); the measured fallback also runs the engage search per flat pool
+  control (`engageCandidates` keyed by the control's own name, pin E12) and never reads a control named a frequency or a Q as
+  a band's gain (REQ 2's low-cut corner moved the tone 92 dB; pin E13b). `--redo nothing_nominated` now also takes a finished row
+  whose child **exited 4** (nothing to measure / nothing moved) even when it wrote a record saying so (`nothing_measured` on the
+  row from this build, the exit code on Sean's b0258a7b rows; pin P16). Rehearsed here: Q10 (m) 262 s, REQ 2 (s) 114 s.
+- **Limiters without a ceiling word (item 4).** `runLimiter` with no `ceiling` / `margin` control no longer stops: for every
+  sampled pool control it reads the labels at nine norms, and where two read as dB a dB or more apart (never `%`), measures the
+  output true peak at the highest label at or under the −1 dBFS drive (a ceiling above the drive is never reached) at BOTH
+  amount ends — the end where the peak sits at that label is the amount's hard end — then at the label nearest 6 dB below;
+  the control whose output true peak **sits at its label** at both (within 0.5 dB) is the nominee (`limiter::measuredCeilingPositions`,
+  `judgeMeasuredCeiling`, pins LM-M1–M4), the smallest error winning, and the mode continues as if named (`nominated_by` on
+  the record, the verdict `measured_unnamed`). The peak-moves-and-holds-against-the-drive test was tried first and rejected:
+  behind a hard-limited amount bx_limiter's Mix (24 dB) and Output Dim (9 dB) both passed it. Nothing holds → a "nothing moves
+  the measure" record, exit 4, so `--redo nothing_nominated` covers the 16. `--cert-limiter … --ignore-ceiling-name` (test only)
+  sets a found word aside so the measured path can be rehearsed on a product that has one. Rehearsed here: bx_limiter →
+  none (Output Dim 1.03 dB off its label, the rest not dB), bx_limiter True Peak with its word set aside → `[2] Ceiling` found
+  (0.00 dB off at −1.88 / −7.50), full pass holds. kHs Limiter is PACE-protected (a window; killed, nothing measured) and APB
+  L-18 fails to instantiate here (exit 1) — the "Peak"-named case is Sean's to prove. Observation for the accuracy pass: the
+  roles block still reports bx_limiter True Peak's Gain as a measured ceiling (holds against the drive because the named
+  ceiling pins the output; same in Sean's log).

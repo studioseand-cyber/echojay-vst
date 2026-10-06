@@ -69,7 +69,7 @@ inline void gzipInto (const juce::File& src, const juce::File& dstDir)
 
 // THE REDO (Kathy, 6 Oct): --phaseb-all --redo a,b,... names categories whose rows are ALL run again, and/or "nothing_nominated",
 // which re-runs exactly the rows that finished ok with no record (the lexicon nominated nothing). Everything else is untouched.
-inline bool rowIsNothingNominated (const juce::var& row) { return row.getProperty ("outcome", "").toString() == "ok" && row.getProperty ("records", {}).size() == 0; }
+inline bool rowIsNothingNominated (const juce::var& row) { return row.getProperty ("outcome", "").toString() == "ok" && (row.getProperty ("records", {}).size() == 0 || (bool) row.getProperty ("nothing_measured", false) || (int) row.getProperty ("exit_code", 0) == 4); }   // exit 4 = the mode measured nothing: Sean's b0258a7b rows carry no flag, only the code
 inline bool rowToRedo (const juce::var& row, const juce::String& category, const juce::StringArray& redo)
 {
     if (redo.contains (category)) return true;

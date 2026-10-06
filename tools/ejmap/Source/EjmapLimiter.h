@@ -73,6 +73,38 @@ inline std::vector<CeilingPos> ceilingPositions (const std::vector<std::pair<flo
     return out;
 }
 
+// THE CEILING BY MEASUREMENT (Kathy, 6 Oct item 4: limiters without a ceiling word - Invisible Limiter's "Limit Level", L-18's
+// "Peak", Ozone's "Output Level"). A ceiling's own signature: its labels read as dB and, with the amount hard, the output true
+// peak SITS AT THE LABEL at two labels a dB or more apart. The peak-moves-and-holds test is not it: behind a hard-limited
+// amount, bx_limiter's Mix (24 dB) and Output Dim (9 dB) both moved the peak and held against the drive. A "%" label is never a
+// ceiling. Several hold -> the smallest worst error wins.
+inline constexpr double kMeasuredCeilingTolDb = 0.5, kMeasuredCeilingSpreadDb = 1.0;
+inline std::optional<double> ceilingLabelDb (const juce::String& display) { if (display.contains ("%")) return std::nullopt; return labelDb (display); }
+// two positions from a control's label grid: A = the highest dB label at or under the drive (a ceiling above the -1 dBFS sine is
+// never reached: bx_limiter True Peak's -0.47 read -1.02), B = the dB label nearest A - 6; none when fewer than two labels a dB apart
+inline std::vector<CeilingPos> measuredCeilingPositions (const std::vector<std::pair<float, juce::String>>& grid)
+{
+    std::vector<CeilingPos> rows; for (const auto& [n, d] : grid) if (const auto v = ceilingLabelDb (d)) rows.push_back (CeilingPos { n, d, *v, 0.0 });
+    if (rows.size() < 2) return {};
+    const CeilingPos* a = nullptr; for (const auto& r : rows) if (r.labelDb <= kDriveDbfs && (! a || r.labelDb > a->labelDb)) a = &r;
+    if (! a) return {};
+    const CeilingPos* b = nullptr; for (const auto& r : rows) { if (std::abs (r.labelDb - a->labelDb) < kMeasuredCeilingSpreadDb) continue; if (! b || std::abs (r.labelDb - (a->labelDb - 6.0)) < std::abs (b->labelDb - (a->labelDb - 6.0))) b = &r; }
+    if (! b) return {};
+    CeilingPos pa = *a, pb = *b; pa.target = kDriveDbfs; pb.target = a->labelDb - 6.0; return { pa, pb };
+}
+struct LabelPeak { CeilingPos pos; PeakReading reading; };
+struct MeasuredCeiling { bool holds = false; juce::String why; double worstErrDb = 0.0; };
+inline MeasuredCeiling judgeMeasuredCeiling (const std::vector<LabelPeak>& lp)
+{
+    MeasuredCeiling m; int ok = 0; double lo = 1e9, hi = -1e9;
+    for (const auto& r : lp) if (r.reading.ok) { ++ok; const double e = r.reading.truePeakDb - r.pos.labelDb; m.worstErrDb = juce::jmax (m.worstErrDb, std::abs (e)); lo = juce::jmin (lo, r.pos.labelDb); hi = juce::jmax (hi, r.pos.labelDb); }
+    if (ok < 2) { m.why = "fewer than two label positions read"; return m; }
+    if (hi - lo < kMeasuredCeilingSpreadDb) { m.why = "the labels read are under " + juce::String (kMeasuredCeilingSpreadDb, 1) + " dB apart"; return m; }
+    juce::StringArray parts; for (const auto& r : lp) if (r.reading.ok) parts.add (r.pos.display + " -> true peak " + juce::String (r.reading.truePeakDb, 2));
+    if (m.worstErrDb > kMeasuredCeilingTolDb) { m.why = "the output peak does not sit at the label (worst " + juce::String (m.worstErrDb, 2) + " dB off; " + parts.joinIntoString (", ") + ")"; return m; }
+    m.holds = true; m.why = "the output true peak sits at the label at " + juce::String (ok) + " positions (worst " + juce::String (m.worstErrDb, 2) + " dB off; " + parts.joinIntoString (", ") + ")"; return m;
+}
+
 struct CeilingResult
 {
     CeilingPos pos; bool oversampling = false; bool hasOs = false;

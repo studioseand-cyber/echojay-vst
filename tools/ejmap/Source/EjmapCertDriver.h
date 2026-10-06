@@ -1420,6 +1420,7 @@ struct SweepOptions
     bool profile = false;                            // the profile sweep (31 levels, 2.5 s, quiet reference everywhere)
     juce::StringArray slice;                         // the dress rehearsal only: product names the batch is limited to (empty = all)
     bool retryLicence = false;                       // --retry-licence: re-check the needs-licence set (the licence is back)
+    bool ignoreCeilingName = false;                  // --cert-limiter --ignore-ceiling-name (test only): the measured-ceiling path on a product with the word
     bool deriveOnly = false;                         // --derive-only (tone-check mode): re-derive, apply the rules and export, load NOTHING - the projection for a zipped-back folder
     juce::StringArray resweepProducts;               // the follow-up's own re-sweep set (planDiffers): forced back onto the worklist
     juce::String mapState;                           // INFORMATION for the record (ruled 2 Oct): set by the batch from the subject; the tuner path has no Subject of its own
@@ -2773,6 +2774,8 @@ inline ModeFixture sampledFixture (const SweepOptions& opt, const juce::PluginDe
     juce::var base0; { auto* o = new juce::DynamicObject(); juce::Array<juce::var> cs; for (const auto& [i, r] : list) { if (! r.automatable || r.meta) continue; auto* c = new juce::DynamicObject(); c->setProperty ("index", i); c->setProperty ("name", r.name); c->setProperty ("numSteps", r.numSteps); cs.add (juce::var (c)); } o->setProperty ("controls", cs); base0 = juce::var (o); }
     std::set<int> needed; for (int i : nominate (base0)) needed.insert (i);
     for (const auto& pc : unnamedPool (base0, std::vector<int> (needed.begin(), needed.end()))) needed.insert (pc.index);
+    // the two-step switches too (6 Oct): the engage search reads their on/off texts, for named bands and for bands found by measurement
+    for (const auto& [i, r] : list) if (r.automatable && ! r.meta && r.numSteps == 2) needed.insert (i);
     if (needed.empty()) { fx.why = "no control to sample (nothing nominated, no numeric pool)"; return fx; }
     juce::StringArray idx; for (int i : needed) idx.add (juce::String (i));
     fx.timeoutMs = textPassTimeoutMs ((int) needed.size(), opt.timeoutMs);
@@ -3170,13 +3173,79 @@ inline int runLimiter (const SweepOptions& opt)
         }
     int amount = plan.ok ? plan.thr : -1; juce::String amountName = plan.thrName;
     if (amount < 0 && plan.ok && ! plan.candidates.empty()) { amount = plan.candidates.front().index; amountName = plan.candidates.front().name; }
+    if (amount < 0) { say ("LIMITER: " + opt.product + ": no amount control planned (" + plan.why + ")"); return 4; }
+    juce::StringArray sets; for (auto [i, v] : plan.sets) sets.add (juce::String (i) + ":" + juce::String (v, 6));
+    // the two ends of one pool control with the amount hard (and `with` written): the output peak at each; a mover gets the drive
+    // test at its 1.0 end (6 dB less drive: a ceiling holds the peak, a gain passes the change). Shared by the roles block and the fallback.
+    auto ceilingEnds = [&] (const PoolControl& pc, float amountHard, const juce::StringArray& with, roleevidence::Figure& ua, roleevidence::Figure& ub) -> bool
+    {
+        for (float n : { 0.0f, 1.0f })
+        {
+            juce::StringArray all = sets; all.addArray (with); all.add (juce::String (pc.index) + ":" + juce::String (n, 6));
+            const auto r = run ("u" + juce::String (pc.index) + ".n" + juce::String (n, 0), { "--sweep", "thr=" + juce::String (amount), "norms=" + juce::String (amountHard, 6), "levels=" + juce::String ((int) limiter::kDriveDbfs), "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0", "set=" + all.joinIntoString (",") });
+            if (r.kind == ChildResult::Kind::uiShown) return false;
+            const auto pk = limiter::parsePeaks (r.cleanExit() ? r.out : juce::String()); auto& f = n < 0.5f ? ua : ub; if (pk.ok) { f.ok = true; f.peakDb = pk.peakDb; }
+        }
+        if (ua.ok && ub.ok && ua.peakDb && ub.peakDb && std::abs (*ub.peakDb - *ua.peakDb) >= roleevidence::kCeilingMoveDb)
+        {
+            juce::StringArray all = sets; all.addArray (with); all.add (juce::String (pc.index) + ":1.000000");
+            const auto r = run ("u" + juce::String (pc.index) + ".drive", { "--sweep", "thr=" + juce::String (amount), "norms=" + juce::String (amountHard, 6), "levels=" + juce::String ((int) limiter::kDriveDbfs - 6), "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0", "set=" + all.joinIntoString (",") });
+            if (r.kind == ChildResult::Kind::uiShown) return false;
+            const auto pk = limiter::parsePeaks (r.cleanExit() ? r.out : juce::String()); if (pk.ok) ub.peakDriveDeltaDb = pk.peakDb - *ub.peakDb;
+        }
+        return true;
+    };
+    // MEASUREMENT NOMINATES THE CEILING (Kathy, 6 Oct item 4; derivation limiter::measuredCeilingPositions / judgeMeasuredCeiling): no
+    // ceiling word -> the amount's hard end is the end with the lower true peak; then every pool control's labels are read at nine
+    // norms and, where two read as dB a dB or more apart, the output true peak is measured at the label nearest -1 and the one
+    // nearest 6 dB below it; the control whose output peak SITS AT ITS LABEL at both is the nominee. Nothing holds -> a "nothing
+    // moves the measure" record and exit 4. --ignore-ceiling-name (test only) takes this path on a product with a ceiling word.
+    std::optional<roleevidence::RoleVerdict> measuredCeiling;
+    if (opt.ignoreCeilingName && ceilingIdx >= 0) { say ("LIMITER: --ignore-ceiling-name: the ceiling word '" + ceilingName + "' is set aside; measurement must find the ceiling"); ceilingIdx = -1; ceilingName = {}; }
     if (ceilingIdx < 0)
     {
         juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString());
-        say ("LIMITER: " + opt.product + ": no ceiling control by name (ceiling / margin): nothing to judge; controls: " + names.joinIntoString (", ")); return 4;
+        say ("LIMITER: " + opt.product + ": no ceiling control by name (ceiling / margin): measurement looks for one; controls: " + names.joinIntoString (", "));
+        auto peakAt = [&] (const juce::String& tag, float amountNorm, const juce::StringArray& with)
+        {
+            juce::StringArray all = sets; all.addArray (with);
+            const auto r = run (tag, { "--sweep", "thr=" + juce::String (amount), "norms=" + juce::String (amountNorm, 6), "levels=" + juce::String ((int) limiter::kDriveDbfs), "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0", "set=" + all.joinIntoString (",") });
+            return std::make_pair (limiter::parsePeaks (r.cleanExit() ? r.out : juce::String()), r);
+        };
+        // per candidate: its label nearest -1 is measured at BOTH amount ends (the hard end is the one where the output sits at that
+        // label: bx_limiter True Peak's Gain at 0.0 is -12 dB of input and the quieter output, but no limiting), then the label 6 dB
+        // below at that end; the pair must both sit at their labels
+        std::vector<int> nominated { amount }; if (osIdx >= 0) nominated.push_back (osIdx); for (auto [i, v] : plan.sets) nominated.push_back (i);
+        int probed = 0; double bestErr = 1e9; float hard0 = 0.0f; juce::StringArray nine; for (int k = 0; k <= 8; ++k) nine.add (juce::String ((float) k / 8.0f, 6));
+        for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
+        {
+            ++probed;
+            const auto tg = run ("u" + juce::String (pc.index) + ".labels", { "--text-at-norms", juce::String (pc.index), nine.joinIntoString (",") });
+            if (tg.kind == ChildResult::Kind::uiShown) { say ("LIMITER: a window appeared; stopping"); return 5; }
+            std::vector<std::pair<float, juce::String>> g; for (const auto& row : pitch::parseTextGrid (tg.cleanExit() ? tg.out : juce::String())) g.push_back ({ (float) row.getValue, row.text });
+            const auto pos = limiter::measuredCeilingPositions (g);
+            if (pos.empty()) { say ("  [" + juce::String (pc.index) + "] " + pc.name + ": labels do not read as two dB values a dB apart (" + (g.empty() ? juce::String ("no grid") : g.front().second + " .. " + g.back().second) + ")"); continue; }
+            auto tagOf = [&] (const limiter::CeilingPos& cp, float e) { return "u" + juce::String (pc.index) + ".l" + juce::String (cp.labelDb, 1).replace ("-", "m").replace (".", "p") + ".a" + juce::String (e, 0); };
+            const auto a0 = peakAt (tagOf (pos[0], 0.0f), 0.0f, { juce::String (pc.index) + ":" + juce::String (pos[0].norm, 6) }), a1 = peakAt (tagOf (pos[0], 1.0f), 1.0f, { juce::String (pc.index) + ":" + juce::String (pos[0].norm, 6) });
+            if (a0.second.kind == ChildResult::Kind::uiShown || a1.second.kind == ChildResult::Kind::uiShown) { say ("LIMITER: a window appeared; stopping"); return 5; }
+            auto off = [&] (const limiter::PeakReading& r) { return r.ok ? std::abs (r.truePeakDb - pos[0].labelDb) : 1e9; };
+            const float hardC = off (a0.first) <= off (a1.first) ? 0.0f : 1.0f;
+            const auto b = peakAt (tagOf (pos[1], hardC), hardC, { juce::String (pc.index) + ":" + juce::String (pos[1].norm, 6) });
+            if (b.second.kind == ChildResult::Kind::uiShown) { say ("LIMITER: a window appeared; stopping"); return 5; }
+            const auto m = limiter::judgeMeasuredCeiling ({ { pos[0], hardC < 0.5f ? a0.first : a1.first }, { pos[1], b.first } });
+            say ("  [" + juce::String (pc.index) + "] " + pc.name + " (amount at " + juce::String (hardC, 1) + "): " + (m.holds ? "nominated by measurement (the lexicon found nothing): " : "") + m.why);
+            if (m.holds && m.worstErrDb < bestErr) { bestErr = m.worstErrDb; hard0 = hardC; ceilingIdx = pc.index; ceilingName = pc.name; measuredCeiling = roleevidence::unnamed (pc.index, pc.name, "ceiling", roleevidence::Signature { true, m.why }); measuredCeiling->reason = "nominated by measurement (the lexicon found nothing): " + m.why; }
+        }
+        say ("LIMITER: the lexicon nominated no ceiling; measurement probed " + juce::String (probed) + " control(s) and nominated " + (measuredCeiling ? "[" + juce::String (ceilingIdx) + "] " + ceilingName : juce::String ("none")));
+        if (! measuredCeiling)
+        {
+            auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_limiter_prototype/0"); o->setProperty ("status", "PROTOTYPE - nothing moves the measure: no ceiling word and " + juce::String (probed) + " control(s) probed show no output peak sitting at a dB label");
+            o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version); o->setProperty ("amount_control", amountName); o->setProperty ("amount_hard_norm", hard0);
+            o->setProperty ("ceiling", juce::Array<juce::var>()); o->setProperty ("nominated_by", "nothing: measured"); o->setProperty ("measuredAt", nowStamp());
+            outDir.getChildFile (stem + ".limiter.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+            return 4;
+        }
     }
-    if (amount < 0) { say ("LIMITER: " + opt.product + ": no amount control planned (" + plan.why + ")"); return 4; }
-    say ("LIMITER: " + opt.product + " " + desc.version + ": ceiling [" + juce::String (ceilingIdx) + "] " + ceilingName + ", amount [" + juce::String (amount) + "] " + amountName + (osIdx >= 0 ? ", oversampling [" + juce::String (osIdx) + "] " + osName : juce::String (", no oversampling switch")));
     // the ceiling's labels at 33 norms -> the positions nearest the targets
     juce::StringArray gs; for (int k = 0; k <= 32; ++k) gs.add (juce::String ((float) k / 32.0f, 6));
     const auto tg = run ("ceiling.textgrid", { "--text-at-norms", juce::String (ceilingIdx), gs.joinIntoString (",") });
@@ -3184,7 +3253,6 @@ inline int runLimiter (const SweepOptions& opt)
     for (const auto& row : pitch::parseTextGrid (tg.cleanExit() ? tg.out : juce::String())) grid.push_back ({ (float) row.getValue, row.text });
     const auto positions = limiter::ceilingPositions (grid);
     if (positions.empty()) { say ("LIMITER: the ceiling's labels do not read as dB (" + (grid.empty() ? juce::String ("no grid") : grid.front().second + " .. " + grid.back().second) + ")"); return 4; }
-    juce::StringArray sets; for (auto [i, v] : plan.sets) sets.add (juce::String (i) + ":" + juce::String (v, 6));
     auto measure = [&] (const juce::String& tag, float amountNorm, float ceilingNorm, std::optional<float> osNorm)
     {
         juce::StringArray all = sets; all.add (juce::String (ceilingIdx) + ":" + juce::String (ceilingNorm, 6)); if (osNorm) all.add (juce::String (osIdx) + ":" + juce::String (*osNorm, 6));
@@ -3220,26 +3288,13 @@ inline int runLimiter (const SweepOptions& opt)
         roleevidence::Figure fa, fb; const limiter::CeilingResult* first = nullptr; const limiter::CeilingResult* last = nullptr;
         for (const auto& cr : results) if (! cr.hasOs || ! cr.oversampling) { if (! first) first = &cr; last = &cr; }
         if (first && first->reading.ok) { fa.ok = true; fa.peakDb = first->reading.peakDb; } if (last && last != first && last->reading.ok) { fb.ok = true; fb.peakDb = last->reading.peakDb; }
-        roles.push_back (roleevidence::nominee (ceilingIdx, ceilingName, "ceiling", roleevidence::signatureHolds ("ceiling", fa, fb)));
+        if (measuredCeiling) roles.push_back (*measuredCeiling);   // the ceiling measurement found: its own ends are its evidence
+        else roles.push_back (roleevidence::nominee (ceilingIdx, ceilingName, "ceiling", roleevidence::signatureHolds ("ceiling", fa, fb)));
         std::vector<int> nominated { ceilingIdx, amount }; if (osIdx >= 0) nominated.push_back (osIdx); for (auto [i, v] : plan.sets) nominated.push_back (i);
         for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
         {
             roleevidence::Figure ua, ub;
-            for (float n : { 0.0f, 1.0f })
-            {
-                juce::StringArray all = sets; all.add (juce::String (ceilingIdx) + ":" + juce::String (probePos.norm, 6)); all.add (juce::String (pc.index) + ":" + juce::String (n, 6));
-                const auto r = run ("u" + juce::String (pc.index) + ".n" + juce::String (n, 0), { "--sweep", "thr=" + juce::String (amount), "norms=" + juce::String (hard, 6), "levels=" + juce::String ((int) limiter::kDriveDbfs), "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0", "set=" + all.joinIntoString (",") });
-                if (r.kind == ChildResult::Kind::uiShown) { say ("LIMITER: a window appeared; stopping"); return 5; }
-                const auto pk = limiter::parsePeaks (r.cleanExit() ? r.out : juce::String()); auto& f = n < 0.5f ? ua : ub; if (pk.ok) { f.ok = true; f.peakDb = pk.peakDb; }
-            }
-            // a candidate whose peak moved gets the drive test at its 1.0 end: 6 dB less drive - a ceiling holds the peak, a gain passes the change
-            if (ua.ok && ub.ok && ua.peakDb && ub.peakDb && std::abs (*ub.peakDb - *ua.peakDb) >= roleevidence::kCeilingMoveDb)
-            {
-                juce::StringArray all = sets; all.add (juce::String (ceilingIdx) + ":" + juce::String (probePos.norm, 6)); all.add (juce::String (pc.index) + ":1.000000");
-                const auto r = run ("u" + juce::String (pc.index) + ".drive", { "--sweep", "thr=" + juce::String (amount), "norms=" + juce::String (hard, 6), "levels=" + juce::String ((int) limiter::kDriveDbfs - 6), "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0", "set=" + all.joinIntoString (",") });
-                if (r.kind == ChildResult::Kind::uiShown) { say ("LIMITER: a window appeared; stopping"); return 5; }
-                const auto pk = limiter::parsePeaks (r.cleanExit() ? r.out : juce::String()); if (pk.ok) ub.peakDriveDeltaDb = pk.peakDb - *ub.peakDb;
-            }
+            if (! ceilingEnds (pc, hard, { juce::String (ceilingIdx) + ":" + juce::String (probePos.norm, 6) }, ua, ub)) { say ("LIMITER: a window appeared; stopping"); return 5; }
             roles.push_back (roleevidence::unnamed (pc.index, pc.name, "ceiling", roleevidence::signatureHolds ("ceiling", ua, ub)));
         }
         sayRoles (say, roles);
@@ -3248,7 +3303,7 @@ inline int runLimiter (const SweepOptions& opt)
     setRoles (o, roles);
     o->setProperty ("schema", "ej_limiter_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.4, not exported, not published");
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
-    o->setProperty ("ceiling_control", ceilingName); o->setProperty ("amount_control", amountName); o->setProperty ("amount_hard_norm", hard); o->setProperty ("oversampling_control", osIdx >= 0 ? juce::var (osName) : juce::var());
+    o->setProperty ("ceiling_control", ceilingName); o->setProperty ("nominated_by", measuredCeiling ? "measurement (unnamed: no ceiling word; the control whose two ends show the ceiling signature)" : "names"); o->setProperty ("amount_control", amountName); o->setProperty ("amount_hard_norm", hard); o->setProperty ("oversampling_control", osIdx >= 0 ? juce::var (osName) : juce::var());
     o->setProperty ("drive_dbfs_peak", limiter::kDriveDbfs); o->setProperty ("method", "997 Hz sine at -1 dBFS peak, amount at its hard end, ceiling at the labels nearest -0.1/-0.3/-1/-3/-6; output sample peak and 4x cubic true-peak estimate over 0.75 s");
     juce::Array<juce::var> rows;
     for (const auto& r : results) { auto* ro = new juce::DynamicObject(); ro->setProperty ("ceiling_display", r.pos.display); ro->setProperty ("ceiling_db", r.pos.labelDb); ro->setProperty ("norm", r.pos.norm); if (r.hasOs) ro->setProperty ("oversampling", r.oversampling);
@@ -3329,17 +3384,37 @@ inline int runEq (const SweepOptions& opt)
             auto [b0, br0] = response ("u.base", pool.front().index, { "current" }, {});
             if (br0.kind == ChildResult::Kind::uiShown) { say ("EQ: a window appeared; stopping"); return 5; }
             if (b0.ok && ! b0.positions.empty())
+            {
+                // the switches, for the engage search on a control that reads flat at both ends (Waves Q10 / REQ: bands off at instantiate; 6 Oct)
+                std::vector<std::tuple<int, juce::String, bool, std::map<juce::String, float>>> sw0;
+                if (const auto* cs = base.getProperty ("controls", {}).getArray())
+                    for (const auto& c : *cs) { const int i2 = (int) c.getProperty ("index", -1); if ((int) c.getProperty ("numSteps", 0) != 2 && ! sweep::wordValued (c)) continue; std::map<juce::String, float> texts; if (const auto at = c.getProperty ("displayAt", {}); at.isObject()) for (const auto& kv : at.getDynamicObject()->getProperties()) texts[kv.value.toString()] = (float) kv.name.toString().getDoubleValue(); sw0.push_back ({ i2, c.getProperty ("name", "").toString(), true, texts }); }
                 for (const auto& pc : pool)
                 {
+                    if (! eq::measuredGainCandidate (pc.name)) { say ("  [" + juce::String (pc.index) + "] " + pc.name + ": named a frequency or Q: not read as a band's gain"); continue; }
+                    auto fig = [] (const std::vector<std::pair<double, double>>& dev) { roleevidence::Figure f; f.ok = true; const auto b = eq::deriveBand (dev); f.bandGainDb = (b.result == "measured" || b.result == "shelf") ? b.gainDb : 0.0;
+                                     std::vector<double> ds; for (const auto& [hz, d] : dev) ds.push_back (d); if (! ds.empty()) { std::sort (ds.begin(), ds.end()); f.levelShiftDb = ds[ds.size() / 2]; } return f; };
                     auto [ur, r] = response ("u" + juce::String (pc.index), pc.index, { "0.000000", "1.000000" }, {}); ++probed;
                     if (r.kind == ChildResult::Kind::uiShown) { say ("EQ: a window appeared; stopping"); return 5; }
-                    roleevidence::Figure fa, fb; if (ur.positions.size() == 2)
-                    { auto fig = [] (const std::vector<std::pair<double, double>>& dev) { roleevidence::Figure f; f.ok = true; const auto b = eq::deriveBand (dev); f.bandGainDb = (b.result == "measured" || b.result == "shelf") ? b.gainDb : 0.0;
-                                     std::vector<double> ds; for (const auto& [hz, d] : dev) ds.push_back (d); if (! ds.empty()) { std::sort (ds.begin(), ds.end()); f.levelShiftDb = ds[ds.size() / 2]; } return f; };
-                      fa = fig (eq::deviation (ur.positions[0], b0.positions[0])); fb = fig (eq::deviation (ur.positions[1], b0.positions[0])); }
-                    if (const auto mv = roleevidence::measurementNominates (pc.index, pc.name, "eq_gain", fa, fb)) { eq::BandControls mb; mb.key = "measured [" + juce::String (pc.index) + "] " + pc.name; mb.gains = { pc.index }; mb.gainNames = { pc.name }; mb.freqs = { -1 }; mb.freqNames = { "(none)" }; bands.push_back (mb); measuredBands.insert (pc.index);
+                    roleevidence::Figure fa, fb; if (ur.positions.size() == 2) { fa = fig (eq::deviation (ur.positions[0], b0.positions[0])); fb = fig (eq::deviation (ur.positions[1], b0.positions[0])); }
+                    auto mv = roleevidence::measurementNominates (pc.index, pc.name, "eq_gain", fa, fb);
+                    if (! mv && ur.positions.size() == 2)
+                    {   // flat at both ends: its own switches, closest name first, at most two - a band that is off at instantiate
+                        int tried = 0; std::vector<int> excl { pc.index };
+                        for (const auto& c : eq::engageCandidates (pc.name, sw0, excl))
+                        {
+                            if (++tried > 2) break;
+                            auto [ur2, r2] = response ("u" + juce::String (pc.index) + ".e" + juce::String (c.index), pc.index, { "0.000000", "1.000000" }, { juce::String (c.index) + ":" + juce::String (c.onNorm, 6) }); ++probed;
+                            if (r2.kind == ChildResult::Kind::uiShown) { say ("EQ: a window appeared; stopping"); return 5; }
+                            if (ur2.positions.size() != 2) continue;
+                            const auto ga = fig (eq::deviation (ur2.positions[0], b0.positions[0])), gb = fig (eq::deviation (ur2.positions[1], b0.positions[0]));
+                            if (const auto mv2 = roleevidence::measurementNominates (pc.index, pc.name, "eq_gain", ga, gb)) { mv = mv2; say ("  [" + juce::String (pc.index) + "] " + pc.name + ": flat as instantiated; with [" + juce::String (c.index) + "] " + c.name + " = '" + c.onText + "' it moves"); break; }
+                        }
+                    }
+                    if (mv) { eq::BandControls mb; mb.key = "measured [" + juce::String (pc.index) + "] " + pc.name; mb.gains = { pc.index }; mb.gainNames = { pc.name }; mb.freqs = { -1 }; mb.freqNames = { "(none)" }; bands.push_back (mb); measuredBands.insert (pc.index);
                                      say ("  [" + juce::String (pc.index) + "] " + pc.name + ": " + mv->reason); }
                 }
+            }
         }
         say ("EQ: the lexicon nominated nothing; measurement probed " + juce::String (probed) + " control(s) at their ends and nominated " + juce::String ((int) bands.size()) + " band(s)");
         if (bands.empty())
@@ -4502,6 +4577,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 else if (r.kind == ChildResult::Kind::exited && (r.code == 0 || r.code == 4)) outcome = slept ? "slept" : "ok";   // 4 = the mode found nothing to measure (said in its log)
                 else outcome = "failed";
                 row->setProperty ("child", r.describe()); row->setProperty ("exit_code", r.code); row->setProperty ("slept_ms", r.sleptMs);
+                if (r.kind == ChildResult::Kind::exited && r.code == 4) row->setProperty ("nothing_measured", true);   // exit 4 = nothing to measure (nothing nominated, or nothing moved): --redo nothing_nominated finds it even with a record
                 if (slept) row->setProperty ("reason", "the Mac slept during the measurement (" + juce::String (r.sleptMs / 1000.0, 1) + " s): recorded, the data is not trusted; delete this row to re-run");
                 // the mode's record(s) and raw traces, moved into place (the raw gzipped); the row is written LAST
                 juce::StringArray records; int rawN = 0;
