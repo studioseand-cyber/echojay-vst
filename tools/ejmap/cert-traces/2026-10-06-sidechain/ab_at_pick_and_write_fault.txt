@@ -1,0 +1,25 @@
+THE A/B AT THE TONE CHECK'S PICK (ruling 2), live on a copy of Sean's folder, three same-version units:
+ab6/run.txt:TONE: Unfiltered Audio Zip - sidechain A/B at the pick (norm 0.727, -15.4 dBFS): GR 1.98 dB under 'enabled_silent' -> 1.98 dB under 'self-keyed (as EchoJay 04e)': the same within 0.1 dB, the record stands
+ab6/run.txt:TONECHECK-ALL: 1 re-checked, 2 already at v1.7 (skipped), 0 needs_licence, 0 not exported now, 0 without traces
+ab6/run2.txt:  Unfiltered Audio Zip: sidechain A/B at the pick (norm 0.727, -15.4 dBFS): GR 1.98 dB under 'enabled_silent' -> 1.98 dB under 'self-keyed (as EchoJay 04e)': the same within 0.1 dB, the record stands (from an earlier 
+ab6/run2.txt:TONE: Lindell SBC - sidechain A/B at the pick (norm 0.511, -15.4 dBFS): GR 1.99 dB under 'enabled_silent' -> 1.99 dB under 'self-keyed (as EchoJay 04e)': the same within 0.1 dB, the record stands
+ab6/run2.txt:TONE: elysia mpressor - sidechain A/B at the pick (norm 0.271, -11.7 dBFS): GR 1.99 dB under 'enabled_silent' -> 1.99 dB under 'self-keyed (as EchoJay 04e)': the same within 0.1 dB, the record stands
+ab6/run2.txt:TONECHECK-ALL: 2 re-checked, 1 already at v1.7 (skipped), 0 needs_licence, 0 not exported now, 0 without traces
+
+THE WRITE FAULT under a mutant that re-breaks the writes (restoreWrites + the carry-over disabled), Zip:
+RE-DERIVED from traces (nothing measured) - Unfiltered Audio Zip -> AudioUnit_417a7643_1.4.2.rederived.json
+ratio: [5] ran at '4.14' -> 4.14 (RAISED from '1', value READ BACK after the write) | auto make-up disabled: no
+TONE: Unfiltered Audio Zip - GR -0.00 dB at L (target 2.0, quiet check ok) -> FAIL (within 0.5 dB)
+TONE: Unfiltered Audio Zip - write fault: [5] check 0.0000, sweep 0.4219 (sweep trace AudioUnit_417a7643_1.4.2.sweep.pos00.1.txt)
+TONE: Unfiltered Audio Zip - GR -0.00 dB at L (target 4.0, quiet check ok) -> FAIL (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR -0.00 dB at L (target 5.0, quiet check ok) -> FAIL (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR -0.00 dB at L (target 6.0, quiet check ok) -> FAIL (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR -0.00 dB at L (target 7.0, quiet check ok) -> FAIL (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR -0.00 dB at L (target 8.0, quiet check ok) -> FAIL (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR -0.00 dB at L (target 9.0, quiet check ok) -> FAIL (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR -0.00 dB at L (target 10.0, quiet check ok) -> FAIL (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR -0.00 dB at L (target 11.0, quiet check ok) -> FAIL (within 0.5 dB)
+TONE: Unfiltered Audio Zip - GR -0.00 dB at L (target 12.0, quiet check ok) -> FAIL (within 0.5 dB)
+TONE: Unfiltered Audio Zip - g 2.0 FAIL; deep levels checked 9, nulled 9 -> Unfiltered_Audio_Zip_1.4.2.tonecheck.json
+  -> needs_review: tone check failed: -0.00 vs 2.0; the profile is written but not exported
+RE-SWEEP: 0 product(s)

@@ -133,6 +133,24 @@ inline bool sweptUnderPolicyNow (const juce::var& sweepView)
     const auto sc = sweepView.getProperty ("sidechain", {});
     return sc.isObject() && sc.getProperty ("policy", "").toString() == kPolicyNow;
 }
+// THE WRITE FAULT (Kathy's ruling 2, 6 Oct): a tone check reading ~0 where the curve predicts compression is first asked
+// whether it WROTE what the sweep wrote - the check's writes (index:norm) against the sweep trace's set lines. The first
+// difference is named with both norms; an empty string means the writes agree (then, and only then, a policy re-sweep).
+// Zip, 5 Oct: the check wrote ratio [5] at 0.0000 (1:1) where the sweep wrote 0.4219 ("4.14") - a write fault, not a policy.
+inline constexpr double kNearZeroDb = 0.3;        // a reading this close to 0 dB where >= 1 dB was predicted is "the unit did nothing"
+inline juce::String writeFault (const std::vector<std::pair<int, double>>& checkWrites, const std::vector<std::pair<int, double>>& traceSets, int amountIndex)
+{
+    std::map<int, double> c, t;
+    for (const auto& [i, n] : checkWrites) if (i != amountIndex) c[i] = n;
+    for (const auto& [i, n] : traceSets)   if (i != amountIndex) t[i] = n;
+    for (const auto& [i, n] : t)
+    {
+        if (! c.count (i)) return "write fault: the sweep wrote [" + juce::String (i) + "] at " + juce::String (n, 4) + ", the check did not write it";
+        if (std::abs (c.at (i) - n) > 1e-4) return "write fault: [" + juce::String (i) + "] check " + juce::String (c.at (i), 4) + ", sweep " + juce::String (n, 4);
+    }
+    return {};   // a write the check makes and the sweep never did (the neutral list at instantiate values) changes nothing: not a fault
+}
+inline bool nearZeroWherePredicted (std::optional<double> grDb, double predictedDb) { return grDb && std::abs (*grDb) < kNearZeroDb && predictedDb >= 1.0; }
 struct Verdict { bool resweep = false; juce::String verdict, why; double deltaDb = 0.0; };
 inline Verdict verdict (double beforeDb, double afterDb, double norm, double level)
 {

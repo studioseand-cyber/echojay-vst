@@ -2560,3 +2560,27 @@ record's writes when the fresh view's are empty. Derive-only over Sean's folder:
 4 Oct write sets again, nothing spurious added; over his 4 Oct zip 159 of 159. Live on a copy of his folder, Zip: 1.98 /
 3.99 / 5.02 … 10.98 dB at g = 2 … 11, every level PASS. The resume rule changed with it: a FAILED v1.7 check is run again on
 the next follow-up (a passed one is still skipped), so his next run re-checks the eleven without touching anything.
+
+## 60. The sidechain policy, the A/B at the pick, and the write fault (Kathy's rulings 1 and 2, 6 Oct)
+
+**The policy** is EchoJay's and the probe's only one: the first extra input element stays connected and is fed the main
+input's own signal (EchoJay feeds every hosted plugin's first extra input from the slot's input since build 04e); any
+further extra input is unconnected. Every trace's policy line, every record's `thresholdSweep.sidechain.policy` and every
+profile's `measured.sidechain` say **`self-keyed (as EchoJay 04e)`** (`sidechaincheck::kPolicyNow`; pins SC-P, SC-R, X-SC).
+`unconnected` (4–6 Oct) and `enabled_silent` (28 Sep–4 Oct) are "before"; the probe's `sidechain=` switch keeps them for
+tests and for the A/B. No product in Sean's catalogue declares more than one extra input (151 with exactly one).
+
+**The A/B** runs inside the tone check, at the check's own g = 2 pick with its full write list: a record swept under an
+earlier policy whose unit declares an extra input gets one more process, the same pick and writes, under its own policy
+through the switch, and the two GR readings are compared — more than 0.1 dB apart is policy-sensitive and the record is
+re-swept after its check (the row it just wrote is replaced); within it the record stands. The verdict is on the record as
+`sidechainPolicyCheck` (`at: the tone check's pick …`), the trace is `raw/<profile>.tonecheck.ab.<switch>.1.txt`. The
+pre-pass only names the set. **A passed check does not close an owed A/B** (`loop::sidechainAbOwed`, pin L23): the resume
+skips a passed v1.7 check only when its A/B under the policy now is on the record. Live on Zip, Lindell SBC and mpressor:
+1.98 → 1.98, 1.99 → 1.99, 1.99 → 1.99, "the same within 0.1 dB".
+
+**The write fault.** A g = 2 reading within 0.3 dB of 0 where ≥ 1 dB was predicted is first asked whether the check WROTE
+what the sweep wrote: its writes (index:norm, the amount excluded) against the sweep trace's `set` lines
+(`sidechaincheck::writeFault`, pin SC-W with Zip's case as the mutant). A difference is a WRITE FAULT — named on the check's
+file (`write_fault`) and in the log, never a re-sweep; the A/B is not run on it. Live under a mutant that re-breaks the
+writes: `write fault: [5] check 0.0000, sweep 0.4219 (sweep trace …pos00.1.txt)`, the row needs_review, RE-SWEEP 0.

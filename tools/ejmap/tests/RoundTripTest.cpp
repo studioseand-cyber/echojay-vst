@@ -6567,6 +6567,15 @@ void testLoopOutcomes()
           juce::Array<juce::var> nc2; nc2.add (obj ({ { "index", 7 }, { "thresholdSweep", obj ({ { "preconditions", none } }) } }));
           const auto f3 = carryOverAfterRederive (obj ({ { "thresholdCandidates", oc2 } }), obj ({ { "thresholdCandidates", nc2 } }));
           check (f3.getProperty ("thresholdCandidates", {})[0].getProperty ("thresholdSweep", {}).getProperty ("preconditions", {}).size() == 1, "loop L22c: a candidate's writes carry over by index too"); }
+        // L23 (ruled 6 Oct): the sidechain A/B is OWED to a record swept under an earlier policy with an extra input, until a
+        // verdict under the policy now is on it; no extra input, or swept under the policy now, owes nothing
+        { auto rec = [&] (const char* pol, int buses, const char* abNow) { juce::Array<juce::var> eb; for (int i = 0; i < buses; ++i) eb.add (obj ({ { "index", i + 1 }, { "name", "SC" } }));
+              auto r = obj ({ { "thresholdSweep", obj ({ { "sidechain", obj ({ { "policy", pol }, { "extraInputBuses", eb } }) } }) } });
+              if (abNow != nullptr) r.getDynamicObject()->setProperty ("sidechainPolicyCheck", obj ({ { "policyNow", abNow }, { "verdict", "same" } })); return r; };
+          check (sidechainAbOwed (rec ("enabled_silent", 1, nullptr)) && sidechainAbOwed (rec ("unconnected", 1, nullptr)), "loop L23: swept under an earlier policy with an extra input: the A/B is owed");
+          check (! sidechainAbOwed (rec ("enabled_silent", 0, nullptr)), "loop L23: no extra input: nothing owed");
+          check (! sidechainAbOwed (rec ("self-keyed (as EchoJay 04e)", 1, nullptr)), "loop L23: swept under the policy now: nothing owed");
+          check (! sidechainAbOwed (rec ("enabled_silent", 1, "self-keyed (as EchoJay 04e)")) && sidechainAbOwed (rec ("enabled_silent", 1, "unconnected")), "loop L23: a verdict under the policy now closes it; one under an older policy does not"); }
         // NEEDS LICENCE (L15, 2 Oct): a licence-stops entry becomes a row in its own state with the windows it saw
         juce::Array<juce::var> wins { "PACE [pid 123]" };
         juce::Array<juce::var> ls; ls.add (obj ({ { "plugin_id", "/Library/Audio/Plug-Ins/VST3/SSL Native Drumstrip v6.vst3" }, { "state", "needs_licence" }, { "pace", true }, { "windows", wins }, { "stage", "scan" }, { "at", "t" } }));
@@ -6710,6 +6719,16 @@ void testSidechainCheck()
       // THE POLICY (Kathy's ruling, 6 Oct): EchoJay's, labelled exactly so on every record and profile; the two earlier ones are "before"
       check (juce::String (kPolicyNow) == "self-keyed (as EchoJay 04e)" && juce::String (kPolicyPrev) == "unconnected" && juce::String (kPolicyOld) == "enabled_silent", "sidechain SC-P: the policy now is EchoJay's, by its label");
       check (switchFor (kPolicyOld) == "silent" && switchFor (kPolicyPrev) == "unconnected" && switchFor (kPolicyNow) == "echojay" && switchFor ("something").isEmpty(), "sidechain SC-P: each policy a record can carry maps to the probe's test switch, an unknown one to nothing");
+      // THE WRITE FAULT (ruling 2): Zip's case is the mutant - the check wrote [5] at 0.0000 where the sweep wrote 0.421875
+      const std::vector<std::pair<int, double>> sweepSets { { 5, 0.421875 }, { 4, 0.0 }, { 28, 1.0 } };
+      const std::vector<std::pair<int, double>> zipCheck  { { 0, 0.0 }, { 5, 0.0 }, { 4, 0.0 }, { 28, 1.0 }, { 17, 0.727 } };
+      const std::vector<std::pair<int, double>> goodCheck { { 0, 0.0 }, { 5, 0.421875 }, { 4, 0.0 }, { 28, 1.0 }, { 17, 0.727 } };
+      const auto wf = writeFault (zipCheck, sweepSets, 17);
+      check (wf == "write fault: [5] check 0.0000, sweep 0.4219", "sidechain SC-W (Zip, 5 Oct): the ratio written at 0.0000 where the sweep wrote 0.4219 is named as a write fault (got '" + wf + "')");
+      check (writeFault (goodCheck, sweepSets, 17).isEmpty(), "sidechain SC-W: the same writes agree (extra writes the sweep never made - the neutral list - are not faults; the amount is never compared)");
+      check (writeFault ({ { 4, 0.0 } }, sweepSets, 17).startsWith ("write fault: the sweep wrote [5]"), "sidechain SC-W: a sweep write the check omitted is a fault");
+      check (nearZeroWherePredicted (0.0, 2.0) && nearZeroWherePredicted (-0.2, 2.0) && ! nearZeroWherePredicted (0.5, 2.0) && ! nearZeroWherePredicted (0.0, 0.5) && ! nearZeroWherePredicted (std::nullopt, 2.0),
+             "sidechain SC-W: 'near zero where predicted' is |GR| < 0.3 dB with >= 1 dB predicted, never on an unreadable GR");
       check (sweptUnderPolicyNow (viewNow), "sidechain SC-R: a view with the EchoJay label was swept under the policy now");
       check (! sweptUnderPolicyNow (viewPrev) && ! sweptUnderPolicyNow (viewOld), "sidechain SC-R: a view under unconnected or enabled_silent was not (both are before)");
       check (! sweptUnderPolicyNow (juce::JSON::parse ("{}")), "sidechain SC-R: no sidechain field = not under the policy now (the traces decide)"); }

@@ -28,6 +28,7 @@
 */
 #pragma once
 #include <juce_core/juce_core.h>
+#include "EjmapSidechainCheck.h"
 #include "EjmapSweep.h"
 #include <optional>
 #include <cstring>
@@ -555,6 +556,26 @@ inline juce::var carryOverAfterRederive (const juce::var& oldRecord, juce::var f
             for (const auto& a : *oc) for (const auto& b : *nc)
                 if ((int) a.getProperty ("index", -1) == (int) b.getProperty ("index", -2)) copyDetector (a.getProperty ("thresholdSweep", {}), b.getProperty ("thresholdSweep", {}));
     return fresh;
+}
+
+// THE SIDECHAIN A/B OWED (ruled 6 Oct, the re-verify plan): a record swept under an earlier sidechain policy, with an extra
+// input declared, that has no A/B verdict under the policy now is still owed its reading - a passed tone check does not
+// close it. The view is the single sweep or the picked (else first) candidate's.
+inline bool sidechainAbOwed (const juce::var& record)
+{
+    juce::var view = record.getProperty ("thresholdSweep", {});
+    if (! view.isObject()) if (const auto* cs = record.getProperty ("thresholdCandidates", {}).getArray(); cs != nullptr && ! cs->isEmpty())
+    {
+        const int picked = (int) record.getProperty ("pickedCandidate", {}).getProperty ("index", -1);
+        view = cs->getReference (0).getProperty ("thresholdSweep", {});
+        for (const auto& c : *cs) if ((int) c.getProperty ("index", -1) == picked) view = c.getProperty ("thresholdSweep", {});
+    }
+    if (! view.isObject()) return false;
+    const auto sc = view.getProperty ("sidechain", {});
+    if (! sc.isObject() || sc.getProperty ("extraInputBuses", {}).size() == 0) return false;
+    if (sc.getProperty ("policy", "").toString() == sidechaincheck::kPolicyNow) return false;
+    const auto ab = record.getProperty ("sidechainPolicyCheck", {});
+    return ! (ab.isObject() && ab.getProperty ("policyNow", "").toString() == sidechaincheck::kPolicyNow);
 }
 
 struct Counts { int exported = 0, recorded = 0, refused = 0, held = 0, needsReview = 0, quarantined = 0, needsLicence = 0, multiband = 0, surround = 0, rows = 0; };

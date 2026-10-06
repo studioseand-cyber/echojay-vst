@@ -1,0 +1,89 @@
+probe: "Unfiltered Audio Zip" | AudioUnit:Effects/aumf,uaZP,UnAu | uid=417a7643 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	17	name	Threshold	positions	1	levels	9
+spec	hz	997.000	hold_s	2.500	discard_s	2.200	win_s	0.300	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0	signal	sine	hz2	0.000
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Sidechain	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	AGC	Disabled
+param	1	0.000000	Knee	0 dB
+param	2	0.000000	Peak	Disabled
+param	3	0.500000	Out Gain	0 dB
+param	4	0.000000	Color	0.0%
+param	5	0.000000	Ratio	1
+param	6	0.000000	Auto Threshold	Disabled
+param	7	0.000000	Analysis Mode	Amplitude
+param	8	0.000000	Modulation Control 1	0
+param	9	0.000000	Modulation Control 2	0
+param	10	0.000000	Modulation Control 3	0
+param	11	0.000000	Modulation Control 4	0
+param	12	0.000000	Modulation Control 5	0
+param	13	0.000000	Modulation Control 6	0
+param	14	0.000000	Modulation Control 7	0
+param	15	0.000000	Modulation Control 8	0
+param	16	0.000000	Modulation Control 9	0
+param	17	1.000000	Threshold	0.0 dB
+param	18	0.299240	Release	180 ms
+param	19	0.000000	Env. Style	Classic
+param	20	0.000000	Modulation Control 10	0
+param	21	0.000000	Modulation Control 11	0
+param	22	0.000000	Modulation Control 12	0
+param	23	0.000000	Modulation Control 13	0
+param	24	0.000000	Modulation Control 14	0
+param	25	0.000000	Modulation Control 15	0
+param	26	0.000000	Modulation Control 16	0
+param	27	0.000000	Color Mode	Contrast
+param	28	1.000000	Dry/Wet	100%
+param	29	0.100100	Attack	6.00 ms
+param	30	0.000000	Bypass	Disabled
+param	31	0.000000	Expand	Disabled
+param	32	0.500000	Filter	OFF
+set	0	0.000000	confirm_ms	3.1	getValue	0.000000	landed_by	instack	render_blocks	0	text	Disabled
+set	1	0.000000	confirm_ms	2.7	getValue	0.000000	landed_by	instack	render_blocks	0	text	0 dB
+set	2	0.000000	confirm_ms	2.6	getValue	0.000000	landed_by	instack	render_blocks	0	text	Disabled
+set	3	0.500000	confirm_ms	3.1	getValue	0.500000	landed_by	instack	render_blocks	0	text	0 dB
+set	4	0.000000	confirm_ms	3.0	getValue	0.000000	landed_by	instack	render_blocks	0	text	0.0%
+set	6	0.000000	confirm_ms	2.5	getValue	0.000000	landed_by	instack	render_blocks	0	text	Disabled
+set	7	0.000000	confirm_ms	2.2	getValue	0.000000	landed_by	instack	render_blocks	0	text	Amplitude
+set	8	0.000000	confirm_ms	2.7	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	9	0.000000	confirm_ms	2.7	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	10	0.000000	confirm_ms	2.2	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	11	0.000000	confirm_ms	2.2	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	12	0.000000	confirm_ms	2.2	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	13	0.000000	confirm_ms	2.2	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	14	0.000000	confirm_ms	2.7	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	15	0.000000	confirm_ms	2.2	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	16	0.000000	confirm_ms	2.2	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	18	0.299240	confirm_ms	2.3	getValue	0.299240	landed_by	instack	render_blocks	0	text	180 ms
+set	19	0.000000	confirm_ms	2.2	getValue	0.000000	landed_by	instack	render_blocks	0	text	Classic
+set	20	0.000000	confirm_ms	2.2	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	21	0.000000	confirm_ms	2.1	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	22	0.000000	confirm_ms	2.6	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	23	0.000000	confirm_ms	3.1	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	24	0.000000	confirm_ms	2.8	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	25	0.000000	confirm_ms	3.0	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	26	0.000000	confirm_ms	3.0	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	27	0.000000	confirm_ms	3.1	getValue	0.000000	landed_by	instack	render_blocks	0	text	Contrast
+set	28	1.000000	confirm_ms	3.0	getValue	1.000000	landed_by	instack	render_blocks	0	text	100%
+set	29	0.100100	confirm_ms	3.0	getValue	0.100100	landed_by	instack	render_blocks	0	text	6.00 ms
+set	31	0.000000	confirm_ms	2.2	getValue	0.000000	landed_by	instack	render_blocks	0	text	Disabled
+set	32	0.500000	confirm_ms	2.6	getValue	0.500000	landed_by	instack	render_blocks	0	text	OFF
+set	5	0.421875	confirm_ms	2.1	getValue	0.421875	landed_by	instack	render_blocks	0	text	4.14
+stage	position
+pos	0	norm	0.727051	confirm_ms	2.46	slices	1	instack_match	1	getValue	0.727051	landed_by	instack	render_blocks	0	text_ms	22.5	reads	2	text	-21 dB
+hold	0	-90.00	level_db	-93.0113	in_rms_db	-93.0103	tone_frac	0.9998	ch	-93.0113,-93.0113	doubled	0	last_move_db	0.0011	final_move_db	0.0011	win	-93.1157,-93.0101,-93.0089,-93.0097,-93.0113,-93.0115,-93.0101,-93.0089	nonfinite	0	out_peak_db	-90.0000	out_true_peak_db	-90.0000
+hold	0	-84.00	level_db	-87.0109	in_rms_db	-87.0103	tone_frac	0.9999	ch	-87.0109,-87.0109	doubled	0	last_move_db	-0.0014	final_move_db	-0.0014	win	-87.0094,-87.0091,-87.0105,-87.0116,-87.0109,-87.0094,-87.0091,-87.0105	nonfinite	0	out_peak_db	-84.0000	out_true_peak_db	-84.0000
+hold	0	-78.00	level_db	-81.0090	in_rms_db	-81.0103	tone_frac	1.0000	ch	-81.0090,-81.0090	doubled	0	last_move_db	-0.0003	final_move_db	-0.0003	win	-81.0096,-81.0112,-81.0115,-81.0102,-81.0090,-81.0096,-81.0112,-81.0115	nonfinite	0	out_peak_db	-78.0000	out_true_peak_db	-77.8856
+hold	0	-72.00	level_db	-75.0104	in_rms_db	-75.0103	tone_frac	1.0000	ch	-75.0104,-75.0104	doubled	0	last_move_db	0.0016	final_move_db	0.0016	win	-75.0116,-75.0110,-75.0094,-75.0090,-75.0104,-75.0116,-75.0110,-75.0094	nonfinite	0	out_peak_db	-72.0000	out_true_peak_db	-72.0000
+hold	0	-66.00	level_db	-69.0116	in_rms_db	-69.0103	tone_frac	0.9997	ch	-69.0116,-69.0116	doubled	0	last_move_db	-0.0005	final_move_db	-0.0005	win	-69.0103,-69.0090,-69.0095,-69.0111,-69.0116,-69.0103,-69.0090,-69.0095	nonfinite	0	out_peak_db	-66.0000	out_true_peak_db	-66.0000
+hold	0	-60.00	level_db	-63.0095	in_rms_db	-63.0103	tone_frac	1.0000	ch	-63.0095,-63.0095	doubled	0	last_move_db	-0.0013	final_move_db	-0.0013	win	-63.0090,-63.0103,-63.0116,-63.0111,-63.0095,-63.0090,-63.0103,-63.0116	nonfinite	0	out_peak_db	-60.0000	out_true_peak_db	-60.0000
+hold	0	-54.00	level_db	-57.0094	in_rms_db	-57.0103	tone_frac	1.0000	ch	-57.0094,-57.0094	doubled	0	last_move_db	0.0012	final_move_db	0.0012	win	-57.0110,-57.0116,-57.0104,-57.0090,-57.0094,-57.0110,-57.0116,-57.0104	nonfinite	0	out_peak_db	-54.0000	out_true_peak_db	-53.6106
+hold	0	-48.00	level_db	-51.0115	in_rms_db	-51.0103	tone_frac	0.9997	ch	-51.0115,-51.0115	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-51.0112,-51.0096,-51.0090,-51.0102,-51.0115,-51.0112,-51.0096,-51.0090	nonfinite	0	out_peak_db	-48.0000	out_true_peak_db	-48.0000
+hold	0	-15.39	level_db	-20.3771	in_rms_db	-18.4000	tone_frac	1.0000	ch	-20.3771,-20.3771	doubled	0	last_move_db	-0.0016	final_move_db	-0.0016	win	-19.6479,-20.3749,-20.3775,-20.3782,-20.3771,-20.3756,-20.3759,-20.3775	nonfinite	0	out_peak_db	-17.3666	out_true_peak_db	-17.3666
+reread	0	steady
+timing	wall_ms	215.1	audio_s	22.500
+stage	done

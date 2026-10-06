@@ -4420,58 +4420,15 @@ inline SidechainCheckResult sidechainPolicyCheck (const SweepOptions& opt, const
     // already decided for this policy on an earlier run
     if (const auto prev = record.getProperty ("sidechainPolicyCheck", {}); prev.isObject() && prev.getProperty ("policyNow", "").toString() == kPolicyNow)
     { res.inSet = true; res.resweep = prev.getProperty ("verdict", "").toString() == "resweep"; res.why = prev.getProperty ("why", "").toString() + " (from an earlier run)"; return res; }
-    // the traces
-    const auto stem = recordFile.getFileNameWithoutExtension();
-    std::vector<Trace> traces; std::vector<juce::File> files;
-    for (const auto& f : opt.out.getChildFile ("raw").findChildFiles (juce::File::findFiles, false, stem + ".sweep.*pos*.1.txt"))
-    {
-        const auto tag = f.getFileName().fromFirstOccurrenceOf (".sweep.", false, false);
-        if (tag.startsWith ("r2.")) continue;
-        if (prefix.isNotEmpty() && ! (".sweep." + tag).contains (prefix)) continue;
-        if (prefix.isEmpty() && tag.matchesWildcard ("c*.pos*", true)) continue;   // a candidate's trace never speaks for a single sweep
-        traces.push_back (parseTrace (f.loadFileAsString())); files.push_back (f);
-    }
-    const auto pick = pickReading (traces, recordWrites (view));
-    if (! pick.ok)
-    {
-        const bool noTrace = pick.why.startsWith ("no position trace") || pick.why.startsWith ("no trace ran");
-        if (! noTrace) return res;                                                  // not in the set, by its own traces
-        res.inSet = true; res.why = "sidechain policy: unknown - " + pick.why; return res;
-    }
+    // IN THE SET (Kathy's ruling 2, 6 Oct): swept under an earlier policy with an extra input declared. The A/B itself runs
+    // inside the tone check, at the check's own pick with its full write list (runToneCheck), and its verdict lands on the
+    // record as sidechainPolicyCheck; the follow-up reads that verdict after the check and re-sweeps on "resweep".
     res.inSet = true;
-    const auto& t = traces[pick.trace];
-    if (deriveOnly) { res.why = "would read norm " + juce::String (t.norm, 3) + " at " + juce::String (pick.level, 0) + " dBFS (record: " + juce::String (pick.beforeDb, 2) + " dB) under " + kPolicyNow; return res; }
-    // the one process
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
-    auto note = [&] (const juce::String& verdict, const juce::String& why, std::optional<double> after)
-    {
-        auto* o = new juce::DynamicObject();
-        o->setProperty ("policyBefore", t.policy); o->setProperty ("policyNow", kPolicyNow); o->setProperty ("extraInputBuses", t.extraBusNames.joinIntoString (", "));
-        if (candidateName.isNotEmpty()) o->setProperty ("candidate", candidateName);
-        o->setProperty ("norm", t.norm); o->setProperty ("level_dbfs", pick.level); o->setProperty ("before_db", pick.beforeDb);
-        if (after) { o->setProperty ("after_db", *after); o->setProperty ("delta_db", *after - pick.beforeDb); }
-        o->setProperty ("trace", files[pick.trace].getFileName()); o->setProperty ("verdict", verdict); o->setProperty ("why", why);
-        o->setProperty ("readAt", juce::Time::getCurrentTime().toISO8601 (false));
-        record.getDynamicObject()->setProperty ("sidechainPolicyCheck", juce::var (o));
-        recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n");
-        res.why = why; res.ran = true;
-    };
-    if (hits.size() != 1) { note ("not_run", "sidechain policy: not read - '" + product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)", {}); return res; }
-    const auto& desc = hits[0].desc;
-    if (const auto vm = profile::versionMismatch (record.getProperty ("version", "").toString(), desc.version); vm.isNotEmpty()) { note ("not_run", "sidechain policy: not read - " + vm, {}); return res; }
-    juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) };
-    args.addArray (argsFor (t, pick.level));
-    const auto r = runChild (args, opt.timeoutMs);
-    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
-    raw.getChildFile (stem + ".sidechaincheck.1.txt").replaceWithText (r.out, false, false, "\n");
-    if (r.kind == ChildResult::Kind::uiShown) { note ("window", "sidechain policy: a window appeared under the new policy (" + r.describe() + "); record kept, not re-swept", {}); return res; }
-    if (! r.cleanExit()) { note ("crashed", "sidechain policy: the probe " + r.describe() + " under the new policy; record kept, not re-swept, said here", {}); return res; }
-    const auto after = parseTrace (r.out);
-    if (! after.ok || ! after.holdDb.count (pick.level)) { note ("not_run", "sidechain policy: the process printed no reading at " + juce::String (pick.level, 0) + " dBFS; record kept", {}); return res; }
-    if (after.policy != kPolicyNow) { note ("not_run", "sidechain policy: the probe ran under '" + after.policy + "', not " + kPolicyNow + " - is the follow-up probe installed?", {}); return res; }
-    const auto v = verdict (pick.beforeDb, after.holdDb.at (pick.level), t.norm, pick.level);
-    note (v.verdict, v.why, after.holdDb.at (pick.level));
-    res.resweep = v.resweep;
+    { const auto sc = view.getProperty ("sidechain", {}); juce::StringArray buses; if (const auto* eb = sc.getProperty ("extraInputBuses", {}).getArray()) for (const auto& b : *eb) buses.add (b.getProperty ("name", "").toString());
+      const auto pol = sc.getProperty ("policy", "").toString();
+      if (switchFor (pol).isEmpty() && pol.isNotEmpty()) { res.why = "sidechain policy: swept under '" + pol + "', which the probe cannot reproduce for an A/B; record kept"; return res; }
+      res.why = "sidechain policy: swept under '" + (pol.isEmpty() ? juce::String (kPolicyOld) : pol) + "' (" + buses.joinIntoString (", ") + ") - the A/B runs at the tone check's pick, g = 2, under '" + kPolicyNow + "'" + (deriveOnly ? " (derive-only: not run)" : ""); }
+    (void) deriveOnly; (void) opt; (void) product; (void) prefix; (void) candidateName;
     return res;
 }
 
@@ -4559,7 +4516,8 @@ inline int runToneCheckAll (SweepOptions opt)
         // RESUME: a PASSED v1.7 check with its deep levels and L_ref is done (a needs_licence product has no result file, so
         // --retry-licence reaches exactly that set). A FAILED check is run again every time (6 Oct): the seven that failed on
         // Sean's Mac failed on writes the re-derive had lost, and the fix above changes the writes, not the check's file.
-        if (! opt.deriveOnly && tc.getProperty ("spec", "").toString() == "v1.7" && tc.hasProperty ("deep_levels") && tc.hasProperty ("L_ref_dbfs") && (bool) tc.getProperty ("pass_within_0_5_db", true)) { ++skipped; continue; }
+        if (! opt.deriveOnly && tc.getProperty ("spec", "").toString() == "v1.7" && tc.hasProperty ("deep_levels") && tc.hasProperty ("L_ref_dbfs") && (bool) tc.getProperty ("pass_within_0_5_db", true)
+            && ! loop::sidechainAbOwed (rec0)) { ++skipped; continue; }
         if (! opt.deriveOnly && ! opt.retryLicence) if (const auto stop = loop::carriedLicenceStop (scanStops, product); stop) { std::cout << "  " << product << ": needs licence at the scan, not loaded" << std::endl; ++licence; continue; }
         std::cout << "\n=== tone checks: " << product << std::endl;
         // 1. RE-DERIVE from the traces (the deep points), carrying over what the traces do not hold
@@ -4595,6 +4553,11 @@ inline int runToneCheckAll (SweepOptions opt)
         outcomes = loop::mergeRow (outcomes, newRow); writeOutcomes();
         const auto st = newRow.getProperty ("state", "").toString();
         std::cout << "  -> " << st << ": " << newRow.getProperty ("reason", "").toString() << std::endl;
+        // THE SIDECHAIN A/B VERDICT (ruled 6 Oct), taken inside the tone check at its pick: policy-sensitive -> re-swept below, and
+        // the row just written is replaced by the re-sweep's own
+        { const auto now = juce::JSON::parse (recordFile.loadFileAsString()); const auto ab = now.getProperty ("sidechainPolicyCheck", {});
+          if (ab.isObject() && ab.getProperty ("policyNow", "").toString() == sidechaincheck::kPolicyNow && ab.getProperty ("verdict", "").toString() == "resweep" && ! resweep.contains (product))
+          { resweep.add (product); resweepWhys.add (product + ": " + ab.getProperty ("why", "").toString()); if (opt.projection) opt.projection->resweeps.push_back ({ product, ab.getProperty ("why", "").toString(), true }); std::cout << "  -> re-sweep (the sidechain A/B at the pick): " << ab.getProperty ("why", "").toString() << std::endl; } }
         if (st == "exported" || newRow.getProperty ("reason", "").toString().startsWith ("export written (derive-only")) ++done; else if (st == "needs_licence") ++licence; else ++failed;
     }
     {
@@ -5164,6 +5127,74 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
 
     const auto main = checkAt (g, "");
     if (main.window) return kToneWindowExit;
+    // THE WRITE FAULT (Kathy's ruling 2, 6 Oct): a reading ~0 where the curve predicts compression is first asked whether the
+    // check wrote what the sweep wrote - its writes against the sweep trace's set lines; a difference is a WRITE FAULT (fix the
+    // writes, re-check: never a re-sweep). Zip, 5 Oct: ratio [5] check 0.0000, sweep 0.4219.
+    juce::String writeFaultNote;
+    const auto viewForAb = candidate.isNotEmpty() ? profile::candidateAsSingle (record, candidate, ratioNote).getProperty ("thresholdSweep", {}) : record.getProperty ("thresholdSweep", {});
+    if (main.ran && sidechaincheck::nearZeroWherePredicted (main.gr, main.pick.expectedGrDb))
+    {
+        std::vector<std::pair<int, double>> checkWrites; for (const auto& w : sets) checkWrites.push_back ({ w.upToFirstOccurrenceOf (":", false, false).getIntValue(), w.fromFirstOccurrenceOf (":", false, false).getDoubleValue() });
+        const auto stem = recordFile.getFileNameWithoutExtension(); const juce::String prefix = candidate.isNotEmpty() ? ".c" + juce::String (plan.thr) + "." : juce::String();
+        std::vector<std::pair<int, double>> traceSets; juce::String traceName;
+        for (const auto& f : opt.out.getChildFile ("raw").findChildFiles (juce::File::findFiles, false, stem + ".sweep.*pos00.1.txt"))
+        {
+            const auto tag = f.getFileName().fromFirstOccurrenceOf (".sweep.", false, false);
+            if (tag.startsWith ("r2.")) continue;
+            if (prefix.isNotEmpty() && ! (".sweep." + tag).contains (prefix)) continue;
+            if (prefix.isEmpty() && tag.matchesWildcard ("c*.pos*", true)) continue;
+            traceSets = sidechaincheck::parseTrace (f.loadFileAsString()).sets; traceName = f.getFileName(); break;
+        }
+        if (traceName.isEmpty()) writeFaultNote = "near zero where " + juce::String (main.pick.expectedGrDb, 1) + " dB was predicted; no sweep trace to compare the writes against";
+        else { const auto wf = sidechaincheck::writeFault (checkWrites, traceSets, plan.thr); writeFaultNote = wf.isNotEmpty() ? wf + " (sweep trace " + traceName + ")" : "near zero where " + juce::String (main.pick.expectedGrDb, 1) + " dB was predicted; the writes agree with the sweep trace " + traceName + " (not a write fault)"; }
+        say ("TONE: " + product + " - " + writeFaultNote);
+    }
+    // THE SIDECHAIN A/B AT THE TONE CHECK'S OWN PICK (Kathy's ruling 2 and the re-verify plan, 6 Oct): a record swept under an
+    // earlier sidechain policy whose unit declares an extra input gets ONE more process - the same pick, the same writes, the
+    // record's own policy through the probe's test switch - and the two readings are compared: > 0.1 dB apart is policy-
+    // sensitive and the record is re-swept; within it the record stands. The verdict goes on the record (sidechainPolicyCheck).
+    {
+        const auto sc = viewForAb.getProperty ("sidechain", {});
+        const auto policyBefore = sc.getProperty ("policy", "").toString();
+        const bool extraBus = sc.isObject() && sc.getProperty ("extraInputBuses", {}).size() > 0;
+        const auto sw = sidechaincheck::switchFor (policyBefore);
+        if (main.ran && main.gr && extraBus && policyBefore != sidechaincheck::kPolicyNow && sw.isNotEmpty() && ! writeFaultNote.startsWith ("write fault"))
+        {
+            juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
+                                     "--sweep", "thr=" + juce::String (plan.thr), "norms=" + juce::String (main.pick.norm, 6),
+                                     "levels=" + toneLevels + juce::String (main.Lpeak, 4), "hz=997", "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
+            if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
+            args.add ("sidechain=" + sw);
+            const auto r = runChild (args, opt.timeoutMs);
+            auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
+            raw.getChildFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.ab." + sw + ".1.txt").replaceWithText (r.out, false, false, "\n");
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("policyBefore", policyBefore); o->setProperty ("policyNow", sidechaincheck::kPolicyNow); o->setProperty ("at", "the tone check's pick, g " + juce::String (g, 1) + ", the full write list");
+            o->setProperty ("norm", main.pick.norm); o->setProperty ("level_dbfs", main.Lpeak); o->setProperty ("after_db", *main.gr);
+            if (r.kind == ChildResult::Kind::uiShown) { o->setProperty ("verdict", "window"); o->setProperty ("why", "sidechain A/B: a window appeared under '" + policyBefore + "' (" + r.describe() + "); record kept"); }
+            else if (! r.cleanExit()) { o->setProperty ("verdict", "crashed"); o->setProperty ("why", "sidechain A/B: the probe " + r.describe() + " under '" + policyBefore + "'; record kept"); }
+            else
+            {
+                sweep::ProcessOut po { r.out, true, r.describe(), (float) main.pick.norm };
+                const auto d = sweep::derive (sweep::mergeProcesses ({ juce::String(), true, "none", -1.0f }, { po }), { main.Lpeak }, plan.ratioIndex, true);
+                const auto key = sweep::levelKey (main.Lpeak);
+                const std::optional<double> before = d.reduction.count (key) && ! d.reduction.at (key).empty() ? d.reduction.at (key)[0] : std::nullopt;
+                if (! before) { o->setProperty ("verdict", "not_run"); o->setProperty ("why", "sidechain A/B: no reading under '" + policyBefore + "'; record kept"); }
+                else
+                {
+                    const double delta = *main.gr - *before;
+                    o->setProperty ("before_db", *before); o->setProperty ("delta_db", delta);
+                    const bool rs = std::abs (delta) > sidechaincheck::kSameDb;
+                    o->setProperty ("verdict", rs ? "resweep" : "same");
+                    o->setProperty ("why", juce::String ("sidechain A/B at the pick (norm ") + juce::String (main.pick.norm, 3) + ", " + juce::String (main.Lpeak, 1) + " dBFS): GR " + juce::String (*before, 2) + " dB under '" + policyBefore + "' -> " + juce::String (*main.gr, 2) + " dB under '" + sidechaincheck::kPolicyNow + "'"
+                                           + (rs ? ": policy-sensitive, re-sweep" : ": the same within 0.1 dB, the record stands"));
+                }
+            }
+            o->setProperty ("readAt", juce::Time::getCurrentTime().toISO8601 (false));
+            say ("TONE: " + product + " - " + o->getProperty ("why").toString());
+            if (auto* ro = record.getDynamicObject()) { ro->setProperty ("sidechainPolicyCheck", juce::var (o)); recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n"); }
+        }
+    }
     // THE RANGE RE-SAMPLE (ruled 4 Oct): this product is loaded in this session anyway, so every control whose range is partial
     // is read at 21 norms now (one probe process per control, seconds) and the corrected control data written to cert/controls/.
     {
@@ -5206,6 +5237,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     o->setProperty ("quiet_check_ok", main.quietOk);
     o->setProperty ("gr_measured_db", main.gr ? juce::var (std::round (*main.gr * 100.0) / 100.0) : juce::var());
     o->setProperty ("pass_within_0_5_db", main.pass);
+    if (writeFaultNote.isNotEmpty()) o->setProperty ("write_fault", writeFaultNote);
     if (! main.ran) o->setProperty ("why_not_run", main.why);
     o->setProperty ("probe", id.cdhash); o->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
     o->setProperty ("ratio_norm_source", ratioNote); o->setProperty ("spec", "v1.7");
