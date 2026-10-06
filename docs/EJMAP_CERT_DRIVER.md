@@ -2629,3 +2629,17 @@ writes: `write fault: [5] check 0.0000, sweep 0.4219 (sweep trace …pos00.1.txt
   a dual-mono pair), said on the record; both release times and the definition string; the §7 block as `time_draft` in
   `cert/phaseb/timing/timing/` — never in a compressor profile.
 - The certification path is untouched: derive-only equal to 804a0a56 on Sean's zip and the rehearsal sets, 0 differences.
+
+## 63. Sean's ruling on Auto-Tune Vocal Compressor (6 Oct; tonight's build 0d2ccd5d)
+
+My earlier "pitch tracker mutes an unpitched signal" was a guess and wrong (the unit is a plain compressor: unity −60..−6 at
+default on his sweep). The two detector traces show: identical writes, input present, and under the two-tone an output of
+EXACTLY zero at every one of the 36 levels (`out_peak_db −999`, `nonfinite 0`) while the sine reached 2 dB at −15.30 dBFS at
+norm 0.70 — "not_reached" came from silence, not from the ladder's top or headroom; what silences it the probe cannot say.
+Built: (1) an attempted, unmeasured detector is exported **exactly** `"detector_f": null, "detector_f_source": "unknown"`, the
+reason in `notes`; never assumed, never a default; measured profiles carry no `detector_f_source` (the "measured" tag of the
+morning's builds is gone again); a never-attempted detector still refuses, so the follow-up measures first. (2) The tone check
+with a null `detector_f` runs at BOTH L_ref values (f = 0: −18.4; f = 1: −9.21), g = 2 and every deep level, and passes only if
+both pass; both readings are on the check's file (`both_levels`). (3) The detector retries at the position whose 2 dB point is
+nearest −27 dBFS RMS when either signal falls short at the −18 position, records the position used, and records
+`unmeasurable` with the reason when both positions fail. Pins X16b–d, D4 (mutants: "assumed rms", a missing source, 0.0).

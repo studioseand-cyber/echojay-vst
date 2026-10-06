@@ -28,7 +28,10 @@ REPO=~/src/echojay-vst            # wherever the checkout is
 #   the rehearsal set: 0 differences), plus Phase B: --redo gain-cal,timing (the gain spec v0.1 verdicts + acceptance re-measure and an
 #   ej_gain_profile/1 draft; the timing spec v0.1 second pass, scaled hold, gr_shift_db, the pick as the amount and a `time` draft) and
 #   --redo nothing_nominated (measurement nominates when the lexicon finds nothing). 804a0a56 IS THE FALLBACK for tonight.
-git -C "$REPO" fetch && git -C "$REPO" checkout 9d3a1972     # branch feat/ejmap-cert; the commit after it is this documentation (804a0a56: the fallback)
+#   TONIGHT'S BUILD, FINAL (6 Oct 16:12, Sean's ruling on the Vocal Compressor): 0d2ccd5d - as 9d3a1972 plus: an attempted, unmeasured
+#   detector exports as detector_f null / detector_f_source "unknown" (reason in notes), measured profiles carry no detector_f_source,
+#   a null detector_f is tone-checked at both L_ref values, the detector retries at the -27 dBFS position. 9d3a1972 IS THE FALLBACK.
+git -C "$REPO" fetch && git -C "$REPO" checkout 0d2ccd5d     # branch feat/ejmap-cert; the commit after it is this documentation (9d3a1972: the fallback)
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
 cmake --build build-ejmap --target ejmap EchoJayProbe -j 4
@@ -71,6 +74,13 @@ ledger, the iLok, the power. Exit 0 = the probe verifies. From here the mapper r
 nothing on this page is needed again until the code changes.
 
 ## What was tested where
+
+**6 Oct 16:12, tonight's build, final (0d2ccd5d):** rebuilt from the clean checkout (stamp `0d2ccd5d`), packaged into
+`~/Desktop/ejmap-dist-6oct-c`, both signatures Developer ID / team 8BT5F9B887; preflight exit 0; from the packaged app Zip through
+the follow-up (1.98 dB PASS, the A/B the same) and Lindell SBC through `--phaseb-all --category timing`. Derive-only against
+9d3a1972 on Sean's current folder, his 4 Oct zip, cert_sc and cert_tc35: rows, records, controls and logs identical; the one
+difference is the `detector_f_source` key removed from every measured profile (Sean's amendment). The unknown-detector path
+rehearsed live on Lindell SBC with an injected unmeasurable detector.
 
 **6 Oct 15:00, tonight's build (9d3a1972):** rebuilt from the clean checkout (stamp `9d3a1972`), packaged into
 `~/Desktop/ejmap-dist-6oct-b`, both signatures Developer ID / team 8BT5F9B887; preflight exit 0 from inside the bundle; from the

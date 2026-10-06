@@ -7,9 +7,12 @@ re-derives each exported record from its traces, re-exports the profile with the
 certified plugin only for the tone checks. **The rows whose plan changed under this build are re-swept by the
 same command, which decides that itself** (below); you never name a product. It is resumable and uses the same window watch.
 
-**Tonight's build is commit `9d3a1972`** (6 Oct evening; branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
-step 1 with that commit checked out). `804a0a56` (6 Oct, midday) is the fallback: it runs the follow-up identically (the two were
-checked equal, derive-only, on your 4 Oct zip and on your current folder — 0 differences) but lacks tonight's Phase B re-runs.
+**Tonight's build is commit `0d2ccd5d`** (6 Oct, 16:12; branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
+step 1 with that commit checked out). It is `9d3a1972` plus your Vocal Compressor ruling (an unmeasured detector exported as
+`detector_f: null, detector_f_source: "unknown"` with the reason in notes; such a profile tone-checked at both L_ref values; the
+detector retried at the −27 dBFS position). `9d3a1972` is the fallback: it runs everything else identically (checked equal,
+derive-only, on your current folder and your 4 Oct zip: the only difference is the `detector_f_source` key gone from measured
+profiles).
 NOT `36397676`, which is the batch build and stays as it is, and **NEVER `17ebf114` or `b0258a7b` for the follow-up**: both carry the write bug — their re-derive dropped every record's sweep-time writes, so a tone check wrote Zip's
 ratio at 1:1 and the VBC profiles said mix 0 % — and the collapse bug, where the landing read wrote a picked candidate's view
 over its record; `804a0a56` and `9d3a1972` repair both from the records' own traces). It carries everything 17ebf114 did: v1.8–v2.1, the raw hold test, and the 4 Oct rules from your run (the measured pair rules, the licence row, the
@@ -57,7 +60,7 @@ product(s)`), re-derives and tone-checks everything else, then sweeps those thro
 them (detector, export, tone check). OneKnob Pumper (m)/(s) and the five licence-flag refusals are not on it: the
 `--retry-refused` line above covers those.
 
-## Step 1 — the follow-up (`ejmap.app` built from **9d3a1972**, tonight's build; 804a0a56 the fallback; NEVER 17ebf114 or b0258a7b)
+## Step 1 — the follow-up (`ejmap.app` built from **0d2ccd5d**, tonight's build; 9d3a1972 the fallback; NEVER 17ebf114 or b0258a7b)
 
 **Step 2 below lists tonight's three commands in order, and its command 1 IS this step.** Run step 2 top to bottom and nothing
 twice: this section explains what command 1 does and what to expect from it.
@@ -120,7 +123,7 @@ L_ref itself and passes (Lindell SBC's 6 dB included, under the v1.9 clamp).
 - **No sweeps, nothing sent.** A record without traces (none expected from the batch) is tone-checked on
   its existing points and says so.
 
-## Step 2 — tonight's order (6 Oct, build 9d3a1972): the follow-up, then the gain and timing re-runs, then the fallback
+## Step 2 — tonight's order (6 Oct, build 0d2ccd5d): the follow-up, then the gain and timing re-runs, then the fallback
 
 Three commands, in this order, each in its own go; Ctrl-C any time, and each resumes from where it stopped when run again.
 **Command 1 is step 1 (the follow-up) — not a second run of it.** Running step 2 top to bottom does everything once.
