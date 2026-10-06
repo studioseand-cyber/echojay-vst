@@ -666,9 +666,11 @@ inline Export exportCompProfile (const juce::var& f)
         }
         else
         {
-            // a measured detector: unchanged shape, no detector_f_source (Sean, 6 Oct)
+            // a measured detector says so, EXACTLY "detector_f_source": "measured" (Sean, 6 Oct evening, for the build after 0d2ccd5d;
+            // the server reads a missing key as measured on older files)
             P->setProperty ("detector_f", r2 (juce::jlimit (0.0, 1.0, *f)));
             P->setProperty ("detector_f_raw", r2 (*f));                                                     // unclamped, so an out-of-range measurement is visible
+            P->setProperty ("detector_f_source", "measured");
         }
     }
     {

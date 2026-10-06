@@ -10,3 +10,6 @@ Built: (1) an attempted, unmeasured detector exports EXACTLY "detector_f": null,
 never assumed, never 0.0; measured profiles carry no detector_f_source; the tone check with a null detector_f tests at both L_ref values
 (f = 0 rms -18.4, f = 1 peak -9.21) and passes only if both pass, both recorded (rehearsed live on Lindell SBC with an injected
 unmeasurable detector: the two files here). (2) the retry. The Vocal Compressor itself cannot be run here (licence-bound).
+
+SEAN (6 Oct evening): "detector_f_source": "measured" on every measured profile - derive-only over a copy of his folder with the new build, nothing loaded:
+{('measured', 'number'): 81, (None, 'number'): 1}

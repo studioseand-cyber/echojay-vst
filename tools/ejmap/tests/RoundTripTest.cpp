@@ -5532,7 +5532,7 @@ void testProfileExport()
         check (P.getProperty ("amount", {}).getProperty ("stepped", true).isBool() && ! (bool) P.getProperty ("amount", {}).getProperty ("stepped", true)
                  && std::abs ((double) P.getProperty ("detector_f", 9.0) - 0.2) < 1e-6,
                "export X16 (v1.4): stepped is a boolean (false for a continuous control); detector_f is the measured number");
-        check (! P.hasProperty ("detector_f_source"), "export X16b (Sean, 6 Oct): a measured detector's profile carries NO detector_f_source - its shape is unchanged");
+        check (P.getProperty ("detector_f_source", "").toString() == "measured" && P.getProperty ("detector_f", {}).isDouble(), "export X16b (Sean, 6 Oct evening): a measured detector's profile carries EXACTLY detector_f_source \"measured\" beside its number (a missing key goes red)");
         // X16c (Sean's ruling + amendment, 6 Oct): a detector not measured is exported EXACTLY as "detector_f": null, "detector_f_source": "unknown",
         // the reason in notes - never assumed, never a default value; a detector never run exports the same way (no refusal)
         { auto un = juce::JSON::parse (juce::JSON::toString (rec)); auto* dd = new juce::DynamicObject(); dd->setProperty ("fraction", juce::var()); dd->setProperty ("unmeasurable", "the two-tone produced no output at any level while the sine reached 2 dB");
