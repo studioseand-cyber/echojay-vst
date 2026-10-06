@@ -1,0 +1,79 @@
+{
+ "product": "bx_crispytuner",
+ "control": "Amount",
+ "heldVibratoSignal": "220 Hz, 30-cent 5 Hz sine vibrato, 4 s, -18 dB; retained = output vibrato depth / input vibrato depth (1 = kept whole, 0 = flattened)",
+ "heldVibrato": [
+  {
+   "norm": 0.0,
+   "display": "0",
+   "retained": 0.998,
+   "in_depth_cents": 28.2,
+   "out_depth_cents": 28.2,
+   "out_mean_cents": 0.3,
+   "windows": 327
+  },
+  {
+   "norm": 0.142857,
+   "display": "14",
+   "retained": 0.929,
+   "in_depth_cents": 28.2,
+   "out_depth_cents": 26.2,
+   "out_mean_cents": 0.3,
+   "windows": 327
+  },
+  {
+   "norm": 0.285714,
+   "display": "29",
+   "retained": 0.724,
+   "in_depth_cents": 28.2,
+   "out_depth_cents": 20.5,
+   "out_mean_cents": 0.3,
+   "windows": 327
+  },
+  {
+   "norm": 0.428571,
+   "display": "43",
+   "retained": 0.619,
+   "in_depth_cents": 28.2,
+   "out_depth_cents": 17.5,
+   "out_mean_cents": 0.3,
+   "windows": 327
+  },
+  {
+   "norm": 0.571429,
+   "display": "57",
+   "retained": 0.507,
+   "in_depth_cents": 28.2,
+   "out_depth_cents": 14.3,
+   "out_mean_cents": 0.0,
+   "windows": 327
+  },
+  {
+   "norm": 0.714286,
+   "display": "71",
+   "retained": 0.398,
+   "in_depth_cents": 28.2,
+   "out_depth_cents": 11.2,
+   "out_mean_cents": 0.3,
+   "windows": 327
+  },
+  {
+   "norm": 0.857143,
+   "display": "86",
+   "retained": 0.306,
+   "in_depth_cents": 28.2,
+   "out_depth_cents": 8.6,
+   "out_mean_cents": 0.2,
+   "windows": 327
+  },
+  {
+   "norm": 1.0,
+   "display": "100",
+   "retained": 0.296,
+   "in_depth_cents": 28.2,
+   "out_depth_cents": 8.4,
+   "out_mean_cents": 0.2,
+   "windows": 327
+  }
+ ]
+}

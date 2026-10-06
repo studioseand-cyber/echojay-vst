@@ -2669,3 +2669,20 @@ nearest −27 dBFS RMS when either signal falls short at the −18 position, rec
   L-18 fails to instantiate here (exit 1) — the "Peak"-named case is Sean's to prove. Observation for the accuracy pass: the
   roles block still reports bx_limiter True Peak's Gain as a measured ceiling (holds against the drive because the named
   ceiling pins the output; same in Sean's log).
+
+## 65. Tuners: Humanize with the vibrato held note, and `--redo tuners` (Kathy's item 5, 6 Oct)
+
+The static held note showed nothing. Built (data only, nothing exported): every Humanize-named control's block now runs a
+THIRD probe, the held note carrying a **30-cent 5 Hz sine vibrato** (4 s, −18 dB), and every STRENGTH candidate's sweep runs the
+same held note once; the derivation (`pitch::deriveVibrato`, pins V5–V8) reads the vibrato's depth in the output against the
+input's over the readable windows after the first half second (√2 × RMS about the mean; both read by the same detector so its
+window's smearing cancels; an input read under half the generated depth is the detector's fault and refused): `retained` 1 = the
+held note's vibrato kept whole, 0 = flattened. On the fixture: `pitchCandidates[].heldVibrato[]` (per position: `retained`,
+depths, the output's mean cents, windows) and `pitchExtras.humanize[].positions[].held_vibrato_*`. bx_crispytuner has no
+Humanize-named control (its "Time Tolerance" is swept as a flex ladder; not re-labelled — a lexicon question for Kathy), so the
+rehearsal shows the measure on its strength control **Amount**: 0 → 0.998, 14 → 0.929, 29 → 0.724, 43 → 0.619, 57 → 0.507,
+71 → 0.398, 86 → 0.306, 100 → 0.296 (129 s). `--redo tuners`: a twelfth Phase B category `tuners` (`--cert-tuner <product>`,
+the ledger's `pitch` products — the catalogue's category, or a local map's when the catalogue has none, as the worklist reads
+it; guard 30 min; pin P17, P1 twelve). Its record is the mode's fixture, moved to `phaseb/tuners/tuner/<stem>.json` beside the row;
+the one store `cert/fixtures/` is never written by Phase B. Here the ledger has crispytuner as category none, so the rehearsal
+ran against a scratch ledger copy marking it `pitch` (`~/Library/ejmap` untouched).

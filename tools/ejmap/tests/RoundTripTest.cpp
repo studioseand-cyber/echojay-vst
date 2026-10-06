@@ -6998,6 +6998,22 @@ void testTunerV01()
     check (sn.result == "measured" && sn.windowsUsed == 6 && std::abs (sn.residualCents - 13.5) < 1e-6 && std::abs (sn.strength - 0.55) < 1e-6, "tuner V1: six short notes, residual = the median of each note's second half (13.5), strength 0.55 (" + sn.reason + ")");
     PitchPosition two = notes; two.windows.resize (12);
     check (deriveShortNotes (two, 30.0).result == "refused" && deriveShortNotes (two, 30.0).reason.contains ("fewer than 3 readable notes"), "tuner V2: two notes are not enough (a guard, not a number)");
+    // V5/V6 (Kathy, 6 Oct item 5): the held note with a 30-cent 5 Hz sine vibrato; retained = output depth / input depth over the windows after settling
+    {
+        auto vwin = [] (double tMs, double inC, double outC) { Window w; w.tMs = tMs; w.inC = inC; w.inConf = 1.0; w.outC = outC; w.outConf = 1.0; w.outDb = -20.0; w.target = 0.0; return w; };
+        PitchPosition kept, flat, early; kept.landed = flat.landed = early.landed = true;
+        for (int n = 0; n < 210; ++n) { const double t = n * 10.0, ph = juce::MathConstants<double>::twoPi * 5.0 * t / 1000.0; kept.windows.push_back (vwin (t, 30.0 * std::sin (ph), 6.0 * std::sin (ph) + 2.0)); flat.windows.push_back (vwin (t, 30.0 * std::sin (ph), 0.3 * std::sin (ph))); if (t < 400.0) early.windows.push_back (vwin (t, 30.0 * std::sin (ph), 30.0 * std::sin (ph))); }
+        const auto vk = deriveVibrato (kept, 30.0), vf = deriveVibrato (flat, 30.0), ve = deriveVibrato (early, 30.0);
+        check (vk.result == "measured" && std::abs (vk.inDepthCents - 30.0) < 0.5 && std::abs (vk.outDepthCents - 6.0) < 0.5 && std::abs (vk.retained - 0.2) < 0.01 && std::abs (vk.outMeanCents - 2.0) < 0.1 && vk.windowsUsed == 160,
+               "tuner V5: a 30-cent vibrato leaving the output 6 cents deep (about +2) is retained 0.20 over the 160 windows after the first half second (" + juce::String (vk.retained, 3) + ")");
+        check (vf.result == "measured" && vf.retained < 0.02 && ve.result == "refused" && ve.reason.contains ("fewer than"), "tuner V6: a flattened held note retains ~0; windows only inside the settling half second are refused");
+        Window w0 = vwin (1000.0, 2.0, 1.0); PitchPosition weak = kept; for (auto& w : weak.windows) w.inC *= 0.3;
+        check (deriveVibrato (weak, 30.0).result == "refused" && deriveVibrato (weak, 30.0).reason.contains ("under half the generated"), "tuner V7: an input vibrato read under half the generated depth is refused (the detector, not the unit)");
+        PitchPosition smeared = kept; for (auto& w : smeared.windows) { w.inC *= 0.8; w.outC = (w.outC - 2.0) * 0.8 + 2.0; }   // the detector's window smears both by the same factor
+        check (deriveVibrato (smeared, 30.0).result == "measured" && std::abs (deriveVibrato (smeared, 30.0).retained - 0.2) < 0.01, "tuner V8: retained is the output depth over the INPUT depth as read (24 -> 4.8 cents = 0.20), never over the generated 30");
+    }
+    check (ejmap::phaseb::categoryNamed ("tuners") != nullptr && ejmap::phaseb::categoryNamed ("tuners")->mode == "--cert-tuner" && ejmap::phaseb::categoryNamed ("tuners")->ledgerCategories.contains ("pitch") && ejmap::phaseb::rowToRedo (juce::JSON::parse ("{\"outcome\":\"ok\",\"records\":[\"tuner/x.json\"]}"), "tuners", { "tuners" }),
+           "phaseb P17: 'tuners' is a Phase B category running --cert-tuner over the ledger's pitch products, and --redo tuners runs its finished rows again");
     // tolerance: strengths at 5/10/20/30/50 cents
     // Auto-Tune Pro at Flex-Tune 86 (4 Oct): 5 -> 1.00, 10 -> 0.63, 20 -> 0.24, 30 -> 0.10, 40 -> 0.04, 45 -> 0.02: the window is 10 cents
     const auto t1 = toleranceFrom ({ { 5.0, 1.002 }, { 10.0, 0.631 }, { 20.0, 0.236 }, { 30.0, 0.104 }, { 40.0, 0.037 }, { 45.0, 0.015 } });
@@ -7753,7 +7769,7 @@ void testTextPassTimeout()
 void testPhaseB()
 {
     using namespace ejmap::phaseb;
-    check (categories().size() == 11 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories().back().name == "multiband", "phaseb P1: eleven categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband)");
+    check (categories().size() == 12 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories().back().name == "tuners", "phaseb P1: twelve categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners)");
     for (const auto& c : categories()) check (c.guardS >= 600.0 && c.guardWhy.isNotEmpty(), "phaseb P2: " + c.name + " has a stated hang guard of at least 10 min (" + juce::String (c.guardS / 60.0, 0) + ")");
     check (categoryNamed ("saturation")->ledgerCategories.contains ("amp_sim") && modeWord ("--cert-reverb-delay") == "reverbdelay" && modeWord ("--cert-gain-cal") == "gaincal", "phaseb P3: amp sims ride with saturation; the mode word is the record folder");
     // the done marker: a row file, whole or absent

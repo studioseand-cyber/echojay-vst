@@ -40,7 +40,10 @@ inline const std::vector<Category>& categories()
         { "delay",       "--cert-reverb-delay",  "delay",     { "delay" },                     1200.0, "as reverb plus 5 feedback + 3 tempos: ~5-8 min measured" },
         { "transient",   "--cert-dynamics",      "transient", { "transient_shaper" },          600.0,  "two neutral runs + 5-10 hit runs + the pool's hit pairs: ~2-4 min" },
         { "gate",        "--cert-dynamics",      "gate",      { "gate" },                      900.0,  "5 ramps + 3 range ramps + 9 bursts + the pool's ramp pairs: ~4-6 min" },
-        { "multiband",   "--cert-multiband",     "",          {},                              1500.0, "a pairing response per threshold, a ladder per band, 25-30 vocal responses: ~4-8 min measured" } };
+        { "multiband",   "--cert-multiband",     "",          {},                              1500.0, "a pairing response per threshold, a ladder per band, 25-30 vocal responses: ~4-8 min measured" },
+        // tuners (Kathy, 6 Oct item 5): the tuner certification run again for its data (Humanize with the vibrato held note); the record
+        // lands beside the row (phaseb/tuners/tuner/), NEVER in the one store (cert/fixtures/), which --redo tuners leaves untouched
+        { "tuners",      "--cert-tuner",         "",          { "pitch" },                     1800.0, "strength + speed sweeps per strength control, flex ladder, humanize (three runs), key/scale grids: ~5-15 min" } };
     return k;
 }
 inline const Category* categoryNamed (const juce::String& name) { for (const auto& c : categories()) if (c.name == name) return &c; return nullptr; }

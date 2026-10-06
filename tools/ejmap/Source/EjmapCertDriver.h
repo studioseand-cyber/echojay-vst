@@ -4505,8 +4505,10 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
         {
             for (const auto& ir : installed)
             {
-                const auto it = in.categoryByUid.find (ir.uidKey); if (it == in.categoryByUid.end()) continue;
-                if (! cat.ledgerCategories.contains (it->second)) continue;
+                // the catalogue's category is the fact; a local map's when the catalogue has none (as the certification worklist reads it)
+                juce::String category; if (const auto it = in.categoryByUid.find (ir.uidKey); it != in.categoryByUid.end()) category = it->second;
+                if (category.isEmpty()) if (const auto lm = in.localMapCategory.find (ir.identityKey); lm != in.localMapCategory.end()) category = lm->second;
+                if (! cat.ledgerCategories.contains (category)) continue;
                 PhaseBProduct pp; pp.product = ir.desc.name; pp.stem = stemFor (ir.desc); pp.category = cat.name; pp.desc = ir.desc; list.push_back (pp);
             }
         }
@@ -4584,9 +4586,10 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 for (const auto& d : tmp.findChildFiles (juce::File::findDirectories, false))
                 {
                     if (d.getFileName() == "raw") { const auto rawDir = catDir.getChildFile ("raw"); rawDir.createDirectory(); for (const auto& f : d.findChildFiles (juce::File::findFiles, false)) { gzipInto (f, rawDir); ++rawN; } continue; }
-                    if (d.getFileName() == "fixtures") continue;
-                    const auto dst = catDir.getChildFile (d.getFileName()); dst.createDirectory();
-                    for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.json")) { const auto target = dst.getChildFile (f.getFileName()); target.deleteFile(); f.moveFileTo (target); records.add (d.getFileName() + "/" + f.getFileName()); }
+                    if (d.getFileName() == "fixtures" && cat.name != "tuners") continue;   // a timing fixture copied in; for tuners the mode's record IS the fixture: kept as phaseb/tuners/tuner/, the one store untouched
+                    const auto dstName = cat.name == "tuners" && d.getFileName() == "fixtures" ? juce::String ("tuner") : d.getFileName();
+                    const auto dst = catDir.getChildFile (dstName); dst.createDirectory();
+                    for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.json")) { const auto target = dst.getChildFile (f.getFileName()); target.deleteFile(); f.moveFileTo (target); records.add (dstName + "/" + f.getFileName()); }
                 }
                 { const auto lg = catDir.getChildFile ("logs"); lg.createDirectory(); const auto target = lg.getChildFile (pp.stem + ".log.txt"); target.deleteFile(); tmp.getChildFile ("log.txt").moveFileTo (target); }
                 row->setProperty ("records", records); row->setProperty ("raw_files", rawN);
@@ -5116,9 +5119,35 @@ inline int runCertTuner (const SweepOptions& opt)
             if (! mv.ok) break;
         }
         auto rec = pitch::composePitchSweep (ms, runs, keyIndex, keyText);
+        // the held note WITH a 30-cent 5 Hz sine vibrato on the strength control too (Kathy, 6 Oct item 5, data only): a tuner with no
+        // Humanize word (bx_crispytuner) still shows here how much of a held note's vibrato each strength position keeps
+        juce::Array<juce::var> heldVib;
+        if (! windowSeen)
+        {
+            auto hv = runProbe ("c" + ctl + ".heldvib", { "--sweep-pitch", "ctl=" + ctl, "norms=" + norms.joinIntoString (","), "gen=vibrato", "shape=sine", "rate=5", "note=220", "cents=30", "hold=4", "db=-18" });
+            if (hv.kind == ChildResult::Kind::uiShown) windowSeen = true;
+            const auto mhv = pitch::parsePitch (hv.cleanExit() ? hv.out : juce::String ("refused " + hv.describe()));
+            juce::StringArray rs;
+            for (int k = 0; k < norms.size(); ++k)
+            {
+                auto* po = new juce::DynamicObject(); po->setProperty ("norm", norms[k].getDoubleValue());
+                if (mhv.ok && (size_t) k < mhv.positions.size())
+                {
+                    const auto& pp = mhv.positions[(size_t) k]; po->setProperty ("display", pp.text);
+                    const auto vr = pitch::deriveVibrato (pp, 30.0);
+                    po->setProperty ("retained", vr.result == "measured" ? juce::var (vr.retained) : juce::var ("refused: " + vr.reason));
+                    if (vr.result == "measured") { po->setProperty ("in_depth_cents", std::round (vr.inDepthCents * 10.0) / 10.0); po->setProperty ("out_depth_cents", std::round (vr.outDepthCents * 10.0) / 10.0); po->setProperty ("out_mean_cents", std::round (vr.outMeanCents * 10.0) / 10.0); po->setProperty ("windows", vr.windowsUsed); }
+                    rs.add (pp.text + " -> " + po->getProperty ("retained").toString());
+                }
+                else po->setProperty ("retained", "refused: " + (mhv.ok ? juce::String ("position absent") : mhv.refused));
+                heldVib.add (juce::var (po));
+            }
+            say ("  [" + ctl + "] " + c->name + ": held-note vibrato retained: " + rs.joinIntoString (", "));
+        }
         if (auto* o = rec.getDynamicObject())
         {
             o->setProperty ("index", c->index); o->setProperty ("name", c->name);
+            o->setProperty ("heldVibrato", heldVib); o->setProperty ("heldVibratoSignal", "220 Hz, 30-cent 5 Hz sine vibrato, 4 s, -18 dB; retained = output vibrato depth / input vibrato depth (1 = kept whole, 0 = flattened)");
             if (! ms.ok) o->setProperty ("staticRefused", ms.refused);
             if (! runs.empty() && ! runs.front().vib.ok) o->setProperty ("vibratoRefused", runs.front().vib.refused);
             o->setProperty ("detentsBy", detentsBy); if (! detentTexts.isEmpty()) { juce::Array<juce::var> dt; for (const auto& t : detentTexts) dt.add (t); o->setProperty ("detentTexts", dt); }
@@ -5191,8 +5220,11 @@ inline int runCertTuner (const SweepOptions& opt)
                     const auto norms = normsFor (c);
                     auto held = runProbe ("h" + ctl + ".held",  { "--sweep-pitch", "ctl=" + ctl, "norms=" + norms.joinIntoString (","), "gen=static", "note=220", "cents=30", "hold=4", "db=-18" });
                     auto shrt = runProbe ("h" + ctl + ".notes", { "--sweep-pitch", "ctl=" + ctl, "norms=" + norms.joinIntoString (","), "gen=notes", "note=220", "cents=30", "hold=4", "note_ms=200", "gap_ms=100", "db=-18" });
+                    // the held note WITH a 30-cent 5 Hz sine vibrato (Kathy, 6 Oct item 5): the static held note showed nothing; Humanize shows as the vibrato kept
+                    auto vibr = runProbe ("h" + ctl + ".heldvib", { "--sweep-pitch", "ctl=" + ctl, "norms=" + norms.joinIntoString (","), "gen=vibrato", "shape=sine", "rate=5", "note=220", "cents=30", "hold=4", "db=-18" });
                     const auto mh = pitch::parsePitch (held.cleanExit() ? held.out : juce::String ("refused " + held.describe()));
                     const auto mn = pitch::parsePitch (shrt.cleanExit() ? shrt.out : juce::String ("refused " + shrt.describe()));
+                    const auto mv = pitch::parsePitch (vibr.cleanExit() ? vibr.out : juce::String ("refused " + vibr.describe()));
                     auto* ho = new juce::DynamicObject(); ho->setProperty ("index", idx); ho->setProperty ("name", name);
                     juce::Array<juce::var> positions;
                     for (int k = 0; k < norms.size(); ++k)
@@ -5200,12 +5232,14 @@ inline int runCertTuner (const SweepOptions& opt)
                         auto* po = new juce::DynamicObject(); po->setProperty ("norm", norms[k].getDoubleValue());
                         if (mh.ok && (size_t) k < mh.positions.size()) { po->setProperty ("display", mh.positions[(size_t) k].text); const auto sr = pitch::deriveStrength (mh.positions[(size_t) k], 30.0); po->setProperty ("held_note_correction", sr.result == "measured" ? juce::var (sr.strength) : juce::var ("refused: " + sr.reason)); }
                         if (mn.ok && (size_t) k < mn.positions.size()) { const auto sn = pitch::deriveShortNotes (mn.positions[(size_t) k], 30.0); po->setProperty ("short_note_correction", sn.result == "measured" ? juce::var (sn.strength) : juce::var ("refused: " + sn.reason)); po->setProperty ("short_notes", sn.windowsUsed); }
+                        if (mv.ok && (size_t) k < mv.positions.size()) { const auto vr = pitch::deriveVibrato (mv.positions[(size_t) k], 30.0); po->setProperty ("held_vibrato_retained", vr.result == "measured" ? juce::var (vr.retained) : juce::var ("refused: " + vr.reason)); if (vr.result == "measured") { po->setProperty ("held_vibrato_in_depth_cents", std::round (vr.inDepthCents * 10.0) / 10.0); po->setProperty ("held_vibrato_out_depth_cents", std::round (vr.outDepthCents * 10.0) / 10.0); po->setProperty ("held_vibrato_out_mean_cents", std::round (vr.outMeanCents * 10.0) / 10.0); po->setProperty ("held_vibrato_windows", vr.windowsUsed); } }
                         if (po->getProperty ("held_note_correction").isDouble() && po->getProperty ("short_note_correction").isDouble() && (double) po->getProperty ("short_note_correction") > 0.05)
                             po->setProperty ("held_over_short", std::round ((double) po->getProperty ("held_note_correction") / (double) po->getProperty ("short_note_correction") * 1000.0) / 1000.0);
                         positions.add (juce::var (po));
                     }
                     ho->setProperty ("positions", positions); humanize.add (juce::var (ho));
-                    say ("  humanize [" + ctl + "] " + name + ": held vs short notes at " + juce::String (norms.size()) + " position(s)");
+                    ho->setProperty ("held_vibrato_signal", "220 Hz, 30-cent 5 Hz sine vibrato, 4 s, -18 dB; retained = output vibrato depth / input vibrato depth (1 = kept whole, 0 = flattened)");
+                    { juce::StringArray rs; for (const auto& pv : positions) rs.add (pv.getProperty ("display", "").toString() + " -> " + pv.getProperty ("held_vibrato_retained", "").toString()); say ("  humanize [" + ctl + "] " + name + ": held vs short notes at " + juce::String (norms.size()) + " position(s); vibrato retained on the held note: " + rs.joinIntoString (", ")); }
                 }
                 else if ((pitch::keyName (name) || pitch::scaleName (name)) && ! nametokens::controlAnswersTerm (name, "learn") && ! nametokens::controlAnswersTerm (name, "midi"))   // not 'Learn Scale from MIDI'
                 {

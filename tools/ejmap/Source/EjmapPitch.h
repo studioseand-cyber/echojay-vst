@@ -322,6 +322,25 @@ inline StrengthResult deriveShortNotes (const PitchPosition& p, double detune)
     r.result = "measured";
     return r;
 }
+// HELD NOTE WITH VIBRATO (Kathy, 6 Oct item 5: Humanize): a held note carrying a 30-cent 5 Hz sine vibrato; the DEPTH of the
+// vibrato in the output against the input's (both read by the same detector, so the window's smearing cancels): 1 = the
+// vibrato kept whole (Humanize letting the held note move), 0 = flattened. Depth = sqrt(2) x the RMS about the mean over the
+// readable windows after the first half second; the input's depth must be at least half the generated cents.
+inline constexpr double kVibratoSettleMs = 500.0; inline constexpr int kVibratoMinWindows = 16;
+struct VibratoResult { juce::String result = "refused", reason; double inDepthCents = 0.0, outDepthCents = 0.0, retained = 0.0, outMeanCents = 0.0; int windowsUsed = 0; };
+inline VibratoResult deriveVibrato (const PitchPosition& p, double cents)
+{
+    VibratoResult r;
+    if (! p.landed) { r.reason = "write did not land"; return r; }
+    std::vector<double> ins, outs;
+    for (const auto& w : p.windows) if (w.tMs >= kVibratoSettleMs && readable (w) && w.inConf >= kMinConf && w.inC > -9000.0) { ins.push_back (w.inC); outs.push_back (w.outC); }
+    if ((int) ins.size() < kVibratoMinWindows) { r.reason = "fewer than " + juce::String (kVibratoMinWindows) + " readable windows after settling (" + juce::String ((int) ins.size()) + ")"; return r; }
+    auto depth = [] (const std::vector<double>& v, double& mean) { mean = 0.0; for (double x : v) mean += x; mean /= (double) v.size(); double ss = 0.0; for (double x : v) ss += (x - mean) * (x - mean); return std::sqrt (2.0 * ss / (double) v.size()); };
+    double inMean = 0.0; r.inDepthCents = depth (ins, inMean); r.outDepthCents = depth (outs, r.outMeanCents); r.windowsUsed = (int) ins.size();
+    if (r.inDepthCents < 0.5 * std::abs (cents)) { r.reason = "the detector read the input's vibrato at " + juce::String (r.inDepthCents, 1) + " cents deep, under half the generated " + juce::String (cents, 1); return r; }
+    r.retained = std::round (r.outDepthCents / r.inDepthCents * 1000.0) / 1000.0;
+    r.result = "measured"; return r;
+}
 // THE FLEX WINDOW from the strengths at the detunes (detune -> strength, measured ones only). Measured 4 Oct on Auto-Tune Pro:
 // Flex-Tune corrects notes NEAR the target and leaves far-off notes alone - at 86, 5 cents -> 1.00, 10 -> 0.63, 20 -> 0.24,
 // 30 -> 0.10 - so the statistic the spec drafted ("the smallest detune corrected") is 5 at every position but 100 and says

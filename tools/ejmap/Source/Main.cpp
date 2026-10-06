@@ -866,6 +866,7 @@ namespace
             if (a == "--cert-tuner")
             {
                 ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION;
+                if (i + 1 < argc && ! argAt (argc, argv, i + 1).startsWith ("--")) o.product = argAt (argc, argv, i + 1);   // --cert-tuner <product>: the Phase B child form (6 Oct, --redo tuners)
                 for (int j = 1; j < argc; ++j)
                 {
                     const auto k = argAt (argc, argv, j); const auto v = argAt (argc, argv, j + 1);
