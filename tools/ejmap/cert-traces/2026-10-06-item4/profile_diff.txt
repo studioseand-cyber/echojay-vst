@@ -78,3 +78,8 @@ OUTCOMES (/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES
 REASONS: new keys detector_f_source / measured.sidechain / measured.extra_input_buses (this build); tone_check absent (derive-only runs none); Lindell 254E stepped False -> True
 (amountLanding read on 5 Oct: stepped by evidence); bx_townhouse detector 0.70 -> 0.69 (re-swept on 5 Oct by the sidechain reading, a fresh detector); the 14 writes above (restored).
 VERDICT: no unexplained difference.
+
+=== (C) 6 Oct 15:xx - tonight's build 9d3a1972 against 804a0a56, derive-only over a COPY of Sean's current folder (~/Downloads/cert), both packaged apps
+rows 181 = 181, state/reason differences 0; records 245/245 differ 0; profiles 83/83 differ 0; controls 45/45 differ 0 (time stamps masked);
+the derive logs identical line for line (8688 lines each; paths and the RE-DERIVED stamp lines masked); RE-SWEEP 2 (Mike-E, MAGNUM-K) on both.
+VERDICT: equal. No rebuild.

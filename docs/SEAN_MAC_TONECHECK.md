@@ -7,11 +7,12 @@ re-derives each exported record from its traces, re-exports the profile with the
 certified plugin only for the tone checks. **The rows whose plan changed under this build are re-swept by the
 same command, which decides that itself** (below); you never name a product. It is resumable and uses the same window watch.
 
-**The follow-up build is commit `804a0a56`** (6 Oct; branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
-step 1 with that commit checked out — NOT `36397676`, which is the batch build and stays as it is, and **NOT `17ebf114` or
-`b0258a7b`**: both carry the write bug — their re-derive dropped every record's sweep-time writes, so a tone check wrote Zip's
+**Tonight's build is commit `9d3a1972`** (6 Oct evening; branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
+step 1 with that commit checked out). `804a0a56` (6 Oct, midday) is the fallback: it runs the follow-up identically (the two were
+checked equal, derive-only, on your 4 Oct zip and on your current folder — 0 differences) but lacks tonight's Phase B re-runs.
+NOT `36397676`, which is the batch build and stays as it is, and **NEVER `17ebf114` or `b0258a7b` for the follow-up**: both carry the write bug — their re-derive dropped every record's sweep-time writes, so a tone check wrote Zip's
 ratio at 1:1 and the VBC profiles said mix 0 % — and the collapse bug, where the landing read wrote a picked candidate's view
-over its record; `804a0a56` repairs both from the records' own traces). It carries everything 17ebf114 did: v1.8–v2.1, the raw hold test, and the 4 Oct rules from your run (the measured pair rules, the licence row, the
+over its record; `804a0a56` and `9d3a1972` repair both from the records' own traces). It carries everything 17ebf114 did: v1.8–v2.1, the raw hold test, and the 4 Oct rules from your run (the measured pair rules, the licence row, the
 out-of-scope states, the review pick, the range re-sample, the repeat repair; round 2: input-drive and one-knob amount controls, stepped by evidence; round 3: multiband names, picks on stereo units, the re-sweeps it decides itself; the 4/5 Oct night: the sidechain left unconnected with the evidence-based re-sweep, `inert`, tuner plan v2 with the v0.1 measurements, Sean's stepped rule):
 targets 1..12 with the clamp to 30 and the saturation note, the reverse read, the depth-aware clamp, the vocal-anchored tone level, every deep null accounted for in `notes` (a list),
 out-of-order deep points nulled before export, the shallow-break refusal, the known-licence skip and the §11 guard.
@@ -56,7 +57,10 @@ product(s)`), re-derives and tone-checks everything else, then sweeps those thro
 them (detector, export, tone check). OneKnob Pumper (m)/(s) and the five licence-flag refusals are not on it: the
 `--retry-refused` line above covers those.
 
-## Step 1 — what Sean runs (the follow-up; `ejmap.app` built from **804a0a56**, 6 Oct — NOT 17ebf114 or b0258a7b, which carry the write bug)
+## Step 1 — the follow-up (`ejmap.app` built from **9d3a1972**, tonight's build; 804a0a56 the fallback; NEVER 17ebf114 or b0258a7b)
+
+**Step 2 below lists tonight's three commands in order, and its command 1 IS this step.** Run step 2 top to bottom and nothing
+twice: this section explains what command 1 does and what to expect from it.
 
 **6 Oct: run it again over your EXISTING cert folder — no fresh start, nothing deleted.** The 5 Oct run's records are
 repaired in place from their own traces (the sweep-time writes that the re-derive had dropped; the sixteen pair/pick records
@@ -119,6 +123,7 @@ L_ref itself and passes (Lindell SBC's 6 dB included, under the v1.9 clamp).
 ## Step 2 — tonight's order (6 Oct, build 9d3a1972): the follow-up, then the gain and timing re-runs, then the fallback
 
 Three commands, in this order, each in its own go; Ctrl-C any time, and each resumes from where it stopped when run again.
+**Command 1 is step 1 (the follow-up) — not a second run of it.** Running step 2 top to bottom does everything once.
 
 ```
 BIN=/Applications/ejmap.app/Contents/MacOS/ejmap
