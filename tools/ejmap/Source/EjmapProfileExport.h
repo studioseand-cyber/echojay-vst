@@ -551,6 +551,7 @@ inline Export exportCompProfile (const juce::var& f)
                 if (isReadoutOrMeter (c)) continue;
                 auto* o = new juce::DynamicObject();
                 o->setProperty ("control", name);
+                o->setProperty ("index", idx);   // (ruled 6 Oct, AMEK: 24 readouts all named "M" - a neutral is written by its index, the name is for reading)
                 if (auto it = pre.find (idx); it != pre.end())
                 {
                     const auto role = it->second.getProperty ("role", "").toString();
@@ -1060,7 +1061,12 @@ inline juce::String toneWrites (const juce::var& profile, const juce::var& recor
         if (const auto* arr = profile.getProperty (field, {}).getArray())
             for (const auto& e : *arr)
             {
-                const auto n = e.getProperty ("control", "").toString(); const int i = indexOf (n);
+                // BY INDEX when the profile carries one and the record's control at that index bears the name (ruled 6 Oct, AMEK: 24
+                // readouts named "M" all resolved by name to the first); by name otherwise
+                const auto n = e.getProperty ("control", "").toString(); int i = -1;
+                if (const auto ei = e.getProperty ("index", {}); ei.isInt() || ei.isDouble())
+                    if (const auto* cs = record.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if ((int) c.getProperty ("index", -1) == (int) ei && c.getProperty ("name", "") == n) i = (int) ei;
+                if (i < 0) i = indexOf (n);
                 if (i < 0) return juce::String (field) + " control '" + n + "' not in the record";
                 const auto norm = e.getProperty ("norm", {});
                 if (! (norm.isDouble() || norm.isInt())) return juce::String (field) + " control '" + n + "' has no norm in the profile";

@@ -5755,6 +5755,25 @@ void testProfileExport()
         auto fixedP = juce::JSON::parse (juce::JSON::toString (ef.profile)); fixedP.getProperty ("ratio", {}).getDynamicObject()->setProperty ("control", juce::var()); fixedP.getProperty ("ratio", {}).getDynamicObject()->setProperty ("curve", juce::Array<juce::var>());
         juce::StringArray s3; juce::Array<juce::var> w3; juce::String n3;
         check (toneWrites (fixedP, full, s3, w3, n3).isEmpty() && s3.size() == 4 && n3.contains ("fixed"), "tone T3: a fixed-ratio profile writes no ratio and says so");
+        // T4 (Kathy's ruling 3, 6 Oct - AMEK): neutral entries carry their index and are written BY it, so two controls sharing a name
+        // each get their own write (24 readouts named "M": by name every one went to the first, and a 0.5125 write to it never landed)
+        { bool allIndexed = true; for (const auto& e : *ef.profile.getProperty ("neutral", {}).getArray()) if (! e.hasProperty ("index")) allIndexed = false;
+          check (allIndexed, "tone T4: every exported neutral entry carries its index");
+          auto twin = juce::JSON::parse (juce::JSON::toString (full)); auto twinP = juce::JSON::parse (juce::JSON::toString (ef.profile));
+          // the record's Attack (index 5) and Mix (index 8) both named "M" in record and profile; the profile's entries keep their indices
+          for (const auto& c : *twin.getProperty ("controls", {}).getArray()) if ((int) c.getProperty ("index", -1) == 5 || (int) c.getProperty ("index", -1) == 8) c.getDynamicObject()->setProperty ("name", "M");
+          for (const auto& e : *twinP.getProperty ("neutral", {}).getArray()) if ((int) e.getProperty ("index", -1) == 5 || (int) e.getProperty ("index", -1) == 8) e.getDynamicObject()->setProperty ("control", "M");
+          juce::StringArray s4; juce::Array<juce::var> w4; juce::String n4;
+          const auto why4 = toneWrites (twinP, twin, s4, w4, n4);
+          check (why4.isEmpty() && s4.contains ("5:0.500000") && s4.contains ("8:1.000000"), "tone T4: two neutrals named 'M' are written at their own indices 5 and 8, each at its own norm (" + s4.joinIntoString (" ") + ")");
+          // MUTANT CHECK by hand: with the index ignored both 'M' entries resolve by name to the first (5), and 8 is never written
+          auto noIdx = juce::JSON::parse (juce::JSON::toString (twinP)); for (const auto& e : *noIdx.getProperty ("neutral", {}).getArray()) e.getDynamicObject()->removeProperty ("index");
+          juce::StringArray s6; juce::Array<juce::var> w6; juce::String n6; toneWrites (noIdx, twin, s6, w6, n6);
+          check (! s6.contains ("8:1.000000") && s6.contains ("5:1.000000"), "tone T4: without indices the second 'M' lands on the first's index at the wrong norm - the AMEK shape (" + s6.joinIntoString (" ") + ")");
+          // an index that does not bear the name falls back to the name (a profile from another record)
+          auto moved = juce::JSON::parse (juce::JSON::toString (ef.profile)); for (const auto& e : *moved.getProperty ("neutral", {}).getArray()) if (e.getProperty ("control", "") == "Attack") e.getDynamicObject()->setProperty ("index", 40);
+          juce::StringArray s5; juce::Array<juce::var> w5; juce::String n5;
+          check (toneWrites (moved, full, s5, w5, n5).isEmpty() && s5.contains ("5:0.500000"), "tone T4: a profile index that does not bear the name is ignored and the name resolves (Attack -> 5)"); }
         // SECTION 11 (T3b, 3 Oct): the installed version must be the record's; an unknown version on either side refuses too - a guard never guesses
         check (versionMismatch ("2.5.62", "2.5.62").isEmpty() && versionMismatch (" 2.5.62", "2.5.62 ").isEmpty()
                && versionMismatch ("2.5.62", "2.5.70").contains ("installed version 2.5.70 differs from the record's 2.5.62") && versionMismatch ("2.5.62", "2.5.70").contains ("section 11")
