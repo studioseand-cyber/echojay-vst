@@ -5547,6 +5547,31 @@ void testProfileExport()
                "export X18 (v1.2): a record his v1 model cannot fit (max error " + juce::String (sx.fitMaxErrorDb, 2) + " dB) still exports - fit is reported, never a gate");
     }
     check (! exportCompProfile (record (6, true, false, "", "certified")).ok, "export X9: fewer than 9 curve points refuses");
+    // X9b (Kathy's ruling 3, 6 Oct - UnFairchild, Shadow Hills Class A): positions whose write did not land are DROPPED from the export,
+    // and a continuous-declared control whose writes landed only on k/(n-1) is stepped with those detents, judged by Sean's stepped rule
+    {
+        auto withLanding = [&] (int positions, std::function<bool (int)> landed) {
+            auto r = record (positions, true, false, "", "certified"); auto sv = r.getProperty ("thresholdSweep", {});
+            juce::Array<juce::var> lb; for (int i = 0; i < positions; ++i) lb.add (landed (i) ? "instack" : "unlanded");
+            sv.getDynamicObject()->setProperty ("positionLandedBy", lb);
+            auto q = sv.getProperty ("quality", {}); if (! q.isObject()) { q = juce::var (new juce::DynamicObject()); sv.getDynamicObject()->setProperty ("quality", q); }
+            juce::Array<juce::var> dn; dn.add ("4@4:-20.1/-21.9"); dn.add ("5@4:-20.1/-21.9"); q.getDynamicObject()->setProperty ("deepPointsNulled", dn);
+            return r; };
+        const auto un = withLanding (16, [] (int i) { return i % 3 == 0; });                       // landed at 0, 3, 6, 9, 12, 15 of 16 = k/5
+        const auto dr = ejmap::sweep::dropUnlandedPositions (un.getProperty ("thresholdSweep", {}));
+        check (dr.dropped == 10 && dr.sweep.getProperty ("positionNorms", {}).size() == 6 && dr.sweep.getProperty ("inAtGr", {}).size() == 6 && (int) dr.sweep.getProperty ("positions", 0) == 6
+                 && dr.sweep.getProperty ("reduction_db", {}).getDynamicObject()->getProperties().begin()->value.size() == 6,
+               "export X9b: dropping the unlanded positions filters every per-position array, the lists inside dicts, and recounts positions (16 -> 6)");
+        { const auto dn = dr.sweep.getProperty ("quality", {}).getProperty ("deepPointsNulled", {});
+          check (dn.size() == 0 || (dn.size() == 1 && dn[0].toString().startsWith ("1@")), "export X9b: hold-test nulls on dropped positions go, the rest are renumbered (4 unlanded -> gone; 5 unlanded -> gone; got " + juce::JSON::toString (dn) + ")"); }
+        check (ejmap::sweep::landedDetents (un.getProperty ("thresholdSweep", {})) == 6, "export X9b: the landed norms 0, .2, .4, .6, .8, 1 say 6 detents");
+        check (ejmap::sweep::landedDetents (record (16, true, false, "", "certified").getProperty ("thresholdSweep", {})) == 0, "export X9b: nothing unlanded = no detents by landing");
+        check (ejmap::sweep::landedDetents (withLanding (16, [] (int i) { return i != 2; }).getProperty ("thresholdSweep", {})) == 0, "export X9b: landed norms that are not a k/(n-1) grid say nothing");
+        const auto ex = exportCompProfile (un);
+        check (ex.ok && ex.profile.getProperty ("amount", {}).getProperty ("curve", {}).size() == 6 && (bool) ex.profile.getProperty ("amount", {}).getProperty ("stepped", false)
+                 && ex.profile.getProperty ("amount", {}).getProperty ("stepped_by_evidence", "").toString().contains ("6 values") && ex.profile.getProperty ("amount", {}).getProperty ("positions_dropped_unlanded", "").toString().contains ("10 position"),
+               "export X9b (UnFairchild): 6 landed detents export stepped under Sean's rule where 16 continuous points with 6 reaching 1 dB would refuse (" + ex.refused + ")");
+    }
     check (! exportCompProfile (record (16, true, true, "", "certified")).ok && exportCompProfile (record (16, true, true, "", "certified")).refused.contains ("other"),
            "export X10: several candidates is topology other and no profile");
     check (! exportCompProfile (record (16, true, false, "", "flat")).ok, "export X11: a non-certified sweep refuses");

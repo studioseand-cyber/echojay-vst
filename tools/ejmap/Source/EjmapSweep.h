@@ -315,6 +315,62 @@ inline bool wordValued (const juce::var& c)
     return true;
 }
 
+// UNLANDED POSITIONS (Kathy's ruling 3, 6 Oct: Shadow Hills Class A, UnFairchild): a position whose write did not land
+// (positionLandedBy "unlanded") measured the value the control snapped to, not the norm it was asked - a refinement round
+// on a discrete control, or a continuous-declared control that steps. Such positions are DROPPED from the view the export
+// reads: every per-position array (and every per-position list inside a dict) is filtered, `positions` recounted, the
+// hold-test nulls ("i@t:...") renumbered. Unchanged when nothing was unlanded, or when everything was (nothing to keep).
+struct DropUnlanded { juce::var sweep; int dropped = 0; juce::StringArray droppedNorms; };
+inline DropUnlanded dropUnlandedPositions (const juce::var& sweepVar)
+{
+    DropUnlanded r; r.sweep = sweepVar;
+    const auto* lb = sweepVar.getProperty ("positionLandedBy", {}).getArray(); if (lb == nullptr) return r;
+    const int n = lb->size(); std::vector<bool> keep ((size_t) n, true); int kept = 0;
+    for (int i = 0; i < n; ++i) { keep[(size_t) i] = (*lb)[i].toString() != "unlanded"; if (keep[(size_t) i]) ++kept; }
+    if (kept == n || kept == 0) return r;
+    const auto norms = sweepVar.getProperty ("positionNorms", {});
+    for (int i = 0; i < n; ++i) if (! keep[(size_t) i]) r.droppedNorms.add (juce::String ((double) norms[i], 4));
+    r.dropped = n - kept;
+    auto filterArr = [&] (const juce::var& a) { juce::Array<juce::var> o; for (int i = 0; i < a.size(); ++i) if (keep[(size_t) i]) o.add (a[i]); return juce::var (o); };
+    std::map<int, int> renum; for (int i = 0, k = 0; i < n; ++i) if (keep[(size_t) i]) renum[i] = k++;
+    auto* s = new juce::DynamicObject();
+    if (auto* src = sweepVar.getDynamicObject())
+        for (const auto& kv : src->getProperties())
+        {
+            const auto& v = kv.value;
+            if (v.isArray() && v.size() == n) s->setProperty (kv.name, filterArr (v));
+            else if (kv.name == juce::Identifier ("positions") && v.isInt() && (int) v == n) s->setProperty (kv.name, kept);
+            else if (auto* d = v.getDynamicObject())
+            {
+                auto* nd = new juce::DynamicObject();
+                for (const auto& kv2 : d->getProperties())
+                {
+                    if (kv2.value.isArray() && kv2.value.size() == n) nd->setProperty (kv2.name, filterArr (kv2.value));
+                    else if (kv.name == juce::Identifier ("quality") && kv2.name == juce::Identifier ("deepPointsNulled") && kv2.value.isArray())
+                    { juce::Array<juce::var> o; for (const auto& x : *kv2.value.getArray()) { const auto t = x.toString(); const int i = t.upToFirstOccurrenceOf ("@", false, false).getIntValue(); if (renum.count (i)) o.add (juce::String (renum.at (i)) + "@" + t.fromFirstOccurrenceOf ("@", false, false)); } nd->setProperty (kv2.name, o); }
+                    else nd->setProperty (kv2.name, kv2.value);
+                }
+                s->setProperty (kv.name, juce::var (nd));
+            }
+            else s->setProperty (kv.name, v);
+        }
+    r.sweep = juce::var (s);
+    return r;
+}
+// THE DETENTS THE WRITES LANDED ON: when a sweep had unlanded positions, the landed norms themselves say what the control
+// steps on - n detents when they are exactly k/(n-1) with 0 and 1 among them (UnFairchild: 0, .2, .4, .6, .8, 1 -> 6).
+inline int landedDetents (const juce::var& sweepVar)
+{
+    const auto* lb = sweepVar.getProperty ("positionLandedBy", {}).getArray(); if (lb == nullptr) return 0;
+    const auto norms = sweepVar.getProperty ("positionNorms", {}); bool anyUnlanded = false; std::vector<double> landed;
+    for (int i = 0; i < lb->size() && i < norms.size(); ++i) { if ((*lb)[i].toString() == "unlanded") anyUnlanded = true; else landed.push_back ((double) norms[i]); }
+    if (! anyUnlanded || landed.size() < 2) return 0;
+    std::sort (landed.begin(), landed.end()); landed.erase (std::unique (landed.begin(), landed.end(), [] (double a, double b) { return std::abs (a - b) < 1e-4; }), landed.end());
+    const int n = (int) landed.size();
+    if (std::abs (landed.front()) > 1e-4 || std::abs (landed.back() - 1.0) > 1e-4) return 0;
+    for (int k = 0; k < n; ++k) if (std::abs (landed[(size_t) k] - (double) k / (n - 1)) > 1e-4) return 0;
+    return n;
+}
 inline bool isSteppedControl (const juce::var& c)
 {
     const int steps = (int) c.getProperty ("numSteps", 0);

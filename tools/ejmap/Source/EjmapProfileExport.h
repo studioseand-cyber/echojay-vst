@@ -301,7 +301,9 @@ inline Export exportCompProfile (const juce::var& f)
     Export e;
     auto refuse = [&] (const juce::String& why) { e.refused = why; return e; };
     if (f.getProperty ("schema", "").toString() != sweep::kSchemaCompressor) return refuse ("not a compressor record (schema " + f.getProperty ("schema", "").toString() + ")");
-    const auto sweepVar = f.getProperty ("thresholdSweep", {});
+    // UNLANDED POSITIONS DROPPED (ruled 6 Oct): the export reads the sweep without the positions whose write never landed
+    const auto dropped = sweep::dropUnlandedPositions (f.getProperty ("thresholdSweep", {}));
+    const auto sweepVar = dropped.sweep;
     if (! sweepVar.isObject()) return refuse (f.hasProperty ("thresholdCandidates") ? "topology other: several threshold candidates and no human pick - no profile (his section 3)"
                                                : f.hasProperty ("thresholdRefusal") ? "refused at stage " + f.getProperty ("thresholdRefusal", {}).getProperty ("stage", "").toString() : "no sweep");
     if (sweepVar.getProperty ("result", "").toString() != "certified") return refuse ("sweep result is " + sweepVar.getProperty ("result", "").toString() + ": " + sweepVar.getProperty ("reason", "").toString());
@@ -447,6 +449,10 @@ inline Export exportCompProfile (const juce::var& f)
     bool steppedForGate = sweep::isSteppedControl (ctlForGate);
     if (const auto ev = f.getProperty ("amountLanding", {}); ! steppedForGate && ev.isObject() && (int) ev.getProperty ("control", -1) == plan.thr && (int) ev.getProperty ("detents", 0) >= 2 && positionsAreDetents (curve, (int) ev.getProperty ("detents", 0)))
         steppedForGate = true;
+    // ... or the sweep's own landing evidence (ruled 6 Oct, UnFairchild): a continuous-declared control whose writes landed only on
+    // k/(n-1) is stepped with those n detents, and the curve (the unlanded positions dropped above) is exactly them
+    int detentsByLanding = 0;
+    if (! steppedForGate) { detentsByLanding = sweep::landedDetents (f.getProperty ("thresholdSweep", {})); if (detentsByLanding >= 2 && positionsAreDetents (curve, detentsByLanding)) steppedForGate = true; else detentsByLanding = 0; }
     if (steppedForGate) { if (withOne < kMinSteppedPoints) return refuse ("only " + juce::String (withOne) + " detent(s) reach 1 dB inside the measured levels (stepped: every detent is listed, at least " + juce::String (kMinSteppedPoints) + " must reach 1 dB - Sean's rule, 4 Oct)"); }
     else if (withOne < kMinCurvePoints) return refuse ("only " + juce::String (withOne) + " curve point(s) reach 1 dB inside the measured levels (his rule: at least " + juce::String (kMinCurvePoints) + ")");
 
@@ -589,6 +595,9 @@ inline Export exportCompProfile (const juce::var& f)
             if (! stepped && positionsAreDetents (curve, n)) { stepped = true; a->setProperty ("stepped_by_evidence", "declared continuous; its writes land only on " + juce::String (n) + " values (k/" + juce::String (n - 1) + "), measured from the probe's write landing; the " + juce::String (n) + " swept positions are those detents"); }
             else if (! stepped) a->setProperty ("stepped_by_evidence_unresolved", "declared continuous; its writes land only on " + juce::String (n) + " values, but the swept positions are not those detents - exported continuous; a re-sweep on the detents would make it stepped");
         }
+        // ... and the sweep's own landing (ruled 6 Oct, UnFairchild): decided above for the gate, said here
+        if (! stepped && detentsByLanding >= 2) { stepped = true; a->setProperty ("stepped_by_evidence", "declared continuous; in its own sweep the writes landed only on " + juce::String (detentsByLanding) + " values (k/" + juce::String (detentsByLanding - 1) + "); the unlanded positions were dropped and the " + juce::String (detentsByLanding) + " that landed are those detents"); }
+        if (dropped.dropped > 0) a->setProperty ("positions_dropped_unlanded", "dropped " + juce::String (dropped.dropped) + " position(s) whose write did not land (the control snapped): norms " + dropped.droppedNorms.joinIntoString (", "));
         a->setProperty ("stepped", stepped);
         P->setProperty ("amount", juce::var (a));
     }

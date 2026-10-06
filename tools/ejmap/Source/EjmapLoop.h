@@ -488,6 +488,9 @@ inline PlanDiff planDiffers (const juce::var& record, const sweep::Plan& now)
         if (! sv.isObject() || sv.getProperty ("result", "").toString() != "certified" || roundsTaken >= sweep::kRefineRounds) return;
         const int idx = (int) sv.getProperty ("sweptControl", {}).getProperty ("index", (int) sv.getProperty ("thresholdPick", {}).getProperty ("index", now.thr));
         if (steppedControl (idx)) return;
+        // STEPPED BY ITS OWN SWEEP (ruled 6 Oct, UnFairchild): writes that landed only on k/(n-1) make the control stepped with those
+        // detents; a refinement round would add positions between detents that cannot land. Sean's stepped rule judges it, not "at least 9".
+        if (sweep::landedDetents (sv) >= 2) return;
         const auto norms = sv.getProperty ("positionNorms", {}); const auto ia = sv.getProperty ("inAtGr", {});
         int withOne = 0; std::vector<double> twos, ones;
         for (int i = 0; i < ia.size() && i < norms.size(); ++i) { const auto one = ia[i].getProperty ("1", {}); if (one.isDouble() || one.isInt()) { ++withOne; ones.push_back ((double) one); } const auto two = ia[i].getProperty ("2", {}); if (two.isDouble() || two.isInt()) twos.push_back ((double) two); }
