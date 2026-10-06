@@ -5345,6 +5345,7 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
     juce::StringArray sets; if (const auto* pre = sweepVar.getProperty ("preconditions", {}).getArray()) for (const auto& x : *pre) sets.add (x.getProperty ("index", -1).toString() + ":" + juce::String ((double) x.getProperty ("norm", 0.0), 6));
     if (const auto* ws = sweepVar.getProperty ("engageWrites", {}).getProperty ("writes", {}).getArray()) for (const auto& w : *ws) sets.add (w.getProperty ("index", -1).toString() + ":" + juce::String ((double) w.getProperty ("norm", 0.0), 6));
     juce::StringArray levelList; for (double L : plan.probeLevels()) levelList.add (juce::String ((int) L));
+    bool twoToneSilent = false;   // every two-tone hold read silence (-999): a pitch-tracking unit that mutes an unpitched signal (Auto-Tune Vocal Compressor, ruled 6 Oct)
     auto run = [&] (bool twoTone) -> std::optional<double>
     {
         juce::StringArray args { opt.probe.getFullPathName(), hits[0].desc.name, hits[0].desc.fileOrIdentifier, juce::String::toHexString (hits[0].desc.uniqueId),
@@ -5356,6 +5357,7 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
         auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
         raw.getChildFile (recordFile.getFileNameWithoutExtension() + (twoTone ? ".detector.twotone.1.txt" : ".detector.sine.1.txt")).replaceWithText (r.out, false, false, "\n");
         if (! r.cleanExit()) { say ("DETECTOR: the " + juce::String (twoTone ? "two-tone" : "sine") + " process " + r.describe()); return std::nullopt; }
+        if (twoTone) { int holds = 0, silent = 0; for (const auto& line : juce::StringArray::fromLines (r.out)) if (line.startsWith ("hold\t")) { ++holds; const auto f = juce::StringArray::fromTokens (line, "\t", ""); const int k = f.indexOf ("level_db"); if (k >= 0 && k + 1 < f.size() && f[k + 1].getDoubleValue() <= -900.0) ++silent; } twoToneSilent = holds > 0 && silent == holds; }
         sweep::ProcessOut po { r.out, true, r.describe(), norm };
         const auto d = sweep::derive (sweep::mergeProcesses ({ juce::String(), true, "none", -1.0f }, { po }), plan.testLevels(), plan.ratioIndex, true);
         if (d.inAtGr.empty()) { say ("DETECTOR: the " + juce::String (twoTone ? "two-tone" : "sine") + " process derived no curve: " + d.result + " - " + d.reason); return std::nullopt; }
@@ -5364,6 +5366,20 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
         return (v.isDouble() || v.isInt()) ? std::optional<double> ((double) v) : std::nullopt;
     };
     const auto sine = run (false), two = run (true);
+    if (sine && ! two && twoToneSilent)
+    {
+        // UNMEASURABLE BY THIS METHOD (ruled 6 Oct, Auto-Tune Vocal Compressor): the sine reached 2 dB, the two-tone produced NO output at any
+        // level - a pitch-tracking unit mutes an unpitched signal. Recorded as such; the export assumes rms (f = 0) and says so.
+        auto* det = new juce::DynamicObject();
+        det->setProperty ("fraction", juce::var()); det->setProperty ("sine_in_at_2db", *sine); det->setProperty ("twotone_in_at_2db", juce::var()); det->setProperty ("hz2", 1201.0); det->setProperty ("position_norm", norm);
+        det->setProperty ("unmeasurable", "the two-tone (997 + 1201 Hz, equal RMS) produced no output at any level while the sine reached 2 dB at " + juce::String (*sine, 2) + " dBFS: a pitch-tracking unit mutes an unpitched signal; the detector fraction cannot be measured by the two-tone method");
+        det->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
+        det->setProperty ("rule", "shift between the sine's and the equal-RMS two-tone's 2 dB levels, over 3.01 dB; 0 = rms detector, 1 = peak detector");
+        sweepVar.getDynamicObject()->setProperty ("detector", juce::var (det));
+        recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n");
+        say ("DETECTOR: " + product + " - sine 2 dB at " + juce::String (*sine, 2) + ", the two-tone SILENT at every level: unmeasurable by this method (a pitch-tracking unit), recorded as such -> written into " + recordFile.getFileName());
+        return 0;
+    }
     if (! sine || ! two) { say ("DETECTOR: " + product + " - a 2 dB point was not reached on one signal; nothing recorded"); return 1; }
     const double f = profile::detectorFraction (*sine, *two);
     auto* det = new juce::DynamicObject();

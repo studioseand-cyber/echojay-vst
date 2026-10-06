@@ -653,9 +653,20 @@ inline Export exportCompProfile (const juce::var& f)
     {
         const auto det = sweepVar.getProperty ("detector", {});
         std::optional<double> f; if (det.isObject() && (det.getProperty ("fraction", {}).isDouble() || det.getProperty ("fraction", {}).isInt())) f = (double) det.getProperty ("fraction", {});
-        if (! f) return refuse ("detector_f not measured (v1.4 requires it): run --cert-detector on the record first");
-        P->setProperty ("detector_f", r2 (juce::jlimit (0.0, 1.0, *f)));
-        if (f) P->setProperty ("detector_f_raw", r2 (*f));                                                 // unclamped, so an out-of-range measurement is visible
+        if (! f && det.isObject() && det.getProperty ("unmeasurable", "").toString().isNotEmpty())
+        {
+            // MEASURED AND UNMEASURABLE (ruled 6 Oct, Auto-Tune Vocal Compressor): the detector was run on the pick's own 2 dB point and the
+            // two-tone was silent; the profile assumes rms (f = 0, the convention's default) and SAYS it is assumed, never measured
+            P->setProperty ("detector_f", 0.0); P->setProperty ("detector_f_raw", juce::var());
+            P->setProperty ("detector_f_source", "assumed rms (0.0): " + det.getProperty ("unmeasurable", "").toString());
+        }
+        else
+        {
+            if (! f) return refuse ("detector_f not measured (v1.4 requires it): run --cert-detector on the record first");
+            P->setProperty ("detector_f", r2 (juce::jlimit (0.0, 1.0, *f)));
+            P->setProperty ("detector_f_raw", r2 (*f));                                                     // unclamped, so an out-of-range measurement is visible
+            P->setProperty ("detector_f_source", "measured");
+        }
     }
     {
         // v1.3 quality: the record's repeat pass. No repeat = null point_error_db, repeats 1, and the server will refuse: said, not padded.

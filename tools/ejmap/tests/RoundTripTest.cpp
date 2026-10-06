@@ -5532,6 +5532,16 @@ void testProfileExport()
         check (P.getProperty ("amount", {}).getProperty ("stepped", true).isBool() && ! (bool) P.getProperty ("amount", {}).getProperty ("stepped", true)
                  && std::abs ((double) P.getProperty ("detector_f", 9.0) - 0.2) < 1e-6,
                "export X16 (v1.4): stepped is a boolean (false for a continuous control); detector_f is the measured number");
+        check (P.getProperty ("detector_f_source", "") == "measured", "export X16b: a measured detector says so");
+        // X16c (ruled 6 Oct, Auto-Tune Vocal Compressor): a detector run whose two-tone was silent is recorded unmeasurable; the export assumes
+        // rms (0.0) and says it is assumed; a detector never run still refuses
+        { auto un = juce::JSON::parse (juce::JSON::toString (rec)); auto* dd = new juce::DynamicObject(); dd->setProperty ("fraction", juce::var()); dd->setProperty ("unmeasurable", "the two-tone produced no output at any level: a pitch-tracking unit mutes an unpitched signal");
+          un.getProperty ("thresholdSweep", {}).getDynamicObject()->setProperty ("detector", juce::var (dd));
+          const auto eu = exportCompProfile (un);
+          check (eu.ok && (double) eu.profile.getProperty ("detector_f", 9.0) == 0.0 && eu.profile.getProperty ("detector_f_raw", 1.0).isVoid() && eu.profile.getProperty ("detector_f_source", "").toString().startsWith ("assumed rms (0.0): the two-tone produced no output"),
+                 "export X16c: an unmeasurable detector exports f = 0.0 labelled assumed, with the reason (" + eu.refused + ")");
+          auto none = juce::JSON::parse (juce::JSON::toString (rec)); none.getProperty ("thresholdSweep", {}).getDynamicObject()->removeProperty ("detector");
+          check (! exportCompProfile (none).ok && exportCompProfile (none).refused.contains ("detector_f not measured"), "export X16c: a detector never run still refuses"); }
         const auto Q = P.getProperty ("quality", {});
         check (Q.isObject() && std::abs ((double) Q.getProperty ("point_error_db", 9.0) - 0.12) < 1e-6 && Q.getProperty ("method", "") == "hold 2.5 s vs 5 s"
                  && (bool) Q.getProperty ("monotonic_within_positions", false) && (bool) Q.getProperty ("monotonic_across_positions", false),
