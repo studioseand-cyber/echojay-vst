@@ -4441,7 +4441,8 @@ inline int runToneCheckAll (SweepOptions opt)
     if (! opt.deriveOnly) { const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { std::cout << "TONECHECK-ALL: ABORTED BEFORE ANY PLUGIN - " << id.why << std::endl; return 3; } }
     const auto scanStops = quarantinedBundles (opt.ledger);
     const auto reviewPicks = juce::JSON::parse (opt.out.getChildFile ("review_picks.json").loadFileAsString());
-    std::cout << "TONECHECK-ALL: " << opt.out.getFullPathName() << "  iLok " << iLokPresence() << (reviewPicks.isArray() ? "  review picks " + juce::String (reviewPicks.size()) : juce::String ("  no review_picks.json")) << std::endl;
+    const auto ilokNow = iLokPresence();
+    std::cout << "TONECHECK-ALL: " << opt.out.getFullPathName() << "  iLok " << ilokNow << (reviewPicks.isArray() ? "  review picks " + juce::String (reviewPicks.size()) : juce::String ("  no review_picks.json")) << std::endl;
     int done = 0, skipped = 0, licence = 0, failed = 0, noTraces = 0;
     // THE RE-SWEEP PASS (ruled 4 Oct): every record whose plan under this build differs from the plan it was swept under is
     // re-swept, through the batch's own per-product sweep, then finished (export + tone check) like any other; Sean never
@@ -4566,6 +4567,10 @@ inline int runToneCheckAll (SweepOptions opt)
         if (! resweep.isEmpty() && ! opt.deriveOnly)
         {
             SweepOptions so = opt; so.resweepProducts = resweep; so.profile = true; so.retryRefused = true; so.retryAll = true;
+            // THE RE-SWEEP INHERITS THE BATCH'S PACE SETTING (Kathy's ruling 3, 6 Oct - Mike-E): with the iLok present a PACE-wrapped
+            // product is measurable, as it was in the batch; the re-sweep used to hold it ("run with --include-pace") with the iLok in
+            so.includePace = opt.includePace || ilokNow.startsWith ("present");
+            if (so.includePace && ! opt.includePace) std::cout << "  (iLok " << ilokNow << ": the re-sweeps include PACE-wrapped products, as the batch did)" << std::endl;
             int k = 0;
             for (const auto& product : resweep)
             {
