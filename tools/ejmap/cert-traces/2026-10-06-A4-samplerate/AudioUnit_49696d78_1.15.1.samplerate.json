@@ -1,0 +1,29 @@
+{
+  "gr_48k_db": 1.99,
+  "gr_by_sr": {
+    "44100": 1.99,
+    "48000": 1.99,
+    "96000": 1.98
+  },
+  "delta_vs_48k_db": {
+    "44100": -0.0,
+    "48000": 0.0,
+    "96000": -0.01
+  },
+  "latency_by_sr": {
+  },
+  "max_abs_delta_db": 0.01,
+  "rate_dependent": false,
+  "flag_db": 0.5,
+  "verdict": "GR within 0.5 dB across 44.1 / 48 / 96 kHz (largest move 0.01)",
+  "schema": "ej_samplerate_pass/0",
+  "status": "ACCURACY PASS A4 (6 Oct): data only, not exported, not published",
+  "product": "elysia mpressor",
+  "version": "1.15.1",
+  "identity": "AudioUnit|49696d78|1.15.1",
+  "pick_norm": 0.270632145533333,
+  "L_rms_dbfs": -14.724119999999999,
+  "writes": "0:1.000000,1:1.000000,2:1.000000,4:0.000000,5:0.500000,6:0.000000,7:0.500000,8:0.000000,10:0.500000,11:0.000000,12:0.500000,13:0.000000,14:0.500000,15:0.000000,16:0.000000,17:0.000000,9:0.363636",
+  "method": "the tone check's process (quiet ladder + L, 2.5 s holds, 997 Hz) with the plugin prepared at 44100, 48000 and 96000; GR = quiet reference gain - gain at L",
+  "measuredAt": "20261006T191547"
+}

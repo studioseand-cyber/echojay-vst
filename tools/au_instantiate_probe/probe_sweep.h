@@ -54,6 +54,7 @@ struct SweepSpec
     // the sine would have at the level - its peak is 3.01 dB higher (crest 6.02 dB vs the sine's 3.01). An RMS detector
     // reads it as the sine; a peak detector reaches the same GR 3.01 dB lower in level. `level` keeps meaning sine-peak dBFS.
     double hz2 = 0.0;      // 0 = sine; > 0 = two-tone at hz and hz2
+    double sampleRate = 0.0;   // sr= (6 Oct, accuracy A4): 0 = the render default (48 kHz); 44100 / 96000 prepare the plugin at that rate
 };
 
 inline bool parseSweepArgs (int argc, char** argv, int first, SweepSpec& s, juce::String& why)
@@ -68,6 +69,7 @@ inline bool parseSweepArgs (int argc, char** argv, int first, SweepSpec& s, juce
         else if (k == "levels") s.levels = doubles (v);
         else if (k == "hz") s.hz = v.getDoubleValue();
         else if (k == "hz2") s.hz2 = v.getDoubleValue();
+        else if (k == "sr") s.sampleRate = v.getDoubleValue();
         else if (k == "hold") s.holdS = v.getDoubleValue();
         else if (k == "discard") s.discardS = v.getDoubleValue();
         else if (k == "win") s.winS = v.getDoubleValue();
@@ -272,8 +274,9 @@ inline Landing landWrite (juce::AudioProcessorParameter& q, float want, SweepRen
     return l;
 }
 
-inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const RenderSpec& rs = {})
+inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const RenderSpec& rs0 = {})
 {
+    RenderSpec rs = rs0; if (s.sampleRate > 0.0) rs.sampleRate = s.sampleRate;
     auto ps = p.getParameters();
     if (! juce::isPositiveAndBelow (s.thr, ps.size()) || ps[s.thr] == nullptr)
     { std::printf ("refused no parameter at index %d (%d parameters)\n", s.thr, ps.size()); return; }
@@ -283,7 +286,7 @@ inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const Re
                  s.hz, s.holdS, s.discardS, s.winS, s.refS, s.movingDb, s.resetPerHold ? 1 : 0, s.hz2 > 0.0 ? "two_tone_same_rms" : "sine", s.hz2);
     configureAndPrepare (p, rs);
     SweepRenderer r (p, rs.sampleRate, rs.block, s.hz, s.hz2);
-    std::printf ("config\tmain_in\t%d\tmain_out\t%d\tlatency\t%d\n", r.mainIn, r.mainOut, p.getLatencySamples());
+    std::printf ("config\tmain_in\t%d\tmain_out\t%d\tlatency\t%d\tsr\t%.0f\n", r.mainIn, r.mainOut, p.getLatencySamples(), rs.sampleRate);
     if (r.mainIn == 0 || r.mainOut == 0) { std::printf ("refused no main input or output bus\n"); return; }
 
     // EVERY PARAMETER AS INSTANTIATED, before anything is written: the ratio EJ Map derives with is read from here.

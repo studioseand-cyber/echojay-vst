@@ -1,0 +1,6 @@
+SAMPLERATE: Lindell SBC 1.0.3: the tone check's pick norm 0.5107 at L -18.40 dBFS RMS; rates 44.1 / 48 / 96 kHz
+  44.1 kHz: GR 1.99 dB
+  48.0 kHz: GR 1.99 dB
+  96.0 kHz: GR 1.99 dB
+SAMPLERATE: Lindell SBC - GR within 0.5 dB across 44.1 / 48 / 96 kHz (largest move 0.00)
+SAMPLERATE: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/samplerate/.tmp-AudioUnit_6f747363_1.0.3/samplerate/AudioUnit_6f747363_1.0.3.samplerate.json

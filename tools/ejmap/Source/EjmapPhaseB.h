@@ -53,6 +53,8 @@ inline const std::vector<Category>& categories()
         { "material",    "--cert-material",      "",          {},                              600.0,  "three materials x two passes of 6.5 s: ~1 min", true },
         // frequency (A3, 6 Oct; opt-in: --redo frequency): the tone check's process at 100 Hz and 5 kHz as well as 997
         { "frequency",   "--cert-frequency",     "",          {},                              600.0,  "three tone-check processes: ~30 s", true },
+        // sample rate (A4, 6 Oct; opt-in: --redo samplerate): the tone check's process at 44.1 / 48 / 96 kHz on a spread of ten
+        { "samplerate",  "--cert-samplerate",    "",          {},                              600.0,  "three tone-check processes: ~30 s", true },
         { "gainall",     "--cert-gain-cal",      "all",       { "eq", "limiter", "de-esser", "saturation", "amp_sim", "reverb", "delay", "transient_shaper", "gate" }, 600.0, "21 norms x 2-3 levels per gain control + the unnamed pool: ~1-4 min", true } };
     return k;
 }

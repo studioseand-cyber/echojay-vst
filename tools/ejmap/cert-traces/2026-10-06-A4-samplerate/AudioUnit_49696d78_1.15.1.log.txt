@@ -1,0 +1,6 @@
+SAMPLERATE: elysia mpressor 1.15.1: the tone check's pick norm 0.2706 at L -14.72 dBFS RMS; rates 44.1 / 48 / 96 kHz
+  44.1 kHz: GR 1.99 dB
+  48.0 kHz: GR 1.99 dB
+  96.0 kHz: GR 1.98 dB
+SAMPLERATE: elysia mpressor - GR within 0.5 dB across 44.1 / 48 / 96 kHz (largest move 0.01)
+SAMPLERATE: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/samplerate/.tmp-AudioUnit_49696d78_1.15.1/samplerate/AudioUnit_49696d78_1.15.1.samplerate.json

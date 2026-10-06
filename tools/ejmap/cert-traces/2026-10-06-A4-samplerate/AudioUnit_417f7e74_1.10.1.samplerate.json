@@ -1,0 +1,29 @@
+{
+  "gr_48k_db": 1.99,
+  "gr_by_sr": {
+    "44100": 1.99,
+    "48000": 1.99,
+    "96000": 1.99
+  },
+  "delta_vs_48k_db": {
+    "44100": -0.0,
+    "48000": 0.0,
+    "96000": 0.0
+  },
+  "latency_by_sr": {
+  },
+  "max_abs_delta_db": 0.0,
+  "rate_dependent": false,
+  "flag_db": 0.5,
+  "verdict": "GR within 0.5 dB across 44.1 / 48 / 96 kHz (largest move 0.00)",
+  "schema": "ej_samplerate_pass/0",
+  "status": "ACCURACY PASS A4 (6 Oct): data only, not exported, not published",
+  "product": "bx_opto",
+  "version": "1.10.1",
+  "identity": "AudioUnit|417f7e74|1.10.1",
+  "pick_norm": 0.452879259090909,
+  "L_rms_dbfs": -18.0,
+  "writes": "1:0.500000,3:0.000000,4:0.000000,5:0.000000,6:1.000000,7:0.000000,8:0.000000,9:1.000000",
+  "method": "the tone check's process (quiet ladder + L, 2.5 s holds, 997 Hz) with the plugin prepared at 44100, 48000 and 96000; GR = quiet reference gain - gain at L",
+  "measuredAt": "20261006T191529"
+}

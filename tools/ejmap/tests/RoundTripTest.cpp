@@ -76,6 +76,7 @@
 #include "EjmapCombined.h"
 #include "EjmapMaterial.h"
 #include "EjmapFrequency.h"
+#include "EjmapSampleRate.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include <functional>
@@ -7360,6 +7361,16 @@ void testFrequency()
     check (filt.ok && filt.frequencyDependent && std::abs (filt.maxAbsDeltaDb - 1.7) < 1e-9 && filt.why.contains ("sidechain filter"), "frequency FQ2: 0.3 dB at 100 Hz against 2.0 at 997 is a 1.7 dB move: flagged frequency_dependent");
     check (part.ok && part.frequencyDependent && part.unread == juce::StringArray { "100 Hz" } && ! judge ({ { 100.0, 2.0 }, { 5000.0, 2.0 } }).ok, "frequency FQ3: an unread tone is listed, not a zero; no 997 Hz reading refuses");
 }
+/** SAMPLE RATE (EjmapSampleRate.h; A4, 6 Oct): GR per rate against 48 kHz, the 0.5 dB flag, the spread of ten. */
+void testSampleRate()
+{
+    using namespace ejmap::samplerate;
+    const auto same = judge ({ { 44100.0, 2.1 }, { 48000.0, 2.0 }, { 96000.0, 1.7 } }), moved = judge ({ { 44100.0, 2.0 }, { 48000.0, 2.0 }, { 96000.0, 2.8 } });
+    check (same.ok && ! same.rateDependent && std::abs (same.maxAbsDeltaDb - 0.3) < 1e-9, "samplerate SR1: 2.1 / 2.0 / 1.7 dB is within 0.5: not rate dependent");
+    check (moved.ok && moved.rateDependent && std::abs (moved.deltaDb.at (96000.0) - 0.8) < 1e-9 && moved.why.contains ("rate field") && ! judge ({ { 44100.0, 2.0 } }).ok, "samplerate SR2: 2.8 at 96 kHz against 2.0 at 48 is flagged (the profile would need a rate field); no 48 kHz reading refuses");
+    const auto sp = spreadOf (41); const auto few = spreadOf (7);
+    check (sp.size() == 10 && sp.front() == 0 && sp.back() == 40 && sp[5] == 22 && few.size() == 7 && few.back() == 6 && spreadOf (0).empty(), "samplerate SR3: ten of 41 evenly from the first to the last (0 .. 40, the sixth 22); seven of seven is all");
+}
 void testTimingSegments()
 {
     using namespace ejmap::timing;
@@ -7862,7 +7873,7 @@ void testTextPassTimeout()
 void testPhaseB()
 {
     using namespace ejmap::phaseb;
-    check (categories().size() == 16 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories()[14].name == "frequency" && categories().back().name == "gainall", "phaseb P1: sixteen categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, frequency, gain-all)");
+    check (categories().size() == 17 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories()[14].name == "frequency" && categories()[15].name == "samplerate" && categories().back().name == "gainall", "phaseb P1: seventeen categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, frequency, samplerate, gain-all)");
     for (const auto& c : categories()) check (c.guardS >= 600.0 && c.guardWhy.isNotEmpty(), "phaseb P2: " + c.name + " has a stated hang guard of at least 10 min (" + juce::String (c.guardS / 60.0, 0) + ")");
     check (categoryNamed ("saturation")->ledgerCategories.contains ("amp_sim") && modeWord ("--cert-reverb-delay") == "reverbdelay" && modeWord ("--cert-gain-cal") == "gaincal", "phaseb P3: amp sims ride with saturation; the mode word is the record folder");
     // the done marker: a row file, whole or absent
@@ -8101,6 +8112,7 @@ int main (int, char**)
     testCombined();
     testMaterial();
     testFrequency();
+    testSampleRate();
     testTimingSegments();
     testLimiter();
     testEq();

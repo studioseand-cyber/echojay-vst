@@ -56,6 +56,7 @@
 #include "EjmapCombined.h"
 #include "EjmapMaterial.h"
 #include "EjmapFrequency.h"
+#include "EjmapSampleRate.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include "EjmapCertReview.h"
@@ -3022,6 +3023,73 @@ inline int runFrequency (const SweepOptions& opt)
     return v.ok ? 0 : 4;
 }
 
+// SAMPLE RATE (Kathy's NEXT BUILD item A4, 6 Oct; derivation in EjmapSampleRate.h): the tone check's process at the pick with the
+// plugin prepared at 44.1 and 96 kHz as well as 48; GR per rate and the move against 48; over 0.5 dB flags a rate-dependent unit.
+inline int runSampleRate (const SweepOptions& opt)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("SAMPLERATE: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    if (hits.size() != 1) { say ("SAMPLERATE: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
+    const auto& desc = hits[0].desc;
+    const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (root.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
+    { say ("SAMPLERATE: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
+    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto pstem = juce::File::createLegalFileName (opt.product).replaceCharacter (' ', '_') + "_" + desc.version;
+    const auto tcFile = root.getChildFile ("profiles").getChildFile (pstem + ".tonecheck.json");
+    const auto tc = juce::JSON::parse (tcFile.loadFileAsString());
+    if (! tc.isObject()) { say ("SAMPLERATE: " + opt.product + ": no tone check (" + tcFile.getFileName() + ")"); return 4; }
+    const auto pick = tc.getProperty ("pick", {}); const double pickNorm = (double) pick.getProperty ("norm", -1.0), Lrms = (double) tc.getProperty ("L_rms_dbfs", -18.4), Lpeak = Lrms + profile::kPeakToSineRmsDb;
+    if (pickNorm < 0.0) { say ("SAMPLERATE: " + opt.product + ": the tone check carries no pick"); return 4; }
+    juce::StringArray sets; int amountIdx = -1;
+    if (const auto* ws = tc.getProperty ("writes", {}).getArray())
+        for (const auto& w : *ws) { const int i = (int) w.getProperty ("index", -1); if (i < 0) continue; if (w.getProperty ("why", "").toString().containsIgnoreCase ("pick")) { amountIdx = i; continue; } sets.add (juce::String (i) + ":" + juce::String ((double) w.getProperty ("norm", 0.0), 6)); }
+    if (amountIdx < 0)
+    {
+        const auto record = juce::JSON::parse (latestRecordFor (root.getChildFile ("fixtures"), opt.product).loadFileAsString()); const auto profile = juce::JSON::parse (root.getChildFile ("profiles").getChildFile (pstem + ".json").loadFileAsString());
+        const auto amountName = profile.getProperty ("amount", {}).getProperty ("control", "").toString();
+        if (const auto* cs = record.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if (c.getProperty ("name", "").toString() == amountName) amountIdx = (int) c.getProperty ("index", -1);
+        if (amountIdx < 0) { say ("SAMPLERATE: " + opt.product + ": the amount control is not on the record"); return 4; }
+    }
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("samplerate"); outDir.createDirectory();
+    juce::String toneLevels; { std::vector<double> q; for (const auto& [lo, hi] : sweep::kQuietLadder) { q.push_back (lo); q.push_back (hi); } std::sort (q.begin(), q.end()); for (double L : q) toneLevels << juce::String ((int) L) << ","; }
+    say ("SAMPLERATE: " + opt.product + " " + desc.version + ": the tone check's pick norm " + juce::String (pickNorm, 4) + " at L " + juce::String (Lrms, 2) + " dBFS RMS; rates 44.1 / 48 / 96 kHz");
+    std::map<double, std::optional<double>> grByHz; std::map<double, int> latencyBySr;
+    for (double sr : samplerate::kRates)
+    {
+        juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--sweep", "thr=" + juce::String (amountIdx), "norms=" + juce::String (pickNorm, 6),
+                                 "levels=" + toneLevels + juce::String (Lpeak, 4), "hz=997", "sr=" + juce::String (sr, 0), "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
+        if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
+        const auto r = runChild (args, opt.timeoutMs);
+        raw.getChildFile (stem + ".samplerate.sr" + juce::String (sr, 0) + ".1.txt").replaceWithText (r.out, false, false, "\n");
+        if (r.kind == ChildResult::Kind::uiShown) { say ("SAMPLERATE: a window appeared; stopping"); return 5; }
+        std::optional<double> gr;
+        if (r.cleanExit())
+        {
+            sweep::ProcessOut po { r.out, true, r.describe(), (float) pickNorm };
+            const auto d = sweep::derive (sweep::mergeProcesses ({ juce::String(), true, "none", -1.0f }, { po }), { Lpeak }, -1, true);
+            const auto key = sweep::levelKey (Lpeak); gr = d.reduction.count (key) && ! d.reduction.at (key).empty() ? d.reduction.at (key)[0] : std::nullopt;
+        }
+        grByHz[sr] = gr; for (const auto& line : juce::StringArray::fromLines (r.out)) if (line.startsWith ("config\t")) { const auto f = juce::StringArray::fromTokens (line, "\t", ""); const int k = f.indexOf ("latency"); if (k >= 0 && k + 1 < f.size()) latencyBySr[sr] = f[k + 1].getIntValue(); }
+        say ("  " + juce::String (sr / 1000.0, 1) + " kHz: GR " + (gr ? juce::String (*gr, 2) + " dB" : "unreadable (" + r.describe() + ")"));
+    }
+    const auto v = samplerate::judge (grByHz);
+    say ("SAMPLERATE: " + opt.product + " - " + v.why);
+    auto rec = samplerate::verdictVar (v);
+    if (auto* o = rec.getDynamicObject())
+    {
+        o->setProperty ("schema", "ej_samplerate_pass/0"); o->setProperty ("status", "ACCURACY PASS A4 (6 Oct): data only, not exported, not published");
+        o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+        o->setProperty ("pick_norm", pickNorm); o->setProperty ("L_rms_dbfs", Lrms); o->setProperty ("writes", sets.joinIntoString (",")); o->setProperty ("method", "the tone check's process (quiet ladder + L, 2.5 s holds, 997 Hz) with the plugin prepared at 44100, 48000 and 96000; GR = quiet reference gain - gain at L");
+        o->setProperty ("measuredAt", nowStamp());
+    }
+    outDir.getChildFile (stem + ".samplerate.json").replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n");
+    say ("SAMPLERATE: -> " + outDir.getChildFile (stem + ".samplerate.json").getFullPathName());
+    return v.ok ? 0 : 4;
+}
+
 inline int runGainCal (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
@@ -4699,7 +4767,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     {
         if (! phaseb::categoryRuns (cat, onlyCategories, redo)) continue;
         std::vector<PhaseBProduct> list;
-        if (cat.name == "gaincal" || cat.name == "timing" || cat.name == "combined" || cat.name == "material" || cat.name == "frequency")
+        if (cat.name == "gaincal" || cat.name == "timing" || cat.name == "combined" || cat.name == "material" || cat.name == "frequency" || cat.name == "samplerate")
         {
             // every certified compressor: an exported row, or a record whose sweep is certified
             if (const auto* a = outcomes.getArray()) for (const auto& row : *a)
@@ -4731,6 +4799,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
         }
         if (! onlyProducts.isEmpty()) { std::vector<PhaseBProduct> f; for (const auto& pp : list) if (onlyProducts.contains (pp.product)) f.push_back (pp); list = f; }
         std::sort (list.begin(), list.end(), [] (const PhaseBProduct& a, const PhaseBProduct& b) { return a.product.compareIgnoreCase (b.product) < 0; });
+        if (cat.name == "samplerate" && onlyProducts.isEmpty()) { std::vector<PhaseBProduct> f; for (int i : samplerate::spreadOf ((int) list.size())) f.push_back (list[(size_t) i]); list = f; }   // A4: a spread of ten, evenly over the sorted list
         work[cat.name] = list;
     }
     // THE REDO (6 Oct): the rows named are deleted first, so the counts below see them as not done and the loop runs them again
@@ -4785,7 +4854,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 if (cat.name == "timing" && pp.recordFile.isNotEmpty()) { tmp.getChildFile ("fixtures").createDirectory(); juce::File (pp.recordFile).copyFileTo (tmp.getChildFile ("fixtures").getChildFile (juce::File (pp.recordFile).getFileName())); }
                 juce::StringArray args { exe.getFullPathName(), cat.mode, pp.product };
                 if (cat.kindArg.isNotEmpty()) { args.add ("--kind"); args.add (cat.kindArg); }
-                if (cat.name == "combined" || cat.name == "material" || cat.name == "frequency") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts) live in the real folder
+                if (cat.name == "combined" || cat.name == "material" || cat.name == "frequency" || cat.name == "samplerate") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts) live in the real folder
                 args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName() });
                 const auto t1 = juce::Time::getMillisecondCounterHiRes();
                 const auto r = runChild (args, (int) (cat.guardS * 1000.0));

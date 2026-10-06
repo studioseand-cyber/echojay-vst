@@ -1,0 +1,29 @@
+{
+  "gr_48k_db": 1.98,
+  "gr_by_sr": {
+    "44100": 1.98,
+    "48000": 1.98,
+    "96000": 1.98
+  },
+  "delta_vs_48k_db": {
+    "44100": -0.0,
+    "48000": 0.0,
+    "96000": 0.0
+  },
+  "latency_by_sr": {
+  },
+  "max_abs_delta_db": 0.0,
+  "rate_dependent": false,
+  "flag_db": 0.5,
+  "verdict": "GR within 0.5 dB across 44.1 / 48 / 96 kHz (largest move 0.00)",
+  "schema": "ej_samplerate_pass/0",
+  "status": "ACCURACY PASS A4 (6 Oct): data only, not exported, not published",
+  "product": "C1 comp (s)",
+  "version": "12.0.0",
+  "identity": "AudioUnit|494b617d|12.0.0",
+  "pick_norm": 0.897946959924545,
+  "L_rms_dbfs": -13.713253,
+  "writes": "0:0.000000,1:0.460000,2:0.425000,3:0.000000,5:0.500000,6:0.690000,4:0.484375",
+  "method": "the tone check's process (quiet ladder + L, 2.5 s holds, 997 Hz) with the plugin prepared at 44100, 48000 and 96000; GR = quiet reference gain - gain at L",
+  "measuredAt": "20261006T191543"
+}

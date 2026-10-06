@@ -1,0 +1,6 @@
+SAMPLERATE: C1 comp (s) 12.0.0: the tone check's pick norm 0.8979 at L -13.71 dBFS RMS; rates 44.1 / 48 / 96 kHz
+  44.1 kHz: GR 1.98 dB
+  48.0 kHz: GR 1.98 dB
+  96.0 kHz: GR 1.98 dB
+SAMPLERATE: C1 comp (s) - GR within 0.5 dB across 44.1 / 48 / 96 kHz (largest move 0.00)
+SAMPLERATE: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/samplerate/.tmp-AudioUnit_494b617d_12.0.0/samplerate/AudioUnit_494b617d_12.0.0.samplerate.json

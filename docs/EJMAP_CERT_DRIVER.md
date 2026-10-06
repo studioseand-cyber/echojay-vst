@@ -2749,3 +2749,13 @@ between 2c633870 and this commit on a product with an extra input bus would have
 emphasis). Rehearsed on the six local profiles (53 s): bx_opto 0.00, SBC 0.21, C1 (s) 0.62, RCompressor (s) 0.73 — not
 flagged; **elysia mpressor 1.52** (0.48 dB at 100 Hz: its sidechain filter) and **Lindell 7X-500 1.14** (3.10 at 100 Hz: more
 GR on lows) flagged. Data only.
+
+## 70. Accuracy pass A4, sample rate: `--redo samplerate` (6 Oct)
+
+The probe's `--sweep` takes `sr=` (the plugin prepared at that rate; the config line now prints `sr`). `--cert-samplerate
+<product>` (`EjmapSampleRate.h`, pins SR1–SR3; Phase B category `samplerate`, opt-in): the tone check's process at the pick at
+44.1 and 96 kHz as well as 48; GR per rate, the move against 48 and the latency per rate on
+`phaseb/samplerate/samplerate/<stem>.samplerate.json`; a move over 0.5 dB (the tone check's bar) flags `rate_dependent` —
+"the profile would need a rate field for this unit". The spread: without `--only`, every k-th of the sorted certified list so
+ten are measured (`samplerate::spreadOf`). Rehearsed on the six local profiles (53 s): every unit within 0.01 dB across the
+three rates — on these six, profiles need no rate field; Sean's ten decide for his set.
