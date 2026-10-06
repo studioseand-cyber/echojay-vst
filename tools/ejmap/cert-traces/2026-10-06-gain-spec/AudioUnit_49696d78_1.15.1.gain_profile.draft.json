@@ -1,0 +1,469 @@
+{
+  "schema": "ej_gain_profile/1",
+  "status": "DRAFT against GAIN_PROFILE_SPEC v0.1 (a proposal): data only, not exported, not published",
+  "plugin": {
+    "name": "elysia mpressor",
+    "manufacturer": "Plugin Alliance",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|49696d78|1.15.1",
+    "version": "1.15.1",
+    "map_fp": "b3396255fdc18668cbadcdda4edac425fa4598506b60dbb11788a3eae9ed91d3"
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert), probe a3358115f150",
+    "date": "2026-10-06",
+    "sample_rate": 48000,
+    "signal": "997 Hz sine, 1.5 s per position; -40 and -20 dBFS (inputs also -60, judged there)"
+  },
+  "controls": [
+    {
+      "control": "EQ Gain",
+      "role": "gain",
+      "verdict": "no_effect",
+      "writable": false,
+      "worst_off_db": 6.0,
+      "bar_db": 0.1,
+      "level_dependent_db": 0.01,
+      "stepped": false,
+      "unity_offset_db": -0.02,
+      "curve": [
+        {
+          "norm": 0.0,
+          "display": "6.0 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.05,
+          "display": "6.0 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.1,
+          "display": "5.9 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.15,
+          "display": "5.1 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.2,
+          "display": "4.2 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.25,
+          "display": "3.4 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.3,
+          "display": "2.7 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.35,
+          "display": "2.2 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.4,
+          "display": "1.6 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.45,
+          "display": "1.1 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.55,
+          "display": "1.1 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.6,
+          "display": "1.6 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.65,
+          "display": "2.2 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.7,
+          "display": "2.7 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.75,
+          "display": "3.4 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.8,
+          "display": "4.2 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.85,
+          "display": "5.1 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.9,
+          "display": "5.9 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.95,
+          "display": "6.0 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 1.0,
+          "display": "6.0 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        }
+      ]
+    },
+    {
+      "control": "Gain",
+      "role": "gain",
+      "verdict": "level_dependent",
+      "writable": false,
+      "worst_off_db": 0.05,
+      "bar_db": 0.1,
+      "level_dependent_db": 0.51,
+      "stepped": false,
+      "unity_offset_db": -0.02,
+      "curve": [
+        {
+          "norm": 0.0,
+          "display": "0.0 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.05,
+          "display": "0.3 dB",
+          "measured_db": 0.25,
+          "measured_db_at_m20": 0.25
+        },
+        {
+          "norm": 0.1,
+          "display": "0.6 dB",
+          "measured_db": 0.53,
+          "measured_db_at_m20": 0.52
+        },
+        {
+          "norm": 0.15,
+          "display": "0.8 dB",
+          "measured_db": 0.8,
+          "measured_db_at_m20": 0.8
+        },
+        {
+          "norm": 0.2,
+          "display": "1.2 dB",
+          "measured_db": 1.18,
+          "measured_db_at_m20": 1.17
+        },
+        {
+          "norm": 0.25,
+          "display": "1.8 dB",
+          "measured_db": 1.73,
+          "measured_db_at_m20": 1.72
+        },
+        {
+          "norm": 0.3,
+          "display": "2.3 dB",
+          "measured_db": 2.28,
+          "measured_db_at_m20": 2.27
+        },
+        {
+          "norm": 0.35,
+          "display": "2.8 dB",
+          "measured_db": 2.83,
+          "measured_db_at_m20": 2.82
+        },
+        {
+          "norm": 0.4,
+          "display": "3.4 dB",
+          "measured_db": 3.38,
+          "measured_db_at_m20": 3.36
+        },
+        {
+          "norm": 0.45,
+          "display": "3.9 dB",
+          "measured_db": 3.93,
+          "measured_db_at_m20": 3.91
+        },
+        {
+          "norm": 0.5,
+          "display": "5.0 dB",
+          "measured_db": 4.98,
+          "measured_db_at_m20": 4.96
+        },
+        {
+          "norm": 0.55,
+          "display": "6.1 dB",
+          "measured_db": 6.05,
+          "measured_db_at_m20": 6.03
+        },
+        {
+          "norm": 0.6,
+          "display": "6.9 dB",
+          "measured_db": 6.88,
+          "measured_db_at_m20": 6.85
+        },
+        {
+          "norm": 0.65,
+          "display": "7.9 dB",
+          "measured_db": 7.85,
+          "measured_db_at_m20": 7.82
+        },
+        {
+          "norm": 0.7,
+          "display": "9.2 dB",
+          "measured_db": 9.220000000000001,
+          "measured_db_at_m20": 9.18
+        },
+        {
+          "norm": 0.75,
+          "display": "10.8 dB",
+          "measured_db": 10.720000000000001,
+          "measured_db_at_m20": 10.66
+        },
+        {
+          "norm": 0.8,
+          "display": "12.4 dB",
+          "measured_db": 12.369999999999999,
+          "measured_db_at_m20": 12.279999999999999
+        },
+        {
+          "norm": 0.85,
+          "display": "14.4 dB",
+          "measured_db": 14.369999999999999,
+          "measured_db_at_m20": 14.23
+        },
+        {
+          "norm": 0.9,
+          "display": "16.6 dB",
+          "measured_db": 16.57,
+          "measured_db_at_m20": 16.329999999999998
+        },
+        {
+          "norm": 0.95,
+          "display": "18.3 dB",
+          "measured_db": 18.309999999999999,
+          "measured_db_at_m20": 17.960000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "20.0 dB",
+          "measured_db": 19.960000000000001,
+          "measured_db_at_m20": 19.449999999999999
+        }
+      ]
+    },
+    {
+      "control": "Gain Reduction",
+      "role": "gain",
+      "verdict": "few_numeric_points",
+      "writable": false,
+      "worst_off_db": 0.0,
+      "bar_db": 0.1,
+      "level_dependent_db": 0.01,
+      "stepped": false,
+      "unity_offset_db": -0.02,
+      "curve": [
+        {
+          "norm": 0.0,
+          "display": "0.00 dB",
+          "measured_db": -0.02,
+          "measured_db_at_m20": -0.03
+        },
+        {
+          "norm": 0.05,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.1,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.15,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.2,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.25,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.3,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.35,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.4,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.45,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.5,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.55,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.6,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.65,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.7,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.75,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.8,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.85,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.9,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.95,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 1.0,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        }
+      ]
+    }
+  ],
+  "neutral": [
+    {
+      "control": "Attack",
+      "set": "19.0 ms",
+      "norm": 0.5
+    },
+    {
+      "control": "Release",
+      "set": "117.5 ms",
+      "norm": 0.5
+    },
+    {
+      "control": "Ratio",
+      "set": "2.8",
+      "norm": 0.363636
+    },
+    {
+      "control": "EQ Freq",
+      "set": "230.0 Hz",
+      "norm": 0.5
+    },
+    {
+      "control": "GR Limit",
+      "set": "10.0 dB",
+      "norm": 0.5
+    }
+  ],
+  "notes": [
+    "EQ Gain: no_effect - the control does not move the output (span 0.00 dB over 21 positions)",
+    "Gain: level_dependent - the levels disagree by up to 0.51 dB (bar 0.5): a stage inside the processing, not a trim - never written for level matching; worst |measured - display| 0.05 dB; judged -40 against -20 dBFS",
+    "Gain Reduction: few_numeric_points - only 1 numeric label(s): listed, not judged (span 0.00 dB)"
+  ]
+}

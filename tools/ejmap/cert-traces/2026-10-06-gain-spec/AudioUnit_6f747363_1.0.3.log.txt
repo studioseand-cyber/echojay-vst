@@ -1,0 +1,13 @@
+GAINCAL: text pass: 14 of 22 controls sampled in 3.2 s (timeout 120 s, scaled to the count)
+GAINCAL: Lindell SBC 1.0.3: 3 gain-role control(s) (amount [13] Threshold excluded)
+  [3] Gain (gain): level_dependent - the levels disagree by up to 7.15 dB (bar 0.5): a stage inside the processing, not a trim - never written for level matching; worst |measured - display| 4.40 dB; judged -40 against -20 dBFS
+  [7] Input Gain (input): display_matches - relative to the control's own 0.0 point (-0.01 dB out-in); worst |measured - display| 0.00 dB over 21 numeric point(s) (bar 0.10, the label's resolution); level-independent within 0.00 dB; judged at -60 dBFS (an input gain: -40 can sit inside the compression path)
+    acceptance +3 dB from instantiate (-0.01): norm 0.6500 promised 2.99, measured 2.99, miss -0.00 dB -> PASS
+    acceptance -3 dB from instantiate (-0.01): norm 0.3500 promised -3.01, measured -3.01, miss 0.00 dB -> PASS
+  [14] Output Gain (output): level_dependent - the levels disagree by up to 0.67 dB (bar 0.5): a stage inside the processing, not a trim - never written for level matching; worst |measured - display| 0.00 dB; judged -40 against -20 dBFS
+  ROLES BY MEASUREMENT: 3 verdict(s), 8 unnamed control(s) probed without the signature
+    role gain DROPPED    [3] Gain - the level moves 19.60 dB at one level and 13.12 at the quieter: a path, not a plain gain
+    role input CONFIRMED  [7] Input Gain - the level moves 19.99 dB, the same at the quieter level
+    role output CONFIRMED  [14] Output Gain - the level moves 20.00 dB, the same at the quieter level
+GAINCAL: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rd/phaseb/gaincal/.tmp-AudioUnit_6f747363_1.0.3/gaincal/AudioUnit_6f747363_1.0.3.gaincal.json
+GAINCAL: draft ej_gain_profile/1 -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rd/phaseb/gaincal/.tmp-AudioUnit_6f747363_1.0.3/gain-cal/AudioUnit_6f747363_1.0.3.gain_profile.draft.json

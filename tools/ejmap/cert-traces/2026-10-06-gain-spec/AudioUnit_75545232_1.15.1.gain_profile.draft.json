@@ -1,0 +1,675 @@
+{
+  "schema": "ej_gain_profile/1",
+  "status": "DRAFT against GAIN_PROFILE_SPEC v0.1 (a proposal): data only, not exported, not published",
+  "plugin": {
+    "name": "Vertigo VSC-2",
+    "manufacturer": "Plugin Alliance",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|75545232|1.15.1",
+    "version": "1.15.1",
+    "map_fp": "6f8ec9fdce67a4e67cfcbdb5d7d074fcbaa42bfe68c261b9f594e7b4ae60d944"
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert), probe a3358115f150",
+    "date": "2026-10-06",
+    "sample_rate": 48000,
+    "signal": "997 Hz sine, 1.5 s per position; -40 and -20 dBFS (inputs also -60, judged there)"
+  },
+  "controls": [
+    {
+      "control": "Make Up A",
+      "role": "makeup",
+      "verdict": "display_matches",
+      "writable": true,
+      "worst_off_db": 0.05,
+      "bar_db": 0.1,
+      "level_dependent_db": 0.03,
+      "stepped": false,
+      "unity_offset_db": 0.02,
+      "curve": [
+        {
+          "norm": 0.0,
+          "display": "0.0 dB",
+          "measured_db": 0.02,
+          "measured_db_at_m20": 0.02
+        },
+        {
+          "norm": 0.05,
+          "display": "+0.9 dB",
+          "measured_db": 0.95,
+          "measured_db_at_m20": 0.95
+        },
+        {
+          "norm": 0.1,
+          "display": "+1.6 dB",
+          "measured_db": 1.62,
+          "measured_db_at_m20": 1.62
+        },
+        {
+          "norm": 0.15,
+          "display": "+2.2 dB",
+          "measured_db": 2.17,
+          "measured_db_at_m20": 2.17
+        },
+        {
+          "norm": 0.2,
+          "display": "+2.6 dB",
+          "measured_db": 2.64,
+          "measured_db_at_m20": 2.64
+        },
+        {
+          "norm": 0.25,
+          "display": "+3.1 dB",
+          "measured_db": 3.07,
+          "measured_db_at_m20": 3.07
+        },
+        {
+          "norm": 0.3,
+          "display": "+3.5 dB",
+          "measured_db": 3.49,
+          "measured_db_at_m20": 3.49
+        },
+        {
+          "norm": 0.35,
+          "display": "+3.9 dB",
+          "measured_db": 3.91,
+          "measured_db_at_m20": 3.91
+        },
+        {
+          "norm": 0.4,
+          "display": "+4.3 dB",
+          "measured_db": 4.34,
+          "measured_db_at_m20": 4.34
+        },
+        {
+          "norm": 0.45,
+          "display": "+4.8 dB",
+          "measured_db": 4.8,
+          "measured_db_at_m20": 4.8
+        },
+        {
+          "norm": 0.5,
+          "display": "+5.3 dB",
+          "measured_db": 5.3,
+          "measured_db_at_m20": 5.3
+        },
+        {
+          "norm": 0.55,
+          "display": "+5.8 dB",
+          "measured_db": 5.85,
+          "measured_db_at_m20": 5.85
+        },
+        {
+          "norm": 0.6,
+          "display": "+6.5 dB",
+          "measured_db": 6.48,
+          "measured_db_at_m20": 6.48
+        },
+        {
+          "norm": 0.65,
+          "display": "+7.2 dB",
+          "measured_db": 7.2,
+          "measured_db_at_m20": 7.2
+        },
+        {
+          "norm": 0.7,
+          "display": "+8.0 dB",
+          "measured_db": 8.06,
+          "measured_db_at_m20": 8.06
+        },
+        {
+          "norm": 0.75,
+          "display": "+9.1 dB",
+          "measured_db": 9.09,
+          "measured_db_at_m20": 9.09
+        },
+        {
+          "norm": 0.8,
+          "display": "+10.3 dB",
+          "measured_db": 10.359999999999999,
+          "measured_db_at_m20": 10.359999999999999
+        },
+        {
+          "norm": 0.85,
+          "display": "+12.0 dB",
+          "measured_db": 11.99,
+          "measured_db_at_m20": 11.99
+        },
+        {
+          "norm": 0.9,
+          "display": "+14.1 dB",
+          "measured_db": 14.16,
+          "measured_db_at_m20": 14.16
+        },
+        {
+          "norm": 0.95,
+          "display": "+17.2 dB",
+          "measured_db": 17.199999999999999,
+          "measured_db_at_m20": 17.190000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "+21.8 dB",
+          "measured_db": 21.77,
+          "measured_db_at_m20": 21.75
+        }
+      ],
+      "acceptance": [
+        {
+          "target_db": 3.016500000000001,
+          "norm_written": 0.243476256339327,
+          "expected_db": 3.02,
+          "measured_db": 3.02,
+          "miss_db": 0.0,
+          "pass": true
+        },
+        {
+          "target_db": -2.983499999999999,
+          "norm_written": 0.0,
+          "expected_db": 0.02,
+          "clamped_to_span": true,
+          "measured_db": 0.02,
+          "miss_db": 0.0,
+          "pass": true
+        }
+      ]
+    },
+    {
+      "control": "Make Up B",
+      "role": "makeup",
+      "verdict": "display_matches",
+      "writable": true,
+      "worst_off_db": 0.05,
+      "bar_db": 0.1,
+      "level_dependent_db": 0.03,
+      "stepped": false,
+      "unity_offset_db": 0.02,
+      "curve": [
+        {
+          "norm": 0.0,
+          "display": "0.0 dB",
+          "measured_db": 0.02,
+          "measured_db_at_m20": 0.02
+        },
+        {
+          "norm": 0.05,
+          "display": "+0.9 dB",
+          "measured_db": 0.95,
+          "measured_db_at_m20": 0.95
+        },
+        {
+          "norm": 0.1,
+          "display": "+1.6 dB",
+          "measured_db": 1.62,
+          "measured_db_at_m20": 1.62
+        },
+        {
+          "norm": 0.15,
+          "display": "+2.2 dB",
+          "measured_db": 2.17,
+          "measured_db_at_m20": 2.17
+        },
+        {
+          "norm": 0.2,
+          "display": "+2.6 dB",
+          "measured_db": 2.64,
+          "measured_db_at_m20": 2.64
+        },
+        {
+          "norm": 0.25,
+          "display": "+3.1 dB",
+          "measured_db": 3.07,
+          "measured_db_at_m20": 3.07
+        },
+        {
+          "norm": 0.3,
+          "display": "+3.5 dB",
+          "measured_db": 3.49,
+          "measured_db_at_m20": 3.49
+        },
+        {
+          "norm": 0.35,
+          "display": "+3.9 dB",
+          "measured_db": 3.91,
+          "measured_db_at_m20": 3.91
+        },
+        {
+          "norm": 0.4,
+          "display": "+4.3 dB",
+          "measured_db": 4.34,
+          "measured_db_at_m20": 4.34
+        },
+        {
+          "norm": 0.45,
+          "display": "+4.8 dB",
+          "measured_db": 4.8,
+          "measured_db_at_m20": 4.8
+        },
+        {
+          "norm": 0.5,
+          "display": "+5.3 dB",
+          "measured_db": 5.3,
+          "measured_db_at_m20": 5.3
+        },
+        {
+          "norm": 0.55,
+          "display": "+5.8 dB",
+          "measured_db": 5.85,
+          "measured_db_at_m20": 5.85
+        },
+        {
+          "norm": 0.6,
+          "display": "+6.5 dB",
+          "measured_db": 6.48,
+          "measured_db_at_m20": 6.48
+        },
+        {
+          "norm": 0.65,
+          "display": "+7.2 dB",
+          "measured_db": 7.2,
+          "measured_db_at_m20": 7.2
+        },
+        {
+          "norm": 0.7,
+          "display": "+8.0 dB",
+          "measured_db": 8.06,
+          "measured_db_at_m20": 8.06
+        },
+        {
+          "norm": 0.75,
+          "display": "+9.1 dB",
+          "measured_db": 9.09,
+          "measured_db_at_m20": 9.09
+        },
+        {
+          "norm": 0.8,
+          "display": "+10.3 dB",
+          "measured_db": 10.359999999999999,
+          "measured_db_at_m20": 10.359999999999999
+        },
+        {
+          "norm": 0.85,
+          "display": "+12.0 dB",
+          "measured_db": 11.99,
+          "measured_db_at_m20": 11.99
+        },
+        {
+          "norm": 0.9,
+          "display": "+14.1 dB",
+          "measured_db": 14.16,
+          "measured_db_at_m20": 14.16
+        },
+        {
+          "norm": 0.95,
+          "display": "+17.2 dB",
+          "measured_db": 17.199999999999999,
+          "measured_db_at_m20": 17.190000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "+21.8 dB",
+          "measured_db": 21.77,
+          "measured_db_at_m20": 21.75
+        }
+      ],
+      "acceptance": [
+        {
+          "target_db": 3.016500000000001,
+          "norm_written": 0.243476256339327,
+          "expected_db": 3.02,
+          "measured_db": 3.02,
+          "miss_db": 0.0,
+          "pass": true
+        },
+        {
+          "target_db": -2.983499999999999,
+          "norm_written": 0.0,
+          "expected_db": 0.02,
+          "clamped_to_span": true,
+          "measured_db": 0.02,
+          "miss_db": 0.0,
+          "pass": true
+        }
+      ]
+    },
+    {
+      "control": "Gain Reduction A",
+      "role": "gain",
+      "verdict": "few_numeric_points",
+      "writable": false,
+      "worst_off_db": 0.0,
+      "bar_db": 0.1,
+      "level_dependent_db": 0.0,
+      "stepped": false,
+      "unity_offset_db": 0.02,
+      "curve": [
+        {
+          "norm": 0.0,
+          "display": "0.0 dB",
+          "measured_db": 0.02,
+          "measured_db_at_m20": 0.02
+        },
+        {
+          "norm": 0.05,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.1,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.15,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.2,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.25,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.3,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.35,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.4,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.45,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.5,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.55,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.6,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.65,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.7,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.75,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.8,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.85,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.9,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.95,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 1.0,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        }
+      ]
+    },
+    {
+      "control": "Gain Reduction B",
+      "role": "gain",
+      "verdict": "few_numeric_points",
+      "writable": false,
+      "worst_off_db": 0.0,
+      "bar_db": 0.1,
+      "level_dependent_db": 0.0,
+      "stepped": false,
+      "unity_offset_db": 0.02,
+      "curve": [
+        {
+          "norm": 0.0,
+          "display": "0.0 dB",
+          "measured_db": 0.02,
+          "measured_db_at_m20": 0.02
+        },
+        {
+          "norm": 0.05,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.1,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.15,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.2,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.25,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.3,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.35,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.4,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.45,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.5,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.55,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.6,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.65,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.7,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.75,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.8,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.85,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.9,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.95,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 1.0,
+          "display": "",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        }
+      ]
+    }
+  ],
+  "neutral": [
+    {
+      "control": "Bank",
+      "set": "A",
+      "norm": 0.0
+    },
+    {
+      "control": "Threshold A",
+      "set": "+11.8 dB",
+      "norm": 1.0
+    },
+    {
+      "control": "Ratio A",
+      "set": "2:1",
+      "norm": 0.2
+    },
+    {
+      "control": "Attack A",
+      "set": "10 ms",
+      "norm": 0.8
+    },
+    {
+      "control": "Release A",
+      "set": "0.6 s",
+      "norm": 0.4
+    },
+    {
+      "control": "SC Filter A",
+      "set": "Off",
+      "norm": 0.5
+    },
+    {
+      "control": "Threshold B",
+      "set": "+11.8 dB",
+      "norm": 1.0
+    },
+    {
+      "control": "Ratio B",
+      "set": "2:1",
+      "norm": 0.2
+    },
+    {
+      "control": "Attack B",
+      "set": "10 ms",
+      "norm": 0.8
+    },
+    {
+      "control": "Release B",
+      "set": "0.6 s",
+      "norm": 0.4
+    },
+    {
+      "control": "SC Filter B",
+      "set": "Off",
+      "norm": 0.5
+    }
+  ],
+  "notes": [
+    "Gain Reduction A: few_numeric_points - only 1 numeric label(s): listed, not judged (span 0.00 dB)",
+    "Gain Reduction B: few_numeric_points - only 1 numeric label(s): listed, not judged (span 0.00 dB)"
+  ]
+}

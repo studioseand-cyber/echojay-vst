@@ -1,0 +1,17 @@
+GAINCAL: text pass: 15 of 19 controls sampled in 3.6 s (timeout 120 s, scaled to the count)
+GAINCAL: Vertigo VSC-2 1.15.1: 4 gain-role control(s)
+  [8] Make Up A (makeup): display_matches - relative to the control's own 0.0 point (0.02 dB out-in); worst |measured - display| 0.05 dB over 21 numeric point(s) (bar 0.10, the label's resolution); level-independent within 0.03 dB
+    acceptance +3 dB from instantiate (0.02): norm 0.2435 promised 3.02, measured 3.02, miss 0.00 dB -> PASS
+    acceptance -3 dB from instantiate (0.02): norm 0.0000 promised 0.02, measured 0.02, miss 0.00 dB -> PASS (clamped to the span)
+  [15] Make Up B (makeup): display_matches - relative to the control's own 0.0 point (0.02 dB out-in); worst |measured - display| 0.05 dB over 21 numeric point(s) (bar 0.10, the label's resolution); level-independent within 0.03 dB
+    acceptance +3 dB from instantiate (0.02): norm 0.2435 promised 3.02, measured 3.02, miss 0.00 dB -> PASS
+    acceptance -3 dB from instantiate (0.02): norm 0.0000 promised 0.02, measured 0.02, miss 0.00 dB -> PASS (clamped to the span)
+  [17] Gain Reduction A (gain): few_numeric_points - only 1 numeric label(s): listed, not judged (span 0.00 dB)
+  [18] Gain Reduction B (gain): few_numeric_points - only 1 numeric label(s): listed, not judged (span 0.00 dB)
+  ROLES BY MEASUREMENT: 4 verdict(s), 10 unnamed control(s) probed without the signature
+    role makeup CONFIRMED  [8] Make Up A - the level moves 21.76 dB, the same at the quieter level
+    role makeup CONFIRMED  [15] Make Up B - the level moves 21.76 dB, the same at the quieter level
+    role gain DROPPED    [17] Gain Reduction A - not measured at both positions
+    role gain DROPPED    [18] Gain Reduction B - not measured at both positions
+GAINCAL: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rd/phaseb/gaincal/.tmp-AudioUnit_75545232_1.15.1/gaincal/AudioUnit_75545232_1.15.1.gaincal.json
+GAINCAL: draft ej_gain_profile/1 -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rd/phaseb/gaincal/.tmp-AudioUnit_75545232_1.15.1/gain-cal/AudioUnit_75545232_1.15.1.gain_profile.draft.json

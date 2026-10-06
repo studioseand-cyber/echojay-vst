@@ -1,0 +1,10 @@
+GAINCAL: text pass: 13 of 14 controls sampled in 3.1 s (timeout 120 s, scaled to the count)
+GAINCAL: Lindell 7X-500 1.2.2: 1 gain-role control(s) (amount [0] Input excluded)
+  [1] Output (output): not_db_scale - the label is not called dB (unit '') and the output does not track it: a scale, listed, not judged; absolute out-in (no 0.0 display point); worst |measured - display| 14.30 dB over 20 numeric point(s) (bar 0.10, the label's resolution); level-independent within 0.03 dB
+    acceptance +3 dB from instantiate (1.81): norm 0.4246 promised 4.81, measured 4.82, miss 0.01 dB -> PASS
+    acceptance -3 dB from instantiate (1.81): norm 0.2134 promised -1.19, measured -1.15, miss 0.04 dB -> PASS
+  ROLES BY MEASUREMENT: 2 verdict(s), 8 unnamed control(s) probed without the signature
+    role output DROPPED    [1] Output - not measured at both positions
+    measured role gain, UNNAMED  [4] Mix - the level moves 1.40 dB, the same at the quieter level
+GAINCAL: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rd/phaseb/gaincal/.tmp-AudioUnit_6f457232_1.2.2/gaincal/AudioUnit_6f457232_1.2.2.gaincal.json
+GAINCAL: draft ej_gain_profile/1 -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rd/phaseb/gaincal/.tmp-AudioUnit_6f457232_1.2.2/gain-cal/AudioUnit_6f457232_1.2.2.gain_profile.draft.json

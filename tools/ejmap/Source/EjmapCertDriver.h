@@ -2846,7 +2846,7 @@ inline int runGainCal (const SweepOptions& opt)
     }
     say ("GAINCAL: " + opt.product + " " + desc.version + ": " + juce::String ((int) targets.size()) + " gain-role control(s)" + (plan.thr >= 0 ? " (amount [" + juce::String (plan.thr) + "] " + plan.thrName + " excluded)" : juce::String()));
     juce::StringArray norms; for (int k = 0; k < gaincal::kNorms; ++k) norms.add (juce::String ((float) k / (float) (gaincal::kNorms - 1), 6));
-    juce::Array<juce::var> controls; int measured = 0;
+    juce::Array<juce::var> controls; int measured = 0; juce::Array<juce::var> gainNotes;
     std::vector<roleevidence::RoleVerdict> roles; std::vector<int> nominated; for (const auto& t : targets) nominated.push_back (t.index); if (plan.thr >= 0) nominated.push_back (plan.thr);
     for (const auto& t : targets)
     {
@@ -2866,7 +2866,34 @@ inline int runGainCal (const SweepOptions& opt)
             roles.push_back (roleevidence::nominee (t.index, t.name, t.role.isEmpty() ? "gain" : t.role, roleevidence::signatureHolds ("gain", fa, fb)));
         }
         say ("  [" + juce::String (t.index) + "] " + t.name + " (" + t.role + "): " + c.verdict + " - " + c.note);
-        controls.add (gaincal::toVar (t.index, t.name, t.role, rows, c));
+        auto cv = gaincal::toVar (t.index, t.name, t.role, rows, c);
+        // THE ACCEPTANCE RE-MEASURE (Kathy's gain spec v0.1 section 8, 6 Oct): for a writable control, +3 and -3 dB from its instantiate value
+        // (or as far as the span allows) - the norm computed from the curve as the server would, written in a FRESH process, measured at
+        // -40 dBFS, the miss recorded; pass within 0.2 dB (a stepped control: of the detent's own measured value)
+        if (gaincal::writable (c.verdict))
+        {
+            const auto ctl = sweep::findControl (base, t.index); const bool stepped = sweep::isSteppedControl (ctl);
+            const double ref = t.role == "input" ? gaincal::kInputRefDbfs : -40.0;
+            const double instNorm = (double) ctl.getProperty ("defaultOnInstantiate", {}).getProperty ("normalised", 0.0);
+            std::optional<double> instDb; double bd = 1e9; for (const auto& r : rows) if (r.landed && r.measuredDb.count (ref) && std::abs (r.norm - instNorm) < bd) { bd = std::abs (r.norm - instNorm); instDb = r.measuredDb.at (ref); }
+            juce::Array<juce::var> acc;
+            if (instDb) for (double d : { 3.0, -3.0 })
+            {
+                const auto inv = gaincal::normForDb (rows, *instDb + d, ref, stepped);
+                std::optional<double> got;
+                if (inv.ok)
+                {
+                    const auto r = run ("a" + juce::String (t.index) + (d > 0 ? ".p3" : ".m3"), { "--sweep", "thr=" + juce::String (t.index), "norms=" + juce::String (inv.norm, 6), "levels=" + juce::String ((int) ref), "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
+                    if (r.kind == ChildResult::Kind::uiShown) { say ("GAINCAL: a window appeared on [" + juce::String (t.index) + "] " + t.name + "; stopping"); return 5; }
+                    for (const auto& rr : gaincal::parseLevelRun (r.cleanExit() ? r.out : juce::String(), ref)) if (rr.landed && rr.measuredDb.count (ref)) got = rr.measuredDb.at (ref);
+                }
+                const auto a = gaincal::acceptanceOf (*instDb + d, inv, got); acc.add (gaincal::acceptanceVar (a));
+                say ("    acceptance " + juce::String (d > 0 ? "+" : "") + juce::String (d, 0) + " dB from instantiate (" + juce::String (*instDb, 2) + "): " + (a.ran ? "norm " + juce::String (a.normWritten, 4) + " promised " + juce::String (a.expectedDb, 2) + ", measured " + juce::String (a.measuredDb, 2) + ", miss " + juce::String (a.missDb, 2) + " dB -> " + (a.pass ? "PASS" : "FAIL") + (a.clamped ? " (clamped to the span)" : "") : a.why));
+            }
+            cv.getDynamicObject()->setProperty ("acceptance", acc);
+        }
+        else gainNotes.add (t.name + ": " + c.verdict + " - " + c.note);
+        controls.add (cv);
     }
     // the unnamed pool: one process per control at its two ends, -40 and -60 dBFS (below any compression path)
     for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
@@ -2888,6 +2915,34 @@ inline int runGainCal (const SweepOptions& opt)
     o->setProperty ("measuredAt", nowStamp()); o->setProperty ("controls", controls);
     outDir.getChildFile (stem + ".gaincal.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
     say ("GAINCAL: -> " + outDir.getChildFile (stem + ".gaincal.json").getFullPathName());
+    // THE ej_gain_profile/1 DRAFT (Kathy's gain spec v0.1 section 7, 6 Oct): the section 7 shape in cert/phaseb/gain-cal/, data only, not exported
+    {
+        auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_gain_profile/1"); P->setProperty ("status", "DRAFT against GAIN_PROFILE_SPEC v0.1 (a proposal): data only, not exported, not published");
+        { auto* pl = new juce::DynamicObject(); pl->setProperty ("name", opt.product); pl->setProperty ("manufacturer", desc.manufacturerName); pl->setProperty ("format", "AudioUnit"); pl->setProperty ("plugin_id", "AudioUnit|" + uidHex + "|" + desc.version); pl->setProperty ("version", desc.version); pl->setProperty ("map_fp", base.getProperty ("map_fp", juce::var())); P->setProperty ("plugin", juce::var (pl)); }
+        { auto* m = new juce::DynamicObject(); m->setProperty ("tool", "EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12)); m->setProperty ("date", juce::Time::getCurrentTime().formatted ("%Y-%m-%d")); m->setProperty ("sample_rate", 48000); m->setProperty ("signal", "997 Hz sine, 1.5 s per position; -40 and -20 dBFS (inputs also -60, judged there)"); P->setProperty ("measured", juce::var (m)); }
+        juce::Array<juce::var> pcs;
+        for (const auto& cv : controls)
+        {
+            auto* pc = new juce::DynamicObject(); pc->setProperty ("control", cv.getProperty ("control", "")); pc->setProperty ("role", cv.getProperty ("role", "")); pc->setProperty ("verdict", cv.getProperty ("verdict", ""));
+            pc->setProperty ("writable", gaincal::writable (cv.getProperty ("verdict", "").toString()));
+            pc->setProperty ("worst_off_db", cv.getProperty ("worst_off_db", juce::var())); pc->setProperty ("bar_db", cv.getProperty ("match_bar_db", juce::var())); pc->setProperty ("level_dependent_db", cv.getProperty ("worst_level_dependence_db", juce::var()));
+            const auto ctl = sweep::findControl (base, (int) cv.getProperty ("index", -1)); pc->setProperty ("stepped", sweep::isSteppedControl (ctl));
+            if ((bool) cv.getProperty ("has_zero_point", false) || cv.hasProperty ("zero_ref_db")) { pc->setProperty ("unity_offset_db", cv.getProperty ("zero_ref_db", juce::var())); }
+            juce::Array<juce::var> curve;
+            if (const auto* gc = cv.getProperty ("gain_curve", {}).getArray()) for (const auto& pt : *gc)
+            { auto* q = new juce::DynamicObject(); q->setProperty ("norm", pt.getProperty ("norm", 0.0)); q->setProperty ("display", pt.getProperty ("display", ""));
+              const auto ref = cv.getProperty ("role", "") == "input" ? "measured_db_at_-60" : "measured_db_at_-40"; q->setProperty ("measured_db", pt.getProperty (ref, juce::var())); q->setProperty ("measured_db_at_m20", pt.getProperty ("measured_db_at_-20", juce::var())); if (pt.hasProperty ("measured_db_at_-60")) q->setProperty ("measured_db_at_m60", pt.getProperty ("measured_db_at_-60", juce::var())); if (pt.hasProperty ("unlanded")) q->setProperty ("unlanded", true); curve.add (juce::var (q)); }
+            pc->setProperty ("curve", curve);
+            if (cv.hasProperty ("acceptance")) pc->setProperty ("acceptance", cv.getProperty ("acceptance", juce::var()));
+            pcs.add (juce::var (pc));
+        }
+        P->setProperty ("controls", pcs);
+        juce::Array<juce::var> neutral; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) { bool isT = false; for (const auto& t : targets) isT = isT || t.index == (int) c.getProperty ("index", -1); if (isT || (int) c.getProperty ("index", -1) == plan.thr) continue; const auto doi = c.getProperty ("defaultOnInstantiate", {}); if (! doi.isObject()) continue; auto* n = new juce::DynamicObject(); n->setProperty ("control", c.getProperty ("name", "")); n->setProperty ("set", doi.getProperty ("display", "")); n->setProperty ("norm", doi.getProperty ("normalised", juce::var())); neutral.add (juce::var (n)); }
+        P->setProperty ("neutral", neutral); P->setProperty ("notes", gainNotes);
+        auto dir = opt.out.getChildFile ("gain-cal"); dir.createDirectory();
+        dir.getChildFile (stem + ".gain_profile.draft.json").replaceWithText (juce::JSON::toString (juce::var (P)) + "\n", false, false, "\n");
+        say ("GAINCAL: draft ej_gain_profile/1 -> " + dir.getChildFile (stem + ".gain_profile.draft.json").getFullPathName());
+    }
     return measured > 0 ? 0 : 4;
 }
 

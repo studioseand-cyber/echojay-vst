@@ -1,0 +1,18 @@
+PHASEB: --redo gaincal,timing: 14 finished row(s) run again
+[gaincal 1/7 | all 618/631] bx_townhouse Buss Compressor: ok 114.094 s | elapsed 5:14:18 | ETA 0:02:00
+[gaincal 2/7 | all 619/631] elysia mpressor: ok 51.4125 s | elapsed 5:15:10 | ETA 0:01:47
+[gaincal 3/7 | all 620/631] Lindell 254E: ok 41.5791 s | elapsed 5:15:51 | ETA 0:01:36
+[gaincal 4/7 | all 621/631] Lindell 7X-500: ok 10.683 s | elapsed 5:16:02 | ETA 0:01:21
+[gaincal 5/7 | all 622/631] Lindell SBC: ok 19.0334 s | elapsed 5:16:21 | ETA 0:01:09
+[gaincal 6/7 | all 623/631] Solid Bus Comp: ok 55.3236 s | elapsed 5:17:16 | ETA 0:00:56
+[gaincal 7/7 | all 624/631] Vertigo VSC-2: ok 95.6834 s | elapsed 5:18:52 | ETA 0:00:42
+[timing 1/7 | all 625/631] bx_townhouse Buss Compressor: ok 8.91614 s | elapsed 5:19:01 | ETA 0:00:36
+[timing 2/7 | all 626/631] elysia mpressor: ok 12.7573 s | elapsed 5:19:14 | ETA 0:00:30
+[timing 3/7 | all 627/631] Lindell 254E: ok 32.5439 s | elapsed 5:19:46 | ETA 0:00:24
+[timing 4/7 | all 628/631] Lindell 7X-500: ok 67.3744 s | elapsed 5:20:54 | ETA 0:00:18
+[timing 5/7 | all 629/631] Lindell SBC: ok 11.3958 s | elapsed 5:21:05 | ETA 0:00:14
+[timing 6/7 | all 630/631] Solid Bus Comp: ok 84.6925 s | elapsed 5:22:30 | ETA 0:00:08
+[timing 7/7 | all 631/631] Vertigo VSC-2: ok 8.37912 s | elapsed 5:22:38 | ETA 0:00:00
+real	10m29.987s
+PHASE B PROGRESS (started 20261005T231353, updated 20261006T145309, redo gaincal,timing)
+[exited with code 0]

@@ -7125,8 +7125,20 @@ void testGainCal()
     const auto inRows = mergeLevels ({ parseLevelRun (run (-20.0, in20), -20.0), parseLevelRun (run (-40.0, in40), -40.0), parseLevelRun (run (-60.0, in60), -60.0) });
     check (kInputLevelsDbfs.size() == 3 && kInputRefDbfs == -60.0, "gaincal G7: inputs get a third level, -60 dBFS, and are judged there");
     const auto j60 = judge (inRows, "dB", kInputRefDbfs), j40 = judge (inRows, "dB", -40.0);
-    check (j60.verdict == "display_matches" && j60.levelDependent && j60.note.contains ("judged at -60 dBFS"), "gaincal G8: at -60 the input label is honest and the level dependence is said (" + j60.verdict + ")");
-    check (j40.verdict == "display_off", "gaincal G9: the same control judged at -40 reads 'off' - the compression path, not the label (" + j40.verdict + ")");
+    // KATHY'S GAIN SPEC v0.1 section 5 (6 Oct): level_dependent is a VERDICT - a stage inside the processing, never written; inputs judged -60 against -40
+    check (j60.verdict == "level_dependent" && j60.levelDependent && j60.worstLevelDepDb > 3.9 && j60.note.contains ("judged -60 against -40"), "gaincal G8 (spec v0.1): an input honest at -60 but 4 dB lower at -40 is level_dependent, judged -60 against -40 (" + j60.verdict + ": " + j60.note + ")");
+    check (j40.verdict == "level_dependent" && j40.note.contains ("-40 against -20"), "gaincal G9 (spec v0.1): judged at -40 the same control is level_dependent against -20 (" + j40.verdict + ")");
+    check (! writable ("level_dependent") && ! writable ("no_effect") && writable ("display_off") && writable ("not_db_scale") && writable ("display_matches"), "gaincal G9b: the server may write display_matches / display_off / not_db_scale by curve, never level_dependent or no_effect");
+    check (! displayDb ("-144.0 dB") && ! displayDb ("-inf dB") && displayDb ("-60.0 dB") && *displayDb ("-60.0 dB") == -60.0, "gaincal G4b (spec v0.1): a label at or below -120 dB is a floor word, not a dB number; -60 is a number");
+    { auto rowsOf = [] (std::vector<double> v) { std::vector<Reading> rs; for (size_t i = 0; i < v.size(); ++i) { Reading r; r.norm = (double) i / (double) (v.size() - 1); r.measuredDb[-40.0] = v[i]; rs.push_back (r); } return rs; };
+      check (isMonotonic (rowsOf ({ 0.0, 3.0, 7.0, 12.0 }), -40.0) && isMonotonic (rowsOf ({ 12.0, 7.0, 3.0, 0.0 }), -40.0) && ! isMonotonic (rowsOf ({ 0.0, 5.0, 2.0, 8.0 }), -40.0) && isMonotonic (rowsOf ({ 0.0, 3.0, 2.95, 6.0 }), -40.0), "gaincal G10: monotonic up or down within 0.1 dB; a 3 dB reversal is not");
+      const auto rs = rowsOf ({ 0.0, 4.0, 8.0, 12.0 });
+      const auto i6 = normForDb (rs, 6.0, -40.0, false); check (i6.ok && std::abs (i6.norm - 0.5) < 1e-9 && std::abs (i6.givesDb - 6.0) < 1e-9 && ! i6.clamped, "gaincal G11: +6 dB on a 0..12 curve inverts to norm 0.5 by interpolation");
+      const auto i20 = normForDb (rs, 20.0, -40.0, false); check (i20.ok && std::abs (i20.norm - 1.0) < 1e-9 && std::abs (i20.givesDb - 12.0) < 1e-9 && i20.clamped, "gaincal G11: a target past the span writes the end and says it is clamped (gives 12)");
+      const auto is = normForDb (rs, 6.5, -40.0, true); check (is.ok && (std::abs (is.norm - 0.333333) < 1e-3 || std::abs (is.norm - 0.666667) < 1e-3) && std::abs (is.givesDb - (is.norm < 0.5 ? 4.0 : 8.0)) < 1e-9, "gaincal G11: a stepped control takes the nearest detent and reports the dB it gives");
+      const auto ok = acceptanceOf (6.0, i6, 6.15), bad = acceptanceOf (6.0, i6, 6.5), none = acceptanceOf (6.0, i6, std::nullopt);
+      check (ok.ran && ok.pass && std::abs (ok.missDb - 0.15) < 1e-9 && bad.ran && ! bad.pass && std::abs (bad.missDb - 0.5) < 1e-9 && ! none.ran, "gaincal G12 (section 8): a re-measured write passes within 0.2 dB of what the curve promised; 0.5 dB fails; no reading = not run");
+      const auto det = acceptanceOf (6.5, is, is.givesDb + 0.1); check (det.ran && det.pass && std::abs (det.expectedDb - is.givesDb) < 1e-9, "gaincal G12: a stepped control is judged against the detent's own measured value, not the target"); }
     check (displayDb ("+6.0 dB") && *displayDb ("+6.0 dB") == 6.0 && displayDb ("-10.00") && ! displayDb ("Off") && ! displayDb ("Max"), "gaincal G4: numeric labels parse, words do not");
     // SBC's Output Gain: unit-less "6.00" that the output tracks IS a dB label
     std::vector<std::tuple<double, const char*, double>> sbc { { 0.0, "-10.00", -10.01 }, { 0.5, "0.00", -0.01 }, { 1.0, "10.00", 9.99 } };
@@ -7144,7 +7156,7 @@ void testGainCal()
     check (judge (mergeLevels ({ parseLevelRun (run (-40.0, sbc2), -40.0) }), "dB").verdict == "display_off", "gaincal G7: a dB label the output misses by 1 dB is display_off");
     // level dependence: SBC's "Gain" drives the compressor at -20
     const auto dep = judge (mergeLevels ({ parseLevelRun (run (-20.0, { { 0.0, "0.00", 0.0 }, { 0.5, "12.00", 6.3 }, { 1.0, "24.00", 12.4 } }), -20.0), parseLevelRun (run (-40.0, { { 0.0, "0.00", 0.0 }, { 0.5, "12.00", 10.2 }, { 1.0, "24.00", 19.6 } }), -40.0) }), "dB");
-    check (dep.levelDependent && dep.worstLevelDepDb > 7.0 && dep.verdict == "display_off", "gaincal G8: two levels disagreeing by 7 dB is level-dependent (an input gain inside the compression path)");
+    check (dep.levelDependent && dep.worstLevelDepDb > 7.0 && dep.verdict == "level_dependent", "gaincal G8: two levels disagreeing by 7 dB is the level_dependent VERDICT (an input gain inside the compression path; spec v0.1)");
     // no effect, silence, words
     check (judge (mergeLevels ({ parseLevelRun (run (-40.0, { { 0.0, "0", 0.0 }, { 0.5, "50", 0.01 }, { 1.0, "100", 0.0 } }), -40.0) })).verdict == "no_effect", "gaincal G9: a control that moves nothing is no_effect (Virtual Gain, EQ Gain)");
     check (judge (mergeLevels ({ parseLevelRun (run (-40.0, { { 0.0, "0", -806.0 }, { 1.0, "10", -800.0 } }), -40.0) })).verdict == "unreadable", "gaincal G10: silence is not a reading (7X-500's Output with its Input at minimum)");

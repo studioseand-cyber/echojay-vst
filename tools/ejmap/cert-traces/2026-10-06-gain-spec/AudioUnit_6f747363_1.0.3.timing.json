@@ -1,0 +1,443 @@
+{
+  "roles_by_measurement": [
+    {
+      "index": 16,
+      "control": "Release",
+      "role": "release",
+      "verdict": "confirmed",
+      "reason": "the release moves 27.3 -> 2066.3 ms"
+    },
+    {
+      "index": 19,
+      "control": "Attack",
+      "role": "attack",
+      "verdict": "confirmed",
+      "reason": "the attack moves 6.4 -> 48.4 ms"
+    }
+  ],
+  "unnamed_probed_without_signature": 0,
+  "unnamed_not_probed": "a burst pair per control costs ~12 s: the unnamed pool is not probed in this mode",
+  "role_rule": "names propose, measurement decides (5 Oct): a nominee keeps its role only when its two ends show the role's signature; an unnamed control that shows it is reported, not swept as the role",
+  "time_draft": {
+    "status": "DRAFT against COMP_TIMING_SPEC v0.1 (a proposal): data only, not in any compressor profile, not exported",
+    "definition": "63% (one time constant): attack = gain falls 63% of the GR step; release = recovers 63% of the way back",
+    "measured_at": {
+      "amount_control": "Threshold",
+      "amount_by": "the single amount control",
+      "norm": 0.866667,
+      "gr_step_db": 4.28,
+      "burst_dbfs": [
+        -35.276365819491708,
+        -19.276365819491708
+      ]
+    },
+    "attack": {
+      "control": "Attack",
+      "stepped": true,
+      "positions": [
+        {
+          "norm": 0.0,
+          "display": "0.03 ms",
+          "attack_ms": 2.0,
+          "pass": "4 kHz, 1 ms windows",
+          "gr_shift_db": 0.01
+        },
+        {
+          "norm": 0.166667,
+          "display": "0.1 ms",
+          "attack_ms": 2.1,
+          "pass": "4 kHz, 1 ms windows",
+          "gr_shift_db": -0.0
+        },
+        {
+          "norm": 0.333333,
+          "display": "0.3 ms",
+          "attack_ms": 3.6,
+          "pass": "4 kHz, 1 ms windows",
+          "gr_shift_db": -0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "1 ms",
+          "attack_ms": 8.800000000000001,
+          "pass": "997 Hz, 5 ms windows",
+          "gr_shift_db": 0.0
+        },
+        {
+          "norm": 0.666667,
+          "display": "3 ms",
+          "attack_ms": 14.199999999999999,
+          "pass": "997 Hz, 5 ms windows",
+          "gr_shift_db": 0.0
+        },
+        {
+          "norm": 0.833333,
+          "display": "10 ms",
+          "attack_ms": 19.800000000000001,
+          "pass": "997 Hz, 5 ms windows",
+          "gr_shift_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "30 ms",
+          "attack_ms": 48.399999999999999,
+          "pass": "997 Hz, 5 ms windows",
+          "gr_shift_db": 0.01
+        }
+      ]
+    },
+    "release": {
+      "control": "Release",
+      "stepped": false,
+      "positions": [
+        {
+          "norm": 0.0,
+          "display": "0.050",
+          "release_ms": 27.300000000000001,
+          "gr_shift_db": -0.0
+        },
+        {
+          "norm": 0.142857,
+          "display": "0.121",
+          "release_ms": 38.799999999999997,
+          "gr_shift_db": -0.0
+        },
+        {
+          "norm": 0.285714,
+          "display": "0.193",
+          "release_ms": 50.100000000000001,
+          "gr_shift_db": -0.0
+        },
+        {
+          "norm": 0.428571,
+          "display": "0.321",
+          "release_ms": 81.599999999999994,
+          "gr_shift_db": -0.0
+        },
+        {
+          "norm": 0.571429,
+          "display": "0.679",
+          "release_ms": 208.199999999999989,
+          "gr_shift_db": 0.0
+        },
+        {
+          "norm": 0.714286,
+          "display": "1.179",
+          "release_ms": 434.100000000000023,
+          "gr_shift_db": 0.0
+        },
+        {
+          "norm": 0.857143,
+          "display": "1.929",
+          "release_ms": 799.700000000000045,
+          "gr_shift_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "3.000",
+          "release_ms": 2066.300000000000182,
+          "gr_shift_db": 0.0
+        }
+      ]
+    },
+    "program_dependent": true,
+    "release_short_burst_ms": 60.799999999999997,
+    "release_long_burst_ms": 157.300000000000011,
+    "method": "997 Hz burst 16 dB step; 5 ms windows aligned by latency; fast attacks re-read at 4 kHz, 1 ms windows; the hold at least 10 x the first-pass attack or 2 s; gr_shift_db against the instantiate position",
+    "notes": []
+  },
+  "schema": "ej_timing_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.3, not exported, not published",
+  "product": "Lindell SBC",
+  "version": "1.0.3",
+  "identity": "AudioUnit|6f747363|1.0.3",
+  "amount_control": "Threshold",
+  "amount_norm": 0.866667,
+  "one_db_point_dbfs_peak": -29.276365819491708,
+  "quiet_dbfs": -35.276365819491708,
+  "loud_dbfs": -19.276365819491708,
+  "method": "997 Hz sine, 1 s at quiet, step to loud, step back; gain per 5 ms window; attack = 63 % of the GR step, release = 63 % recovery",
+  "controls": [
+    {
+      "index": 16,
+      "control": "Release",
+      "role": "release",
+      "positionsBy": "even8",
+      "positions": [
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.33,
+          "gr_step_db": 4.28,
+          "attack_ms": 8.9,
+          "release_ms": 27.300000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.0,
+          "display": "0.050",
+          "hold_s": 2.0,
+          "gr_shift_db": -0.0
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.33,
+          "gr_step_db": 4.28,
+          "attack_ms": 8.9,
+          "release_ms": 38.799999999999997,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.142857,
+          "display": "0.121",
+          "hold_s": 2.0,
+          "gr_shift_db": -0.0
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.33,
+          "gr_step_db": 4.28,
+          "attack_ms": 8.800000000000001,
+          "release_ms": 50.100000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.285714,
+          "display": "0.193",
+          "hold_s": 2.0,
+          "gr_shift_db": -0.0
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.33,
+          "gr_step_db": 4.28,
+          "attack_ms": 8.800000000000001,
+          "release_ms": 81.599999999999994,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.428571,
+          "display": "0.321",
+          "hold_s": 2.0,
+          "gr_shift_db": -0.0
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.33,
+          "gr_step_db": 4.28,
+          "attack_ms": 8.800000000000001,
+          "release_ms": 208.199999999999989,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.571429,
+          "display": "0.679",
+          "hold_s": 2.0,
+          "gr_shift_db": 0.0
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.33,
+          "gr_step_db": 4.28,
+          "attack_ms": 8.800000000000001,
+          "release_ms": 434.100000000000023,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.714286,
+          "display": "1.179",
+          "hold_s": 2.0,
+          "gr_shift_db": 0.0
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.33,
+          "gr_step_db": 4.28,
+          "attack_ms": 8.800000000000001,
+          "release_ms": 799.700000000000045,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.857143,
+          "display": "1.929",
+          "hold_s": 2.0,
+          "gr_shift_db": 0.0
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.33,
+          "gr_step_db": 4.28,
+          "attack_ms": 8.800000000000001,
+          "release_ms": 2066.300000000000182,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 1.0,
+          "display": "3.000",
+          "hold_s": 2.0,
+          "gr_shift_db": 0.0
+        }
+      ]
+    },
+    {
+      "index": 19,
+      "control": "Attack",
+      "role": "attack",
+      "positionsBy": "declared",
+      "positions": [
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.34,
+          "gr_step_db": 4.29,
+          "attack_faster_than_ms": 6.4,
+          "release_ms": 143.699999999999989,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.0,
+          "display": "0.03 ms",
+          "hold_s": 2.0,
+          "second_pass": {
+            "result": "measured",
+            "baseline_gain_db": -0.05,
+            "final_gain_db": -4.33,
+            "gr_step_db": 4.28,
+            "attack_ms": 2.0,
+            "release_ms": 143.900000000000006,
+            "loud_late_iqr_db": 0.0,
+            "window_ms": 1.0
+          },
+          "gr_shift_db": 0.01
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.33,
+          "gr_step_db": 4.28,
+          "attack_faster_than_ms": 6.4,
+          "release_ms": 143.900000000000006,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.166667,
+          "display": "0.1 ms",
+          "hold_s": 2.0,
+          "second_pass": {
+            "result": "measured",
+            "baseline_gain_db": -0.05,
+            "final_gain_db": -4.33,
+            "gr_step_db": 4.28,
+            "attack_ms": 2.1,
+            "release_ms": 144.099999999999994,
+            "loud_late_iqr_db": 0.0,
+            "window_ms": 1.0
+          },
+          "gr_shift_db": -0.0
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.33,
+          "gr_step_db": 4.28,
+          "attack_faster_than_ms": 6.4,
+          "release_ms": 145.699999999999989,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.333333,
+          "display": "0.3 ms",
+          "hold_s": 2.0,
+          "second_pass": {
+            "result": "measured",
+            "baseline_gain_db": -0.05,
+            "final_gain_db": -4.33,
+            "gr_step_db": 4.28,
+            "attack_ms": 3.6,
+            "release_ms": 145.800000000000011,
+            "loud_late_iqr_db": 0.0,
+            "window_ms": 1.0
+          },
+          "gr_shift_db": -0.0
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.33,
+          "gr_step_db": 4.28,
+          "attack_ms": 8.800000000000001,
+          "release_ms": 152.0,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.5,
+          "display": "1 ms",
+          "hold_s": 2.0,
+          "gr_shift_db": 0.0
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.33,
+          "gr_step_db": 4.29,
+          "attack_ms": 14.199999999999999,
+          "release_ms": 159.900000000000006,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.666667,
+          "display": "3 ms",
+          "hold_s": 2.0,
+          "gr_shift_db": 0.0
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.33,
+          "gr_step_db": 4.29,
+          "attack_ms": 19.800000000000001,
+          "release_ms": 167.599999999999994,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.833333,
+          "display": "10 ms",
+          "hold_s": 2.0,
+          "gr_shift_db": 0.0
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": -0.05,
+          "final_gain_db": -4.34,
+          "gr_step_db": 4.29,
+          "attack_ms": 48.399999999999999,
+          "release_ms": 205.699999999999989,
+          "loud_late_iqr_db": 0.01,
+          "window_ms": 5.0,
+          "norm": 1.0,
+          "display": "30 ms",
+          "hold_s": 2.0,
+          "gr_shift_db": 0.01
+        }
+      ]
+    }
+  ],
+  "program_dependence": {
+    "short_burst": {
+      "result": "measured",
+      "baseline_gain_db": -0.05,
+      "final_gain_db": -4.36,
+      "gr_step_db": 4.31,
+      "attack_ms": 8.9,
+      "release_ms": 60.799999999999997,
+      "loud_late_iqr_db": 0.0,
+      "window_ms": 5.0
+    },
+    "long_burst": {
+      "result": "measured",
+      "baseline_gain_db": -0.05,
+      "final_gain_db": -4.33,
+      "gr_step_db": 4.28,
+      "attack_ms": 8.800000000000001,
+      "release_ms": 157.300000000000011,
+      "loud_late_iqr_db": 0.0,
+      "window_ms": 5.0
+    },
+    "release_ratio_long_over_short": 2.59,
+    "program_dependent": true
+  },
+  "measuredAt": "20261006T145136"
+}

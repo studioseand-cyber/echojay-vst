@@ -1,0 +1,234 @@
+{
+  "schema": "ej_gain_profile/1",
+  "status": "DRAFT against GAIN_PROFILE_SPEC v0.1 (a proposal): data only, not exported, not published",
+  "plugin": {
+    "name": "Lindell 7X-500",
+    "manufacturer": "Plugin Alliance",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|6f457232|1.2.2",
+    "version": "1.2.2",
+    "map_fp": "5da42046bed73462a7d0c3b576c6ebcef0c555cdd787ee11484254db5c6d59a2"
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert), probe a3358115f150",
+    "date": "2026-10-06",
+    "sample_rate": 48000,
+    "signal": "997 Hz sine, 1.5 s per position; -40 and -20 dBFS (inputs also -60, judged there)"
+  },
+  "controls": [
+    {
+      "control": "Output",
+      "role": "output",
+      "verdict": "not_db_scale",
+      "writable": true,
+      "worst_off_db": 14.300000000000001,
+      "bar_db": 0.1,
+      "level_dependent_db": 0.03,
+      "stepped": false,
+      "curve": [
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "measured_db": null,
+          "measured_db_at_m20": null
+        },
+        {
+          "norm": 0.05,
+          "display": "0.5",
+          "measured_db": -13.75,
+          "measured_db_at_m20": -13.779999999999999
+        },
+        {
+          "norm": 0.1,
+          "display": "1.0",
+          "measured_db": -7.73,
+          "measured_db_at_m20": -7.76
+        },
+        {
+          "norm": 0.15,
+          "display": "1.5",
+          "measured_db": -4.21,
+          "measured_db_at_m20": -4.24
+        },
+        {
+          "norm": 0.2,
+          "display": "2.0",
+          "measured_db": -1.71,
+          "measured_db_at_m20": -1.74
+        },
+        {
+          "norm": 0.25,
+          "display": "2.5",
+          "measured_db": 0.23,
+          "measured_db_at_m20": 0.2
+        },
+        {
+          "norm": 0.3,
+          "display": "3.0",
+          "measured_db": 1.81,
+          "measured_db_at_m20": 1.78
+        },
+        {
+          "norm": 0.35,
+          "display": "3.5",
+          "measured_db": 3.15,
+          "measured_db_at_m20": 3.12
+        },
+        {
+          "norm": 0.4,
+          "display": "4.0",
+          "measured_db": 4.31,
+          "measured_db_at_m20": 4.28
+        },
+        {
+          "norm": 0.45,
+          "display": "4.5",
+          "measured_db": 5.33,
+          "measured_db_at_m20": 5.3
+        },
+        {
+          "norm": 0.5,
+          "display": "5.0",
+          "measured_db": 6.24,
+          "measured_db_at_m20": 6.22
+        },
+        {
+          "norm": 0.55,
+          "display": "5.5",
+          "measured_db": 7.07,
+          "measured_db_at_m20": 7.05
+        },
+        {
+          "norm": 0.6,
+          "display": "6.0",
+          "measured_db": 7.83,
+          "measured_db_at_m20": 7.8
+        },
+        {
+          "norm": 0.65,
+          "display": "6.5",
+          "measured_db": 12.470000000000001,
+          "measured_db_at_m20": 12.449999999999999
+        },
+        {
+          "norm": 0.7,
+          "display": "7.0",
+          "measured_db": 15.49,
+          "measured_db_at_m20": 15.470000000000001
+        },
+        {
+          "norm": 0.75,
+          "display": "7.5",
+          "measured_db": 17.719999999999999,
+          "measured_db_at_m20": 17.699999999999999
+        },
+        {
+          "norm": 0.8,
+          "display": "8.0",
+          "measured_db": 19.489999999999998,
+          "measured_db_at_m20": 19.469999999999999
+        },
+        {
+          "norm": 0.85,
+          "display": "8.5",
+          "measured_db": 20.960000000000001,
+          "measured_db_at_m20": 20.949999999999999
+        },
+        {
+          "norm": 0.9,
+          "display": "9.0",
+          "measured_db": 22.219999999999999,
+          "measured_db_at_m20": 22.199999999999999
+        },
+        {
+          "norm": 0.95,
+          "display": "9.5",
+          "measured_db": 23.32,
+          "measured_db_at_m20": 23.300000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0",
+          "measured_db": 24.300000000000001,
+          "measured_db_at_m20": 24.280000000000001
+        }
+      ],
+      "acceptance": [
+        {
+          "target_db": 4.808700000000002,
+          "norm_written": 0.42455505574027,
+          "expected_db": 4.81,
+          "measured_db": 4.82,
+          "miss_db": 0.01,
+          "pass": true
+        },
+        {
+          "target_db": -1.191299999999998,
+          "norm_written": 0.213441193167157,
+          "expected_db": -1.19,
+          "measured_db": -1.15,
+          "miss_db": 0.04,
+          "pass": true
+        }
+      ]
+    }
+  ],
+  "neutral": [
+    {
+      "control": "Attack",
+      "set": "Slow",
+      "norm": 1.0
+    },
+    {
+      "control": "Release",
+      "set": "Fast",
+      "norm": 0.0
+    },
+    {
+      "control": "Mix",
+      "set": "10.0",
+      "norm": 1.0
+    },
+    {
+      "control": "Ratio",
+      "set": "4:1",
+      "norm": 0.0
+    },
+    {
+      "control": "SC High Pass Filter",
+      "set": "OFF",
+      "norm": 0.0
+    },
+    {
+      "control": "Continuous Attack",
+      "set": "5.0",
+      "norm": 0.5
+    },
+    {
+      "control": "Continuous Release",
+      "set": "5.0",
+      "norm": 0.5
+    },
+    {
+      "control": "Stereo Link",
+      "set": "50%",
+      "norm": 0.5
+    },
+    {
+      "control": "Continuous ON",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Link ON",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Analog ON",
+      "set": "On",
+      "norm": 1.0
+    }
+  ],
+  "notes": []
+}

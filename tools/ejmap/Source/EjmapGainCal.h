@@ -30,6 +30,9 @@ inline constexpr double kMatchDb = 0.1;          // the roadmap's display_matche
 inline constexpr double kLevelDepDb = 0.5;       // two levels disagreeing by more than this: level-dependent
 inline constexpr double kSilentDb = -60.0;       // out - in below this is silence (7X-500's output with its Input at minimum), not a reading
 inline constexpr double kNoEffectDb = 0.1;       // a control whose readings span less than this does nothing to the output
+inline constexpr double kFloorWordDb = -120.0;   // a numeric label at or below this is a floor word (-inf, -144), not a dB number (Kathy's gain spec, 6 Oct)
+inline constexpr double kMonotonicTolDb = 0.1;   // a not-dB scale is writable by curve only when the curve is monotonic within this
+inline constexpr double kAcceptDb = 0.2;         // section 8: a write computed from the curve must land within this of its target
 inline const std::vector<double> kLevelsDbfs { -20.0, -40.0 };
 // A THIRD LEVEL FOR INPUT GAINS (5 Oct R8c): an input gain sits in front of the detector, so at -40 dBFS a +10 dB label can
 // already be inside the compression path (the 4 Oct finding); inputs are measured at -60 too and judged there.
@@ -80,7 +83,9 @@ inline std::optional<double> displayDb (const juce::String& display)
     const auto t = display.trim().removeCharacters ("+").upToFirstOccurrenceOf (" ", false, false).replace ("dB", "");
     if (t.isEmpty() || ! t.containsAnyOf ("0123456789")) return std::nullopt;
     if (t.retainCharacters ("0123456789.-").length() != t.length()) return std::nullopt;
-    return t.getDoubleValue();
+    const double v = t.getDoubleValue();
+    if (v <= kFloorWordDb) return std::nullopt;   // a floor at a range end (Ozone 12 Vintage Compressor's -144) is a word, not a number: the rest of the curve is judged (ruled 6 Oct)
+    return v;
 }
 
 // THE DISPLAY'S RESOLUTION: "5 dB" is a whole-dB label (half a unit of rounding is not an error: bx_opto's Output Gain reads
@@ -101,6 +106,52 @@ inline bool isDbScale (const juce::String& unit, const std::vector<Reading>& row
     for (const auto& r : rows) if (r.display.containsIgnoreCase ("db")) return true;
     return false;
 }
+
+// a curve is monotonic when its readings at the reference level never reverse by more than the tolerance
+inline bool isMonotonic (const std::vector<Reading>& rows, double refLevel)
+{
+    std::vector<double> v; for (const auto& r : rows) if (r.landed && r.measuredDb.count (refLevel)) v.push_back (r.measuredDb.at (refLevel));
+    if (v.size() < 3) return true;
+    bool up = true, down = true; for (size_t i = 1; i < v.size(); ++i) { if (v[i] < v[i - 1] - kMonotonicTolDb) up = false; if (v[i] > v[i - 1] + kMonotonicTolDb) down = false; }
+    return up || down;
+}
+// THE SERVER'S COMPUTATION (section 6.2), the same here for acceptance (section 8): the norm whose measured value is the target - interpolated
+// between the two measured positions that bracket it for a continuous control; the nearest detent for a stepped one, with the dB it gives
+struct Inverted { bool ok = false; double norm = 0.0, givesDb = 0.0; bool clamped = false; juce::String why; };
+inline Inverted normForDb (const std::vector<Reading>& rows, double targetDb, double refLevel, bool stepped)
+{
+    Inverted r; std::vector<std::pair<double, double>> pts; for (const auto& x : rows) if (x.landed && x.measuredDb.count (refLevel)) pts.push_back ({ x.norm, x.measuredDb.at (refLevel) });
+    if (pts.size() < 2) { r.why = "fewer than two measured positions"; return r; }
+    if (stepped) { size_t best = 0; for (size_t i = 1; i < pts.size(); ++i) if (std::abs (pts[i].second - targetDb) < std::abs (pts[best].second - targetDb)) best = i; r.ok = true; r.norm = pts[best].first; r.givesDb = pts[best].second; r.clamped = std::abs (r.givesDb - targetDb) > kAcceptDb; return r; }
+    double lo = 1e9, hi = -1e9; size_t ilo = 0, ihi = 0; for (size_t i = 0; i < pts.size(); ++i) { if (pts[i].second < lo) { lo = pts[i].second; ilo = i; } if (pts[i].second > hi) { hi = pts[i].second; ihi = i; } }
+    if (targetDb <= lo) { r.ok = true; r.norm = pts[ilo].first; r.givesDb = lo; r.clamped = targetDb < lo - kAcceptDb; return r; }
+    if (targetDb >= hi) { r.ok = true; r.norm = pts[ihi].first; r.givesDb = hi; r.clamped = targetDb > hi + kAcceptDb; return r; }
+    for (size_t i = 1; i < pts.size(); ++i)
+    {
+        const double a = pts[i - 1].second, b = pts[i].second;
+        if ((targetDb - a) * (targetDb - b) <= 0.0 && std::abs (b - a) > 1e-9) { const double t = (targetDb - a) / (b - a); r.ok = true; r.norm = pts[i - 1].first + t * (pts[i].first - pts[i - 1].first); r.givesDb = targetDb; return r; }
+    }
+    r.why = "no bracketing pair (the curve is not monotonic around the target)"; return r;
+}
+// one acceptance point (section 8): the write computed from the curve, re-measured in a fresh process; pass within 0.2 dB of the target
+// (a stepped control: of the detent's own measured value)
+struct Acceptance { double targetDb = 0.0, normWritten = 0.0, expectedDb = 0.0, measuredDb = 0.0, missDb = 0.0; bool ran = false, pass = false, clamped = false; juce::String why; };
+inline Acceptance acceptanceOf (double targetDb, const Inverted& inv, std::optional<double> measuredDb)
+{
+    Acceptance a; a.targetDb = targetDb; a.normWritten = inv.norm; a.expectedDb = inv.givesDb; a.clamped = inv.clamped;
+    if (! inv.ok) { a.why = "not written: " + inv.why; return a; }
+    if (! measuredDb) { a.why = "no reading in the fresh process"; return a; }
+    a.ran = true; a.measuredDb = *measuredDb; a.missDb = std::round ((a.measuredDb - a.expectedDb) * 100.0) / 100.0; a.pass = std::abs (a.missDb) <= kAcceptDb;
+    return a;
+}
+inline juce::var acceptanceVar (const Acceptance& a)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty ("target_db", a.targetDb); o->setProperty ("norm_written", a.normWritten); o->setProperty ("expected_db", std::round (a.expectedDb * 100.0) / 100.0);
+    if (a.clamped) o->setProperty ("clamped_to_span", true);
+    if (a.ran) { o->setProperty ("measured_db", std::round (a.measuredDb * 100.0) / 100.0); o->setProperty ("miss_db", a.missDb); o->setProperty ("pass", a.pass); } else o->setProperty ("why", a.why);
+    return juce::var (o);
+}
+inline bool writable (const juce::String& verdict) { return verdict == "display_matches" || verdict == "display_off" || verdict == "not_db_scale"; }
 
 struct Curve
 {
@@ -128,8 +179,9 @@ inline Curve judge (const std::vector<Reading>& rows, const juce::String& unit =
         ++c.numericPoints;
         const double rel = r.measuredDb.at (refLevel) - (zero ? *zero : 0.0);
         c.worstOffDb = juce::jmax (c.worstOffDb, std::abs (rel - *d));
-        double lo = 1e9, hi = -1e9; for (const auto& [L, v] : r.measuredDb) { lo = juce::jmin (lo, v); hi = juce::jmax (hi, v); }
-        if (r.measuredDb.size() >= 2) c.worstLevelDepDb = juce::jmax (c.worstLevelDepDb, hi - lo);
+        // level dependence: -40 against -20; for an input (judged at -60) -60 against -40 only, since -20 through a raised input gain sits in the compression path by design
+        const double other = refLevel <= -59.0 ? -40.0 : -20.0;
+        if (r.measuredDb.count (other)) c.worstLevelDepDb = juce::jmax (c.worstLevelDepDb, std::abs (r.measuredDb.at (other) - r.measuredDb.at (refLevel)));
     }
     if (c.measuredPoints == 0) { c.verdict = "unreadable"; c.note = "no position gave a reading (silent output, or every write unlanded)"; return c; }
     c.levelDependent = c.worstLevelDepDb > kLevelDepDb;
@@ -138,8 +190,11 @@ inline Curve judge (const std::vector<Reading>& rows, const juce::String& unit =
     if (c.numericPoints < 3) { c.verdict = "few_numeric_points"; c.note = "only " + juce::String (c.numericPoints) + " numeric label(s): listed, not judged (span " + juce::String (c.spanDb, 2) + " dB)"; return c; }
     for (const auto& r : rows) if (displayDb (r.display)) c.barDb = juce::jmax (c.barDb, 0.5 * displayResolution (r.display));
     c.displayMatches = c.worstOffDb <= c.barDb;
-    // a unit-less label that the output tracks IS a dB label (SBC's "6.00" reads 6.00 dB); one that does not, and is not called dB, may be another scale (U2A's 0..100 %)
-    c.verdict = c.displayMatches ? "display_matches" : isDbScale (unit, rows) ? "display_off" : "not_db_scale";
+    // LEVEL-DEPENDENT IS A VERDICT (Kathy's gain spec section 5, 6 Oct): a stage inside the processing, never written for level matching
+    if (c.levelDependent) { c.verdict = "level_dependent"; c.note = "the levels disagree by up to " + juce::String (c.worstLevelDepDb, 2) + " dB (bar " + juce::String (kLevelDepDb, 1) + "): a stage inside the processing, not a trim - never written for level matching; worst |measured - display| " + juce::String (c.worstOffDb, 2) + " dB" + (refLevel != -40.0 ? "; judged " + juce::String (refLevel, 0) + " against -40 dBFS (an input gain)" : "; judged -40 against -20 dBFS"); return c; }
+    // a unit-less label that the output tracks IS a dB label (SBC's "6.00" reads 6.00 dB); one that does not, and is not called dB, may be another scale (U2A's 0..100 %) - writable by curve only when the curve is monotonic
+    c.verdict = c.displayMatches ? "display_matches" : isDbScale (unit, rows) ? "display_off" : isMonotonic (rows, refLevel) ? "not_db_scale" : "not_monotonic";
+    if (c.verdict == "not_monotonic") { c.note = "the label is not dB and the curve is not monotonic (within " + juce::String (kMonotonicTolDb, 1) + " dB): the server could not invert it; listed, not writable"; return c; }
     c.note = (c.verdict == "not_db_scale" ? "the label is not called dB (unit '" + unit + "') and the output does not track it: a scale, listed, not judged; " : juce::String())
            + (c.hasZeroPoint ? "relative to the control's own 0.0 point (" + juce::String (c.zeroRefDb, 2) + " dB out-in)" : "absolute out-in (no 0.0 display point)")
            + "; worst |measured - display| " + juce::String (c.worstOffDb, 2) + " dB over " + juce::String (c.numericPoints) + " numeric point(s) (bar " + juce::String (c.barDb, 2) + ", the label's resolution)"
@@ -166,6 +221,7 @@ inline juce::var toVar (int index, const juce::String& name, const juce::String&
     o->setProperty ("display_matches", c.displayMatches); o->setProperty ("level_dependent", c.levelDependent);
     o->setProperty ("worst_off_db", std::round (c.worstOffDb * 100.0) / 100.0); o->setProperty ("worst_level_dependence_db", std::round (c.worstLevelDepDb * 100.0) / 100.0);
     o->setProperty ("verdict", c.verdict); o->setProperty ("note", c.note); o->setProperty ("match_bar_db", c.barDb); o->setProperty ("span_db", std::round (c.spanDb * 100.0) / 100.0);
+    o->setProperty ("has_zero_point", c.hasZeroPoint); if (c.hasZeroPoint) o->setProperty ("zero_ref_db", std::round (c.zeroRefDb * 100.0) / 100.0);
     return juce::var (o);
 }
 
