@@ -116,7 +116,36 @@ L_ref itself and passes (Lindell SBC's 6 dB included, under the v1.9 clamp).
 - **No sweeps, nothing sent.** A record without traces (none expected from the batch) is tone-checked on
   its existing points and says so.
 
-## Step 2 — the Phase B data (5 Oct; unchanged in 804a0a56: Phase B rows already done are never re-run)
+## Step 2 — tonight's order (6 Oct, build 9d3a1972): the follow-up, then the gain and timing re-runs, then the fallback
+
+Three commands, in this order, each in its own go; Ctrl-C any time, and each resumes from where it stopped when run again.
+
+```
+BIN=/Applications/ejmap.app/Contents/MacOS/ejmap
+"$BIN" --cert-preflight
+# 1. the compressor follow-up (step 1 above) - about 35-40 minutes
+caffeinate -i "$BIN" --cert-tonecheck-all 2>&1 | tee -a ~/Library/ejmap/cert/tonecheck.log
+# 2. the gain and timing data for every certified compressor, again, under Kathy's two specs - about 1 hour
+caffeinate -i "$BIN" --phaseb-all --redo gain-cal,timing 2>&1 | tee -a ~/Library/ejmap/cert/phaseb.log
+# 3. if there is time: the products the lexicon could not name, measured again with measurement nominating - several hours, resumable
+caffeinate -i "$BIN" --phaseb-all --redo nothing_nominated 2>&1 | tee -a ~/Library/ejmap/cert/phaseb.log
+```
+
+What 2 does: re-runs exactly the gain-cal and timing rows (69 each; every other Phase B row untouched) — gain controls judged
+as the gain spec says, each writable one re-measured at +3 and −3 dB (pass within 0.2 dB), an `ej_gain_profile/1`-shaped draft
+per product in `cert/phaseb/gaincal/gain-cal/`; timing with the 4 kHz second pass for fast attacks, the hold scaled to slow
+ones, the steady-GR shift at every position, the picked candidate as the amount on the 17 that were skipped, and a `time`
+draft in `cert/phaseb/timing/timing/`. Data only: no profile is exported or changed by it. Measured here: ~50 s a product for
+gain-cal, ~15 s for timing — on your Mac (2–3× faster on 5 Oct) about 50 minutes for all 69; here it would be 1.5 h.
+
+What 3 does: the 205 rows that finished with no record on 5 Oct (91 EQs, 114 saturators / amp sims — the names did not match)
+are run again; the mode probes every control at its ends and nominates the ones that move the measure. Measured here: 30–340 s a
+product (an amp sim with five tone controls is the slow end) — all 205 is a night of its own (5–12 h here, less on yours); stop
+it in the morning, it resumes the next night. Hang guards as before (EQ 30 min, saturation 15 min a product).
+
+`"$BIN" --phaseb-status` says where 2 or 3 is at any time. The morning zip is as in step 1 (stop the run first).
+
+## Step 2 (5 Oct) — the Phase B data as first gathered (the rows already done are never re-run except by --redo)
 
 Step 1 (the follow-up above) is unchanged and runs first, once. Step 2 runs after it, over several nights: it measures
 every installed EQ, limiter, de-esser, saturator and amp sim, reverb, delay, transient shaper, gate and multiband, plus a

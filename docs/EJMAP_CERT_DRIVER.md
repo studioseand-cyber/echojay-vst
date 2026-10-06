@@ -2608,3 +2608,24 @@ writes: `write fault: [5] check 0.0000, sweep 0.4219 (sweep trace …pos00.1.txt
    pair/pick records (in 17ebf114 and b0258a7b). Every record writer now writes the record on disk, never the view;
    `planDiffers` treats a collapsed record as its pick; the re-derive rebuilds the candidates from their `c<index>.` traces
    and carries the collapsed view's detector to the pick (pins L19s2, L22d). Item 4's evidence: `cert-traces/2026-10-06-item4/`.
+
+## 62. Kathy's 6 Oct amendment: the two specs' data and the fallback (tonight's build 9d3a1972)
+
+- **`--phaseb-all --redo <list>`** (`phaseb::rowToRedo`, pin P16): a category name re-runs every row of it; `nothing_nominated`
+  re-runs exactly the rows that finished ok with no record. The rows are deleted first, the counts and ETA see them as
+  undone, `progress.txt` says `redo …`. Everything else is untouched.
+- **Measurement nominates** (`roleevidence::measurementNominates`, pins MN1–5): the EQ and saturation modes, finding no name,
+  probe every sampled numeric control at its two ends with their own probe and take the ones whose ends show the role's
+  signature as nominees, recorded "unnamed" (`nominated_by` on the record); nothing moving the measure writes a record saying so.
+- **Gain controls** (gain spec v0.1 §4/5/8; `EjmapGainCal.h`, pins G4b, G8–G12): inputs judged −60 against −40; a floor word
+  (≤ −120 dB) is a word; verdicts `display_matches` / `display_off` / `not_db_scale` (monotonic only) are writable,
+  `level_dependent` / `no_effect` / `unreadable` / `words` / `few_numeric_points` / `not_monotonic` are not, each with a reason in
+  the draft's `notes`; the acceptance re-measure (+3 / −3 dB from instantiate, inverted from the curve, a fresh process at −40,
+  the miss recorded, pass within 0.2 dB; a detent against its own value) per writable control; the `ej_gain_profile/1` draft in
+  `cert/phaseb/gaincal/gain-cal/`.
+- **Timing** (timing spec v0.1 §3/5/7; `EjmapTiming.h`, pins TS1–TS6): a bound attack re-read at 4 kHz with 1 ms windows
+  ("faster than 1 ms" below); the hold ≥ 10 × the first-pass attack or 2 s; `gr_shift_db` at every position against an
+  instantiate reference burst (over 0.5 dB: `shifts_amount`); the pick as the amount on a candidates record (both thresholds for
+  a dual-mono pair), said on the record; both release times and the definition string; the §7 block as `time_draft` in
+  `cert/phaseb/timing/timing/` — never in a compressor profile.
+- The certification path is untouched: derive-only equal to 804a0a56 on Sean's zip and the rehearsal sets, 0 differences.

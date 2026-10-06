@@ -24,7 +24,11 @@ REPO=~/src/echojay-vst            # wherever the checkout is
 #   DO NOT USE 17ebf114 OR b0258a7b FOR THE COMPRESSOR FOLLOW-UP: both carry the write bug (the re-derive dropped every record's
 #   sweep-time writes, so a tone check wrote Zip's ratio at 1:1 and the VBC profiles said mix 0 %) and the collapse bug (the
 #   landing read wrote the picked candidate's view over the record). 804a0a56 repairs both from the records' own traces.
-git -C "$REPO" fetch && git -C "$REPO" checkout 804a0a56     # branch feat/ejmap-cert; the commit after it is this documentation
+#   TONIGHT'S BUILD (6 Oct evening, Kathy's amendment): 9d3a1972 - the follow-up untouched (derive-only equal to 804a0a56 on Sean's zip and
+#   the rehearsal set: 0 differences), plus Phase B: --redo gain-cal,timing (the gain spec v0.1 verdicts + acceptance re-measure and an
+#   ej_gain_profile/1 draft; the timing spec v0.1 second pass, scaled hold, gr_shift_db, the pick as the amount and a `time` draft) and
+#   --redo nothing_nominated (measurement nominates when the lexicon finds nothing). 804a0a56 IS THE FALLBACK for tonight.
+git -C "$REPO" fetch && git -C "$REPO" checkout 9d3a1972     # branch feat/ejmap-cert; the commit after it is this documentation (804a0a56: the fallback)
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
 cmake --build build-ejmap --target ejmap EchoJayProbe -j 4
@@ -67,6 +71,12 @@ ledger, the iLok, the power. Exit 0 = the probe verifies. From here the mapper r
 nothing on this page is needed again until the code changes.
 
 ## What was tested where
+
+**6 Oct 15:00, tonight's build (9d3a1972):** rebuilt from the clean checkout (stamp `9d3a1972`), packaged into
+`~/Desktop/ejmap-dist-6oct-b`, both signatures Developer ID / team 8BT5F9B887; preflight exit 0 from inside the bundle; from the
+packaged app, Lindell SBC through `--phaseb-all --category gaincal --category timing` (19 s + 11 s, the gain-profile draft and
+the timing draft written), `--phaseb-status` read back. Certification derive-only equal to 804a0a56 on Sean's 4 Oct zip (181
+rows, 245 records, 45 profiles), cert_sc and cert_tc35: 0 differences.
 
 **6 Oct 12:46, the build 804a0a56:** both targets rebuilt from the clean checkout (`EjmapBuildInfo.h` stamps `804a0a56`,
 `strings` finds it in the binary), packaged with `package_app.sh` into `~/Desktop/ejmap-dist-6oct`, both signatures Developer
