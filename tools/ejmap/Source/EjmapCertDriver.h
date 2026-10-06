@@ -2478,7 +2478,10 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         sweep::applyCandidateControl (q, base);
         sweep::ProcessOut ref; std::vector<sweep::ProcessOut> pos;
         juce::var oldC;
-        for (const auto& x : *fx.getProperty ("thresholdCandidates", {}).getArray()) if ((int) x.getProperty ("index", -1) == c.index) oldC = x.getProperty ("thresholdSweep", {});
+        if (const auto* ocs = fx.getProperty ("thresholdCandidates", {}).getArray()) { for (const auto& x : *ocs) if ((int) x.getProperty ("index", -1) == c.index) oldC = x.getProperty ("thresholdSweep", {}); }
+        // a COLLAPSED candidates record (6 Oct): the single sweep on the record is the picked candidate's own view - its detector, writes and
+        // refinement carry into that candidate; the other candidates come from their traces alone
+        else if ((int) fx.getProperty ("pickedCandidate", {}).getProperty ("index", -1) == c.index) oldC = fx.getProperty ("thresholdSweep", {});
         const auto run = resolveTraceRun (processesJson, "c" + juce::String (c.index) + ".");
         if (const auto pw = oldC.getProperty ("pairWrite", {}); pw.isObject()) { q.pairIndex = (int) pw.getProperty ("index", -1); q.pairName = pw.getProperty ("name", "").toString(); }
         if (run.quiet) { q.quietReference = true; q.referenceFallbackNote = fallbackNote (oldC); }
@@ -2707,8 +2710,10 @@ inline LandingRead readAmountLanding (const SweepOptions& opt, const juce::Plugi
         lr.note = "stepped by evidence: " + juce::String (*n) + " detents";
     }
     else { ev->setProperty ("detents", 0); ev->setProperty ("note", "continuous: every write landed where it was written (41 norms)"); lr.note = "continuous (every write landed where it was written)"; }
+    // ON THE RECORD ON DISK, never the caller's view (6 Oct: the tone check's `record` is the picked candidate's single view, and writing
+    // it back collapsed sixteen candidates records on Sean's Mac); the caller's copy gets the evidence too
     record.getDynamicObject()->setProperty ("amountLanding", juce::var (ev));
-    recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n");
+    { auto disk = juce::JSON::parse (recordFile.loadFileAsString()); if (auto* o = disk.getDynamicObject()) { o->setProperty ("amountLanding", juce::var (ev)); recordFile.replaceWithText (juce::JSON::toString (disk) + "\n", false, false, "\n"); } }
     return lr;
 }
 
@@ -5209,7 +5214,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
             }
             o->setProperty ("readAt", juce::Time::getCurrentTime().toISO8601 (false));
             say ("TONE: " + product + " - " + o->getProperty ("why").toString());
-            if (auto* ro = record.getDynamicObject()) { ro->setProperty ("sidechainPolicyCheck", juce::var (o)); recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n"); }
+            { auto disk = juce::JSON::parse (recordFile.loadFileAsString()); if (auto* ro = disk.getDynamicObject()) { ro->setProperty ("sidechainPolicyCheck", juce::var (o)); recordFile.replaceWithText (juce::JSON::toString (disk) + "\n", false, false, "\n"); } }   // the record on disk, never the view
         }
     }
     // THE RANGE RE-SAMPLE (ruled 4 Oct): this product is loaded in this session anyway, so every control whose range is partial

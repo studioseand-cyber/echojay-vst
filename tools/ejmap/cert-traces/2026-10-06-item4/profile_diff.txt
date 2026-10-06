@@ -1,0 +1,80 @@
+ITEM 4 (Kathy, 6 Oct): the fixed build, derive-only over a copy of Sean's folder (~/Downloads/cert, his b0258a7b run), every exported profile against
+(A) his 4 Oct zip's profiles and (B) his b0258a7b (5 Oct) profiles. Writes = neutral[] + engage[] + ratio.curve[0] (control -> norm, set).
+
+=== (A) against the 4 Oct zip
+4 Oct profiles 43 | fixed-build derive-only profiles 82 | in both 43 | 4 Oct only []
+new only (no 4 Oct profile to compare: products first exported by the 5 Oct follow-up): 39
+of the 49 that lost their writes, in both profile sets: 27 -> writes identical for 27 of 27
+{'top-level keys differ': 43, 'measured keys differ': 43, 'stepped differs': 1, 'detector_f differs': 1}
+== top-level keys differ 43
+    ('Abbey Road RS124 (m)', ['detector_f_source'], ['tone_check'])
+    ('Acme Opticom XLA-3', ['detector_f_source'], ['tone_check'])
+    ('Bettermaker Bus Compressor DSP', ['detector_f_source'], ['tone_check'])
+    ('C1 comp-gate (m)', ['detector_f_source'], ['tone_check'])
+    ('C1 comp-gate (s)', ['detector_f_source'], ['tone_check'])
+    ('C1 comp-sc (m)', ['detector_f_source'], ['tone_check'])
+== measured keys differ 43
+    ('Abbey Road RS124 (m)', ['extra_input_buses', 'sidechain'], [])
+    ('Acme Opticom XLA-3', ['extra_input_buses', 'sidechain'], [])
+    ('Bettermaker Bus Compressor DSP', ['extra_input_buses', 'sidechain'], [])
+    ('C1 comp-gate (m)', ['extra_input_buses', 'sidechain'], [])
+    ('C1 comp-gate (s)', ['extra_input_buses', 'sidechain'], [])
+    ('C1 comp-sc (m)', ['extra_input_buses', 'sidechain'], [])
+== stepped differs 1
+    ('Lindell 254E', False, True)
+== detector_f differs 1
+    ('bx_townhouse Buss Compressor', 0.7, 0.69)
+
+=== (B) against b0258a7b (5 Oct)
+b0258a7b profiles 80 | fixed-build derive-only profiles 82 | in both 80 | b0258a7b only []
+new only (no 4 Oct profile to compare: products first exported by the 5 Oct follow-up): 2
+of the 49 that lost their writes, in both profile sets: 43 -> writes identical for 29 of 43
+{'top-level keys differ': 79, 'measured keys differ': 79, 'writes differ': 14}
+== top-level keys differ 79
+    ('AMEK Mastering Compressor', ['detector_f_source'], ['tone_check'])
+    ('API-2500 (m)', ['detector_f_source'], ['tone_check'])
+    ('API-2500 (s)', ['detector_f_source'], ['tone_check'])
+    ('Abbey Road RS124 (m)', ['detector_f_source'], ['tone_check'])
+    ('Abbey Road RS124 (s)', ['detector_f_source'], ['tone_check'])
+    ('Acme Opticom XLA-3', ['detector_f_source'], ['tone_check'])
+== measured keys differ 79
+    ('AMEK Mastering Compressor', ['extra_input_buses', 'sidechain'], [])
+    ('API-2500 (m)', ['extra_input_buses', 'sidechain'], [])
+    ('API-2500 (s)', ['extra_input_buses', 'sidechain'], [])
+    ('Abbey Road RS124 (m)', ['extra_input_buses', 'sidechain'], [])
+    ('Abbey Road RS124 (s)', ['extra_input_buses', 'sidechain'], [])
+    ('Acme Opticom XLA-3', ['extra_input_buses', 'sidechain'], [])
+== writes differ 14
+    ('C1 comp-gate (m)', [('RATIO:Ratio', (0.218, '4.13:1'), (0.4844, '4.13:1'))])
+    ('C1 comp-gate (s)', [('RATIO:Ratio', (0.218, '4.13:1'), (0.4844, '4.13:1'))])
+    ('C1 comp-sc (m)', [('RATIO:Comp Ratio', (0.218, '4.13:1'), (0.4844, '4.13:1'))])
+    ('C1 comp-sc (s)', [('RATIO:Comp Ratio', (0.218, '4.13:1'), (0.4844, '4.13:1'))])
+    ('Kiive XTComp', [('Sat Mix Left', (1.0, '1.0'), (0.9688, '1.0')), ('Comp Mix Left', (1.0, '1.0'), (0.9688, '1.0')), ('Sat Mix Right', (1.0, '1.0'), (0.9688, '1.0')), ('Comp Mix Right', (1.0, '1.0'), 
+    ('SSL Native X-Comp v6', [('Makeup Gain', (0.1429, '0.00'), (0.1562, '0.56'))])
+
+=== (B) the 14 write differences in full (every one a sweep-time write restored; each equals the 4 Oct value)
+C1 comp-gate (m)               | RATIO:Ratio: 5 Oct (0.218, '4.13:1') -> now (0.4844, '4.13:1')
+C1 comp-gate (s)               | RATIO:Ratio: 5 Oct (0.218, '4.13:1') -> now (0.4844, '4.13:1')
+C1 comp-sc (m)                 | RATIO:Comp Ratio: 5 Oct (0.218, '4.13:1') -> now (0.4844, '4.13:1')
+C1 comp-sc (s)                 | RATIO:Comp Ratio: 5 Oct (0.218, '4.13:1') -> now (0.4844, '4.13:1')
+Kiive XTComp                   | Comp Mix Left: 5 Oct (1.0, '1.0') -> now (0.9688, '1.0'); Comp Mix Right: 5 Oct (1.0, '1.0') -> now (0.9688, '1.0'); Sat Mix Left: 5 Oct (1.0, '1.0') -> now (0.9688, '1.0'); Sat Mix Right: 5 Oct (1.0, '1.0') -> now (0.9688, '1.0')
+SSL Native X-Comp v6           | Makeup Gain: 5 Oct (0.1429, '0.00') -> now (0.1562, '0.56')
+Solid Bus Comp                 | Makeup: 5 Oct (0.2896, '2.2 dB') -> now (0.1875, '-0.3 dB')
+Unfiltered Audio Zip           | RATIO:Ratio: 5 Oct (0.0, '4.14') -> now (0.4219, '4.14')
+VBC FG-Grey                    | Make-Up Gain: 5 Oct (0.0, '-24.0dB') -> now (0.5, '0.0dB'); Mix: 5 Oct (0.0, '0%') -> now (1.0, '100%'); RATIO:Ratio: 5 Oct (0.0, '4.0') -> now (0.5, '4.0')
+VBC FG-MU                      | Make-Up Gain Left: 5 Oct (0.0, '-24.0dB') -> now (0.5, '0.0dB'); Make-Up Gain Right: 5 Oct (0.0, '-24.0dB') -> now (0.5, '0.0dB'); Mix: 5 Oct (0.0, '0%') -> now (1.0, '100%')
+VBC FG-Red                     | Make-Up Gain: 5 Oct (0.0, '-24.0dB') -> now (0.5, '0.0dB'); Mix: 5 Oct (0.0, '0%') -> now (1.0, '100%'); RATIO:Ratio: 5 Oct (0.0, '4.0') -> now (0.5, '4.0')
+VBC Rack                       | Grey Make-Up Gain: 5 Oct (0.0, '-24.0dB') -> now (0.5, '0.0dB'); Grey Mix: 5 Oct (0.0, '0%') -> now (1.0, '100%'); MU Make-Up Gain Left: 5 Oct (0.0, '-24.0dB') -> now (0.5, '0.0dB'); MU Make-Up Gain Right: 5 Oct (0.0, '-24.0dB') -> now (0.5, '0.0dB'); MU Mix: 5 Oct (0.0, '0%') -> now (1.0, '100%'); Red Make-Up Gain: 5 Oct (0.0, '-24.0dB') -> now (0.5, '0.0dB'); Red Mix: 5 Oct (0.0, '0%') -> now (1.0, '100%')
+elysia alpha master            | Mix 1: 5 Oct (1.0, '100.0 %') -> now (0.9375, '100.0 %'); Mix 2: 5 Oct (1.0, '100.0 %') -> now (0.9375, '100.0 %')
+elysia alpha mix               | Mix: 5 Oct (1.0, '100.0 %') -> now (0.9375, '100.0 %')
+
+=== the re-sweeps the next follow-up projects on his folder (derive-only)
+RE-SWEEP: 2 product(s) (derive-only: projected, not run)
+  Empirical Labs Mike-E Comp: refused at plan under the batch build (not swept: 0 controls hold the threshold role (class amount_only)); this build plans [3] Drive
+  Maag MAGNUM-K: the pair write: 'Threshold 2' must be written with 'Threshold 1' at every position (dual-mono pair, ruled 6 Oct) and this sweep did not
+OUTCOMES (/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/i4/outcomes.json): 181 rows - exported 0, recorded 6, refused 7, held 45, nee
+
+
+REASONS: new keys detector_f_source / measured.sidechain / measured.extra_input_buses (this build); tone_check absent (derive-only runs none); Lindell 254E stepped False -> True
+(amountLanding read on 5 Oct: stepped by evidence); bx_townhouse detector 0.70 -> 0.69 (re-swept on 5 Oct by the sidechain reading, a fresh detector); the 14 writes above (restored).
+VERDICT: no unexplained difference.

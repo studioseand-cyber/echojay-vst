@@ -6476,6 +6476,16 @@ void testLoopOutcomes()
             Plan nowP; nowP.ok = true; nowP.thr = -1; for (int i : { 1, 16, 30 }) nowP.candidates.push_back ({ i, "c" + juce::String (i), {}, false });
             auto emo = juce::JSON::parse (R"json({"product": "EMO-D5 (s)", "controls": [{"index": 16, "name": "Comp Thresh"}], "thresholdCandidates": [{"index": 16, "name": "Comp Thresh", "thresholdSweep": {"result": "certified", "sweptControl": {"index": 16, "refineRounds": 1}, "positionNorms": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], "inAtGr": [{"1": -30, "2": -28}, {"1": -28, "2": -26}, {"1": -26, "2": -24}, {"1": -24, "2": -22}, {"1": -22, "2": -20}, {"1": -20, "2": -18}, {"1": -18, "2": -16}, {"1": -16, "2": -14}, {"1": -14, "2": -12}]}}], "pickedCandidate": {"index": 16}, "ruleDecided": {"rule": "R1"}})json");
             check (! planDiffers (emo, nowP).resweep, "loop L19s: a Rule-1 record whose pick is still one of this build's candidates is NOT re-swept");
+            // L19s2 (6 Oct, Sean's b0258a7b run): a COLLAPSED candidates record - the picked candidate's single view written over the record by the
+            // 5 Oct landing read - is the pick, not a plan change: never re-swept (the re-derive rebuilds the candidates from their traces)
+            { auto collapsed = juce::JSON::parse (R"json({"product": "Vertigo VSC-2", "controls": [{"index": 4, "name": "Threshold A", "unit": "dB"}, {"index": 11, "name": "Threshold B", "unit": "dB"}],
+                  "pickedCandidate": {"index": 4, "name": "Threshold A"}, "ruleDecided": {"rule": "linked_pair", "pick": {"index": 4, "name": "Threshold A"}},
+                  "thresholdSweep": {"result": "certified", "sweptControl": {"index": 4, "flags": "", "refineRounds": 0}, "positionNorms": [0.0, 0.5, 1.0], "inAtGr": [{"1": -30.0, "2": -28.0}, {"1": -20.0, "2": -18.0}, {"1": -10.0, "2": -8.0}]}})json");
+              ejmap::sweep::Plan two; two.ok = true; two.thr = -1; two.candidates = { { 11, "Threshold B", {}, false }, { 4, "Threshold A", {}, false } };
+              const auto pdc = planDiffers (collapsed, two);
+              check (! pdc.resweep && pdc.why.contains ("collapsed candidates record"), "loop L19s2: a collapsed candidates record whose pick is one of the plan's candidates is not a plan change (" + pdc.why + ")");
+              auto notPicked = juce::JSON::parse (juce::JSON::toString (collapsed)); notPicked.getDynamicObject()->removeProperty ("pickedCandidate"); notPicked.getDynamicObject()->removeProperty ("ruleDecided");
+              check (planDiffers (notPicked, two).resweep, "loop L19s2: the same single sweep without a decision IS a plan change (swept one, the plan has two)"); }
             Plan nowQ = nowP; nowQ.candidates.clear(); nowQ.candidates.push_back ({ 1, "c1", {}, false }); nowQ.candidates.push_back ({ 30, "c30", {}, false });
             check (planDiffers (emo, nowQ).resweep && planDiffers (emo, nowQ).why.contains ("no longer one this build plans"), "loop L19s2: when the pick is no longer plannable the record is re-swept");
             // a single sweep whose amount control changed, and one whose 1 dB coverage is short with a gap over the bar
@@ -6660,6 +6670,12 @@ void testLoopOutcomes()
           juce::Array<juce::var> nc2; nc2.add (obj ({ { "index", 7 }, { "thresholdSweep", obj ({ { "preconditions", none } }) } }));
           const auto f3 = carryOverAfterRederive (obj ({ { "thresholdCandidates", oc2 } }), obj ({ { "thresholdCandidates", nc2 } }));
           check (f3.getProperty ("thresholdCandidates", {})[0].getProperty ("thresholdSweep", {}).getProperty ("preconditions", {}).size() == 1, "loop L22c: a candidate's writes carry over by index too"); }
+        // L22d (6 Oct): a collapsed candidates record (single sweep + pick) rebuilt as candidates carries its detector into the picked candidate
+        { const auto coll = obj ({ { "pickedCandidate", obj ({ { "index", 4 } }) }, { "thresholdSweep", obj ({ { "detector", obj ({ { "fraction", 0.58 } }) } }) } });
+          juce::Array<juce::var> nc3; nc3.add (obj ({ { "index", 11 }, { "thresholdSweep", obj ({ { "result", "certified" } }) } })); nc3.add (obj ({ { "index", 4 }, { "thresholdSweep", obj ({ { "result", "certified" } }) } }));
+          const auto f4 = carryOverAfterRederive (coll, obj ({ { "thresholdCandidates", nc3 } }));
+          check (std::abs ((double) f4.getProperty ("thresholdCandidates", {})[1].getProperty ("thresholdSweep", {}).getProperty ("detector", {}).getProperty ("fraction", 0.0) - 0.58) < 1e-9 && ! f4.getProperty ("thresholdCandidates", {})[0].getProperty ("thresholdSweep", {}).hasProperty ("detector"),
+                 "loop L22d: a collapsed record's detector lands on the picked candidate (4) of the rebuilt record, not on the other (11)"); }
         // L23 (ruled 6 Oct): the sidechain A/B is OWED to a record swept under an earlier policy with an extra input, until a
         // verdict under the policy now is on it; no extra input, or swept under the policy now, owes nothing
         { auto rec = [&] (const char* pol, int buses, const char* abNow) { juce::Array<juce::var> eb; for (int i = 0; i < buses; ++i) eb.add (obj ({ { "index", i + 1 }, { "name", "SC" } }));

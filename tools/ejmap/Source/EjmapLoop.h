@@ -554,6 +554,16 @@ inline PlanDiff planDiffers (const juce::var& record, const sweep::Plan& now)
         else { rounds = (int) sw.getProperty ("gridRefinement", {}).getProperty ("rounds", 0); if (sw.getProperty ("roleFlag", "").toString().isNotEmpty()) sweptFlags = sw.getProperty ("roleFlag", "").toString(); }
     }
     const auto nowList = listOf (now);
+    // A COLLAPSED CANDIDATES RECORD (found 6 Oct in Sean's b0258a7b run, in 17ebf114 too): the 5 Oct tone check's landing read wrote the
+    // picked candidate's SINGLE VIEW back over the record, so a decided pair / pick (Vertigo, DPR-402, MaxxVolume ...) reads as "swept
+    // [4]" against a plan of [11,4]. That is the pick, not a plan change: the record keeps its decision and the re-derive rebuilds the
+    // candidates from their own traces (the "c<index>." runs). Never a re-sweep.
+    if (sw.isObject() && ! now.candidates.empty() && record.getProperty ("pickedCandidate", {}).isObject() && record.getProperty ("ruleDecided", {}).isObject())
+    {
+        const int picked = (int) record.getProperty ("pickedCandidate", {}).getProperty ("index", -1);
+        bool inPlan = false; for (const auto& c : now.candidates) inPlan = inPlan || c.index == picked;
+        if (inPlan && sweptList == juce::String (picked)) { d.why = "a collapsed candidates record: the picked candidate's view stands for the record; rebuilt from its traces by the re-derive, not re-swept"; return d; }
+    }
     if (sweptList.isNotEmpty() && nowList != sweptList)
     { d.resweep = true; d.why = "the plan changed: swept [" + sweptList + "], this build plans [" + nowList + "]" + (now.pickNote.isNotEmpty() ? " (" + now.pickNote.upToFirstOccurrenceOf (";", false, false) + ")" : juce::String()); return d; }
     if (sweptFlags.isNotEmpty() && now.thr >= 0 && now.thrFlags.joinIntoString (",") != sweptFlags && now.thrFlags.joinIntoString (",").isNotEmpty())
@@ -588,6 +598,11 @@ inline juce::var carryOverAfterRederive (const juce::var& oldRecord, juce::var f
         if (const auto* nc = fresh.getProperty ("thresholdCandidates", {}).getArray())
             for (const auto& a : *oc) for (const auto& b : *nc)
                 if ((int) a.getProperty ("index", -1) == (int) b.getProperty ("index", -2)) copyDetector (a.getProperty ("thresholdSweep", {}), b.getProperty ("thresholdSweep", {}));
+    // a COLLAPSED candidates record (6 Oct) rebuilt as candidates: the old single sweep is the picked candidate's view - its detector and
+    // writes go to that candidate
+    if (oldRecord.getProperty ("thresholdSweep", {}).isObject() && ! oldRecord.hasProperty ("thresholdCandidates"))
+        if (const auto* nc = fresh.getProperty ("thresholdCandidates", {}).getArray())
+            for (const auto& b : *nc) if ((int) b.getProperty ("index", -2) == (int) oldRecord.getProperty ("pickedCandidate", {}).getProperty ("index", -1)) copyDetector (oldRecord.getProperty ("thresholdSweep", {}), b.getProperty ("thresholdSweep", {}));
     return fresh;
 }
 
