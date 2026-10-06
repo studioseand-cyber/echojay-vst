@@ -1,0 +1,45 @@
+EQ: text pass: 11 of 11 controls sampled in 6.4 s (timeout 120 s, scaled to the count)
+EQ: PuigTec EQP1A (s) 12.0.0: 0 band(s) by name
+  [0] LowBoost: nominated by measurement (the lexicon found nothing): the band's gain moves 16.56 dB
+  [1] LowAtten: nominated by measurement (the lexicon found nothing): the band's gain moves 20.65 dB
+  [3] HiBoost: nominated by measurement (the lexicon found nothing): the band's gain moves 19.50 dB
+  [6] HiAtten: nominated by measurement (the lexicon found nothing): the band's gain moves 16.15 dB
+EQ: the lexicon nominated nothing; measurement probed 10 control(s) at their ends and nominated 4 band(s)
+  band 'measured [0] LowBoost': gain [0] LowBoost, freq [-1] (none)
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 1.8: shelf centre 70 Hz, gain 0.58 dB (broad)
+    gain 3.7: shelf centre 53.414 Hz, gain 2.48 dB (broad)
+    gain 5.5: shelf centre 36.1393 Hz, gain 7.19 dB (low_shelf)
+    gain 7.3: shelf centre 26 Hz, gain 12.39 dB (low_shelf)
+    gain 9.2: shelf centre 26 Hz, gain 15.49 dB (low_shelf)
+    gain 11.0: shelf centre 26 Hz, gain 16.56 dB (low_shelf)
+  band 'measured [1] LowAtten': gain [1] LowAtten, freq [-1] (none)
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 1.8: flat - the largest deviation is -0.11 dB
+    gain 3.7: shelf centre 20 Hz, gain -1.14 dB (low_shelf)
+    gain 5.5: shelf centre 20 Hz, gain -5.01 dB (low_shelf)
+    gain 7.3: shelf centre 20 Hz, gain -10.90 dB (low_shelf)
+    gain 9.2: shelf centre 20 Hz, gain -17.20 dB (low_shelf)
+    gain 11.0: shelf centre 20 Hz, gain -20.65 dB (low_shelf)
+  band 'measured [3] HiBoost': gain [3] HiBoost, freq [-1] (none)
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 1.8: shelf centre 3172.5 Hz, gain 0.82 dB (broad)
+    gain 3.7: shelf centre 3172.34 Hz, gain 2.72 dB (broad)
+    gain 5.5: measured centre 3172.54 Hz, gain 4.62 dB, bw 2.36 oct
+    gain 7.3: measured centre 3173.08 Hz, gain 7.34 dB, bw 1.75 oct
+    gain 9.2: measured centre 3174.75 Hz, gain 11.38 dB, bw 1.25 oct
+    gain 11.0: measured centre 3177.88 Hz, gain 19.50 dB, bw 0.57 oct
+  band 'measured [6] HiAtten': gain [6] HiAtten, freq [-1] (none)
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 1.8: flat - the largest deviation is -0.49 dB
+    gain 3.7: shelf centre 20000 Hz, gain -1.94 dB (high_shelf)
+    gain 5.5: shelf centre 20000 Hz, gain -3.81 dB (high_shelf)
+    gain 7.3: shelf centre 20000 Hz, gain -6.70 dB (high_shelf)
+    gain 9.2: shelf centre 20000 Hz, gain -10.85 dB (high_shelf)
+    gain 11.0: shelf centre 20000 Hz, gain -16.15 dB (high_shelf)
+  ROLES BY MEASUREMENT: 4 verdict(s), 6 unnamed control(s) probed without the signature; frequency and q signatures need a boosted band: unnamed controls are probed for the gain signature only
+    role eq_gain CONFIRMED  [0] LowBoost - the band's gain moves 16.56 dB
+    role eq_gain CONFIRMED  [1] LowAtten - the band's gain moves 20.65 dB
+    role eq_gain CONFIRMED  [3] HiBoost - the band's gain moves 19.50 dB
+    role eq_gain CONFIRMED  [6] HiAtten - the band's gain moves 16.15 dB
+EQ: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/nn/phaseb/eq/.tmp-AudioUnit_5a37707d_12.0.0/eq/AudioUnit_5a37707d_12.0.0.eq.json

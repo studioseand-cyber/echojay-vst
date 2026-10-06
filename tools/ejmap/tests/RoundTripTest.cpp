@@ -7156,6 +7156,29 @@ void testGainCal()
     Lindell SBC's 5 Oct traces read through the follow-up's own parser (with an unread-file control). */
 void testTiming()
 {
+    // KATHY'S TIMING SPEC v0.1 (6 Oct): the hold scales, a bound attack gets the 4 kHz / 1 ms second pass, gr_shift_db against the
+    // instantiate position, the section 7 position shape - each a pure rule, each with a mutant
+    {
+        using namespace ejmap::timing;
+        check (std::abs (scaledHoldS (std::nullopt, 2.0) - 2.0) < 1e-9 && std::abs (scaledHoldS (48.0, 2.0) - 2.0) < 1e-9 && std::abs (scaledHoldS (500.0, 2.0) - 5.0) < 1e-9 && std::abs (scaledHoldS (5000.0, 2.0) - 30.0) < 1e-9 && std::abs (scaledHoldS (100.0, 3.0) - 3.0) < 1e-9,
+               "timing TS1: the hold is the longer of 10 x the first-pass attack and 2 s (48 ms -> 2 s, 500 ms -> 5 s), capped at 30 s, never below the segment the label gave");
+        Timing bound; bound.result = "bound"; bound.attackBoundMs = 6.4; Timing meas; meas.result = "measured"; meas.attackMs = 8.8; Timing ref; ref.result = "refused";
+        check (secondPassNeeded (bound) && ! secondPassNeeded (meas) && ! secondPassNeeded (ref), "timing TS2: only a measured-or-bound first pass whose attack is a bound gets the second pass");
+        Timing fast; fast.result = "measured"; fast.attackMs = 0.9; Timing fastBound; fastBound.result = "bound"; fastBound.attackBoundMs = 1.0;
+        const auto a1 = attackAfterPasses (bound, fast), a2 = attackAfterPasses (bound, fastBound), a3 = attackAfterPasses (meas, std::nullopt), a4 = attackAfterPasses (bound, std::nullopt);
+        check (a1.attackMs && std::abs (*a1.attackMs - 0.9) < 1e-9 && a1.pass.startsWith ("4 kHz"), "timing TS3: the second pass's time stands when the first was a bound");
+        check (! a2.attackMs && a2.fasterThanMs && std::abs (*a2.fasterThanMs - 1.0) < 1e-9, "timing TS3: a bound in the second pass too is 'faster than 1 ms'");
+        check (a3.attackMs && std::abs (*a3.attackMs - 8.8) < 1e-9 && a3.pass.startsWith ("997"), "timing TS3: a measured first pass needs no second");
+        check (! a4.attackMs && a4.fasterThanMs && std::abs (*a4.fasterThanMs - 6.4) < 1e-9, "timing TS3: no second pass = the first pass's bound");
+        check (std::abs (grShiftDb (8.1, 8.0) - 0.1) < 1e-9 && ! shiftsAmount (0.4) && shiftsAmount (0.6) && shiftsAmount (-0.6), "timing TS4: gr_shift_db is the position's steady GR step minus the instantiate position's; over 0.5 dB shifts the amount");
+        const auto pa = timePosition (0.0, "0.03 ms", "attack", bound, fastBound, 0.0);
+        check (pa.getProperty ("attack_ms", 1.0).isVoid() && std::abs ((double) pa.getProperty ("faster_than_ms", 0.0) - 1.0) < 1e-9 && ! pa.hasProperty ("shifts_amount") && std::abs ((double) pa.getProperty ("gr_shift_db", 9.0)) < 1e-9,
+               "timing TS5: a section 7 attack position: attack_ms null with faster_than_ms when only a bound was measurable, gr_shift_db on it");
+        Timing rel; rel.result = "measured"; rel.releaseMs = 2066.3;
+        const auto pr = timePosition (1.0, "3.000", "release", rel, std::nullopt, 0.7);
+        check (std::abs ((double) pr.getProperty ("release_ms", 0.0) - 2066.3) < 1e-9 && (bool) pr.getProperty ("shifts_amount", false), "timing TS5: a release position carries release_ms and shifts_amount when the shift is over 0.5 dB");
+        check (juce::String (kDefinition).startsWith ("63%"), "timing TS6: the definition string is the 63 % (one time constant) one, required by the spec");
+    }
     using namespace ejmap::timing;
     // a synthetic burst: 1 s pre at gain 0, 2 s loud with GR 6 dB reached as 1 - exp(-t/tauA), 3 s post recovering as exp(-t/tauR); 5 ms windows; latency none
     auto synth = [] (double tauAMs, double tauRMs, double stepDb, double holdS = 2.0, double postS = 3.0) {
@@ -7555,6 +7578,22 @@ void testMultiband()
 /** NAMES PROPOSE, MEASUREMENT DECIDES (EjmapRoleEvidence.h, 5 Oct evening ruling): every case run 2 found where the name was wrong, as a pin. */
 void testRoleEvidence()
 {
+    // MN (Kathy's 6 Oct ruling, the Phase B fallback): measurement nominates when the lexicon found nothing - the role's signature at the
+    // two ends IS the nomination; modulation is never a drive; nothing holds, nothing nominated. The mutant that nominates nothing goes red.
+    {
+        using namespace ejmap::roleevidence;
+        Figure ea, eb; ea.ok = eb.ok = true; ea.bandGainDb = 0.0; eb.bandGainDb = 6.0; ea.levelShiftDb = 0.0; eb.levelShiftDb = 0.1;
+        const auto band = measurementNominates (24, "HP Freq 1", "eq_gain", ea, eb);
+        check (band && band->verdict == "measured_unnamed" && band->role == "eq_gain" && band->index == 24 && band->reason.startsWith ("nominated by measurement"), "role MN1: a control whose two ends show a 6 dB band is nominated as an EQ band, unnamed");
+        Figure fa, fb; fa.ok = fb.ok = true; fa.bandGainDb = 0.0; fb.bandGainDb = 0.3;
+        check (! measurementNominates (3, "Output", "eq_gain", fa, fb), "role MN2: 0.3 dB between the ends nominates nothing");
+        Figure la, lb; la.ok = lb.ok = true; la.bandGainDb = 0.0; lb.bandGainDb = 12.0; la.levelShiftDb = 0.0; lb.levelShiftDb = 12.0;
+        check (! measurementNominates (2, "Input Gain", "eq_gain", la, lb), "role MN3: a level shift of the whole grid is not a band");
+        Figure da, db; da.ok = db.ok = true; da.thdDb = -60.0; db.thdDb = -12.0; da.outputDb = db.outputDb = -20.0; da.sidebandDb = db.sidebandDb = -200.0;
+        check (measurementNominates (5, "Volume", "drive", da, db) && measurementNominates (5, "Volume", "drive", da, db)->role == "drive", "role MN4: THD rising 48 dB between the ends nominates a drive (an amp sim's Volume)");
+        Figure ma, mb; ma.ok = mb.ok = true; ma.thdDb = -60.0; mb.thdDb = -12.0; ma.outputDb = mb.outputDb = -20.0; ma.sidebandDb = -200.0; mb.sidebandDb = 20.0;
+        check (! measurementNominates (7, "WOW Depth", "drive", ma, mb), "role MN5: energy beside the tone is modulation, never a drive nominee");
+    }
     using namespace ejmap::roleevidence;
     auto fig = [] (std::function<void (Figure&)> fill) { Figure f; f.ok = true; fill (f); return f; };
     // drive: Saphira's "Warmth Band1 Gain" nominated by "warmth": THD -36.3 / -36.3 across its ends -> dropped; J37's Saturation -63.7 -> -10.6 -> confirmed
@@ -7690,6 +7729,12 @@ void testPhaseB()
       d2.getChildFile ("eq").getChildFile (".tmp-AudioUnit_1_1.0").createDirectory();
       check (! isDone (d2, "eq", "AudioUnit_1_1.0"), "phaseb P14: a .tmp folder without a row is not done");
       writeAtomic (rowFile (d2, "eq", "AudioUnit_1_1.0"), "{}"); check (isDone (d2, "eq", "AudioUnit_1_1.0"), "phaseb P14: the row file is the only DONE marker");
+      // P16 (Kathy, 6 Oct): --redo names categories (every row) and/or nothing_nominated (ok rows with no record); nothing else is touched
+      const auto okNoRec = juce::JSON::parse ("{\"outcome\":\"ok\",\"records\":[]}"), okRec = juce::JSON::parse ("{\"outcome\":\"ok\",\"records\":[\"eq/x.json\"]}"), failed = juce::JSON::parse ("{\"outcome\":\"failed\",\"records\":[]}");
+      check (rowIsNothingNominated (okNoRec) && ! rowIsNothingNominated (okRec) && ! rowIsNothingNominated (failed), "phaseb P16: nothing_nominated = ok with no record (a failed row is not it)");
+      check (rowToRedo (okNoRec, "eq", { "nothing_nominated" }) && ! rowToRedo (okRec, "eq", { "nothing_nominated" }) && rowToRedo (okRec, "timing", { "gaincal", "timing" }) && ! rowToRedo (okRec, "eq", { "gaincal", "timing" }) && ! rowToRedo (okNoRec, "eq", {}),
+             "phaseb P16: a category in the list redoes every row of it; nothing_nominated only the empty ok rows; an empty list redoes nothing");
+      { Progress pr; pr.redo = "gaincal,timing"; pr.cats["gaincal"].total = 3; check (progressText (pr).contains ("redo gaincal,timing") && progressFromVar (progressVar (pr)).redo == "gaincal,timing", "phaseb P16: the progress says what is being redone and it round-trips"); }
       d2.deleteRecursively(); }
 }
 

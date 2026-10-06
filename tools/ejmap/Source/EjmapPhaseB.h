@@ -67,9 +67,18 @@ inline void gzipInto (const juce::File& src, const juce::File& dstDir)
     { juce::GZIPCompressorOutputStream gz (fo, 6, kGzipWindowBits); juce::FileInputStream fi (src); if (fi.openedOk()) gz.writeFromInputStream (fi, -1); gz.flush(); }
 }
 
+// THE REDO (Kathy, 6 Oct): --phaseb-all --redo a,b,... names categories whose rows are ALL run again, and/or "nothing_nominated",
+// which re-runs exactly the rows that finished ok with no record (the lexicon nominated nothing). Everything else is untouched.
+inline bool rowIsNothingNominated (const juce::var& row) { return row.getProperty ("outcome", "").toString() == "ok" && row.getProperty ("records", {}).size() == 0; }
+inline bool rowToRedo (const juce::var& row, const juce::String& category, const juce::StringArray& redo)
+{
+    if (redo.contains (category)) return true;
+    return redo.contains ("nothing_nominated") && rowIsNothingNominated (row);
+}
+
 // PROGRESS: counts per category, measured seconds per product, the ETA from the medians so far
 struct CategoryProgress { int total = 0, done = 0, ok = 0, timedOut = 0, failed = 0, skipped = 0; std::vector<double> seconds; };
-struct Progress { std::map<juce::String, CategoryProgress> cats; double elapsedS = 0.0; juce::String current, startedAt, updatedAt; };
+struct Progress { std::map<juce::String, CategoryProgress> cats; double elapsedS = 0.0; juce::String current, startedAt, updatedAt, redo; };
 inline double medianOf (std::vector<double> v) { if (v.empty()) return 0.0; std::sort (v.begin(), v.end()); return v.size() % 2 ? v[v.size() / 2] : 0.5 * (v[v.size() / 2 - 1] + v[v.size() / 2]); }
 // the ETA: for each category, the products left x that category's median so far - or, with nothing measured there yet, its
 // guard's stated estimate (the midpoint of the minutes in guardWhy is not parsed: the overall median so far stands in)
@@ -92,7 +101,7 @@ inline juce::String progressText (const Progress& p)
 {
     juce::String s;
     int doneAll = 0, totalAll = 0; for (const auto& [n, c] : p.cats) { doneAll += c.done; totalAll += c.total; }
-    s << "PHASE B PROGRESS (started " << p.startedAt << ", updated " << p.updatedAt << ")\n";
+    s << "PHASE B PROGRESS (started " << p.startedAt << ", updated " << p.updatedAt << (p.redo.isNotEmpty() ? ", redo " + p.redo : juce::String()) << ")\n";
     s << "all: " << doneAll << "/" << totalAll << " done; elapsed " << hms (p.elapsedS) << "; ETA " << hms (etaSeconds (p)) << (p.current.isNotEmpty() ? "; now: " + p.current : juce::String ("; idle")) << "\n";
     for (const auto& cat : categories())
     {
@@ -108,7 +117,7 @@ inline juce::String progressText (const Progress& p)
 }
 inline juce::var progressVar (const Progress& p)
 {
-    auto* o = new juce::DynamicObject(); o->setProperty ("startedAt", p.startedAt); o->setProperty ("updatedAt", p.updatedAt); o->setProperty ("elapsed_s", std::round (p.elapsedS)); o->setProperty ("eta_s", std::round (etaSeconds (p))); o->setProperty ("current", p.current);
+    auto* o = new juce::DynamicObject(); o->setProperty ("startedAt", p.startedAt); o->setProperty ("updatedAt", p.updatedAt); o->setProperty ("elapsed_s", std::round (p.elapsedS)); o->setProperty ("eta_s", std::round (etaSeconds (p))); o->setProperty ("current", p.current); if (p.redo.isNotEmpty()) o->setProperty ("redo", p.redo);
     auto* cats = new juce::DynamicObject();
     for (const auto& [n, c] : p.cats) { auto* co = new juce::DynamicObject(); co->setProperty ("total", c.total); co->setProperty ("done", c.done); co->setProperty ("ok", c.ok); co->setProperty ("timed_out", c.timedOut); co->setProperty ("failed", c.failed); co->setProperty ("skipped", c.skipped); juce::Array<juce::var> sec; for (double x : c.seconds) sec.add (std::round (x)); co->setProperty ("seconds", sec); cats->setProperty (n, juce::var (co)); }
     o->setProperty ("categories", juce::var (cats));
@@ -116,7 +125,7 @@ inline juce::var progressVar (const Progress& p)
 }
 inline Progress progressFromVar (const juce::var& v)
 {
-    Progress p; p.startedAt = v.getProperty ("startedAt", "").toString(); p.updatedAt = v.getProperty ("updatedAt", "").toString(); p.elapsedS = (double) v.getProperty ("elapsed_s", 0.0); p.current = v.getProperty ("current", "").toString();
+    Progress p; p.startedAt = v.getProperty ("startedAt", "").toString(); p.updatedAt = v.getProperty ("updatedAt", "").toString(); p.elapsedS = (double) v.getProperty ("elapsed_s", 0.0); p.current = v.getProperty ("current", "").toString(); p.redo = v.getProperty ("redo", "").toString();
     if (auto* cats = v.getProperty ("categories", {}).getDynamicObject())
         for (const auto& kv : cats->getProperties())
         { CategoryProgress c; const auto& x = kv.value; c.total = (int) x.getProperty ("total", 0); c.done = (int) x.getProperty ("done", 0); c.ok = (int) x.getProperty ("ok", 0); c.timedOut = (int) x.getProperty ("timed_out", 0); c.failed = (int) x.getProperty ("failed", 0); c.skipped = (int) x.getProperty ("skipped", 0);

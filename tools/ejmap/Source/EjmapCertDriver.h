@@ -2916,7 +2916,17 @@ inline int runTiming (const SweepOptions& opt)
     const auto sw = record.getProperty ("thresholdSweep", {});
     if (! sw.isObject() || sw.getProperty ("result", "").toString() != "certified") { say ("TIMING: the record's sweep is not certified (" + sw.getProperty ("result", "").toString() + "): nothing to time against"); return 4; }
     auto plan = sweep::planFromFixture (record);
-    if (! plan.ok || plan.thr < 0) { say ("TIMING: the record has no single amount control: " + plan.why); return 4; }
+    // THE 17 SKIPPED RECORDS (Kathy's timing spec, 6 Oct): a record with several threshold candidates uses its PICK as the amount - the
+    // review pick, or the measured pair / leader - and a dual-mono pair writes both thresholds; said on the record
+    juce::String amountBy = "the single amount control"; int pairIdx = -1; juce::String pairName;
+    if (plan.ok && plan.thr < 0 && pick.isNotEmpty())
+    {
+        const int pi = (int) record.getProperty ("pickedCandidate", {}).getProperty ("index", -1);
+        for (const auto& c : plan.candidates) if (c.index == pi) { plan = plan.forCandidate (c); break; }
+        const auto rd = record.getProperty ("ruleDecided", {}); amountBy = "the pick '" + pick + "' (" + (rd.isObject() ? rd.getProperty ("rule", "").toString() : juce::String ("picked")) + ")";
+        if (rd.getProperty ("pair_with", {}).isObject()) { pairIdx = (int) rd.getProperty ("pair_with", {}).getProperty ("index", -1); pairName = rd.getProperty ("pair_with", {}).getProperty ("name", "").toString(); amountBy += ", with '" + pairName + "' written with it (dual-mono pair)"; }
+    }
+    if (! plan.ok || plan.thr < 0) { say ("TIMING: the record has no single amount control and no pick: " + plan.why); return 4; }
     // the setting: the position whose 1 dB point is nearest the anchor
     const auto norms = sw.getProperty ("positionNorms", {}); const auto inAt = sw.getProperty ("inAtGr", {});
     int best = -1; double bestOne = 0.0;
@@ -2925,28 +2935,39 @@ inline int runTiming (const SweepOptions& opt)
     const double quiet = bestOne - 6.0, loud = juce::jmin (-3.0, bestOne + 10.0);
     juce::StringArray sets; for (const auto& [i, n] : sidechaincheck::recordWrites (sw)) sets.add (juce::String (i) + ":" + juce::String (n, 6));
     sets.add (juce::String (plan.thr) + ":" + juce::String ((double) norms[best], 6));
+    if (pairIdx >= 0) sets.add (juce::String (pairIdx) + ":" + juce::String ((double) norms[best], 6));
+    say ("TIMING: amount by " + amountBy);
     say ("TIMING: " + opt.product + " " + desc.version + ": amount [" + juce::String (plan.thr) + "] " + plan.thrName + " at norm " + juce::String ((double) norms[best], 3) + " (1 dB point " + juce::String (bestOne, 2) + " dBFS peak); burst " + juce::String (quiet, 1) + " -> " + juce::String (loud, 1));
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("timing"); outDir.createDirectory();
     const auto stem = recordFile.getFileNameWithoutExtension();
-    auto burst = [&] (const juce::String& tag, const juce::StringArray& extraSets, double holdS, double postS) -> std::pair<timing::Timing, ChildResult>
+    auto burstAt = [&] (const juce::String& tag, const juce::StringArray& extraSets, double holdS, double postS, double hz, double winMs) -> std::pair<timing::Timing, ChildResult>
     {
         juce::StringArray all = sets; all.addArray (extraSets);
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--burst", "quiet=" + juce::String (quiet, 2), "loud=" + juce::String (loud, 2),
-                                 "pre=1.0", "hold=" + juce::String (holdS, 2), "post=" + juce::String (postS, 2), "hz=997", "win_ms=5", "set=" + all.joinIntoString (",") };
+                                 "pre=1.0", "hold=" + juce::String (holdS, 2), "post=" + juce::String (postS, 2), "hz=" + juce::String (hz, 0), "win_ms=" + juce::String (winMs, 0), "set=" + all.joinIntoString (",") };
         const auto r = runChild (args, opt.timeoutMs);
         raw.getChildFile (stem + ".timing." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
         return { timing::derive (timing::parseBurst (r.cleanExit() ? r.out : juce::String ("refused " + r.describe()))), r };
     };
+    auto burst = [&] (const juce::String& tag, const juce::StringArray& extraSets, double holdS, double postS) { return burstAt (tag, extraSets, holdS, postS, 997.0, 5.0); };
+    // THE INSTANTIATE REFERENCE (spec section 5): the steady GR step with every timing control as instantiated - gr_shift_db at
+    // each timing position is read against it
+    std::optional<double> stepDb0;
+    { auto [t0, r0] = burst ("ref.instantiate", {}, timing::kDefaultHoldS, timing::kDefaultPostS); if (r0.kind == ChildResult::Kind::uiShown) { say ("TIMING: a window appeared; stopping"); return 5; }
+      if (t0.result == "measured" || t0.result == "bound") { stepDb0 = t0.stepDb; say ("  instantiate reference: GR step " + juce::String (t0.stepDb, 2) + " dB"); } else say ("  instantiate reference: " + t0.reason); }
+    juce::Array<juce::var> timeNotes; std::map<juce::String, juce::var> timeBlocks;   // the section 7 draft per role
     std::vector<roleevidence::RoleVerdict> roles;
     // the roles: attack and release controls
     std::vector<roles::NamedControl> named;
     if (const auto* cs = record.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) named.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", {}).toString(), false });
     const auto cl = roles::classify (named, roles::Category::compressor);
     juce::Array<juce::var> controls; int measured = 0;
+    std::map<juce::String, juce::Array<juce::var>> timePositionsFor; std::map<juce::String, std::pair<juce::String, bool>> timeControlFor;
     for (const auto& r : cl.controls)
     {
         if (r.role != "attack" && r.role != "release") continue;
         const auto ctl = sweep::findControl (record, r.index);
+        if (! timeControlFor.count (r.role)) timeControlFor[r.role] = { r.name, sweep::isSteppedControl (ctl) }; else continue;   // the section 7 block holds one control per role (the first); the others are on `controls`
         juce::StringArray cn; juce::String positionsBy = "even8"; std::vector<std::pair<float, juce::String>> landed;   // the landing read's norm -> text (R8b reads the label from it)
         if (sweep::isSteppedControl (ctl)) { positionsBy = "declared"; const int n = (int) ctl.getProperty ("numSteps", 0); for (int k = 0; k < n; ++k) cn.add (juce::String ((float) k / (float) juce::jmax (1, n - 1), 6)); }
         else
@@ -2982,8 +3003,27 @@ inline int runTiming (const SweepOptions& opt)
             if (holdS > timing::kDefaultHoldS + 1e-9 || postS > timing::kDefaultPostS + 1e-9) say ("    segments scaled to the label '" + label + "': hold " + juce::String (holdS, 1) + " s, post " + juce::String (postS, 1) + " s");
             auto [t, cr] = burst (r.role + juce::String (r.index) + ".p" + juce::String (k).paddedLeft ('0', 2), { juce::String (r.index) + ":" + cn[k] }, holdS, postS);
             if (cr.kind == ChildResult::Kind::uiShown) { say ("TIMING: a window appeared; stopping"); return 5; }
+            // THE HOLD SCALES (spec section 3): at least 10 x the first-pass attack, or 2 s - a slow attack re-read with the hold it needs
+            double holdUsed = holdS;
+            if (const double h2 = timing::scaledHoldS (t.attackMs ? t.attackMs : t.attackBoundMs, holdS); h2 > holdS + 1e-9 && r.role == "attack")
+            { say ("    hold scaled to " + juce::String (h2, 1) + " s (10 x the first-pass attack " + juce::String (t.attackMs ? *t.attackMs : *t.attackBoundMs, 1) + " ms)");
+              auto [t2, cr2] = burst (r.role + juce::String (r.index) + ".p" + juce::String (k).paddedLeft ('0', 2) + ".hold", { juce::String (r.index) + ":" + cn[k] }, h2, postS);
+              if (cr2.kind == ChildResult::Kind::uiShown) { say ("TIMING: a window appeared; stopping"); return 5; }
+              if (t2.result == "measured" || t2.result == "bound") { t = t2; cr = cr2; holdUsed = h2; } }
+            // THE FAST-ATTACK SECOND PASS (spec section 3): a bound at 5 ms windows is re-read with a 4 kHz tone and 1 ms windows
+            std::optional<timing::Timing> second;
+            if (r.role == "attack" && timing::secondPassNeeded (t))
+            { auto [t2, cr2] = burstAt (r.role + juce::String (r.index) + ".p" + juce::String (k).paddedLeft ('0', 2) + ".fast", { juce::String (r.index) + ":" + cn[k] }, holdUsed, postS, timing::kFastPassHz, timing::kFastPassWinMs);
+              if (cr2.kind == ChildResult::Kind::uiShown) { say ("TIMING: a window appeared; stopping"); return 5; }
+              second = t2; say ("    second pass (4 kHz, 1 ms windows): " + (t2.attackMs ? "attack " + juce::String (*t2.attackMs, 2) + " ms" : t2.attackBoundMs ? "faster than " + juce::String (timing::kFastPassWinMs, 0) + " ms" : t2.result + " - " + t2.reason)); }
+            const double grShift = stepDb0 && (t.result == "measured" || t.result == "bound") ? timing::grShiftDb (t.stepDb, *stepDb0) : 0.0;
+            if (stepDb0 && timing::shiftsAmount (grShift)) { say ("    SHIFTS THE AMOUNT: steady GR " + juce::String (grShift, 2) + " dB against the instantiate position (over 0.5 dB)"); timeNotes.add (r.role + " [" + juce::String (r.index) + "] " + r.name + " at " + cn[k] + ": shifts the amount by " + juce::String (grShift, 2) + " dB; not for the server's use (section 5)"); }
+            if (t.result == "refused") timeNotes.add (r.role + " [" + juce::String (r.index) + "] " + r.name + " at " + cn[k] + ": " + t.reason);
+            timePositionsFor[r.role].add (timing::timePosition (cn[k].getDoubleValue(), juce::String(), r.role, t, second, stepDb0 ? grShift : 0.0));
             juce::String display; for (const auto& line : juce::StringArray::fromLines (cr.out)) { const auto f = juce::StringArray::fromTokens (line, "\t", ""); if (f.size() > 2 && f[0] == "set" && f[1].getIntValue() == r.index) { const int tx = f.indexOf ("text"); if (tx >= 0 && tx + 1 < f.size()) display = f[tx + 1]; } }
             auto pv = timing::toVar (t); pv.getDynamicObject()->setProperty ("norm", cn[k].getDoubleValue()); pv.getDynamicObject()->setProperty ("display", display);
+            pv.getDynamicObject()->setProperty ("hold_s", holdUsed); if (second) pv.getDynamicObject()->setProperty ("second_pass", timing::toVar (*second)); if (stepDb0) pv.getDynamicObject()->setProperty ("gr_shift_db", grShift);
+            { auto& arr = timePositionsFor[r.role]; if (arr.size() > 0) arr.getReference (arr.size() - 1).getDynamicObject()->setProperty ("display", display); }
             positions.add (pv);
             if (k == 0) firstT = t; if (k == cn.size() - 1) lastT = t;
             if (t.result == "measured" || t.result == "bound") ++measured;
@@ -3015,6 +3055,19 @@ inline int runTiming (const SweepOptions& opt)
     sayRoles (say, roles, "unnamed controls not probed in this mode (a burst pair per control costs ~12 s; the roles' lexicon nominates)");
     auto* o = new juce::DynamicObject();
     setRoles (o, roles, "a burst pair per control costs ~12 s: the unnamed pool is not probed in this mode");
+    // THE `time` BLOCK, DRAFT (Kathy's timing spec v0.1 section 7, 6 Oct): data only - never written into a compressor profile
+    {
+        auto* tb = new juce::DynamicObject(); tb->setProperty ("status", "DRAFT against COMP_TIMING_SPEC v0.1 (a proposal): data only, not in any compressor profile, not exported");
+        tb->setProperty ("definition", timing::kDefinition);
+        { auto* ma = new juce::DynamicObject(); ma->setProperty ("amount_control", plan.thrName); ma->setProperty ("amount_by", amountBy); ma->setProperty ("norm", (double) norms[best]); if (stepDb0) ma->setProperty ("gr_step_db", std::round (*stepDb0 * 100.0) / 100.0); juce::Array<juce::var> bd { quiet, loud }; ma->setProperty ("burst_dbfs", bd); tb->setProperty ("measured_at", juce::var (ma)); }
+        for (const char* role : { "attack", "release" })
+            if (timeControlFor.count (role)) { auto* rb = new juce::DynamicObject(); rb->setProperty ("control", timeControlFor[role].first); rb->setProperty ("stepped", timeControlFor[role].second); rb->setProperty ("positions", timePositionsFor[role]); tb->setProperty (role, juce::var (rb)); }
+            else tb->setProperty (role, juce::var());
+        tb->setProperty ("program_dependent", pd->getProperty ("program_dependent")); tb->setProperty ("release_short_burst_ms", pd->getProperty ("short_burst").getProperty ("release_ms", juce::var())); tb->setProperty ("release_long_burst_ms", pd->getProperty ("long_burst").getProperty ("release_ms", juce::var()));
+        tb->setProperty ("method", "997 Hz burst 16 dB step; 5 ms windows aligned by latency; fast attacks re-read at 4 kHz, 1 ms windows; the hold at least 10 x the first-pass attack or 2 s; gr_shift_db against the instantiate position");
+        tb->setProperty ("notes", timeNotes);
+        o->setProperty ("time_draft", juce::var (tb));
+    }
     o->setProperty ("schema", "ej_timing_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.3, not exported, not published");
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", record.getProperty ("identity", {}));
     o->setProperty ("amount_control", plan.thrName); o->setProperty ("amount_norm", (double) norms[best]); o->setProperty ("one_db_point_dbfs_peak", bestOne);
@@ -3189,9 +3242,8 @@ inline int runEq (const SweepOptions& opt)
     const auto base = fx.base; say ("EQ: " + fx.note);
     std::vector<std::pair<int, juce::String>> controls;
     if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) controls.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", "").toString() });
-    const auto bands = eq::bandsFrom (controls);
+    auto bands = eq::bandsFrom (controls);
     say ("EQ: " + opt.product + " " + desc.version + ": " + juce::String ((int) bands.size()) + " band(s) by name");
-    if (bands.empty()) { juce::StringArray names; for (const auto& [i, n] : controls) names.add (n); say ("  controls: " + names.joinIntoString (", ")); return 4; }
     auto normsFor = [&] (int idx, int n) {
         const auto ctl = sweep::findControl (base, idx); juce::StringArray out;
         if (sweep::isSteppedControl (ctl)) { const int st = (int) ctl.getProperty ("numSteps", 0); for (int k = 0; k < st; ++k) out.add (juce::String ((float) k / (float) juce::jmax (1, st - 1), 6)); }
@@ -3209,6 +3261,41 @@ inline int runEq (const SweepOptions& opt)
         if (b.result == "shelf" && b.cornerHz > 0.0) o->setProperty ("corner_hz", std::round (b.cornerHz * 10.0) / 10.0);
         if (b.result == "measured") { o->setProperty ("bandwidth_oct", std::round (b.bandwidthOct * 1000.0) / 1000.0); o->setProperty ("low_3db_hz", std::round (b.lowHz * 10.0) / 10.0); o->setProperty ("high_3db_hz", std::round (b.highHz * 10.0) / 10.0); }
         o->setProperty ("tones", b.tonesUsed); return juce::var (o); };
+    // MEASUREMENT NOMINATES WHEN THE LEXICON FINDS NOTHING (Kathy's 6 Oct ruling, the 91 EQs the spellings missed): every sampled
+    // numeric control at its two ends on the multitone, against the unit's own no-write baseline; one whose response shows a band
+    // (the eq_gain signature: a peak or shelf of >= 1 dB that is not a level shift of the whole grid) is a band with that gain
+    // control and no frequency / Q control, recorded "unnamed". Nothing moving the measure gets a record saying so.
+    std::set<int> measuredBands;
+    if (bands.empty())
+    {
+        const auto pool = unnamedPool (base, {}, &fx.sampled); int probed = 0;
+        if (! pool.empty())
+        {
+            auto [b0, br0] = response ("u.base", pool.front().index, { "current" }, {});
+            if (br0.kind == ChildResult::Kind::uiShown) { say ("EQ: a window appeared; stopping"); return 5; }
+            if (b0.ok && ! b0.positions.empty())
+                for (const auto& pc : pool)
+                {
+                    auto [ur, r] = response ("u" + juce::String (pc.index), pc.index, { "0.000000", "1.000000" }, {}); ++probed;
+                    if (r.kind == ChildResult::Kind::uiShown) { say ("EQ: a window appeared; stopping"); return 5; }
+                    roleevidence::Figure fa, fb; if (ur.positions.size() == 2)
+                    { auto fig = [] (const std::vector<std::pair<double, double>>& dev) { roleevidence::Figure f; f.ok = true; const auto b = eq::deriveBand (dev); f.bandGainDb = (b.result == "measured" || b.result == "shelf") ? b.gainDb : 0.0;
+                                     std::vector<double> ds; for (const auto& [hz, d] : dev) ds.push_back (d); if (! ds.empty()) { std::sort (ds.begin(), ds.end()); f.levelShiftDb = ds[ds.size() / 2]; } return f; };
+                      fa = fig (eq::deviation (ur.positions[0], b0.positions[0])); fb = fig (eq::deviation (ur.positions[1], b0.positions[0])); }
+                    if (const auto mv = roleevidence::measurementNominates (pc.index, pc.name, "eq_gain", fa, fb)) { eq::BandControls mb; mb.key = "measured [" + juce::String (pc.index) + "] " + pc.name; mb.gains = { pc.index }; mb.gainNames = { pc.name }; mb.freqs = { -1 }; mb.freqNames = { "(none)" }; bands.push_back (mb); measuredBands.insert (pc.index);
+                                     say ("  [" + juce::String (pc.index) + "] " + pc.name + ": " + mv->reason); }
+                }
+        }
+        say ("EQ: the lexicon nominated nothing; measurement probed " + juce::String (probed) + " control(s) at their ends and nominated " + juce::String ((int) bands.size()) + " band(s)");
+        if (bands.empty())
+        {
+            juce::StringArray names; for (const auto& [i, n] : controls) names.add (n); say ("  controls: " + names.joinIntoString (", "));
+            auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_eq_prototype/1"); o->setProperty ("status", "PROTOTYPE - nothing moves the measure: the lexicon nominated nothing and " + juce::String (probed) + " control(s) probed at their ends showed no band");
+            o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version); o->setProperty ("bands", juce::Array<juce::var>()); o->setProperty ("nominated_by", "nothing: measured"); o->setProperty ("measuredAt", nowStamp());
+            outDir.getChildFile (stem + ".eq.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+            return 4;
+        }
+    }
     // THE SWITCHES (5 Oct R8a): every two-step or word-valued control with its texts, for the band engage search
     std::vector<std::tuple<int, juce::String, bool, std::map<juce::String, float>>> switches; std::vector<int> bandControlIdx;
     if (const auto* cs = base.getProperty ("controls", {}).getArray())
@@ -3268,7 +3355,7 @@ inline int runEq (const SweepOptions& opt)
         bo->setProperty ("gain_sweep", gainRows); if (engagedBy.isNotEmpty()) bo->setProperty ("engaged_by", engagedBy);
         // FREQ sweep at the boost
         juce::Array<juce::var> freqRows;
-        if (boostNorm >= 0.0f)
+        if (boostNorm >= 0.0f && fIdx >= 0)
         {
             juce::StringArray fsets = engageSets; fsets.add (juce::String (gIdx) + ":" + juce::String (boostNorm, 6));
             auto [fr, r] = response (tag + ".freq", fIdx, normsFor (fIdx, 7), fsets);
@@ -3301,7 +3388,7 @@ inline int runEq (const SweepOptions& opt)
         // ROLES BY MEASUREMENT for this band's three nominees: gain = the band's gain moves; frequency = the centre moves with the
         // band staying; q = the bandwidth moves with the centre still (the freq and q sweeps run with the gain boosted)
         roles.push_back (roleevidence::nominee (gIdx, band.gainNames.front(), "eq_gain", roleevidence::signatureHolds ("eq_gain", gFirst, gLast)));
-        roles.push_back (roleevidence::nominee (fIdx, band.freqNames.front(), "frequency", roleevidence::signatureHolds ("frequency", fFirst, fLast)));
+        if (fIdx >= 0) roles.push_back (roleevidence::nominee (fIdx, band.freqNames.front(), "frequency", roleevidence::signatureHolds ("frequency", fFirst, fLast)));
         if (! band.qs.empty()) roles.push_back (roleevidence::nominee (band.qs.front(), band.qNames.front(), "q", roleevidence::signatureHolds ("q", qFirst, qLast)));
         bandRows.add (juce::var (bo));
     }
@@ -3328,6 +3415,7 @@ inline int runEq (const SweepOptions& opt)
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
     o->setProperty ("method", "121-tone log multitone 20 Hz-20 kHz at -12 dBFS peak, 1 s hold, 0.5 s discard; deviation against the band's baseline; centre = largest deviation (parabolic in log f), bandwidth = -3 dB span; the grid is 1/12 octave: a centre is known to about 3 %, a bandwidth to about 0.1 octave");
     o->setProperty ("bands", bandRows); o->setProperty ("measuredAt", nowStamp());
+    o->setProperty ("nominated_by", measuredBands.empty() ? "names" : "measurement (unnamed: the lexicon nominated nothing; " + juce::String ((int) measuredBands.size()) + " control(s) whose two ends show a band)");
     outDir.getChildFile (stem + ".eq.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
     say ("EQ: -> " + outDir.getChildFile (stem + ".eq.json").getFullPathName() + (engaged > 0 ? " (" + juce::String (engaged) + " band(s) engaged by a switch the search found)" : juce::String()));
     return measured > 0 ? 0 : 4;
@@ -3371,7 +3459,32 @@ inline int runSaturation (const SweepOptions& opt)
     if (! fx.ok) { say ("SAT: " + fx.why); return 1; }
     const auto base = fx.base; nominate (base); say ("SAT: " + fx.note);
     say ("SAT: " + opt.product + " " + desc.version + ": " + juce::String ((int) targets.size()) + " drive-type control(s)");
-    if (targets.empty()) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  controls: " + names.joinIntoString (", ")); return 4; }
+    // MEASUREMENT NOMINATES WHEN THE LEXICON FINDS NOTHING (Kathy's 6 Oct ruling, the 114 amp sims): every sampled numeric control
+    // at its two ends on the drive probe; one whose THD rises >= 3 dB (the drive signature, modulation excluded) is the nominee,
+    // recorded "unnamed". A product where nothing moves the measure gets a record saying so, never an empty row to redo forever.
+    std::set<int> measuredNominees;
+    if (targets.empty())
+    {
+        int probed = 0;
+        for (const auto& pc : unnamedPool (base, {}, &fx.sampled))
+        {
+            const auto r = run ("u" + juce::String (pc.index), { "--response", "ctl=" + juce::String (pc.index), "norms=0,1", "tones=1", "lo=997", "harmonics=5", "db=-12", "hold=1.0", "discard=0.5" }); ++probed;
+            if (r.kind == ChildResult::Kind::uiShown) { say ("SAT: a window appeared; stopping"); return 5; }
+            const auto L = saturation::deriveLevel (saturation::parseHarmonics (r.cleanExit() ? r.out : juce::String()), -12.0);
+            roleevidence::Figure a, b; for (const auto& rd : L.readings) { roleevidence::Figure* f = rd.norm < 0.01f ? &a : rd.norm > 0.99f ? &b : nullptr; if (f && (rd.valid || rd.silent)) { f->ok = true; f->thdDb = rd.valid && rd.thdDb > -200.0 ? rd.thdDb : -200.0; f->sidebandDb = rd.valid ? rd.sidebandDb : -200.0; f->outputDb = rd.valid ? rd.outDb : -200.0; } }
+            if (const auto mv = roleevidence::measurementNominates (pc.index, pc.name, "drive", a, b)) { targets.push_back ({ pc.index, pc.name }); measuredNominees.insert (pc.index); say ("  [" + juce::String (pc.index) + "] " + pc.name + ": " + mv->reason); }
+        }
+        say ("SAT: the lexicon nominated nothing; measurement probed " + juce::String (probed) + " control(s) at their ends and nominated " + juce::String ((int) targets.size()));
+        if (targets.empty())
+        {
+            juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  controls: " + names.joinIntoString (", "));
+            auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_saturation_prototype/1"); o->setProperty ("status", "PROTOTYPE - nothing moves the measure: the lexicon nominated nothing and " + juce::String (probed) + " control(s) probed at their ends moved no THD");
+            o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version); o->setProperty ("controls", juce::Array<juce::var>()); o->setProperty ("nominated_by", "nothing: measured"); o->setProperty ("measuredAt", nowStamp());
+            outDir.getChildFile (stem + ".saturation.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+            return 4;
+        }
+    }
+
     // THE MEASUREMENT (R3, 5 Oct): one sine at 997 Hz (an exact bin), the drive at 11 norms, harmonics 2..5 read by exact
     // Goertzel bins (probe --response tones=1 harmonics=5), one process per level; EjmapSaturation.h derives the rest
     juce::StringArray norms; for (int k = 0; k < 11; ++k) norms.add (juce::String (k / 10.0f, 6));
@@ -3411,6 +3524,7 @@ inline int runSaturation (const SweepOptions& opt)
         if ((bool) c.getProperty ("silent", false) || (bool) c.getProperty ("inert", false)) { roleevidence::RoleVerdict v; v.index = idx; v.name = c.getProperty ("control", "").toString(); v.role = "drive"; v.verdict = "dropped"; v.reason = c.getProperty ("note", "").toString().upToFirstOccurrenceOf (":", false, false) + ": nothing to decide"; roles.push_back (v); continue; }
         roles.push_back (roleevidence::nominee (idx, c.getProperty ("control", "").toString(), "drive", roleevidence::signatureHolds ("drive", a, b)));
     }
+    for (int mi : measuredNominees) nominated.push_back (mi);
     for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
     {
         const auto r = run ("u" + juce::String (pc.index), { "--response", "ctl=" + juce::String (pc.index), "norms=0,1", "tones=1", "lo=997", "harmonics=5", "db=-12", "hold=1.0", "discard=0.5" });
@@ -3428,6 +3542,7 @@ inline int runSaturation (const SweepOptions& opt)
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
     o->setProperty ("method", "one 997 Hz sine (an exact bin) at -20, -12 and -6 dBFS peak, the drive control at 11 norms; per position the fundamental's gain (out - in) and the 2nd-5th harmonics by exact Goertzel bins (probe --response tones=1 harmonics=5): thd_db = 10 log10 (sum of harmonic power / fundamental power), thd_pct its square root x 100, even_odd_db = (h2 + h4) / (h3 + h5) in dB; onset = the first position by norm whose THD reaches 1 % / 0.1 %; inert = fundamental within 0.05 dB and no harmonic above -90 dB everywhere");
     o->setProperty ("controls", controls); o->setProperty ("inert_or_silent_controls", inertN); o->setProperty ("no_effect_controls", noEffectN); o->setProperty ("measuredAt", nowStamp());
+    o->setProperty ("nominated_by", measuredNominees.empty() ? "names" : "measurement (unnamed: the lexicon nominated nothing; " + juce::String ((int) measuredNominees.size()) + " control(s) whose THD rises at their ends)");
     outDir.getChildFile (stem + ".saturation.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
     say ("SAT: -> " + outDir.getChildFile (stem + ".saturation.json").getFullPathName());
     return measured > 0 ? 0 : 4;
@@ -4219,7 +4334,7 @@ inline int runMultiband (const SweepOptions& opt)
 // (the batch's row - THE DONE MARKER, written last by rename), <cert>/phaseb/progress.{json,txt}, <cert>/phaseb/summary.json.
 using phaseb::writeAtomic; using phaseb::gzipInto;
 struct PhaseBProduct { juce::String product, stem, category; juce::PluginDescription desc; juce::String recordFile; };
-inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyCategories, const juce::StringArray& onlyProducts)
+inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyCategories, const juce::StringArray& onlyProducts, const juce::StringArray& redo = {})
 {
     using namespace phaseb;
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
@@ -4269,6 +4384,13 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
         std::sort (list.begin(), list.end(), [] (const PhaseBProduct& a, const PhaseBProduct& b) { return a.product.compareIgnoreCase (b.product) < 0; });
         work[cat.name] = list;
     }
+    // THE REDO (6 Oct): the rows named are deleted first, so the counts below see them as not done and the loop runs them again
+    int redone = 0;
+    if (! redo.isEmpty())
+        for (const auto& cat : categories()) if (work.count (cat.name))
+            for (const auto& pp : work[cat.name])
+                if (isDone (phasebDir, cat.name, pp.stem) && rowToRedo (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()), cat.name, redo)) { rowFile (phasebDir, cat.name, pp.stem).deleteFile(); ++redone; }
+    if (! redo.isEmpty()) say ("PHASEB: --redo " + redo.joinIntoString (",") + ": " + juce::String (redone) + " finished row(s) run again");
     // PROGRESS: resumed from the file (the elapsed and the measured seconds carry over); the totals are tonight's discovery
     Progress prog = progressFromVar (juce::JSON::parse (phasebDir.getChildFile ("progress.json").loadFileAsString()));
     if (prog.startedAt.isEmpty()) prog.startedAt = nowStamp();
@@ -4280,6 +4402,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
         for (const auto& pp : work[cat.name]) if (isDone (phasebDir, cat.name, pp.stem)) { ++c.done; const auto row = juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()); const auto oc = row.getProperty ("outcome", "").toString(); if (oc == "ok") ++c.ok; else if (oc == "timed_out") ++c.timedOut; else if (oc == "skipped") ++c.skipped; else ++c.failed; }
         totalAll += c.total;
     }
+    if (! redo.isEmpty()) prog.redo = redo.joinIntoString (",");
     auto saveProgress = [&] (const juce::String& current)
     {
         prog.current = current; prog.updatedAt = nowStamp(); prog.elapsedS = elapsedBefore + (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;

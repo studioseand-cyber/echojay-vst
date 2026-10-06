@@ -255,6 +255,18 @@ inline juce::var toVar (const std::vector<RoleVerdict>& vs)
     for (const auto& v : vs) { auto* o = new juce::DynamicObject(); o->setProperty ("index", v.index); o->setProperty ("control", v.name); o->setProperty ("role", v.role); o->setProperty ("verdict", v.verdict); o->setProperty ("reason", v.reason); a.add (juce::var (o)); }
     return a;
 }
+
+// MEASUREMENT NOMINATES (Kathy's 6 Oct ruling, the Phase B fallback): when a mode's lexicon finds nothing, every sampled
+// numeric control is read at its two ends with the mode's own probe, and one whose ends show the role's signature IS the
+// nominee - recorded "unnamed". Energy beside the tone is modulation, never a drive. Nothing holds, nothing is nominated.
+inline std::optional<RoleVerdict> measurementNominates (int index, const juce::String& name, const juce::String& role, const Figure& a, const Figure& b)
+{
+    if (role == "drive" && modulationOf (a, b).holds) return std::nullopt;
+    const auto sig = signatureHolds (role, a, b);
+    if (! sig.holds) return std::nullopt;
+    auto v = unnamed (index, name, role, sig); v.reason = "nominated by measurement (the lexicon found nothing): " + sig.why;
+    return v;
+}
 inline juce::String line (const RoleVerdict& v)
 {
     return (v.verdict == "confirmed" ? "role " + v.role + " CONFIRMED  " : v.verdict == "dropped" ? "role " + v.role + " DROPPED    " : v.verdict == "measured_unnamed" ? "measured role " + v.role + ", UNNAMED  " : "not " + v.role + "  ")

@@ -1,0 +1,76 @@
+SAT: text pass: 27 of 33 controls sampled in 10.0 s (timeout 120 s, scaled to the count)
+SAT: PRS V9 (m) 12.0.0: 0 drive-type control(s)
+  [2] Input: nominated by measurement (the lexicon found nothing): THD moves -48.2 -> -4.8 dB
+  [4] Treble: nominated by measurement (the lexicon found nothing): THD moves -26.4 -> -20.1 dB
+  [5] Middle: nominated by measurement (the lexicon found nothing): THD moves -23.2 -> -27.0 dB
+  [11] Bias: nominated by measurement (the lexicon found nothing): THD moves -14.3 -> -18.9 dB
+  [12] SAG: nominated by measurement (the lexicon found nothing): THD moves -24.6 -> -17.0 dB
+SAT: the lexicon nominated nothing; measurement probed 27 control(s) at their ends and nominated 5
+  [2] Input: -20 dBFS: max THD -5.3 dB, gain span 27.39 dB, 1 % onset '-4.0' (norm 0.40); -12 dBFS: max THD -4.8 dB, gain span 19.42 dB, 1 % onset '-12.0' (norm 0.20); -6 dBFS: max THD -3.2 dB, gain span 13.55 dB, 1 % onset '-16.0' (norm 0.10)
+      @-12 -20.0      gain  -15.05 dB  THD -48.2 dB (0.390 %)  h2 -48.7 h3 -57.5 h4 -98.6 h5 -116.1  mixed (even/odd 8.8 dB)
+      @-12 -16.0      gain  -11.06 dB  THD -43.9 dB (0.640 %)  h2 -45.4 h3 -49.1 h4 -85.2 h5 -101.1  mixed (even/odd 3.7 dB)
+      @-12 -12.0      gain   -7.17 dB  THD -37.3 dB (1.359 %)  h2 -40.8 h3 -39.9 h4 -70.0 h5 -81.0  mixed (even/odd -0.9 dB)
+      @-12 -8.0       gain   -3.74 dB  THD -26.4 dB (4.779 %)  h2 -33.5 h3 -27.4 h4 -57.7 h5 -58.3  mixed (even/odd -6.2 dB)
+      @-12 -4.0       gain   -0.78 dB  THD -24.9 dB (5.658 %)  h2 -32.6 h3 -25.9 h4 -47.4 h5 -44.3  mixed (even/odd -6.6 dB)
+      @-12 0.0        gain    2.36 dB  THD -26.5 dB (4.716 %)  h2 -27.9 h3 -32.5 h4 -45.6 h5 -48.6  mixed (even/odd 4.5 dB)
+      @-12 4.0        gain    4.32 dB  THD -11.0 dB (28.201 %)  h2 -11.8 h3 -19.3 h4 -29.2 h5 -47.8  mixed (even/odd 7.6 dB)
+      @-12 8.0        gain    4.24 dB  THD -5.5 dB (53.256 %)  h2 -5.8 h3 -18.8 h4 -19.9 h5 -38.8  mixed (even/odd 13.1 dB)
+      @-12 12.0       gain    4.38 dB  THD -5.3 dB (54.506 %)  h2 -7.2 h3 -11.3 h4 -15.2 h5 -30.1  mixed (even/odd 4.7 dB)
+      @-12 16.0       gain    4.36 dB  THD -5.2 dB (54.676 %)  h2 -8.7 h3 -9.0 h4 -14.5 h5 -25.6  mixed (even/odd 1.2 dB)
+      @-12 20.0       gain    4.26 dB  THD -4.8 dB (57.428 %)  h2 -7.8 h3 -9.7 h4 -12.8 h5 -26.0  mixed (even/odd 3.0 dB)
+  [4] Treble: -20 dBFS: max THD -24.6 dB, gain span 1.39 dB, 1 % onset '0' (norm 0.00); -12 dBFS: max THD -19.8 dB, gain span 1.27 dB, 1 % onset '0' (norm 0.00); -6 dBFS: max THD -5.9 dB, gain span 0.05 dB, 1 % onset '0' (norm 0.00)
+      @-12 0          gain    2.12 dB  THD -26.4 dB (4.801 %)  h2 -27.6 h3 -32.6 h4 -50.2 h5 -47.0  mixed (even/odd 4.9 dB)
+      @-12 10         gain    2.25 dB  THD -26.6 dB (4.694 %)  h2 -27.9 h3 -32.7 h4 -48.0 h5 -47.8  mixed (even/odd 4.7 dB)
+      @-12 20         gain    2.29 dB  THD -26.6 dB (4.698 %)  h2 -27.9 h3 -32.6 h4 -46.9 h5 -48.2  mixed (even/odd 4.7 dB)
+      @-12 30         gain    2.33 dB  THD -26.5 dB (4.730 %)  h2 -27.8 h3 -32.6 h4 -46.1 h5 -48.5  mixed (even/odd 4.7 dB)
+      @-12 40         gain    2.37 dB  THD -26.4 dB (4.789 %)  h2 -27.7 h3 -32.5 h4 -45.2 h5 -48.8  mixed (even/odd 4.8 dB)
+      @-12 50         gain    2.43 dB  THD -26.2 dB (4.891 %)  h2 -27.5 h3 -32.4 h4 -44.1 h5 -49.3  mixed (even/odd 4.9 dB)
+      @-12 60         gain    2.51 dB  THD -25.9 dB (5.070 %)  h2 -27.2 h3 -32.2 h4 -42.4 h5 -50.1  mixed (even/odd 5.0 dB)
+      @-12 70         gain    2.62 dB  THD -25.3 dB (5.407 %)  h2 -26.7 h3 -31.7 h4 -40.2 h5 -51.5  mixed (even/odd 5.1 dB)
+      @-12 80         gain    2.80 dB  THD -24.3 dB (6.074 %)  h2 -25.8 h3 -30.8 h4 -37.2 h5 -53.7  mixed (even/odd 5.3 dB)
+      @-12 90         gain    3.05 dB  THD -22.6 dB (7.453 %)  h2 -24.1 h3 -29.0 h4 -33.6 h5 -54.0  mixed (even/odd 5.3 dB)
+      @-12 100        gain    3.39 dB  THD -19.8 dB (10.262 %)  h2 -21.5 h3 -26.2 h4 -29.7 h5 -49.5  mixed (even/odd 5.3 dB)
+  [5] Middle: -20 dBFS: max THD -25.8 dB, gain span 6.52 dB, 1 % onset '0' (norm 0.00); -12 dBFS: max THD -23.2 dB, gain span 5.63 dB, 1 % onset '0' (norm 0.00); -6 dBFS: max THD -7.0 dB, gain span 2.96 dB, 1 % onset '0' (norm 0.00)
+      @-12 0          gain   -3.04 dB  THD -23.2 dB (6.894 %)  h2 -25.9 h3 -26.7 h4 -45.8 h5 -78.7  mixed (even/odd 0.8 dB)
+      @-12 10         gain    0.29 dB  THD -25.4 dB (5.376 %)  h2 -28.5 h3 -28.5 h4 -47.6 h5 -43.4  mixed (even/odd -0.1 dB)
+      @-12 20         gain    1.50 dB  THD -27.2 dB (4.343 %)  h2 -29.2 h3 -31.9 h4 -50.7 h5 -44.7  mixed (even/odd 2.6 dB)
+      @-12 30         gain    2.08 dB  THD -27.2 dB (4.379 %)  h2 -28.6 h3 -32.9 h4 -50.6 h5 -46.8  mixed (even/odd 4.1 dB)
+      @-12 40         gain    2.38 dB  THD -26.4 dB (4.790 %)  h2 -27.7 h3 -32.5 h4 -45.0 h5 -48.9  mixed (even/odd 4.8 dB)
+      @-12 50         gain    2.53 dB  THD -25.7 dB (5.173 %)  h2 -27.0 h3 -32.0 h4 -42.1 h5 -50.3  mixed (even/odd 5.0 dB)
+      @-12 60         gain    2.59 dB  THD -25.4 dB (5.357 %)  h2 -26.7 h3 -31.7 h4 -41.1 h5 -51.0  mixed (even/odd 5.1 dB)
+      @-12 70         gain    2.57 dB  THD -25.5 dB (5.285 %)  h2 -26.9 h3 -31.8 h4 -41.5 h5 -50.7  mixed (even/odd 5.1 dB)
+      @-12 80         gain    2.45 dB  THD -26.1 dB (4.953 %)  h2 -27.4 h3 -32.3 h4 -43.6 h5 -49.5  mixed (even/odd 4.9 dB)
+      @-12 90         gain    2.18 dB  THD -27.0 dB (4.473 %)  h2 -28.4 h3 -32.9 h4 -48.9 h5 -47.4  mixed (even/odd 4.4 dB)
+      @-12 100        gain    1.57 dB  THD -27.3 dB (4.300 %)  h2 -29.2 h3 -32.1 h4 -51.0 h5 -44.9  mixed (even/odd 2.7 dB)
+  [11] Bias: -20 dBFS: max THD -14.1 dB, gain span 14.30 dB, 1 % onset '0.0' (norm 0.00); -12 dBFS: max THD -14.3 dB, gain span 9.13 dB, 1 % onset '0.0' (norm 0.00); -6 dBFS: max THD -6.3 dB, gain span 5.76 dB, 1 % onset '0.0' (norm 0.00)
+      @-12 0.0        gain   -2.80 dB  THD -14.3 dB (19.169 %)  h2 -23.9 h3 -14.9 h4 -37.7 h5 -34.7  mixed (even/odd -8.8 dB)
+      @-12 10.0       gain   -0.68 dB  THD -19.3 dB (10.901 %)  h2 -25.5 h3 -20.5 h4 -39.5 h5 -40.1  mixed (even/odd -4.9 dB)
+      @-12 20.0       gain    1.00 dB  THD -24.9 dB (5.686 %)  h2 -26.7 h3 -29.9 h4 -41.7 h5 -53.1  mixed (even/odd 3.3 dB)
+      @-12 30.0       gain    2.41 dB  THD -26.2 dB (4.875 %)  h2 -27.6 h3 -32.4 h4 -44.4 h5 -49.2  mixed (even/odd 4.9 dB)
+      @-12 40.0       gain    3.61 dB  THD -23.4 dB (6.743 %)  h2 -28.2 h3 -25.3 h4 -47.3 h5 -44.9  mixed (even/odd -2.9 dB)
+      @-12 50.0       gain    4.64 dB  THD -21.6 dB (8.335 %)  h2 -28.7 h3 -22.5 h4 -50.0 h5 -45.7  mixed (even/odd -6.2 dB)
+      @-12 60.0       gain    5.50 dB  THD -20.8 dB (9.082 %)  h2 -29.1 h3 -21.5 h4 -52.4 h5 -51.0  mixed (even/odd -7.5 dB)
+      @-12 70.0       gain    5.95 dB  THD -20.2 dB (9.725 %)  h2 -28.4 h3 -21.0 h4 -55.3 h5 -62.2  mixed (even/odd -7.5 dB)
+      @-12 80.0       gain    6.12 dB  THD -19.6 dB (10.473 %)  h2 -28.3 h3 -20.2 h4 -59.6 h5 -51.9  mixed (even/odd -8.0 dB)
+      @-12 90.0       gain    6.24 dB  THD -19.1 dB (11.095 %)  h2 -28.2 h3 -19.7 h4 -55.8 h5 -48.3  mixed (even/odd -8.5 dB)
+      @-12 100.0      gain    6.33 dB  THD -18.7 dB (11.600 %)  h2 -28.2 h3 -19.2 h4 -52.2 h5 -46.7  mixed (even/odd -9.0 dB)
+  [12] SAG: -20 dBFS: max THD -24.4 dB, gain span 4.13 dB, 1 % onset '0.0' (norm 0.00); -12 dBFS: max THD -17.0 dB, gain span 4.87 dB, 1 % onset '0.0' (norm 0.00); -6 dBFS: max THD -6.3 dB, gain span 5.42 dB, 1 % onset '0.0' (norm 0.00)
+      @-12 0.0        gain    3.07 dB  THD -24.6 dB (5.890 %)  h2 -27.7 h3 -27.7 h4 -49.0 h5 -45.1  mixed (even/odd -0.1 dB)
+      @-12 10.0       gain    2.46 dB  THD -26.1 dB (4.964 %)  h2 -27.6 h3 -31.8 h4 -45.5 h5 -48.2  mixed (even/odd 4.2 dB)
+      @-12 20.0       gain    1.82 dB  THD -26.8 dB (4.593 %)  h2 -27.3 h3 -36.9 h4 -43.6 h5 -54.6  mixed (even/odd 9.7 dB)
+      @-12 30.0       gain    1.24 dB  THD -26.0 dB (4.984 %)  h2 -27.1 h3 -33.4 h4 -42.2 h5 -58.4  mixed (even/odd 6.4 dB)
+      @-12 40.0       gain    0.71 dB  THD -24.5 dB (5.942 %)  h2 -26.9 h3 -28.6 h4 -41.1 h5 -49.9  mixed (even/odd 1.8 dB)
+      @-12 50.0       gain    0.22 dB  THD -22.9 dB (7.195 %)  h2 -26.7 h3 -25.4 h4 -40.1 h5 -45.3  mixed (even/odd -1.2 dB)
+      @-12 60.0       gain   -0.24 dB  THD -21.3 dB (8.572 %)  h2 -26.5 h3 -23.1 h4 -39.2 h5 -42.3  mixed (even/odd -3.3 dB)
+      @-12 70.0       gain   -0.67 dB  THD -20.0 dB (9.988 %)  h2 -26.4 h3 -21.3 h4 -38.4 h5 -40.3  mixed (even/odd -4.9 dB)
+      @-12 80.0       gain   -1.07 dB  THD -18.9 dB (11.397 %)  h2 -26.2 h3 -19.9 h4 -37.7 h5 -38.7  mixed (even/odd -6.1 dB)
+      @-12 90.0       gain   -1.45 dB  THD -17.9 dB (12.780 %)  h2 -26.1 h3 -18.7 h4 -37.1 h5 -37.4  mixed (even/odd -7.1 dB)
+      @-12 100.0      gain   -1.80 dB  THD -17.0 dB (14.129 %)  h2 -26.0 h3 -17.7 h4 -36.5 h5 -36.4  mixed (even/odd -8.0 dB)
+  ROLES BY MEASUREMENT: 6 verdict(s), 21 unnamed control(s) probed without the signature
+    role drive CONFIRMED  [2] Input - THD moves -48.2 -> -4.8 dB
+    role drive CONFIRMED  [4] Treble - THD moves -26.4 -> -19.8 dB
+    role drive CONFIRMED  [5] Middle - THD moves -23.2 -> -27.3 dB
+    role drive CONFIRMED  [11] Bias - THD moves -14.3 -> -18.7 dB
+    role drive CONFIRMED  [12] SAG - THD moves -24.6 -> -17.0 dB
+    measured role modulation, UNNAMED  [13] Speed - energy beside the fundamental rises -38.0 -> 3.8 dB (relative) over the harmonics' 1.6: modulation, not drive
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/nn/phaseb/saturation/.tmp-AudioUnit_5a556c7d_12.0.0/saturation/AudioUnit_5a556c7d_12.0.0.saturation.json

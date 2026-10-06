@@ -1,0 +1,15 @@
+EQ: text pass: 1 of 1 controls sampled in 4.0 s (timeout 120 s, scaled to the count)
+EQ: OneKnob Phatter (s) 12.0.0: 0 band(s) by name
+  [0] OKPhatter: nominated by measurement (the lexicon found nothing): the band's gain moves 10.47 dB
+EQ: the lexicon nominated nothing; measurement probed 1 control(s) at their ends and nominated 1 band(s)
+  band 'measured [0] OKPhatter': gain [0] OKPhatter, freq [-1] (none)
+    gain 0.0: flat - the largest deviation is 0.00 dB
+    gain 1.7: shelf centre 28 Hz, gain 1.78 dB (broad)
+    gain 3.3: shelf centre 24 Hz, gain 3.44 dB (low_shelf)
+    gain 5.0: shelf centre 20 Hz, gain 5.19 dB (low_shelf)
+    gain 6.7: shelf centre 20 Hz, gain 6.99 dB (low_shelf)
+    gain 8.3: shelf centre 20 Hz, gain 8.68 dB (low_shelf)
+    gain 10.0: shelf centre 20 Hz, gain 10.47 dB (low_shelf)
+  ROLES BY MEASUREMENT: 1 verdict(s); frequency and q signatures need a boosted band: unnamed controls are probed for the gain signature only
+    role eq_gain CONFIRMED  [0] OKPhatter - the band's gain moves 10.47 dB
+EQ: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/nn/phaseb/eq/.tmp-AudioUnit_4156657d_12.0.0/eq/AudioUnit_4156657d_12.0.0.eq.json

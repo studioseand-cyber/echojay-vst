@@ -729,11 +729,15 @@ namespace
             // --phaseb-all [--out <cert>] [--probe <path>] [--ejmap-ledger <dir>] [--category <name>]... [--only <product>]...: the Phase B batch (5 Oct evening), and --phaseb-status
             if (a == "--phaseb-all" || a == "--phaseb-status")
             {
-                ejmap::cert::SweepOptions o; juce::StringArray cats, only;
+                ejmap::cert::SweepOptions o; juce::StringArray cats, only, redo;
                 for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
-                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--category") cats.add (v); else if (k == "--only") only.add (v); }
+                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--category") cats.add (v); else if (k == "--only") only.add (v);
+                    else if (k == "--redo") { for (const auto& r : juce::StringArray::fromTokens (v, ",", "")) if (r.trim().isNotEmpty()) redo.add (r.trim()); } }
+                // --redo gain-cal,timing names categories (their rows run again); --redo nothing_nominated re-runs the rows that finished with no record
+                for (auto& r : redo) if (r == "gain-cal") r = "gaincal";
+                for (const auto& r : redo) if (r != "nothing_nominated" && ejmap::phaseb::categoryNamed (r) == nullptr) { std::cerr << "--redo: '" << r << "' is not a Phase B category or nothing_nominated" << std::endl; return 2; }
                 ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
-                return a == "--phaseb-status" ? ejmap::cert::runPhaseBStatus (o) : ejmap::cert::runPhaseBAll (o, cats, only);
+                return a == "--phaseb-status" ? ejmap::cert::runPhaseBStatus (o) : ejmap::cert::runPhaseBAll (o, cats, only, redo);
             }
             // --cert-multiband <product> [--out <cert dir>] [--probe <path>] [--ejmap-ledger <dir>]: the multiband proposal PROTOTYPE (R7), nothing exported
             if (a == "--cert-multiband" && i + 1 < argc)

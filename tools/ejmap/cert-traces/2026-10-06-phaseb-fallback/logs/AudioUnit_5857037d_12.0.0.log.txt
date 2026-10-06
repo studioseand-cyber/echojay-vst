@@ -1,0 +1,4 @@
+EQ: text pass: 14 of 14 controls sampled in 9.8 s (timeout 120 s, scaled to the count)
+EQ: REQ 2 (s) 12.0.0: 0 band(s) by name
+EQ: the lexicon nominated nothing; measurement probed 8 control(s) at their ends and nominated 0 band(s)
+  controls: Band1 On/Off, Band1 Type, Band1 Gain, Band1 Frq, Band1 Q, Band6 On/Off, Band6 Type, Band6 Gain, Band6 Frq, Band6 Q, Gain-L (link), Gain-R, Band1 Type All, Band6 Type All
