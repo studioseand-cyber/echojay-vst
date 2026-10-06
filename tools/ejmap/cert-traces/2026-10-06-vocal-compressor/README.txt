@@ -13,3 +13,4 @@ unmeasurable detector: the two files here). (2) the retry. The Vocal Compressor 
 
 SEAN (6 Oct evening): "detector_f_source": "measured" on every measured profile - derive-only over a copy of his folder with the new build, nothing loaded:
 {('measured', 'number'): 81, (None, 'number'): 1}
+SECOND SIGNAL rehearsal on Lindell SBC (norm 0.7): 2 dB points sine -20.61, two-tone -20.63, sine+2nd harmonic -20.62 -> f 0.01 (two-tone) vs 0.00 (2nd harmonic over its 1.90 dB crest): consistent (an rms unit).

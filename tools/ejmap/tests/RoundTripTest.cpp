@@ -6098,6 +6098,12 @@ void testProfileExport()
         const auto xd = exportCompProfile (withDet);
         check (xd.ok && std::abs ((double) xd.profile.getProperty ("detector_f", 0.0) - 0.97) < 1e-6,
                "detector D3 (v1.3): a measured fraction exports as detector_f, the number");
+        // D5 (Kathy, 6 Oct evening): the second signal - a sine plus its own harmonic at equal RMS has its own crest, computed not assumed:
+        // 2nd harmonic +1.90 dB over the sine, 3rd +0.74; the fraction divides by that crest (a 1.90 dB shift on the 2nd-harmonic signal = f 1.0)
+        check (std::abs (harmonicCrestDb (2) - 1.90) < 0.02 && std::abs (harmonicCrestDb (3) - 0.74) < 0.02 && harmonicCrestDb (2) < kPeakToSineRmsDb,
+               "detector D5: sine + 2nd harmonic crests +1.90 dB, + 3rd +0.74 dB over the sine at equal RMS (the two-tone's 3.01 is not theirs)");
+        check (std::abs (detectorFractionWith (-15.3, -17.2, 1.90) - 1.0) < 1e-9 && std::abs (detectorFractionWith (-15.3, -15.3, 1.90)) < 1e-9 && std::abs (detectorFractionWith (-15.3, -18.31, kPeakToSineRmsDb) - 1.0) < 1e-3,
+               "detector D5: f = shift over the signal's own crest (1.90 dB shift on the 2nd-harmonic signal = peak; 3.01 on the two-tone = peak)");
         auto noDet = record (16, true, false, "", "certified"); noDet.getProperty ("thresholdSweep", {}).getDynamicObject()->removeProperty ("detector");
         check (! exportCompProfile (noDet).ok && exportCompProfile (noDet).refused.contains ("detector_f"), "detector D4 (v1.4): a record whose detector was never attempted is NOT exported - the follow-up measures it first (an attempted, unmeasured one exports unknown: X16c)");
         auto noRep = record (16, true, false, "", "certified"); noRep.getProperty ("thresholdSweep", {}).getDynamicObject()->removeProperty ("quality");

@@ -5558,16 +5558,17 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
     if (const auto* ws = sweepVar.getProperty ("engageWrites", {}).getProperty ("writes", {}).getArray()) for (const auto& w : *ws) sets.add (w.getProperty ("index", -1).toString() + ":" + juce::String ((double) w.getProperty ("norm", 0.0), 6));
     juce::StringArray levelList; for (double L : plan.probeLevels()) levelList.add (juce::String ((int) L));
     bool twoToneSilent = false;   // every two-tone hold read silence (-999): a pitch-tracking unit that mutes an unpitched signal (Auto-Tune Vocal Compressor, ruled 6 Oct)
+    double runHz = 997.0, runHz2 = 1201.0; juce::String runTag;   // the pair a two-tone run uses (the second signal and the data pairs change it)
     auto run = [&] (bool twoTone) -> std::optional<double>
     {
         juce::StringArray args { opt.probe.getFullPathName(), hits[0].desc.name, hits[0].desc.fileOrIdentifier, juce::String::toHexString (hits[0].desc.uniqueId),
-                                 "--sweep", "thr=" + juce::String (plan.thr), "norms=" + juce::String (norm, 6), "levels=" + levelList.joinIntoString (","), "hz=997",
+                                 "--sweep", "thr=" + juce::String (plan.thr), "norms=" + juce::String (norm, 6), "levels=" + levelList.joinIntoString (","), "hz=" + juce::String (twoTone ? runHz : 997.0, 0),
                                  "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
-        if (twoTone) args.add ("hz2=1201");
+        if (twoTone) args.add ("hz2=" + juce::String (runHz2, 0));
         if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
         const auto r = runChild (args, opt.timeoutMs);
         auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
-        raw.getChildFile (recordFile.getFileNameWithoutExtension() + ".detector" + retryTag + (twoTone ? ".twotone.1.txt" : ".sine.1.txt")).replaceWithText (r.out, false, false, "\n");
+        raw.getChildFile (recordFile.getFileNameWithoutExtension() + ".detector" + retryTag + (twoTone ? (runTag.isNotEmpty() ? runTag : juce::String (".twotone")) + ".1.txt" : juce::String (".sine.1.txt"))).replaceWithText (r.out, false, false, "\n");
         if (! r.cleanExit()) { say ("DETECTOR: the " + juce::String (twoTone ? "two-tone" : "sine") + " process " + r.describe()); return std::nullopt; }
         if (twoTone) { int holds = 0, silent = 0; for (const auto& line : juce::StringArray::fromLines (r.out)) if (line.startsWith ("hold\t")) { ++holds; const auto f = juce::StringArray::fromTokens (line, "\t", ""); const int k = f.indexOf ("level_db"); if (k >= 0 && k + 1 < f.size() && f[k + 1].getDoubleValue() <= -900.0) ++silent; } twoToneSilent = holds > 0 && silent == holds; }
         sweep::ProcessOut po { r.out, true, r.describe(), norm };
@@ -5593,9 +5594,33 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
     }
     if (sine && ! two && twoToneSilent)
     {
-        // UNMEASURABLE BY THIS METHOD (ruled 6 Oct, Auto-Tune Vocal Compressor): the sine reached 2 dB, the two-tone produced NO output at any
-        // level - a pitch-tracking unit mutes an unpitched signal. Recorded as such; the export assumes rms (f = 0) and says so.
-        auto* det = new juce::DynamicObject();
+        // THE TWO-TONE READ SILENCE (Kathy, 6 Oct evening): (a) as data, the two-tone at two other pairs, so Sean can see what silences it;
+        // (b) the SECOND SIGNAL - a sine plus its own 2nd harmonic at equal RMS (hz2 = 2 x hz, a pitched signal) - and f from ITS crest
+        juce::Array<juce::var> pairs;
+        for (const auto& [h1, h2, tag] : std::vector<std::tuple<double, double, const char*>> { { 500.0, 700.0, ".twotone500" }, { 2000.0, 2400.0, ".twotone2000" } })
+        {
+            runHz = h1; runHz2 = h2; runTag = tag; twoToneSilent = false; const auto v = run (true);
+            auto* po = new juce::DynamicObject(); po->setProperty ("hz", h1); po->setProperty ("hz2", h2); po->setProperty ("silent", twoToneSilent); po->setProperty ("twotone_in_at_2db", v ? juce::var (*v) : juce::var()); pairs.add (juce::var (po));
+            say ("DETECTOR: " + product + " - data: two-tone " + juce::String (h1, 0) + " + " + juce::String (h2, 0) + " Hz: " + (twoToneSilent ? "SILENT" : v ? "2 dB at " + juce::String (*v, 2) : "no 2 dB point"));
+        }
+        runHz = 997.0; runHz2 = 1994.0; runTag = ".harmonic2"; twoToneSilent = false;
+        const auto h2v = run (true); const double crest = profile::harmonicCrestDb (2);
+        say ("DETECTOR: " + product + " - second signal: sine + 2nd harmonic (997 + 1994 Hz, equal RMS, crest +" + juce::String (crest, 2) + " dB): " + (twoToneSilent ? "SILENT too" : h2v ? "2 dB at " + juce::String (*h2v, 2) : "no 2 dB point"));
+        if (h2v)
+        {
+            const double f = profile::detectorFractionWith (*sine, *h2v, crest);
+            auto* det = new juce::DynamicObject();
+            det->setProperty ("fraction", std::round (f * 100.0) / 100.0); det->setProperty ("sine_in_at_2db", *sine); det->setProperty ("twotone_in_at_2db", juce::var()); det->setProperty ("second_signal_in_at_2db", *h2v);
+            det->setProperty ("signal", "sine + 2nd harmonic (997 + 1994 Hz, equal RMS): the two-tone read silence"); det->setProperty ("crest_db", std::round (crest * 100.0) / 100.0); det->setProperty ("hz2", 1994.0); det->setProperty ("position_norm", norm); det->setProperty ("position_note", positionNote);
+            det->setProperty ("twotone_silent_at", juce::var (pairs)); det->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
+            det->setProperty ("rule", "shift between the sine's and the equal-RMS second signal's 2 dB levels, over that signal's own crest (" + juce::String (crest, 2) + " dB); 0 = rms detector, 1 = peak detector");
+            sweepVar.getDynamicObject()->setProperty ("detector", juce::var (det));
+            recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n");
+            say ("DETECTOR: " + product + " - sine 2 dB at " + juce::String (*sine, 2) + ", 2nd-harmonic signal at " + juce::String (*h2v, 2) + ": shift " + juce::String (*sine - *h2v, 2) + " dB over crest " + juce::String (crest, 2) + " -> f = " + juce::String (f, 2) + " (" + profile::detectorWord (f) + ") -> written into " + recordFile.getFileName());
+            return 0;
+        }
+        // UNMEASURABLE: the two-tone silent and the second signal short too - recorded with the reason and the data pairs
+        auto* det = new juce::DynamicObject(); det->setProperty ("twotone_silent_at", juce::var (pairs)); det->setProperty ("second_signal", twoToneSilent ? "sine + 2nd harmonic: silent too" : "sine + 2nd harmonic: no 2 dB point");
         det->setProperty ("fraction", juce::var()); det->setProperty ("sine_in_at_2db", *sine); det->setProperty ("twotone_in_at_2db", juce::var()); det->setProperty ("hz2", 1201.0); det->setProperty ("position_norm", norm);
         det->setProperty ("unmeasurable", "the two-tone (997 + 1201 Hz, equal RMS) produced no output at any level (output exactly 0, input present) while the sine reached 2 dB at " + juce::String (*sine, 2) + " dBFS; " + positionNote + "; what in the plugin silences a two-tone input the probe cannot say");
         det->setProperty ("position_note", positionNote);

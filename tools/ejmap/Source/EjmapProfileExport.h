@@ -180,6 +180,16 @@ inline double toSineRms (double peakDbfs) { return peakDbfs - kPeakToSineRmsDb; 
 // the sine does. shift = sine's 2 dB level - two-tone's; f = shift / 3.01. 0 = an RMS detector (same RMS, same GR),
 // 1 = a peak detector (3.01 dB more peak, 3.01 dB earlier). Recorded as the number; the spec's word only at an end.
 inline double detectorFraction (double sineIn2dB, double twoToneIn2dB) { return (sineIn2dB - twoToneIn2dB) / kPeakToSineRmsDb; }
+// THE SECOND SIGNAL (Kathy, 6 Oct evening): when the two-tone reads silence, a sine plus its own k-th harmonic at equal RMS (the
+// probe's hz2 = k x hz) stands in. Its peak over the sine's at the same RMS is smaller than the two-tone's 3.01 dB, so the fraction
+// divides by THIS signal's crest: f = shift / crest. The crest is max|sin x + sin kx| / sqrt 2, computed here, not assumed.
+inline double harmonicCrestDb (int k)
+{
+    double m = 0.0; const int n = 20000;
+    for (int i = 0; i < n; ++i) { const double x = juce::MathConstants<double>::twoPi * i / n; m = juce::jmax (m, std::abs (std::sin (x) + std::sin (k * x))); }
+    return 20.0 * std::log10 (m / std::sqrt (2.0));
+}
+inline double detectorFractionWith (double sineIn2dB, double otherIn2dB, double crestDb) { return crestDb > 0.05 ? (sineIn2dB - otherIn2dB) / crestDb : 0.0; }
 inline juce::String detectorWord (std::optional<double> f)
 {
     if (! f) return "unknown";
