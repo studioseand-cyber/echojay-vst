@@ -53,7 +53,34 @@ product(s)`), re-derives and tone-checks everything else, then sweeps those thro
 them (detector, export, tone check). OneKnob Pumper (m)/(s) and the five licence-flag refusals are not on it: the
 `--retry-refused` line above covers those.
 
-## Step 1 — what Sean runs (the follow-up; `ejmap.app` built from `17ebf114`, or from the PHASE B build `b0258a7b` which runs it identically — step 2 needs the latter)
+## Step 1 — what Sean runs (the follow-up; `ejmap.app` built from **804a0a56**, 6 Oct — NOT 17ebf114 or b0258a7b, which carry the write bug)
+
+**6 Oct: run it again over your EXISTING cert folder — no fresh start, nothing deleted.** The 5 Oct run's records are
+repaired in place from their own traces (the sweep-time writes that the re-derive had dropped; the sixteen pair/pick records
+that had collapsed to one sweep). The same command as before:
+
+```
+BIN=/Applications/ejmap.app/Contents/MacOS/ejmap
+"$BIN" --cert-preflight
+caffeinate -i "$BIN" --cert-tonecheck-all 2>&1 | tee -a ~/Library/ejmap/cert/tonecheck.log
+```
+
+It will re-run 47 tone checks and 2 re-sweeps and skip the rest (about 35–40 minutes): the 11 checks that failed on 5 Oct
+(C1 comp-gate/-sc m/s, Zip, VBC FG-Red / Grey / MU / Rack, AMEK, MAGNUM-K — the first seven failed on the dropped writes);
+31 passed checks whose unit declares a sidechain input, each with one extra reading under the new sidechain policy
+("self-keyed, as EchoJay 04e") against its own policy — a difference over 0.1 dB re-sweeps the record; 5 that become
+exportable (Auto-Tune Vocal Compressor, Shadow Hills Class A, UnFairchild, dbx-160 (s), Mixland Vac Attack); and the
+re-sweeps of Mike-E (PACE: it runs with the iLok in) and MAGNUM-K (both thresholds written together — Kathy's new pick).
+Put the 6 Oct `review_picks.json` into `~/Library/ejmap/cert/` first (it changes MAGNUM-K's entry).
+
+**Stop:** Ctrl-C in that window, any time — a product mid-check leaves no result and is re-run from its start. **Resume:**
+the same command. **Check:** nothing to type; the log's last `=== tone checks:` line is where it is.
+
+**The morning zip** (the same as before; stop the run first):
+```
+cd ~/Library/ejmap && zip -rq ~/Desktop/ejmap-tonecheck-$(hostname -s)-$(date +%Y%m%d).zip cert
+unzip -l ~/Desktop/ejmap-tonecheck-$(hostname -s)-$(date +%Y%m%d).zip | grep -c config.json      # must print 0
+```
 
 ```
 BIN=/Applications/ejmap.app/Contents/MacOS/ejmap
@@ -93,7 +120,7 @@ L_ref itself and passes (Lindell SBC's 6 dB included, under the v1.9 clamp).
 - **No sweeps, nothing sent.** A record without traces (none expected from the batch) is tone-checked on
   its existing points and says so.
 
-## Step 2 — the Phase B data (5 Oct; the PHASE B build, commit b0258a7b)
+## Step 2 — the Phase B data (5 Oct; unchanged in 804a0a56: Phase B rows already done are never re-run)
 
 Step 1 (the follow-up above) is unchanged and runs first, once. Step 2 runs after it, over several nights: it measures
 every installed EQ, limiter, de-esser, saturator and amp sim, reverb, delay, transient shaper, gate and multiband, plus a

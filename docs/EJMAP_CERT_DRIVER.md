@@ -2584,3 +2584,27 @@ what the sweep wrote: its writes (index:norm, the amount excluded) against the s
 (`sidechaincheck::writeFault`, pin SC-W with Zip's case as the mutant). A difference is a WRITE FAULT — named on the check's
 file (`write_fault`) and in the log, never a re-sweep; the A/B is not run on it. Live under a mutant that re-breaks the
 writes: `write fault: [5] check 0.0000, sweep 0.4219 (sweep trace …pos00.1.txt)`, the row needs_review, RE-SWEEP 0.
+
+## 61. Kathy's 6 Oct rulings, built (804a0a56)
+
+1. **Sidechain** — §60: EchoJay's policy is the probe's only policy, labelled `self-keyed (as EchoJay 04e)` on every trace,
+   record (`thresholdSweep.sidechain.policy`) and profile (`measured.sidechain`, `measured.extra_input_buses`).
+2. **The A/B at the tone check's pick and the write fault** — §60.
+3. **Item 3:** Shadow Hills Class A / UnFairchild — unlanded positions dropped from the export (`sweep::dropUnlandedPositions`,
+   `positions_dropped_unlanded` on the profile), a continuous-declared control whose writes landed only on k/(n−1) is stepped
+   with those detents (`sweep::landedDetents`, `stepped_by_evidence`) and judged by Sean's stepped rule, with no refinement
+   round. Mike-E — the follow-up's re-sweep inherits `--include-pace` when the iLok is present. AMEK — every neutral entry
+   carries `index` and is written by it. dbx-160 (s) / Vac Attack / MAGNUM-K — the `dual_mono_pair` rule (a channel pair whose
+   first candidate moves only its own channel, both certified): the twin is written WITH the amount at every position
+   (`Plan::pairIndex`, the sweep's `set=`, `thresholdSweep.pairWrite`), the export carries `amount.pair_with` and keeps the twin
+   out of neutral, the tone check writes both at every pick and is gated on the worse channel; a record decided so, or
+   review-picked `"A + B as a pair"`, owes a pair re-sweep until its picked sweep carries `pairWrite`; a changed review entry
+   (later date) replaces an earlier review pick. On Sean's traces dbx-160 (s) and Vac Attack decide `linked_pair` (their
+   channels agree within 0.00 dB over 1 890 / 1 134 readings — the 5 Oct "no rule" had no channel readings to hand); MAGNUM-K
+   takes the pair by Kathy's entry. Auto-Tune Vocal Compressor — the two-tone is silent on it (a pitch tracker mutes an
+   unpitched signal): the detector records `unmeasurable`, the export assumes rms (`detector_f` 0.0, `detector_f_source`
+   "assumed rms …").
+4. **The collapsed records** — the 5 Oct tone check's landing read wrote the picked candidate's single view over sixteen
+   pair/pick records (in 17ebf114 and b0258a7b). Every record writer now writes the record on disk, never the view;
+   `planDiffers` treats a collapsed record as its pick; the re-derive rebuilds the candidates from their `c<index>.` traces
+   and carries the collapsed view's detector to the pick (pins L19s2, L22d). Item 4's evidence: `cert-traces/2026-10-06-item4/`.

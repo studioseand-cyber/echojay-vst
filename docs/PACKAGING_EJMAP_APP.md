@@ -20,7 +20,11 @@ REPO=~/src/echojay-vst            # wherever the checkout is
 #   the PHASE B build (the follow-up + --phaseb-all / --phaseb-status, 5 Oct evening): b0258a7b - docs/SEAN_MAC_TONECHECK.md step 2;
 #   its certification results equal 17ebf114's (step 6 evidence in tools/ejmap/cert-traces/2026-10-05-phaseb/) except inert = needs_licence
 #   and a sidechain re-sweep no longer repeated nightly. 17ebf114 STAYS THE FALLBACK: if anything about b0258a7b is in doubt, build 17ebf114.
-git -C "$REPO" fetch && git -C "$REPO" checkout b0258a7b     # branch feat/ejmap-cert; the commit after it is this documentation (17ebf114: the fallback)
+#   THE 6 OCT BUILD (Kathy's rulings 1-3 and the write fix): 804a0a56 - docs/SEAN_MAC_TONECHECK.md steps 1 and 2.
+#   DO NOT USE 17ebf114 OR b0258a7b FOR THE COMPRESSOR FOLLOW-UP: both carry the write bug (the re-derive dropped every record's
+#   sweep-time writes, so a tone check wrote Zip's ratio at 1:1 and the VBC profiles said mix 0 %) and the collapse bug (the
+#   landing read wrote the picked candidate's view over the record). 804a0a56 repairs both from the records' own traces.
+git -C "$REPO" fetch && git -C "$REPO" checkout 804a0a56     # branch feat/ejmap-cert; the commit after it is this documentation
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
 cmake --build build-ejmap --target ejmap EchoJayProbe -j 4
@@ -63,6 +67,12 @@ ledger, the iLok, the power. Exit 0 = the probe verifies. From here the mapper r
 nothing on this page is needed again until the code changes.
 
 ## What was tested where
+
+**6 Oct 12:46, the build 804a0a56:** both targets rebuilt from the clean checkout (`EjmapBuildInfo.h` stamps `804a0a56`,
+`strings` finds it in the binary), packaged with `package_app.sh` into `~/Desktop/ejmap-dist-6oct`, both signatures Developer
+ID / team 8BT5F9B887 with timestamps; `--cert-preflight` from inside the bundle finds the probe beside the executable (cdhash
+a3358115…), exit 0; from the packaged app, the follow-up over a copy of Sean's folder sliced to Zip: the writes restored from
+the traces, the trace's policy line `self-keyed (as EchoJay 04e)`, GR 1.98 dB at g = 2 PASS, the A/B 1.98 → 1.98 "the same".
 
 **5 Oct 18:06, the PHASE B build (b0258a7b):** both targets rebuilt from the clean checkout (`EjmapBuildInfo.h` stamps
 `b0258a7b`, no `-dirty`; `strings` finds it in the binary), packaged with `package_app.sh` into `~/Desktop/ejmap-dist-phaseb`,
