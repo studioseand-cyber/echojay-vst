@@ -5450,6 +5450,7 @@ void testProfileExport()
         s->setProperty ("measuredAt", "20261001T120000.000+0100"); s->setProperty ("level_convention", "peak"); s->setProperty ("result", result); s->setProperty ("hold_s", 2.5); s->setProperty ("win_s", 0.3);
         auto* tone = new juce::DynamicObject(); juce::Array<juce::var> lv; for (int L = -60; L <= 0; L += 2) lv.add ((double) L); tone->setProperty ("levels_dbfs", lv); s->setProperty ("tone", juce::var (tone));
         auto* rd = new juce::DynamicObject(); rd->setProperty ("value", 4.0); rd->setProperty ("position", "4.0:1"); s->setProperty ("ratioDuring", juce::var (rd));
+        { auto* sc = new juce::DynamicObject(); sc->setProperty ("policy", ejmap::sidechaincheck::kPolicyNow); juce::Array<juce::var> eb; auto* b = new juce::DynamicObject(); b->setProperty ("index", 1); b->setProperty ("name", "Side-Chain Input Bus"); b->setProperty ("channels", 2); eb.add (juce::var (b)); sc->setProperty ("extraInputBuses", eb); s->setProperty ("sidechain", juce::var (sc)); }
         juce::Array<juce::var> norms, texts, eff; auto* red = new juce::DynamicObject(); std::map<int, juce::Array<juce::var>> cols;
         for (int i = 0; i < positions; ++i)
         {
@@ -5489,6 +5490,8 @@ void testProfileExport()
     if (e.ok)
     {
         const auto P = e.profile;
+        check (P.getProperty ("measured", {}).getProperty ("sidechain", "").toString() == "self-keyed (as EchoJay 04e)" && P.getProperty ("measured", {}).getProperty ("extra_input_buses", {}).size() == 1,
+               "export X-SC (ruled 6 Oct): the profile's measured block says the sidechain policy the sweep ran under, by the record's label, with the extra buses");
         const auto curve = P.getProperty ("amount", {}).getProperty ("curve", {});
         const double effPeak = (double) rec.getProperty ("thresholdSweep", {}).getProperty ("thresholdEffective1dB", {})[0];
         const auto steps = P.getProperty ("measured", {}).getProperty ("steps_dbfs", {});
@@ -6682,7 +6685,7 @@ void testSidechainCheck()
         auto t = trace ("c1comp_s.enabled_silent.txt");
         auto noBus = t; noBus.extraInputBuses = 0;
         check (! pickReading ({ noBus }, t.sets).ok && pickReading ({ noBus }, t.sets).why.contains ("no input bus past the main one"), "sidechain S7: a product with no second input bus is not in the set");
-        auto newPolicy = t; newPolicy.policy = kPolicyNow;
+        auto newPolicy = t; newPolicy.policy = kPolicyNow;   // (the old pickReading: a trace under any later policy is not an "enabled_silent" trace)
         check (! pickReading ({ newPolicy }, t.sets).ok && pickReading ({ newPolicy }, t.sets).why.contains ("not swept under enabled_silent"), "sidechain S8: a record already swept unconnected is not in the set");
         check (! pickReading ({ t }, {}).ok && pickReading ({ t }, {}).why.contains ("record's writes"), "sidechain S9: a trace that ran with other writes than the record's is not compared (the writes are part of the reading)");
         check (! pickReading ({}, t.sets).ok && pickReading ({}, t.sets).why.contains ("no position trace"), "sidechain S10: no trace -> unknown, said, never guessed");
@@ -6701,10 +6704,14 @@ void testSidechainCheck()
     check (w.size() == 3 && sameWrites (w, { { 15, 1.0 }, { 28, 1.0 }, { 41, 0.5 } }) && ! sameWrites (w, { { 28, 1.0 }, { 41, 0.5 } }), "sidechain S14: the record's writes are its preconditions plus its engage writes, order-free");
     // SC-R the record's own evidence beats a cached verdict: a view swept under the policy now is out of the set even with a stale
     // "resweep" verdict on the record (the re-sweep carries it over; read first it re-swept C1 comp (s) on every follow-up run)
-    { const auto viewNow = juce::JSON::parse ("{\"sidechain\":{\"policy\":\"unconnected\",\"extraInputBuses\":[{\"index\":1}]}}");
+    { const auto viewNow = juce::JSON::parse ("{\"sidechain\":{\"policy\":\"self-keyed (as EchoJay 04e)\",\"extraInputBuses\":[{\"index\":1}]}}");
+      const auto viewPrev = juce::JSON::parse ("{\"sidechain\":{\"policy\":\"unconnected\",\"extraInputBuses\":[{\"index\":1}]}}");
       const auto viewOld = juce::JSON::parse ("{\"sidechain\":{\"policy\":\"enabled_silent\",\"extraInputBuses\":[{\"index\":1}]}}");
-      check (sweptUnderPolicyNow (viewNow), "sidechain SC-R: a view with policy 'unconnected' was swept under the policy now");
-      check (! sweptUnderPolicyNow (viewOld), "sidechain SC-R: a view under enabled_silent was not");
+      // THE POLICY (Kathy's ruling, 6 Oct): EchoJay's, labelled exactly so on every record and profile; the two earlier ones are "before"
+      check (juce::String (kPolicyNow) == "self-keyed (as EchoJay 04e)" && juce::String (kPolicyPrev) == "unconnected" && juce::String (kPolicyOld) == "enabled_silent", "sidechain SC-P: the policy now is EchoJay's, by its label");
+      check (switchFor (kPolicyOld) == "silent" && switchFor (kPolicyPrev) == "unconnected" && switchFor (kPolicyNow) == "echojay" && switchFor ("something").isEmpty(), "sidechain SC-P: each policy a record can carry maps to the probe's test switch, an unknown one to nothing");
+      check (sweptUnderPolicyNow (viewNow), "sidechain SC-R: a view with the EchoJay label was swept under the policy now");
+      check (! sweptUnderPolicyNow (viewPrev) && ! sweptUnderPolicyNow (viewOld), "sidechain SC-R: a view under unconnected or enabled_silent was not (both are before)");
       check (! sweptUnderPolicyNow (juce::JSON::parse ("{}")), "sidechain SC-R: no sidechain field = not under the policy now (the traces decide)"); }
 }
 

@@ -28,8 +28,14 @@ namespace ejmap::sidechaincheck
 
 inline constexpr double kSameDb = 0.1;               // the ruling's bar: within 0.1 dB the policy had no effect
 inline constexpr double kLoudestLevelDb = -6.0;     // the loud level: the loudest swept level at or below this (peak dBFS)
-inline constexpr const char* kPolicyNow = "unconnected";
-inline constexpr const char* kPolicyOld = "enabled_silent";
+inline constexpr const char* kPolicyNow  = "self-keyed (as EchoJay 04e)";   // Kathy's ruling 6 Oct: EchoJay's policy, the probe's only one
+inline constexpr const char* kPolicyPrev = "unconnected";                     // 4 - 6 Oct
+inline constexpr const char* kPolicyOld  = "enabled_silent";                  // 28 Sep - 4 Oct
+// the probe's test-only switch value that reproduces a record's own policy for the A/B (empty = not reproducible)
+inline juce::String switchFor (const juce::String& recordPolicy)
+{
+    return recordPolicy == kPolicyOld ? "silent" : recordPolicy == kPolicyPrev ? "unconnected" : recordPolicy == kPolicyNow ? "echojay" : juce::String();
+}
 
 // One position process as the probe printed it: the lines the check needs.
 struct Trace

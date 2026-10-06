@@ -494,6 +494,12 @@ inline Export exportCompProfile (const juce::var& f)
         m->setProperty ("host", "out_of_process");
         const auto rd = sweepVar.getProperty ("ratioDuring", {});
         m->setProperty ("reference_ratio", rd.getProperty ("value", juce::var()));
+        // THE SIDECHAIN POLICY the sweep ran under (Kathy's ruling, 6 Oct): the profile says it as the record does, so a server
+        // reading "self-keyed (as EchoJay 04e)" knows the measurement was taken in the configuration the profile will run in
+        { const auto sc = sweepVar.getProperty ("sidechain", {});
+          m->setProperty ("sidechain", sc.isObject() ? sc.getProperty ("policy", juce::var()) : juce::var());
+          juce::StringArray buses; if (const auto* eb = sc.getProperty ("extraInputBuses", {}).getArray()) for (const auto& b : *eb) buses.add (b.getProperty ("name", "").toString());
+          m->setProperty ("extra_input_buses", buses); }
         P->setProperty ("measured", juce::var (m));
     }
     P->setProperty ("topology", topologyOf (f, sweepVar, plan));

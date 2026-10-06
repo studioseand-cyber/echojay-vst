@@ -38,6 +38,12 @@
 //     so nothing in a release build. EJ Map's PluginHost uses the same sequence, so its M9 renders also ran with
 //     sidechains off wherever the plugin allowed it.
 // So configure = enableAllBuses + setRateAndBufferSizeDetails (rate and block only, no bus changes) + prepareToPlay.
+// THE POLICY SINCE 6 OCT (Kathy's ruling): EchoJay's own - the first extra input element stays connected and is FED THE
+// MAIN INPUT'S SIGNAL (self-keyed, as EchoJay feeds every hosted plugin's first extra input from the slot's own input since
+// build 04e), any further extra input is left unconnected. Every trace says "self-keyed (as EchoJay 04e)" on its policy
+// line; the 6 Oct experiment (cert-traces/2026-10-06-sidechain) read every unit the same under this, unconnected and
+// all-self-keyed, and no product in Sean's catalogue declares more than one extra input. The 4 Oct notes below describe
+// the "unconnected" policy that stood from 4 to 6 Oct; the switch `sidechain=` keeps it, and enabled_silent, for tests.
 // THE RISK the 28 Sep note recorded - "a compressor that defaults to EXTERNAL sidechain keying keys off silence and
 // never compresses, so a sweep reads flat" - is what happened (five Waves units), which is why the element is now left
 // unconnected. The "policy" and "sidechain" lines below state the state as measured, and the fixture carries them
@@ -116,7 +122,18 @@ inline void printLayoutSupport (juce::AudioPluginInstance& p)
 // amendment, 6 Oct: EchoJay since build 04e feeds the FIRST extra input from the slot's own input and leaves any further
 // extra input disconnected - the first element connected and fed the main signal, the rest unconnected). Set by a
 // `sidechain=<policy>` argument on any mode; printed on the policy line so a trace says which it ran under.
-inline juce::String& sidechainPolicy() { static juce::String s ("unconnected"); return s; }
+// THE POLICY (Kathy's ruling, 6 Oct): EchoJay's - the first extra input self-keyed from the main input, any further extra
+// input unconnected - is the probe's ONLY policy; the others stay for tests (the follow-up's A/B reads a record's own
+// policy with them). Every trace, record and profile carries the label kSidechainLabel.
+inline constexpr const char* kSidechainDefault = "echojay";
+inline constexpr const char* kSidechainLabel   = "self-keyed (as EchoJay 04e)";
+inline juce::String& sidechainPolicy() { static juce::String s (kSidechainDefault); return s; }
+inline juce::String sidechainPolicyLabel (bool isAU)
+{
+    const auto& pol = sidechainPolicy();
+    if (! isAU) return "enabled_silent";
+    return pol == "echojay" ? juce::String (kSidechainLabel) : pol == "silent" ? juce::String ("enabled_silent") : pol;
+}
 inline bool takeSidechainPolicyArg (int& argc, char** argv)
 {
     for (int i = 1; i < argc; ++i)
@@ -140,7 +157,7 @@ inline void configureAndPrepare (juce::AudioPluginInstance& p, const RenderSpec&
     p.setRateAndBufferSizeDetails (s.sampleRate, s.block);
     const bool isAU = p.getPluginDescription().pluginFormatName == "AudioUnit";
     const auto pol = sidechainPolicy();
-    std::printf ("policy\tsidechain\t%s\tenable_all_buses\t%s\n", ! isAU ? "enabled_silent" : pol == "silent" ? "enabled_silent" : pol.toRawUTF8(), allEnabled ? "ok" : "refused");
+    std::printf ("policy\tsidechain\t%s\tenable_all_buses\t%s\n", sidechainPolicyLabel (isAU).toRawUTF8(), allEnabled ? "ok" : "refused");
     printBuses (p, "render");
     if (! isAU)
         for (int b = 1; b < p.getBusCount (true); ++b)
@@ -159,13 +176,17 @@ inline void configureAndPrepare (juce::AudioPluginInstance& p, const RenderSpec&
     if (p.getPluginDescription().pluginFormatName == "AudioUnit" && (pol == "unconnected" || pol == "echojay"))
         if (auto au = (AudioUnit) p.getPlatformSpecificData())
             for (int b = (pol == "echojay" ? 2 : 1); b < p.getBusCount (true); ++b)
-            {
+            {   // (under echojay, element 1 stays connected and is fed the main signal: printed below as "self_keyed")
                 AURenderCallbackStruct none { nullptr, nullptr };
                 const auto rc = AudioUnitSetProperty (au, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, (UInt32) b, &none, sizeof none);
                 if (auto* bus = p.getBus (true, b))
                     std::printf ("sidechain\t%d\t%s\t%d\t%s\t%s\n", b, clean (bus->getName()).toRawUTF8(), bus->getNumberOfChannels(),
                                  bus->isEnabled() ? "enabled" : "disabled", rc == noErr ? "unconnected" : ("still_connected rc " + juce::String ((int) rc)).toRawUTF8());
             }
+    if (p.getPluginDescription().pluginFormatName == "AudioUnit" && (pol == "echojay" || pol == "self"))
+        for (int b = 1; b < (pol == "echojay" ? juce::jmin (2, p.getBusCount (true)) : p.getBusCount (true)); ++b)
+            if (auto* bus = p.getBus (true, b))
+                std::printf ("sidechain\t%d\t%s\t%d\t%s\tself_keyed\n", b, clean (bus->getName()).toRawUTF8(), bus->getNumberOfChannels(), bus->isEnabled() ? "enabled" : "disabled");
 }
 
 // The number of main-bus input channels the stimulus drives (0 when there is no enabled main input).
