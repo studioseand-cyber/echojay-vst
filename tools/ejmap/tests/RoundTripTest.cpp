@@ -74,6 +74,7 @@
 #include "EjmapGainCal.h"
 #include "EjmapTiming.h"
 #include "EjmapCombined.h"
+#include "EjmapMaterial.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include <functional>
@@ -7020,7 +7021,8 @@ void testTunerV01()
         check (ga && ga->optIn && ga->mode == "--cert-gain-cal" && ga->kindArg == "all" && ga->ledgerCategories.contains ("eq") && ga->ledgerCategories.contains ("amp_sim") && ga->ledgerCategories.contains ("gate") && ! ga->ledgerCategories.contains ("compressor") && ! ga->ledgerCategories.contains ("pitch"),
                "phaseb P18: gain-all runs --cert-gain-cal over the other Phase B categories' products (never the compressors, never the tuners)");
         const auto* cb = ejmap::phaseb::categoryNamed ("combined");
-        check (cb && cb->optIn && cb->mode == "--cert-combined" && ! ejmap::phaseb::categoryRuns (*cb, {}, {}) && ejmap::phaseb::categoryRuns (*cb, {}, { "combined" }), "phaseb P18c: combined (accuracy A1) is opt-in too: --redo combined");
+        const auto* mt = ejmap::phaseb::categoryNamed ("material");
+        check (cb && cb->optIn && cb->mode == "--cert-combined" && ! ejmap::phaseb::categoryRuns (*cb, {}, {}) && ejmap::phaseb::categoryRuns (*cb, {}, { "combined" }) && mt && mt->optIn && mt->mode == "--cert-material" && ! ejmap::phaseb::categoryRuns (*mt, {}, {}), "phaseb P18c: combined (A1) and material (A2) are opt-in too: --redo combined / --redo material");
         check (! ejmap::phaseb::categoryRuns (*ga, {}, {}) && ejmap::phaseb::categoryRuns (*ga, {}, { "gainall" }) && ejmap::phaseb::categoryRuns (*ga, { "gainall" }, {}) && ejmap::phaseb::categoryRuns (*eq, {}, {}) && ! ejmap::phaseb::categoryRuns (*eq, { "gainall" }, {}) && ejmap::phaseb::categoryRuns (*eq, {}, { "gainall" }),
                "phaseb P18b: a bare --phaseb-all leaves gain-all out; --redo gain-all or --category gainall brings it in; eq still runs unless --category names another");
     }
@@ -7313,6 +7315,40 @@ void testCombined()
     check (none.ok && std::abs (none.predictedGrDb - 4.0) < 1e-9 && ! none.predictedOutDb && none.makeupControl.isEmpty() && none.notes.size() == 3 && none.writes.size() == 3,
            "combined CB6: no time draft and no writable make-up: the setting is the tone check's writes and the pick, GR predicted = g, no output prediction, each absence noted (" + juce::String (none.notes.size()) + ")");
     check (! compose (juce::JSON::parse (R"json({"amount": {"control": "Threshold"}})json"), writes, timing, gain, { { "Other", 0 } }).ok, "combined CB7: an amount control not on the record's control list refuses");
+}
+/** REAL MATERIAL (EjmapMaterial.h; Kathy's NEXT BUILD A2, 6 Oct): the probe's mwin trace, the curve at the pick, the prediction per window, the miss. */
+void testMaterial()
+{
+    using namespace ejmap::material;
+    const juce::String trace = "material\tproto\t1\tkind\tvocal\trms\t-18.40\tquiet\t-40.00\tseconds\t6.00\twin_ms\t50.00\tseed\t1\n"
+                               "config\tmain_in\t2\tmain_out\t2\tlatency\t64\tsr\t48000\n"
+                               "mwin\tquiet\tt_ms\t25.00\tin_db\t-40.000\tout_db\t-39.000\n"
+                               "mpass\tquiet\ttarget_rms_db\t-40.00\tin_rms_db\t-40.000\tout_rms_db\t-39.000\n"
+                               "mwin\tloud\tt_ms\t25.00\tin_db\t-18.000\tout_db\t-19.500\n"      // gain -1.5 against a quiet gain of +1 -> GR 2.5
+                               "mwin\tloud\tt_ms\t75.00\tin_db\t-24.000\tout_db\t-23.000\n"      // gain +1 -> GR 0
+                               "mwin\tloud\tt_ms\t125.00\tin_db\t-60.000\tout_db\t-59.000\n"     // under the floor: not counted
+                               "mwin\tloud\tt_ms\t175.00\tin_db\t-12.000\tout_db\t-16.000\n"     // gain -4 -> GR 5
+                               "mpass\tloud\ttarget_rms_db\t-18.40\tin_rms_db\t-18.400\tout_rms_db\t-19.900\n"
+                               "mdone\tpasses\t2\twindows\t5\tnonfinite\t0\n";
+    const auto p = parseMaterial (trace);
+    check (p.ok && p.kind == "vocal" && p.latency == 64 && p.quiet.ok && std::abs (p.quiet.outRmsDb + 39.0) < 1e-9 && p.loud.windows.size() == 4 && std::abs (p.loud.windows[3].outDb + 16.0) < 1e-9 && ! parseMaterial ("refused no main input or output bus\n").ok,
+           "material MT1: the trace parses (kind, latency, both passes, the loud windows); a refusal does not");
+    // the profile: two points bracket the pick 0.5 (0.4 and 0.6); in_at_gr at g 1/2/4: (-30/-26/-20) and (-26/-22/-16) -> at the pick (-28/-24/-18); g 8 only at 0.6
+    const auto profile = juce::JSON::parse (R"json({"amount": {"curve": [{"norm": 0.4, "in_at_gr_dbfs": {"1": -30.0, "2": -26.0, "4": -20.0, "8": null}}, {"norm": 0.6, "in_at_gr_dbfs": {"1": -26.0, "2": -22.0, "4": -16.0, "8": -8.0}}]}})json");
+    const auto c = curveAtPick (profile, 0.5);
+    check (c.ok && c.inAtG.size() == 3 && std::abs (c.inAtG.at (1) + 28.0) < 1e-9 && std::abs (c.inAtG.at (2) + 24.0) < 1e-9 && std::abs (c.inAtG.at (4) + 18.0) < 1e-9 && ! c.inAtG.count (8),
+           "material MT2: the curve at the pick interpolates in_at_gr across the norm axis; a g carried on one side only is not carried");
+    check (std::abs (predictGr (c, -18.0).grDb - 4.0) < 1e-9 && std::abs (predictGr (c, -21.0).grDb - 3.0) < 1e-9 && std::abs (predictGr (c, -24.0).grDb - 2.0) < 1e-9 && std::abs (predictGr (c, -28.5).grDb - 0.5) < 1e-9 && std::abs (predictGr (c, -32.0).grDb) < 1e-9
+           && predictGr (c, -10.0).beyond && std::abs (predictGr (c, -10.0).grDb - 4.0) < 1e-9 && ! predictGr (c, -18.0).beyond,
+           "material MT3: GR predicted by inverting g over the level (-21 -> 3), falling to 0 within a dB under the 1 dB point, clamped and flagged above the deepest carried g");
+    const auto r = derive (p, c);
+    check (r.ok && r.counted == 3 && r.windows == 4 && std::abs (r.quietGainDb - 1.0) < 1e-9 && std::abs (r.grAtPassRmsDb - 2.5) < 1e-9 && std::abs (r.predAtPassRmsDb - 3.87) < 1e-9,
+           "material MT4: the quiet pass gives the static gain (+1); the loud pass's GR 2.5 against the prediction at its RMS (-18.4 -> 3.87); the -60 dBFS window is not counted");
+    // per window: GR 2.5 / 0 / 5 against predictions 4.0 / 2.0 / 4 (clamped, beyond) -> misses -1.5 / -2.0 / +1.0: median -1.5, worst -2.0
+    check (std::abs (r.medianMissDb + 1.5) < 1e-9 && std::abs (r.worstMissDb + 2.0) < 1e-9 && r.beyond == 1 && std::abs (r.medianGrDb - 2.5) < 1e-9 && std::abs (r.p90AbsMissDb - 1.5) < 1e-9,
+           "material MT5: per-window misses -1.5 / -2.0 / +1.0 -> median -1.5, worst -2.0 (the largest |miss|, sign kept), one window beyond the curve");
+    Parsed quietOnly = p; quietOnly.loud.windows.clear(); quietOnly.ok = false; quietOnly.refused = "no complete quiet and loud pass in the trace";
+    check (! derive (quietOnly, c).ok && ! derive (p, curveAtPick (juce::JSON::parse (R"json({"amount": {"curve": []}})json"), 0.5)).ok, "material MT6: no loud windows, or no curve at the pick, refuses");
 }
 void testTimingSegments()
 {
@@ -7816,7 +7852,7 @@ void testTextPassTimeout()
 void testPhaseB()
 {
     using namespace ejmap::phaseb;
-    check (categories().size() == 14 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories().back().name == "gainall", "phaseb P1: fourteen categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, gain-all)");
+    check (categories().size() == 15 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories().back().name == "gainall", "phaseb P1: fifteen categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, gain-all)");
     for (const auto& c : categories()) check (c.guardS >= 600.0 && c.guardWhy.isNotEmpty(), "phaseb P2: " + c.name + " has a stated hang guard of at least 10 min (" + juce::String (c.guardS / 60.0, 0) + ")");
     check (categoryNamed ("saturation")->ledgerCategories.contains ("amp_sim") && modeWord ("--cert-reverb-delay") == "reverbdelay" && modeWord ("--cert-gain-cal") == "gaincal", "phaseb P3: amp sims ride with saturation; the mode word is the record folder");
     // the done marker: a row file, whole or absent
@@ -8053,6 +8089,7 @@ int main (int, char**)
     testGainCal();
     testTiming();
     testCombined();
+    testMaterial();
     testTimingSegments();
     testLimiter();
     testEq();

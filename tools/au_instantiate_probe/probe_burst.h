@@ -109,7 +109,7 @@ inline void runBurst (juce::AudioPluginInstance& p, const BurstSpec& s, const Re
             const double amp = (tt >= nPre && tt < nPre + nHold) ? ampL : ampQ;
             const float v = (float) (amp * std::sin (phase));
             phase += step; if (phase > juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
-            for (int ch = 0; ch < r.mainIn; ++ch) r.io.setSample (ch, i, v);
+            for (int ch = 0; ch < r.fedIn; ++ch) r.io.setSample (ch, i, v);
         }
         r.midi.clear();
         p.processBlock (r.io, r.midi);

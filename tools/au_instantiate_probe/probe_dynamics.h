@@ -123,7 +123,7 @@ inline void renderWindows (juce::AudioPluginInstance& p, SweepRenderer& r, long 
     {
         r.io.clear();
         const int n = (int) juce::jmin ((long long) r.block, renderTotal - t);
-        for (int i = 0; i < n; ++i) { const float v = gen (t + i); for (int ch = 0; ch < r.mainIn; ++ch) r.io.setSample (ch, i, v); }
+        for (int i = 0; i < n; ++i) { const float v = gen (t + i); for (int ch = 0; ch < r.fedIn; ++ch) r.io.setSample (ch, i, v); }
         r.midi.clear(); p.processBlock (r.io, r.midi);
         for (int i = 0; i < n; ++i)
         {

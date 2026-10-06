@@ -49,6 +49,8 @@ inline const std::vector<Category>& categories()
         // when named (--category gainall or --redo gain-all), never in a bare --phaseb-all; records under phaseb/gainall/
         // combined settings (Kathy's NEXT BUILD A1, 6 Oct; accuracy pass, opt-in: --redo combined after gain-cal and timing have run)
         { "combined",    "--cert-combined",      "",          {},                              600.0,  "one process at the composed setting: ~10-20 s", true },
+        // real material (A2, 6 Oct; opt-in: --redo material): three generated signals through the tone check's pick
+        { "material",    "--cert-material",      "",          {},                              600.0,  "three materials x two passes of 6.5 s: ~1 min", true },
         { "gainall",     "--cert-gain-cal",      "all",       { "eq", "limiter", "de-esser", "saturation", "amp_sim", "reverb", "delay", "transient_shaper", "gate" }, 600.0, "21 norms x 2-3 levels per gain control + the unnamed pool: ~1-4 min", true } };
     return k;
 }

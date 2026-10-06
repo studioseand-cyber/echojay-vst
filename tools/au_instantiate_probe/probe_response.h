@@ -140,7 +140,7 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
                 const double t = (double) (done + i) / sr; double v = 0.0;
                 for (int q = 0; q < s.tones; ++q) v += weight[(size_t) q] * std::sin (phase0[(size_t) q] + juce::MathConstants<double>::twoPi * hz[(size_t) q] * t);
                 gen[(size_t) i] = (float) (amp * v);
-                for (int ch = 0; ch < r.mainIn; ++ch) r.io.setSample (ch, i, gen[(size_t) i]);
+                for (int ch = 0; ch < r.fedIn; ++ch) r.io.setSample (ch, i, gen[(size_t) i]);
             }
             r.midi.clear(); p.processBlock (r.io, r.midi);
             for (int i = 0; i < n; ++i)

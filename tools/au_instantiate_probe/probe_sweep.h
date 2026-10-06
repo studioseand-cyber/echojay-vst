@@ -94,7 +94,7 @@ struct SweepRenderer
     juce::MidiBuffer midi;
     double sr, phase = 0.0, step;
     double phase2 = 0.0, step2 = 0.0;     // the second tone of a two-tone signal (0 = sine only)
-    int block, mainIn, mainOut, fedIn = 0;
+    int block, mainIn, mainOut, fedIn = 0;   // fedIn: the channels the stimulus is WRITTEN to under the sidechain policy (main + the first extra bus under "echojay") - EVERY mode writes r.fedIn, never r.mainIn (6 Oct: a connected, silent sidechain read no compression on Waves C1 (s))
 
     SweepRenderer (juce::AudioPluginInstance& proc, double sampleRate, int blockSize, double hz, double hz2 = 0.0)
         : p (proc), io (juce::jmax (2, proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels()), blockSize),

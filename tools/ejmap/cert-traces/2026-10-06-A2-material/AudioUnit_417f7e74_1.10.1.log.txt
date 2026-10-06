@@ -1,0 +1,5 @@
+MATERIAL: bx_opto 1.10.1: the tone check's pick norm 0.4529 (g 2.0 at L -18.00 dBFS RMS), 9 write(s); three materials at -18.00 dBFS RMS
+  vocal: pass GR 3.92 dB at -18.00 dBFS RMS (predicted 2.00); per window median GR 3.17 vs predicted 2.20 -> median miss 1.03, worst 5.08, p90 |miss| 3.31 over 109 of 120 window(s)
+  drums: pass GR 7.19 dB at -18.00 dBFS RMS (predicted 2.00); per window median GR 4.08 vs predicted 0.00 -> median miss 3.17, worst 5.40, p90 |miss| 4.80 over 101 of 120 window(s) (8 beyond the curve's deepest level)
+  mix: pass GR 4.36 dB at -18.00 dBFS RMS (predicted 2.00); per window median GR 3.61 vs predicted 1.44 -> median miss 2.40, worst 5.42, p90 |miss| 3.40 over 120 of 120 window(s) (4 beyond the curve's deepest level)
+MATERIAL: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/material/.tmp-AudioUnit_417f7e74_1.10.1/material/AudioUnit_417f7e74_1.10.1.material.json

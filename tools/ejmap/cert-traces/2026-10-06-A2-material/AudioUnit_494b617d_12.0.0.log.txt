@@ -1,0 +1,5 @@
+MATERIAL: C1 comp (s) 12.0.0: the tone check's pick norm 0.8979 (g 2.0 at L -13.71 dBFS RMS), 8 write(s); three materials at -13.71 dBFS RMS
+  vocal: pass GR 3.44 dB at -13.71 dBFS RMS (predicted 2.00); per window median GR 2.99 vs predicted 2.15 -> median miss 0.83, worst 3.34, p90 |miss| 1.30 over 109 of 120 window(s)
+  drums: pass GR 4.13 dB at -16.41 dBFS RMS (predicted 1.20); per window median GR 0.34 vs predicted 0.00 -> median miss 0.33, worst 1.39, p90 |miss| 1.13 over 101 of 120 window(s)
+  mix: pass GR 2.96 dB at -15.06 dBFS RMS (predicted 1.60); per window median GR 2.19 vs predicted 1.28 -> median miss 1.03, worst 2.23, p90 |miss| 1.52 over 120 of 120 window(s)
+MATERIAL: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/material/.tmp-AudioUnit_494b617d_12.0.0/material/AudioUnit_494b617d_12.0.0.material.json

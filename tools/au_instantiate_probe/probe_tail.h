@@ -128,7 +128,7 @@ inline void runTail (juce::AudioPluginInstance& p, const TailSpec& s, const Rend
             const long long tt = t + i;
             const float v = tt < nBurst ? (float) (amp * std::sin (phase)) : 0.0f;
             phase += step; if (phase > juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
-            for (int ch = 0; ch < r.mainIn; ++ch) r.io.setSample (ch, i, v);
+            for (int ch = 0; ch < r.fedIn; ++ch) r.io.setSample (ch, i, v);
         }
         r.midi.clear();
         p.processBlock (r.io, r.midi); head.samples += rs.block;

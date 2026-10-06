@@ -1,0 +1,5 @@
+MATERIAL: RCompressor (s) 12.0.0: the tone check's pick norm 0.8560 (g 2.0 at L -14.45 dBFS RMS), 8 write(s); three materials at -14.45 dBFS RMS
+  vocal: pass GR 1.73 dB at -14.45 dBFS RMS (predicted 2.00); per window median GR 0.31 vs predicted 2.10 -> median miss -0.61, worst 3.26, p90 |miss| 1.90 over 111 of 121 window(s)
+  drums: pass GR 1.26 dB at -16.41 dBFS RMS (predicted 1.39); per window median GR 0.05 vs predicted 0.00 -> median miss 0.00, worst -4.42, p90 |miss| 2.87 over 102 of 121 window(s)
+  mix: pass GR 1.09 dB at -15.06 dBFS RMS (predicted 1.81); per window median GR 0.43 vs predicted 1.45 -> median miss -0.90, worst -3.62, p90 |miss| 1.45 over 121 of 121 window(s)
+MATERIAL: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/material/.tmp-AudioUnit_5f54727d_12.0.0/material/AudioUnit_5f54727d_12.0.0.material.json

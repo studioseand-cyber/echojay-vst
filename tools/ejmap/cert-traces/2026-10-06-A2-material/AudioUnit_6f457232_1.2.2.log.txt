@@ -1,0 +1,5 @@
+MATERIAL: Lindell 7X-500 1.2.2: the tone check's pick norm 0.2698 (g 2.0 at L -18.00 dBFS RMS), 13 write(s); three materials at -18.00 dBFS RMS
+  vocal: pass GR 2.81 dB at -18.00 dBFS RMS (predicted 2.00); per window median GR 1.72 vs predicted 2.27 -> median miss -0.02, worst 5.06, p90 |miss| 1.02 over 109 of 120 window(s)
+  drums: pass GR 7.80 dB at -18.00 dBFS RMS (predicted 2.00); per window median GR 4.75 vs predicted 0.00 -> median miss 3.72, worst 4.90, p90 |miss| 4.90 over 101 of 120 window(s) (14 beyond the curve's deepest level)
+  mix: pass GR 5.29 dB at -18.00 dBFS RMS (predicted 2.00); per window median GR 4.26 vs predicted 1.18 -> median miss 3.11, worst 4.10, p90 |miss| 3.66 over 120 of 120 window(s) (5 beyond the curve's deepest level)
+MATERIAL: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/material/.tmp-AudioUnit_6f457232_1.2.2/material/AudioUnit_6f457232_1.2.2.material.json

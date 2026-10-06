@@ -195,7 +195,7 @@ inline void runPitchSweep (juce::AudioPluginInstance& p, const PitchSpec& s, con
                 const float v = (float) (amp * envelopeAt (s, (double) t / sr) * std::sin (phase));
                 phase += juce::MathConstants<double>::twoPi * hz / sr;
                 if (phase > juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
-                for (int ch = 0; ch < r.mainIn; ++ch) r.io.setSample (ch, n, v);
+                for (int ch = 0; ch < r.fedIn; ++ch) r.io.setSample (ch, n, v);
                 if (t < total) in[(size_t) t] = v;
             }
             r.midi.clear();

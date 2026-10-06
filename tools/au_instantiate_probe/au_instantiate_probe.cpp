@@ -19,6 +19,7 @@
 #include "probe_pitch.h"                     // feat/ejmap-cert: --sweep-pitch, spec section 5 (tuners), 1 Oct
 #include "probe_burst.h"                     // feat/ejmap-cert: --burst, compressor timing PROTOTYPE (roadmap 2.3), 5 Oct
 #include "probe_response.h"                  // feat/ejmap-cert: --response, multitone EQ response PROTOTYPE (roadmap 2.2), 5 Oct
+#include "probe_material.h"                  // feat/ejmap-cert: --material, generated vocal / drums / mix through the pick (accuracy A2), 6 Oct
 #include "probe_tail.h"                      // feat/ejmap-cert: --tail, burst-then-silence for reverb / delay PROTOTYPE (roadmap 2.7), 5 Oct
 #include "probe_dynamics.h"                  // feat/ejmap-cert: --hits and --ramp, transient shapers and gates PROTOTYPE (roadmap 2.8), 5 Oct
 #include <set>
@@ -97,7 +98,8 @@ int main (int argc, char** argv)
     const bool tail       = argc >= 5 && juce::String (argv[4]) == "--tail";         // key=value arguments, probe_tail.h (PROTOTYPE)
     const bool hits       = argc >= 5 && juce::String (argv[4]) == "--hits";         // key=value arguments, probe_dynamics.h (PROTOTYPE)
     const bool ramp       = argc >= 5 && juce::String (argv[4]) == "--ramp";         // key=value arguments, probe_dynamics.h (PROTOTYPE)
-    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep || textAtNorms || sweepPitch || burst || response || tail || hits || ramp;
+    const bool materialM  = argc >= 5 && juce::String (argv[4]) == "--material";     // key=value arguments, probe_material.h (PROTOTYPE, A2)
+    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep || textAtNorms || sweepPitch || burst || response || tail || hits || ramp || materialM;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
@@ -173,6 +175,13 @@ int main (int argc, char** argv)
             ejprobe::TailSpec spec; juce::String why;
             if (! ejprobe::parseTailArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
             ejprobe::runTail (*inst, spec);
+            std::fflush (stdout); std::_Exit (0);
+        }
+        if (materialM)
+        {
+            ejprobe::MaterialSpec spec; juce::String why;
+            if (! ejprobe::parseMaterialArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+            ejprobe::runMaterial (*inst, spec);
             std::fflush (stdout); std::_Exit (0);
         }
         if (burst)

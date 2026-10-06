@@ -54,6 +54,7 @@
 #include "EjmapGainCal.h"
 #include "EjmapTiming.h"
 #include "EjmapCombined.h"
+#include "EjmapMaterial.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include "EjmapCertReview.h"
@@ -2891,6 +2892,68 @@ inline int runCombined (const SweepOptions& opt)
     return 0;
 }
 
+// REAL MATERIAL (Kathy's NEXT BUILD item A2, 6 Oct; derivation in EjmapMaterial.h): the probe's generated vocal, drum loop and
+// full mix through the tone check's writes (its pick included), each at the material's RMS (the profile's own L for the tone
+// check's g, so the sine and the material meet at one level) after a quiet pass; GR over time against the curve at the pick.
+inline int runMaterial (const SweepOptions& opt)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("MATERIAL: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    if (hits.size() != 1) { say ("MATERIAL: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
+    const auto& desc = hits[0].desc;
+    const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (root.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
+    { say ("MATERIAL: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
+    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto pstem = juce::File::createLegalFileName (opt.product).replaceCharacter (' ', '_') + "_" + desc.version;
+    const auto profileFile = root.getChildFile ("profiles").getChildFile (pstem + ".json"), tcFile = root.getChildFile ("profiles").getChildFile (pstem + ".tonecheck.json");
+    const auto profile = juce::JSON::parse (profileFile.loadFileAsString()), tc = juce::JSON::parse (tcFile.loadFileAsString());
+    if (! profile.isObject() || ! tc.isObject()) { say ("MATERIAL: " + opt.product + ": no profile or tone check (" + profileFile.getFileName() + ", " + tcFile.getFileName() + ")"); return 4; }
+    const auto pick = tc.getProperty ("pick", {}); const double pickNorm = (double) pick.getProperty ("norm", -1.0), Lrms = (double) tc.getProperty ("L_rms_dbfs", -18.4);
+    if (pickNorm < 0.0) { say ("MATERIAL: " + opt.product + ": the tone check carries no pick"); return 4; }
+    juce::StringArray sets; int amountIdx = -1; bool pickWritten = false;
+    if (const auto* ws = tc.getProperty ("writes", {}).getArray())
+        for (const auto& w : *ws) { const int i = (int) w.getProperty ("index", -1); if (i < 0) continue; sets.add (juce::String (i) + ":" + juce::String ((double) w.getProperty ("norm", 0.0), 6)); if (w.getProperty ("why", "").toString().containsIgnoreCase ("pick")) { amountIdx = i; pickWritten = true; } }
+    if (! pickWritten)
+    {   // older tone checks list the pick separately: the amount control by name on the record
+        const auto record = juce::JSON::parse (latestRecordFor (root.getChildFile ("fixtures"), opt.product).loadFileAsString()); const auto amountName = profile.getProperty ("amount", {}).getProperty ("control", "").toString();
+        if (const auto* cs = record.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if (c.getProperty ("name", "").toString() == amountName) amountIdx = (int) c.getProperty ("index", -1);
+        if (amountIdx < 0) { say ("MATERIAL: " + opt.product + ": the amount control is not on the record"); return 4; }
+        sets.add (juce::String (amountIdx) + ":" + juce::String (pickNorm, 6));
+    }
+    const auto curve = material::curveAtPick (profile, pickNorm);
+    if (! curve.ok) { say ("MATERIAL: " + opt.product + ": " + curve.why); return 4; }
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("material"); outDir.createDirectory();
+    say ("MATERIAL: " + opt.product + " " + desc.version + ": the tone check's pick norm " + juce::String (pickNorm, 4) + " (g " + tc.getProperty ("g_db", 2.0).toString() + " at L " + juce::String (Lrms, 2) + " dBFS RMS), " + juce::String (sets.size()) + " write(s); three materials at " + juce::String (Lrms, 2) + " dBFS RMS");
+    juce::Array<juce::var> results; int okN = 0;
+    for (const auto& kind : material::kKinds)
+    {
+        juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--material", "kind=" + kind, "rms=" + juce::String (Lrms, 2), "quiet=-40", "seconds=6", "win_ms=50" };
+        if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
+        const auto r = runChild (args, opt.timeoutMs);
+        raw.getChildFile (stem + ".material." + kind + ".1.txt").replaceWithText (r.out, false, false, "\n");
+        if (r.kind == ChildResult::Kind::uiShown) { say ("MATERIAL: a window appeared; stopping"); return 5; }
+        const auto parsed = material::parseMaterial (r.cleanExit() ? r.out : juce::String ("refused " + r.describe()));
+        const auto res = material::derive (parsed, curve);
+        if (res.ok) ++okN;
+        say ("  " + kind + ": " + (res.ok ? "pass GR " + juce::String (res.grAtPassRmsDb, 2) + " dB at " + juce::String (res.passInRmsDb, 2) + " dBFS RMS (predicted " + juce::String (res.predAtPassRmsDb, 2) + "); per window median GR " + juce::String (res.medianGrDb, 2) + " vs predicted " + juce::String (res.medianPredDb, 2)
+                                   + " -> median miss " + juce::String (res.medianMissDb, 2) + ", worst " + juce::String (res.worstMissDb, 2) + ", p90 |miss| " + juce::String (res.p90AbsMissDb, 2) + " over " + juce::String (res.counted) + " of " + juce::String (res.windows) + " window(s)" + (res.beyond > 0 ? " (" + juce::String (res.beyond) + " beyond the curve's deepest level)" : juce::String())
+                                 : "refused - " + res.refused));
+        results.add (material::resultVar (res));
+    }
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("schema", "ej_material_pass/0"); o->setProperty ("status", "ACCURACY PASS A2 (6 Oct): data only, not exported, not published");
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("pick_norm", pickNorm); o->setProperty ("L_rms_dbfs", Lrms); o->setProperty ("writes", sets.joinIntoString (",")); o->setProperty ("prediction", "the profile's in_at_gr at the pick (interpolated across norm), inverted at each window's input RMS; GR(t) = quiet-pass gain - (out - in)(t); windows under -50 dBFS not counted");
+    o->setProperty ("signals", "generated by the probe (probe_material.h): a sung-like harmonic line with vibrato and breaths; a 100 BPM kick / snare / hat loop; the two with a bass and a pad; 6 s each, 50 ms windows, latency-aligned");
+    o->setProperty ("materials", results); o->setProperty ("measuredAt", nowStamp());
+    outDir.getChildFile (stem + ".material.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    say ("MATERIAL: -> " + outDir.getChildFile (stem + ".material.json").getFullPathName());
+    return okN > 0 ? 0 : 4;
+}
+
 inline int runGainCal (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
@@ -4568,7 +4631,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     {
         if (! phaseb::categoryRuns (cat, onlyCategories, redo)) continue;
         std::vector<PhaseBProduct> list;
-        if (cat.name == "gaincal" || cat.name == "timing" || cat.name == "combined")
+        if (cat.name == "gaincal" || cat.name == "timing" || cat.name == "combined" || cat.name == "material")
         {
             // every certified compressor: an exported row, or a record whose sweep is certified
             if (const auto* a = outcomes.getArray()) for (const auto& row : *a)
@@ -4654,7 +4717,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 if (cat.name == "timing" && pp.recordFile.isNotEmpty()) { tmp.getChildFile ("fixtures").createDirectory(); juce::File (pp.recordFile).copyFileTo (tmp.getChildFile ("fixtures").getChildFile (juce::File (pp.recordFile).getFileName())); }
                 juce::StringArray args { exe.getFullPathName(), cat.mode, pp.product };
                 if (cat.kindArg.isNotEmpty()) { args.add ("--kind"); args.add (cat.kindArg); }
-                if (cat.name == "combined") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts) live in the real folder
+                if (cat.name == "combined" || cat.name == "material") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts) live in the real folder
                 args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName() });
                 const auto t1 = juce::Time::getMillisecondCounterHiRes();
                 const auto r = runChild (args, (int) (cat.guardS * 1000.0));

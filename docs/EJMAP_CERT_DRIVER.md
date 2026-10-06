@@ -2715,3 +2715,28 @@ bx_opto GR miss −0.01 / out 0.00 (no timing positions: the tone check re-run w
 Lindell SBC −0.02 (shifts ~0); **Lindell 7X-500 −2.78** (Fast attack +3.41 and Slow release +3.20 predicted 10.61, measured
 7.83: the shifts do not add); **elysia mpressor +2.14** (150 ms + 5 ms predicted 0.27, measured 2.41). That non-additivity is
 A1's first finding; nothing is changed by it (data only).
+
+## 68. Accuracy pass A2, real material: `--redo material` (Kathy's NEXT BUILD, 6 Oct) — and a sidechain defect it found
+
+**The probe's `--material kind=vocal|drums|mix`** (`probe_material.h`): three GENERATED signals, nothing recorded — a sung-like
+harmonic line (a five-note phrase around 220 Hz, eight harmonics at −6 dB/oct, a 5 Hz 30-cent vibrato, syllables of 300–600 ms
+with breaths between), a 100 BPM kick / snare / hat loop (a hat on every sixteenth), and the two with a bass and a pad. Each is
+normalised to `rms` dBFS (never clipped: a peaky loop delivers less, and the pass line says what was delivered), rendered once
+at `quiet` (−40: the unit's static gain) and once at `rms`, after the `set=` writes; per 50 ms window on the input's clock
+(latency-aligned like the burst) the input and output RMS (`mwin`), per pass the whole RMS (`mpass`).
+**`--cert-material <product>`** (`EjmapMaterial.h`, pins MT1–MT6; Phase B category `material`, opt-in `--redo material`, over
+the exported compressors, inputs from `--cert-root`): the tone check's writes with its pick, the three materials at the tone
+check's own L (so the sine and the material meet at one RMS); GR(t) = quiet-pass gain − (out − in)(t); the prediction per
+window from the profile's `in_at_gr` at the pick (interpolated across the norm axis, inverted at the window's input RMS; under
+the 1 dB point it falls to 0 within a dB; above the deepest carried g clamped and flagged); windows under −50 dBFS not counted;
+the record keeps the whole-pass GR against the prediction at the pass RMS, the median / worst / p90 |miss| per window and the
+trace. Rehearsed on the six local profiles (51 s for all): vocal median misses 1.03 / 0.83 / 0.33 / −0.61 / −0.02 / 0.01 dB
+(bx_opto, C1 (s), mpressor, RCompressor (s), 7X-500, SBC), worst 2.3–5.1; drums read 3.2 / 3.7 dB MORE than the sine curve on
+bx_opto and the 7X-500 (peaky material on a programme-dependent detector — the finding), ~0 on the Waves. Data only.
+**THE DEFECT FOUND:** under the 6 Oct sidechain policy ("self-keyed (as EchoJay 04e)": the first extra input bus connected and
+fed the main signal) only the certification sweep wrote `r.fedIn` channels; every prototype mode — `--burst` (timing),
+`--response` (EQ, de-esser, saturation, multiband vocal), `--tail` (reverb / delay), `--hits` / `--ramp` (transient, gate),
+`--sweep-pitch` (tuners) and the new `--material` — wrote `r.mainIn` only, leaving a declared sidechain CONNECTED AND SILENT:
+C1 comp (s) read exactly 0.00 dB GR on every material. Fixed in all six (every mode writes `r.fedIn`); C1 now 3.44 dB.
+Sean's b0258a7b Phase B data is unaffected (that build's policy was "unconnected"), but any Phase B row measured by a build
+between 2c633870 and this commit on a product with an extra input bus would have been wrong — none was run.

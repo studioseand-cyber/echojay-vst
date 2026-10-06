@@ -1,0 +1,5 @@
+MATERIAL: elysia mpressor 1.15.1: the tone check's pick norm 0.2706 (g 2.0 at L -14.72 dBFS RMS), 18 write(s); three materials at -14.72 dBFS RMS
+  vocal: pass GR 3.09 dB at -14.72 dBFS RMS (predicted 2.00); per window median GR 2.53 vs predicted 2.22 -> median miss 0.33, worst 4.54, p90 |miss| 0.77 over 111 of 121 window(s)
+  drums: pass GR 1.86 dB at -16.41 dBFS RMS (predicted 0.90); per window median GR 0.96 vs predicted 0.00 -> median miss 0.06, worst -4.54, p90 |miss| 3.24 over 101 of 121 window(s)
+  mix: pass GR 1.43 dB at -15.06 dBFS RMS (predicted 1.79); per window median GR 0.59 vs predicted 1.06 -> median miss -0.15, worst -4.05, p90 |miss| 1.23 over 121 of 121 window(s)
+MATERIAL: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/material/.tmp-AudioUnit_49696d78_1.15.1/material/AudioUnit_49696d78_1.15.1.material.json
