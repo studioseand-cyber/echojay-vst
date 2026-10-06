@@ -55,6 +55,7 @@
 #include "EjmapTiming.h"
 #include "EjmapCombined.h"
 #include "EjmapMaterial.h"
+#include "EjmapFrequency.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include "EjmapCertReview.h"
@@ -2954,6 +2955,73 @@ inline int runMaterial (const SweepOptions& opt)
     return okN > 0 ? 0 : 4;
 }
 
+// FREQUENCY (Kathy's NEXT BUILD item A3, 6 Oct; derivation in EjmapFrequency.h): the tone check's process at the pick, at 100 Hz and
+// 5 kHz as well as 997 Hz, the same L; GR per tone and the move against 997; over 1 dB flags a frequency-dependent detector.
+inline int runFrequency (const SweepOptions& opt)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("FREQUENCY: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    if (hits.size() != 1) { say ("FREQUENCY: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
+    const auto& desc = hits[0].desc;
+    const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (root.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
+    { say ("FREQUENCY: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
+    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto pstem = juce::File::createLegalFileName (opt.product).replaceCharacter (' ', '_') + "_" + desc.version;
+    const auto tcFile = root.getChildFile ("profiles").getChildFile (pstem + ".tonecheck.json");
+    const auto tc = juce::JSON::parse (tcFile.loadFileAsString());
+    if (! tc.isObject()) { say ("FREQUENCY: " + opt.product + ": no tone check (" + tcFile.getFileName() + ")"); return 4; }
+    const auto pick = tc.getProperty ("pick", {}); const double pickNorm = (double) pick.getProperty ("norm", -1.0), Lrms = (double) tc.getProperty ("L_rms_dbfs", -18.4), Lpeak = Lrms + profile::kPeakToSineRmsDb;
+    if (pickNorm < 0.0) { say ("FREQUENCY: " + opt.product + ": the tone check carries no pick"); return 4; }
+    juce::StringArray sets; int amountIdx = -1;
+    if (const auto* ws = tc.getProperty ("writes", {}).getArray())
+        for (const auto& w : *ws) { const int i = (int) w.getProperty ("index", -1); if (i < 0) continue; if (w.getProperty ("why", "").toString().containsIgnoreCase ("pick")) { amountIdx = i; continue; } sets.add (juce::String (i) + ":" + juce::String ((double) w.getProperty ("norm", 0.0), 6)); }
+    if (amountIdx < 0)
+    {
+        const auto record = juce::JSON::parse (latestRecordFor (root.getChildFile ("fixtures"), opt.product).loadFileAsString()); const auto profile = juce::JSON::parse (root.getChildFile ("profiles").getChildFile (pstem + ".json").loadFileAsString());
+        const auto amountName = profile.getProperty ("amount", {}).getProperty ("control", "").toString();
+        if (const auto* cs = record.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if (c.getProperty ("name", "").toString() == amountName) amountIdx = (int) c.getProperty ("index", -1);
+        if (amountIdx < 0) { say ("FREQUENCY: " + opt.product + ": the amount control is not on the record"); return 4; }
+    }
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("frequency"); outDir.createDirectory();
+    juce::String toneLevels; { std::vector<double> q; for (const auto& [lo, hi] : sweep::kQuietLadder) { q.push_back (lo); q.push_back (hi); } std::sort (q.begin(), q.end()); for (double L : q) toneLevels << juce::String ((int) L) << ","; }
+    say ("FREQUENCY: " + opt.product + " " + desc.version + ": the tone check's pick norm " + juce::String (pickNorm, 4) + " at L " + juce::String (Lrms, 2) + " dBFS RMS; tones 100 / 997 / 5000 Hz");
+    std::map<double, std::optional<double>> grByHz;
+    for (double hz : frequency::kTonesHz)
+    {
+        juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--sweep", "thr=" + juce::String (amountIdx), "norms=" + juce::String (pickNorm, 6),
+                                 "levels=" + toneLevels + juce::String (Lpeak, 4), "hz=" + juce::String (hz, 0), "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
+        if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
+        const auto r = runChild (args, opt.timeoutMs);
+        raw.getChildFile (stem + ".frequency.hz" + juce::String (hz, 0) + ".1.txt").replaceWithText (r.out, false, false, "\n");
+        if (r.kind == ChildResult::Kind::uiShown) { say ("FREQUENCY: a window appeared; stopping"); return 5; }
+        std::optional<double> gr;
+        if (r.cleanExit())
+        {
+            sweep::ProcessOut po { r.out, true, r.describe(), (float) pickNorm };
+            const auto d = sweep::derive (sweep::mergeProcesses ({ juce::String(), true, "none", -1.0f }, { po }), { Lpeak }, -1, true);
+            const auto key = sweep::levelKey (Lpeak); gr = d.reduction.count (key) && ! d.reduction.at (key).empty() ? d.reduction.at (key)[0] : std::nullopt;
+        }
+        grByHz[hz] = gr;
+        say ("  " + juce::String (hz, 0) + " Hz: GR " + (gr ? juce::String (*gr, 2) + " dB" : "unreadable (" + r.describe() + ")"));
+    }
+    const auto v = frequency::judge (grByHz);
+    say ("FREQUENCY: " + opt.product + " - " + v.why);
+    auto rec = frequency::verdictVar (v);
+    if (auto* o = rec.getDynamicObject())
+    {
+        o->setProperty ("schema", "ej_frequency_pass/0"); o->setProperty ("status", "ACCURACY PASS A3 (6 Oct): data only, not exported, not published");
+        o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+        o->setProperty ("pick_norm", pickNorm); o->setProperty ("L_rms_dbfs", Lrms); o->setProperty ("writes", sets.joinIntoString (",")); o->setProperty ("method", "the tone check's process (quiet ladder + L, 2.5 s holds) at 100, 997 and 5000 Hz; GR = quiet reference gain - gain at L");
+        o->setProperty ("measuredAt", nowStamp());
+    }
+    outDir.getChildFile (stem + ".frequency.json").replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n");
+    say ("FREQUENCY: -> " + outDir.getChildFile (stem + ".frequency.json").getFullPathName());
+    return v.ok ? 0 : 4;
+}
+
 inline int runGainCal (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
@@ -4631,7 +4699,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     {
         if (! phaseb::categoryRuns (cat, onlyCategories, redo)) continue;
         std::vector<PhaseBProduct> list;
-        if (cat.name == "gaincal" || cat.name == "timing" || cat.name == "combined" || cat.name == "material")
+        if (cat.name == "gaincal" || cat.name == "timing" || cat.name == "combined" || cat.name == "material" || cat.name == "frequency")
         {
             // every certified compressor: an exported row, or a record whose sweep is certified
             if (const auto* a = outcomes.getArray()) for (const auto& row : *a)
@@ -4717,7 +4785,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 if (cat.name == "timing" && pp.recordFile.isNotEmpty()) { tmp.getChildFile ("fixtures").createDirectory(); juce::File (pp.recordFile).copyFileTo (tmp.getChildFile ("fixtures").getChildFile (juce::File (pp.recordFile).getFileName())); }
                 juce::StringArray args { exe.getFullPathName(), cat.mode, pp.product };
                 if (cat.kindArg.isNotEmpty()) { args.add ("--kind"); args.add (cat.kindArg); }
-                if (cat.name == "combined" || cat.name == "material") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts) live in the real folder
+                if (cat.name == "combined" || cat.name == "material" || cat.name == "frequency") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts) live in the real folder
                 args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName() });
                 const auto t1 = juce::Time::getMillisecondCounterHiRes();
                 const auto r = runChild (args, (int) (cat.guardS * 1000.0));

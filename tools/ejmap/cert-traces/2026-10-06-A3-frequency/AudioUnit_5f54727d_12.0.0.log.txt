@@ -1,0 +1,6 @@
+FREQUENCY: RCompressor (s) 12.0.0: the tone check's pick norm 0.8560 at L -14.45 dBFS RMS; tones 100 / 997 / 5000 Hz
+  100 Hz: GR 1.22 dB
+  997 Hz: GR 1.95 dB
+  5000 Hz: GR 1.96 dB
+FREQUENCY: RCompressor (s) - GR within 1.0 dB across the tones (largest move 0.73)
+FREQUENCY: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/frequency/.tmp-AudioUnit_5f54727d_12.0.0/frequency/AudioUnit_5f54727d_12.0.0.frequency.json

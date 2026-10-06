@@ -1,0 +1,6 @@
+FREQUENCY: Lindell 7X-500 1.2.2: the tone check's pick norm 0.2698 at L -18.00 dBFS RMS; tones 100 / 997 / 5000 Hz
+  100 Hz: GR 3.10 dB
+  997 Hz: GR 1.96 dB
+  5000 Hz: GR 1.95 dB
+FREQUENCY: Lindell 7X-500 - GR moves 1.14 dB with frequency (over 1.0): a sidechain filter or emphasis suspected
+FREQUENCY: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/frequency/.tmp-AudioUnit_6f457232_1.2.2/frequency/AudioUnit_6f457232_1.2.2.frequency.json

@@ -75,6 +75,7 @@
 #include "EjmapTiming.h"
 #include "EjmapCombined.h"
 #include "EjmapMaterial.h"
+#include "EjmapFrequency.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include <functional>
@@ -7350,6 +7351,15 @@ void testMaterial()
     Parsed quietOnly = p; quietOnly.loud.windows.clear(); quietOnly.ok = false; quietOnly.refused = "no complete quiet and loud pass in the trace";
     check (! derive (quietOnly, c).ok && ! derive (p, curveAtPick (juce::JSON::parse (R"json({"amount": {"curve": []}})json"), 0.5)).ok, "material MT6: no loud windows, or no curve at the pick, refuses");
 }
+/** FREQUENCY (EjmapFrequency.h; A3, 6 Oct): GR per tone against 997 Hz, the flag over 1 dB. */
+void testFrequency()
+{
+    using namespace ejmap::frequency;
+    const auto flat = judge ({ { 100.0, 2.1 }, { 997.0, 2.0 }, { 5000.0, 1.6 } }), filt = judge ({ { 100.0, 0.3 }, { 997.0, 2.0 }, { 5000.0, 2.2 } }), part = judge ({ { 100.0, std::nullopt }, { 997.0, 2.0 }, { 5000.0, 3.5 } });
+    check (flat.ok && ! flat.frequencyDependent && std::abs (flat.maxAbsDeltaDb - 0.4) < 1e-9 && std::abs (flat.deltaDb.at (100.0) - 0.1) < 1e-9, "frequency FQ1: 2.1 / 2.0 / 1.6 dB is within a dB: not flagged (largest move 0.4)");
+    check (filt.ok && filt.frequencyDependent && std::abs (filt.maxAbsDeltaDb - 1.7) < 1e-9 && filt.why.contains ("sidechain filter"), "frequency FQ2: 0.3 dB at 100 Hz against 2.0 at 997 is a 1.7 dB move: flagged frequency_dependent");
+    check (part.ok && part.frequencyDependent && part.unread == juce::StringArray { "100 Hz" } && ! judge ({ { 100.0, 2.0 }, { 5000.0, 2.0 } }).ok, "frequency FQ3: an unread tone is listed, not a zero; no 997 Hz reading refuses");
+}
 void testTimingSegments()
 {
     using namespace ejmap::timing;
@@ -7852,7 +7862,7 @@ void testTextPassTimeout()
 void testPhaseB()
 {
     using namespace ejmap::phaseb;
-    check (categories().size() == 15 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories().back().name == "gainall", "phaseb P1: fifteen categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, gain-all)");
+    check (categories().size() == 16 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories()[14].name == "frequency" && categories().back().name == "gainall", "phaseb P1: sixteen categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, frequency, gain-all)");
     for (const auto& c : categories()) check (c.guardS >= 600.0 && c.guardWhy.isNotEmpty(), "phaseb P2: " + c.name + " has a stated hang guard of at least 10 min (" + juce::String (c.guardS / 60.0, 0) + ")");
     check (categoryNamed ("saturation")->ledgerCategories.contains ("amp_sim") && modeWord ("--cert-reverb-delay") == "reverbdelay" && modeWord ("--cert-gain-cal") == "gaincal", "phaseb P3: amp sims ride with saturation; the mode word is the record folder");
     // the done marker: a row file, whole or absent
@@ -8090,6 +8100,7 @@ int main (int, char**)
     testTiming();
     testCombined();
     testMaterial();
+    testFrequency();
     testTimingSegments();
     testLimiter();
     testEq();

@@ -2740,3 +2740,12 @@ fed the main signal) only the certification sweep wrote `r.fedIn` channels; ever
 C1 comp (s) read exactly 0.00 dB GR on every material. Fixed in all six (every mode writes `r.fedIn`); C1 now 3.44 dB.
 Sean's b0258a7b Phase B data is unaffected (that build's policy was "unconnected"), but any Phase B row measured by a build
 between 2c633870 and this commit on a product with an extra input bus would have been wrong — none was run.
+
+## 69. Accuracy pass A3, frequency: `--redo frequency` (6 Oct)
+
+`--cert-frequency <product>` (`EjmapFrequency.h`, pins FQ1–FQ3; Phase B category `frequency`, opt-in): the tone check's process
+(its writes, its pick, its L, the quiet ladder) at 100 Hz and 5 kHz as well as 997; GR per tone and the move against 997 on
+`phaseb/frequency/frequency/<stem>.frequency.json`; a move over 1 dB flags `frequency_dependent` (a sidechain filter or
+emphasis). Rehearsed on the six local profiles (53 s): bx_opto 0.00, SBC 0.21, C1 (s) 0.62, RCompressor (s) 0.73 — not
+flagged; **elysia mpressor 1.52** (0.48 dB at 100 Hz: its sidechain filter) and **Lindell 7X-500 1.14** (3.10 at 100 Hz: more
+GR on lows) flagged. Data only.

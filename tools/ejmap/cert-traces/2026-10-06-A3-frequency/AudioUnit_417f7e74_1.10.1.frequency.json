@@ -1,0 +1,27 @@
+{
+  "gr_997_db": 1.99,
+  "gr_by_hz": {
+    "100": 1.99,
+    "997": 1.99,
+    "5000": 1.99
+  },
+  "delta_vs_997_db": {
+    "100": 0.0,
+    "997": 0.0,
+    "5000": 0.0
+  },
+  "max_abs_delta_db": 0.0,
+  "frequency_dependent": false,
+  "flag_db": 1.0,
+  "verdict": "GR within 1.0 dB across the tones (largest move 0.00)",
+  "schema": "ej_frequency_pass/0",
+  "status": "ACCURACY PASS A3 (6 Oct): data only, not exported, not published",
+  "product": "bx_opto",
+  "version": "1.10.1",
+  "identity": "AudioUnit|417f7e74|1.10.1",
+  "pick_norm": 0.452879259090909,
+  "L_rms_dbfs": -18.0,
+  "writes": "1:0.500000,3:0.000000,4:0.000000,5:0.000000,6:1.000000,7:0.000000,8:0.000000,9:1.000000",
+  "method": "the tone check's process (quiet ladder + L, 2.5 s holds) at 100, 997 and 5000 Hz; GR = quiet reference gain - gain at L",
+  "measuredAt": "20261006T190753"
+}

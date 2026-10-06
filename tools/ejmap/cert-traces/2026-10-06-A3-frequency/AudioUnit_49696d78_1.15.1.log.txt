@@ -1,0 +1,6 @@
+FREQUENCY: elysia mpressor 1.15.1: the tone check's pick norm 0.2706 at L -14.72 dBFS RMS; tones 100 / 997 / 5000 Hz
+  100 Hz: GR 0.48 dB
+  997 Hz: GR 1.99 dB
+  5000 Hz: GR 2.01 dB
+FREQUENCY: elysia mpressor - GR moves 1.52 dB with frequency (over 1.0): a sidechain filter or emphasis suspected
+FREQUENCY: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/frequency/.tmp-AudioUnit_49696d78_1.15.1/frequency/AudioUnit_49696d78_1.15.1.frequency.json

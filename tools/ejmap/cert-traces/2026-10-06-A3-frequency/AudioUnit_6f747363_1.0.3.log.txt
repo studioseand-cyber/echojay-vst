@@ -1,0 +1,6 @@
+FREQUENCY: Lindell SBC 1.0.3: the tone check's pick norm 0.5107 at L -18.40 dBFS RMS; tones 100 / 997 / 5000 Hz
+  100 Hz: GR 2.19 dB
+  997 Hz: GR 1.99 dB
+  5000 Hz: GR 1.99 dB
+FREQUENCY: Lindell SBC - GR within 1.0 dB across the tones (largest move 0.21)
+FREQUENCY: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/frequency/.tmp-AudioUnit_6f747363_1.0.3/frequency/AudioUnit_6f747363_1.0.3.frequency.json

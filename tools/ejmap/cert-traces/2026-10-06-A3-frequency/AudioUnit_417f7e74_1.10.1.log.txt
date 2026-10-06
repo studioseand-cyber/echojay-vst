@@ -1,0 +1,6 @@
+FREQUENCY: bx_opto 1.10.1: the tone check's pick norm 0.4529 at L -18.00 dBFS RMS; tones 100 / 997 / 5000 Hz
+  100 Hz: GR 1.99 dB
+  997 Hz: GR 1.99 dB
+  5000 Hz: GR 1.99 dB
+FREQUENCY: bx_opto - GR within 1.0 dB across the tones (largest move 0.00)
+FREQUENCY: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/frequency/.tmp-AudioUnit_417f7e74_1.10.1/frequency/AudioUnit_417f7e74_1.10.1.frequency.json
