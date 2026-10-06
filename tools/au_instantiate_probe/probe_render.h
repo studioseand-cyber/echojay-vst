@@ -109,6 +109,28 @@ inline void printLayoutSupport (juce::AudioPluginInstance& p)
     }
 }
 
+// THE SIDECHAIN POLICY SWITCH (6 Oct, an EXPERIMENT - the default is the shipped policy, unchanged): "unconnected" (the
+// render callback removed from every element past the main one, as Logic with no source), "silent" (every element
+// connected and fed zeros: the pre-4 Oct state), "self" (every element connected and fed the MAIN input's own signal: a
+// compressor keying from the sidechain hears what it would with the track routed to its own key), "echojay" (Sean's
+// amendment, 6 Oct: EchoJay since build 04e feeds the FIRST extra input from the slot's own input and leaves any further
+// extra input disconnected - the first element connected and fed the main signal, the rest unconnected). Set by a
+// `sidechain=<policy>` argument on any mode; printed on the policy line so a trace says which it ran under.
+inline juce::String& sidechainPolicy() { static juce::String s ("unconnected"); return s; }
+inline bool takeSidechainPolicyArg (int& argc, char** argv)
+{
+    for (int i = 1; i < argc; ++i)
+        if (std::strncmp (argv[i], "sidechain=", 10) == 0)
+        {
+            const juce::String v (argv[i] + 10);
+            if (v != "unconnected" && v != "silent" && v != "self" && v != "echojay") return false;
+            sidechainPolicy() = v;
+            for (int j = i; j + 1 < argc; ++j) argv[j] = argv[j + 1];
+            --argc; return true;
+        }
+    return true;
+}
+
 // CONFIGURE AND PREPARE, the one place the SIDECHAIN POLICY is applied, so every mode that renders gets it.
 inline void configureAndPrepare (juce::AudioPluginInstance& p, const RenderSpec& s)
 {
@@ -117,7 +139,8 @@ inline void configureAndPrepare (juce::AudioPluginInstance& p, const RenderSpec&
     const bool allEnabled = p.enableAllBuses();
     p.setRateAndBufferSizeDetails (s.sampleRate, s.block);
     const bool isAU = p.getPluginDescription().pluginFormatName == "AudioUnit";
-    std::printf ("policy\tsidechain\t%s\tenable_all_buses\t%s\n", isAU ? "unconnected" : "enabled_silent", allEnabled ? "ok" : "refused");
+    const auto pol = sidechainPolicy();
+    std::printf ("policy\tsidechain\t%s\tenable_all_buses\t%s\n", ! isAU ? "enabled_silent" : pol == "silent" ? "enabled_silent" : pol.toRawUTF8(), allEnabled ? "ok" : "refused");
     printBuses (p, "render");
     if (! isAU)
         for (int b = 1; b < p.getBusCount (true); ++b)
@@ -133,9 +156,9 @@ inline void configureAndPrepare (juce::AudioPluginInstance& p, const RenderSpec&
     // elements past the main one restores the DAW's state: the element stays declared and enabled, nothing is written
     // to it, and the plugin's pull on it fails as it does in Logic. AudioUnit only (a VST3's sidechain is the format's
     // own business and is left as it was: enabled, silent).
-    if (p.getPluginDescription().pluginFormatName == "AudioUnit")
+    if (p.getPluginDescription().pluginFormatName == "AudioUnit" && (pol == "unconnected" || pol == "echojay"))
         if (auto au = (AudioUnit) p.getPlatformSpecificData())
-            for (int b = 1; b < p.getBusCount (true); ++b)
+            for (int b = (pol == "echojay" ? 2 : 1); b < p.getBusCount (true); ++b)
             {
                 AURenderCallbackStruct none { nullptr, nullptr };
                 const auto rc = AudioUnitSetProperty (au, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, (UInt32) b, &none, sizeof none);
@@ -150,6 +173,16 @@ inline int mainInputChannels (juce::AudioPluginInstance& p)
 {
     return p.getBusCount (true) > 0 && p.getBus (true, 0) != nullptr && p.getBus (true, 0)->isEnabled()
              ? p.getBus (true, 0)->getNumberOfChannels() : 0;
+}
+// The input channels the stimulus is WRITTEN to: the main bus, or under the "self" policy every enabled input channel
+// (JUCE lays the sidechain buses' channels after the main bus's in the one buffer).
+inline int fedInputChannels (juce::AudioPluginInstance& p)
+{
+    const int main = mainInputChannels (p);
+    if (main == 0) return 0;
+    if (sidechainPolicy() == "self") return p.getTotalNumInputChannels();
+    if (sidechainPolicy() == "echojay") { auto* b1 = p.getBusCount (true) > 1 ? p.getBus (true, 1) : nullptr; return main + (b1 != nullptr && b1->isEnabled() ? b1->getNumberOfChannels() : 0); }
+    return main;
 }
 
 // The render. Returns nothing: every result is printed, and a crash is attributed by the last flushed stage line.

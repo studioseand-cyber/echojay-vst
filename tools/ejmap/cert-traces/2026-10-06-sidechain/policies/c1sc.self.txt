@@ -1,0 +1,49 @@
+probe: "C1 comp-sc (s)" | AudioUnit:Effects/aufx,C1CS,ksWV | uid=4937727d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	8	name	Threshold	positions	1	levels	1
+spec	hz	997.000	hold_s	2.500	discard_s	2.200	win_s	0.300	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0	signal	sine	hz2	0.000
+stage	configure
+policy	sidechain	self	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	340
+param	0	0.000000	Low/Peak Ref	Low Ref
+param	1	0.000000	LookAhead	Off
+param	2	0.460000	Comp Attack	2.00
+param	3	0.425000	Comp Release	50
+param	4	0.000000	Comp PDR Tc	0
+param	5	0.218000	Comp Ratio	1.00:1
+param	6	0.500000	Comp Makeup	0.0
+param	7	0.690000	Output Gain	0.0
+param	8	1.000000	Threshold	0.0
+param	9	1.000000	In Left Gain	0.0
+param	10	1.000000	In Right Gain	0.0
+param	11	0.000000	Filter Type	 Low-Pass
+param	12	0.849000	Filter Freq	7179
+param	13	1.000000	Filter Q	0.600
+param	14	0.000000	Monitor	    Audio
+param	15	0.000000	EQ Mode	Wideband
+param	16	0.000000	Key Mode	Stereo
+set	0	0.000000	confirm_ms	36.5	getValue	0.000000	landed_by	instack	render_blocks	0	text	Low Ref
+set	1	0.000000	confirm_ms	32.9	getValue	0.000000	landed_by	instack	render_blocks	0	text	Off
+set	2	0.460000	confirm_ms	33.2	getValue	0.460000	landed_by	instack	render_blocks	0	text	2.00
+set	3	0.425000	confirm_ms	33.2	getValue	0.425000	landed_by	instack	render_blocks	0	text	50
+set	4	0.000000	confirm_ms	34.4	getValue	0.000000	landed_by	instack	render_blocks	0	text	0
+set	6	0.500000	confirm_ms	33.1	getValue	0.500000	landed_by	instack	render_blocks	0	text	0.0
+set	7	0.690000	confirm_ms	32.7	getValue	0.690000	landed_by	instack	render_blocks	0	text	0.0
+set	9	1.000000	confirm_ms	34.7	getValue	1.000000	landed_by	instack	render_blocks	0	text	0.0
+set	10	1.000000	confirm_ms	32.5	getValue	1.000000	landed_by	instack	render_blocks	0	text	0.0
+set	11	0.000000	confirm_ms	32.9	getValue	0.000000	landed_by	instack	render_blocks	0	text	 Low-Pass
+set	12	0.849000	confirm_ms	33.2	getValue	0.849000	landed_by	instack	render_blocks	0	text	7179
+set	13	1.000000	confirm_ms	32.9	getValue	1.000000	landed_by	instack	render_blocks	0	text	0.600
+set	14	0.000000	confirm_ms	33.0	getValue	0.000000	landed_by	instack	render_blocks	0	text	    Audio
+set	15	0.000000	confirm_ms	33.4	getValue	0.000000	landed_by	instack	render_blocks	0	text	Wideband
+set	16	0.000000	confirm_ms	33.4	getValue	0.000000	landed_by	instack	render_blocks	0	text	Stereo
+set	5	0.484375	confirm_ms	52.8	getValue	0.484375	landed_by	pump	render_blocks	0	text	4.13:1
+stage	position
+pos	0	norm	0.897019	confirm_ms	48.27	slices	6	instack_match	0	getValue	0.897019	landed_by	pump	render_blocks	0	text_ms	21.0	reads	2	text	-10.3
+hold	0	-15.39	level_db	-19.0920	in_rms_db	-18.4003	tone_frac	1.0000	ch	-19.0920,-19.0920	doubled	0	last_move_db	0.0016	final_move_db	0.0016	win	-19.1845,-19.0927,-19.0911,-19.0907,-19.0920,-19.0933,-19.0927,-19.0911	nonfinite	0	out_peak_db	-16.0809	out_true_peak_db	-16.0808
+reread	0	steady
+timing	wall_ms	77.6	audio_s	2.500
+stage	done

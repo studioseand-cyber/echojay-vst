@@ -94,14 +94,14 @@ struct SweepRenderer
     juce::MidiBuffer midi;
     double sr, phase = 0.0, step;
     double phase2 = 0.0, step2 = 0.0;     // the second tone of a two-tone signal (0 = sine only)
-    int block, mainIn, mainOut;
+    int block, mainIn, mainOut, fedIn = 0;
 
     SweepRenderer (juce::AudioPluginInstance& proc, double sampleRate, int blockSize, double hz, double hz2 = 0.0)
         : p (proc), io (juce::jmax (2, proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels()), blockSize),
           sr (sampleRate), step (juce::MathConstants<double>::twoPi * hz / sampleRate),
           step2 (hz2 > 0.0 ? juce::MathConstants<double>::twoPi * hz2 / sampleRate : 0.0), block (blockSize)
     {
-        mainIn = mainInputChannels (proc);
+        mainIn = mainInputChannels (proc); fedIn = fedInputChannels (proc);
         mainOut = proc.getBusCount (false) > 0 && proc.getBus (false, 0) != nullptr && proc.getBus (false, 0)->isEnabled()
                     ? proc.getBus (false, 0)->getNumberOfChannels() : 0;
     }
@@ -150,7 +150,7 @@ struct SweepRenderer
             {
                 // Two-tone: each tone at amp / sqrt 2, so the RMS equals the sine's (amp^2/2) and the peak is 3.01 dB higher.
                 const float v = step2 > 0.0 ? (float) (amp * (std::sin (phase) + std::sin (phase2)) / std::sqrt (2.0)) : (float) (amp * std::sin (phase));
-                for (int ch = 0; ch < mainIn; ++ch) io.setSample (ch, n, v);
+                for (int ch = 0; ch < fedIn; ++ch) io.setSample (ch, n, v);
                 phase += step;
                 if (phase > juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
                 if (step2 > 0.0) { phase2 += step2; if (phase2 > juce::MathConstants<double>::twoPi) phase2 -= juce::MathConstants<double>::twoPi; }

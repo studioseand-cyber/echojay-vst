@@ -30,6 +30,7 @@
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
+    if (! ejprobe::takeSidechainPolicyArg (argc, argv)) { std::printf ("refused sidechain= must be unconnected, silent or self\n"); std::fflush (stdout); std::_Exit (3); }
     if (argc >= 2 && juce::String (argv[1]) == "--pitch-selftest") { const int rc = ejprobe::runPitchSelfTest(); std::fflush (stdout); std::_Exit (rc); }
     juce::AudioPluginFormatManager fm;
     juce::addDefaultFormatsToManager (fm);   // the HEADLESS module's registration (as ChainHost)
