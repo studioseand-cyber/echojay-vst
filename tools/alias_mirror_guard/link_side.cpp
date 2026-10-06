@@ -52,6 +52,50 @@ int main (int argc, char** argv)
     { auto* o = new juce::DynamicObject(); o->setProperty ("done", true); juce::File (H + "/link_done.json").replaceWithText (juce::JSON::toString (juce::var (o), true)); }
     edBase.reset();
     }
+    // ---- COMP_PROFILE_SPEC_v1 section 5: A RESTART KEEPS THE TRACK'S READING (2 Oct 2026 ruling) ----------
+    {
+        std::printf ("\n-- track_level survives a restart, and is never downgraded --\n");
+        // Sean's ruling: "Persist each Link track's last valid track_level reading in the Link's saved state,
+        // keyed to that track, so a Logic restart doesn't reset it; a fresh reading replaces it as soon as it has
+        // more heard audio than the stored one." The state chunk IS the key to the track - Logic hands the same
+        // chunk back to the Link on that channel - so persistence and keying are one mechanism, tested together.
+        auto fresh = std::make_unique<LinkProcessor>();
+        fresh->linkName = "Lead Vox"; fresh->prepareToPlay (48000.0, 512);
+        // A chunk from a session in which this track HAD been heard: 42 s of it.
+        auto saved = chunk (*fresh);
+        auto* so = saved.getDynamicObject();
+        so->setProperty ("tlRmsDbfs",  -14.25);
+        so->setProperty ("tlPeakDbfs", -2.50);
+        so->setProperty ("tlHeardS",   42.0);
+        const auto savedJson = juce::JSON::toString (saved, true);
+        // ...reopened: a NEW instance, as a restart gives.
+        auto reopened = std::make_unique<LinkProcessor>();
+        reopened->linkName = "Lead Vox"; reopened->prepareToPlay (48000.0, 512);
+        reopened->setStateInformation (savedJson.toRawUTF8(), (int) savedJson.getNumBytesAsUTF8());
+        const auto back = chunk (*reopened);
+        check (back.hasProperty ("tlHeardS")
+                   && std::abs ((double) back.getProperty ("tlHeardS",   juce::var()) - 42.0)   < 0.01
+                   && std::abs ((double) back.getProperty ("tlRmsDbfs",  juce::var()) + 14.25)  < 0.01
+                   && std::abs ((double) back.getProperty ("tlPeakDbfs", juce::var()) + 2.50)   < 0.01,
+               "a restart KEEPS the track's level reading  (RED as it stood: nothing persisted it, so a restart "
+               "threw the track's history away and the next build sent no level until it had played again)",
+               "rms " + juce::String ((double) back.getProperty ("tlRmsDbfs", juce::var()), 2)
+                   + " peak " + juce::String ((double) back.getProperty ("tlPeakDbfs", juce::var()), 2)
+                   + " heard " + juce::String ((double) back.getProperty ("tlHeardS", juce::var()), 0) + "s");
+        // THE OTHER DIRECTION: more heard audio wins, so a SHORTER reading must not overwrite a longer one. A
+        // session reopened from an older chunk cannot quietly downgrade what the track already knows.
+        so->setProperty ("tlHeardS",  5.0);
+        so->setProperty ("tlRmsDbfs", -30.0);
+        const auto shorter = juce::JSON::toString (saved, true);
+        reopened->setStateInformation (shorter.toRawUTF8(), (int) shorter.getNumBytesAsUTF8());
+        const auto after = chunk (*reopened);
+        check (std::abs ((double) after.getProperty ("tlHeardS", juce::var()) - 42.0) < 0.01
+                   && std::abs ((double) after.getProperty ("tlRmsDbfs", juce::var()) + 14.25) < 0.01,
+               "...and a SHORTER reading does not replace it - more heard audio wins, in every direction",
+               "heard " + juce::String ((double) after.getProperty ("tlHeardS", juce::var()), 0)
+                   + "s rms " + juce::String ((double) after.getProperty ("tlRmsDbfs", juce::var()), 2));
+    }
+
     std::printf ("\n==== alias_mirror_guard (link side): %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

@@ -13,6 +13,7 @@
 
 #include <JuceHeader.h>
 #include "EJTrackLevel.h"
+#include "ChainHost.h"   // 2 Oct 2026: the parked-rack leg drives the real tap through ChainHost::process
 #include <cstdio>
 #include <cmath>
 #include <vector>
@@ -70,21 +71,74 @@ void guardMain()
 {
     std::printf ("== track_level_guard: COMP_PROFILE_SPEC_v1 section 5 ==\n");
 
-    std::printf ("\n-- (1) under 20 s heard there is NO answer --\n");
+    std::printf ("\n-- (1) THREE seconds is an answer, and silence never is (2 Oct 2026 ruling) --\n");
     {
+        // SUPERSEDED EXPECTATION, RE-RULED 2 Oct 2026. This leg asserted that 10 s of audio gives NO reading -
+        // the spec's old "under 20 s heard: send null". Sean withdrew the 20 s floor: it meant a build on a track
+        // that had played a few seconds sent no level at all, so the server computed no threshold and fell back,
+        // on exactly the turns someone is auditioning a short phrase. The floor is 3 s of audio ABOVE THE GATE,
+        // heard_s still rides the payload so the server can weigh it, and null is reserved for the one case that
+        // really has no answer: nothing above the gate was ever heard.
         echojay::TrackLevel tl; tl.prepare (kSr);
         feed (tl, take (10.0, -12.0f, -30.0f, 0.25));
         const auto r = tl.read();
-        check (! r.valid,
-               "(1) 10 s of audio gives no reading - the spec's null  (RED as it stood: there was no track_level "
-               "at all, so the server had no level to compute a threshold from)",
+        check (r.valid,
+               "(1) 10 s of audio DOES give a reading  (RED as it stood: the 20 s floor returned null here, and "
+               "the server fell back to no threshold at all)",
                "heard " + f1 (r.heardSeconds) + " s, valid=" + (r.valid ? "y" : "n"));
-        check (tl.toVar().isVoid(),
-               "(1) ...and the wire field is null, not a number and not an object",
+        check (! tl.toVar().isVoid(),
+               "(1) ...and the wire field is an object, not null",
                tl.toVar().isVoid() ? juce::String ("void") : juce::JSON::toString (tl.toVar()));
         check (std::abs (r.heardSeconds - 10.0f) < 0.6f,
-               "(1) ...while the heard time it reports is the audio it actually got",
-               f1 (r.heardSeconds) + " s of 10.0");
+               "(1) ...and heard_s still reports the audio it actually got, so the server can say how much it was "
+               "set from", f1 (r.heardSeconds) + " s of 10.0");
+    }
+
+    std::printf ("\n-- (1b) 6 s of vocal produces a reading; SILENCE ALONE produces null --\n");
+    {
+        // Sean's two RED tests, together, because they are the same rule from both sides.
+        echojay::TrackLevel six; six.prepare (kSr);
+        feed (six, take (6.0, -14.0f, -32.0f, 0.3));
+        const auto r6 = six.read();
+        check (r6.valid && std::abs (r6.loudRmsDbfs + 14.0f) < 1.0f,
+               "(1b) 6 s of vocal gives a reading, at the level it was fed",
+               "valid=" + juce::String (r6.valid ? "y" : "n") + " rms " + f1 (r6.loudRmsDbfs)
+                   + " heard " + f1 (r6.heardSeconds) + " s");
+        // SILENCE: forty seconds of it, far past both the 3 s floor and the settle window, so this cannot pass by
+        // simply not having waited long enough. Below the gate is not programme: it never enters the histogram and
+        // never advances the heard clock, so there is nothing to report and the field is null.
+        echojay::TrackLevel quiet; quiet.prepare (kSr);
+        feed (quiet, { Phrase { 40.0, -200.0f } });
+        const auto rq = quiet.read();
+        check (! rq.valid && rq.heardSeconds <= 0.0f,
+               "(1b) ...while 40 s of SILENCE gives null - below the gate is not programme, and no amount of it "
+               "becomes one",
+               "valid=" + juce::String (rq.valid ? "y" : "n") + " heard " + f1 (rq.heardSeconds) + " s");
+        check (quiet.toVar().isVoid(),
+               "(1b) ...and that one really is null on the wire",
+               quiet.toVar().isVoid() ? juce::String ("void") : juce::JSON::toString (quiet.toVar()));
+    }
+
+    std::printf ("\n-- (1c) a clip SHORTER than 3 s, once it has played through --\n");
+    {
+        // "If the clip is shorter, send what was heard once it has played through." Measured on the SAMPLE clock -
+        // audio that stopped arriving - so a guard can drive it and it cannot drift with machine load.
+        echojay::TrackLevel tl; tl.prepare (kSr);
+        feed (tl, take (1.6, -11.0f, -40.0f, 0.1));          // under the floor
+        const auto mid = tl.read();
+        check (! mid.valid,
+               "(1c) 1.6 s and still arriving: no answer yet - the floor is not abandoned, only bounded",
+               "valid=" + juce::String (mid.valid ? "y" : "n") + " heard " + f1 (mid.heardSeconds) + " s");
+        feed (tl, { Phrase { 2.5, -200.0f } });              // the clip ended: silence, past kSettledAfterS
+        const auto done = tl.read();
+        check (done.valid && std::abs (done.loudRmsDbfs + 11.0f) < 1.5f,
+               "(1c) ...and once it has played through, what was heard IS the answer  (RED as it stood: a clip "
+               "shorter than the floor waited for audio that was never coming)",
+               "valid=" + juce::String (done.valid ? "y" : "n") + " rms " + f1 (done.loudRmsDbfs)
+                   + " heard " + f1 (done.heardSeconds) + " s");
+        check (std::abs (done.heardSeconds - 1.6f) < 0.6f,
+               "(1c) ...and heard_s says how little it was: the server is told, not misled",
+               f1 (done.heardSeconds) + " s");
     }
 
     std::printf ("\n-- (2) the 95th percentile IS the loud phrases --\n");
@@ -267,6 +321,40 @@ void guardMain()
         check (std::abs (rc.loudPeakDbfs - wantPeak) <= 0.2f,
                "(8) ...and on a take with no outlier it is simply the peak of the material",
                juce::String (rc.loudPeakDbfs, 2) + " dBFS, wanted " + juce::String (wantPeak, 2));
+    }
+
+    // ---- THE READING EXISTS WITH NO SLOTS IN THE RACK (2 Oct 2026, Sean's finding 2) ----------------------
+    // The Link publishes this reading for V2 to send on a Link-rack build, and while V2 HOLDS the rack the Link's
+    // own chain is PARKED at 0 slots (RACK_BORROW_IMPLEMENTATION_SPEC §1/§2 - V2 owns the instances). So the
+    // measurement has to be independent of what the rack contains, or the publish is dead code on exactly the
+    // turn that needs it. ChainHost::process feeds the tap on BOTH its paths - the normal one and the dry
+    // pass-through it takes when the graph lock is busy - before anything about slot count, and that is what this
+    // pins: an empty rack still measures its input.
+    {
+        std::printf ("\n-- an EMPTY rack still measures its input (the parked-while-borrowed case) --\n");
+        ChainHost h;
+        h.prepare (48000.0, 512);
+        check (h.getNumSlots() == 0, "precondition: no slots, as a parked Link's chain has none",
+               juce::String (h.getNumSlots()));
+        juce::AudioBuffer<float> buf (2, 512);
+        juce::MidiBuffer midi;
+        const double inc = 2.0 * juce::MathConstants<double>::pi * 997.0 / 48000.0;
+        double phase = 0.0;
+        const float amp = juce::Decibels::decibelsToGain (-12.0f) * std::sqrt (2.0f);
+        const int blocks = (int) std::lround (25.0 * 48000.0 / 512.0);   // 25 s: past the spec's 20 s floor
+        for (int b = 0; b < blocks; ++b)
+        {
+            for (int i = 0; i < 512; ++i) { const float v = amp * (float) std::sin (phase); phase += inc;
+                                            buf.setSample (0, i, v); buf.setSample (1, i, v); }
+            h.process (buf, midi);
+        }
+        const auto r = h.trackLevelReading();
+        check (r.valid, "an empty rack's input is still measured, so a parked Link can publish  (RED as it stood "
+                        "if the tap had sat behind the slot graph: the reading would never become valid)",
+               juce::String ("valid=") + (r.valid ? "y" : "n") + " heard=" + juce::String ((int) r.heardSeconds) + "s");
+        check (std::abs (r.loudRmsDbfs + 12.0f) < 0.5f,
+               "...and it reads the level that was fed, not a dry-path artefact",
+               juce::String (r.loudRmsDbfs, 2) + " dBFS for a -12 dBFS tone");
     }
 
     std::printf ("\n==== track_level_guard: %s (%d assertion(s) failed) ====\n",

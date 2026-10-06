@@ -3451,6 +3451,14 @@ private:
     int  figureCardHeight(const ChatMsg& msg) const;
     void drawCompareFigureCard(juce::Graphics& g, juce::Rectangle<int> area,
                                const ChatMsg& msg);
+    /** 3 Oct 2026: true when this edit's recorded result says it was NOT applied. A calibration loop
+        must not start from a refused edit. See the .cpp for the session that made this a rule. */
+    bool editWasRefused (const juce::String& editJson) const;
+    /** 3 Oct 2026: DOES THIS TURN GO OUT AS turnType=chain_edit? True when the classifier's own intent is
+        chain_edit AND the flag file is present. Pure and static so a guard can drive the decision itself: the
+        two call sites are inside a network response callback, and a condition no test can reach is a condition
+        that gets edited by hand. See ChainHost::turnTypeEditEnabled. */
+    static bool sendsChainEditTurnType (const juce::String& classifierIntent);
     void applyChainEditFromMsg(int msgIdx);
 
     // ---- ASK choice chips (Phase 1b, B2 docked-shelf layout) ----------------
@@ -3890,6 +3898,9 @@ private:
     // 21t-g item 2: one line builder behind both blocks, and the single-track block itself.
     juce::String levelsTokensFor (const juce::String& uid, juce::String* nameOut = nullptr,
                                   float* trimOut = nullptr) const;
+    /** COMP_PROFILE_SPEC_v1 section 5: set the request's track_level from the TARGET track's tap
+        (a Link's published reading), or send none. Never V2's own tap for a Link turn. */
+    void applyTrackLevelForTurn (const juce::String& targetUid = {});
     juce::String buildTrackLevelsContext (const juce::String& targetUid = {});
     /** 21t-h: a reply's <<<ECHOJAY_LEVEL_MATCH>>> block -> the card text (one line per member, with its delta) and
         the editData the apply path already reads. Empty when the payload names no members. */

@@ -2154,6 +2154,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // wet-only change on an untouched slot would otherwise never
             // reach the rack. Keyed on the slot's identity: a stale index
             // is REJECTED by the Link, never remapped.
+            //
+            // 2 Oct 2026: THE VERB IS STILL WRITTEN WHILE WE HOLD THE RACK, and slotwet_knobpath is the guard that
+            // says so - "the V2 knob on a HELD Link-rack slot writes the BorrowHost (heard) AND the Link verb". I
+            // suppressed this write for a day on the strength of Sean's 28 "slotWet REJECTED" lines, and that was
+            // the wrong side: the rule here is deliberate and tested, and the refusals were the LINK answering for
+            // a rack it has parked. The noise is fixed where the noise is made, and the value's survival is the
+            // deselect plan's job (OpType::Values now carries wet and bypass for every surviving slot).
             sendLinkSlotWetCommand(uid, i, bh->slotIdentityHex(i), v);
             return;
         }
@@ -6404,7 +6411,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     const juce::String cmpChatId = currentChatId;   // persist target captured at compose time
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
-    api.setTrackLevelVar(processorRef.getChainHost().trackLevelVar());   // spec section 5: the track's loud level
+    applyTrackLevelForTurn();   // spec section 5: from the TARGET track's tap, never V2's own
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -8572,6 +8579,10 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
             // re-check. The sidecar uid is HEX (server-oriented); the state
             // policy compares decimal — converted HERE, the one consumer
             // seam, or every known-uid slot withholds its own state.
+            // THE RACK'S LEVEL MATCH COMES ACROSS WITH IT (5 Oct 2026). restoreSavedChain applies these; without
+            // them every borrowed slot started at 0 dB and a compressor build's make-up was silently discarded.
+            if (s.outGainDb != 0.0f) o->setProperty("outGainDb", (double) s.outGainDb);
+            if (s.preTrimDb != 0.0f) o->setProperty("preTrimDb", (double) s.preTrimDb);
             if (s.format.isNotEmpty())  o->setProperty("format",  s.format);
             if (s.uid.isNotEmpty())
                 o->setProperty("uid", LinkShm::sidecarUidToStateUid(s.uid));
@@ -24635,22 +24646,42 @@ void EchoJayEditor::sayCalibrationCouldNotStart (const juce::String& uid, const 
     auto* host = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor (uid);
     const int calSlot = calibrationSlotIndexOf (payload);
     juce::String name;
-    if (host != nullptr && calSlot >= 0 && calSlot < host->getNumSlots())
-        name = host->getSlotInfo (calSlot).name;
-    if (name.isEmpty())
-    {   // the slot never landed: name it from the block, which is the only place left that knows
-        auto* co = payload.getProperty ("calibration", juce::var()).getDynamicObject();
-        if (co != nullptr) name = co->getProperty ("plugin").toString();
-    }
+    // THE BLOCK'S OWN IDENTITY FIRST, NEVER THE LIVE SLOT AT ITS INDEX (2 Oct 2026 ruling). This read the live
+    // rack at the block's shipped index, so after a failed load compacted the rack it named whatever had moved
+    // into that position - Sean was told "I could not start landing Lustrous Plates" about a plugin nothing had
+    // asked to land, while the CL 1B the block was actually about never got its check.
+    juce::String meant;
+    if (auto* co = payload.getProperty ("calibration", juce::var()).getDynamicObject())
+        meant = co->getProperty ("plugin").toString().trim();
+    if (meant.isEmpty())
+        if (auto* arr = payload.getProperty ("chain", juce::var()).getArray())
+            if (juce::isPositiveAndBelow (calSlot, arr->size()))
+                meant = (*arr)[calSlot].getProperty ("name", juce::var()).toString().trim();
+    // Is the plugin the block meant actually in the rack, and where?
+    int liveSlot = -1;
+    if (host != nullptr && meant.isNotEmpty())
+        for (int i = 0; i < host->getNumSlots(); ++i)
+            if (host->getSlotInfo (i).name.trim().equalsIgnoreCase (meant)) { liveSlot = i; break; }
+    name = meant;
+    if (name.isEmpty() && host != nullptr && calSlot >= 0 && calSlot < host->getNumSlots())
+        name = host->getSlotInfo (calSlot).name;   // last resort, and only when the block named nobody
     if (name.isEmpty()) name = "that compressor";
     const juce::String why = (host == nullptr)            ? "its rack is not held here"
                            : (calSlot < 0)                ? "the build named no slot to land"
                            : (calSlot >= host->getNumSlots()) ? "it never arrived in the rack"
                                                           : "its settings never landed";
-    EchoJay_NSLog (("EJThreshold: COULD NOT START LANDING \"" + name + "\" - " + why).toRawUTF8());
-    appendLocalResultBubble ("I could not start landing " + name + " - " + why
-                             + ". It is running at the settings the build gave it; say \"land it\" and I will "
-                             "try again.");
+    EchoJay_NSLog (("EJThreshold: COULD NOT START LANDING \"" + name + "\" - " + why
+                    + (liveSlot < 0 ? juce::String (" [the block's plugin is NOT in the rack: refused, and the "
+                                                    "user is told nothing - the load failure reports itself]")
+                                    : juce::String())).toRawUTF8());
+    // A REFUSED BLOCK SAYS NOTHING TO THE USER (2 Oct 2026 ruling). When the plugin the block named is not in the
+    // rack, there is nothing of its to land and no sentence worth showing: the thing that went wrong is the LOAD,
+    // and that reports itself by name. The old line turned one failure into two messages, the second about the
+    // wrong plugin entirely.
+    if (liveSlot >= 0)
+        appendLocalResultBubble ("I could not start landing " + name + " - " + why
+                                 + ". It is running at the settings the build gave it; say \"land it\" and I will "
+                                 "try again.");
 }
 
 int EchoJayEditor::calibrationSlotIndexOf (const juce::var& payload)
@@ -24725,16 +24756,37 @@ int EchoJayEditor::startCalibrationFromChain (const juce::String& uid, const juc
                                                            [host] (int sl) { return host->getSlotInfo (sl).name; },
                                                            cfgs, whyAll);
     if (whyAll.isNotEmpty()) EchoJay_NSLog (("EJThreshold: BLOCK(S) NOT AS CONTRACTED - " + whyAll).toRawUTF8());
-    if (found == 0)
+    // ---- REMAP EACH BLOCK TO THE SLOT'S IDENTITY, NOT ITS INDEX (2 Oct 2026 ruling) -----------------------
+    // The rule and the reason live with the parser, in CalibLoop::remapBlocksToIdentity, so a guard drives it on
+    // Sean's own rack without an editor. Here it is just the two name lists and the refusal.
     {
-        EchoJay_NSLog ("EJThreshold: no usable calibration block on this chain - nothing started");
-        return 0;
+        juce::StringArray shipped, live;
+        if (auto* arr = chain.getProperty ("chain", juce::var()).getArray())
+            for (const auto& e : *arr) shipped.add (e.getProperty ("name", juce::var()).toString().trim());
+        for (int i = 0; i < host->getNumSlots(); ++i) live.add (host->getSlotInfo (i).name.trim());
+        const int moved = echojay::CalibLoop::remapBlocksToIdentity (cfgs, shipped, live);
+        if (moved > 0)
+            EchoJay_NSLog (("EJThreshold: " + juce::String (moved) + " calibration block(s) REMAPPED to the live "
+                            "slot of the plugin they name - the rack compacted under them").toRawUTF8());
+        for (const auto& c : cfgs)
+            if (c.slot < 0)
+                EchoJay_NSLog (("EJThreshold: block DROPPED \"" + c.plugin + "\" - that plugin is not in the "
+                                "rack, so there is nothing of its to land. The user is told nothing: the load "
+                                "failure is the thing worth reporting, and it reports itself.").toRawUTF8());
+        cfgs.erase (std::remove_if (cfgs.begin(), cfgs.end(),
+                                    [] (const echojay::CalibLoop::Config& c) { return c.slot < 0; }),
+                    cfgs.end());
+        if (cfgs.empty())
+        {
+            EchoJay_NSLog ("EJThreshold: no calibration block still names a plugin in this rack - nothing started");
+            return 0;
+        }
     }
-    if (found > 1)
+    if ((int) cfgs.size() > 1)
     {
         for (auto& c : cfgs) c.purpose = purpose;
         const int started = processorRef.calibStartMany (uid, cfgs);
-        EchoJay_NSLog (("EJThreshold: " + juce::String (found) + " compressor block(s) on this build -> "
+        EchoJay_NSLog (("EJThreshold: " + juce::String ((int) cfgs.size()) + " dynamics block(s) on this build -> "
                         + juce::String (started) + " hold(s) started, one closing line").toRawUTF8());
         return started;
     }
@@ -24803,6 +24855,16 @@ int EchoJayEditor::startCalibrationForEdit (const juce::String& uid, const juce:
                                             echojay::CalibLoop::Purpose purpose)
 {
     if (editJson.isEmpty()) return 0;
+    // ONLY FROM AN EDIT THAT APPLIED (3 Oct 2026 ruling), AT THE CHOKE POINT. The three callers check too,
+    // because each has its own thing to NOT do afterwards (none of them may post "nothing started" over a card
+    // that already says "not applied"). This is the one every road passes through, so a road added later cannot
+    // reintroduce the fault by forgetting: Sean's 08:03 edit was refused with `base=0 [] live=4` and a loop ran
+    // on the rack anyway, dialling a compressor nobody had agreed to add.
+    if (editWasRefused (editJson))
+    {
+        EchoJay_NSLog ("EJThreshold: edit was NOT APPLIED - no calibration started (startCalibrationForEdit)");
+        return 0;
+    }
     const auto v = juce::JSON::parse (editJson);
     if (const int n = startCalibrationFromChain (uid, v, purpose)) return n;
     auto ops = v.getProperty ("ops", juce::var());
@@ -24872,6 +24934,10 @@ void EchoJayEditor::calibTickAndPost (const juce::String& uid)
     if (ask.isNotEmpty()) postOrReplaceSettleLine (uid, ask, replaces);
     const auto closing = processorRef.calibTakeClosing (uid);
     if (closing.isNotEmpty()) appendLocalResultBubble (closing);
+    // 6 Oct 2026 (Sean's ruling for 06a): an edit the Link never confirmed is DROPPED, and the user is told once.
+    // Drained here because this is where the processor's other one-shot chat line is drained - one door, not two.
+    const auto parkedNotice = processorRef.takeBorrowParkedNotice();
+    if (parkedNotice.isNotEmpty()) appendLocalResultBubble (parkedNotice);
 }
 
 // level_match (21t-c, 25 Sep 2026): the group's levels, applied as a MOVE PER MEMBER.
@@ -25198,6 +25264,36 @@ void EchoJayEditor::pollTrimVerification()
     repaint();
 }
 
+// A LOOP STARTS ONLY FROM AN EDIT THAT APPLIED (3 Oct 2026 ruling, Sean's 08:03 session).
+//
+// His log: "08:03:48.346 Not applied: this edit works on slot 2, and the rack no longer has that slot" and then
+// "08:03:52.485 local edit settled (slot landed, bound expired) -> 1 loop(s) started". The loop start is on a
+// TIMER and never consulted the result, so a refused edit calibrated anyway - and in that session it then walked
+// the CL 1B's Threshold on the strength of an edit the rack had rejected.
+//
+// The result is already recorded by then: retireLinkEditCard stores it on the chat message four seconds earlier,
+// keyed by the edit's own JSON (the same key it uses, because the display list can shift while the ack is in
+// flight). So this reads the recorded result rather than racing it.
+// 3 Oct 2026, Sean's 08:03 session item 8: THE TURN TYPE, BEHIND A FLAG.
+// His "harder" turn went out as turnType=chain_generate and came back with no base slots, because the turn type
+// is staged from hadChainFeed alone, BEFORE the classifier answers. The classifier said chain_edit. So: send
+// chain_edit when it says chain_edit - but only with ~/Library/EchoJay/turntype_edit_on.txt present, because B
+// has not yet confirmed the server handles that turn type, and shipping it unconfirmed would turn one broken
+// edit into every edit broken. Default OFF means byte-for-byte today's behaviour.
+bool EchoJayEditor::sendsChainEditTurnType (const juce::String& classifierIntent)
+{
+    return ChainHost::turnTypeEditEnabled() && classifierIntent == "chain_edit";
+}
+
+bool EchoJayEditor::editWasRefused (const juce::String& editJson) const
+{
+    for (const auto& cm : chatMessages)
+        if (cm.editData == editJson && cm.editResult.isNotEmpty())
+            return cm.editResult.startsWithIgnoreCase ("not applied")
+                || cm.editResult.containsIgnoreCase ("not_applied");
+    return false;      // no result recorded yet: not a refusal, and the callers below say so
+}
+
 void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
 {
     if (msgIdx < 0 || msgIdx >= (int)chatMessages.size()) return;
@@ -25411,6 +25507,12 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                     auto after = [safeThis, editUid, editJson] (bool ready, const char* what)
                     {
                         if (safeThis == nullptr) return;
+                        // ONLY FROM AN EDIT THAT APPLIED (3 Oct 2026 ruling). See editWasRefused.
+                        if (safeThis->editWasRefused (editJson))
+                        {
+                            EchoJay_NSLog ("EJThreshold: edit was NOT APPLIED - no calibration started (borrowed rack)");
+                            return;
+                        }
                         const int started = safeThis->startCalibrationForEdit (editUid, editJson, echojay::CalibLoop::Purpose::buildHold);
                         if (auto* h = editUid.isEmpty() ? &safeThis->processorRef.getChainHost()
                                                         : safeThis->processorRef.borrowHostIfActiveFor (editUid))
@@ -25436,6 +25538,12 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 auto after = [safeThis, editUid, editJson] (bool ready)
                 {
                     if (safeThis == nullptr) return;
+                    // ONLY FROM AN EDIT THAT APPLIED (3 Oct 2026 ruling). See editWasRefused.
+                    if (safeThis->editWasRefused (editJson))
+                    {
+                        EchoJay_NSLog ("EJThreshold: edit was NOT APPLIED - no calibration started (local rack)");
+                        return;
+                    }
                     const int started = safeThis->startCalibrationForEdit (editUid, editJson, echojay::CalibLoop::Purpose::buildHold);
                     safeThis->processorRef.getChainHost().setLoopsStarted (started);   // 21t-m item 1
                     EchoJay_NSLog (("EJThreshold: local edit settled (slot landed"
@@ -25446,7 +25554,10 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 if (calSlot >= 0)
                     processorRef.getChainHost().whenSlotReady (calSlot, ChainHost::kMapFetchBoundMs, after);
                 else
-                    startCalibrationForEdit (editUid, editJson, echojay::CalibLoop::Purpose::buildHold);
+                    if (! editWasRefused (editJson))
+                        startCalibrationForEdit (editUid, editJson, echojay::CalibLoop::Purpose::buildHold);
+                    else
+                        EchoJay_NSLog ("EJThreshold: edit was NOT APPLIED - no calibration started (no slot to wait for)");
             }
         }
         return;
@@ -27308,6 +27419,59 @@ juce::String EchoJayEditor::levelsTokensFor (const juce::String& uid, juce::Stri
 // compressor on a single track can be set from the figures already kept instead of asking the user to play it
 // again. Empty when the chat is not on a channel, or when that channel has no frame - an empty block is better
 // than a block of "no reading", which would read as a measurement that failed rather than one never taken.
+// COMP_PROFILE_SPEC_v1 section 5: THE LEVEL COMES FROM THE TRACK THE TURN IS ABOUT (2 Oct 2026 ruling).
+//
+// Every send site used to read processorRef.getChainHost().trackLevelVar() - V2's OWN pre-chain tap. On Sean's
+// 14:20 session V2 sits on Stereo Out and the build targeted a Link rack on Aitch_4_01, so the body carried
+// loud_rms -12.47 / loud_peak +0.76: the finished mix, not the vocal. The Link's own tap read PEAK -5.0. Section 6
+// turns that number straight into a compressor threshold, so a reading from the wrong signal is worse than none -
+// it is confidently wrong, and nothing downstream can tell.
+//
+// The target is derived exactly as buildTrackLevelsContext derives it, for the same reason: the first build on a
+// freshly selected channel has no chat record yet, so workingOnUid() is empty on the turn that matters most.
+//
+// WHEN A LINK TRACK IS THE SUBJECT AND IT HAS PUBLISHED NO READING, NOTHING IS SENT. The spec makes track_level
+// optional ("under 20 s heard: send null... the server does not compute a threshold and falls back"), so absence
+// is a defined, safe state. Falling back to V2's own tap is the bug this fixes, and it must not come back as a
+// convenience.
+void EchoJayEditor::applyTrackLevelForTurn (const juce::String& targetUid)
+{
+    const juce::String uid = targetUid.isNotEmpty() ? targetUid
+                           : (processorRef.pendingChannelUid.isNotEmpty() ? processorRef.pendingChannelUid
+                                                                         : workingOnUid());
+    auto say = [] (const juce::String& src, const juce::String& uidStr, const juce::var& v)
+    {
+        auto* o = v.getDynamicObject();
+        const auto num = [o] (const char* k) { return o != nullptr ? juce::String ((double) o->getProperty (k), 2)
+                                                                  : juce::String ("-"); };
+        EchoJay_NSLog (("EJTrackLevel: source=" + src + (uidStr.isNotEmpty() ? " uid=" + uidStr : juce::String())
+                        + " rms=" + num ("loud_rms_dbfs") + " peak=" + num ("loud_peak_dbfs")
+                        + " heard=" + (o != nullptr ? juce::String ((int) o->getProperty ("heard_s")) + "s"
+                                                    : juce::String ("-"))).toRawUTF8());
+    };
+    if (uid.isEmpty())                       // V2's own rack is the subject: its own tap is the right one
+    {
+        const auto v = processorRef.getChainHost().trackLevelVar();
+        api.setTrackLevelVar (v);
+        say ("self", {}, v);
+        return;
+    }
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir (err);
+    const juce::File f (dir.isEmpty() ? juce::String() : dir + "track-level-" + uid + ".json");
+    const auto v = (f != juce::File() && f.existsAsFile()) ? juce::JSON::parse (f.loadFileAsString()) : juce::var();
+    if (auto* o = v.getDynamicObject(); o != nullptr && o->hasProperty ("loud_rms_dbfs"))
+    {
+        api.setTrackLevelVar (v);
+        say ("link", uid, v);
+        return;
+    }
+    api.setTrackLevelVar ({});               // no reading for THIS track: send none, never V2's own
+    EchoJay_NSLog (("EJTrackLevel: source=none uid=" + uid
+                    + " - that track has published no section 5 reading (under 20 s heard, or an older Link), so "
+                      "no track_level is sent; V2's own tap is NOT a substitute for it").toRawUTF8());
+}
+
 juce::String EchoJayEditor::buildTrackLevelsContext (const juce::String& targetUid)
 {
     // THE TURN'S TARGET, PASSED IN, not re-derived. A channel with no chat record yet is HELD as pending until the
@@ -29556,7 +29720,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
-    api.setTrackLevelVar(processorRef.getChainHost().trackLevelVar());   // spec section 5: the track's loud level
+    applyTrackLevelForTurn();   // spec section 5: from the TARGET track's tap, never V2's own
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -29619,6 +29783,16 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
                 // pre-classifier behaviour, never a dead turn. The binding
                 // still rides: call 1 succeeded, only the wording failed.
                 safeThis->api.setNextClassifyBinding(c.intent, c.token);
+                // turnType=chain_edit, BEHIND A FLAG (3 Oct 2026). The classifier's answer arrives HERE, after the
+                // turn type was already staged from hadChainFeed alone - which is why Sean's "harder" went out as a
+                // generate and came back with no base slots. OFF by default until B confirms the server handles
+                // chain_edit: shipping it unconfirmed would turn one broken edit into every edit broken.
+                if (sendsChainEditTurnType (c.intent))
+                {
+                    safeThis->api.overrideNextChatTurnType("chain_edit");
+                    EchoJay_NSLog("EJChat: turnType -> chain_edit (the classifier said chain_edit and"
+                                  " turntype_edit_on.txt is present)");
+                }
                 safeThis->fireChatMainCall(sysPrompt, activeChatId,
                                            turnTargetUid, turnTargetName, 0,
                                            rolesSnap, contentsSnap);
@@ -29719,6 +29893,16 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         // The binding rides the main call. Absent when the classifier had
         // no intent, which the server handles by classifying for itself.
         safeThis->api.setNextClassifyBinding(c.intent, c.token);
+        // turnType=chain_edit, BEHIND A FLAG (3 Oct 2026). The classifier's answer arrives HERE, after the
+        // turn type was already staged from hadChainFeed alone - which is why Sean's "harder" went out as a
+        // generate and came back with no base slots. OFF by default until B confirms the server handles
+        // chain_edit: shipping it unconfirmed would turn one broken edit into every edit broken.
+        if (sendsChainEditTurnType (c.intent))
+        {
+            safeThis->api.overrideNextChatTurnType("chain_edit");
+            EchoJay_NSLog("EJChat: turnType -> chain_edit (the classifier said chain_edit and"
+                          " turntype_edit_on.txt is present)");
+        }
         safeThis->fireChatMainCall(sysPrompt, activeChatId,
                                    turnTargetUid, turnTargetName, provisionalId,
                                    rolesSnap, contentsSnap);
@@ -30249,7 +30433,7 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
-    api.setTrackLevelVar(processorRef.getChainHost().trackLevelVar());   // spec section 5: the track's loud level
+    applyTrackLevelForTurn();   // spec section 5: from the TARGET track's tap, never V2's own
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -30312,7 +30496,7 @@ void EchoJayEditor::rerouteChatTurn(const juce::String& sysPrompt, const juce::S
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
-    api.setTrackLevelVar(processorRef.getChainHost().trackLevelVar());   // spec section 5: the track's loud level
+    applyTrackLevelForTurn();   // spec section 5: from the TARGET track's tap, never V2's own
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -35625,7 +35809,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     juce::String captureChatId = chatId;
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
-    api.setTrackLevelVar(processorRef.getChainHost().trackLevelVar());   // spec section 5: the track's loud level
+    applyTrackLevelForTurn();   // spec section 5: from the TARGET track's tap, never V2's own
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group

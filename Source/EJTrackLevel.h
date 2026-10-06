@@ -39,7 +39,17 @@ class TrackLevel
 public:
     static constexpr double kWindowMs      = 400.0;   // spec section 5
     static constexpr float  kPercentile    = 0.95f;   // "95th percentile of 400 ms RMS"
-    static constexpr float  kMinHeardS     = 20.0f;   // under this there is no answer
+    // 2 Oct 2026 RULING (Sean): THREE SECONDS, NOT TWENTY. The 20 s floor came from wanting a stable percentile,
+    // and it cost more than it bought: a build on a track that had played a few seconds sent no track_level at all,
+    // so the server computed no threshold and fell back - on exactly the turns someone is auditioning a short
+    // phrase. Three seconds of audio ABOVE THE GATE is enough to place a vocal within the 1 dB the acceptance test
+    // allows, and heard_s rides the payload so the server can weigh it.
+    static constexpr float  kMinHeardS     = 3.0f;
+    // ...AND A CLIP SHORTER THAN THAT IS STILL AN ANSWER, once it has played through. Waiting for a floor that
+    // will never arrive is the same failure as the 20 s one. "Played through" is measured on the SAMPLE CLOCK -
+    // audio that stopped arriving - not on wall clock, so it is deterministic and a guard can drive it: when no
+    // new above-gate window has closed for this long, what was heard is what there is.
+    static constexpr float  kSettledAfterS = 2.0f;
     static constexpr float  kSilenceGateDb = -70.0f;  // a window quieter than this is not programme
     static constexpr float  kBinDb         = 0.25f;
     static constexpr float  kLoDb          = -96.0f;
@@ -70,6 +80,7 @@ public:
         inWindow_ = 0;
         windowPeak_ = 0.0f;
         heardSamples_ = 0;
+        sinceHeardGrew_ = 0;
         peakBins_.fill (0);
         peakSumDb_.fill (0.0);
     }
@@ -86,7 +97,12 @@ public:
             windowPeak_ = juce::jmax (windowPeak_, std::abs (s));
             if (++inWindow_ >= windowSamples_)
             {
+                const auto before = heardSamples_;
                 closeWindow();
+                // The sample clock since the last window that COUNTED. A window below the gate is not heard
+                // audio, so it advances this instead of resetting it: silence cannot keep a reading pending.
+                if (heardSamples_ > before) sinceHeardGrew_ = 0;
+                else                        sinceHeardGrew_ += (juce::int64) windowSamples_;
                 inWindow_ = 0; sumSq_ = 0.0; windowPeak_ = 0.0f;
             }
         }
@@ -101,7 +117,13 @@ public:
         Reading r;
         r.heardSeconds = heardSeconds();
         r.windows = total_;
-        if (r.heardSeconds < kMinHeardS || total_ <= 0) return r;   // valid stays false => null on the wire
+        // NULL ONLY WHEN NOTHING ABOVE THE GATE WAS HEARD (2 Oct 2026 ruling). Otherwise: three seconds, or
+        // whatever was heard once the material has stopped arriving. Silence alone can never satisfy either,
+        // because a window below the gate never enters total_ and never advances heardSamples_.
+        if (total_ <= 0 || r.heardSeconds <= 0.0f) return r;        // valid stays false => null on the wire
+        const bool enough  = r.heardSeconds >= kMinHeardS;
+        const bool settled = (double) sinceHeardGrew_ >= (double) kSettledAfterS * sr_;
+        if (! enough && ! settled) return r;                       // still filling, and still arriving
         // The percentile by counting up from the quiet end: the first bin at or past 95% of the windows. Both
         // figures are read the same way, from their own distribution over the same windows.
         const int wanted = juce::jmax (1, (int) std::lround ((double) total_ * (double) kPercentile));
@@ -188,6 +210,7 @@ private:
     int    inWindow_ = 0;
     float  windowPeak_ = 0.0f;
     juce::int64 heardSamples_ = 0;
+    juce::int64 sinceHeardGrew_ = 0;   // SAMPLES since a window last counted as heard: the "played through" clock
     // loud_peak_dbfs (v1.3): its own distribution, one max-|sample| per window, over the same windows.
     std::array<int, (size_t) kBins> peakBins_ {};
     std::array<double, (size_t) kBins> peakSumDb_ {};

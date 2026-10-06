@@ -25,6 +25,7 @@
 #include "ChainHost.h"
 #include "EedDeviceRegistry.h"
 #include "LinkShm.h"
+#include "EJStateRoot.h"   // 4 Oct: the reuse legs opt in via the product's own flag, in an isolated root
 #include <cstdio>
 #include <vector>
 
@@ -147,7 +148,33 @@ int main()
         check (firstAnyPrepare (s, t0, t1) >= 0 && lastIdx (s, Ev::SetState, t0, t1) > firstAnyPrepare (s, t0, t1),
                "SPEC build: restore seed lands AFTER the single prepare (unchanged order)");
 
-        host.releaseBorrowToPool();                                          // PARK
+        // ---- 4 Oct 2026: THESE LEGS NOW ASK FOR REUSE, because reuse is no longer the default ------------------
+        //
+        // Parking a borrowed instance and disposing it later, inside ~EchoJayProcessor during AP_Close, is what
+        // aborts the Softube CL 1B - so the default became DESTROY ON RELEASE and parking moved behind
+        // ~/Library/EchoJay/reuse_on. The three legs below are about the reuse path's ORDERING (same instance back,
+        // one prepare, seed before prepare), which is still real behaviour worth holding fixed - it just has to be
+        // requested now. Without this the park destroys and the legs fail on a product that is working as ruled.
+        //
+        // Written only when ECHOJAY_STATE_HOME is set (run_guard.sh always sets it and refuses otherwise), and
+        // restored on every exit path: reuse_on re-enables the crash path, so a guard must never leave it behind.
+        const bool reuseIsolated = echojay::stateIsIsolated();
+        check (reuseIsolated,
+               "reuse: this leg is ISOLATED before writing the reuse_on flag (it re-enables the CL 1B crash path)",
+               reuseIsolated ? juce::String (echojay::stateHomeOverride()) : juce::String ("ECHOJAY_STATE_HOME unset"));
+        const auto reuseFlag = echojay::userAppData().getChildFile ("EchoJay").getChildFile ("reuse_on");
+        const bool reuseHad  = reuseIsolated && reuseFlag.existsAsFile();
+        struct ReuseFlagRestore
+        {
+            juce::File f; bool had, armed;
+            ~ReuseFlagRestore() { if (! armed) return;
+                                  if (had) { f.getParentDirectory().createDirectory(); f.replaceWithText ("on\n"); }
+                                  else f.deleteFile(); }
+        } reuseRestore { reuseFlag, reuseHad, reuseIsolated };
+        if (reuseIsolated)
+        { reuseFlag.getParentDirectory().createDirectory(); reuseFlag.replaceWithText ("on\n"); }
+
+        host.releaseBorrowToPool();                                          // PARK (reuse_on: parked, not destroyed)
         const int t2 = (int) g_log.size();
         check (countIn (s, Ev::Release, t1, t2) == 1, "park: released ONCE (uninitialised while parked)");
 

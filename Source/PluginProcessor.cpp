@@ -1645,6 +1645,86 @@ void EchoJayProcessor::applyHostTrackNameIfDirty()
     publishChainRole();
 }
 
+// ---- 4 Oct 2026 (ruled): HAND A SAVED BORROWED RACK BACK TO ITS LINK ---------------------------------------
+//
+// Sean's bug: a chain built on a Link track while this instance held the lease, then saved WITHOUT switching racks,
+// was lost on reopen - it lived only in borrowHost_, the hand-back happens on a rack switch, and neither side's
+// state carried it. getStateInformation now saves it under `borrowedRacks`; this is the other half.
+//
+// THE TIE-BREAK IS BY REVISION, not by whether the Link's chain is empty (Sean's ruling, and his reason: "non-empty
+// Link wins" would restore a stale chain when he rebuilds on a rack that already had one and saves without
+// switching). We saved the Link's revision as it stood when the borrow began. On reopen the Link republishes the
+// revision ITS OWN saved chunk carried. If the two agree, nothing happened on the Link since we took the rack, so
+// our copy is the newer one and it goes back. If they differ - a hand-back, or a delete on the Link - the Link is
+// authoritative and our copy is dropped, which is what keeps a deleted rack deleted.
+void EchoJayProcessor::applyPendingBorrowRestores()
+{
+    if (pendingBorrowRestore_.empty()) return;
+    int err = 0;
+    const auto dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) return;
+
+    for (auto it = pendingBorrowRestore_.begin(); it != pendingBorrowRestore_.end(); )
+    {
+        const auto uid = it->first;
+        // IS THAT LINK HERE YET? Nothing is decided until it is: this is what makes both load orders work, and
+        // an entry simply waits on the 1 Hz timer until its Link registers.
+        bool seen = false;
+        for (const auto& li : getLinkSlotInfos()) if (li.uid == uid) { seen = true; break; }
+        if (! seen) { ++it; continue; }
+
+        auto* ro = it->second.getDynamicObject();
+        if (ro == nullptr) { it = pendingBorrowRestore_.erase(it); continue; }
+        const int  baseRev  = (int) ro->getProperty("baseRev");
+        const auto chainVar = ro->getProperty("chain");
+
+        const auto rc = LinkShm::readRackSidecar(dir, uid);
+        // THE DECISION IS MADE ON THE LINK'S OWN TWO NUMBERS, both from its saved chunk:
+        //   chainRev      the revision its rack sat at when the session was saved
+        //   leaseBaseRev  the revision it sat at when the borrow engaged (-1 = no borrow was open)
+        // Equal means the Link's rack did not change after the borrow began, so the copy we saved - which has the
+        // build in it - is the newer one and goes back. Different means a hand-back or a delete happened on the
+        // Link, and the Link is authoritative. Comparing OUR engage-time reading against its save-time reading
+        // would have compared two clocks: the Link bumps its own revision when the lease bypasses its slots, and
+        // our sidecar read can fall on either side of that bump, so it would have mismatched on timing alone and
+        // this restore would never have fired. Both numbers are the Link's, taken at two moments it controls.
+        const int linkAtSave  = rc.valid ? rc.restoredChainRev     : -1;
+        const int linkAtLease = rc.valid ? rc.restoredLeaseBaseRev : -1;
+        const bool ours = (linkAtSave >= 0 && linkAtLease >= 0 && linkAtSave == linkAtLease);
+        if (! ours)
+        {
+            EchoJay_NSLog(("EJBorrow: saved borrowed rack for uid=" + uid + " DROPPED - the Link's saved chunk says"
+                           " rev=" + juce::String(linkAtSave) + " leaseBaseRev=" + juce::String(linkAtLease)
+                           + (linkAtSave < 0 || linkAtLease < 0
+                                  ? " (it could not state one of them - an older Link, or no borrow was open at"
+                                    " save time - so it keeps what it has)"
+                                  : " (its own rack moved after the borrow began, so the Link is authoritative)")
+                           + "; our copy was taken at baseRev=" + juce::String(baseRev)).toRawUTF8());
+            it = pendingBorrowRestore_.erase(it);
+            continue;
+        }
+
+        // The Link's own build parser takes it from here - the same road a rack switch's hand-back uses, carrying
+        // settings_structured, wet, bypass, the hosted state and (new today) each slot's own gains.
+        auto* cmd = new juce::DynamicObject();
+        cmd->setProperty("v",          1);
+        cmd->setProperty("seq",        LinkShm::nextCtrlSeq());
+        cmd->setProperty("chain",      chainVar);
+        cmd->setProperty("sourceNote", "EchoJay V2 borrowed-rack session restore");
+        juce::File(dir + "chain-ack-" + uid + ".json").deleteFile();
+        const bool wrote = juce::File(dir + "chain-cmd-" + uid + ".json")
+                               .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+        EchoJay_NSLog(("EJBorrow: RESTORED the saved borrowed rack to uid=" + uid + " ("
+                       + juce::String(chainVar.isArray() ? chainVar.getArray()->size() : 0)
+                       + " slot(s); the Link's rack was unchanged after the borrow engaged, rev="
+                       + juce::String(linkAtSave) + ")"
+                       + (wrote ? "" : " - BUT THE COMMAND COULD NOT BE WRITTEN")).toRawUTF8());
+        // ONE ATTEMPT, whether or not the write succeeded. Retrying every second against a Link that is refusing
+        // would rebuild its rack repeatedly, and the failure is logged where it can be read.
+        it = pendingBorrowRestore_.erase(it);
+    }
+}
+
 void EchoJayProcessor::timerCallback()
 {
     applyHostTrackNameIfDirty();
@@ -1656,6 +1736,14 @@ void EchoJayProcessor::timerCallback()
     // calls it on its own user actions (a tab switch, an apply) for the list.
     refreshLinkRegistry();
     updateLinkAudioRecency();   // 1 Hz: stamp which Links are passing audio, for the meter-snapshot recency gate
+    // 4 Oct 2026 (save fix): a saved borrowed rack is handed to its Link the first time that Link is SEEN, which
+    // is necessarily after refreshLinkRegistry above. On this processor-owned 1 Hz timer, so it happens with the
+    // window closed and in EITHER load order - this instance restored before its Link or after it.
+    applyPendingBorrowRestores();
+    // 5 Oct 2026: let go of released hosted AUs once nothing else holds them. Message thread, bounded, and it is
+    // what makes the dispose exactly-once instead of happening at an arbitrary later moment (the 18:30:46 crash).
+    getChainHost().drainPendingDispose ("processor timer");
+    if (borrowHost_ != nullptr) borrowHost_->drainPendingDispose ("processor timer");
     // 21t-k item 1b: THE REPAIR RUNS ONCE, after a load, and only once the registry has been read - a repair
     // that ran before the Links registered would find nothing live to rebind to and would spend its one chance.
     // It is armed by setStateInformation and disarmed here whatever it finds, so it can never loop.
@@ -2377,6 +2465,7 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
         if (activeLinkSlots[ringSlot].map != nullptr)
             LinkShm::ringSeekForward(activeLinkSlots[ringSlot].map, kEditCushionFrames);
     }
+    const double engageStartMs = juce::Time::getMillisecondCounterHiRes();
     borrowSession_.ringSlot.store(ringSlot, std::memory_order_relaxed);
     borrowAlignReset_.store(true, std::memory_order_relaxed);
     borrowRingAgeMeasured_.store(-1, std::memory_order_relaxed);
@@ -2384,6 +2473,10 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     borrowRingLostTicks_ = 0;
     borrowRouteFlip_.store(false, std::memory_order_relaxed);   // default per channel type
     borrowSession_.active.store(true, std::memory_order_relaxed);
+    // 5 Oct 2026: EVERY TRANSITION, NAMED. On 5 Oct borrowRelease ran twice 17 s apart and the second got past
+    // `if (! borrowActive()) return;`, so something set this true again during a reopen - and the log carried no
+    // engage line to say what. A flag that guards a teardown has to say who set it.
+    EchoJay_NSLog(("EJBorrow: session ACTIVE <- true (engage begin, uid=" + borrowSession_.uid + ")").toRawUTF8());
 
     // R2 (21t-b, 25 Sep 2026): edits parked when this rack last failed to answer are re-armed HERE, at the only
     // moment the Link can take them - it answers chain commands while it is leased, and it is leased now.
@@ -2405,7 +2498,18 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
                 borrowHost_->setMasterWet(rc.masterWet);
                 EchoJay_NSLog(("EJBorrow: chain mix seeded from the rack's own sidecar: "
                                + juce::String(rc.masterWet, 3)).toRawUTF8());
+                // 4 Oct 2026: THE REVISION THE BORROW STARTED FROM, for the save/restore tie-break.
+                // A chain built while this borrow is open lives ONLY in borrowHost_ until a rack switch hands it
+                // back, so saving with the borrow open has to carry it - and on restore we need to know whether
+                // the LINK has moved since. This is that baseline: the Link's own rev as it stood when we took
+                // the rack. If the Link's restored rev still equals it, nothing changed on the Link side and our
+                // copy is the newer one; if it moved (a hand-back, or a delete on the Link), the Link wins.
+                borrowBaseRev_ = rc.revision;
+                EchoJay_NSLog(("EJBorrow: base rev for uid=" + uid + " is "
+                               + juce::String(borrowBaseRev_)).toRawUTF8());
             }
+            else
+                borrowBaseRev_ = -1;   // no sidecar to compare against: a restore cannot claim to be newer
         }
     }
 
@@ -2413,8 +2517,21 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     if (borrowLeaseTimer_ == nullptr)
         borrowLeaseTimer_ = std::make_unique<BorrowLeaseTimer>(*this);
     borrowLeaseTimer_->startTimer((int) LinkShm::kLeaseRenewMs);
-    EchoJay_NSLog(("EJBorrow: engaged uid=" + uid + " ringSlot="
-                   + juce::String(ringSlot)).toRawUTF8());
+    // 4 Oct 2026: THE COST OF A FRESH ENGAGE, AS A NUMBER. Destroy-on-release is now the default, so every engage
+    // pays a fresh createPluginInstance per slot - and for a PACE-wrapped plugin that includes its authorisation
+    // handshake, which is the expensive and variable part. Sean asked how much slower this is; estimating it would
+    // be guesswork, so the engage states its own elapsed time and the next session answers it directly. Compare a
+    // run with ~/Library/EchoJay/reuse_on present against one without.
+    // SETUP time only, and the line says so. The instances load ASYNCHRONOUSLY afterwards: in Sean's 4 Oct log the
+    // engage was 15:05:35 and the five slots arrived 15:06:31-15:06:34. Each slot's EJPlace line now carries its own
+    // "+N s since engage", and the LAST of those is the figure that answers what a fresh engage costs.
+    if (borrowHost_ != nullptr) borrowHost_->setEngageStampMs(engageStartMs);
+    EchoJay_NSLog(("EJBorrow: engaged uid=" + uid + " ringSlot=" + juce::String(ringSlot)
+                   + " - setup took " + juce::String(juce::Time::getMillisecondCounterHiRes() - engageStartMs, 1)
+                   + " ms; the instances load asynchronously and each slot's own line carries its elapsed time"
+                   + (borrowHost_ != nullptr ? " (" + juce::String(borrowHost_->borrowPoolCount())
+                                               + " parked instance(s) available to reuse)" : juce::String()))
+                      .toRawUTF8());
 }
 
 // borrowAudioOn/borrowAudioOff (LISTEN) DELETED 27 Aug 2026 — solo
@@ -2586,6 +2703,8 @@ void EchoJayProcessor::borrowRelease(bool keepEdits)
     if (dir.isNotEmpty())
         juce::File(LinkShm::leasePath(dir, borrowSession_.uid)).deleteFile();
     borrowSession_.active.store(false, std::memory_order_relaxed);
+    EchoJay_NSLog(("EJBorrow: session ACTIVE <- false (release, uid=" + borrowSession_.uid
+                   + ", keepEdits=" + juce::String(keepEdits ? "Y" : "N") + ")").toRawUTF8());
     const juce::String uid = borrowSession_.uid;
     borrowSession_.uid.clear();
     borrowSession_.leaseId.clear();
@@ -2899,14 +3018,19 @@ void EchoJayProcessor::borrowRebaseAfterPush()
 // same code: a parked queue for this rack becomes this session's pending queue, and the next flush sends it.
 int EchoJayProcessor::borrowRearmParkedFor(const juce::String& uid)
 {
+    // 6 Oct 2026 (Sean's ruling for 06a): THE BLIND REPLAY IS OFF, AT THE DOOR.
+    // Both park sites now drop instead of parking, so this map should be empty - but the refusal lives HERE as well,
+    // because this is the ONE function that can turn a parked edit back into a pending one, and a future caller must
+    // not be able to resurrect an index-only op by accident. An edit may be replayed again only when it carries its
+    // target's identity (fingerprint + name) and has been checked as not-already-satisfied; neither exists yet.
     auto parked = borrowParkedPushes_.find(uid);
     if (parked == borrowParkedPushes_.end() || parked->second.empty()) return 0;
-    borrowPendingPushes_ = parked->second;
+    const int n = (int) parked->second.size();
     borrowParkedPushes_.erase(parked);
-    const int n = (int) borrowPendingPushes_.size();
-    EchoJay_NSLog(("EJLink: re-armed " + juce::String(n) + " parked edit(s) for uid=" + uid
-                   + " (R2 retry, this rack is leased again)").toRawUTF8());
-    return n;
+    EchoJay_NSLog(("EJLink: REFUSING to re-arm " + juce::String(n) + " parked edit(s) for uid=" + uid
+                   + " - they carry no target identity, so replaying them by index could land on a different plugin."
+                     " Dropped (6 Oct ruling); identity + satisfied check come first.").toRawUTF8());
+    return 0;
 }
 
 void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
@@ -2926,20 +3050,29 @@ void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
             const juce::String puid = borrowSession_.uid;
             const juce::String pname = resolveLinkDisplayName(puid);
             const int nPending = (int) borrowPendingPushes_.size();
-            borrowParkedPushes_[puid] = borrowPendingPushes_;
+            // 6 Oct 2026 (Sean's ruling for 06a): DROPPED, NOT PARKED. Same reason as the other site - these ops
+            // are index-based and carry no identity, so a blind replay at the next engage can land a remove on a
+            // different plugin. The user is told in one chat line instead of the edit quietly waiting to fire.
             juce::String ops;
             for (const auto& p : borrowPendingPushes_) ops += (ops.isEmpty() ? "" : ", ") + p.op;
+            borrowPendingPushes_.clear();
+            borrowParkedNotice_ = "The Link on " + pname + " didn't confirm " + juce::String(nPending)
+                                + " change" + (nPending == 1 ? "" : "s") + " - check it shows what you expect.";
             EchoJay_NSLog(("EJLink: " + juce::String(nPending) + " edit(s) unacked by " + pname
-                           + " in 5 s [" + ops + "] - PARKED and the rack released (R2); they are retried when "
-                             "this rack is next engaged").toRawUTF8());
+                           + " in 5 s [" + ops + "] - DROPPED and the rack released; the blind R2 replay is OFF in"
+                             " this build, so they are NOT retried. The user is told instead. Identity + a satisfied"
+                             " check come first, then background delivery replaces this drop.").toRawUTF8());
             borrowApplyReleaseOnFail_ = true;   // R2: the release is not optional
-            borrowApplyFinish(false, juce::String(nPending) + " edit(s) unacked in 5 s (parked, will retry)", false);
+            borrowApplyFinish(false, juce::String(nPending) + " edit(s) unacked in 5 s (dropped, not retried)", false);
             // LAST WORD, deliberately after the release: borrowApplyFinish writes the generic "ended WITHOUT
             // writing" note, and R2 asks for the banner to report WHICH edits are still owed and that they are
             // coming - a user who can carry on still has to be told what is outstanding.
+            // 6 Oct 2026: THE BANNER MUST NOT PROMISE A RETRY THAT NO LONGER HAPPENS. It said the edits "are kept
+            // and go through the moment it answers", which was true of R2's replay and is false now that they are
+            // dropped. A banner that promises delivery is worse than one that admits the change did not land.
             borrowStickyBanner_ = juce::String(nPending) + " edit(s) have not reached "
-                + (pname.isNotEmpty() ? pname : juce::String("that rack")) + " yet (" + ops + "). It has its rack "
-                "back and you can carry on - the edits are kept and go through the moment it answers.";
+                + (pname.isNotEmpty() ? pname : juce::String("that rack")) + " (" + ops + "). It has its rack back "
+                "and you can carry on, but these changes were NOT applied - check the rack shows what you expect.";
             return;
         }
     }
@@ -3231,6 +3364,79 @@ void EchoJayProcessor::borrowEditorClosed()
 {
     if (! borrowActive()) return;
     if (borrowApplyInFlight_) { borrowApplyReleaseOnFail_ = true; return; }
+
+    // ---- 4 Oct 2026 RULING: DO NOT HAND BACK TO A LINK THAT CANNOT ANSWER --------------------------------------
+    //
+    // At project close the editor closes, this fires, and the hand-back edits go out to a Link that is already
+    // tearing down. Sean's 15:09 log, in order: "deselect re-send -> NO ACK; 2 edit(s) unacked [bypass, bypass]
+    // PARKED", "close-apply FAILED (edits kept)", then the Link refusing with guard=touched-slot-missing because
+    // its own rack was already gone. The attempt cannot succeed and it runs during the most fragile moment there is.
+    //
+    // THE TEST IS LIVENESS, NOT "IS THIS A CLOSE". The editor cannot know why it is closing - a user closing the
+    // window and a project closing look identical from here - so guessing would be wrong half the time. What
+    // actually distinguishes the two is whether the Link is still there to answer.
+    //
+    // AND IT IS MEASURED IN TIME, NOT IN POLLS. The first cut of this used heartbeatFresh, which is
+    // `staleCycles < 6` - a count of CONSUMER POLLS without an advance. refreshLinkRegistry runs on the 1 Hz timer
+    // AND from four editor sites, so a few quick user actions can run that count up against a Link that is alive
+    // and heartbeating normally: the gate would then skip a hand-back that would have worked. The Link's heartbeat
+    // is bumped from its own juce::Timer (30 Hz, every 30th tick), NOT from processBlock, so it keeps climbing with
+    // the transport stopped and the track idle - which is exactly why a wall-clock age is a fair test here.
+    //
+    // SKIPPING IS ONLY SAFE BECAUSE THE SAVE NOW CARRIES THE RACK. Before today there was no fallback and the
+    // hand-back was the only road home, which is why it was attempted unconditionally. getStateInformation's
+    // borrowedRacks key is the carrier now, and the next open hands the rack back from there.
+    {
+        // The Link heartbeats at 1 Hz, so three seconds is three missed beats - comfortably past jitter and well
+        // short of the ~6 s the reaper uses. A row we have never seen climb (-1) is not evidence of life either.
+        constexpr float kAnsweringWithinS = 3.0f;
+        bool  found = false, linkAlive = false;
+        float ageS = -1.0f;
+        for (const auto& li : getLinkSlotInfos())
+            if (li.uid == borrowSession_.uid)
+            {
+                found = true; ageS = li.heartbeatAgeSeconds;
+                linkAlive = li.connected && ageS >= 0.0f && ageS <= kAnsweringWithinS;
+                break;
+            }
+        if (! linkAlive)
+        {
+            // ONE PARKING MECHANISM, NOT TWO (4 Oct 2026 ruling). R2 already has the answer for "edits that could
+            // not be delivered": park them against this rack in borrowParkedPushes_, which borrowRearmParkedFor
+            // re-arms the next time the rack is engaged. The first cut of this skip released with the edits merely
+            // KEPT - visible in the banner but inert, waiting on a save/restore round trip - which is a second,
+            // weaker mechanism for the same situation. They go through R2's queue instead, so an edit that missed a
+            // dying Link is retried on the next engage exactly like one that went unacked.
+            const juce::String puid = borrowSession_.uid;
+            const int nPending = (int) borrowPendingPushes_.size();
+            juce::String ops;
+            if (nPending > 0)
+            {
+                for (const auto& pp : borrowPendingPushes_) ops += (ops.isEmpty() ? "" : ", ") + pp.op;
+                // 6 Oct 2026 (Sean's ruling for 06a): LOG IT, DROP IT, AND TELL THE USER. The blind R2 replay is
+                // OFF. These ops are index-based ({"op":"remove","slot":3}) and carry no identity, so re-arming them
+                // at the next engage replays a position against a rack that may have moved - which is how a remove
+                // lands on the wrong plugin. Identity (fingerprint + name) and a satisfied check come first, next
+                // round, and then background delivery replaces this drop.
+                borrowPendingPushes_.clear();
+                borrowParkedNotice_ = "The Link on " + resolveLinkDisplayName(puid) + " didn't confirm "
+                                    + juce::String(nPending) + " change" + (nPending == 1 ? "" : "s")
+                                    + " - check it shows what you expect.";
+            }
+            EchoJay_NSLog(("EJStruct: editor closed and \"" + resolveLinkDisplayName(puid)
+                           + "\" is not answering (" + (! found ? juce::String("not in the registry")
+                                                                : "last heartbeat " + juce::String(ageS, 1) + " s ago")
+                           + ") - SKIPPING the hand-back rather than sending edits into a teardown"
+                           + (nPending > 0
+                                  ? "; " + juce::String(nPending) + " edit(s) DROPPED [" + ops
+                                    + "] - the blind replay is off in this build, so they are NOT retried; the user"
+                                      " is told instead (6 Oct ruling)"
+                                  : "; nothing was pending")
+                           + ". The saved session carries the rack itself.").toRawUTF8());
+            borrowRelease(true);
+            return;
+        }
+    }
     if (borrowStructureCapable_)
     {
         borrowApplyAndRelease(true);
@@ -4970,6 +5176,65 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
         state->setProperty("savedChainName", savedChainName);
     }
 
+    // ---- 4 Oct 2026 (ruled): THE OPEN BORROWED RACK RIDES THE SAVE -----------------------------------------
+    //
+    // A chain built on a Link track while this instance holds the lease lives ONLY in borrowHost_ until a rack
+    // switch hands it back ("a chain build lands in the SESSION (the borrowed host), never on the Link" -
+    // sendChainToLink). Save without switching racks first and the rack was in no save format anywhere: this side
+    // wrote only its own chainHost, and the Link wrote its own empty chainModel. Sean's bug, exactly.
+    //
+    // SHAPE: the LINK'S OWN chain-array format, not this side's slotsXml. Restoring then means handing the array
+    // to the Link, which is the same thing a rack switch does and goes through the Link's own proven restore
+    // parser - rather than a second restore path that would drift from it.
+    //
+    // CACHE-ONLY: every per-slot plugin state comes from getCachedSlotStatesVar, whose own comment is
+    // "Serialises the cache and NOTHING else: no call into a hosted plugin, no work that can block, so this is
+    // safe inside the host's save callback." The host may call this off the message thread, so nothing here asks
+    // a plugin for anything or waits on anything.
+    //
+    // ADDITIVE: the key is written ONLY when a borrow is actually open and holding slots, so a session with no
+    // borrow grows no key and reads byte-for-byte as before.
+    if (borrowActive() && borrowHost_ != nullptr && borrowHost_->getNumSlots() > 0)
+    {
+        const auto cached = borrowHost_->getCachedSlotStatesVar(ChainHost::kSessionStateMaxSlotBytes,
+                                                               ChainHost::kSessionStateMaxTotalBytes,
+                                                               "borrowedRack");
+        auto* cachedObj = cached.getDynamicObject();
+        juce::Array<juce::var> chainArr;
+        const int n = borrowHost_->getNumSlots();
+        for (int i = 0; i < n; ++i)
+        {
+            const auto si = borrowHost_->getSlotInfo(i);
+            auto* so = new juce::DynamicObject();
+            so->setProperty("name",      si.name);
+            so->setProperty("settings",  si.settings);
+            so->setProperty("bypassed",  si.bypassed);
+            so->setProperty("wet",       (double) si.wet);
+            so->setProperty("outGainDb", (double) borrowHost_->getSlotOutGainDb(i));
+            so->setProperty("preTrimDb", (double) borrowHost_->getSlotPreTrimDb(i));
+            if (const auto st = borrowHost_->getSlotStructured(i); ! st.isVoid())
+                so->setProperty("settings_structured", st);
+            if (cachedObj != nullptr)
+            {
+                const juce::String key (i + 1);          // the cache is keyed 1-based
+                if (cachedObj->hasProperty(key)) so->setProperty("state", cachedObj->getProperty(key));
+            }
+            chainArr.add(juce::var(so));
+        }
+        auto* entry = new juce::DynamicObject();
+        entry->setProperty("uid",       borrowSession_.uid);
+        entry->setProperty("baseRev",   borrowBaseRev_);
+        entry->setProperty("masterWet", (double) borrowHost_->getMasterWet());
+        entry->setProperty("chain",     chainArr);
+        juce::Array<juce::var> racks; racks.add(juce::var(entry));
+        state->setProperty("borrowedRacks", racks);
+        EchoJay_NSLog(("EJBorrow: SAVED open borrowed rack uid=" + borrowSession_.uid
+                       + " baseRev=" + juce::String(borrowBaseRev_)
+                       + " slots=" + juce::String(n)
+                       + " (the Link does not have this rack yet - it is handed back on a rack switch, and this is"
+                         " what carries it across a save that happened first)").toRawUTF8());
+    }
+
     juce::String json = juce::JSON::toString(juce::var(state.release()), true);
     destData.append(json.toRawUTF8(), json.getNumBytesAsUTF8());
     } catch (...) {}
@@ -5262,6 +5527,28 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             savedChainId = obj->getProperty("savedChainId").toString();
         if (obj->hasProperty("savedChainName"))
             savedChainName = obj->getProperty("savedChainName").toString();
+
+        // ---- 4 Oct 2026 (ruled): BORROWED RACKS, PARSED HERE AND APPLIED LATER --------------------------------
+        // Nothing is handed to a Link in setStateInformation: the Link may not exist yet (either load order is
+        // legal), and this call can be off the message thread. So the entries are only remembered, and
+        // applyPendingBorrowRestores does the work from the registry sweep once the uid is actually present.
+        if (auto* racks = obj->getProperty("borrowedRacks").getArray())
+        {
+            pendingBorrowRestore_.clear();
+            for (const auto& rv : *racks)
+                if (auto* ro = rv.getDynamicObject())
+                {
+                    const auto u = ro->getProperty("uid").toString();
+                    if (u.isNotEmpty() && ro->getProperty("chain").isArray())
+                    {
+                        pendingBorrowRestore_[u] = rv;
+                        EchoJay_NSLog(("EJBorrow: session carries a saved borrowed rack for uid=" + u
+                                       + " baseRev=" + juce::String((int) ro->getProperty("baseRev"))
+                                       + " slots=" + juce::String(ro->getProperty("chain").getArray()->size())
+                                       + " - held until that Link is seen").toRawUTF8());
+                    }
+                }
+        }
 
         // Restore chain slots on message thread (after audio is set up).
         // Support both new "chainSlotsXml" key and old single-plugin "chainLoadedDescXml"
@@ -5989,6 +6276,7 @@ void EchoJayProcessor::refreshLinkRegistry()
         {
             ps.lastHb     = snap.heartbeat;
             ps.staleCycles = 0;
+            ps.lastHbAdvancedMs = juce::Time::getMillisecondCounterHiRes();   // 4 Oct: the time, not the count
         }
 
         // LIVENESS BEFORE LISTING (25 Aug 2026): inUse alone lists ghosts —
@@ -6050,6 +6338,11 @@ void EchoJayProcessor::refreshLinkRegistry()
         // The row stays LISTED while stale (proven-then-frozen) so the strip
         // can say "gone" distinctly, until the ~30s reap removes it.
         info.heartbeatFresh = ps.staleCycles < 6;
+        // 4 Oct 2026: SECONDS since the heartbeat last climbed, for any decision that must not be made on a count.
+        // 0 while nothing has been seen yet, which reads as "no evidence of life" rather than "fresh".
+        info.heartbeatAgeSeconds = ps.lastHbAdvancedMs > 0.0
+            ? (float) ((juce::Time::getMillisecondCounterHiRes() - ps.lastHbAdvancedMs) / 1000.0)
+            : -1.0f;
         newInfos.push_back(std::move(info));
     }
 
@@ -6555,6 +6848,21 @@ echojay::CalibLoop EchoJayProcessor::calibLoad(const juce::String& uid) const
 
 void EchoJayProcessor::calibStore(const juce::String& uid, const echojay::CalibLoop& loop)
 {
+    // 3 Oct 2026 (13:52 item 2): MIRROR THE LOOP'S TARGET AND LAST READING ONTO THE SLOT, here, because every
+    // road that advances a loop ends at this one function - the same reason the "only from an applied edit" gate
+    // sits at startCalibrationForEdit. Sean asked "harder" twice and the second turn re-asked for the same 3.0 dB,
+    // because [CURRENT CHAIN] never stated the target the loop was already on.
+    //
+    // An ENDED loop keeps its last_gr_db and loses its target: the reading is still the last thing measured on
+    // that compressor, which is what the field means, while a band nobody is pursuing any more would be a claim
+    // about the present that is not true.
+    if (auto* h = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
+        if (loop.slot >= 0)
+        {
+            const float nan = std::numeric_limits<float>::quiet_NaN();
+            h->setSlotGrState(loop.slot, loop.active() ? loop.lo : nan,
+                              loop.active() ? loop.hi : nan, loop.lastGr);
+        }
     if (uid.isEmpty()) { ownCalib_ = loop; return; }
     int err = 0; const auto dir = LinkShm::resolveDir(err);
     if (dir.isEmpty()) return;
@@ -6591,7 +6899,13 @@ void EchoJayProcessor::calibStart(const juce::String& uid, int slot, const juce:
     }
     else
     {
-        loop.begin(pluginName, slot, bandLo, bandHi, openingDrive, purpose);
+        // 5 Oct 2026 (item 3): the slot's heard clock AS IT STANDS NOW, so the loop can tell a window of new audio
+        // from a window that predates the block. Read before anything resets, which is the only honest moment.
+        const float heardNow0 = [this, &uid, slot]() -> float
+        { if (auto* h = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
+              return h->getSlotLevels(slot).in.heardSeconds;
+          return std::numeric_limits<float>::quiet_NaN(); }();
+        loop.begin(pluginName, slot, bandLo, bandHi, openingDrive, purpose, heardNow0);
         if (auto* hd = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
             loop.dynamicsSlot = hd->slotIsDynamics(slot);   // (l), same as the cfg door
         loop.slotIdent = liveIdent0;
@@ -6606,7 +6920,28 @@ void EchoJayProcessor::calibStart(const juce::String& uid, int slot, const juce:
         if (auto* host = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
             if (slot >= 0 && slot < host->getNumSlots())
             if (! (purpose == echojay::CalibLoop::Purpose::buildHold && loop.dynamicsSlot))
-            { host->setSlotPreTrimDb(slot, openingDrive); host->setSlotOutGainDb(slot, -openingDrive); }
+            {
+                // 5 Oct 2026: A ZERO DRIVE IS NOT A REASON TO ZERO THE SLOT.
+                //
+                // This pair writes IN up a rung and the LIVE OUT down by the same. With openingDrive 0 both writes
+                // are 0 - which is a no-op on a fresh slot and a CLOBBER on a slot that already carries a value.
+                // On a borrowed rack those values are the Link's: Sean's 11:19 log shows the Link handing over +5.00
+                // dB on slots 2 and 3 and every "EJBorrow: engaged" followed within 200 ms by "slot 1..5 output gain
+                // set to 0.00 dB". The borrowed host is what processes audio while leased, so his +5 was audibly
+                // gone, and a save taken during the lease would have stored the zeroes in borrowedRacks.
+                // The Link's own chunk kept +5 (the structure plan carries byp and wet, not the gains), which is why
+                // it came back on every reopen and the loss looked cosmetic.
+                const bool haveDrive = std::abs(openingDrive) > 1.0e-6f;
+                const float existingOut = host->getSlotOutGainDb(slot);
+                const float existingIn  = host->getSlotPreTrimDb(slot);
+                if (haveDrive || (std::abs(existingOut) < 1.0e-6f && std::abs(existingIn) < 1.0e-6f))
+                { host->setSlotPreTrimDb(slot, openingDrive); host->setSlotOutGainDb(slot, -openingDrive); }
+                else
+                    EchoJay_NSLog(("EJThreshold: slot " + juce::String(slot + 1) + " opening write SKIPPED - no"
+                                   " drive to apply and the slot already carries IN " + juce::String(existingIn, 2)
+                                   + " / OUT " + juce::String(existingOut, 2) + " dB (on a borrowed rack those are"
+                                     " the Link's; writing 0 here is what wiped them)").toRawUTF8());
+            }
     }
     calibStore(uid, loop);
 }
@@ -6711,8 +7046,35 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
         cfg.dynamicsSlot = hd->slotIsDynamics(cfg.slot);
         // The block's own expectations onto the slot: they travel on the CALIBRATION block, not the chain entry.
         hd->setSlotExpectations(cfg.slot, cfg.expectedGrDb, cfg.expectedLevelDb);
+        // ITEM 5 (3 Oct 2026, Sean's 08:03 session): A NAMED CONTROL WITH NO START IS NOT A STARTING POINT.
+        // The block carried start_db=(none) for actuator "threshold", so the loop opened at NaN - it logged "dialling
+        // Threshold from nan dB" and its first window read "Threshold=+0.0", meaning its first write was a jump from a
+        // value it had never read. Read the control instead; if it cannot be read, HOLD rather than step, because
+        // stepping from an unknown position is how a control ends up somewhere nobody chose.
+        if (cfg.actuator != echojay::CalibLoop::Actuator::Drive && ! (cfg.startDb == cfg.startDb)
+            && ! cfg.params.isEmpty())
+        {
+            float nowDb = 0.0f;
+            if (hd->readControlDb(cfg.slot, cfg.params[0], nowDb))
+            {
+                cfg.startDb = nowDb;
+                EchoJay_NSLog(("EJThreshold: block carried no start_db - READ \"" + cfg.params[0]
+                               + "\" off the plugin: " + juce::String(nowDb, 2) + " dB, opening from there").toRawUTF8());
+            }
+            else
+            {
+                cfg.holdOnly = true;
+                EchoJay_NSLog(("EJThreshold: block carried no start_db and \"" + cfg.params[0] + "\" could not be read"
+                               " - HOLDING, not stepping: a step from an unknown position is a jump").toRawUTF8());
+            }
+        }
     }
-    loop.begin(cfg);
+    {
+        auto cfgH = cfg;
+        if (auto* h = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
+            cfgH.heardAtBeginS = h->getSlotLevels(cfg.slot).in.heardSeconds;
+        loop.begin(cfgH);
+    }
     loop.blockFromProfile = cfg.fromProfile;
     stampCompProfileOnLoop(uid, loop);   // COMP_PROFILE_SPEC_v1 items 3/4, behind the flag
     loop.slotIdent = liveIdent;   // (n): the slot+plugin this loop belongs to, checked on every tick
@@ -6736,15 +7098,42 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
             {
                 // The opening THRESHOLD is written the same way every later step is. The drive is left alone:
                 // slot_pre_gain_db is staging and the server already wrote it.
-                if (cfg.startDb == cfg.startDb)   // not NaN: under 30 s heard, the server sends no start value
+                //
+                // A HOLD WRITES NOTHING - NOT EVEN THE VALUE IT JUST READ (3 Oct 2026, 13:52 item 3).
+                // Sean's log: "wrote Threshold = 0.10" at 13:52:00 and "-1.20" at 13:53:11, on a block that had
+                // already been marked hold-only. Two things fed it. A set_directly block means the SERVER set the
+                // control, so there is nothing to open; and item 5's fix fills startDb from the control's own
+                // reading when the block omits it, which turned that read straight back into a write. Neither is
+                // a no-op: this write goes through the readback search and the map, so the value that lands can
+                // differ from the value that was read, and a hold had moved the compressor.
+                if (echojay::CalibLoop::writesOpeningValue(cfg))
                     host->setSlotControlsToValue(cfg.slot, cfg.params, cfg.startDb);
+                else
+                    EchoJay_NSLog(("EJThreshold: NOT writing " + cfg.params.joinIntoString(" + ") + " - "
+                                   + (cfg.holdOnly ? juce::String("this is a hold; the control stays where it is")
+                                                   : juce::String("no opening value was sent"))
+                                   + (cfg.startDb == cfg.startDb
+                                          ? " (reads " + juce::String(cfg.startDb, 2) + " dB)" : juce::String())).toRawUTF8());
             }
             // (q) 30 Sep 2026: A COMPRESSOR BUILD WRITES NO IN - it is set as dialled, and the hold moves OUT
             // and nothing else. Any other slot opens at its drive as before.
             else if (! (cfg.purpose == echojay::CalibLoop::Purpose::buildHold && cfg.dynamicsSlot))
             {
-                host->setSlotPreTrimDb(cfg.slot, cfg.startDb);
-                host->setSlotOutGainDb(cfg.slot, -cfg.startDb);   // 21t-m: the LIVE out, not the compare trim
+                // 5 Oct 2026: the THIRD site of the same rule - a zero drive must not zero a slot that already
+                // carries a value. See calibStart(uid, slot, pluginName, ...) for why.
+                const bool haveDrive = (cfg.startDb == cfg.startDb) && std::abs(cfg.startDb) > 1.0e-6f;
+                const float existingOut = host->getSlotOutGainDb(cfg.slot);
+                const float existingIn  = host->getSlotPreTrimDb(cfg.slot);
+                if (haveDrive || (std::abs(existingOut) < 1.0e-6f && std::abs(existingIn) < 1.0e-6f))
+                {
+                    host->setSlotPreTrimDb(cfg.slot, cfg.startDb);
+                    host->setSlotOutGainDb(cfg.slot, -cfg.startDb);   // 21t-m: the LIVE out, not the compare trim
+                }
+                else
+                    EchoJay_NSLog(("EJThreshold: slot " + juce::String(cfg.slot + 1) + " opening write SKIPPED -"
+                                   " no drive to apply and the slot already carries IN "
+                                   + juce::String(existingIn, 2) + " / OUT " + juce::String(existingOut, 2)
+                                   + " dB").toRawUTF8());
             }
             // RESET POINT 1 of 4 (21t-j): THE BUILD. Both legs start counting here, so the first crest difference
             // describes the setting this build just made and nothing before it.
@@ -6774,7 +7163,131 @@ void EchoJayProcessor::fillCalibWindow(ChainHost* host, echojay::CalibLoop& loop
         const bool haveCrest = I.maxShortTermDb == I.maxShortTermDb && I.shortTermP90Db == I.shortTermP90Db
                             && O.maxShortTermDb == O.maxShortTermDb && O.shortTermP90Db == O.shortTermP90Db;
         const bool have90 = I.shortTermP90Db == I.shortTermP90Db && O.shortTermP90Db == O.shortTermP90Db;
-        w.grDb = haveCrest ? ((I.maxShortTermDb - I.shortTermP90Db) - (O.maxShortTermDb - O.shortTermP90Db)) : 0.0f;
+        // GR IS A LEVEL REDUCTION, NOT A CREST CHANGE (2 Oct 2026 ruling, Sean's 19:43 session).
+        //
+        // This read the CREST difference - "the crest the compressor took off" - chosen because makeup gain
+        // shifts both output terms together and cancels out of it. Makeup-immune, and blind to the case that
+        // matters: a compressor with a slow attack on sustained material pulls SHORTMAX and SHORT90 down
+        // TOGETHER, so the crest barely moves however hard it is working. Sean's CL 1B read -0.4..+0.4 dB
+        // throughout while its gain reduction genuinely rose with the drive, and the loop walked the drive to
+        // +6 dB believing it had bought nothing.
+        //
+        // The level figure is the real one, and the correction is exact because the IN tally is taken AFTER the
+        // pre-trim (so the drive is not in it) and levelChangeDb is taken BEFORE EchoJay's slot OUT gain (so the
+        // mirror is not in it either). What remains between in and out is the plugin: its gain reduction, less
+        // its own makeup. The profile knows that makeup as static_gain_db; with no profile it is unknown and 0,
+        // which can UNDERSTATE the reduction on a unit with built-in makeup - so the crest figure rides the log
+        // beside it, and a disagreement between the two is visible rather than silent.
+        w.grCrestDb = haveCrest ? ((I.maxShortTermDb - I.shortTermP90Db) - (O.maxShortTermDb - O.shortTermP90Db))
+                                : 0.0f;
+        // ...less the plugin's OWN makeup, which the profile knows (spec section 7 subtracts static_gain_db for
+        // exactly this reason). Unknown without a profile, and then 0 - stated, not hidden.
+        // WHICH SENSOR, AND WHY IT IS A CHOICE (2 Oct 2026, corrected the same evening).
+        //
+        // LEVEL is the real gain reduction - but it counts EVERY level change between in and out, including a
+        // static one the compressor is not responsible for: a slot that simply attenuates, a unit with negative
+        // make-up, staging. level_loop_guard case (9) caught exactly that: a fixture slot 6 dB down read as 6 dB
+        // of compression, the loop decided it was over the 2-3 band and backed the drive to -6 dB. The spec
+        // subtracts static_gain_db for this reason, and that figure only exists when a profile is attached.
+        //
+        // CREST is blind to static level entirely, which is why it was chosen - and why it read ~0 on Sean's CL 1B,
+        // a slow unit on sustained material whose SHORTMAX and SHORT90 came down together.
+        //
+        // So: LEVEL when a profile tells us the static offset, CREST when nothing does. Neither is right
+        // everywhere, the choice is recorded per window in grSensor, and the figure not used still rides the log -
+        // a disagreement between them is visible rather than decided silently.
+        // BOTH FIGURES, ALWAYS (3 Oct 2026): the agreement rule needs the level figure even when no profile
+        // supplies static_gain_db, so it is computed here regardless and the loop decides what to do with it.
+        // 3 Oct 2026 (13:52 ruling): THE OFFSET MAY COME FROM THE BLOCK, not only from a map profile. One
+        // accessor answers both, so the two twins and the loop's own agreement rule cannot disagree about whether
+        // this slot has a static offset. Sean's session: the map had no comp_profile, the block carried
+        // from_profile, and the crest fallback reported about 0 dB on a compressor doing 2-3.
+        w.inShortTermDb = I.shortTermDb;
+    w.inShortTermP90Db = I.shortTermP90Db;   // item 4, log only   // 4 Oct: for the "not responding" guard; plain dBFS on a slot tally
+        w.grLevelKnown = have90;
+        w.grLevelDb = have90 ? (-(O.shortTermP90Db - I.shortTermP90Db) + loop.staticGainDb()) : 0.0f;
+        // ---- 3 Oct 2026 (Kathy, refined): THE UNIT'S LOW-LEVEL GAIN, SAMPLED LIVE. LOG ONLY --------------
+        // A window where the compressor is genuinely BELOW THRESHOLD measures its low-level gain as out minus in,
+        // which is what static_gain_db claims to be. Two gates, in order of how much they prove:
+        //   CONFIRMED    6 dB under the block's in_at_gr1_dbfs - the dialled setting's own 1 dB point, so "below
+        //                threshold" is the setting's own statement rather than our inference.
+        //   FALLBACK     10 dB under the track's remembered loud level, tagged unconfirmed, until B ships the
+        //                field. Same reference: a SLOT tally is Weighting::Plain (offsetDb() == 0), so its
+        //                shortTermDb is plain RMS dBFS, as are in_at_gr1_dbfs and TrackLevel's loud_rms_dbfs.
+        // Windows near the noise floor and silent ones are ignored: out minus in on near-nothing is noise over
+        // noise, and it would sit in the median looking like data.
+        //
+        // WHY 10 AND NOT 15 (4 Oct 2026, measured). At 15 dB this gathered NOTHING all session - "(waiting, n=0)"
+        // in every CL 1B window from 15:06 to 15:09 while the loop read 1.3-2.3 dB of gain reduction on a playing
+        // vocal. The figure compared is a THREE-SECOND short-term window, which averages phrase and gap together
+        // and so sits within roughly 6-10 dB of the track's p95; 15 dB below it is a near-silent bar, which on this
+        // material also falls under the -60 dBFS floor and is excluded. The gate was unreachable, not unlucky.
+        //
+        // Relaxing it is safe BY CONSTRUCTION, not by hope: the two-band agreement test is the guard. If 10 dB
+        // admits windows where the unit is still working, the two input bands disagree and the line reports
+        // "not confirmed" with both figures rather than a number. A wrong reading cannot pass itself off as right;
+        // the worst case is that we still have no figure, which is where we already are.
+        if (I.known && O.known && ! w.silent
+            && std::isfinite (I.shortTermDb) && std::isfinite (O.shortTermDb)
+            && I.shortTermDb > -60.0f)
+        {
+            const float gr1 = loop.inAtGr1Dbfs;
+            const auto  tl  = host->trackLevelReading();
+            const bool  haveGr1 = std::isfinite (gr1);
+            const float ceilingDb = haveGr1 ? gr1 - 6.0f
+                                            : (tl.valid ? tl.loudRmsDbfs - 10.0f
+                                                        : std::numeric_limits<float>::quiet_NaN());
+            if (std::isfinite (ceilingDb) && I.shortTermDb <= ceilingDb)
+                host->noteLowLevelGainSample (loop.slot, I.shortTermDb,
+                                            O.shortTermDb - I.shortTermDb, haveGr1);
+        }
+
+        // ...and the line itself, composed from the slot's store. Beside the PROFILE's figure, which is what
+        // Kathy wants compared: a measured 0.0 against a profile -0.7 is the finding, either way it falls.
+        {
+            ChainHost::LowGainReading lg;
+            const bool have = host->lowLevelGain (loop.slot, lg);
+            loop.lowGainText = echojay::CalibLoop::lowGainLine (have, lg.medianDb, lg.loBandDb, lg.hiBandDb,
+                                                             lg.rangeLoDbfs, lg.rangeHiDbfs, lg.samples,
+                                                             lg.twoBandAgreed, lg.confirmedGate,
+                                                             loop.staticGainKnown()
+                                                                 ? loop.staticGainDb()
+                                                                 : std::numeric_limits<float>::quiet_NaN());
+        }
+
+        const bool haveStatic = loop.staticGainKnown();
+        // 6 Oct 2026 (Sean's ruling): ON AN INPUT-DRIVE AMOUNT CONTROL, OUT-MINUS-IN IS NOT GAIN REDUCTION.
+        // His UAD 1176LN Rev E at Input -21: the level method read -4.5 and called it "4.5 dB louder out than in",
+        // while the VU was pinned and he could hear heavy compression. On a unit whose amount control is INPUT
+        // DRIVE, out-minus-in is the input gain MINUS the gain reduction, so the two are inseparable and the figure
+        // says nothing about GR. The level method is only trustworthy when a profile states static_gain_db AND the
+        // control being moved is not itself an input gain.
+        // Order, as ruled: the plugin's own GR meter if it exposes one, then crest, otherwise say plainly that GR
+        // cannot be measured - never a level figure dressed up as GR.
+        const bool inputDrive  = loop.amountIsInputDrive();
+        const bool haveMeter   = loop.grReadable && std::isfinite (loop.sensedGrDb);
+        if (inputDrive && haveMeter)
+        {
+            w.grDb = std::abs (loop.sensedGrDb);
+            w.grSensor = "meter";
+        }
+        else if (inputDrive && ! haveStatic)
+        {
+            // No meter and no profile: crest is blind to static level, which is exactly what makes it the only
+            // honest fallback here - and when there is no crest either, the figure is UNKNOWN and says so.
+            w.grDb = haveCrest ? w.grCrestDb : std::numeric_limits<float>::quiet_NaN();
+            w.grSensor = haveCrest ? "crest-inputdrive" : "unmeasurable-inputdrive";
+        }
+        else if (haveStatic && have90)
+        {
+            w.grDb = w.grLevelDb;
+            w.grSensor = "level-static";
+        }
+        else
+        {
+            w.grDb = w.grCrestDb;
+            w.grSensor = haveCrest ? "crest" : "none";
+        }
         w.levelChangeDb = have90 ? (O.shortTermP90Db - I.shortTermP90Db)
                                  : ((I.known && O.known) ? (O.levelDb - I.levelDb) : 0.0f);
         if (! haveCrest) w.measured = false;   // no crest pair, no sample
@@ -6829,8 +7342,16 @@ void EchoJayProcessor::applyCalibStep(const juce::String& uid, ChainHost* host, 
         // newPost used to go to setSlotTrimDb - the COMPARE trim, which is only in circuit during an A/B - so
         // every rung of every loop raised the chain by a dB and nothing took it back. Sean's 21:53-21:54
         // compressor ran pre=+1/+2/+3 with post=-1/-2/-3 and came out 3 dB louder.
-host->setSlotPreTrimDb(loop.slot, step.newPre);
+        host->setSlotPreTrimDb(loop.slot, step.newPre);
         host->setSlotOutGainDb(loop.slot, step.newPost);   // 21t-m: the LIVE out, not the compare trim
+        // 2 Oct 2026: SAY THE IN WRITE TOO. The OUT write logs ("slot N output gain set to -1.00 dB") and the IN
+        // write said nothing, so Sean's 19:43 log showed six OUT writes and no evidence the drive had been applied
+        // at all - which is exactly the question he then had to ask. The readback is taken from the host, not from
+        // the value we just passed in, so a write that was clamped or refused shows as the figure that landed.
+        EchoJay_NSLog(("EJThreshold: slot " + juce::String(loop.slot + 1) + " drive (IN pre-gain) set to "
+                       + juce::String(host->getSlotPreTrimDb(loop.slot), 2) + " dB, asked "
+                       + juce::String(step.newPre, 2) + " dB"
+                       + (host->isBorrowed() ? juce::String(" [borrowed host]") : juce::String())).toRawUTF8());
         // RESET POINT 2 of 4: a write to the ACTUATOR (EchoJay's own staging gain here).
         host->resetSlotShortTermStats(loop.slot, "the loop moved the drive");
         if (uid.isNotEmpty()) republishBorrowedRackSidecar();
@@ -6861,7 +7382,25 @@ host->setSlotPreTrimDb(loop.slot, step.newPre);
                        + (wrote > 0 ? juce::String("written") : juce::String("REFUSED by the apply path"))
                        + "; no second move").toRawUTF8());
         host->resetSlotShortTermStats(loop.slot, "the profile check eased the amount");
+        // THE 1 dB POINT MOVED WITH THE CONTROL (4 Oct 2026 ruling). Re-derived here, from the host's own profile,
+        // so this works on the borrowed/sidecar path too - the loop's profileVar does not ride the sidecar, which is
+        // why the derivation cannot live at the sampling site. A block-stated figure is left alone.
+        loop.profileCurrentNorm = step.amountNorm;
+        loop.profileAmountNormAfter = step.amountNorm;
+        if (! loop.inAtGr1FromBlock)
+            rederiveInAtGr1(loop, host->slotCompProfile(loop.slot), step.amountNorm, "amount moved");
     }
+    // 4 Oct 2026: THE LOOP HAS LANDED - KEEP MEASURING. Armed at the moment it finishes, carrying the 1 dB point
+    // at the position it left the control, so the watch gates exactly as the loop would have.
+    //
+    // 5 Oct 2026 (Sean's item 4): ...AND "LANDED" IS NOT "FINISHED". step.finished means the loop ENDED on this
+    // window, which a build hold does not do - it lands and stays OPEN for COMP_PROFILE_SPEC_v1's section 7 check.
+    // So on exactly the slots this watch exists for, it was never armed: his 11:23:51-11:25:02 pass landed, held,
+    // and logged NO EJLowGain line at all in 70 s of playback, with the card still reading "(waiting, n=0)".
+    // Arming on the landing is idempotent - armLowGainWatch keeps the existing watch and only refreshes its gate -
+    // so it may be called on every window after the landing without resetting the count it is keeping.
+    if (loop.dynamicsSlot && (step.finished || loop.landed))
+        host->armLowGainWatch(loop.slot, loop.inAtGr1Dbfs);
     if (step.writeSlotGain)
     {
         host->setSlotOutGainDb(loop.slot, step.slotGainValue);
@@ -6875,7 +7414,12 @@ host->setSlotPreTrimDb(loop.slot, step.newPre);
                        + juce::String(std::abs(loop.levelChangeDb), 1) + " dB "
                        + (loop.levelChangeDb > 0.0f ? "louder" : "quieter") + " out than in; residual before this "
                        "write " + juce::String(loop.levelResidualDb, 2) + " dB; written total "
-                       + juce::String(loop.levelTrimmedDb, 2) + " dB)").toRawUTF8());
+                       + juce::String(loop.levelTrimmedDb, 2) + " dB)"
+                       // 5 Oct 2026, Sean's budget: the make-up must land inside about 6 s of PLAYING. Audio
+                       // seconds since the write, so a stopped transport is not counted against it.
+                       + ((loop).secondsSinceWrite() == (loop).secondsSinceWrite()
+                              ? " [" + juce::String ((loop).secondsSinceWrite(), 1) + " s of audio since the write]"
+                              : juce::String (" [seconds since the write unknown]"))).toRawUTF8());
     }
 }
 
@@ -6884,6 +7428,10 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     auto loop = calibLoad(uid);
     if (! loop.active())
     {
+        // 4 Oct 2026: a LANDED slot keeps being measured for its low-level gain. This is the path a finished loop
+        // falls down every tick, which is exactly where the hold's measurement used to stop dead.
+        if (auto* wh = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
+            wh->tickLowGainWatch();
         calibSweepCompanionsOnly(uid);
         return {};
     }
@@ -6967,6 +7515,37 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
 // COMP_PROFILE_SPEC_v1 items 3 and 4: COPY THE PROFILE'S NUMBERS ONTO THE LOOP, so the loop needs no ChainHost to
 // run its one check or compose its line. Behind the flag: with it off hasProfile stays false and the loop behaves
 // exactly as letter (q) - set as dialled, hold once, and a line that says so.
+// 4 Oct 2026 RULING: RE-DERIVE in_at_gr1_dbfs AT THE CONTROL'S CURRENT POSITION.
+//
+// The profile's amount.curve carries in_at_gr_dbfs {"1","2","3"} per point - point 1 is the input level at which
+// the unit first produces 1 dB of gain reduction AT THAT POSITION. Move the control and that level moves, so a
+// figure derived once is wrong from the next move onwards. The low-level-gain gate admits windows 6 dB under it;
+// too high a ceiling admits windows where the unit is working, and because both input bands are contaminated
+// together the two-band test can still agree and report a confident wrong number. So this runs on every stamp and
+// after every amount write, and says what it changed to.
+//
+// A block-stated figure never reaches here: the caller checks inAtGr1FromBlock first.
+void EchoJayProcessor::rederiveInAtGr1(echojay::CalibLoop& loop, const juce::var& prof, float norm,
+                                      const char* why)
+{
+    const float before  = loop.inAtGr1Dbfs;
+    const float derived = echojay::CompCheck::inAtGr1At(prof, norm);
+    if (! std::isfinite(derived))
+    {
+        EchoJay_NSLog(("EJCompProfile: in_at_gr1_dbfs could not be derived at norm " + juce::String(norm, 3)
+                       + " (" + why + ") - the profile states no point 1 near this position, so the low-level-gain"
+                         " gate stays on its unconfirmed track-loudness fallback").toRawUTF8());
+        return;
+    }
+    loop.inAtGr1Dbfs = derived;
+    const bool moved = std::isfinite(before) && std::abs(before - derived) > 0.05f;
+    EchoJay_NSLog(("EJCompProfile: in_at_gr1_dbfs DERIVED at norm " + juce::String(norm, 3) + " (" + why + "): "
+                   + juce::String(derived, 1) + " dBFS"
+                   + (moved ? " (was " + juce::String(before, 1) + " - the control moved, so the 1 dB point moved"
+                              " with it and the low-level gate follows)" : "")
+                   + " - the low-level-gain gate is the CONFIRMED one, 6 dB under this").toRawUTF8());
+}
+
 void EchoJayProcessor::stampCompProfileOnLoop(const juce::String& uid, echojay::CalibLoop& loop)
 {
     if (! ChainHost::compProfilesEnabled()) return;
@@ -6997,10 +7576,43 @@ void EchoJayProcessor::stampCompProfileOnLoop(const juce::String& uid, echojay::
     }
     loop.profileCurrentNorm = currentNorm;
     loop.profileAmountNormAfter = currentNorm;
+    // ---- 4 Oct 2026 RULING: DERIVE in_at_gr1_dbfs FROM THE PROFILE'S LADDER WHEN THE BLOCK OMITS IT -----------
+    //
+    // The low-level-gain measurement only believes windows where the unit is CLEARLY below threshold, and the
+    // honest ceiling is 6 dB under the dialled setting's own 1 dB point. B's blocks do not carry in_at_gr1_dbfs
+    // yet, and the fallback (10 dB under the track's loud level, tagged unconfirmed) is coarse. But the profile
+    // ALREADY on this slot has the ladder - each amount.curve point carries in_at_gr_dbfs {"1","2","3"} - so the
+    // figure is derivable here and the CONFIRMED gate works today.
+    //
+    // DERIVED ONCE, HERE, into the field the sampler already reads: inAtGr1Dbfs rides toVar/fromVar, while
+    // profileVar does not, so deriving it at sample time would work for exactly one tick of a Link rack and then
+    // silently fall back. The block always wins when it states one - this only fills a gap.
+    // A BLOCK-STATED FIGURE IS NEVER OVERWRITTEN; A DERIVED ONE IS ALWAYS RE-DERIVED (4 Oct 2026 ruling).
+    // The guard here used to be `if (! isfinite(inAtGr1Dbfs))`, which meant a derived value was computed once and
+    // then frozen - so a later "harder" moved the threshold while the gate kept the old, higher ceiling. The test
+    // is now provenance, not emptiness.
+    if (! loop.inAtGr1FromBlock)
+        rederiveInAtGr1(loop, prof, currentNorm, "stamp");
+    // 4 Oct 2026 RULING: THE 1 dB POINT AND ITS SOURCE, ON THIS LINE, EVERY TIME.
+    // Sean's 20:56 session printed this line with neither a "DERIVED" nor a "no point 1" line beside it, which left
+    // no way to tell whether the figure came from the block, from the ladder, or was never set - and the gate's
+    // ceiling depends entirely on which. Stated here unconditionally so the question cannot arise again.
+    const juce::String gr1Source = loop.inAtGr1FromBlock ? juce::String("block")
+                                 : (std::isfinite(loop.inAtGr1Dbfs) ? juce::String("derived")
+                                                                    : juce::String("none"));
     EchoJay_NSLog(("EJCompProfile: slot " + juce::String(loop.slot + 1) + " (\"" + info.plugin
                    + "\") has a usable profile, map_fp=" + info.mapFp + ", topology=" + info.topology
                    + ", amount=\"" + loop.profileAmountControl + "\" at norm " + juce::String(currentNorm, 3)
-                   + "; expecting " + juce::String(expGr, 1) + " dB of gain reduction").toRawUTF8());
+                   + "; expecting " + juce::String(expGr, 1) + " dB of gain reduction"
+                   + "; in_at_gr1_dbfs=" + (std::isfinite(loop.inAtGr1Dbfs)
+                                                ? juce::String(loop.inAtGr1Dbfs, 1)
+                                                : juce::String("(none)"))
+                   + " source=" + gr1Source
+                   + " -> low-level gate " + (std::isfinite(loop.inAtGr1Dbfs)
+                                                  ? "CONFIRMED at " + juce::String(loop.inAtGr1Dbfs - 6.0f, 1)
+                                                    + " dBFS"
+                                                  : juce::String("unconfirmed fallback (track loudness - 10)")))
+                      .toRawUTF8());
 }
 
 /** (o) 30 Sep 2026: THE COMPANION SWEEP, ON ITS OWN. calibTick has four early returns - an inactive primary, a
@@ -7042,7 +7654,14 @@ void EchoJayProcessor::advanceCalibCompanions(const juce::String& uid, ChainHost
             EchoJay_NSLog(("EJThreshold: companion hold \"" + c.plugin + "\" slot " + juce::String(c.slot + 1)
                            + " ENDED - " + how).toRawUTF8());
             deadList.addIfNotAlreadyThere (c.plugin + " (" + how.upToFirstOccurrenceOf (",", false, false) + ")");
-            c = {};
+            // 6 Oct 2026: MARK IT FINISHED, DO NOT WIPE IT. `c = {}` reset the whole loop, and the closing line is
+            // composed LATER from these same records (calibFinishIfAllDone walks calibExtra_), so every figure it
+            // needs had already been destroyed: plugin empty, levelTrimmedDb 0, slotGainDb 0. That is precisely the
+            // card Sean saw at 10:41:48 - "Compressor 2 set as dialled, level already matched" while the log one
+            // line above wrote slot 2 to -4.50 dB - and it is what level_loop_guard (16) catches, where the fixture
+            // names the companion "Comp B" and the line still said "Compressor 2".
+            // active() is only `state != State::Idle`, so Idle is all that was ever needed to end it.
+            c.state = echojay::CalibLoop::State::Idle;
         };
         if (c.slot < 0 || c.slot >= host->getNumSlots())
         {
@@ -7113,11 +7732,26 @@ void EchoJayProcessor::advanceCalibCompanions(const juce::String& uid, ChainHost
     auto namePart = [&parts, &n] (const echojay::CalibLoop& l)
     {
         ++n;
-        // (q): "set as dialled, level matched" PER COMPRESSOR.
-        if (std::abs (l.levelTrimmedDb) <= 0.05f)
-        { parts.add ("Compressor " + juce::String (n) + " set as dialled, level already matched"); return; }
-        parts.add ("Compressor " + juce::String (n) + " set as dialled, level matched, Output "
-                   + (l.slotGainDb >= 0.0f ? "+" : "") + juce::String (l.slotGainDb, 1) + " dB");
+        // 6 Oct 2026 (Sean's ruling), TWO FAULTS IN ONE LINE.
+        //
+        // (a) NAME THE PLUGIN. "Compressor 1/2" is not what the user put in the slot, and the window lines a few
+        //     lines above in the same log say "Tube-Tech CL 1B" and "UAD UA 1176LN Rev E". The loop carries the
+        //     real name; only this line was inventing one. The ordinal stays as a fallback for the cancelled
+        //     primary, which has no name left.
+        //
+        // (b) STATE THE WRITE. This chose "level already matched" from levelTrimmedDb, the written total RELATIVE
+        //     to the hold's base - and on Sean's 10:41:48 build the 1176's clause said "level already matched"
+        //     while the log one line above wrote slot 2 to -4.50 dB. Whatever made that total read zero, the card
+        //     must not contradict the write: the STANDING output is an absolute fact about the slot, so it is
+        //     stated whenever it is non-zero. (Worth chasing separately: the companions are read back out of
+        //     calibExtra_, so a hold whose write did not get stored back would show exactly this.)
+        const juce::String who = l.plugin.isNotEmpty() ? l.plugin : ("Compressor " + juce::String (n));
+        const juce::String out = (l.slotGainDb >= 0.0f ? "+" : "") + juce::String (l.slotGainDb, 1) + " dB";
+        if (std::abs (l.levelTrimmedDb) > 0.05f)
+        { parts.add (who + " set as dialled, level matched, Output " + out); return; }
+        if (std::abs (l.slotGainDb) > 0.05f)
+        { parts.add (who + " set as dialled, level already matched, Output still " + out); return; }
+        parts.add (who + " set as dialled, level already matched");
     };
     if (! primaryCancelled) namePart (primary); else ++n;   // the number still counts, its figure is gone
     for (const auto& c : it->second) namePart (c);
@@ -7161,9 +7795,23 @@ int EchoJayProcessor::calibStartMany(const juce::String& uid, const std::vector<
             continue;
         }
         cfg.dynamicsSlot = host->slotIsDynamics(cfg.slot);   // (l)
+        // ITEM 5 ON THE COMPANION ROAD TOO (3 Oct 2026). The drive substitution above has been here since 30 Sep;
+        // the named-control half was added only to calibStart, so a COMPANION block naming a control with no
+        // start_db still opened at NaN. A build with two compressors has one of each, and which one gets the
+        // defect is an accident of ordering - exactly the kind of difference that makes a fault look intermittent.
+        if (cfg.actuator != echojay::CalibLoop::Actuator::Drive && ! (cfg.startDb == cfg.startDb)
+            && ! cfg.params.isEmpty())
+        {
+            float nowDb = 0.0f;
+            if (host->readControlDb(cfg.slot, cfg.params[0], nowDb)) cfg.startDb = nowDb;
+            else                                                     cfg.holdOnly = true;
+            EchoJay_NSLog(("EJThreshold: companion block carried no start_db for \"" + cfg.params[0] + "\" - "
+                           + (cfg.holdOnly ? juce::String("could not read it, HOLDING")
+                                           : "read " + juce::String(nowDb, 2) + " dB off the plugin")).toRawUTF8());
+        }
         host->setSlotExpectations(cfg.slot, cfg.expectedGrDb, cfg.expectedLevelDb);
         echojay::CalibLoop c;
-        c.begin(cfg);
+        { auto cfgH = cfg; cfgH.heardAtBeginS = host->getSlotLevels(cfg.slot).in.heardSeconds; c.begin(cfgH); }
         c.blockFromProfile = cfg.fromProfile;
         stampCompProfileOnLoop(uid, c);                  // COMP_PROFILE_SPEC_v1: a companion is checked too
         c.slotIdent = host->slotIdentityKey(cfg.slot);   // (n)
@@ -7172,9 +7820,22 @@ int EchoJayProcessor::calibStartMany(const juce::String& uid, const std::vector<
         // takes it back, so a rung never leaks a dB into the chain.
         if (! cfg.dynamicsSlot)
         {
-            host->setSlotPreTrimDb(cfg.slot, cfg.startDb);
-            host->setSlotOutGainDb(cfg.slot, -cfg.startDb);
-            host->resetSlotShortTermStats(cfg.slot, "a companion hold set the actuator");
+            // 5 Oct 2026: the same rule as the primary road above - a zero drive must not zero a slot that already
+            // carries a value, because on a borrowed rack that value is the Link's.
+            const bool haveDrive = (cfg.startDb == cfg.startDb) && std::abs(cfg.startDb) > 1.0e-6f;
+            const float existingOut = host->getSlotOutGainDb(cfg.slot);
+            const float existingIn  = host->getSlotPreTrimDb(cfg.slot);
+            if (haveDrive || (std::abs(existingOut) < 1.0e-6f && std::abs(existingIn) < 1.0e-6f))
+            {
+                host->setSlotPreTrimDb(cfg.slot, cfg.startDb);
+                host->setSlotOutGainDb(cfg.slot, -cfg.startDb);
+                host->resetSlotShortTermStats(cfg.slot, "a companion hold set the actuator");
+            }
+            else
+                EchoJay_NSLog(("EJThreshold: companion slot " + juce::String(cfg.slot + 1) + " opening write"
+                               " SKIPPED - no drive to apply and the slot already carries IN "
+                               + juce::String(existingIn, 2) + " / OUT " + juce::String(existingOut, 2)
+                               + " dB").toRawUTF8());
         }
         extra.push_back(c);
         ++started;
@@ -7188,6 +7849,13 @@ int EchoJayProcessor::calibStartMany(const juce::String& uid, const std::vector<
 /** 21t-i: THE MEASURE-AND-ASK LINE, handed to the chat exactly once. The same shape as calibTakeClosing and for
     the same reason - the flag is cleared before the text is returned, so two ticks cannot both post it - but a
     separate door, because this one does NOT mean the loop ended. It measures, it reports, it waits for the user. */
+juce::String EchoJayProcessor::takeBorrowParkedNotice()
+{
+    const auto n = borrowParkedNotice_;
+    borrowParkedNotice_.clear();
+    return n;
+}
+
 juce::String EchoJayProcessor::calibTakeAsk(const juce::String& uid, bool* replacesOpeningOut)
 {
     auto loop = calibLoad(uid);

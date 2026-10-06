@@ -665,6 +665,130 @@ Not fixed because the fix changes which plugins get withheld, and that is Sean's
 normalise the comparison so existing lines still match, and stop trimming the path on read and on write. It wants
 a leg with a trailing-space fixture, proven both ways.
 
+
+---
+
+## OWED, as of 2 Oct 20:20 — named so none of it is carried in anyone's head
+
+These are Sean's rulings from the 19:43 and 20:1x messages that are NOT in 02j. Each says what it needs, because
+the order between them matters.
+
+### 1. Make-up goes on the PLUGIN's own output/gain control when the block names one
+
+EchoJay's slot output is used only when the block names no output control. Today the hold writes EchoJay's own OUT
+and nothing else (21t-m ruling, 29 Sep), so this reverses part of that for the case where the block is explicit.
+
+### 2. THE FEEDBACK TRAP — must land in the SAME round as (1), not after it
+
+Sean, 20:1x, and he is right. `grDb` is now `-(out p90 - in p90) + static_gain_db`. A make-up written on the
+plugin's **own** output control sits INSIDE the in->out span, so:
+
+> every dB the loop writes there reads as a dB LESS gain reduction, and the loop chases it
+
+It would push the drive to compensate for its own make-up, which is a runaway in the direction of more
+compression. `static_gain_db` does not cover it: that is the profile's figure for the unit at its NEUTRAL
+settings, not what the loop has since written.
+
+`grDb` must add back, in dB:
+  - the make-up the loop itself wrote on the plugin's output control — read back from the map, not assumed from
+    what was asked, because a clamped or refused write must not be added back;
+  - any non-neutral output/gain setting THE BUILD wrote before the loop started (same reason: it is inside the
+    span and is not the compressor's doing).
+
+**The trap is NOT live in 02j**, because nothing writes make-up on a plugin control yet. That is exactly why (1)
+and (2) ship together: (1) alone arms it.
+
+**Leg (ruled):** write +2 dB of make-up on the plugin's output control; the GR reading must not change.
+
+### 2a. THE TWO SENSORS MUST AGREE BEFORE THE LOOP MOVES (Sean's ruling, 3 Oct) — NEXT ROUND
+
+With NO profile, the loop moves only when BOTH GR readings agree on the direction:
+- **harder** only if level AND crest both read UNDER the band
+- **softer** only if BOTH read OVER it
+- **disagree -> HOLD**, and log both figures
+
+This is the ruling that covers both of last night's failures with one rule, which is why it is better than either
+sensor alone:
+- case (9): level read 6 dB over (a slot that merely attenuates), crest read ~0 -> they disagree -> HOLD, instead
+  of backing the drive to -6 dB;
+- the 19:43 CL 1B: crest read ~0, level read over -> they disagree -> HOLD, instead of walking the drive to +6 dB.
+
+**Why it is urgent rather than tidy (Sean's point):** a THRESHOLD block on an unprofiled slow compressor runs on
+crest alone TODAY, and can walk the threshold to `min_db` exactly the way the drive went to +6. The agreement rule
+closes that before the threshold actuator work makes it reachable more often.
+
+**Legs: one per direction** - both-under moves harder, both-over moves softer, and each disagreement case HOLDS
+(level-over/crest-zero, and crest-over/level-zero).
+
+With a profile the level-minus-static figure stands on its own; the agreement rule is for the unprofiled case where
+neither sensor can be trusted alone.
+
+### 2d. max_steps from the block (Sean's ruling, 3 Oct) — NEXT ROUND
+
+The block carries `max_steps` and the parser does not read it at all (confirmed 2 Oct: 0 occurrences in
+EJCalibLoop.h); the loop uses its own `kMaxSteps = 6` regardless. Read it, and use **the smaller of the block's
+figure and 6** - so the server can ask for fewer rungs but never more than the ruled cap.
+
+### 2b. RATCHET: gr_target_db and last_gr_db per compressor slot in [CURRENT CHAIN]
+
+**Field names AGREED with B (2 Oct, Sean confirmed):** `gr_target_db` per compressor slot, and `last_gr_db` for
+the last measured GR. No need to wait on B. Emit in the next round.
+
+Why: so the server can act on a second "harder" instead of re-deriving a target it cannot see. Today the block
+says nothing about what each compressor was aiming at or what it actually measured.
+
+**Where it goes, found 2 Oct so the next round is mechanical:** `Source/EchoJayAPI.cpp:4016`, the loop over
+`rack.slots` that prints `N: "name" (format, BYPASSED, wet N%)`. Add the two figures to that line for slots that
+are dynamics.
+
+**Where the figures come from:** the CalibLoop carries the band as `lo`..`hi` (from the block's `gr_target_db`)
+and the measured figure as `lastGr`. That loop rides the rack sidecar (`rc.calib`), which this targeted
+[CURRENT CHAIN] path already reads - so no new transport is needed. A slot with no loop and no stored target emits
+neither field rather than a zero: absent must not read as "aiming at 0 dB".
+
+**Caution:** `lastGr` is now the LEVEL-based figure (2 Oct), not the old crest one. Anything the server infers from
+`last_gr_db` is only as good as that sensor, and on a unit with built-in make-up and no profile it can understate -
+see the make-up correction owed in item 2 above, which must land before `last_gr_db` is trusted for a ratchet.
+
+### 2c. OWED: a leg for the LEVEL-based GR sensor, in comp_profile_guard
+
+The GR sensor now chooses per window: **level minus `static_gain_db`** when a profile supplies that offset,
+**crest** when nothing does. `grVia=` in the window line records which ran.
+
+Why the choice exists, both directions proven the hard way in one evening:
+- CREST alone read ~0 on Sean's CL 1B (slow unit, sustained material - SHORTMAX and SHORT90 fall together), so the
+  loop walked the drive to +6 dB believing it had bought nothing. That is the bug that started this.
+- LEVEL alone read 6 dB of "compression" on a fixture slot that merely attenuates 6 dB, and the loop backed the
+  drive to -6 dB. `level_loop_guard` case (9) caught it within one gate run.
+
+**Owed:** a leg in `comp_profile_guard` (which hosts a real plugin WITH a profile, so `static_gain_db` is known)
+asserting that a known level reduction reads as that GR via the level path, and that a static offset is subtracted
+rather than counted. `level_loop_guard` case (9) already holds the crest path. My first attempt at this leg asserted
+against `lastGr` while it was still NaN - it must drive enough windows for one to be JUDGED first.
+
+### 3. Threshold/amount actuators must work in the loop, not just drive
+
+`param` = a plugin control. The parser and the Actuator enum already carry Threshold and Input, and
+`switchNamedAsActuator`/`setSlotControlsToValue` exist - but the LOOP's stepping path is the drive. This is a
+second actuator through the whole loop, including its own settle and its own at-the-limit behaviour, so it wants
+its own round and its own legs rather than being bolted on.
+
+### 4. The load-FAILURE substitution leg
+
+The code is in 02j (a failed create is replaced in the same slot by the built-in of its role, card names both).
+The LEG is not written. Sean's shape: a slot whose create fails is replaced in the same slot, the card line names
+both, **and a later calibration block for a slot after it still lands on the right plugin** - that last clause is
+the interesting half, because it is the item-1 remap and the substitution interacting.
+
+### 5. Still open from earlier, unchanged
+
+- `level_match_guard` case (1) passed once the op-1/op-2 handshake landed; watch it stays green.
+- The 0.250 slot wet: 02g+ instruments both ends (`wet_pct RECEIVED ... raw= type=`, and ABSENT). Unanswered
+  until a live build with that build in place. If it logs ABSENT and 0.250 still lands, the value is invented on
+  our side and I was wrong to point at the ops payload.
+- `docs/COMP_PROFILE_SPEC_v1.md` section 5 carries the 3 s ruling; **Sean's Desktop master and B's side still say
+  20 s** and need the same change.
+
 ---
 
 ## EARLIER — the day session of 1 Oct (unchanged below this line)
@@ -1096,3 +1220,582 @@ the same value the spec's own example prints — so the example was taken from a
     gate must never run it.
 12. **The test signal is generated and the handoff says so**, because the repo has no `.wav` assets.
 13. **`--file` was added to narrow the scan** after a full AU scan killed the process on UAD/PACE registration.
+
+---
+
+## Sean's ruling, 3 Oct (after the 08:03 diagnosis) — NEXT ROUND, in this order
+
+### A. turnType = chain_edit — IMPLEMENT BUT DO NOT SHIP UNTIL SEAN RELAYS B'S ANSWER
+
+Send `chain_edit` when the classifier says `chain_edit`. Today `PluginEditor.cpp:29536` decides turnType from
+`hadChainFeed` alone and has **no path that can emit chain_edit at all**.
+
+**HELD:** Sean has asked B whether the server handles `chain_edit`. This part does not ship until he relays the
+answer. If it shipped first and the server does not handle it, every edit turn would break instead of one.
+
+### B. PREFLIGHT: "no base stated" IS NEVER A REFUSAL — ships regardless of B's answer
+
+If the reply carries no base list, compare against the **[CURRENT CHAIN] snapshot this turn actually sent**
+(rev 6 at 08:03:21 in his session), and refuse **only if the live rack has really changed since then**:
+`rev differs AND the touched slot moved or is gone`.
+
+Why it ships regardless: a missing optional field became a refusal. `base=0 []` against `live=4` was read as
+"that slot is gone" when the rack was intact and the apply itself had already printed `live=4`.
+
+**Leg (ruled):** an edit with no base list on an unchanged rack APPLIES; the same edit after the touched slot has
+been removed REFUSES.
+
+### C. A LOOP STARTS ONLY FROM AN EDIT THAT APPLIED
+
+His log: `08:03:48.346 Not applied` then `08:03:52.485 local edit settled -> 1 loop(s) started`. The loop starts
+from the "local edit settled" path, which never consults whether the edit applied.
+
+**Leg (ruled):** a refused edit starts no loop.
+
+### Order for the next round, and the deadline
+1. B (preflight) and C (loop only on applied) — both ship.
+2. A implemented but HELD pending B's answer.
+3. Legs owed from 03a: item 3 (an amount block in listen mode never writes the control) and item 5 (no start_db
+   and an unreadable control -> holds).
+4. Then the agreement rule (2a), `max_steps` (2d), then the owed set (make-up + feedback trap together,
+   threshold/amount stepping, gr_target_db/last_gr_db, the level-path leg).
+
+**Gate finished by 17:30** (Kathy runs EJ Map on this Mac tonight; no builds or gates while she does).
+
+---
+
+## Round ship_2026-10-03b — the 3 Oct ruling, unattended
+
+### What shipped
+
+**(a) "No base stated" is never a refusal** — `ChainHost.cpp`, the preflight's touched-slot guard.
+With no base list the edit is judged on the ops' own identities against the live rack: `guard=touched-slot-gone`
+when an op that acts on an existing slot names an index past the end, `guard=touched-slot-identity` when `op.name`
+and the live slot disagree, otherwise it proceeds and logs *"no base list stated - judged on the ops' own
+identities"*. A missing optional field is never the refusal.
+
+**The rev half of the ruling is NOT done, and it is Sean's call.** His ruling also says to compare the rev of the
+`[CURRENT CHAIN]` snapshot the turn actually sent. The borrowed path passes `expectedRevision = -1` — the turn does
+not retain what it sent — so there is nothing to compare against until that is plumbed. The silent direction
+(compare against the live rev, which always matches, so nothing ever refuses) is worse than today, so it was not
+guessed at unattended. The identity check gives both legs he asked for.
+
+**(b) A loop starts only from an edit that APPLIED** — `PluginEditor.cpp`.
+`editWasRefused(editJson)` reads the result already recorded on the chat message, keyed by the edit's own JSON.
+It gates the three settle callbacks **and** `startCalibrationForEdit` itself, which is the choke point every road
+passes through — the three callers also check, because each has its own thing not to do afterwards (none may post
+"nothing started" over a card that already says "not applied"). "No result recorded yet" is **not** a refusal: the
+ack can trail the settle by four seconds.
+
+**(c) turnType = chain_edit, BEHIND A FLAG, OFF BY DEFAULT** — `EchoJayEditor::sendsChainEditTurnType`.
+`~/Library/EchoJay/turntype_edit_on.txt` present AND the classifier's intent is `chain_edit`. Default OFF is
+byte-for-byte today's behaviour. The write goes through the new `EchoJayAPI::overrideNextChatTurnType`, which sets
+only the turn type — `setNextChatTurnType(t)` resets `nextChatBusCount_` as a side effect, which would drop a
+staged meter payload. **Still held pending B's answer**; nothing changes until Sean creates the file.
+
+**(e) The agreement rule** — `EJCalibLoop.h`, before both step paths (threshold and drive).
+With no profile: harder only if LEVEL and CREST both read under the band, softer only if both read over, otherwise
+HOLD and log both — `state=held-disagree`, with the two figures and the band on the line. `grLevelDb` /
+`grLevelKnown` are now computed in **both** `fillCalibWindow` twins whether or not a profile exists, because the
+rule needs both sensors to have an opinion. With a profile the rule is off: `static_gain_db` is what makes the
+level figure trustworthy, and the profile is the only thing that supplies it.
+
+**(f) max_steps from the block** — parsed into `Config::maxStepsFromBlock`, carried as `maxStepsBlock`, applied
+through `effMaxSteps()` = the smaller of it and our own 6. Both step-budget checks use it.
+
+### Two things found while writing the legs, and fixed
+
+**1. A Link rack's loop was losing fields on every tick.** `calibTick` is `calibLoad → decide → calibStore`, and
+for a non-empty uid both ends go through `CalibLoop::toVar` / `fromVar`. `holdOnly` was in neither — so **item 3's
+fix from 03a held for exactly one tick on a Link or borrowed rack** and the loop then stepped the control again, on
+the rack Sean's sessions actually run on. `maxStepsBlock` had the same hole, and so did the whole profile group:
+`hasProfile` was false again by the second tick, which means COMP_PROFILE_SPEC_v1 §7's one check could never run on
+a Link rack at all. Twenty fields now travel, NaN as a void var (JSON writes a NaN double as null and reads it back
+as 0, and "0 dB expected" is a different claim from "nobody said"). The log-only members are deliberately left out:
+`lastHeardS` riding the sidecar is what caused 187 consecutive stale windows after a handover.
+
+**2. The companion road had no item-5 handling.** The drive substitution has been on it since 30 Sep; the
+named-control half was added only to `calibStart`, so a *companion* block naming a control with no `start_db` still
+opened at NaN. A build with two compressors gets one of each, and which one has the defect is an accident of
+ordering.
+
+### Legs added
+
+| Leg | Guard | What it holds |
+|---|---|---|
+| (a) | `level_slot_guard` | no base list + unchanged rack → applies; touched slot removed → refuses, naming what it expected and what it found; index past the end → refuses; unnamed op on a live slot → applies; **an ADD on an empty rack and an add past the end → apply** |
+| (b) | `ui_guard` | a refused edit starts no loop and writes no drive; the same edit applied starts it; no result yet still starts it |
+| (c) | `ui_guard` | both flag states; only a `chain_edit` intent; the override reaches the wire and the staged `busCount` survives it |
+| (d) item 3 | `level_loop_guard` (24) | a held block in LISTEN mode: twenty windows 2.5 dB under the band, zero writes to the control, zero to the drive, and it still measures and reports |
+| (d) item 5 | `level_loop_guard` (25) | no `start_db` on a named control → the control's own position is read; unreadable → holds, and twelve windows later has written nothing |
+| (e) | `level_loop_guard` (22) | both disagreement shapes hold; both agreements step; no level figure → the crest still stands alone; with a profile the rule is off |
+| (f) | `level_loop_guard` (23) | `max_steps` 2 → 2 dB; absent → 6; 10 → still 6 |
+| new | `level_loop_guard` (26) | the sidecar round trip keeps every field a decision is made on, NaN stays NaN, and an older sidecar keeps the defaults |
+
+### Faults of mine, caught by the gate rather than by Sean
+
+- The first cut of the no-base branch walked the merged `touched` set — `o.slot`, `o.to` **and** `o.after`. An add's
+  `after` is an **insertion point**, so `add after 0` on an empty rack was refused with "the rack does not have
+  that slot". That is every build, and `ui_guard`'s 21t-h and 21t-i legs said so in one run. The index that has to
+  exist is `o.slot`, on the ops that act on a slot already there. Both directions are now legs.
+- Leg (26) segfaulted on its last assertion: `l.toVar().getDynamicObject()` is a raw pointer into a temporary var,
+  released at the end of the statement. That is the 18 Sep Pro Tools crash, in a test harness.
+- Leg (25)'s first fixture probed the Gain built-in, whose `level_db` display text is a bare number and so does not
+  parse as dB. A fixture fault, not a product one; it now asks every slot and names what it found.
+
+### Still OWED after 03b
+
+1. **The rev half of the preflight ruling.** Retain the rev of the `[CURRENT CHAIN]` snapshot the turn actually
+   sent and pass it as `expectedRevision` on the borrowed path, so "rev differs AND the touched slot moved or is
+   gone" can be evaluated as ruled. Today the borrowed path passes `-1`.
+2. **Make-up on the plugin's own output control, TOGETHER WITH the GR feedback-trap fix.** Add back make-up the
+   loop wrote, read from the map, plus any non-neutral build-written output setting. Leg: +2 dB of make-up must not
+   change the GR reading. These two are one job — fixing the write without the trap makes the sensor lie.
+3. **Threshold/amount actuator stepping.** Today a named amount control is HELD (03a item 3, leg (24)); stepping it
+   needs the profile's curve, which is what `set_directly` currently stands in for.
+4. **`gr_target_db` + `last_gr_db` in `[CURRENT CHAIN]`** at `EchoJayAPI.cpp:4016` — B has been told the field is
+   `gr_target_db` per compressor slot plus `last_gr_db` for the last measured GR. Not emitted yet.
+5. **A level-path GR leg in `comp_profile_guard`**, which is where a rig with a REAL profile lives — level_loop_guard
+   has no profile, so case (20) was withdrawn rather than faked.
+6. **`level_match_guard` case (1)** — the reverse handshake fixed the race; keep it watched.
+7. **turnType=chain_edit** — implemented, flagged, OFF. Ship by creating `~/Library/EchoJay/turntype_edit_on.txt`
+   once B confirms the server handles the turn type.
+
+### 03b gate verdict
+
+**GREEN: 100% of 57 tests passed (56 `fast` + 1 `plugins`), 0 failed assertions.** Total test time 2181 s,
+finished 12:37 on 3 Oct.
+
+Placed, **not installed**, at `ship_2026-10-03b/`:
+
+| Bundle | arm64 | x86_64 |
+|---|---|---|
+| EchoJay V2 (67M) | `B3561412-2B73-3E5C-B706-C0085A6BD34C` | `0408CD4B-FA55-3E50-97B9-89D2F0999C76` |
+| EchoJay Link (49M) | `7217FFE4-29B0-35F8-845C-7BD80691EDDD` | `0B89F663-E55D-3590-A267-4C2B29D7F873` |
+
+Provenance: the newest `Source/` file is `EJCalibLoop.h` at 11:36:02; both bundle binaries are 11:59/12:00 and the
+gate ran 12:00–12:37 against the same tree. Nothing in `Source/` changed after the build, so the gate and the
+bundles are one Source.
+
+**The first gate run (10:29-10:49) was 7 of 57 red, and the attribution matters more than the count:**
+
+- **Five were the staleness refusal working as designed** — `calib_link_guard`, `alias_mirror_guard`,
+  `lease_id_guard`, `level_match_guard`, `role_snapshot_guard` all compile their V2/Link side against
+  `build-release`, whose archives were from 08:16 and older than `Source/`. They printed *"the V2 archive is OLDER
+  than the headers this would compile against"* and refused rather than segfaulting. That refusal exists because
+  this exact class cost three wrong attributions on 1 Oct. Rebuilt `build-release`; all five passed.
+- **`preflight_guard` leg (b) was the LEG out of date, not the product.** It asserted `getNumSlots() == 1` after a
+  failed create. The log says `EJLoad: SUBSTITUTED "Guard Failer" -> "EchoJay Compressor"` — which is the 2 Oct
+  ruling, *"LOAD FAILURE = SUBSTITUTE"*. The leg now asserts the slot is KEPT and that the card carries the host's
+  own reason rather than "hangs on load", which is what keeps it distinguishable from leg (a) (never created
+  in-host at all). Note this test carries the `plugins` label, so 03a's 56-test `fast` run never ran it.
+- **`level_loop_guard` was mine, twice.** First a fixture fault: leg (25) probed for a control `readControlDb` can
+  read, and **no EchoJay built-in publishes a single JUCE `AudioProcessorParameter`** (not one `addParameter` in any
+  `Eed*Processor.cpp`) — they run on structured settings, so `readControlDb` can never read one. The leg now
+  asserts that as ground truth and tests the HOLD direction, which is the safety-critical one and the one a
+  built-in actually exercises; the "read it" half is owed in `comp_profile_guard`, which hosts a real plugin.
+
+**And the second red was a real product gap in my own 03a fix.** Item 5's fix stopped the WRITE from an unread
+position, but the position stayed NaN and every line quoting it still printed `nan` - which is what Sean actually
+reported ("dialling Threshold from nan dB", then a window reading "Threshold=+0.0"). Fixed at `signed1`, the one
+formatter every line passes through: a non-finite value now renders `unknown`. The loop's position is deliberately
+left NaN, because it holds precisely BECAUSE nobody read the control - writing a 0 there would be the invented
+reading wearing the fix's clothes. The leg now asserts on the rendered line (no `nan`, `unknown` present) rather
+than on the member.
+
+---
+
+## NEXT ROUND (not 3 Oct): explicit "harder" to 12 dB, and the ONE corrective move
+
+Sean's ruling, as corrected at 14:37 on 3 Oct. **This supersedes the earlier wording of the same item**, which said
+"Two steps at most": it is **at most ONE corrective move**, and a miss after that move ASKS rather than moving again.
+
+### The pick
+
+Explicit "harder" goes to **12 dB**. Past the profile's measured points the SERVER estimates, and says so: the
+block carries `estimated: true` with a **sense**.
+
+### The one corrective move, by pick kind
+
+| Pick | After the hold |
+|---|---|
+| `estimated: true` | **ONE move, and only one.** If level-minus-static GR misses `expected_gr_db` by **more than 1 dB in either direction**, move the NAMED CONTROL once in the block's sense, by the amount needed to CLOSE THE GAP - not by a fixed step. B's block will carry the amount; failing that, use the profile slope. Then hold and report the measured figure. **If it is still off: say so and ASK.** Never a second move. |
+| measured (not estimated) | Unchanged: the existing **one-move-toward-less-gain-reduction** rule (COMP_PROFILE_SPEC_v1 section 7). |
+| `at_control_limit` | **No move at all.** The control is already at its end; moving it is a write that cannot help. |
+
+### Bounds that hold for every case
+
+- **Never past `min_db` / `max_db`.**
+- **Never on crest alone** - the corrective move is judged on level-minus-static, which means it needs
+  `static_gain_db` from the map profile or from the block (see `staticGainKnown()`, shipped 3 Oct). A slot with no
+  static offset gets no corrective move.
+- **Never EchoJay's own drive.** The named control, or nothing.
+
+### Legs (ruled)
+
+1. **1.5 dB under `expected_gr_db` moves once** - and the move closes the gap rather than stepping a fixed 1 dB.
+2. **0.8 dB off moves not at all** - inside the 1 dB tolerance.
+3. **A miss after the move ASKS rather than moving again** - the second move must be impossible, not merely unlikely.
+4. ...and the two kinds that are not estimated: a measured pick keeps one-move-toward-less; `at_control_limit` moves
+   nothing.
+
+### Then, still owed and unchanged
+
+Make-up on the plugin's own output control **together with** the GR feedback-trap fix (adding make-up back must not
+change the GR reading; leg: +2 dB of make-up leaves the figure alone). These two are one job - fixing the write
+without the trap makes the sensor lie about what the write did.
+
+---
+
+## UNCOMMITTED, UNGATED work in the tree after 03c (3 Oct, evening)
+
+`ship_2026-10-03c` is GREEN, placed and reported (V2 arm64 `E20761E5…`, Link arm64 `2D4426C9…`). Everything below
+was written AFTER those bundles were built, so **the tree no longer matches them**. It compiles (V2 archive, 0
+errors, 16:31) but **no guard has run against it**. It gates in the next round.
+
+### In the tree now: Kathy's live low-level-gain measurement (LOG ONLY)
+
+Answers whether the CL 1B's constant 0.7 dB gap exists in our chain at all. `ChainSlot` holds a 64-entry ring of
+(input dBFS, out−in) pairs; `ChainHost::noteLowLevelGainSample` / `lowLevelGain` own it. Two gates: **confirmed**
+= 6 dB under the block's `in_at_gr1_dbfs` (parsed, carried, serialised; NaN until B ships it); **fallback** = 15 dB
+under the track's remembered loud level, tagged `unconfirmed`. Under −60 dBFS and silent windows ignored. A gate
+change resets the store. Confirmation test: two input bands ≥6 dB apart, ≥3 samples each, medians agreeing within
+0.1 dB, else `not confirmed` with both figures. One composer (`CalibLoop::lowGainLine`) so the twins cannot drift.
+Rides the window line. Plus `EJPlace: "<name>" loaded at host sampleRate=… Hz`.
+
+The store lives on the SLOT, not the loop: a loop round-trips through the sidecar every tick on a Link rack, so a
+ring on the loop would reset every second and never accumulate.
+
+### Backlog for the next gated round, in the order it was ruled
+
+1. **The save fix** (Sean's rulings, 3 Oct): additive `borrowedRacks` key, cache-only serialisation
+   (`getCachedSlotStatesVar` is explicitly safe in the save callback), restore deferred to the message thread on
+   first sight of the uid (both load orders). Tie-break **by revision**: store the Link's rev the borrow started
+   from; apply V2's copy only if the Link's restored rev is still at that base, else the Link wins and V2 discards.
+   The Link persists no rev today — add `chainRev` additively, restored into a separate member and published in the
+   sidecar, NOT by overwriting `chainRevision_` (the counter the preflight staleness guards compare against).
+   Additive format gaps: slot output gain + pre-trim in `chainSlotsXml` AND `chainModelToVar`; `settings_structured`
+   in `chainModelToVar` (it is read on restore and never written). V2-side save line naming each open borrowed rack
+   (uid, base rev, slot count, bytes). Legs: both load orders identical on the Link incl. slot output gain and
+   structured settings; older Link chain + newer borrowed rebuild → borrowed wins; deleted on the Link → stays
+   deleted; a session with no `borrowedRacks` key loads exactly as today.
+2. **`gr_target_db` / `last_gr_db` on the BORROWED path.** Shipped in 03c only on the `ChainHost` adapter; the
+   `RackSidecar` overload (`PluginEditor.cpp` ~27735, the Link-rack path) passes no `grNotes`, which is why Sean's
+   16:10 slot 3 line carried neither field. That branch already holds `bh`, so it is a small fix. The sidecar
+   branch (Link advancing its own loop after deselect) needs the figures to ride the sidecar additively.
+3. **The stale window after an edit** (16:10 item 2). `begin()` sets `awaitFresh = false` and `lastHeardS = -1`
+   while `retarget()` sets `awaitFresh = true` and keeps `lastHeardS` — so a FRESH loop judges its first window
+   and a re-target does not. Third contributor: `calibLastWindowMs_` is processor-level and is not restarted when
+   a loop begins, so the first tick can close a "window" immediately AND pass that arbitrary span as the window
+   length. Fix: arm `awaitFresh` in `begin()` and restart the window clock at loop start. Leg churn is likely —
+   several legs assume the first window is judged.
+4. **The measure mismatch** (Kathy's definition). The block says `measure=shortmax`; the client computes GR from
+   `shortTermP90Db` (SHORT90 = where the programme SITS). Both legs agree with each other, so there is no in/out
+   mismatch — the measure is simply not the one the definition and the block ask for, and p90 under-reads GR on a
+   compressor. Fix: use `maxShortTermDb` on both legs. Also log `in=`, `out=` and the parsed `static=` so the two
+   candidate causes (measure vs a placeholder `static_gain_db: 0`) separate themselves immediately.
+5. **The map cache** (16:10 item 3). `~/Library/EchoJay/param_maps.json`, 138 maps, **0 with a comp_profile**; the
+   CL 1B's fp `ab70ea5337fe` is cached at rev `882416b27874` with none. Revalidation exists and rev-compares, but
+   is latched **once per session** (`mapsRevalidated_`) and had already fired before B's ~14:50 fix. AND
+   `storeParamMaps` does `if (oldRev.isNotEmpty() && oldRev == newRev) continue;` — **so B must bump the map's rev
+   or the client discards the corrected body even on a revalidation.** Client fix: on the "map present but no
+   comp_profile" path, request a targeted re-fetch of that one fp, at most once per fp per session.
+6. **Silence and quiet material** (Sean's rules). Confirmed: silent windows are never judged and nothing is
+   written (`if (w.silent) { noSignalMs += windowMs; … return; }`), and on resume `noSignalMs = 0` and
+   `Waiting → Listening`, so the check does run on the first audible windows however much later. Gaps vs the
+   ruling: the threshold is `kNoSignalMs = 30000` (ruled 10 s); the wording is "<plugin> is on - play it and I'll
+   tell you what it's doing" (ruled "Set. I'll check it and match the level when the vocal plays"); and
+   `askNoSignal` returns early unless `mode == Passive`, so a Listen loop says nothing. NOTE: `card()` returns
+   empty in Passive by a previous ruling ("PASSIVE SAYS NOTHING WHILE IT RUNS"), so putting this on the CARD
+   reverses that — flagged for Sean. Quiet material: judge only windows within 6 dB of the remembered loud level;
+   slot tallies are plain dBFS so this is a direct comparison.
+7. **The estimated-pick corrective move** — at most ONE, sized to close the gap, then ask (recorded above).
+8. **Make-up on the plugin's own output control together with the GR feedback-trap fix.**
+
+### Rulings, 3 Oct evening (these amend the backlog items above)
+
+**Item 4, the measure mismatch — CONFIRMED AS THE LEAD.** B confirms the 13:53 and 16:10 blocks carried
+`static_gain_db = -0.7`, so the "placeholder 0" candidate is OUT. And the arithmetic now closes:
+with static −0.7 and a SHORT90 drop of 2.0, Kathy's `GR = static − (out − in)` gives **1.3**, which is exactly the
+`grLevel=1.3` in the 16:09:03 window line. For GR to be the true 2.7 the drop at the LOUD PHRASES must be ≈3.4 dB,
+i.e. ~1.4 dB more than at p90 — which is what a compressor does to its loudest material. So the fix is to compute
+both legs from `maxShortTermDb`, and the expected size of the correction is known in advance, which is what makes
+it falsifiable: if moving to shortmax does NOT move the CL 1B's reading by about 1.4 dB, the lead was wrong.
+Still log `in=`, `out=`, `static=` so the next session shows the raw figures either way.
+
+**Item 6, silence — SETTLED, and it does NOT reverse the no-card ruling.** Passive stays silent WHILE IT
+MEASURES. But if nothing is heard for **10 s after a build or edit**, the check cannot run, so post the settle line
+EARLY, as a chat line:
+
+> Set from its profile. I'll match the level when the vocal plays.
+
+When it later measures, post the normal line. **One line each, never more** — so two separate latches, not one:
+the early settle line and the normal measured line are different lines with different conditions. The 10 s clock
+runs from the build or edit, replacing `kNoSignalMs = 30000` for this case. Nothing goes on the card, so
+"PASSIVE SAYS NOTHING WHILE IT RUNS" stands as written.
+
+**Item 5, the map cache.** B is bumping the map rev when a profile attaches, so the rev-compare will no longer
+discard the corrected body. NOTE: the **once-per-session latch** (`mapsRevalidated_`) still means a profile that
+attaches mid-session does not arrive until the plugin is reloaded — so the targeted re-fetch on the "map present
+but no comp_profile" path is still worth having, and is what makes it land in the same session.
+
+**New, from B: `expected_drop_db` on profiled blocks.** Read it when present. It is the expected (out − in) level
+drop, so it is a direct cross-check on our own measured drop — and with the measure fix above it is the figure that
+says whether we are now measuring the drop the server meant. Parse additively, log it, change nothing with it yet.
+
+**Build discipline:** nothing builds until the EJ Map run is finished; Sean will say when. The tree currently holds
+Kathy's low-level-gain measurement, compiled clean (0 errors) but ungated.
+
+### Rulings, 3 Oct late — map ranges and anchors
+
+**`controls_norm` precedence is correct as it stands** (it wins, and the `controls` duplicate is dropped before the
+write, matched on the normalised name). **Approved for next round:** build `normOwned` only from `controls_norm`
+names that RESOLVE to a parameter, so an unmatched name keeps its display fallback instead of losing both writes.
+Leg: a `controls_norm` name the plugin does not have must leave the display value applied, not drop it.
+
+**Anchor interpolation is POSITIONAL, confirmed in code.** `interpolateAnchors` brackets the target and returns
+`n0 + frac * (n1 - n0)` using the anchors' own normalised positions — so a half-range table (8.5 @ 0.5, 31 @ 1.0)
+puts 10 dB at ≈0.533, NOT at ≈0.07. It never spreads min..max over 0..1.
+
+**The cached CL 1B map is the GOOD table, not a half-range.** fp `ab70ea5337fe`, rev `882416b27874`: Gain has 23
+anchors, `range [-47.8, 31]`, first anchor −47.8 dB @ norm 0.1, and 0.0 dB is bracketed by real anchors at
+−2.7 @ 0.300 and +1.0 @ 0.350, i.e. ≈0.33 — the position Kathy says is right. The un-anchored stretch below norm
+0.1 is the "Off" region, correctly excluded because "Off" is not a dB value. **Sean has told B not to bump the rev
+for this fp unless the server body matches this table** — a bump would otherwise replace the good table with the
+worse one. Note this also corrects an earlier report of mine: `Gain 0.0` is NOT refused as out of range on this
+machine; that only happens against the 8.5..31 table, which is not what is cached here.
+
+**Approved for next round: a null-anchor guard.** `anchorsFromVar` does `(float)(double)(*p)[0]`, so a `[null, x]`
+anchor pair would silently become a `0.0 dB` anchor — which would both admit a 0.0 request to the range gate and
+land it at that pair's norm (Off, at norm 0). A scan of all 138 cached maps found **0 pairs containing a null**, so
+this is a latent trap for a future map shape rather than a present fault. Guard: skip any pair with a non-numeric
+entry, never read it as 0.0, and log the skip. Leg: a map carrying `[null, 0.0]` must behave as if that anchor were
+absent.
+
+**Recorded, affects future make-up work:** the CL 1B's Gain is `trust = "setread"`, so the display comparison is
+skipped and only the norm round-trip is checked ("applied (display unverifiable on this plugin)"). Make-up written
+to that control CANNOT be verified by readback — which the owed make-up/feedback-trap item has to account for.
+
+### From B, 4 Oct: min_db/max_db now come from the map
+
+Wider bounds: the 1176 family's Input min is **-50.3** (was -24) and the CL 1B's threshold max is **+1.1**
+(was -18.5). Sean: the section 7 correction limits read these, so no client change is needed.
+
+**Checked, read-only, and nothing truncates them.** `configFromBlock` takes each as sent when it is a number
+(`out.maxDb = mx.isVoid() ? 0.0f : (float)(double) mx`), and `begin()` only ORDERS the pair
+(`minDb = jmin(c.minDb, c.maxDb); maxDb = jmax(...)`), so `-96 .. +1.1` arrives intact. There is no clamp at 0
+anywhere on the actuator range - the only 0 is the fallback for an ABSENT max_db, which these blocks now carry.
+
+**Two consequences worth expecting rather than being surprised by:**
+1. The null-min_db note ("min_db null ... taking -96 dB as the practical floor"), which fired on the CL 1B at
+   16:09 on 3 Oct, should stop appearing for plugins whose map supplies a min.
+2. A `max_db` above zero is new. It is legal and the clamp honours it, but it means a threshold CAN now be raised
+   to a value that effectively stops the unit compressing. Nothing today walks it there - the amount actuator is
+   HOLD-ONLY (03a item 3) and the step budget is 6 - but it matters for backlog item "threshold/amount actuator
+   stepping", where the wider range is the difference between clamping early and travelling the whole control.
+   The one corrective move for an estimated pick is bounded by min/max too, so it inherits the same widening.
+
+---
+
+## Overnight 4/5 Oct: ship_2026-10-04e is the build to install (GREEN 58/58, one clean pass)
+
+**The sidechain premise was wrong, and that is the headline.** `AudioProcessorGraph` adopts each hosted plugin at
+the graph's own main-bus channel counts (2-in/2-out), so a declared sidechain bus arrives **disabled, 0 channels**:
+there are no spare input channels to zero and nothing silent reaches the key. Measured in the new `sidechain_guard`:
+`input buses=2 totalInCh=2 bus1=DISABLED 0ch`. Kathy's C1/RComp zeros came from a probe that ENABLED every input bus
+and fed the spare one silence. **EchoJay never fed a sidechain silence.** The ruled (b) fix is in the tree but
+unreachable (the bus is never enabled); left guarded and commented so it works if buses are ever enabled.
+**Open, needs a signed probe:** JUCE installs an AU render callback for every DECLARED bus regardless of enablement,
+so a real Waves AU gets a live callback on a zero-channel element. Whether it reads that as "disconnected" (keying
+internally, as under Logic) or as silence cannot be settled with a mock, and a PACE plugin cannot be loaded here.
+
+**Two defects the new legs found, both in code already shipped or about to be:**
+1. **The save fix dropped the slot gains on arrival.** `LinkProcessor` has TWO chain-array parses; the gains went
+   into `restoreChainFromVar` (session restore) while the V2 hands a saved borrowed rack back via a **chain-cmd**,
+   which lands in the other parse. G6 read `0.00 / 0.00` against the `-2.5 / 1.5` sent. Fixed on the command path.
+   **04c and 04d carry the incomplete version; 04e is the first build where a reopened session keeps its level
+   match.** The V2 binary is byte-identical across 04d/04e (`2C6C480F…`) because the fix was Link-only.
+2. **`harness_build.py`'s staleness check was too coarse** — it refused when the V2 archive was older than ANY
+   `Source/` file, but `LinkProcessor.cpp` is not in the V2 archive. A Link-only edit therefore made four two-sided
+   guards (`alias_mirror`, `lease_id`, `level_match`, `role_snapshot`) skip their V2 halves and fail by name. Now
+   compares against the build directory's own object list (75 objects) plus every header, **proven both
+   directions**: a Link-only edit compiles, touching `ChainHost.cpp` still refuses. 04e's gate is the first in which
+   those four actually ran their V2 halves.
+
+**`link_state_guard` was half-disabled since 28 Sep** (runner looked for `$S/v2_side_bin`; `harness_build.py` was
+renamed to per-guard outputs that day). One-line fix; now GREEN both sides. New **G6/A and G6/B** cover the two
+load orders for the borrowedRacks save fix, asserting the slot OUT gain and PRE-trim survive. Still NOT registered
+in the gate — it runs standalone, deterministically (199-202 s, identical results, live shm untouched).
+
+**Also in 04e:** the not-responding loop guard (~0 dB GR with the input well past the profile's 1 dB point stops and
+reports, never steps further; never off the crest sensor); the passive low-level-gain watch on landed slots (a hold
+ran one window and could never gather); `in_at_gr1_dbfs` value+source on every "usable profile" line (the default was
+already NaN, so that hypothesis was wrong); and the settle line labelling measured figures as measured with the
+target shown, to one decimal (it had been rounding 2.3 to "2", hiding the miss).
+
+**Not reached:** round 2, items 8-15.
+
+---
+
+## ROUND 05a (5 Oct 2026) — the 04e Logic session, items 1–4 + the item 6 read-only answer
+
+Sean's session log was recovered from the unified log (`log show`, 11:17–11:27), so every claim below is from his own
+run rather than from a reconstruction.
+
+### Item 1 — crash on close (both layers, as ruled)
+Release really disposes: the node ref is copied, `removeNode` runs, `pumpGraphToRetireOldSequence` pumps two silent
+blocks so `RenderSequenceExchange` swaps and the old sequence is freed, and the line says whether the AU was
+destroyed there (`refs <= 1`) or is still held. Teardown disposes nothing: `leakHostedPluginsAtTeardown` copies every
+remaining `Node::Ptr` into a heap-allocated, never-freed vector reached through a `static` POINTER — so there is no
+static destructor at process exit to dispose them (the UAD-style exit crash). Applied to the Link's graph too.
+`teardown_dispose_guard` counts disposals on a mock AU: release 0 -> 1, teardown 1 -> 1. Green both directions.
+
+### Item 2 — slot gain reset on engage: a CLOBBER, not a missing seed
+Three sites wrote the slot's OUT gain from the opening drive, and with a zero/absent drive wrote `-0` over whatever
+the slot held: `calibStart(uid, slot, pluginName, …)`, `calibStart(Config)` and `calibStartMany`. His log is the
+proof — five slots to 0.00 at 11:18:51, 11:19:22, 11:20:02, 11:22:49 and 11:26:10, each burst following an engage,
+with +5.00 restored in between. All three now refuse to write when there is no drive to apply and the slot already
+carries a value, and say so.
+
+**Is the loss permanent? No, and the log says why.** The structure plan carries `byp` and `wet`, never the gains, so
+the hand-back cannot write the zeroes back and the Link keeps its own +5 — which is exactly why Sean saw +5.00 come
+back at every reopen. The damage was (a) audible for the whole lease, since the borrowed host is what processes
+audio, and (b) a save taken *during* a lease stored the zeroes in `borrowedRacks`.
+
+**A second gap found while fixing it:** `restoreSavedChain` — the var path that rebuilds a BORROWED rack at engage
+*and* restores a saved borrowed rack — never read `outGainDb`/`preTrimDb`. Only the XML path did. So even correctly
+saved gains were dropped on the way back in. Both fields now ride `RackSidecarSlot` (additive, last in the struct,
+written only when non-zero), are published by the one shared `fillRackSidecarSlots`, are carried onto the borrow's
+slot objects by the editor, and are read by `restoreSavedChain`.
+
+### Item 3 — the stale window: the re-target was bypassing the wait
+`awaitFresh` existed but skipped exactly ONE window, and `if (pendingStep != 0) awaitFresh = false;` cleared even
+that for a comparative. His 11:24:18 pass:
+
+    11:24:18.913  block carried no start_db - READ "Threshold" off the plugin: -13.60 dB
+    11:24:18.913  slot 3 both legs reset ... no window from before this can enter a sample
+    11:24:18.963  window 1 gr=4.3 ... settleHeard=0.0s          <- 50 ms later, JUDGED
+
+gr=4.3 was the reading from the previous setting (-8.8 dB, band 4.5–5.0). The Threshold had moved 4.8 dB OUTSIDE the
+loop, so `pendingStep` reported nothing moved. Now the slot's heard clock is the bar: `heardAtWriteS` anchors on the
+first window after the write and nothing is judged until a WHOLE window of audio has been heard since
+(`state=awaiting-fresh-window`). The anchor is a reading of THIS host's tally and never rides the sidecar — the
+187-stale-window handover trap — while `awaitFresh` does, so a handover re-anchors honestly.
+
+### Item 4 — the watch was never armed on the slots it exists for
+`armLowGainWatch` was gated on `step.finished`, which means "the loop ENDED on this window". A build hold does not
+end: it lands and stays open for §7's check. So on exactly the dynamics slots the watch exists for it was never
+armed — his 11:23:51–11:25:02 pass logged no `EJLowGain` line at all and the card read `(waiting, n=0)`. Now armed on
+`step.finished || loop.landed`, with arming made idempotent (an existing watch keeps its window count and only
+refreshes its gate, or re-arming every window would hold the count at 0 and the eighth-window report would never
+print). The Link twin had no arm site and no tick at all; both added.
+
+### Item 6 — read-only, and the answer is upstream of the plugin
+The arithmetic is right and matches the spec verbatim. `grLevelDb = -(O90 - I90) + staticGainDb` on both twins
+(`LinkProcessor.cpp:528`, `PluginProcessor.cpp:7152`), and §7's own path computes `levelChangeDb - staticGainDb`
+(`EJCompCheck.h:85`). Spec line 101: "output minus input well below threshold". Those agree, applied once, no double
+subtraction, same accessor on both sides. Sean's bench (-30.0 in, -30.6 out) confirms the -0.7 is real on this host,
+so the shortfall is real compression, not a reporting error.
+
+**The track/slot pair.** Aitch_4 is uid `4814a16004`, and its published track level across the whole session is
+`loud_rms_dbfs -21.45, loud_peak_dbfs -5.85, heard 466 s`. **The slot-input pair does not exist** — nothing in the
+session records it, because `LevelTally` computes no 400 ms p95 RMS and no per-window peak percentile at all (it has
+3 s short-term figures and gated 400 ms p10/p50/**p90**). That absence is the finding: the comparison B wants cannot
+be made from anything EchoJay records today, which is precisely why the field has to be built.
+
+### 05a corrections after Sean's review
+
+**1. The first 05a placement was entirely stale, and worse than reported.** `cmake --build build-guards --target
+EchoJay EchoJayLink` builds the SHARED CODE static libraries, not the bundles. It printed "[100%] Built target
+EchoJay" and every statement I made about it was true, while all four bundles on disk were still 04e's 00:38
+binaries — not just the AUs. 04e shipped no VST3s at all, which is the only reason those UUIDs looked new. The four
+targets that produce bundles are `EchoJay_AU`, `EchoJay_VST3`, `EchoJayLink_AU`, `EchoJayLink_VST3` — which is what
+the "four plugin targets" rule always meant. Sean caught it from the UUID table.
+
+`tools/place_ship.sh` now does the placing and refuses twice over: a binary older than the newest tracked source
+file cannot contain it, and an AU whose arm64 UUID equals the INSTALLED one means nothing was rebuilt. Proven both
+directions today — it refused the stale tree (naming both reasons) and placed the rebuilt one.
+
+**2. level_loop_guard (14) was encoding the bug.** Sean: "not a fixture question until proven." Proven. New leg
+(14c) asks the question on one slot with enough audio and the level hold writes `OUT -1.00` in four windows, so the
+write is intact. (14) then failed for a different reason, and the leg's OWN closing line — asserted and green —
+said it: "Compressor 2 set as dialled, level already matched." That companion needs no match, so writing OUT would
+be wrong. It used to write because it was judging a window from BEFORE the build reset the tallies: the old green
+depended on the staleness item 3 removes. The assertion now requires the hold to have ACCOUNTED for the level —
+moved OUT, or said it did not need to — and the unconditional write is proved by (14c) where it belongs.
+level_loop_guard: 100% GREEN.
+
+**3. Item 6 deferred to 05b by ruling**, so this round is not delayed.
+
+---
+
+## 05b BACKLOG (ruled, not yet built)
+
+1. **Item 6 — the slot's own level on its [CURRENT CHAIN] line.** `echojay::TrackLevel` driven from each slot's IN tap
+   (after EchoJay's slot input gain), on both twins. Emit `loud_rms_dbfs`, `loud_peak_dbfs`, `slot_heard_s`; both
+   figures or neither; omitted until >= 3 s heard. Definitions are §5's by construction, since it is the same class
+   that produces the track figure. Report the exact line format to Sean for B.
+2. **SHORT LISTENS — predict the make-up at the write (5 Oct ruling).** When an edit changes a PROFILED compressor's
+   amount (harder / softer / build), write the PREDICTED make-up immediately with the edit: the profile's expected GR
+   at the new position plus the static-gain term, onto EchoJay's slot OUT (or the plugin's own output control once
+   item 13 lands). The measured level hold then corrects it on the first judged window. Log
+   "make-up predicted X dB at the write; corrected to Y dB after N s of audio". Unprofiled plugins keep today's
+   measure-then-write behaviour. While awaiting audio the card says "keep playing, about N s to go" instead of
+   looking idle.
+   Leg: harder on a profiled rig -> OUT moves AT THE WRITE, before any window -> the first judged window corrects it
+   to the measured figure.
+   **CONFLICT TO RESOLVE FIRST (flagged, needs Sean's word):** this is a second write to OUT for one edit, and the
+   30 Sep ruling is the opposite - "a BUILD does not come back to refine. It sets OUT once so the level matches, and
+   closes on the same step - so the sentence states the write it just made." The hold also counts its writes
+   (`holdWrites < kHoldMaxWrites`). So either the predicted write is explicitly NOT one of the hold's writes (a
+   staging write, with the hold's single write still to come), or the 30 Sep rule is relaxed for profiled slots.
+   The two readings produce different closing sentences, which is what that ruling was protecting - so it is Sean's
+   call, not an implementation detail.
+2a. **Short listens: RULED (a) by Sean, 5 Oct.** The predicted write is a STAGING write and is explicitly not one
+   of the hold's writes (it must not consume `holdWrites`). The hold still makes its single real write, and the
+   closing sentence states the CORRECTED figure. The 30 Sep "a build sets OUT once" rule stands unchanged.
+
+3. **Item 3 — CORRECTED BY SEAN, 5 Oct. It IS the stale chunk, and there is a SECOND defect.**
+   My "the settled read is the truth" reading was wrong. Evidence: the same norm landed "-13.6" at 16:20:25 on V2
+   (0.4016) and the Link's immediate read after writing 0.402 was also -13.6, so 0.402 = -13.6 and the write worked.
+   Something then moved it to -2.6 (16:18:07) and to "Off" (16:18:53) - and Off is norm 0, which no write of ours
+   ever asked for. That is the restored chunk, applied ASYNC after our write. The chunk was stale because a DAW save
+   serves it from the cache with no fresh capture. True value at save was -13.6 (the 11:24 harder, nothing since).
+   **SECOND DEFECT, CONFIRMED:** "value restored" is EchoJay reverting its own correct write. settleVerify's final
+   attempt runs `param->setValueNotifyingHost (r.settlePrevNorm)`, the value from BEFORE our write - so after the
+   chunk moved the parameter, the verdict put it at neither our value nor the chunk's. The revert is right for a
+   plugin that ignores a write (the WaveShell case it was built for) and wrong when a third party moved the
+   parameter in between - here EchoJay's own chunk restore, which it knows it performed.
+   **FIX, recommended: (i), with (ii) as a cheap complement, not as the correctness argument.**
+   (ii) alone cannot close the hole: capturing calls getStateInformation (the nextCaptureMs backoff exists because
+   some plugins are slow), so a synchronous capture per write risks message-thread stalls during a loop; routed
+   through the debounced sweep it is cheap but RACY, because the DAW save callback deliberately never forces a
+   capture - which is the exact failure. It also only covers chunks stale because of US; a user knob-move in the
+   plugin's own window followed by an immediate save has the same race.
+   (i) is deterministic and costs no serialisation, and THE SEAM ALREADY EXISTS: restoreOne does applyRestoredState
+   (blob) then applyRestoredParams - "Blob first, then the JUCE-side parameter values" - but that second step is
+   **VST3 only**, which is why an AU CL 1B on the Link had nothing applied after its chunk. Extend it to our stored
+   controls on AU slots, gated on our value being newer (slot `capturedAtMs` vs a new per-slot last-we-wrote stamp).
+   Legs: (1) write -13.6, DAW-save with NO manual Save, restore, read -13.6. (2) a parameter moved by EchoJay's own
+   chunk restore after our write must NOT trigger a revert to the pre-write value.
+   **APPROVED BY SEAN, 5 Oct, as planned above**, with one term made explicit: the revert must NEVER fire when a
+   KNOWN THIRD PARTY changed the parameter after our write - our own chunk restore, or a user move. So the revert
+   needs a precondition, not just a re-read: settleVerify may only restore when nothing it knows about touched that
+   parameter since the write. An unexplained mismatch (the plugin genuinely ignoring us, the WaveShell case) still
+   reverts; an explained one never does, because then the revert is undoing somebody else's legitimate change and
+   leaves the parameter at a third value that nobody asked for.
+
+4. **Item 3's old framing — the readback verdict alone.** `landed "-2.6"` proves the write worked; the verdict
+   compared the immediate read against the settled one, called it "did not stick" and reverted it. Fix the verdict
+   (settled read is the truth), same class as the note at EchoJayParamApply.h:67. No reordering.
+   Noted while proving it: the DAW's own save callback serves the slot chunk FROM THE CACHE and deliberately never
+   calls into a hosted plugin, so a chunk genuinely can lag. It did not bite here.
+4. **Item 2 — release leaves 2 extra refs.** "node refs after the pump = 3 - STILL HELD": the pump is not retiring
+   the render sequence. Layer (b) covers the crash; released instances live until close. Find the holders.
+5. **(14d)'s make-up bar.** It asserts 3 windows because that is what was measured, which is looser than Sean's 6 s
+   budget. The hold's gate is `landed && holdOpen && ! holdDone` at ~1640 and `landed = true` is set at 1588, BEFORE
+   it - so a one-window ordering artefact is ruled out. Establish whether the extra window is the residual or
+   holdOpen, then either write on the first judged window or state the reason, and set the assertion to match.
+6. **Re-aim `sidechain_guard`** at a mock whose sidechain survives adoption: it is green while asserting the
+   built-in case.
+7. **Fold `link_state_guard` into the CMake tree** so it stops being the one thing outside the gate.

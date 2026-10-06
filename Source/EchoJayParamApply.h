@@ -1567,6 +1567,12 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
         if (semantic == "bands")    continue; // handled after the flat pass
         if (semantic == "controls") continue; // handled after the flat pass
         if (semantic == "deltas")   continue; // 21t: handled after the controls pass (it reads the readback)
+        // controls_norm IS A CONTAINER, NEVER A CONTROL (2 Oct 2026, Sean's 16:33 session). It was added as a
+        // sibling of `controls` and this flat pass was not told, so the KEY itself was looked up as a parameter
+        // name, missed, and reported as a control needing the user's hand: the card read "except controls norm
+        // which needs hand-dialing", naming a thing that does not exist on any plugin. Handled below, like the
+        // other two containers above it.
+        if (semantic == "controls_norm") continue;
 
         auto mapEntry = mapParams.getProperty (semantic, juce::var());
         const bool flatUsable = mapEntry.isObject() && usableParamEntry (mapEntry);
@@ -1623,10 +1629,35 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
     if (auto* co0 = controlsReq.getDynamicObject())
     {
         auto mapControls = map.getProperty ("controls", juce::var());
+        // ONE CONTROL, ONE WRITE: controls_norm WINS (2 Oct 2026, Sean's 16:33 session). The server sent Gain in
+        // BOTH maps and the plugin dialled it twice, 80 microseconds apart - "Gain: APPLIED 0.336 (display
+        // unverifiable)" from `controls`, then "Gain: APPLIED 0.330 (norm 0.3300 written directly)" from
+        // controls_norm. Two writes to one control is a race the readback cannot describe: the first value is
+        // reported applied and is then overwritten, so the dial summary and the plugin disagree about what the
+        // user got. controls_norm is the precise one by construction (the spec: an interpolated position has no
+        // display text, and a bare number in `controls` would be read as a display value), so it is the one that
+        // stands, and the duplicate here is dropped before it is written rather than after.
+        juce::StringArray normOwned;
+        if (auto* no = settings.getProperty ("controls_norm", juce::var()).getDynamicObject())
+            for (auto& nk : no->getProperties()) normOwned.add (normalizeControlName (nk.name.toString()));
         // 18e (item 7): PAIRED controls. A map carrying "L X"/"R X", "X 1"/"X 2" or "X A"/"X B" and settings that name ONE
         // side get the same value on the other side, so a stereo pair is never half-dialled and never "by hand".
         juce::DynamicObject::Ptr expanded = new juce::DynamicObject();
-        for (auto& kv : co0->getProperties()) expanded->setProperty (kv.name, kv.value);
+        for (auto& kv : co0->getProperties())
+        {
+            if (normOwned.contains (normalizeControlName (kv.name.toString())))
+            {
+                // NO ApplyResult for the dropped duplicate. An unapplied result is how a control ends up on the
+                // card as "needs hand-dialing", which is the very fault being fixed one screen up - and this
+                // control is NOT unattended: the controls_norm pass below writes it, and logs
+                // "norm 0.3300 written directly (controls_norm)" when it does. One write, one line about it.
+                EchoJay_NSLog (("EJParamApply:   " + kv.name.toString()
+                                + ": from controls SKIPPED - controls_norm carries it and is the precise form "
+                                  "(one control, one write)").toRawUTF8());
+                continue;
+            }
+            expanded->setProperty (kv.name, kv.value);
+        }
         {
             auto hasControl = [&] (const juce::String& nm) -> bool
             {

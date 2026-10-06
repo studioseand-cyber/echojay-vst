@@ -169,6 +169,72 @@ int main()
             }
         }
     }
+    // ---- A BLACKLISTED PLUGIN IS NOT IN THE OUTGOING FEED (2 Oct 2026 ruling) ------------------------------
+    {
+        std::printf ("\n-- a blacklisted NAME-ONLY row is withheld from the feed, not just refused at load --\n");
+        // Sean's 16:33 session, second half. AVOX SYBIL is on the crash skip list, and the first fix stopped it
+        // LOADING - but it was still in the [AVAILABLE PLUGINS] list the server sees, so the model proposed it and
+        // the user watched it be offered and withheld in the same turn. withholdReasonLocked had both faults this
+        // rig reproduces: it compared the blacklist RAW (so a trailing-space OSType never matched its trimmed line
+        // on disk) and it short-circuited when fileOrIdentifier was empty - which is every merged feed row.
+        auto antares = [] (const char* nm, const char* ident)
+        {
+            juce::PluginDescription d; d.name = nm; d.pluginFormatName = "AudioUnit";
+            d.manufacturerName = "Antares"; d.fileOrIdentifier = ident;
+            d.uniqueId = d.deprecatedUid = juce::String (ident).hashCode(); d.version = "4.2.0"; return d;
+        };
+        // The real identifier ends in a space: Antares' manufacturer OSType is literally 'VST '.
+        const juce::String realIdent = "AudioUnit:Effects/aufx,AnVD,VST ";
+        ChainHost h (ChainHost::Mode::Primary); h.prepare (48000.0, 512);
+        EchoJayBorrowHostTestAccess::addEntry (h, antares ("AVOX SYBIL",  realIdent.toRawUTF8()));
+        EchoJayBorrowHostTestAccess::addEntry (h, antares ("AVOX THROAT", "AudioUnit:Effects/aufx,AnVT,VST "));
+        // ...and the blacklist line is the TRIMMED form, which is what is actually on disk.
+        h.addToBlacklist (realIdent.trimEnd(), "crashed the host during instantiate (deadman)");
+        // The feed rows are NAME-ONLY, which is the shape that defeated the old check.
+        ScannedPlugin sy; sy.name = "AVOX SYBIL";  sy.manufacturer = "Antares"; sy.format = "AU"; sy.enabled = true; sy.uid = "antares-sybil";
+        ScannedPlugin th; th.name = "AVOX THROAT"; th.manufacturer = "Antares"; th.format = "AU"; th.enabled = true; th.uid = "antares-throat";
+        h.buildRecommendable (std::vector<ScannedPlugin> { sy, th }, {});
+        const auto names = h.getRecommendableNames();
+        check (! names.contains ("AVOX SYBIL"),
+               "a blacklisted plugin is ABSENT from the outgoing feed, so the model never proposes it  (RED as it "
+               "stood: offered, proposed, then refused at load - the user saw it withheld in the same turn)",
+               names.joinIntoString ("|"));
+        // BOTH DIRECTIONS, or this is just "the feed is empty": its sibling, same manufacturer, same OSType shape,
+        // not on the list, is still offered.
+        check (names.contains ("AVOX THROAT"),
+               "...while its unlisted sibling - same manufacturer, same trailing-space OSType - is still offered",
+               names.joinIntoString ("|"));
+    }
+
+    // ---- THE BLACKLIST KEY: AN OSType MAY END IN A SPACE (2 Oct 2026 ruling) -----------------------------
+    {
+        std::printf ("\n-- a trailing-space OSType is blacklistable --\n");
+        // Sean's 11:35/14:20 sessions: AVOX SYBIL was offered in the chain feed and then could not be built.
+        // Antares' AU manufacturer OSType is literally 'VST ', so the real identifier is
+        // "AudioUnit:Effects/aufx,AnVD,VST " - 32 characters. chain_blacklist.txt held the TRIMMED 31-character
+        // form (the reader trimmed it, and the writer had too), and isBlacklisted compares exactly, so the crash
+        // skip list answered FALSE for a plugin on the list. The file's own header promises a listed plugin is
+        // "withheld from the chain feed and refused at load"; it was neither. A class defect: every product whose
+        // OSType ends in a space was unblacklistable, which is to say the skip list failed on exactly the plugins
+        // that crash.
+        const juce::String real    = "AudioUnit:Effects/aufx,AnVD,VST ";   // 32 - what the scan reports
+        const juce::String onDisk  = "AudioUnit:Effects/aufx,AnVD,VST";    // 31 - what the file holds
+        check (real.length() == 32 && onDisk.length() == 31,
+               "the fixture is the real pair: the identifier is one character longer than the stored line",
+               juce::String (real.length()) + " vs " + juce::String (onDisk.length()));
+        check (ChainHost::blacklistKey (real) == ChainHost::blacklistKey (onDisk),
+               "the stored (trimmed) line and the real identifier reduce to ONE key, so a file already on disk "
+               "keeps matching  (RED as it stood: an exact compare answered false and the plugin was offered)",
+               "\"" + ChainHost::blacklistKey (real) + "\"");
+        // ...and the other direction, or the key would just be "everything matches everything".
+        check (ChainHost::blacklistKey (real) != ChainHost::blacklistKey ("AudioUnit:Effects/aufx,AnVD,SfTb"),
+               "...while a DIFFERENT manufacturer is still a different key - the normalisation is trailing "
+               "whitespace only, not a fuzzy match");
+        check (ChainHost::blacklistKey ("  AudioUnit:Effects/aufx,AnVD,VST ") != ChainHost::blacklistKey (real),
+               "...and LEADING space is not stripped: it is not part of any identifier, so a line carrying one is "
+               "malformed and must not silently match");
+    }
+
     std::printf ("\n==== substitute_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

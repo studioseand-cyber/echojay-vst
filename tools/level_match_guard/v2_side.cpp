@@ -153,6 +153,25 @@ int main()
             for (const auto& li : proc.getLinkSlotInfos()) if (li.uid == m.uid) g = li.gainDb;
             was.push_back ({ m.uid, m.name, g, m.uid == b.uid ? -1.4 : -0.8 });
         }
+        // WAIT FOR THE LINK SIDE TO JUDGE OP 1 BEFORE SENDING OP 2 (2 Oct 2026).
+        //
+        // This is why case (1) was red for weeks, and it was never the product. The link side waits for
+        // v2_applied.json, feeds 3 s of audio and only THEN reads the trims - but nothing stopped THIS side
+        // sending its second level_match in the meantime, and it did, about 0.4 s later. So the link side asserted
+        // op 1's outcome against state op 2 had already moved: it read 0.30 / -5.30 / -1.40 where op 1 had landed
+        // 1.10 / -3.90 / -0.60. The Link's own log proves op 1 was applied EXACTLY as asked -
+        //   seq ...547  v4_1  -2.50 -> 1.10  (delta 3.60), and the same for the other two -
+        // and then seq 550/551/552 moved them again. Deterministic, which is why it reproduced identically in
+        // seven runs at four different commits and looked so much like arithmetic.
+        //
+        // link_trims.json is already written by the link side immediately after its case (1) assertions, so the
+        // handshake only needed the other half. No deadlock: between v2_applied.json and link_trims.json the link
+        // side waits for nothing of ours.
+        {
+            const bool judged = waitFile (juce::File (H + "/link_trims.json"), 30000);
+            check (judged, "the link side judged op 1 before op 2 was sent (the handshake that makes case (1) a "
+                           "test of the product rather than of who wrote last)");
+        }
         juce::String editData2;
         {
             juce::Array<juce::var> members;

@@ -45,6 +45,9 @@ inline void fillRackSidecarSlots (LinkShm::RackSidecar& rc,
         back.fp = id.fp; back.uid = id.uid; back.version = id.version;
         back.lastEditMs   = lastEditMs;
         back.manufacturer = s.manufacturer;
+        // 5 Oct 2026: the slot's own EchoJay gains, so a borrow can start where the rack actually is.
+        back.outGainDb    = host.getSlotOutGainDb (i);
+        back.preTrimDb    = host.getSlotPreTrimDb (i);
     }
 }
 } // namespace echojay

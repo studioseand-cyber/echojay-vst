@@ -23,6 +23,14 @@
 #ifdef EJ_LOUDNESSLOOP_V2
 #include "EedLevelProcessor.h"
 #include "EedGainProcessor.h"   // 21m ruling 2: the +4 dB stand-in
+
+// 5 Oct 2026 (Sean's ruling): THIS HARNESS DRIVES ITS OWN WINDOWS, so it opts out of the fresh-window wait
+// EXPLICITLY, per loop. In the product an unknown heard-clock means WAIT, because a begin site that forgot to fill
+// it would silently bring back the stale reading item 3 closed. A synthetic leg has no clock to supply - it sets
+// Window::heardSeconds by hand - so it is the one legitimate caller that must say so out loud. Routed through one
+// helper rather than stamped on seventy Config declarations, so the opt-out is auditable in a single place.
+static void beginDriven (echojay::CalibLoop& l, echojay::CalibLoop::Config c)
+{ c.noFreshWait = true; l.begin (c); }
 #endif
 struct EchoJayAPIRequestPin { static juce::String body (EchoJayAPI& a, const juce::StringArray& r, const juce::StringArray& c, const juce::String& sys, const juce::String& mb) { return a.buildChatRequestBody (r, c, sys, mb); } };   // 21m unityChain leg
 struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost& h, const juce::PluginDescription& d) { return h.loadBuiltinNow (d); }
@@ -916,7 +924,7 @@ static int guardMain()
         {   // (1) it drives to the band and ENDS there - the RED is a drive that never moves and a card that
             //     never leaves "Listening".
             echojay::CalibLoop loop;
-            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung, std::numeric_limits<float>::quiet_NaN(), true);
             check (loop.card() == "Listening... play the loudest part",
                    "21t-d (1). it opens on \"Listening... play the loudest part\"", loop.card());
             juce::StringArray logs; bool done = false; float drive = 0.0f; juce::String closing;
@@ -956,7 +964,7 @@ static int guardMain()
         {   // (2) no audio: it pauses at 30 s and resumes, and nothing is written while it waits
             std::printf ("\n== 21t-d (2): silence pauses the loop at 30 s, and it resumes ==\n");
             echojay::CalibLoop loop;
-            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung, std::numeric_limits<float>::quiet_NaN(), true);
             bool wrote = false;
             for (int w = 0; w < 9; ++w)   // 9 x 3 s = 27 s: not yet
             {
@@ -990,7 +998,7 @@ static int guardMain()
         {   // (3) the clamp: the band cannot be reached by drive alone, and the line says so honestly
             std::printf ("\n== 21t-d (3): the drive limit ends it with the figure it measured ==\n");
             echojay::CalibLoop loop;
-            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 11.0f, echojay::CalibLoop::Purpose::askRung);   // one step from the +12 limit
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 11.0f, echojay::CalibLoop::Purpose::askRung, std::numeric_limits<float>::quiet_NaN(), true);   // one step from the +12 limit
             juce::String closing; bool done = false;
             for (int w = 0; w < 20 && ! done; ++w)
             {
@@ -1015,7 +1023,7 @@ static int guardMain()
                    "21t-e. a loop that was never begun is not running", juce::String ((int) none.state));
             // ...and one that IS begun for a compressor is - so the difference is the chain, not the code path.
             echojay::CalibLoop comp;
-            comp.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
+            comp.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung, std::numeric_limits<float>::quiet_NaN(), true);
             check (comp.running() && comp.plugin == "EJ Test Compressor",
                    "21t-e. ...while a compressor's loop is", comp.plugin);
             // The retirement itself is a V2-side fact (no compose-time pre-gain), asserted where it lives: the
@@ -1025,7 +1033,7 @@ static int guardMain()
         {   // (5) HEADROOM: the drive limit is min(+12, the drive that brings the input to -3 dBTP)
             std::printf ("\n== 21t-d (5): the drive stops where the INPUT runs out of headroom ==\n");
             echojay::CalibLoop loop;
-            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung, std::numeric_limits<float>::quiet_NaN(), true);
             // The fixture's slot input sits at -9 dBTP at 0 dB of drive, and it RISES WITH THE DRIVE, because a
             // pre-gain is what the drive is. -3 is the ceiling, so +6 dB is the last drive that does not clip it.
             float drive = 0.0f; juce::String closing; bool done = false;
@@ -1049,7 +1057,7 @@ static int guardMain()
                    "21t-d (5). ...as a HEADROOM stop, not a step-budget one");
             // With headroom to spare the limit is the ordinary +12 again.
             echojay::CalibLoop loop2;
-            loop2.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
+            loop2.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung, std::numeric_limits<float>::quiet_NaN(), true);
             float drive2 = 0.0f; bool done2 = false;
             for (int w = 0; w < 30 && ! done2; ++w)
             {
@@ -1068,7 +1076,7 @@ static int guardMain()
         {   // (4) the handover: the step count survives the move to the other host
             std::printf ("\n== 21t-d (4): a handover continues the loop, it does not restart it ==\n");
             echojay::CalibLoop loop;
-            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung, std::numeric_limits<float>::quiet_NaN(), true);
             for (int w = 0; w < 4; ++w)
             {
                 echojay::CalibLoop::Window win; win.measured = true; win.silent = false; win.grDb = 0.3f;
@@ -1100,7 +1108,7 @@ static int guardMain()
         {   // a dropped window is not a measurement
             std::printf ("\n== 21t-d: a window with dropped frames is not a measurement ==\n");
             echojay::CalibLoop loop;
-            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung, std::numeric_limits<float>::quiet_NaN(), true);
             echojay::CalibLoop::Window bad; bad.measured = false; bad.silent = false; bad.grDb = 0.0f;
             const auto st = loop.onWindow (bad, 3000.0);
             check (! st.writeDrive && loop.steps == 0 && loop.noSignalMs == 0.0,
@@ -1129,7 +1137,7 @@ static int guardMain()
             cfg.plugin = "EJ Test Compressor"; cfg.slot = 1; cfg.lo = 2.0f; cfg.hi = 3.0f;
             cfg.mode = echojay::CalibLoop::Mode::Passive;      // the default; stated here because it is the subject
             cfg.startDb = 0.0f;
-            echojay::CalibLoop loop; loop.begin (cfg);
+            echojay::CalibLoop loop; beginDriven (loop, cfg);
             check (loop.card().isEmpty(), "21t-g (6a). a passive loop draws NO card before it has measured anything",
                    loop.card().isEmpty() ? juce::String ("(silent)") : loop.card());
             juce::String anyCard;
@@ -1178,7 +1186,7 @@ static int guardMain()
         {
             echojay::CalibLoop::Config cfg;
             cfg.plugin = "EJ Test Compressor"; cfg.slot = 1; cfg.lo = 2.0f; cfg.hi = 3.0f;
-            echojay::CalibLoop loop; loop.begin (cfg);
+            echojay::CalibLoop loop; beginDriven (loop, cfg);
             juce::String said;
             for (int i = 0; i < 3; ++i) { const auto st = loop.onWindow (inBand(), 3000.0); said += st.closing; }
             // 21t-i: a compressor already in band is the ordinary case, and it is now also the case the ruling
@@ -1200,7 +1208,7 @@ static int guardMain()
             echojay::CalibLoop::Config cfg;
             cfg.plugin = "EJ Test Compressor"; cfg.slot = 1; cfg.lo = 2.0f; cfg.hi = 3.0f;
             cfg.mode = echojay::CalibLoop::Mode::Listen;
-            echojay::CalibLoop loop; loop.begin (cfg);
+            echojay::CalibLoop loop; beginDriven (loop, cfg);
             check (loop.card().contains ("Listening"),
                    "21t-g (6c). a LISTEN loop still asks for playback, word for word as before", loop.card());
             loop.onWindow (tooLittle(), 3000.0);
@@ -1225,7 +1233,7 @@ static int guardMain()
             cfg.params.add ("Thresh L"); cfg.params.add ("Thresh R");   // paired: stepped as one
             cfg.senseSign = -1;                                          // lower_is_harder, the dB case
             cfg.startDb = -18.0f; cfg.minDb = -40.0f; cfg.maxDb = 0.0f;
-            echojay::CalibLoop loop; loop.begin (cfg);
+            echojay::CalibLoop loop; beginDriven (loop, cfg);
             const auto st = loop.onWindow (tooLittle(), 3000.0);
             check (st.writeParams && ! st.writeDrive
                    && st.paramNames.size() == 2 && std::abs (st.paramValue - (-19.0f)) < 0.001f,
@@ -1243,7 +1251,7 @@ static int guardMain()
             // The profile's range is the limit, and hitting it ends the loop saying the band was not reached.
             echojay::CalibLoop::Config edge = cfg;
             edge.startDb = -39.5f;                        // one step from the floor
-            echojay::CalibLoop loop2; loop2.begin (edge);
+            echojay::CalibLoop loop2; beginDriven (loop2, edge);
             const auto e1 = loop2.onWindow (tooLittle(), 3000.0);
             check (e1.finished && ! e1.writeParams,
                    "21t-g (6d). ...and the profile's own range stops it rather than dialling past the control",
@@ -1256,7 +1264,7 @@ static int guardMain()
             // nothing at all, rather than ending a loop that in this mode does not end.
             {
                 echojay::CalibLoop::Config edgeP = edge; edgeP.mode = echojay::CalibLoop::Mode::Passive;
-                echojay::CalibLoop loop4; loop4.begin (edgeP);
+                echojay::CalibLoop loop4; beginDriven (loop4, edgeP);
                 loop4.onWindow (tooLittle(), 3000.0);
                 loop4.onWindow (tooLittle(), 3000.0);
                 loop4.retarget (5.0f, 6.0f);                 // the user asked for more; the floor is one step away
@@ -1387,7 +1395,7 @@ static int guardMain()
             // staging. Opening at 0 would undo the staging in one move, which is what this leg has always been
             // about; what changed is only WHO takes the first step.
             echojay::CalibLoop::Config staged = c; staged.startDb = 4.0f;    // what staging wrote on the slot
-            echojay::CalibLoop loop; loop.begin (staged);
+            echojay::CalibLoop loop; beginDriven (loop, staged);
             float heard = 90.0f;
             auto next = [&heard]
             {
@@ -1440,7 +1448,7 @@ static int guardMain()
                    "21t-k 3. ...and the log says so, in the ruled words", why.trim().substring (0, 130));
             // ...and the loop opened from the staging moves FROM THERE, not from the block's number.
             echojay::CalibLoop::Config staged = c; staged.startDb = -3.0f;   // what the slot actually carries
-            echojay::CalibLoop l; l.begin (staged);
+            echojay::CalibLoop l; beginDriven (l, staged);
             check (std::abs (l.preDb - (-3.0f)) < 0.001f,
                    "21t-k 3. ...so the pre-slot gain stays at the staging", juce::String (l.preDb, 2) + " dB");
         }
@@ -1661,7 +1669,7 @@ static int guardMain()
             c.mode = echojay::CalibLoop::Mode::Passive;
             c.actuator = echojay::CalibLoop::Actuator::Drive;
             c.startDb = -6.0f;
-            echojay::CalibLoop l; l.begin (c); return l;
+            echojay::CalibLoop l; beginDriven (l, c); return l;
         };
 
         // (1) SET ONCE: twelve judged windows a long way out of band, and NOT ONE write. Before this round the
@@ -1788,7 +1796,7 @@ static int guardMain()
             check (ok && std::abs (c.stepDb - 3.0f) < 0.001f,
                    "21t-i (5). \"step\" on the wire is read as the threshold's step size",
                    juce::String (c.stepDb, 1) + " dB" + (why.isEmpty() ? juce::String() : " why: " + why));
-            echojay::CalibLoop l; l.begin (c);
+            echojay::CalibLoop l; beginDriven (l, c);
             // 28 Sep 2026: the settle takes the block's step too, so the first move off -14.0 is three dB, and the
             // heard time has to ADVANCE on every window or the loop rejects it as stale.
             float heard = 60.0f;
@@ -1823,7 +1831,7 @@ static int guardMain()
             c.mode = echojay::CalibLoop::Mode::Passive;
             c.actuator = echojay::CalibLoop::Actuator::Drive;
             c.startDb = -6.0f; c.heardS = 120.0f;
-            echojay::CalibLoop l; l.begin (c);
+            echojay::CalibLoop l; beginDriven (l, c);
             // 28 Sep 2026: the sentence arrives when the SETTLE LANDS rather than after two windows. What it
             // quotes is unchanged and is what this leg is about.
             juce::String ask; float h = 0.0f;
@@ -1844,7 +1852,7 @@ static int guardMain()
             c.mode = echojay::CalibLoop::Mode::Passive;
             c.actuator = echojay::CalibLoop::Actuator::Drive;
             c.startDb = 0.0f; c.working = true;
-            echojay::CalibLoop l; l.begin (c);
+            echojay::CalibLoop l; beginDriven (l, c);
             juce::String ask; float h = 40.0f;
             for (int i = 0; i < 20 && ask.isEmpty(); ++i)
             { h += 3.0f; const auto w = l.onWindow (win (2.5f, h), 3000.0); ask = w.ask; }
@@ -1860,7 +1868,7 @@ static int guardMain()
             c.mode = echojay::CalibLoop::Mode::Passive;
             c.actuator = echojay::CalibLoop::Actuator::Drive;
             c.startDb = 0.0f;                                  // heardS left NaN
-            echojay::CalibLoop l; l.begin (c);
+            echojay::CalibLoop l; beginDriven (l, c);
             juce::String ask; float h = 55.0f;
             for (int i = 0; i < 20 && ask.isEmpty(); ++i)
             { h += 3.0f; const auto w = l.onWindow (win (2.5f, h), 3000.0); ask = w.ask; }
@@ -1882,7 +1890,7 @@ static int guardMain()
             c.mode = echojay::CalibLoop::Mode::Passive;
             c.actuator = echojay::CalibLoop::Actuator::Drive;
             c.startDb = -6.0f; c.heardS = 90.0f;
-            echojay::CalibLoop l; l.begin (c);
+            echojay::CalibLoop l; beginDriven (l, c);
             float h = 90.0f;
             auto w = [&h, &win] (float gr) { h += 3.0f; return win (gr, h); };
             for (int i = 0; i < 20 && ! l.landed; ++i) l.onWindow (w (5.4f), 3000.0);   // the build lands first
@@ -1907,7 +1915,7 @@ static int guardMain()
             c.mode = echojay::CalibLoop::Mode::Passive;
             c.actuator = echojay::CalibLoop::Actuator::Drive;
             c.startDb = -6.0f;
-            echojay::CalibLoop l; l.begin (c);
+            echojay::CalibLoop l; beginDriven (l, c);
             float h = 90.0f;
             auto w = [&h, &win] (float gr) { h += 3.0f; return win (gr, h); };
             for (int i = 0; i < 20 && ! l.landed; ++i) l.onWindow (w (5.4f), 3000.0);
@@ -1957,7 +1965,7 @@ static int guardMain()
                    "flagged",
                    "heard_s " + juce::String (c.heardS, 0) + ", nudge " + juce::String (c.nudge)
                    + ", step " + juce::String (c.stepDb, 1) + (why.isEmpty() ? juce::String() : " why: " + why));
-            echojay::CalibLoop l; l.begin (c);
+            echojay::CalibLoop l; beginDriven (l, c);
             juce::String ask; float h = 6.0f;
             for (int i = 0; i < 20 && ask.isEmpty(); ++i)
             { h += 3.0f; const auto wnd = l.onWindow (win (5.4f, h), 3000.0); ask = wnd.ask; }
@@ -2038,7 +2046,7 @@ static int guardMain()
         c.actuator = echojay::CalibLoop::Actuator::Drive;
         c.startDb = 0.0f;
         c.senseParams.add ("GR Meter L"); c.grReadable = true;
-        echojay::CalibLoop l; l.begin (c);
+        echojay::CalibLoop l; beginDriven (l, c);
         check (l.senseLogsOwed == echojay::CalibLoop::kSenseLogWindows,
                "21t-j (cross-check). a build that names a sense control owes FIVE windows of it",
                juce::String (l.senseLogsOwed));
@@ -2083,7 +2091,7 @@ static int guardMain()
                "21t-j (cross-check). ...and a control printing nothing numeric says prints_db=no, which is a "
                "finding, not an absence", lines.size() > 2 ? lines[2] : juce::String ("(none)"));
         { echojay::CalibLoop::Config plain = c; plain.senseParams.clear(); plain.grReadable = false;
-          echojay::CalibLoop l2; l2.begin (plain); int n = 0;
+          echojay::CalibLoop l2; beginDriven (l2, plain); int n = 0;
           check (l2.senseLogsOwed == 0 && ! l2.takeSenseLog (n),
                  "21t-j (cross-check). a build with NO sense control logs nothing at all",
                  juce::String (l2.senseLogsOwed)); }
@@ -2111,7 +2119,7 @@ static int guardMain()
             c.mode = echojay::CalibLoop::Mode::Passive;
             c.actuator = echojay::CalibLoop::Actuator::Drive;
             c.startDb = 0.0f; c.heardS = 90.0f;
-            echojay::CalibLoop l; l.begin (c); return l;
+            echojay::CalibLoop l; beginDriven (l, c); return l;
         };
         {   // THE OPENING LINE, at the build, before any audio.
             auto l = buildLoop();

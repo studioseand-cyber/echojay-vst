@@ -258,6 +258,14 @@ ej_add_guard(overlay_gate_harness     SOURCE tools/overlay_gate_harness/overlay_
 ej_add_guard(key_gate_harness         SOURCE tools/key_gate_harness/key_gate_harness.cpp      LABEL fast)
 ej_add_guard(detected_key_text        SOURCE tools/detected_key_text/harness.cpp              LABEL fast)
 ej_add_guard(attach_order             SOURCE tools/attach_order/attach_order.cpp              LABEL fast)
+# 4 Oct 2026 (Kathy): a hosted plugin's SIDECHAIN bus must never be fed silence. A keyed mock that only compresses
+# off a non-silent key, on BOTH host modes, because rebuildGraph is shared. The bug it holds fixed made real Waves
+# compressors (C1, RComp, SSLComp, VComp, dbx-160) do nothing at all, with no error anywhere.
+ej_add_guard(sidechain_guard          SOURCE tools/sidechain_guard/harness.cpp               LABEL fast SCRIBBLE)
+# 5 Oct 2026: a hosted plugin is disposed at RELEASE and NEVER inside ~ChainHost/AP_Close, which is where the
+# Softube CL 1B's ACFShutdown aborts the AU host service. Asserts BOTH directions, because leaking everything would
+# also "pass" the teardown half.
+ej_add_guard(teardown_dispose_guard   SOURCE tools/teardown_dispose_guard/harness.cpp        LABEL fast SCRIBBLE)
 ej_add_guard(borrowkept_harness       SOURCE tools/borrowkept_harness/borrowkept_harness.cpp  LABEL fast)
 ej_add_guard(global_undo_guard        SOURCE tools/global_undo_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(groups_guard             SOURCE tools/groups_guard/harness.cpp                   LABEL fast SCRIBBLE)

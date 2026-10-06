@@ -191,6 +191,45 @@ struct CompCheck
         return 0.0f;
     }
 
+    /** 4 Oct 2026 (Sean's ruling): THE UNIT'S 1 dB POINT AT A GIVEN CONTROL POSITION, off the profile's own ladder.
+        Each `amount.curve` point carries `in_at_gr_dbfs: {"1","2","3"}` - the input level in dBFS at which the unit
+        produces 1, 2 or 3 dB of gain reduction with the control at that norm. Point "1" is the 1 dB point, which is
+        what "below threshold" has to be measured against.
+        Interpolated at `norm` between the two nearest points that STATE a value: the ladder is null at the ends
+        (at norm 0 the CL 1B prints "Off" and no input produces 1 dB), and treating a null as a number there would
+        put the 1 dB point at 0 dBFS and make every window look below threshold.
+        NaN when the profile has no usable ladder - and then the caller keeps its fallback. */
+    static float inAtGr1At (const juce::var& profile, float norm)
+    {
+        const auto nan = std::numeric_limits<float>::quiet_NaN();
+        auto* po = profile.getDynamicObject();
+        if (po == nullptr) return nan;
+        auto* arr = po->getProperty ("amount").getProperty ("curve", juce::var()).getArray();
+        if (arr == nullptr || arr->isEmpty()) return nan;
+        float loN = 0.0f, loV = nan, hiN = 0.0f, hiV = nan;
+        for (const auto& pv : *arr)
+        {
+            auto* o = pv.getDynamicObject();
+            if (o == nullptr) continue;
+            const auto v1 = o->getProperty ("in_at_gr_dbfs").getProperty ("1", juce::var());
+            if (! (v1.isDouble() || v1.isInt() || v1.isInt64())) continue;   // null at the ends: not a number
+            const float n = (float) (double) o->getProperty ("norm");
+            const float v = (float) (double) v1;
+            if (n <= norm && (! (loV == loV) || n >= loN)) { loN = n; loV = v; }
+            if (n >= norm && (! (hiV == hiV) || n <= hiN)) { hiN = n; hiV = v; }
+        }
+        if (loV == loV && hiV == hiV)
+        {
+            if (hiN <= loN + 1.0e-6f) return loV;
+            const float f = juce::jlimit (0.0f, 1.0f, (norm - loN) / (hiN - loN));
+            return loV + f * (hiV - loV);
+        }
+        // Past the stated ends, the nearest stated point is the honest answer rather than an extrapolation.
+        if (loV == loV) return loV;
+        if (hiV == hiV) return hiV;
+        return nan;
+    }
+
     static std::vector<Point> curveOf (const juce::var& profile)
     {
         std::vector<Point> out;

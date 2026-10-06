@@ -16,6 +16,7 @@
 #include "EedCompressorProcessor.h"   // 21t-d: force-link the built-in registrars the wiring leg racks
 #include "SurgicalEqProcessor.h"
 #include "EchoJayLevelTally.h"   // 21t-d (c)
+#include "EJStateRoot.h"      // 3 Oct: echojay::userAppData(), for the turntype flag file in the isolated root
 #ifndef UI_GUARD_NO_HELPERS
 #include "BorrowStatusText.h"
 #include "AskShelfLayout.h"
@@ -24,6 +25,7 @@
 #endif
 #include <cstdio>
 #include <typeinfo>
+
 // The request body as the shipping client builds it (the same pin groups_guard uses).
 struct EchoJayAPIRequestPin { static juce::String body (EchoJayAPI& a, const juce::StringArray& r, const juce::StringArray& c, const juce::String& sys, const juce::String& mb) { return a.buildChatRequestBody (r, c, sys, mb); } };
 struct EchoJayAlignTestAccess { static void setLinks (EchoJayProcessor& p, std::vector<EchoJayProcessor::LinkSlotInfo> v)
@@ -88,6 +90,14 @@ struct EchoJayBorrowTestAccess
         p.borrowSession_.active.store (true, std::memory_order_relaxed);
         return *p.borrowHost_;
     }
+    // ---- 4 Oct 2026 (the save fix) ----
+    static void setBaseRev (EchoJayProcessor& p, int rev) { p.borrowBaseRev_ = rev; }
+    // juce::Timer is a PRIVATE base of EchoJayProcessor, so only a friend can reach it. The legs need the 1 Hz
+    // tick off: it calls applyPendingBorrowRestores itself, and a fixture that is also calling it by hand would be
+    // racing its own assertions.
+    static void stopTick (EchoJayProcessor& p) { static_cast<juce::Timer&> (p).stopTimer(); }
+    static void applyRestores (EchoJayProcessor& p) { p.applyPendingBorrowRestores(); }
+    static int  pendingCount (EchoJayProcessor& p) { return (int) p.pendingBorrowRestore_.size(); }
     static void release (EchoJayProcessor& p)
     {
         p.borrowSession_.active.store (false, std::memory_order_relaxed);
@@ -200,6 +210,11 @@ struct EchoJayTabStripTestAccess
     static bool  inlineEditorOpen (EchoJayEditor& e) { return e.chainListPanel.hasInlineEditor(); }
     static juce::String pill (EchoJayEditor& e) { return e.chatTargetLabel(); }
     static void applyEdit (EchoJayEditor& e, int msgIdx) { e.applyChainEditFromMsg (msgIdx); }
+    // ---- 3 Oct 2026 ruling: a loop starts only from an edit that APPLIED, and the turn type behind a flag ----
+    static bool editRefused (EchoJayEditor& e, const juce::String& json) { return e.editWasRefused (json); }
+    static int  startForEdit (EchoJayEditor& e, const juce::String& uid, const juce::String& json)
+    { return e.startCalibrationForEdit (uid, json, echojay::CalibLoop::Purpose::buildHold); }
+    static bool editTurnType (const juce::String& intent) { return EchoJayEditor::sendsChainEditTurnType (intent); }
     static void unpinView (EchoJayEditor& e) { e.unpinRackView(); }
     static bool pinned (EchoJayEditor& e) { return e.viewRackPinned_; }
     // ---- 21t-c ----
@@ -1279,7 +1294,7 @@ int main()
             // after deselect. V2 owns no tallies for this rack, so it must render and not advance.
             echojay::CalibLoop remote;
             // askRung: this fixture is a loop mid-hunt, which is what V2 renders after a deselect.
-            remote.begin ("Tube-Tech CL 1B", 0, 2.0f, 3.0f, 3.0f, echojay::CalibLoop::Purpose::askRung);
+            remote.begin ("Tube-Tech CL 1B", 0, 2.0f, 3.0f, 3.0f, echojay::CalibLoop::Purpose::askRung, std::numeric_limits<float>::quiet_NaN(), true);
             remote.lastGr = 2.4f;
             // revision >= 0 is what makes a sidecar VALID on read (LinkShm), so the fixture writes a real one -
             // a rack with no revision is not a rack anyone has described.
@@ -2393,16 +2408,32 @@ int main()
                    "rack stayed held afterwards)", juce::String (waited, 0) + " ms");
             check (! proc.borrowActive(),
                    "R2. the rack is RELEASED even though the edits did not land - a handover never locks you out");
-            check (EchoJayBorrowTestAccess::parked (proc, "lnk_09") == 2,
-                   "R2. ...and the two edits are PARKED against that rack, not thrown away",
+            // 6 OCT 2026 (Sean's ruling for 06a): DROPPED, NOT PARKED, AND NEVER REPLAYED.
+            // R2's promise was "retried the next time the rack is engaged", and the ops it would retry are
+            // index-based ({"op":"remove","slot":3}) with no target identity - so a replay can land a remove on a
+            // different plugin if the rack moved while the edits were waiting. Until an edit carries its target's
+            // fingerprint + name AND is checked as not-already-satisfied, the honest behaviour is to drop it and
+            // TELL the user. These assertions are the inverse of the ones they replace, deliberately.
+            check (EchoJayBorrowTestAccess::parked (proc, "lnk_09") == 0,
+                   "R2 (06a). the unacked edits are DROPPED, not parked - nothing is left queued to fire later",
                    juce::String (EchoJayBorrowTestAccess::parked (proc, "lnk_09")));
+            {
+                const auto notice = proc.takeBorrowParkedNotice();
+                check (notice.contains ("didn't confirm") && notice.contains ("check it shows what you expect"),
+                       "R2 (06a). ...and the user is told once, in one chat line",
+                       notice.isEmpty() ? juce::String ("(nothing said)") : notice);
+            }
             const auto bn = EchoJayBorrowTestAccess::banner (proc);
+            // 6 Oct 2026: ...AND IT MUST NOT PROMISE DELIVERY. The old banner said the edits "are kept and go
+            // through the moment it answers", which became a lie the moment the replay was turned off.
+            check (! bn.contains ("go through the moment"),
+                   "R2 (06a). the banner does NOT promise a retry that no longer happens", bn.substring (0, 140));
             check (bn.contains ("2 edit(s) have not reached") && bn.contains ("bypass") && bn.contains ("remove"),
                    "R2. ...and the banner says how many and which ones", bn.substring (0, 120));
-            check (proc.borrowRearmParkedFor ("lnk_09") == 2 && EchoJayBorrowTestAccess::pending (proc) == 2,
-                   "R2. engaging that rack again re-arms the queue - the retry the ruling promises");
-            check (EchoJayBorrowTestAccess::parked (proc, "lnk_09") == 0,
-                   "R2. ...and the parked copy is consumed, so the edits cannot be sent twice");
+            check (proc.borrowRearmParkedFor ("lnk_09") == 0 && EchoJayBorrowTestAccess::pending (proc) == 0,
+                   "R2 (06a). engaging that rack again re-arms NOTHING - the blind replay is off, and the refusal "
+                   "lives in borrowRearmParkedFor itself so no caller can resurrect an index-only op",
+                   juce::String (EchoJayBorrowTestAccess::pending (proc)) + " pending");
             EchoJayBorrowTestAccess::release (proc);
             EchoJayBorrowTestAccess::clearPending (proc);
         }
@@ -2944,6 +2975,365 @@ int main()
                    "Build 2. ...and at the bottom too (-24 dB)",
                    juce::String (proc.getChainHost().getSlotOutGainDb (0), 1) + " dB");
         }
+    }
+
+    {   // THE 3 OCT LEGS GET THEIR OWN PROCESSOR AND EDITOR, as every block here does: they engage a borrowed
+        // host and push chat messages, and borrowing another block's fixture is how a leg starts depending on the
+        // order it runs in.
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (2000, 1100); pumpMs (60);
+
+        {   // ---- 3 Oct 2026 ruling, item 2: A LOOP STARTS ONLY FROM AN EDIT THAT APPLIED -----------------------
+            std::printf ("\n== 3 Oct ruling: a REFUSED edit starts no calibration loop ==\n");
+            // Sean's 08:03 session, items 1 and 2 together: the apply was refused ("base=0 [] live=4") and the
+            // calibration loop started anyway - so a compressor nobody had agreed to add was dialled on his rack,
+            // and the only visible trace was a card saying "not applied" above a loop reporting gain reduction.
+            // The two faults are separate and both are fixed: the refusal was wrong (level_slot_guard holds that
+            // now), and a loop must not run off a refused edit whether the refusal was right or not.
+            const juce::String ruid = "refused_edit";
+            auto& own = EchoJayBorrowTestAccess::engage (proc, ruid);
+            { EedCompressorProcessor forceComp; SurgicalEqProcessor forceEq; juce::ignoreUnused (forceComp, forceEq); }
+            const auto* comp = BuiltinDeviceRegistry::instance().findByName ("EchoJay Compressor");
+            const auto* eq   = BuiltinDeviceRegistry::instance().findByName ("EchoJay EQ");
+            if (comp != nullptr && eq != nullptr)
+            {
+                while (own.getNumSlots() > 0) own.removeSlot (0);
+                own.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*eq),   0);
+                own.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*comp), 1);
+                // The reply's own JSON, in the shape that starts a loop: an op on the compressor's slot carrying a
+                // band. This is the string the card stores as editData, and the key the result is recorded under.
+                const juce::String editJson =
+                    "{\"ops\":[{\"slot\":2,\"gr_target_db\":[2.5,3.5],\"slot_pre_gain_db\":4.0}]}";
+                const auto savedMsgs = A::msgs (*ed);
+                {
+                    A::Msg card;
+                    card.role = "assistant"; card.content = "work the compressor harder";
+                    card.editData = editJson;
+                    card.editResult = "not applied - the rack was modified after this edit was proposed - ask again";
+                    A::msgs (*ed).push_back (card);
+                }
+                check (A::editRefused (*ed, editJson),
+                       "3 Oct (2). the recorded result is read as a REFUSAL, keyed by the edit's own JSON");
+                proc.calibStore (ruid, echojay::CalibLoop{});
+                const int startedAfterRefusal = A::startForEdit (*ed, ruid, editJson);
+                const auto afterRefusal = proc.calibLoad (ruid);
+                check (startedAfterRefusal == 0,
+                       "3 Oct (2). a REFUSED edit starts NO loop  (RED as it stood: the apply was refused and the "
+                       "loop ran on the rack anyway, dialling a compressor nobody had agreed to add)",
+                       juce::String (startedAfterRefusal) + " loop(s) started");
+                check (afterRefusal.slot < 0 && afterRefusal.state == echojay::CalibLoop::State::Idle,
+                       "3 Oct (2). ...and nothing is stored for the rack to tick",
+                       "slot " + juce::String (afterRefusal.slot));
+                check (std::abs (own.getSlotInfo (1).preTrimDb) < 0.01f,
+                       "3 Oct (2). ...and the drive the block asked for was never written",
+                       juce::String (own.getSlotInfo (1).preTrimDb, 2) + " dB");
+
+                // THE OTHER DIRECTION, or this is just a switch that turns the feature off: the SAME edit, with the
+                // SAME JSON, once the result records that it applied.
+                A::msgs (*ed).back().editResult = "applied: EchoJay Compressor set";
+                check (! A::editRefused (*ed, editJson),
+                       "3 Oct (2). ...while a result that does NOT begin \"not applied\" is not a refusal");
+                const int startedAfterApply = A::startForEdit (*ed, ruid, editJson);
+                check (startedAfterApply >= 1,
+                       "3 Oct (2). ...and the same edit, applied, starts its loop exactly as before",
+                       juce::String (startedAfterApply) + " loop(s) started");
+                // ...AND NO RESULT RECORDED YET is not a refusal either. The ack can be four seconds behind the
+                // settle, and treating "nothing recorded" as "refused" would silently kill every build's hold.
+                A::msgs (*ed).back().editResult.clear();
+                proc.calibStore (ruid, echojay::CalibLoop{});
+                check (! A::editRefused (*ed, editJson)
+                       && A::startForEdit (*ed, ruid, editJson) >= 1,
+                       "3 Oct (2). ...and an edit with NO result recorded yet still starts its loop - the ack can "
+                       "trail the settle, and \"not yet known\" is not \"refused\"");
+                while (own.getNumSlots() > 0) own.removeSlot (0);
+                proc.calibStore (ruid, echojay::CalibLoop{});
+                A::msgs (*ed) = savedMsgs;
+            }
+            else check (false, "3 Oct (2). fixture: the two built-ins are registered");
+            EchoJayBorrowTestAccess::release (proc);
+            { int e2 = 0; juce::File (LinkShm::resolveDir (e2) + "rack-" + ruid + ".json").deleteFile(); }
+        }
+
+        {   // ---- 3 Oct 2026, item 8: turnType=chain_edit, BEHIND A FLAG, OFF BY DEFAULT ------------------------
+            std::printf ("\n== 3 Oct item 8: turnType=chain_edit follows the classifier, behind its flag file ==\n");
+            // Sean's "harder" went out as turnType=chain_generate although the classifier had said chain_edit, and
+            // came back with no base slots. The turn type is staged from hadChainFeed BEFORE the classifier answers.
+            // Held behind ~/Library/EchoJay/turntype_edit_on.txt until B confirms the server handles chain_edit:
+            // shipping it unconfirmed would turn one broken edit into every edit broken. So the leg is BOTH STATES.
+            const auto flag = echojay::userAppData().getChildFile ("EchoJay").getChildFile ("turntype_edit_on.txt");
+            const bool had = flag.existsAsFile();
+            flag.deleteFile();
+            check (! ChainHost::turnTypeEditEnabled(),
+                   "3 Oct (8). with no flag file the feature is OFF", flag.getFullPathName());
+            check (! A::editTurnType ("chain_edit"),
+                   "3 Oct (8). ...so a chain_edit intent still goes out as it does today - default OFF means "
+                   "byte-for-byte today's behaviour, which is what \"wait for B\" has to mean");
+            flag.getParentDirectory().createDirectory();
+            flag.replaceWithText ("on\n");
+            check (ChainHost::turnTypeEditEnabled(),
+                   "3 Oct (8). with the flag file present the feature is ON");
+            check (A::editTurnType ("chain_edit"),
+                   "3 Oct (8). ...and a chain_edit intent then sends turnType=chain_edit  (RED as it stood: the "
+                   "turn type came from hadChainFeed alone, staged before the classifier had answered)");
+            check (! A::editTurnType ("chain_generate") && ! A::editTurnType ("") && ! A::editTurnType ("chat"),
+                   "3 Oct (8). ...and ONLY a chain_edit intent does - the flag does not relabel every turn");
+            // AND THE OVERRIDE ITSELF: it must change the turn type WITHOUT resetting the staged bus count, which is
+            // what setNextChatTurnType(t) would have done as a side effect - a meter blob lost to a wording fix.
+            proc.getApi().setNextChatTurnType ("chain_generate", 3);
+            proc.getApi().overrideNextChatTurnType ("chain_edit");
+            const auto body = EchoJayAPIRequestPin::body (proc.getApi(), juce::StringArray { "user" }, juce::StringArray { "harder" }, "sys", {});
+            check (body.contains ("\"turnType\":\"chain_edit\""),
+                   "3 Oct (8). the override reaches the wire as turnType=chain_edit",
+                   body.contains ("\"turnType\"") ? body.fromFirstOccurrenceOf ("\"turnType\"", true, false)
+                                                        .substring (0, 40) : juce::String ("no turnType field"));
+            check (body.contains ("\"busCount\":3"),
+                   "3 Oct (8). ...and the staged busCount SURVIVES it  (the reason there is a second setter at all: "
+                   "setNextChatTurnType resets the bus count, so re-calling it would drop a meter payload)",
+                   body.contains ("\"busCount\"") ? body.fromFirstOccurrenceOf ("\"busCount\"", true, false)
+                                                        .substring (0, 20) : juce::String ("no busCount field"));
+            if (! had) flag.deleteFile();          // leave the machine as it was found
+        }
+
+    }
+
+    {   // ---- 4 Oct 2026: THE SAVE FIX - an open borrowed rack survives a save with no rack switch -------------
+        std::printf ("\n== save fix: a borrowed rack saved WITHOUT a rack switch comes back ==\n");
+        // Sean's bug, narrowed by him: the chain is lost only if he saves WITHOUT switching racks first. A build on
+        // a Link track while this instance holds the lease lands in borrowHost_ ("never on the Link" -
+        // sendChainToLink), the hand-back happens on a rack switch, and until today NEITHER side's state carried
+        // it: this side saved only its own chainHost, the Link saved its own empty chainModel.
+        //
+        // WHAT THIS LEG COVERS: the save format, the three fields that were missing from it, and all three
+        // tie-break outcomes, in ONE process.
+        // WHAT IT DOES NOT COVER: the two LOAD ORDERS (this instance restored before its Link, or after it). That
+        // needs two real processes over one shm directory, which is link_state_guard's rig - see the note at the
+        // end of this block and the gate file's exclusion list.
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        { EedCompressorProcessor fc; SurgicalEqProcessor fe; juce::ignoreUnused (fc, fe); }
+        const auto* comp = BuiltinDeviceRegistry::instance().findByName ("EchoJay Compressor");
+        const auto* eq   = BuiltinDeviceRegistry::instance().findByName ("EchoJay EQ");
+        if (comp != nullptr && eq != nullptr)
+        {
+            const juce::String buid = "save_fix_rack";
+            auto& bh = EchoJayBorrowTestAccess::engage (proc, buid);
+            while (bh.getNumSlots() > 0) bh.removeSlot (0);
+            bh.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*eq),   0);
+            bh.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*comp), 1);
+            pumpMs (200);
+            check (bh.getNumSlots() == 2, "save fix. fixture: two slots in the BORROWED host, none on this chain",
+                   juce::String (bh.getNumSlots()) + " borrowed, "
+                   + juce::String (proc.getChainHost().getNumSlots()) + " local");
+            // The state a build leaves behind and that was being lost: a wet knob, a bypass, and the two gains the
+            // hold and the drive write - which is the level match.
+            bh.setSlotWet (0, 0.40f, ChainHost::WetSource::Assistant);
+            bh.setSlotBypassed (1, true);
+            bh.setSlotOutGainDb (1, -3.5f);
+            bh.setSlotPreTrimDb (1, 2.0f);
+            pumpMs (100);
+
+            juce::MemoryBlock saved;
+            proc.getStateInformation (saved);
+            check (saved.getSize() > 0, "save fix. the session chunk was written",
+                   juce::String ((juce::int64) saved.getSize()) + " bytes");
+            const auto txt = juce::String::fromUTF8 ((const char*) saved.getData(), (int) saved.getSize());
+            check (txt.contains ("borrowedRacks"),
+                   "save fix. the chunk carries borrowedRacks  (RED as it stood: V2 saved only its own chainHost, "
+                   "so a rack held in borrowHost_ was in no save format anywhere)");
+            check (txt.contains ("outGainDb") && txt.contains ("preTrimDb"),
+                   "save fix. ...with each slot's OWN GAINS, which were in no save format at all - so every "
+                   "compressor build's level match was lost on reopen");
+            check (txt.contains (buid), "save fix. ...and the rack's uid, so it can be handed to the right Link");
+
+            // ---- THE TIE-BREAK, all three outcomes. The decision is made on the LINK'S OWN pair of revisions,
+            // published in its sidecar: rev at save vs rev when the borrow engaged.
+            int serr = 0; const auto sdir = LinkShm::resolveDir (serr);
+            auto writeSidecar = [&] (int atSave, int atLease)
+            {
+                LinkShm::RackSidecar rc;
+                rc.valid = true; rc.uid = buid; rc.name = "Guard Rack"; rc.revision = 7;
+                rc.restoredChainRev = atSave; rc.restoredLeaseBaseRev = atLease;
+                LinkShm::writeRackSidecar (sdir, rc);
+            };
+            auto cmdFile = [&] { return juce::File (sdir + "chain-cmd-" + buid + ".json"); };
+            auto restoreInto = [&] (EchoJayProcessor& p)
+            {
+                p.setStateInformation (saved.getData(), (int) saved.getSize());
+                for (int k = 0; k < 40 && EchoJayBorrowTestAccess::pendingCount (p) == 0; ++k) pumpMs (25);
+            };
+            // The Link must be VISIBLE or nothing is decided - that is what makes both load orders work.
+            std::vector<EchoJayProcessor::LinkSlotInfo> rows;
+            { EchoJayProcessor::LinkSlotInfo li; li.name = "Guard Rack"; li.uid = buid; li.active = true;
+              li.connected = true; li.regIdx = 0; rows.push_back (li); }
+
+            {   // (1) THE LINK HAS NOT MOVED since the borrow engaged -> our copy is newer and goes back.
+                EchoJayProcessor p2; p2.prepareToPlay (48000.0, 512);
+                EchoJayBorrowTestAccess::stopTick (p2);
+                cmdFile().deleteFile();
+                writeSidecar (12, 12);
+                restoreInto (p2);
+                check (EchoJayBorrowTestAccess::pendingCount (p2) == 1,
+                       "save fix. the restored session holds the saved rack, pending its Link",
+                       juce::String (EchoJayBorrowTestAccess::pendingCount (p2)));
+                EchoJayAlignTestAccess::setLinks (p2, rows); pumpMs (30);
+                EchoJayBorrowTestAccess::applyRestores (p2);
+                check (cmdFile().existsAsFile(),
+                       "save fix. rev at save == rev at lease engage -> the rack is handed BACK to the Link");
+                const auto sent = juce::JSON::parse (cmdFile().loadFileAsString());
+                auto* arr = sent.getProperty ("chain", juce::var()).getArray();
+                check (arr != nullptr && arr->size() == 2,
+                       "save fix. ...as a 2-slot chain command, the same road a rack switch uses",
+                       juce::String (arr != nullptr ? arr->size() : -1));
+                if (arr != nullptr && arr->size() == 2)
+                {
+                    auto* s1 = (*arr)[1].getDynamicObject();
+                    check (s1 != nullptr && std::abs ((double) s1->getProperty ("outGainDb") + 3.5) < 0.01,
+                           "save fix. ...carrying the slot's OUT gain, so the level match survives the reopen",
+                           s1 != nullptr ? s1->getProperty ("outGainDb").toString() : juce::String ("no slot"));
+                    check (s1 != nullptr && std::abs ((double) s1->getProperty ("preTrimDb") - 2.0) < 0.01,
+                           "save fix. ...and its PRE-trim", s1 != nullptr ? s1->getProperty ("preTrimDb").toString()
+                                                                        : juce::String());
+                    check (s1 != nullptr && (bool) s1->getProperty ("bypassed"),
+                           "save fix. ...and its bypass");
+                    auto* s0 = (*arr)[0].getDynamicObject();
+                    check (s0 != nullptr && std::abs ((double) s0->getProperty ("wet") - 0.40) < 0.01,
+                           "save fix. ...and the other slot's wet", s0 != nullptr ? s0->getProperty ("wet").toString()
+                                                                                 : juce::String());
+                }
+                check (EchoJayBorrowTestAccess::pendingCount (p2) == 0,
+                       "save fix. ...and the entry is spent, so it cannot rebuild the rack every second");
+            }
+            {   // (2) THE LINK MOVED after the borrow engaged - a hand-back, or a DELETE on the Link. The Link is
+                // authoritative and our copy is dropped: this is what keeps a deleted rack deleted.
+                EchoJayProcessor p3; p3.prepareToPlay (48000.0, 512);
+                EchoJayBorrowTestAccess::stopTick (p3);
+                cmdFile().deleteFile();
+                writeSidecar (19, 12);          // saved at 19, borrow began at 12: the Link changed in between
+                restoreInto (p3);
+                EchoJayAlignTestAccess::setLinks (p3, rows); pumpMs (30);
+                EchoJayBorrowTestAccess::applyRestores (p3);
+                check (! cmdFile().existsAsFile(),
+                       "save fix. the Link's own rack moved after the borrow began -> our copy is DROPPED, so a "
+                       "rack deleted on the Link stays deleted  (and a stale copy cannot resurrect it)");
+                check (EchoJayBorrowTestAccess::pendingCount (p3) == 0,
+                       "save fix. ...and it is not retried");
+            }
+            {   // (3) NEITHER SIDE CAN SAY - an older Link that publishes no revisions, or no borrow open at save.
+                // The safe answer is to leave the Link alone rather than overwrite a rack on a guess.
+                EchoJayProcessor p4; p4.prepareToPlay (48000.0, 512);
+                EchoJayBorrowTestAccess::stopTick (p4);
+                cmdFile().deleteFile();
+                writeSidecar (-1, -1);
+                restoreInto (p4);
+                EchoJayAlignTestAccess::setLinks (p4, rows); pumpMs (30);
+                EchoJayBorrowTestAccess::applyRestores (p4);
+                check (! cmdFile().existsAsFile(),
+                       "save fix. an older Link that states no revisions keeps what it has - absent is not "
+                       "permission to overwrite");
+            }
+            {   // (4) A SESSION WITH NO borrowedRacks KEY loads exactly as today. The ruled compatibility case.
+                EchoJayProcessor p5; p5.prepareToPlay (48000.0, 512);
+                EchoJayBorrowTestAccess::stopTick (p5);
+                cmdFile().deleteFile();
+                writeSidecar (12, 12);
+                juce::MemoryBlock plain;
+                { EchoJayProcessor p6; p6.prepareToPlay (48000.0, 512);
+                  EchoJayBorrowTestAccess::stopTick (p6);
+                  p6.getStateInformation (plain); }           // no borrow ever engaged
+                const auto ptxt = juce::String::fromUTF8 ((const char*) plain.getData(), (int) plain.getSize());
+                check (! ptxt.contains ("borrowedRacks"),
+                       "save fix. a session with no borrow writes NO borrowedRacks key at all - so every existing "
+                       "session reads byte-for-byte as before");
+                p5.setStateInformation (plain.getData(), (int) plain.getSize());
+                pumpMs (60);
+                EchoJayAlignTestAccess::setLinks (p5, rows); pumpMs (30);
+                EchoJayBorrowTestAccess::applyRestores (p5);
+                check (EchoJayBorrowTestAccess::pendingCount (p5) == 0 && ! cmdFile().existsAsFile(),
+                       "save fix. ...and it hands nothing to any Link");
+            }
+            cmdFile().deleteFile();
+            juce::File (sdir + "rack-" + buid + ".json").deleteFile();
+            while (bh.getNumSlots() > 0) bh.removeSlot (0);
+            EchoJayBorrowTestAccess::release (proc);
+        }
+        else check (false, "save fix. fixture: the two built-ins are registered");
+    }
+
+    {   // ---- 4 Oct 2026: BORROWED INSTANCES ARE DESTROYED AT RELEASE, NOT PARKED FOR TEARDOWN ---------------
+        std::printf ("\n== 4 Oct: destroy-on-release is the default for borrowed instances ==\n");
+        // Disposing a PARKED borrowed instance from inside ~EchoJayProcessor during AP_Close is what aborts the
+        // Softube CL 1B: its own ACFShutdown frees a pointer it never allocated. Six crashes across 2-3 Oct, and a
+        // run with the old no_reuse flag - which destroys at release instead - came back clean. So the default is
+        // inverted: nothing is parked unless ~/Library/EchoJay/reuse_on asks for it.
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        EchoJayBorrowTestAccess::stopTick (proc);
+        { EedCompressorProcessor fc; SurgicalEqProcessor fe; juce::ignoreUnused (fc, fe); }
+        const auto* comp = BuiltinDeviceRegistry::instance().findByName ("EchoJay Compressor");
+        const auto* eq   = BuiltinDeviceRegistry::instance().findByName ("EchoJay EQ");
+        // ---- THIS LEG WRITES A FLAG THE PRODUCT READS, SO IT PROVES ITS ISOLATION FIRST -------------------
+        //
+        // reuse_on re-enables the parking path, which is the CL 1B crash path. If a guard left it behind on the
+        // real machine, Logic would pick it up at the next rack switch - the file is read fresh each time. Two
+        // guards, because one is not enough:
+        //   1. REFUSE unless ECHOJAY_STATE_HOME is set. run_guard.sh always sets it (and exits 2 rather than run
+        //      un-isolated), so under the gate this is satisfied; run the binary bare and the leg declines instead
+        //      of touching ~/Library.
+        //   2. A SCOPE GUARD that restores the original state on EVERY exit path, including an exception or an
+        //      early return, so a leg that dies mid-way cannot leave the flag on.
+        const bool isolated = echojay::stateIsIsolated();
+        check (isolated,
+               "teardown. this leg is ISOLATED before it writes a product flag - reuse_on re-enables the crash "
+               "path, so it must never be written under the real ~/Library",
+               isolated ? juce::String (echojay::stateHomeOverride()) : juce::String ("ECHOJAY_STATE_HOME unset"));
+        const auto flag = echojay::userAppData().getChildFile ("EchoJay").getChildFile ("reuse_on");
+        const bool hadFlag = isolated && flag.existsAsFile();
+        struct FlagRestore
+        {
+            juce::File f; bool had; bool armed;
+            ~FlagRestore() { if (! armed) return; if (had) { f.getParentDirectory().createDirectory();
+                                                            f.replaceWithText ("on\n"); } else f.deleteFile(); }
+        } flagRestore { flag, hadFlag, isolated };
+        if (comp != nullptr && eq != nullptr)
+        {
+            const juce::String tuid = "teardown_rack";
+            auto& bh = EchoJayBorrowTestAccess::engage (proc, tuid);
+            while (bh.getNumSlots() > 0) bh.removeSlot (0);
+            bh.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*eq),   0);
+            bh.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*comp), 1);
+            pumpMs (200);
+            check (bh.getNumSlots() == 2, "teardown. fixture: two borrowed slots",
+                   juce::String (bh.getNumSlots()));
+            // DEFAULT: the flag absent -> release destroys, nothing is left parked for the teardown to dispose.
+            if (isolated) flag.deleteFile();
+            bh.releaseBorrowToPool();
+            pumpMs (150);
+            check (bh.borrowPoolCount() == 0,
+                   "teardown. with no reuse_on flag, release DESTROYS every borrowed instance - nothing is parked "
+                   "for ~EchoJayProcessor to dispose, which is the disposal that aborts the CL 1B",
+                   juce::String (bh.borrowPoolCount()) + " parked");
+            // ...AND THE OTHER DIRECTION, or this is an unfalsifiable claim about a flag nobody reads: with the
+            // flag present the instances ARE parked, so the speed experiment is still available.
+            while (bh.getNumSlots() > 0) bh.removeSlot (0);
+            bh.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*eq), 0);
+            pumpMs (150);
+            if (isolated) { flag.getParentDirectory().createDirectory(); flag.replaceWithText ("on\n"); }
+            bh.releaseBorrowToPool();
+            pumpMs (150);
+            if (isolated)
+                check (bh.borrowPoolCount() > 0,
+                       "teardown. ...while reuse_on still parks them, so the speed trade can be measured on one "
+                       "binary", juce::String (bh.borrowPoolCount()) + " parked");
+            // ...and the teardown sweep clears whatever is parked, so the count a destructor would face is 0.
+            bh.clearBorrowPoolForTeardown();
+            check (bh.borrowPoolCount() == 0,
+                   "teardown. ...and the teardown sweep empties the pool before the graph is destroyed",
+                   juce::String (bh.borrowPoolCount()) + " parked");
+            // the scope guard restores it; nothing to undo by hand
+            while (bh.getNumSlots() > 0) bh.removeSlot (0);
+            EchoJayBorrowTestAccess::release (proc);
+        }
+        else check (false, "teardown. fixture: the two built-ins are registered");
     }
 
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);

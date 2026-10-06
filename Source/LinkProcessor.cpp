@@ -124,6 +124,15 @@ void LinkProcessor::timerCallback()
             // within a second rather than staying wrong until someone clicks something. Once per second, four
             // stores into shared memory.
             publishRegistrySnapshot ("heartbeat");
+            // COMP_PROFILE_SPEC_v1 section 5: THIS TRACK'S OWN LOUD LEVEL, PUBLISHED FOR V2 (2 Oct 2026).
+            // Sean's 14:20 session: the build targeted a Link rack on Aitch_4_01 and the body carried
+            // track_level loud_rms -12.47 / loud_peak +0.76 - measured on V2's OWN input, which on Stereo Out is
+            // the finished mix. The Link's own tap read PEAK -5.0. The server then picks a compressor threshold
+            // for the wrong signal, which is worse than picking none.
+            // Every ChainHost already measures section 5 on its pre-chain tap, including this one, so the reading
+            // exists here - it just had no way to reach V2. A small JSON beside the ctrl/ack files carries it:
+            // absent means "no reading", which V2 treats as "send no track_level at all".
+            publishTrackLevel();
             // Mirror current heartbeat into diag for the editor to read
             if (regMap)
                 diag.heartbeat = LinkShm::loadRelaxed(
@@ -373,11 +382,22 @@ void LinkProcessor::publishRackSidecar()
             rc.revision = juce::jmax(rc.revision, held.revision);
         }
     }
+    // 4 Oct 2026 (save fix): what our saved chunk said its revision was, for the V2's tie-break.
+    rc.restoredChainRev = restoredChainRev_;
+    rc.restoredLeaseBaseRev = restoredLeaseBaseRev_;
     if (calibLoop_.active()) rc.calib = calibLoop_.toVar();
     else
     {
         const auto existing = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
         if (existing.valid && ! existing.calib.isVoid()) rc.calib = existing.calib;
+    }
+    // 3 Oct 2026 (13:52 item 2): the Link mirrors its own loop's target and last reading onto its own slot, the
+    // same way the V2 side does at calibStore. A Link rack's [CURRENT CHAIN] is built from this host.
+    if (calibLoop_.slot >= 0)
+    {
+        const float nan = std::numeric_limits<float>::quiet_NaN();
+        chainHost.setSlotGrState(calibLoop_.slot, calibLoop_.active() ? calibLoop_.lo : nan,
+                                 calibLoop_.active() ? calibLoop_.hi : nan, calibLoop_.lastGr);
     }
     // 21t-i: THE STORED RECORD RIDES THE SIDECAR, so V2 can compose a block about this channel while this Link is
     // quiet or parked. A publish that happens before anything has been heard must not blank a record already there.
@@ -421,7 +441,13 @@ void LinkProcessor::calibTickOwnRack()
             calibLoop_.slotIdent = chainHost.slotIdentityKey (calibLoop_.slot);   // (n): re-stamped on handover
         }
     }
-    if (! calibLoop_.active()) return;
+    if (! calibLoop_.active())
+    {
+        // 5 Oct 2026: ...and a LANDED slot is still measured. This is the path a finished loop falls down every
+        // tick on this side, and it did nothing at all - the V2 twin has ticked the watch here since 4 Oct.
+        chainHost.tickLowGainWatch();
+        return;
+    }
     if (calibLoop_.slot < 0 || calibLoop_.slot >= chainHost.getNumSlots()) return;
 
     // 21t-m item 6c (29 Sep 2026 ruling): A LOOP THE RACK MOVED UNDER IS CANCELLED HERE TOO. Sean's log is the
@@ -464,7 +490,131 @@ void LinkProcessor::calibTickOwnRack()
         const bool haveCrest = I.maxShortTermDb == I.maxShortTermDb && I.shortTermP90Db == I.shortTermP90Db
                             && O.maxShortTermDb == O.maxShortTermDb && O.shortTermP90Db == O.shortTermP90Db;
         const bool have90 = I.shortTermP90Db == I.shortTermP90Db && O.shortTermP90Db == O.shortTermP90Db;
-        w.grDb = haveCrest ? ((I.maxShortTermDb - I.shortTermP90Db) - (O.maxShortTermDb - O.shortTermP90Db)) : 0.0f;
+        // GR IS A LEVEL REDUCTION, NOT A CREST CHANGE (2 Oct 2026 ruling, Sean's 19:43 session).
+        //
+        // This read the CREST difference - "the crest the compressor took off" - chosen because makeup gain
+        // shifts both output terms together and cancels out of it. Makeup-immune, and blind to the case that
+        // matters: a compressor with a slow attack on sustained material pulls SHORTMAX and SHORT90 down
+        // TOGETHER, so the crest barely moves however hard it is working. Sean's CL 1B read -0.4..+0.4 dB
+        // throughout while its gain reduction genuinely rose with the drive, and the loop walked the drive to
+        // +6 dB believing it had bought nothing.
+        //
+        // The level figure is the real one, and the correction is exact because the IN tally is taken AFTER the
+        // pre-trim (so the drive is not in it) and levelChangeDb is taken BEFORE EchoJay's slot OUT gain (so the
+        // mirror is not in it either). What remains between in and out is the plugin: its gain reduction, less
+        // its own makeup. The profile knows that makeup as static_gain_db; with no profile it is unknown and 0,
+        // which can UNDERSTATE the reduction on a unit with built-in makeup - so the crest figure rides the log
+        // beside it, and a disagreement between the two is visible rather than silent.
+        w.grCrestDb = haveCrest ? ((I.maxShortTermDb - I.shortTermP90Db) - (O.maxShortTermDb - O.shortTermP90Db))
+                                : 0.0f;
+        // ...less the plugin's OWN makeup, which the profile knows (spec section 7 subtracts static_gain_db for
+        // exactly this reason). Unknown without a profile, and then 0 - stated, not hidden.
+        // WHICH SENSOR, AND WHY IT IS A CHOICE (2 Oct 2026, corrected the same evening).
+        //
+        // LEVEL is the real gain reduction - but it counts EVERY level change between in and out, including a
+        // static one the compressor is not responsible for: a slot that simply attenuates, a unit with negative
+        // make-up, staging. level_loop_guard case (9) caught exactly that: a fixture slot 6 dB down read as 6 dB
+        // of compression, the loop decided it was over the 2-3 band and backed the drive to -6 dB. The spec
+        // subtracts static_gain_db for this reason, and that figure only exists when a profile is attached.
+        //
+        // CREST is blind to static level entirely, which is why it was chosen - and why it read ~0 on Sean's CL 1B,
+        // a slow unit on sustained material whose SHORTMAX and SHORT90 came down together.
+        //
+        // So: LEVEL when a profile tells us the static offset, CREST when nothing does. Neither is right
+        // everywhere, the choice is recorded per window in grSensor, and the figure not used still rides the log -
+        // a disagreement between them is visible rather than decided silently.
+        // BOTH FIGURES, ALWAYS (3 Oct 2026): the agreement rule needs the level figure even when no profile
+        // supplies static_gain_db, so it is computed here regardless and the loop decides what to do with it.
+        // 3 Oct 2026 (13:52 ruling): THE OFFSET MAY COME FROM THE BLOCK, not only from a map profile. One
+        // accessor answers both, so the two twins and the loop's own agreement rule cannot disagree about whether
+        // this slot has a static offset. Sean's session: the map had no comp_profile, the block carried
+        // from_profile, and the crest fallback reported about 0 dB on a compressor doing 2-3.
+        w.inShortTermDb = I.shortTermDb;
+    w.inShortTermP90Db = I.shortTermP90Db;   // item 4, log only   // 4 Oct: for the "not responding" guard; plain dBFS on a slot tally
+        w.grLevelKnown = have90;
+        w.grLevelDb = have90 ? (-(O.shortTermP90Db - I.shortTermP90Db) + calibLoop_.staticGainDb()) : 0.0f;
+        // ---- 3 Oct 2026 (Kathy, refined): THE UNIT'S LOW-LEVEL GAIN, SAMPLED LIVE. LOG ONLY --------------
+        // A window where the compressor is genuinely BELOW THRESHOLD measures its low-level gain as out minus in,
+        // which is what static_gain_db claims to be. Two gates, in order of how much they prove:
+        //   CONFIRMED    6 dB under the block's in_at_gr1_dbfs - the dialled setting's own 1 dB point, so "below
+        //                threshold" is the setting's own statement rather than our inference.
+        //   FALLBACK     10 dB under the track's remembered loud level, tagged unconfirmed, until B ships the
+        //                field. Same reference: a SLOT tally is Weighting::Plain (offsetDb() == 0), so its
+        //                shortTermDb is plain RMS dBFS, as are in_at_gr1_dbfs and TrackLevel's loud_rms_dbfs.
+        // Windows near the noise floor and silent ones are ignored: out minus in on near-nothing is noise over
+        // noise, and it would sit in the median looking like data.
+        //
+        // WHY 10 AND NOT 15 (4 Oct 2026, measured). At 15 dB this gathered NOTHING all session - "(waiting, n=0)"
+        // in every CL 1B window from 15:06 to 15:09 while the loop read 1.3-2.3 dB of gain reduction on a playing
+        // vocal. The figure compared is a THREE-SECOND short-term window, which averages phrase and gap together
+        // and so sits within roughly 6-10 dB of the track's p95; 15 dB below it is a near-silent bar, which on this
+        // material also falls under the -60 dBFS floor and is excluded. The gate was unreachable, not unlucky.
+        //
+        // Relaxing it is safe BY CONSTRUCTION, not by hope: the two-band agreement test is the guard. If 10 dB
+        // admits windows where the unit is still working, the two input bands disagree and the line reports
+        // "not confirmed" with both figures rather than a number. A wrong reading cannot pass itself off as right;
+        // the worst case is that we still have no figure, which is where we already are.
+        if (I.known && O.known && ! w.silent
+            && std::isfinite (I.shortTermDb) && std::isfinite (O.shortTermDb)
+            && I.shortTermDb > -60.0f)
+        {
+            const float gr1 = calibLoop_.inAtGr1Dbfs;
+            const auto  tl  = chainHost.trackLevelReading();
+            const bool  haveGr1 = std::isfinite (gr1);
+            const float ceilingDb = haveGr1 ? gr1 - 6.0f
+                                            : (tl.valid ? tl.loudRmsDbfs - 10.0f
+                                                        : std::numeric_limits<float>::quiet_NaN());
+            if (std::isfinite (ceilingDb) && I.shortTermDb <= ceilingDb)
+                chainHost.noteLowLevelGainSample (calibLoop_.slot, I.shortTermDb,
+                                            O.shortTermDb - I.shortTermDb, haveGr1);
+        }
+
+        // ...and the line itself, composed from the slot's store. Beside the PROFILE's figure, which is what
+        // Kathy wants compared: a measured 0.0 against a profile -0.7 is the finding, either way it falls.
+        {
+            ChainHost::LowGainReading lg;
+            const bool have = chainHost.lowLevelGain (calibLoop_.slot, lg);
+            calibLoop_.lowGainText = echojay::CalibLoop::lowGainLine (have, lg.medianDb, lg.loBandDb, lg.hiBandDb,
+                                                             lg.rangeLoDbfs, lg.rangeHiDbfs, lg.samples,
+                                                             lg.twoBandAgreed, lg.confirmedGate,
+                                                             calibLoop_.staticGainKnown()
+                                                                 ? calibLoop_.staticGainDb()
+                                                                 : std::numeric_limits<float>::quiet_NaN());
+        }
+
+        const bool haveStatic = calibLoop_.staticGainKnown();
+        // 6 Oct 2026 (Sean's ruling): ON AN INPUT-DRIVE AMOUNT CONTROL, OUT-MINUS-IN IS NOT GAIN REDUCTION.
+        // His UAD 1176LN Rev E at Input -21: the level method read -4.5 and called it "4.5 dB louder out than in",
+        // while the VU was pinned and he could hear heavy compression. On a unit whose amount control is INPUT
+        // DRIVE, out-minus-in is the input gain MINUS the gain reduction, so the two are inseparable and the figure
+        // says nothing about GR. The level method is only trustworthy when a profile states static_gain_db AND the
+        // control being moved is not itself an input gain.
+        // Order, as ruled: the plugin's own GR meter if it exposes one, then crest, otherwise say plainly that GR
+        // cannot be measured - never a level figure dressed up as GR.
+        const bool inputDrive  = calibLoop_.amountIsInputDrive();
+        const bool haveMeter   = calibLoop_.grReadable && std::isfinite (calibLoop_.sensedGrDb);
+        if (inputDrive && haveMeter)
+        {
+            w.grDb = std::abs (calibLoop_.sensedGrDb);
+            w.grSensor = "meter";
+        }
+        else if (inputDrive && ! haveStatic)
+        {
+            // No meter and no profile: crest is blind to static level, which is exactly what makes it the only
+            // honest fallback here - and when there is no crest either, the figure is UNKNOWN and says so.
+            w.grDb = haveCrest ? w.grCrestDb : std::numeric_limits<float>::quiet_NaN();
+            w.grSensor = haveCrest ? "crest-inputdrive" : "unmeasurable-inputdrive";
+        }
+        else if (haveStatic && have90)
+        {
+            w.grDb = w.grLevelDb;
+            w.grSensor = "level-static";
+        }
+        else
+        {
+            w.grDb = w.grCrestDb;
+            w.grSensor = haveCrest ? "crest" : "none";
+        }
         w.levelChangeDb = have90 ? (O.shortTermP90Db - I.shortTermP90Db)
                                  : ((I.known && O.known) ? (O.levelDb - I.levelDb) : 0.0f);
         if (! haveCrest) w.measured = false;   // no crest pair, no sample
@@ -526,6 +676,11 @@ chainHost.setSlotPreTrimDb(calibLoop_.slot, step.newPre);
         chainHost.setSlotControlsToValue(calibLoop_.slot, step.paramNames, step.paramValue);
         chainHost.resetSlotShortTermStats(calibLoop_.slot, "the loop moved the actuator");   // both legs start again
     }
+    // 5 Oct 2026 (Sean's item 4): THE LANDED SLOT KEEPS BEING MEASURED ON THIS SIDE TOO. The loop is one header
+    // and a handover must not change whether the low-level-gain watch runs. "landed" rather than "finished"
+    // because a build hold lands and stays OPEN for section 7's check - see the V2 twin for the full note.
+    if (calibLoop_.dynamicsSlot && (step.finished || calibLoop_.landed))
+        chainHost.armLowGainWatch (calibLoop_.slot, calibLoop_.inAtGr1Dbfs);
     // 21t-m (29 Sep 2026 ruling): the hold's write to a PLUGIN'S output control is gone - it writes EchoJay's
     // own per-slot OUT and nothing else, so there is no step.writeOutput to handle here any more.
     // THE HOLD, through EchoJay's own per-slot output gain - the only control it ever writes.
@@ -541,7 +696,12 @@ chainHost.setSlotPreTrimDb(calibLoop_.slot, step.newPre);
                        + juce::String(std::abs(calibLoop_.levelChangeDb), 1) + " dB "
                        + (calibLoop_.levelChangeDb > 0.0f ? "louder" : "quieter") + " out than in; residual before this "
                        "write " + juce::String(calibLoop_.levelResidualDb, 2) + " dB; written total "
-                       + juce::String(calibLoop_.levelTrimmedDb, 2) + " dB)").toRawUTF8());
+                       + juce::String(calibLoop_.levelTrimmedDb, 2) + " dB)"
+                       // 5 Oct 2026, Sean's budget: the make-up must land inside about 6 s of PLAYING. Audio
+                       // seconds since the write, so a stopped transport is not counted against it.
+                       + ((calibLoop_).secondsSinceWrite() == (calibLoop_).secondsSinceWrite()
+                              ? " [" + juce::String ((calibLoop_).secondsSinceWrite(), 1) + " s of audio since the write]"
+                              : juce::String (" [seconds since the write unknown]"))).toRawUTF8());
     }
     // THE STATE V2 RENDERS FROM, written by the host that measured it - every judged window, not only the ones
     // that moved the drive: the card says "working N dB" and that figure changes on windows that change nothing
@@ -1142,7 +1302,27 @@ void LinkProcessor::pollControlCommand()
         const float        wet  = juce::jlimit(0.0f, 1.0f,
                                                (float)(double) sw->getProperty("wet"));
         const juce::String have = chainHost.slotIdentityHex(idx);   // "" out of range
-        if (idx < 0 || idx >= chainHost.getNumSlots() || want.isEmpty() || want != have)
+        // A PARKED RACK IS NOT A REJECTION (2 Oct 2026, Sean's 14:20 finding 3). While V2 holds the borrow our own
+        // chain is parked at 0 slots BY DESIGN (RACK_BORROW_IMPLEMENTATION_SPEC §1/§2 - V2 owns the instances and
+        // we are reconciled at deselect), so a knob drag on the held rack arrives here once per tick and there is
+        // nothing to match it against. Sean's log carried 28 "REJECTED ... slots=0" lines in three seconds, which
+        // reads like a broken rack and is not: V2 has already applied the value to the borrowed host, and the
+        // deselect plan carries it back here (OpType::Values, wet and bypass for every surviving slot).
+        // So this says what is true, ONCE per lease rather than per tick - a line per drag tick is how a real
+        // defect hides. The verb keeps being written by V2 on purpose (slotwet_knobpath pins that).
+        const bool parkedUnderLease = rackLeaseActive_ && chainHost.getNumSlots() == 0;
+        if (parkedUnderLease)
+        {
+            if (! slotWetParkedSaid_)
+            {
+                slotWetParkedSaid_ = true;
+                EchoJay_NSLog(("EJCtrl: slotWet DEFERRED idx=" + juce::String(idx)
+                               + " - this rack is parked while V2 holds the borrow, so there is no slot to write; "
+                                 "V2 has it on the borrowed host and the deselect plan carries it back. Further "
+                                 "slotWet commands this lease are not logged.").toRawUTF8());
+            }
+        }
+        else if (idx < 0 || idx >= chainHost.getNumSlots() || want.isEmpty() || want != have)
         {
             EchoJay_NSLog(("EJCtrl: slotWet REJECTED idx=" + juce::String(idx)
                            + " want=" + want + " have=" + have
@@ -1810,6 +1990,56 @@ void LinkProcessor::closeRingNow()
 // =============================================================================
 //  Public state machine (message thread)
 // =============================================================================
+// COMP_PROFILE_SPEC_v1 section 5, published for V2 (2 Oct 2026). Throttled hard, because this runs on every
+// Link's 1 Hz tick and Sean's session carries ~60 of them: nothing is written until the reading is VALID (the
+// spec's 20 s of heard audio), and then only when a figure actually moved or 3 s have passed. An idle or silent
+// Link writes no file at all, which is exactly the "no reading" V2 needs to see.
+void LinkProcessor::publishTrackLevel()
+{
+    auto r = chainHost.trackLevelReading();
+    // MORE HEARD AUDIO WINS (2 Oct 2026 ruling). A live reading replaces the stored one as soon as it has heard
+    // more than it; until then the stored one is what this track knows about itself, and it is what gets
+    // published - which is the whole point of persisting it across a restart.
+    if (r.valid && r.heardSeconds > tlStoredHeardS_)
+    {
+        tlStoredHeardS_ = r.heardSeconds;
+        tlStoredRmsDb_  = r.loudRmsDbfs;
+        tlStoredPeakDb_ = r.loudPeakDbfs;
+    }
+    else if (tlStoredHeardS_ > 0.0f)
+    {
+        r.valid = true;                        // publish the stored reading: a restart must not blank the track
+        r.loudRmsDbfs  = tlStoredRmsDb_;
+        r.loudPeakDbfs = tlStoredPeakDb_;
+        r.heardSeconds = tlStoredHeardS_;
+    }
+    if (! r.valid) return;                     // nothing above the gate, ever: the spec's null
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    const bool moved = std::abs (r.loudRmsDbfs  - tlLastRmsDb_)  > 0.1f
+                    || std::abs (r.loudPeakDbfs - tlLastPeakDb_) > 0.1f;
+    if (! moved && nowMs - tlLastWriteMs_ < 3000.0) return;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir (err);
+    if (dir.isEmpty() || instanceUid_.isEmpty()) return;
+    // Built from the CHOSEN reading (stored or live), in the spec's own shape and to its own precision, rather
+    // than from chainHost's var - which only ever describes the live one and would contradict the figures above.
+    auto* to = new juce::DynamicObject();
+    to->setProperty ("loud_rms_dbfs",  juce::String (r.loudRmsDbfs, 2).getDoubleValue());
+    to->setProperty ("loud_peak_dbfs", juce::String (r.loudPeakDbfs, 2).getDoubleValue());
+    to->setProperty ("window",  "400ms_p95");
+    to->setProperty ("heard_s", (int) std::lround (r.heardSeconds));   // stays in the payload, by ruling
+    juce::var v (to);
+    if (auto* o = v.getDynamicObject()) o->setProperty ("uid", instanceUid_);
+    if (! juce::File (dir + "track-level-" + instanceUid_ + ".json")
+            .replaceWithText (juce::JSON::toString (v, true)))
+        return;
+    tlLastRmsDb_ = r.loudRmsDbfs; tlLastPeakDb_ = r.loudPeakDbfs; tlLastWriteMs_ = nowMs;
+    EchoJay_NSLog (("EJTrackLevel: published uid=" + instanceUid_
+                    + " rms=" + juce::String (r.loudRmsDbfs, 2)
+                    + " peak=" + juce::String (r.loudPeakDbfs, 2)
+                    + " heard=" + juce::String ((int) r.heardSeconds) + "s").toRawUTF8());
+}
+
 void LinkProcessor::updateShmState()
 {
     // Called after any linkName/linkOn change — tell the host non-parameter
@@ -2312,6 +2542,15 @@ void LinkProcessor::rackLeaseEngage()
     rackLeaseActive_ = true;
     leaseSlot0_      = -1;
     leaseActive_.store(true, std::memory_order_relaxed);
+    // 4 Oct 2026 (save fix): THE REVISION THIS RACK SAT AT ONCE THE LEASE WAS ENGAGED - captured AFTER the
+    // bypass-all above, because setLeaseBypass bumps the revision and that bump is the lease's own doing, not a
+    // change to the rack's contents.
+    //
+    // This is the baseline for "did MY rack change after the borrow began", and it is captured HERE rather than on
+    // the V2 side on purpose: the V2 reads our sidecar at ITS engage, which may be before or after this bump, so a
+    // V2-side baseline would disagree with our own revision for reasons of timing alone and the comparison would
+    // never match. Both numbers the decision rests on are now ours, taken at two moments we control.
+    leaseBaseRev_ = chainHost.getChainRevision();
     notifyChainModel();
     EchoJay_NSLog(("EJLease: RACK engaged, " +
                    juce::String((int) rackLeasePrior_.size())
@@ -2330,6 +2569,8 @@ void LinkProcessor::rackLeaseRelease()
                    + juce::String((int) rackLeasePrior_.size())
                    + " slot bypass state(s) restored").toRawUTF8());
     rackLeaseActive_ = false;
+    leaseBaseRev_ = -1;   // the borrow is over: there is no baseline to compare a saved copy against
+    slotWetParkedSaid_ = false;   // 2 Oct 2026: the parked-rack notice is once per LEASE, not once per process
     rackLeasePrior_.clear();
     // The model re-reads the restored truth: without this, a sync that ran
     // mid-lease would leave the editor (and the SAVED state) claiming the
@@ -2571,13 +2812,17 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
         juce::String stateB64 = item.stateBase64;
         bool wantBypass = item.bypassed;
         juce::var structuredForSlot = item.structured;
+        // 4 Oct 2026: copied out of `item` for the same reason the three above are - the apply runs inside a lambda
+        // that captures by value, and `item` is a reference into a vector the lambda does not own.
+        const float restoreOutGainDb = item.outGainDb;
+        const float restorePreTrimDb = item.preTrimDb;
         // Format preference applies to NEW instantiation only: restores
         // (stateBase64 present) keep the format their state was saved with —
         // AU and VST3 state blobs are not interchangeable.
         if (stateB64.isEmpty())
             desc = self->chainHost.preferInlineHostableDesc(desc);
         self->chainHost.loadPluginAsync(desc, origin,
-            [self, results, addDetail, slot, stateB64, wantBypass, structuredForSlot, stepPtr,
+            [self, results, addDetail, slot, stateB64, wantBypass, structuredForSlot, restoreOutGainDb, restorePreTrimDb, stepPtr,
              name = item.name, resolvedName = desc.name]
             (const juce::String& err) mutable
         {
@@ -2603,6 +2848,12 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
                 self->chainHost.setSlotWet(hostIdx, slot.wet, ChainHost::WetSource::Restore);
                 if (wantBypass)
                     self->chainHost.setSlotBypassed(hostIdx, true);
+                // 4 Oct 2026 (ruled): the slot's own gains, restored with it. A build command carries 0.0 for
+                // both, which is the neutral it would have had anyway, so only a session restore moves them.
+                // From the BUILD ITEM, not the model spec: ChainSlotSpec is the display model and deliberately
+                // mirrors only what the panel draws, while the gains are restore payload.
+                if (restoreOutGainDb != 0.0f) self->chainHost.setSlotOutGainDb(hostIdx, restoreOutGainDb);
+                if (restorePreTrimDb != 0.0f) self->chainHost.setSlotPreTrimDb(hostIdx, restorePreTrimDb);
                 // Restore the hosted plugin's saved state (session restore)
                 if (stateB64.isNotEmpty())
                 {
@@ -2765,6 +3016,24 @@ juce::var LinkProcessor::chainModelToVar() const
         o->setProperty("bypassed", s.bypassed);
         o->setProperty("missing",  s.missing);
         o->setProperty("wet",      (double)s.wet);
+        // 4 Oct 2026 (ruled), ADDITIVE, three fields that restoreChainFromVar was already prepared for or needed:
+        //
+        //   settings_structured   restoreChainFromVar READS it (item.structured) and this writer never wrote it,
+        //                         so every Link session restore silently degraded structured dialling to the
+        //                         prose text. Written from the slot's own structured settings when it has them.
+        //   outGainDb / preTrimDb the hold's write and the drive's write. In no save format at all until today, so
+        //                         a reopened Link session lost its compressor builds' level match.
+        //
+        // Absent on an older chunk means default - prose-only settings, and 0.0 gains - which is exactly what
+        // those sessions restored to before, so nothing that loads today changes.
+        if (! s.missing && s.hostIdx >= 0)
+        {
+            const auto structured = chainHost.getSlotStructured(s.hostIdx);
+            if (! structured.isVoid())
+                o->setProperty("settings_structured", structured);
+            o->setProperty("outGainDb", (double) chainHost.getSlotOutGainDb(s.hostIdx));
+            o->setProperty("preTrimDb", (double) chainHost.getSlotPreTrimDb(s.hostIdx));
+        }
         if (!s.missing && s.hostIdx >= 0)
         {
             if (auto* p = chainHost.getSlotProcessor(s.hostIdx))
@@ -2799,6 +3068,9 @@ void LinkProcessor::restoreChainFromVar(const juce::var& v)
                              ? juce::jlimit(0.0f, 1.0f, (float)(double)o->getProperty("wet"))
                              : 1.0f;   // pre-wet/dry sessions restore fully wet
         item.stateBase64 = o->getProperty("state").toString();
+        // 4 Oct 2026: additive. Absent = 0.0, which is what every pre-today chunk restored to.
+        item.outGainDb   = (float) (double) o->getProperty("outGainDb");
+        item.preTrimDb   = (float) (double) o->getProperty("preTrimDb");
         if (item.name.isNotEmpty())
             spec.push_back(std::move(item));
     }
@@ -3053,6 +3325,16 @@ void LinkProcessor::pollChainCommand()
                 // build turn parses exactly as before.
                 item.stateBase64 = eo->getProperty("state").toString();
                 item.bypassed    = (bool) eo->getProperty("bypassed");
+                // 4/5 Oct 2026: THE SLOT'S OWN GAINS, ON THE COMMAND PATH TOO.
+                //
+                // There are TWO parses of a chain array in this file, and the gains were added to the other one -
+                // restoreChainFromVar, which is SESSION RESTORE. The V2 hands a saved borrowed rack back by writing
+                // a chain-cmd, which lands HERE, so the gains travelled in the payload and were dropped on arrival:
+                // the rack came back with its level match reset to 0. The file's own comment warns about exactly
+                // this pair ("the first fix went to the wrong one"), and G6 caught it reading 0.00 / 0.00 against
+                // the -2.5 / 1.5 that was sent. A build command carries neither key, so it is unaffected.
+                item.outGainDb   = (float)(double) eo->getProperty("outGainDb");
+                item.preTrimDb   = (float)(double) eo->getProperty("preTrimDb");
                 if (eo->hasProperty("wet"))
                     item.wet = juce::jlimit(0.0f, 1.0f,
                                             (float)(double) eo->getProperty("wet"));
@@ -3167,7 +3449,7 @@ void LinkProcessor::startCalibFromBlock(const juce::var& block)
     // fault, on the other side of the transport.
     cfg.purpose = echojay::CalibLoop::Purpose::buildHold;
     cfg.dynamicsSlot = chainHost.slotIsDynamics(slot);   // (l): the input-headroom ceiling is off on a compressor
-    calibLoop_.begin(cfg);
+    { auto cfgH = cfg; cfgH.heardAtBeginS = chainHost.getSlotLevels(cfg.slot).in.heardSeconds; calibLoop_.begin(cfgH); }
     calibLoop_.slotIdent = chainHost.slotIdentityKey(slot);   // (n)
     const bool threshold = cfg.actuator == echojay::CalibLoop::Actuator::Threshold;
     EchoJay_NSLog(("EJThreshold(Link): \"" + cfg.plugin + "\" slot " + juce::String(slot + 1)
@@ -3179,7 +3461,15 @@ void LinkProcessor::startCalibFromBlock(const juce::var& block)
     // The opening value is written the same way every later step is.
     if (threshold)
     {
-        if (haveStart) chainHost.setSlotControlsToValue(slot, cfg.params, cfg.startDb);
+        // A HOLD WRITES NOTHING, HERE TOO (3 Oct 2026, 13:52 item 3). The mirror of the V2 twin: a set_directly
+        // or otherwise hold-only block has nothing to open, and writing the value back goes through the readback
+        // search and can land somewhere else than it was read.
+        if (echojay::CalibLoop::writesOpeningValue(cfg))
+            chainHost.setSlotControlsToValue(slot, cfg.params, cfg.startDb);
+        else
+            EchoJay_NSLog(("EJThreshold(Link): NOT writing " + cfg.params.joinIntoString(" + ") + " - "
+                           + (cfg.holdOnly ? juce::String("this is a hold; the control stays where it is")
+                                           : juce::String("no opening value was sent"))).toRawUTF8());
         chainHost.resetSlotShortTermStats(slot, "the build set the actuator");   // 21t-j: reset point 1
     }
     else
@@ -3241,6 +3531,24 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     obj->setProperty("alias",    displayAlias);   // 21n item 2
     obj->setProperty("linkOn",   (bool)linkOn.load());
     obj->setProperty("gainDb",   (double)gainDb_.load(std::memory_order_relaxed));
+    // COMP_PROFILE_SPEC_v1 section 5, PERSISTED (2 Oct 2026 ruling). This blob is per-instance, so it is already
+    // keyed to the track: Logic hands the same chunk back to the Link on that channel. Without this, a restart
+    // threw away everything the track had been heard to do and the next build sent no level at all until it had
+    // played again. The reading written out is the BETTER of what is stored and what this session has heard -
+    // "more heard audio wins" - so reopening a session cannot quietly downgrade a longer reading to a shorter one.
+    {
+        const auto live = chainHost.trackLevelReading();
+        const bool liveWins = live.valid && live.heardSeconds > tlStoredHeardS_;
+        const float rms  = liveWins ? live.loudRmsDbfs  : tlStoredRmsDb_;
+        const float peak = liveWins ? live.loudPeakDbfs : tlStoredPeakDb_;
+        const float hrd  = liveWins ? live.heardSeconds : tlStoredHeardS_;
+        if (hrd > 0.0f)
+        {
+            obj->setProperty("tlRmsDbfs",  (double) rms);
+            obj->setProperty("tlPeakDbfs", (double) peak);
+            obj->setProperty("tlHeardS",   (double) hrd);
+        }
+    }
     obj->setProperty("placement", placement_.load(std::memory_order_relaxed));
     obj->setProperty("projectName", projectName);
     obj->setProperty("genre",       genre);
@@ -3268,6 +3576,15 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     // per-plugin state
     obj->setProperty("chain",    chainModelToVar());
     obj->setProperty("chainMasterWet", (double)chainHost.getMasterWet());
+    // 4 Oct 2026 (ruled): THE CHAIN REVISION, so V2's saved borrowed copy can be judged against it on reopen.
+    // The rule is "apply V2's copy only if the Link has not moved since the borrow started", and a revision is
+    // the only thing that answers that. Additive: absent on an older chunk, and then restoredChainRev_ stays -1
+    // and V2's copy is never treated as newer - the safe direction.
+    obj->setProperty("chainRev", chainHost.getChainRevision());
+    // ...and the revision the CURRENT borrow started from, when one is open. The V2 side compares these two: equal
+    // means our rack has not changed since the lease engaged, so the copy the V2 saved is the newer one. -1 means
+    // no borrow was open at save time, and then the V2's copy is never preferred.
+    obj->setProperty("leaseBaseRev", leaseBaseRev_);
     juce::String json = juce::JSON::toString(juce::var(obj), true);
     dest.replaceAll(json.toRawUTF8(), json.getNumBytesAsUTF8());
     // 20 Sep 2026 (the deleted-chain-came-back observation): what the SAVED chunk carries, always logged
@@ -3282,6 +3599,24 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
     auto v = juce::JSON::parse(json);
     if (auto* obj = v.getDynamicObject())
     {
+        // COMP_PROFILE_SPEC_v1 section 5, RESTORED (2 Oct 2026 ruling). Absent fields leave the stored reading
+        // alone, so an older chunk restores exactly as it does today. A reading is NEVER downgraded here: the
+        // chunk only wins if it heard more than whatever this instance already holds, which is the same
+        // "more heard audio wins" rule the save side and the publish use.
+        if (obj->hasProperty("tlHeardS"))
+        {
+            const float hrd = (float)(double) obj->getProperty("tlHeardS");
+            if (hrd > tlStoredHeardS_)
+            {
+                tlStoredHeardS_  = hrd;
+                tlStoredRmsDb_   = (float)(double) obj->getProperty("tlRmsDbfs");
+                tlStoredPeakDb_  = (float)(double) obj->getProperty("tlPeakDbfs");
+                EchoJay_NSLog(("EJTrackLevel: restored from saved state rms="
+                               + juce::String(tlStoredRmsDb_, 2) + " peak=" + juce::String(tlStoredPeakDb_, 2)
+                               + " heard=" + juce::String((int) tlStoredHeardS_)
+                               + "s - a restart no longer resets this track's level").toRawUTF8());
+            }
+        }
         // OUR OWN CHUNK RE-APPLIED (6 Sep 2026, the v6 regression): Pro Tools
         // calls SetChunk on a live instance repeatedly with that instance's own
         // current chunk (212 setState lines for ~40 instances in one session).
@@ -3389,6 +3724,18 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
         });
         if (obj->hasProperty("editorW"))  editorW = juce::jlimit(900, 1800, (int)obj->getProperty("editorW"));
         if (obj->hasProperty("editorH"))  editorH = juce::jlimit(580, 1200, (int)obj->getProperty("editorH"));
+        // 4 Oct 2026: the SAVED revision is kept as its own value and NEVER written into chainRevision_.
+        // chainRevision_ is the live structural counter the preflight staleness guards compare against, and
+        // overwriting it would make an edit proposed against the restored rack look stale (or fresh) for reasons
+        // that have nothing to do with the rack. This is a record of what the chunk said, for the tie-break only.
+        if (obj->hasProperty("chainRev"))
+        {
+            restoredChainRev_ = (int) obj->getProperty("chainRev");
+            restoredLeaseBaseRev_ = obj->hasProperty("leaseBaseRev") ? (int) obj->getProperty("leaseBaseRev") : -1;
+            EchoJay_NSLog(("EJLinkState: chunk carried chainRev=" + juce::String(restoredChainRev_)
+                           + " (kept for the borrowed-rack tie-break; the live revision is untouched at "
+                           + juce::String(chainHost.getChainRevision()) + ")").toRawUTF8());
+        }
         if (obj->hasProperty("chain"))
         {
             EchoJay_NSLog(("EJLinkState: setState uid=" + chunkUidIn + (ownChunk ? " (own)" : " (foreign/seed)") + " chain=" + juce::String(obj->getProperty("chain").isArray() ? obj->getProperty("chain").getArray()->size() : -1)

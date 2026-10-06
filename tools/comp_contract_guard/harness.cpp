@@ -23,6 +23,14 @@
 #include <cstdio>
 #include <cmath>
 
+// 5 Oct 2026 (Sean's ruling): THIS HARNESS DRIVES ITS OWN WINDOWS, so it opts out of the fresh-window wait
+// EXPLICITLY, per loop. In the product an unknown heard-clock means WAIT, because a begin site that forgot to fill
+// it would silently bring back the stale reading item 3 closed. A synthetic leg has no clock to supply - it sets
+// Window::heardSeconds by hand - so it is the one legitimate caller that must say so out loud. Routed through one
+// helper rather than stamped on seventy Config declarations, so the opt-out is auditable in a single place.
+static void beginDriven (echojay::CalibLoop& l, echojay::CalibLoop::Config c)
+{ c.noFreshWait = true; l.begin (c); }
+
 namespace {
 int failures = 0, skipped = 0;
 void check (bool ok, const juce::String& w, const juce::String& d = {})
@@ -320,25 +328,70 @@ void guardMain()
         echojay::CalibLoop::Config c;
         c.plugin = "EMO-D5 (s)"; c.slot = 1; c.purpose = echojay::CalibLoop::Purpose::buildHold;
         c.dynamicsSlot = true; c.mode = echojay::CalibLoop::Mode::Passive;
-        l.begin (c);
+        beginDriven (l, c);
         // BOTH flags: the feature is on (which picks section 7's wording at all) and THIS slot has a profile.
         l.profilesFeatureOn = true;
         l.hasProfile = true;
         l.lastGr = -2.0f;                 // the server expected 2 dB; the loop measured it
         l.levelTrimmedDb = -1.5f; l.slotGainDb = -1.5f; l.levelHeld = true;
         const auto line = l.completedLine();
-        check (line.startsWith ("EMO-D5 (s):") && line.contains ("from its profile"),
-               "a profiled compressor's line names the plugin and says the setting came from its profile",
-               line);
+        // 4 Oct 2026 RULING: a MEASURED figure is labelled measured, and "from its profile" is reserved for
+        // PREDICTIONS. This leg asserted the old sentence, which said "about 2 dB ... from its profile" about a
+        // figure the loop had measured itself - presenting our own reading as the profile's claim, and hiding that
+        // it had missed the target. The line now names the plugin, says the reading is MEASURED, and shows what it
+        // was aiming for, so a miss is visible in the sentence rather than only in the log.
+        check (line.startsWith ("EMO-D5 (s):") && line.contains ("measured"),
+               "a profiled compressor's line names the plugin and labels the reading as MEASURED (not \"from its "
+               "profile\", which is for predictions)", line);
+        check (line.contains ("aimed for"),
+               "...and shows the figure it was aiming for, so a miss is visible in the sentence", line);
+        check (! line.contains ("from its profile"),
+               "...and does NOT claim a measured figure came from the profile", line);
         check (line.contains ("Output -1.5"),
                "...and states the OUT the hold wrote", line);
         // The unprofiled compressor ON A FLAG-ON SESSION: section 7 still governs the wording, so this sets the
         // feature on and the profile off. With the feature OFF it would be letter (q)'s line instead, and
         // level_loop_guard (16) is what asserts that case - the two legs together pin both sides of the flag.
-        echojay::CalibLoop l2; l2.begin (c); l2.profilesFeatureOn = true; l2.hasProfile = false;
+        echojay::CalibLoop l2; beginDriven (l2, c); l2.profilesFeatureOn = true; l2.hasProfile = false;
         l2.levelTrimmedDb = 0.0f; l2.levelResidualDb = 0.0f;
         check (l2.completedLine().contains ("no profile yet"),
                "...while the one with no profile says so", l2.completedLine());
+    }
+
+    // ---- controls_norm IS A CONTAINER, AND IT WINS (2 Oct 2026, Sean's 16:33 session) ----------------------
+    {
+        std::printf ("\n-- controls_norm is never a control name, and never a second write --\n");
+        // Two faults from one session, both in the apply path, and both were VISIBLE IN THIS GUARD'S OWN OUTPUT
+        // before it asserted them: it printed "controls_norm: manual 0.000 (no mapping for this control on this
+        // plugin)" and passed. A guard that prints the defect and stays green is the thing to fix first.
+        //   1. the flat pass treated the controls_norm KEY as a parameter name, so Sean's card said "except
+        //      controls norm which needs hand-dialing" - naming a control no plugin has;
+        //   2. a control carried in BOTH maps was written twice ("Gain: APPLIED 0.336" from controls, then
+        //      "Gain: APPLIED 0.330" from controls_norm), so the readback described the value that lost.
+        const auto amount = echojay::CompCheck::amountControl (profile);
+        auto* norms = new juce::DynamicObject();
+        norms->setProperty (juce::Identifier (amount), 0.6683);
+        auto* ctrls = new juce::DynamicObject();
+        ctrls->setProperty (juce::Identifier (amount), "-19.9");      // the SAME control, as display text
+        auto* both = new juce::DynamicObject();
+        both->setProperty ("controls",      juce::var (ctrls));
+        both->setProperty ("controls_norm", juce::var (norms));
+        const auto rep2 = h.applyStructuredSettings (0, juce::var (both), juce::var());
+        int named = 0, writes = 0;
+        for (const auto& r : rep2)
+        {
+            if (r.semantic.containsIgnoreCase ("controls_norm")) ++named;
+            if (echojay::normalizeControlName (r.semantic)
+                    .equalsIgnoreCase (echojay::normalizeControlName (amount)) && r.applied) ++writes;
+        }
+        check (named == 0,
+               "no apply result is named after the controls_norm CONTAINER  (RED as it stood: the key was looked "
+               "up as a parameter, missed, and reported to the user as needing their hand)",
+               juce::String (named) + " result(s) named controls_norm");
+        check (writes <= 1,
+               "a control carried in BOTH maps is written ONCE  (RED as it stood: two writes 80 microseconds "
+               "apart, and the dial summary described the one that was overwritten)",
+               juce::String (writes) + " applied write(s) to \"" + amount + "\"");
     }
 
     std::printf ("\n==== comp_contract_guard: %s (%d assertion(s) failed, %d skipped) ====\n",

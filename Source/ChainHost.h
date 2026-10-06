@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include "EJChainRole.h"   // 21t-m item 5: the chain role and its three sources
 #include <JuceHeader.h>
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
@@ -117,6 +118,13 @@ public:
     ~ChainHost() override;
     bool isBorrowed() const noexcept { return mode_ == Mode::Borrowed; }
 
+    /** THE BLACKLIST KEY: trailing whitespace normalised (2 Oct 2026). An AU identifier ends in its four-character
+        manufacturer OSType and an OSType may contain spaces - Antares ships AVOX SYBIL as 'VST ' - while the
+        chain_blacklist.txt files already on disk were written trimmed. Public because substitute_guard pins both
+        directions of it: the stored and real forms reduce to one key, a different manufacturer does not, and a
+        LEADING space never matches. See ChainHost.cpp for what the exact compare cost. */
+    static juce::String blacklistKey(const juce::String& path);
+
     /** Host latency mirroring, REFUSED in Borrowed mode (spec §2.3): the
         host-reported latency is the main rack's alone — a borrowed chain's
         latency lives on a side stream the host cannot compensate. Returns
@@ -134,6 +142,44 @@ public:
     // §3a's rule is untouched; parked instances are findable instead of
     // only leaked. Growth bound: distinct plugin identities ever borrowed.
     void releaseBorrowToPool();          // park every slot, clear the rack
+    /** 4 Oct 2026: remove anything still parked, while the graph is whole. Called first from ~ChainHost; public so
+        a guard can drive it. It makes the disposal ordered and visible - it does NOT move it out of the teardown,
+        which is why destroy-on-release is the actual protection. */
+    void clearBorrowPoolForTeardown();
+    /** 5 Oct 2026: pump one silent block so the render-sequence exchange swaps and the OLD sequence becomes the
+        message thread's to free. Without this, a host that has stopped rendering (Logic closing a project) leaves
+        both sequences - and every Node::Ptr they hold - to be destroyed inside AP_Close, which is where the Softube
+        CL 1B aborts. Safe to call when unprepared; it does nothing then. */
+    void pumpGraphToRetireOldSequence (const char* why);
+    /** 5 Oct 2026 (ruled): keep every remaining HOSTED plugin instance alive past this object's death, so none is
+        disposed inside AP_Close - which is where the Softube CL 1B's ACFShutdown aborts the AU host service. A
+        deliberate leak at teardown, logged by name, heap-allocated and never freed (a static would be destroyed at
+        process exit, which is the UAD-shaped exit crash). Built-ins are ours and are left to dispose normally. */
+    void leakHostedPluginsAtTeardown();
+    // ---- 5 Oct 2026: EXACTLY-ONCE DISPOSAL OF A RELEASED HOSTED AU ---------------------------------------
+    // The 18:30:46 crash. At release the ChainSlot's Node::Ptr was never cleared, and the RETIRED render sequence
+    // still held one, so after slots_.clear() the AU survived as an ORPHAN owned solely by JUCE's
+    // RenderSequenceExchange - which frees the old sequence in its own 500 ms timerCallback, and that timer cannot
+    // run while we are inside release on the message thread. The instance was therefore disposed at some arbitrary
+    // later moment; by then another plugin in the same host process had torn down Softube's shared ACF library, and
+    // the dispose freed memory that library had already released ("pointer being freed was not allocated").
+    // So release keeps the LAST reference itself, in pendingDispose_, and lets go only once nothing else holds it:
+    // on the message thread, with the host healthy, exactly once. Driven by the processor's own timer, and also
+    // called at the start of the next release and at teardown.
+    void drainPendingDispose (const char* why);
+    int  pendingDisposeCount() const { return (int) pendingDispose_.size(); }
+    // How many times the never-freed fallback fired. A guard asserts this is ZERO on the normal path: the fallback
+    // exists so a stubborn holder cannot crash the host, NOT so a broken release can look healthy.
+    int  disposeFallbackCount() const { return disposeFallbackCount_; }
+    /** Keep one HOSTED plugin node alive past this object's death. Returns false for anything we wrote ourselves
+        (built-ins, trim/blend nodes), which dispose safely. See the definition for why the store is a static
+        POINTER to a heap vector and must never become a static object. */
+    static bool keepHostedNodeForever (const juce::AudioProcessorGraph::Node::Ptr& node, const juce::String& name);
+    /** 4 Oct 2026: stamp the moment a borrow engaged, so each slot's load line can state how long after the engage
+        it actually became available. Instances load ASYNCHRONOUSLY - in Sean's 4 Oct log the engage logged at
+        15:05:35 and the five slots arrived 15:06:31-15:06:34 - so a duration measured at the engage itself says
+        nothing about the cost of creating them. 0 disables the annotation. */
+    void setEngageStampMs (double ms) noexcept { engageStampMs_ = ms; }
     int  borrowPoolCount() const noexcept { return (int) borrowPoolTotal_; }
     int  borrowFreshInstantiations() const noexcept { return borrowFresh_; }
     /** The named fallback: this identity failed reuse verification — every
@@ -965,6 +1011,9 @@ public:
         // set_wet op (required there) or riding an add/replace (applied once
         // the slot has loaded). -1 = absent = leave the knob alone.
         float wetPct = -1.0f;
+        // 3 Oct 2026: a wet_pct that was present but not a number. Carried rather than logged in the parser,
+        // which the edit card re-runs every frame.
+        bool  wetPctBadType = false;
         juce::String name;      // add/replace: name from AVAILABLE PLUGINS
         juce::String settings;  // prose settings for the slot tile (display)
         // 21t-i (27 Sep 2026): a level_match op is a GROUP move, not a rack edit - it carries members, not a
@@ -1362,6 +1411,37 @@ public:
     /** COMP_PROFILE_SPEC_v1 item 2: what the server said to expect of a slot, from its chain block. NaN clears.
         Stored on the slot so the check in section 7 reads it from the rack rather than from a copy of the block. */
     void setSlotExpectations (int slotIndex, float expectedGrDb, float expectedLevelDb);
+    /** 3 Oct 2026 (13:52 item 2): the loop's current target band and last measured GR, for [CURRENT CHAIN].
+        Called by the host that advances the loop. NaN clears a figure rather than zeroing it. */
+    void setSlotGrState (int slotIndex, float targetLoDb, float targetHiDb, float lastGrDb);
+    /** 3 Oct 2026 (Kathy): one low-level out-minus-in sample for this slot, and the running median.
+        `outMinusInDb` is taken from a window whose input is well below the loud level, so the unit is below
+        threshold and the difference is its low-level gain. LOG ONLY - it moves no GR and no make-up. */
+    void noteLowLevelGainSample (int slotIndex, float inDbfs, float outMinusInDb, bool confirmedGate);
+    /** The reading, with everything the log line needs. Returns false when there is nothing to state yet.
+        `twoBandAgreed` false means the two input bands disagreed: the median is NOT to be trusted and the line
+        prints both band figures instead. `confirmedGate` false means it fell back to the track's loud level
+        because the block carried no in_at_gr1_dbfs, and the line is tagged "unconfirmed". */
+    struct LowGainReading
+    {
+        float medianDb = std::numeric_limits<float>::quiet_NaN();
+        float loBandDb = std::numeric_limits<float>::quiet_NaN();
+        float hiBandDb = std::numeric_limits<float>::quiet_NaN();
+        float rangeLoDbfs = 0.0f, rangeHiDbfs = 0.0f;
+        int   samples = 0;
+        bool  twoBandAgreed = false;
+        bool  confirmedGate = false;
+    };
+    bool lowLevelGain (int slotIndex, LowGainReading& out) const;
+    /** 4 Oct 2026: keep measuring a LANDED slot's low-level gain, with no loop and no writes. `gr1Db` is the
+        profile's 1 dB point at the position the loop left the control (NaN = use the track-loudness fallback). */
+    void armLowGainWatch (int slotIndex, float gr1Db);
+    void clearLowGainWatch (int slotIndex, const juce::String& why);
+    /** One pass over every armed slot. Takes at most one sample per slot per 3 s, on the same gates the loop uses,
+        and logs a running count. Safe to call every tick; does nothing when nothing is armed. */
+    void tickLowGainWatch();
+    /** ...and the read side, index-checked, for the one injection that prints them. */
+    bool slotGrState (int slotIndex, float& targetLoDb, float& targetHiDb, float& lastGrDb) const;
     float slotExpectedGrDb    (int slotIndex) const;
     float slotExpectedLevelDb (int slotIndex) const;
     /** ...and the PROFILE for that slot, read live out of the parameter-map payload under its fingerprint
@@ -1386,6 +1466,9 @@ public:
     /** COMP_PROFILE_SPEC_v1: the whole profile path is behind this, default OFF. With it off, behaviour is
         exactly letter (q). Static and read from disk at each call: ~/Library/EchoJay/comp_profiles_on.txt */
     static bool compProfilesEnabled();
+    /** 3 Oct 2026: send turnType=chain_edit when the classifier says chain_edit. OFF by default
+        (~/Library/EchoJay/turntype_edit_on.txt) until B confirms the server handles it. */
+    static bool turnTypeEditEnabled();
     juce::var trackLevelVar() const { return trackLevel_.toVar(); }
     echojay::TrackLevel::Reading trackLevelReading() const { return trackLevel_.read(); }
     echojay::LevelTally::Snapshot getChainOutLevels() const { return chainOutTally_.snapshot(); }
@@ -2094,6 +2177,7 @@ public:
     // original event, later duplicates are re-detections).
     void addToBlacklist(const juce::String& path, const juce::String& reason = {});
 
+    double engageStampMs_ = 0.0;   // 4 Oct: see setEngageStampMs
     double sampleRate_ = 44100.0;  // public so pollVST3Validation can read
     int    blockSize_  = 512;
 
@@ -2115,6 +2199,43 @@ private:
         // is measured against. NaN is "the block said nothing", which means today's behaviour for this slot.
         float expectedGrDb    = std::numeric_limits<float>::quiet_NaN();
         float expectedLevelDb = std::numeric_limits<float>::quiet_NaN();
+        // 3 Oct 2026 (13:52 item 2): WHAT THE LOOP IS AFTER AND WHAT IT LAST READ, for [CURRENT CHAIN].
+        // Sean asked "harder" twice and the second turn re-asked for the same 3.0 dB, because the server cannot
+        // see the target the loop is already on - so a comparative had nothing to move away from. These are the
+        // loop's own current band and its last measured gain reduction, written by whichever host is advancing
+        // it. NaN is "no loop, or nothing measured yet" and must stay ABSENT on the wire, never 0: 0 dB of gain
+        // reduction is a compressor that is not working, which is a different claim from "I have no reading".
+        float grTargetLoDb = std::numeric_limits<float>::quiet_NaN();
+        float grTargetHiDb = std::numeric_limits<float>::quiet_NaN();
+        float lastGrDb     = std::numeric_limits<float>::quiet_NaN();
+        // ---- 3 Oct 2026, Kathy: THE UNIT'S LOW-LEVEL GAIN, MEASURED LIVE (log only) --------------------------
+        // static_gain_db is "output minus input at the unit's low-level gain under the profile's neutral
+        // settings" - the part of out-minus-in the compressor applies when it is NOT compressing. The CL 1B reads
+        // a constant 0.7 dB under its profile, and this says whether that 0.7 exists in OUR chain at all: over
+        // windows whose input sits well below the loud level (so below threshold), out minus in IS the low-level
+        // gain. A running median rather than a mean, because one window straddling a phrase would drag a mean.
+        //
+        // It lives on the SLOT, not on the loop: the loop round-trips through the sidecar every tick on a Link
+        // rack, so a ring kept there would reset every second and never accumulate (this morning's lesson).
+        // Kathy's refinement: the INPUT LEVEL rides with each sample, because the confirmation test splits the
+        // samples into two input bands and only believes a figure both bands agree on. A unit that is quietly
+        // compressing in the "below threshold" region reads differently in the two bands; a true low-level gain
+        // is the same in both. So the store is pairs, not a single column.
+        static constexpr int kLowGainRing = 64;
+        struct LowGainSample { float inDbfs = 0.0f; float outMinusInDb = 0.0f; };
+        std::array<LowGainSample, kLowGainRing> lowGainRing {};
+        int   lowGainCount = 0;      // samples taken, total (may exceed the ring)
+        int   lowGainPos   = 0;      // next write position
+        bool  lowGainConfirmedGate = false;   // true = gated on the block's in_at_gr1_dbfs, false = the fallback
+        // ---- 4 Oct 2026 RULING: THE PASSIVE WATCH ------------------------------------------------------------
+        // A HOLD block runs ONE window and stops ("state=landed-held-one-write"), and sampling only happened while
+        // the loop was listening - so on a hold the low-level gain could never gather a single sample (Sean's
+        // 20:56 session: "(waiting, n=0)" with the loop already finished). After a loop lands, the slot keeps being
+        // MEASURED for this one purpose: no writes, no stepping, no loop. Cleared on the next edit or rack release.
+        bool   lowGainWatch = false;
+        float  lowGainWatchGr1Db = std::numeric_limits<float>::quiet_NaN();   // the ceiling's anchor, captured at arm
+        double lowGainWatchLastMs = 0.0;      // wall clock of the last window taken: a 3 s floor, not a tick count
+        int    lowGainWatchWindows = 0;
         bool                                 bypassed = false;
         bool                                 intendedBypassed = false;   // v9: what the user/plan asked; `bypassed` is the effective state (lease overlays it)
         juce::String                         settings;   // AI-suggested dial-in guidance
@@ -2415,6 +2536,11 @@ private:
     // skip it — inert until the reattach re-prepares it once, after the seed.
     std::map<juce::String, std::vector<BorrowPoolEntry>> borrowPool_;
     size_t            borrowPoolTotal_ = 0;
+    // See drainPendingDispose. Each entry is the LAST reference to a released hosted AU; letting go of it IS the
+    // dispose, so the vector owning it is what makes the dispose exactly-once and message-thread-only.
+    std::vector<juce::AudioProcessorGraph::Node::Ptr> pendingDispose_;
+    std::vector<int>  pendingDisposeTries_;
+    int               disposeFallbackCount_ = 0;
     juce::StringArray borrowPoolIneligible_;
     int               borrowFresh_ = 0;      // fresh instantiations, for the gate
     // Node ids of slots that came FROM the pool this borrow — a seed failure
@@ -2616,7 +2742,13 @@ private:
                              saved chain did not carry the field: still no opinion, on
                              either side. */
                          juce::String savedFormat, savedVersion, savedUid;
-                         juce::var params; };   // the {uid,format,plugin,params} object for a VST3 slot (see getCachedSlotParamsVar), void = none
+                         juce::var params;   // the {uid,format,plugin,params} object for a VST3 slot (see getCachedSlotParamsVar), void = none
+                         /** 4 Oct 2026: the slot's own gains, restored with it. A compressor build's LEVEL MATCH
+                             is the hold's write to the OUT gain and the drive's to the PRE-trim; neither was in
+                             any save format, so every reopened session came back unmatched. NaN is not used: an
+                             older session's XML has no attribute, the default is 0.0, and 0.0 is what those slots
+                             restored to before - so absent and "explicitly neutral" are deliberately the same. */
+                         float outGainDb = 0.0f, preTrimDb = 0.0f; };
     // onSlotSettled: see restoreSavedChain. Empty for a session restore,
     // which builds its rack before any editor exists to watch it.
     void restoreNextSlot(std::vector<RestoreItem> items, int idx,

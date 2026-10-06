@@ -319,6 +319,11 @@ public:
     void setNextChatTurnType(const juce::String& t, int busCount = 0)
     { nextChatTurnType_ = t; nextChatBusCount_ = busCount; }
 
+    /** 3 Oct 2026: change ONLY the staged turn type, leaving the staged bus count alone. The classifier's answer
+        arrives AFTER setNextChatTurnType has staged "chain_generate", and re-calling that setter would reset
+        nextChatBusCount_ to 0 as a side effect - a meter blob silently lost to a wording fix. */
+    void overrideNextChatTurnType(const juce::String& t) { nextChatTurnType_ = t; }
+
     // Per-fp exact controls exposure (9 Aug 2026): name->fp JSON object
     // staged from ChainHost::buildMapFpsJson, consumed at body build like
     // the meters blob. Tells the server WHICH BINARY each plugin name is,
@@ -610,6 +615,13 @@ public:
     // split call fell back at 3068 ms. Decision beyond the ruling, flagged: the user waits up to 6.7 s for the ack
     // on a slow classify instead of 3.2 s.
     static constexpr int kClassifyBudgetMs         = 6700;
+    // 6 Oct 2026 (Sean's ruling): A CLASSIFY BODY IS SMALL, AND A SEND NEVER GOES OUT UNCLASSIFIED.
+    // His 18:24 turn carried a 208 KB classify body (the whole chat history, via buildChatTurns) against the 6.7 s
+    // budget above, the deadline fired, and the turn went out with no classifyIntent and no classifyToken - B found
+    // it from the server side because the client said nothing. The classifier needs the typed message and a little
+    // context (prior assistant line, channel, role, whether a rack exists); it does not need the chain dump, the
+    // inventory or the track analysis. Past this size even the small body is cut back to the typed text alone.
+    static constexpr int kClassifyBodyMaxBytes     = 32768;
     static constexpr int kClassifyQuestionBudgetMs = 2800;
 
     /** Call 1. Calls back EXACTLY ONCE on the message thread.
@@ -888,7 +900,11 @@ public:
                                                    const juce::String& chainLevelLine = {},
     // 21t-m item 5 (29 Sep 2026 ruling): the chain's ROLE and which of its three sources decided it, printed in
     // the header. The same fact goes to the server in the body as channelRole; the model reads this one.
-                                                   const juce::String& chainRoleText = {});
+                                                   const juce::String& chainRoleText = {},
+                                                   // 3 Oct 2026 (13:52 item 2): gr_target_db / last_gr_db per
+                                                   // slot, index-parallel like slotLevelNotes so the sidecar's
+                                                   // wire struct is untouched. nullptr = print none.
+                                                   const juce::StringArray* slotGrNotes = nullptr);
     /** 21t-m item 2: the chain's OWN in/out line, distinct from the last slot's out. */
     static juce::String formatChainLevelLine(const ChainHost& chainHost);
     // Running level (LevelTally, 17 Aug 2026), rendered for the model.
@@ -1367,7 +1383,8 @@ private:
 
     // The /api/classify request body, extracted so a guard can read the bytes that
     // go on the wire (it cannot observe a POST). classify() sends exactly this.
-    juce::String buildClassifyRequestBody(const ClassifyRequest& req) const;
+    juce::String buildClassifyRequestBody(const ClassifyRequest& req,
+                                         bool includeHistory = true) const;
     // tools/mapfps_test ONLY (CONTRACT_history_resend_pin.md, 21 Aug 2026):
     // the history-resend pin must run THIS function, not a reimplementation
     // — the server's brief suppression counts plugin names in history it

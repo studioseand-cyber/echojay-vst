@@ -144,6 +144,19 @@ public:
 
     /// Call from editor after any change to linkOn or linkName (message thread).
     void updateShmState();
+    // COMP_PROFILE_SPEC_v1 section 5: this track's own loud level, written for V2 (2 Oct 2026). Throttled; see
+    // the .cpp. An idle Link writes nothing, and absence is what tells V2 there is no reading for this track.
+    void publishTrackLevel();
+    bool slotWetParkedSaid_ = false;   // 2 Oct 2026: the parked-under-lease slotWet notice, once per lease
+    float  tlLastRmsDb_   = -200.0f;
+    float  tlLastPeakDb_  = -200.0f;
+    double tlLastWriteMs_ = 0.0;
+    // COMP_PROFILE_SPEC_v1 section 5, persisted across a restart (2 Oct 2026 ruling). Keyed to the track by
+    // construction: this rides the per-instance state chunk Logic hands back to the Link on that channel.
+    // "More heard audio wins" decides between this and the live reading, in all three places that compare them.
+    float  tlStoredRmsDb_  = 0.0f;
+    float  tlStoredPeakDb_ = 0.0f;
+    float  tlStoredHeardS_ = 0.0f;
 
     /// Fired on the message thread when linkOn/linkName change OUTSIDE the
     /// editor (state restore, remote ctrl command) so an open editor can
@@ -195,6 +208,10 @@ public:
         // path is compiled into this binary via ChainHost.cpp and nothing ever
         // handed it a value.
         juce::var structured;      // settings_structured, void when absent
+        // 4 Oct 2026 (ruled): the slot's own gains, for the restore path. The hold writes the OUT gain and the
+        // drive writes the PRE-trim; neither was ever saved, so a reopened Link session came back unmatched.
+        // 0.0 for a build command (they carry no gains) and for any older chunk, which is what those restored to.
+        float outGainDb = 0.0f, preTrimDb = 0.0f;
     };
 
     ChainHost& getChainHost() { return chainHost; }
@@ -500,6 +517,14 @@ private:
     // on THIS — the display name is a label, never an address (unnamed or
     // same-named Links collided and toggles applied to all of them).
     juce::String instanceUid_;
+    // 4 Oct 2026 (ruled): the chain revision this instance's SAVED chunk carried, or -1 when it carried none.
+    // Published in the sidecar so the V2 side can decide whether its saved borrowed copy is still the newer one.
+    // Deliberately NOT written into ChainHost's live chainRevision_ - see setStateInformation.
+    int restoredChainRev_ = -1;
+    // The revision this rack sat at when the CURRENT borrow engaged (-1 = no borrow open). Saved in the chunk and
+    // republished after a restore, so the V2 can tell whether our rack moved after the borrow began.
+    int leaseBaseRev_ = -1;
+    int restoredLeaseBaseRev_ = -1;   // what our saved chunk said leaseBaseRev_ was
     // Uid claim gate (25 Aug 2026): decides duplicate vs ghost vs undecided
     // by the holder's heartbeat across claim-retry ticks. Reset when the
     // holder slot changes or the question resolves.

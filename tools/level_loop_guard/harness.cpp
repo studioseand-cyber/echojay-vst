@@ -21,6 +21,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "ChainHost.h"
+#include "EJCompCheck.h"   // 4 Oct: leg (30) drives the in_at_gr_dbfs ladder directly
 #include "EchoJayAPI.h"
 #include "EedDeviceRegistry.h"
 // EedGainProcessor.cpp holds the BuiltinDeviceRegistrar for "EchoJay Gain", and a registrar is a static object
@@ -32,6 +33,14 @@
 #include <cstdio>
 #include <cmath>
 #include <memory>
+
+// 5 Oct 2026 (Sean's ruling): THIS HARNESS DRIVES ITS OWN WINDOWS, so it opts out of the fresh-window wait
+// EXPLICITLY, per loop. In the product an unknown heard-clock means WAIT, because a begin site that forgot to fill
+// it would silently bring back the stale reading item 3 closed. A synthetic leg has no clock to supply - it sets
+// Window::heardSeconds by hand - so it is the one legitimate caller that must say so out loud. Routed through one
+// helper rather than stamped on seventy Config declarations, so the opt-out is auditable in a single place.
+static void beginDriven (echojay::CalibLoop& l, echojay::CalibLoop::Config c)
+{ c.noFreshWait = true; l.begin (c); }
 
 struct EchoJayBorrowHostTestAccess
 {
@@ -403,7 +412,7 @@ void guardMain()
         feed (r.proc, r.prog, 12.0);
         echojay::CalibLoop l;
         auto cfg = passiveDriveCfg ("EchoJay Compressor");
-        l.begin (cfg);
+        beginDriven (l, cfg);
         echojay::CalibLoop::Window w;
         w.measured = true; w.silent = false; w.grDb = 2.5f; w.levelChangeDb = 0.0f; w.inTruePeakDb = -12.0f;
         w.slotOutGainDb = 0.0f; w.slotPreTrimDb = 3.0f;      // the state at 21:54:16
@@ -482,7 +491,7 @@ void guardMain()
             echojay::CalibLoop l;
             auto cfg = passiveDriveCfg ("Fake Comp");
             cfg.purpose = purpose;
-            l.begin (cfg);
+            beginDriven (l, cfg);
             echojay::CalibLoop::Window w;
             w.measured = true; w.silent = false; w.grDb = 0.2f; w.levelChangeDb = 6.0f; w.inTruePeakDb = -12.0f;
             w.slotOutGainDb = 0.0f; w.slotPreTrimDb = 0.0f;
@@ -880,7 +889,7 @@ void guardMain()
         // window for nine minutes logged state=stale-window with heard stuck at 24.1 s.
         echojay::CalibLoop first;
         auto cfg = passiveDriveCfg ("NEOLD U17");
-        first.begin (cfg);
+        beginDriven (first, cfg);
         echojay::CalibLoop::Window w;
         w.measured = true; w.silent = false; w.grDb = 0.4f; w.levelChangeDb = 0.1f; w.inTruePeakDb = -12.0f;
         for (int i = 0; i < 6; ++i) { w.heardSeconds = 20.0f + 3.0f * (float) i; first.onWindow (w, 3000.0); }
@@ -922,7 +931,7 @@ void guardMain()
         // The gate asked "did heard advance at all" (+1 ms), so the tail of a stopping transport spent one of
         // the settle's three windows. Replayed here at Sean's own numbers.
         echojay::CalibLoop l;
-        l.begin (passiveDriveCfg ("MV2 (s)"));
+        beginDriven (l, passiveDriveCfg ("MV2 (s)"));
         echojay::CalibLoop::Window w;
         w.measured = true; w.silent = false; w.grDb = 0.2f; w.levelChangeDb = 0.1f; w.inTruePeakDb = -12.0f;
         w.heardSeconds = 21.4f;
@@ -945,6 +954,116 @@ void guardMain()
         check (! full.logLine.contains ("stale-window"),
                "(4b) ...while a WHOLE window's worth is judged, so the settle still runs on real audio",
                full.logLine.fromLastOccurrenceOf ("state=", true, false));
+    }
+
+    {   // (4h) 6 OCT 2026, SEAN'S RULING: AN INPUT-DRIVE AMOUNT CONTROL CANNOT REPORT GR FROM THE LEVEL METHOD.
+        // His UAD 1176LN Rev E at Input -21, 10:41:45: "gr=-0.0 ... grLevel=-4.5", the card said "4.5 dB louder out
+        // than in", the VU was pinned and he could hear heavy compression. On a unit whose amount control is INPUT
+        // DRIVE, out-minus-in is the input gain MINUS the gain reduction, so neither can be recovered from it.
+        // Order ruled: the plugin's own GR meter, then crest, otherwise say plainly that GR cannot be measured.
+        auto c = passiveDriveCfg ("UAD UA 1176LN Rev E");
+        c.actuator = echojay::CalibLoop::Actuator::Input;
+        c.params.clear(); c.params.add ("Input");
+        {
+            echojay::CalibLoop probe;
+            auto cIn = c; cIn.noFreshWait = true;
+            probe.begin (cIn);
+            check (probe.amountIsInputDrive(),
+                   "(4h) a loop moving the plugin's own Input is recognised as input drive");
+        }
+        {   // ...and ECHOJAY'S OWN drive is NOT, because the IN tally is taken after that trim, so it is in neither
+            // side of out-minus-in. Counting it would disable the level method on every ordinary drive pass.
+            echojay::CalibLoop probe;
+            auto ejDrive = passiveDriveCfg ("EJ drive");   // Actuator::Drive - EchoJay's own staging trim
+            ejDrive.noFreshWait = true;
+            probe.begin (ejDrive);
+            check (! probe.amountIsInputDrive(),
+                   "(4h) ...while EchoJay's own staging drive is NOT input drive - the IN tally is taken after it");
+        }
+        {   // A THRESHOLD unit is not input drive either.
+            echojay::CalibLoop probe;
+            auto t = passiveDriveCfg ("Tube-Tech CL 1B");
+            t.actuator = echojay::CalibLoop::Actuator::Threshold;
+            t.params.clear(); t.params.add ("Threshold");
+            t.noFreshWait = true;
+            probe.begin (t);
+            check (! probe.amountIsInputDrive(), "(4h) ...and a Threshold unit is not");
+        }
+        // AND THE REPORTED FIGURE: a window whose sensor says the GR is unmeasurable must not report a number -
+        // 20 dB of real reduction behind +20 dB of input gain reads as 0 dB out-minus-in, which is the trap.
+        echojay::CalibLoop l2;
+        c.noFreshWait = true;
+        l2.begin (c);
+        echojay::CalibLoop::Window w;
+        w.measured = true; w.silent = false; w.heardSeconds = 40.0f; w.inTruePeakDb = -12.0f;
+        w.grDb = std::numeric_limits<float>::quiet_NaN();     // the host's "unmeasurable-inputdrive" verdict
+        w.grSensor = "unmeasurable-inputdrive";
+        w.levelChangeDb = 0.0f;                              // +20 dB in, 20 dB GR: out-minus-in is ZERO
+        l2.onWindow (w, 3000.0);
+        const float reported = l2.measuredGrDb();
+        check (! (reported == reported) || std::abs (reported) > 0.5f,
+               "(4h) 20 dB of reduction behind 20 dB of input gain is NOT reported as 0 dB of GR - it is reported as "
+               "unknown  (RED as it stood: the level method answered 0 and the card quoted it)",
+               (reported == reported) ? juce::String (reported, 2) + " dB" : juce::String ("unknown"));
+    }
+
+    {   // (4g) 5 OCT 2026, SEAN'S RULING: AN UNKNOWN HEARD CLOCK MEANS WAIT, NOT "JUDGE IT ANYWAY".
+        // The dangerous direction is the silent one: if a production begin site ever fails to fill heardAtBeginS,
+        // the loop must lose one window rather than go back to judging a window that predates the block. So this
+        // leg uses a Config with NO clock and NO opt-out - deliberately NOT beginDriven - and asserts the first
+        // window is held. The opt-out exists for harnesses only, and it has to be said out loud.
+        echojay::CalibLoop l;
+        auto cNoClock = passiveDriveCfg ("unknown clock");   // heardAtBeginS stays NaN, noFreshWait stays false
+        l.begin (cNoClock);
+        echojay::CalibLoop::Window w;
+        w.measured = true; w.silent = false; w.grDb = 4.3f; w.levelChangeDb = -5.0f; w.inTruePeakDb = -12.0f;
+        w.heardSeconds = 40.0f;                              // a tally that has heard plenty, all of it BEFORE this
+        const auto firstNoClock = l.onWindow (w, 3000.0);
+        check (firstNoClock.logLine.contains ("awaiting-fresh-window"),
+               "(4g) with no heard clock stated, the FIRST window is not judged - unknown is the conservative "
+               "direction, because a begin site that forgot to fill it would otherwise judge pre-block audio",
+               firstNoClock.logLine.fromLastOccurrenceOf ("state=", true, false));
+        w.heardSeconds = 43.0f;                              // one whole window later
+        const auto secondNoClock = l.onWindow (w, 3000.0);
+        check (! secondNoClock.logLine.contains ("awaiting-fresh-window"),
+               "(4g) ...and the next whole window IS judged, so the cost is one window and not the loop",
+               secondNoClock.logLine.fromLastOccurrenceOf ("state=", true, false));
+    }
+
+    {   // (4f) 5 OCT 2026, SEAN'S ITEM 3: THE FIRST JUDGED WINDOW MUST START AFTER THE WRITE.
+        // His 11:24:18 pass, from the session log:
+        //   11:24:18.913  block carried no start_db - READ "Threshold" off the plugin: -13.60 dB
+        //   11:24:18.913  slot 3 both legs reset ... no window from before this can enter a sample
+        //   11:24:18.963  window 1 gr=4.3 ... settleHeard=0.0s          <- 50 ms later, JUDGED
+        // gr=4.3 was the reading from the PREVIOUS setting (-8.8 dB, band 4.5-5.0). The Threshold had moved 4.8 dB
+        // OUTSIDE the loop, so pendingStep said nothing had moved and the one-window skip was cleared; the user was
+        // told "measured about 4.3 dB on the loud phrases (aimed for 6.5)" about a setting never measured at all.
+        // The slot's heard clock is the bar: a judged window needs a WHOLE window of audio heard since the write.
+        echojay::CalibLoop l;
+        {   // THE SLOT HAD HEARD 85 s WHEN THE BLOCK OPENED - his log's slotHeard, and what the host now passes in.
+            auto c3 = passiveDriveCfg ("Tube-Tech CL 1B (item 3)");
+            c3.heardAtBeginS = 85.0f;
+            l.begin (c3);          // NOT beginDriven: this leg supplies the clock, which is what it is testing
+
+        }
+        echojay::CalibLoop::Window w;
+        w.measured = true; w.silent = false; w.grDb = 4.3f; w.levelChangeDb = -5.0f; w.inTruePeakDb = -12.0f;
+        w.heardSeconds = 85.0f;                   // the slot had already heard 85 s BEFORE the write
+        const auto immediate = l.onWindow (w, 3000.0);
+        check (immediate.logLine.contains ("awaiting-fresh-window"),
+               "(4f) the window arriving 50 ms after the write is NOT judged  (RED as it stood: it was judged, and "
+               "the figure it reported described the setting before the move)",
+               immediate.logLine.fromLastOccurrenceOf ("state=", true, false));
+        w.heardSeconds = 86.5f;                   // 1.5 s later: still not a whole window of new audio
+        const auto partial = l.onWindow (w, 3000.0);
+        check (! partial.logLine.contains ("settled") && ! partial.logLine.contains ("landed"),
+               "(4f) ...and neither is one 1.5 s later - a FULL window of post-write audio is the bar",
+               partial.logLine.fromLastOccurrenceOf ("state=", true, false));
+        w.heardSeconds = 88.0f;                   // 85.0 + one whole 3 s window
+        const auto fresh = l.onWindow (w, 3000.0);
+        check (! fresh.logLine.contains ("awaiting-fresh-window"),
+               "(4f) ...while a whole window of post-write audio IS judged, so the answer still arrives",
+               fresh.logLine.fromLastOccurrenceOf ("state=", true, false));
     }
 
     // ---- (5) THE RATE LIMIT ITSELF, AT REAL TIME ---------------------------------------------------------
@@ -1254,7 +1373,7 @@ void guardMain()
         echojay::CalibLoop l;
         auto cfg = passiveDriveCfg ("VComp (s)");
         cfg.purpose = echojay::CalibLoop::Purpose::buildHold;
-        l.begin (cfg);
+        beginDriven (l, cfg);
         check (l.purpose == echojay::CalibLoop::Purpose::buildHold, "(7b) precondition: begin() set it");
         const auto round = echojay::CalibLoop::fromVar (l.toVar());
         check (round.purpose == echojay::CalibLoop::Purpose::buildHold,
@@ -1265,7 +1384,7 @@ void guardMain()
         echojay::CalibLoop la;
         auto ca = passiveDriveCfg ("VComp (s)");
         ca.purpose = echojay::CalibLoop::Purpose::askRung;
-        la.begin (ca);
+        beginDriven (la, ca);
         check (echojay::CalibLoop::fromVar (la.toVar()).purpose == echojay::CalibLoop::Purpose::askRung,
                "(7b) ...and an ask is still an ask, so the field is carried and not hard-coded");
     }
@@ -1429,7 +1548,10 @@ void guardMain()
         check (std::abs (out1 - out2) > 0.05f,
                "(9) ...to a DIFFERENT figure, because they are different compressors",
                f1 (out1) + " vs " + f1 (out2) + " dB");
-        check (said.startsWith ("Built.") && said.contains ("Compressor 1") && said.contains ("Compressor 2"),
+        // 6 Oct 2026: both named, and NEITHER as an ordinal. "Compressor 2" is the fallback for a loop with no
+        // name left, which is exactly what the wiped companion produced - so its absence is the assertion.
+        check (said.startsWith ("Built.") && said.contains ("EchoJay Gain")
+               && ! said.contains ("Compressor 1 set as dialled") && ! said.contains ("Compressor 2 set as dialled"),
                "(9) ...and ONE line names each of them  ((q) changed the wording to \"set as dialled, level "
                "matched\" per compressor; what this leg is for is that BOTH are named)",
                said.isEmpty() ? juce::String ("(nothing said)") : said);
@@ -1573,7 +1695,7 @@ void guardMain()
         auto runTo = [] (bool dynamics, float opening) -> echojay::CalibLoop
         {
             echojay::CalibLoop l;
-            l.begin ("NEOLD V76U73", 0, 2.0f, 3.0f, opening, echojay::CalibLoop::Purpose::askRung);
+            l.begin ("NEOLD V76U73", 0, 2.0f, 3.0f, opening, echojay::CalibLoop::Purpose::askRung, std::numeric_limits<float>::quiet_NaN(), true);
             l.dynamicsSlot = dynamics;
             echojay::CalibLoop::Window w;
             w.measured = true; w.silent = false;
@@ -1656,7 +1778,7 @@ void guardMain()
             // (q) 30 Sep 2026: the SEEK is the non-compressor case now. A compressor build takes no drive at all
             // and is proved by (16) below.
             cfg.startDb = 0.0f; cfg.working = true; cfg.dynamicsSlot = false;
-            echojay::CalibLoop l; l.begin (cfg);
+            echojay::CalibLoop l; beginDriven (l, cfg);
             echojay::CalibLoop::Window w;
             w.measured = true; w.silent = false; w.inTruePeakDb = -20.0f;
             float heard = 0.0f; int windows = 0;
@@ -1742,6 +1864,78 @@ void guardMain()
                "(12b) ...while a THRESHOLD block still is, because there the range governs the write", why2);
     }
 
+    // ---- (14d) 5 OCT 2026: THE PRODUCTION PATH, WITH THE HOST'S OWN CLOCK AND SEAN'S TIMING BUDGET ---------
+    {
+        std::printf ("\n-- (14d) a real begin through calibStartMany must judge, hold and write inside the budget --\n");
+        // THIS IS THE LEG WHOSE ABSENCE LET 05a SHIP A STALLED LOOP. Every other leg here drives CalibLoop as an
+        // object it holds in memory, and most now opt out of the fresh-window wait through beginDriven - so none of
+        // them exercised the thing that broke: the host RELOADS the loop from its stored var on every tick, so any
+        // state the var does not carry is re-initialised every window. The heard-clock anchor did not travel (by
+        // design - the handover trap), so it was re-taken on every window and the wait never ended. Sean's
+        // 16:19-16:23 session: windows 2-14 all state=awaiting-fresh-window, slotHeard 5.9 -> 41.2 s, no level
+        // hold, no make-up. The gate was green throughout.
+        //
+        // So this leg goes through calibStartMany and calibTick - the real road, the real tallies, the real clock -
+        // and asserts Sean's budget: a judged window within ONE window of audio after the write, and the make-up
+        // written inside about 6 s of playing.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
+        auto c = passiveDriveCfg ("Compressor 1");
+        c.slot = 0; c.purpose = echojay::CalibLoop::Purpose::buildHold;
+        c.noFreshWait = false;          // THE PRODUCTION DEFAULT, stated: this leg must not opt out of anything
+        std::vector<echojay::CalibLoop::Config> cfgs { c };
+        check (r.proc.calibStartMany (uid, cfgs) == 1, "(14d) precondition: a real hold started");
+        int windowsToJudge = -1, windowsToMakeUp = -1;
+        for (int k = 0; k < 8; ++k)
+        {
+            feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid);
+            const auto st = r.proc.calibLoad (uid);
+            if (windowsToJudge < 0 && st.window > 0 && ! st.awaitFresh) windowsToJudge = k + 1;
+            if (windowsToMakeUp < 0 && std::abs (r.h.getSlotOutGainDb (0)) > 0.05f) windowsToMakeUp = k + 1;
+            if (windowsToMakeUp >= 0) break;
+        }
+        // ONE window held at most: the first window may straddle the write, the second must be judged.
+        check (windowsToJudge >= 0 && windowsToJudge <= 2,
+               "(14d) a window is JUDGED within one window of audio after the write  (RED as 05a shipped: never - "
+               "windows 2-14 were all awaiting-fresh-window and nothing was ever judged)",
+               windowsToJudge < 0 ? juce::String ("never judged in 8 windows (24 s of audio)")
+                                  : juce::String (windowsToJudge) + " window(s)");
+        // 6 s of playing = two 3 s windows after the one that may be held, so three windows is the bar.
+        check (windowsToMakeUp >= 0 && windowsToMakeUp <= 3,
+               "(14d) ...and the level hold writes the make-up inside about 6 s of playing",
+               windowsToMakeUp < 0 ? juce::String ("never written in 8 windows (24 s of audio)")
+                                   : juce::String (windowsToMakeUp) + " window(s), OUT " + f1 (r.h.getSlotOutGainDb (0)));
+    }
+
+    // ---- (14c) 5 OCT 2026, SEAN'S SEQUENCE: HARDER -> A FRESH WINDOW -> THE LEVEL HOLD WRITES OUT --------
+    {
+        std::printf ("\n-- (14c) a hold given a whole fresh window and then a judged one writes its slot's OUT --\n");
+        // Ruled by Sean after (14) went red on the item-3 change: "(14) is not a fixture question until proven".
+        // (14) asserts the OUT write inside a fixture that also cancels a primary mid-flight, so it cannot tell a
+        // window-alignment problem from a lost write. This leg asks the question on its own: ONE hold, a slot that
+        // is genuinely 6 dB out, and enough audio after begin() for the fresh window the item-3 gate now requires
+        // AND a judged window after it. If the OUT write happens here, the behaviour is intact and (14)'s budget is
+        // what moved; if it does not, the item-3 gate has cost the level hold its write and that is a regression.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
+        auto c = passiveDriveCfg ("Compressor 1");
+        c.slot = 0; c.purpose = echojay::CalibLoop::Purpose::buildHold;
+        std::vector<echojay::CalibLoop::Config> cfgs { c };
+        check (r.proc.calibStartMany (uid, cfgs) == 1, "(14c) precondition: one hold started",
+               juce::String (r.h.getNumSlots()) + " slot(s)");
+        int ticks = 0;
+        for (int k = 0; k < 10; ++k)
+        {
+            feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid); ++ticks;
+            if (std::abs (r.h.getSlotOutGainDb (0)) > 0.05f) break;
+        }
+        check (std::abs (r.h.getSlotOutGainDb (0)) > 0.05f,
+               "(14c) a whole fresh window, then a judged one, and the level hold writes the slot's OUT",
+               "OUT " + f1 (r.h.getSlotOutGainDb (0)) + " after " + juce::String (ticks) + " window(s)");
+    }
+
     // ---- (14) NO HOLD ENDS IN SILENCE (letter (o), 30 Sep 2026 ruling) -----------------------------------
     {
         std::printf ("\n-- (14) a companion hold outlives its primary, and every hold says how it ended --\n");
@@ -1767,6 +1961,13 @@ void guardMain()
         { auto c = passiveDriveCfg (sl == 0 ? "Compressor 1" : "Compressor 2");
           c.slot = sl; c.purpose = echojay::CalibLoop::Purpose::buildHold; cfgs.push_back (c); }
         check (r.proc.calibStartMany (uid, cfgs) == 2, "(14) precondition: two holds started");
+        // 5 Oct 2026: ONE MORE WINDOW BEFORE THE CANCEL. Item 3 made a loop open awaiting a fresh window, because
+        // begin() resets both of the slot's legs and there is no valid measurement until a whole window has been
+        // heard since. This fixture budgeted exactly enough audio for the old behaviour, so every hold here lost its
+        // landing and the leg went red on the OUT write. PROVEN a budget problem and not a lost write by (14c),
+        // which asks the same question on one slot with enough audio and gets OUT -1.00 in four windows. The extra
+        // window is given HERE, before the reorder, so the cancel this leg is about still happens mid-flight.
+        feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid);
         // THE PRIMARY IS CANCELLED under it - its slot changes identity - while the companion is still working.
         for (int k = 0; k < 2; ++k) { feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid); }
         r.h.moveSlot (0, +1);
@@ -1794,14 +1995,30 @@ void guardMain()
                "window, no OUT write, no end line)",
                stillAlive ? juce::String ("still running after " + juce::String (companionWindows) + " window(s)")
                           : juce::String ("finished in " + juce::String (companionWindows) + " window(s)"));
-        check (std::abs (r.h.getSlotOutGainDb (0)) > 0.05f || std::abs (r.h.getSlotOutGainDb (1)) > 0.05f,
-               "(14) ...and it wrote its own slot's OUT",
-               "OUT1 " + f1 (r.h.getSlotOutGainDb (0)) + " OUT2 " + f1 (r.h.getSlotOutGainDb (1)));
         bool replaces = false;
         const auto said = r.proc.calibTakeAsk (uid, &replaces);
         check (said.isNotEmpty() && said.startsWith ("Built."),
                "(14) ...and the build still posts ONE closing line even though the primary died",
                said.isEmpty() ? juce::String ("(nothing said)") : said);
+        // 5 Oct 2026: THIS ASSERTION WAS ENCODING THE BUG. It demanded an OUT write unconditionally, and it passed
+        // only because the loop was judging a window from BEFORE the build reset the tallies - the stale reading
+        // item 3 removes. With the reading honest, this companion's level needs no match at all, and the leg's OWN
+        // closing line (asserted just below, and green) says so: "Compressor 2 set as dialled, level already
+        // matched." A hold that writes OUT on a slot that is already matched would be wrong.
+        // What must hold is that the hold ACCOUNTED for the level - it either moved OUT or said it did not need to -
+        // and never silently skipped it. The unconditional write is proved where it belongs, by (14c), on a slot
+        // that genuinely is out: OUT -1.00 in four windows.
+        {
+            const bool wroteOut = std::abs (r.h.getSlotOutGainDb (0)) > 0.05f
+                               || std::abs (r.h.getSlotOutGainDb (1)) > 0.05f;
+            const bool saidMatched = said.contains ("level already matched") || said.contains ("level matched");
+            check (wroteOut || saidMatched,
+                   "(14) ...and it ACCOUNTED for the level - it wrote its own slot's OUT, or it said the level was "
+                   "already matched  (it may no longer do the former unconditionally: that write used to come off a "
+                   "pre-reset window, which is the staleness item 3 closed)",
+                   "OUT1 " + f1 (r.h.getSlotOutGainDb (0)) + " OUT2 " + f1 (r.h.getSlotOutGainDb (1))
+                   + (saidMatched ? " / said matched" : " / said nothing about the level"));
+        }
         check (said.contains ("cancelled"),
                "(14) ...which says the primary's hold was cancelled rather than quietly omitting it", said);
     }
@@ -2045,8 +2262,14 @@ void guardMain()
         for (int k = 0; k < 20 && said2.isEmpty(); ++k)
         { feed (r2.proc, r2.prog, 3.0); r2.virtualMs += 3050.0; r2.proc.calibTick (uid);
           said2 = r2.proc.calibTakeAsk (uid, &replaces); }
-        check (said2.contains ("Compressor 1 set as dialled") && said2.contains ("Compressor 2 set as dialled"),
-               "(16) the phrase is PER COMPRESSOR in a two-compressor build", said2);
+        // 6 Oct 2026 (Sean's ruling): THE PLUGINS ARE NAMED, not numbered. This asserted the literal "Compressor 1"
+        // / "Compressor 2", which is the wording the ruling replaced - and the fixture names them "Comp A" and
+        // "Comp B", so asserting the ordinals hid the real defect: the companion's record was WIPED when its hold
+        // ended, so the line could only ever say "Compressor 2" for it.
+        check (said2.contains ("Comp A set as dialled") && said2.contains ("Comp B set as dialled"),
+               "(16) the phrase is PER COMPRESSOR and names each plugin  (RED as it stood: the companion's record "
+               "was reset by endedWith, so its name and its written figure were gone by the time the line was built)",
+               said2);
         check (std::abs (r2.h.getSlotPreTrimDb (1)) < 0.05f && std::abs (r2.h.getSlotPreTrimDb (2)) < 0.05f,
                "(16) ...and neither IN was written",
                "IN1 " + f1 (r2.h.getSlotPreTrimDb (1)) + " IN2 " + f1 (r2.h.getSlotPreTrimDb (2)));
@@ -2075,7 +2298,7 @@ void guardMain()
             c.plugin = "Tube-Tech CL 1B"; c.slot = 1;
             c.purpose = echojay::CalibLoop::Purpose::buildHold;
             c.dynamicsSlot = dynamics; c.mode = echojay::CalibLoop::Mode::Passive;
-            l.begin (c);
+            beginDriven (l, c);
             l.slotGainDb = outDb; l.levelTrimmedDb = outDb; l.levelHeld = true;
             return l.completedLine();
         };
@@ -2097,6 +2320,803 @@ void guardMain()
         const auto nd = lineFor (12.0f, false);
         check (! nd.contains ("too much"),
                "(17) ...and a NON-dynamics slot with the same +12 dB is not accused of compressing at all", nd);
+    }
+
+    // ---- (18) BLOCKS ARE KEYED TO IDENTITY, NOT INDEX (2 Oct 2026 ruling) ---------------------------------
+    {
+        std::printf ("\n-- (18) a rack that compacted under a block: remap, never the wrong plugin --\n");
+        // Sean's 19:43 rack, exactly: EQ, Vocal De-Esser, CL 1B, Lustrous Plates. The de-esser failed on its
+        // licence, the rack compacted to three, and the CL 1B's block - shipped slot 3, index 2 - pointed at
+        // Lustrous Plates. He was told "I could not start landing Lustrous Plates" and the CL 1B was never checked.
+        const juce::StringArray shipped { "EchoJay EQ", "Vocal De-Esser", "Tube-Tech CL 1B", "Lustrous Plates" };
+        const juce::StringArray live    { "EchoJay EQ", "Tube-Tech CL 1B", "Lustrous Plates" };   // compacted
+        std::vector<echojay::CalibLoop::Config> cfgs;
+        {
+            echojay::CalibLoop::Config c; c.plugin = "Tube-Tech CL 1B"; c.slot = 2;   // shipped index
+            cfgs.push_back (c);
+        }
+        const int moved = echojay::CalibLoop::remapBlocksToIdentity (cfgs, shipped, live);
+        check (moved == 1 && cfgs.size() == 1 && cfgs[0].slot == 1,
+               "(18) the CL 1B's block follows the CL 1B to its live slot  (RED as it stood: it kept index 2, "
+               "which after the compaction was Lustrous Plates - a plugin nothing asked to land)",
+               "moved " + juce::String (moved) + ", slot now " + juce::String (cfgs[0].slot));
+        // ...and the block for the plugin that never arrived is REFUSED, by identity, so it cannot land on a
+        // neighbour either. slot < 0 is the caller's signal to drop it silently.
+        std::vector<echojay::CalibLoop::Config> gone;
+        { echojay::CalibLoop::Config c; c.plugin = "Vocal De-Esser"; c.slot = 1; gone.push_back (c); }
+        echojay::CalibLoop::remapBlocksToIdentity (gone, shipped, live);
+        check (gone[0].slot < 0,
+               "(18) ...while the block for the plugin that did NOT load is refused, not pointed at its neighbour",
+               "slot " + juce::String (gone[0].slot));
+        // AND THE OTHER DIRECTION: an untouched rack must not be reshuffled by this.
+        std::vector<echojay::CalibLoop::Config> same;
+        { echojay::CalibLoop::Config c; c.plugin = "Tube-Tech CL 1B"; c.slot = 1; same.push_back (c); }
+        check (echojay::CalibLoop::remapBlocksToIdentity (same, live, live) == 0 && same[0].slot == 1,
+               "(18) ...and a rack that matches the shipped chain is left exactly as it is",
+               "slot " + juce::String (same[0].slot));
+    }
+
+    // ---- (19) WITHDRAWN 2 Oct 2026 -------------------------------------------------------------------------
+    // This leg asserted that windows with a frozen heard clock move nothing, for a gate I added to EJCalibLoop and
+    // have since withdrawn. Both were wrong: Sean's session showed the slot clock advancing three seconds per
+    // window throughout (171.9 -> 174.9 -> 177.9 ...), so the loop was hearing and the premise did not hold; and
+    // the mechanism - a delta against lastHeardS - had already been abandoned for causing 187 consecutive stale
+    // windows after a handover, which case (4) below exists to hold fixed. Removing the leg with the gate rather
+    // than leaving a test for behaviour the product deliberately does not have. The real fault in that session was
+    // the GR sensor, and case (20) covers it.
+
+    // ---- (20) WITHDRAWN 2 Oct 2026, and OWED elsewhere --------------------------------------------------
+    // This asserted that 6 dB of level reduction reads as 6 dB of GR, on a rig with no profile. Two things were
+    // wrong with it. It read st.lastGr, which stays NaN until a window is actually JUDGED, and two ticks did not
+    // produce one - so it compared against NaN and would have failed whatever the product did. And the rule it
+    // asserted is not the rule: GR by LEVEL counts every level change between in and out, including a static one
+    // the compressor did not cause, which is what case (9) caught when a fixture slot 6 dB down read as 6 dB of
+    // compression and the loop backed the drive to -6.
+    //
+    // The sensor now chooses: LEVEL minus static_gain_db when a profile supplies that offset, CREST when nothing
+    // does, and grVia= in the window line says which ran. Testing the level path needs a rig with a REAL profile
+    // attached, which comp_profile_guard has and this one does not - so the coverage is OWED there, not faked here.
+    // Sean's CL 1B case is the level path; case (9) is the crest path; both must hold.
+
+    // ---- (21) B's PRODUCTION BLOCK SHAPES (3723e80) ARE SAFE (2 Oct 2026) ----------------------------------
+    {
+        std::printf ("\n-- (21) actuator \"amount\" holds and checks; it never drives EchoJay's input --\n");
+        // B's production server ships actuator "amount" or "threshold" with param, start_db, min/max_db and
+        // output_param, and profiled blocks carry actuator "amount", from_profile, set_directly and
+        // expected_gr_db. The old parser recognised only threshold/input/drive and its else branch set
+        // Actuator::Drive - so a profiled block naming the amount control ran EchoJay's own INPUT PRE-GAIN and
+        // ignored the plugin control the server had already set from the profile. It warned into whyOut and then
+        // did the wrong thing anyway, which is the worst of both.
+        auto blockWith = [] (const char* actuator, bool setDirectly, bool withParam) -> juce::var
+        {
+            auto* c = new juce::DynamicObject();
+            c->setProperty ("slot", 1);
+            c->setProperty ("actuator", actuator);
+            if (withParam) c->setProperty ("param", "Comp Thresh");
+            c->setProperty ("min_db", -60.0); c->setProperty ("max_db", 0.0);
+            c->setProperty ("output_param", "Makeup");
+            c->setProperty ("expected_gr_db", 2.0);
+            c->setProperty ("from_profile", true);
+            if (setDirectly) c->setProperty ("set_directly", true);
+            auto* chain = new juce::DynamicObject();
+            chain->setProperty ("calibration", juce::var (c));
+            return juce::var (chain);
+        };
+        auto parse = [] (const juce::var& blk, echojay::CalibLoop::Config& out) -> bool
+        {
+            juce::String why;
+            return echojay::CalibLoop::configFromBlock (blk.getProperty ("calibration", juce::var()),
+                                                        4, false, "Tube-Tech CL 1B", out, why);
+        };
+        {   // the PROFILED shape: amount + from_profile + set_directly + expected_gr_db
+            echojay::CalibLoop::Config c;
+            check (parse (blockWith ("amount", true, true), c), "(21) the profiled \"amount\" block parses");
+            check (c.actuator != echojay::CalibLoop::Actuator::Drive,
+                   "(21) ...and the actuator is NOT the drive  (RED as it stood: the else branch ran EchoJay's own "
+                   "input pre-gain in front of a control the server had already set from the profile)",
+                   c.actuator == echojay::CalibLoop::Actuator::Threshold ? "Threshold" : "Input/Drive");
+            check (c.holdOnly, "(21) ...it HOLDS rather than stepping a control whose direction the block never states");
+            check (c.params.contains ("Comp Thresh"),
+                   "(21) ...and the plugin control it names is carried, not dropped", c.params.joinIntoString ("|"));
+            check (c.expectedGrDb == c.expectedGrDb && std::abs (c.expectedGrDb - 2.0f) < 0.01f,
+                   "(21) ...and expected_gr_db survives, so the section 7 check still has its figure",
+                   juce::String (c.expectedGrDb, 2));
+            check (c.outputParams.contains ("Makeup"),
+                   "(21) ...and output_param is carried for the make-up work that is owed",
+                   c.outputParams.joinIntoString ("|"));
+        }
+        {   // "amount" WITHOUT set_directly: still held, never driven
+            echojay::CalibLoop::Config c;
+            parse (blockWith ("amount", false, true), c);
+            check (c.actuator != echojay::CalibLoop::Actuator::Drive && c.holdOnly,
+                   "(21) an \"amount\" block with no set_directly is held too - a sense we would have to guess is "
+                   "not a sense");
+        }
+        {   // THE OTHER DIRECTION: a plain drive block with no param still runs the drive, unchanged.
+            echojay::CalibLoop::Config c;
+            parse (blockWith ("drive", false, false), c);
+            check (c.actuator == echojay::CalibLoop::Actuator::Drive && ! c.holdOnly,
+                   "(21) ...while a real drive block with no control named still runs the DRIVE, as before");
+        }
+    }
+
+
+    // ---- (22) THE AGREEMENT RULE: WITH NO PROFILE, ONE SENSOR'S WORD MOVES NOTHING (3 Oct 2026 ruling) -------
+    {
+        std::printf ("\n-- (22) no profile: the loop moves only where LEVEL and CREST agree --\n");
+        // Sean's ruling after two faults with the same shape. Without a profile there is no static_gain_db, so
+        // neither sensor is sound on its own:
+        //   the 19:43 CL 1B  crest read ~0 on a slow unit over sustained material (SHORTMAX and SHORT90 fall
+        //                    together, so the crest does not shrink) while the level figure read several dB -
+        //                    and acting on crest alone walked the drive to +6 dB hunting gain reduction that
+        //                    was already there;
+        //   case (9)         a fixture slot 6 dB DOWN reads 6 dB of level change and no crest change at all -
+        //                    and acting on level alone backed the drive to -6 dB for compression that never
+        //                    happened.
+        // One condition covers both: move only where the two agree, and when they do not, HOLD and print both.
+        //
+        // Driven through onWindow rather than the end-to-end rig because the point is the DECISION, and a
+        // fixture that fed real audio would also have to fake a disagreement in the taps to produce one.
+        auto runWith = [] (float crest, float level, bool levelKnown, bool profile, int windows)
+        {
+            echojay::CalibLoop l;
+            auto cfg = passiveDriveCfg ("Tube-Tech CL 1B");
+            cfg.mode = echojay::CalibLoop::Mode::Listen;   // the stepping path: this is where it matters
+            cfg.purpose = echojay::CalibLoop::Purpose::askRung;
+            beginDriven (l, cfg);
+            l.hasProfile = profile;
+            l.profileStaticGainDb = profile ? 0.0f : std::numeric_limits<float>::quiet_NaN();
+            l.dynamicsSlot = true;                         // a compressor, so no input-headroom ceiling (l)
+            echojay::CalibLoop::Window w;
+            w.measured = true; w.silent = false;
+            // grDb IS the acted-on figure, and with no profile the host sets it FROM the crest (see
+            // fillCalibWindow): keeping that true here is what makes the leg a test of the product's own wiring.
+            w.grDb = profile ? level : crest;
+            w.grCrestDb = crest; w.grLevelDb = level; w.grLevelKnown = levelKnown;
+            w.grSensor = profile ? "level-static" : "crest";
+            w.levelChangeDb = 0.0f;
+            w.inTruePeakDb = -30.0f;                       // nowhere near the ceiling: not what is under test
+            w.slotOutGainDb = 0.0f; w.slotPreTrimDb = 0.0f;
+            float heard = 30.0f;
+            juce::StringArray lines; int driveWrites = 0;
+            for (int i = 0; i < windows; ++i)
+            {
+                w.heardSeconds = (heard += 4.0f);
+                w.slotPreTrimDb = l.preDb;
+                const auto st = l.onWindow (w, 3000.0);
+                if (st.logLine.isNotEmpty()) lines.add (st.logLine);
+                if (st.writeDrive) ++driveWrites;
+                if (st.finished) break;
+            }
+            struct R { float preDb; int writes; juce::StringArray lines; };
+            return R { l.preDb, driveWrites, lines };
+        };
+        const float band = 2.5f;   // passiveDriveCfg's band is 2.0-3.0
+        juce::ignoreUnused (band);
+
+        {   // DISAGREEMENT, Sean's CL 1B shape: crest under the band, level over it.
+            const auto r = runWith (0.0f, 6.0f, true, false, 12);
+            check (r.writes == 0 && std::abs (r.preDb) < 0.01f,
+                   "(22) crest 0.0 UNDER the band and level 6.0 OVER it: nothing moves  (RED as it stood: the "
+                   "crest sensor alone wanted more, and the drive walked to +6.0 dB on Sean's CL 1B)",
+                   juce::String (r.writes) + " drive write(s), drive " + f1 (r.preDb) + " dB");
+            const auto held = r.lines.strings.size() > 0 ? r.lines[r.lines.size() - 1] : juce::String();
+            bool saidBoth = false;
+            for (const auto& ln : r.lines)
+                if (ln.contains ("disagree") && ln.contains ("level 6.0") && ln.contains ("crest 0.0"))
+                    saidBoth = true;
+            check (saidBoth,
+                   "(22) ...and the line says they disagree and prints BOTH figures, so the next session can see "
+                   "which sensor wanted what", held);
+        }
+        {   // ...AND THE OTHER DISAGREEMENT, case (9)'s shape: level over, crest flat, on a slot that only cuts.
+            const auto r = runWith (0.2f, 6.0f, true, false, 12);
+            check (r.writes == 0,
+                   "(22) a slot 6 dB DOWN with no crest change moves nothing either  (RED as it stood on the "
+                   "level sensor: it backed the drive to -6 dB for compression that never happened)",
+                   juce::String (r.writes) + " drive write(s), drive " + f1 (r.preDb) + " dB");
+        }
+        {   // AGREED UNDER: both read below the band, so harder is allowed - this is the direction that must
+            // still work, or the rule has simply disabled the loop.
+            const auto r = runWith (0.4f, 0.6f, true, false, 24);
+            check (r.writes >= 1 && r.preDb > 0.5f,
+                   "(22) BOTH under the band: it steps HARDER, exactly as before the rule",
+                   juce::String (r.writes) + " drive write(s), drive " + f1 (r.preDb) + " dB");
+        }
+        {   // AGREED OVER: both read above it, so softer is allowed.
+            const auto r = runWith (6.0f, 6.4f, true, false, 24);
+            check (r.writes >= 1 && r.preDb < -0.5f,
+                   "(22) BOTH over the band: it steps SOFTER",
+                   juce::String (r.writes) + " drive write(s), drive " + f1 (r.preDb) + " dB");
+        }
+        {   // NO LEVEL FIGURE AT ALL (the host could not close a SHORT90 window): the rule cannot apply, and it
+            // must not freeze the loop instead. This is the difference between "the sensors disagree" and "there
+            // is only one sensor", and conflating them would strand every host that reads no SHORT90.
+            const auto r = runWith (0.4f, 0.0f, false, false, 24);
+            check (r.writes >= 1,
+                   "(22) with NO level figure the crest stands alone and the loop still moves - an unreadable "
+                   "sensor is not a disagreement",
+                   juce::String (r.writes) + " drive write(s), drive " + f1 (r.preDb) + " dB");
+        }
+        {   // WITH A PROFILE the rule is off: static_gain_db is what makes the level figure trustworthy, and the
+            // profile is the only thing that supplies it. The same disagreement must step.
+            const auto r = runWith (0.0f, 6.0f, true, true, 24);
+            check (r.writes >= 1,
+                   "(22) WITH a profile the same disagreement still steps: the level figure stands on its own "
+                   "once static_gain_db is known, and the rule is for unprofiled slots only",
+                   juce::String (r.writes) + " drive write(s), drive " + f1 (r.preDb) + " dB");
+        }
+    }
+
+    // ---- (23) max_steps COMES FROM THE BLOCK, CAPPED BY OURS (3 Oct 2026 ruling) ----------------------------
+    {
+        std::printf ("\n-- (23) the step budget is the SMALLER of the block's max_steps and our 6 --\n");
+        // The parser read max_steps nowhere, so a server that asked for two steps got six. The ruling is the
+        // smaller of the two: the block may ask for less, never for more.
+        auto stepsUnder = [] (int maxSteps)
+        {
+            echojay::CalibLoop l;
+            auto cfg = passiveDriveCfg ("Tube-Tech CL 1B");
+            cfg.mode = echojay::CalibLoop::Mode::Listen;
+            cfg.purpose = echojay::CalibLoop::Purpose::askRung;
+            cfg.maxStepsFromBlock = maxSteps;
+            beginDriven (l, cfg);
+            l.dynamicsSlot = true;
+            echojay::CalibLoop::Window w;
+            w.measured = true; w.silent = false;
+            w.grDb = 0.0f; w.grCrestDb = 0.0f;              // never anywhere near the band: every window wants one
+            w.grLevelDb = 0.0f; w.grLevelKnown = true;      // ...and the two AGREE, so (22) lets it run
+            w.levelChangeDb = 0.0f; w.inTruePeakDb = -30.0f;
+            w.slotOutGainDb = 0.0f;
+            float heard = 30.0f; int writes = 0;
+            for (int i = 0; i < 40; ++i)
+            {
+                w.heardSeconds = (heard += 4.0f);
+                w.slotPreTrimDb = l.preDb;
+                const auto st = l.onWindow (w, 3000.0);
+                if (st.writeDrive) ++writes;
+                if (st.finished) break;
+            }
+            struct R { int writes; float preDb; };
+            return R { writes, l.preDb };
+        };
+        const auto two   = stepsUnder (2);
+        const auto absent = stepsUnder (-1);
+        const auto ten   = stepsUnder (10);
+        check (std::abs (two.preDb - 2.0f) <= 0.01f,
+               "(23) max_steps 2 spends TWO dB and stops  (RED as it stood: the field was parsed nowhere, so the "
+               "block's 2 became our 6)", f1 (two.preDb) + " dB over " + juce::String (two.writes) + " write(s)");
+        check (std::abs (absent.preDb - 6.0f) <= 0.01f,
+               "(23) ...no max_steps at all keeps our own cap of 6", f1 (absent.preDb) + " dB");
+        check (std::abs (ten.preDb - 6.0f) <= 0.01f,
+               "(23) ...and max_steps 10 is still 6: the block may ask for LESS, never for more",
+               f1 (ten.preDb) + " dB");
+    }
+
+    // ---- (24) 03a ITEM 3: holdOnly BEATS LISTEN, where the stepping actually is ------------------------------
+    {
+        std::printf ("\n-- (24) a held block in LISTEN mode writes nothing at all --\n");
+        // Sean's 08:03 session: the block logged "actuator amount names a plugin control: HOLDING, not stepping
+        // it" and then walked the CL 1B's Threshold from -1 to -6 dB in six steps. Mapping holdOnly onto
+        // Purpose::buildHold was not enough, because the automatic stepping is the LISTEN path and ran whatever
+        // the purpose said. (21) covers the PARSE; this covers the RUN, which is where the writes came from.
+        echojay::CalibLoop l;
+        auto cfg = passiveDriveCfg ("Tube-Tech CL 1B");
+        cfg.mode = echojay::CalibLoop::Mode::Listen;             // LISTEN, as the 08:03 block was
+        cfg.actuator = echojay::CalibLoop::Actuator::Threshold;
+        cfg.params.add ("Threshold");
+        cfg.startDb = -1.0f; cfg.minDb = -60.0f; cfg.maxDb = 0.0f;
+        cfg.holdOnly = true;                                     // ...and held, as configFromBlock marked it
+        cfg.setDirectly = true; cfg.fromProfile = true; cfg.expectedGrDb = 2.0f;
+        beginDriven (l, cfg);
+        l.dynamicsSlot = true;
+        echojay::CalibLoop::Window w;
+        w.measured = true; w.silent = false;
+        w.grDb = 0.0f; w.grCrestDb = 0.0f;                       // far under the band: a stepping loop would move
+        w.grLevelDb = 0.0f; w.grLevelKnown = true;
+        w.levelChangeDb = 0.0f; w.inTruePeakDb = -30.0f;
+        w.slotOutGainDb = 0.0f; w.slotPreTrimDb = 0.0f;
+        int paramWrites = 0, driveWrites = 0; float heard = 30.0f;
+        juce::String anAsk;
+        for (int i = 0; i < 20; ++i)
+        {
+            w.heardSeconds = (heard += 4.0f);
+            const auto st = l.onWindow (w, 3000.0);
+            if (st.writeParams) ++paramWrites;
+            if (st.writeDrive)  ++driveWrites;
+            if (st.ask.isNotEmpty()) anAsk = st.ask;
+        }
+        check (paramWrites == 0,
+               "(24) twenty windows 2.5 dB under the band and the named control is never written  (RED as it "
+               "stood: six writes, Threshold -1 -> -6 dB, after the log had said it was holding)",
+               juce::String (paramWrites) + " write(s) to Threshold");
+        check (driveWrites == 0,
+               "(24) ...and EchoJay's own drive is not written either - a held block steps NOTHING",
+               juce::String (driveWrites) + " drive write(s)");
+        check (std::abs (l.value + 1.0f) <= 0.01f,
+               "(24) ...so the control is still where the server set it", f1 (l.value) + " dB");
+        check (anAsk.isNotEmpty(),
+               "(24) ...and it does what a held block is FOR: it measures and reports", anAsk);
+    }
+
+
+    // ---- (25) 03a ITEM 5: A NAMED CONTROL WITH NO START IS READ, OR HELD -----------------------------------
+    {
+        std::printf ("\n-- (25) no start_db on a named control: read it, or hold rather than jump --\n");
+        // Sean's 08:03 session, item 5: the block carried start_db=(none) for actuator "threshold" and the loop
+        // logged "dialling Threshold from nan dB", then its first window read "Threshold=+0.0" - a write to a
+        // value it had never read. The drive had had its own substitution since 30 Sep (open from the staging);
+        // a NAMED control needs the control's own position, and when that cannot be read the honest answer is to
+        // hold, because a step from an unknown position is a jump.
+        Rig r (ChannelType::LeadVocal, 0.0f);
+        // A SECOND BUILT-IN beside the rig's Gain, so the ground-truth assertion below is about a rack rather
+        // than about one device.
+        if (const auto* cp = BuiltinDeviceRegistry::instance().findByName ("EchoJay Limiter"))
+            EchoJayBorrowHostTestAccess::loadBuiltin (r.h, BuiltinDeviceRegistry::descriptionFor (*cp));
+        pumpMs (200);
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
+        // The readable control is found by ASKING every slot, not by naming one: readControlDb matches on the
+        // parameter's own name and parses its display text, and hard-coding a built-in's parameter name here
+        // would make the leg fail the day that name changes for an unrelated reason.
+        // GROUND TRUTH FIRST, because it decides what this leg can honestly assert: ChainHost::readControlDb
+        // iterates the slot processor's JUCE parameters, and NO EchoJay built-in publishes one - they are driven
+        // entirely by structured settings (not a single addParameter in any Eed*Processor.cpp). So readControlDb
+        // can never read a built-in, and the "read the control off the plugin" half of item 5 cannot be exercised
+        // on a rig made of built-ins. The first cut of this leg tried, picked a slot by probing, found nothing,
+        // and failed its own precondition - twice, once per built-in it tried.
+        //
+        // What that leaves: the HOLD half is the safety-critical direction and it IS exercisable here, because a
+        // built-in is exactly the "cannot be read" case. The read half is OWED in a guard that hosts a real
+        // plugin (comp_profile_guard, which has one for the profile join).
+        int paramsSeen = 0;
+        for (int sl = 0; sl < r.h.getNumSlots(); ++sl)
+            if (auto* p0 = r.h.getSlotProcessor (sl))
+                paramsSeen += p0->getParameters().size();
+        float ignored = 0.0f;
+        check (paramsSeen == 0 && ! r.h.readControlDb (0, "level_db", ignored)
+               && ! r.h.readControlDb (0, "ceiling_db", ignored),
+               "(25) ground truth: a built-in publishes no JUCE parameters, so readControlDb refuses on one - "
+               "which is what makes this rig the UNREADABLE case and the read case owed elsewhere",
+               juce::String (paramsSeen) + " parameter(s) across " + juce::String (r.h.getNumSlots()) + " slot(s)");
+
+        auto named = [&] (const juce::String& param)
+        {
+            auto c = passiveDriveCfg ("EchoJay Limiter");
+            c.slot = juce::jmax (0, r.h.getNumSlots() - 1);
+            c.actuator = echojay::CalibLoop::Actuator::Threshold;
+            c.params.add (param);
+            c.startDb = std::numeric_limits<float>::quiet_NaN();   // absent and null both arrive as NaN
+            c.minDb = -60.0f; c.maxDb = 12.0f;
+            c.purpose = echojay::CalibLoop::Purpose::buildHold;
+            return c;
+        };
+        r.proc.calibStore (uid, echojay::CalibLoop{});
+        r.proc.calibStartMany (uid, { named ("Threshold") });
+        const auto held = r.proc.calibLoad (uid);
+        check (held.holdOnly,
+               "(25) a named control with NO start_db that cannot be read HOLDS instead of stepping  (RED as it "
+               "stood: \"dialling Threshold from nan dB\", and the first window wrote Threshold=+0.0 - a jump "
+               "from a position the loop had never read)");
+        // THE POSITION STAYS UNKNOWN, and that is the point: the loop holds BECAUSE it does not know where the
+        // control is, so claiming a number here would be the invented-0 failure wearing the fix's clothes. What
+        // must never happen is a LINE quoting one - Sean's log read "dialling Threshold from nan dB" and then
+        // "Threshold=+0.0". So the assertion is on the line, not on the member.
+        check (! (held.value == held.value),
+               "(25) ...and its position is deliberately still UNKNOWN - a held block holds because nobody read "
+               "the control, and a 0 here would be an invented reading");
+        {
+            echojay::CalibLoop::Window probe;
+            probe.measured = true; probe.silent = false; probe.heardSeconds = 34.0f;
+            probe.grDb = 0.0f; probe.grCrestDb = 0.0f; probe.grLevelDb = 0.0f; probe.grLevelKnown = true;
+            probe.levelChangeDb = 0.0f; probe.inTruePeakDb = -30.0f;
+            probe.slotOutGainDb = 0.0f; probe.slotPreTrimDb = 0.0f;
+            auto probeLoop = held;
+            const auto line = probeLoop.onWindow (probe, 3000.0).logLine;
+            check (! line.containsIgnoreCase ("nan"),
+                   "(25) ...and NO line prints \"nan\"  (RED as it stood: \"dialling Threshold from nan dB\", and "
+                   "the window line read Threshold=+0.0 - a number for a position never read)", line);
+            check (line.contains ("unknown"),
+                   "(25) ...it says the position is unknown instead, which is the truth and is unmistakable", line);
+        }
+        {
+            echojay::CalibLoop::Window w;
+            w.measured = true; w.silent = false;
+            w.grDb = 0.0f; w.grCrestDb = 0.0f; w.grLevelDb = 0.0f; w.grLevelKnown = true;
+            w.levelChangeDb = 0.0f; w.inTruePeakDb = -30.0f; w.slotOutGainDb = 0.0f; w.slotPreTrimDb = 0.0f;
+            auto loop = held; int writes = 0; float heard = 30.0f;
+            for (int i = 0; i < 12; ++i)
+            { w.heardSeconds = (heard += 4.0f); if (loop.onWindow (w, 3000.0).writeParams) ++writes; }
+            check (writes == 0, "(25) ...and twelve windows 2.5 dB under the band later it has written nothing",
+                   juce::String (writes) + " write(s)");
+        }
+        r.proc.calibStore (uid, echojay::CalibLoop{});
+    }
+
+    // ---- (26) THE SIDECAR ROUND TRIP KEEPS EVERY FIELD A DECISION IS MADE ON (3 Oct 2026) ------------------
+    {
+        std::printf ("\n-- (26) toVar/fromVar: a Link rack's loop survives its own tick --\n");
+        // Found while writing (24): calibTick is calibLoad -> decide -> calibStore, and for a NON-EMPTY uid both
+        // ends go through toVar/fromVar. holdOnly was in neither, so item 3's fix held for exactly one tick on a
+        // Link or borrowed rack and the loop then stepped the control again - on the rack Sean's sessions run on.
+        // maxStepsBlock had the same hole, and the whole profile group did too, which is why COMP_PROFILE_SPEC_v1's
+        // one check could never run on a Link: `hasProfile` was false again by the second tick.
+        //
+        // The leg sets every such field to a NON-DEFAULT value and compares after the trip, so the next field
+        // added to the loop is caught here rather than in a session log three weeks later.
+        echojay::CalibLoop l;
+        auto cfg = passiveDriveCfg ("Tube-Tech CL 1B");
+        cfg.actuator = echojay::CalibLoop::Actuator::Threshold;
+        cfg.params.add ("Comp Thresh");
+        cfg.startDb = -14.0f;
+        cfg.holdOnly = true;
+        cfg.maxStepsFromBlock = 2;
+        beginDriven (l, cfg);
+        l.hasProfile = true; l.profilesFeatureOn = true; l.blockFromProfile = true;
+        l.profileChecked = true; l.profileCorrected = true; l.profileNotEngaging = true;
+        l.profileCorrectionDb = 1.5f; l.profileObservedDropDb = 2.25f;
+        l.profileExpectedGrDb = 2.0f; l.profileExpectedLevelDb = -1.5f;
+        l.profileStaticGainDb = -3.5f;
+        l.profileAmountControl = "Comp Thresh"; l.profileAmountNormAfter = 0.42f; l.profileCurrentNorm = 0.37f;
+        l.levelHoldClamped = true; l.levelHoldLimitDb = -24.0f; l.levelResidualDb = -2.75f;
+        l.landedInBand = true;
+        // 3 Oct 13:52: lastSensor stopped being log-only (measuredGrDb reads it to refuse a crest figure on a
+        // from_profile slot) and blockStaticGainDb is the block's own offset, so both are decision fields now.
+        l.lastSensor = "level-static"; l.blockStaticGainDb = -3.5f;
+        const auto back = echojay::CalibLoop::fromVar (l.toVar());
+        check (back.holdOnly,
+               "(26) holdOnly survives the round trip  (RED as it stood: the one field that says \"never write "
+               "this control\" was in neither direction, so a held block started stepping on its second tick)");
+        check (back.maxStepsBlock == 2,
+               "(26) ...and the block's own max_steps, which became our 6 again after one tick",
+               juce::String (back.maxStepsBlock));
+        check (back.hasProfile && back.profilesFeatureOn && back.blockFromProfile,
+               "(26) ...and the three profile flags, without which section 7's check never runs on a Link rack");
+        check (back.profileChecked && back.profileCorrected && back.profileNotEngaging,
+               "(26) ...and what the check already found, so it is not re-run every second");
+        check (std::abs (back.profileStaticGainDb + 3.5f) < 0.01f,
+               "(26) ...and static_gain_db, which is what makes the LEVEL sensor trustworthy and decides whether "
+               "the agreement rule applies at all", f1 (back.profileStaticGainDb));
+        check (std::abs (back.profileCorrectionDb - 1.5f) < 0.01f
+               && std::abs (back.profileObservedDropDb - 2.25f) < 0.01f
+               && std::abs (back.profileExpectedGrDb - 2.0f) < 0.01f
+               && std::abs (back.profileExpectedLevelDb + 1.5f) < 0.01f,
+               "(26) ...and the four figures the check's own line quotes");
+        check (back.profileAmountControl == "Comp Thresh"
+               && std::abs (back.profileAmountNormAfter - 0.42f) < 0.001f
+               && std::abs (back.profileCurrentNorm - 0.37f) < 0.001f,
+               "(26) ...and the amount control with both its positions", back.profileAmountControl);
+        check (back.levelHoldClamped && std::abs (back.levelHoldLimitDb + 24.0f) < 0.01f
+               && std::abs (back.levelResidualDb + 2.75f) < 0.01f && back.landedInBand,
+               "(26) ...and the four fields the CLOSING SENTENCE is composed from, so a handover cannot change "
+               "what Sean is told about what happened");
+        // NaN MUST COME BACK AS NaN, not as 0: "nobody stated an expected gain reduction" and "the expected gain
+        // reduction is 0 dB" are different claims, and juce::JSON writes a NaN double as null.
+        echojay::CalibLoop n;
+        beginDriven (n, passiveDriveCfg ("Tube-Tech CL 1B"));
+        const auto nback = echojay::CalibLoop::fromVar (n.toVar());
+        check (! (nback.profileExpectedGrDb == nback.profileExpectedGrDb)
+               && ! (nback.profileObservedDropDb == nback.profileObservedDropDb),
+               "(26) ...while an absent figure comes back ABSENT, not as 0 dB",
+               juce::String (nback.profileExpectedGrDb, 2));
+        // ...AND AN OLD SIDECAR, written before these fields existed, keeps the member defaults rather than
+        // reading a void var as 0 - which for maxStepsBlock would mean "no steps at all".
+        // THE VAR IS HELD IN A NAMED LOCAL FIRST. getDynamicObject() hands back a raw pointer into the var, and
+        // on a temporary that object is released at the end of the statement - this leg segfaulted on its last
+        // assertion for exactly that reason, which is the 18 Sep Pro Tools crash in a test harness.
+        const auto stored = l.toVar();
+        auto* o = stored.getDynamicObject();
+        o->removeProperty ("maxStepsBlock"); o->removeProperty ("holdOnly");
+        const auto older = echojay::CalibLoop::fromVar (stored);
+        check (older.maxStepsBlock == -1 && ! older.holdOnly,
+               "(26) ...and a sidecar written by an older build keeps the defaults, not zeroes",
+               juce::String (older.maxStepsBlock));
+        check (back.lastSensor == "level-static",
+               "(26) ...and lastSensor travels now it is a DECISION field - measuredGrDb reads it to refuse a "
+               "crest figure on a from_profile slot, and a field like that reset on the second tick is this "
+               "morning's defect again", back.lastSensor);
+        check (std::abs (back.blockStaticGainDb + 3.5f) < 0.01f,
+               "(26) ...and so does the block's own static_gain_db, which is the whole of what the level sensor "
+               "needs", f1 (back.blockStaticGainDb));
+    }
+
+
+    // ---- (27) static_gain_db OFF THE BLOCK, AND NO CREST FIGURE ON A from_profile CARD (3 Oct 13:52) --------
+    {
+        std::printf ("\n-- (27) a from_profile block supplies its own static_gain_db; crest never poses as GR --\n");
+        // Sean's 13:52 session: the map had NO comp_profile (B is fixing that), the calibration block carried
+        // from_profile, and the loop fell back to the crest sensor - which reads about 0 on a slow unit over
+        // sustained material. The card then said "about 0 dB on the loud phrases, from its profile" on a
+        // compressor measurably doing 2-3 dB. His grLevel figures were 1.5/3.0/2.5 against the profile's
+        // 2.0/3.0/3.0, so the level sensor was right the whole time and only lacked the one offset.
+        auto blockWith = [] (bool fromProfile, juce::var staticGain) -> juce::var
+        {
+            auto* c = new juce::DynamicObject();
+            c->setProperty ("slot", 1);
+            c->setProperty ("actuator", "amount");
+            c->setProperty ("param", "Comp Thresh");
+            c->setProperty ("min_db", -60.0); c->setProperty ("max_db", 0.0);
+            c->setProperty ("expected_gr_db", 2.0);
+            if (fromProfile) c->setProperty ("from_profile", true);
+            if (! staticGain.isVoid()) c->setProperty ("static_gain_db", staticGain);
+            auto* chain = new juce::DynamicObject();
+            chain->setProperty ("calibration", juce::var (c));
+            return juce::var (chain);
+        };
+        auto parse = [] (const juce::var& blk, echojay::CalibLoop::Config& out)
+        {
+            juce::String why;
+            return echojay::CalibLoop::configFromBlock (blk.getProperty ("calibration", juce::var()),
+                                                       4, false, "Tube-Tech CL 1B", out, why);
+        };
+        {   // THE PARSE: static_gain_db is read, and -3.5 survives as -3.5.
+            echojay::CalibLoop::Config c;
+            check (parse (blockWith (true, juce::var (-3.5)), c), "(27) a block carrying static_gain_db parses");
+            check (c.staticGainFromBlock == c.staticGainFromBlock && std::abs (c.staticGainFromBlock + 3.5f) < 0.01f,
+                   "(27) ...and static_gain_db is read off the block  (RED as it stood: the field was parsed "
+                   "nowhere, so the only source was a map profile and a map without one cost the sensor)",
+                   f1 (c.staticGainFromBlock));
+            echojay::CalibLoop l; beginDriven (l, c);
+            check (l.blockFromProfile,
+                   "(27) ...and begin() carries from_profile onto the loop  (RED as it stood: the flag was set by "
+                   "PluginProcessor only, so the LINK twin never set it and every from_profile rule read false "
+                   "on a Link rack)");
+            check (l.staticGainKnown() && std::abs (l.staticGainDb() + 3.5f) < 0.01f,
+                   "(27) ...so the loop has a static offset with NO map profile attached at all",
+                   f1 (l.staticGainDb()));
+            // ZERO IS A REAL VALUE - a unity-gain compressor - and must not read as "absent".
+            echojay::CalibLoop::Config z;
+            parse (blockWith (true, juce::var (0.0)), z);
+            echojay::CalibLoop lz; beginDriven (lz, z);
+            check (lz.staticGainKnown() && std::abs (lz.staticGainDb()) < 0.01f,
+                   "(27) ...and static_gain_db 0 is a READING, not an absence: a unity-gain compressor states 0");
+            // ...while a block that does NOT say from_profile has no business supplying the sensor's offset.
+            echojay::CalibLoop::Config n;
+            parse (blockWith (false, juce::var (-3.5)), n);
+            echojay::CalibLoop ln; beginDriven (ln, n);
+            check (! ln.staticGainKnown(),
+                   "(27) ...and a block with static_gain_db but NO from_profile supplies nothing - the offset is "
+                   "only meaningful as part of a profile's own claim about the plugin");
+            // ...and absent stays absent.
+            echojay::CalibLoop::Config a;
+            parse (blockWith (true, juce::var()), a);
+            echojay::CalibLoop la; beginDriven (la, a);
+            check (! la.staticGainKnown(),
+                   "(27) ...and from_profile with no static_gain_db still has no offset, so the crest fallback "
+                   "stands - which is the state Sean's session was actually in");
+        }
+        {   // THE CARD: a from_profile slot never quotes a crest figure as gain reduction.
+            echojay::CalibLoop::Config c;
+            parse (blockWith (true, juce::var()), c);      // from_profile, NO static: the crest fallback
+            echojay::CalibLoop l; beginDriven (l, c);
+            l.lastGr = 0.2f; l.lastSensor = "crest";
+            check (! (l.measuredGrDb() == l.measuredGrDb()),
+                   "(27) a from_profile slot reading by CREST reports NO gain-reduction figure  (RED as it stood: "
+                   "\"about 0 dB on the loud phrases, from its profile\" on a compressor doing 2-3 dB - a reading "
+                   "from the wrong sensor, attributed to the profile)",
+                   f1 (l.measuredGrDb()));
+            const auto card = l.card();
+            check (! card.containsIgnoreCase ("about 0 dB"),
+                   "(27) ...so the card cannot print \"about 0 dB ... from its profile\"", card);
+            // ...and the SAME loop reading by level-minus-static does quote it, or the rule has just silenced
+            // the feature instead of fixing it.
+            l.lastGr = 2.4f; l.lastSensor = "level-static";
+            check (l.measuredGrDb() == l.measuredGrDb() && std::abs (l.measuredGrDb() - 2.4f) < 0.01f,
+                   "(27) ...while the level-minus-static reading IS quoted", f1 (l.measuredGrDb()));
+            // ...and a slot with no profile at all still reports its crest figure, unchanged.
+            echojay::CalibLoop::Config p;
+            parse (blockWith (false, juce::var()), p);
+            echojay::CalibLoop lp; beginDriven (lp, p);
+            lp.lastGr = 0.2f; lp.lastSensor = "crest";
+            check (lp.measuredGrDb() == lp.measuredGrDb(),
+                   "(27) ...and an UNPROFILED slot still reports its crest reading, as before - the rule is about "
+                   "attributing a figure to a profile, not about hiding figures", f1 (lp.measuredGrDb()));
+        }
+        {   // AND THE AGREEMENT RULE IS OFF once the block has supplied the offset: it exists for slots with no
+            // static figure, and asking "hasProfile" would have kept it on for exactly this case.
+            echojay::CalibLoop::Config c;
+            parse (blockWith (true, juce::var (0.0)), c);
+            c.mode = echojay::CalibLoop::Mode::Listen;
+            c.actuator = echojay::CalibLoop::Actuator::Drive;   // the stepping path
+            c.holdOnly = false; c.params.clear();
+            c.startDb = 0.0f;
+            echojay::CalibLoop l; beginDriven (l, c);
+            l.dynamicsSlot = true;
+            echojay::CalibLoop::Window w;
+            w.measured = true; w.silent = false;
+            w.grDb = 6.0f; w.grLevelDb = 6.0f; w.grLevelKnown = true;   // level says OVER
+            w.grCrestDb = 0.0f;                                        // crest says UNDER: they disagree
+            w.grSensor = "level-static";
+            w.levelChangeDb = 0.0f; w.inTruePeakDb = -30.0f;
+            w.slotOutGainDb = 0.0f; w.slotPreTrimDb = 0.0f;
+            int writes = 0; float heard = 30.0f;
+            for (int i = 0; i < 20; ++i)
+            {
+                w.heardSeconds = (heard += 4.0f); w.slotPreTrimDb = l.preDb;
+                if (l.onWindow (w, 3000.0).writeDrive) ++writes;
+                if (l.state == echojay::CalibLoop::State::Idle && l.window > 2) break;
+            }
+            check (writes >= 1,
+                   "(27) with static_gain_db from the BLOCK the agreement rule is off and the loop acts on the "
+                   "level figure  (the rule exists for slots that have NO static offset; testing hasProfile would "
+                   "have frozen exactly the case the block just fixed)",
+                   juce::String (writes) + " drive write(s), drive " + f1 (l.preDb) + " dB");
+        }
+    }
+
+    // ---- (28) A HOLD WRITES NOTHING, NOT EVEN WHAT IT JUST READ (3 Oct 13:52 item 3) ----------------------
+    {
+        std::printf ("\n-- (28) the opening write is refused for a hold --\n");
+        // 13:52:00 "wrote Threshold = 0.10", 13:53:11 "wrote Threshold = -1.20", both on hold-only blocks. The
+        // write is not a no-op: it goes through the readback search and the map, so what lands can differ from
+        // what was read - a hold had moved the compressor it was supposed to leave alone.
+        auto cfg = [] (bool holdOnly, float startDb)
+        {
+            echojay::CalibLoop::Config c;
+            c.plugin = "Tube-Tech CL 1B"; c.slot = 1;
+            c.actuator = echojay::CalibLoop::Actuator::Threshold;
+            c.params.add ("Threshold");
+            c.holdOnly = holdOnly; c.startDb = startDb;
+            return c;
+        };
+        const float nan = std::numeric_limits<float>::quiet_NaN();
+        check (! echojay::CalibLoop::writesOpeningValue (cfg (true, 0.10f)),
+               "(28) a hold-only block with a readable position writes NOTHING  (RED as it stood: \"wrote "
+               "Threshold = 0.10\" - the value item 5 had just read, written straight back)");
+        check (! echojay::CalibLoop::writesOpeningValue (cfg (true, nan)),
+               "(28) ...and a hold with no position writes nothing either");
+        check (echojay::CalibLoop::writesOpeningValue (cfg (false, -1.20f)),
+               "(28) ...while a STEPPING block with an opening value still writes it - the opening write is how a "
+               "threshold loop starts, and this must not have switched that off");
+        check (! echojay::CalibLoop::writesOpeningValue (cfg (false, nan)),
+               "(28) ...and a stepping block with no opening value sent still writes nothing, as before");
+    }
+
+    // ---- (29) gr_target_db AND last_gr_db IN [CURRENT CHAIN] (3 Oct 13:52 item 2) -------------------------
+    {
+        std::printf ("\n-- (29) the turn states what the loop is after and what it last read --\n");
+        // Sean asked "harder" twice; the second turn came back asking for the same 3.0 dB, because nothing in the
+        // turn said what the loop was already targeting - so a comparative had no current value to move from.
+        Rig r (ChannelType::LeadVocal, 0.0f);
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
+        {   // NO LOOP: the block says nothing about gain reduction at all.
+            const auto before = EchoJayAPI::buildCurrentChainInjection (r.h);
+            check (! before.contains ("gr_target_db") && ! before.contains ("last_gr_db"),
+                   "(29) a rack with no loop states neither field  (ABSENT STAYS ABSENT: a 0 here would say the "
+                   "compressor is doing nothing, which is a claim and the one the model would act on)",
+                   before.substring (0, 90).replace ("\n", " "));
+        }
+        auto c = passiveDriveCfg ("EchoJay Gain");
+        c.slot = 0; c.lo = 2.0f; c.hi = 3.0f;
+        c.purpose = echojay::CalibLoop::Purpose::buildHold;
+        r.proc.calibStartMany (uid, { c });
+        {   // A LOOP WITH A TARGET BUT NO READING YET: the target rides, the reading does not.
+            const auto mid = EchoJayAPI::buildCurrentChainInjection (r.h);
+            check (mid.contains ("gr_target_db 2.0"),
+                   "(29) a running loop states its target band  (RED as it stood: the field was never emitted, so "
+                   "a second \"harder\" re-asked for the same 3.0 dB)",
+                   mid.contains ("gr_target_db") ? mid.fromFirstOccurrenceOf ("gr_target_db", true, false)
+                                                      .substring (0, 40) : juce::String ("no gr_target_db"));
+            check (! mid.contains ("last_gr_db"),
+                   "(29) ...and states NO last_gr_db before anything has been measured - a loop that has just "
+                   "started has a target and no reading, which is exactly the state worth seeing");
+        }
+        {   // ...AND ONCE A WINDOW HAS BEEN JUDGED, the reading rides too, as a magnitude.
+            auto loop = r.proc.calibLoad (uid);
+            loop.lastGr = -2.4f;                 // the loop stores it signed; the block states the magnitude
+            r.proc.calibStore (uid, loop);
+            const auto after = EchoJayAPI::buildCurrentChainInjection (r.h);
+            check (after.contains ("last_gr_db 2.4"),
+                   "(29) a measured reading rides as its MAGNITUDE, the way \"N dB of gain reduction\" reads "
+                   "everywhere else", after.contains ("last_gr_db")
+                       ? after.fromFirstOccurrenceOf ("last_gr_db", true, false).substring (0, 30)
+                       : juce::String ("no last_gr_db"));
+            check (after.contains ("gr_target_db 2.0"),
+                   "(29) ...beside the target it is being judged against");
+        }
+        {   // AN ENDED LOOP keeps its last reading and drops its target: the reading is still the last thing
+            // measured on that compressor, while a band nobody is pursuing is a false claim about the present.
+            auto loop = r.proc.calibLoad (uid);
+            loop.lastGr = -2.4f;
+            loop.state = echojay::CalibLoop::State::Idle;
+            r.proc.calibStore (uid, loop);
+            const auto ended = EchoJayAPI::buildCurrentChainInjection (r.h);
+            check (ended.contains ("last_gr_db 2.4") && ! ended.contains ("gr_target_db"),
+                   "(29) an ENDED loop keeps last_gr_db and drops gr_target_db - the reading still stands, the "
+                   "target does not", ended.contains ("gr_target") ? juce::String ("target still stated")
+                                                                   : juce::String ("target dropped, reading kept"));
+        }
+        r.proc.calibStore (uid, echojay::CalibLoop{});
+    }
+
+
+    // ---- (30) THE 1 dB POINT MOVES WITH THE CONTROL (4 Oct 2026 ruling) -----------------------------------
+    {
+        std::printf ("\n-- (30) in_at_gr1 is re-derived at the control's position, never frozen --\n");
+        // The low-level-gain measurement only counts windows 6 dB under the unit's own 1 dB point. That point is a
+        // property of the DIALLED POSITION, not of the plugin: the profile's amount.curve carries
+        // in_at_gr_dbfs {"1","2","3"} per point. The first cut derived it once and guarded re-derivation with
+        // `if (! isfinite(inAtGr1Dbfs))`, so after "harder" moved the threshold down the gate kept the old, HIGHER
+        // ceiling and began admitting windows where the unit was compressing. That does not fail loudly - both
+        // input bands are contaminated together, so they can still agree and report a confident wrong figure.
+        //
+        // A synthetic ladder, because the arithmetic is the thing under test: point 1 runs -30 dBFS at norm 0.2 to
+        // -10 dBFS at norm 0.8, with nulls at both ends where no input produces 1 dB (the CL 1B prints "Off" at 0).
+        auto profileWithLadder = [] () -> juce::var
+        {
+            auto pt = [] (double norm, juce::var gr1)
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("norm", norm);
+                auto* lad = new juce::DynamicObject();
+                lad->setProperty ("1", gr1);
+                o->setProperty ("in_at_gr_dbfs", juce::var (lad));
+                return juce::var (o);
+            };
+            juce::Array<juce::var> curve;
+            curve.add (pt (0.0, juce::var()));        // "Off": no input produces 1 dB
+            curve.add (pt (0.2, -30.0));
+            curve.add (pt (0.5, -20.0));
+            curve.add (pt (0.8, -10.0));
+            curve.add (pt (1.0, juce::var()));        // past the top: not stated
+            auto* amount = new juce::DynamicObject();
+            amount->setProperty ("control", "Threshold");
+            amount->setProperty ("curve", curve);
+            auto* prof = new juce::DynamicObject();
+            prof->setProperty ("amount", juce::var (amount));
+            return juce::var (prof);
+        };
+        const auto prof = profileWithLadder();
+        using CC = echojay::CompCheck;
+        // AT THE STATED POINTS, exactly.
+        check (std::abs (CC::inAtGr1At (prof, 0.2f) + 30.0f) < 0.01f,
+               "(30) the ladder reads -30 dBFS at norm 0.2", f1 (CC::inAtGr1At (prof, 0.2f)));
+        check (std::abs (CC::inAtGr1At (prof, 0.8f) + 10.0f) < 0.01f,
+               "(30) ...and -10 dBFS at norm 0.8", f1 (CC::inAtGr1At (prof, 0.8f)));
+        // DERIVE AT A, MOVE TO B: the figure must CHANGE and must match the ladder at B. This is the ruling's leg.
+        const float atA = CC::inAtGr1At (prof, 0.35f);
+        const float atB = CC::inAtGr1At (prof, 0.65f);
+        check (std::abs (atA + 25.0f) < 0.2f,
+               "(30) interpolated between stated points at norm 0.35", f1 (atA));
+        check (std::abs (atB + 15.0f) < 0.2f,
+               "(30) ...and at norm 0.65", f1 (atB));
+        check (std::abs (atB - atA) > 1.0f,
+               "(30) moving the control MOVES the 1 dB point  (RED as it stood: derived once and frozen, so the "
+               "gate kept the old ceiling and admitted windows where the unit was compressing)",
+               f1 (atA) + " -> " + f1 (atB));
+        // THE NULLS AT THE ENDS ARE NOT ZERO. Reading a null as 0 dBFS would put the 1 dB point at full scale and
+        // make every window look below threshold - the failure that would have looked like a working measurement.
+        check (std::abs (CC::inAtGr1At (prof, 0.0f) + 30.0f) < 0.01f,
+               "(30) at norm 0 the ladder is NULL, so the nearest STATED point stands - a null is never read as "
+               "0 dBFS", f1 (CC::inAtGr1At (prof, 0.0f)));
+        check (std::abs (CC::inAtGr1At (prof, 1.0f) + 10.0f) < 0.01f,
+               "(30) ...and the same past the top", f1 (CC::inAtGr1At (prof, 1.0f)));
+        // A PROFILE WITH NO LADDER states nothing, and the caller keeps its fallback.
+        check (! (CC::inAtGr1At (juce::var(), 0.5f) == CC::inAtGr1At (juce::var(), 0.5f)),
+               "(30) no profile -> NaN, so the gate falls back rather than inventing a ceiling");
+        auto* bare = new juce::DynamicObject();
+        check (! (CC::inAtGr1At (juce::var (bare), 0.5f) == CC::inAtGr1At (juce::var (bare), 0.5f)),
+               "(30) ...and a profile with no amount.curve does the same");
+        // AND THE PROVENANCE RULE: a block-stated figure is marked as such and must never be re-derived.
+        echojay::CalibLoop::Config cb;
+        cb.plugin = "Tube-Tech CL 1B"; cb.slot = 0;
+        cb.inAtGr1Dbfs = -18.0f;
+        echojay::CalibLoop lb; beginDriven (lb, cb);
+        check (lb.inAtGr1FromBlock && std::abs (lb.inAtGr1Dbfs + 18.0f) < 0.01f,
+               "(30) a BLOCK-stated figure is flagged as the block's, so nothing overwrites it",
+               f1 (lb.inAtGr1Dbfs));
+        echojay::CalibLoop::Config cd;
+        cd.plugin = "Tube-Tech CL 1B"; cd.slot = 0;      // no in_at_gr1_dbfs
+        echojay::CalibLoop ld; beginDriven (ld, cd);
+        check (! ld.inAtGr1FromBlock,
+               "(30) ...while an absent one is NOT, which is what licenses re-derivation on every move");
+        // ...and both survive the sidecar round trip, or a Link rack loses the distinction on its second tick.
+        lb.lastSensor = "level-static";
+        const auto backB = echojay::CalibLoop::fromVar (lb.toVar());
+        check (backB.inAtGr1FromBlock && std::abs (backB.inAtGr1Dbfs + 18.0f) < 0.01f,
+               "(30) ...and the provenance rides the sidecar, so a Link tick cannot turn the block's figure into a "
+               "re-derivable one", f1 (backB.inAtGr1Dbfs));
     }
 
     std::printf ("\n==== level_loop_guard: %s (%d assertion(s) failed) ====\n",

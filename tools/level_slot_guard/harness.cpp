@@ -306,6 +306,164 @@ int main()
     }
 
 
+    {   // ---- "NO BASE STATED" IS NEVER A REFUSAL (3 Oct 2026 ruling, Sean's 08:03 session) ----------------
+        std::printf ("\n== 3 Oct ruling: an absent base list is judged on the ops' own identities ==\n");
+        // His "harder" turn came back with no base list and was refused `base=0 [] live=4` - with the rack
+        // intact, four slots, as the same line said. An ABSENT optional field was compared as though it
+        // described an EMPTY rack, so every touched index looked like a slot the rack no longer had.
+        //
+        // The ruling: never refuse for the absence. There is still one thing to check and the op carries it -
+        // `name`, the plugin the edit is about - so the two legs are the two he asked for: an edit with no base
+        // list on an unchanged rack APPLIES; the same edit after the touched slot is removed REFUSES.
+        auto host = std::make_unique<ChainHost> (ChainHost::Mode::Primary);
+        const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        const auto* lv = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
+        const auto* li = BuiltinDeviceRegistry::instance().findByName ("EchoJay Limiter");
+        if (gn != nullptr && lv != nullptr && li != nullptr)
+        {
+            host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*gn), 0);
+            host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*lv), 1);
+            host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*li), 2);
+            // The edit touches slot 2 (index 1) and names the plugin it is about, as a real op does.
+            auto bypassSlot2 = [] (bool on)
+            {
+                std::vector<ChainHost::ChainEditOp> ops;
+                ChainHost::ChainEditOp b;
+                b.op = "bypass"; b.slot = 1; b.on = on; b.name = "EchoJay Level";
+                ops.push_back (b);
+                return ops;
+            };
+            auto run = [&] (std::vector<ChainHost::ChainEditOp> ops, const juce::StringArray& base)
+            {
+                bool done = false, aborted = true; juce::StringArray res;
+                host->applyChainEdits (std::move (ops), -1, base,
+                                       [&] (const juce::StringArray& r, int, bool ab) { res = r; aborted = ab; done = true; });
+                for (int k = 0; k < 60 && ! done; ++k)
+                { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+                struct R { bool done, aborted; juce::String text; };
+                return R { done, aborted, res.joinIntoString (" | ").substring (0, 160) };
+            };
+            // LEG 1: NO base list, rack unchanged -> it applies.
+            const auto r1 = run (bypassSlot2 (true), juce::StringArray{});
+            check (r1.done && ! r1.aborted && host->getSlotInfo (1).bypassed,
+                   "3 Oct. an edit with NO base list applies on an unchanged rack  (RED as it stood: "
+                   "\"guard=touched-slot-missing slot=1 base=0 [] live=3\" - the absence was read as an empty rack)",
+                   r1.text);
+            // LEG 2: the same edit after THE TOUCHED SLOT IS REMOVED -> it refuses.
+            // Removing slot 2 of 3 is the case that needs the identity check rather than a bounds check: index 1
+            // is still in range, holding what used to be slot 3. A length test alone would wave this through.
+            host->removeSlot (1);
+            check (host->getNumSlots() == 2 && host->getSlotInfo (1).name == "EchoJay Limiter",
+                   "3 Oct. fixture: the touched slot is gone and index 1 now holds the slot behind it",
+                   host->getSlotInfo (1).name);
+            const auto r2 = run (bypassSlot2 (true), juce::StringArray{});
+            check (r2.done && r2.aborted,
+                   "3 Oct. ...and the same edit is REFUSED once the slot it touches has been removed - the op's "
+                   "own name is the identity when no base list states one", r2.text);
+            check (r2.text.contains ("EchoJay Level") && r2.text.contains ("EchoJay Limiter"),
+                   "3 Oct. ...and the refusal says what it expected and what it found, so the next turn can ask "
+                   "again for the right thing", r2.text);
+            // ...AND PAST THE END is still gone outright, which is the other half of the branch.
+            std::vector<ChainHost::ChainEditOp> far;
+            ChainHost::ChainEditOp fb; fb.op = "bypass"; fb.slot = 7; fb.on = true; fb.name = "EchoJay Level";
+            far.push_back (fb);
+            const auto r3 = run (far, juce::StringArray{});
+            check (r3.done && r3.aborted,
+                   "3 Oct. ...and an index past the end of the rack is refused with no base list either", r3.text);
+            // THE OTHER DIRECTION, so this is not a licence to apply anything: an op with no base list AND no
+            // name of its own has nothing to check, and must still reach the dry run rather than be refused for
+            // the absence. (A real server op always carries one; this holds the rule, not the shape.)
+            std::vector<ChainHost::ChainEditOp> anon;
+            ChainHost::ChainEditOp ab2; ab2.op = "bypass"; ab2.slot = 0; ab2.on = true; anon.push_back (ab2);
+            const auto r4 = run (anon, juce::StringArray{});
+            check (r4.done && ! r4.aborted,
+                   "3 Oct. ...while an unnamed op on a slot that exists is not refused for the absence either",
+                   r4.text);
+            // AND AN ADD, WHICH IS EVERY BUILD. The first cut of this branch walked the merged `touched` set -
+            // o.slot, o.to AND o.after - and an add's `after` is an INSERTION POINT, so "add after 0" on an
+            // empty rack was refused with "the rack does not have that slot". That is not an edge case: it is
+            // what a build does, and ui_guard's 21t-h and 21t-i legs failed on it in one run. The index that has
+            // to exist is o.slot, on the ops that act on a slot already there.
+            auto fresh = std::make_unique<ChainHost> (ChainHost::Mode::Primary);
+            std::vector<ChainHost::ChainEditOp> add;
+            ChainHost::ChainEditOp ao;
+            ao.op = "add"; ao.after = -1; ao.name = "EchoJay Gain"; add.push_back (ao);
+            bool doneA = false, abortedA = true; juce::StringArray resA;
+            fresh->applyChainEdits (add, -1, juce::StringArray{},
+                                    [&] (const juce::StringArray& rr, int, bool ab) { resA = rr; abortedA = ab; doneA = true; });
+            for (int k = 0; k < 80 && ! doneA; ++k)
+            { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+            check (doneA && ! abortedA,
+                   "3 Oct. an ADD with no base list on an EMPTY rack is not refused before it starts - an "
+                   "insertion point is not a slot that has to already be there",
+                   resA.joinIntoString (" | ").substring (0, 160));
+            // ...and an add BEYOND the end is an insertion point too, not a missing slot.
+            std::vector<ChainHost::ChainEditOp> addFar;
+            ChainHost::ChainEditOp af; af.op = "add"; af.after = 9; af.name = "EchoJay Level"; addFar.push_back (af);
+            bool doneB = false, abortedB = true; juce::StringArray resB;
+            fresh->applyChainEdits (addFar, -1, juce::StringArray{},
+                                    [&] (const juce::StringArray& rr, int, bool ab) { resB = rr; abortedB = ab; doneB = true; });
+            for (int k = 0; k < 80 && ! doneB; ++k)
+            { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+            check (doneB && ! abortedB,
+                   "3 Oct. ...and so is an add past the end, which is how you append to a rack",
+                   resB.joinIntoString (" | ").substring (0, 160));
+        }
+        else check (false, "3 Oct. fixture: the three built-ins are registered");
+    }
+
+    {   // ---- 4 Oct 2026: THE SLOT FORMAT ROUND TRIP - gains ride, and keepLevel is not invented -------------
+        std::printf ("\n== 4 Oct: slot gains survive the session format, and keepLevel is left alone ==\n");
+        // Two things, both found while making a borrowed rack survive a save:
+        //   THE GAINS were in no save format - not this frozen slotsXml and not the Link's chainModelToVar - so a
+        //   compressor build's LEVEL MATCH (the hold's write to OUT, the drive's to the PRE-trim) was lost on every
+        //   reopen, on EVERY rack including this instance's own.
+        //   keepLevel was being INVENTED by the restore: RestoreItem was built positionally
+        //       RestoreItem item { desc, bypassed, wet, {}, statesObj != nullptr };
+        //   over fields (desc, bypassed, wet, trimDb, keepLevel, stateBase64, expectState), so the fifth value set
+        //   keepLevel - and restoreNextSlot applies it with setSlotKeepLevel. Every slot restored from a session
+        //   that had saved states came back "level kept", with an undo entry and a revision bump each.
+        auto host = std::make_unique<ChainHost> (ChainHost::Mode::Primary);
+        const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        const auto* lv = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
+        if (gn != nullptr && lv != nullptr)
+        {
+            host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*gn), 0);
+            host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*lv), 1);
+            host->setSlotOutGainDb (0, -3.5f);
+            host->setSlotPreTrimDb (0,  2.0f);
+            host->setSlotWet (1, 0.25f, ChainHost::WetSource::Assistant);
+            const auto xml = host->getSlotsStateXml();
+            check (xml.contains ("outGainDb") && xml.contains ("preTrimDb"),
+                   "4 Oct. the frozen slot format now carries both gains  (RED as it stood: bypassed + wet + the "
+                   "description only, so a level-matched build came back unmatched)");
+            check (! host->getSlotKeepLevel (0) && ! host->getSlotKeepLevel (1),
+                   "4 Oct. fixture: neither slot is \"level kept\" before the round trip");
+            // ...and the round trip puts them back, with keepLevel still false.
+            auto back = std::make_unique<ChainHost> (ChainHost::Mode::Primary);
+            back->tryRestoreSlotsFromXml (xml, juce::var(), juce::var());
+            for (int k = 0; k < 120 && back->getNumSlots() < 2; ++k)
+            { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+            check (back->getNumSlots() == 2, "4 Oct. the round trip restores both slots",
+                   juce::String (back->getNumSlots()));
+            if (back->getNumSlots() == 2)
+            {
+                check (std::abs (back->getSlotOutGainDb (0) + 3.5f) < 0.05f,
+                       "4 Oct. ...with the OUT gain the hold had written",
+                       juce::String (back->getSlotOutGainDb (0), 2) + " dB");
+                check (std::abs (back->getSlotPreTrimDb (0) - 2.0f) < 0.05f,
+                       "4 Oct. ...and the PRE-trim the drive had written",
+                       juce::String (back->getSlotPreTrimDb (0), 2) + " dB");
+                check (! back->getSlotKeepLevel (0) && ! back->getSlotKeepLevel (1),
+                       "4 Oct. ...and NOTHING came back \"level kept\"  (RED as it stood: a positional initialiser "
+                       "set keepLevel instead of expectState, so every restored slot was silently flipped)",
+                       juce::String ((int) back->getSlotKeepLevel (0)) + "/"
+                       + juce::String ((int) back->getSlotKeepLevel (1)));
+            }
+        }
+        else check (false, "4 Oct. fixture: the two built-ins are registered");
+    }
+
     std::printf ("\n==== level_slot_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

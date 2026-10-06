@@ -162,6 +162,58 @@ int main()
       A::refresh (*ed, false); pumpMs (60);
       check (res.ok && spPlan == nullptr && bh->getNumSlots() == 3, "borrowed: plan apply (Create) -> rebuilt", res.ok ? juce::String (bh->getNumSlots()) : res.failedAt); }
 
+    // ---- (6) A WET-ONLY CHANGE SURVIVES DESELECT (2 Oct 2026 ruling) --------------------------------------
+    // Sean's 14:20 residual. Create and Commit already carried wet, so a created or edited slot was fine - but a
+    // slot whose ONLY change was the wet knob classified as LeaveUnedited, emitted NO op, and the change died at
+    // deselect. The 28 "slotWet REJECTED" lines in his log were the live write failing too, so the value had no
+    // route to the Link at all: not live (the Link's rack is parked while we hold the borrow) and not at deselect.
+    {
+        std::printf ("\n-- (6) deselect carries the wet of a slot nothing else writes --\n");
+        using namespace LinkShm::StructureEdit;
+        const juce::String uid = "uid-wetguard";            // the same borrow this guard already holds
+        auto* bh = proc.borrowHostIfActiveFor (uid);
+        check (bh != nullptr && bh->getNumSlots() >= 2, "(6) precondition: a borrowed host with slots",
+               bh != nullptr ? juce::String (bh->getNumSlots()) + " slot(s)" : juce::String ("(no borrow host)"));
+        if (bh != nullptr && bh->getNumSlots() >= 2)
+        {
+            const int last = bh->getNumSlots() - 1;          // "slot 4" in Sean's rack: the one he moved
+            const float want = 0.42f;
+            bh->setSlotWet (last, 1.0f, ChainHost::WetSource::Restore);   // the value deselect must overwrite
+            std::vector<SlotIdentity> base = bh->liveIdentity();
+            std::vector<CurrentSlot> cur;
+            for (int i = 0; i < (int) base.size(); ++i)
+                cur.push_back ({ base[(size_t) i], i, /*edited*/ false, /*withheld*/ false, {}, false, {} });
+            cur[(size_t) last].wet = want;                   // the ONLY difference, and the slot is NOT edited
+            const auto plan = computePlan (uid, base, cur);
+            int values = 0, commits = 0;
+            for (const auto& op : plan.ops)
+            {
+                if (op.type == OpType::Values) ++values;
+                if (op.type == OpType::Commit) ++commits;
+            }
+            check (values == (int) base.size() && commits == 0,
+                   "(6) the plan carries VALUES for every surviving slot and commits nothing  (RED as it stood: "
+                   "an unedited slot emitted no op at all, so its wet never left V2)",
+                   juce::String (values) + " values op(s), " + juce::String (commits) + " commit(s)");
+            auto scratch = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                               .getChildFile ("wetguard_journal6"); scratch.createDirectory();
+            // A DESELECT IS NOT A USER GESTURE ON THIS SIDE (2 Oct 2026 ruling). The knob was turned in V2, so
+            // the undo entry belongs there; applying the values here must add none, or every deselect buries the
+            // Link's history under one wet step per slot for something the user never did on this rack.
+            const int undoBefore = bh->undoDepth();
+            const auto res = bh->applyStructurePlan (scratch.getFullPathName(), plan);
+            check (res.ok, "(6) ...and the plan applies without a rollback - a wet knob must never be able to "
+                           "abort a deselect", res.ok ? juce::String ("ok") : res.failedAt);
+            check (std::abs (bh->getSlotWet (last) - want) < 1e-6f,
+                   "(6) ...and the slot's wet is the value the user left, after deselect",
+                   juce::String (bh->getSlotWet (last), 3) + " vs " + juce::String (want, 3));
+            check (bh->undoDepth() == undoBefore,
+                   "(6) ...and it added NO undo entry - a deselect applies what the user already did in V2, so the "
+                   "wet writes are a Restore, not a User gesture on this rack",
+                   juce::String (bh->undoDepth()) + " vs " + juce::String (undoBefore) + " before");
+        }
+    }
+
     std::printf ("\n==== wet_rebuild_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

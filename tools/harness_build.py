@@ -31,16 +31,48 @@ def _refuse_stale_archive(lib):
         sys.exit("  FAIL  the V2 archive does not exist at %s - build it first:\n"
                  "        cmake --build build-release -j 4 --target EchoJay" % lib)
     lib_mtime = os.path.getmtime(lib)
+    # 5 Oct 2026: COMPARE AGAINST WHAT THE ARCHIVE ACTUALLY CONTAINS.
+    #
+    # This walked every Source/*.{h,cpp} and refused if ANY was newer. But Source/LinkProcessor.cpp is compiled
+    # into the LINK target only - it is not in the V2 archive - so a Link-only edit made every V2-side harness
+    # refuse while the V2 archive was genuinely current. Overnight on 4/5 Oct that turned four two-sided guards
+    # (alias_mirror, lease_id, level_match, role_snapshot) red at once, for a reason that had nothing to do with
+    # them: their V2 half was never built, so their legs failed with empty aliases and null acks.
+    #
+    # The build directory knows exactly which sources became this archive, so the object list is the authority
+    # rather than a hand-maintained exclusion list. EVERY HEADER still counts, because a header changes layout for
+    # whatever includes it; only .cpp files are narrowed to the ones that are really in there. If the object dir
+    # cannot be found we fall back to the old, broader rule - refusing too often is safe, refusing too little is not.
+    # 6 Oct 2026: THE OBJECT DIR MUST BELONG TO THE ARCHIVE BEING CHECKED. This was hardcoded to EchoJay.dir, the
+    # V2 target, so checking the LINK archive narrowed its .cpp list to V2's objects - i.e. it counted
+    # PluginProcessor.cpp and friends, which the Link archive never compiled. On 6 Oct that refused all five
+    # two-sided guards at once because a PluginProcessor.h edit was newer than a Link archive it cannot affect.
+    # The target is derived from the archive's own name, which is the only thing that can be right for both.
+    _base = os.path.basename(lib)
+    _tgt  = "EchoJayLink.dir" if "Link" in _base else "EchoJay.dir"
+    objdir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(lib))),
+                          "CMakeFiles", _tgt, "Source")
+    if not os.path.isdir(objdir):
+        objdir = os.path.join(ROOT, "build-release", "CMakeFiles", _tgt, "Source")
+    archived_cpp = set()
+    if os.path.isdir(objdir):
+        for o in os.listdir(objdir):
+            if o.endswith(".o"):
+                archived_cpp.add(o[:-2])          # "ChainHost.cpp.o" -> "ChainHost.cpp"
     newer = []
     for root, _dirs, files in os.walk(os.path.join(ROOT, "Source")):
         for f in files:
-            if f.endswith((".h", ".cpp")):
-                fp = os.path.join(root, f)
-                try:
-                    if os.path.getmtime(fp) > lib_mtime:
-                        newer.append(os.path.relpath(fp, ROOT))
-                except OSError:
-                    pass
+            if not f.endswith((".h", ".cpp")):
+                continue
+            # A .cpp that is not in the archive cannot have changed the archive.
+            if f.endswith(".cpp") and archived_cpp and f not in archived_cpp:
+                continue
+            fp = os.path.join(root, f)
+            try:
+                if os.path.getmtime(fp) > lib_mtime:
+                    newer.append(os.path.relpath(fp, ROOT))
+            except OSError:
+                pass
     if newer:
         newer.sort()
         import time as _t

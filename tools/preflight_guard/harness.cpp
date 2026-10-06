@@ -97,7 +97,16 @@ int main()
     juce::String errE; bool cbE = false;
     h.loadPluginAsync (dErr, ChainHost::LoadOrigin::Assistant, [&] (const juce::String& err) { errE = err; cbE = true; });
     { const double t1 = juce::Time::getMillisecondCounterHiRes(); while (! cbE && juce::Time::getMillisecondCounterHiRes() - t1 < 5000) pumpMeasuring (50); }
-    check (cbE && errE.isNotEmpty() && ! errE.contains ("hangs on load") && h.getNumSlots() == 1, "(b) the in-host create was ATTEMPTED (a real create error on the fake identity, not a substitution)", errE.substring (0, 80));
+    // 3 Oct 2026: THIS LEG USED TO ASSERT getNumSlots() == 1 - that a failed create leaves NO slot. That stopped
+    // being the behaviour on 2 Oct, by ruling: "LOAD FAILURE = SUBSTITUTE" (Sean's 19:43 build, where the Vocal
+    // De-Esser failed on its licence, the slot vanished, the rack compacted and the CL 1B's calibration block
+    // then pointed at the wrong plugin). So a load failure now keeps the slot and puts the built-in of its role
+    // in it. The leg's real point survives and is what it still asserts: leg (a)'s plugin is never created
+    // in-host at all, while THIS one IS - a non-zero probe exit is not evidence - and the two are told apart on
+    // the card by their reasons ("hangs on load" versus the host's own words).
+    check (cbE && errE.isNotEmpty() && ! errE.contains ("hangs on load"), "(b) the in-host create was ATTEMPTED (a real create error on the fake identity, not pre-empted as a hang)", errE.substring (0, 80));
+    check (h.getNumSlots() == 2, "(b) ...and the failed load KEEPS its slot (2 Oct ruling: a load failure is a substitution, not a hole - a compacting rack is what sent a calibration block at the wrong plugin)", juce::String (h.getNumSlots()) + " slot(s)");
+    check (h.getNumSlots() == 2 && h.getSlotInfo (1).settings.contains ("Guard Failer didn't load") && ! h.getSlotInfo (1).settings.contains ("hangs on load"), "(b) ...and the card names the plugin and the host's own reason, NOT \"hangs on load\" - which is how this case stays distinguishable from (a)", h.getNumSlots() == 2 ? h.getSlotInfo (1).settings.upToFirstOccurrenceOf ("\n", false, false) : juce::String ("no second slot"));
     check (vg.state == ChainHost::PreflightState::unknown, "(c) the known-good product has no probe verdict (none was run)");
     check (ChainHost::probeHelperFile().getFileName() == "EchoJayProbe" && ChainHost::probeHelperFile().getParentDirectory().getFileName() == juce::File::getSpecialLocation (juce::File::currentExecutableFile).getParentDirectory().getFileName(), "(d) the helper is looked for as EchoJayProbe beside the plugin binary (Contents/MacOS)", ChainHost::probeHelperFile().getFullPathName());
 #endif

@@ -2291,7 +2291,7 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
 // assert "the classify body's messages match the writer's turn for turn" is for
 // both bodies to come from functions a harness can call. classify() sends exactly
 // what this returns.
-juce::String EchoJayAPI::buildClassifyRequestBody(const ClassifyRequest& req) const
+juce::String EchoJayAPI::buildClassifyRequestBody(const ClassifyRequest& req, bool includeHistory) const
 {
     // THE FULL COMPOSED MESSAGE, unstripped — see the contract note on
     // ClassifyRequest. The server strips it for both calls itself.
@@ -2340,7 +2340,7 @@ juce::String EchoJayAPI::buildClassifyRequestBody(const ClassifyRequest& req) co
     // of a 400-character tail of one reply. The blocks stay in: the server strips them.
     // Omitted entirely when the composer sent no history, which is what makes the
     // server's "(not sent by this client)" fact honest for older clients.
-    if (! req.historyRoles.isEmpty())
+    if (includeHistory && ! req.historyRoles.isEmpty())
     {
         const auto turns = buildChatTurns(req.historyRoles, req.historyContents);
         auto parsed = juce::JSON::parse(turns.json);
@@ -2368,7 +2368,34 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
     }
 
 
-    const juce::String classifyBody = buildClassifyRequestBody(req);
+    // 6 Oct 2026 (Sean's ruling): SMALL BY DEFAULT, AND NEVER SKIPPED.
+    // The chat history is what made this 208 KB; the classifier does not need it (priorAssistant already carries the
+    // line it does need). The history is measured rather than serialised, so saying what was dropped costs nothing.
+    juce::String classifyBody = buildClassifyRequestBody(req, false);
+    {
+        int histBytes = 0;
+        for (const auto& c : req.historyContents) histBytes += (int) c.getNumBytesAsUTF8();
+        if (histBytes > 0)
+            EchoJay_NSLog(("EJClassify: body trimmed - " + juce::String(req.historyRoles.size())
+                           + " turn(s) of history (~" + juce::String(histBytes) + "b) left out; body is "
+                           + juce::String((int) classifyBody.getNumBytesAsUTF8()) + "b (was about "
+                           + juce::String(histBytes + (int) classifyBody.getNumBytesAsUTF8())
+                           + "b). A 208 KB body against a " + juce::String(kClassifyBudgetMs)
+                           + " ms budget is how a turn went out unclassified on 5 Oct.").toRawUTF8());
+    }
+    // STILL TOO BIG: the typed text alone, because a classify call that happens is worth more than a complete one
+    // that times out. Logged, so a body this large is visible rather than inferred.
+    if ((int) classifyBody.getNumBytesAsUTF8() > kClassifyBodyMaxBytes)
+    {
+        ClassifyRequest bare;
+        bare.message = req.message;
+        bare.channel = req.channel;
+        const auto wasBytes = (int) classifyBody.getNumBytesAsUTF8();
+        classifyBody = buildClassifyRequestBody(bare, false);
+        EchoJay_NSLog(("EJClassify: body STILL over " + juce::String(kClassifyBodyMaxBytes) + "b ("
+                       + juce::String(wasBytes) + "b) - sending the typed text alone, "
+                       + juce::String((int) classifyBody.getNumBytesAsUTF8()) + "b. Every send classifies.").toRawUTF8());
+    }
     {
         // The parsed root lives in a NAMED local: getArray() hands back a pointer INTO the
         // var, and a temporary would be gone before it is read (my own rule, and
@@ -3434,6 +3461,33 @@ juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availableP
     return block;
 }
 
+// 3 Oct 2026 (13:52 item 2): WHAT THIS COMPRESSOR IS AFTER AND WHAT IT LAST READ.
+//
+// Sean asked "harder" twice. The second turn came back asking for the same 3.0 dB, because nothing in the turn
+// said what the loop was already targeting - so a comparative had no current value to move away from. These are
+// the two fields the server was told to expect: gr_target_db (the band being pursued) and last_gr_db (the last
+// measured gain reduction).
+//
+// ABSENT STAYS ABSENT. A slot with no loop prints nothing at all, and a loop with no reading yet prints only its
+// target. Writing 0 would say "this compressor is doing nothing", which is a claim, not a gap - and it is the
+// claim the model would act on by driving it harder.
+static juce::String formatSlotGrNote(const ChainHost& chainHost, int slotIndex)
+{
+    float lo = 0.0f, hi = 0.0f, last = 0.0f;
+    if (! chainHost.slotGrState(slotIndex, lo, hi, last)) return {};
+    juce::String n;
+    if (lo == lo && hi == hi)
+        n << "gr_target_db " << juce::String(lo, 1) << juce::String::fromUTF8("\xe2\x80\x93") << juce::String(hi, 1);
+    if (last == last)
+    {
+        if (n.isNotEmpty()) n << ", ";
+        // The MAGNITUDE, because that is what "N dB of gain reduction" means everywhere else in this product and
+        // in the server's prompt; the loop stores it signed.
+        n << "last_gr_db " << juce::String(std::abs(last), 1);
+    }
+    return n;
+}
+
 juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
 {
     // Adapter: fill a RackSidecar from the live local rack and let the ONE
@@ -3450,17 +3504,21 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
     // untouched; the formatter prefers this array for the model's line.
     juce::StringArray modelSettings;
     juce::Array<bool>  hasLiveReads;
+    // 3 Oct 2026 (13:52 item 2): gr_target_db / last_gr_db ride index-parallel, exactly as the level notes do, so
+    // the sidecar's wire struct stays untouched (the Link app's own readers depend on its layout).
+    juce::StringArray grNotes;
     int i = 0;
     for (const auto& s : chainHost.getAllSlotInfos())
     {
         rack.slots.push_back({ s.name, s.format, s.settings, s.bypassed, s.wet });
         modelSettings.add(s.settingsForModel);
         hasLiveReads.add(s.hasLiveReads);
+        grNotes.add(formatSlotGrNote(chainHost, i));
         notes.add(formatSlotLevelNote(chainHost, i++));
     }
     return buildCurrentChainInjection(rack, juce::String(), &notes, &modelSettings,
                                       &hasLiveReads, formatChainLevelLine(chainHost),
-                                      chainHost.chainRole().text());
+                                      chainHost.chainRole().text(), &grNotes);
 }
 
 // ---- running level, rendered ----------------------------------------------
@@ -3985,7 +4043,8 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
                                                     const juce::StringArray* slotModelSettings,
                                                     const juce::Array<bool>* slotHasLiveReads,
                                                     const juce::String& chainLevelLine,
-                                                    const juce::String& chainRoleText)
+                                                    const juce::String& chainRoleText,
+                                                    const juce::StringArray* slotGrNotes)
 {
     if (!rack.valid || rack.slots.empty()) return {};
 
@@ -4038,6 +4097,10 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
             block << ", wet " << juce::roundToInt(s.wet * 100.0f) << "%";
         if (slotLevelNotes != nullptr && i < slotLevelNotes->size() && (*slotLevelNotes)[i].isNotEmpty())
             block << "; " << (*slotLevelNotes)[i];
+        // 3 Oct 2026 (13:52 item 2): the loop's target and last reading, for the slots that have one. A slot with
+        // no loop adds nothing, so a rack of EQs reads exactly as it does today.
+        if (slotGrNotes != nullptr && i < slotGrNotes->size() && (*slotGrNotes)[i].isNotEmpty())
+            block << "; " << (*slotGrNotes)[i];
         block << ")";
         // THE MODEL READS ITS OWN STRING (24 Aug 2026). The card's copy and
         // the model's copy answer to opposite rules — see

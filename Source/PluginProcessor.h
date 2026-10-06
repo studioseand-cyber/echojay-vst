@@ -669,6 +669,7 @@ public:
     // and retried the next time that rack is engaged - which is what "retried when the Link answers" means when
     // the Link only answers while it is leased.
     std::map<juce::String, std::vector<BorrowPendingPush>> borrowParkedPushes_;
+    juce::String borrowParkedNotice_;   // see takeBorrowParkedNotice
     // 21t-d: the loop for THIS instance's own rack (the mix bus case); a Link rack's loop lives on its sidecar.
     echojay::CalibLoop ownCalib_;
     // (i) 30 Sep 2026, B's contract: EVERY COMPRESSOR IN A BUILD GETS ITS OWN HOLD. `calibrations` carries one
@@ -738,6 +739,12 @@ public:
     // 21t-i/21t-j: the loop's one chat line, handed out exactly once. replacesOpeningOut says whether it REPLACES
     // the opening line in place (the settle completing) rather than being a new message.
     juce::String calibTakeAsk(const juce::String& uid, bool* replacesOpeningOut = nullptr);
+    /** 6 Oct 2026 (Sean's ruling for 06a): THE BLIND R2 REPLAY IS OFF, so an edit the Link never confirmed is
+        dropped at release - and the user is TOLD, because an edit that silently vanished is worse than one that
+        failed loudly. One line, handed over exactly once, drained where the loop's own line is. The replay comes
+        back next round with identity (fingerprint + name) and a satisfied check in front of it; replaying an
+        index-only op against a rack that may have moved is how a "remove 3" lands on the wrong plugin. */
+    juce::String takeBorrowParkedNotice();
     /** 21t-j (28 Sep 2026 ruling): CANCEL A PENDING SETTLE on that slot - any user or chat edit to it, or the
         plugin being removed or replaced. The line closes with the setting as it stands; it does not vanish and it
         does not keep promising to land something nobody is landing. Returns true if a settle was pending. */
@@ -764,6 +771,9 @@ public:
     void advanceCalibCompanions(const juce::String& uid, ChainHost* host, double sinceMs);
     void calibSweepCompanionsOnly(const juce::String& uid);   // (o): companions run whatever the primary is doing
     void stampCompProfileOnLoop(const juce::String& uid, echojay::CalibLoop& loop);   // spec items 3/4, flagged
+    /** 4 Oct 2026: re-read the profile's in_at_gr_dbfs point-1 ladder at `norm`. Called on every stamp and after
+        every amount write, because the 1 dB point moves with the control. Never called for a block-stated figure. */
+    void rederiveInAtGr1(echojay::CalibLoop& loop, const juce::var& prof, float norm, const char* why);
     echojay::CalibLoop calibLoad(const juce::String& uid) const;
     void               calibStore(const juce::String& uid, const echojay::CalibLoop& loop);
     double             calibStallLogMs_ = 0.0;   // 21t-i: rate limit for the "cannot be advanced" line
@@ -1015,6 +1025,16 @@ public:
         std::atomic<int>  ringSlot { -1 };
     };
     BorrowSession borrowSession_;
+    // 4 Oct 2026 (save fix): the Link's own chain revision as it stood when this borrow engaged. -1 = unknown
+    // (no sidecar), which makes a saved copy non-authoritative on restore. See getStateInformation's
+    // borrowedRacks key and the restore tie-break.
+    int borrowBaseRev_ = -1;
+    // 4 Oct 2026 (save fix): borrowed racks read out of the saved session and NOT yet handed to their Links.
+    // Keyed by rack uid -> the saved entry {uid, baseRev, masterWet, chain}. setStateInformation only PARSES into
+    // this; the hand-off happens later, on the message thread, the first time that uid is seen in the registry -
+    // which is what makes the fix work in BOTH load orders (this instance before its Link, or after it).
+    std::map<juce::String, juce::var> pendingBorrowRestore_;
+    void applyPendingBorrowRestores();   // message thread only; called from the registry sweep
 private:
     std::unique_ptr<ChainHost> borrowHost_;
     juce::AudioBuffer<float>   borrowBuf_;
@@ -1583,6 +1603,9 @@ public:
                                           // absence must mean "do not send
                                           // controls", never "check a version".
         bool heartbeatFresh = true;       // heartbeat advanced within ~3s.
+        // 4 Oct 2026: seconds since the heartbeat last CLIMBED, by wall clock. -1 = never seen climbing. Use this,
+        // not heartbeatFresh, for any decision about whether the Link can answer - see SlotProbeState.
+        float heartbeatAgeSeconds = -1.0f;
                                           // FALSE = the process stopped
                                           // answering: the strip renders the
                                           // distinct "gone" state until the
@@ -1809,7 +1832,11 @@ private:
     void disconnectAllLinkSlotsNow();  // destructor
 
     // Stale detection (message thread)
-    struct SlotProbeState { uint32_t lastHb = 0; int staleCycles = 0;
+    // 4 Oct 2026: lastHbAdvancedMs is a WALL CLOCK, and it exists because staleCycles is not one. staleCycles
+    // counts CONSUMER POLLS without an advance, and refreshLinkRegistry runs both on the 1 Hz timer and from four
+    // editor sites (tab switches, applies) - so a burst of user actions can run the count up while the Link is
+    // perfectly alive, and anything deciding "is it answering" from the count is measuring dispatch order.
+    struct SlotProbeState { uint32_t lastHb = 0; int staleCycles = 0; double lastHbAdvancedMs = 0.0;
                             LinkShm::RegLiveness live; };
     std::array<SlotProbeState, kMaxLinkSlots> slotProbeStates;
 

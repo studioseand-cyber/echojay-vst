@@ -7,8 +7,14 @@ S=/private/tmp/claude-502/-Users-SeanD-echojay-vst/8b86da2a-378d-4ecf-97c0-0e33f
 ISO=$(mktemp -d /tmp/echojay-lsg-home.XXXXXX); export HOME=$ISO EJ_STATE_TEST_HOME=$ISO ECHOJAY_STATE_HOME=$ISO
 H=$ISO/lsg; mkdir -p $H; echo "isolated home $ISO"
 echo "-- compile link side"; bash tools/merge_gate_tests/compile_link_harness.sh tools/link_state_guard/link_side.cpp $S/lsg_link_bin 2>&1 | grep -E "error:|compiled" | head -5
-echo "-- compile v2 side"; rm -f $S/v2_side_bin; python3 tools/harness_build.py tools/link_state_guard/v2_side.cpp 2>&1 | grep -E "COMPILE FAILED|error:|compiled ->|v2 side: compiled" | head -6; [ -x $S/v2_side_bin ] || V2COMPILEFAIL=1
-V2BIN=$S/v2_side_bin; V2OK=0; [ -x "$V2BIN" ] && [ -z "${V2COMPILEFAIL:-}" ] && V2OK=1
+# 4 Oct 2026: THE OUTPUT PATH CARRIES THE GUARD'S NAME. harness_build.py was changed on 28 Sep to name its output
+# <guard-dir>_<source>_bin, because FIVE guards have a file called v2_side.cpp and all five were compiling to one
+# path. This runner still looked for the old $S/v2_side_bin, so `[ -x ... ]` was always false, the runner declared
+# "V2 side unavailable on this tree", fell back to replaying canned bytes, and marked legs RED BY NAME - while the
+# log one line above said "compiled -> .../link_state_guard_v2_side_bin". The guard has been half-disabled since.
+V2BIN=$S/link_state_guard_v2_side_bin
+echo "-- compile v2 side"; rm -f "$V2BIN"; python3 tools/harness_build.py tools/link_state_guard/v2_side.cpp 2>&1 | grep -E "COMPILE FAILED|error:|compiled ->|v2 side: compiled" | head -6; [ -x "$V2BIN" ] || V2COMPILEFAIL=1
+V2OK=0; [ -x "$V2BIN" ] && [ -z "${V2COMPILEFAIL:-}" ] && V2OK=1
 $S/lsg_link_bin $H > $H/link.log 2>&1 & LP=$!
 for i in $(seq 1 120); do [ -f $H/link_ready.json ] && break; sleep 0.5; done
 UID_=$(python3 -c "import json;print(json.load(open('$H/link_ready.json'))['uid'])" 2>/dev/null); echo "link uid $UID_"

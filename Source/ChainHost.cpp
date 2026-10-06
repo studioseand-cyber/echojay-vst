@@ -2,6 +2,8 @@
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
+#include "EJCalibLoop.h"   // 4 Oct: tickLowGainWatch reuses CalibLoop::lowGainLine, so the format has ONE author
+#include "EJPaceCheck.h"   // 2 Oct 2026: licence is CLAIMED only when the bundle really is wrapped
 #include "EJReadbackSearch.h"   // 21t-j: landing a dB target by readback
 #include "EedLimiterProcessor.h"   // 21p item 2: the one plugin that publishes its own GR
 #include "EedDeviceProcessor.h"    // 21t-m item 6b: a builtin's switches are in its schema, not in getParameters()
@@ -212,6 +214,16 @@ static juce::File feedSplitFlagFile() { return appSupportDir().getChildFile("fee
 static juce::File compProfilesFlagFile() { return appSupportDir().getChildFile("comp_profiles_on.txt"); }
 bool ChainHost::compProfilesEnabled() { return compProfilesFlagFile().existsAsFile(); }
 
+// turnType=chain_edit (3 Oct 2026), OFF BY DEFAULT and deliberately so. The plugin has always sent
+// turnType=chain_generate for any turn carrying the chain feed - it has no path that can emit chain_edit - which
+// is why Sean's "harder" went out as a generate and came back without base slots. Sending the honest value is the
+// fix, but B has NOT yet confirmed the server handles chain_edit, and shipping it first would turn one broken edit
+// into every edit broken. So it is behind a file, read fresh at each use:
+//     touch ~/Library/EchoJay/turntype_edit_on.txt     # on
+//     rm    ~/Library/EchoJay/turntype_edit_on.txt     # off (the default)
+static juce::File turnTypeEditFlagFile() { return appSupportDir().getChildFile("turntype_edit_on.txt"); }
+bool ChainHost::turnTypeEditEnabled() { return turnTypeEditFlagFile().existsAsFile(); }
+
 // EXPERIMENT (16 Sep 2026): the NO-REUSE kill switch for the rack-switch AU crash.
 // ABSENT (default) => normal instance reuse via the borrow/park pools. PRESENT
 // (touch ~/Library/EchoJay/no_reuse) => every plan/borrow attach instantiates a
@@ -219,7 +231,19 @@ bool ChainHost::compProfilesEnabled() { return compProfilesFlagFile().existsAsFi
 // insert (which never crashes these AUs). Read fresh at each rack switch (message
 // thread, cheap) so it can be A/B'd on ONE binary without a restart. If no-reuse
 // stops the crash, reuse is the cause; if it still crashes, reuse is eliminated.
-static bool noReuseActive() { return appSupportDir().getChildFile("no_reuse").existsAsFile(); }
+// 4 Oct 2026 RULING: DESTROY ON RELEASE IS NOW THE DEFAULT, and reuse is the experiment.
+//
+// Parking a borrowed third-party instance and disposing it later, inside ~EchoJayProcessor during AP_Close, is what
+// crashes the Softube CL 1B: its own ACFShutdown frees a pointer it never allocated
+// (___BUG_IN_CLIENT_OF_LIBMALLOC_POINTER_BEING_FREED_WAS_NOT_ALLOCATED), aborting the AU host service. Six
+// occurrences across 2-3 Oct, and a run with the old `no_reuse` flag on - which destroys at release instead - came
+// back clean. Disposing while the host is alive and settled is safe; disposing at process teardown is not.
+//
+// So the sense is inverted: the file is now `reuse_on` and parking happens ONLY when it is present, for speed
+// testing. The old `no_reuse` file is still honoured as a no-op-but-explicit way of asking for today's default, so
+// a machine that has one does not silently change behaviour.
+static bool reuseActive() { return appSupportDir().getChildFile("reuse_on").existsAsFile(); }
+static bool noReuseActive() { return ! reuseActive(); }
 
 static juce::File popoutOnlyFile() { return appSupportDir().getChildFile("popout_only.txt"); }
 static juce::StringArray& popoutOnlyCache() { static juce::StringArray c; return c; }
@@ -965,6 +989,130 @@ static std::vector<juce::AudioProcessorGraph::Node::Ptr>& leakedNodeStore()
     return *store;
 }
 
+// ---- 4 Oct 2026 RULING (belt and braces): NOTHING PARKED SURVIVES INTO THE TEARDOWN -------------------------
+//
+// Named rather than inlined into the destructor so a guard can drive it: a behaviour nothing can call is a
+// behaviour nothing can test. Called FIRST from ~ChainHost, while the graph is still whole.
+// ---- 5 Oct 2026: FORCE THE OLD RENDER SEQUENCE TO BE DROPPED, ON THE MESSAGE THREAD ------------------------
+//
+// removeNode() takes the node out of the graph's own list, but the LIVE RENDER SEQUENCE still holds a Node::Ptr to
+// it. JUCE hands the old sequence back to the message thread only after the AUDIO thread has swapped:
+//     set(next)                  -> mainThreadState = next, isNew = true        (message thread)
+//     updateAudioThreadState()   -> swap(main, audio), isNew = false            (audio thread)
+//     timerCallback() every 500ms -> if (! isNew) mainThreadState.reset()        (message thread, frees the old one)
+// When a host stops rendering - which is exactly what Logic does while closing a project - the swap never happens,
+// isNew stays true, the timer never frees anything, and BOTH sequences die inside the graph destructor during
+// AP_Close. That is where the Softube CL 1B's ACFShutdown double-free lands, and it is why 4 Oct's clean runs were
+// timing luck rather than a fix: "0 instance(s) parked" was true and the instance was still alive.
+//
+// processBlock() calls updateAudioThreadState() at its top, and JUCE's own code contemplates processBlock running on
+// the message thread (it tests isThisTheMessageThread there). So one silent block pumped from here performs the
+// swap; the exchange's timer then frees the old sequence within 500 ms, on the message thread, while the host is
+// still healthy. Two blocks, because the first swap may only install the sequence we just built.
+void ChainHost::pumpGraphToRetireOldSequence (const char* why)
+{
+    if (graph_ == nullptr || ! prepared_) return;
+    juce::AudioBuffer<float> silence (juce::jmax (2, graph_->getTotalNumInputChannels()),
+                                      juce::jmax (32, blockSize_));
+    silence.clear();
+    juce::MidiBuffer midi;
+    for (int i = 0; i < 2; ++i) graph_->processBlock (silence, midi);
+    EchoJay_NSLog (("ChainHost: pumped the graph twice to retire the old render sequence (" + juce::String (why)
+                    + ") - the sequence holds a Node::Ptr to every plugin, and a host that has stopped rendering "
+                      "would otherwise leave it to be freed inside AP_Close").toRawUTF8());
+}
+
+// ---- 5 Oct 2026 RULING (b): NEVER DISPOSE A HOSTED THIRD-PARTY PLUGIN INSIDE AP_Close ----------------------
+//
+// The Softube CL 1B's own ACFShutdown frees a pointer it never allocated, aborting the AU host service, and the one
+// place we cannot stop that happening is inside ~AudioProcessorGraph during AP_Close - the host is already tearing
+// down, the render sequences are being destroyed, and there is no healthy moment left. Layer (a) makes the normal
+// path dispose at RELEASE instead. This is the backstop for anything still held when we get here: its instance is
+// kept alive forever rather than disposed at the worst possible moment.
+//
+// A DELIBERATE LEAK, AND DELIBERATELY NOT A STATIC. A function-local static vector would be destroyed during
+// process exit, which disposes the plugins there instead - that is the UAD-2-shaped crash (SIGSEGV under exit and
+// __cxa_finalize_ranges) already on file. A heap allocation nobody ever frees has no destructor to run, so the
+// instances outlive the process cleanly. The memory is returned by the OS when the process goes.
+//
+// Only PLUGIN nodes are kept: our own built-ins and the trim/blend nodes are ours and dispose safely.
+// The one keep-forever store, shared by both teardown paths (live slots and anything still parked).
+//
+// THE POINTER is static; THE VECTOR IS NEVER DESTROYED. That distinction is the whole point: a static vector OBJECT
+// would be destroyed during process exit and would dispose these plugins there, which is the UAD-2-shaped crash
+// under exit/__cxa_finalize_ranges already on file. A static POINTER has a trivial destructor, so the vector it
+// points at - and every Node::Ptr in it - outlives the process cleanly. Do not "tidy" this into a static object.
+bool ChainHost::keepHostedNodeForever (const juce::AudioProcessorGraph::Node::Ptr& node, const juce::String& name)
+{
+    if (node == nullptr) return false;
+    auto* proc = node->getProcessor();
+    if (proc == nullptr) return false;
+    // A hosted plugin is one we did not write. Built-ins are ours and tear down safely, so they are left alone.
+    if (dynamic_cast<juce::AudioPluginInstance*> (proc) == nullptr) return false;
+    static std::vector<juce::AudioProcessorGraph::Node::Ptr>* const keepForever
+        = new std::vector<juce::AudioProcessorGraph::Node::Ptr>();
+    keepForever->push_back (node);
+    juce::ignoreUnused (name);
+    return true;
+}
+
+void ChainHost::leakHostedPluginsAtTeardown()
+{
+    if (graph_ == nullptr) return;
+    juce::StringArray kept;
+    for (auto& s : slots_)
+        if (keepHostedNodeForever (s.node, s.desc.name)) kept.add (s.desc.name);
+    if (! kept.isEmpty())
+        EchoJay_NSLog (("ChainHost: teardown KEPT " + juce::String (kept.size())
+                        + " hosted plugin instance(s) alive on purpose [" + kept.joinIntoString (", ")
+                        + "] - disposing a third-party AU inside AP_Close is what aborts on the Softube CL 1B."
+                          " This is a deliberate leak at teardown only; the OS reclaims it when the process exits.")
+                           .toRawUTF8());
+}
+
+void ChainHost::clearBorrowPoolForTeardown()
+{
+    if (! borrowPool_.empty() || ! planPark_.empty())
+    {
+        int removed = 0;
+        auto drop = [&] (const juce::AudioProcessorGraph::Node::Ptr& n)
+        {
+            if (n == nullptr || graph_ == nullptr) return;
+            if (auto* p = n->getProcessor()) { p->suspendProcessing (true); p->releaseResources(); }
+            // 5 Oct 2026: a HOSTED plugin is kept alive rather than removed. removeNode only drops the graph's
+            // reference - the render sequence may still hold one, and then the dispose lands in AP_Close, which is
+            // the crash. Ours are removed as before.
+            if (! keepHostedNodeForever (n, {})) graph_->removeNode (n->nodeID);
+            ++removed;
+        };
+        // Exactly one of proc/node is set per entry. A PARKED node lives in the graph; a FRESH-STAGED `proc` is a
+        // unique_ptr held outside it, which would otherwise be disposed implicitly when the map clears - later in
+        // this same teardown, and at a moment nothing states. Both are dealt with here, explicitly.
+        int staged = 0;
+        auto dropStaged = [&] (std::unique_ptr<juce::AudioProcessor>& up)
+        {
+            if (up == nullptr) return;
+            up->releaseResources();
+            up.reset();
+            ++staged;
+        };
+        for (auto& kv : borrowPool_) for (auto& e : kv.second) { drop (e.node); dropStaged (e.proc); }
+        for (auto& kv : planPark_)   for (auto& e : kv.second) { drop (e.node); dropStaged (e.proc); }
+        borrowPool_.clear(); planPark_.clear(); borrowPoolTotal_ = 0;
+        // HONEST LIMIT: this makes the disposal ORDERED and VISIBLE, at the top of the teardown with the graph
+        // still whole - it does NOT move the disposal out of the teardown, which is the condition that crashes.
+        // The protection against the crash is the new default (destroy at release), which means there is normally
+        // nothing here to remove at all. A non-zero count in this line is therefore a finding, not routine.
+        EchoJay_NSLog(("EJBorrowPool: teardown removed " + juce::String(removed) + " parked and "
+                       + juce::String(staged) + " staged instance(s) before the graph was destroyed"
+                       + (removed + staged > 0
+                              ? " - NOTE: with destroy-on-release as the default this should be 0; disposing a"
+                                " borrowed instance from inside ~EchoJayProcessor is what aborts the Softube CL 1B"
+                              : "")).toRawUTF8());
+    }
+
+}
+
 ChainHost::~ChainHost()
 {
     // 21r item 2(b): a stepped-text sweep may still be running in a child process. It holds a token, not this
@@ -978,6 +1126,9 @@ ChainHost::~ChainHost()
     *settleAlive_ = false;   // a settle tick that fires after this dies must not touch us
     cancelFlag_.store(true);
     if (scanThread_.joinable()) scanThread_.join();
+
+    clearBorrowPoolForTeardown();
+    leakHostedPluginsAtTeardown();
 
     // Stop the cache timer and drop every listener BEFORE the nodes are
     // parked in the process-lifetime store. Those instances outlive us by
@@ -1031,6 +1182,21 @@ ChainHost::~ChainHost()
     for (auto& n : graveyard_)
         if (n) leakedNodeStore().push_back(n);
     graveyard_.clear();
+    // 6 Oct 2026: AND THE ONES AWAITING DISPOSAL, which 05c introduced and this did not cover. pendingDispose_
+    // holds the LAST reference to a released hosted AU on purpose, so letting the vector die with the object would
+    // run AudioComponentInstanceDispose inside ~ChainHost - i.e. inside AP_Close, which is the exact crash the
+    // pending list exists to prevent. At teardown the process-lifetime store takes them, like every other node
+    // here: a deliberate leak at exit is the ruled answer, and exit is the only place it is allowed.
+    if (! pendingDispose_.empty())
+    {
+        EchoJay_NSLog(("ChainHost: teardown took " + juce::String((int) pendingDispose_.size())
+                       + " instance(s) still awaiting disposal into the process-lifetime store - they are NOT"
+                         " disposed here, because here is AP_Close").toRawUTF8());
+        for (auto& n : pendingDispose_)
+            if (n) leakedNodeStore().push_back(n);
+        pendingDispose_.clear();
+        pendingDisposeTries_.clear();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1748,14 +1914,19 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
         // Slot wet/dry from the model: "wet_pct" 0..100. Numbers clamp;
         // anything else is absent (the knob is left alone) and logged, so
         // a wrong type never silently reads as 0% or 100%.
+        // wet_pct: a number, or absent. NOT LOGGED HERE (3 Oct 2026). I put a "RECEIVED" line here on 2 Oct to
+        // answer where a slot wet of 0.250 came from, and this is a PURE PARSE that the edit card re-runs every
+        // frame: Sean's 08:03 session carried 10,526 of them in two and a half minutes, about seventy a second.
+        // Logging inside a parser logs the render loop, not the event. The figure is reported once per edit where
+        // it is CONSUMED instead - see applyChainEdits - and nothing was re-applied by the re-parsing: this
+        // function only builds ops and returns them.
         if (eo->hasProperty("wet_pct"))
         {
             const auto wv = eo->getProperty("wet_pct");
             if (wv.isDouble() || wv.isInt() || wv.isInt64())
                 op.wetPct = juce::jlimit(0.0f, 100.0f, (float)(double) wv);
             else
-                EchoJay_NSLog(("EJEdit: wet_pct on op \"" + op.op + "\" is not a number ("
-                               + wv.toString() + "); ignored").toRawUTF8());
+                op.wetPctBadType = true;      // reported once, at apply time
         }
         // 21t-i: level_match carries members. Counted here so the card can SAY what it will do and, more to the
         // point, so this op produces a ROW - a card with no rows has no height, and a card with no height gets no
@@ -2045,6 +2216,60 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
             if (o.to   >= 0) touched.insert(o.to);
             if (o.after >= 0) touched.insert(o.after);
         }
+        // ---- "NO BASE STATED" IS NEVER A REFUSAL (3 Oct 2026 ruling, Sean's 08:03 session) ----------------
+        //
+        // His "harder" turn was refused with `base=0 [] live=4` while the rack was intact - the apply line itself
+        // had already printed live=4. The reply carried no base list (the turn went out as turnType=chain_generate,
+        // which is a separate fault), and an ABSENT list was compared as though it described an empty rack: every
+        // touched index then looked like a slot the rack "no longer has". A missing optional field must not become
+        // a refusal.
+        //
+        // With no base list there is still one thing worth checking, and the op carries it: `op.name`, the plugin
+        // the edit is ABOUT. If the live slot at that index holds something else, the rack has moved under the edit
+        // and refusing is right - which is what catches a removed slot, because removing slot 2 of 4 leaves index 1
+        // in range holding what used to be slot 3. An index past the end of the live rack is gone outright.
+        //
+        // NOT DONE, and it is Sean's call: his ruling also says to compare the rev of the [CURRENT CHAIN] snapshot
+        // the turn actually sent. The borrowed path passes expectedRevision = -1 - the turn does not retain what it
+        // sent - so there is nothing here to compare against yet. Adding plumbing unattended risked the SILENT
+        // direction (compare against the live rev, which always matches, so nothing ever refuses and a genuinely
+        // stale edit applies), which is worse than today. The identity check below gives both legs he asked for.
+        if (baseSlots.isEmpty())
+        {
+            // ...AND ONLY AN OP THAT NAMES AN EXISTING SLOT IS JUDGED THIS WAY. `touched` deliberately merges
+            // o.slot, o.to and o.after, because for the base-list guard below any of them can be a slot the
+            // preview described. Here they are not the same thing: `after` and a move's `to` are INSERTION
+            // POINTS, and an insertion point one past the end is how you add to the end of a rack. The first cut
+            // walked `touched` and refused `add after 0` on an empty rack with "the rack does not have that
+            // slot" - which is every build, and ui_guard's 21t-h/21t-i legs said so in one run. The index that
+            // has to exist is `o.slot`, on the ops that act on a slot already there.
+            for (const auto& o : ops)
+            {
+                if (o.op == "add" || o.slot < 0) continue;      // an add's slot is where it is going, not what is there
+                if (o.slot >= n)
+                {
+                    EchoJay_NSLog(("EJEdit: preflight REFUSED guard=touched-slot-gone slot=" + juce::String(o.slot)
+                                   + " live=" + juce::String(n) + " op=" + o.op + " (no base list stated; the index "
+                                     "is past the end of the rack)").toRawUTF8());
+                    return abort("this edit works on slot " + juce::String(o.slot + 1)
+                                 + ", and the rack does not have that slot - ask again");
+                }
+                if (o.name.isEmpty()) continue;
+                if (! namesMatchLoose(o.name, slots_[(size_t) o.slot].desc.name))
+                {
+                    EchoJay_NSLog(("EJEdit: preflight REFUSED guard=touched-slot-identity slot="
+                                   + juce::String(o.slot) + " op names \"" + o.name + "\" live=\""
+                                   + slots_[(size_t) o.slot].desc.name
+                                   + "\" (no base list stated, so the op's own name is the identity)").toRawUTF8());
+                    return abort("this edit expected \"" + o.name + "\" at slot " + juce::String(o.slot + 1)
+                                 + ", but the rack has \"" + slots_[(size_t) o.slot].desc.name
+                                 + "\" - ask again");
+                }
+            }
+            EchoJay_NSLog(("EJEdit: no base list stated - judged on the ops' own identities against the live rack "
+                           "(" + juce::String(n) + " slot(s)); not refused for an absent field").toRawUTF8());
+        }
+        else
         for (int i : touched)
         {
             const bool haveBase = i < baseSlots.size();
@@ -2069,6 +2294,22 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
                              + slots_[(size_t) i].desc.name + "\" there - ask again");
             }
         }
+    }
+    // 3 Oct 2026: THE WET FIGURES, ONCE PER EDIT, where they are consumed. This replaces the per-parse line that
+    // flooded Sean's 08:03 log (10,526 lines, ~70/s, because the edit card re-parses every frame). One line, and it
+    // says ABSENT explicitly - if a slot wet lands with no wet_pct received, the value is ours and the hunt is here.
+    {
+        juce::String wetSummary;
+        for (const auto& o : ops)
+        {
+            if (o.op != "set_wet" && o.wetPct < 0.0f && ! o.wetPctBadType) continue;
+            wetSummary << (wetSummary.isEmpty() ? "" : ", ") << o.op << "@" << juce::String(o.slot)
+                       << (o.wetPctBadType ? juce::String("=NOT-A-NUMBER (ignored)")
+                          : o.wetPct >= 0.0f ? "=" + juce::String(o.wetPct, 2) + "%"
+                                             : juce::String("=ABSENT"));
+        }
+        if (wetSummary.isNotEmpty())
+            EchoJay_NSLog(("EJEdit: wet_pct on this edit: " + wetSummary).toRawUTF8());
     }
     EchoJay_NSLog(("EJEdit: staleness guards passed rev=" + juce::String(getChainRevision())
                    + " slots=" + juce::String(n) + " base=" + juce::String(baseSlots.size())
@@ -2869,6 +3110,15 @@ void ChainHost::setSlotWet(int i, float wet01, WetSource src)
         else pushUndo("wet " + s.desc.name, "wet" + juce::String(i));   // 21m undo: one step per knob gesture (coalesced)
     }
     s.wet = juce::jlimit(0.0f, 1.0f, wet01);
+    // 2 Oct 2026 (Sean's 14:20 finding 2): SAY WHAT THE BUILD WROTE, and on which host. His UAD Pure Plate card
+    // showed a 25% mix knob with no slot-wet write anywhere in the session - the server sent the plugin's own Mix
+    // control (0.425 -> "12 %") and no wet_pct at all, so nothing here ran and the knob's figure had no provenance
+    // that could be checked afterwards. One line, at the single point every Assistant wet write passes, including
+    // a build on a BORROWED host (a Link rack), which is the case that had no evidence at all.
+    if (src == WetSource::Assistant)
+        EchoJay_NSLog(("EJCtrl: slotWet build idx=" + juce::String(i) + " value=" + juce::String(s.wet, 3)
+                       + " (\"" + s.desc.name + "\"" + (isBorrowed() ? ", borrowed host" : ", own rack")
+                       + ")").toRawUTF8());
     bumpChainValue();   // ruling 2 (21s-b): a VALUE write, not a structural edit
     if (!s.wetShared)   // slot not rebuilt yet (e.g. restore) — value rides in s.wet
         s.wetShared = std::make_shared<std::atomic<float>>(s.wet);
@@ -3619,11 +3869,23 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
             slot.desc.manufacturerName = pi->getPluginDescription().manufacturerName;
     // Discriminator log (2 Sep): one side of the write; the projection's
     // EJPane line is the other. The timestamps say which candidate holds.
+    // 4 Oct 2026: HOW LONG AFTER THE ENGAGE THIS SLOT BECAME AVAILABLE. The cost of destroy-on-release is paid
+    // here, in createPluginInstance (and for a PACE plugin, its authorisation handshake) - not at the engage, which
+    // only sets the session up. The LAST slot's figure is the one that answers "how much slower is a fresh engage".
+    const juce::String sinceEngage = engageStampMs_ > 0.0
+        ? ", +" + juce::String((juce::Time::getMillisecondCounterHiRes() - engageStampMs_) / 1000.0, 2)
+                + " s since engage"
+        : juce::String();
     EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
-                   + slot.desc.manufacturerName + "\" (async load"
+                   + slot.desc.manufacturerName + "\"" + sinceEngage + " (async load"
                    + juce::String(attachBypassed_.load(std::memory_order_acquire)
                                       ? ", attached BYPASSED under the lease" : "")
                    + ")").toRawUTF8());
+    // 3 Oct 2026 (Kathy): THE HOST SAMPLE RATE AT SLOT LOAD. A profile measured at 48 k and a session running at
+    // 44.1 k is one of the three candidates for the CL 1B's constant 0.7 dB gap (the others being a Gain stage off
+    // neutral and the tap position), and it is the one that is free to rule in or out from a log line.
+    EchoJay_NSLog(("EJPlace: \"" + slot.desc.name + "\" loaded at host sampleRate="
+                   + juce::String(sampleRate_, 0) + " Hz").toRawUTF8());
     // v9 change A: the slot arrives in the lease's TARGET state - one write,
     // never un-bypassed-then-corrected. attachBypassed_ is set by the Link's
     // rack lease before it bypasses the existing slots and cleared after it
@@ -4811,6 +5073,186 @@ void ChainHost::logDialSummary(const juce::String& reason) const
 }
 
 // ---- COMP_PROFILE_SPEC_v1 item 2: THE SERVER'S EXPECTATIONS, AND THE PROFILE ------------------------------
+// 3 Oct 2026 (13:52 item 2): THE LOOP'S TARGET AND LAST READING, kept on the slot so [CURRENT CHAIN] can state
+// them. They are not stored on the loop's own side because the injection is built from the RACK, and because both
+// hosts (this instance's own chain and a borrowed one) advance loops through this same object.
+void ChainHost::setSlotGrState (int slotIndex, float targetLoDb, float targetHiDb, float lastGrDb)
+{
+    if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size())) return;
+    auto& s = slots_[(size_t) slotIndex];
+    s.grTargetLoDb = targetLoDb;
+    s.grTargetHiDb = targetHiDb;
+    s.lastGrDb     = lastGrDb;
+}
+
+// 3 Oct 2026 (Kathy, refined): THE UNIT'S LOW-LEVEL GAIN, MEASURED LIVE AND ONLY BELIEVED WHEN CONFIRMED.
+//
+// static_gain_db is "output minus input at the unit's low-level gain under the profile's neutral settings". The
+// CL 1B reads a constant 0.7 dB under its profile, and this answers whether that 0.7 exists in OUR chain at all.
+//
+// WHY A CONFIRMATION TEST AND NOT JUST A MEDIAN. "Below threshold" is a claim, and a unit that is quietly
+// compressing in the region we chose would give a stable, wrong figure - exactly the kind of number that reads as
+// evidence. So the samples are split into two input bands at least 6 dB apart and the figure is reported only if
+// both bands agree within 0.1 dB: a true low-level gain is level-INDEPENDENT, so the two bands must match, while
+// a unit still working shows a different ratio in each. Disagreement is reported as a disagreement, with both
+// figures, rather than averaged into one confident-looking number.
+//
+// A MEDIAN, not a mean: one window straddling the start of a phrase is a wrong sample, and a mean carries it
+// forever while a median ignores it.
+void ChainHost::noteLowLevelGainSample (int slotIndex, float inDbfs, float outMinusInDb, bool confirmedGate)
+{
+    if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size())) return;
+    if (! std::isfinite (inDbfs) || ! std::isfinite (outMinusInDb)) return;
+    auto& s = slots_[(size_t) slotIndex];
+    // A CHANGE OF GATE STARTS THE MEASUREMENT AGAIN. Samples taken against the track's loud level and samples
+    // taken against the block's own 1 dB point are selected by different rules; mixing them would make the two
+    // bands incomparable and the "unconfirmed" tag a lie about half the data.
+    if (s.lowGainCount > 0 && s.lowGainConfirmedGate != confirmedGate)
+    { s.lowGainCount = 0; s.lowGainPos = 0; }
+    s.lowGainConfirmedGate = confirmedGate;
+    s.lowGainRing[(size_t) s.lowGainPos] = { inDbfs, outMinusInDb };
+    s.lowGainPos = (s.lowGainPos + 1) % ChainSlot::kLowGainRing;
+    ++s.lowGainCount;
+}
+
+// ---- 4 Oct 2026 RULING: THE PASSIVE LOW-LEVEL-GAIN WATCH ---------------------------------------------------
+//
+// A hold block runs one window and stops, so the measurement never gathered on exactly the slots it was wanted for.
+// After a loop lands, the slot keeps being measured for this ONE purpose. No loop, no writes, no stepping - the
+// same gates, the same store, the same two-band confirmation. Cleared on the next edit or rack release, so it never
+// outlives the setting it describes.
+void ChainHost::armLowGainWatch (int slotIndex, float gr1Db)
+{
+    if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size())) return;
+    auto& s = slots_[(size_t) slotIndex];
+    // ALREADY WATCHING: KEEP THE COUNT (5 Oct 2026). The caller arms on every window after the landing, because a
+    // build hold lands and stays open rather than finishing. Resetting the window count here would hold it at 0
+    // forever, so the eighth-window report would never print and the watch would look dead while it was running.
+    // The gate is still refreshed: the 1 dB point moves when the amount control moves, and the newer figure is the
+    // right one to gate against.
+    if (s.lowGainWatch)
+    {
+        s.lowGainWatchGr1Db = gr1Db;
+        return;
+    }
+    s.lowGainWatch = true;
+    s.lowGainWatchGr1Db = gr1Db;
+    s.lowGainWatchLastMs = 0.0;
+    s.lowGainWatchWindows = 0;
+    EchoJay_NSLog(("EJLowGain: watching slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
+                   + "\") after it landed - measuring its low-level gain only, no writes"
+                   + (std::isfinite(gr1Db) ? ", gate 6 dB under " + juce::String(gr1Db, 1) + " dBFS"
+                                           : ", unconfirmed fallback gate (track loudness - 10)")).toRawUTF8());
+}
+
+void ChainHost::clearLowGainWatch (int slotIndex, const juce::String& why)
+{
+    if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size())) return;
+    auto& s = slots_[(size_t) slotIndex];
+    if (! s.lowGainWatch) return;
+    s.lowGainWatch = false;
+    EchoJay_NSLog(("EJLowGain: stopped watching slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
+                   + "\") after " + juce::String(s.lowGainWatchWindows) + " window(s) - " + why).toRawUTF8());
+}
+
+void ChainHost::tickLowGainWatch()
+{
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        auto& s = slots_[(size_t) i];
+        if (! s.lowGainWatch || s.bypassed) continue;
+        // ONE WINDOW AT A TIME, BY THE CLOCK. A tick count would measure how often we are called; three seconds is
+        // the same window the loop judges on.
+        if (s.lowGainWatchLastMs > 0.0 && nowMs - s.lowGainWatchLastMs < 3000.0) continue;
+
+        const auto lv = getSlotLevels(i);
+        if (! lv.measured || ! lv.in.known || ! lv.out.known) continue;
+        const float inDb = lv.in.shortTermDb, outDb = lv.out.shortTermDb;
+        if (! std::isfinite(inDb) || ! std::isfinite(outDb) || inDb <= -60.0f) continue;
+
+        const bool haveGr1 = std::isfinite(s.lowGainWatchGr1Db);
+        const auto tl = trackLevelReading();
+        const float ceilingDb = haveGr1 ? s.lowGainWatchGr1Db - 6.0f
+                                        : (tl.valid ? tl.loudRmsDbfs - 10.0f
+                                                    : std::numeric_limits<float>::quiet_NaN());
+        if (! std::isfinite(ceilingDb) || inDb > ceilingDb) { s.lowGainWatchLastMs = nowMs; continue; }
+
+        noteLowLevelGainSample(i, inDb, outDb - inDb, haveGr1);
+        s.lowGainWatchLastMs = nowMs;
+        ++s.lowGainWatchWindows;
+        // A COUNT EVERY EIGHTH WINDOW, not every one: at 3 s a window that is one line every 24 s per watched slot,
+        // which is readable in a session log rather than a flood.
+        if (s.lowGainWatchWindows % 8 == 0)
+        {
+            LowGainReading r;
+            const bool have = lowLevelGain(i, r);
+            EchoJay_NSLog(("EJLowGain: slot " + juce::String(i + 1) + " (\"" + s.desc.name + "\") "
+                           + echojay::CalibLoop::lowGainLine(have, r.medianDb, r.loBandDb, r.hiBandDb,
+                                                             r.rangeLoDbfs, r.rangeHiDbfs, r.samples,
+                                                             r.twoBandAgreed, r.confirmedGate,
+                                                             std::numeric_limits<float>::quiet_NaN())
+                           + " after " + juce::String(s.lowGainWatchWindows) + " watched window(s)").toRawUTF8());
+        }
+    }
+}
+
+bool ChainHost::lowLevelGain (int slotIndex, LowGainReading& out) const
+{
+    out = LowGainReading();
+    if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size())) return false;
+    const auto& s = slots_[(size_t) slotIndex];
+    const int n = juce::jmin (s.lowGainCount, (int) ChainSlot::kLowGainRing);
+    out.samples = s.lowGainCount;
+    out.confirmedGate = s.lowGainConfirmedGate;
+    // SIX SAMPLES, THREE PER BAND. Fewer cannot support two medians, and a median of one or two is just the
+    // sample itself wearing a statistic's name.
+    if (n < 6) return false;
+
+    float lo = s.lowGainRing[0].inDbfs, hi = lo;
+    for (int i = 1; i < n; ++i)
+    { lo = juce::jmin (lo, s.lowGainRing[(size_t) i].inDbfs); hi = juce::jmax (hi, s.lowGainRing[(size_t) i].inDbfs); }
+    out.rangeLoDbfs = lo; out.rangeHiDbfs = hi;
+
+    auto medianOf = [] (std::vector<float> v) -> float
+    {
+        if (v.empty()) return std::numeric_limits<float>::quiet_NaN();
+        std::sort (v.begin(), v.end());
+        const size_t m = v.size() / 2;
+        return (v.size() % 2 == 1) ? v[m] : 0.5f * (v[m - 1] + v[m]);
+    };
+
+    std::vector<float> all, loBand, hiBand;
+    all.reserve ((size_t) n);
+    const float mid = 0.5f * (lo + hi);
+    for (int i = 0; i < n; ++i)
+    {
+        const auto& sm = s.lowGainRing[(size_t) i];
+        all.push_back (sm.outMinusInDb);
+        (sm.inDbfs <= mid ? loBand : hiBand).push_back (sm.outMinusInDb);
+    }
+    out.medianDb = medianOf (all);
+
+    // THE TWO BANDS MUST BE FAR ENOUGH APART TO MEAN ANYTHING, and each must have enough samples to have a median.
+    // kBandSpanDb is Kathy's 6 dB: closer together and "level-independent" has not been tested.
+    constexpr float kBandSpanDb = 6.0f, kAgreeDb = 0.1f;
+    if (hi - lo < kBandSpanDb || loBand.size() < 3 || hiBand.size() < 3) return true;   // a figure, not yet confirmed
+    out.loBandDb = medianOf (loBand);
+    out.hiBandDb = medianOf (hiBand);
+    out.twoBandAgreed = std::abs (out.loBandDb - out.hiBandDb) <= kAgreeDb;
+    return true;
+}
+
+bool ChainHost::slotGrState (int slotIndex, float& targetLoDb, float& targetHiDb, float& lastGrDb) const
+{
+    if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size())) return false;
+    const auto& s = slots_[(size_t) slotIndex];
+    targetLoDb = s.grTargetLoDb; targetHiDb = s.grTargetHiDb; lastGrDb = s.lastGrDb;
+    // TRUE means "this slot has something to say", which is either figure on its own: a loop that has just
+    // started has a target and no reading, and that is exactly the state the server most needs to see.
+    return (s.grTargetLoDb == s.grTargetLoDb) || (s.lastGrDb == s.lastGrDb);
+}
+
 void ChainHost::setSlotExpectations (int slotIndex, float expectedGrDb, float expectedLevelDb)
 {
     if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size())) return;
@@ -4843,11 +5285,36 @@ juce::var ChainHost::slotCompProfile (int slotIndex) const
 {
     if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size())) return {};
     const auto& s = slots_[(size_t) slotIndex];
-    if (s.fp.isEmpty()) return {};                       // a built-in carries no fingerprint, so no profile
+    // THREE SILENT RETURNS, NOW SPOKEN (3 Oct 2026, Sean's 08:03 session). His loop ran on the CREST sensor
+    // because hasProfile was false, and nothing in a 69 MB log said why: all three of these returned void without
+    // a word. The only EJCompProfile lines in that session were setSlotExpectations' - the BLOCK's expected_gr_db
+    // landing on the slot - which is a different thing and reads like an attached profile if you are not looking
+    // closely. Each return now names itself, and names the consequence.
+    if (s.fp.isEmpty())
+    {
+        EchoJay_NSLog (("EJCompProfile: slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name
+                        + "\") has NO FINGERPRINT, so no profile can be keyed to it - the loop falls back to the "
+                          "crest sensor").toRawUTF8());
+        return {};
+    }
     const auto it = paramMaps_.find (s.fp);
-    if (it == paramMaps_.end()) return {};
+    if (it == paramMaps_.end())
+    {
+        EchoJay_NSLog (("EJCompProfile: slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name
+                        + "\") has NO PARAMETER MAP for fp " + s.fp.substring (0, 12)
+                        + "... - so no comp_profile either; the loop falls back to the crest sensor").toRawUTF8());
+        return {};
+    }
     const auto prof = it->second.getProperty ("comp_profile", juce::var());
-    if (! prof.isObject()) return {};
+    if (! prof.isObject())
+    {
+        EchoJay_NSLog (("EJCompProfile: slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name
+                        + "\") HAS a map for fp " + s.fp.substring (0, 12)
+                        + "... but it carries NO comp_profile - the server attached none for this binary. The loop "
+                          "falls back to the crest sensor, and static_gain_db is unavailable because the whole "
+                          "profile is.").toRawUTF8());
+        return {};
+    }
     // ITEM 3 (COMP_PROFILE_SPEC_v1 v1.1, section 3 field rules): THE JOIN KEY IS THE FULL 64-HEX FINGERPRINT.
     // "The `fp=` in EJDialSummary logs is only its first 12 characters and will not match." A profile carrying a
     // map_fp that is not this slot's full fingerprint is a profile for another binary, and using it would dial a
@@ -5979,10 +6446,60 @@ void ChainHost::markBorrowPoolIneligible(const juce::PluginDescription& d,
                    "instantiate fresh").toRawUTF8());
 }
 
+/** Let go of released hosted AUs once nothing else holds them. Message thread only: letting go of the last
+    reference IS AudioComponentInstanceDispose, and that must never happen on the audio thread, at AP_Close, or
+    inside a library another plugin has already shut down. See the note in the header. */
+void ChainHost::drainPendingDispose (const char* why)
+{
+    if (pendingDispose_.empty()) return;
+    // kDisposeTries x the processor's timer period is the budget. JUCE's exchange frees the retired sequence on a
+    // 500 ms timer, so a couple of seconds is generous; past that something is genuinely holding it and we choose a
+    // leak over a crash - loudly, and counted, so a guard can insist this never happens on the normal path.
+    static constexpr int kDisposeTries = 8;
+    for (int i = (int) pendingDispose_.size(); --i >= 0;)
+    {
+        auto& n = pendingDispose_[(size_t) i];
+        if (n == nullptr) { pendingDispose_.erase (pendingDispose_.begin() + i);
+                            pendingDisposeTries_.erase (pendingDisposeTries_.begin() + i); continue; }
+        const int refs = n->getReferenceCount();
+        const juce::String nm = n->getProcessor() != nullptr ? n->getProcessor()->getName() : juce::String ("(gone)");
+        if (refs <= 1)
+        {
+            EchoJay_NSLog(("EJBorrowPool: disposing \"" + nm + "\" now - nothing else holds it ("
+                           + juce::String (why) + "); this is the ONE dispose of this instance").toRawUTF8());
+            pendingDispose_.erase (pendingDispose_.begin() + i);          // the dispose happens on this line
+            pendingDisposeTries_.erase (pendingDisposeTries_.begin() + i);
+            continue;
+        }
+        if (++pendingDisposeTries_[(size_t) i] >= kDisposeTries)
+        {
+            // A LEAK IS THE LESSER EVIL, BUT IT IS NOT FREE AND IT IS NOT SILENT.
+            ++disposeFallbackCount_;
+            EchoJay_NSLog(("EJBorrowPool: ERROR - \"" + nm + "\" is STILL held (refs=" + juce::String (refs)
+                           + ") after " + juce::String (kDisposeTries) + " attempts (" + juce::String (why)
+                           + "); LEAKING it deliberately rather than disposing into an unknown holder. This should"
+                             " never happen on a healthy release - if it does, something outside this class owns a"
+                             " hosted node and that is the bug to find.").toRawUTF8());
+            keepHostedNodeForever (n, nm);
+            pendingDispose_.erase (pendingDispose_.begin() + i);
+            pendingDisposeTries_.erase (pendingDisposeTries_.begin() + i);
+        }
+    }
+}
+
 void ChainHost::releaseBorrowToPool()
 {
     GraphMutation graphMutation(*this);   // v9 change B
     if (mode_ != Mode::Borrowed || !graph_) return;
+    drainPendingDispose ("a new release began");   // never let two releases' orphans pile up
+    // 6 Oct 2026 (approved): SAY WHERE THE TIME GOES. On 5 Oct this function logged five destroys and then nothing
+    // for 17 seconds, and the crash came out of the silence - we could not even tell whether the stall was before or
+    // inside slots_.clear(). Every step now says it happened, and anything over the watchdog says how long it took,
+    // so the next stall names a plugin instead of a gap in the log.
+    const double releaseT0 = juce::Time::getMillisecondCounterHiRes();
+    auto sinceT0 = [releaseT0] { return juce::String (juce::Time::getMillisecondCounterHiRes() - releaseT0, 1); };
+    EchoJay_NSLog(("EJBorrowPool: release ENTERED with " + juce::String((int) slots_.size())
+                   + " slot(s)").toRawUTF8());
     for (int i = 0; i < (int) slots_.size(); ++i)
     {
         auto& s = slots_[(size_t) i];
@@ -6005,11 +6522,48 @@ void ChainHost::releaseBorrowToPool()
         // once, after the seed. (JUCE's Node::processor is private, so a parked
         // node cannot be lifted out of the graph — only a FRESH-staged instance,
         // which never enters the graph until attach, gets the pure spec path.)
+        s.lowGainWatch = false;   // 4 Oct: the rack is going; the measurement describes a setting that no longer exists
         if (auto* p = s.node->getProcessor()) { p->suspendProcessing(true); p->releaseResources(); }
         if (noReuseActive())
         {
-            graph_->removeNode(s.node->nodeID);   // NO-REUSE experiment: destroy
-            EchoJay_NSLog(("EJNoReuse: destroyed \"" + s.desc.name + "\" on release (flag on)").toRawUTF8());
+            // ---- 5 Oct 2026: THE DISPOSAL HAPPENS HERE, AND THE LOG PROVES IT ------------------------------
+            // removeNode drops the GRAPH's reference; the live render sequence still holds one. Keeping our own
+            // Node::Ptr across the pump lets us see when everything else has let go: a reference count of 1 means
+            // the graph and both sequences are done with it, so the AU is disposed when `keep` leaves this scope -
+            // on the message thread, at release, with the host healthy. If it is still above 1 the dispose would
+            // have been deferred into AP_Close, which is the crash, and the line says so.
+            auto keep = s.node;
+            const auto nm = s.desc.name;
+            // THE SLOT STOPS OWNING IT HERE (5 Oct 2026). This was the 18:30:46 crash: s.node stayed set, so the
+            // reference count below counted the slot as well, and - worse - ~ChainSlot could dispose the AU later,
+            // at a moment nobody chose. From here exactly ONE owner exists, the local `keep`, and letting go of it
+            // IS the dispose.
+            s.node = nullptr;
+            graph_->removeNode(keep->nodeID);
+            pumpGraphToRetireOldSequence ("borrowed rack released");
+            const int refs = keep->getReferenceCount();
+            if (refs <= 1)
+            {
+                EchoJay_NSLog(("EJBorrowPool: destroyed \"" + nm + "\" on release (default: a borrowed instance is"
+                               " not parked); node refs after the pump = " + juce::String(refs)
+                               + " - disposed HERE, on the message thread [+" + sinceT0() + " ms]").toRawUTF8());
+            }
+            else
+            {
+                // STILL HELD, and the holder is JUCE's RenderSequenceExchange: it frees the retired sequence in its
+                // own 500 ms timerCallback, which cannot run while we are inside release on this thread. Letting go
+                // now would hand the last reference to that sequence and the AU would be disposed at whatever later
+                // moment it happened to be freed - which is the crash, because by then another plugin may have torn
+                // down a shared library they both use. So WE keep the last reference and dispose it ourselves, on
+                // this thread, as soon as nothing else holds it.
+                EchoJay_NSLog(("EJBorrowPool: destroyed \"" + nm + "\" on release; node refs after the pump = "
+                               + juce::String(refs) + " - the retired render sequence has not let go yet, so the"
+                               " dispose is HELD HERE and will happen on the message thread once it does (never at"
+                               " AP_Close, never into a library another plugin has shut down) [+" + sinceT0()
+                               + " ms]").toRawUTF8());
+                pendingDispose_.push_back (keep);
+                pendingDisposeTries_.push_back (0);
+            }
         }
         else
         {
@@ -6019,6 +6573,8 @@ void ChainHost::releaseBorrowToPool()
         // The wet-blend node is OURS — destroy for real, as removeSlot does.
         if (s.blendNode) graph_->removeNode(s.blendNode->nodeID);
     }
+    EchoJay_NSLog(("EJBorrowPool: release about to clear " + juce::String((int) slots_.size())
+                   + " slot(s) [+" + sinceT0() + " ms]").toRawUTF8());
     slots_.clear();
     borrowReusedNodeIds_.clear();
     borrowSeededNodeIds_.clear();
@@ -6029,8 +6585,18 @@ void ChainHost::releaseBorrowToPool()
         graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
         graph_->prepareToPlay(sampleRate_, blockSize_);
     }
+    const double releaseMs = juce::Time::getMillisecondCounterHiRes() - releaseT0;
     EchoJay_NSLog(("EJBorrowPool: rack released, " + juce::String((int) borrowPoolTotal_)
-                   + " instance(s) parked").toRawUTF8());
+                   + " instance(s) parked" + (reuseActive() ? " (reuse_on)" : " (default: destroyed, not parked)")
+                   + " [completed in " + juce::String (releaseMs, 1) + " ms]").toRawUTF8());
+    // THE WATCHDOG (approved 6 Oct). A release is a handful of graph mutations and should be milliseconds; Sean's
+    // 5 Oct one took 17 SECONDS and said nothing. Anything past half a second is worth a line of its own, because it
+    // means a hosted plugin's own teardown is blocking the message thread - which is also why the Link's heartbeat
+    // stopped dead in that log.
+    if (releaseMs > 500.0)
+        EchoJay_NSLog(("EJBorrowPool: WATCHDOG - the release took " + juce::String (releaseMs, 1)
+                       + " ms, which is far longer than the graph work in it. A hosted plugin's teardown is blocking"
+                         " the message thread; the per-slot lines above say which one.").toRawUTF8());
 }
 
 #if ECHOJAY_DEV_TRANSPORT
@@ -6118,7 +6684,7 @@ void ChainHost::parkSlotReattachable(int i)
         if (noReuseActive())
         {
             graph_->removeNode(s.node->nodeID);   // NO-REUSE experiment: destroy
-            EchoJay_NSLog(("EJNoReuse: destroyed \"" + s.desc.name + "\" on park (flag on)").toRawUTF8());
+            EchoJay_NSLog(("EJBorrowPool: destroyed \"" + s.desc.name + "\" instead of parking (default)").toRawUTF8());
         }
         else
             planPark_[planKeyOf({ s.desc.name,
@@ -6528,9 +7094,14 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
                 // COMMIT 3 (17 Sep 2026): the per-slot wet the user gave the
                 // created slot in the main. A pure value write (atomic, no
                 // graph mutation); absent (-1) leaves the default alone.
+                // RESTORE, not User (2 Oct 2026 ruling, extended to Create): same reason as the Commit and Values
+                // cases below - WetSource::User pushes an undo entry, and this one lands on a slot that did not
+                // exist a moment ago, so the deselect left the Link holding TWO entries for one logical action:
+                // the create, and a wet step for a knob the user turned in V2. The undo for that gesture belongs
+                // on the side where the hand was.
                 if (op.wet >= 0.0f)
                     setSlotWet(juce::jmin(op.to, (int) slots_.size() - 1),
-                               op.wet, WetSource::User);
+                               op.wet, WetSource::Restore);
                 break;
             }
             case OpType::Commit:
@@ -6546,8 +7117,39 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
                 catch (...) { ok = false; why = op.name + " refused the settings"; }
                 popDeathMark(mark);
                 // COMMIT 3: an edited survivor's wet rides its Commit.
+                // ...as a RESTORE, not a User write (2 Oct 2026 ruling). WetSource::User pushes an undo entry, so
+                // a deselect filled the LINK's undo history with one wet step per slot that the user never made -
+                // they turned the knob in V2, and that is where the undo entry belongs. Restore is defined as
+                // "the session's saved value and not a change", which is exactly what a deselect is applying.
                 if (ok && op.wet >= 0.0f)
-                    setSlotWet(op.from, op.wet, WetSource::User);
+                    setSlotWet(op.from, op.wet, WetSource::Restore);
+                // 2 Oct 2026: ...and so does its bypass. The plan carried `byp` on a Create only, so an edited
+                // survivor the user had also bypassed came back un-bypassed.
+                // ONLY WHEN IT DIFFERS: setSlotBypassed calls rebuildGraph() unconditionally, so writing the
+                // value it already holds costs a full graph rebuild for nothing.
+                if (ok && slots_[(size_t) op.from].bypassed != op.bypassed)
+                    setSlotBypassed(op.from, op.bypassed);
+                break;
+            }
+            // VALUES (2 Oct 2026 ruling): wet and bypass for a surviving slot nothing else writes. NO state
+            // payload and NO failure path - these are two value writes on a slot the plan has already decided to
+            // leave as it is, so there is nothing here that could leave the rack half-applied. That matters: a
+            // Commit that cannot read its state rolls the entire deselect back, and a wet knob must never be able
+            // to do that.
+            case OpType::Values:
+            {
+                if (! juce::isPositiveAndBelow(op.from, (int) slots_.size())) break;
+                // RESTORE, never User: a deselect is applying what the user already set in V2, and a User write
+                // pushes an undo entry - one per slot, every deselect, for a gesture made in the other plugin.
+                if (op.wet >= 0.0f) setSlotWet(op.from, op.wet, WetSource::Restore);
+                // ...and bypass ONLY when it differs. setSlotBypassed rebuilds the graph unconditionally, and this
+                // op runs for EVERY surviving slot, so writing the value a slot already holds would cost one full
+                // rebuild per slot on every deselect - the rebuild storm wet_rebuild_guard exists to prevent.
+                if (slots_[(size_t) op.from].bypassed != op.bypassed)
+                    setSlotBypassed(op.from, op.bypassed);
+                EchoJay_NSLog(("EJPlan: values slot=" + juce::String(op.from + 1) + " \"" + op.name
+                               + "\" wet=" + (op.wet >= 0.0f ? juce::String(op.wet, 3) : juce::String("(absent)"))
+                               + " bypass=" + juce::String(op.bypassed ? "on" : "off")).toRawUTF8());
                 break;
             }
         }
@@ -6840,8 +7442,31 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
     // Auto-Tune Vocal Compressor a second time one minute after it was
     // blacklisted, crashing the DAW again. Withheld, not deleted:
     // deleting its line from chain_blacklist.txt re-enables the plugin.
-    if (desc.fileOrIdentifier.isNotEmpty() && isBlacklisted(desc.fileOrIdentifier))
+    // A NAME-ONLY ROW MUST STILL BE BLACKLIST-CHECKED (2 Oct 2026, Sean's 16:33 session).
+    //
+    // AVOX SYBIL is on the crash skip list and was offered in the reply anyway, probed, and then silently missing
+    // from the rack ("6 plugins loaded" of 7). Normalising the trailing-space OSType key was necessary and not
+    // sufficient: this check is guarded on fileOrIdentifier being non-empty, and the chain feed offers plugins by
+    // NAME - the merged sibling rows carry no identifier at all. So the guard short-circuited and the list could
+    // not see a plugin it names. A skip list that fails on the plugins it lists is not a skip list.
+    //
+    // The name is resolved to an identifier from the scanned types first, then checked. Resolution by name is
+    // exactly what the feed did to offer it, so it cannot fail here and succeed there.
+    juce::String blIdent = desc.fileOrIdentifier;
+    if (blIdent.isEmpty() && desc.name.isNotEmpty())
     {
+        std::lock_guard<std::mutex> lk(pluginsMutex_);
+        for (const auto& d : knownPlugins_.getTypes())
+            if (d.name.trim().equalsIgnoreCase(desc.name.trim()) && d.fileOrIdentifier.isNotEmpty())
+            { blIdent = d.fileOrIdentifier; break; }
+    }
+    if (blIdent.isNotEmpty() && isBlacklisted(blIdent))
+    {
+        EchoJay_NSLog(("EJLoad: \"" + desc.name + "\" WITHHELD - on the crash skip list as "
+                       + blIdent.trim() + (desc.fileOrIdentifier.isEmpty()
+                              ? juce::String(" (resolved from the name: the feed row carried no identifier, which "
+                                             "is how this used to slip through)")
+                              : juce::String())).toRawUTF8());
         if (callback)
             callback("\"" + desc.name + "\" was withheld: it crashed a "
                      "previous load and is on the crash skip list "
@@ -6888,7 +7513,62 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
                     // callback - the signature allows it, and level_slot_guard already does for built-ins - then
                     // terminates the host with an uncaught std::bad_function_call as soon as a REAL plugin
                     // finishes loading. Found by level_loop_guard's (6a) leg loading Apple's AUDelay.
-                    if (callback) callback(err.isNotEmpty() ? err : "createPluginInstance returned nullptr");
+                    // BY NAME, ALWAYS (2 Oct 2026 ruling). Sean's build said "6 plugins loaded" where the reply
+                    // named 7, and nothing said which one was missing or why - the message went up carrying only
+                    // the host's error text, which for a licence failure is often empty or opaque. A slot that
+                    // does not load is the one thing the card must never be quiet about.
+                    EchoJay_NSLog(("EJLoad: \"" + fullDesc.name + "\" FAILED to load - "
+                                   + (err.isNotEmpty() ? err : juce::String("createPluginInstance returned nullptr"))
+                                   ).toRawUTF8());
+                    // A LOAD FAILURE IS A SUBSTITUTION, NOT A HOLE (2 Oct 2026 ruling, Sean's 19:43 build).
+                    //
+                    // "Vocal De-Esser" failed with OS error -1 (iLok absent) and the slot simply vanished: the
+                    // rack compacted, which then sent the CL 1B's calibration block at the wrong plugin. The
+                    // substitute machinery already existed for a preflight HANG - built-in of the role, named on
+                    // the card, withheld from the auto-dial set - and a load failure never reached it. Same
+                    // outcome, same slot, same sentence.
+                    //
+                    // NO LOAD TIMEOUT IS ADDED, by ruling: the 3m22s before this failure was Sean logging into
+                    // iLok Cloud, and a short timeout would have turned a success into a failure.
+                    {
+                        juce::String role;
+                        if (auto it = buildRoles_.find(fullDesc.name.trim().toLowerCase()); it != buildRoles_.end())
+                            role = it->second;
+                        auto builtinName = builtinAlternativeForRole(role);
+                        if (builtinName.isEmpty()) builtinName = builtinAlternativeForRole(fullDesc.name);
+                        const auto bd = builtinName.isNotEmpty() ? builtinDescriptionFor(builtinName)
+                                                                 : juce::PluginDescription();
+                        // WHY it failed, in the user's terms. Licence is only claimed when the bundle really is
+                        // licence-wrapped - read off disk, nothing instantiated - otherwise the host's own words.
+                        const bool licence = echojay::refuseIfPaceWrapped(fullDesc).isNotEmpty();
+                        const juce::String because = licence ? juce::String("licence")
+                                                   : (err.isNotEmpty() ? err : juce::String("no reason given"));
+                        if (bd.name.isNotEmpty() && loadBuiltinNow(bd).isEmpty() && ! slots_.empty())
+                        {
+                            auto& ns = slots_.back();
+                            ns.substitutedFrom = fullDesc.name;
+                            ns.substitutedWhy  = licence ? "licence" : "did not load";
+                            ns.settings = fullDesc.name + " didn't load (" + because + ") - using "
+                                        + builtinName + " instead; withheld from the auto-dial set";
+                            recordLoadIfLicensed(origin, (int) slots_.size() - 1, bd.name);
+                            EchoJay_NSLog(("EJLoad: SUBSTITUTED \"" + fullDesc.name + "\" -> \"" + builtinName
+                                           + "\" (" + because + ") - the slot is KEPT, so no index after it moves")
+                                              .toRawUTF8());
+                            if (callback)
+                                callback("\"" + fullDesc.name + "\" didn't load (" + because + ") - using "
+                                         + builtinName + " instead.");
+                            return;
+                        }
+                        // NOTHING FITS: name the plugin and the reason, and say what is missing rather than
+                        // leaving a silent gap in the chain.
+                        EchoJay_NSLog(("EJLoad: \"" + fullDesc.name + "\" did not load (" + because
+                                       + ") and no built-in stands in for role \"" + role + "\" - the slot is "
+                                         "empty and the card says so").toRawUTF8());
+                        if (callback)
+                            callback("\"" + fullDesc.name + "\" didn't load (" + because + ") and I have no "
+                                     "built-in equivalent for it - the chain is missing that stage. Name another "
+                                     "plugin for it and I will put it in.");
+                    }
                     return;
                 }
                 completeLoad(std::move(inst), fullDesc, origin);
@@ -7035,6 +7715,72 @@ void ChainHost::rebuildGraph()
             graph_->addConnection({{prev, ch}, {stage.preTrim, ch}});
         for (int ch = 0; ch < juce::jmin(2, nIn); ++ch)
             graph_->addConnection({{stage.preTrim, ch}, {stage.plugin, ch}});
+
+        // ---- 4 Oct 2026 (Kathy, ruled): A SIDECHAIN BUS MUST NEVER BE FED SILENCE ----------------------------
+        //
+        // Several Waves compressors (C1, RComp, SSLComp, VComp, dbx-160) declare a sidechain input bus. We connect
+        // only channels 0/1, and AudioProcessorGraph ZEROES every unconnected input channel - so the plugin's key
+        // received digital silence and dutifully compressed nothing. Kathy measured it: C1 0 dB against 10.5 dB
+        // with the sidechain disconnected, RComp 0 against 54. The user's compressor did nothing, silently.
+        //
+        // CONFIRMED LIVE ON A REAL PLUGIN (5 Oct 2026). Sean's Logic log on 04e:
+        //     ChainHost: Tube-Tech CL 1B sidechain fed from main (2 ch of 2) from plugin channel 2
+        // and SSLComp now compresses inside EchoJay where it did nothing before. A real AU arrives with its
+        // sidechain bus ENABLED, so before this fix those channels were unconnected and the graph zeroed them.
+        //
+        // A BUILT-IN IS NOT A WITNESS FOR THIS. The graph adopts a built-in at its own 2-in/2-out channel counts,
+        // which DISABLES a declared sidechain - so sidechain_guard's mock reports bus1=DISABLED 0ch and this branch
+        // never fires for it. Measuring that and concluding "the host never enables such a bus" was wrong (and is
+        // corrected in A_OVERNIGHT_REPORT.md): it generalised from a built-in to plugins loaded through the format
+        // manager, which keep their enabled buses.
+        //
+        // Logic leaves an unassigned sidechain DISCONNECTED and the plugin falls back to its own input. We cannot
+        // reproduce that exactly: JUCE's AU host installs a render callback for every DECLARED input bus
+        // (prepareToPlay loops `i < getBusCount(isInput)`, no skip for a disabled one), so even a disabled bus has
+        // a live callback handing it a 0-channel buffer. Clearing that callback means editing the vendored JUCE
+        // fork; recorded as the faithful-to-Logic option if a plugin ever needs true disconnection.
+        //
+        // RULED FIX: feed the main input into the FIRST non-main input bus. That is what internal keying means and
+        // it cannot produce silence. A unit that keys internally and ignores the bus (EMO-D5) is unaffected.
+        // A MONO key bus gets channel 0 (the left/main channel), not an L+R sum: summing needs a mixer node in the
+        // graph, and a compressor keyed off one channel of a correlated stereo pair tracks the programme closely
+        // enough for a key, while a new node is a new thing to get wrong on every slot in the rack.
+        // Only the FIRST non-main bus is fed: a third bus is something else again (some plugins declare metering or
+        // ducking inputs) and guessing at it is not warranted.
+        if (auto* pNode = graph_->getNodeForId(stage.plugin))
+            if (auto* pProc = pNode->getProcessor())
+            {
+                // 6 Oct 2026 (Sean's ruling): EVERY ENABLED NON-MAIN INPUT BUS, not just the first.
+                //
+                // Kathy's two families: C1 comp / RComp key from any CONNECTED sidechain, so a silent one stops them
+                // compressing; C1 comp-sc, Zip and the VBC FG units stop processing when the sidechain is
+                // DISCONNECTED. Self-keying - the slot's own input into the sidechain - is right for both. This fed
+                // bus 1 only, so a plugin declaring two or more non-main input buses had the rest left unconnected,
+                // which AudioProcessorGraph ZEROES - i.e. silent, which is the failing case for the second family.
+                const int inBuses = pProc->getBusCount (true);
+                int busesFed = 0;
+                for (int b = 1; b < inBuses; ++b)
+                {
+                    auto* key = pProc->getBus (true, b);
+                    if (key == nullptr || ! key->isEnabled()) continue;
+                    const int keyCh   = key->getNumberOfChannels();
+                    const int firstCh = pProc->getChannelIndexInProcessBlockBuffer (true, b, 0);
+                    const int fed     = juce::jmin (2, keyCh);
+                    for (int ch = 0; ch < fed; ++ch)
+                        graph_->addConnection ({ { stage.preTrim, ch }, { stage.plugin, firstCh + ch } });
+                    ++busesFed;
+                    EchoJay_NSLog(("ChainHost: \"" + pProc->getName() + "\" input bus " + juce::String(b)
+                                   + " (sidechain) fed from main (" + juce::String(fed) + " ch of "
+                                   + juce::String(keyCh) + ") from plugin channel " + juce::String(firstCh)
+                                   + " - self-keyed, so a unit that needs a CONNECTED key gets signal and a unit"
+                                     " that stops when DISCONNECTED keeps running").toRawUTF8());
+                }
+                EchoJay_NSLog(("ChainHost: \"" + pProc->getName() + "\" input buses=" + juce::String(inBuses)
+                               + " totalInCh=" + juce::String(pProc->getTotalNumInputChannels())
+                               + " non-main buses fed=" + juce::String(busesFed)
+                               + (inBuses > 1 && busesFed == 0
+                                      ? juce::String(" (none enabled - nothing to feed)") : juce::String())).toRawUTF8());
+            }
 
         for (int ch = 0; ch < 2; ++ch)
             graph_->addConnection({{prev, ch}, {stage.blend, ch + 2}});   // dry tap
@@ -7343,7 +8089,8 @@ juce::AudioPluginFormat* ChainHost::getFormatByName(const juce::String& namePart
 bool ChainHost::isBlacklisted(const juce::String& path) const
 {
     std::lock_guard<std::mutex> lock(pluginsMutex_);
-    return blacklist_.contains(path);
+    return blacklist_.contains(blacklistKey(path));   // 2 Oct 2026: an OSType may end in a space
+
 }
 
 void ChainHost::addToBlacklist(const juce::String& path, const juce::String& reason)
@@ -7354,9 +8101,10 @@ void ChainHost::addToBlacklist(const juce::String& path, const juce::String& rea
     juce::String bl;
     {
         std::lock_guard<std::mutex> lock(pluginsMutex_);
-        if (!blacklist_.contains(path)) blacklist_.add(path);
-        if (blacklistMeta_[path].isEmpty())
-            blacklistMeta_.set(path,
+        const auto key = blacklistKey(path);
+        if (!blacklist_.contains(key)) blacklist_.add(key);
+        if (blacklistMeta_[key].isEmpty())
+            blacklistMeta_.set(key,
                 (reason.isNotEmpty() ? reason : juce::String("crashed or hung during load"))
                 + "\t" + juce::Time::getCurrentTime().toISO8601(true));
         bl << "# EchoJay crash skip list. A plugin listed here is withheld from\n"
@@ -7380,6 +8128,24 @@ void ChainHost::addToBlacklist(const juce::String& path, const juce::String& rea
     getBlacklistFile().replaceWithText(bl);
 }
 
+// THE BLACKLIST KEY (2 Oct 2026 ruling, Sean's 11:35 AVOX SYBIL).
+//
+// An AU identifier ends in its four-character manufacturer OSType, and an OSType may contain spaces: Antares
+// ships AVOX SYBIL as 'VST ', so the real identifier is "AudioUnit:Effects/aufx,AnVD,VST " - 32 characters, the
+// last one significant. reloadBlacklistFromDisk trimmed the path it parsed, and the writer had trimmed it too,
+// so chain_blacklist.txt held the 31-character form. isBlacklisted compares exactly, so it answered FALSE for a
+// plugin that was on the list: SYBIL stayed in the chain feed (the file's own header promises a listed plugin is
+// "withheld from the chain feed and refused at load"), the model picked it, and the build then could not use it.
+// Offered by name, refused by identity.
+//
+// This is a CLASS, not one plugin: every product whose OSType ends in a space was unblacklistable, which is to
+// say the crash skip list failed silently exactly where it was needed - on the plugins that crash.
+//
+// Both sides are normalised on trailing whitespace so the files already on disk (written trimmed) keep matching
+// the real identifiers. Trailing whitespace is never meaningful BETWEEN two identifiers: an OSType is always four
+// characters, so "…,VST" is not a different plugin from "…,VST " - it is the same one, written short.
+juce::String ChainHost::blacklistKey(const juce::String& path) { return path.trimEnd(); }
+
 void ChainHost::reloadBlacklistFromDisk()
 {
     juce::StringArray lines;
@@ -7394,7 +8160,8 @@ void ChainHost::reloadBlacklistFromDisk()
         if (line.isEmpty() || line.startsWithChar('#')) continue;
         // Tabbed form: path<TAB>reason<TAB>ISO date. Bare paths (the
         // pre-format form, possibly CRLF-terminated) stay valid.
-        auto path = line.upToFirstOccurrenceOf("\t", false, false).trim();
+        // NOT .trim() on the path (2 Oct 2026): it ate the significant trailing space of an OSType like 'VST '.
+        auto path = blacklistKey(line.upToFirstOccurrenceOf("\t", false, false));
         if (path.isEmpty()) continue;
         blacklist_.addIfNotAlreadyThere(path);
         auto meta = line.fromFirstOccurrenceOf("\t", false, false).trim();
@@ -7595,8 +8362,24 @@ ChainHost::WithholdReason ChainHost::withholdReasonLocked(const juce::PluginDesc
 {
     // Blacklist first: a row that crashed the host is withheld whatever its
     // slices say, and the reason the user can act on is the blacklist line.
-    if (d.fileOrIdentifier.isNotEmpty() && blacklist_.contains(d.fileOrIdentifier))
-        return WithholdReason::CrashBlacklisted;
+    //
+    // 2 Oct 2026 (Sean's 16:33 session, second half): THIS SITE HAD BOTH FAULTS, and it is the one that decides
+    // what the model is allowed to propose. It compared blacklist_ RAW, so a trailing-space OSType ('VST ') never
+    // matched its trimmed line on disk; and it short-circuited on an empty fileOrIdentifier, so a merged
+    // name-only feed row was never checked at all. AVOX SYBIL is on the list and was offered to the model anyway -
+    // which the load refusal then caught, so the user watched a plugin be proposed and withheld in the same turn.
+    // Refusing to load it is not enough: it must not be offered.
+    // The name is resolved to an identifier from the scanned types, which is the same resolution that put it in the
+    // feed, so the two cannot disagree - and the comparison goes through blacklistKey, like every other.
+    {
+        juce::String ident = d.fileOrIdentifier;
+        if (ident.isEmpty() && d.name.isNotEmpty())
+            for (const auto& k : knownPlugins_.getTypes())      // already under pluginsMutex_
+                if (k.name.trim().equalsIgnoreCase(d.name.trim()) && k.fileOrIdentifier.isNotEmpty())
+                { ident = k.fileOrIdentifier; break; }
+        if (ident.isNotEmpty() && blacklist_.contains(blacklistKey(ident)))
+            return WithholdReason::CrashBlacklisted;
+    }
     // Settings too large to save: its own file, its own reason (any format)
     if (d.fileOrIdentifier.isNotEmpty() && stateOversize_.find(d.fileOrIdentifier) != stateOversize_.end())
         return WithholdReason::SettingsTooLarge;
@@ -9620,6 +10403,19 @@ juce::String ChainHost::getSlotsStateXml() const
         auto* item = root->createNewChildElement("SLOT");
         item->setAttribute("bypassed", s.bypassed ? 1 : 0);
         item->setAttribute("wet", (double)s.wet);
+        // 4 Oct 2026 (ruled): THE SLOT'S OWN GAINS RIDE THE SAVE. They were in no save format at all - not this
+        // frozen one and not the Link's chainModelToVar - so reopening a session lost every compressor build's
+        // LEVEL MATCH: the hold writes the slot OUT gain and the drive writes the PRE-trim, and both came back 0.
+        // ADDITIVE: new attributes on an existing element. An older build's XML lacks them, getDoubleAttribute's
+        // default is 0.0, and 0.0 is exactly what those slots restored to before - so old sessions load unchanged.
+        // The OUT gain lives on the blend node, not on the slot (getSlotOutGainDb reads it the same way); the
+        // PRE-trim lives on the slot. Taking each from where it actually is, rather than from a mirror that could
+        // be stale.
+        float outDb = 0.0f;
+        if (s.blendNode != nullptr)
+            if (auto* b = dynamic_cast<SlotWetBlend*> (s.blendNode->getProcessor())) outDb = b->outGainDb();
+        item->setAttribute("outGainDb", (double) outDb);
+        item->setAttribute("preTrimDb", (double) s.preTrimDb);
         if (auto descXml = s.desc.createXml())
             item->addChildElement(descXml.release());
     }
@@ -9666,6 +10462,13 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
                         const bool sup = undoSuppressed_; undoSuppressed_ = true;
                         if (wasBypassed) setSlotBypassed(lastSlot, true);
                         setSlotKeepLevel(lastSlot, items[idx].keepLevel);
+                        // 4 Oct 2026 (ruled): THE SLOT'S OWN GAINS COME BACK WITH IT. The hold writes the OUT
+                        // gain and the drive writes the PRE-trim, so without these a reopened session lost every
+                        // compressor build's level match - the chain came back louder than it was saved. Inside
+                        // the undo suppression with the rest of the restore: putting a slot back where it was is
+                        // not an edit the user can undo.
+                        setSlotOutGainDb(lastSlot, items[idx].outGainDb);
+                        setSlotPreTrimDb(lastSlot, items[idx].preTrimDb);
                         undoSuppressed_ = sup;
                     }
                     // Withheld chunks were already explained by the note that
@@ -10009,7 +10812,24 @@ void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml,
         if (!descElem) continue;
         juce::PluginDescription desc;
         if (!desc.loadFromXml(*descElem)) continue;
-        RestoreItem item { desc, bypassed, wet, {}, statesObj != nullptr };
+        // 4 Oct 2026: NAMED FIELDS, NOT POSITIONAL. This was
+        //     RestoreItem item { desc, bypassed, wet, {}, statesObj != nullptr };
+        // and RestoreItem's fields are (desc, bypassed, wet, trimDb, keepLevel, stateBase64, expectState) - so the
+        // fifth initialiser set keepLevel, not expectState. restoreNextSlot then calls
+        // setSlotKeepLevel(lastSlot, items[idx].keepLevel), so EVERY slot restored from a session that had saved
+        // slot states was silently flipped to "level kept" on reopen, with an undo entry and a revision bump each.
+        // expectState, meanwhile, stayed false, so its one note ("loaded at its default settings") never fired.
+        // The var-based path at the other restore site has always set expectState by name and was never wrong.
+        // Found while adding the gains below: a positional initialiser over a struct that gains fields is a bug
+        // waiting for the next field, so this one is now named.
+        RestoreItem item;
+        item.desc        = desc;
+        item.bypassed    = bypassed;
+        item.wet         = wet;
+        item.expectState = (statesObj != nullptr);
+        // ...and the gains, additive: absent means 0.0, which is what every pre-today session restored to.
+        item.outGainDb = (float) child->getDoubleAttribute("outGainDb", 0.0);
+        item.preTrimDb = (float) child->getDoubleAttribute("preTrimDb", 0.0);
         // 1-based, matching the shared chain format and the API's `state`
         // object. Position in the document is the slot number: keying by it
         // makes a skipped slot explicit rather than inferred.
@@ -10644,6 +11464,14 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
         // by applyRestoredState after the chunk applies, never at resolve time
         // (a note must not claim a dial that has not happened yet, or that a
         // load failure downstream then contradicts).
+        // 5 Oct 2026 (Sean's item 2): THE SLOT'S OWN GAINS, ON THIS PATH TOO. tryRestoreSlotsFromXml has read
+        // these since 4 Oct, but restoreSavedChain - which is what rebuilds a BORROWED rack at engage and what
+        // restores a saved borrowed rack - did not, so both arrived at 0 and the Link's level match was lost even
+        // when the values had been saved correctly. Same limits the setters apply.
+        item.outGainDb   = o->hasProperty("outGainDb")
+                             ? (float)(double) o->getProperty("outGainDb") : 0.0f;
+        item.preTrimDb   = o->hasProperty("preTrimDb")
+                             ? (float)(double) o->getProperty("preTrimDb") : 0.0f;
         item.savedFormat  = o->getProperty("format").toString().trim();
         item.savedVersion = o->getProperty("version").toString().trim();
         item.savedUid     = o->getProperty("uid").toString().trim();

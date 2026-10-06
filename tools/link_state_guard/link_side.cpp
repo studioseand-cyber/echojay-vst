@@ -24,6 +24,9 @@ struct EchoJayLinkSyncTestAccess
     static void sync (LinkProcessor& p)         { p.syncModelAfterStructuralChange(); }
     static bool leased (LinkProcessor& p)       { return p.rackLeaseActive_; }
     static void pause (LinkProcessor& p, bool on) { if (on) p.stopTimer(); else p.startTimerHz (30); }
+    // 4 Oct 2026 (G6): consume a waiting chain-cmd by hand. The Link's own 30 Hz timer does this, but a leg that
+    // waits on a timer measures the timer; pumping it directly makes the load-order legs deterministic.
+    static void poll (LinkProcessor& p)         { p.pollChainCommand(); }
 #ifdef EJ_LINK_IDEMPOTENT_CMDS
     static int appliedTotal (LinkProcessor& p)  { return p.chainCmdApplied_; }
     static int appliesOf (LinkProcessor& p, const juce::String& id) { int n = 0; for (const auto& s : p.appliedChainIds_) if (s == id) ++n; return n; }
@@ -161,6 +164,108 @@ int main (int argc, char** argv)
         juce::AudioBuffer<float> b (2, 512); b.clear(); juce::MidiBuffer m; fresh3->processBlock (b, m);
         check (h.getNumSlots() == cFinal.slots, "G3: ...and one processed block leaves the slot list as restored");
     }
+    // ---- G6 (4/5 Oct 2026): THE SAVE FIX IN BOTH LOAD ORDERS -----------------------------------------------
+    //
+    // Sean's bug: build on a Link track while the V2 holds the lease, save WITHOUT switching racks, reopen, and the
+    // chain was gone. The rack lived only in the V2's borrowHost_, the hand-back happens on a rack switch, and
+    // neither side's state carried it. The V2 now saves it under `borrowedRacks` and hands it back when it next sees
+    // that Link - and the ORDER the two plugins load in is the thing a single-process guard cannot test, which is
+    // why these legs live here. Both orders must end with the Link holding the rack.
+    //
+    //   ORDER A  the Link restores FIRST, with an empty chain, and the V2's chain-cmd arrives afterwards.
+    //   ORDER B  the chain-cmd is already waiting when the Link restores.
+    //
+    // Both are driven at the WIRE: a chain-cmd file is exactly what the V2's applyPendingBorrowRestores writes, so
+    // this exercises the real road without needing the V2 process to be alive at a particular instant.
+    {
+        std::printf ("\n-- G6: the saved borrowed rack reaches the Link in BOTH load orders --\n");
+        auto chainCmdFor = [] (const juce::String& uid, const juce::StringArray& names)
+        {
+            juce::Array<juce::var> arr;
+            for (const auto& n : names)
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("name", n);
+                o->setProperty ("settings", "restored by the borrowed-rack save");
+                o->setProperty ("bypassed", false);
+                o->setProperty ("wet", 1.0);
+                o->setProperty ("outGainDb", -2.5);   // the hold's write: it must survive the trip
+                o->setProperty ("preTrimDb",  1.5);   // the drive's write
+                arr.add (juce::var (o));
+            }
+            auto* cmd = new juce::DynamicObject();
+            cmd->setProperty ("v", 1);
+            cmd->setProperty ("seq", (int) juce::Random::getSystemRandom().nextInt (100000) + 9000);
+            cmd->setProperty ("chain", arr);
+            cmd->setProperty ("sourceNote", "EchoJay V2 borrowed-rack session restore");
+            return juce::JSON::toString (juce::var (cmd), true);
+        };
+        const juce::StringArray want { "EchoJay EQ", "EchoJay Gain" };
+
+        // ORDER A: the Link comes up with NOTHING, then the command arrives.
+        {
+            auto la = std::make_unique<LinkProcessor>();
+            la->prepareToPlay (48000.0, 512); pumpMs (400);
+            const auto uidA = TA::uid (*la);
+            check (TA::host (*la).getNumSlots() == 0, "G6/A: the Link restores with an empty chain first",
+                   juce::String (TA::host (*la).getNumSlots()));
+            juce::File (hostDir() + "chain-cmd-" + uidA + ".json").replaceWithText (chainCmdFor (uidA, want));
+            for (int k = 0; k < 60 && TA::host (*la).getNumSlots() < want.size(); ++k) { TA::poll (*la); pumpMs (200); }
+            const auto namesA = hostNames (TA::host (*la));
+            check (namesA == want,
+                   "G6/A: LINK FIRST, then the V2's hand-back - the rack arrives and is hosted  (RED as it stood: "
+                   "neither side saved a rack held in borrowHost_, so a save without a rack switch lost it)",
+                   namesA.joinIntoString ("|"));
+            check (std::abs (TA::host (*la).getSlotOutGainDb (0) + 2.5f) < 0.05f
+                   && std::abs (TA::host (*la).getSlotPreTrimDb (0) - 1.5f) < 0.05f,
+                   "G6/A: ...with the slot's OUT gain and PRE-trim intact, so the level match survives",
+                   juce::String (TA::host (*la).getSlotOutGainDb (0), 2) + " / "
+                   + juce::String (TA::host (*la).getSlotPreTrimDb (0), 2));
+            // ---- G7 (5 Oct 2026, Sean's item 2): THE SIDECAR CARRIES THE SLOT'S OWN GAINS ------------------
+            // The borrow rebuilds the rack from THIS object (PluginEditor's engage reads st->slots and hands them to
+            // ChainHost::restoreSavedChain), so a gain the sidecar does not carry is a gain the borrowed slot starts
+            // at 0 - and the Link's level match is gone for as long as the lease lasts. Sean's 11:19-11:26 session:
+            // the Link held +5.00 dB on slots 2 and 3, and every "EJBorrow: engaged" was followed within 200 ms by
+            // "EJThreshold: slot N output gain set to 0.00 dB".
+            TA::host (*la).setSlotOutGainDb (0, 5.0f);
+            TA::host (*la).setSlotPreTrimDb (0, 1.5f);
+            for (int k = 0; k < 30; ++k) { TA::poll (*la); pumpMs (100); }
+            const auto rcG7 = LinkShm::readRackSidecar (hostDir(), uidA);
+            const bool haveG7 = rcG7.valid && ! rcG7.slots.empty();
+            check (haveG7 && std::abs (rcG7.slots[0].outGainDb - 5.0f) < 0.05f
+                          && std::abs (rcG7.slots[0].preTrimDb - 1.5f) < 0.05f,
+                   "G7: the rack sidecar carries the slot's OUT gain and PRE-trim, so a borrow can start where the "
+                   "rack actually is  (RED as it stood: the two fields did not exist on RackSidecarSlot at all, so "
+                   "every borrowed slot began at 0 dB whatever the Link was holding)",
+                   haveG7 ? juce::String (rcG7.slots[0].outGainDb, 2) + " / "
+                            + juce::String (rcG7.slots[0].preTrimDb, 2)
+                          : juce::String ("no sidecar"));
+            // ...AND THE LINK STILL HOLDS THEM. The release hand-back carries byp and wet, never the gains, so the
+            // Link's own copy is the one that must survive a lease - which is why Sean saw +5.00 come back on every
+            // reopen while the borrowed rack played at 0.
+            check (haveG7 && std::abs (TA::host (*la).getSlotOutGainDb (0) - 5.0f) < 0.05f,
+                   "G7: ...and the Link's own slot still reads +5.00 after publishing it",
+                   juce::String (TA::host (*la).getSlotOutGainDb (0), 2));
+            juce::File (hostDir() + "chain-cmd-" + uidA + ".json").deleteFile();
+            pumpMs (200); la.reset(); pumpMs (200);
+        }
+        // ORDER B: the command is ALREADY on disk before the Link exists.
+        {
+            auto lb = std::make_unique<LinkProcessor>();
+            lb->prepareToPlay (48000.0, 512); pumpMs (400);
+            const auto uidB = TA::uid (*lb);
+            // Written before any poll, so from the Link's point of view it was waiting when it came up.
+            juce::File (hostDir() + "chain-cmd-" + uidB + ".json").replaceWithText (chainCmdFor (uidB, want));
+            for (int k = 0; k < 60 && TA::host (*lb).getNumSlots() < want.size(); ++k) { TA::poll (*lb); pumpMs (200); }
+            const auto namesB = hostNames (TA::host (*lb));
+            check (namesB == want,
+                   "G6/B: HAND-BACK FIRST, then the Link - a command already waiting is still applied, so neither "
+                   "load order loses the rack", namesB.joinIntoString ("|"));
+            juce::File (hostDir() + "chain-cmd-" + uidB + ".json").deleteFile();
+            pumpMs (200); lb.reset(); pumpMs (200);
+        }
+    }
+
     std::printf ("\n==== link_state_guard (link side): %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     juce::File (H + "/link_done.json").replaceWithText ("{}");
     std::fflush (stdout);

@@ -1267,6 +1267,14 @@ struct RackSidecarSlot {
     // the trap's THIRD visit; a field spliced mid-struct shifts every
     // brace initialiser silently and still compiles.
     juce::String manufacturer;
+    // THE SLOT'S OWN ECHOJAY GAINS (5 Oct 2026, Sean's item 2). A slot has exactly two: OUT (what a compressor
+    // hold writes to match level) and IN (the drive). They live on EchoJay's own SlotPreTrim/SlotWetBlend nodes,
+    // NOT in the plugin's chunk, so nothing in `settings` carries them - and so a borrow that rebuilt the rack
+    // from this sidecar started every slot at 0 and threw away the Link's level match. Written only when
+    // non-zero, absent reads 0.0, which is exactly the no-gain case. LAST, after manufacturer: the trap's FOURTH
+    // visit, same positional-brace-init rule as above.
+    float outGainDb = 0.0f;
+    float preTrimDb = 0.0f;
 };
 struct RackSidecar {
     bool  valid = false;
@@ -1300,6 +1308,14 @@ struct RackSidecar {
     // apply a structure plan announces it; absent reads false and a main
     // never sends a plan — the never-half-see pattern, again.
     bool  structureEditCapable = false;
+    // 4 Oct 2026 (save fix): the chain revision this Link's SAVED SESSION CHUNK carried, or -1 when it carried
+    // none (an older chunk, or a Link that has never been saved). The V2 side compares it against the revision
+    // its own borrowed copy was taken at, to decide which of the two is newer after a reopen. Additive at v:1:
+    // written only when known, absent reads -1, and -1 makes the V2 copy non-authoritative - the safe direction.
+    int   restoredChainRev = -1;
+    // ...and what its chunk said the CURRENT borrow's base revision was. Equal to restoredChainRev means the rack
+    // did not change after the borrow engaged, so a copy the main saved is the newer one. -1 = not stated.
+    int   restoredLeaseBaseRev = -1;
     bool  inContextCapable = false;
     // Round 53 (C4, the borrow-budget ruling): WHO published this sidecar.
     // publisherPid is the writing process; host* is ChainHost::getHostIdentity()
@@ -1483,7 +1499,15 @@ namespace StructureEdit
 
     // The ordered ops (spec §3). Leave* classes are not ops — they are the
     // absence of one; the plan reports their counts for the confirm.
-    enum class OpType { Remove, Move, Create, Commit };
+    // Values APPENDED 2 Oct 2026 (Sean's 14:20 finding, residual): the per-slot VALUES - wet and bypass - for a
+    // surviving slot that is otherwise untouched. Create and Commit already carried wet, so a slot the user
+    // created or edited was fine; a slot whose ONLY change was the wet knob was classified LeaveUnedited, emitted
+    // no op at all, and the change died at deselect. Commit could not be reused for it: its applier treats an
+    // empty state payload as "commit state unreadable" and rolls the WHOLE plan back.
+    // Appended last on purpose - the wire writes `type` as an int, so Remove/Move/Create/Commit keep their values
+    // and an older Link finds no matching case and skips the op (the switch has no default, and ok stays true), so
+    // it degrades to today's behaviour instead of failing a deselect.
+    enum class OpType { Remove, Move, Create, Commit, Values };
     struct Op
     {
         OpType type {};
@@ -1611,8 +1635,23 @@ namespace StructureEdit
             if (c.withheld) { ++p.withheldEdited; continue; }
             p.ops.push_back ({ OpType::Commit, i, -1,
                                c.identity.name, c.stateB64, c.identity,
-                               false, {}, c.wet });
+                               c.bypassedNow, {}, c.wet });   // 2 Oct 2026: bypass rides a Commit too, not just a Create
             ++p.committing;
+        }
+
+        // VALUES for the survivors nothing else writes (2 Oct 2026 ruling). Every surviving slot's wet and bypass
+        // must reach the Link, not only the ones that happen to be created or committed. A withheld slot is still
+        // never written - that asymmetry is spec §3/§5c and deliberate - and a slot already carrying a Create or
+        // Commit needs nothing more, because both carry the same two values.
+        for (int i = 0; i < (int) current.size(); ++i)
+        {
+            const auto& c = current[(size_t) i];
+            if (c.originIndex < 0) continue;        // a Create already carries them
+            if (c.edited) continue;                 // a Commit already carries them (or it is withheld, below)
+            if (c.withheld) continue;               // never written, by ruling
+            p.ops.push_back ({ OpType::Values, i, -1,
+                               c.identity.name, {}, c.identity,
+                               c.bypassedNow, {}, c.wet });
         }
         return p;
     }
@@ -1965,6 +2004,8 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     obj->setProperty("uid",       rc.uid);
     obj->setProperty("name",      rc.name);
     obj->setProperty("revision",  rc.revision);
+    if (rc.restoredChainRev >= 0) obj->setProperty("restoredChainRev", rc.restoredChainRev);
+    if (rc.restoredLeaseBaseRev >= 0) obj->setProperty("restoredLeaseBaseRev", rc.restoredLeaseBaseRev);
     obj->setProperty("masterWet", rc.masterWet);
     obj->setProperty("preGainDb",        rc.preGainDb);
     obj->setProperty("preGainUserSet",   rc.preGainUserSet);
@@ -2000,6 +2041,9 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
         if (s.fp.isNotEmpty())      so->setProperty("fp",      s.fp);
         if (s.uid.isNotEmpty())     so->setProperty("uid",     s.uid);
         if (s.version.isNotEmpty()) so->setProperty("version", s.version);
+        // Additive at v:1, written only when non-zero (see RackSidecarSlot).
+        if (s.outGainDb != 0.0f) so->setProperty("outGainDb", (double) s.outGainDb);
+        if (s.preTrimDb != 0.0f) so->setProperty("preTrimDb", (double) s.preTrimDb);
         // ADDITIVE AT v:1, and it must stay that way. `v` is an EXACT-match
         // reject in readRackSidecar below, not a minimum, so publishing v:2
         // would make an older main plugin discard the WHOLE sidecar and lose
@@ -2041,6 +2085,8 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.uid       = obj->getProperty("uid").toString();
     rc.name      = obj->getProperty("name").toString();
     rc.revision  = (int)obj->getProperty("revision");
+    rc.restoredChainRev = obj->hasProperty("restoredChainRev") ? (int)obj->getProperty("restoredChainRev") : -1;
+    rc.restoredLeaseBaseRev = obj->hasProperty("restoredLeaseBaseRev") ? (int)obj->getProperty("restoredLeaseBaseRev") : -1;
     rc.masterWet = obj->hasProperty("masterWet")
                      ? (float)(double)obj->getProperty("masterWet") : 1.0f;
     rc.preGainDb        = obj->hasProperty("preGainDb") ? (float)(double)obj->getProperty("preGainDb") : 0.0f;
@@ -2074,6 +2120,10 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                 s.fp       = so->getProperty("fp").toString();
                 s.uid      = so->getProperty("uid").toString();
                 s.version  = so->getProperty("version").toString();
+                s.outGainDb = so->hasProperty("outGainDb")
+                                ? (float)(double) so->getProperty("outGainDb") : 0.0f;
+                s.preTrimDb = so->hasProperty("preTrimDb")
+                                ? (float)(double) so->getProperty("preTrimDb") : 0.0f;
                 // Accepted ONLY at the exact published length. A short or long
                 // array is a version this reader does not understand, and half
                 // a curve drawn as a whole one would misplace every frequency
