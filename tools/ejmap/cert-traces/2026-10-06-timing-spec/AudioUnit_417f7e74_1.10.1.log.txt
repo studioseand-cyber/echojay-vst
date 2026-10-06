@@ -1,0 +1,6 @@
+TIMING: amount by the single amount control
+TIMING: bx_opto 1.10.1: amount [2] Peak Reduction at norm 0.667 (1 dB point -30.80 dBFS peak); burst -36.8 -> -20.8
+  instantiate reference: GR step 7.40 dB
+  program dependence: release after 0.3 s 592.221 ms, after 3 s 592.446 ms (ratio 1.00)
+  ROLES BY MEASUREMENT: 0 verdict(s); unnamed controls not probed in this mode (a burst pair per control costs ~12 s; the roles' lexicon nominates)
+TIMING: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/tm/phaseb/timing/.tmp-AudioUnit_417f7e74_1.10.1/timing/AudioUnit_417f7e74_1.10.1.timing.json

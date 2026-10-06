@@ -1,0 +1,26 @@
+TIMING: amount by the single amount control
+TIMING: Lindell SBC 1.0.3: amount [13] Threshold at norm 0.867 (1 dB point -29.28 dBFS peak); burst -35.3 -> -19.3
+  instantiate reference: GR step 4.28 dB
+  release [16] Release = 0.050: measured attack 8.9 ms release 27.3 ms (GR step 4.28)
+  release [16] Release = 0.121: measured attack 8.9 ms release 38.8 ms (GR step 4.28)
+  release [16] Release = 0.193: measured attack 8.8 ms release 50.1 ms (GR step 4.28)
+  release [16] Release = 0.321: measured attack 8.8 ms release 81.6 ms (GR step 4.28)
+  release [16] Release = 0.679: measured attack 8.8 ms release 208.2 ms (GR step 4.28)
+  release [16] Release = 1.179: measured attack 8.8 ms release 434.1 ms (GR step 4.28)
+  release [16] Release = 1.929: measured attack 8.8 ms release 799.7 ms (GR step 4.28)
+  release [16] Release = 3.000: measured attack 8.8 ms release 2066.3 ms (GR step 4.28)
+    second pass (4 kHz, 1 ms windows): attack 1.99 ms
+  attack [19] Attack = 0.03 ms: measured attack < 6.4 ms release 143.7 ms (GR step 4.29)
+    second pass (4 kHz, 1 ms windows): attack 2.11 ms
+  attack [19] Attack = 0.1 ms: measured attack < 6.4 ms release 143.9 ms (GR step 4.28)
+    second pass (4 kHz, 1 ms windows): attack 3.64 ms
+  attack [19] Attack = 0.3 ms: measured attack < 6.4 ms release 145.7 ms (GR step 4.28)
+  attack [19] Attack = 1 ms: measured attack 8.8 ms release 152.0 ms (GR step 4.28)
+  attack [19] Attack = 3 ms: measured attack 14.2 ms release 159.9 ms (GR step 4.29)
+  attack [19] Attack = 10 ms: measured attack 19.8 ms release 167.6 ms (GR step 4.29)
+  attack [19] Attack = 30 ms: measured attack 48.4 ms release 205.7 ms (GR step 4.29)
+  program dependence: release after 0.3 s 60.787 ms, after 3 s 157.278 ms (ratio 2.59) - PROGRAM-DEPENDENT
+  ROLES BY MEASUREMENT: 2 verdict(s); unnamed controls not probed in this mode (a burst pair per control costs ~12 s; the roles' lexicon nominates)
+    role release CONFIRMED  [16] Release - the release moves 27.3 -> 2066.3 ms
+    role attack CONFIRMED  [19] Attack - the attack moves 6.4 -> 48.4 ms
+TIMING: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/tm/phaseb/timing/.tmp-AudioUnit_6f747363_1.0.3/timing/AudioUnit_6f747363_1.0.3.timing.json

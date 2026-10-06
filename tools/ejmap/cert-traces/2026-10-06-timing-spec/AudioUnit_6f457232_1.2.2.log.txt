@@ -1,0 +1,20 @@
+TIMING: amount by the single amount control
+TIMING: Lindell 7X-500 1.2.2: amount [0] Input at norm 0.667 (1 dB point -29.10 dBFS peak); burst -35.1 -> -19.1
+  instantiate reference: GR step 9.59 dB
+    second pass (4 kHz, 1 ms windows): faster than 1 ms
+    SHIFTS THE AMOUNT: steady GR 3.41 dB against the instantiate position (over 0.5 dB)
+  attack [2] Attack = Fast: measured attack < 7.5 ms release 17.1 ms (GR step 13.00)
+    second pass (4 kHz, 1 ms windows): attack 2.26 ms
+    SHIFTS THE AMOUNT: steady GR 2.13 dB against the instantiate position (over 0.5 dB)
+  attack [2] Attack = Medium: measured attack < 7.5 ms release 15.4 ms (GR step 11.72)
+  attack [2] Attack = Slow: measured attack 11.5 ms release 12.8 ms (GR step 9.59)
+  release [3] Release = Fast: measured attack 11.5 ms release 12.8 ms (GR step 9.59)
+    SHIFTS THE AMOUNT: steady GR 1.99 dB against the instantiate position (over 0.5 dB)
+  release [3] Release = Medium: measured attack 10.1 ms release 51.9 ms (GR step 11.58)
+    SHIFTS THE AMOUNT: steady GR 3.20 dB against the instantiate position (over 0.5 dB)
+  release [3] Release = Slow: measured attack 9.2 ms release 231.1 ms (GR step 12.79)
+  program dependence: release after 0.3 s 11.1944 ms, after 3 s 12.7811 ms (ratio 1.14)
+  ROLES BY MEASUREMENT: 2 verdict(s); unnamed controls not probed in this mode (a burst pair per control costs ~12 s; the roles' lexicon nominates)
+    role attack CONFIRMED  [2] Attack - the attack moves 7.5 -> 11.5 ms
+    role release CONFIRMED  [3] Release - the release moves 12.8 -> 231.1 ms
+TIMING: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/tm/phaseb/timing/.tmp-AudioUnit_6f457232_1.2.2/timing/AudioUnit_6f457232_1.2.2.timing.json

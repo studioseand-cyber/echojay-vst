@@ -1,0 +1,259 @@
+{
+  "roles_by_measurement": [
+    {
+      "index": 2,
+      "control": "Attack",
+      "role": "attack",
+      "verdict": "confirmed",
+      "reason": "the attack moves 7.5 -> 11.5 ms"
+    },
+    {
+      "index": 3,
+      "control": "Release",
+      "role": "release",
+      "verdict": "confirmed",
+      "reason": "the release moves 12.8 -> 231.1 ms"
+    }
+  ],
+  "unnamed_probed_without_signature": 0,
+  "unnamed_not_probed": "a burst pair per control costs ~12 s: the unnamed pool is not probed in this mode",
+  "role_rule": "names propose, measurement decides (5 Oct): a nominee keeps its role only when its two ends show the role's signature; an unnamed control that shows it is reported, not swept as the role",
+  "time_draft": {
+    "status": "DRAFT against COMP_TIMING_SPEC v0.1 (a proposal): data only, not in any compressor profile, not exported",
+    "definition": "63% (one time constant): attack = gain falls 63% of the GR step; release = recovers 63% of the way back",
+    "measured_at": {
+      "amount_control": "Input",
+      "amount_by": "the single amount control",
+      "norm": 0.666667,
+      "gr_step_db": 9.59,
+      "burst_dbfs": [
+        -35.100000000000001,
+        -19.100000000000001
+      ]
+    },
+    "attack": {
+      "control": "Attack",
+      "stepped": false,
+      "positions": [
+        {
+          "norm": 0.0,
+          "display": "Fast",
+          "attack_ms": null,
+          "faster_than_ms": 1.0,
+          "pass": "4 kHz, 1 ms windows: a bound",
+          "gr_shift_db": 3.41,
+          "shifts_amount": true
+        },
+        {
+          "norm": 0.5,
+          "display": "Medium",
+          "attack_ms": 2.3,
+          "pass": "4 kHz, 1 ms windows",
+          "gr_shift_db": 2.13,
+          "shifts_amount": true
+        },
+        {
+          "norm": 1.0,
+          "display": "Slow",
+          "attack_ms": 11.5,
+          "pass": "997 Hz, 5 ms windows",
+          "gr_shift_db": 0.0
+        }
+      ]
+    },
+    "release": {
+      "control": "Release",
+      "stepped": false,
+      "positions": [
+        {
+          "norm": 0.0,
+          "display": "Fast",
+          "release_ms": 12.800000000000001,
+          "gr_shift_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "Medium",
+          "release_ms": 51.899999999999999,
+          "gr_shift_db": 1.99,
+          "shifts_amount": true
+        },
+        {
+          "norm": 1.0,
+          "display": "Slow",
+          "release_ms": 231.099999999999994,
+          "gr_shift_db": 3.2,
+          "shifts_amount": true
+        }
+      ]
+    },
+    "program_dependent": false,
+    "release_short_burst_ms": 11.199999999999999,
+    "release_long_burst_ms": 12.800000000000001,
+    "method": "997 Hz burst 16 dB step; 5 ms windows aligned by latency; fast attacks re-read at 4 kHz, 1 ms windows; the hold at least 10 x the first-pass attack or 2 s; gr_shift_db against the instantiate position",
+    "notes": [
+      "attack [2] Attack at 0.000000: shifts the amount by 3.41 dB; not for the server's use (section 5)",
+      "attack [2] Attack at 0.500000: shifts the amount by 2.13 dB; not for the server's use (section 5)",
+      "release [3] Release at 0.500000: shifts the amount by 1.99 dB; not for the server's use (section 5)",
+      "release [3] Release at 1.000000: shifts the amount by 3.20 dB; not for the server's use (section 5)"
+    ]
+  },
+  "schema": "ej_timing_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.3, not exported, not published",
+  "product": "Lindell 7X-500",
+  "version": "1.2.2",
+  "identity": "AudioUnit|6f457232|1.2.2",
+  "amount_control": "Input",
+  "amount_norm": 0.666667,
+  "one_db_point_dbfs_peak": -29.100000000000001,
+  "quiet_dbfs": -35.100000000000001,
+  "loud_dbfs": -19.100000000000001,
+  "method": "997 Hz sine, 1 s at quiet, step to loud, step back; gain per 5 ms window; attack = 63 % of the GR step, release = 63 % recovery",
+  "controls": [
+    {
+      "index": 2,
+      "control": "Attack",
+      "role": "attack",
+      "positionsBy": "landing",
+      "positions": [
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.59,
+          "final_gain_db": 0.59,
+          "gr_step_db": 13.0,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 17.100000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.0,
+          "display": "Fast",
+          "hold_s": 2.0,
+          "second_pass": {
+            "result": "measured",
+            "baseline_gain_db": 13.58,
+            "final_gain_db": 0.49,
+            "gr_step_db": 13.09,
+            "attack_faster_than_ms": 1.5,
+            "release_ms": 17.399999999999999,
+            "loud_late_iqr_db": 0.0,
+            "window_ms": 1.0
+          },
+          "gr_shift_db": 3.41
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 1.88,
+          "gr_step_db": 11.720000000000001,
+          "attack_faster_than_ms": 7.5,
+          "release_ms": 15.4,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.5,
+          "display": "Medium",
+          "hold_s": 2.0,
+          "second_pass": {
+            "result": "measured",
+            "baseline_gain_db": 13.59,
+            "final_gain_db": 1.92,
+            "gr_step_db": 11.67,
+            "attack_ms": 2.3,
+            "release_ms": 15.300000000000001,
+            "loud_late_iqr_db": 0.0,
+            "window_ms": 1.0
+          },
+          "gr_shift_db": 2.13
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 1.0,
+          "display": "Slow",
+          "hold_s": 2.0,
+          "gr_shift_db": 0.0
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "control": "Release",
+      "role": "release",
+      "positionsBy": "landing",
+      "positions": [
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 4.01,
+          "gr_step_db": 9.59,
+          "attack_ms": 11.5,
+          "release_ms": 12.800000000000001,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.0,
+          "display": "Fast",
+          "hold_s": 2.0,
+          "gr_shift_db": 0.0
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.6,
+          "final_gain_db": 2.02,
+          "gr_step_db": 11.58,
+          "attack_ms": 10.1,
+          "release_ms": 51.899999999999999,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 0.5,
+          "display": "Medium",
+          "hold_s": 2.0,
+          "gr_shift_db": 1.99
+        },
+        {
+          "result": "measured",
+          "baseline_gain_db": 13.59,
+          "final_gain_db": 0.8,
+          "gr_step_db": 12.789999999999999,
+          "attack_ms": 9.199999999999999,
+          "release_ms": 231.099999999999994,
+          "loud_late_iqr_db": 0.0,
+          "window_ms": 5.0,
+          "norm": 1.0,
+          "display": "Slow",
+          "hold_s": 2.0,
+          "gr_shift_db": 3.2
+        }
+      ]
+    }
+  ],
+  "program_dependence": {
+    "short_burst": {
+      "result": "measured",
+      "baseline_gain_db": 13.6,
+      "final_gain_db": 4.76,
+      "gr_step_db": 8.84,
+      "attack_ms": 10.800000000000001,
+      "release_ms": 11.199999999999999,
+      "loud_late_iqr_db": 0.14,
+      "window_ms": 5.0
+    },
+    "long_burst": {
+      "result": "measured",
+      "baseline_gain_db": 13.6,
+      "final_gain_db": 4.01,
+      "gr_step_db": 9.59,
+      "attack_ms": 11.5,
+      "release_ms": 12.800000000000001,
+      "loud_late_iqr_db": 0.0,
+      "window_ms": 5.0
+    },
+    "release_ratio_long_over_short": 1.14,
+    "program_dependent": false
+  },
+  "measuredAt": "20261006T142808"
+}

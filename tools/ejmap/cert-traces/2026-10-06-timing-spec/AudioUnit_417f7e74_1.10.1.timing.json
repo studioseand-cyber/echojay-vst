@@ -1,0 +1,64 @@
+{
+  "roles_by_measurement": [],
+  "unnamed_probed_without_signature": 0,
+  "unnamed_not_probed": "a burst pair per control costs ~12 s: the unnamed pool is not probed in this mode",
+  "role_rule": "names propose, measurement decides (5 Oct): a nominee keeps its role only when its two ends show the role's signature; an unnamed control that shows it is reported, not swept as the role",
+  "time_draft": {
+    "status": "DRAFT against COMP_TIMING_SPEC v0.1 (a proposal): data only, not in any compressor profile, not exported",
+    "definition": "63% (one time constant): attack = gain falls 63% of the GR step; release = recovers 63% of the way back",
+    "measured_at": {
+      "amount_control": "Peak Reduction",
+      "amount_by": "the single amount control",
+      "norm": 0.666667,
+      "gr_step_db": 7.4,
+      "burst_dbfs": [
+        -36.799999999999997,
+        -20.800000000000001
+      ]
+    },
+    "attack": null,
+    "release": null,
+    "program_dependent": false,
+    "release_short_burst_ms": 592.200000000000045,
+    "release_long_burst_ms": 592.399999999999977,
+    "method": "997 Hz burst 16 dB step; 5 ms windows aligned by latency; fast attacks re-read at 4 kHz, 1 ms windows; the hold at least 10 x the first-pass attack or 2 s; gr_shift_db against the instantiate position",
+    "notes": []
+  },
+  "schema": "ej_timing_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.3, not exported, not published",
+  "product": "bx_opto",
+  "version": "1.10.1",
+  "identity": "AudioUnit|417f7e74|1.10.1",
+  "amount_control": "Peak Reduction",
+  "amount_norm": 0.666667,
+  "one_db_point_dbfs_peak": -30.800000000000001,
+  "quiet_dbfs": -36.799999999999997,
+  "loud_dbfs": -20.800000000000001,
+  "method": "997 Hz sine, 1 s at quiet, step to loud, step back; gain per 5 ms window; attack = 63 % of the GR step, release = 63 % recovery",
+  "controls": [],
+  "program_dependence": {
+    "short_burst": {
+      "result": "measured",
+      "baseline_gain_db": -0.01,
+      "final_gain_db": -7.41,
+      "gr_step_db": 7.39,
+      "attack_faster_than_ms": 7.5,
+      "release_ms": 592.200000000000045,
+      "loud_late_iqr_db": 0.0,
+      "window_ms": 5.0
+    },
+    "long_burst": {
+      "result": "measured",
+      "baseline_gain_db": -0.01,
+      "final_gain_db": -7.41,
+      "gr_step_db": 7.4,
+      "attack_faster_than_ms": 7.5,
+      "release_ms": 592.399999999999977,
+      "loud_late_iqr_db": 0.0,
+      "window_ms": 5.0
+    },
+    "release_ratio_long_over_short": 1.0,
+    "program_dependent": false
+  },
+  "measuredAt": "20261006T142647"
+}

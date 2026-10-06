@@ -151,4 +151,52 @@ inline juce::var toVar (const Timing& t)
     return juce::var (o);
 }
 
+// KATHY'S TIMING SPEC v0.1 (6 Oct, sections 3, 5, 7) - the pure parts, pinned with mutants:
+inline const char* kDefinition = "63% (one time constant): attack = gain falls 63% of the GR step; release = recovers 63% of the way back";
+inline constexpr double kHoldAttackMultiple = 10.0, kHoldFloorS = 2.0, kHoldCapS = 30.0;   // the hold: at least 10 x the first-pass attack, or 2 s, whichever is longer
+inline constexpr double kFastPassHz = 4000.0, kFastPassWinMs = 1.0;                      // the second pass for a bound attack
+inline constexpr double kShiftsAmountDb = 0.5;                                            // a timing position that moves the steady GR by more than this shifts the amount
+// the hold for a position, from its first-pass attack (a bound counts as its bound)
+inline double scaledHoldS (std::optional<double> firstPassAttackMs, double holdS)
+{
+    double h = juce::jmax (holdS, kHoldFloorS);
+    if (firstPassAttackMs) h = juce::jmax (h, *firstPassAttackMs * kHoldAttackMultiple / 1000.0);
+    return juce::jmin (h, kHoldCapS);
+}
+// a first pass whose attack is only a bound (inside the first 5 ms window) gets the 4 kHz / 1 ms second pass
+inline bool secondPassNeeded (const Timing& first) { return (first.result == "measured" || first.result == "bound") && ! first.attackMs && first.attackBoundMs.has_value(); }
+// the position's attack after both passes: a time, or "faster than" the second pass's window (1 ms)
+struct AttackRead { std::optional<double> attackMs, fasterThanMs; juce::String pass; };
+inline AttackRead attackAfterPasses (const Timing& first, const std::optional<Timing>& second)
+{
+    AttackRead a;
+    if (first.attackMs) { a.attackMs = first.attackMs; a.pass = "997 Hz, 5 ms windows"; return a; }
+    if (second && second->attackMs) { a.attackMs = second->attackMs; a.pass = "4 kHz, 1 ms windows"; return a; }
+    if (second && second->attackBoundMs) { a.fasterThanMs = kFastPassWinMs; a.pass = "4 kHz, 1 ms windows: a bound"; return a; }
+    if (first.attackBoundMs) { a.fasterThanMs = first.attackBoundMs; a.pass = "997 Hz, 5 ms windows: a bound (no second pass)"; return a; }
+    return a;
+}
+// the steady GR at a timing position against the instantiate position (section 5)
+inline double grShiftDb (double stepDbAtPosition, double stepDbAtInstantiate) { return std::round ((stepDbAtPosition - stepDbAtInstantiate) * 100.0) / 100.0; }
+inline bool shiftsAmount (double grShift) { return std::abs (grShift) > kShiftsAmountDb; }
+// ONE POSITION of the section 7 `time` block
+inline juce::var timePosition (double norm, const juce::String& display, const juce::String& role, const Timing& first, const std::optional<Timing>& second, double grShift)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty ("norm", norm); o->setProperty ("display", display);
+    if (role == "attack")
+    {
+        const auto a = attackAfterPasses (first, second);
+        o->setProperty ("attack_ms", a.attackMs ? juce::var (std::round (*a.attackMs * 10.0) / 10.0) : juce::var());
+        if (a.fasterThanMs) o->setProperty ("faster_than_ms", *a.fasterThanMs);
+        if (a.pass.isNotEmpty()) o->setProperty ("pass", a.pass);
+    }
+    else
+    {
+        o->setProperty ("release_ms", first.releaseMs ? juce::var (std::round (*first.releaseMs * 10.0) / 10.0) : juce::var());
+        if (! first.releaseMs && first.releaseBoundMs) o->setProperty ("longer_than_ms", *first.releaseBoundMs);
+    }
+    o->setProperty ("gr_shift_db", grShift); if (shiftsAmount (grShift)) o->setProperty ("shifts_amount", true);
+    if (first.result == "refused") o->setProperty ("refused", first.reason);
+    return juce::var (o);
+}
 } // namespace ejmap::timing

@@ -1,0 +1,4 @@
+[timing 1/4 | all 1/4] bx_opto: ok 1.64237 s | elapsed 0:00:02 | ETA 0:00:05
+[timing 2/4 | all 2/4] elysia mpressor: ok 12.819 s | elapsed 0:00:14 | ETA 0:00:14
+[timing 3/4 | all 3/4] Lindell 7X-500: ok 67.6821 s | elapsed 0:01:22 | ETA 0:00:13
+[timing 4/4 | all 4/4] Lindell SBC: ok 11.4041 s | elapsed 0:01:34 | ETA 0:00:00
