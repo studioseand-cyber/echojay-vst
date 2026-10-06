@@ -5259,13 +5259,13 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     // ONE LEVEL (v1.7 section 8, L per level ruled 3 Oct): the test L for this g by profile::toneLevelFor (or the caller's
     // override), the pick there, the writes, one fresh process at L, the GR against the pick's expected g within 0.5 dB.
     struct LevelResult { double g = 0, Lrms = 0, Lpeak = 0, Lref = 0, gapDb = 0; bool ran = false, pass = false, quietOk = false, window = false, noValidL = false; std::optional<double> gr; std::vector<double> chGrDb; profile::Pick pick; juce::String why, rule; };
-    auto checkAt = [&] (double gg, const juce::String& tag) -> LevelResult
+    auto checkAt = [&] (double gg, const juce::String& tag, std::optional<double> fAt = std::nullopt) -> LevelResult
     {
         LevelResult lr; lr.g = gg;
         if (Lrms > kToneLevelByRule + 1.0) { lr.Lrms = Lrms; lr.pick = profile::pickPosition (profile, Lrms, gg); lr.rule = "L given by the caller (" + juce::String (Lrms, 2) + ")"; }
         else
         {
-            const auto tl = profile::toneLevelFor (profile, gg);
+            const auto tl = profile::toneLevelFor (profile, gg, fAt);
             lr.rule = tl.rule; lr.Lref = tl.Lref; lr.gapDb = tl.gapDb;
             if (! tl.ok) { lr.noValidL = true; lr.why = tl.reason; say ("TONE: " + product + " - " + juce::String (gg, 1) + " dB: " + lr.why); return lr; }
             lr.Lrms = tl.L; lr.pick = tl.pick;
@@ -5325,8 +5325,26 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
         p->setProperty ("in_at_g", pk.inAtG0); p->setProperty ("stepped", pk.stepped); p->setProperty ("pick_one_db", pk.pickOneDb); p->setProperty ("clamp_db", pk.clampDb); p->setProperty ("expected_gr_db", pk.expectedGrDb); if (pk.stepped) p->setProperty ("expected_extrapolated", pk.expectedExtrapolated);
         p->setProperty ("filled_across_norm", pk.filledAcrossNorm); p->setProperty ("fell_back_to_measured", pk.fellBackToMeasured); if (pk.note.isNotEmpty()) p->setProperty ("note", pk.note); return juce::var (p); };
 
-    const auto main = checkAt (g, "");
-    if (main.window) return kToneWindowExit;
+    // AN UNKNOWN DETECTOR (Sean's ruling, 6 Oct): the check runs at BOTH L_ref values - rms (f = 0) and peak (f = 1) - and passes only if both
+    // pass; both are recorded. A measured detector runs once at its own L_ref, as before.
+    const bool fUnknown = profile::detectorUnknown (profile);
+    const auto fList = profile::detectorFractionsToTest (profile);
+    std::vector<LevelResult> mains;
+    for (double fAt : fList)
+    {
+        if (fUnknown) say ("TONE: " + product + " - detector unknown: testing at L_ref for f = " + juce::String (fAt, 0) + (fAt < 0.5 ? " (rms)" : " (peak)"));
+        auto m = checkAt (g, fUnknown ? (fAt < 0.5 ? juce::String (".f0") : juce::String (".f1")) : juce::String(), fUnknown ? std::optional<double> (fAt) : std::nullopt);
+        if (m.window) return kToneWindowExit;
+        mains.push_back (m);
+    }
+    LevelResult main = mains.front();
+    if (fUnknown)
+    {
+        // the worse of the two decides: pass only if both pass; the reported reading is the failing one's, or f = 0's when both pass
+        for (const auto& m : mains) if (! m.pass) { main = m; break; }
+        main.pass = true; for (const auto& m : mains) main.pass = main.pass && m.pass;
+        say ("TONE: " + product + " - detector unknown: f = 0 " + (mains[0].pass ? "PASS" : "FAIL") + ", f = 1 " + (mains.size() > 1 && mains[1].pass ? "PASS" : "FAIL") + " -> " + (main.pass ? "PASS (both)" : "FAIL (both must pass)"));
+    }
     // THE WRITE FAULT (Kathy's ruling 2, 6 Oct): a reading ~0 where the curve predicts compression is first asked whether the
     // check wrote what the sweep wrote - its writes against the sweep trace's set lines; a difference is a WRITE FAULT (fix the
     // writes, re-check: never a re-sweep). Zip, 5 Oct: ratio [5] check 0.0000, sweep 0.4219.
@@ -5437,6 +5455,13 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     o->setProperty ("quiet_check_ok", main.quietOk);
     o->setProperty ("gr_measured_db", main.gr ? juce::var (std::round (*main.gr * 100.0) / 100.0) : juce::var());
     o->setProperty ("pass_within_0_5_db", main.pass);
+    if (fUnknown)
+    {
+        o->setProperty ("detector_unknown", true);
+        juce::Array<juce::var> both;
+        for (size_t i = 0; i < mains.size(); ++i) { auto* b = new juce::DynamicObject(); b->setProperty ("detector_f_tested", fList[i]); b->setProperty ("L_rms_dbfs", mains[i].Lrms); b->setProperty ("L_ref_dbfs", mains[i].Lref); b->setProperty ("gr_measured_db", mains[i].gr ? juce::var (std::round (*mains[i].gr * 100.0) / 100.0) : juce::var()); b->setProperty ("pass", mains[i].pass); b->setProperty ("quiet_check_ok", mains[i].quietOk); both.add (juce::var (b)); }
+        o->setProperty ("both_levels", both); o->setProperty ("rule", "detector unknown: tested at both L_ref values (f = 0 and f = 1); passes only if both pass (Sean, 6 Oct)");
+    }
     if (writeFaultNote.isNotEmpty()) o->setProperty ("write_fault", writeFaultNote);
     if (! main.ran) o->setProperty ("why_not_run", main.why);
     o->setProperty ("probe", id.cdhash); o->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
@@ -5446,8 +5471,11 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     juce::Array<juce::var> deepArr, nulled; juce::StringArray toneNullLines;
     for (int t : profile::deepLevelsCarried (profile))
     {
-        const auto lr = checkAt ((double) t, ".g" + juce::String (t));
-        if (lr.window) return kToneWindowExit;
+        // an unknown detector: each deep level at both L_ref values too, the worse one decides (Sean, 6 Oct)
+        LevelResult lr;
+        { std::vector<LevelResult> rs;
+          for (double fAt : fList) { auto m = checkAt ((double) t, ".g" + juce::String (t) + (fUnknown ? (fAt < 0.5 ? ".f0" : ".f1") : juce::String()), fUnknown ? std::optional<double> (fAt) : std::nullopt); if (m.window) return kToneWindowExit; rs.push_back (m); }
+          lr = rs.front(); if (fUnknown) { for (const auto& m : rs) if (! m.pass) { lr = m; break; } bool all = true; for (const auto& m : rs) all = all && m.pass; lr.pass = all; } }
         auto* dl = new juce::DynamicObject(); dl->setProperty ("g_db", (double) t); dl->setProperty ("ran", lr.ran); dl->setProperty ("gr_measured_db", lr.gr ? juce::var (std::round (*lr.gr * 100.0) / 100.0) : juce::var());
         dl->setProperty ("L_rms_dbfs", lr.ran || lr.pick.ok ? juce::var (lr.Lrms) : juce::var()); dl->setProperty ("L_rule", lr.rule); { juce::Array<juce::var> ch; for (double x : lr.chGrDb) ch.add (std::round (x * 100.0) / 100.0); dl->setProperty ("gr_per_channel_db", ch); } dl->setProperty ("L_ref_dbfs", lr.Lref); dl->setProperty ("L_gap_db", lr.ran || lr.pick.ok ? juce::var (std::round (lr.gapDb * 100.0) / 100.0) : juce::var());
         dl->setProperty ("quiet_check_ok", lr.quietOk); dl->setProperty ("pass_within_0_5_db", lr.pass); dl->setProperty ("pick", lr.pick.ok ? pickVar (lr.pick) : juce::var()); if (! lr.ran) dl->setProperty ("why_not_run", lr.why);
@@ -5519,12 +5547,13 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
     if (candIndex >= 0) { std::optional<sweep::Plan::Candidate> pc; for (const auto& c : plan.candidates) if (c.index == candIndex) pc = c; if (pc) plan = plan.forCandidate (*pc); plan.candidates.clear(); }   // copy first (see the exporter)
     if (plan.thr < 0) { say ("DETECTOR: several threshold candidates; pass --candidate NAME"); return 4; }
     plan.makeProfile();
-    // the position: numeric 2 dB point nearest -18 dBFS RMS (= -14.99 peak)
+    // the position: numeric 2 dB point nearest -18 dBFS RMS (= -14.99 peak); the RETRY (Sean's ruling, 6 Oct) nearest -27 dBFS RMS, well
+    // inside both signals' range, when either signal does not reach 2 dB at the first
     const auto norms = sweepVar.getProperty ("positionNorms", {}); const auto inAt = sweepVar.getProperty ("inAtGr", {});
-    int best = -1; double bestD = 1e9;
-    for (int i = 0; i < inAt.size(); ++i) { const auto v = inAt[i].getProperty ("2", {}); if (v.isDouble() || v.isInt()) { const double d = std::abs ((double) v - (-18.0 + profile::kPeakToSineRmsDb)); if (d < bestD) { bestD = d; best = i; } } }
+    auto positionNear = [&] (double rmsAnchor) { int best = -1; double bestD = 1e9; for (int i = 0; i < inAt.size(); ++i) { const auto v = inAt[i].getProperty ("2", {}); if (v.isDouble() || v.isInt()) { const double d = std::abs ((double) v - (rmsAnchor + profile::kPeakToSineRmsDb)); if (d < bestD) { bestD = d; best = i; } } } return best; };
+    int best = positionNear (-18.0);
     if (best < 0) { say ("DETECTOR: no position has a measured 2 dB point"); return 4; }
-    const float norm = (float) (double) norms[best];
+    float norm = (float) (double) norms[best]; juce::String retryTag;
     juce::StringArray sets; if (const auto* pre = sweepVar.getProperty ("preconditions", {}).getArray()) for (const auto& x : *pre) sets.add (x.getProperty ("index", -1).toString() + ":" + juce::String ((double) x.getProperty ("norm", 0.0), 6));
     if (const auto* ws = sweepVar.getProperty ("engageWrites", {}).getProperty ("writes", {}).getArray()) for (const auto& w : *ws) sets.add (w.getProperty ("index", -1).toString() + ":" + juce::String ((double) w.getProperty ("norm", 0.0), 6));
     juce::StringArray levelList; for (double L : plan.probeLevels()) levelList.add (juce::String ((int) L));
@@ -5538,7 +5567,7 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
         if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
         const auto r = runChild (args, opt.timeoutMs);
         auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
-        raw.getChildFile (recordFile.getFileNameWithoutExtension() + (twoTone ? ".detector.twotone.1.txt" : ".detector.sine.1.txt")).replaceWithText (r.out, false, false, "\n");
+        raw.getChildFile (recordFile.getFileNameWithoutExtension() + ".detector" + retryTag + (twoTone ? ".twotone.1.txt" : ".sine.1.txt")).replaceWithText (r.out, false, false, "\n");
         if (! r.cleanExit()) { say ("DETECTOR: the " + juce::String (twoTone ? "two-tone" : "sine") + " process " + r.describe()); return std::nullopt; }
         if (twoTone) { int holds = 0, silent = 0; for (const auto& line : juce::StringArray::fromLines (r.out)) if (line.startsWith ("hold\t")) { ++holds; const auto f = juce::StringArray::fromTokens (line, "\t", ""); const int k = f.indexOf ("level_db"); if (k >= 0 && k + 1 < f.size() && f[k + 1].getDoubleValue() <= -900.0) ++silent; } twoToneSilent = holds > 0 && silent == holds; }
         sweep::ProcessOut po { r.out, true, r.describe(), norm };
@@ -5548,14 +5577,28 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
         say ("DETECTOR: " + juce::String (twoTone ? "two-tone" : "sine    ") + " at norm " + juce::String (norm, 4) + ": 2 dB reached at " + juce::JSON::toString (v, true) + " dBFS peak-equivalent (" + d.result + ")");
         return (v.isDouble() || v.isInt()) ? std::optional<double> ((double) v) : std::nullopt;
     };
-    const auto sine = run (false), two = run (true);
+    auto sine = run (false), two = run (true);
+    // THE RETRY (Sean, 6 Oct): either signal short of 2 dB at the -18 position -> the position whose 2 dB point is nearest -27 dBFS RMS, both signals again
+    juce::String positionNote = "position: norm " + juce::String (norm, 4) + " (2 dB point nearest -18 dBFS RMS)";
+    if (! sine || ! two)
+    {
+        const int lower = positionNear (-27.0);
+        if (lower >= 0 && lower != best)
+        {
+            say ("DETECTOR: " + product + " - " + (sine ? juce::String ("the two-tone") : two ? juce::String ("the sine") : juce::String ("neither signal")) + " reached 2 dB at norm " + juce::String (norm, 4) + ": retrying at the position whose 2 dB point is nearest -27 dBFS RMS (norm " + juce::String ((double) norms[lower], 4) + ")");
+            best = lower; norm = (float) (double) norms[lower]; retryTag = ".retry"; twoToneSilent = false;
+            sine = run (false); two = run (true);
+            positionNote = "position: norm " + juce::String (norm, 4) + " (retried: the 2 dB point nearest -27 dBFS RMS, after the -18 position left a signal short of 2 dB)";
+        }
+    }
     if (sine && ! two && twoToneSilent)
     {
         // UNMEASURABLE BY THIS METHOD (ruled 6 Oct, Auto-Tune Vocal Compressor): the sine reached 2 dB, the two-tone produced NO output at any
         // level - a pitch-tracking unit mutes an unpitched signal. Recorded as such; the export assumes rms (f = 0) and says so.
         auto* det = new juce::DynamicObject();
         det->setProperty ("fraction", juce::var()); det->setProperty ("sine_in_at_2db", *sine); det->setProperty ("twotone_in_at_2db", juce::var()); det->setProperty ("hz2", 1201.0); det->setProperty ("position_norm", norm);
-        det->setProperty ("unmeasurable", "the two-tone (997 + 1201 Hz, equal RMS) produced no output at any level while the sine reached 2 dB at " + juce::String (*sine, 2) + " dBFS: a pitch-tracking unit mutes an unpitched signal; the detector fraction cannot be measured by the two-tone method");
+        det->setProperty ("unmeasurable", "the two-tone (997 + 1201 Hz, equal RMS) produced no output at any level (output exactly 0, input present) while the sine reached 2 dB at " + juce::String (*sine, 2) + " dBFS; " + positionNote + "; what in the plugin silences a two-tone input the probe cannot say");
+        det->setProperty ("position_note", positionNote);
         det->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
         det->setProperty ("rule", "shift between the sine's and the equal-RMS two-tone's 2 dB levels, over 3.01 dB; 0 = rms detector, 1 = peak detector");
         sweepVar.getDynamicObject()->setProperty ("detector", juce::var (det));
@@ -5563,11 +5606,22 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
         say ("DETECTOR: " + product + " - sine 2 dB at " + juce::String (*sine, 2) + ", the two-tone SILENT at every level: unmeasurable by this method (a pitch-tracking unit), recorded as such -> written into " + recordFile.getFileName());
         return 0;
     }
-    if (! sine || ! two) { say ("DETECTOR: " + product + " - a 2 dB point was not reached on one signal; nothing recorded"); return 1; }
+    if (! sine || ! two)
+    {
+        // NOT REACHED AT BOTH POSITIONS: recorded as unmeasurable with the reason (the export then says detector_f null, "unknown" - Sean, 6 Oct)
+        auto* det = new juce::DynamicObject();
+        det->setProperty ("fraction", juce::var()); det->setProperty ("sine_in_at_2db", sine ? juce::var (*sine) : juce::var()); det->setProperty ("twotone_in_at_2db", two ? juce::var (*two) : juce::var()); det->setProperty ("hz2", 1201.0); det->setProperty ("position_norm", norm);
+        det->setProperty ("unmeasurable", juce::String (sine ? "the two-tone" : two ? "the sine" : "neither signal") + " reached 2 dB inside the measured levels" + (retryTag.isNotEmpty() ? ", at the -18 position and again at the -27 retry" : juce::String()) + "; " + positionNote);
+        det->setProperty ("position_note", positionNote); det->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
+        sweepVar.getDynamicObject()->setProperty ("detector", juce::var (det));
+        recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n");
+        say ("DETECTOR: " + product + " - " + det->getProperty ("unmeasurable").toString() + "; recorded as unmeasurable -> exported unknown");
+        return 1;
+    }
     const double f = profile::detectorFraction (*sine, *two);
     auto* det = new juce::DynamicObject();
     det->setProperty ("fraction", std::round (f * 100.0) / 100.0); det->setProperty ("sine_in_at_2db", *sine); det->setProperty ("twotone_in_at_2db", *two);
-    det->setProperty ("hz2", 1201.0); det->setProperty ("position_norm", norm); det->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
+    det->setProperty ("hz2", 1201.0); det->setProperty ("position_norm", norm); det->setProperty ("position_note", positionNote); det->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
     det->setProperty ("rule", "shift between the sine's and the equal-RMS two-tone's 2 dB levels, over 3.01 dB; 0 = rms detector, 1 = peak detector");
     sweepVar.getDynamicObject()->setProperty ("detector", juce::var (det));
     recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n");

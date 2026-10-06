@@ -650,22 +650,25 @@ inline Export exportCompProfile (const juce::var& f)
         P->setProperty ("ratio", juce::var (r));
     }
     P->setProperty ("static_gain_db", r2 (staticGain));
+    juce::String detectorNote;
     {
         const auto det = sweepVar.getProperty ("detector", {});
         std::optional<double> f; if (det.isObject() && (det.getProperty ("fraction", {}).isDouble() || det.getProperty ("fraction", {}).isInt())) f = (double) det.getProperty ("fraction", {});
-        if (! f && det.isObject() && det.getProperty ("unmeasurable", "").toString().isNotEmpty())
+        if (! f && ! det.isObject()) return refuse ("detector_f not measured (v1.4 requires it): run --cert-detector on the record first");   // never attempted: the follow-up measures first
+        if (! f)
         {
-            // MEASURED AND UNMEASURABLE (ruled 6 Oct, Auto-Tune Vocal Compressor): the detector was run on the pick's own 2 dB point and the
-            // two-tone was silent; the profile assumes rms (f = 0, the convention's default) and SAYS it is assumed, never measured
-            P->setProperty ("detector_f", 0.0); P->setProperty ("detector_f_raw", juce::var());
-            P->setProperty ("detector_f_source", "assumed rms (0.0): " + det.getProperty ("unmeasurable", "").toString());
+            // ATTEMPTED AND NOT MEASURED = UNKNOWN (Sean's ruling, 6 Oct, Auto-Tune Vocal Compressor and any other): detector_f null, the reason in
+            // notes - never an assumed value. The tone check then tests at BOTH L_ref values (f = 0 and f = 1) and passes only if both pass.
+            const auto why = det.getProperty ("unmeasurable", "").toString().isNotEmpty() ? det.getProperty ("unmeasurable", "").toString() : juce::String ("the detector run recorded no fraction");
+            // EXACTLY "detector_f": null, "detector_f_source": "unknown" (Sean's amendment, 6 Oct): the server treats the profile as estimated
+            P->setProperty ("detector_f", juce::var()); P->setProperty ("detector_f_source", "unknown");
+            detectorNote = "detector: unknown - " + why + "; the tone check tests at both L_ref values (rms f = 0 and peak f = 1) and passes only if both pass";
         }
         else
         {
-            if (! f) return refuse ("detector_f not measured (v1.4 requires it): run --cert-detector on the record first");
+            // a measured detector: unchanged shape, no detector_f_source (Sean, 6 Oct)
             P->setProperty ("detector_f", r2 (juce::jlimit (0.0, 1.0, *f)));
             P->setProperty ("detector_f_raw", r2 (*f));                                                     // unclamped, so an out-of-range measurement is visible
-            P->setProperty ("detector_f_source", "measured");
         }
     }
     {
@@ -803,6 +806,7 @@ inline Export exportCompProfile (const juce::var& f)
     flush();
     if (fit.maxErrorDb > 1.5) { notes << "fit.max_error_db over 1.5 against the v1 model: NOT a gate in v1.2 (section 6 matches measured points)"; flush(); }
     if (! sweepVar.getProperty ("engageWrites", {}).isObject()) { notes << "compressed as instantiated, no engage write needed"; flush(); }
+    if (detectorNote.isNotEmpty()) noteLines.add (detectorNote);
     P->setProperty ("notes", notesVar (noteLines));
     e.profile = juce::var (P);
     e.ok = true;
@@ -1001,15 +1005,24 @@ inline Pick pickPosition (const juce::var& profile, double L, double g)
 inline constexpr double kVocalLoudRmsDb = -18.4, kVocalLoudPeakDb = -6.2;    // the spec's example track (section 5 / 6.4 step 1)
 inline double toneLevelRef (double detectorF) { return kVocalLoudRmsDb + juce::jlimit (0.0, 1.0, detectorF) * (kVocalLoudPeakDb - kVocalLoudRmsDb - 3.0103); }
 struct ToneLevel { bool ok = false; double L = 0.0, Lref = 0.0, gapDb = 0.0; Pick pick; juce::String rule, reason; int tried = 0; double clampDb = 0.0; };
-inline ToneLevel toneLevelFor (const juce::var& profile, double g)
+// AN UNKNOWN DETECTOR (Sean's ruling, 6 Oct): the tone check tests at BOTH L_ref values - rms (f = 0) and peak (f = 1) - and passes only
+// if both pass. toneLevelFor takes the f to anchor on; with none on the profile the caller passes each in turn.
+inline std::vector<double> detectorFractionsToTest (const juce::var& profile)
+{
+    const auto fv = profile.getProperty ("detector_f", {});
+    if (fv.isDouble() || fv.isInt()) return { (double) fv };
+    return { 0.0, 1.0 };
+}
+inline bool detectorUnknown (const juce::var& profile) { const auto fv = profile.getProperty ("detector_f", {}); return ! (fv.isDouble() || fv.isInt()); }
+inline ToneLevel toneLevelFor (const juce::var& profile, double g, std::optional<double> fOverride = std::nullopt)
 {
     ToneLevel tl;
     const auto curve = profile.getProperty ("amount", {}).getProperty ("curve", {});
     const auto steps = profile.getProperty ("measured", {}).getProperty ("steps_dbfs", {});
     const double lo = steps.size() > 0 ? (double) steps[0] : -63.01, hi = steps.size() > 1 ? (double) steps[1] : -3.01;
     const auto fv = profile.getProperty ("detector_f", {});
-    if (! (fv.isDouble() || fv.isInt())) { tl.reason = "no detector_f on the profile: the test level cannot be anchored (section 6.4 step 1 needs f)"; return tl; }
-    const double f = (double) fv;
+    if (! fOverride && ! (fv.isDouble() || fv.isInt())) { tl.reason = "no detector_f on the profile and no f given: the test level cannot be anchored (section 6.4 step 1 needs f)"; return tl; }
+    const double f = fOverride ? *fOverride : (double) fv;
     tl.Lref = toneLevelRef (f);
     std::vector<double> vals;
     for (int i = 0; i < curve.size(); ++i) if (auto v = inAtGr (curve[i], g)) vals.push_back (*v);

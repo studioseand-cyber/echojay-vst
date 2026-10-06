@@ -5532,16 +5532,27 @@ void testProfileExport()
         check (P.getProperty ("amount", {}).getProperty ("stepped", true).isBool() && ! (bool) P.getProperty ("amount", {}).getProperty ("stepped", true)
                  && std::abs ((double) P.getProperty ("detector_f", 9.0) - 0.2) < 1e-6,
                "export X16 (v1.4): stepped is a boolean (false for a continuous control); detector_f is the measured number");
-        check (P.getProperty ("detector_f_source", "") == "measured", "export X16b: a measured detector says so");
-        // X16c (ruled 6 Oct, Auto-Tune Vocal Compressor): a detector run whose two-tone was silent is recorded unmeasurable; the export assumes
-        // rms (0.0) and says it is assumed; a detector never run still refuses
-        { auto un = juce::JSON::parse (juce::JSON::toString (rec)); auto* dd = new juce::DynamicObject(); dd->setProperty ("fraction", juce::var()); dd->setProperty ("unmeasurable", "the two-tone produced no output at any level: a pitch-tracking unit mutes an unpitched signal");
+        check (! P.hasProperty ("detector_f_source"), "export X16b (Sean, 6 Oct): a measured detector's profile carries NO detector_f_source - its shape is unchanged");
+        // X16c (Sean's ruling + amendment, 6 Oct): a detector not measured is exported EXACTLY as "detector_f": null, "detector_f_source": "unknown",
+        // the reason in notes - never assumed, never a default value; a detector never run exports the same way (no refusal)
+        { auto un = juce::JSON::parse (juce::JSON::toString (rec)); auto* dd = new juce::DynamicObject(); dd->setProperty ("fraction", juce::var()); dd->setProperty ("unmeasurable", "the two-tone produced no output at any level while the sine reached 2 dB");
           un.getProperty ("thresholdSweep", {}).getDynamicObject()->setProperty ("detector", juce::var (dd));
           const auto eu = exportCompProfile (un);
-          check (eu.ok && (double) eu.profile.getProperty ("detector_f", 9.0) == 0.0 && eu.profile.getProperty ("detector_f_raw", 1.0).isVoid() && eu.profile.getProperty ("detector_f_source", "").toString().startsWith ("assumed rms (0.0): the two-tone produced no output"),
-                 "export X16c: an unmeasurable detector exports f = 0.0 labelled assumed, with the reason (" + eu.refused + ")");
+          const auto notes = eu.ok ? juce::JSON::toString (eu.profile.getProperty ("notes", {})) : juce::String();
+          check (eu.ok && eu.profile.hasProperty ("detector_f") && eu.profile.getProperty ("detector_f", 1.0).isVoid() && eu.profile.getProperty ("detector_f_source", "").toString() == "unknown" && ! eu.profile.hasProperty ("detector_f_raw")
+                   && notes.contains ("detector: unknown - the two-tone produced no output") && notes.contains ("both L_ref"),
+                 "export X16c: an unmeasured detector is exactly detector_f null + detector_f_source \"unknown\", the reason in notes (" + eu.refused + ")");
+          check (eu.ok && ! eu.profile.getProperty ("detector_f", 1.0).isDouble() && ! eu.profile.getProperty ("detector_f", 1.0).isInt(), "export X16c: detector_f is null, never a number (no default value)");
           auto none = juce::JSON::parse (juce::JSON::toString (rec)); none.getProperty ("thresholdSweep", {}).getDynamicObject()->removeProperty ("detector");
-          check (! exportCompProfile (none).ok && exportCompProfile (none).refused.contains ("detector_f not measured"), "export X16c: a detector never run still refuses"); }
+          const auto en = exportCompProfile (none);
+          check (! en.ok && en.refused.contains ("detector_f not measured"), "export X16c: a detector never ATTEMPTED still refuses (the follow-up measures first; only an attempted, unmeasured one is unknown)");
+          auto att = juce::JSON::parse (juce::JSON::toString (rec)); auto* d0 = new juce::DynamicObject(); d0->setProperty ("fraction", juce::var()); att.getProperty ("thresholdSweep", {}).getDynamicObject()->setProperty ("detector", juce::var (d0));
+          const auto ea = exportCompProfile (att);
+          check (ea.ok && ea.profile.getProperty ("detector_f", 1.0).isVoid() && ea.profile.getProperty ("detector_f_source", "") == "unknown" && juce::JSON::toString (ea.profile.getProperty ("notes", {})).contains ("recorded no fraction"), "export X16c: an attempted detector with no fraction and no reason is unknown too, saying so");
+          // the tone check's rule for a null detector_f: both L_ref values, rms and peak
+          check (detectorUnknown (eu.profile) && ! detectorUnknown (P) && detectorFractionsToTest (eu.profile) == std::vector<double> { 0.0, 1.0 } && detectorFractionsToTest (P).size() == 1
+                   && std::abs (toneLevelFor (eu.profile, 2.0, 0.0).Lref - toneLevelRef (0.0)) < 1e-9 && std::abs (toneLevelFor (eu.profile, 2.0, 1.0).Lref - toneLevelRef (1.0)) < 1e-9 && ! toneLevelFor (eu.profile, 2.0).ok,
+                 "export X16d: a null detector_f tests at both L_ref values (f = 0 and f = 1); a measured one at its own; with no f at all the level cannot be anchored"); }
         const auto Q = P.getProperty ("quality", {});
         check (Q.isObject() && std::abs ((double) Q.getProperty ("point_error_db", 9.0) - 0.12) < 1e-6 && Q.getProperty ("method", "") == "hold 2.5 s vs 5 s"
                  && (bool) Q.getProperty ("monotonic_within_positions", false) && (bool) Q.getProperty ("monotonic_across_positions", false),
@@ -6088,7 +6099,7 @@ void testProfileExport()
         check (xd.ok && std::abs ((double) xd.profile.getProperty ("detector_f", 0.0) - 0.97) < 1e-6,
                "detector D3 (v1.3): a measured fraction exports as detector_f, the number");
         auto noDet = record (16, true, false, "", "certified"); noDet.getProperty ("thresholdSweep", {}).getDynamicObject()->removeProperty ("detector");
-        check (! exportCompProfile (noDet).ok && exportCompProfile (noDet).refused.contains ("detector_f"), "detector D4 (v1.4): a record without a measured detector_f is NOT exported - required");
+        check (! exportCompProfile (noDet).ok && exportCompProfile (noDet).refused.contains ("detector_f"), "detector D4 (v1.4): a record whose detector was never attempted is NOT exported - the follow-up measures it first (an attempted, unmeasured one exports unknown: X16c)");
         auto noRep = record (16, true, false, "", "certified"); noRep.getProperty ("thresholdSweep", {}).getDynamicObject()->removeProperty ("quality");
         check (! exportCompProfile (noRep).ok && exportCompProfile (noRep).refused.contains ("point_error_db"), "quality X21 (v1.4): a record without the hold-doubled repeat is NOT exported - required");
         // the monotonic self-check, both ways: equal neighbours across positions pass; a dip fails; equal within a position fails (strict).
