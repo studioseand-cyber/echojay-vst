@@ -33,3 +33,4 @@ latency-logs/*.log
 latency-logs/build/
 build-limiter-ab/
 docs/limiter_ab/renders/*.wav
+docs/limiter_ab/renders/*
