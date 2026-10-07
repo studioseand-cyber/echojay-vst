@@ -89,13 +89,19 @@ inline TruePeakResult truePeak (const std::vector<double>& x, double ceilingLin,
     return r;
 }
 
-// Power spectrum of x[start .. start+n) with a Hann window, n a power of two. Returns |X|^2 per bin, scaled so
-// a full-scale sine reads 1.0 at its bin (coherent gain removed); the caller sums ±bins for a line.
+// Power spectrum of x[start .. start+n) with a 4-term Blackman-Harris window (sidelobes -92 dB; Hann's leakage
+// from a line that is not bin-centred put a -44 dB floor under THD+N), n a power of two. Returns |X|^2 per bin,
+// scaled so a full-scale sine reads 1.0 at its bin (coherent gain removed); the caller sums ±5 bins for a line.
 inline std::vector<double> powerSpectrum (const std::vector<double>& x, size_t start, size_t n)
 {
     std::vector<std::complex<double>> a (n);
     double cg = 0;
-    for (size_t i = 0; i < n; ++i) { const double w = 0.5 - 0.5 * std::cos (2.0 * kPi * (double) i / (double) n); cg += w; a[i] = (start + i < x.size() ? x[start + i] : 0.0) * w; }
+    for (size_t i = 0; i < n; ++i)
+    {
+        const double t = 2.0 * kPi * (double) i / (double) n;
+        const double w = 0.35875 - 0.48829 * std::cos (t) + 0.14128 * std::cos (2 * t) - 0.01168 * std::cos (3 * t);
+        cg += w; a[i] = (start + i < x.size() ? x[start + i] : 0.0) * w;
+    }
     fft (a, false);
     std::vector<double> p (n / 2 + 1);
     for (size_t k = 0; k <= n / 2; ++k) { const double m = std::abs (a[k]) * 2.0 / cg; p[k] = m * m; }   // amplitude of a sine = 2|X|/cg

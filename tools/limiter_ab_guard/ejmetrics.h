@@ -247,7 +247,7 @@ inline ToneResult analyseTone (const Pair& p, const ejfix::Layout& L)
     ToneResult R; const size_t N = p.frames(); const size_t nfft = 1 << 16;
     const size_t B = (size_t) std::llround (p.sr / 1000.0); const auto gr = grSeries (p, B);
     const double binHz = p.sr / (double) nfft;
-    auto linePower = [&] (const std::vector<double>& ps, double hz) { const long k0 = std::lround (hz / binHz); double s = 0; for (long k = k0 - 3; k <= k0 + 3; ++k) if (k >= 0 && (size_t) k < ps.size()) s += ps[(size_t) k]; return s; };
+    auto linePower = [&] (const std::vector<double>& ps, double hz) { const long k0 = std::lround (hz / binHz); double s = 0; for (long k = k0 - 5; k <= k0 + 5; ++k) if (k >= 0 && (size_t) k < ps.size()) s += ps[(size_t) k]; return s; };
     for (const auto& s : L.segments)
     {
         ToneSeg T; T.levelDb = s.levelDb;
