@@ -85,4 +85,36 @@ struct Tracker
 inline double truePeakOf (const std::vector<double>& x, size_t warm = 0) { Tracker t; for (size_t i = 0; i < x.size(); ++i) { if (i == warm) t.resetPeaks(); t.push (x[i]); } return t.truePeak; }
 inline double toDb (double a) { return a > 0.0 ? 20.0 * std::log10 (a) : -999.0; }
 
+// THE BS.1770-4 REFERENCE (Annex 2's 48-tap, 4-phase interpolating FIR; 7 Oct follow-up 2): the cross-check for the filter above.
+// TRANSCRIBED FROM THE PUBLISHED TABLE AS RECALLED - no download was made. Its published structure is pinned (phase 3 is phase 0
+// reversed, phase 2 is phase 1 reversed), and the suite pins this filter and the designed one against each other and against generated
+// Tech 3341-style true-peak cases; a transcription slip large enough to matter shows there. Note the table's own property: phase 1 and
+// phase 2 sum to 0.973 (-0.24 dB at DC), phase 0 and 3 to 1.0016 - the standard's filter, not a transcription artefact.
+inline constexpr int kRefTaps = 12;
+inline const std::array<std::array<double, kRefTaps>, 4>& referencePhases()
+{
+    static const std::array<std::array<double, kRefTaps>, 4> h { {
+        { 0.0017089843750, 0.0109863281250, -0.0196533203125, 0.0332031250000, -0.0594482421875, 0.1373291015625, 0.9721679687500, -0.1022949218750, 0.0476074218750, -0.0266113281250, 0.0148925781250, -0.0083007812500 },
+        { -0.0291748046875, 0.0292968750000, -0.0517578125000, 0.0891113281250, -0.1665039062500, 0.4650878906250, 0.7797851562500, -0.2003173828125, 0.1015625000000, -0.0582275390625, 0.0330810546875, -0.0189208984375 },
+        { -0.0189208984375, 0.0330810546875, -0.0582275390625, 0.1015625000000, -0.2003173828125, 0.7797851562500, 0.4650878906250, -0.1665039062500, 0.0891113281250, -0.0517578125000, 0.0292968750000, -0.0291748046875 },
+        { -0.0083007812500, 0.0148925781250, -0.0266113281250, 0.0476074218750, -0.1022949218750, 0.9721679687500, 0.1373291015625, -0.0594482421875, 0.0332031250000, -0.0196533203125, 0.0109863281250, 0.0017089843750 } } };
+    return h;
+}
+struct ReferenceTracker
+{
+    std::array<double, kRefTaps> hist {}; int head = 0; double truePeak = 0.0;
+    void resetPeaks() { truePeak = 0.0; }
+    void push (double x)
+    {
+        hist[(size_t) head] = x; head = (head + 1) % kRefTaps;
+        for (const auto& ph : referencePhases())
+        {
+            double y = 0.0; int i = head;
+            for (int k = 0; k < kRefTaps; ++k) { i = (i + kRefTaps - 1) % kRefTaps; y += ph[(size_t) k] * hist[(size_t) i]; }
+            truePeak = std::max (truePeak, std::abs (y));
+        }
+    }
+};
+inline double referenceTruePeakOf (const std::vector<double>& x, size_t warm = 0) { ReferenceTracker t; for (size_t i = 0; i < x.size(); ++i) { if (i == warm) t.resetPeaks(); t.push (x[i]); } return t.truePeak; }
+
 } // namespace ejprobe::truepeak

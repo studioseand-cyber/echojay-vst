@@ -7728,6 +7728,32 @@ void testTruePeak()
     // a digitally clipped (flat-topped) sine: the TRUE peak sits ABOVE the flat top - the reconstruction rings at the corners (why
     // true-peak meters read over 0 dBFS on a clipped master, and why the spec's `overshoots` verdict exists); by 0.1 to 0.5 dB here
     { auto v = sine (997.0, 0.0, 1.0, 48000); for (auto& x : v) x = std::max (-0.5, std::min (0.5, x)); const double sp = samplePeak (v), tp = truePeakOf (v, warm); check (toDb (tp) - toDb (sp) > 0.1 && toDb (tp) - toDb (sp) < 0.5, "truepeak T5: a flat-topped clip at -6.02 reads " + juce::String (toDb (tp), 3) + " dB true peak (" + juce::String (toDb (tp) - toDb (sp), 2) + " over its sample peak)"); }
+    // FOLLOW-UP 2 (7 Oct): THE CROSS-CHECK against the BS.1770-4 reference filter and generated Tech 3341-style true-peak cases
+    {
+        const auto& R = referencePhases();
+        bool mirrored = true; for (int k = 0; k < kRefTaps; ++k) { if (R[3][(size_t) k] != R[0][(size_t) (kRefTaps - 1 - k)] || R[2][(size_t) k] != R[1][(size_t) (kRefTaps - 1 - k)]) mirrored = false; }
+        double s0 = 0.0, s1 = 0.0; for (int k = 0; k < kRefTaps; ++k) { s0 += R[0][(size_t) k]; s1 += R[1][(size_t) k]; }
+        check (mirrored && std::abs (s0 - 1.0016) < 0.001 && std::abs (s1 - 0.9730) < 0.001, "truepeak X1: the reference table's published structure (phase 3 = phase 0 reversed, 2 = 1 reversed; sums 1.0016 / 0.9730)");
+        // 997 Hz: designed vs reference within 0.1 dB, both at the amplitude
+        { const auto v = sine (997.0, 0.37, 0.5, 48000); const double a = toDb (truePeakOf (v, warm)), b = toDb (referenceTruePeakOf (v, warm));
+          check (std::abs (a - b) < 0.1 && std::abs (b - toDb (0.5)) < 0.1, "truepeak X2: at 997 Hz the designed filter reads " + juce::String (a, 3) + " and the BS.1770 reference " + juce::String (b, 3) + " dB (amplitude -6.021): within 0.1 dB"); }
+        // GENERATED Tech 3341-style cases (the document's own table is not reproduced; these are built the same way): sines whose TRUE peak is
+        // -6.0 dBFS with the sample phase chosen to put the crest between samples, at fs/4, fs/6, fs/8, fs/12 and fs/16 (the ratios that leave the
+        // crest furthest from a sample), plus a 0 dBTP sine at fs/4 with the samples 45 degrees off. Tech 3341's true-peak tolerance: +0.2 / -0.4 dB.
+        struct Case { double hz, phase, amp; const char* name; };
+        const std::vector<Case> cases { { 12000.0, kPi / 4.0, 0.5, "fs/4, 45 deg" }, { 8000.0, kPi / 6.0, 0.5, "fs/6, 30 deg" }, { 6000.0, kPi / 8.0, 0.5, "fs/8, 22.5 deg" },
+                                        { 4000.0, kPi / 12.0, 0.5, "fs/12, 15 deg" }, { 3000.0, kPi / 16.0, 0.5, "fs/16, 11.25 deg" }, { 12000.0, kPi / 4.0, 1.0, "fs/4 at 0 dBTP" } };
+        int inTol = 0, refInTol = 0, agree = 0; juce::StringArray worst;
+        for (const auto& c : cases)
+        {
+            const auto v = sine (c.hz, c.phase, c.amp, 48000); const double expect = toDb (c.amp), a = toDb (truePeakOf (v, warm)), b = toDb (referenceTruePeakOf (v, warm));
+            if (a - expect <= 0.2 && a - expect >= -0.4) ++inTol; if (b - expect <= 0.2 && b - expect >= -0.4) ++refInTol; if (std::abs (a - b) <= 0.25) ++agree;
+            worst.add (juce::String (c.name) + ": designed " + juce::String (a - expect, 3) + ", reference " + juce::String (b - expect, 3));
+        }
+        check (inTol == (int) cases.size(), "truepeak X3: the designed filter inside Tech 3341's +0.2 / -0.4 dB on all " + juce::String ((int) cases.size()) + " generated cases (" + worst.joinIntoString ("; ") + ")");
+        check (refInTol == (int) cases.size(), "truepeak X4: the BS.1770 reference inside the same tolerance on all of them");
+        check (agree == (int) cases.size(), "truepeak X5: the two filters agree within 0.25 dB case by case (measured 7 Oct: at most 0.22, at fs/12 where the reference over-reads +0.20 - its ripple or a recall slip in the table, both inside the tolerance; the designed filter sits on the 4x bound, -0.17 at fs/4)");
+    }
     // the tracker's running form equals the whole-buffer form
     { const auto v = sine (5000.0, 1.1, 0.7, 24000); Tracker t; for (size_t i = 0; i < v.size(); ++i) { if (i == warm) t.resetPeaks(); t.push (v[i]); } check (std::abs (t.truePeak - truePeakOf (v, warm)) < 1e-12, "truepeak T6: the running tracker and the buffer form agree"); }
 }
