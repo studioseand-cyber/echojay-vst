@@ -2847,3 +2847,22 @@ records beside it. Phase B category `strips` (opt-in, the ledger's `channel_stri
 each: bx_console SSL 4000 E (compressor 12 with `Dyn On/Off`, eq 21 with `HPF On/Off`, saturation 1), Lindell 80 Channel
 (compressor 11 `Comp In`, plan amount Comp Threshold; eq 10; gate 9 `Gate In`; saturation 1 — every section ran), bx_console N
 (eq 22, saturation 1). The EQ engage found is the HPF's switch where no `EQ In` exists: the record names it.
+
+## 75. Categorising the uncategorised: `--categorise-propose` (NEXT BUILD item F, 7 Oct; CATEGORISE_524_FIX.md read first)
+
+`EjmapCategorise.h` (pins CT1–CT6) over every installed product the ledger leaves uncategorised (`--only` names any product,
+`--limit N`): (1) OUT OF SCOPE by the AU type (aumu / augn instruments, aumi MIDI; aumf music effects stay in) and by meter /
+utility words; (2) the WORDS propose (name + the ledger's two-arm `kind`): dynamics / eq / reverb / delay / saturation / pitch /
+modulation; (3) four probe reads at the instantiate state — the 121-tone response at −30 and −12 dBFS, a burst-then-silence
+tail, harmonics at −30 and −6, a 30-cent static note — and the SIGNATURE decides in the order delay (discrete repeats),
+reverb (a tail; a feedback delay reads the same, so the words break the tie and no word leaves it unsettled), pitch (≥ 15
+cents), modulation (sidebands over −30 dB — the analysis' own floor is −41.6), dynamics (the gain moves ≥ 1 dB with level
+without audible THD), saturation (THD over −50 dB at −6 dBFS rising ≥ 6 dB; a coloured compressor is said), eq (≥ 3 dB
+across the tones, level-independent). Nothing holding at instantiate keeps a single word proposal UNSETTLED. Output:
+`<out>/proposed_categories.json` + `category_review.txt` (the unsettled first, with every reading). **Nothing is written to
+categories.json.** A PACE-wrapped product is not loaded here (`--include-pace` on a Mac with the licence); the licence gate
+applies. Rehearsed: twelve known units (bx_crispytuner → pitch 32 cents; OTT and Lindell 354E → dynamics; 7X-500 → saturation
+with "the gain also moves" noted; bx_rooMS and bx_delay2500 → a tail, unsettled reverb-or-delay by signature alone; the flat
+compressors at instantiate → their word, unsettled) and the first 40 uncategorised installed here (5 min: 11 out of scope,
+5 settled, 24 unsettled, 12 PACE not loaded; ~7.5 s per measured product, 28 s for a Waves B360 surround unit).
+Sean's 605: ~25% out of scope by name alone, the rest ~8–10 s each with `--include-pace` → roughly 1–1.5 h.

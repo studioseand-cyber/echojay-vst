@@ -60,6 +60,7 @@
 #include "EjmapLicence.h"
 #include "EjmapUadPreflight.h"
 #include "EjmapStrip.h"
+#include "EjmapCategorise.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include "EjmapCertReview.h"
@@ -1172,7 +1173,8 @@ struct DiscoveryInputs
 {
     std::map<juce::String, int> mapState;                   // identity key -> MapState (0 unmapped .. 5 unknown)
     std::map<juce::String, juce::String> localMapCategory;  // identity key -> category, from a local map
-    std::map<juce::String, juce::String> categoryByUid;     // "AudioUnit|uid" -> category, from categories.json
+    std::map<juce::String, juce::String> categoryByUid;
+    std::map<juce::String, juce::String> kindByUid;     // "AudioUnit|uid" -> category, from categories.json
     // "AudioUnit|uid" -> disposition, from categories.json, when it is anything but "sweep" - and its `why`. THE MAPPER'S
     // ESCAPE HATCH REACHES CERT (ruled 30 Sep): the runbook excludes a plugin that hangs by writing operator_excluded here,
     // and the certification batch must not open what the mapping sweep was told to leave alone.
@@ -1220,6 +1222,7 @@ inline DiscoveryInputs loadDiscoveryInputs (const juce::File& ledgerRoot)
                 {
                     const auto uidKey = k.toString().toLowerCase().replace ("audiounit|", "AudioUnit|").replace ("vst3|", "VST3|");
                     in.categoryByUid[uidKey] = p.value.getProperty ("category", "").toString();
+                    in.kindByUid[uidKey] = p.value.getProperty ("kind", "").toString();   // the two-arm models' kind string (item F reads it as a proposal)
                     const auto disp = p.value.getProperty ("disposition", "").toString().trim();
                     if (exclusionDisposition (disp))
                         in.dispositionByUid[uidKey] = disp + (p.value.hasProperty ("why") ? " (" + p.value.getProperty ("why", "").toString() + ")" : juce::String());
@@ -2944,6 +2947,79 @@ inline int runStrip (const SweepOptions& opt)
     outDir.getChildFile (stem + ".strip.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
     say ("STRIP: -> " + outDir.getChildFile (stem + ".strip.json").getFullPathName());
     return ran > 0 ? 0 : 4;
+}
+
+// CATEGORISE THE UNCATEGORISED (Kathy's NEXT BUILD item F, 7 Oct; the rules in EjmapCategorise.h): every installed product with no
+// category in the ledger -> out of scope by type / name, a proposal from the words, four probe reads at the instantiate state, the
+// signature decides -> <out>/proposed_categories.json + <out>/category_review.txt. NOTHING is written to categories.json.
+// --only / --limit narrow the set; a licence-bound product (the gate) is not loaded and listed as such.
+inline int runCategorisePropose (const SweepOptions& opt, const juce::StringArray& only, int limit)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("CATEGORISE: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    const auto in = loadDiscoveryInputs (opt.ledger);
+    const auto bundles = componentBundles();
+    std::vector<InstalledRecord> todo;
+    for (const auto& r : installedAudioUnits())
+    {
+        if (! only.isEmpty() && ! only.contains (r.desc.name)) continue;
+        const auto it = in.categoryByUid.find (r.uidKey); if (only.isEmpty() && it != in.categoryByUid.end() && it->second.isNotEmpty()) continue;   // categorised already (--only names a product regardless: a rehearsal on a known one)
+        todo.push_back (r);
+    }
+    std::sort (todo.begin(), todo.end(), [] (const InstalledRecord& a, const InstalledRecord& b) { return a.desc.name.compareIgnoreCase (b.desc.name) < 0; });
+    if (limit > 0 && (int) todo.size() > limit) todo.resize ((size_t) limit);
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
+    say ("CATEGORISE: " + juce::String ((int) todo.size()) + " uncategorised installed product(s)" + (limit > 0 ? " (limited to " + juce::String (limit) + ")" : juce::String()) + "; nothing is written to categories.json");
+    std::vector<categorise::Row> rows; const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    for (const auto& r : todo)
+    {
+        categorise::Row row; row.product = r.desc.name; row.vendor = r.desc.manufacturerName; row.identity = r.identityKey;
+        row.typeCode = r.desc.fileOrIdentifier.fromFirstOccurrenceOf ("/", false, false).upToFirstOccurrenceOf (",", false, false);
+        if (const auto k = in.kindByUid.find (r.uidKey); k != in.kindByUid.end()) row.kind = k->second;
+        row.outOfScope = categorise::outOfScope (row.typeCode, row.product, row.kind);
+        if (row.outOfScope.isNotEmpty()) { say ("  " + row.product + ": out of scope (" + row.outOfScope + ")"); rows.push_back (row); continue; }
+        row.proposed = categorise::categoriesFromWords (row.product, row.vendor, row.kind);
+        // the licence gate and PACE: a licence-bound product is not loaded here; the proposal from words stands, unsettled
+        juce::String why; const bool pace = paceHeld (r.desc, bundles, why);
+        if (const auto gate = licenceGate (opt, r.desc); gate.stop.isNotEmpty() || (pace && ! opt.includePace))
+        {
+            row.why = (gate.stop.isNotEmpty() ? gate.stop : "PACE-wrapped (" + why + "): not loaded here (--include-pace loads it)") + "; the words propose " + (row.proposed.isEmpty() ? juce::String ("nothing") : row.proposed.joinIntoString (" / ")) + ": review";
+            row.category = row.proposed.size() == 1 ? row.proposed[0] : juce::String(); say ("  " + row.product + ": " + row.why); rows.push_back (row); continue;
+        }
+        const auto uidHex = r.uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + r.desc.version;
+        auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), r.desc.name, r.desc.fileOrIdentifier, juce::String::toHexString (r.desc.uniqueId) }; args.addArray (extra); const auto x = runChild (args, opt.timeoutMs); raw.getChildFile (stem + ".categorise." + tag + ".1.txt").replaceWithText (x.out, false, false, "\n"); return x; };
+        const auto t1 = juce::Time::getMillisecondCounterHiRes();
+        const auto lp = run ("list-params", { "--list-params" });
+        if (lp.kind == ChildResult::Kind::uiShown) { row.why = "a window at the load (" + lp.describe() + "): not loaded again; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); rows.push_back (row); continue; }
+        if (! lp.cleanExit()) { row.why = "--list-params " + lp.describe() + "; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); rows.push_back (row); continue; }
+        int ctl = -1; for (const auto& [i, lr] : parseListParams (lp.out)) if (lr.automatable && ! lr.meta) { ctl = i; break; }
+        if (ctl < 0) { row.why = "no automatable parameter to hold the probe's position: " + juce::String ("the reads need one; the words propose ") + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); rows.push_back (row); continue; }
+        auto& sg = row.sig; bool window = false;
+        auto guard = [&] (const ChildResult& x) { if (x.kind == ChildResult::Kind::uiShown) window = true; return x; };
+        const auto r30 = guard (run ("resp30", { "--response", "ctl=" + juce::String (ctl), "norms=current", "tones=121", "lo=20", "hi=20000", "db=-30", "hold=1.0", "discard=0.5" }));
+        const auto r12 = window ? ChildResult() : guard (run ("resp12", { "--response", "ctl=" + juce::String (ctl), "norms=current", "tones=121", "lo=20", "hi=20000", "db=-12", "hold=1.0", "discard=0.5" }));
+        categorise::readResponses (sg, eq::parseResponse (r30.cleanExit() ? r30.out : juce::String()), eq::parseResponse (r12.cleanExit() ? r12.out : juce::String()));
+        const auto tl = window ? ChildResult() : guard (run ("tail", { "--tail", "db=-12", "burst_ms=300", "tail_s=3", "hz=997", "win_ms=1" }));
+        categorise::readTail (sg, reverbdelay::parseTail (tl.cleanExit() ? tl.out : juce::String()));
+        const auto h30 = window ? ChildResult() : guard (run ("harm30", { "--response", "ctl=" + juce::String (ctl), "norms=current", "tones=1", "lo=997", "harmonics=5", "db=-30", "hold=1.0", "discard=0.5" }));
+        const auto h6 = window ? ChildResult() : guard (run ("harm6", { "--response", "ctl=" + juce::String (ctl), "norms=current", "tones=1", "lo=997", "harmonics=5", "db=-6", "hold=1.0", "discard=0.5" }));
+        categorise::readHarmonics (sg, saturation::parseHarmonics (h30.cleanExit() ? h30.out : juce::String()), saturation::parseHarmonics (h6.cleanExit() ? h6.out : juce::String()));
+        const auto pt = window ? ChildResult() : guard (run ("pitch", { "--sweep-pitch", "ctl=" + juce::String (ctl), "norms=current", "gen=static", "note=220", "cents=30", "hold=2", "db=-18" }));
+        categorise::readPitch (sg, pitch::parsePitch (pt.cleanExit() ? pt.out : juce::String()), 30.0);
+        row.measured = ! window; row.seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0;
+        if (window) { row.why = "a window appeared during the reads: not loaded again; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); rows.push_back (row); continue; }
+        const auto d = categorise::decide (sg, row.proposed); row.category = d.category; row.why = d.why; row.settled = d.settled;
+        say ("  " + row.product + ": " + (d.settled ? d.category + " - " : juce::String ("UNSETTLED - ")) + d.why + " (" + juce::String (row.seconds, 0) + " s)");
+        rows.push_back (row);
+    }
+    juce::Array<juce::var> arr; for (const auto& row : rows) arr.add (categorise::rowVar (row));
+    auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_category_proposal/0"); o->setProperty ("status", "PROPOSAL (item F, 7 Oct): nothing written to categories.json; the review sheet lists the unsettled");
+    o->setProperty ("rules", "out of scope by AU type (aumu/augn/aumf/aumi) and meter / utility words; words propose; the signature decides in the order delay, reverb (the words break a tail's tie), pitch, modulation, dynamics, saturation, eq; bars: level 1 dB, frequency span 3 dB, THD audible -50 dB and rising 6 dB, pitch 15 cents, RT60 0.25 s, sideband -30 dB");
+    o->setProperty ("products", arr); o->setProperty ("seconds", std::round ((juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0)); o->setProperty ("writtenAt", nowStamp());
+    opt.out.getChildFile ("proposed_categories.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    opt.out.getChildFile ("category_review.txt").replaceWithText (categorise::reviewSheet (rows), false, false, "\n");
+    say ("CATEGORISE: -> " + opt.out.getChildFile ("proposed_categories.json").getFullPathName() + " and category_review.txt (" + juce::String ((int) rows.size()) + " row(s), " + juce::String ((juce::Time::getMillisecondCounterHiRes() - t0) / 60000.0, 1) + " min)");
+    return 0;
 }
 
 // --uad-preflight: say what the registry shows, load nothing

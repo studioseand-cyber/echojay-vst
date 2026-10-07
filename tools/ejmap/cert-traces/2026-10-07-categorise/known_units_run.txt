@@ -1,0 +1,13 @@
+CATEGORISE: 11 uncategorised installed product(s); nothing is written to categories.json
+  bx_bluechorus2: UNSETTLED - no signature held; proposed by words: modulation: review (2.30434 s)
+  bx_console N: UNSETTLED - no signature at the instantiate state (flat, level-independent, no tail, no THD rise); the name's single proposal stands, unsettled: review (2.69455 s)
+  bx_crispytuner: pitch - the output's pitch moved 32.1 cents from the input's (3.96178 s)
+  bx_delay2500: UNSETTLED - a tail (RT60 2.85 s, 0 repeat(s) found) and no word: leaning reverb (a feedback delay reads the same): review (2.78003 s)
+  bx_limiter: UNSETTLED - no signature at the instantiate state (flat, level-independent, no tail, no THD rise); the name's single proposal stands, unsettled: review (2.82722 s)
+  bx_opto: UNSETTLED - no signature at the instantiate state (flat, level-independent, no tail, no THD rise); the name's single proposal stands, unsettled: review (2.63531 s)
+  bx_rooMS: UNSETTLED - a tail (RT60 7.90 s, 0 repeat(s) found) and no word: leaning reverb (a feedback delay reads the same): review (2.93312 s)
+  Lindell 354E: dynamics - the gain moves 2.67 dB between -30 and -12 dBFS on the same tones; THD -59.8 dB at -6 (not audible) (2.53618 s)
+  Lindell 7X-500: saturation - THD rises 46.9 dB from -30 to -6 dBFS (-37.9 dB at -6) (2.46368 s)
+  Lindell SBC: UNSETTLED - no signature at the instantiate state (flat, level-independent, no tail, no THD rise); the name's single proposal stands, unsettled: review (2.55323 s)
+  OTT: dynamics - the gain moves 10.26 dB between -30 and -12 dBFS on the same tones; THD -56.3 dB at -6 (not audible) (0.989526 s)
+CATEGORISE: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cat2/proposed_categories.json and category_review.txt (11 row(s), 0.5 min)

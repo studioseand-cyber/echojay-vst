@@ -3,8 +3,8 @@
   the server's two-arm categoriser is a queue now, and this proposes OFFLINE, writing nothing to Sean's categories).
 
   Three steps, each on the record so the review sheet shows why:
-    1. OUT OF SCOPE by the AU type code and the name: aumu / aumf / augn / aumi (instruments, music effects, generators, MIDI)
-       -> instrument / midi; meter / analyser / analyzer / scope / tuner-display words -> meter; utility words (gain, trim,
+    1. OUT OF SCOPE by the AU type code and the name: aumu / augn / aumi (instruments, generators, MIDI processors) -> instrument /
+       midi (aumf, a music effect, stays in scope); meter / analyser / analyzer / scope / tuner-display words -> meter; utility words (gain, trim,
        pan, routing, dither, test tone, phase, downmix, stereo-to-mono, send, return, utility, latency) -> utility.
     2. A PROPOSAL from the name, the vendor's line and the ledger's `kind` (the two-arm models' kind string, where one was
        written): the category words -> dynamics / eq / reverb / delay / saturation / pitch / modulation; several -> unsettled.
@@ -16,8 +16,9 @@
          harmonics at -30 and -6 dBFS: THD rising with level by more than kThdRiseDb = saturation
          a static detuned note: the output's pitch moved from the input's by more than kPitchCents = pitch; sidebands beside
            the fundamental (modulationOf) = modulation
-       The signatures are tried in the order delay, reverb, pitch, modulation, saturation, dynamics, eq (a reverb's tail is
-       also frequency-dependent; a saturator's THD also moves the level): the first that holds decides. None holding, or two
+       The signatures are tried in the order delay, reverb (the words break a tail's reverb / delay tie), pitch, modulation,
+       dynamics (a gain moving with level without audible THD), saturation (audible THD, over -50 dB, rising), eq: the first
+       that holds decides. None holding, or two
        in conflict with the proposal, = unsettled, on the review sheet with everything read.
   Nothing is exported, nothing is written to categories.json. PURE here (pins CT1-CT6); the driver runs the probe.
 */
@@ -33,7 +34,7 @@
 namespace ejmap::categorise
 {
 
-inline constexpr double kLevelDb = 1.0, kFreqDb = 3.0, kThdRiseDb = 6.0, kPitchCents = 15.0, kTailS = 0.25;
+inline constexpr double kLevelDb = 1.0, kFreqDb = 3.0, kThdRiseDb = 6.0, kThdAudibleDb = -50.0, kPitchCents = 15.0, kTailS = 0.25, kReverbS = 1.0, kSidebandDb = -30.0;   // a sideband under -30 dB is the analysis' own floor (-41.6 on a clean unit), never modulation
 
 inline juce::StringArray tokens (const juce::String& s) { auto t = juce::StringArray::fromTokens (s.toLowerCase(), " -_/()[]:.,", "\"'"); t.removeEmptyStrings(); return t; }
 inline bool hasAny (const juce::StringArray& tk, std::initializer_list<const char*> ws) { for (const auto& t : tk) for (const char* w : ws) if (t == w) return true; return false; }
@@ -42,7 +43,7 @@ inline bool hasAny (const juce::StringArray& tk, std::initializer_list<const cha
 inline juce::String outOfScope (const juce::String& typeCode, const juce::String& name, const juce::String& kind)
 {
     const auto t4 = typeCode.substring (0, 4);
-    if (t4 == "aumu" || t4 == "augn" || t4 == "aumf" || t4 == "aumi") return t4 == "aumi" ? "midi" : "instrument";
+    if (t4 == "aumu" || t4 == "augn" || t4 == "aumi") return t4 == "aumi" ? "midi" : "instrument";   // aumf (a music effect: an effect taking MIDI) stays IN scope
     const auto tk = tokens (name + " " + kind);
     if (hasAny (tk, { "meter", "meters", "metering", "analyser", "analyzer", "analysis", "scope", "spectrum", "lufs", "loudness", "visualizer", "visualiser", "oscilloscope", "correlation" })) return "meter";
     if (hasAny (tk, { "utility", "trim", "pan", "panner", "routing", "router", "dither", "tone", "generator", "phase", "polarity", "downmix", "downmixer", "mono", "send", "return", "latency", "delaycomp", "monitor", "monitoring", "switcher", "matrix", "patch" })) return "utility";
@@ -53,7 +54,7 @@ inline juce::String outOfScope (const juce::String& typeCode, const juce::String
 inline juce::StringArray categoriesFromWords (const juce::String& name, const juce::String& vendor, const juce::String& kind)
 {
     const auto tk = tokens (name + " " + kind); juce::StringArray out; (void) vendor;
-    if (hasAny (tk, { "comp", "compressor", "compression", "limiter", "limit", "gate", "expander", "dynamics", "leveler", "leveller", "maximizer", "maximiser", "transient", "deesser", "de-esser", "ducker" })) out.add ("dynamics");
+    if (hasAny (tk, { "comp", "compressor", "compression", "limiter", "limit", "gate", "expander", "dynamics", "leveler", "leveller", "maximizer", "maximiser", "transient", "deesser", "de-esser", "ducker", "opto", "vca", "fet", "bus", "buss", "sbc" })) out.add ("dynamics");
     if (hasAny (tk, { "eq", "equalizer", "equaliser", "filter", "tilt", "shelf", "hpf", "lpf", "lowcut", "highcut", "notch", "exciter", "enhancer" })) out.add ("eq");
     if (hasAny (tk, { "reverb", "verb", "plate", "hall", "room", "chamber", "spring", "ambience", "convolution" })) out.add ("reverb");
     if (hasAny (tk, { "delay", "echo", "tap", "taps", "repeater", "slapback" })) out.add ("delay");
@@ -86,11 +87,11 @@ inline void readResponses (Signatures& s, const eq::Response& lo, const eq::Resp
     std::sort (gA.begin(), gA.end()); s.freqSpanDb = gA[(size_t) std::floor (0.9 * (double) (gA.size() - 1))] - gA[(size_t) std::floor (0.1 * (double) (gA.size() - 1))];
     s.levelDepDb = medianOf (moves); s.responseRead = true;
 }
-inline void readTail (Signatures& s, const rd::Tail& t)
+inline void readTail (Signatures& s, const reverbdelay::Tail& t)
 {
     if (! t.ok) { s.notes.add ("tail: " + (t.refused.isNotEmpty() ? t.refused : juce::String ("not read"))); return; }
-    const auto d = rd::decayOf (t); if (d.ok && (d.t30 ? d.t30RT60s : d.t20RT60s) > 0.0) s.rt60s = d.t30 ? d.t30RT60s : d.t20RT60s;
-    const auto o = rd::onsetsOf (t); s.repeats = (int) o.repeats.size(); s.tailRead = true;
+    const auto d = reverbdelay::decayOf (t); if (d.ok && (d.t30 ? d.t30RT60s : d.t20RT60s) > 0.0) s.rt60s = d.t30 ? d.t30RT60s : d.t20RT60s;
+    const auto o = reverbdelay::onsetsOf (t); s.repeats = (int) o.repeats.size(); s.tailRead = true;
 }
 inline void readHarmonics (Signatures& s, const saturation::HarmResponse& lo, const saturation::HarmResponse& hi)
 {
@@ -112,11 +113,23 @@ inline Decision decide (const Signatures& s, const juce::StringArray& proposed)
 {
     Decision d;
     auto settle = [&] (const char* c, const juce::String& why) { d.category = c; d.why = why; d.settled = true; return d; };
+    // a TAIL is time-based: discrete repeats = delay; otherwise the tail alone cannot tell a feedback delay's decay from a reverb's
+    // (bx_delay2500 at instantiate read RT60 2.85 s and no repeat), so the words break the tie and say so; no word = unsettled between the two
     if (s.tailRead && s.repeats >= 2 && (! s.rt60s || *s.rt60s < 1.5)) return settle ("delay", juce::String (s.repeats) + " discrete repeat(s) after the burst");
-    if (s.tailRead && s.rt60s && *s.rt60s >= kTailS) return settle ("reverb", "a decay of RT60 " + juce::String (*s.rt60s, 2) + " s");
+    if (s.tailRead && s.rt60s && *s.rt60s >= kTailS)
+    {
+        const auto tl = "a tail (RT60 " + juce::String (*s.rt60s, 2) + " s, " + juce::String (s.repeats) + " repeat(s) found)";
+        if (proposed.contains ("delay") && ! proposed.contains ("reverb")) return settle ("delay", tl + "; the words say delay");
+        if (proposed.contains ("reverb") && ! proposed.contains ("delay")) return settle ("reverb", tl + "; the words say reverb");
+        if (*s.rt60s >= kReverbS && s.repeats == 0 && proposed.isEmpty()) { d.category = "reverb"; d.why = tl + " and no word: leaning reverb (a feedback delay reads the same): review"; return d; }
+        d.category = proposed.contains ("delay") ? "delay" : "reverb"; d.why = tl + "; reverb or delay: review"; return d;
+    }
     if (s.pitchRead && s.pitchMoveCents >= kPitchCents) return settle ("pitch", "the output's pitch moved " + juce::String (s.pitchMoveCents, 1) + " cents from the input's");
-    if (s.harmRead && s.sidebandDb && s.harmDb && *s.sidebandDb > -60.0 && *s.sidebandDb > *s.harmDb) return settle ("modulation", "energy beside the fundamental (" + juce::String (*s.sidebandDb, 1) + " dB) over the harmonics (" + juce::String (*s.harmDb, 1) + ")");
-    if (s.harmRead && s.thdHiDb > -80.0 && s.thdHiDb - s.thdLoDb >= kThdRiseDb) return settle ("saturation", "THD rises " + juce::String (s.thdHiDb - s.thdLoDb, 1) + " dB from -30 to -6 dBFS (" + juce::String (s.thdHiDb, 1) + " dB at -6)");
+    if (s.harmRead && s.sidebandDb && s.harmDb && *s.sidebandDb > kSidebandDb && *s.sidebandDb > *s.harmDb) return settle ("modulation", "energy beside the fundamental (" + juce::String (*s.sidebandDb, 1) + " dB) over the harmonics (" + juce::String (*s.harmDb, 1) + ")");
+    // DYNAMICS before saturation: a gain that moves with level and no audible THD is a compressor (Lindell 354E: 2.67 dB, THD -59.8);
+    // audible THD rising with level is saturation (over -50 dB at -6 dBFS: a console emulation's -72 is colour, not a saturator)
+    if (s.responseRead && s.levelDepDb >= kLevelDb && ! (s.harmRead && s.thdHiDb >= kThdAudibleDb)) return settle ("dynamics", "the gain moves " + juce::String (s.levelDepDb, 2) + " dB between -30 and -12 dBFS on the same tones" + (s.harmRead ? "; THD " + juce::String (s.thdHiDb, 1) + " dB at -6 (not audible)" : juce::String()));
+    if (s.harmRead && s.thdHiDb >= kThdAudibleDb && s.thdHiDb - s.thdLoDb >= kThdRiseDb) return settle ("saturation", "THD rises " + juce::String (s.thdHiDb - s.thdLoDb, 1) + " dB from -30 to -6 dBFS (" + juce::String (s.thdHiDb, 1) + " dB at -6)" + (s.responseRead && s.levelDepDb >= kLevelDb ? "; the gain also moves " + juce::String (s.levelDepDb, 2) + " dB with level (a coloured compressor reads here too)" : juce::String()));
     if (s.responseRead && s.levelDepDb >= kLevelDb) return settle ("dynamics", "the gain moves " + juce::String (s.levelDepDb, 2) + " dB between -30 and -12 dBFS on the same tones");
     if (s.responseRead && s.freqSpanDb >= kFreqDb && s.levelDepDb < kLevelDb) return settle ("eq", "the gain spans " + juce::String (s.freqSpanDb, 1) + " dB across the tones, level-independent");
     // nothing held: the proposal alone decides only when it is a single word AND the reads say "inert at instantiate" is plausible

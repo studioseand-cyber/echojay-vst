@@ -80,6 +80,7 @@
 #include "EjmapLicence.h"
 #include "EjmapUadPreflight.h"
 #include "EjmapStrip.h"
+#include "EjmapCategorise.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include <functional>
@@ -7479,6 +7480,30 @@ void testStrip()
     check (indicesOf (*sec ("eq")) == "3,4,5" && presetOf (*sec ("eq")) == "3:0.000000" && presetOf (*sec ("gate")).isEmpty() && modeFor ("eq") == "--cert-eq" && modeFor ("gate") == "--cert-dynamics" && modeFor ("global").isEmpty(),
            "strip ST5: the child's --only-controls lists the section's indices, --preset the engage write (none without a switch), the mode per section");
 }
+/** CATEGORISING THE UNCATEGORISED (EjmapCategorise.h; item F, 7 Oct): out of scope, the words, the signatures' decision. */
+void testCategorise()
+{
+    using namespace ejmap::categorise;
+    check (outOfScope ("aumu", "Massive X", "") == "instrument" && outOfScope ("aumi", "Scaler", "") == "midi" && outOfScope ("aufx", "Youlean Loudness Meter", "") == "meter" && outOfScope ("aufx", "Utility Gain", "") == "utility" && outOfScope ("aumf", "ADA Flanger", "").isEmpty() && outOfScope ("aufx", "Decapitator", "").isEmpty(),
+           "categorise CT1: instruments and MIDI by type, meters and utilities by word; a music effect (aumf) and a plain effect stay in scope");
+    const auto w = categoriesFromWords ("Opto Compressor", "X", ""), two = categoriesFromWords ("EchoBoy", "Soundtoys", "tape delay"), k = categoriesFromWords ("Sculpt", "ADPTR", "stereo imager");
+    check (w == juce::StringArray { "dynamics" } && two.contains ("delay") && two.contains ("saturation") && k == juce::StringArray { "modulation" }, "categorise CT2: the words propose (the ledger's kind counts); EchoBoy's 'tape delay' proposes two");
+    Signatures dyn; dyn.responseRead = true; dyn.levelDepDb = 2.67; dyn.freqSpanDb = 0.1; dyn.harmRead = true; dyn.thdLoDb = -87.0; dyn.thdHiDb = -59.8;
+    Signatures sat = dyn; sat.levelDepDb = 0.02; sat.thdHiDb = -37.9;
+    Signatures hot = dyn; hot.levelDepDb = 3.0; hot.thdHiDb = -30.0;
+    check (decide (dyn, {}).category == "dynamics" && decide (dyn, {}).settled && decide (sat, {}).category == "saturation" && decide (hot, {}).category == "saturation" && decide (hot, {}).why.contains ("coloured compressor"),
+           "categorise CT3: a gain moving with level and inaudible THD is dynamics; audible rising THD is saturation, and a gain move beside it is said");
+    Signatures tail; tail.tailRead = true; tail.rt60s = 2.85; tail.repeats = 0; tail.responseRead = true; tail.freqSpanDb = 5.0;
+    Signatures echoes = tail; echoes.repeats = 3; echoes.rt60s = 0.6;
+    check (! decide (tail, {}).settled && decide (tail, {}).category == "reverb" && decide (tail, { "delay" }).settled && decide (tail, { "delay" }).category == "delay" && decide (tail, { "reverb" }).category == "reverb" && decide (echoes, {}).category == "delay" && decide (echoes, {}).settled,
+           "categorise CT4: a tail with no repeats and no word leans reverb unsettled; the words break the tie; discrete repeats settle delay");
+    Signatures pit; pit.pitchRead = true; pit.pitchMoveCents = 32.1; pit.harmRead = true; pit.sidebandDb = 35.6; pit.harmDb = -30.0;
+    Signatures mod; mod.harmRead = true; mod.sidebandDb = -16.5; mod.harmDb = -82.0; Signatures floorSide = mod; floorSide.sidebandDb = -41.6;
+    check (decide (pit, {}).category == "pitch" && decide (mod, {}).category == "modulation" && ! decide (floorSide, {}).settled, "categorise CT5: a 32-cent move is pitch before its sidebands; -16.5 dB sidebands are modulation; the analysis floor (-41.6) is not");
+    Signatures flat; flat.responseRead = true; flat.levelDepDb = 0.0; flat.freqSpanDb = 0.0; Signatures eqs = flat; eqs.freqSpanDb = 13.4;
+    check (decide (eqs, {}).category == "eq" && decide (eqs, {}).settled && ! decide (flat, { "dynamics" }).settled && decide (flat, { "dynamics" }).category == "dynamics" && decide (flat, {}).category.isEmpty(),
+           "categorise CT6: a level-independent 13 dB span is eq; flat at instantiate keeps a single word proposal unsettled, no word = nothing");
+}
 void testTimingSegments()
 {
     using namespace ejmap::timing;
@@ -8225,6 +8250,7 @@ int main (int, char**)
     testUadAndWindows();
     testMultibandRules();
     testStrip();
+    testCategorise();
     testTimingSegments();
     testLimiter();
     testEq();

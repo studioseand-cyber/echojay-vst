@@ -1,0 +1,40 @@
+CATEGORY PROPOSALS: 40 product(s): 11 out of scope, 5 settled by signature, 24 unsettled (below). Nothing written to categories.json.
+  eq: 1
+  modulation: 3
+  out of scope: instrument: 3
+  out of scope: meter: 4
+  out of scope: utility: 4
+  saturation: 1
+
+UNSETTLED - for review (what the words proposed, what the reads said):
+  Abbey Road Vinyl Light (m) [Waves, kind 'vinyl emulation']: leaning reverb; a tail (RT60 0.48 s, 0 repeat(s) found); reverb or delay: review
+  Absynth 5 MFX [Native Instruments, kind 'multi-effect']: no signature held; no word proposed: review
+  Acon Digital DeClick 2 [Acon Digital, kind 'audio restoration']: no signature held; no word proposed: review
+  Acon Digital DeClip 2 [Acon Digital, kind 'audio restoration']: no signature held; no word proposed: review
+  Acon Digital DeHum 2 [Acon Digital, kind 'audio restoration']: no signature held; no word proposed: review
+  ADPTR Sculpt [Plugin Alliance]: no signature held; no word proposed: review
+  APB ChickenHead [McDSP]: PACE-wrapped (no bundle found for aufx,ched,McDP, so its PACE state cannot be checked: held, not assumed clear): not loaded here (--include-pace loads it); the words propose nothing: review
+  APB El Moo [McDSP]: PACE-wrapped (no bundle found for aufx,elmo,McDP, so its PACE state cannot be checked: held, not assumed clear): not loaded here (--include-pace loads it); the words propose nothing: review
+  Auto-Key [Antares, kind 'key detector']: PACE-wrapped (PACE-wrapped (Auto-Key.component)): not loaded here (--include-pace loads it); the words propose nothing: review
+  Auto-Tune SoundSoap [Antares, kind 'noise reduction']: leaning pitch; PACE-wrapped (PACE-wrapped (Auto-Tune SoundSoap.component)): not loaded here (--include-pace loads it); the words propose pitch: review
+  Auto-Tune Vocodist [Antares, kind 'vocoder']: leaning pitch; PACE-wrapped (PACE-wrapped (Auto-Tune Vocodist.component)): not loaded here (--include-pace loads it); the words propose pitch: review
+  AVOX ARTICULATOR [Antares, kind 'vocoder']: leaning pitch; PACE-wrapped (PACE-wrapped (AVOX ARTICULATOR.component)): not loaded here (--include-pace loads it); the words propose pitch: review
+  AVOX ASPIRE [Antares, kind 'breath processor']: PACE-wrapped (PACE-wrapped (AVOX ASPIRE.component)): not loaded here (--include-pace loads it); the words propose nothing: review
+  AVOX CHOIR [Antares, kind 'unison doubler']: leaning pitch; PACE-wrapped (PACE-wrapped (AVOX CHOIR.component)): not loaded here (--include-pace loads it); the words propose pitch: review
+  AVOX DUO [Antares, kind 'unison doubler']: leaning pitch; PACE-wrapped (PACE-wrapped (AVOX DUO.component)): not loaded here (--include-pace loads it); the words propose pitch: review
+  AVOX MUTATOR [Antares, kind 'voice transformer']: PACE-wrapped (PACE-wrapped (AVOX MUTATOR.component)): not loaded here (--include-pace loads it); the words propose nothing: review
+  AVOX PUNCH [Antares, kind 'vocal enhancer']: leaning eq; PACE-wrapped (PACE-wrapped (AVOX PUNCH.component)): not loaded here (--include-pace loads it); the words propose eq: review
+  AVOX THROAT [Antares, kind 'voice transformer']: PACE-wrapped (PACE-wrapped (AVOX THROAT.component)): not loaded here (--include-pace loads it); the words propose nothing: review
+  B360 (1->4) [Waves, kind 'ambisonics encoder']: no signature held; no word proposed: review
+  B360 (2->4) [Waves, kind 'ambisonics encoder']: no signature held; no word proposed: review
+  B360 (5->4) [Waves, kind 'ambisonics encoder']: no signature held; no word proposed: review
+  B360 (6->4) [Waves, kind 'ambisonics encoder']: no signature held; no word proposed: review
+  B360 (8->4) [Waves, kind 'ambisonics encoder']: no signature held; no word proposed: review
+  B360 AmbiX-FuMa (4->4) [Waves, kind 'ambisonics converter']: no automatable parameter to hold the probe's position: the reads need one; the words propose : review
+
+SETTLED (category: why):
+  Abbey Road Vinyl (m) -> modulation: energy beside the fundamental (-24.0 dB) over the harmonics (-32.9)
+  Abbey Road Vinyl (s) -> modulation: energy beside the fundamental (-24.0 dB) over the harmonics (-32.9)
+  Abbey Road Vinyl Light (s) -> saturation: THD rises 39.7 dB from -30 to -6 dBFS (-45.2 dB at -6)
+  Acon Digital DeNoise 2 -> eq: the gain spans 13.4 dB across the tones, level-independent
+  ADA Flanger -> modulation: energy beside the fundamental (-3.5 dB) over the harmonics (-25.2)

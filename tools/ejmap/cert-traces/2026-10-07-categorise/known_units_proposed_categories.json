@@ -1,0 +1,263 @@
+{
+  "schema": "ej_category_proposal/0",
+  "status": "PROPOSAL (item F, 7 Oct): nothing written to categories.json; the review sheet lists the unsettled",
+  "rules": "out of scope by AU type (aumu/augn/aumf/aumi) and meter / utility words; words propose; the signature decides in the order delay, reverb (the words break a tail's tie), pitch, modulation, dynamics, saturation, eq; bars: level 1 dB, frequency span 3 dB, THD audible -50 dB and rising 6 dB, pitch 15 cents, RT60 0.25 s, sideband -30 dB",
+  "products": [
+    {
+      "product": "bx_bluechorus2",
+      "vendor": "Plugin Alliance",
+      "type": "aufx",
+      "identity": "AudioUnit|417f7332|1.11.1",
+      "kind": "chorus",
+      "proposed_by_words": "modulation",
+      "category": "modulation",
+      "settled": false,
+      "why": "no signature held; proposed by words: modulation: review",
+      "measured": true,
+      "signatures": {
+        "rt60_s": null,
+        "repeats": 0,
+        "notes": [
+          "response: fewer than 10 readable tones",
+          "harmonics: the fundamental was not read at both levels",
+          "pitch: the output was silent or not a tone in the steady state"
+        ]
+      },
+      "seconds": 2.0
+    },
+    {
+      "product": "bx_console N",
+      "vendor": "Plugin Alliance",
+      "type": "aumf",
+      "identity": "AudioUnit|417f7950|1.9.1",
+      "proposed_by_words": "saturation",
+      "category": "saturation",
+      "settled": false,
+      "why": "no signature at the instantiate state (flat, level-independent, no tail, no THD rise); the name's single proposal stands, unsettled: review",
+      "measured": true,
+      "signatures": {
+        "level_dependence_db": 0.0,
+        "frequency_span_db": 0.27,
+        "rt60_s": null,
+        "repeats": 0,
+        "thd_db_at_m30": -95.0,
+        "thd_db_at_m6": -71.900000000000006,
+        "sideband_db": -200.0,
+        "pitch_move_cents": 0.0,
+        "notes": []
+      },
+      "seconds": 3.0
+    },
+    {
+      "product": "bx_crispytuner",
+      "vendor": "Plugin Alliance",
+      "type": "aufx",
+      "identity": "AudioUnit|77727f61|1.1.0",
+      "kind": "pitch correction",
+      "proposed_by_words": "pitch",
+      "category": "pitch",
+      "settled": true,
+      "why": "the output's pitch moved 32.1 cents from the input's",
+      "measured": true,
+      "signatures": {
+        "level_dependence_db": 0.0,
+        "frequency_span_db": 0.26,
+        "rt60_s": null,
+        "repeats": 0,
+        "thd_db_at_m30": -30.399999999999999,
+        "thd_db_at_m6": -30.399999999999999,
+        "sideband_db": 35.600000000000001,
+        "pitch_move_cents": 32.100000000000001,
+        "notes": []
+      },
+      "seconds": 4.0
+    },
+    {
+      "product": "bx_delay2500",
+      "vendor": "Plugin Alliance",
+      "type": "aufx",
+      "identity": "AudioUnit|417f756c|1.8.1",
+      "proposed_by_words": "",
+      "category": "reverb",
+      "settled": false,
+      "why": "a tail (RT60 2.85 s, 0 repeat(s) found) and no word: leaning reverb (a feedback delay reads the same): review",
+      "measured": true,
+      "signatures": {
+        "level_dependence_db": 0.01,
+        "frequency_span_db": 4.99,
+        "rt60_s": 2.85,
+        "repeats": 0,
+        "thd_db_at_m30": -82.099999999999994,
+        "thd_db_at_m6": -82.200000000000003,
+        "sideband_db": -16.5,
+        "pitch_move_cents": 0.0,
+        "notes": []
+      },
+      "seconds": 3.0
+    },
+    {
+      "product": "bx_limiter",
+      "vendor": "Plugin Alliance",
+      "type": "aufx",
+      "identity": "AudioUnit|417f7d6d|1.15.2",
+      "proposed_by_words": "dynamics",
+      "category": "dynamics",
+      "settled": false,
+      "why": "no signature at the instantiate state (flat, level-independent, no tail, no THD rise); the name's single proposal stands, unsettled: review",
+      "measured": true,
+      "signatures": {
+        "level_dependence_db": 0.0,
+        "frequency_span_db": 0.0,
+        "rt60_s": null,
+        "repeats": 0,
+        "thd_db_at_m30": -999.0,
+        "thd_db_at_m6": -183.599999999999994,
+        "sideband_db": -200.0,
+        "pitch_move_cents": 0.0,
+        "notes": []
+      },
+      "seconds": 3.0
+    },
+    {
+      "product": "bx_opto",
+      "vendor": "Plugin Alliance",
+      "type": "aufx",
+      "identity": "AudioUnit|417f7e74|1.10.1",
+      "proposed_by_words": "dynamics",
+      "category": "dynamics",
+      "settled": false,
+      "why": "no signature at the instantiate state (flat, level-independent, no tail, no THD rise); the name's single proposal stands, unsettled: review",
+      "measured": true,
+      "signatures": {
+        "level_dependence_db": 0.0,
+        "frequency_span_db": 0.0,
+        "rt60_s": null,
+        "repeats": 0,
+        "thd_db_at_m30": -999.0,
+        "thd_db_at_m6": -182.300000000000011,
+        "sideband_db": -41.600000000000001,
+        "pitch_move_cents": 0.0,
+        "notes": []
+      },
+      "seconds": 3.0
+    },
+    {
+      "product": "bx_rooMS",
+      "vendor": "Plugin Alliance",
+      "type": "aufx",
+      "identity": "AudioUnit|417f636d|1.9.1",
+      "proposed_by_words": "",
+      "category": "reverb",
+      "settled": false,
+      "why": "a tail (RT60 7.90 s, 0 repeat(s) found) and no word: leaning reverb (a feedback delay reads the same): review",
+      "measured": true,
+      "signatures": {
+        "level_dependence_db": 0.0,
+        "frequency_span_db": 18.210000000000001,
+        "rt60_s": 7.9,
+        "repeats": 0,
+        "thd_db_at_m30": -78.799999999999997,
+        "thd_db_at_m6": -78.799999999999997,
+        "sideband_db": -17.199999999999999,
+        "pitch_move_cents": 0.0,
+        "notes": []
+      },
+      "seconds": 3.0
+    },
+    {
+      "product": "Lindell 354E",
+      "vendor": "Plugin Alliance",
+      "type": "aufx",
+      "identity": "AudioUnit|6f457234|1.0.4",
+      "proposed_by_words": "",
+      "category": "dynamics",
+      "settled": true,
+      "why": "the gain moves 2.67 dB between -30 and -12 dBFS on the same tones; THD -59.8 dB at -6 (not audible)",
+      "measured": true,
+      "signatures": {
+        "level_dependence_db": 2.67,
+        "frequency_span_db": 0.14,
+        "rt60_s": null,
+        "repeats": 0,
+        "thd_db_at_m30": -87.099999999999994,
+        "thd_db_at_m6": -59.799999999999997,
+        "sideband_db": -35.299999999999997,
+        "pitch_move_cents": 0.0,
+        "notes": []
+      },
+      "seconds": 3.0
+    },
+    {
+      "product": "Lindell 7X-500",
+      "vendor": "Plugin Alliance",
+      "type": "aufx",
+      "identity": "AudioUnit|6f457232|1.2.2",
+      "proposed_by_words": "",
+      "category": "saturation",
+      "settled": true,
+      "why": "THD rises 46.9 dB from -30 to -6 dBFS (-37.9 dB at -6)",
+      "measured": true,
+      "signatures": {
+        "level_dependence_db": 0.02,
+        "frequency_span_db": 0.96,
+        "rt60_s": 0.14,
+        "repeats": 0,
+        "thd_db_at_m30": -84.700000000000003,
+        "thd_db_at_m6": -37.899999999999999,
+        "sideband_db": -38.700000000000003,
+        "notes": [
+          "pitch: the output was silent or not a tone in the steady state"
+        ]
+      },
+      "seconds": 2.0
+    },
+    {
+      "product": "Lindell SBC",
+      "vendor": "Plugin Alliance",
+      "type": "aufx",
+      "identity": "AudioUnit|6f747363|1.0.3",
+      "proposed_by_words": "dynamics",
+      "category": "dynamics",
+      "settled": false,
+      "why": "no signature at the instantiate state (flat, level-independent, no tail, no THD rise); the name's single proposal stands, unsettled: review",
+      "measured": true,
+      "signatures": {
+        "level_dependence_db": 0.66,
+        "frequency_span_db": 0.07,
+        "rt60_s": null,
+        "repeats": 0,
+        "thd_db_at_m30": -78.299999999999997,
+        "thd_db_at_m6": -78.5,
+        "sideband_db": -41.600000000000001,
+        "pitch_move_cents": 0.0,
+        "notes": []
+      },
+      "seconds": 3.0
+    },
+    {
+      "product": "OTT",
+      "vendor": "Xfer Records",
+      "type": "aufx",
+      "identity": "AudioUnit|6155777e|1.3.7",
+      "proposed_by_words": "",
+      "category": "dynamics",
+      "settled": true,
+      "why": "the gain moves 10.26 dB between -30 and -12 dBFS on the same tones; THD -56.3 dB at -6 (not audible)",
+      "measured": true,
+      "signatures": {
+        "level_dependence_db": 10.26,
+        "frequency_span_db": 4.57,
+        "rt60_s": null,
+        "repeats": 1,
+        "thd_db_at_m30": -56.799999999999997,
+        "thd_db_at_m6": -56.299999999999997,
+        "sideband_db": -200.0,
+        "pitch_move_cents": 0.0,
+        "notes": []
+      },
+      "seconds": 1.0
+    }
+  ],
+  "seconds": 30.0,
+  "writtenAt": "20261007T110916"
+}

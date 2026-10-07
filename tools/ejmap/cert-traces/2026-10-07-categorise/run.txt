@@ -1,0 +1,46 @@
+CATEGORISE: 40 uncategorised installed product(s) (limited to 40); nothing is written to categories.json
+  Abbey Road Studio 3 (6->2): out of scope (utility)
+  Abbey Road Studio 3 (8->2): out of scope (utility)
+  Abbey Road Studio 3 (s): out of scope (utility)
+  Abbey Road Vinyl (m): modulation - energy beside the fundamental (-24.0 dB) over the harmonics (-32.9) (30.8768 s)
+  Abbey Road Vinyl (s): modulation - energy beside the fundamental (-24.0 dB) over the harmonics (-32.9) (30.9381 s)
+  Abbey Road Vinyl Light (m): UNSETTLED - a tail (RT60 0.48 s, 0 repeat(s) found); reverb or delay: review (29.8104 s)
+  Abbey Road Vinyl Light (s): saturation - THD rises 39.7 dB from -30 to -6 dBFS (-45.2 dB at -6) (30.1968 s)
+  Absynth 5: out of scope (instrument)
+  Absynth 5 MFX: UNSETTLED - no signature held; no word proposed: review (18.0273 s)
+  Acon Digital DeClick 2: UNSETTLED - no signature held; no word proposed: review (1.40891 s)
+  Acon Digital DeClip 2: UNSETTLED - no signature held; no word proposed: review (1.2851 s)
+  Acon Digital DeHum 2: UNSETTLED - no signature held; no word proposed: review (1.24343 s)
+  Acon Digital DeNoise 2: eq - the gain spans 13.4 dB across the tones, level-independent (1.19559 s)
+  ADA Flanger: modulation - energy beside the fundamental (-3.5 dB) over the harmonics (-25.2) (2.9392 s)
+  ADPTR MetricAB: out of scope (meter)
+  ADPTR Sculpt: UNSETTLED - no signature held; no word proposed: review (3.04692 s)
+  ADPTR StreamLiner: out of scope (meter)
+  ANA 2: out of scope (instrument)
+  APB ChickenHead: PACE-wrapped (no bundle found for aufx,ched,McDP, so its PACE state cannot be checked: held, not assumed clear): not loaded here (--include-pace loads it); the words propose nothing: review
+  APB El Moo: PACE-wrapped (no bundle found for aufx,elmo,McDP, so its PACE state cannot be checked: held, not assumed clear): not loaded here (--include-pace loads it); the words propose nothing: review
+  APB Moo X Mixer: out of scope (utility)
+  AR TG Meter Bridge (m): out of scope (meter)
+  AR TG Meter Bridge (s): out of scope (meter)
+  Auto-Key: PACE-wrapped (PACE-wrapped (Auto-Key.component)): not loaded here (--include-pace loads it); the words propose nothing: review
+  Auto-Tune Slice: out of scope (instrument)
+  Auto-Tune SoundSoap: PACE-wrapped (PACE-wrapped (Auto-Tune SoundSoap.component)): not loaded here (--include-pace loads it); the words propose pitch: review
+  Auto-Tune Vocodist: PACE-wrapped (PACE-wrapped (Auto-Tune Vocodist.component)): not loaded here (--include-pace loads it); the words propose pitch: review
+  AVOX ARTICULATOR: PACE-wrapped (PACE-wrapped (AVOX ARTICULATOR.component)): not loaded here (--include-pace loads it); the words propose pitch: review
+  AVOX ASPIRE: PACE-wrapped (PACE-wrapped (AVOX ASPIRE.component)): not loaded here (--include-pace loads it); the words propose nothing: review
+  AVOX CHOIR: PACE-wrapped (PACE-wrapped (AVOX CHOIR.component)): not loaded here (--include-pace loads it); the words propose pitch: review
+  AVOX DUO: PACE-wrapped (PACE-wrapped (AVOX DUO.component)): not loaded here (--include-pace loads it); the words propose pitch: review
+  AVOX MUTATOR: PACE-wrapped (PACE-wrapped (AVOX MUTATOR.component)): not loaded here (--include-pace loads it); the words propose nothing: review
+  AVOX PUNCH: PACE-wrapped (PACE-wrapped (AVOX PUNCH.component)): not loaded here (--include-pace loads it); the words propose eq: review
+  AVOX THROAT: PACE-wrapped (PACE-wrapped (AVOX THROAT.component)): not loaded here (--include-pace loads it); the words propose nothing: review
+  B360 (1->4): UNSETTLED - no signature held; no word proposed: review (27.8611 s)
+  B360 (2->4): UNSETTLED - no signature held; no word proposed: review (27.8751 s)
+  B360 (5->4): UNSETTLED - no signature held; no word proposed: review (27.8789 s)
+  B360 (6->4): UNSETTLED - no signature held; no word proposed: review (27.8563 s)
+  B360 (8->4): UNSETTLED - no signature held; no word proposed: review (27.981 s)
+  B360 AmbiX-FuMa (4->4): no automatable parameter to hold the probe's position: the reads need one; the words propose : review
+CATEGORISE: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cat/proposed_categories.json and category_review.txt (40 row(s), 5.0 min)
+
+real	4m58.786s
+user	0m14.927s
+sys	0m4.399s
