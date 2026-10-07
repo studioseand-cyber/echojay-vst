@@ -713,6 +713,13 @@ namespace
             for (int j = 1; j < argc; ++j) if (argAt (argc, argv, j) == "--assume-uad-device") ejmap::cert::assumeUadDeviceFlag() = true;   // every command: the hold and the gate read it
             // a strip section's child (item E, 7 Oct): --only-controls i,j,k narrows every mode's fixture; --preset i:n,... is the probe's preset (EJ_PROBE_PRESET) under every probe process
             for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--only-controls") for (const auto& t : juce::StringArray::fromTokens (v, ",", "")) ejmap::cert::onlyControlsFlag().insert (t.getIntValue()); else if (k == "--preset") setenv ("EJ_PROBE_PRESET", v.toRawUTF8(), 1); }
+            if (a == "--zip" && i + 1 < argc)   // the morning zip (7 Oct): whole cert/, or --since marker|YYYY-MM-DD for what is new
+            {
+                juce::File out; juce::String since;
+                for (int j = i + 2; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--out") out = cwdFile (v); else if (k == "--since") since = v; }
+                if (out == juce::File()) { std::cerr << "--zip <cert dir> --out <zip> [--since marker|YYYY-MM-DD]" << std::endl; return 2; }
+                return ejmap::cert::runZip (cwdFile (argAt (argc, argv, i + 1)), out, since);
+            }
             if (a == "--uad-preflight") { ejmap::cert::SweepOptions o; o.assumeUadDevice = ejmap::cert::assumeUadDeviceFlag(); return ejmap::cert::runUadPreflight (o); }
             if ((a == "--licence-check" || a == "--licence-stamp") && i + 1 < argc)
             {

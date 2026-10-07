@@ -3098,6 +3098,39 @@ inline int runStripSection (const SweepOptions& opt0)
     return rc != 0 ? rc : trc;
 }
 
+// --zip <cert dir> --out <zip> [--since marker|YYYY-MM-DD] (Kathy, 7 Oct): the morning zip. Whole `cert/` without --since; with
+// --since only the files newer than the marker file (cert/.zipped, touched after every zip) or the date. config.json is never
+// in it (refused, as before); the size says when to switch to --since (over 500 MB: always --since).
+inline int runZip (const juce::File& cert, const juce::File& out, const juce::String& since)
+{
+    if (! cert.isDirectory()) { std::cout << "ZIP: no folder " << cert.getFullPathName() << std::endl; return 2; }
+    const auto marker = cert.getChildFile (".zipped");
+    juce::Time cutoff; bool useCutoff = false; juce::String how = "everything";
+    if (since.isNotEmpty())
+    {
+        if (since == "marker") { if (! marker.existsAsFile()) { std::cout << "ZIP: --since marker but no " << marker.getFullPathName() << " yet: zip everything once first (no --since)" << std::endl; return 2; } cutoff = marker.getLastModificationTime(); useCutoff = true; how = "newer than the marker (" + cutoff.toISO8601 (true) + ")"; }
+        else { cutoff = juce::Time::fromISO8601 (since); if (cutoff.toMilliseconds() == 0) { std::cout << "ZIP: --since takes 'marker' or YYYY-MM-DD" << std::endl; return 2; } useCutoff = true; how = "newer than " + since; }
+    }
+    juce::StringArray rel; juce::int64 bytes = 0; int skippedConfig = 0;
+    for (const auto& f : cert.findChildFiles (juce::File::findFiles, true))
+    {
+        if (f.getFileName() == "config.json") { ++skippedConfig; continue; }
+        if (f.getFileName() == ".zipped") continue;
+        if (useCutoff && f.getLastModificationTime() <= cutoff) continue;
+        rel.add ("cert/" + f.getRelativePathFrom (cert)); bytes += f.getSize();
+    }
+    if (rel.isEmpty()) { std::cout << "ZIP: nothing " << how << " under " << cert.getFullPathName() << std::endl; return 4; }
+    const auto list = juce::File::createTempFile (".lst"); list.replaceWithText (rel.joinIntoString ("\n") + "\n");
+    juce::ChildProcess p; out.deleteFile();
+    const bool started = p.start (juce::StringArray { "/bin/sh", "-c", "cd \"" + cert.getParentDirectory().getFullPathName() + "\" && /usr/bin/zip -q \"" + out.getFullPathName() + "\" -@ < \"" + list.getFullPathName() + "\"" });
+    const auto outText = started ? p.readAllProcessOutput() : juce::String(); const int code = started ? p.getExitCode() : -1; list.deleteFile();
+    if (code != 0) { std::cout << "ZIP: zip failed (" << code << ") " << outText << std::endl; return 1; }
+    marker.replaceWithText (juce::Time::getCurrentTime().toISO8601 (true) + "\n");
+    std::cout << "ZIP: " << rel.size() << " file(s), " << juce::String (bytes / 1048576.0, 1) << " MB uncompressed, " << how << " -> " << out.getFullPathName() << " (" << juce::String (out.getSize() / 1048576.0, 1) << " MB); config.json skipped " << skippedConfig << "; marker touched" << std::endl;
+    if (cert.getParentDirectory() != juce::File() && ! useCutoff && bytes > 500LL * 1048576LL) std::cout << "ZIP: the folder is over 500 MB: from now on zip with --since marker" << std::endl;
+    return 0;
+}
+
 // --uad-preflight: say what the registry shows, load nothing
 inline int runUadPreflight (const SweepOptions& opt)
 {
