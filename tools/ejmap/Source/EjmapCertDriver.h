@@ -4596,34 +4596,63 @@ inline int runSaturation (const SweepOptions& opt)
     const juce::String firstDrive = [&] { for (int i = 0; i < controls.size(); ++i) if (controls[i].getProperty ("verdict", "") == "drive") return controls[i].getProperty ("control", "").toString(); return juce::String(); }();
     saturation::OutputChoice outc;
     {
+        // FOLLOW-UP 4 (7 Oct): every candidate - the gain draft's choice, then controls named output / master / volume / level / trim / makeup,
+        // then the unnamed pool - must be LEVEL ONLY AFTER THE DRIVE (saturation::levelOnlyAfterDrive): with the first drive at its hardest
+        // position, at -12 dBFS, two norms, the level moves >= 3 dB and the THD <= 1 dB. A volume inside the tone path is skipped with its reading.
+        int driveIdx = -1; float driveHard = 1.0f;
+        for (const auto& t : targets) if (t.name == firstDrive) driveIdx = t.index;
+        if (driveIdx >= 0) for (int i = 0; i < controls.size(); ++i) if ((int) controls[i].getProperty ("index", -1) == driveIdx)
+            if (const auto* lv = controls[i].getProperty ("levels", {}).getArray()) for (const auto& L : *lv) if (std::abs ((double) L.getProperty ("level_dbfs", 0.0) + 12.0) < 0.1)
+            { double best = -1e9; if (const auto* cv = L.getProperty ("curve", {}).getArray()) for (const auto& r : *cv) { const auto t = r.getProperty ("thd_db", {}); if ((bool) r.getProperty ("valid", false) && (t.isDouble() || t.isInt()) && (double) t > best) { best = (double) t; driveHard = (float) (double) r.getProperty ("norm", 1.0); } } }
+        juce::Array<juce::var> tried;
+        auto afterDrive = [&] (int idx, const juce::String& name) -> std::optional<saturation::AfterDrive>
+        {
+            if (driveIdx < 0) return std::nullopt;
+            const auto r = run ("ad" + juce::String (idx), { "--response", "ctl=" + juce::String (idx), "norms=0.25,0.75", "tones=1", "lo=997", "harmonics=5", "db=-12", "hold=1.0", "discard=0.5", "set=" + juce::String (driveIdx) + ":" + juce::String (driveHard, 6) });
+            if (r.kind == ChildResult::Kind::uiShown) return std::nullopt;
+            const auto a = saturation::levelOnlyAfterDrive (saturation::deriveLevel (saturation::parseHarmonics (r.cleanExit() ? r.out : juce::String()), -12.0));
+            auto* t = new juce::DynamicObject(); t->setProperty ("control", name); t->setProperty ("level_span_db", std::round (a.levelSpanDb * 100.0) / 100.0); t->setProperty ("thd_span_db", std::round (a.thdSpanDb * 100.0) / 100.0); t->setProperty ("level_only_after_drive", a.ok); tried.add (juce::var (t));
+            say ("  output candidate [" + juce::String (idx) + "] " + name + ": " + a.why);
+            return a;
+        };
+        auto indexOf = [&] (const juce::String& name) { if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if (c.getProperty ("name", "").toString() == name) return (int) c.getProperty ("index", -1); return -1; };
         const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
         for (const auto& rel : { "phaseb/gainall/drafts/", "phaseb/gaincal/drafts/", "phaseb/gainall/gain-cal/", "phaseb/gaincal/gain-cal/" })
         { const auto f = root.getChildFile (rel).getChildFile (stem + ".gain_profile.draft.json"); if (f.existsAsFile()) { outc = saturation::outputFromGainDraft (juce::JSON::parse (f.loadFileAsString()), firstDrive); if (outc.ok) { outc.source += " at " + juce::String (rel); break; } } }
+        if (outc.ok && driveIdx >= 0) { const auto a = afterDrive (indexOf (outc.control), outc.control); if (a && ! a->ok) { outc = saturation::OutputChoice(); outc.why = "the gain draft's output is not level_only after the drive"; } }
         if (! outc.ok)
         {
-            int outIdx = -1; juce::String outName;
+            std::vector<std::pair<int, juce::String>> named, others; std::vector<int> nominatedIdx;
             if (const auto* cs = base.getProperty ("controls", {}).getArray())
                 for (const auto& c : *cs)
                 {
                     const int idx = (int) c.getProperty ("index", -1); const auto n = c.getProperty ("name", "").toString();
                     if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (n) || nametokens::controlAnswersTerm (n, "mix")) continue;
                     bool isTarget = false; for (const auto& t : targets) isTarget = isTarget || t.index == idx; if (isTarget) continue;
-                    bool outLike = false; for (const char* t : { "output", "out", "level", "volume", "trim", "makeup", "make-up" }) if (nametokens::controlAnswersTerm (n, t)) outLike = true;
-                    if (outLike && outIdx < 0) { outIdx = idx; outName = n; }
+                    bool outLike = false; for (const char* t : { "output", "out", "master", "level", "volume", "vol", "trim", "makeup", "make-up" }) if (nametokens::controlAnswersTerm (n, t)) outLike = true;
+                    (outLike ? named : others).push_back ({ idx, n });
                 }
-            if (outIdx >= 0)
+            std::vector<std::pair<int, juce::String>> order = named; if (driveIdx >= 0) for (const auto& o2 : others) if (order.size() < 8) order.push_back (o2);   // the pool only when the after-drive test can run
+            // per candidate: the after-drive test, then its -40 dBFS curve (writable), then the curve held in context; the first that passes all three
+            juce::StringArray rejections;
+            for (const auto& [idx, n] : order)
             {
+                std::optional<saturation::AfterDrive> a;
+                if (driveIdx >= 0) { a = afterDrive (idx, n); if (! a || ! a->ok) continue; }
                 juce::StringArray gnorms; for (int k = 0; k < gaincal::kNorms; ++k) gnorms.add (juce::String ((float) k / (float) (gaincal::kNorms - 1), 6));
-                const auto r = run ("out" + juce::String (outIdx), { "--sweep", "thr=" + juce::String (outIdx), "norms=" + gnorms.joinIntoString (","), "levels=-40", "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
+                const auto r = run ("out" + juce::String (idx), { "--sweep", "thr=" + juce::String (idx), "norms=" + gnorms.joinIntoString (","), "levels=-40", "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
                 if (r.kind == ChildResult::Kind::uiShown) { say ("SAT: a window appeared; stopping"); return 5; }
                 const auto rows = gaincal::mergeLevels ({ gaincal::parseLevelRun (r.cleanExit() ? r.out : juce::String(), -40.0) });
-                const auto c = gaincal::judge (rows, sweep::findControl (base, outIdx).getProperty ("unit", "").toString(), -40.0);
-                if (gaincal::writable (c.verdict)) { outc.ok = true; outc.control = outName; outc.role = "output"; outc.curve = rows; outc.stepped = sweep::isSteppedControl (sweep::findControl (base, outIdx)); outc.source = "inline: 21 norms at -40 dBFS, one process (" + c.verdict + "; no gain draft in the cert folder)"; }
-                else outc.why = "[" + juce::String (outIdx) + "] " + outName + " measured inline is " + c.verdict + " (" + c.note + "): not usable for level matching";
+                const auto c = gaincal::judge (rows, sweep::findControl (base, idx).getProperty ("unit", "").toString(), -40.0);
+                if (! gaincal::writable (c.verdict)) { rejections.add ("[" + juce::String (idx) + "] " + n + ": its curve is " + c.verdict); say ("  output candidate [" + juce::String (idx) + "] " + n + ": curve " + c.verdict + " - not usable"); if (driveIdx < 0) break; continue; }
+                const bool stepped = sweep::isSteppedControl (sweep::findControl (base, idx));
+                if (a) { const auto held = saturation::curveHoldsInContext (*a, rows, stepped); say ("  output candidate [" + juce::String (idx) + "] " + n + ": " + held.why); if (! held.ok) { rejections.add ("[" + juce::String (idx) + "] " + n + ": " + held.why); continue; } }
+                outc.ok = true; outc.control = n; outc.role = "output"; outc.curve = rows; outc.stepped = stepped; outc.source = "inline: 21 norms at -40 dBFS, one process (" + c.verdict + (driveIdx >= 0 ? "; level_only after the drive and its curve held in context, by measurement" : "; no drive to test it against") + ")";
+                break;
             }
-            else if (outc.why.isEmpty()) outc.why = "no control named output / out / level / volume / trim / makeup beside the drive";
+            if (! outc.ok) outc.why = driveIdx >= 0 ? "no level control after the drive: " + juce::String ((int) tried.size()) + " candidate(s) tested - each moved the distortion, moved too little level, or (" + juce::String (rejections.size()) + ") had a level law that depends on the level" + (rejections.isEmpty() ? juce::String() : ": " + rejections.joinIntoString ("; ")) : (order.empty() ? "no control named output / out / master / level / volume / trim / makeup beside the drive" : rejections.joinIntoString ("; "));
         }
-        auto* oc = new juce::DynamicObject(); oc->setProperty ("control", outc.ok ? juce::var (outc.control) : juce::var()); oc->setProperty ("role", outc.ok ? juce::var (outc.role) : juce::var()); oc->setProperty ("source", outc.ok ? outc.source : "none: " + outc.why);
+        auto* oc = new juce::DynamicObject(); oc->setProperty ("control", outc.ok ? juce::var (outc.control) : juce::var()); oc->setProperty ("role", outc.ok ? juce::var (outc.role) : juce::var()); oc->setProperty ("source", outc.ok ? outc.source : "none: " + outc.why); oc->setProperty ("after_drive_tests", tried);
         if (outc.ok) { juce::Array<juce::var> cv; for (const auto& rr : outc.curve) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", rr.norm); q->setProperty ("display", rr.display); q->setProperty ("measured_db", rr.landed && rr.measuredDb.count (-40.0) ? juce::var (std::round (rr.measuredDb.at (-40.0) * 100.0) / 100.0) : juce::var()); cv.add (juce::var (q)); } oc->setProperty ("curve", cv); }
         o->setProperty ("output_control", juce::var (oc));
         say ("SAT: output control: " + (outc.ok ? "[" + outc.control + "] " + outc.source : "none - " + outc.why));
@@ -4647,6 +4676,7 @@ inline int runSaturation (const SweepOptions& opt)
             saturation::StepAcceptance a; a.step = step; juce::String why;
             if (driveIdx < 0) a.why = "no control with the drive verdict";
             else if (! L12) a.why = "no -12 dBFS level on the drive";
+            else if (! outc.ok) a.why = "null: no usable level control (" + outc.why + ")";   // follow-up 4: never run uncompensated
             else if (const auto pos = saturation::positionForStep (*L12, step, why))
             {
                 a.offered = true; a.position = *pos; a.comp = saturation::compensate (outc, outInstNorm, pos->gainDb);

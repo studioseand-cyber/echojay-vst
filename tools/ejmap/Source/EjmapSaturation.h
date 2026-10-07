@@ -239,6 +239,38 @@ inline std::optional<double> levelAtNorm (const std::vector<gaincal::Reading>& c
     for (size_t i = 0; i + 1 < pts.size(); ++i) if (pts[i].first <= norm && norm <= pts[i + 1].first) { const double t = (norm - pts[i].first) / juce::jmax (1e-12, pts[i + 1].first - pts[i].first); return pts[i].second + t * (pts[i + 1].second - pts[i].second); }
     return std::nullopt;
 }
+// LEVEL ONLY AFTER THE DRIVE (7 Oct follow-up 4, amp sims): a level control is usable for compensation only when, WITH THE DRIVE ENGAGED,
+// moving it moves the level and not the distortion - a volume inside the tone path (Ampeg B15N's Ch64Volume) moves the THD too, and a
+// compensation through it changes the step the acceptance asks for. The test: at -12 dBFS, the drive at its hardest position, the
+// candidate at two norms: level span >= kAfterDriveLevelSpanDb and THD span <= kAfterDriveThdSpanDb.
+inline constexpr double kAfterDriveLevelSpanDb = 3.0, kAfterDriveThdSpanDb = 1.0;
+struct AfterDrive { bool ok = false; double levelSpanDb = 0.0, thdSpanDb = 0.0; juce::String why; std::map<float, double> gainAt; };
+inline AfterDrive levelOnlyAfterDrive (const LevelResult& L)
+{
+    AfterDrive a; std::vector<const Reading*> v; for (const auto& r : L.readings) if (r.valid) v.push_back (&r);
+    if (v.size() < 2) { a.why = "fewer than two positions read with the drive engaged"; return a; }
+    double gmin = 1e9, gmax = -1e9, tmin = 1e9, tmax = -1e9; for (const auto* r : v) { gmin = std::min (gmin, r->gainDb); gmax = std::max (gmax, r->gainDb); const double t = std::max (-120.0, r->thdDb); tmin = std::min (tmin, t); tmax = std::max (tmax, t); }
+    a.levelSpanDb = gmax - gmin; a.thdSpanDb = tmax - tmin; for (const auto* r : v) a.gainAt[r->norm] = r->gainDb;
+    a.ok = a.levelSpanDb >= kAfterDriveLevelSpanDb && a.thdSpanDb <= kAfterDriveThdSpanDb;
+    a.why = "with the drive engaged it moves the level " + juce::String (a.levelSpanDb, 2) + " dB and the THD " + juce::String (a.thdSpanDb, 2) + " dB"
+          + (a.ok ? ": level_only after the drive" : a.levelSpanDb < kAfterDriveLevelSpanDb ? ": too little level to compensate with" : ": inside the tone path (it moves the distortion)");
+    return a;
+}
+// THE CURVE HOLDS IN CONTEXT (follow-up 4, Ampeg B15N): the level change the candidate made between its two test norms with the drive
+// engaged at -12 dBFS against the change its -40 dBFS curve promises between the same norms; more than kInContextDb apart -> its level
+// law depends on the level (a power-amp stage), so the curve cannot compensate: rejected with both figures
+inline constexpr double kInContextDb = 0.5;
+inline AfterDrive curveHoldsInContext (AfterDrive a, const std::vector<gaincal::Reading>& curve, bool stepped)
+{
+    if (! a.ok || a.gainAt.size() < 2) return a;
+    const float n0 = a.gainAt.begin()->first, n1 = a.gainAt.rbegin()->first;
+    const auto c0 = levelAtNorm (curve, n0, stepped), c1 = levelAtNorm (curve, n1, stepped);
+    if (! c0 || ! c1) { a.ok = false; a.why = "the -40 dBFS curve has no level at the test norms"; return a; }
+    const double ctx = a.gainAt.rbegin()->second - a.gainAt.begin()->second, crv = *c1 - *c0;
+    if (std::abs (ctx - crv) > kInContextDb) { a.ok = false; a.why = "level-dependent: with the drive engaged it moves " + juce::String (ctx, 2) + " dB between norms " + juce::String (n0, 2) + " and " + juce::String (n1, 2) + ", its -40 dBFS curve " + juce::String (crv, 2) + " (over " + juce::String (kInContextDb, 1) + " apart): the curve cannot compensate"; }
+    else a.why += "; its -40 dBFS curve agrees in context (" + juce::String (ctx, 2) + " vs " + juce::String (crv, 2) + " dB)";
+    return a;
+}
 // THE COMPENSATION: the output norm whose curve value is the instantiate value minus the drive's level change
 struct Compensation { bool ok = false; double instDb = 0.0, wantDb = 0.0, norm = 0.0, givesDb = 0.0; bool clamped = false; juce::String why; };
 inline Compensation compensate (const OutputChoice& out, double instNorm, double levelChangeDb)

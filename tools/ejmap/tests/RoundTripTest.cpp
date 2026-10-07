@@ -8046,6 +8046,19 @@ void testSaturation()
           OutputChoice cc; cc.ok = true; for (auto [n, db] : std::vector<std::pair<double, double>> { { 0.70, 18.63 }, { 0.75, 20.27 }, { 0.80, 21.81 }, { 0.85, 23.25 } }) { ejmap::gaincal::Reading r; r.norm = n; r.measuredDb[-40.0] = db; cc.curve.push_back (r); }
           const auto cf = compensate (cc, 0.78, 4.44);
           check (cf.ok && std::abs (cf.instDb - 21.194) < 0.01 && std::abs (cf.wantDb - 16.754) < 0.01, "sat V3f: MasterVolume at 0.78 reads 21.19 dB (interpolated between 0.75 and 0.80), not the nearest point's 21.81: the 0.62 dB the acceptance missed by"); }
+        // V3g (follow-up 4, amp sims): a level control is usable only when level_only AFTER the drive
+        { const auto inside = levelOnlyAfterDrive (level (-12.0, { reading (0.25f, -30.0, -8.0), reading (0.75f, -22.0, 6.0) }));   // Ch64Volume: 14 dB of level, 8 dB of THD
+          const auto after = levelOnlyAfterDrive (level (-12.0, { reading (0.25f, -24.1, -10.0), reading (0.75f, -23.8, 4.0) }));    // a master after the tone stack
+          const auto weak = levelOnlyAfterDrive (level (-12.0, { reading (0.25f, -24.0, 0.0), reading (0.75f, -24.0, 1.0) }));
+          check (! inside.ok && inside.why.contains ("inside the tone path") && after.ok && after.why.contains ("level_only after the drive") && ! weak.ok && weak.why.contains ("too little level") && ! levelOnlyAfterDrive (level (-12.0, { reading (0.5f, -24.0, 0.0) })).ok,
+                 "sat V3g: a volume that moves the THD 8 dB is inside the tone path; a master moving 14 dB of level and 0.3 of THD is level_only after the drive; 1 dB of level is too little; one reading decides nothing"); }
+        // V3h (follow-up 4, Ampeg B15N): the curve must hold in context - 3.5 dB in context against a -40 dBFS curve promising 9 dB: level-dependent
+        { auto ad = levelOnlyAfterDrive (level (-12.0, { reading (0.25f, -23.4, -2.0), reading (0.75f, -23.0, 1.5) }));
+          std::vector<ejmap::gaincal::Reading> cv; for (auto [n, db] : std::vector<std::pair<double, double>> { { 0.0, -20.0 }, { 0.25, -6.0 }, { 0.75, 3.0 }, { 1.0, 6.0 } }) { ejmap::gaincal::Reading r; r.norm = n; r.measuredDb[-40.0] = db; cv.push_back (r); }
+          const auto held = curveHoldsInContext (ad, cv, false);
+          std::vector<ejmap::gaincal::Reading> cv2; for (auto [n, db] : std::vector<std::pair<double, double>> { { 0.0, -20.0 }, { 0.25, -2.0 }, { 0.75, 1.3 }, { 1.0, 6.0 } }) { ejmap::gaincal::Reading r; r.norm = n; r.measuredDb[-40.0] = db; cv2.push_back (r); }
+          const auto held2 = curveHoldsInContext (ad, cv2, false);
+          check (ad.ok && ! held.ok && held.why.contains ("level-dependent") && held2.ok && held2.why.contains ("agrees in context"), "sat V3h: 3.5 dB in context vs a 9 dB curve -> level-dependent, rejected; vs a 3.3 dB curve -> held"); }
         // V4: the step judgement
         { StepAcceptance a; a.step = 2; a.ran = true; a.measuredThdDb = -33.0; a.measuredLevelDb = 0.3; a.comp.ok = true; judgeStep (a); check (a.pass && a.thdOk && a.levelOk, "sat V4a: THD -33 in the warm band, output 0.3 dB from the input -> PASS");
           a.measuredLevelDb = 0.8; judgeStep (a); check (! a.pass && a.thdOk && ! a.levelOk && a.why.contains ("over 0.5"), "sat V4b: 0.8 dB off -> FAIL on level");
