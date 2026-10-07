@@ -102,13 +102,20 @@ int main()
             check (R.hits[0].retentionDb > -8.2 - 0.3 && R.hits[0].retentionDb < -8.2 + 0.3, "a +8.2 dB over impulse retains -8.2 dB (lands at the ceiling)", f2 (R.hits[0].retentionDb));
         }
     }
-    {   // tones: a steady tone over the ceiling is held at a GAIN (THD very low), at 997 Hz and at 50 Hz
+    {   // tones. CLEAN holds a steady tone at a GAIN (THD below -60 dB). TRANSPARENT (C4 approved, 7 Oct) rides the waveform
+        // the way Pro-L 2 measured (-26.6 dB at 997 Hz, -19.6 at 50 Hz, +8.2 over): THD between -45 and -12 dB, odd harmonics.
         for (const char* name : { "tone_997", "tone_50" })
         {
-            const auto L = ejfix::layout (name); const auto src = ejfix::generate (L, sr); const auto out = render (src, 8.2, 0.0, true, T); const auto R = ejm::analyse (name, "v2", src, out, 8.2, 0.0);
-            const bool ok = R.aligned && R.tone.segs.size() == 6;
-            check (ok, std::string (name) + " renders and aligns", R.align.why);
-            if (ok) { check (R.tone.segs[3].thdDb < -60.0, std::string (name) + " at +8.2 dB over: THD below -60 dB (a gain, not a clipper)", f2 (R.tone.segs[3].thdDb) + " dB, GR " + f2 (R.tone.segs[3].grSteadyDb)); check (R.pk.overs == 0, std::string (name) + ": zero overs", f2 (R.pk.truePeakDb) + " dBTP"); }
+            const auto L = ejfix::layout (name); const auto src = ejfix::generate (L, sr);
+            const auto Rt = ejm::analyse (name, "transparent", src, render (src, 8.2, 0.0, true, T), 8.2, 0.0), Rc = ejm::analyse (name, "clean", src, render (src, 8.2, 0.0, true, echojay::limv2::clean()), 8.2, 0.0);
+            const bool ok = Rt.aligned && Rc.aligned && Rt.tone.segs.size() == 6 && Rc.tone.segs.size() == 6;
+            check (ok, std::string (name) + " renders and aligns in both styles", Rt.align.why + Rc.align.why);
+            if (ok)
+            {
+                check (Rc.tone.segs[3].thdDb < -60.0, std::string (name) + " CLEAN at +8.2 dB over: THD below -60 dB (a gain, not a clipper)", f2 (Rc.tone.segs[3].thdDb) + " dB, GR " + f2 (Rc.tone.segs[3].grSteadyDb));
+                check (Rt.tone.segs[3].thdDb > -45.0 && Rt.tone.segs[3].thdDb < -12.0, std::string (name) + " TRANSPARENT at +8.2 dB over: rides the waveform like Pro-L 2 (THD -45..-12 dB)", f2 (Rt.tone.segs[3].thdDb) + " dB, GR " + f2 (Rt.tone.segs[3].grSteadyDb));
+                check (Rt.pk.overs == 0 && Rc.pk.overs == 0, std::string (name) + ": zero overs in both styles", f2 (Rt.pk.truePeakDb) + " / " + f2 (Rc.pk.truePeakDb) + " dBTP");
+            }
         }
     }
     {   // linking: link 1 both channels dip; link 0 the right channel does not
@@ -118,6 +125,34 @@ int main()
         const bool ok = Rl.aligned && Ru.aligned && Rl.hits.size() == 12 && Ru.hits.size() == 12;
         check (ok, "panned_transient renders linked and unlinked", Rl.align.why + Ru.align.why);
         if (ok) { check (std::abs (Rl.hits[0].dipLDb - Rl.hits[0].dipRDb) < 0.1, "link 1: L and R dip equally", f2 (Rl.hits[0].dipLDb) + " / " + f2 (Rl.hits[0].dipRDb)); check (Ru.hits[0].dipLDb < -5.0 && Ru.hits[0].dipRDb > -0.3, "link 0: only L dips", f2 (Ru.hits[0].dipLDb) + " / " + f2 (Ru.hits[0].dipRDb)); check (Rl.pk.overs == 0 && Ru.pk.overs == 0, "both hold the ceiling", std::to_string (Rl.pk.overs) + " / " + std::to_string (Ru.pk.overs)); }
+    }
+    {   // HARD REQUIREMENTS (overnight brief, 7 Oct): zero overs at +15 dB, near-silence, mono, every sample rate, no NaN,
+        // no subnormal output, and no subnormal left in the state after 10 s of digital silence following a loud burst
+        auto scan = [] (const ejwav::Audio& o, size_t& nan, size_t& sub) { nan = sub = 0; for (const auto& c : o.ch) for (double v : c) { if (! std::isfinite (v)) ++nan; else if (v != 0.0 && std::fpclassify ((float) v) == FP_SUBNORMAL) ++sub; } };
+        for (double rate : { 44100.0, 48000.0, 88200.0, 96000.0, 192000.0 })
+        {
+            const auto L = ejfix::layout ("probe_transients"); auto src = ejfix::generate (L, rate);
+            for (double gain : { 15.0 })
+            {
+                const auto out = render (src, gain, -0.1, true, T); size_t nan, sub; scan (out, nan, sub); const auto pk = ejm::peaks (out.ch, rate, -0.1);
+                check (pk.overs == 0 && nan == 0 && sub == 0, "probe at +15 dB, " + std::to_string ((int) rate) + " Hz: zero overs, no NaN, no subnormal output", f2 (pk.truePeakDb) + " dBTP, " + std::to_string (pk.overs) + " overs, nan " + std::to_string (nan) + ", sub " + std::to_string (sub));
+            }
+            {   // near-silence: -100 dBFS noise is passed as a pure delay, no NaN, no subnormals, no gain action
+                ejwav::Audio q; q.sampleRate = rate; const size_t N = (size_t) (3 * rate); q.ch.assign (2, std::vector<double> (N)); uint32_t s = 7; for (size_t n = 0; n < N; ++n) { s = s * 1664525u + 1013904223u; const double v = 1e-5 * (((double) (s >> 8) / 16777216.0) * 2.0 - 1.0); q.ch[0][n] = v; q.ch[1][n] = -v; }
+                const auto out = render (q, 15.0, 0.0, true, T); size_t nan, sub; scan (out, nan, sub); double worst = 0; for (size_t c = 0; c < 2; ++c) for (size_t n = 0; n < N; ++n) worst = std::max (worst, std::abs (out.ch[c][n] - q.ch[c][n] * ejdsp::lin (15.0)));
+                check (nan == 0 && sub == 0 && worst < 1e-6, "near-silence (-100 dBFS) at +15 dB, " + std::to_string ((int) rate) + " Hz: pure gain+delay, no NaN, no subnormals", "worst " + std::to_string (worst) + " nan " + std::to_string (nan) + " sub " + std::to_string (sub));
+            }
+            {   // mono: one channel, same guarantees
+                ejwav::Audio m; m.sampleRate = rate; m.ch.assign (1, src.ch[0]); const auto out = render (m, 8.2, -0.1, true, T); size_t nan, sub; scan (out, nan, sub); const auto pk = ejm::peaks (out.ch, rate, -0.1);
+                check (out.channels() == 1 && pk.overs == 0 && nan == 0 && sub == 0, "mono probe at +8.2 dB, " + std::to_string ((int) rate) + " Hz: zero overs, no NaN, no subnormals", f2 (pk.truePeakDb) + " dBTP, " + std::to_string (pk.overs) + " overs");
+            }
+        }
+        {   // a loud burst then 10 s of digital zero: the output must reach exactly zero (no subnormal tail), and the state must not
+            // be left subnormal - checked by processing one more block and scanning it
+            ejwav::Audio b; b.sampleRate = sr; const size_t N = (size_t) (11 * sr); b.ch.assign (2, std::vector<double> (N, 0.0)); for (size_t n = (size_t) (0.5 * sr); n < (size_t) (0.6 * sr); ++n) b.ch[0][n] = b.ch[1][n] = 2.0 * std::sin (2 * ejdsp::kPi * 100.0 * (double) n / sr);
+            const auto out = render (b, 8.2, -0.1, true, T); size_t nan, sub; scan (out, nan, sub); double tail = 0; for (size_t c = 0; c < 2; ++c) for (size_t n = (size_t) (5 * sr); n < N; ++n) tail = std::max (tail, std::abs (out.ch[c][n]));
+            check (nan == 0 && sub == 0 && tail == 0.0, "burst then 10 s of silence: output exactly zero after 5 s, no subnormals anywhere", "tail " + std::to_string (tail) + " sub " + std::to_string (sub));
+        }
     }
     {   // THE LEGACY PORT against the real Pro Tools prints (skipped, and said so, when the renders are not on this machine)
         struct Case { const char* src; const char* print; double gain; } cases[] = { { "docs/limiter_ab/renders/source_bass_sustain.wav", "docs/limiter_ab/renders/echojay_bass_sustain.wav", 8.41 }, { "docs/limiter_ab/renders/source_fullmix.wav", "docs/limiter_ab/renders/echojay_fullmix.wav", 8.32 } };

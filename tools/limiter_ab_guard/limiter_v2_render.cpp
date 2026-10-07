@@ -3,7 +3,8 @@
 // latencySamples so it lands at offset 0 against the source, like a PDC'd bounce; --no-pdc keeps it raw).
 //
 //   limiter_v2_render <in.wav> <out.wav> [--gain 8.2] [--ceiling 0.0] [--tp 1] [--lookahead 5] [--stages 3]
-//                     [--fast 40] [--slow 500] [--slowatk 60] [--slowwin 20] [--link 1] [--margin 0.1] [--post 1] [--block 512] [--no-pdc]
+//                     [--style transparent|clean] [--fast 40] [--slow 500] [--slowatk 60] [--slowwin 20] [--slowfrac 1] [--link 1] [--margin 0.1] [--post 1] [--block 512] [--no-pdc]
+//   --style resets every tuning field to that style; put it FIRST and override single fields after it.
 #include "ejwav.h"
 #include "../../Source/EJLimiterV2Core.h"
 #include <cstdio>
@@ -22,7 +23,8 @@ int main (int argc, char** argv)
         else if (a == "--lookahead") t.lookaheadMs = next(); else if (a == "--stages") t.smoothStages = (int) next();
         else if (a == "--fast") t.fastReleaseMs = next(); else if (a == "--slow") t.slowReleaseMs = next(); else if (a == "--slowatk") t.slowAttackMs = next();
         else if (a == "--link") t.link = next(); else if (a == "--margin") t.tpMarginDb = next(); else if (a == "--block") block = (int) next();
-        else if (a == "--slowwin") t.slowWindowMs = next(); else if (a == "--post") t.postMs = next();
+        else if (a == "--slowwin") t.slowWindowMs = next(); else if (a == "--post") t.postMs = next(); else if (a == "--slowfrac") t.slowFraction = next();
+        else if (a == "--style") { const std::string st = i + 1 < argc ? argv[++i] : ""; if (st == "clean") t = echojay::limv2::clean(); else if (st == "transparent") t = echojay::limv2::transparent(); else { std::fprintf (stderr, "unknown style %s\n", st.c_str()); return 2; } }
         else if (a == "--no-pdc") pdc = false; else { std::fprintf (stderr, "unknown option %s\n", a.c_str()); return 2; }
     }
     ejwav::Audio a; try { a = ejwav::read (argv[1]); } catch (const std::exception& ex) { std::fprintf (stderr, "%s\n", ex.what()); return 2; }

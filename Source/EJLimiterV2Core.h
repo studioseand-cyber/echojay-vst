@@ -61,6 +61,7 @@ struct Tuning
     double fastReleaseMs  = 40.0;   // time constant of the fast limb (dB-domain exponential)
     double slowReleaseMs  = 500.0;  // time constant of the slow limb's recovery
     double slowAttackMs   = 60.0;   // how quickly sustained over-level raises the slow floor
+    double slowFraction   = 1.0;    // the slow floor's target as a fraction of the required reduction (Pro-L 2 measured ~0.72)
     double slowWindowMs   = 20.0;   // the slow limb charges from the largest reduction over this window (> one LF cycle)
     double link           = 1.0;    // 1 = fully linked channels, 0 = independent
     double tpMarginDb     = 0.1;    // detector margin under the ceiling with true peak on
@@ -68,7 +69,21 @@ struct Tuning
     double maxLookaheadMs = 20.0;   // storage sized once, in prepare()
 };
 
-inline Tuning transparent() { return Tuning {}; }
+// CLEAN: the first v2 behaviour - holds sustained material at a steady gain (THD below -100 dB on tones), a 5 ms
+// smooth window, 40 ms fast limb, a slow floor charged to the full reduction over a 20 ms window. Not exposed yet.
+inline Tuning clean() { return Tuning {}; }
+
+// TRANSPARENT: tuned to the Pro-L 2 Transparent measurements of 7 Oct 2026 (docs/limiter_ab/SESSION_L_NOTES.md),
+// step by step (C1..C6 in the overnight run); each value is a measured number, not a knob label.
+inline Tuning transparent()
+{
+    Tuning t;
+    t.slowFraction  = 0.72;    // C1: the floor settles at ~72 % of the required reduction (10 ms burst 8 %, 1 s 72 %)
+    t.slowAttackMs  = 150.0;   // C1: the floor charges with a 120-185 ms constant
+    t.slowReleaseMs = 180.0;   // C1: and decays with 160-185 ms (measured on every limb)
+    t.slowWindowMs  = 1.0;     // C1: charged from the reduction itself, so an LF tone gets the shallower floor Pro-L 2 shows
+    return t;
+}
 
 // 8x true-peak interpolator: 8 phases of a 96-tap Kaiser (beta 9) windowed sinc. Fixed arrays, no allocation.
 // Cost: 768 MACs per sample per channel, twice (detector + post-check): ~150 M MAC/s at 48 kHz stereo.
@@ -209,7 +224,8 @@ public:
                 const float heldSlow = slowWin_[c].push (held);
                 const double dWin = heldSlow < 1.0f ? -20.0 * std::log10 ((double) heldSlow) : 0.0;
                 eFast_[c] = std::max (d, eFast_[c] * decayFast_);
-                eSlow_[c] += (dWin - eSlow_[c]) * (dWin > eSlow_[c] ? coefSlowAtk_ : coefSlowRel_);
+                const double slowTarget = dWin * tuning_.slowFraction;
+                eSlow_[c] += (slowTarget - eSlow_[c]) * (slowTarget > eSlow_[c] ? coefSlowAtk_ : coefSlowRel_);
                 const double env = std::max (eFast_[c], eSlow_[c]);
                 float ge = (float) std::pow (10.0, -env / 20.0);
                 for (int s = 0; s < S_; ++s) ge = ma_[c][s].push (ge);
