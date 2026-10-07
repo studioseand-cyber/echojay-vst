@@ -58,3 +58,39 @@ reads WAVs. Reproducible from files kept in the repo (WAVs git-ignored, results 
 - Hann leakage from a non-bin-centred line put a -44 dB floor under THD+N; Blackman-Harris fixed it.
 - The harness marks a dip at -0.5 dB, so a smooth lookahead window measures a pre-dip SHORTER than the lookahead
   (3.0-3.7 ms for 5 ms). The same bias applies to the Pro-L 2 render; compare like with like.
+
+## 7 Oct 2026, evening: first Pro-L 2 measurements (results/2026-10-07_proL2_*.txt)
+
+Renders present: proL2_{tone_997,tone_50,tone_imd,probe_transients,panned_transient} (Logic, 48k float, 38.0 s
+fixed-length, compensated: offset 0 on the markers, tails silent), source_fullmix + echojay_fullmix (Pro Tools,
+24-bit, uncompensated: echojay offset +108 = 2 ms lookahead + 12 interpolator samples), proL2tpOFF_fullmix (TP OFF
+by mistake, offset +496 = Pro-L 2's latency 10.33 ms; NOT a reference, used for GR-envelope shape only).
+The five synthetic sources grew by ~9.5 kB on import: Logic appended an `LGWV` overview chunk AFTER the data chunk;
+audio verified bit-identical to a fresh generation (never regenerate them now).
+
+What Pro-L 2 Transparent (Default Setting) does, measured:
+- NO lookahead pre-dip beyond 0.33 ms: full reduction inside the onset's own block; a 1-sample impulse gets a
+  ~0.5 ms-wide dip and lands exactly at the ceiling. Within a burst the gain rides the 3 kHz waveform (+-0.5 dB).
+- Release = INSTANT part + slow floor. After a short burst (<= 10 ms) the gain is back within 0.6 dB in < 0.33 ms.
+  The floor charges toward ~72% of the required reduction (after 10 ms: 8%, 50 ms: 33%, 200 ms: 66%, 1 s: 72%,
+  i.e. one-pole attack tau ~120-185 ms) and decays exponentially in dB with tau ~160-185 ms (measured on every
+  limb from 50 ms burst, 200 ms, 1 s, and the tone step to zero: 163/175/183 ms).
+- Tones: it rides the waveform (soft-clip-like). THD at +8.2 over: -26.6 dB at 997 Hz (h3 -27, h5 -36), -19.6 dB at
+  50 Hz (h3 -20, h5 -31, h7 -40); at +3 over: -30.8 / -25.2; at 0 over (tone at the ceiling): -61.5. Steady GR at
+  +8.2 over: 997 Hz -7.97, 50 Hz -6.68 (the 50 Hz tone comes out 1.5 dB louder than a pure gain would give).
+  IMD 19+20 kHz: 18k/21k products -24 dB, no 1 kHz product (symmetric).
+- Channel linking on a LEFT-only burst: R dips 5.61 dB for L's 7.53 -> ~75% in dB (82% as a linear blend).
+- True peak: -0.02..-0.04 dBTP on every clean case; +0.08 dBTP with 4 overs on the IMD pair's hard start.
+- Latency 496 samples at 48 k (10.33 ms), from the uncompensated PT render (TP off; TP-on value pending).
+- fullmix: on THIS bounce +8.2 dB barely limits: Pro-L 2 (TP off) max GR -0.12 dB, source+8.2 true peak +0.52 dBTP;
+  shipping EchoJay max GR -1.35 dB, out -0.18 dBTP (ceiling consistent with 0.0, cannot be -0.3), +0.12 dB louder than
+  source+8.2 on every untouched hit (a 0.12 dB gain somewhere in that render), first 50 ms at -0.33 (input-gain ease).
+  Either the A/B used a hotter source than this bounce, or the complaint lives in < 1.5 dB of GR on the loudest hits.
+  The 1-3 dB "dips" the hit table shows at 46.43/46.90 s are harness noise on near-silent blocks (|in*G| ~ 0.005).
+
+v2 vs Pro-L 2 on the synthetic cases (rule lines in results/2026-10-07_proL2_vs_v2_synthetic.txt): overs PASS,
+retention PASS, THD PASS; level FAIL on all five (v2 0.35-1.0 LU quieter), release limbs FAIL (t63 ~100 vs 9.7 ms,
+t90 ~700 vs 9.7 ms), pumping FAIL (probe 1.92 vs 1.53 dB, panned 1.00 vs 0.45 dB). Tuning proposals in the report to
+Sean of 7 Oct evening; nothing applied.
+
+Independent true-peak cross-check: ffmpeg is NOT installed and neither are numpy/scipy; nothing installed. Still owed.
