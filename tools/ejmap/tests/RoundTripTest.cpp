@@ -6198,6 +6198,13 @@ void testProfileSweepPlan()
         check (! compressorWord ("Compare Thresh") && ! compressorWord ("Component Threshold") && ! compressorWord ("Compressor1") && ! compressorWord ("Gate Thresh") && ! compressorWord ("Leveller Thresh") && ! compressorWord ("Limiter Thresh"),
                "rule1 K2: a prefix is not the word - Compare, Component, Compressor1 are not it; neither is a leveller or a limiter stage");
         auto cands = [] (std::initializer_list<const char*> names) { std::vector<Plan::Candidate> v; int i = 0; for (auto* n : names) v.push_back ({ i++, n, {}, false }); return v; };
+        // K8 (Kathy, 7 Oct): inside a strip's compressor section the section word IS the comp word - one LC threshold is Rule 1's pick; two are
+        // ordinary candidates (no pick: the measured rules, else a review pick); outside a section nothing changes
+        check (ruleOnePick (cands ({ "LC Threshold" }), "compressor") == std::optional<int> (0) && ! ruleOnePick (cands ({ "LC Threshold", "LC 2nd Thresh Level" }), "compressor") && ! ruleOnePick (cands ({ "LC Threshold", "GE Threshold" }), "") && ruleOnePick (cands ({ "Gate Thresh", "Comp Thresh" }), "") == std::optional<int> (1),
+               "rule1 K8: in the strip's compressor section 'LC Threshold' alone is the pick; two LC thresholds are ordinary candidates; outside a section LC carries no word");
+        { auto* o = new juce::DynamicObject(); o->setProperty ("strip_section", "compressor"); juce::Array<juce::var> cs; for (int k = 0; k < 2; ++k) { auto* c = new juce::DynamicObject(); c->setProperty ("index", k); c->setProperty ("name", k == 0 ? "LC Threshold" : "LC 2nd Thresh Level"); auto* sw = new juce::DynamicObject(); sw->setProperty ("result", "certified"); c->setProperty ("thresholdSweep", juce::var (sw)); cs.add (juce::var (c)); } o->setProperty ("thresholdCandidates", cs);
+          const auto oc = ejmap::loop::outcomeForRecord (juce::var (o));
+          check (oc.state == "needs_review" && oc.reason.contains ("strip's compressor section") && oc.reason.contains ("review pick") && ! oc.reason.contains ("no rule decides it"), "rule1 K9: two certified LC candidates in the strip's compressor section are needs_review for a review pick, not for naming"); }
         const auto emo = cands ({ "Gate Thresh", "Comp Thresh", "Leveller Thresh", "DeEsser Thresh", "Limiter Thresh" });
         const auto pick = ruleOnePick (emo);
         check (pick && emo[(size_t) *pick].name == "Comp Thresh", "rule1 K3 (EMO-D5): among Gate / Comp / Leveller / DeEsser / Limiter the pick is Comp Thresh - the hand run's choice");

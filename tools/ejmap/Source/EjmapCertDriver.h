@@ -2219,7 +2219,7 @@ inline int runCertSweep (const SweepOptions& opt)
         std::vector<sweep::Plan::Candidate> order;
         if (r1) order.push_back (plan.candidates[(size_t) *r1]);
         for (int i = 0; i < (int) plan.candidates.size(); ++i) if (! r1 || i != *r1) order.push_back (plan.candidates[(size_t) i]);
-        if (r1) std::cout << "  RULE 1: '" << plan.candidates[(size_t) *r1].name << "' carries the compressor stage word alone - swept first; the rest only if it does not certify" << std::endl;
+        if (r1) std::cout << "  RULE 1: '" << plan.candidates[(size_t) *r1].name << "' carries the compressor stage word alone" << (sweep::stripSectionFlag() == "compressor" ? " (through the strip's compressor section word)" : "") << " - swept first; the rest only if it does not certify" << std::endl;
         for (size_t k = 0; k < order.size(); ++k)
         {
             const auto& c = order[k];
@@ -2930,7 +2930,7 @@ inline int runStrip (const SweepOptions& opt)
         {   // THE FULL COMPRESSOR PATH (7 Oct): a child --cert-strip-section with the section's controls and engage - the sweep, the detector,
             // the rules, the record and the tone check into the section's own folder; no profile reaches cert/profiles
             const auto secDir = outDir.getChildFile (stem + ".compressor"); secDir.createDirectory();
-            juce::StringArray args { exe.getFullPathName(), "--cert-strip-section", opt.product, "--out", secDir.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName(), "--only-controls", strip::indicesOf (sec) };
+            juce::StringArray args { exe.getFullPathName(), "--cert-strip-section", opt.product, "--out", secDir.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName(), "--only-controls", strip::indicesOf (sec), "--section", "compressor" };
             if (sec.engage) { args.add ("--preset"); args.add (strip::presetOf (sec)); }
             say ("  compressor: the full compressor path over " + juce::String ((int) sec.controls.size()) + " control(s)" + (sec.engage ? " with " + sec.engage->name + " -> '" + sec.engageText + "'" : juce::String()) + " -> " + secDir.getFileName());
             const auto t1 = juce::Time::getMillisecondCounterHiRes();

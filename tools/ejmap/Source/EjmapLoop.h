@@ -163,6 +163,8 @@ inline Outcome outcomeForRecord (const juce::var& record)
             if (allFlat) { o.state = "needs_review"; o.reason = "sweep result flat on every candidate (" + juce::String (cands.size()) + "): " + flatWhy + " - the flat-results investigation, nothing to pick"; return o; }
         }
         o.state = "needs_review";
+        if (record.getProperty ("strip_section", "").toString() == "compressor")   // Kathy, 7 Oct: each is a compressor threshold by the section word - ordinary candidates, a review pick decides
+        { o.reason = juce::String (cands.size()) + " candidates in the strip's compressor section (each a compressor threshold by the section word): no measured rule decided them; a review pick is needed"; return o; }
         o.reason = juce::String (cands.size()) + " threshold candidates (a channel strip or multiband): no rule decides it, nobody picks";
         return o;
     }

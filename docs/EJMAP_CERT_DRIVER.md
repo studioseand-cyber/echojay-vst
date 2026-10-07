@@ -2908,3 +2908,16 @@ candidates swept (114 s) — Kathy's call whether "LC" is a compressor word; **b
   release-only +3.18 (the draft said +3.41 / +3.20) sum to 6.56 against the combined 3.83 — **the shifts truly do not add**;
   elysia mpressor −1.38 + −1.58 = −2.96 against −1.59 (the draft's release shift was −2.32: partly under-settled, mostly not
   additive); Lindell SBC additive (0.01); bx_opto no timing positions.
+
+## 78. Inside a strip's compressor section the section word is Rule 1's comp word (Kathy, 7 Oct; no re-cut yet)
+
+`sweep::stripSectionFlag()` (the strip's child is started with `--section compressor`) makes every candidate in the section
+ruled compressor (LC / GE strips included) satisfy Rule 1's comp word through its section word — "LC Threshold" is a
+compressor threshold (`compressorWordOrSection`, pin K8, mutant red). Exactly one candidate: Rule 1's pick, as for "Comp
+Thresh". Two or more (bx_console SSL 4000 E's `LC Threshold` / `LC 2nd Thresh Level`; bx_console N's three): ordinary
+candidates — every one swept, the measured candidate rules decide (dual-mono pair, linked pair …), else the record is
+`needs_review` for a **review pick** with its own reason ("N candidates in the strip's compressor section (each a compressor
+threshold by the section word): no measured rule decided them; a review pick is needed" — pin K9), never for naming. Outside a
+section nothing changes. Rehearsed: bx_console SSL 4000 E (2 candidates, 116 s) and bx_console N (3 candidates, 120 s; its
+`LC On/Off` and `GE On/Off` engage switches found) both end in the review-pick state, their candidates all certified, awaiting
+`review_picks.json`.

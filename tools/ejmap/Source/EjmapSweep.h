@@ -997,11 +997,16 @@ inline bool compressorWord (const juce::String& name)
     }
     return false;
 }
-inline std::optional<int> ruleOnePick (const std::vector<Plan::Candidate>& candidates)
+// THE STRIP'S SECTION, process-wide (Kathy, 7 Oct): inside a channel strip's section ruled compressor (LC / GE strips included) every
+// candidate satisfies Rule 1's comp word THROUGH ITS SECTION WORD - "LC Threshold" is a compressor threshold. Set by the strip's
+// child (--section compressor); empty everywhere else.
+inline juce::String& stripSectionFlag() { static juce::String f; return f; }
+inline bool compressorWordOrSection (const juce::String& name, const juce::String& section) { return compressorWord (name) || section == "compressor"; }
+inline std::optional<int> ruleOnePick (const std::vector<Plan::Candidate>& candidates, const juce::String& section = stripSectionFlag())
 {
     std::optional<int> pick; int n = 0;
-    for (int i = 0; i < (int) candidates.size(); ++i) if (compressorWord (candidates[(size_t) i].name)) { ++n; pick = i; }
-    return n == 1 ? pick : std::nullopt;
+    for (int i = 0; i < (int) candidates.size(); ++i) if (compressorWordOrSection (candidates[(size_t) i].name, section)) { ++n; pick = i; }
+    return n == 1 ? pick : std::nullopt;   // exactly one carries the word: Rule 1; two (two LC thresholds) are ordinary candidates - the measured rules, else a review pick
 }
 // THE HOLD-DOUBLED REPEAT IS SKIPPED ONLY FOR A PASS-THROUGH FIRST PASS (ruled 2 Oct): identical output at every
 // position and level, repeated, proves nothing. A merely flat sweep is NOT that - flat has meant "our signal did not

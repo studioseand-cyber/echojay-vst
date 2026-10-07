@@ -1,0 +1,343 @@
+{
+  "schema": "ej_strip_prototype/0",
+  "status": "PROTOTYPE (item E, 7 Oct): sections by name, each through its category's mode with its engage switch as the probe's preset; data only, nothing exported",
+  "product": "bx_console SSL 4000 E",
+  "version": "1.7.1",
+  "identity": "AudioUnit|41747d65|1.7.1",
+  "rule": "Rule 1 (2 Oct): the section's own engage switch rides with it; every other section at its instantiate value - a section's measurement is the strip with that section engaged, the others as instantiated",
+  "sections": [
+    {
+      "section": "compressor",
+      "controls": [
+        {
+          "index": 18,
+          "name": "Dyn On/Off",
+          "steps": 2
+        },
+        {
+          "index": 19,
+          "name": "LC Ratio",
+          "steps": 2147483647
+        },
+        {
+          "index": 20,
+          "name": "LC Threshold",
+          "steps": 2147483647
+        },
+        {
+          "index": 21,
+          "name": "LC Release",
+          "steps": 2147483647
+        },
+        {
+          "index": 22,
+          "name": "LC Attack",
+          "steps": 2
+        },
+        {
+          "index": 23,
+          "name": "LC Mix",
+          "steps": 2147483647
+        },
+        {
+          "index": 24,
+          "name": "LC Link",
+          "steps": 2
+        },
+        {
+          "index": 25,
+          "name": "LC Highpass",
+          "steps": 2147483647
+        },
+        {
+          "index": 26,
+          "name": "LC 2nd Thresh Level",
+          "steps": 2147483647
+        },
+        {
+          "index": 35,
+          "name": "Dyn VCA Series",
+          "steps": 2
+        },
+        {
+          "index": 36,
+          "name": "Dyn Key",
+          "steps": 2
+        }
+      ],
+      "engage": "Dyn On/Off",
+      "engage_index": 18,
+      "engage_norm": 1.0,
+      "engage_text": "On",
+      "mode": "--cert-strip-section (sweep, detector, rules, record, tone check; no export)",
+      "folder": "AudioUnit_41747d65_1.7.1.compressor",
+      "child": "exit 0",
+      "exit_code": 0,
+      "seconds": 116.0,
+      "state": "needs_review",
+      "reason": "2 candidates in the strip's compressor section (each a compressor threshold by the section word): no measured rule decided them; a review pick is needed",
+      "not_for_publication": true,
+      "outcome": "ok"
+    },
+    {
+      "section": "eq",
+      "controls": [
+        {
+          "index": 11,
+          "name": "HPF On/Off",
+          "steps": 2
+        },
+        {
+          "index": 12,
+          "name": "HPF Frequency",
+          "steps": 2147483647
+        },
+        {
+          "index": 13,
+          "name": "HPF x3",
+          "steps": 2
+        },
+        {
+          "index": 14,
+          "name": "LPF On/Off",
+          "steps": 2
+        },
+        {
+          "index": 15,
+          "name": "LPF Frequency",
+          "steps": 2147483647
+        },
+        {
+          "index": 16,
+          "name": "LPF /3",
+          "steps": 2
+        },
+        {
+          "index": 37,
+          "name": "EQ On/Off",
+          "steps": 2
+        },
+        {
+          "index": 38,
+          "name": "EQ High Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 39,
+          "name": "EQ High Frequency",
+          "steps": 2147483647
+        },
+        {
+          "index": 40,
+          "name": "EQ High Bell",
+          "steps": 2
+        },
+        {
+          "index": 41,
+          "name": "EQ High Mid Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 42,
+          "name": "EQ High Mid Frequency",
+          "steps": 2147483647
+        },
+        {
+          "index": 43,
+          "name": "EQ High Mid Q",
+          "steps": 2147483647
+        },
+        {
+          "index": 44,
+          "name": "EQ Type",
+          "steps": 2
+        },
+        {
+          "index": 45,
+          "name": "EQ Low Mid Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 46,
+          "name": "EQ Low Mid Frequency",
+          "steps": 2147483647
+        },
+        {
+          "index": 47,
+          "name": "EQ Low Mid Q",
+          "steps": 2147483647
+        },
+        {
+          "index": 48,
+          "name": "EQ Low Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 49,
+          "name": "EQ Low Frequency",
+          "steps": 2147483647
+        },
+        {
+          "index": 50,
+          "name": "EQ Low Bell",
+          "steps": 2
+        },
+        {
+          "index": 51,
+          "name": "EQ Position",
+          "steps": 3
+        }
+      ],
+      "engage": "HPF On/Off",
+      "engage_index": 11,
+      "engage_norm": 1.0,
+      "engage_text": "On",
+      "mode": "--cert-eq",
+      "child": "exit 0",
+      "exit_code": 0,
+      "seconds": 17.0,
+      "records": "eq.AudioUnit_41747d65_1.7.1.eq.json",
+      "log": "AudioUnit_41747d65_1.7.1.eq.log.txt",
+      "outcome": "ok"
+    },
+    {
+      "section": "gate",
+      "controls": [
+        {
+          "index": 27,
+          "name": "GE Mode",
+          "steps": 2
+        },
+        {
+          "index": 28,
+          "name": "GE Invert",
+          "steps": 2
+        },
+        {
+          "index": 29,
+          "name": "GE Range",
+          "steps": 2147483647
+        },
+        {
+          "index": 30,
+          "name": "GE Threshold",
+          "steps": 2147483647
+        },
+        {
+          "index": 31,
+          "name": "GE Threshold Range",
+          "steps": 2
+        },
+        {
+          "index": 32,
+          "name": "GE Release",
+          "steps": 2147483647
+        },
+        {
+          "index": 33,
+          "name": "GE Attack",
+          "steps": 2
+        },
+        {
+          "index": 34,
+          "name": "GE Hysteresis",
+          "steps": 2147483647
+        }
+      ],
+      "note": "no engage switch named in the section: measured as instantiated",
+      "mode": "--cert-dynamics",
+      "child": "exit 0",
+      "exit_code": 0,
+      "seconds": 9.0,
+      "records": "gate.AudioUnit_41747d65_1.7.1.dynamics.json",
+      "log": "AudioUnit_41747d65_1.7.1.gate.log.txt",
+      "outcome": "ok"
+    },
+    {
+      "section": "saturation",
+      "controls": [
+        {
+          "index": 5,
+          "name": "THD",
+          "steps": 2147483647
+        }
+      ],
+      "note": "no engage switch named in the section: measured as instantiated",
+      "mode": "--cert-saturation",
+      "child": "exit 0",
+      "exit_code": 0,
+      "seconds": 4.0,
+      "records": "saturation.AudioUnit_41747d65_1.7.1.saturation.json",
+      "log": "AudioUnit_41747d65_1.7.1.saturation.log.txt",
+      "outcome": "ok"
+    },
+    {
+      "section": "global",
+      "controls": [
+        {
+          "index": 0,
+          "name": "Power",
+          "steps": 2
+        },
+        {
+          "index": 1,
+          "name": "Mute",
+          "steps": 2
+        },
+        {
+          "index": 2,
+          "name": "Setting",
+          "steps": 4
+        },
+        {
+          "index": 3,
+          "name": "In Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 4,
+          "name": "Virtual Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 6,
+          "name": "Phase",
+          "steps": 2
+        },
+        {
+          "index": 7,
+          "name": "Out Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 8,
+          "name": "Monitoring",
+          "steps": 3
+        },
+        {
+          "index": 9,
+          "name": "Console Channel",
+          "steps": 72
+        },
+        {
+          "index": 10,
+          "name": "Stereo Mode",
+          "steps": 2
+        },
+        {
+          "index": 17,
+          "name": "FLT Position",
+          "steps": 2
+        },
+        {
+          "index": 52,
+          "name": "Meter Position",
+          "steps": 2
+        }
+      ],
+      "mode": "none (global controls)",
+      "outcome": "not run (no mode)"
+    }
+  ],
+  "measuredAt": "20261007T133352"
+}

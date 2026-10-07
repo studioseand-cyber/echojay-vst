@@ -712,7 +712,7 @@ namespace
             // --uad-preflight [--assume-uad-device]; --licence-check <cert dir> [--licences <csv>] [--date YYYY-MM-DD]; --licence-stamp <cert dir> [...] (6 Oct, Sean's UAD rulings)
             for (int j = 1; j < argc; ++j) if (argAt (argc, argv, j) == "--assume-uad-device") ejmap::cert::assumeUadDeviceFlag() = true;   // every command: the hold and the gate read it
             // a strip section's child (item E, 7 Oct): --only-controls i,j,k narrows every mode's fixture; --preset i:n,... is the probe's preset (EJ_PROBE_PRESET) under every probe process
-            for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--only-controls") for (const auto& t : juce::StringArray::fromTokens (v, ",", "")) ejmap::cert::onlyControlsFlag().insert (t.getIntValue()); else if (k == "--preset") setenv ("EJ_PROBE_PRESET", v.toRawUTF8(), 1); }
+            for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--only-controls") for (const auto& t : juce::StringArray::fromTokens (v, ",", "")) ejmap::cert::onlyControlsFlag().insert (t.getIntValue()); else if (k == "--preset") setenv ("EJ_PROBE_PRESET", v.toRawUTF8(), 1); else if (k == "--section") ejmap::sweep::stripSectionFlag() = v; }
             if (a == "--zip" && i + 1 < argc)   // the morning zip (7 Oct): whole cert/, or --since marker|YYYY-MM-DD for what is new
             {
                 juce::File out; juce::String since;

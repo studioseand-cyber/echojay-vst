@@ -1,0 +1,112 @@
+SWEEP: subject supplied by the caller (channel strip, compressor section: controls 17,18,19,20,21,22,23,24,25,26,27; engage preset 17:1.000000; the other sections at their instantiate values (Rule 1)), not the worklist
+  neutral: [27] LC Mix -> norm 1 ('100 %') for mix_wet
+  sweeping bx_console N candidate [20] LC Threshold (unseen version 1.9.1: defaults sampled first) - 1 reference + 16 position processes
+  sweeping bx_console N candidate [21] LC Threshold Range (unseen version 1.9.1: defaults sampled first) - 1 reference + 2 position processes
+  sweeping bx_console N candidate [25] LC 2nd Thresh Level (unseen version 1.9.1: defaults sampled first) - 1 reference + 16 position processes
+  no measured rule: 3 candidates, 0 certified: no channel pair, no master, no Main/Aux
+CANDIDATE [20] LC Threshold (flags ) - bx_console N (class bands_or_stages, 3 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 1f1bab392abc13a1f84125a99aa63eb41fe94591
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [20] LC Threshold unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [18] LC Link = 'Off'
+ratio: [22] ran at '' -> not numeric | auto make-up disabled: no
+default-threshold reference ('+20.0 dB', spec 4.7 check only):  -60.00 out-in -18.09  -58.00 out-in -16.06  -56.00 out-in -14.16  -54.00 out-in -12.28  -52.00 out-in -10.16  -50.00 out-in -8.14  -48.00 out-in -6.27  -46.00 out-in -4.12  -44.00 out-in -2.14  -42.00 out-in -0.18  -40.00 out-in -0.04  -38.00 out-in -0.04  -36.00 out-in -0.04  -34.00 out-in -0.04  -32.00 out-in -0.04  -30.00 out-in -0.04  -28.00 out-in -0.04  -26.00 out-in -0.04  -24.00 out-in -0.04  -22.00 out-in -0.04  -20.00 out-in -0.04  -18.00 out-in -0.04  -16.00 out-in -0.04  -14.00 out-in -0.04  -12.00 out-in -0.04  -10.00 out-in -0.04  -8.00 out-in -0.04  -6.00 out-in -0.04  -4.00 out-in -0.05  -2.00 out-in -0.05  0.00 out-in -0.06  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 16
+processes: 75 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.0 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    +20.0 dB          --       --       --          --          
+  1  0.0667    +18.0 dB          --       --       --          --          
+  2  0.1333    +16.0 dB          --       --       --          --          
+  3  0.2000    +14.0 dB          --       --       --          --          
+  4  0.2667    +12.0 dB          --       --       --          --          
+  5  0.3333    +10.0 dB          --       --       --          --          
+  6  0.4000    +8.0 dB           --       --       --          --          
+  7  0.4667    +6.0 dB           --       --       --          --          
+  8  0.5333    +4.0 dB           --       --       --          --          
+  9  0.6000    +2.0 dB           --       --       --          --          
+ 10  0.6667    0.0 dB            --       --       --          --          
+ 11  0.7333    -2.0 dB           --       --       --          --          
+ 12  0.8000    -4.0 dB           --       --       --          --          
+ 13  0.8667    -6.0 dB           --       --       --          --          
+ 14  0.9333    -8.0 dB           --       --       --          --          
+ 15  1.0000    -10.0 dB          --       --       --          --          
+
+1 MAP:             unreadable (no two end positions readable at every level) | sense -- | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:none -34.00:none -32.00:none -30.00:none -28.00:none -26.00:none -24.00:none -22.00:none -20.00:none -18.00:none -16.00:none -14.00:none -12.00:none -10.00:none -8.00:none -6.00:none -4.00:none -2.00:none 0.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_417f7950_1.9.1.json
+
+CANDIDATE [21] LC Threshold Range (flags ) - bx_console N (class bands_or_stages, 3 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 1f1bab392abc13a1f84125a99aa63eb41fe94591
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [21] LC Threshold Range unit 'dB' (class bands_or_stages) | positions 2 (every step), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [18] LC Link = 'Off'
+ratio: [22] ran at '' -> not numeric | auto make-up disabled: no
+default-threshold reference ('0 dB', spec 4.7 check only):  -60.00 out-in -18.09  -58.00 out-in -16.14  -56.00 out-in -14.17  -54.00 out-in -12.30  -52.00 out-in -10.12  -50.00 out-in -8.21  -48.00 out-in -6.24  -46.00 out-in -4.12  -44.00 out-in -2.15  -42.00 out-in -0.22  -40.00 out-in -0.03  -38.00 out-in -0.04  -36.00 out-in -0.04  -34.00 out-in -0.04  -32.00 out-in -0.04  -30.00 out-in -0.04  -28.00 out-in -0.04  -26.00 out-in -0.04  -24.00 out-in -0.04  -22.00 out-in -0.04  -20.00 out-in -0.04  -18.00 out-in -0.04  -16.00 out-in -0.04  -14.00 out-in -0.04  -12.00 out-in -0.04  -10.00 out-in -0.04  -8.00 out-in -0.04  -6.00 out-in -0.04  -4.00 out-in -0.05  -2.00 out-in -0.05  0.00 out-in -0.06  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -- --
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 2
+processes: 75 run, 0 retried, 0 position(s) failed
+write verify: 2 landed, 0 write_unlanded (skipped), in-stack read already matched on 2 of 2, pump slices total 2, longest confirm 3.0 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    0 dB              --       --       --          --          
+  1  1.0000    -20 dB            --       --       --          --          
+
+1 MAP:             unreadable (no two end positions readable at every level) | sense -- | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:none -34.00:none -32.00:none -30.00:none -28.00:none -26.00:none -24.00:none -22.00:none -20.00:none -18.00:none -16.00:none -14.00:none -12.00:none -10.00:none -8.00:none -6.00:none -4.00:none -2.00:none 0.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_417f7950_1.9.1.json
+
+CANDIDATE [25] LC 2nd Thresh Level (flags ) - bx_console N (class bands_or_stages, 3 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 1f1bab392abc13a1f84125a99aa63eb41fe94591
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [25] LC 2nd Thresh Level unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [18] LC Link = 'Off'
+ratio: [22] ran at '' -> not numeric | auto make-up disabled: no
+default-threshold reference ('20.0 dB', spec 4.7 check only):  -60.00 out-in -18.10  -58.00 out-in -16.12  -56.00 out-in -14.12  -54.00 out-in -12.28  -52.00 out-in -10.17  -50.00 out-in -8.14  -48.00 out-in -6.27  -46.00 out-in -4.15  -44.00 out-in -2.16  -42.00 out-in -0.22  -40.00 out-in -0.04  -38.00 out-in -0.04  -36.00 out-in -0.04  -34.00 out-in -0.04  -32.00 out-in -0.04  -30.00 out-in -0.04  -28.00 out-in -0.04  -26.00 out-in -0.04  -24.00 out-in -0.04  -22.00 out-in -0.04  -20.00 out-in -0.04  -18.00 out-in -0.04  -16.00 out-in -0.04  -14.00 out-in -0.04  -12.00 out-in -0.04  -10.00 out-in -0.04  -8.00 out-in -0.04  -6.00 out-in -0.04  -4.00 out-in -0.05  -2.00 out-in -0.05  0.00 out-in -0.06  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 16
+processes: 75 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    10.0 dB           --       --       --          --          
+  1  0.0667    13.3 dB           --       --       --          --          
+  2  0.1333    16.7 dB           --       --       --          --          
+  3  0.2000    20.0 dB           --       --       --          --          
+  4  0.2667    23.3 dB           --       --       --          --          
+  5  0.3333    26.7 dB           --       --       --          --          
+  6  0.4000    30.0 dB           --       --       --          --          
+  7  0.4667    33.3 dB           --       --       --          --          
+  8  0.5333    36.7 dB           --       --       --          --          
+  9  0.6000    40.0 dB           --       --       --          --          
+ 10  0.6667    43.3 dB           --       --       --          --          
+ 11  0.7333    46.7 dB           --       --       --          --          
+ 12  0.8000    50.0 dB           --       --       --          --          
+ 13  0.8667    53.3 dB           --       --       --          --          
+ 14  0.9333    56.7 dB           --       --       --          --          
+ 15  1.0000    60.0 dB           --       --       --          --          
+
+1 MAP:             unreadable (no two end positions readable at every level) | sense -- | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:none -34.00:none -32.00:none -30.00:none -28.00:none -26.00:none -24.00:none -22.00:none -20.00:none -18.00:none -16.00:none -14.00:none -12.00:none -10.00:none -8.00:none -6.00:none -4.00:none -2.00:none 0.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_417f7950_1.9.1.json
+
+SECTION: sweep exit 0
+SECTION: needs_review: 3 candidates in the strip's compressor section (each a compressor threshold by the section word): no measured rule decided them; a review pick is needed
+SECTION: needs_review: 3 candidates in the strip's compressor section (each a compressor threshold by the section word): no measured rule decided them; a review pick is needed
