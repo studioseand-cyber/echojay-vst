@@ -89,20 +89,27 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
     // THE TONE GRID: log-spaced, each tone snapped to a whole number of cycles in the measured span so the Goertzel bins are exact
     const double sr = rs.sampleRate;
     const long long total = (long long) std::llround (s.holdS * sr), from = (long long) std::llround (s.discardS * sr), span = total - from;
-    std::vector<double> hz ((size_t) s.tones), phase0 ((size_t) s.tones);
+    // DISTINCT BINS (7 Oct): two tones that snap to the same bin (1/12 octave at 10 Hz over a 0.5 s span is 0.58 Hz apart on a 2 Hz
+    // grid) would be one sine read twice; the second is dropped, the count printed is the distinct one, and the derivation sees
+    // each frequency once. The span decides the resolution: the EQ mode holds 2.0 s with 0.5 s discarded (1.5 s -> 0.67 Hz).
+    std::vector<double> hz, phase0; hz.reserve ((size_t) s.tones); phase0.reserve ((size_t) s.tones);
     juce::Random rng (20261005);
     for (int k = 0; k < s.tones; ++k)
     {
         const double f = s.tones == 1 ? s.loHz : s.loHz * std::pow (s.hiHz / s.loHz, (double) k / (double) (s.tones - 1));
         const double cycles = juce::jmax (1.0, std::round (f * (double) span / sr));
-        hz[(size_t) k] = cycles * sr / (double) span;                      // exact bins over the measured span
-        phase0[(size_t) k] = rng.nextDouble() * juce::MathConstants<double>::twoPi;
+        const double snapped = cycles * sr / (double) span;                // exact bins over the measured span
+        const double ph = rng.nextDouble() * juce::MathConstants<double>::twoPi;   // drawn for every asked tone, so the seed's sequence is the same whatever is dropped
+        if (! hz.empty() && std::abs (hz.back() - snapped) < 1e-9) continue;
+        hz.push_back (snapped); phase0.push_back (ph);
     }
+    const int tonesDistinct = (int) hz.size();
+    if (tonesDistinct < s.tones) std::printf ("tones_distinct\t%d\tasked\t%d\tspan_s\t%.3f\n", tonesDistinct, s.tones, (double) span / sr);
     // THE TONE WEIGHTS: flat, or shape=vocal - pink (-3 dB/oct) between 100 Hz and 1 kHz, a further -6 dB/oct above 1 kHz
     // (-9 total), -12 dB/oct below 100 Hz, relative to 1 kHz: a speech-like long-term spectrum, said as such in the record
-    std::vector<double> weight ((size_t) s.tones, 1.0);
+    std::vector<double> weight ((size_t) tonesDistinct, 1.0);
     if (s.shape == "vocal")
-        for (int k = 0; k < s.tones; ++k)
+        for (int k = 0; k < tonesDistinct; ++k)
         {
             const double f = hz[(size_t) k]; double db = -10.0 * std::log10 (f / 1000.0);   // pink: -3 dB/oct in amplitude terms is -10 log10 (f) in power
             if (f > 1000.0) db -= 20.0 * std::log10 (f / 1000.0);                          // -6 dB/oct more above 1 kHz
@@ -111,7 +118,7 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
         }
     // the amplitude: the weighted sum of `tones` sines normalised so the generated peak sits at `db` dBFS (measured on a dry pass)
     double peak = 0.0;
-    for (long long t = 0; t < total; t += 7) { double v = 0.0; for (int k = 0; k < s.tones; ++k) v += weight[(size_t) k] * std::sin (phase0[(size_t) k] + juce::MathConstants<double>::twoPi * hz[(size_t) k] * (double) t / sr); peak = juce::jmax (peak, std::abs (v)); }
+    for (long long t = 0; t < total; t += 7) { double v = 0.0; for (int k = 0; k < tonesDistinct; ++k) v += weight[(size_t) k] * std::sin (phase0[(size_t) k] + juce::MathConstants<double>::twoPi * hz[(size_t) k] * (double) t / sr); peak = juce::jmax (peak, std::abs (v)); }
     const double amp = std::pow (10.0, s.dbfs / 20.0) / juce::jmax (1e-9, peak);
     auto& ctl = *ps[s.ctl];
     std::vector<float> norms = s.norms; if (s.current) norms = { ctl.getValue() };
@@ -124,7 +131,7 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
         std::printf ("rpos\t%d\tnorm\t%.6f\tconfirm_ms\t%.1f\tlanded_by\t%s\ttext\t%s\n", (int) k, norm, l.ms, l.by, clean (text).toRawUTF8());
         if (l.ms < 0) { std::printf ("rdone\t%d\ttones\t0\tunlanded\n", (int) k); std::fflush (stdout); continue; }
         // Goertzel accumulators per ANALYSIS bin (the stimulus tones, then the harmonics 2f..Nf below Nyquist), input and output
-        std::vector<double> bins (hz.begin(), hz.end()); std::vector<int> order ((size_t) s.tones, 1);
+        std::vector<double> bins (hz.begin(), hz.end()); std::vector<int> order ((size_t) tonesDistinct, 1);
         for (int n = 2; n <= s.harmonics; ++n) if (n * hz[0] < sr / 2.0) { bins.push_back (n * hz[0]); order.push_back (n); }   // exact: a multiple of an exact bin is an exact bin
         const int nb = (int) bins.size();
         std::vector<double> gi1 ((size_t) nb, 0.0), gi2 ((size_t) nb, 0.0), go1 ((size_t) nb, 0.0), go2 ((size_t) nb, 0.0), coef ((size_t) nb);
@@ -138,7 +145,7 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
             for (int i = 0; i < n; ++i)
             {
                 const double t = (double) (done + i) / sr; double v = 0.0;
-                for (int q = 0; q < s.tones; ++q) v += weight[(size_t) q] * std::sin (phase0[(size_t) q] + juce::MathConstants<double>::twoPi * hz[(size_t) q] * t);
+                for (int q = 0; q < tonesDistinct; ++q) v += weight[(size_t) q] * std::sin (phase0[(size_t) q] + juce::MathConstants<double>::twoPi * hz[(size_t) q] * t);
                 gen[(size_t) i] = (float) (amp * v);
                 for (int ch = 0; ch < r.fedIn; ++ch) r.io.setSample (ch, i, gen[(size_t) i]);
             }
@@ -164,7 +171,7 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
             else std::printf ("rharm\t%d\torder\t%d\thz\t%.3f\tin_db\t%.3f\tout_db\t%.3f\n", (int) k, order[(size_t) q], bins[(size_t) q], mag (gi1[(size_t) q], gi2[(size_t) q]), mag (go1[(size_t) q], go2[(size_t) q]));
         }
         std::printf ("rtotal\t%d\tin_rms_db\t%.3f\tout_rms_db\t%.3f\n", (int) k, 20.0 * std::log10 (std::sqrt (inSs / (double) juce::jmax (1LL, nSpan)) + 1e-30), 20.0 * std::log10 (std::sqrt (outSs / (double) juce::jmax (1LL, nSpan)) + 1e-30));
-        std::printf ("rdone\t%d\ttones\t%d\tnonfinite\t%lld\n", (int) k, s.tones, nonFinite);
+        std::printf ("rdone\t%d\ttones\t%d\tnonfinite\t%lld\n", (int) k, tonesDistinct, nonFinite);
         std::fflush (stdout);
     }
     stage ("done");

@@ -33,7 +33,7 @@ inline const std::vector<Category>& categories()
         { "gaincal",     "--cert-gain-cal",      "",          {},                              600.0,  "21 norms x 2-3 levels per gain control + the unnamed pool: ~2-4 min measured" },
         { "timing",      "--cert-timing",        "",          {},                              1200.0, "a burst pair per position, 8-16 positions, segments scaled to slow labels: ~3-8 min measured" },
         { "limiter",     "--cert-limiter",       "",          { "limiter" },                   600.0,  "five ceilings x two oversampling states + the pool's drive test: ~2-3 min" },
-        { "eq",          "--cert-eq",            "",          { "eq" },                        1800.0, "three sweeps per band, up to ten bands, the engage search and the pool: ~6-12 min measured" },
+        { "eq",          "--cert-eq",            "",          { "eq" },                        2700.0, "ten responses per band (baselines at two levels and two grids, gain at -12 / -30, freq, Q at +6 / +3, two acceptance writes), up to ten bands, the engage search and the pool: ~12-25 min" },
         { "deesser",     "--cert-deesser",       "",          { "de-esser" },                  600.0,  "two ladders, the noise ladder, up to six responses, the pool: ~2-4 min" },
         { "saturation",  "--cert-saturation",    "",          { "saturation", "amp_sim" },     900.0,  "three levels per drive control + the pool: ~2-6 min measured (Saphira's twelve: 6)" },
         { "reverb",      "--cert-reverb-delay",  "reverb",    { "reverb" },                    1200.0, "11 mix + 5 decay + 5 time tails + the pool's tail pairs: ~5-8 min measured" },

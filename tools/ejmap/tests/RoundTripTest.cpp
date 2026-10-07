@@ -7799,6 +7799,93 @@ void testEq()
         check (m.size() == 1 && m[0].index == 0 && m[0].onNorm == 1.0f && m[0].onText == "In",
                "eq E12: a measured band keyed by its gain control's name finds its own On/Off switch (In -> norm 1) and not another band's (" + juce::String ((int) m.size()) + ")");
     }
+    // EQ_PROFILE_SPEC v0.1 (7 Oct, item 2): the grid, the level check, the shape guard, the verdicts, the acceptance, the draft
+    {
+        // E20: the grid - 10 Hz to the top 1/12-octave step under Nyquist (23.5 kHz; 24 asked), 136 tones = 1/12.06 oct, 271 = 1/24
+        const double step = std::log2 (kGridHiHz / kGridLoHz) / (kGridTones - 1), qstep = std::log2 (kGridHiHz / kGridLoHz) / (kQGridTones - 1);
+        check (kGridLoHz == 10.0 && kGridHiHz < 24000.0 && kGridHiHz > 23000.0 && std::abs (step - 1.0 / 12.0) < 0.002 && std::abs (qstep - step / 2.0) < 1e-9 && gridDescription().contains ("24 kHz asked") && gridDescription().contains ("Nyquist"),
+               "eq E20: the grid is 10 Hz-23.5 kHz at " + juce::String (1.0 / step, 2) + " steps per octave (1/24 for Q: every even fine tone is a coarse tone), 24 kHz said to be Nyquist");
+        auto row = [] (float norm, const juce::String& disp, const juce::String& result, double gain, double centre, const juce::String& shape = "peak", double corner = 0.0) { GainRow r; r.norm = norm; r.display = disp; r.band.result = result; r.band.gainDb = gain; r.band.centreHz = centre; r.band.shape = shape; r.band.cornerHz = corner; r.labelDb = labelNumber (disp); return r; };
+        std::vector<GainRow> m12 { row (0.0f, "-12 dB", "measured", -11.8, 1000.0), row (0.25f, "-6 dB", "measured", -5.9, 1000.0), row (0.5f, "0 dB", "flat", 0.0, 0.0), row (0.75f, "+6 dB", "measured", 6.1, 1000.0), row (1.0f, "+12 dB", "measured", 12.2, 1000.0) };
+        // E21: the level check
+        { auto m30 = m12; const auto a = levelCheck (m12, m30); check (a.ok && a.verdict == "static" && a.worstDb == 0.0 && a.compared == 5, "eq E21a: identical maps at -12 and -30 -> static, 0 dB");
+          m30[3].band.gainDb = 5.3; const auto b = levelCheck (m12, m30); check (b.ok && b.verdict == "level_dependent" && std::abs (b.worstDb - 0.8) < 1e-9 && b.note.contains ("level_dependent"), "eq E21b: 0.8 dB apart at one position -> level_dependent (flagged, usable)");
+          m30[4].band.gainDb = 8.0; const auto c = levelCheck (m12, m30); check (c.ok && c.verdict == "dynamic" && std::abs (c.worstDb - 4.2) < 1e-9 && c.note.contains ("out of scope"), "eq E21c: 4.2 dB apart -> dynamic, out of scope for v1");
+          m30[2].band.result = "measured"; m30[2].band.gainDb = 2.0; const auto d = levelCheck (m12, m30); check (std::abs (d.worstDb - 4.2) < 1e-9, "eq E21d: a position flat at -12 and 2 dB at -30 counts as 2 dB apart (the worst stays 4.2)");
+          check (! levelCheck (m12, {}).ok, "eq E21e: nothing read at -30 -> the check is not ok, said"); }
+        // E22: the shape guard
+        check (shapeGuard (m12).passes, "eq E22a: a monotonic gain map with a still centre passes the guard");
+        { auto g = m12; g[4].band.gainDb = 100.0; const auto r = shapeGuard (g); check (! r.passes && r.verdict == "not_static" && r.reason.contains ("something other than gain"), "eq E22b: 100 dB of 'gain' (MAutoEqualizer) is not_static");
+          auto w = m12; w[4].band.centreHz = 2500.0; const auto r2 = shapeGuard (w); check (! r2.passes && r2.reason.contains ("moves the frequency"), "eq E22c: a peak whose centre walks 1.3 octaves across the gain sweep is not_static");
+          auto v = m12; v[3].band.gainDb = -2.0; const auto r3 = shapeGuard (v); check (! r3.passes && r3.reason.contains ("not monotonic") && r3.reason.contains ("2.00 dB"), "eq E22d: a gain that falls back 2 dB after the flat 0 (-2 at the '+6' position) is not monotonic: not_static");
+          auto sh = m12; for (auto& x : sh) { x.band.shape = "low_shelf"; x.band.result = x.band.result == "flat" ? "flat" : "shelf"; x.band.cornerHz = 100.0 + 50.0 * x.norm; } check (shapeGuard (sh).passes, "eq E22e: a shelf whose corner moves with gain is not judged on its centre (shelves may do that)"); }
+        // E23: the verdicts and their precedence
+        { juce::String why; LevelCheck lcS; lcS.ok = true; lcS.verdict = "static"; LevelCheck lcL = lcS; lcL.verdict = "level_dependent"; lcL.note = "0.8 apart"; LevelCheck lcD = lcS; lcD.verdict = "dynamic"; lcD.note = "4 apart"; ShapeGuard ok; ShapeGuard bad; bad.passes = false; bad.verdict = "not_static"; bad.reason = "100 dB";
+          check (bandVerdict (m12, lcS, ok, false, false, why) == "measured" && why.isEmpty(), "eq E23a: static, guard passes, continuous, no switch -> measured");
+          check (bandVerdict (m12, lcS, ok, true, false, why) == "stepped" && bandVerdict (m12, lcL, ok, true, false, why) == "level_dependent" && bandVerdict (m12, lcL, ok, false, true, why) == "needs_engage", "eq E23b: stepped; level_dependent outranks stepped; needs_engage outranks level_dependent");
+          check (bandVerdict (m12, lcD, ok, false, true, why) == "dynamic" && bandVerdict (m12, lcD, bad, false, false, why) == "not_static" && why == "100 dB", "eq E23c: dynamic outranks needs_engage; the shape guard outranks everything, with its reason");
+          std::vector<GainRow> flat { row (0.0f, "-12", "flat", 0.0, 0.0), row (1.0f, "+12", "flat", 0.0, 0.0) };
+          check (bandVerdict (flat, lcS, ok, false, false, why) == "flat" && why.contains ("flat at every gain position") && bandVerdict ({}, lcS, ok, false, false, why) == "refused", "eq E23d: flat everywhere -> flat; no rows -> refused");
+          check (serverMayUse ("measured") && serverMayUse ("stepped") && serverMayUse ("level_dependent") && serverMayUse ("needs_engage") && ! serverMayUse ("flat") && ! serverMayUse ("dynamic") && ! serverMayUse ("not_static") && ! serverMayUse ("refused"), "eq E23e: the server may use four of the eight verdicts"); }
+        // E24: the acceptance targets - the 1/3 and 2/3 points of the measured figure range in log f, the norm interpolated; a stepped control takes the detents
+        { std::vector<FreqPoint> pts { { 0.0f, "100", 100.0 }, { 0.5f, "1k", 1000.0 }, { 1.0f, "10k", 10000.0 } };
+          const auto t = acceptanceTargets (pts, false);
+          check (t.size() == 2 && std::abs (t[0].targetHz - 464.2) < 1.0 && std::abs (t[1].targetHz - 2154.4) < 1.0 && std::abs (t[0].norm - 0.3333f) < 0.002f && std::abs (t[1].norm - 0.6667f) < 0.002f && ! t[0].stepped,
+                 "eq E24a: 100 Hz-10 kHz measured: targets 464 and 2154 Hz, norms 0.333 / 0.667 by log-f interpolation (" + juce::String (t[0].targetHz, 0) + " / " + juce::String (t[1].targetHz, 0) + ")");
+          const auto d = acceptanceTargets (pts, true);
+          check (d.size() == 2 && d[0].stepped && std::abs (d[0].detentHz - 1000.0) < 1e-9 && d[0].norm == 0.5f && std::abs (d[1].detentHz - 1000.0) < 1e-9, "eq E24b: a stepped frequency takes the nearest detents and their own figures (both targets fall nearest 1 kHz here)");
+          check (acceptanceTargets ({ { 0.5f, "1k", 1000.0 } }, false).empty(), "eq E24c: fewer than two figures -> no targets"); }
+        // E25: the gain map inverted
+        { const auto g = normForGain (m12, 3.0, false); check (g.ok && std::abs (g.norm - 0.623f) < 0.002f && g.promisedDb == 3.0, "eq E25a: +3 dB lands between the flat 0 (0.5) and the +6.1 (0.75): norm " + juce::String (g.norm, 3));
+          const auto h = normForGain (m12, -3.0, true); check (h.ok && h.norm == 0.0f + 0.25f && std::abs (h.promisedDb + 5.9) < 1e-9 && h.display == "-6 dB", "eq E25b: a stepped gain takes the nearest measured position (-5.9 at '-6 dB') and promises ITS gain");
+          check (! normForGain (m12, 20.0, false).ok && normForGain (m12, 20.0, false).why.contains ("outside the measured span"), "eq E25c: a target outside the span is refused with the span"); }
+        // E26: the judgement
+        { Acceptance a; a.targetDb = 3.0; a.targetHz = 464.0; a.gain.ok = true; a.gain.promisedDb = 3.0; a.figure.targetHz = 464.0; a.ran = true; a.measured.result = "measured"; a.measured.gainDb = 3.3; a.measured.centreHz = 480.0; a.measured.shape = "peak";
+          judgeAcceptance (a); check (a.pass && std::abs (a.gainMissDb - 0.3) < 1e-9 && std::abs (a.figureOffPct - 3.45) < 0.05, "eq E26a: +3.3 dB at 480 Hz for +3 at 464: within 0.5 dB and 5 % -> PASS");
+          a.measured.gainDb = 3.6; judgeAcceptance (a); check (! a.pass && a.why.contains ("MISSES"), "eq E26b: 0.6 dB off -> FAIL");
+          a.measured.gainDb = 3.0; a.measured.centreHz = 500.0; judgeAcceptance (a); check (! a.pass && a.why.contains ("over the bar"), "eq E26c: 7.8 % off the figure -> FAIL");
+          a.figure.stepped = true; a.figure.detentHz = 500.0; judgeAcceptance (a); check (a.pass, "eq E26d: on a stepped band the figure is judged against the reported detent (500): PASS");
+          a.figure.stepped = false; a.measured.shape = "low_shelf"; a.measured.result = "shelf"; a.measured.cornerHz = 470.0; a.measured.centreHz = 20.0; judgeAcceptance (a); check (a.pass && std::abs (a.figureOffPct - 1.29) < 0.05, "eq E26e: a shelf is judged at its corner, not its plateau's frequency");
+          Acceptance n; n.ran = true; n.measured.result = "flat"; n.measured.reason = "0.2 dB"; judgeAcceptance (n); check (! n.pass && n.why.contains ("no band read"), "eq E26f: nothing read at the written setting -> FAIL, said"); }
+        // E27: the draft from a record: corner_hz on a shelf, centre_hz on a peak, the Q map at two gains, notes for unusable bands, the old-record note
+        {
+            auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+            juce::Array<juce::var> gs { mk ({ { "norm", 0.0 }, { "display", "-6" }, { "result", "measured" }, { "shape", "peak" }, { "gain_db", -5.9 }, { "centre_hz", 1000.0 } }), mk ({ { "norm", 0.5 }, { "display", "0" }, { "result", "flat" }, { "reason", "0.1" } }), mk ({ { "norm", 1.0 }, { "display", "+6" }, { "result", "measured" }, { "shape", "peak" }, { "gain_db", 6.1 }, { "centre_hz", 1000.0 } }) };
+            juce::Array<juce::var> fs { mk ({ { "norm", 0.0 }, { "display", "200" }, { "result", "measured" }, { "shape", "peak" }, { "gain_db", 6.0 }, { "centre_hz", 210.0 } }), mk ({ { "norm", 1.0 }, { "display", "8k" }, { "result", "refused" }, { "reason", "fewer than 8 tones" } }) };
+            juce::Array<juce::var> qs { mk ({ { "norm", 0.0 }, { "display", "0.5" }, { "result", "measured" }, { "bandwidth_oct", 2.0 } }), mk ({ { "norm", 1.0 }, { "display", "8" }, { "result", "measured" }, { "bandwidth_oct", 0.3 } }) };
+            juce::Array<juce::var> q3 { mk ({ { "norm", 0.0 }, { "display", "0.5" }, { "result", "measured" }, { "bandwidth_oct", 2.4 } }) };
+            juce::Array<juce::var> shelfF { mk ({ { "norm", 0.5 }, { "display", "60Hz" }, { "result", "shelf" }, { "shape", "low_shelf" }, { "gain_db", 10.48 }, { "centre_hz", 20.0 }, { "corner_hz", 309.0 } }) };
+            juce::Array<juce::var> shelfG { mk ({ { "norm", 0.67 }, { "display", "6.7" }, { "result", "shelf" }, { "shape", "low_shelf" }, { "gain_db", 10.48 }, { "centre_hz", 20.0 }, { "corner_hz", 309.0 } }) };
+            juce::Array<juce::var> acc { mk ({ { "pass", true } }), mk ({ { "pass", false } }) };
+            juce::Array<juce::var> bands { mk ({ { "band", "HMF" }, { "gain_control", "HMF Gain" }, { "freq_control", "HMF Freq" }, { "q_control", "HMF Q" }, { "verdict", "measured" }, { "verdict_reason", "" }, { "gain_sweep", gs }, { "freq_sweep", fs }, { "q_sweep", qs }, { "q_sweep_3db", q3 }, { "proportional_q", true }, { "level_dependent_db", 0.1 }, { "acceptance", acc } }),
+                                           mk ({ { "band", "Low" }, { "gain_control", "Low Gain" }, { "freq_control", "Low Freq" }, { "verdict", "stepped" }, { "verdict_reason", "detents" }, { "gain_sweep", shelfG }, { "freq_sweep", shelfF }, { "q_sweep", juce::Array<juce::var>() } }),
+                                           mk ({ { "band", "Air" }, { "gain_control", "Air" }, { "freq_control", "(none)" }, { "verdict", "dynamic" }, { "verdict_reason", "4 dB between levels" }, { "gain_sweep", gs }, { "freq_sweep", juce::Array<juce::var>() } }) };
+            const auto rec = mk ({ { "grid", "x" }, { "bands", bands }, { "neutral", juce::Array<juce::var>() } });
+            const auto D = profileDraft (rec, juce::var(), juce::var(), "DRAFT", ejmap::drafts::specTag ("EQ_PROFILE_SPEC"));
+            const auto& B = D.getProperty ("bands", {});
+            check (D.getProperty ("schema", "") == "ej_eq_profile/1" && B.size() == 3 && B[0].getProperty ("shape", "") == "peak" && B[0].getProperty ("verdict", "") == "measured" && (bool) B[0].getProperty ("proportional_q", false), "eq E27a: ej_eq_profile/1 with three bands, shape and verdict carried");
+            const auto& fm0 = B[0].getProperty ("freq_map", {}); const auto& fm1 = B[1].getProperty ("freq_map", {});
+            check (fm0.size() == 2 && fm0[0].hasProperty ("centre_hz") && ! fm0[0].hasProperty ("corner_hz") && fm0[1].hasProperty ("why") && fm1.size() == 1 && fm1[0].hasProperty ("corner_hz") && ! fm1[0].hasProperty ("centre_hz") && (double) fm1[0].getProperty ("corner_hz", 0.0) == 309.0,
+                   "eq E27b: a peak's freq_map carries centre_hz, a shelf's corner_hz (never both); a refused position carries why");
+            const auto& qm = B[0].getProperty ("q_map", {});
+            check (qm.size() == 2 && (double) qm[0].getProperty ("bandwidth_oct_at_6db", 0.0) == 2.0 && (double) qm[0].getProperty ("bandwidth_oct_at_3db", 0.0) == 2.4 && qm[1].getProperty ("bandwidth_oct_at_3db", {}).isVoid(), "eq E27c: the Q map carries the bandwidth at +6 and at +3 (null where +3 was not read)");
+            const auto& gm = B[0].getProperty ("gain_map", {});
+            check (gm.size() == 3 && (double) gm[1].getProperty ("gain_db", 1.0) == 0.0 && (double) gm[2].getProperty ("gain_db", 0.0) == 6.1, "eq E27d: a flat gain position is 0 dB in the map");
+            const auto& N = D.getProperty ("notes", {}); juce::StringArray ns; if (const auto* na = N.getArray()) for (const auto& n : *na) ns.add (n.toString());
+            check (ns.size() == 2 && ns[0].contains ("Band 'HMF': 1 of 2 acceptance") && ns[1].contains ("Band 'Air': dynamic") && ns[1].contains ("not usable"), "eq E27e: notes - the failed acceptance write and the dynamic band (" + ns.joinIntoString (" | ") + ")");
+            const auto old = mk ({ { "bands", bands } });
+            const auto D2 = profileDraft (old, juce::var(), juce::var(), "DRAFT", ejmap::drafts::specTag ("EQ_PROFILE_SPEC"));
+            check (D2.getProperty ("notes", {})[0].toString().contains ("without the 7 Oct fields") && D2.getProperty ("neutral", {}).size() == 0, "eq E27f: a 5 Oct record (no grid) drafts with a provisional note and an empty neutral");
+            check (ejmap::drafts::contentProblem (D).isEmpty(), "eq E27g: the draft passes the content rule");
+        }
+        // E28 (the 7 Oct bx_digital rehearsal): a +3 dB low shelf whose plateau wobbles by 0.0001 dB one tone in from the 10 Hz edge
+        // is a LOW SHELF with its corner, never "broad" with no figure (which read "3.00 dB at 12 Hz" against a 105 Hz corner)
+        { std::vector<std::pair<double, double>> dev; for (int k = 0; k < 136; ++k) { const double f = 10.0 * std::pow (2350.0, k / 135.0); dev.push_back ({ f, 3.0 / (1.0 + std::pow (f / 105.0, 2.0)) + (k == 2 ? 0.0001 : 0.0) }); }
+          const auto b = deriveBand (dev); check (b.result == "shelf" && b.shape == "low_shelf" && std::abs (b.cornerHz - 105.0) < 8.0 && std::abs (figureOf (b) - 105.0) < 8.0, "eq E28: a plateau within 0.1 dB to the grid's edge is a shelf: low_shelf, corner " + juce::String (b.cornerHz, 0) + " Hz (shape " + b.shape + ")"); }
+        // E29: an older probe's duplicate bins (two asked tones snapped to one 2 Hz bin) are taken once by the deviation
+        { Position a, b; for (double f : { 10.0, 10.0, 12.0, 12.0, 14.0 }) { Tone t; t.hz = f; t.inDb = -30.0; t.outDb = -27.0; a.tones.push_back (t); Tone u = t; u.outDb = -30.0; b.tones.push_back (u); }
+          const auto d = deviation (a, b); check (d.size() == 3 && d[0].first == 10.0 && d[1].first == 12.0 && d[2].first == 14.0 && std::abs (d[0].second - 3.0) < 1e-9, "eq E29: five tones on three bins -> three deviations (" + juce::String ((int) d.size()) + ")"); }
+    }
 }
 
 /** SATURATION HARMONICS (EjmapSaturation.h, roadmap 2.5 PROTOTYPE, 5 Oct R3): the rharm trace, THD / even-odd / onset / inert. */
