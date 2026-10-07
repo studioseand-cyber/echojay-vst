@@ -94,3 +94,29 @@ t90 ~700 vs 9.7 ms), pumping FAIL (probe 1.92 vs 1.53 dB, panned 1.00 vs 0.45 dB
 Sean of 7 Oct evening; nothing applied.
 
 Independent true-peak cross-check: ffmpeg is NOT installed and neither are numpy/scipy; nothing installed. Still owed.
+
+## 7 Oct 2026, late: proL2_fullmix (TP on) and the bass_sustain trio (results/2026-10-07_fullmix_proL2_echojay.txt,
+## 2026-10-07_bass_sustain_gain8.5.txt)
+
+- Latency at 48 k: Pro-L 2 TP off 496 samples (10.33 ms), TP on 731 (15.23 ms): TP adds 235 (4.9 ms). Shipping
+  EchoJay 108 (2 ms lookahead + 12). Offsets vs source_bass_sustain: proL2 +235, echojay -388 (source carries 496).
+- Gains estimated from unlimited 100 ms blocks (p10 = p90, stable): proL2_fullmix +8.20, echojay_fullmix +8.32,
+  proL2_bass +8.49, echojay_bass +8.41 (estimate, Sean to confirm).
+- proL2_bass_sustain "+0.22..0.28 dBTP, overs": NOT real - the print ends mid-cycle (last sample +0.905); every
+  meter that flushes the end with zeros sees the truncation edge. Inside the audio the max is -0.03 dBTP, 0 overs.
+  Independent check: FFT-exact band-limited interpolation (16x zero-padding, no windowed sinc) agrees with the 96-tap
+  meter within 0.01 dB on all six real renders. ffmpeg and numpy/scipy absent; nothing installed.
+- echojay_* land at -0.18..-0.20 dBTP AND -0.20 dBFS sample: ceiling 0.0 with the wall's 0.1 dB detector margin and
+  its 4x/24-tap detector; limiter_wall_guard documents [-0.25, -0.10]. Not a -0.19 ceiling setting.
+- fullmix with the real proL2 reference: Pro-L 2 max GR 0.15 dB, EchoJay 1.35 dB; rule lines: level PASS, overs
+  PASS, retention PASS (worst 0.60 dB at the one real hit, 30.07 s), release limbs FAIL (26.5/58 ms vs 0.3), pumping
+  PASS. On this bounce +8.2 is not a limiting job for either.
+- bass_sustain: EchoJay -7.68 vs Pro-L 2 -7.09 LUFS (0.59 LU quieter), GR mean -1.36 (gain-corrected) vs -1.01, max
+  -4.1 vs -3.0; time spent reducing > 2 dB: 28 % vs 4 %. Why: (1) Pro-L 2 rides the bass waveform (1 ms GR ripple
+  0.43 dB vs 0.14) so it takes ~1 dB less reduction for the same ceiling; (2) EchoJay's one-pole release follows the
+  note's own decay from 4.3 dB down (t63 ~340 ms vs Pro-L 2's floor at 72 % + instant part); (3) at every note
+  onset EchoJay dips 3.2-3.5 dB where Pro-L 2 dips 1.9-2.1. Linking is not a factor (L-R std 0.00 for both).
+- Panel (proL2_panel_bass_sustain.png): Transparent; lookahead just off minimum (~0.3 ms of 0-5) = the <= 0.33 ms
+  pre-dip; attack and release both ~11 o'clock on 0-10 s scales (if log, ~150 ms each = the measured 120-185 ms
+  floor constants; Sean to hover for the exact value); transient linking ~80 % (measured 75 % dB / 82 % linear);
+  release linking 100 %.
