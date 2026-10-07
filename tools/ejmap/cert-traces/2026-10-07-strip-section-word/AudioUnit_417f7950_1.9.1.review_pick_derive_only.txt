@@ -1,0 +1,10 @@
+TONECHECK-ALL: /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rp/AudioUnit_417f7950_1.9.1  iLok ABSENT  review picks 9
+SIDECHAIN POLICY CHECK: 0 product(s) swept under enabled_silent with a second input bus (derive-only: nothing read)
+RE-SWEEP (the plan under this build differs from the plan the record was swept under): 0 product(s) before the re-derive (a measured pick that still needs refinement joins after its re-derive)
+  bx_console N: review pick names 'LC Threshold' but its sweep is unreadable: nothing picked
+
+RE-SWEEP: 0 product(s) (derive-only: projected, not run)
+OUTCOMES (/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rp/AudioUnit_417f7950_1.9.1/outcomes.json): 1 rows - exported 0, recorded 0, refused 0, held 0, needs_review 1, quarantined_at_scan 0, needs_licence 0, multiband 0, surround 0
+
+TONECHECK-ALL: 0 re-checked, 0 already at v1.7 (skipped), 0 needs_licence, 0 not exported now, 0 without traces
+review sheet: /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rp/AudioUnit_417f7950_1.9.1/review_sheet.txt

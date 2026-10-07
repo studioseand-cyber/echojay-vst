@@ -47,5 +47,19 @@
   "by": "Kathy",
   "date": "2026-10-05",
   "note": "the only stage active at default; the other three are flat"
+ },
+ {
+  "product": "bx_console SSL 4000 E",
+  "candidate": "LC Threshold",
+  "by": "Kathy",
+  "date": "2026-10-07",
+  "note": "the main compressor threshold; LC 2nd Thresh Level is a second stage (strip compressor section)"
+ },
+ {
+  "product": "bx_console N",
+  "candidate": "LC Threshold",
+  "by": "Kathy",
+  "date": "2026-10-07",
+  "note": "the main compressor threshold; LC Threshold Range is a range setting, LC 2nd Thresh Level a second stage (strip compressor section)"
  }
 ]

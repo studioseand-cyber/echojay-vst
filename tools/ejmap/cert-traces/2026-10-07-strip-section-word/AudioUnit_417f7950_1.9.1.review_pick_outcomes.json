@@ -1,0 +1,11 @@
+[
+  {
+    "identity": "AudioUnit|417f7950|1.9.1",
+    "product": "bx_console N",
+    "category": "compressor",
+    "state": "needs_review",
+    "reason": "3 candidates in the strip's compressor section (each a compressor threshold by the section word): no measured rule decided them; a review pick is needed",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rp/AudioUnit_417f7950_1.9.1/fixtures/AudioUnit_417f7950_1.9.1.json",
+    "at": "20261007T133854"
+  }
+]

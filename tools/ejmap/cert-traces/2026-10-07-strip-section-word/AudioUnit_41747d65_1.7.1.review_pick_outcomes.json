@@ -1,0 +1,11 @@
+[
+  {
+    "identity": "AudioUnit|41747d65|1.7.1",
+    "product": "bx_console SSL 4000 E",
+    "category": "compressor",
+    "state": "needs_review",
+    "reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/rp/AudioUnit_41747d65_1.7.1/fixtures/AudioUnit_41747d65_1.7.1.json",
+    "at": "20261007T133854"
+  }
+]

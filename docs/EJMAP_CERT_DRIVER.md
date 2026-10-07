@@ -2921,3 +2921,15 @@ threshold by the section word): no measured rule decided them; a review pick is 
 section nothing changes. Rehearsed: bx_console SSL 4000 E (2 candidates, 116 s) and bx_console N (3 candidates, 120 s; its
 `LC On/Off` and `GE On/Off` engage switches found) both end in the review-pick state, their candidates all certified, awaiting
 `review_picks.json`.
+
+Review picks (Kathy, 7 Oct; `review_picks.json` on the Desktop and `cert-traces/2026-10-06-review-picks/`): bx_console SSL 4000 E
+→ `LC Threshold` (LC 2nd Thresh Level a second stage); bx_console N → `LC Threshold` (LC Threshold Range a range setting, LC 2nd
+Thresh Level a second stage). Derive-only over last night's section records, nothing loaded: the **SSL** pick applies
+("review pick applied: 'LC Threshold' by Kathy on 2026-10-07") and the record is `needs_review: would export in the follow-up:
+the pick needs its detector measured (one load) and the tone check` — the expected derive-only resolution, the export then
+into the section folder only (not for publication). **bx_console N**: "review pick names 'LC Threshold' but its sweep is
+unreadable: nothing picked" — every candidate's sweep on that record is `unreadable` (no two end positions readable at every
+level): under the section's `LC On/Off → On` the quiet-reference rungs (−90..−78 dBFS) read ~35 dB BELOW the input
+(`level_db −128.7` at `in_rms_db −93.0`), i.e. the strip's GATE section, engaged at instantiate (Rule 1 leaves the other sections
+as they are), closes on the ladder. The pick stands on file; the record cannot carry it until that section's sweep reads —
+a ruling question (bypass the other dynamics sections while a section is swept, or not), not decided here.
