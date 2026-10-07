@@ -4175,6 +4175,7 @@ inline int runEq (const SweepOptions& opt)
     auto bandVar = [] (const eq::Band& b) { auto* o = new juce::DynamicObject(); o->setProperty ("result", b.result); if (b.reason.isNotEmpty()) o->setProperty ("reason", b.reason); o->setProperty ("shape", b.shape);
         if (b.result == "measured" || b.result == "shelf") { o->setProperty ("centre_hz", std::round (b.centreHz * 10.0) / 10.0); o->setProperty ("gain_db", std::round (b.gainDb * 100.0) / 100.0); }
         if (b.result == "shelf" && b.cornerHz > 0.0) o->setProperty ("corner_hz", std::round (b.cornerHz * 10.0) / 10.0);
+        if (b.result == "measured" && b.bandwidthBasis != "3db") o->setProperty ("bandwidth_basis", b.bandwidthBasis);
         if (b.result == "measured") { o->setProperty ("bandwidth_oct", std::round (b.bandwidthOct * 1000.0) / 1000.0); o->setProperty ("low_3db_hz", std::round (b.lowHz * 10.0) / 10.0); o->setProperty ("high_3db_hz", std::round (b.highHz * 10.0) / 10.0); }
         o->setProperty ("tones", b.tonesUsed); return juce::var (o); };
     // MEASUREMENT NOMINATES WHEN THE LEXICON FINDS NOTHING (Kathy's 6 Oct ruling, the 91 EQs the spellings missed): every sampled
@@ -4324,6 +4325,28 @@ inline int runEq (const SweepOptions& opt)
                 if (eq::usable (b) && eq::figureOf (b) > 0.0) freqPoints.push_back ({ p.norm, p.text, eq::figureOf (b) });
                 freqRows.add (v); if (b.result == "measured" || b.result == "shelf") ++measured;
                 say ("    freq " + p.text + " (gain at " + juce::String (boostDb, 1) + "): " + b.result + (b.result == "measured" ? " centre " + juce::String (b.centreHz, 0) + " Hz, gain " + juce::String (b.gainDb, 2) + ", bw " + juce::String (b.bandwidthOct, 2) + " oct" : b.result == "shelf" ? " " + b.shape + (b.cornerHz > 0.0 ? " corner " + juce::String (b.cornerHz, 0) + " Hz" : juce::String()) + ", plateau " + juce::String (b.gainDb, 2) : " - " + b.reason));
+            }
+            // ADAPTIVE POINTS (7 Oct follow-up 1): midpoints between neighbours until log-f interpolation holds within 5 % or 21 points
+            if (! sweep::isSteppedControl (sweep::findControl (base, fIdx)) && freqPoints.size() >= 2)
+            {
+                auto iv = eq::intervalsOf (freqPoints); int round = 0;
+                while (true)
+                {
+                    const auto mids = eq::nextMidpoints (iv, (int) freqPoints.size());
+                    if (mids.empty()) break;
+                    juce::StringArray mn; for (float m : mids) mn.add (juce::String (m, 6));
+                    auto [mr, rr] = response (tag + ".freqA" + juce::String (++round), fIdx, mn, fsets);
+                    if (rr.kind == ChildResult::Kind::uiShown) { say ("EQ: a window appeared; stopping"); return 5; }
+                    std::vector<std::pair<float, std::optional<eq::FreqPoint>>> read;
+                    for (float m : mids) { std::optional<eq::FreqPoint> fp; for (const auto& p : mr.positions) if (std::abs (p.norm - m) < 1e-4f) { const auto b = eq::deriveBand (eq::deviation (p, baseline)); auto v = bandVar (b); v.getDynamicObject()->setProperty ("norm", p.norm); v.getDynamicObject()->setProperty ("display", p.text); v.getDynamicObject()->setProperty ("adaptive_round", round); freqRows.add (v); if (eq::usable (b) && eq::figureOf (b) > 0.0) { fp = eq::FreqPoint { m, p.text, eq::figureOf (b) }; freqPoints.push_back (*fp); } } read.push_back ({ m, fp }); }
+                    iv = eq::applyRound (iv, read, (int) freqPoints.size());
+                    int open = 0; for (const auto& i : iv) if (i.state == "open") ++open;
+                    say ("    adaptive round " + juce::String (round) + ": " + juce::String ((int) mids.size()) + " midpoint(s), " + juce::String ((int) freqPoints.size()) + " point(s), " + juce::String (open) + " interval(s) still over 5 %");
+                }
+                juce::Array<juce::var> ivv; int bad = 0;
+                for (const auto& i : iv) { auto* o = new juce::DynamicObject(); o->setProperty ("from_norm", i.a.norm); o->setProperty ("to_norm", i.b.norm); o->setProperty ("from_hz", std::round (i.a.figureHz)); o->setProperty ("to_hz", std::round (i.b.figureHz)); o->setProperty ("state", i.state); o->setProperty ("mid_miss_pct", std::round (i.missPct * 10.0) / 10.0); ivv.add (juce::var (o)); if (i.state == "budget" || i.state == "unreadable") ++bad; }
+                bo->setProperty ("freq_intervals", ivv); bo->setProperty ("freq_points", (int) freqPoints.size());
+                if (bad > 0) say ("    adaptive: " + juce::String (bad) + " interval(s) end without holding (budget or unreadable): recorded per interval");
             }
         }
         bo->setProperty ("freq_sweep", freqRows); bo->setProperty ("boost_norm", boostNorm); bo->setProperty ("boost_label_db", boostDb);

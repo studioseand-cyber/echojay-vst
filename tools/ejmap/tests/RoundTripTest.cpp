@@ -7883,6 +7883,35 @@ void testEq()
         // is a LOW SHELF with its corner, never "broad" with no figure (which read "3.00 dB at 12 Hz" against a 105 Hz corner)
         { std::vector<std::pair<double, double>> dev; for (int k = 0; k < 136; ++k) { const double f = 10.0 * std::pow (2350.0, k / 135.0); dev.push_back ({ f, 3.0 / (1.0 + std::pow (f / 105.0, 2.0)) + (k == 2 ? 0.0001 : 0.0) }); }
           const auto b = deriveBand (dev); check (b.result == "shelf" && b.shape == "low_shelf" && std::abs (b.cornerHz - 105.0) < 8.0 && std::abs (figureOf (b) - 105.0) < 8.0, "eq E28: a plateau within 0.1 dB to the grid's edge is a shelf: low_shelf, corner " + juce::String (b.cornerHz, 0) + " Hz (shape " + b.shape + ")"); }
+        // E30 (follow-up 1): ADAPTIVE FREQUENCY POINTS - bx_digital HMF 1's law: log-linear except a knee between 0.5 and 0.667
+        {
+            auto law = [] (float n) { return n <= 0.55f ? 200.0 * std::pow (2.0, n / 0.55 * 3.6) : 2425.0 * std::pow (2.0, (n - 0.55) / 0.45 * 0.8); };   // 200 Hz .. 2.4 kHz steeply, then 2.4 .. 4.2 kHz flat (a knee)
+            std::vector<FreqPoint> pts; for (int k = 0; k < 7; ++k) { const float n = k / 6.0f; pts.push_back ({ n, juce::String (n), law (n) }); }
+            check (std::abs (interpFigureHz (pts[0], pts[6], 0.5f) - std::sqrt (pts[0].figureHz * pts[6].figureHz)) < 1e-6, "eq E30a: the interpolation is linear in log f (the midpoint of two figures is their geometric mean)");
+            auto iv = intervalsOf (pts); int rounds = 0;
+            while (true) { const auto mids = nextMidpoints (iv, (int) pts.size()); if (mids.empty()) break; ++rounds;
+                std::vector<std::pair<float, std::optional<FreqPoint>>> read; for (float m : mids) { FreqPoint fp { m, juce::String (m), law (m) }; pts.push_back (fp); read.push_back ({ m, fp }); }
+                iv = applyRound (iv, read, (int) pts.size()); }
+            int holds = 0, budget = 0; for (const auto& i : iv) { if (i.state == "holds") ++holds; if (i.state == "budget") ++budget; }
+            // the 7-point interpolation at 0.58 promised a figure the law misses by over 5 %; after refinement every interval holds within the budget
+            bool hitsKnee = false; for (const auto& i : iv) if (i.a.norm < 0.55f && i.b.norm > 0.55f) hitsKnee = true;
+            check (budget == 0 && (int) pts.size() <= kAdaptMaxPoints && holds == (int) iv.size() && hitsKnee && rounds >= 2, "eq E30b: a knee between two of the 7 points is split until every interval holds within 5 % (" + juce::String ((int) pts.size()) + " points, " + juce::String (rounds) + " rounds)");
+            // a smooth log-linear law needs no extra points beyond the first check round
+            std::vector<FreqPoint> lin; for (int k = 0; k < 7; ++k) { const float n = k / 6.0f; lin.push_back ({ n, "", 20.0 * std::pow (1000.0, n) }); }
+            auto iv2 = intervalsOf (lin); const auto m2 = nextMidpoints (iv2, 7); std::vector<std::pair<float, std::optional<FreqPoint>>> r2; for (float m : m2) r2.push_back ({ m, FreqPoint { m, "", 20.0 * std::pow (1000.0, (double) m) } });
+            iv2 = applyRound (iv2, r2, 7 + (int) m2.size()); int open2 = 0; for (const auto& i : iv2) if (i.state != "holds") ++open2;
+            check (m2.size() == 6 && open2 == 0, "eq E30c: a log-linear law holds everywhere after one round of six midpoints");
+            // the budget: 20 points now -> one midpoint only; intervals left open become `budget`; an unreadable midpoint closes its interval
+            check (nextMidpoints (intervalsOf (pts), 20).size() <= 1, "eq E30d: the budget caps a round at 21 points in all");
+            std::vector<Interval> two { { lin[0], lin[1] }, { lin[1], lin[2] } }; const float ma = 0.5f * (lin[0].norm + lin[1].norm);
+            const auto after = applyRound (two, { { ma, std::nullopt } }, kAdaptMaxPoints);
+            check (after.size() == 2 && after[0].state == "unreadable" && after[1].state == "budget", "eq E30e: a midpoint with no figure closes as unreadable; an unmeasured open interval at the budget is `budget`");
+        }
+        // E31 (follow-up 1, the real cause on bx_digital HMF 1): a +3 dB bell at 4976 Hz whose high skirt never falls to 0.02 dB is a PEAK at its
+        // centre, not a shelf at its half-gain corner (4117 Hz)
+        { std::vector<std::pair<double, double>> dev; for (int k = 0; k < 136; ++k) { const double f = 10.0 * std::pow (2350.0, k / 135.0); const double x = std::log2 (f / 4976.0); dev.push_back ({ f, 3.0 * std::exp (-x * x / 0.5) + (f > 12000.0 ? 0.05 : 0.0) }); }
+          const auto b = deriveBand (dev);
+          check (b.result == "measured" && b.shape == "peak" && b.bandwidthBasis == "half_gain" && std::abs (b.centreHz - 4976.0) / 4976.0 < 0.03 && std::abs (figureOf (b) - 4976.0) / 4976.0 < 0.03, "eq E31: a +3 dB bell whose skirt stays 0.05 dB up is a peak at " + juce::String (b.centreHz, 0) + " Hz (half-gain bandwidth), never a shelf"); }
         // E29: an older probe's duplicate bins (two asked tones snapped to one 2 Hz bin) are taken once by the deviation
         { Position a, b; for (double f : { 10.0, 10.0, 12.0, 12.0, 14.0 }) { Tone t; t.hz = f; t.inDb = -30.0; t.outDb = -27.0; a.tones.push_back (t); Tone u = t; u.outDb = -30.0; b.tones.push_back (u); }
           const auto d = deviation (a, b); check (d.size() == 3 && d[0].first == 10.0 && d[1].first == 12.0 && d[2].first == 14.0 && std::abs (d[0].second - 3.0) < 1e-9, "eq E29: five tones on three bins -> three deviations (" + juce::String ((int) d.size()) + ")"); }

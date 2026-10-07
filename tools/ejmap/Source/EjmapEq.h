@@ -68,6 +68,7 @@ struct Band
     double centreHz = 0.0, gainDb = 0.0, bandwidthOct = 0.0, lowHz = 0.0, highHz = 0.0, worstOffGridDb = 0.0;
     double cornerHz = 0.0;                        // a shelf's corner: where the deviation is half the plateau (the frequency label's meaning for a shelf)
     int tonesUsed = 0; juce::String shape;        // peak | low_shelf | high_shelf | lowcut | highcut
+    juce::String bandwidthBasis = "3db";          // "3db" (the -3 dB points), or "half_gain" for a bell too small to have them (7 Oct)
 };
 inline constexpr double kFlatDb = 0.5;           // a deviation that never exceeds this is "flat" (the control did nothing at this position)
 inline constexpr double kPlateauDb = 0.1;        // a shelf's plateau: every tone from the peak to the grid's end within this of the peak (7 Oct: a 0.0001 dB wobble one tone in from the edge used to make a shelf "broad" with no corner)
@@ -101,6 +102,22 @@ inline Band deriveBand (const std::vector<std::pair<double, double>>& dev)
         return std::nullopt;
     };
     const auto lo = cross (-1), hi = cross (+1);
+    // A SMALL BELL (7 Oct, bx_digital HMF 1 at +3 dB): its "-3 dB points" are where the deviation falls to 0.02 dB, which a skirt may never reach -
+    // it was filed as a shelf and its half-gain "corner" (4117 Hz) read as the figure of a bell centred at 4976. A deviation that crosses HALF
+    // its gain on both sides of the peak is a peak, with the bandwidth between those half-gain points (said as the basis).
+    auto halfAt = [&] (int dir) -> std::optional<double>
+    {
+        const double t = std::abs (peak) * 0.5;
+        for (long i = (long) ip; i + dir >= 0 && i + dir < (long) dev.size(); i += dir)
+        {
+            const double a = std::abs (dev[(size_t) i].second), c = std::abs (dev[(size_t) (i + dir)].second);
+            if (a >= t && c < t) { const double f = (a - t) / (a - c); return std::pow (2.0, std::log2 (dev[(size_t) i].first) + f * (std::log2 (dev[(size_t) (i + dir)].first) - std::log2 (dev[(size_t) i].first))); }
+        }
+        return std::nullopt;
+    };
+    if (! (lo && hi))
+        if (const auto hl = halfAt (-1), hh = halfAt (+1); hl && hh)
+        { b.lowHz = *hl; b.highHz = *hh; b.bandwidthOct = std::log2 (*hh / *hl); b.result = "measured"; b.shape = "peak"; b.bandwidthBasis = "half_gain"; return b; }
     // "at the end": the peak sits at the grid's end, or the plateau from the peak to that end stays within kPlateauDb of it
     auto plateauTo = [&] (int dir) { for (long i = (long) ip; i >= 0 && i < (long) dev.size(); i += dir) if (std::abs (peak) - std::abs (dev[(size_t) i].second) > kPlateauDb) return false; return true; };
     const bool atLowEnd = plateauTo (-1), atHighEnd = plateauTo (+1);
@@ -369,6 +386,56 @@ inline juce::var acceptanceVar (const Acceptance& a)
     if (a.ran && usable (a.measured)) { o->setProperty ("measured_gain_db", std::round (a.measured.gainDb * 100.0) / 100.0); o->setProperty ("measured_figure_hz", std::round (figureOf (a.measured) * 10.0) / 10.0); o->setProperty ("measured_shape", a.measured.shape); o->setProperty ("gain_miss_db", std::round (a.gainMissDb * 100.0) / 100.0); o->setProperty ("figure_off_pct", std::round (a.figureOffPct * 10.0) / 10.0); }
     o->setProperty ("pass", a.pass); if (a.why.isNotEmpty()) o->setProperty ("why", a.why);
     return juce::var (o);
+}
+
+// ADAPTIVE FREQUENCY POINTS (Kathy, 7 Oct follow-up 1): after the 7 points, every pair of neighbours whose log-f interpolation would miss
+// the measured figure by more than kAdaptMissPct is split - the midpoint norm is measured, and if the figure there is more than 5 % off
+// the interpolation of its neighbours, the midpoint becomes a point and both halves are checked again; until every interval holds or
+// the control has kAdaptMaxPoints points. A midpoint that reads no figure (flat, refused) closes its interval as `unreadable`.
+// bx_digital HMF 1 (7 Oct): 4117 Hz measured where the 7-point interpolation promised 5028 - the law between two norms is not log-linear.
+inline constexpr int kAdaptMaxPoints = 21;
+inline constexpr double kAdaptMissPct = 5.0;
+inline double interpFigureHz (const FreqPoint& a, const FreqPoint& b, float norm)
+{
+    if (std::abs (b.norm - a.norm) < 1e-9f) return a.figureHz;
+    const double t = (norm - a.norm) / (double) (b.norm - a.norm);
+    return std::pow (2.0, std::log2 (a.figureHz) + t * (std::log2 (b.figureHz) - std::log2 (a.figureHz)));
+}
+inline double midMissPct (const FreqPoint& a, const FreqPoint& b, const FreqPoint& mid) { return 100.0 * std::abs (interpFigureHz (a, b, mid.norm) - mid.figureHz) / mid.figureHz; }
+struct Interval { FreqPoint a, b; juce::String state = "open"; double missPct = 0.0; };   // open | holds | split | unreadable | budget
+// the intervals between neighbours (sorted by norm)
+inline std::vector<Interval> intervalsOf (std::vector<FreqPoint> pts)
+{
+    std::sort (pts.begin(), pts.end(), [] (const FreqPoint& x, const FreqPoint& y) { return x.norm < y.norm; });
+    std::vector<Interval> out; for (size_t i = 0; i + 1 < pts.size(); ++i) out.push_back ({ pts[i], pts[i + 1] }); return out;
+}
+// the midpoints to measure this round: one per open interval, as many as the budget allows (the widest first)
+inline std::vector<float> nextMidpoints (const std::vector<Interval>& iv, int pointsNow)
+{
+    std::vector<const Interval*> open; for (const auto& i : iv) if (i.state == "open") open.push_back (&i);
+    std::sort (open.begin(), open.end(), [] (const Interval* x, const Interval* y) { return (x->b.norm - x->a.norm) > (y->b.norm - y->a.norm); });
+    std::vector<float> m; for (const auto* i : open) { if (pointsNow + (int) m.size() >= kAdaptMaxPoints) break; m.push_back (0.5f * (i->a.norm + i->b.norm)); }
+    return m;
+}
+// apply one round's midpoint readings: `read` maps a midpoint norm to its figure (absent = no figure there). Returns the new interval list;
+// intervals left open after the budget is spent are marked `budget`.
+inline std::vector<Interval> applyRound (const std::vector<Interval>& iv, const std::vector<std::pair<float, std::optional<FreqPoint>>>& read, int pointsAfter)
+{
+    std::vector<Interval> out;
+    for (const auto& i : iv)
+    {
+        if (i.state != "open") { out.push_back (i); continue; }
+        const float mid = 0.5f * (i.a.norm + i.b.norm);
+        const std::pair<float, std::optional<FreqPoint>>* r = nullptr; for (const auto& x : read) if (std::abs (x.first - mid) < 1e-6f) r = &x;
+        if (! r) { Interval k = i; k.state = pointsAfter >= kAdaptMaxPoints ? "budget" : "open"; out.push_back (k); continue; }
+        if (! r->second) { Interval k = i; k.state = "unreadable"; out.push_back (k); continue; }
+        const double miss = midMissPct (i.a, i.b, *r->second);
+        if (miss <= kAdaptMissPct) { Interval l { i.a, *r->second, "holds", miss }, h { *r->second, i.b, "holds", miss }; out.push_back (l); out.push_back (h); continue; }
+        Interval l { i.a, *r->second, "open", miss }, h { *r->second, i.b, "open", miss };
+        if (pointsAfter >= kAdaptMaxPoints) { l.state = h.state = "budget"; }
+        out.push_back (l); out.push_back (h);
+    }
+    return out;
 }
 
 // THE DRAFT ej_eq_profile/1 (section 6) FROM THE RECORD (a derive-only function: the mode calls it on the record it just wrote, the
