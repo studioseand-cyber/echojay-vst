@@ -2892,6 +2892,48 @@ inline LicenceGate licenceGate (const SweepOptions& opt, const juce::PluginDescr
 // CHANNEL STRIPS (Kathy's NEXT BUILD item E, 7 Oct; the rules in EjmapStrip.h): the strip's controls in sections, each section's
 // engage switch (Rule 1), each section through its category's mode as a child with --only-controls and the engage as the probe's
 // preset; the compressor section's plan recorded, its sweep and tone check not built here. Record: <out>/strip/<stem>.strip.json.
+// THE STRIP DRAFT (Kathy, 7 Oct item 7): ONE draft per strip naming the parent plugin; each section carries its engage write (the section's own
+// switch, the probe's preset) and its neutral writes (the other dynamics sections off or neutralised, ruled 7 Oct), and its draft IN ITS
+// CATEGORY'S SHAPE, derived from the section's record: EQ -> ej_eq_profile/1, gate -> ej_gate_profile/1, saturation -> ej_saturation_profile/1,
+// compressor -> the strip-section record (its profile when the section wrote one - not_for_publication - else the record's state). A section
+// that did not run says why. Derive-only: the mode calls it at run end, --phaseb-drafts on an existing strip folder.
+inline juce::var stripDraftFrom (const juce::var& stripRec, const juce::File& stripDir, const juce::String& stem, const juce::var& plugin)
+{
+    auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_strip_profile/0"); P->setProperty ("spec", drafts::specTag ("STRIP (each section to its category spec)"));
+    P->setProperty ("status", "DRAFT: each section in its category's v0.1 PROPOSAL shape (EQ / gate / saturation / compressor); strip profiles' export is held (ruled 7 Oct): data only, not exported, not published");
+    P->setProperty ("parent", plugin); P->setProperty ("rule", stripRec.getProperty ("rule", ""));
+    juce::Array<juce::var> secs, notes; const auto date = stripRec.getProperty ("measuredAt", "").toString().substring (0, 8);
+    const auto measured = drafts::measuredBlock ("EJ Map (feat/ejmap-cert), the strip's sections through their categories' modes", date.length() == 8 ? date.substring (0, 4) + "-" + date.substring (4, 6) + "-" + date.substring (6, 8) : runDateIso(), 48000, "per section: its category's signal");
+    auto recordOf = [&] (const juce::String& section, const juce::String& suffix) { const auto f = stripDir.getChildFile (section + "." + stem + suffix); return f.existsAsFile() ? juce::JSON::parse (f.loadFileAsString()) : juce::var(); };
+    if (const auto* ss = stripRec.getProperty ("sections", {}).getArray())
+        for (const auto& sc : *ss)
+        {
+            const auto name = sc.getProperty ("section", "").toString(); auto* x = new juce::DynamicObject(); x->setProperty ("section", name);
+            if (sc.hasProperty ("engage")) { auto* e = new juce::DynamicObject(); e->setProperty ("control", sc.getProperty ("engage", {})); e->setProperty ("set", sc.getProperty ("engage_text", {})); e->setProperty ("norm", sc.getProperty ("engage_norm", {})); x->setProperty ("engage", juce::var (e)); } else x->setProperty ("engage", juce::var());
+            x->setProperty ("neutral_writes", sc.hasProperty ("strip_writes") ? sc.getProperty ("strip_writes", {}) : juce::var (juce::Array<juce::var>()));
+            x->setProperty ("outcome", sc.getProperty ("outcome", ""));
+            juce::var profile; juce::String why;
+            const auto secPlugin = plugin;
+            if (name == "eq") { const auto r = recordOf ("eq", ".eq.json"); if (r.isObject()) profile = eq::profileDraft (r, secPlugin, measured, drafts::statusLine ("EQ_PROFILE_SPEC"), drafts::specTag ("EQ_PROFILE_SPEC")); else why = "no EQ record for the section"; }
+            else if (name == "gate") { const auto r = recordOf ("gate", ".dynamics.json"); if (r.isObject()) profile = dynamics::gateProfile (r, secPlugin, measured, drafts::statusLine ("TRANSIENT_GATE_PROFILE_SPEC"), drafts::specTag ("TRANSIENT_GATE_PROFILE_SPEC")); else why = "no gate record for the section"; }
+            else if (name == "saturation") { const auto r = recordOf ("saturation", ".saturation.json"); if (r.isObject()) profile = saturation::profileDraft (r, secPlugin, measured, drafts::statusLine ("SATURATION_PROFILE_SPEC"), drafts::specTag ("SATURATION_PROFILE_SPEC")); else why = "no saturation record for the section"; }
+            else if (name == "compressor")
+            {
+                const auto secDir = stripDir.getChildFile (stem + ".compressor");
+                juce::var prof; for (const auto& f : secDir.getChildFile ("profiles").findChildFiles (juce::File::findFiles, false, "*.json")) if (! f.getFileName().contains ("tonecheck")) { prof = juce::JSON::parse (f.loadFileAsString()); break; }
+                auto* c = new juce::DynamicObject(); c->setProperty ("schema", "the strip-section record (ej_cert_compressor/1) and its profile when one was written"); c->setProperty ("state", sc.getProperty ("state", juce::var())); c->setProperty ("reason", sc.getProperty ("reason", juce::var())); c->setProperty ("tone_check", sc.getProperty ("tone_check", juce::var())); c->setProperty ("folder", sc.getProperty ("folder", juce::var()));
+                c->setProperty ("profile", prof); c->setProperty ("not_for_publication", true);
+                profile = juce::var (c); if (prof.isVoid()) notes.add ("compressor section: no profile in its folder (state " + sc.getProperty ("state", "?").toString() + ")");
+            }
+            else why = "a global section: no category";
+            if (profile.isVoid()) { x->setProperty ("profile", juce::var()); x->setProperty ("why", why.isNotEmpty() ? why : sc.getProperty ("outcome", "").toString()); if (name != "global") notes.add (name + " section: " + (why.isNotEmpty() ? why : sc.getProperty ("outcome", "").toString())); }
+            else x->setProperty ("profile", profile);
+            secs.add (juce::var (x));
+        }
+    P->setProperty ("sections", secs); P->setProperty ("notes", notes);
+    return juce::var (P);
+}
+
 inline int runStrip (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
@@ -2978,7 +3020,7 @@ inline int runStrip (const SweepOptions& opt)
         const auto r = runChild (args, (int) (1800.0 * 1000.0));
         const double secs2 = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0;
         tmp.getChildFile ("log.txt").replaceWithText (r.out, false, false, "\n");
-        juce::StringArray recs; for (const auto& d : tmp.findChildFiles (juce::File::findDirectories, false)) { if (d.getFileName() == "raw") { for (const auto& f : d.findChildFiles (juce::File::findFiles, false)) f.moveFileTo (raw.getChildFile (f.getFileName())); continue; } for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.json")) { const auto target = outDir.getChildFile (sec.name + "." + f.getFileName()); target.deleteFile(); f.moveFileTo (target); recs.add (target.getFileName()); } }
+        juce::StringArray recs; for (const auto& d : tmp.findChildFiles (juce::File::findDirectories, false)) { if (d.getFileName() == drafts::kFolder) continue;   /* a child's own draft never lands beside the records: the strip draft derives each section's from its record */ if (d.getFileName() == "raw") { for (const auto& f : d.findChildFiles (juce::File::findFiles, false)) f.moveFileTo (raw.getChildFile (f.getFileName())); continue; } for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.json")) { const auto target = outDir.getChildFile (sec.name + "." + f.getFileName()); target.deleteFile(); f.moveFileTo (target); recs.add (target.getFileName()); } }
         const auto lg = outDir.getChildFile (stem + "." + sec.name + ".log.txt"); lg.deleteFile(); tmp.getChildFile ("log.txt").moveFileTo (lg); tmp.deleteRecursively();
         so->setProperty ("mode", mode); so->setProperty ("child", r.describe()); so->setProperty ("exit_code", r.code); so->setProperty ("seconds", std::round (secs2)); so->setProperty ("records", recs.joinIntoString (", ")); so->setProperty ("log", lg.getFileName());
         so->setProperty ("outcome", r.kind == ChildResult::Kind::uiShown ? "window" : r.kind == ChildResult::Kind::exited && (r.code == 0 || r.code == 4) ? "ok" : "failed");
@@ -2987,9 +3029,15 @@ inline int runStrip (const SweepOptions& opt)
         if (r.kind == ChildResult::Kind::uiShown) { secs.add (juce::var (so)); o->setProperty ("sections", secs); outDir.getChildFile (stem + ".strip.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n"); say ("STRIP: a window appeared; stopping"); return 5; }
         secs.add (juce::var (so));
     }
-    o->setProperty ("sections", secs); o->setProperty ("measuredAt", nowStamp());
-    outDir.getChildFile (stem + ".strip.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    o->setProperty ("sections", secs); o->setProperty ("measuredAt", nowStamp()); o->setProperty ("manufacturer", desc.manufacturerName);
+    const juce::var rec (o);
+    outDir.getChildFile (stem + ".strip.json").replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n");
     say ("STRIP: -> " + outDir.getChildFile (stem + ".strip.json").getFullPathName());
+    {   // THE STRIP DRAFT (item 7): every section in its category's shape under one draft naming the parent
+        const auto D = stripDraftFrom (rec, outDir, stem, drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, fx.base.getProperty ("map_fp", juce::var())));
+        const auto f = drafts::draftFile (opt.out, stem, "strip_profile"); const auto problem = drafts::writeDraft (f, D);
+        say (problem.isEmpty() ? "STRIP: draft ej_strip_profile/0 -> " + f.getFullPathName() : "STRIP: " + problem);
+    }
     return ran > 0 ? 0 : 4;
 }
 
@@ -5719,7 +5767,12 @@ namespace draftpass
             { "limiter",    "limiter",    ".limiter.json",    "limiter_ceiling",    "LIMITER_PROFILE_SPEC",       "ej_comp_profile ceiling block (LIMITER_PROFILE_SPEC section 6)" },
             { "eq",         "eq",         ".eq.json",         "eq_profile",         "EQ_PROFILE_SPEC",            "ej_eq_profile/1" },
             { "deesser",    "deesser",    ".deesser.json",    "deesser_block",      "DEESSER_PROFILE_SPEC",       "ej_comp_profile deesser block (DEESSER_PROFILE_SPEC section 6)" },
-            { "saturation", "saturation", ".saturation.json", "saturation_profile", "SATURATION_PROFILE_SPEC",    "ej_saturation_profile/1" } };
+            { "saturation", "saturation", ".saturation.json", "saturation_profile", "SATURATION_PROFILE_SPEC",    "ej_saturation_profile/1" },
+            { "reverb",     "reverbdelay", ".reverbdelay.json", "space_profile",    "REVERB_DELAY_PROFILE_SPEC",  "ej_space_profile/1" },
+            { "delay",      "reverbdelay", ".reverbdelay.json", "space_profile",    "REVERB_DELAY_PROFILE_SPEC",  "ej_space_profile/1" },
+            { "transient",  "dynamics",   ".dynamics.json",   "transient_profile",  "TRANSIENT_GATE_PROFILE_SPEC", "ej_transient_profile/1" },
+            { "gate",       "dynamics",   ".dynamics.json",   "gate_profile",       "TRANSIENT_GATE_PROFILE_SPEC", "ej_gate_profile/1" },
+            { "strips",     "strip",      ".strip.json",      "strip_profile",      "STRIP (each section to its category spec)", "ej_strip_profile/0" } };
         return k;
     }
     inline const Spec* specFor (const juce::String& category) { for (const auto& s : specs()) if (category == s.category) return &s; return nullptr; }
@@ -5733,6 +5786,10 @@ namespace draftpass
         if (category == "eq") return eq::gridDescription();
         if (category == "deesser") return deesser::noiseSignalDescription();
         if (category == "saturation") return "997 Hz sine at -20, -12 and -6 dBFS peak; harmonics 2-5";
+        if (category == "reverb" || category == "delay") return "pink-noise burst 200 ms (decay); 997 Hz burst (mix, timing); adaptive tail up to 20 s";
+        if (category == "transient") return "997 Hz hits, 500 ms decay, -6 dBFS; held tone with transient";
+        if (category == "gate") return "997 Hz ramp -70 -> -6 dBFS and back; burst at a ramp-taken threshold";
+        if (category == "strips") return "per section: its category's signal";
         return {};
     }
 }
@@ -5767,6 +5824,9 @@ inline juce::var draftFromRecord (const juce::String& category, const juce::var&
         auto* D = new juce::DynamicObject(); D->setProperty ("schema", sp->schema); D->setProperty ("spec", spec); D->setProperty ("status", status + "; the deesser block only"); D->setProperty ("block", "deesser"); D->setProperty ("plugin", plugin); D->setProperty ("measured", measured);
         D->setProperty ("deesser", deesser::deesserBlock (rec)); return juce::var (D);
     }
+    if (category == "reverb" || category == "delay") return reverbdelay::spaceProfile (rec, plugin, measured, status, spec);
+    if (category == "transient") return dynamics::transientProfile (rec, plugin, measured, status, spec);
+    if (category == "gate") return dynamics::gateProfile (rec, plugin, measured, status, spec);
     if (category == "tuners")
     {
         const auto e = tunerprofile::exportTunerProfileDraft (rec);
@@ -5794,9 +5854,10 @@ inline int runPhaseBDrafts (const SweepOptions& opt, const juce::StringArray& on
         for (const auto& f : records)
         {
             ++total; const auto rec = juce::JSON::parse (f.loadFileAsString()); juce::String why;
-            auto stem = f.getFileNameWithoutExtension(); for (const char* suf : { ".gaincal", ".timing", ".multiband", ".limiter", ".eq", ".deesser", ".saturation", ".tuner" }) if (stem.endsWith (suf)) stem = stem.dropLastCharacters (juce::String (suf).length());
+            auto stem = f.getFileNameWithoutExtension(); for (const char* suf : { ".gaincal", ".timing", ".multiband", ".limiter", ".eq", ".deesser", ".saturation", ".tuner", ".reverbdelay", ".dynamics", ".strip" }) if (stem.endsWith (suf)) stem = stem.dropLastCharacters (juce::String (suf).length());
             const auto product = rec.getProperty ("product", rec.getProperty ("plugin", {}).getProperty ("name", "")).toString();
-            const auto D = draftFromRecord (category, rec, manufacturerOf.count (product) ? manufacturerOf[product] : juce::String(), why);
+            const auto D = category == "strips" ? stripDraftFrom (rec, f.getParentDirectory(), stem, drafts::pluginBlock (product, manufacturerOf.count (product) ? manufacturerOf[product] : rec.getProperty ("manufacturer", "").toString(), drafts::uidOfIdentity (rec.getProperty ("identity", "").toString()), drafts::versionOfIdentity (rec.getProperty ("identity", "").toString()), juce::var()))
+                                                 : draftFromRecord (category, rec, manufacturerOf.count (product) ? manufacturerOf[product] : juce::String(), why);
             if (D.isVoid()) { ++r; ++refusedN; reasons.add (f.getFileName() + ": " + why); continue; }
             const auto out = drafts::draftFile (phasebDir.getChildFile (category), stem, sp.kind);
             const auto problem = drafts::writeDraft (out, D);

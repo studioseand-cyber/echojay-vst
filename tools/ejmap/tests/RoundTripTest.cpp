@@ -8498,6 +8498,36 @@ void testDraftsPass()
     }
 }
 
+/** THE STRIP DRAFT (7 Oct item 7): every section in its category's shape under one draft naming the parent; engage and neutral writes carried. */
+void testStripDraft()
+{
+    auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap-strip-pin-" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
+    dir.createDirectory(); const juce::String stem = "AudioUnit_41747d65_1.7.1";
+    // the EQ section's record, the gate section's record; the compressor section's folder with a profile
+    juce::Array<juce::var> gs { mk ({ { "norm", 0.75 }, { "display", "+6" }, { "result", "measured" }, { "shape", "peak" }, { "gain_db", 6.0 }, { "centre_hz", 1000.0 } }) };
+    juce::Array<juce::var> bands { mk ({ { "band", "LF" }, { "gain_control", "LF Gain" }, { "freq_control", "LF Freq" }, { "verdict", "measured" }, { "verdict_reason", "" }, { "gain_sweep", gs }, { "freq_sweep", juce::Array<juce::var>() } }) };
+    dir.getChildFile ("eq." + stem + ".eq.json").replaceWithText (juce::JSON::toString (mk ({ { "grid", "x" }, { "bands", bands } })));
+    dir.getChildFile ("gate." + stem + ".dynamics.json").replaceWithText (juce::JSON::toString (mk ({ { "tg_fields", "x" }, { "verdict", "measured" }, { "hysteresis_db", 5.3 } })));
+    dir.getChildFile (stem + ".compressor").getChildFile ("profiles").createDirectory();
+    dir.getChildFile (stem + ".compressor").getChildFile ("profiles").getChildFile (stem + ".profile.json").replaceWithText (juce::JSON::toString (mk ({ { "schema", "ej_comp_profile/2" }, { "not_for_publication", true } })));
+    juce::Array<juce::var> sw { mk ({ { "index", 40 }, { "control", "GE Range" }, { "set", "0.0 dB" }, { "norm", 0.0 }, { "role", "neutral" } }) };
+    juce::Array<juce::var> secs { mk ({ { "section", "compressor" }, { "engage", "LC On" }, { "engage_text", "On" }, { "engage_norm", 1.0 }, { "strip_writes", sw }, { "outcome", "ok" }, { "state", "exported" }, { "folder", stem + ".compressor" } }),
+                                  mk ({ { "section", "eq" }, { "engage", "EQ On" }, { "engage_text", "On" }, { "engage_norm", 1.0 }, { "outcome", "ok" } }),
+                                  mk ({ { "section", "gate" }, { "outcome", "ok" } }), mk ({ { "section", "saturation" }, { "outcome", "failed" } }), mk ({ { "section", "global" }, { "outcome", "not run (no mode)" } }) };
+    const auto rec = mk ({ { "rule", "Rule 1" }, { "sections", secs }, { "measuredAt", "20261007T120000" } });
+    const auto D = ejmap::cert::stripDraftFrom (rec, dir, stem, ejmap::drafts::pluginBlock ("bx_console SSL 4000 E", "Plugin Alliance", "41747d65", "1.7.1", juce::var()));
+    const auto& S = D.getProperty ("sections", {});
+    check (D.getProperty ("schema", "") == "ej_strip_profile/0" && D.getProperty ("parent", {}).getProperty ("name", "") == "bx_console SSL 4000 E" && S.size() == 5 && ejmap::drafts::contentProblem (D).isEmpty(), "strip SD1: one draft naming the parent, five sections, the content rule holds");
+    check (S[0].getProperty ("engage", {}).getProperty ("control", "") == "LC On" && S[0].getProperty ("neutral_writes", {}).size() == 1 && S[0].getProperty ("neutral_writes", {})[0].getProperty ("control", "") == "GE Range" && S[0].getProperty ("profile", {}).getProperty ("profile", {}).getProperty ("schema", "") == "ej_comp_profile/2",
+           "strip SD2: the compressor section carries its engage, its neutral write (GE Range -> 0.0 dB) and the section folder's profile");
+    check (S[1].getProperty ("profile", {}).getProperty ("schema", "") == "ej_eq_profile/1" && S[1].getProperty ("profile", {}).getProperty ("bands", {}).size() == 1 && S[2].getProperty ("profile", {}).getProperty ("schema", "") == "ej_gate_profile/1" && (double) S[2].getProperty ("profile", {}).getProperty ("hysteresis_db", 0.0) == 5.3,
+           "strip SD3: the EQ section is ej_eq_profile/1, the gate section ej_gate_profile/1, each from its record");
+    juce::StringArray ns; if (const auto* na = D.getProperty ("notes", {}).getArray()) for (const auto& n : *na) ns.add (n.toString());
+    check (S[3].getProperty ("profile", {}).isVoid() && S[3].getProperty ("why", "").toString().contains ("no saturation record") && S[4].getProperty ("why", "").toString().contains ("global") && ns.size() == 1 && ns[0].startsWith ("saturation section"), "strip SD4: a section with no record says so (a note); the global section is not a category (no note)");
+    dir.deleteRecursively();
+}
+
 /** THE NOISE SIGNAL (probe_noise.h, 7 Oct): deterministic in the seed, at the asked RMS, band-limited to 4-10 kHz. */
 void testNoise()
 {
@@ -8913,6 +8943,7 @@ int main (int, char**)
     testDeesser();
     testNoise();
     testDraftsPass();
+    testStripDraft();
     testMultiband();
     testRoleEvidence();
     testTextPassTimeout();
