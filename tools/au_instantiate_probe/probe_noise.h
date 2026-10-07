@@ -38,6 +38,21 @@ inline std::vector<double> bandLimited (double sr, long long n, double loHz, dou
     for (auto& x : v) x *= k;
     return v;
 }
+// PINK NOISE (7 Oct, REVERB_DELAY_PROFILE_SPEC v0.1 section 4: the decay's broadband burst): seeded Gaussian white noise through Paul
+// Kellet's three-pole pink filter (-3 dB/oct within about 0.5 dB from 10 Hz to 20 kHz at 48 kHz), the filter warmed for kWarmS, the block
+// normalised to the asked RMS. Deterministic in the seed, like bandLimited.
+inline std::vector<double> pink (double sr, long long n, unsigned long long seed, double rmsTarget)
+{
+    (void) sr;
+    Gauss g (seed); double b0 = 0.0, b1 = 0.0, b2 = 0.0;
+    auto one = [&] { const double w = g.next(); b0 = 0.99765 * b0 + w * 0.0990460; b1 = 0.96300 * b1 + w * 0.2965164; b2 = 0.57000 * b2 + w * 1.0526913; return b0 + b1 + b2 + w * 0.1848; };
+    for (long long i = 0; i < (long long) std::llround (kWarmS * 48000.0); ++i) one();
+    std::vector<double> v ((size_t) std::max (0LL, n)); double ss = 0.0;
+    for (auto& x : v) { x = one(); ss += x * x; }
+    const double rms = v.empty() ? 1.0 : std::sqrt (ss / (double) v.size()); const double k = rms > 0.0 ? rmsTarget / rms : 0.0;
+    for (auto& x : v) x *= k;
+    return v;
+}
 // the power at one frequency (Goertzel), in dB, for the suite's band check
 inline double powerDbAt (const std::vector<double>& v, double sr, double hz)
 {

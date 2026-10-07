@@ -35,10 +35,12 @@ inline constexpr double kFloorDb     = -90.0;    // below this an output window 
 inline constexpr double kOnsetAboveFloorDb = 20.0;   // an onset is a window this far above the measured floor
 inline constexpr double kLawFitDb    = 1.0;      // a mix law fits when every position is within this of it
 inline constexpr double kRepeatMinDb = -60.0;    // repeats are counted down to this below the first
-inline constexpr double kRepeatRiseDb = 12.0;    // a repeat begins where the peak envelope rises this much over the preceding 10 ms
+inline constexpr double kRepeatRiseDb = 12.0;
+inline constexpr double kSilentLevelDb = -150.0; // a silent output window (-600 from the probe's log of zero) is read at this level    // a repeat begins where the peak envelope rises this much over the preceding 10 ms
 
 struct Window { double tMs = 0.0; bool burst = false; double inDb = -999.0, outDb = -999.0, peakDb = -999.0; };
-struct Tail { bool ok = false; juce::String refused; double burstMs = 0.0, tailS = 0.0, winMs = 1.0, tempo = 0.0, dbfs = 0.0; int latency = 0; std::vector<Window> windows; std::map<int, juce::String> setTexts; };
+struct Tail { bool ok = false; juce::String refused; double burstMs = 0.0, tailS = 0.0, winMs = 1.0, tempo = 0.0, dbfs = 0.0; int latency = 0; std::vector<Window> windows; std::map<int, juce::String> setTexts;
+              juce::String stopReason; double stopMs = -1.0; };   // 7 Oct: tstop (quiet = 35 dB down; window = the cap reached)
 
 inline Tail parseTail (const juce::String& out)
 {
@@ -52,6 +54,7 @@ inline Tail parseTail (const juce::String& out)
         if (f[0] == "tail") { t.ok = true; t.burstMs = kv (f, 1, "burst_ms").getDoubleValue(); t.tailS = kv (f, 1, "tail_s").getDoubleValue(); t.winMs = kv (f, 1, "win_ms").getDoubleValue(); t.tempo = kv (f, 1, "tempo").getDoubleValue(); t.dbfs = kv (f, 1, "db").getDoubleValue(); }
         else if (f[0] == "config") t.latency = kv (f, 1, "latency").getIntValue();
         else if (f[0] == "set") t.setTexts[f[1].getIntValue()] = kv (f, 2, "text");
+        else if (f[0] == "tstop") { t.stopReason = kv (f, 1, "reason"); t.stopMs = kv (f, 1, "t_ms").getDoubleValue(); }
         else if (f[0] == "twin") { Window w; w.tMs = kv (f, 1, "t_ms").getDoubleValue(); w.burst = kv (f, 1, "seg") == "burst"; w.inDb = kv (f, 1, "in_db").getDoubleValue(); w.outDb = kv (f, 1, "out_db").getDoubleValue(); w.peakDb = kv (f, 1, "out_peak_db").getDoubleValue(); t.windows.push_back (w); }
     }
     return t;
@@ -77,8 +80,9 @@ inline Levels levelsOf (const Tail& t)
     std::vector<double> dry, wet, in;
     for (const auto& w : t.windows)
     {
-        if (w.burst && w.tMs < kDryWindowMs && w.outDb > -500.0) { dry.push_back (w.outDb); in.push_back (w.inDb); }
-        if (! w.burst && w.tMs >= t.burstMs && w.tMs < t.burstMs + kWetWindowMs && w.outDb > -500.0) wet.push_back (w.outDb);
+        // a SILENT window is a level, not a gap (7 Oct, MReverb at 100 % wet: no dry window at all made the whole end unreadable)
+        if (w.burst && w.tMs < kDryWindowMs) { dry.push_back (juce::jmax (kSilentLevelDb, w.outDb)); in.push_back (w.inDb); }
+        if (! w.burst && w.tMs >= t.burstMs && w.tMs < t.burstMs + kWetWindowMs) wet.push_back (juce::jmax (kSilentLevelDb, w.outDb));
     }
     if (dry.empty()) { L.why = "no window inside the first " + juce::String (kDryWindowMs, 1) + " ms of the burst"; return L; }
     L.ok = true; L.dryDb = powerMeanDb (dry); L.wetDb = powerMeanDb (wet); L.inDb = powerMeanDb (in);
@@ -212,20 +216,171 @@ inline std::optional<double> labelSeconds (const juce::String& display)
     if (s.endsWith ("s") || s.contains (" s") || s.contains ("sec")) return *ms / 1000.0;
     return *ms;   // bare number: seconds for a decay control
 }
-// a tempo-sync note value: "1/4", "1/8", "1/8 D" (dotted), "1/8 T" (triplet), "1/4." -> beats
+// a tempo-sync note value -> beats in 4/4 (7 Oct, spec section 4: dotted and triplet read, not guessed). Accepted: "1/4", "1/8D", "1/8 D",
+// "1/8 dot", "1/8 dotted", "Dotted 1/8", "1/4.", "1/16T", "1/8 T", "1/8 trip", "1/8 triplet", "1/8T." (never both: refused). "Bar"/"1 bar"/"2 bars"
+// = 4 / 8 beats. The modifier is a TOKEN (a letter beside the fraction or a word), never any 'd' or 't' anywhere in the text.
 inline std::optional<double> noteBeats (const juce::String& display)
 {
     const auto s = display.trim().toLowerCase();
-    if (! s.contains ("/")) return {};
-    const int num = s.upToFirstOccurrenceOf ("/", false, false).getTrailingIntValue(); const int den = s.fromFirstOccurrenceOf ("/", false, false).getIntValue();
+    if (s.contains ("bar") && ! s.contains ("/")) { const int n = juce::jmax (1, s.getIntValue()); return 4.0 * n; }
+    // the separator: "/" or the dash form ("1-8", "1-16T": SSL X-Delay) when a digit sits on both sides
+    juce::String sep = "/";
+    if (! s.contains ("/")) { const int d = s.indexOfChar ('-'); if (d > 0 && d + 1 < s.length() && juce::CharacterFunctions::isDigit (s[d - 1]) && juce::CharacterFunctions::isDigit (s[d + 1])) sep = "-"; else return {}; }
+    const auto left = s.upToFirstOccurrenceOf (sep, false, false), right = s.fromFirstOccurrenceOf (sep, false, false);
+    const int num = left.getTrailingIntValue(); const int den = right.getIntValue();
     if (num <= 0 || den <= 0) return {};
     double beats = 4.0 * (double) num / (double) den;   // 1/4 = one beat in 4/4
-    if (s.contains ("d") || s.contains (".")) beats *= 1.5; if (s.contains ("t")) beats *= 2.0 / 3.0;
+    // the text after the denominator's digits, and the words before the fraction
+    juce::String after; { int i = 0; while (i < right.length() && juce::CharacterFunctions::isDigit (right[i])) ++i; after = right.substring (i).trim(); }
+    const auto before = left.trimEnd().dropLastCharacters (juce::String (num).length()).trim();
+    juce::StringArray toks = juce::StringArray::fromTokens (before + " " + after, " ", ""); toks.removeEmptyStrings();
+    bool dotted = false, triplet = false;
+    for (const auto& tk : toks) { if (tk == "d" || tk == "dot" || tk == "dotted" || tk == "." || tk == "d." ) dotted = true; if (tk == "t" || tk == "trip" || tk == "triplet" || tk == "3") triplet = true; }
+    // a modifier letter glued to the denominator stands alone ("8D", "16T", "8D.", "8T "): the next character is not a letter
+    auto lone = [&] (juce::juce_wchar c) { return after.length() >= 1 && after[0] == c && (after.length() == 1 || ! juce::CharacterFunctions::isLetter (after[1])); };
+    if (lone ('d')) dotted = true; if (after.startsWith (".")) dotted = true; if (lone ('t')) triplet = true;
+    if (after == "dt" || after == "td") return {};   // both glued: ambiguous
+    if (dotted && triplet) return {};
+    if (dotted) beats *= 1.5; if (triplet) beats *= 2.0 / 3.0;
     return beats;
 }
 inline double expectedSyncMs (double beats, double bpm) { return 60000.0 / bpm * beats; }
 // THE TAIL WINDOW SCALED TO THE DECAY LABEL (5 Oct evening): at least 1.5 x the label, never under the 6 s default, capped at 30 s
 inline constexpr double kTailDefaultS = 6.0, kTailFold = 1.5, kTailMaxS = 30.0;
 inline double tailForLabel (std::optional<double> labelS) { if (! labelS || *labelS <= 0.0) return kTailDefaultS; return juce::jlimit (kTailDefaultS, kTailMaxS, kTailFold * *labelS); }
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// REVERB_DELAY_PROFILE_SPEC v0.1 (Kathy, 7 Oct 2026, item 5): the roles by measurement, the maps' verdicts, the server's inversions,
+// the acceptance, ej_space_profile/1
+// ---------------------------------------------------------------------------------------------------------------------------
+inline constexpr double kStopDb = 35.0, kMaxTailS = 20.0;           // section 4: the tail runs to 35 dB down or 20 s
+inline constexpr double kSendOnlyDb = -60.0;                        // section 6: no dry at the dry end (relative to the input) -> send_only
+inline const std::vector<std::pair<const char*, double>>& mixSteps() { static const std::vector<std::pair<const char*, double>> k { { "touch", -18.0 }, { "some", -12.0 }, { "lots", -6.0 }, { "drenched", 0.0 } }; return k; }
+inline const std::vector<std::pair<const char*, double>>& lengthTargets() { static const std::vector<std::pair<const char*, double>> k { { "short", 0.5 }, { "medium", 1.3 }, { "long", 2.6 }, { "huge", 5.0 } }; return k; }   // the middle of each band (section 5)
+inline constexpr double kAcceptMixDb = 1.0, kAcceptDecayPct = 15.0, kAcceptTimePct = 2.0, kAcceptTimeMs = 1.0, kAcceptSyncPct = 2.0, kAcceptRepeatDb = 3.0, kRepeatTargetDb = -30.0;
+
+// THE ROLES BY MEASUREMENT (section 3): each role goes to a control whose two ends show its signature; the name's nominee when it shows it,
+// else the STRONGEST control that does (7 Oct, MReverb: the first in index order took "Early/late" for decay at x1.6 over "Length" at x3.9).
+// `scores` maps control index -> role -> strength (0 = the signature does not hold); `exclude` = controls already given another role (the
+// mix control's own onset moves when its dry disappears: never its time).
+struct RolePick { int index = -1; juce::String foundBy, why; };
+inline RolePick pickRole (const juce::String& role, int namedIndex, const std::map<int, std::map<juce::String, double>>& scores, const std::set<int>& exclude = {})
+{
+    RolePick r;
+    auto score = [&] (int idx) { if (! scores.count (idx) || ! scores.at (idx).count (role)) return 0.0; return scores.at (idx).at (role); };
+    if (namedIndex >= 0 && ! exclude.count (namedIndex) && score (namedIndex) > 0.0) { r.index = namedIndex; r.foundBy = "name"; r.why = "the name's nominee shows the " + role + " signature"; return r; }
+    int best = -1; double bestS = 0.0; for (const auto& [idx, m] : scores) { if (idx == namedIndex || exclude.count (idx)) continue; const double sc = score (idx); if (sc > bestS) { bestS = sc; best = idx; } }
+    if (best >= 0) { r.index = best; r.foundBy = "measurement"; r.why = namedIndex >= 0 ? "the name's nominee [" + juce::String (namedIndex) + "] does not show the " + role + " signature; [" + juce::String (best) + "] shows it most strongly" : "no name nominated a " + role + " control; [" + juce::String (best) + "] shows the signature most strongly"; return r; }
+    r.why = namedIndex >= 0 ? "the name's nominee [" + juce::String (namedIndex) + "] does not show the " + role + " signature and no other control does" : "no control shows the " + role + " signature";
+    return r;
+}
+// the strength of a role's signature between two ends (the driver's scores)
+// THE TIME MIDPOINT (7 Oct, SSL X-Delay's "Tap 1 Level"): muting a tap moves the onset to the next tap, so a level control can show the time
+// signature at its ends. A time control puts the onset at its norm-0.5 position STRICTLY BETWEEN its ends (at least kMidFrac of the span from
+// each); a level control's midpoint onset sits at one end (the tap is either there or not). One extra process per time candidate.
+inline constexpr double kMidFrac = 0.05;
+inline bool timeMidpointHolds (double onA, double onB, std::optional<double> onMid)
+{
+    if (! onMid) return false;
+    const double lo = std::min (onA, onB), hi = std::max (onA, onB), span = hi - lo;
+    return span > 0.0 && *onMid > lo + kMidFrac * span && *onMid < hi - kMidFrac * span;
+}
+inline double roleStrength (const juce::String& role, std::optional<double> dryA, std::optional<double> dryB, std::optional<double> wetA, std::optional<double> wetB, std::optional<double> onA, std::optional<double> onB, std::optional<double> rtA, std::optional<double> rtB, std::optional<double> fallA, std::optional<double> fallB,
+                            std::optional<double> firstA = std::nullopt, std::optional<double> firstB = std::nullopt)
+{
+    if (role == "mix" && dryA && dryB && wetA && wetB) return std::abs (*dryB - *dryA) + std::abs (*wetB - *wetA);
+    if (role == "time" && onA && onB) { juce::ignoreUnused (firstA, firstB); return std::abs (*onB - *onA); }
+    if (role == "decay" && rtA && rtB && *rtA > 0.0 && *rtB > 0.0) return std::abs (std::log (*rtB / *rtA));
+    if (role == "feedback" && fallA && fallB) return std::abs (*fallB - *fallA);
+    return 0.0;
+}
+
+// PRE-DELAY RELATIVE TO THE UNIT'S OWN ONSET (section 4): onset(position) minus the onset at the control's 0 setting
+inline std::optional<double> relativeMs (std::optional<double> onsetMs, std::optional<double> ownOnsetMs) { if (! onsetMs || ! ownOnsetMs) return std::nullopt; return *onsetMs - *ownOnsetMs; }
+// a time label is judged only when it reads in ms or s
+inline bool isTimeLabel (const juce::String& display) { const auto s = display.trim().toLowerCase(); if (! s.containsAnyOf ("0123456789")) return false; return s.contains ("ms") || s.endsWith ("s") || s.contains (" s") || s.contains ("sec"); }
+inline bool timeWithin (double measured, double target, double pct, double ms) { return std::abs (measured - target) <= juce::jmax (ms, pct * 0.01 * std::abs (target)); }
+
+// MONOTONIC INVERSION on a measured map (norm, figure): the norm whose figure is the target, linear between neighbours (log for times when
+// `logY`); the map is sorted by figure; outside the span -> none
+struct Inverse { bool ok = false; double norm = 0.0; juce::String why; };
+inline Inverse invertMap (std::vector<std::pair<double, double>> pts, double target, bool logY)
+{
+    Inverse r; pts.erase (std::remove_if (pts.begin(), pts.end(), [&] (const auto& p) { return ! std::isfinite (p.second) || (logY && p.second <= 0.0); }), pts.end());
+    if (pts.size() < 2) { r.why = "fewer than two measured positions"; return r; }
+    std::sort (pts.begin(), pts.end(), [] (const auto& a, const auto& b) { return a.first < b.first; });
+    auto y = [&] (double v) { return logY ? std::log (v) : v; };
+    const double ty = y (target);
+    for (size_t i = 0; i + 1 < pts.size(); ++i)
+    {
+        const double a = y (pts[i].second), b = y (pts[i + 1].second);
+        if ((ty - a) * (ty - b) <= 0.0 && std::abs (b - a) > 1e-12) { const double t = (ty - a) / (b - a); r.ok = true; r.norm = pts[i].first + t * (pts[i + 1].first - pts[i].first); return r; }
+    }
+    double lo = 1e300, hi = -1e300; for (const auto& p : pts) { lo = std::min (lo, p.second); hi = std::max (hi, p.second); }
+    r.why = "the target " + juce::String (target, 3) + " is outside the measured span " + juce::String (lo, 3) + " .. " + juce::String (hi, 3); return r;
+}
+// the mix figure the server inverts: wet relative to dry (dB) per position; a position with no dry (send) or no wet is left out
+inline constexpr double kLevelFloorDbfs = -100.0;   // a dry or wet level under this is the render's floor, not a level the server can invert
+inline std::vector<std::pair<double, double>> wetReDryMap (const std::vector<MixPoint>& pts) { std::vector<std::pair<double, double>> m; for (const auto& p : pts) if (p.dryDb > kLevelFloorDbfs && p.wetDb > kLevelFloorDbfs) m.push_back ({ p.norm, p.wetDb - p.dryDb }); return m; }
+inline bool sendOnly (const std::vector<MixPoint>& pts, double inputDb) { if (pts.empty()) return false; auto v = pts; std::sort (v.begin(), v.end(), [] (const MixPoint& a, const MixPoint& b) { return a.norm < b.norm; }); return v.front().dryDb < inputDb + kSendOnlyDb && v.back().dryDb < inputDb + kSendOnlyDb; }   // no dry at EITHER end: a wet-only unit
+// FEEDBACK for N audible repeats (section 5): the fall per repeat that brings repeat N to kRepeatTargetDb relative to repeat 1
+inline double fallForRepeats (int n) { return kRepeatTargetDb / juce::jmax (1, n - 1); }
+
+// THE MAP VERDICT (section 6)
+inline juce::String mapVerdict (int positionsRead, int positionsAsked, bool anyMoved, bool tailBeyondWindow, bool sendOnlyUnit, bool timeLabels)
+{
+    if (sendOnlyUnit) return "send_only";
+    if (positionsRead == 0) return "unreadable";
+    if (! anyMoved) return "no_effect";
+    if (tailBeyondWindow) return "tail_longer_than_window";
+    if (! timeLabels) return "not_ms_label";
+    juce::ignoreUnused (positionsAsked);
+    return "measured";
+}
+
+// THE DRAFT ej_space_profile/1 (section 7) FROM THE RECORD (the mode and --phaseb-drafts both call it)
+inline juce::var spaceProfile (const juce::var& rec, const juce::var& plugin, const juce::var& measured, const juce::String& status, const juce::String& spec)
+{
+    auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_space_profile/1"); P->setProperty ("spec", spec); P->setProperty ("status", status);
+    const auto kind = rec.getProperty ("kind", "").toString(); P->setProperty ("kind", kind); P->setProperty ("plugin", plugin); P->setProperty ("measured", measured);
+    juce::Array<juce::var> notes; const bool old = ! rec.hasProperty ("space_fields");
+    if (old) notes.add ("drafted from a record without the 7 Oct fields (roles by measurement, broadband decay, relative pre-delay, verdicts, acceptance): the profile is partial");
+    auto block = [&] (const char* key) { return rec.hasProperty (key) ? rec.getProperty (key, {}) : juce::var(); };
+    // mix
+    if (const auto m = block ("mix_law"); m.isObject())
+    {
+        auto* x = new juce::DynamicObject(); x->setProperty ("control", m.getProperty ("control", rec.getProperty ("mix_control", {}).getProperty ("name", juce::var()))); x->setProperty ("found_by", m.getProperty ("found_by", old ? juce::var ("name") : juce::var()));
+        x->setProperty ("law", (bool) m.getProperty ("send_only", false) ? juce::var ("send_only") : m.getProperty ("law", juce::var())); x->setProperty ("worst_db", juce::jmin ((double) m.getProperty ("worst_linear_db", 0.0), (double) m.getProperty ("worst_equal_power_db", 0.0)));
+        juce::Array<juce::var> pts; if (const auto* ps = m.getProperty ("positions", {}).getArray()) for (const auto& p : *ps) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", p.getProperty ("norm", {})); q->setProperty ("display", p.getProperty ("display", "")); q->setProperty ("dry_db", p.getProperty ("dry_db", {})); q->setProperty ("wet_db", p.getProperty ("wet_db", {})); pts.add (juce::var (q)); }
+        x->setProperty ("points", pts); if (m.hasProperty ("verdict")) x->setProperty ("verdict", m.getProperty ("verdict", {})); P->setProperty ("mix", juce::var (x));
+    }
+    else { P->setProperty ("mix", juce::var()); notes.add ("mix: no mix control measured"); }
+    auto timeMap = [&] (const juce::var& m, const char* figure, const char* outName)
+    {
+        auto* x = new juce::DynamicObject(); x->setProperty ("control", m.getProperty ("control", {})); x->setProperty ("found_by", m.getProperty ("found_by", old ? juce::var ("name") : juce::var())); if (m.hasProperty ("verdict")) x->setProperty ("verdict", m.getProperty ("verdict", {}));
+        if (m.hasProperty ("own_onset_ms")) x->setProperty ("own_onset_ms", m.getProperty ("own_onset_ms", {}));
+        juce::Array<juce::var> pts; if (const auto* ps = m.getProperty ("positions", {}).getArray()) for (const auto& p : *ps) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", p.getProperty ("norm", {})); q->setProperty ("display", p.getProperty ("display", "")); q->setProperty (outName, p.getProperty (figure, {})); for (const char* k : { "rt60_1k_s", "rt60_s_bound", "fall_per_repeat_db", "decay_to_minus_60_s" }) if (p.hasProperty (k)) q->setProperty (k, p.getProperty (k, {})); pts.add (juce::var (q)); }
+        x->setProperty ("map", pts); return juce::var (x);
+    };
+    if (kind == "reverb")
+    {
+        if (const auto d = block ("decay"); d.isObject()) P->setProperty ("decay", timeMap (d, d.getProperty ("positions", {})[0].hasProperty ("rt60_s") ? "rt60_s" : "rt60_t20_s", "rt60_s")); else { P->setProperty ("decay", juce::var()); notes.add ("decay: no decay control measured"); }
+        if (const auto t = block ("time"); t.isObject()) P->setProperty ("predelay", timeMap (t, t.getProperty ("positions", {})[0].hasProperty ("relative_ms") ? "relative_ms" : "onset_ms", "relative_ms")); else { P->setProperty ("predelay", juce::var()); notes.add ("predelay: no pre-delay control measured"); }
+        P->setProperty ("time", juce::var()); P->setProperty ("feedback", juce::var()); P->setProperty ("sync", juce::var());
+    }
+    else
+    {
+        if (const auto t = block ("time"); t.isObject()) P->setProperty ("time", timeMap (t, "onset_ms", "time_ms")); else { P->setProperty ("time", juce::var()); notes.add ("time: no delay-time control measured"); }
+        if (const auto f = block ("feedback"); f.isObject()) P->setProperty ("feedback", timeMap (f, "fall_per_repeat_db", "fall_per_repeat_db")); else { P->setProperty ("feedback", juce::var()); notes.add ("feedback: no feedback control measured"); }
+        if (const auto y = block ("tempo_sync"); y.isObject()) P->setProperty ("sync", y); else { P->setProperty ("sync", juce::var()); notes.add ("sync: no sync control (or none found by measurement)"); }
+        P->setProperty ("decay", juce::var()); P->setProperty ("predelay", juce::var());
+    }
+    if (rec.hasProperty ("acceptance")) P->setProperty ("acceptance", rec.getProperty ("acceptance", {}));
+    if (const auto* acc = rec.getProperty ("acceptance", {}).getArray()) for (const auto& a : *acc) if (! (bool) a.getProperty ("pass", false)) notes.add (a.getProperty ("map", "").toString() + " " + a.getProperty ("step", "").toString() + ": " + ((bool) a.getProperty ("ran", false) ? "FAIL - " : "null - ") + a.getProperty ("why", "").toString());
+    if (const auto* rn = rec.getProperty ("role_notes", {}).getArray()) for (const auto& n : *rn) notes.add (n);
+    P->setProperty ("neutral", rec.hasProperty ("neutral") ? rec.getProperty ("neutral", {}) : juce::var (juce::Array<juce::var>()));
+    P->setProperty ("notes", notes);
+    return juce::var (P);
+}
 
 } // namespace ejmap::reverbdelay

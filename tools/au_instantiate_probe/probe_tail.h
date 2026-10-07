@@ -20,9 +20,16 @@
 //   param / set  as the sweep prints them
 //   twin    t_ms <t> seg <burst|tail> in_db <rms dBFS> out_db <rms dBFS, power mean over the main outputs> out_peak_db <dBFS>
 //   tdone   windows <n> nonfinite <n>
+//
+// 7 Oct (REVERB_DELAY_PROFILE_SPEC v0.1 section 4):
+//   signal=pink [seed=n]  the burst is seeded pink noise at the sine's RMS for `db` (decay on broadband; the sine stays the timing signal)
+//   stop_db=<d>           THE ADAPTIVE WINDOW: the tail stops once the last 100 ms of output sit `d` dB under the tail's start (the
+//                         loudest window of the first 50 ms after the burst), at least 200 ms after the burst; else at tail_s (max 60)
+//   tstop  reason <quiet|window> t_ms <t> start_db <d> last100_db <d>
 #pragma once
 
 #include "probe_sweep.h"
+#include "probe_noise.h"
 
 namespace ejprobe
 {
@@ -32,6 +39,7 @@ struct TailSpec
     double dbfs = -12.0, burstMs = 200.0, tailS = 6.0, hz = 997.0, winMs = 1.0, tempo = 0.0;
     std::vector<std::pair<int, float>> sets;
     bool reset = false;
+    bool pink = false; unsigned long long seed = 20261007ULL; double stopDb = 0.0;   // 7 Oct: signal=pink, seed=, stop_db=
 };
 
 inline bool parseTailArgs (int argc, char** argv, int first, TailSpec& s, juce::String& why)
@@ -47,11 +55,15 @@ inline bool parseTailArgs (int argc, char** argv, int first, TailSpec& s, juce::
         else if (k == "win_ms")   s.winMs = v.getDoubleValue();
         else if (k == "tempo")    s.tempo = v.getDoubleValue();
         else if (k == "reset")    s.reset = v.getIntValue() != 0;
+        else if (k == "signal")   { if (v == "pink") s.pink = true; else if (v != "sine") { why = "signal= is sine or pink"; return false; } }
+        else if (k == "seed")     s.seed = (unsigned long long) v.getLargeIntValue();
+        else if (k == "stop_db")  s.stopDb = v.getDoubleValue();
         else if (k == "set")
             for (auto& t : juce::StringArray::fromTokens (v, ",", ""))
                 s.sets.push_back ({ t.upToFirstOccurrenceOf (":", false, false).getIntValue(), (float) t.fromFirstOccurrenceOf (":", false, false).getDoubleValue() });
         else { why = "unknown tail argument '" + a + "'"; return false; }
     }
+    if (s.stopDb < 0.0 || s.stopDb > 90.0) { why = "stop_db out of range"; return false; }
     if (s.burstMs < 1.0 || s.tailS < 0.1 || s.tailS > 60.0 || s.winMs < 0.25 || s.hz < 5.0 || s.dbfs > 0.0) { why = "db, burst_ms, tail_s, win_ms or hz out of range"; return false; }
     if (s.tempo < 0.0 || s.tempo > 400.0) { why = "tempo out of range"; return false; }
     return true;
@@ -72,7 +84,7 @@ struct TailPlayHead : juce::AudioPlayHead
 
 inline void runTail (juce::AudioPluginInstance& p, const TailSpec& s, const RenderSpec& rs = {})
 {
-    std::printf ("tail\tproto\t1\tdb\t%.2f\tburst_ms\t%.2f\ttail_s\t%.3f\thz\t%.3f\twin_ms\t%.2f\ttempo\t%.2f\n", s.dbfs, s.burstMs, s.tailS, s.hz, s.winMs, s.tempo);
+    std::printf ("tail\tproto\t1\tdb\t%.2f\tburst_ms\t%.2f\ttail_s\t%.3f\thz\t%.3f\twin_ms\t%.2f\ttempo\t%.2f\tsignal\t%s\tstop_db\t%.1f\n", s.dbfs, s.burstMs, s.tailS, s.hz, s.winMs, s.tempo, s.pink ? "pink" : "sine", s.stopDb);
     TailPlayHead head; head.sr = rs.sampleRate; head.bpm = s.tempo;
     if (s.tempo > 0.0) p.setPlayHead (&head);   // before prepare: a plugin may read the tempo there
     configureAndPrepare (p, rs);
@@ -105,6 +117,9 @@ inline void runTail (juce::AudioPluginInstance& p, const TailSpec& s, const Rend
     double phase = 0.0; long long t = 0, nonFinite = 0, windows = 0;
     double inSs = 0.0, outSs = 0.0, outPeak = 0.0; long long inWin = 0;
     const int latency = juce::jmax (0, p.getLatencySamples());
+    const std::vector<double> pinkBurst = s.pink ? ejprobe::noise::pink (sr, nBurst, s.seed, amp / std::sqrt (2.0)) : std::vector<double>();
+    // the adaptive stop: the tail's start (loudest window of the first 50 ms after the burst) and a 100 ms running power of the output
+    double startDb = -999.0; std::vector<double> lastPw; bool stopped = false; double stopAtMs = -1.0, last100Db = -999.0;
     auto flush = [&] (long long tEnd)
     {
         const double inDb = inWin > 0 ? 20.0 * std::log10 (std::sqrt (inSs / (double) inWin) + 1e-30) : -999.0;
@@ -113,20 +128,28 @@ inline void runTail (juce::AudioPluginInstance& p, const TailSpec& s, const Rend
         const long long tIn = tMid - latency;
         const char* seg = tIn < nBurst ? "burst" : "tail";
         std::printf ("twin\tt_ms\t%.3f\tseg\t%s\tin_db\t%.3f\tout_db\t%.3f\tout_peak_db\t%.3f\n", 1000.0 * (double) tIn / sr, seg, inDb, outDb, 20.0 * std::log10 (outPeak + 1e-30));
+        if (s.stopDb > 0.0 && tIn >= nBurst)
+        {
+            const double tAfterMs = 1000.0 * (double) (tIn - nBurst) / sr;
+            if (tAfterMs < 50.0) startDb = juce::jmax (startDb, outDb);
+            lastPw.push_back (std::pow (10.0, outDb / 10.0)); const size_t keep = (size_t) juce::jmax (1.0, 100.0 / s.winMs); while (lastPw.size() > keep) lastPw.erase (lastPw.begin());
+            if (tAfterMs >= 200.0 && lastPw.size() == keep && startDb > -500.0)
+            { double m = 0.0; for (double x : lastPw) m += x; last100Db = 10.0 * std::log10 (m / (double) keep + 1e-30); if (last100Db <= startDb - s.stopDb) { stopped = true; stopAtMs = 1000.0 * (double) tIn / sr; } }
+        }
         inSs = outSs = 0.0; outPeak = 0.0; inWin = 0; ++windows;
     };
     std::vector<float> ring ((size_t) latency + (size_t) rs.block + 1, 0.0f); size_t ringPos = 0;
     auto delayed = [&] (size_t writePos) { return ring[(writePos + ring.size() - (size_t) latency) % ring.size()]; };
     // the render runs `latency` samples past the end so the last output answering to the input is seen
     const long long renderTotal = total + latency;
-    while (t < renderTotal)
+    while (t < renderTotal && ! stopped)
     {
         r.io.clear();
         const int n = (int) juce::jmin ((long long) rs.block, renderTotal - t);
         for (int i = 0; i < n; ++i)
         {
             const long long tt = t + i;
-            const float v = tt < nBurst ? (float) (amp * std::sin (phase)) : 0.0f;
+            const float v = tt < nBurst ? (s.pink ? (float) pinkBurst[(size_t) tt] : (float) (amp * std::sin (phase))) : 0.0f;
             phase += step; if (phase > juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
             for (int ch = 0; ch < r.fedIn; ++ch) r.io.setSample (ch, i, v);
         }
@@ -135,7 +158,7 @@ inline void runTail (juce::AudioPluginInstance& p, const TailSpec& s, const Rend
         for (int i = 0; i < n; ++i)
         {
             const long long tt = t + i;
-            const float g = tt < nBurst ? (float) (amp * std::sin (phase - step * (double) (n - i))) : 0.0f;
+            const float g = tt < nBurst ? (s.pink ? (float) pinkBurst[(size_t) tt] : (float) (amp * std::sin (phase - step * (double) (n - i)))) : 0.0f;
             ring[ringPos % ring.size()] = g; const float gIn = delayed (ringPos); ++ringPos;
             if (tt < latency) continue;   // output before the first aligned input sample: not a window
             inSs += (double) gIn * gIn;
@@ -145,7 +168,8 @@ inline void runTail (juce::AudioPluginInstance& p, const TailSpec& s, const Rend
         }
         t += n;
     }
-    if (inWin > 0) flush (renderTotal);
+    if (inWin > 0 && ! stopped) flush (renderTotal);
+    if (s.stopDb > 0.0) std::printf ("tstop\treason\t%s\tt_ms\t%.1f\tstart_db\t%.2f\tlast100_db\t%.2f\n", stopped ? "quiet" : "window", stopped ? stopAtMs : 1000.0 * (double) (renderTotal - latency) / sr, startDb, last100Db);
     std::printf ("tdone\twindows\t%lld\tnonfinite\t%lld\n", windows, nonFinite);
     if (s.tempo > 0.0) p.setPlayHead (nullptr);
     stage ("done");

@@ -8149,6 +8149,74 @@ void testReverbDelay()
            "rd L2: note values to beats (dotted x1.5, triplet x2/3)");
     check (tailForLabel (std::nullopt) == 6.0 && tailForLabel (2.0) == 6.0 && std::abs (tailForLabel (8.0) - 12.0) < 1e-9 && tailForLabel (40.0) == 30.0, "rd L4: the tail is 1.5 x the decay label, 6 s at least, 30 s at most (Valhalla at 8 s gets 12 s)");
     check (std::abs (expectedSyncMs (1.0, 120.0) - 500.0) < 1e-9 && std::abs (expectedSyncMs (1.0, 90.0) - 666.667) < 0.01 && std::abs (expectedSyncMs (0.5, 140.0) - 214.286) < 0.01, "rd L3: a quarter at 120 = 500 ms, at 90 = 666.7 ms; an eighth at 140 = 214.3 ms");
+    // REVERB_DELAY_PROFILE_SPEC v0.1 (7 Oct, item 5)
+    {
+        using namespace ejmap::reverbdelay;
+        // RD1: note values - dotted and triplet as TOKENS, never any 'd' / 't' in the text
+        auto nb = [] (const char* s) { const auto v = noteBeats (s); return v ? *v : -1.0; };
+        check (nb ("1/4") == 1.0 && nb ("1/8D") == 0.75 && nb ("1/8 D") == 0.75 && nb ("1/8 dotted") == 0.75 && nb ("Dotted 1/8") == 0.75 && nb ("1/4.") == 1.5 && std::abs (nb ("1/16T") - 1.0 / 6.0) < 1e-9 && std::abs (nb ("1/8 triplet") - 1.0 / 3.0) < 1e-9 && std::abs (nb ("1/8 trip") - 1.0 / 3.0) < 1e-9 && nb ("1 bar") == 4.0 && nb ("2 bars") == 8.0,
+               "rd RD1: 1/4, 1/8D / D / dotted / Dotted 1/8, 1/4., 1/16T, 1/8 triplet / trip, bars");
+        check (nb ("1-8") == 0.5 && nb ("1-8D") == 0.75 && std::abs (nb ("1-16T") - 1.0 / 6.0) < 1e-9 && ! noteBeats ("-12 dB") && ! noteBeats ("Low-Cut"), "rd RD1c: the dash form (SSL X-Delay '1-8') reads as a note value; '-12 dB' and 'Low-Cut' do not");
+        check (timeMidpointHolds (2.5, 402.5, 201.0) && timeMidpointHolds (14.5, 2475.5, 400.0) && ! timeMidpointHolds (374.5, 126.5, 126.5) && ! timeMidpointHolds (374.5, 126.5, 374.0) && ! timeMidpointHolds (10.0, 50.0, std::nullopt),
+               "rd RD2c: a time control's midpoint onset sits between its ends (FlexVerb's Pre Delay, bx_delay2500's Time L); a tap's level control sits at one end (SSL X-Delay's Tap 1 Level): not a time control");
+        { Tail tw; tw.ok = true; tw.burstMs = 200.0; for (int k = 0; k < 220; ++k) { Window w; w.tMs = k + 0.5; w.burst = k < 200; w.inDb = w.burst ? -15.0 : -999.0; w.outDb = k < 200 ? -600.0 : -14.9; tw.windows.push_back (w); }
+          const auto lv = levelsOf (tw); check (lv.ok && lv.dryDb == kSilentLevelDb && std::abs (lv.wetDb + 14.9) < 1e-9, "rd RD2d: a silent dry (100 % wet, MReverb) is a level of -150 dB, not an unreadable end"); }
+        check (nb ("1/8 Delay") == 0.5 && nb ("1/2 Note") == 2.0 && ! noteBeats ("1/8DT") && ! noteBeats ("Off"), "rd RD1b: a word after the fraction that merely contains d or t ('Delay', 'Note') is NOT dotted / triplet (the 5 Oct misreading); 1/8DT is ambiguous: refused");
+        // RD2: the role picked by measurement
+        std::map<int, std::map<juce::String, double>> h { { 0, { { "mix", 300.0 }, { "time", 14.0 } } }, { 1, { { "decay", 0.48 }, { "time", 47.0 } } }, { 2, { { "time", 13.0 } } }, { 3, { { "decay", 1.35 } } } };
+        const auto a = pickRole ("mix", 0, h), b = pickRole ("decay", 2, h), c = pickRole ("feedback", -1, h), d = pickRole ("time", 8, h, { 0 }), e = pickRole ("decay", 1, h);
+        check (a.index == 0 && a.foundBy == "name" && b.index == 3 && b.foundBy == "measurement" && b.why.contains ("most strongly") && c.index == -1 && c.why.contains ("no control shows") && d.index == 1 && e.index == 1 && e.foundBy == "name",
+               "rd RD2 (MReverb's shape): the name's nominee kept when it shows the signature (Dry/wet, Early/late named); else the STRONGEST (Length x3.9 over Early/late x1.6); the mix control excluded from time; none -> said");
+        check (std::abs (roleStrength ("decay", {}, {}, {}, {}, {}, {}, 0.46, 1.76, {}, {}) - std::log (1.76 / 0.46)) < 1e-9 && roleStrength ("mix", -1.0, -150.0, -150.0, -15.0, {}, {}, {}, {}, {}, {}) == 284.0 && roleStrength ("time", {}, {}, {}, {}, std::nullopt, 5.0, {}, {}, {}, {}) == 0.0, "rd RD2b: the strengths (log RT60 ratio; dry + wet moves with silence at -150; an absent onset scores 0)");
+        // RD3: pre-delay relative to the unit's own onset; time labels; within
+        check (relativeMs (68.0, 18.0) && *relativeMs (68.0, 18.0) == 50.0 && ! relativeMs (std::nullopt, 18.0), "rd RD3: onset 68 ms against the unit's own 18 ms = 50 ms relative");
+        check (isTimeLabel ("120 ms") && isTimeLabel ("1.5 s") && isTimeLabel ("2.30s") && ! isTimeLabel ("35 %") && ! isTimeLabel ("1/8") && ! isTimeLabel ("Large"), "rd RD3b: only ms / s labels are judged");
+        check (timeWithin (101.5, 100.0, 2.0, 1.0) && ! timeWithin (103.0, 100.0, 2.0, 1.0) && timeWithin (10.9, 10.0, 2.0, 1.0), "rd RD3c: within 2 % or 1 ms");
+        // RD4: the inversions
+        const auto inv = invertMap ({ { 0.0, -40.0 }, { 0.5, -12.0 }, { 1.0, 0.0 } }, -18.0, false);
+        check (inv.ok && std::abs (inv.norm - 0.3929) < 1e-3, "rd RD4a: wet re dry -18 dB on a -40 / -12 / 0 map -> norm 0.393");
+        const auto invL = invertMap ({ { 0.0, 0.3 }, { 0.5, 1.2 }, { 1.0, 4.8 } }, 2.4, true);
+        check (invL.ok && std::abs (invL.norm - 0.75) < 1e-6, "rd RD4b: RT60 2.4 s between 1.2 and 4.8 s is the log-midpoint (norm 0.75)");
+        check (! invertMap ({ { 0.0, 0.3 }, { 1.0, 1.2 } }, 5.0, true).ok && invertMap ({ { 0.0, 0.3 }, { 1.0, 1.2 } }, 5.0, true).why.contains ("outside"), "rd RD4c: a target outside the span is null, said");
+        std::vector<MixPoint> mp; for (int k = 0; k <= 10; ++k) { MixPoint p; p.norm = k / 10.0f; p.dryDb = -12.0 + 20.0 * std::log10 (std::max (1e-6, 1.0 - k / 10.0)); p.wetDb = -15.0 + 20.0 * std::log10 (std::max (1e-6, k / 10.0)); mp.push_back (p); }
+        check (wetReDryMap (mp).size() == 9 && ! sendOnly (mp, -15.0), "rd RD4d: the wet-re-dry map leaves out the ends with no dry or no wet; a unit with dry is not send_only");
+        std::vector<MixPoint> so = mp; for (auto& p : so) p.dryDb = -120.0; check (sendOnly (so, -15.0), "rd RD4e: no dry at either end -> send_only");
+        check (fallForRepeats (3) == -15.0 && fallForRepeats (5) == -7.5, "rd RD4f: the 3rd repeat at -30 dB re the 1st needs -15 dB per repeat; the 5th -7.5");
+        // RD5: the verdicts
+        check (mapVerdict (7, 7, true, false, false, true) == "measured" && mapVerdict (7, 7, true, false, true, true) == "send_only" && mapVerdict (0, 7, false, false, false, true) == "unreadable" && mapVerdict (7, 7, false, false, false, true) == "no_effect" && mapVerdict (7, 7, true, true, false, true) == "tail_longer_than_window" && mapVerdict (7, 7, true, false, false, false) == "not_ms_label",
+               "rd RD5: the six verdicts");
+        // RD6: the tail's stop line
+        const auto t = parseTail ("tail\tproto\t1\tdb\t-12\tburst_ms\t200\ttail_s\t20\thz\t997\twin_ms\t1\ttempo\t0\tsignal\tpink\tstop_db\t35\ntstop\treason\tquiet\tt_ms\t3120.0\tstart_db\t-20.1\tlast100_db\t-55.2\n");
+        check (t.ok && t.stopReason == "quiet" && std::abs (t.stopMs - 3120.0) < 1e-9, "rd RD6: the tstop line parses (quiet at 3120 ms)");
+        // RD7: ej_space_profile/1 from a reverb record and a delay record
+        auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+        juce::Array<juce::var> mixPos { mk ({ { "norm", 0.2 }, { "display", "20 %" }, { "dry_db", -1.9 }, { "wet_db", -17.5 } }) }, decPos { mk ({ { "norm", 0.5 }, { "display", "2.0 s" }, { "rt60_s", 2.06 }, { "rt60_1k_s", 2.21 } }) }, prePos { mk ({ { "norm", 0.25 }, { "display", "50 ms" }, { "onset_ms", 68.2 }, { "relative_ms", 50.2 } }) };
+        juce::Array<juce::var> acc { mk ({ { "map", "decay" }, { "step", "huge" }, { "ran", false }, { "pass", false }, { "why", "null: outside" } }) };
+        const auto mixB = mk ({ { "control", "Mix" }, { "found_by", "measurement" }, { "law", "other" }, { "worst_linear_db", 9.4 }, { "worst_equal_power_db", 11.0 }, { "positions", mixPos } });
+        const auto decB = mk ({ { "control", "Decay" }, { "found_by", "name" }, { "positions", decPos } }), preB = mk ({ { "control", "Pre-Delay" }, { "found_by", "name" }, { "own_onset_ms", 18.0 }, { "positions", prePos } });
+        const auto rec = mk ({ { "kind", "reverb" }, { "space_fields", "x" }, { "mix_law", mixB }, { "decay", decB }, { "time", preB }, { "acceptance", acc } });
+        const auto P = spaceProfile (rec, juce::var(), juce::var(), "DRAFT", ejmap::drafts::specTag ("REVERB_DELAY_PROFILE_SPEC"));
+        check (P.getProperty ("schema", "") == "ej_space_profile/1" && P.getProperty ("kind", "") == "reverb" && P.getProperty ("mix", {}).getProperty ("found_by", "") == "measurement" && (double) P.getProperty ("mix", {}).getProperty ("worst_db", 0.0) == 9.4
+               && (double) P.getProperty ("decay", {}).getProperty ("map", {})[0].getProperty ("rt60_s", 0.0) == 2.06 && (double) P.getProperty ("decay", {}).getProperty ("map", {})[0].getProperty ("rt60_1k_s", 0.0) == 2.21
+               && (double) P.getProperty ("predelay", {}).getProperty ("own_onset_ms", 0.0) == 18.0 && (double) P.getProperty ("predelay", {}).getProperty ("map", {})[0].getProperty ("relative_ms", 0.0) == 50.2 && P.getProperty ("time", {}).isVoid() && P.getProperty ("feedback", {}).isVoid(),
+               "rd RD7a: the reverb profile - mix with its law and worst, decay with broadband and 1 kHz RT60, pre-delay relative with the unit's own onset; time / feedback / sync null");
+        check (P.getProperty ("notes", {}).size() == 1 && P.getProperty ("notes", {})[0].toString().contains ("decay huge: null"), "rd RD7b: a null acceptance step is a note");
+        const auto delRec = mk ({ { "kind", "delay" }, { "space_fields", "x" } });
+        const auto Q = spaceProfile (delRec, juce::var(), juce::var(), "DRAFT", "x v0.1 PROPOSAL");
+        check (Q.getProperty ("decay", {}).isVoid() && Q.getProperty ("time", {}).isVoid() && Q.getProperty ("notes", {}).size() == 4, "rd RD7c: a delay with nothing measured: every block null with a note (mix, time, feedback, sync)");
+        const auto oldRec = mk ({ { "kind", "reverb" }, { "decay", mk ({ { "control", "Decay" }, { "positions", juce::Array<juce::var> { mk ({ { "norm", 0.0 }, { "display", "1 s" }, { "rt60_t20_s", 0.9 } }) } } }) } });
+        const auto R = spaceProfile (oldRec, juce::var(), juce::var(), "DRAFT", "x v0.1 PROPOSAL");
+        check (R.getProperty ("notes", {})[0].toString().contains ("without the 7 Oct fields") && (double) R.getProperty ("decay", {}).getProperty ("map", {})[0].getProperty ("rt60_s", 0.0) == 0.9, "rd RD7d: a 5 Oct record drafts with its T20 as rt60_s and the partial note");
+    }
+    // PINK (probe_noise.h, 7 Oct): -3 dB/oct within 1.5 dB over four octaves, at the asked RMS, deterministic
+    {
+        using namespace ejprobe::noise; const double sr = 48000.0;
+        const auto v = pink (sr, 240000, 7ULL, 0.1), w = pink (sr, 240000, 7ULL, 0.1);
+        double ss = 0.0; for (double x : v) ss += x * x;
+        auto band = [&] (double hz) { double s2 = 0.0; for (int k = 0; k < 40; ++k) s2 += std::pow (10.0, powerDbAt (v, sr, hz * (1.0 + 0.002 * k)) / 10.0); return 10.0 * std::log10 (s2 / 40.0); };
+        const double slope = (band (3200.0) - band (200.0)) / 4.0;
+        check (v == w && std::abs (std::sqrt (ss / v.size()) - 0.1) < 1e-9 && std::abs (slope + 3.0) < 1.5, "rd PK1: pink is deterministic, at the asked RMS, " + juce::String (slope, 2) + " dB/oct from 200 Hz to 3.2 kHz");
+    }
 }
 
 /** TRANSIENT SHAPERS AND GATES (EjmapDynamics.h, roadmap 2.8 PROTOTYPE, 5 Oct R5): synthetic hits, a ramp through a gate, a burst through a gate. */

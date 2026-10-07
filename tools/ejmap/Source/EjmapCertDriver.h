@@ -4779,183 +4779,266 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
             else if (feedback.index < 0 && kind == "delay" && ! k.word && answers (n, { "feedback", "regen", "regeneration", "repeats", "fb" })) feedback = k;
         }
     auto named = [] (const Ctl& c) { return c.index < 0 ? juce::String ("-") : "[" + juce::String (c.index) + "] " + c.name; };
-    say ("RD: " + opt.product + " " + desc.version + " (" + kind + "): mix " + named (mix) + "; " + (kind == "delay" ? "time " + named (timeCtl) + "; feedback " + named (feedback) + "; sync " + named (sync) + (sync.index >= 0 ? " (off = '" + sync.offText + "' @" + juce::String (sync.offNorm, 2) + ", on = '" + sync.onText + "' @" + juce::String (sync.onNorm, 2) + ")" : juce::String()) + "; note " + named (note) : "pre-delay " + named (timeCtl) + "; decay " + named (decayCtl)));
-    if (mix.index < 0 && timeCtl.index < 0 && decayCtl.index < 0 && feedback.index < 0) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  controls: " + names.joinIntoString (", ")); return 4; }
+    say ("RD: " + opt.product + " " + desc.version + " (" + kind + "), names propose: mix " + named (mix) + "; " + (kind == "delay" ? "time " + named (timeCtl) + "; feedback " + named (feedback) + "; sync " + named (sync) + "; note " + named (note) : "pre-delay " + named (timeCtl) + "; decay " + named (decayCtl)));
     const juce::String burstMs = kind == "delay" ? "50" : "200";
-    // THE WINDOW SCALED TO THE DECAY LABEL (5 Oct evening, item 2): a decay run's tail is at least 1.5 x the label in seconds
-    // (6 s at least, 30 s at most); the label is read from the fixture's display nearest the norm before the write
-    auto tailFor = [&] (double labelS) { return tailForLabel (labelS); };
-    auto tailArgs = [&] (const juce::StringArray& sets, double tempo = 0.0, double tailS = 6.0) { juce::StringArray a { "--tail", "db=-12", "burst_ms=" + burstMs, "tail_s=" + juce::String (tailS, 1), "hz=997", "win_ms=1" }; if (tempo > 0.0) a.add ("tempo=" + juce::String (tempo, 0)); if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (",")); return a; };
+    // the tail: 997 Hz (timing, mix, feedback) or pink (decay); adaptive to 35 dB down or the cap (spec section 4: 20 s)
+    auto tailArgs = [&] (const juce::StringArray& sets, double tempo = 0.0, double tailS = 6.0, bool pink = false, bool adaptive = false)
+    { juce::StringArray a { "--tail", "db=-12", "burst_ms=" + burstMs, "tail_s=" + juce::String (tailS, 1), "hz=997", "win_ms=1" }; if (pink) a.add ("signal=pink"); if (adaptive) a.add ("stop_db=" + juce::String (kStopDb, 0)); if (tempo > 0.0) a.add ("tempo=" + juce::String (tempo, 0)); if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (",")); return a; };
     auto setOf = [] (int idx, double norm) { return juce::String (idx) + ":" + juce::String (norm, 6); };
     auto* o = new juce::DynamicObject();
-    o->setProperty ("schema", "ej_reverb_delay_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.7, not exported, not published");
+    o->setProperty ("schema", "ej_reverb_delay_prototype/1"); o->setProperty ("status", "PROTOTYPE - roadmap 2.7 against REVERB_DELAY_PROFILE_SPEC v0.1, not exported, not published"); o->setProperty ("space_fields", "7 Oct: roles by measurement, pink decay, adaptive tail, relative pre-delay, sync per note, verdicts, acceptance");
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version); o->setProperty ("kind", kind);
+    int measured = 0; juce::Array<juce::var> roleNotes;
+    auto readTail = [&] (const juce::String& tag, const juce::StringArray& args, bool& window) -> Tail { const auto r = run (tag, args); if (r.kind == ChildResult::Kind::uiShown) window = true; return parseTail (r.cleanExit() ? r.out : juce::String()); };
+    bool windowSeen = false;
+    // 1. THE ROLES BY MEASUREMENT (section 3): every numeric control at its two ends (the name's mix at wet for the others; sync off), each pair
+    //    read for every signature at once; each role to the name's nominee if it shows it, else the first control that does
+    juce::StringArray wetSets; if (mix.index >= 0) wetSets.add (setOf (mix.index, 1.0)); if (sync.index >= 0) wetSets.add (setOf (sync.index, sync.offNorm));
+    std::map<int, std::map<juce::String, double>> holds; std::map<int, juce::String> nameOf; std::vector<roleevidence::RoleVerdict> roles;
+    {
+        int probed = 0;
+        if (const auto* cs = base.getProperty ("controls", {}).getArray())
+            for (const auto& c : *cs)
+            {
+                const int idx = (int) c.getProperty ("index", -1); const auto n = c.getProperty ("name", "").toString();
+                if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (n) || idx == sync.index || idx == note.index) continue;
+                if (! fx.sampled.empty() && fx.sampled.count (idx) == 0 && idx != mix.index && idx != timeCtl.index && idx != decayCtl.index && idx != feedback.index) continue;
+                if (++probed > kUnnamedCap) break;
+                roleevidence::Figure fa, fb;
+                for (double nn : { 0.0, 1.0 })
+                {
+                    juce::StringArray sets; if (idx != mix.index) sets = wetSets; else if (sync.index >= 0) sets.add (setOf (sync.index, sync.offNorm));
+                    sets.add (setOf (idx, nn));
+                    const auto t = readTail ("r" + juce::String (idx) + ".n" + juce::String (nn, 0), tailArgs (sets, 0.0, kMaxTailS, false, true), windowSeen);
+                    if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+                    if (! t.ok) continue;
+                    auto& f = nn < 0.5 ? fa : fb; f.ok = true;
+                    const auto lv = levelsOf (t); if (lv.ok) { f.dryDb = juce::jmax (-150.0, lv.dryDb); f.wetDb = juce::jmax (-150.0, lv.wetDb); }   // silence is a level (-150), not an absent reading: a mix end that is all dry or all wet still shows the signature
+                    const auto on = onsetsOf (t); f.onsetMs = on.onsetMs; f.repeats = (int) on.repeats.size(); f.fallPerRepeatDb = on.fallPerRepeatDb; if (! on.repeats.empty()) f.firstRepeatDb = on.repeats.front().levelDb;
+                    const auto dc = decayOf (t); if (dc.ok) f.rt60s = dc.t20RT60s;
+                }
+                nameOf[idx] = n;
+                for (const char* role : { "mix", "time", "decay", "feedback" })
+                {
+                    const auto h = roleevidence::signatureHolds (role, fa, fb);
+                    double sc = roleStrength (role, fa.dryDb, fb.dryDb, fa.wetDb, fb.wetDb, fa.onsetMs, fb.onsetMs, fa.rt60s, fb.rt60s, fa.fallPerRepeatDb, fb.fallPerRepeatDb);
+                    bool holdsHere = h.holds;
+                    if (holdsHere && juce::String (role) == "time" && idx != mix.index)
+                    {   // the midpoint: a time control's onset at norm 0.5 sits strictly between its ends (a tap's level jumps)
+                        juce::StringArray sets = wetSets; sets.add (setOf (idx, 0.5));
+                        const auto tm = readTail ("r" + juce::String (idx) + ".mid", tailArgs (sets, 0.0, kMaxTailS, false, true), windowSeen);
+                        if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+                        const auto onm = tm.ok ? onsetsOf (tm).onsetMs : std::nullopt;
+                        if (! timeMidpointHolds (*fa.onsetMs, *fb.onsetMs, onm)) { holdsHere = false; say ("  [" + juce::String (idx) + "] " + n + ": the onset moves " + juce::String (*fa.onsetMs, 1) + " -> " + juce::String (*fb.onsetMs, 1) + " ms but sits at " + (onm ? juce::String (*onm, 1) : juce::String ("none")) + " ms at norm 0.5: not a time control (a tap's level, a switch)"); }
+                    }
+                    holds[idx][role] = holdsHere && (sc > 0.0 || juce::String (role) != "time") ? juce::jmax (1e-6, sc) : 0.0;
+                    if (holdsHere) roles.push_back (roleevidence::unnamed (idx, n, role, h));
+                }
+            }
+        say ("RD: roles by measurement: " + juce::String ((int) holds.size()) + " control(s) probed at their ends");
+    }
+    auto ctlFrom = [&] (const RolePick& p) { Ctl k; if (p.index < 0) return k; k.index = p.index; k.name = nameOf[p.index]; return k; };
+    // a control that is a TIME control (its onset moves smoothly, midpoint included) is never the mix: at time 0 a delay's echo lands inside the
+    // dry window and reads as dry (bx_delay2500's Time L, 7 Oct)
+    std::set<int> timeLike; for (const auto& [i, m] : holds) if (m.count ("time") && m.at ("time") > 0.0) timeLike.insert (i);
+    const auto pMix = pickRole ("mix", mix.index, holds, timeLike); std::set<int> taken; if (pMix.index >= 0) taken.insert (pMix.index);
+    const auto pTime = pickRole ("time", timeCtl.index, holds, taken); if (pTime.index >= 0 && kind == "delay") taken.insert (pTime.index);
+    const auto pDecay = kind == "reverb" ? pickRole ("decay", decayCtl.index, holds, taken) : RolePick(), pFb = kind == "delay" ? pickRole ("feedback", feedback.index, holds, taken) : RolePick();
+    for (const auto& [role, pk] : std::vector<std::pair<juce::String, RolePick>> { { "mix", pMix }, { kind == "delay" ? "time" : "pre-delay", pTime }, { kind == "reverb" ? "decay" : "feedback", kind == "reverb" ? pDecay : pFb } })
+    { say ("  " + role + ": " + (pk.index >= 0 ? "[" + juce::String (pk.index) + "] " + nameOf[pk.index] + " (" + pk.foundBy + ")" : juce::String ("none")) + " - " + pk.why); roleNotes.add (role + ": " + pk.why); }
+    if (pMix.index >= 0) mix = ctlFrom (pMix); else mix = Ctl();
+    timeCtl = pTime.index >= 0 ? ctlFrom (pTime) : Ctl(); decayCtl = pDecay.index >= 0 ? ctlFrom (pDecay) : Ctl(); feedback = pFb.index >= 0 ? ctlFrom (pFb) : Ctl();
     auto ctlVar = [] (const Ctl& c) { if (c.index < 0) return juce::var(); auto* x = new juce::DynamicObject(); x->setProperty ("index", c.index); x->setProperty ("name", c.name); return juce::var (x); };
     o->setProperty ("mix_control", ctlVar (mix)); o->setProperty ("time_control", ctlVar (timeCtl)); o->setProperty ("decay_control", ctlVar (decayCtl)); o->setProperty ("feedback_control", ctlVar (feedback)); o->setProperty ("sync_control", ctlVar (sync)); o->setProperty ("note_control", ctlVar (note));
-    int measured = 0;
-    std::vector<roleevidence::RoleVerdict> roles; roleevidence::Figure mixA, mixB, timeA, timeB, decayA, decayB, fbA, fbB;   // the nominees' ends
-    // the wet-only preconditions: mix at 1 (a delay's dry would otherwise hide the first repeat inside the burst)
-    juce::StringArray wetOnly; if (mix.index >= 0) wetOnly.add (setOf (mix.index, 1.0));
-    if (sync.index >= 0) wetOnly.add (setOf (sync.index, sync.offNorm));   // the time control's own units for the baseline and the mix law
-    // 1. THE WET-ONLY BASELINE: onset (pre-delay / delay time at the instantiate position), decay, repeats
-    std::optional<double> baseOnsetMs;
+    if (mix.index < 0 && timeCtl.index < 0 && decayCtl.index < 0 && feedback.index < 0)
+    { o->setProperty ("role_notes", roleNotes); o->setProperty ("measuredAt", nowStamp()); const juce::var rec0 (o); outDir.getChildFile (stem + ".reverbdelay.json").replaceWithText (juce::JSON::toString (rec0) + "\n", false, false, "\n"); say ("RD: nothing moves the measure: no control shows a mix, time, decay or feedback signature"); return 4; }
+    juce::StringArray wetOnly; if (mix.index >= 0) wetOnly.add (setOf (mix.index, 1.0)); if (sync.index >= 0) wetOnly.add (setOf (sync.index, sync.offNorm));
+    auto sevenNorms = [&] (const Ctl& c) { std::vector<double> v; const auto ctl = sweep::findControl (base, c.index); const int st = (int) ctl.getProperty ("numSteps", 0); if (sweep::isSteppedControl (ctl) && st > 2 && st <= 24) for (int k = 0; k < st; ++k) v.push_back ((double) k / (st - 1)); else for (int k = 0; k <= 6; ++k) v.push_back (k / 6.0); return v; };
+    auto textOf = [] (const Tail& t, int idx) { return t.setTexts.count (idx) ? t.setTexts.at (idx) : juce::String(); };
+    // 2. THE MIX MAP (11 norms): dry in the burst's first 2 ms, wet just after it (reverb) or at the first repeat (delay); the law; send_only
+    std::vector<MixPoint> mixPts; double inputDb = -999.0; std::optional<double> baseOnsetMs;
     {
-        const auto r = run ("wet", tailArgs (wetOnly));
-        if (r.kind == ChildResult::Kind::uiShown) { say ("RD: a window appeared; stopping"); return 5; }
-        const auto t = parseTail (r.cleanExit() ? r.out : juce::String());
-        if (! t.ok) say ("  wet-only baseline: " + (t.refused.isNotEmpty() ? "refused " + t.refused : r.describe()));
-        else
-        {
-            ++measured;
-            const auto on = onsetsOf (t); const auto dc = decayOf (t); baseOnsetMs = on.onsetMs;
-            say ("  wet-only (mix " + (mix.index >= 0 ? juce::String ("1.0") : juce::String ("as instantiated")) + "): onset " + (on.onsetMs ? juce::String (*on.onsetMs, 1) + " ms" : juce::String ("none above the floor")) + "; " + on.why
-                 + (on.spacingMs ? "; repeats every " + juce::String (*on.spacingMs, 1) + " ms falling " + juce::String (*on.fallPerRepeatDb, 2) + " dB each" : juce::String())
-                 + "; decay " + (dc.ok ? "RT60 " + juce::String (dc.t20RT60s, 2) + " s (T20)" + (dc.t30 ? ", " + juce::String (dc.t30RT60s, 2) + " s (T30)" : juce::String ("")) : dc.why) + "; floor " + juce::String (on.floorDb, 1) + " dB");
-            auto* b = new juce::DynamicObject(); b->setProperty ("onset_ms", on.onsetMs ? juce::var (*on.onsetMs) : juce::var()); b->setProperty ("repeats", (int) on.repeats.size()); b->setProperty ("repeat_spacing_ms", on.spacingMs ? juce::var (*on.spacingMs) : juce::var()); b->setProperty ("fall_per_repeat_db", on.fallPerRepeatDb ? juce::var (*on.fallPerRepeatDb) : juce::var());
-            b->setProperty ("rt60_t20_s", dc.ok ? juce::var (dc.t20RT60s) : juce::var()); b->setProperty ("rt60_t30_s", dc.t30 ? juce::var (dc.t30RT60s) : juce::var()); b->setProperty ("decay_note", dc.why); b->setProperty ("floor_db", on.floorDb);
-            o->setProperty ("wet_only_baseline", juce::var (b));
-        }
+        const auto t = readTail ("wet", tailArgs (wetOnly), windowSeen); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+        if (t.ok) { const auto on = onsetsOf (t); baseOnsetMs = on.onsetMs; inputDb = levelsOf (t).inDb; }
     }
-    // 2. THE MIX LAW: eleven mix positions; dry in the burst's first 2 ms, wet at the first repeat (delay: the baseline's onset) or just after the burst (reverb)
     if (mix.index >= 0)
     {
-        std::vector<MixPoint> pts; juce::Array<juce::var> rows;
+        juce::Array<juce::var> rows;
         for (int k = 0; k <= 10; ++k)
         {
-            const double norm = k / 10.0;
-            const auto r = run ("mix" + juce::String (k), tailArgs ({ setOf (mix.index, norm) }));
-            if (r.kind == ChildResult::Kind::uiShown) { say ("RD: a window appeared; stopping"); return 5; }
-            const auto t = parseTail (r.cleanExit() ? r.out : juce::String()); if (! t.ok) { say ("  mix " + juce::String (norm, 1) + ": " + (t.refused.isNotEmpty() ? "refused " + t.refused : r.describe())); continue; }
-            auto L = levelsOf (t);
-            if (kind == "delay" && baseOnsetMs && *baseOnsetMs > t.burstMs)
-            {   // the first repeat's head, where the dry has already stopped
-                std::vector<double> wet; for (const auto& w : t.windows) if (w.tMs >= *baseOnsetMs && w.tMs < *baseOnsetMs + kWetWindowMs && w.outDb > -500.0) wet.push_back (w.outDb);
-                L.wetDb = powerMeanDb (wet);
-            }
-            MixPoint p; p.norm = (float) norm; p.text = t.setTexts.count (mix.index) ? t.setTexts.at (mix.index) : juce::String(); p.dryDb = L.dryDb; p.wetDb = L.wetDb; pts.push_back (p); ++measured;
-            auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", p.text); ro->setProperty ("dry_db", L.dryDb > -500.0 ? juce::var (std::round (L.dryDb * 100.0) / 100.0) : juce::var()); ro->setProperty ("wet_db", L.wetDb > -500.0 ? juce::var (std::round (L.wetDb * 100.0) / 100.0) : juce::var()); rows.add (juce::var (ro));
+            const double norm = k / 10.0; juce::StringArray sets; if (sync.index >= 0) sets.add (setOf (sync.index, sync.offNorm)); sets.add (setOf (mix.index, norm));
+            const auto t = readTail ("mix" + juce::String (k), tailArgs (sets), windowSeen); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+            if (! t.ok) continue;
+            auto L = levelsOf (t); if (inputDb < -500.0) inputDb = L.inDb;
+            if (kind == "delay" && baseOnsetMs && *baseOnsetMs > t.burstMs) { std::vector<double> wet; for (const auto& w : t.windows) if (w.tMs >= *baseOnsetMs && w.tMs < *baseOnsetMs + kWetWindowMs && w.outDb > -500.0) wet.push_back (w.outDb); L.wetDb = powerMeanDb (wet); }
+            MixPoint p; p.norm = (float) norm; p.text = textOf (t, mix.index); p.dryDb = L.dryDb; p.wetDb = L.wetDb; mixPts.push_back (p); ++measured;
+            auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", p.text); ro->setProperty ("dry_db", L.dryDb > -500.0 ? juce::var (std::round ((L.dryDb - L.inDb) * 100.0) / 100.0) : juce::var()); ro->setProperty ("wet_db", L.wetDb > -500.0 ? juce::var (std::round ((L.wetDb - L.inDb) * 100.0) / 100.0) : juce::var()); rows.add (juce::var (ro));
         }
-        if (! pts.empty()) { auto fig = [] (const MixPoint& p) { roleevidence::Figure f; f.ok = true; if (p.dryDb > -500.0) f.dryDb = p.dryDb; if (p.wetDb > -500.0) f.wetDb = p.wetDb; return f; }; std::vector<MixPoint> sorted = pts; std::sort (sorted.begin(), sorted.end(), [] (const MixPoint& a, const MixPoint& b) { return a.norm < b.norm; }); mixA = fig (sorted.front()); mixB = fig (sorted.back()); }
-        const auto law = mixLaw (pts);
-        say ("  mix law: " + law.law + " (" + law.why + "); dry at 0 " + juce::String (law.dryRefDb, 2) + " dB, wet at 1 " + juce::String (law.wetRefDb, 2) + " dB" + (kind == "reverb" ? " (dry = the first 2 ms of the burst, before any wet; wet = the 4 ms after the burst ends)" : " (wet = the first repeat's head)"));
-        for (const auto& p : pts) say ("      mix " + juce::String (p.norm, 1) + " '" + p.text + "': dry " + (p.dryDb > -500.0 ? juce::String (p.dryDb, 2) : juce::String ("floor")) + "  wet " + (p.wetDb > -500.0 ? juce::String (p.wetDb, 2) : juce::String ("floor")));
-        auto* m = new juce::DynamicObject(); m->setProperty ("law", law.law); m->setProperty ("why", law.why); m->setProperty ("worst_linear_db", std::round (law.worstLinearDb * 100.0) / 100.0); m->setProperty ("worst_equal_power_db", std::round (law.worstEqualPowerDb * 100.0) / 100.0); m->setProperty ("positions", rows);
+        const auto law = mixLaw (mixPts); const bool so = sendOnly (mixPts, inputDb);
+        say ("  mix: " + (so ? juce::String ("send_only (no dry at either end)") : law.law + " (" + law.why + ")"));
+        auto* m = new juce::DynamicObject(); m->setProperty ("control", mix.name); m->setProperty ("found_by", pMix.foundBy); m->setProperty ("law", law.law); m->setProperty ("send_only", so); m->setProperty ("why", law.why); m->setProperty ("worst_linear_db", std::round (law.worstLinearDb * 100.0) / 100.0); m->setProperty ("worst_equal_power_db", std::round (law.worstEqualPowerDb * 100.0) / 100.0); m->setProperty ("positions", rows);
+        m->setProperty ("verdict", mapVerdict ((int) mixPts.size(), 11, true, false, so, true)); m->setProperty ("levels", "relative to the input (dB)");
         o->setProperty ("mix_law", juce::var (m));
     }
-    // 3. TIME (pre-delay / delay time) at five positions, wet only, sync off where there is one
-    juce::StringArray syncOff;   // (sync off rides in wetOnly since 5 Oct evening)
-    auto fiveNorms = [] { return std::vector<double> { 0.0, 0.25, 0.5, 0.75, 1.0 }; };
+    // 3. TIME: 7 norms (every detent on a stepped control), wet only, sync off; a reverb's pre-delay RELATIVE to its own onset at the 0 setting
+    std::vector<std::pair<double, double>> timeMap; bool timeLabels = true;
     if (timeCtl.index >= 0)
     {
-        juce::Array<juce::var> rows; int within = 0, read = 0;
-        for (double norm : fiveNorms())
+        juce::Array<juce::var> rows; std::optional<double> own; int read = 0; std::set<long> distinct;
+        for (double norm : sevenNorms (timeCtl))
         {
-            juce::StringArray sets = wetOnly; sets.addArray (syncOff); sets.add (setOf (timeCtl.index, norm));
-            const auto r = run ("time" + juce::String (norm, 2), tailArgs (sets));
-            if (r.kind == ChildResult::Kind::uiShown) { say ("RD: a window appeared; stopping"); return 5; }
-            const auto t = parseTail (r.cleanExit() ? r.out : juce::String()); if (! t.ok) { say ("  time " + juce::String (norm, 2) + ": " + (t.refused.isNotEmpty() ? "refused " + t.refused : r.describe())); continue; }
-            const auto on = onsetsOf (t); const auto text = t.setTexts.count (timeCtl.index) ? t.setTexts.at (timeCtl.index) : juce::String(); const auto lab = labelMs (text); ++measured; ++read;
-            const double meas = on.onsetMs ? *on.onsetMs : -1.0;   // ruling 2: time is the first repeat's onset (the spacing counts ringing inside a repeat as repeats: Feedback Hi Pass read 192 -> 142)
-            const bool ok = lab && meas >= 0.0 && std::abs (meas - *lab) <= juce::jmax (2.0, 0.02 * *lab); if (ok) ++within;
-            { roleevidence::Figure f; f.ok = true; if (meas >= 0.0) f.onsetMs = meas; if (norm < 0.01) timeA = f; if (norm > 0.99) timeB = f; }
-            say ("  " + timeCtl.name + " = '" + text + "' (norm " + juce::String (norm, 2) + "): onset " + (on.onsetMs ? juce::String (*on.onsetMs, 1) : juce::String ("none")) + " ms" + (on.spacingMs ? " (repeats every " + juce::String (*on.spacingMs, 1) + " ms)" : juce::String()) + (lab ? " vs label " + juce::String (*lab, 1) + " ms -> " + juce::String (ok ? "within 2 % / 2 ms (the onset)" : "OFF by " + juce::String (meas - *lab, 1) + " ms (the onset)") : juce::String (" (label not a time)")));
-            auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", text); ro->setProperty ("label_ms", lab ? juce::var (*lab) : juce::var()); ro->setProperty ("onset_ms", on.onsetMs ? juce::var (*on.onsetMs) : juce::var()); ro->setProperty ("repeat_spacing_ms", on.spacingMs ? juce::var (*on.spacingMs) : juce::var()); ro->setProperty ("within", ok); rows.add (juce::var (ro));
+            juce::StringArray sets = wetOnly; sets.add (setOf (timeCtl.index, norm));
+            const auto t = readTail ("time" + juce::String (norm, 3), tailArgs (sets), windowSeen); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+            if (! t.ok) continue;
+            const auto on = onsetsOf (t); const auto text = textOf (t, timeCtl.index); ++read; ++measured; if (on.onsetMs) distinct.insert (std::lround (*on.onsetMs));
+            if (! own && norm < 1e-6) own = on.onsetMs;
+            if (! isTimeLabel (text)) timeLabels = false;
+            const auto rel = kind == "reverb" ? relativeMs (on.onsetMs, own) : on.onsetMs;
+            const auto lab = isTimeLabel (text) ? labelMs (text) : std::nullopt;
+            if (rel) timeMap.push_back ({ norm, *rel });
+            auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", text); ro->setProperty ("onset_ms", on.onsetMs ? juce::var (*on.onsetMs) : juce::var()); if (kind == "reverb") ro->setProperty ("relative_ms", rel ? juce::var (*rel) : juce::var()); ro->setProperty ("label_ms", lab ? juce::var (*lab) : juce::var());
+            if (lab && rel) ro->setProperty ("within", timeWithin (*rel, *lab, 10.0, 2.0));
+            rows.add (juce::var (ro));
+            say ("  " + timeCtl.name + " = '" + text + "': onset " + (on.onsetMs ? juce::String (*on.onsetMs, 1) : juce::String ("none")) + " ms" + (kind == "reverb" && rel ? ", relative " + juce::String (*rel, 1) + " ms" : juce::String()) + (lab ? " vs label " + juce::String (*lab, 1) : juce::String (" (label not a time: not judged)")));
         }
-        { std::set<juce::String> distinct; for (const auto& r : rows) { const auto sp = r.getProperty ("repeat_spacing_ms", {}), on = r.getProperty ("onset_ms", {}); distinct.insert (juce::String (! sp.isVoid() ? (double) sp : ! on.isVoid() ? (double) on : -1.0, 0)); }
-          if (read >= 3 && distinct.size() == 1) say ("  the time control moved NOTHING across its positions (the same reading at every one): a sync mode may still be engaged, or the control is not the delay time"); }
-        auto* m = new juce::DynamicObject(); m->setProperty ("control", timeCtl.name); m->setProperty ("positions", rows); m->setProperty ("within_count", within); m->setProperty ("read_count", read); o->setProperty ("time", juce::var (m));
+        auto* m = new juce::DynamicObject(); m->setProperty ("control", timeCtl.name); m->setProperty ("found_by", pTime.foundBy); m->setProperty ("positions", rows); if (kind == "reverb") m->setProperty ("own_onset_ms", own ? juce::var (*own) : juce::var());
+        m->setProperty ("verdict", mapVerdict (read, 7, distinct.size() > 1, false, false, timeLabels)); o->setProperty ("time", juce::var (m));
     }
-    // 4. DECAY (reverb) against the label in seconds; FEEDBACK (delay) against 20 log10 (label %) per repeat
+    // 4. DECAY (reverb): 7 norms, pink burst primary + 997 Hz cross-check, adaptive tail to 35 dB down or 20 s
+    std::vector<std::pair<double, double>> decayMap;
     if (kind == "reverb" && decayCtl.index >= 0)
     {
-        juce::Array<juce::var> rows;
-        for (double norm : fiveNorms())
+        juce::Array<juce::var> rows; int read = 0; bool beyond = false; std::set<long> distinct;
+        for (double norm : sevenNorms (decayCtl))
         {
             juce::StringArray sets = wetOnly; sets.add (setOf (decayCtl.index, norm));
-            double tailS = 6.0; { const auto lab0 = labelSeconds (displayNear (base, decayCtl.index, norm)); if (lab0 && *lab0 > 0.0) tailS = tailFor (*lab0); }
-            if (tailS > 6.0) say ("    tail scaled to the label '" + displayNear (base, decayCtl.index, norm) + "': " + juce::String (tailS, 1) + " s");
-            const auto r = run ("decay" + juce::String (norm, 2), tailArgs (sets, 0.0, tailS));
-            if (r.kind == ChildResult::Kind::uiShown) { say ("RD: a window appeared; stopping"); return 5; }
-            const auto t = parseTail (r.cleanExit() ? r.out : juce::String()); if (! t.ok) { say ("  decay " + juce::String (norm, 2) + ": " + (t.refused.isNotEmpty() ? "refused " + t.refused : r.describe())); continue; }
-            const auto dc = decayOf (t); const auto text = t.setTexts.count (decayCtl.index) ? t.setTexts.at (decayCtl.index) : juce::String(); const auto lab = labelSeconds (text); ++measured;
-            { roleevidence::Figure f; f.ok = true; if (dc.ok) f.rt60s = dc.t20RT60s; if (norm < 0.01) decayA = f; if (norm > 0.99) decayB = f; }
-            say ("  " + decayCtl.name + " = '" + text + "' (norm " + juce::String (norm, 2) + "): " + (dc.ok ? "RT60 " + juce::String (dc.t20RT60s, 2) + " s (T20)" + (dc.t30 ? ", " + juce::String (dc.t30RT60s, 2) + " s (T30)" : juce::String()) : dc.why) + (lab && dc.ok ? " vs label " + juce::String (*lab, 2) + " s (ratio " + juce::String (dc.t20RT60s / juce::jmax (1e-6, *lab), 2) + ")" : juce::String (lab ? "" : " (label not a time)")));
-            auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", text); ro->setProperty ("label_s", lab ? juce::var (*lab) : juce::var()); ro->setProperty ("rt60_t20_s", dc.ok ? juce::var (std::round (dc.t20RT60s * 1000.0) / 1000.0) : juce::var()); ro->setProperty ("rt60_t30_s", dc.t30 ? juce::var (std::round (dc.t30RT60s * 1000.0) / 1000.0) : juce::var()); ro->setProperty ("note", dc.why); rows.add (juce::var (ro));
+            const auto tp = readTail ("decayP" + juce::String (norm, 3), tailArgs (sets, 0.0, kMaxTailS, true, true), windowSeen); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+            const auto tk = readTail ("decayK" + juce::String (norm, 3), tailArgs (sets, 0.0, kMaxTailS, false, true), windowSeen); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+            if (! tp.ok) continue;
+            const auto dp = decayOf (tp), dk = tk.ok ? decayOf (tk) : Decay(); ++read; ++measured;
+            const bool hitCap = tp.stopReason == "window" && (! dp.ok || dp.t10Only);
+            if (hitCap) beyond = true;
+            const double rt = dp.ok ? (dp.t30 ? dp.t30RT60s : dp.t20RT60s) : -1.0; if (rt > 0.0) { decayMap.push_back ({ norm, rt }); distinct.insert (std::lround (rt * 20.0)); }
+            auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", textOf (tp, decayCtl.index)); ro->setProperty ("rt60_s", rt > 0.0 && ! hitCap ? juce::var (std::round (rt * 1000.0) / 1000.0) : juce::var()); if (hitCap) ro->setProperty ("rt60_s_bound", "longer than the 20 s window can read");
+            ro->setProperty ("rt60_1k_s", dk.ok ? juce::var (std::round ((dk.t30 ? dk.t30RT60s : dk.t20RT60s) * 1000.0) / 1000.0) : juce::var()); ro->setProperty ("fit", dp.t30 ? "T30" : dp.t10Only ? "short-range fit" : "T20"); ro->setProperty ("tail_stop", tp.stopReason); ro->setProperty ("note", dp.why); rows.add (juce::var (ro));
+            say ("  " + decayCtl.name + " = '" + textOf (tp, decayCtl.index) + "': RT60 " + (rt > 0.0 ? juce::String (rt, 2) + " s broadband" : dp.why) + (dk.ok ? ", " + juce::String (dk.t30 ? dk.t30RT60s : dk.t20RT60s, 2) + " s at 1 kHz" : juce::String()) + " (tail stopped: " + tp.stopReason + ")");
         }
-        auto* m = new juce::DynamicObject(); m->setProperty ("control", decayCtl.name); m->setProperty ("positions", rows); o->setProperty ("decay", juce::var (m));
+        auto* m = new juce::DynamicObject(); m->setProperty ("control", decayCtl.name); m->setProperty ("found_by", pDecay.foundBy); m->setProperty ("positions", rows); m->setProperty ("verdict", mapVerdict (read, 7, distinct.size() > 1, beyond, false, true)); o->setProperty ("decay", juce::var (m));
     }
+    // 5. FEEDBACK (delay): 7 norms, dB per repeat and seconds to -60
+    std::vector<std::pair<double, double>> fbMap;
     if (kind == "delay" && feedback.index >= 0)
     {
-        juce::Array<juce::var> rows;
-        for (double norm : fiveNorms())
+        juce::Array<juce::var> rows; int read = 0; std::set<long> distinct;
+        for (double norm : sevenNorms (feedback))
         {
-            juce::StringArray sets = wetOnly; sets.addArray (syncOff); sets.add (setOf (feedback.index, norm));
-            const auto r = run ("fb" + juce::String (norm, 2), tailArgs (sets));
-            if (r.kind == ChildResult::Kind::uiShown) { say ("RD: a window appeared; stopping"); return 5; }
-            const auto t = parseTail (r.cleanExit() ? r.out : juce::String()); if (! t.ok) { say ("  feedback " + juce::String (norm, 2) + ": " + (t.refused.isNotEmpty() ? "refused " + t.refused : r.describe())); continue; }
-            const auto on = onsetsOf (t); const auto text = t.setTexts.count (feedback.index) ? t.setTexts.at (feedback.index) : juce::String(); ++measured;
-            { roleevidence::Figure f; f.ok = true; f.repeats = (int) on.repeats.size(); f.fallPerRepeatDb = on.fallPerRepeatDb; if (! on.repeats.empty()) f.firstRepeatDb = on.repeats.front().levelDb; if (norm < 0.01) fbA = f; if (norm > 0.99) fbB = f; }
-            std::optional<double> labPct; { const auto n = labelMs (text); if (n && text.contains ("%")) labPct = *n; }
-            const std::optional<double> expectFall = labPct && *labPct > 0.0 ? std::optional<double> (20.0 * std::log10 (*labPct / 100.0)) : std::nullopt;
+            juce::StringArray sets = wetOnly; sets.add (setOf (feedback.index, norm));
+            const auto t = readTail ("fb" + juce::String (norm, 3), tailArgs (sets, 0.0, 12.0, false, true), windowSeen); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+            if (! t.ok) continue;
+            const auto on = onsetsOf (t); ++read; ++measured;
             const std::optional<double> rt60 = on.spacingMs && on.fallPerRepeatDb && *on.fallPerRepeatDb < -0.01 ? std::optional<double> (60.0 / -*on.fallPerRepeatDb * *on.spacingMs / 1000.0) : std::nullopt;
-            say ("  " + feedback.name + " = '" + text + "' (norm " + juce::String (norm, 2) + "): " + on.why + (on.fallPerRepeatDb ? ", fall " + juce::String (*on.fallPerRepeatDb, 2) + " dB per repeat" : juce::String()) + (expectFall ? " vs 20 log10 (label) " + juce::String (*expectFall, 2) + " dB" : juce::String()) + (rt60 ? ", repeats reach -60 dB in " + juce::String (*rt60, 2) + " s" : juce::String()));
-            auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", text); ro->setProperty ("repeats", (int) on.repeats.size()); ro->setProperty ("fall_per_repeat_db", on.fallPerRepeatDb ? juce::var (std::round (*on.fallPerRepeatDb * 100.0) / 100.0) : juce::var()); ro->setProperty ("expected_fall_db", expectFall ? juce::var (std::round (*expectFall * 100.0) / 100.0) : juce::var()); ro->setProperty ("repeat_spacing_ms", on.spacingMs ? juce::var (*on.spacingMs) : juce::var()); ro->setProperty ("decay_to_minus_60_s", rt60 ? juce::var (std::round (*rt60 * 100.0) / 100.0) : juce::var()); rows.add (juce::var (ro));
+            if (on.fallPerRepeatDb) { fbMap.push_back ({ norm, *on.fallPerRepeatDb }); distinct.insert (std::lround (*on.fallPerRepeatDb * 4.0)); }
+            auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", textOf (t, feedback.index)); ro->setProperty ("repeats", (int) on.repeats.size()); ro->setProperty ("fall_per_repeat_db", on.fallPerRepeatDb ? juce::var (std::round (*on.fallPerRepeatDb * 100.0) / 100.0) : juce::var()); ro->setProperty ("decay_to_minus_60_s", rt60 ? juce::var (std::round (*rt60 * 100.0) / 100.0) : juce::var()); rows.add (juce::var (ro));
+            say ("  " + feedback.name + " = '" + textOf (t, feedback.index) + "': " + on.why + (on.fallPerRepeatDb ? ", " + juce::String (*on.fallPerRepeatDb, 2) + " dB per repeat" : juce::String()));
         }
-        auto* m = new juce::DynamicObject(); m->setProperty ("control", feedback.name); m->setProperty ("positions", rows); o->setProperty ("feedback", juce::var (m));
+        auto* m = new juce::DynamicObject(); m->setProperty ("control", feedback.name); m->setProperty ("found_by", pFb.foundBy); m->setProperty ("positions", rows); m->setProperty ("verdict", mapVerdict (read, 7, distinct.size() > 1, false, false, true)); o->setProperty ("feedback", juce::var (m));
     }
-    // 5. TEMPO SYNC (delay): sync on, the note control as instantiated, host tempo 90 / 120 / 140
+    // 6. SYNC (delay): every note value the note control offers at 120 bpm, the instantiate note at 90 and 140 too (the acceptance's two tempos)
+    juce::Array<juce::var> acc;
     if (kind == "delay" && sync.index >= 0)
     {
+        std::vector<std::pair<double, juce::String>> notes;   // norm, text
+        if (note.index >= 0) if (const auto at = sweep::findControl (base, note.index).getProperty ("displayAt", {}); at.isObject()) for (const auto& kv : at.getDynamicObject()->getProperties()) if (noteBeats (kv.value.toString())) notes.push_back ({ kv.name.toString().getDoubleValue(), kv.value.toString() });
+        juce::String instNote; double instNorm = -1.0; if (note.index >= 0) { const auto doi = sweep::findControl (base, note.index).getProperty ("defaultOnInstantiate", {}); instNote = doi.getProperty ("display", "").toString(); instNorm = (double) doi.getProperty ("normalised", -1.0); }
         juce::Array<juce::var> rows;
-        for (double bpm : { 90.0, 120.0, 140.0 })
+        auto syncRun = [&] (double bpm, double noteNorm, const juce::String& noteText) -> std::optional<double>
         {
-            juce::StringArray sets = wetOnly; sets.add (setOf (sync.index, sync.onNorm));
-            const auto r = run ("tempo" + juce::String (bpm, 0), tailArgs (sets, bpm));
-            if (r.kind == ChildResult::Kind::uiShown) { say ("RD: a window appeared; stopping"); return 5; }
-            const auto t = parseTail (r.cleanExit() ? r.out : juce::String()); if (! t.ok) { say ("  tempo " + juce::String (bpm, 0) + ": " + (t.refused.isNotEmpty() ? "refused " + t.refused : r.describe())); continue; }
-            const auto on = onsetsOf (t); ++measured;
-            juce::String noteText; if (note.index >= 0) if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if ((int) c.getProperty ("index", -1) == note.index) noteText = c.getProperty ("defaultOnInstantiate", {}).getProperty ("display", "").toString();
-            const auto beats = noteBeats (noteText);
-            const double meas = on.spacingMs ? *on.spacingMs : (on.onsetMs ? *on.onsetMs : -1.0);
-            const std::optional<double> expect = beats ? std::optional<double> (expectedSyncMs (*beats, bpm)) : std::nullopt;
-            const double measBeats = meas > 0.0 ? meas * bpm / 60000.0 : -1.0;
-            say ("  sync on at " + juce::String (bpm, 0) + " bpm" + (noteText.isNotEmpty() ? " (note '" + noteText + "')" : juce::String()) + ": " + (meas > 0.0 ? juce::String (meas, 1) + " ms = " + juce::String (measBeats, 3) + " beat(s)" : juce::String ("no onset")) + (expect ? " vs " + juce::String (*expect, 1) + " ms expected" + (meas > 0.0 ? " (" + juce::String (meas - *expect, 1) + " ms off)" : juce::String()) : juce::String (" (the note value is not readable from the control's text: the beats figure is the finding)")));
-            auto* ro = new juce::DynamicObject(); ro->setProperty ("bpm", bpm); ro->setProperty ("note_display", noteText); ro->setProperty ("measured_ms", meas > 0.0 ? juce::var (meas) : juce::var()); ro->setProperty ("measured_beats", measBeats > 0.0 ? juce::var (std::round (measBeats * 1000.0) / 1000.0) : juce::var()); ro->setProperty ("expected_ms", expect ? juce::var (*expect) : juce::var()); rows.add (juce::var (ro));
+            juce::StringArray sets; if (mix.index >= 0) sets.add (setOf (mix.index, 1.0)); sets.add (setOf (sync.index, sync.onNorm)); if (note.index >= 0 && noteNorm >= 0.0) sets.add (setOf (note.index, noteNorm));
+            const auto t = readTail ("sync" + juce::String (bpm, 0) + "." + juce::String (noteNorm, 3), tailArgs (sets, bpm, 6.0), windowSeen); if (! t.ok) return std::nullopt;
+            const auto on = onsetsOf (t); const double meas = on.spacingMs ? *on.spacingMs : (on.onsetMs ? *on.onsetMs : -1.0);
+            const auto beats = noteBeats (noteText); const std::optional<double> expect = beats ? std::optional<double> (expectedSyncMs (*beats, bpm)) : std::nullopt;
+            auto* ro = new juce::DynamicObject(); ro->setProperty ("bpm", bpm); ro->setProperty ("note", noteText); ro->setProperty ("beats", beats ? juce::var (*beats) : juce::var()); ro->setProperty ("measured_ms", meas > 0.0 ? juce::var (meas) : juce::var()); ro->setProperty ("expected_ms", expect ? juce::var (*expect) : juce::var());
+            if (expect && meas > 0.0) ro->setProperty ("within_2pct", timeWithin (meas, *expect, kAcceptSyncPct, 0.0)); rows.add (juce::var (ro)); ++measured;
+            say ("  sync " + juce::String (bpm, 0) + " bpm, note '" + noteText + "': " + (meas > 0.0 ? juce::String (meas, 1) + " ms" : juce::String ("no onset")) + (expect ? " vs " + juce::String (*expect, 1) + " ms" : juce::String (" (note not readable)")));
+            return meas > 0.0 && expect ? std::optional<double> (100.0 * (meas - *expect) / *expect) : std::nullopt;
+        };
+        for (const auto& [nn, txt] : notes) { syncRun (120.0, nn, txt); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; } }
+        if (notes.empty()) syncRun (120.0, instNorm, instNote);
+        for (double bpm : { 90.0, 140.0 })
+        {
+            const auto off = syncRun (bpm, instNorm, instNote); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+            auto* a = new juce::DynamicObject(); a->setProperty ("map", "sync"); a->setProperty ("step", juce::String (bpm, 0) + " bpm, " + instNote); a->setProperty ("ran", off.has_value()); a->setProperty ("pass", off && std::abs (*off) <= kAcceptSyncPct); a->setProperty ("why", off ? juce::String (*off, 2) + " % off" : juce::String ("no reading, or the note text does not read as a note value")); acc.add (juce::var (a));
         }
-        auto* m = new juce::DynamicObject(); m->setProperty ("control", sync.name); m->setProperty ("tempos", rows); o->setProperty ("tempo_sync", juce::var (m));
+        auto* m = new juce::DynamicObject(); m->setProperty ("control", sync.name); m->setProperty ("note_control", note.index >= 0 ? juce::var (note.name) : juce::var()); m->setProperty ("on", sync.onText); m->setProperty ("readings", rows); o->setProperty ("tempo_sync", juce::var (m));
     }
-    // ROLES BY MEASUREMENT (5 Oct evening): the nominees by their own sections' ends; the unnamed pool by one --tail pair per control
-    // (as instantiated, no other write), each pair read for every signature at once: mix (dry / wet), time (onset), decay (RT60),
-    // feedback (repeats / fall) - a control whose mix sits at dry gives no wet readings, and the record says "not measured"
-    std::vector<int> nominated; for (const auto& c : { mix, timeCtl, decayCtl, feedback, sync, note }) if (c.index >= 0) nominated.push_back (c.index);
-    if (mix.index >= 0) roles.push_back (roleevidence::nominee (mix.index, mix.name, "mix", roleevidence::signatureHolds ("mix", mixA, mixB)));
-    if (timeCtl.index >= 0) roles.push_back (roleevidence::nominee (timeCtl.index, timeCtl.name, "time", roleevidence::signatureHolds ("time", timeA, timeB)));
-    if (decayCtl.index >= 0) roles.push_back (roleevidence::nominee (decayCtl.index, decayCtl.name, "decay", roleevidence::signatureHolds ("decay", decayA, decayB)));
-    if (feedback.index >= 0) roles.push_back (roleevidence::nominee (feedback.index, feedback.name, "feedback", roleevidence::signatureHolds ("feedback", fbA, fbB)));
-    for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
+    // 7. THE ACCEPTANCE (section 8): write what the server would compute, re-measure
+    if (mix.index >= 0 && ! sendOnly (mixPts, inputDb))
+        for (const auto& [word, target] : mixSteps())
+        {
+            const auto inv = invertMap (wetReDryMap (mixPts), target, false);
+            auto* a = new juce::DynamicObject(); a->setProperty ("map", "mix"); a->setProperty ("step", word); a->setProperty ("target_wet_re_dry_db", target);
+            if (! inv.ok) { a->setProperty ("ran", false); a->setProperty ("pass", false); a->setProperty ("why", "null: " + inv.why); acc.add (juce::var (a)); continue; }
+            juce::StringArray sets; if (sync.index >= 0) sets.add (setOf (sync.index, sync.offNorm)); sets.add (setOf (mix.index, inv.norm));
+            const auto t = readTail ("accMix." + juce::String (word), tailArgs (sets), windowSeen); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+            auto L = levelsOf (t); if (kind == "delay" && baseOnsetMs && *baseOnsetMs > t.burstMs) { std::vector<double> wet; for (const auto& w : t.windows) if (w.tMs >= *baseOnsetMs && w.tMs < *baseOnsetMs + kWetWindowMs && w.outDb > -500.0) wet.push_back (w.outDb); L.wetDb = powerMeanDb (wet); }
+            const bool ran = t.ok && L.ok && L.wetDb > -500.0; const double got = ran ? L.wetDb - L.dryDb : 0.0;
+            a->setProperty ("norm", inv.norm); a->setProperty ("ran", ran); if (ran) a->setProperty ("measured_wet_re_dry_db", std::round (got * 100.0) / 100.0); a->setProperty ("pass", ran && std::abs (got - target) <= kAcceptMixDb); a->setProperty ("why", ran ? juce::String (got - target, 2) + " dB off" : juce::String ("no reading")); acc.add (juce::var (a));
+            say ("  acceptance mix '" + juce::String (word) + "' (" + juce::String (target, 0) + " dB wet re dry): " + (ran ? juce::String (got, 2) + " dB -> " + (std::abs (got - target) <= kAcceptMixDb ? "PASS" : "FAIL") : juce::String ("no reading")));
+        }
+    if (kind == "reverb" && decayCtl.index >= 0)
+        for (const auto& [word, target] : lengthTargets())
+        {
+            const auto inv = invertMap (decayMap, target, true);
+            auto* a = new juce::DynamicObject(); a->setProperty ("map", "decay"); a->setProperty ("step", word); a->setProperty ("target_rt60_s", target);
+            if (! inv.ok) { a->setProperty ("ran", false); a->setProperty ("pass", false); a->setProperty ("why", "null: " + inv.why); acc.add (juce::var (a)); continue; }
+            juce::StringArray sets = wetOnly; sets.add (setOf (decayCtl.index, inv.norm));
+            const auto t = readTail ("accDecay." + juce::String (word), tailArgs (sets, 0.0, kMaxTailS, true, true), windowSeen); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+            const auto d = decayOf (t); const double got = d.ok ? (d.t30 ? d.t30RT60s : d.t20RT60s) : -1.0; const bool ran = got > 0.0;
+            a->setProperty ("norm", inv.norm); a->setProperty ("ran", ran); if (ran) a->setProperty ("measured_rt60_s", std::round (got * 1000.0) / 1000.0); a->setProperty ("pass", ran && std::abs (got - target) <= kAcceptDecayPct * 0.01 * target); a->setProperty ("why", ran ? juce::String (100.0 * (got - target) / target, 1) + " % off" : d.why); acc.add (juce::var (a));
+            say ("  acceptance decay '" + juce::String (word) + "' (" + juce::String (target, 1) + " s): " + (ran ? juce::String (got, 2) + " s -> " + (std::abs (got - target) <= kAcceptDecayPct * 0.01 * target ? "PASS" : "FAIL") : d.why));
+        }
+    if (kind == "delay" && timeCtl.index >= 0 && timeMap.size() >= 2)
     {
-        roleevidence::Figure ua, ub;
-        for (double n : { 0.0, 1.0 })
+        double lo = 1e9, hi = -1e9; for (const auto& [n, ms] : timeMap) { lo = std::min (lo, ms); hi = std::max (hi, ms); }
+        for (double frac : { 1.0 / 3.0, 2.0 / 3.0 })
         {
-            const auto r = run ("u" + juce::String (pc.index) + ".n" + juce::String (n, 0), tailArgs ({ setOf (pc.index, n) }));
-            if (r.kind == ChildResult::Kind::uiShown) { say ("RD: a window appeared; stopping"); return 5; }
-            const auto t = parseTail (r.cleanExit() ? r.out : juce::String()); if (! t.ok) continue;
-            auto& f = n < 0.5 ? ua : ub; f.ok = true;
-            const auto lv = levelsOf (t); if (lv.ok) { if (lv.dryDb > -500.0) f.dryDb = lv.dryDb; if (lv.wetDb > -500.0) f.wetDb = lv.wetDb; }
-            const auto on = onsetsOf (t); f.onsetMs = on.onsetMs; f.repeats = (int) on.repeats.size(); f.fallPerRepeatDb = on.fallPerRepeatDb; if (! on.repeats.empty()) f.firstRepeatDb = on.repeats.front().levelDb;
-            const auto dc = decayOf (t); if (dc.ok) f.rt60s = dc.t20RT60s;
+            const double target = lo + frac * (hi - lo); const auto inv = invertMap (timeMap, target, lo > 0.0);   // a time taper is exponential: log-linear between positions (bx_delay2500 missed by 7 % linearly)
+            auto* a = new juce::DynamicObject(); a->setProperty ("map", "time"); a->setProperty ("step", juce::String (target, 1) + " ms"); a->setProperty ("target_ms", target);
+            if (! inv.ok) { a->setProperty ("ran", false); a->setProperty ("pass", false); a->setProperty ("why", "null: " + inv.why); acc.add (juce::var (a)); continue; }
+            juce::StringArray sets = wetOnly; sets.add (setOf (timeCtl.index, inv.norm));
+            const auto t = readTail ("accTime" + juce::String (frac, 2), tailArgs (sets), windowSeen); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+            const auto on = onsetsOf (t); const bool ran = on.onsetMs.has_value();
+            a->setProperty ("norm", inv.norm); a->setProperty ("ran", ran); if (ran) a->setProperty ("measured_ms", *on.onsetMs); a->setProperty ("pass", ran && timeWithin (*on.onsetMs, target, kAcceptTimePct, kAcceptTimeMs)); a->setProperty ("why", ran ? juce::String (*on.onsetMs - target, 2) + " ms off" : juce::String ("no onset")); acc.add (juce::var (a));
+            say ("  acceptance time " + juce::String (target, 1) + " ms: " + (ran ? juce::String (*on.onsetMs, 1) + " ms -> " + (timeWithin (*on.onsetMs, target, kAcceptTimePct, kAcceptTimeMs) ? "PASS" : "FAIL") : juce::String ("no onset")));
         }
-        for (const char* role : { "mix", "time", "decay", "feedback" }) roles.push_back (roleevidence::unnamed (pc.index, pc.name, role, roleevidence::signatureHolds (role, ua, ub)));
-        // ruling 2: a control that holds the onset and is not feedback (the first repeat put) but changes the repeats' shape or level is the path's tone
-        if (! roleevidence::signatureHolds ("time", ua, ub).holds && ! roleevidence::signatureHolds ("feedback", ua, ub).holds)
-            if (const auto tn = roleevidence::signatureHolds ("tone", ua, ub); tn.holds) roles.push_back (roleevidence::unnamed (pc.index, pc.name, "tone (feedback path)", tn));
     }
-    sayRoles (say, roles);
-    setRoles (o, roles);
+    if (kind == "delay" && feedback.index >= 0)
+        for (int nRep : { 3, 5 })
+        {
+            const double fall = fallForRepeats (nRep); const auto inv = invertMap (fbMap, fall, false);
+            auto* a = new juce::DynamicObject(); a->setProperty ("map", "feedback"); a->setProperty ("step", juce::String (nRep) + " repeats"); a->setProperty ("target_fall_db", fall);
+            if (! inv.ok) { a->setProperty ("ran", false); a->setProperty ("pass", false); a->setProperty ("why", "null: " + inv.why); acc.add (juce::var (a)); continue; }
+            juce::StringArray sets = wetOnly; sets.add (setOf (feedback.index, inv.norm));
+            const auto t = readTail ("accFb" + juce::String (nRep), tailArgs (sets, 0.0, 12.0, false, true), windowSeen); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+            const auto on = onsetsOf (t); const bool ran = (int) on.repeats.size() >= nRep;
+            const double got = ran ? on.repeats[(size_t) nRep - 1].levelDb - on.repeats.front().levelDb : 0.0;
+            a->setProperty ("norm", inv.norm); a->setProperty ("ran", ran); if (ran) a->setProperty ("repeat_n_re_first_db", std::round (got * 100.0) / 100.0); a->setProperty ("pass", ran && std::abs (got - kRepeatTargetDb) <= kAcceptRepeatDb); a->setProperty ("why", ran ? juce::String (got - kRepeatTargetDb, 2) + " dB off" : "only " + juce::String ((int) on.repeats.size()) + " repeat(s) read"); acc.add (juce::var (a));
+            say ("  acceptance feedback " + juce::String (nRep) + " repeats: " + (ran ? "repeat " + juce::String (nRep) + " at " + juce::String (got, 2) + " dB -> " + (std::abs (got - kRepeatTargetDb) <= kAcceptRepeatDb ? "PASS" : "FAIL") : "only " + juce::String ((int) on.repeats.size()) + " repeat(s) read"));
+        }
+    o->setProperty ("acceptance", acc);
+    sayRoles (say, roles); setRoles (o, roles);
+    o->setProperty ("role_notes", roleNotes);
+    { juce::Array<juce::var> neutral; std::set<int> used { mix.index, timeCtl.index, decayCtl.index, feedback.index, sync.index, note.index }; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) { const int ci = (int) c.getProperty ("index", -1); if (used.count (ci)) continue; const auto doi = c.getProperty ("defaultOnInstantiate", {}); if (! doi.isObject()) continue; auto* n = new juce::DynamicObject(); n->setProperty ("control", c.getProperty ("name", "")); n->setProperty ("set", doi.getProperty ("display", "")); n->setProperty ("norm", doi.getProperty ("normalised", juce::var())); neutral.add (juce::var (n)); } o->setProperty ("neutral", neutral); }
     o->setProperty ("processes", processN); o->setProperty ("measuredAt", nowStamp());
-    o->setProperty ("method", "probe --tail: a 997 Hz burst (" + burstMs + " ms at -12 dBFS) then 6 s of silence, the output's RMS and peak per 1 ms window on the input's clock (latency taken out); dry = the burst's first 2 ms, wet = the 4 ms after the burst (reverb) or the first repeat's head (delay); mix law = worst deviation from linear / equal power over 11 positions, fit within 1 dB; decay = T20 / T30 least-squares on the 10 ms-smoothed tail, RT60 extrapolated; onset = the first window 20 dB above the measured floor; repeats = the tail's peak maxima, spacing and fall as medians; tempo sync = the probe's playhead (playing, 4/4) at 90 / 120 / 140");
-    outDir.getChildFile (stem + ".reverbdelay.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    o->setProperty ("method", "probe --tail: a 997 Hz burst (" + burstMs + " ms at -12 dBFS) for timing, mix and feedback, a seeded pink-noise burst (200 ms) for decay with the 997 Hz burst as the cross-check; the tail adaptive to 35 dB down or 20 s; roles by measurement (every numeric control at its ends, the name's nominee kept when it shows the signature); dry = the burst's first 2 ms, wet = 4 ms after the burst (reverb) or the first repeat's head (delay), relative to the input; decay = T30 where reachable else T20; pre-delay relative to the onset at the control's 0 setting; sync per note value at 120 bpm, the instantiate note at 90 / 140; acceptance per section 8");
+    const juce::var rec (o);
+    outDir.getChildFile (stem + ".reverbdelay.json").replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n");
     say ("RD: -> " + outDir.getChildFile (stem + ".reverbdelay.json").getFullPathName() + " (" + juce::String (processN) + " processes)");
+    {
+        const auto D = reverbdelay::spaceProfile (rec, drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, base.getProperty ("map_fp", juce::var())), drafts::measuredBlock ("EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, "pink-noise burst 200 ms (decay); 997 Hz burst (mix, timing); adaptive tail to 35 dB down or 20 s"), drafts::statusLine ("REVERB_DELAY_PROFILE_SPEC"), drafts::specTag ("REVERB_DELAY_PROFILE_SPEC"));
+        const auto f = drafts::draftFile (opt.out, stem, "space_profile"); const auto problem = drafts::writeDraft (f, D);
+        say (problem.isEmpty() ? "RD: draft ej_space_profile/1 -> " + f.getFullPathName() : "RD: " + problem);
+    }
     return measured > 0 ? 0 : 4;
 }
 
