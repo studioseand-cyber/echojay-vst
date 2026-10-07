@@ -2,7 +2,9 @@
 // harness's independent instruments. Every leg has a known-good and a known-bad side where one exists.
 #include "ejmetrics.h"
 #include "../../Source/EJLimiterV2Core.h"
+#include "ejlegacy.h"
 #include <cstdio>
+#include <sys/stat.h>
 
 namespace {
 int failures = 0;
@@ -116,6 +118,22 @@ int main()
         const bool ok = Rl.aligned && Ru.aligned && Rl.hits.size() == 12 && Ru.hits.size() == 12;
         check (ok, "panned_transient renders linked and unlinked", Rl.align.why + Ru.align.why);
         if (ok) { check (std::abs (Rl.hits[0].dipLDb - Rl.hits[0].dipRDb) < 0.1, "link 1: L and R dip equally", f2 (Rl.hits[0].dipLDb) + " / " + f2 (Rl.hits[0].dipRDb)); check (Ru.hits[0].dipLDb < -5.0 && Ru.hits[0].dipRDb > -0.3, "link 0: only L dips", f2 (Ru.hits[0].dipLDb) + " / " + f2 (Ru.hits[0].dipRDb)); check (Rl.pk.overs == 0 && Ru.pk.overs == 0, "both hold the ceiling", std::to_string (Rl.pk.overs) + " / " + std::to_string (Ru.pk.overs)); }
+    }
+    {   // THE LEGACY PORT against the real Pro Tools prints (skipped, and said so, when the renders are not on this machine)
+        struct Case { const char* src; const char* print; double gain; } cases[] = { { "docs/limiter_ab/renders/source_bass_sustain.wav", "docs/limiter_ab/renders/echojay_bass_sustain.wav", 8.41 }, { "docs/limiter_ab/renders/source_fullmix.wav", "docs/limiter_ab/renders/echojay_fullmix.wav", 8.32 } };
+        for (const auto& c : cases)
+        {
+            struct stat st; if (stat (c.src, &st) != 0 || stat (c.print, &st) != 0) { std::printf ("  skip  legacy port vs %s: file not present on this machine\n", c.print); continue; }
+            const auto src = ejwav::read (c.src), print = ejwav::read (c.print); const size_t N = src.frames();
+            echojay::legacy::Limiter lim; lim.prepare (src.sampleRate, c.gain); const int lat = lim.latencySamples();
+            std::vector<float> L (N + (size_t) lat, 0.0f), R (N + (size_t) lat, 0.0f); for (size_t n = 0; n < N; ++n) { L[n] = (float) src.ch[0][n]; R[n] = (float) src.ch[1][n]; }
+            for (size_t pos = 0; pos < N + (size_t) lat; pos += 512) { const int n = (int) std::min<size_t> (512, N + (size_t) lat - pos); lim.process (L.data() + pos, R.data() + pos, n); }
+            ejwav::Audio out; out.sampleRate = src.sampleRate; out.ch.assign (2, std::vector<double> (N)); for (size_t n = 0; n < N; ++n) { out.ch[0][n] = L[n + (size_t) lat]; out.ch[1][n] = R[n + (size_t) lat]; }
+            const auto al = ejm::align (print, out); if (! al.ok) { check (false, std::string ("legacy port aligns with ") + c.print, al.why); continue; }
+            const auto p = ejm::makePair (print, out, al.offset, 0.0, 0.0); double es = 0, ed = 0; for (int ch = 0; ch < 2; ++ch) for (size_t n = (size_t) (0.2 * sr); n < p.frames(); ++n) { const double x = p.in[(size_t) ch][n], y = p.out[(size_t) ch][n]; es += x * x; ed += (x - y) * (x - y); }
+            const double resDb = 10 * std::log10 (ed / es);
+            check (resDb < -40.0, std::string ("legacy port reproduces the Pro Tools print ") + c.print + " at the print's measured gain (residual < -40 dB re signal)", f2 (resDb) + " dB, offset " + std::to_string (al.offset));
+        }
     }
     std::printf ("\n==== limiter_v2_core_test: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

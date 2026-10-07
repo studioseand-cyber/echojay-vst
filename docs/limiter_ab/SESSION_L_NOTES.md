@@ -120,3 +120,33 @@ Independent true-peak cross-check: ffmpeg is NOT installed and neither are numpy
   pre-dip; attack and release both ~11 o'clock on 0-10 s scales (if log, ~150 ms each = the measured 120-185 ms
   floor constants; Sean to hover for the exact value); transient linking ~80 % (measured 75 % dB / 82 % linear);
   release linking 100 %.
+
+## 7 Oct 2026, night: rulings, the hot full mix, the legacy port (results/2026-10-07_v2_vs_proL2_vs_echojay_all.txt,
+## 2026-10-07_fullmix_hot_gain10.86.txt)
+
+Rulings from Sean: A is NOT gating (build -j 2 in own dir, render allowed). echojay_bass_sustain was printed at
+EchoJay input gain 16.7 = +8.5 nominal vs source_bass_sustain; Pro-L 2 hovered values Attack 275.0 ms, Release
+400.0 ms (lookahead as read: just off minimum, ~0.3 ms). The knob labels do NOT equal the measured constants (floor
+charge 120-185 ms, decay 160-185 ms): tune to the measurements, not the labels. fullmix_hot: Pro-L 2 dial 16.7,
+EFFECTIVE gain vs source_fullmix +10.86 dB (coordinator: unlimited blocks = source x 10.86 dB, residual -108 dB; my
+own estimate +10.86, p10/p90 10.85/10.86); analysed at --gain 10.86 for all three tags, v2 and the current limiter
+rendered at +10.86 from source_fullmix (source_fullmix_hot.wav is a symlink to source_fullmix.wav).
+
+The bass print's gain, measured: the legacy port reproduces echojay_bass_sustain best at +8.41 (residual -40.1 dB)
+and worse at +8.5 (-38.9); echojay_fullmix at +8.32 (-50.5 dB) vs +8.2 (-37.7). In unlimited blocks the wall is at
+unity, so the 0.1 dB is NOT the wall margin: the prints carry +0.12 (fullmix) and -0.09 (bass) of gain somewhere
+upstream of the limiter's own gain. Small, but it is why "level matched" is judged on the Pro-L 2 render's own
+unlimited blocks, never on the dial.
+
+THE LEGACY PORT (tools/limiter_ab_guard/ejlegacy.h, limiter_legacy_render): EedLimiterProcessor::processBlock
+(transparent, TP on, lookahead 2, release 50, the 50 ms multiplicative input-gain ease from 1.0) on the JUCE-free
+headers it already uses. Proven by limiter_v2_core_test against the two Pro Tools prints (residual < -40 dB re
+signal, -40.1 and -50.5); skipped with a message where the renders are absent. Latency 108 at 48 k, like the print.
+
+Harness: EDGE overs (within 96 samples of a file end or in the flush) are reported separately and not counted.
+
+fullmix_hot (+10.86, hits up to 4.5 dB over by the hit detector): Pro-L 2 out -10.06 LUFS (0.12 LU under
+source+gain), max GR 0.96 dB on 400 ms blocks, release 0.3-2 ms; current EchoJay -10.69 (0.6 LU under Pro-L 2),
+max GR 2.78, t90 ~140 ms; v2 -11.28 (1.2 LU under), max GR 3.23, t90 up to 900 ms. All three hold the ceiling
+(0 overs; -0.01 / -0.08 / -0.10 dBTP). Retention on the hardest hit (30.07 s, +4.5): Pro-L 2 -4.58, EchoJay -5.09,
+v2 -4.78 - all three land the peak at the ceiling; the difference is entirely what happens AROUND the hit.
