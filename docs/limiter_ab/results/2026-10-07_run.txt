@@ -1,0 +1,1462 @@
+++ date '+%Y-%m-%d %H:%M'
++ echo '# run_all run  (2026-10-07 21:56)  gains: bass_sustain 8.5, fullmix_hot 10.86, others 8.2'
+# run_all run  (2026-10-07 21:56)  gains: bass_sustain 8.5, fullmix_hot 10.86, others 8.2
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_tone_997.wav ']'
+++ gain_for tone_997
+++ case "$1" in
+++ echo 8.2
++ build-limiter-ab/limiter_v2_render docs/limiter_ab/renders/source_tone_997.wav docs/limiter_ab/renders/v2_tone_997.wav --gain 8.2 --ceiling 0.0 --tp 1
+limiter_v2_render: docs/limiter_ab/renders/source_tone_997.wav -> docs/limiter_ab/renders/v2_tone_997.wav  gain +8.2 ceiling +0.0 tp 1  lookahead 5.0 ms stages 3 fast 0 slow 180 slowatk 150 slowwin 1 link 1.00 margin 0.10 post 1.0  latency 384 samples (compensated)  GR max -8.39 dB
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_tone_50.wav ']'
+++ gain_for tone_50
+++ case "$1" in
+++ echo 8.2
++ build-limiter-ab/limiter_v2_render docs/limiter_ab/renders/source_tone_50.wav docs/limiter_ab/renders/v2_tone_50.wav --gain 8.2 --ceiling 0.0 --tp 1
+limiter_v2_render: docs/limiter_ab/renders/source_tone_50.wav -> docs/limiter_ab/renders/v2_tone_50.wav  gain +8.2 ceiling +0.0 tp 1  lookahead 5.0 ms stages 3 fast 0 slow 180 slowatk 150 slowwin 1 link 1.00 margin 0.10 post 1.0  latency 384 samples (compensated)  GR max -8.30 dB
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_tone_imd.wav ']'
+++ gain_for tone_imd
+++ case "$1" in
+++ echo 8.2
++ build-limiter-ab/limiter_v2_render docs/limiter_ab/renders/source_tone_imd.wav docs/limiter_ab/renders/v2_tone_imd.wav --gain 8.2 --ceiling 0.0 --tp 1
+limiter_v2_render: docs/limiter_ab/renders/source_tone_imd.wav -> docs/limiter_ab/renders/v2_tone_imd.wav  gain +8.2 ceiling +0.0 tp 1  lookahead 5.0 ms stages 3 fast 0 slow 180 slowatk 150 slowwin 1 link 1.00 margin 0.10 post 1.0  latency 384 samples (compensated)  GR max -8.60 dB
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_probe_transients.wav ']'
+++ gain_for probe_transients
+++ case "$1" in
+++ echo 8.2
++ build-limiter-ab/limiter_v2_render docs/limiter_ab/renders/source_probe_transients.wav docs/limiter_ab/renders/v2_probe_transients.wav --gain 8.2 --ceiling 0.0 --tp 1
+limiter_v2_render: docs/limiter_ab/renders/source_probe_transients.wav -> docs/limiter_ab/renders/v2_probe_transients.wav  gain +8.2 ceiling +0.0 tp 1  lookahead 5.0 ms stages 3 fast 0 slow 180 slowatk 150 slowwin 1 link 1.00 margin 0.10 post 1.0  latency 384 samples (compensated)  GR max -8.32 dB
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_panned_transient.wav ']'
+++ gain_for panned_transient
+++ case "$1" in
+++ echo 8.2
++ build-limiter-ab/limiter_v2_render docs/limiter_ab/renders/source_panned_transient.wav docs/limiter_ab/renders/v2_panned_transient.wav --gain 8.2 --ceiling 0.0 --tp 1
+limiter_v2_render: docs/limiter_ab/renders/source_panned_transient.wav -> docs/limiter_ab/renders/v2_panned_transient.wav  gain +8.2 ceiling +0.0 tp 1  lookahead 5.0 ms stages 3 fast 0 slow 180 slowatk 150 slowwin 1 link 1.00 margin 0.10 post 1.0  latency 384 samples (compensated)  GR max -8.30 dB
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_fullmix.wav ']'
+++ gain_for fullmix
+++ case "$1" in
+++ echo 8.2
++ build-limiter-ab/limiter_v2_render docs/limiter_ab/renders/source_fullmix.wav docs/limiter_ab/renders/v2_fullmix.wav --gain 8.2 --ceiling 0.0 --tp 1
+limiter_v2_render: docs/limiter_ab/renders/source_fullmix.wav -> docs/limiter_ab/renders/v2_fullmix.wav  gain +8.2 ceiling +0.0 tp 1  lookahead 5.0 ms stages 3 fast 0 slow 180 slowatk 150 slowwin 1 link 1.00 margin 0.10 post 1.0  latency 384 samples (compensated)  GR max -2.91 dB
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_bass_sustain.wav ']'
+++ gain_for bass_sustain
+++ case "$1" in
+++ echo 8.5
++ build-limiter-ab/limiter_v2_render docs/limiter_ab/renders/source_bass_sustain.wav docs/limiter_ab/renders/v2_bass_sustain.wav --gain 8.5 --ceiling 0.0 --tp 1
+limiter_v2_render: docs/limiter_ab/renders/source_bass_sustain.wav -> docs/limiter_ab/renders/v2_bass_sustain.wav  gain +8.5 ceiling +0.0 tp 1  lookahead 5.0 ms stages 3 fast 0 slow 180 slowatk 150 slowwin 1 link 1.00 margin 0.10 post 1.0  latency 384 samples (compensated)  GR max -4.41 dB
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_fullmix_hot.wav ']'
+++ gain_for fullmix_hot
+++ case "$1" in
+++ echo 10.86
++ build-limiter-ab/limiter_v2_render docs/limiter_ab/renders/source_fullmix_hot.wav docs/limiter_ab/renders/v2_fullmix_hot.wav --gain 10.86 --ceiling 0.0 --tp 1
+limiter_v2_render: docs/limiter_ab/renders/source_fullmix_hot.wav -> docs/limiter_ab/renders/v2_fullmix_hot.wav  gain +10.9 ceiling +0.0 tp 1  lookahead 5.0 ms stages 3 fast 0 slow 180 slowatk 150 slowwin 1 link 1.00 margin 0.10 post 1.0  latency 384 samples (compensated)  GR max -5.57 dB
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_tone_997.wav ']'
+++ gain_for tone_997
+++ case "$1" in
+++ echo 8.2
++ build-limiter-ab/limiter_ab_guard analyse docs/limiter_ab/renders --case tone_997 --gain 8.2 --ceiling 0.0 --trace
+limiter_ab_guard analyse docs/limiter_ab/renders  gain +8.2 dB  ceiling +0.0 dB
+
+#### case tone_997: source docs/limiter_ab/renders/source_tone_997.wav (float32, 48000 Hz, 2 ch, 25.20 s)
+
+== case tone_997           tag proL2       48000 Hz  1209600 frames  offset +0 samples (0.00 ms)  [render 12.8 s longer, tail silent]  corr 1.000 1.000
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I 4.84 LUFS  Mmax 8.2  Smax 8.2   |  out  I 0.01 LUFS  Mmax 0.2  Smax 0.2   |  S std 2.82 -> 0.21 LU
+  peaks      sample -0.04 dBFS  TRUE PEAK -0.02 dBTP  overs above ceiling+0.05 dB: 0
+  dynamics   GR mean -3.65 dB  max -7.97  std 3.01  p2p 7.97  |  crest in 3.4 -> out 3.2 dB  |  L-R GR std 0.00 dB
+  tone       seg  file dB   out RMS   GR steady   fund    THD     THD+N   h2     h3     h4     h5   | imd 1k   2k   18k   21k
+              0    -8.2      -3.0     -0.03       3.0   -61.5   -61.3 -146.2  -61.5 -156.7  -80.2  |    n/a    n/a    n/a    n/a
+              1    -5.2      -2.9     -2.85       3.2   -30.8   -30.8 -145.5  -31.0 -155.3  -44.3  |    n/a    n/a    n/a    n/a
+              2    -2.2      -2.8     -5.79       3.2   -27.8   -27.8 -145.0  -28.2 -154.4  -38.3  |    n/a    n/a    n/a    n/a
+              3    +0.0      -2.8     -7.97       3.2   -26.6   -26.6 -145.4  -27.1 -154.1  -36.1  |    n/a    n/a    n/a    n/a
+              4    -2.2      -2.8     -5.79       3.2   -27.8   -27.8 -145.0  -28.2 -154.4  -38.3  |    n/a    n/a    n/a    n/a
+              5    -8.2      -3.0     -0.03       3.0   -61.5   -61.3 -146.2  -61.6 -156.7  -80.2  |    n/a    n/a    n/a    n/a
+  steps      t(s)   GR from -> to     t10    t50    t90 (ms)
+               4.6    -0.03 ->  -2.85      0.0    0.0    0.0
+               8.6    -2.85 ->  -5.79      0.0    0.0    0.0
+              12.6    -5.79 ->  -7.97      0.0    0.0    0.0
+              16.6    -7.97 ->  -5.79      0.0    0.0   11.0
+              20.6    -5.79 ->  -0.03      0.0   64.0  343.0
+ROW case=tone_997 tag=proL2 aligned=1 offset=0 outI=0.01 inI=4.84 tp=-0.02 overs=0 edgeOvers=0 grMean=-3.65 grStd=3.01 crestOut=3.2 hits=0 retMed=  n/a t63med=  n/a t90med=  n/a lrStd=0.00 thdMax=-26.6 thdnMax=-26.6
+
+== case tone_997           tag v2          48000 Hz  1209600 frames  offset +0 samples (0.00 ms)  corr 1.000 1.000
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I 4.84 LUFS  Mmax 8.2  Smax 8.2   |  out  I -0.22 LUFS  Mmax -0.1  Smax -0.1   |  S std 2.82 -> 0.15 LU
+  peaks      sample -0.10 dBFS  TRUE PEAK -0.10 dBTP  overs above ceiling+0.05 dB: 0
+  dynamics   GR mean -3.87 dB  max -8.30  std 3.12  p2p 8.30  |  crest in 3.4 -> out 3.3 dB  |  L-R GR std 0.00 dB
+  tone       seg  file dB   out RMS   GR steady   fund    THD     THD+N   h2     h3     h4     h5   | imd 1k   2k   18k   21k
+              0    -8.2      -3.1     -0.10       2.9  -144.7   -90.5 -146.2 -153.1 -156.9 -159.5  |    n/a    n/a    n/a    n/a
+              1    -5.2      -3.1     -3.10       2.9  -144.7   -90.5 -146.2 -153.1 -156.9 -159.5  |    n/a    n/a    n/a    n/a
+              2    -2.2      -3.1     -6.10       2.9  -144.7   -90.5 -146.2 -153.1 -156.9 -159.4  |    n/a    n/a    n/a    n/a
+              3    +0.0      -3.1     -8.30       2.9  -144.7   -90.5 -146.2 -153.1 -156.9 -159.5  |    n/a    n/a    n/a    n/a
+              4    -2.2      -3.1     -6.10       2.9  -144.7   -90.5 -146.2 -153.1 -156.9 -159.4  |    n/a    n/a    n/a    n/a
+              5    -8.2      -3.1     -0.10       2.9  -144.7   -90.5 -146.2 -153.1 -156.9 -159.5  |    n/a    n/a    n/a    n/a
+  steps      t(s)   GR from -> to     t10    t50    t90 (ms)
+               4.6    -0.10 ->  -3.10     -4.0   -2.0   -1.0
+               8.6    -3.10 ->  -6.10     -4.0   -2.0   -1.0
+              12.6    -6.10 ->  -8.30     -4.0   -2.0   -1.0
+              16.6    -8.30 ->  -6.10      1.0    2.0    4.0
+              20.6    -6.10 ->  -0.10      2.0   67.0  351.0
+ROW case=tone_997 tag=v2 aligned=1 offset=0 outI=-0.22 inI=4.84 tp=-0.10 overs=0 edgeOvers=0 grMean=-3.87 grStd=3.12 crestOut=3.3 hits=0 retMed=  n/a t63med=  n/a t90med=  n/a lrStd=0.00 thdMax=-144.7 thdnMax=-90.5
+
+-- rule: v2 vs proL2 on tone_997
+  FAIL  level matched within 0.1 LU  [-0.22 vs 0.01 LUFS]
+  PASS  zero true-peak overs above the ceiling  [0 overs, -0.10 dBTP (Pro-L 2: 0, -0.02 dBTP)]
+  PASS  THD at the highest drive: no harmonic more than 3 dB worse than Pro-L 2  [h2 -146.2/-145.4 h3 -153.1/-27.1 h4 -156.9/-154.1 h5 -159.5/-36.1 h6 -161.4/-156.4 h7 -162.9/-76.7 h8 -164.2/-163.8 ]
+
+==== limiter_ab_guard analyse: GREEN (0 problem(s)) ====
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_tone_50.wav ']'
+++ gain_for tone_50
+++ case "$1" in
+++ echo 8.2
++ build-limiter-ab/limiter_ab_guard analyse docs/limiter_ab/renders --case tone_50 --gain 8.2 --ceiling 0.0 --trace
+limiter_ab_guard analyse docs/limiter_ab/renders  gain +8.2 dB  ceiling +0.0 dB
+
+#### case tone_50: source docs/limiter_ab/renders/source_tone_50.wav (float32, 48000 Hz, 2 ch, 25.20 s)
+
+== case tone_50            tag proL2       48000 Hz  1209600 frames  offset +0 samples (0.00 ms)  [render 12.8 s longer, tail silent]  corr 1.000 1.000
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I 0.20 LUFS  Mmax 3.5  Smax 3.5   |  out  I -4.14 LUFS  Mmax -3.5  Smax -3.6   |  S std 2.82 -> 0.47 LU
+  peaks      sample -0.04 dBFS  TRUE PEAK -0.04 dBTP  overs above ceiling+0.05 dB: 0
+  dynamics   GR mean -3.21 dB  max -7.16  std 2.70  p2p 7.16  |  crest in 3.4 -> out 2.7 dB  |  L-R GR std 0.00 dB
+  tone       seg  file dB   out RMS   GR steady   fund    THD     THD+N   h2     h3     h4     h5   | imd 1k   2k   18k   21k
+              0    -8.2      -3.0     -0.01       3.0   -63.5   -60.6 -118.0  -69.1 -126.0  -69.3  |    n/a    n/a    n/a    n/a
+              1    -5.2      -2.4     -2.15       3.6   -25.2   -25.1 -117.9  -26.6 -126.1  -31.4  |    n/a    n/a    n/a    n/a
+              2    -2.2      -2.1     -4.71       3.9   -21.2   -21.2 -117.8  -21.9 -126.5  -30.1  |    n/a    n/a    n/a    n/a
+              3    +0.0      -2.0     -6.68       4.0   -19.6   -19.5 -117.8  -20.0 -126.7  -30.7  |    n/a    n/a    n/a    n/a
+              4    -2.2      -2.1     -4.71       3.9   -21.2   -21.2 -117.8  -21.9 -126.5  -30.1  |    n/a    n/a    n/a    n/a
+              5    -8.2      -3.0     -0.01       3.0   -63.5   -60.6 -118.0  -69.1 -126.0  -69.3  |    n/a    n/a    n/a    n/a
+  steps      t(s)   GR from -> to     t10    t50    t90 (ms)
+               4.6    -0.01 ->  -2.15      2.0    3.0    3.0
+               8.6    -2.15 ->  -4.71    -26.0    3.0    3.0
+              12.6    -4.71 ->  -6.68    -27.0  -26.0    3.0
+              16.6    -6.68 ->  -4.71    -30.0   11.0   71.0
+              20.6    -4.71 ->  -0.01    -30.0   92.0  379.0
+ROW case=tone_50 tag=proL2 aligned=1 offset=0 outI=-4.14 inI=0.20 tp=-0.04 overs=0 edgeOvers=0 grMean=-3.21 grStd=2.70 crestOut=2.7 hits=0 retMed=  n/a t63med=  n/a t90med=  n/a lrStd=0.00 thdMax=-19.6 thdnMax=-19.5
+
+== case tone_50            tag v2          48000 Hz  1209600 frames  offset +0 samples (0.00 ms)  corr 1.000 1.000
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I 0.20 LUFS  Mmax 3.5  Smax 3.5   |  out  I -4.81 LUFS  Mmax -4.6  Smax -4.6   |  S std 2.82 -> 0.16 LU
+  peaks      sample -0.10 dBFS  TRUE PEAK -0.10 dBTP  overs above ceiling+0.05 dB: 0
+  dynamics   GR mean -3.80 dB  max -8.18  std 3.08  p2p 8.18  |  crest in 3.4 -> out 3.2 dB  |  L-R GR std 0.00 dB
+  tone       seg  file dB   out RMS   GR steady   fund    THD     THD+N   h2     h3     h4     h5   | imd 1k   2k   18k   21k
+              0    -8.2      -3.1     -0.08       2.9   -56.8   -56.8 -118.0  -57.0 -126.0  -71.0  |    n/a    n/a    n/a    n/a
+              1    -5.2      -3.0     -2.82       3.0   -34.5   -34.5 -118.0  -35.5 -126.4  -41.4  |    n/a    n/a    n/a    n/a
+              2    -2.2      -3.0     -5.71       3.0   -31.6   -31.6 -118.0  -33.0 -126.5  -37.5  |    n/a    n/a    n/a    n/a
+              3    +0.0      -3.0     -7.87       3.0   -30.7   -30.7 -118.0  -32.2 -126.6  -36.3  |    n/a    n/a    n/a    n/a
+              4    -2.2      -3.0     -5.71       3.0   -31.6   -31.6 -118.0  -33.0 -126.5  -37.5  |    n/a    n/a    n/a    n/a
+              5    -8.2      -3.1     -0.08       2.9   -56.8   -56.8 -118.0  -57.0 -126.0  -71.0  |    n/a    n/a    n/a    n/a
+  steps      t(s)   GR from -> to     t10    t50    t90 (ms)
+               4.6    -0.08 ->  -2.82      0.0    0.0    2.0
+               8.6    -2.82 ->  -5.71      0.0    0.0    2.0
+              12.6    -5.71 ->  -7.87    -28.0    1.0    2.0
+              16.6    -7.87 ->  -5.71    -30.0    0.0    8.0
+              20.6    -5.71 ->  -0.08    -30.0   71.0  353.0
+ROW case=tone_50 tag=v2 aligned=1 offset=0 outI=-4.81 inI=0.20 tp=-0.10 overs=0 edgeOvers=0 grMean=-3.80 grStd=3.08 crestOut=3.2 hits=0 retMed=  n/a t63med=  n/a t90med=  n/a lrStd=0.00 thdMax=-30.7 thdnMax=-30.7
+
+-- rule: v2 vs proL2 on tone_50
+  FAIL  level matched within 0.1 LU  [-4.81 vs -4.14 LUFS]
+  PASS  zero true-peak overs above the ceiling  [0 overs, -0.10 dBTP (Pro-L 2: 0, -0.04 dBTP)]
+  PASS  THD at the highest drive: no harmonic more than 3 dB worse than Pro-L 2  [h2 -118.0/-117.8 h3 -32.2/-20.0 h4 -126.6/-126.7 h5 -36.3/-30.7 h6 -129.8/-132.1 h7 -46.9/-39.8 h8 -132.8/-133.9 ]
+
+==== limiter_ab_guard analyse: GREEN (0 problem(s)) ====
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_tone_imd.wav ']'
+++ gain_for tone_imd
+++ case "$1" in
+++ echo 8.2
++ build-limiter-ab/limiter_ab_guard analyse docs/limiter_ab/renders --case tone_imd --gain 8.2 --ceiling 0.0 --trace
+limiter_ab_guard analyse docs/limiter_ab/renders  gain +8.2 dB  ceiling +0.0 dB
+
+#### case tone_imd: source docs/limiter_ab/renders/source_tone_imd.wav (float32, 48000 Hz, 2 ch, 13.20 s)
+
+== case tone_imd           tag proL2       48000 Hz  633600 frames  offset +0 samples (0.00 ms)  [render 24.8 s longer, tail silent]  corr 1.000 0.997
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I 7.43 LUFS  Mmax 8.5  Smax 8.5   |  out  I 0.80 LUFS  Mmax 1.0  Smax 0.9   |  S std 1.01 -> 0.20 LU
+  peaks      sample -0.22 dBFS  TRUE PEAK 0.08 dBTP  overs above ceiling+0.05 dB: 4  (worst at 0.60 s)
+  dynamics   GR mean -6.22 dB  max -7.57  std 1.64  p2p 7.57  |  crest in 6.1 -> out 5.5 dB  |  L-R GR std 0.00 dB
+  tone       seg  file dB   out RMS   GR steady   fund    THD     THD+N   h2     h3     h4     h5   | imd 1k   2k   18k   21k
+              0    -2.2      -5.5     -5.44       0.5     n/a   -22.3      -      -      -      -  |  -87.5  -92.8  -25.5  -25.4
+              1    +0.0      -5.4     -7.57       0.6     n/a   -20.9      -      -      -      -  |  -88.2  -90.3  -24.1  -24.1
+  steps      t(s)   GR from -> to     t10    t50    t90 (ms)
+               6.6    -5.44 ->  -7.57     -1.0    0.0    0.0
+ROW case=tone_imd tag=proL2 aligned=1 offset=0 outI=0.80 inI=7.43 tp=0.08 overs=4 edgeOvers=0 grMean=-6.22 grStd=1.64 crestOut=5.5 hits=0 retMed=  n/a t63med=  n/a t90med=  n/a lrStd=0.00 thdMax=  n/a thdnMax=-20.9
+
+== case tone_imd           tag v2          48000 Hz  633600 frames  offset +0 samples (0.00 ms)  corr 1.000 0.996
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I 7.43 LUFS  Mmax 8.5  Smax 8.5   |  out  I 0.10 LUFS  Mmax 0.2  Smax 0.2   |  S std 1.01 -> 0.20 LU
+  peaks      sample -0.42 dBFS  TRUE PEAK -0.10 dBTP  overs above ceiling+0.05 dB: 0
+  dynamics   GR mean -6.89 dB  max -8.29  std 1.75  p2p 8.29  |  crest in 6.1 -> out 6.1 dB  |  L-R GR std 0.00 dB
+  tone       seg  file dB   out RMS   GR steady   fund    THD     THD+N   h2     h3     h4     h5   | imd 1k   2k   18k   21k
+              0    -2.2      -6.1     -6.09      -0.1     n/a   -88.4      -      -      -      -  | -153.9 -167.8 -143.6 -141.3
+              1    +0.0      -6.1     -8.29      -0.1     n/a   -88.4      -      -      -      -  | -165.9 -168.1 -143.5 -141.3
+  steps      t(s)   GR from -> to     t10    t50    t90 (ms)
+               6.6    -6.09 ->  -8.29     -4.0   -2.0   -1.0
+ROW case=tone_imd tag=v2 aligned=1 offset=0 outI=0.10 inI=7.43 tp=-0.10 overs=0 edgeOvers=0 grMean=-6.89 grStd=1.75 crestOut=6.1 hits=0 retMed=  n/a t63med=  n/a t90med=  n/a lrStd=0.00 thdMax=  n/a thdnMax=-88.4
+
+-- rule: v2 vs proL2 on tone_imd
+  FAIL  level matched within 0.1 LU  [0.10 vs 0.80 LUFS]
+  PASS  zero true-peak overs above the ceiling  [0 overs, -0.10 dBTP (Pro-L 2: 4, 0.08 dBTP)]
+  PASS  THD at the highest drive: no harmonic more than 3 dB worse than Pro-L 2  [IMD 1k -165.9/-88.2  18k -143.5/-24.1]
+
+==== limiter_ab_guard analyse: GREEN (0 problem(s)) ====
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_probe_transients.wav ']'
+++ gain_for probe_transients
+++ case "$1" in
+++ echo 8.2
++ build-limiter-ab/limiter_ab_guard analyse docs/limiter_ab/renders --case probe_transients --gain 8.2 --ceiling 0.0 --trace
+limiter_ab_guard analyse docs/limiter_ab/renders  gain +8.2 dB  ceiling +0.0 dB
+
+#### case probe_transients: source docs/limiter_ab/renders/source_probe_transients.wav (float32, 48000 Hz, 2 ch, 36.70 s)
+
+== case probe_transients   tag proL2       48000 Hz  1761600 frames  offset +0 samples (0.00 ms)  [render 1.3 s longer, tail silent]  corr 1.000 1.000
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I -1.95 LUFS  Mmax 9.5  Smax 4.9   |  out  I -4.65 LUFS  Mmax 2.6  Smax -1.1   |  S std 3.29 -> 1.49 LU
+  peaks      sample -0.04 dBFS  TRUE PEAK -0.04 dBTP  overs above ceiling+0.05 dB: 0
+  dynamics   GR mean -0.57 dB  max -6.92  std 1.53  p2p 6.92  |  crest in 4.7 -> out 4.0 dB  |  L-R GR std 0.00 dB
+  hits       14 detected  (layout: 14)
+              #    t(s)   over   retained   GRmin   base   pre(ms)   hold(ms)    t10    t50    t63    t90 (ms)   dipL   dipR
+              0    1.10    8.2     -8.24   -6.82   -0.0      0.3       0.0     0.3    0.3    0.3    0.3    -6.82  -6.82
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.7  -3.1  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              1    3.60    8.2     -8.35   -7.95   -0.0      0.0       0.0     0.3    0.7    0.7    0.7    -7.95  -7.95
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.1  -6.8  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              2    6.10    8.2     -8.24   -7.53   -0.0      0.0       0.0     0.3    1.7    1.7    1.7    -7.53  -7.53
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.5  -6.5  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +15 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +35 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +55 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+              3    8.60    8.2     -8.24   -7.53   -0.0      0.0       0.0     0.3    9.7    9.7    9.7    -7.53  -7.53
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.5  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.5  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+              4   11.10    8.2     -8.24   -7.53   -0.0      0.0       0.0     0.3   49.7   49.7  252.3    -7.53  -7.53
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.5  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9
+                 +15 ms   -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9
+                 +35 ms   -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.6  -2.3  -2.3  -2.3  -2.3  -2.3
+                 +55 ms   -2.2  -2.2  -2.2  -2.2  -2.2  -2.2
+              5   13.60    8.2     -8.24   -7.53   -0.0      0.0       0.0     0.3  230.7  280.3  509.0    -7.53  -7.53
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.5  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9
+                 +15 ms   -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9
+                 +35 ms   -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9
+                 +55 ms   -6.9  -6.9  -6.9  -6.9  -6.9  -6.9
+              6   16.10    8.2     -8.24   -7.53   -0.0      0.0       0.0     0.3 1043.7 1093.0 1321.3    -7.53  -7.53
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.5  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9
+                 +15 ms   -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9
+                 +35 ms   -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9
+                 +55 ms   -6.9  -6.9  -6.9  -6.9  -6.9  -6.9
+              7   18.60    4.0     -4.04   -3.14   -0.0      0.3       0.0     0.3    0.3    0.3    0.3    -3.14  -3.14
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.5  -1.2  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              8   21.10    4.0     -4.20   -3.81   -0.0      0.0       0.0     0.3    0.7    0.7    0.7    -3.81  -3.81
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -3.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              9   23.60    4.0     -4.04   -3.50   -0.0      0.0       0.0     0.3    1.3    1.3    1.3    -3.50  -3.50
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -2.3  -2.4  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+             10   26.10    4.0     -4.04   -3.51   -0.0      0.0       0.0     0.3    9.3    9.3    9.3    -3.51  -3.51
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -2.3  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.5  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +15 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +35 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +55 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+             11   28.60    4.0     -4.04   -3.55   -0.0      0.0       0.0     0.3   47.3   47.3  159.0    -3.55  -3.55
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -2.3  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8
+                 +15 ms   -2.8  -2.8  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9
+                 +35 ms   -2.9  -2.9  -2.9  -2.9  -2.9  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.7  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +55 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6
+             12   31.10    4.0     -4.04   -3.55   -0.0      0.0       0.0     0.3  197.3  224.0  464.3    -3.55  -3.55
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -2.3  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8
+                 +15 ms   -2.8  -2.8  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9
+                 +35 ms   -2.9  -2.9  -2.9  -2.9  -2.9  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0
+                 +55 ms   -3.0  -3.0  -3.0  -3.0  -3.0  -3.0
+             13   33.60    4.0     -4.04   -3.55   -0.0      0.0       0.0     0.3  999.7 1056.0 1295.3    -3.55  -3.55
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -2.3  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8  -2.8
+                 +15 ms   -2.8  -2.8  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9
+                 +35 ms   -2.9  -2.9  -2.9  -2.9  -2.9  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0
+                 +55 ms   -3.0  -3.0  -3.0  -3.0  -3.0  -3.0
+ROW case=probe_transients tag=proL2 aligned=1 offset=0 outI=-4.65 inI=-1.95 tp=-0.04 overs=0 edgeOvers=0 grMean=-0.57 grStd=1.53 crestOut=4.0 hits=14 retMed=-6.22 t63med=9.5 t90med=9.5 lrStd=0.00
+
+== case probe_transients   tag v2          48000 Hz  1761600 frames  offset +0 samples (0.00 ms)  corr 1.000 1.000
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I -1.95 LUFS  Mmax 9.5  Smax 4.9   |  out  I -5.03 LUFS  Mmax 1.2  Smax -2.2   |  S std 3.29 -> 1.15 LU
+  peaks      sample -0.10 dBFS  TRUE PEAK -0.10 dBTP  overs above ceiling+0.05 dB: 0
+  dynamics   GR mean -0.69 dB  max -8.30  std 1.83  p2p 8.30  |  crest in 4.7 -> out 4.1 dB  |  L-R GR std 0.00 dB
+  hits       14 detected  (layout: 14)
+              #    t(s)   over   retained   GRmin   base   pre(ms)   hold(ms)    t10    t50    t63    t90 (ms)   dipL   dipR
+              0    1.10    8.2     -8.30   -8.30   -0.0      3.7       1.0     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.1  -0.8  -3.2  -6.5  -8.2  -8.3  -7.3  -4.4  -1.6  -0.4  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+                 +15 ms   -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+                 +35 ms   -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+                 +55 ms   -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+              1    3.60    8.2     -8.32   -8.32   -0.0      3.7       1.3     0.7    2.0    2.3    3.3    -8.32  -8.32
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.6  -2.8  -6.2  -8.1  -8.3  -7.9  -5.5  -2.4  -0.7  -0.3  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+                 +15 ms   -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+                 +35 ms   -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+                 +55 ms   -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+              2    6.10    8.2     -8.30   -8.30   -0.0      3.3       2.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.1  -6.3  -3.2  -1.0  -0.4  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3
+                 +15 ms   -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.2  -0.2  -0.2  -0.2
+                 +35 ms   -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+                 +55 ms   -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+              3    8.60    8.2     -8.30   -8.30   -0.0      3.3      10.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.3  -3.3  -1.2  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+              4   11.10    8.2     -8.30   -8.30   -0.0      3.3      50.7     1.0    2.0    2.3  147.0    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3
+                 +15 ms   -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3
+                 +35 ms   -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.5  -3.9  -2.3  -1.9
+                 +55 ms   -1.8  -1.8  -1.8  -1.8  -1.8  -1.8
+              5   13.60    8.2     -8.30   -8.30   -0.0      3.3     200.7     1.0   15.7   71.0  305.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3
+                 +15 ms   -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3
+                 +35 ms   -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3
+                 +55 ms   -8.3  -8.3  -8.3  -8.3  -8.3  -8.3
+              6   16.10    8.2     -8.30   -8.30   -0.0      3.3    1000.7     1.3   68.3  123.3  358.0    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3
+                 +15 ms   -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3
+                 +35 ms   -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3
+                 +55 ms   -8.3  -8.3  -8.3  -8.3  -8.3  -8.3
+              7   18.60    4.0     -4.10   -4.10   -0.0      3.3       1.7     0.7    1.7    2.0    3.0    -4.10  -4.10
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -1.8  -3.4  -4.0  -4.1  -3.7  -2.4  -0.9  -0.2  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +15 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +35 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +55 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+              8   21.10    4.0     -4.14   -4.14   -0.0      3.3       1.7     0.3    1.7    2.0    3.0    -4.14  -4.14
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.4  -1.6  -3.2  -4.0  -4.1  -3.9  -2.9  -1.3  -0.4  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +15 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +35 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +55 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+              9   23.60    4.0     -4.10   -4.10   -0.0      3.0       2.7     0.7    2.0    2.3    3.3    -4.10  -4.10
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.2  -1.1  -2.7  -3.9  -4.1  -4.1  -4.0  -3.1  -1.6  -0.5  -0.2  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +15 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +35 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +55 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+             10   26.10    4.0     -4.10   -4.10   -0.0      3.0      10.7     0.7    2.0    2.3    3.3    -4.10  -4.10
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.2  -1.1  -2.7  -3.9  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.0  -3.2  -1.6  -0.6  -0.3
+                 +15 ms   -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3
+                 +35 ms   -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+                 +55 ms   -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+             11   28.60    4.0     -4.10   -4.10   -0.0      3.0      50.7     1.0    2.0    2.3  145.7    -4.10  -4.10
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.2  -1.1  -2.7  -3.9  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1
+                 +15 ms   -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1
+                 +35 ms   -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.0  -3.3  -2.0  -1.1  -0.9
+                 +55 ms   -0.9  -0.9  -0.9  -0.9  -0.9  -0.9
+             12   31.10    4.0     -4.10   -4.10   -0.0      3.0     201.0     0.7   15.0   70.0  304.7    -4.10  -4.10
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.2  -1.1  -2.7  -3.9  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1
+                 +15 ms   -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1
+                 +35 ms   -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1
+                 +55 ms   -4.1  -4.1  -4.1  -4.1  -4.1  -4.1
+             13   33.60    4.0     -4.10   -4.10   -0.0      3.0    1001.3     0.7   67.3  122.7  357.3    -4.10  -4.10
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.2  -1.1  -2.7  -3.9  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1
+                 +15 ms   -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1
+                 +35 ms   -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1
+                 +55 ms   -4.1  -4.1  -4.1  -4.1  -4.1  -4.1
+ROW case=probe_transients tag=v2 aligned=1 offset=0 outI=-5.03 inI=-1.95 tp=-0.10 overs=0 edgeOvers=0 grMean=-0.69 grStd=1.83 crestOut=4.1 hits=14 retMed=-6.22 t63med=2.3 t90med=3.3 lrStd=0.00
+
+-- rule: v2 vs proL2 on probe_transients
+  FAIL  level matched within 0.1 LU  [-5.03 vs -4.65 LUFS]
+  PASS  zero true-peak overs above the ceiling  [0 overs, -0.10 dBTP (Pro-L 2: 0, -0.04 dBTP)]
+  PASS  transient retention within 1 dB of Pro-L 2 on every hit  [worst 0.06 dB at hit 10 (26.10 s)]
+  FAIL  release limbs within 10% (median t63, t90)  [t63 2.3 vs 9.5 ms, t90 3.3 vs 9.5 ms]
+  FAIL  pumping (momentary GR std) no worse than Pro-L 2 + 0.2 dB  [1.83 vs 1.53 dB]
+
+==== limiter_ab_guard analyse: GREEN (0 problem(s)) ====
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_panned_transient.wav ']'
+++ gain_for panned_transient
+++ case "$1" in
+++ echo 8.2
++ build-limiter-ab/limiter_ab_guard analyse docs/limiter_ab/renders --case panned_transient --gain 8.2 --ceiling 0.0 --trace
+limiter_ab_guard analyse docs/limiter_ab/renders  gain +8.2 dB  ceiling +0.0 dB
+
+#### case panned_transient: source docs/limiter_ab/renders/source_panned_transient.wav (float32, 48000 Hz, 2 ch, 19.70 s)
+
+== case panned_transient   tag proL2       48000 Hz  945600 frames  offset +0 samples (0.00 ms)  [render 18.3 s longer, tail silent]  corr 1.000 1.000
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I -5.41 LUFS  Mmax -3.3  Smax -5.0   |  out  I -5.93 LUFS  Mmax -5.3  Smax -5.7   |  S std 0.21 -> 0.10 LU
+  peaks      sample -0.04 dBFS  TRUE PEAK -0.04 dBTP  overs above ceiling+0.05 dB: 0
+  dynamics   GR mean -0.28 dB  max -1.40  std 0.45  p2p 1.40  |  crest in 6.4 -> out 4.7 dB  |  L-R GR std 0.11 dB
+  hits       12 detected  (layout: 12)
+              #    t(s)   over   retained   GRmin   base   pre(ms)   hold(ms)    t10    t50    t63    t90 (ms)   dipL   dipR
+              0    1.10    8.2     -8.24   -7.37   -0.0      0.0       0.0     0.3    9.7    9.7    9.7    -7.53  -5.61
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.2  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.3  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+              1    2.60    8.2     -8.24   -7.37   -0.0      0.0       0.0     0.3    9.7    9.7    9.7    -7.53  -5.61
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.2  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.3  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+              2    4.10    8.2     -8.24   -7.37   -0.0      0.0       0.0     0.3    9.7    9.7    9.7    -7.53  -5.61
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.2  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.3  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+              3    5.60    8.2     -8.24   -7.37   -0.0      0.0       0.0     0.3    9.7    9.7    9.7    -7.53  -5.61
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.2  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.3  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+              4    7.10    8.2     -8.24   -7.37   -0.0      0.0       0.0     0.3    9.7    9.7    9.7    -7.53  -5.61
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.2  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.3  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+              5    8.60    8.2     -8.24   -7.37   -0.0      0.0       0.0     0.3    9.7    9.7    9.7    -7.53  -5.61
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.2  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.3  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+              6   10.10    8.2     -8.24   -7.37   -0.0      0.0       0.0     0.3    9.7    9.7    9.7    -7.53  -5.61
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.2  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.3  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+              7   11.60    8.2     -8.24   -7.37   -0.0      0.0       0.0     0.3    9.7    9.7    9.7    -7.53  -5.61
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.2  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.8  -6.3  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+              8   13.10    8.2     -8.24   -7.53   -0.0      0.0       0.0     0.3    9.7    9.7    9.7    -7.53  -7.53
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.5  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.5  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+              9   14.60    8.2     -8.24   -7.53   -0.0      0.0       0.0     0.3    9.7    9.7    9.7    -7.53  -7.53
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.5  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.5  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+             10   16.10    8.2     -8.24   -7.53   -0.0      0.0       0.0     0.3    9.7    9.7    9.7    -7.53  -7.53
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.5  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.5  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+             11   17.60    8.2     -8.24   -7.53   -0.0      0.0       0.0     0.3    9.7    9.7    9.7    -7.53  -7.53
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -6.5  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.9  -6.5  -0.6  -0.6  -0.6  -0.6  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+ROW case=panned_transient tag=proL2 aligned=1 offset=0 outI=-5.93 inI=-5.41 tp=-0.04 overs=0 edgeOvers=0 grMean=-0.28 grStd=0.45 crestOut=4.7 hits=12 retMed=-8.24 t63med=9.7 t90med=9.7 lrStd=0.11
+
+== case panned_transient   tag v2          48000 Hz  945600 frames  offset +0 samples (0.00 ms)  corr 1.000 1.000
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I -5.41 LUFS  Mmax -3.3  Smax -5.0   |  out  I -5.97 LUFS  Mmax -5.6  Smax -5.8   |  S std 0.21 -> 0.10 LU
+  peaks      sample -0.10 dBFS  TRUE PEAK -0.10 dBTP  overs above ceiling+0.05 dB: 0
+  dynamics   GR mean -0.30 dB  max -1.52  std 0.50  p2p 1.52  |  crest in 6.4 -> out 4.7 dB  |  L-R GR std 0.00 dB
+  hits       12 detected  (layout: 12)
+              #    t(s)   over   retained   GRmin   base   pre(ms)   hold(ms)    t10    t50    t63    t90 (ms)   dipL   dipR
+              0    1.10    8.2     -8.30   -8.30   -0.0      3.3      10.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.3  -3.3  -1.2  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+              1    2.60    8.2     -8.30   -8.30   -0.0      3.3      10.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.3  -3.3  -1.2  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+              2    4.10    8.2     -8.30   -8.30   -0.0      3.3      10.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.3  -3.3  -1.2  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+              3    5.60    8.2     -8.30   -8.30   -0.0      3.3      10.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.3  -3.3  -1.2  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+              4    7.10    8.2     -8.30   -8.30   -0.0      3.3      10.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.3  -3.3  -1.2  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+              5    8.60    8.2     -8.30   -8.30   -0.0      3.3      10.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.3  -3.3  -1.2  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+              6   10.10    8.2     -8.30   -8.30   -0.0      3.3      10.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.3  -3.3  -1.2  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+              7   11.60    8.2     -8.30   -8.30   -0.0      3.3      10.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.3  -3.3  -1.2  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+              8   13.10    8.2     -8.30   -8.30   -0.0      3.3      10.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.3  -3.3  -1.2  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+              9   14.60    8.2     -8.30   -8.30   -0.0      3.3      10.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.3  -3.3  -1.2  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+             10   16.10    8.2     -8.30   -8.30   -0.0      3.3      10.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.3  -3.3  -1.2  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+             11   17.60    8.2     -8.30   -8.30   -0.0      3.3      10.7     0.7    2.0    2.3    3.3    -8.30  -8.30
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.5  -2.4  -5.7  -7.9  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.3  -8.1  -6.3  -3.3  -1.2  -0.6
+                 +15 ms   -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.6  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +35 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5
+                 +55 ms   -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+ROW case=panned_transient tag=v2 aligned=1 offset=0 outI=-5.97 inI=-5.41 tp=-0.10 overs=0 edgeOvers=0 grMean=-0.30 grStd=0.50 crestOut=4.7 hits=12 retMed=-8.30 t63med=2.3 t90med=3.3 lrStd=0.00
+
+-- rule: v2 vs proL2 on panned_transient
+  PASS  level matched within 0.1 LU  [-5.97 vs -5.93 LUFS]
+  PASS  zero true-peak overs above the ceiling  [0 overs, -0.10 dBTP (Pro-L 2: 0, -0.04 dBTP)]
+  PASS  transient retention within 1 dB of Pro-L 2 on every hit  [worst 0.06 dB at hit 0 (1.10 s)]
+  FAIL  release limbs within 10% (median t63, t90)  [t63 2.3 vs 9.7 ms, t90 3.3 vs 9.7 ms]
+  PASS  pumping (momentary GR std) no worse than Pro-L 2 + 0.2 dB  [0.50 vs 0.45 dB]
+
+==== limiter_ab_guard analyse: GREEN (0 problem(s)) ====
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_fullmix.wav ']'
+++ gain_for fullmix
+++ case "$1" in
+++ echo 8.2
++ build-limiter-ab/limiter_ab_guard analyse docs/limiter_ab/renders --case fullmix --gain 8.2 --ceiling 0.0 --trace
+limiter_ab_guard analyse docs/limiter_ab/renders  gain +8.2 dB  ceiling +0.0 dB
+
+#### case fullmix: source docs/limiter_ab/renders/source_fullmix.wav (pcm24, 48000 Hz, 2 ch, 58.18 s)
+
+== case fullmix            tag echojay     48000 Hz  2792619 frames  offset +108 samples (2.25 ms)  corr 1.000 1.000 1.000 1.000 1.000 1.000 1.000 0.998
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I -12.60 LUFS  Mmax -8.9  Smax -10.8   |  out  I -12.61 LUFS  Mmax -9.3  Smax -10.9   |  S std 1.77 -> 1.72 LU
+  peaks      sample -0.20 dBFS  TRUE PEAK -0.18 dBTP  overs above ceiling+0.05 dB: 0
+  dynamics   GR mean 0.06 dB  max -1.35  std 0.14  p2p 1.47  |  crest in 11.4 -> out 11.2 dB  |  L-R GR std 0.02 dB
+  hits       15 detected
+              #    t(s)   over   retained   GRmin   base   pre(ms)   hold(ms)    t10    t50    t63    t90 (ms)   dipL   dipR
+              0    0.07   -0.0     -0.33   -0.33    0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.33  -0.33
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a
+                  -5 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1  -0.2  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3
+                 +15 ms   -0.3  -0.3  -0.3  -0.3  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.1
+                 +35 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +55 ms   -0.1  -0.1  -0.0  -0.0  -0.0  -0.0
+              1    1.43   -3.4      0.12    0.12    0.1      n/a       n/a     n/a    n/a    n/a    n/a     0.12   0.12
+                 GR trace -25..+60 ms:
+                 -25 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                  -5 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +15 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +35 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +55 ms    0.1   0.1   0.1   0.1   0.1   0.1
+              2    3.71    0.3     -0.53   -0.53    0.1      n/a       n/a     n/a    n/a    n/a    n/a    -0.53  -0.53
+                 GR trace -25..+60 ms:
+                 -25 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                  -5 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1  -0.4  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.5  -0.4
+                 +15 ms   -0.4  -0.4  -0.4  -0.4  -0.4  -0.4  -0.4  -0.4  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3  -0.3
+                 +35 ms   -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +55 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+              3    8.70   -0.5      0.12    0.12    0.1      n/a       n/a     n/a    n/a    n/a    n/a     0.12   0.12
+                 GR trace -25..+60 ms:
+                 -25 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                  -5 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +15 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +35 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +55 ms    0.1   0.1   0.1   0.1   0.1   0.1
+              4   15.96  -10.1      0.12    0.12    0.1      n/a       n/a     n/a    n/a    n/a    n/a     0.12   0.12
+                 GR trace -25..+60 ms:
+                 -25 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                  -5 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +15 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +35 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +55 ms    0.1   0.1   0.1   0.1   0.1   0.1
+              5   17.65   -7.9      0.12    0.12    0.1      n/a       n/a     n/a    n/a    n/a    n/a     0.12   0.12
+                 GR trace -25..+60 ms:
+                 -25 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                  -5 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +15 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +35 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +55 ms    0.1   0.1   0.1   0.1   0.1   0.1
+              6   18.25   -0.2     -0.14   -0.14    0.1      n/a       n/a     n/a    n/a    n/a    n/a    -0.14  -0.14
+                 GR trace -25..+60 ms:
+                 -25 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                  -5 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +15 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              7   24.61   -1.8      0.12    0.12    0.1      n/a       n/a     n/a    n/a    n/a    n/a     0.12   0.12
+                 GR trace -25..+60 ms:
+                 -25 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                  -5 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +15 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +35 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +55 ms    0.1   0.1   0.1   0.1   0.1   0.1
+              8   25.29   -2.5      0.12    0.12    0.1      n/a       n/a     n/a    n/a    n/a    n/a     0.12   0.12
+                 GR trace -25..+60 ms:
+                 -25 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                  -5 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +15 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +35 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +55 ms    0.1   0.1   0.1   0.1   0.1   0.1
+              9   30.07    1.9     -2.53   -2.53    0.1      0.0       6.7     4.7   37.3   52.7  115.7    -2.53  -2.53
+                 GR trace -25..+60 ms:
+                 -25 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                  -5 ms    0.1   0.1   0.1   0.1   0.0  -2.4  -2.5  -2.5  -2.5  -2.5  -2.4  -2.4  -2.3  -2.3  -2.3  -2.3  -2.3  -2.2  -2.2  -2.2
+                 +15 ms   -2.1  -2.1  -2.0  -2.0  -1.9  -1.9  -1.9  -1.8  -1.8  -1.7  -1.7  -1.7  -1.7  -1.6  -1.6  -1.5  -1.5  -1.5  -1.5  -1.5
+                 +35 ms   -1.5  -1.4  -1.4  -1.4  -1.3  -1.3  -1.3  -1.2  -1.2  -1.2  -1.2  -1.2  -1.1  -1.1  -1.1  -1.1  -1.0  -1.0  -1.0  -1.0
+                 +55 ms   -0.9  -0.9  -0.9  -0.9  -0.9  -0.8
+             10   32.80   -0.5      0.12    0.12    0.1      n/a       n/a     n/a    n/a    n/a    n/a     0.12   0.12
+                 GR trace -25..+60 ms:
+                 -25 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                  -5 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +15 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +35 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +55 ms    0.1   0.1   0.1   0.1   0.1   0.1
+             11   39.93   -3.4      0.12    0.12    0.1      n/a       n/a     n/a    n/a    n/a    n/a     0.12   0.12
+                 GR trace -25..+60 ms:
+                 -25 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                  -5 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +15 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +35 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +55 ms    0.1   0.1   0.1   0.1   0.1   0.1
+             12   46.43   -6.9      0.09   -1.13    0.1      0.0       0.0     0.3    0.3    0.3    0.7    -2.39  -3.01
+                 GR trace -25..+60 ms:
+                 -25 ms    0.3   0.2  -0.2  -0.2   0.0   0.4   0.3   0.1   0.1   0.1   0.3  -0.0   0.0  -0.2   0.3   0.2  -0.0  -0.0  -0.2   0.1
+                  -5 ms    0.1  -0.2   0.0   0.2   0.0   0.1   0.1   0.1   0.1   0.2   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +15 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.2
+                 +35 ms    0.1   0.2   0.1   0.1   0.1   0.1   0.1   0.1   0.2   0.1   0.1   0.1   0.2   0.1   0.1   0.1   0.1   0.2   0.1   0.1
+                 +55 ms    0.1   0.1   0.1   0.2   0.1   0.1
+             13   46.90   -4.6      0.12   -0.40    0.1      n/a       n/a     n/a    n/a    n/a    n/a    -1.03  -0.37
+                 GR trace -25..+60 ms:
+                 -25 ms    0.2   0.2   0.1  -0.1   0.0   0.2   0.2   0.1   0.1   0.1   0.2   0.2   0.2   0.1   0.2   0.1   0.2   0.2   0.1   0.2
+                  -5 ms    0.1   0.2   0.2   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +15 ms    0.1   0.1   0.1   0.2   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +35 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +55 ms    0.1   0.1   0.1   0.1   0.1   0.1
+             14   52.34   -0.9      0.12    0.12    0.1      n/a       n/a     n/a    n/a    n/a    n/a     0.12   0.12
+                 GR trace -25..+60 ms:
+                 -25 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                  -5 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +15 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +35 ms    0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1   0.1
+                 +55 ms    0.1   0.1   0.1   0.1   0.1   0.1
+ROW case=fullmix tag=echojay aligned=1 offset=108 outI=-12.61 inI=-12.60 tp=-0.18 overs=0 edgeOvers=0 grMean=0.06 grStd=0.14 crestOut=11.2 hits=15 retMed=0.12 t63med=26.5 t90med=58.2 lrStd=0.02
+
+== case fullmix            tag proL2       48000 Hz  2791996 frames  offset +731 samples (15.23 ms)  corr 1.000 1.000 1.000 1.000 1.000 1.000 1.000 0.998
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I -12.60 LUFS  Mmax -8.9  Smax -10.8   |  out  I -12.60 LUFS  Mmax -9.0  Smax -10.9   |  S std 1.77 -> 1.77 LU
+  peaks      sample -0.04 dBFS  TRUE PEAK -0.03 dBTP  overs above ceiling+0.05 dB: 0
+  dynamics   GR mean -0.00 dB  max -0.15  std 0.01  p2p 0.15  |  crest in 11.4 -> out 11.2 dB  |  L-R GR std 0.00 dB
+  hits       15 detected
+              #    t(s)   over   retained   GRmin   base   pre(ms)   hold(ms)    t10    t50    t63    t90 (ms)   dipL   dipR
+              0    0.07   -0.0     -0.16   -0.06    0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.07  -0.05
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0  -0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              1    1.43   -3.4      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              2    3.71    0.3     -0.37   -0.23    0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.24  -0.22
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0  -0.1   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              3    8.70   -0.5      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              4   15.96  -10.1      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              5   17.65   -7.9      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              6   18.25   -0.2      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              7   24.61   -1.8      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              8   25.29   -2.5      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              9   30.07    1.9     -1.93   -1.56    0.0      0.0       0.0     0.3    0.3    0.3    0.3    -1.52  -1.60
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0  -0.0  -1.1  -0.4  -0.0  -0.0  -0.0  -0.0  -0.1  -0.0  -0.6  -0.7  -0.6  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.1  -0.0  -0.0  -0.0  -0.0  -0.0  -0.1  -0.2  -0.0  -0.0  -0.0  -0.0  -0.1  -0.2  -0.5
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.1  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+             10   32.80   -0.5      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+             11   39.93   -3.4      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+             12   46.43   -6.9      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+             13   46.90   -4.6      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+             14   52.34   -0.9      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+ROW case=fullmix tag=proL2 aligned=1 offset=731 outI=-12.60 inI=-12.60 tp=-0.03 overs=0 edgeOvers=0 grMean=-0.00 grStd=0.01 crestOut=11.2 hits=15 retMed=0.00 t63med=0.3 t90med=0.3 lrStd=0.00
+
+== case fullmix            tag proL2tpOFF  48000 Hz  2792231 frames  offset +496 samples (10.33 ms)  corr 1.000 1.000 1.000 1.000 1.000 1.000 1.000 0.999
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I -12.60 LUFS  Mmax -8.9  Smax -10.8   |  out  I -12.60 LUFS  Mmax -8.9  Smax -10.9   |  S std 1.77 -> 1.77 LU
+  peaks      sample -0.00 dBFS  TRUE PEAK 0.52 dBTP  overs above ceiling+0.05 dB: 95  (worst at 25.53 s)
+  dynamics   GR mean -0.00 dB  max -0.12  std 0.01  p2p 0.12  |  crest in 11.4 -> out 11.2 dB  |  L-R GR std 0.00 dB
+  hits       15 detected
+              #    t(s)   over   retained   GRmin   base   pre(ms)   hold(ms)    t10    t50    t63    t90 (ms)   dipL   dipR
+              0    0.07   -0.0      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              1    1.43   -3.4      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              2    3.71    0.3     -0.33   -0.18    0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.20  -0.17
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0  -0.1   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              3    8.70   -0.5      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              4   15.96  -10.1      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              5   17.65   -7.9      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              6   18.25   -0.2      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              7   24.61   -1.8      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              8   25.29   -2.5      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+              9   30.07    1.9     -1.89   -1.29    0.0      0.0       0.0     0.3    0.3    0.3    0.3    -1.25  -1.33
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0  -0.0  -0.9  -0.3  -0.0  -0.0  -0.0  -0.0  -0.1  -0.0  -0.5  -0.7  -0.5  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.1  -0.1  -0.0  -0.0  -0.0  -0.0  -0.0  -0.1  -0.4
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.1  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+             10   32.80   -0.5      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+             11   39.93   -3.4      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+             12   46.43   -6.9      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+             13   46.90   -4.6      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+             14   52.34   -0.9      0.00    0.00    0.0      n/a       n/a     n/a    n/a    n/a    n/a     0.00   0.00
+                 GR trace -25..+60 ms:
+                 -25 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                  -5 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +15 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +35 ms    0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0   0.0
+                 +55 ms    0.0   0.0   0.0   0.0   0.0   0.0
+ROW case=fullmix tag=proL2tpOFF aligned=1 offset=496 outI=-12.60 inI=-12.60 tp=0.52 overs=95 edgeOvers=0 grMean=-0.00 grStd=0.01 crestOut=11.2 hits=15 retMed=0.00 t63med=0.3 t90med=0.3 lrStd=0.00
+
+== case fullmix            tag v2          48000 Hz  2792727 frames  offset +0 samples (0.00 ms)  corr 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000
+  gain +8.2 dB  ceiling +0.0 dB
+  loudness   in+gain  I -12.60 LUFS  Mmax -8.9  Smax -10.8   |  out  I -12.64 LUFS  Mmax -9.1  Smax -10.9   |  S std 1.77 -> 1.75 LU
+  peaks      sample -0.10 dBFS  TRUE PEAK -0.10 dBTP  overs above ceiling+0.05 dB: 0
+  dynamics   GR mean -0.02 dB  max -0.80  std 0.06  p2p 0.80  |  crest in 11.4 -> out 11.2 dB  |  L-R GR std 0.00 dB
+  hits       15 detected
+              #    t(s)   over   retained   GRmin   base   pre(ms)   hold(ms)    t10    t50    t63    t90 (ms)   dipL   dipR
+              0    0.07   -0.0     -0.23   -0.23    0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.23  -0.23
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.1  -0.2  -0.2  -0.2  -0.2  -0.2  -0.1  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              1    1.43   -3.4     -0.00   -0.00   -0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.00  -0.00
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              2    3.71    0.3     -0.43   -0.43   -0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.43  -0.43
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.2  -0.4  -0.4  -0.4  -0.4  -0.3  -0.1  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              3    8.70   -0.5     -0.00   -0.00   -0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.00  -0.00
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              4   15.96  -10.1     -0.00   -0.00   -0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.00  -0.00
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              5   17.65   -7.9     -0.00   -0.00   -0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.00  -0.00
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              6   18.25   -0.2     -0.04   -0.04   -0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.04  -0.04
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              7   24.61   -1.8     -0.00   -0.00   -0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.00  -0.00
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              8   25.29   -2.5      0.00   -0.00   -0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.00  -0.00
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              9   30.07    1.9     -2.10   -2.42   -0.0      1.0       2.7     0.3    2.0   11.0   12.3    -2.42  -2.42
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.2  -0.9  -2.0  -2.4  -2.4  -2.4  -2.1  -1.6  -1.0  -1.0  -1.5  -1.8  -1.8  -1.8  -1.7  -1.5  -1.1
+                 +15 ms   -0.6  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2  -0.3  -0.4  -0.6  -0.6  -0.6  -0.6  -0.5  -0.4  -0.6  -0.9  -1.1  -1.2
+                 +35 ms   -1.1  -0.9  -0.6  -0.3  -0.2  -0.2  -0.2  -0.2  -0.2  -0.3  -0.4  -0.4  -0.4  -0.3  -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+                 +55 ms   -0.2  -0.2  -0.2  -0.2  -0.2  -0.2
+             10   32.80   -0.5     -0.00   -0.00   -0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.00  -0.00
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+             11   39.93   -3.4     -0.00   -0.00   -0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.00  -0.00
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+             12   46.43   -6.9     -0.00   -0.00   -0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.00  -0.00
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+             13   46.90   -4.6     -0.00   -0.00   -0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.00  -0.00
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+             14   52.34   -0.9     -0.00   -0.00   -0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.00  -0.00
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +15 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+ROW case=fullmix tag=v2 aligned=1 offset=0 outI=-12.64 inI=-12.60 tp=-0.10 overs=0 edgeOvers=0 grMean=-0.02 grStd=0.06 crestOut=11.2 hits=15 retMed=-0.00 t63med=11.0 t90med=12.3 lrStd=0.00
+
+-- rule: echojay vs proL2 on fullmix
+  PASS  level matched within 0.1 LU  [-12.61 vs -12.60 LUFS]
+  PASS  zero true-peak overs above the ceiling  [0 overs, -0.18 dBTP (Pro-L 2: 0, -0.03 dBTP)]
+  PASS  transient retention within 1 dB of Pro-L 2 on every hit  [worst 0.60 dB at hit 9 (30.07 s)]
+  FAIL  release limbs within 10% (median t63, t90)  [t63 26.5 vs 0.3 ms, t90 58.2 vs 0.3 ms]
+  PASS  pumping (momentary GR std) no worse than Pro-L 2 + 0.2 dB  [0.14 vs 0.01 dB]
+
+-- rule: proL2tpOFF vs proL2 on fullmix
+  PASS  level matched within 0.1 LU  [-12.60 vs -12.60 LUFS]
+  FAIL  zero true-peak overs above the ceiling  [95 overs, 0.52 dBTP (Pro-L 2: 0, -0.03 dBTP)]
+  PASS  transient retention within 1 dB of Pro-L 2 on every hit  [worst 0.16 dB at hit 0 (0.07 s)]
+  PASS  release limbs within 10% (median t63, t90)  [t63 0.3 vs 0.3 ms, t90 0.3 vs 0.3 ms]
+  PASS  pumping (momentary GR std) no worse than Pro-L 2 + 0.2 dB  [0.01 vs 0.01 dB]
+
+-- rule: v2 vs proL2 on fullmix
+  PASS  level matched within 0.1 LU  [-12.64 vs -12.60 LUFS]
+  PASS  zero true-peak overs above the ceiling  [0 overs, -0.10 dBTP (Pro-L 2: 0, -0.03 dBTP)]
+  PASS  transient retention within 1 dB of Pro-L 2 on every hit  [worst 0.17 dB at hit 9 (30.07 s)]
+  FAIL  release limbs within 10% (median t63, t90)  [t63 11.0 vs 0.3 ms, t90 12.3 vs 0.3 ms]
+  PASS  pumping (momentary GR std) no worse than Pro-L 2 + 0.2 dB  [0.06 vs 0.01 dB]
+
+==== limiter_ab_guard analyse: GREEN (0 problem(s)) ====
++ for c in '$CASES'
++ '[' -f docs/limiter_ab/renders/source_bass_sustain.wav ']'
+++ gain_for bass_sustain
+++ case "$1" in
+++ echo 8.5
++ build-limiter-ab/limiter_ab_guard analyse docs/limiter_ab/renders --case bass_sustain --gain 8.5 --ceiling 0.0 --trace
+limiter_ab_guard analyse docs/limiter_ab/renders  gain +8.5 dB  ceiling +0.0 dB
+
+#### case bass_sustain: source docs/limiter_ab/renders/source_bass_sustain.wav (pcm24, 48000 Hz, 2 ch, 58.18 s)
+
+== case bass_sustain       tag echojay     48000 Hz  2792339 frames  offset -388 samples (-8.08 ms)  corr 0.992 0.991 0.996 0.992 0.991 0.000 0.995 0.995
+  gain +8.5 dB  ceiling +0.0 dB
+  loudness   in+gain  I -5.73 LUFS  Mmax -2.1  Smax -4.6   |  out  I -7.68 LUFS  Mmax -4.7  Smax -6.6   |  S std 2.24 -> 2.13 LU
+  peaks      sample -0.20 dBFS  TRUE PEAK -0.20 dBTP  overs above ceiling+0.05 dB: 0
+  dynamics   GR mean -1.45 dB  max -4.16  std 1.00  p2p 4.07  |  crest in 5.8 -> out 4.8 dB  |  L-R GR std 0.00 dB
+  hits       20 detected
+              #    t(s)   over   retained   GRmin   base   pre(ms)   hold(ms)    t10    t50    t63    t90 (ms)   dipL   dipR
+              0    0.07    4.2     -4.35   -4.35    0.0      1.3       9.0     7.0  121.3  250.0  514.7    -4.35  -4.35
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.6  -3.4  -3.5  -3.9  -4.1  -4.1  -4.1  -4.4  -4.4  -4.4  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2  -4.2
+                 +15 ms   -4.1  -4.1  -4.1  -4.0  -4.0  -4.0  -3.9  -3.8  -3.8  -3.8  -3.8  -3.7  -3.7  -3.7  -3.6  -3.5  -3.4  -3.4  -3.4  -3.3
+                 +35 ms   -3.3  -3.3  -3.3  -3.2  -3.2  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.8  -2.8  -2.7  -2.7  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.6  -2.5
+              1    1.43    4.1     -4.32   -4.32   -0.1      0.0      13.3     3.7  181.7  317.3  661.3    -4.32  -4.32
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1   n/a   n/a  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -3.1  -3.5  -3.5  -3.9  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2  -4.2
+                 +15 ms   -4.2  -4.2  -4.2  -4.1  -4.1  -4.0  -3.9  -3.9  -3.9  -3.8  -3.8  -3.8  -3.7  -3.7  -3.6  -3.5  -3.5  -3.5  -3.5  -3.5
+                 +35 ms   -3.4  -3.4  -3.4  -3.4  -3.3  -3.2  -3.1  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.8  -2.8  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.8  -2.8
+              2    3.70    4.1     -4.32   -4.32    0.0      0.0      13.3     3.7  206.7  343.3  683.0    -4.32  -4.32
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1   n/a   n/a  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.2  -3.4  -3.5  -3.6  -4.1  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2  -4.2
+                 +15 ms   -4.2  -4.2  -4.1  -4.1  -4.0  -4.0  -3.9  -3.9  -3.9  -3.8  -3.8  -3.8  -3.7  -3.7  -3.6  -3.5  -3.5  -3.5  -3.5  -3.4
+                 +35 ms   -3.4  -3.4  -3.4  -3.4  -3.3  -3.2  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.9  -2.8  -2.8  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.8  -2.8
+              3    5.30    3.6     -3.84   -3.84   -0.1      2.0      14.0     2.7  248.3  391.7 2547.7    -3.84  -3.84
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -2.5  -3.0  -3.0  -3.3  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.7  -3.7  -3.7  -3.7
+                 +15 ms   -3.7  -3.6  -3.6  -3.5  -3.4  -3.4  -3.4  -3.4  -3.4  -3.3  -3.3  -3.3  -3.2  -3.1  -3.1  -3.1  -3.1  -3.1  -3.0  -3.0
+                 +35 ms   -3.0  -3.0  -3.0  -2.9  -2.8  -2.8  -2.7  -2.7  -2.7  -2.7  -2.7  -2.7  -2.7  -2.7  -2.7  -2.6  -2.6  -2.5  -2.5  -2.4
+                 +55 ms   -2.4  -2.5  -2.5  -2.6  -2.7  -2.8
+              4    8.70    4.1     -4.32   -4.32   -0.1      0.0      13.3     3.3  181.3  317.0  661.0    -4.32  -4.32
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1   n/a   n/a  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.2  -3.4  -3.5  -3.6  -4.1  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2  -4.2
+                 +15 ms   -4.2  -4.2  -4.1  -4.1  -4.0  -4.0  -3.9  -3.9  -3.9  -3.8  -3.8  -3.8  -3.7  -3.7  -3.6  -3.5  -3.5  -3.5  -3.5  -3.4
+                 +35 ms   -3.4  -3.4  -3.4  -3.4  -3.3  -3.2  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.9  -2.8  -2.8  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.8  -2.8
+              5   10.98    4.1     -4.32   -4.32    0.0      0.0      13.3     3.7  207.0  343.3  683.0    -4.32  -4.32
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1   n/a  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -1.0  -3.5  -3.5  -3.7  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2
+                 +15 ms   -4.2  -4.2  -4.2  -4.1  -4.1  -4.0  -3.9  -3.9  -3.9  -3.8  -3.8  -3.8  -3.8  -3.7  -3.7  -3.5  -3.5  -3.5  -3.5  -3.5
+                 +35 ms   -3.4  -3.4  -3.4  -3.4  -3.3  -3.3  -3.2  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.9  -2.8  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.7  -2.8
+              6   15.52   -3.4     -0.09   -0.09    0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.09  -0.09
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +15 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +35 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +55 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+              7   15.98    4.1     -4.32   -4.32   -0.1      0.0      13.3     3.3  181.3  317.0  569.3    -4.32  -4.32
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1   n/a  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -1.0  -3.5  -3.5  -3.7  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2
+                 +15 ms   -4.2  -4.2  -4.2  -4.1  -4.1  -4.0  -3.9  -3.9  -3.9  -3.8  -3.8  -3.8  -3.8  -3.7  -3.7  -3.5  -3.5  -3.5  -3.5  -3.5
+                 +35 ms   -3.4  -3.4  -3.4  -3.4  -3.3  -3.3  -3.2  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.9  -2.8  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.7  -2.8
+              8   18.25    4.1     -4.32   -4.32    0.0      0.0      13.3     4.0  207.0  343.3  683.0    -4.32  -4.32
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1   n/a   n/a  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -2.7  -3.5  -3.5  -3.8  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2
+                 +15 ms   -4.2  -4.2  -4.2  -4.1  -4.1  -4.0  -3.9  -3.9  -3.9  -3.8  -3.8  -3.8  -3.8  -3.7  -3.6  -3.5  -3.5  -3.5  -3.5  -3.5
+                 +35 ms   -3.4  -3.4  -3.4  -3.4  -3.3  -3.2  -3.2  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.8  -2.8  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.8  -2.8
+              9   19.84    3.6     -3.84   -3.84   -0.1      1.7      14.0     3.0  248.3  391.7 2547.7    -3.84  -3.84
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -1.7  -3.0  -3.0  -3.1  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.7  -3.7  -3.7
+                 +15 ms   -3.7  -3.6  -3.6  -3.5  -3.5  -3.4  -3.4  -3.4  -3.4  -3.3  -3.3  -3.3  -3.3  -3.2  -3.1  -3.1  -3.1  -3.1  -3.0  -3.0
+                 +35 ms   -3.0  -3.0  -3.0  -3.0  -2.9  -2.8  -2.8  -2.7  -2.7  -2.7  -2.7  -2.7  -2.7  -2.7  -2.7  -2.6  -2.6  -2.5  -2.5  -2.4
+                 +55 ms   -2.4  -2.4  -2.5  -2.5  -2.6  -2.7
+             10   23.25    4.1     -4.32   -4.32   -0.1      0.0      13.3     3.3  181.3  317.3  661.0    -4.32  -4.32
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1   n/a   n/a  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -2.6  -3.5  -3.5  -3.8  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2  -4.2
+                 +15 ms   -4.2  -4.2  -4.2  -4.1  -4.1  -4.0  -3.9  -3.9  -3.9  -3.8  -3.8  -3.8  -3.8  -3.7  -3.6  -3.5  -3.5  -3.5  -3.5  -3.5
+                 +35 ms   -3.4  -3.4  -3.4  -3.4  -3.3  -3.2  -3.2  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.8  -2.8  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.8  -2.8
+             11   25.52    4.1     -4.32   -4.32    0.0      0.0      13.3     4.0  182.7  343.3  683.0    -4.32  -4.32
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1   n/a   n/a  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -3.2  -3.5  -3.5  -4.0  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2  -4.2
+                 +15 ms   -4.2  -4.2  -4.2  -4.1  -4.1  -4.0  -3.9  -3.9  -3.9  -3.8  -3.8  -3.8  -3.7  -3.7  -3.6  -3.5  -3.5  -3.5  -3.5  -3.4
+                 +35 ms   -3.4  -3.4  -3.4  -3.4  -3.3  -3.2  -3.1  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.9  -2.8  -2.8  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.8  -2.8
+             12   30.07    4.2     -4.35   -4.35    0.0      1.3       9.0     7.0  121.3  250.0 1139.7    -4.35  -4.35
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.6  -3.4  -3.5  -3.9  -4.1  -4.1  -4.1  -4.4  -4.4  -4.4  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2  -4.2
+                 +15 ms   -4.1  -4.1  -4.1  -4.0  -4.0  -4.0  -3.9  -3.8  -3.8  -3.8  -3.8  -3.7  -3.7  -3.7  -3.6  -3.5  -3.4  -3.4  -3.4  -3.3
+                 +35 ms   -3.3  -3.3  -3.3  -3.2  -3.2  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.8  -2.8  -2.7  -2.7  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.6  -2.5
+             13   32.80    4.1     -4.32   -4.32    0.0      0.0      13.3     4.0  182.7  343.7  683.0    -4.32  -4.32
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1   n/a   n/a  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.3  -3.4  -3.5  -3.6  -4.2  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2  -4.2
+                 +15 ms   -4.2  -4.2  -4.1  -4.1  -4.0  -4.0  -3.9  -3.9  -3.9  -3.8  -3.8  -3.8  -3.7  -3.7  -3.6  -3.5  -3.5  -3.5  -3.5  -3.4
+                 +35 ms   -3.4  -3.4  -3.4  -3.4  -3.3  -3.2  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.9  -2.8  -2.8  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.8  -2.8
+             14   34.39    4.0     -4.16   -4.16   -0.1      1.0      13.7     3.3  193.3  336.3  662.7    -4.16  -4.16
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -2.7  -3.3  -3.3  -3.7  -4.2  -4.2  -4.2  -4.2  -4.1  -4.1  -4.1  -4.1  -4.1  -4.1  -4.0  -4.0
+                 +15 ms   -4.0  -4.0  -3.9  -3.9  -3.8  -3.7  -3.7  -3.7  -3.7  -3.6  -3.6  -3.6  -3.5  -3.5  -3.4  -3.3  -3.3  -3.3  -3.3  -3.3
+                 +35 ms   -3.3  -3.3  -3.2  -3.2  -3.2  -3.0  -3.0  -2.9  -2.9  -2.9  -2.9  -2.9  -2.9  -2.8  -2.8  -2.8  -2.8  -2.7  -2.6  -2.6
+                 +55 ms   -2.6  -2.6  -2.6  -2.6  -2.6  -2.7
+             15   43.70    4.2     -4.35   -4.35    0.0      1.0       9.0     7.0  121.3  250.0  514.7    -4.35  -4.35
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a  -0.1   n/a  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -3.3  -3.4  -3.7  -4.1  -4.1  -4.1  -4.3  -4.4  -4.4  -4.4  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2
+                 +15 ms   -4.1  -4.1  -4.1  -4.1  -4.0  -4.0  -3.9  -3.8  -3.8  -3.8  -3.8  -3.7  -3.7  -3.7  -3.6  -3.5  -3.4  -3.4  -3.4  -3.4
+                 +35 ms   -3.3  -3.3  -3.3  -3.3  -3.2  -3.1  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.8  -2.8  -2.7  -2.7  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.6  -2.6
+             16   47.34    4.1     -4.32   -4.32    0.0      0.0      13.3     3.7  206.7  343.3  683.0    -4.32  -4.32
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1   n/a   n/a  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -3.0  -3.5  -3.5  -3.8  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2  -4.2
+                 +15 ms   -4.2  -4.2  -4.2  -4.1  -4.1  -4.0  -3.9  -3.9  -3.9  -3.8  -3.8  -3.8  -3.8  -3.7  -3.6  -3.5  -3.5  -3.5  -3.5  -3.5
+                 +35 ms   -3.4  -3.4  -3.4  -3.4  -3.3  -3.2  -3.2  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.8  -2.8  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.8  -2.8
+             17   48.93    3.6     -3.84   -3.84   -0.1      1.7      14.0     2.7  248.3  391.7 2547.7    -3.84  -3.84
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -2.0  -3.0  -3.0  -3.1  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.8  -3.7  -3.7  -3.7
+                 +15 ms   -3.7  -3.6  -3.6  -3.5  -3.4  -3.4  -3.4  -3.4  -3.4  -3.3  -3.3  -3.3  -3.2  -3.2  -3.1  -3.1  -3.1  -3.1  -3.0  -3.0
+                 +35 ms   -3.0  -3.0  -3.0  -3.0  -2.9  -2.8  -2.8  -2.7  -2.7  -2.7  -2.7  -2.7  -2.7  -2.7  -2.7  -2.6  -2.6  -2.5  -2.5  -2.4
+                 +55 ms   -2.4  -2.4  -2.5  -2.5  -2.6  -2.7
+             18   52.34    4.1     -4.32   -4.32   -0.1      0.0      13.3     3.3  181.3  317.0  661.0    -4.32  -4.32
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1   n/a   n/a  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -2.9  -3.5  -3.5  -3.8  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2  -4.2
+                 +15 ms   -4.2  -4.2  -4.2  -4.1  -4.1  -4.0  -3.9  -3.9  -3.9  -3.8  -3.8  -3.8  -3.8  -3.7  -3.6  -3.5  -3.5  -3.5  -3.5  -3.5
+                 +35 ms   -3.4  -3.4  -3.4  -3.4  -3.3  -3.2  -3.2  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.8  -2.8  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.8  -2.8
+             19   54.61    4.1     -4.32   -4.32    0.0      0.0      13.3     4.0  207.0  343.3  683.0    -4.32  -4.32
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1   n/a   n/a  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -3.3  -3.5  -3.5  -4.0  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.3  -4.2  -4.2
+                 +15 ms   -4.2  -4.2  -4.2  -4.1  -4.0  -4.0  -3.9  -3.9  -3.9  -3.8  -3.8  -3.8  -3.7  -3.7  -3.6  -3.5  -3.5  -3.5  -3.5  -3.4
+                 +35 ms   -3.4  -3.4  -3.4  -3.4  -3.3  -3.2  -3.1  -3.1  -3.1  -3.0  -3.0  -3.0  -3.0  -3.0  -3.0  -2.9  -2.9  -2.8  -2.8  -2.7
+                 +55 ms   -2.7  -2.7  -2.7  -2.7  -2.8  -2.8
+ROW case=bass_sustain tag=echojay aligned=1 offset=-388 outI=-7.68 inI=-5.73 tp=-0.20 overs=0 edgeOvers=0 grMean=-1.45 grStd=1.00 crestOut=4.8 hits=20 retMed=-4.32 t63med=343.3 t90med=683.0 lrStd=0.00
+
+== case bass_sustain       tag proL2       48000 Hz  2792492 frames  offset +235 samples (4.90 ms)  corr 0.996 0.995 0.997 0.996 0.995 0.000 0.997 0.995
+  gain +8.5 dB  ceiling +0.0 dB
+  loudness   in+gain  I -5.74 LUFS  Mmax -2.0  Smax -4.6   |  out  I -7.09 LUFS  Mmax -3.9  Smax -6.0   |  S std 2.23 -> 2.16 LU
+  peaks      sample -0.04 dBFS  TRUE PEAK -0.03 dBTP  overs above ceiling+0.05 dB: 0  [EDGE: 2 overs, 0.27 dBTP within 2 ms of a file end - a print cut mid-waveform, not counted]
+  dynamics   GR mean -1.01 dB  max -3.01  std 0.70  p2p 3.00  |  crest in 5.8 -> out 4.5 dB  |  L-R GR std 0.00 dB
+  hits       20 detected
+              #    t(s)   over   retained   GRmin   base   pre(ms)   hold(ms)    t10    t50    t63    t90 (ms)   dipL   dipR
+              0    0.08    4.2     -4.19   -4.19    0.0      0.0       0.3     0.7    1.0    1.3    1.7    -4.19  -4.19
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a  -0.0   n/a  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -2.2  -2.7  -2.7  -3.8  -3.4  -3.1  -3.8  -4.1  -2.2  -2.7  -3.1  -3.3  -3.0  -1.3  -0.6
+                 +15 ms   -0.6  -2.2  -2.6  -2.5  -2.3  -1.2  -0.7  -0.7  -0.7  -2.4  -2.4  -2.4  -2.4  -1.3  -0.9  -0.9  -0.8  -0.8  -1.3  -1.9
+                 +35 ms   -2.0  -2.2  -1.7  -0.9  -0.9  -0.9  -0.9  -1.1  -1.2  -2.1  -2.2  -2.4  -1.9  -1.0  -1.0  -1.0  -1.0  -1.0  -1.0  -1.8
+                 +55 ms   -1.9  -2.2  -1.9  -1.1  -1.1  -1.1
+              1    1.44    4.1     -4.16   -4.15   -0.0      0.0       0.7     0.3    1.0    1.0    1.3    -4.15  -4.15
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -2.8  -2.5  -2.1  -3.9  -3.9  -2.1  -3.0  -3.3  -3.6  -2.8  -0.7  -2.7
+                 +15 ms   -3.0  -3.0  -2.5  -1.9  -0.7  -0.7  -0.7  -0.7  -2.5  -2.4  -2.3  -2.2  -1.9  -0.8  -0.8  -0.8  -0.8  -1.4  -2.5  -2.4
+                 +35 ms   -2.5  -2.5  -2.4  -1.1  -1.0  -1.0  -1.0  -1.0  -0.9  -1.2  -2.1  -2.1  -2.2  -2.3  -2.0  -1.1  -1.1  -1.1  -1.1  -1.0
+                 +55 ms   -1.1  -1.1  -1.7  -2.3  -2.4  -2.5
+              2    3.71    4.1     -4.16   -4.15    0.0      0.0       0.7     0.3    1.0    1.0    1.3    -4.15  -4.15
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -1.0  -3.2  -1.8  -2.7  -4.1  -3.6  -1.6  -3.1  -3.5  -3.5  -2.1  -0.5  -2.9
+                 +15 ms   -3.0  -2.9  -2.3  -1.6  -0.7  -0.7  -0.7  -1.3  -2.6  -2.4  -2.2  -2.2  -1.6  -0.8  -0.8  -0.8  -0.8  -1.9  -2.4  -2.5
+                 +35 ms   -2.5  -2.6  -2.1  -1.0  -1.0  -1.0  -1.0  -0.9  -0.9  -1.5  -2.1  -2.2  -2.2  -2.3  -1.7  -1.1  -1.1  -1.1  -1.1  -1.0
+                 +55 ms   -1.1  -1.0  -2.0  -2.3  -2.4  -2.5
+              3    5.31    3.6     -3.67   -3.67   -0.0      0.0       0.7     0.3    1.0    1.3    1.3    -3.67  -3.67
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -2.4  -1.9  -1.5  -3.3  -3.5  -1.9  -2.6  -2.7  -3.1  -2.8  -1.2  -0.5  -2.7  -2.7  -2.5
+                 +15 ms   -2.0  -1.4  -0.6  -0.6  -0.6  -0.6  -2.2  -2.2  -2.1  -2.0  -2.1  -1.0  -0.7  -0.7  -0.7  -0.7  -1.8  -2.3  -2.4  -2.4
+                 +35 ms   -2.5  -2.3  -1.0  -0.9  -0.9  -0.9  -0.9  -0.9  -0.9  -1.8  -2.0  -2.1  -2.2  -2.3  -1.6  -1.0  -1.0  -1.0  -1.0  -1.0
+                 +55 ms   -1.0  -1.0  -1.5  -2.2  -2.3  -2.4
+              4    8.71    4.1     -4.16   -4.15   -0.0      0.0       0.7     0.3    1.0    1.0    1.3    -4.15  -4.15
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -1.0  -3.2  -1.8  -2.7  -4.1  -3.6  -1.6  -3.1  -3.5  -3.5  -2.1  -0.5  -2.9
+                 +15 ms   -3.0  -2.9  -2.3  -1.6  -0.7  -0.7  -0.7  -1.3  -2.6  -2.4  -2.2  -2.2  -1.6  -0.8  -0.8  -0.8  -0.8  -1.9  -2.4  -2.5
+                 +35 ms   -2.5  -2.6  -2.1  -1.0  -1.0  -1.0  -1.0  -1.0  -0.9  -1.5  -2.1  -2.2  -2.2  -2.3  -1.7  -1.1  -1.1  -1.1  -1.1  -1.0
+                 +55 ms   -1.1  -1.0  -2.0  -2.3  -2.4  -2.5
+              5   10.98    4.1     -4.16   -4.16    0.0      0.0       0.3     0.3    1.0    1.3    1.3    -4.16  -4.16
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -2.0  -3.2  -0.9  -3.3  -4.1  -3.0  -2.6  -3.1  -3.6  -3.4  -1.5  -1.2
+                 +15 ms   -3.0  -3.0  -2.7  -2.2  -1.2  -0.7  -0.7  -0.7  -1.9  -2.5  -2.3  -2.2  -2.2  -1.2  -0.8  -0.8  -0.8  -0.8  -2.3  -2.4
+                 +35 ms   -2.5  -2.5  -2.6  -1.6  -1.0  -1.0  -1.0  -1.0  -0.9  -0.9  -1.8  -2.1  -2.2  -2.2  -2.3  -1.4  -1.1  -1.1  -1.1  -1.0
+                 +55 ms   -1.1  -1.1  -1.1  -2.2  -2.3  -2.4
+              6   15.53   -3.4     -0.05   -0.06    0.0      n/a       n/a     n/a    n/a    n/a    n/a    -0.06  -0.06
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                  -5 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1
+                 +15 ms   -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.1  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +35 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                 +55 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+              7   15.98    4.1     -4.16   -4.16   -0.0      0.0       0.3     0.3    1.0    1.3    1.3    -4.16  -4.16
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -2.0  -3.2  -0.9  -3.3  -4.1  -3.0  -2.6  -3.1  -3.6  -3.4  -1.5  -1.2  -3.0
+                 +15 ms   -3.0  -2.7  -2.2  -1.2  -0.7  -0.7  -0.7  -1.9  -2.5  -2.3  -2.2  -2.2  -1.2  -0.8  -0.8  -0.8  -0.8  -2.3  -2.4  -2.5
+                 +35 ms   -2.5  -2.6  -1.6  -1.0  -1.0  -1.0  -1.0  -1.0  -0.9  -1.8  -2.1  -2.2  -2.2  -2.3  -1.4  -1.1  -1.1  -1.1  -1.1  -1.1
+                 +55 ms   -1.1  -1.1  -2.2  -2.3  -2.4  -2.6
+              8   18.26    4.1     -4.16   -4.15    0.0      0.0       0.3     0.7    1.3    1.3  656.0    -4.15  -4.15
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -2.6  -2.7  -1.7  -3.7  -4.0  -2.5  -3.0  -3.2  -3.6  -3.1  -1.0  -2.5
+                 +15 ms   -3.0  -3.0  -2.6  -2.1  -0.9  -0.7  -0.7  -0.7  -2.3  -2.4  -2.3  -2.2  -2.1  -1.0  -0.8  -0.8  -0.8  -1.0  -2.5  -2.4
+                 +35 ms   -2.5  -2.5  -2.5  -1.3  -1.0  -1.0  -1.0  -1.0  -0.9  -1.0  -2.0  -2.1  -2.2  -2.3  -2.2  -1.2  -1.1  -1.1  -1.1  -1.0
+                 +55 ms   -1.1  -1.1  -1.5  -2.3  -2.3  -2.5
+              9   19.85    3.6     -3.67   -3.67   -0.0      0.0       0.3     0.7    1.3    1.3    1.7    -3.67  -3.67
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -1.7  -2.6  -0.4  -2.6  -3.6  -2.8  -1.1  -2.7  -3.0  -3.0  -2.1  -0.5  -2.4  -2.7  -2.6
+                 +15 ms   -2.2  -1.8  -0.8  -0.6  -0.6  -0.6  -1.6  -2.3  -2.2  -2.1  -2.1  -1.6  -0.7  -0.7  -0.7  -0.7  -1.0  -2.4  -2.3  -2.4
+                 +35 ms   -2.4  -2.5  -1.6  -0.9  -0.9  -0.9  -0.9  -0.9  -0.9  -1.3  -2.0  -2.1  -2.1  -2.2  -2.1  -1.1  -1.0  -1.0  -1.0  -1.0
+                 +55 ms   -1.0  -1.0  -1.0  -2.1  -2.2  -2.4
+             10   23.26    4.1     -4.16   -4.15   -0.0      0.0       0.3     0.7    1.3    1.3  652.0    -4.15  -4.15
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -2.6  -2.7  -1.7  -3.7  -4.0  -2.5  -3.0  -3.2  -3.6  -3.1  -1.0  -2.5
+                 +15 ms   -3.0  -3.0  -2.6  -2.1  -0.9  -0.7  -0.7  -0.7  -2.3  -2.4  -2.3  -2.2  -2.1  -1.0  -0.8  -0.8  -0.8  -1.0  -2.5  -2.4
+                 +35 ms   -2.5  -2.5  -2.5  -1.3  -1.0  -1.0  -1.0  -1.0  -0.9  -1.0  -2.0  -2.1  -2.2  -2.3  -2.2  -1.2  -1.1  -1.1  -1.1  -1.1
+                 +55 ms   -1.1  -1.1  -1.5  -2.3  -2.3  -2.5
+             11   25.53    4.1     -4.16   -4.15    0.0      0.0       0.3     0.7    1.3    1.3  656.3    -4.15  -4.15
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.1  -2.9  -2.3  -2.3  -4.0  -3.8  -1.9  -3.0  -3.4  -3.6  -2.6  -0.6  -2.8
+                 +15 ms   -3.0  -2.9  -2.4  -1.8  -0.7  -0.7  -0.7  -0.9  -2.6  -2.4  -2.3  -2.2  -1.8  -0.8  -0.8  -0.8  -0.8  -1.6  -2.5  -2.5
+                 +35 ms   -2.5  -2.5  -2.3  -1.1  -1.0  -1.0  -1.0  -1.0  -0.9  -1.3  -2.1  -2.1  -2.2  -2.3  -1.9  -1.1  -1.1  -1.1  -1.1  -1.0
+                 +55 ms   -1.1  -1.0  -1.8  -2.3  -2.4  -2.5
+             12   30.08    4.2     -4.19   -4.19    0.0      0.0       0.3     0.7    1.0    1.3 1107.3    -4.19  -4.19
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a  -0.0   n/a  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -2.2  -2.7  -2.7  -3.8  -3.4  -3.1  -3.8  -4.1  -2.2  -2.7  -3.1  -3.3  -3.0  -1.3  -0.6
+                 +15 ms   -0.6  -2.2  -2.6  -2.5  -2.3  -1.2  -0.7  -0.7  -0.8  -2.4  -2.4  -2.4  -2.4  -1.3  -0.9  -0.9  -0.9  -0.9  -1.3  -1.9
+                 +35 ms   -2.0  -2.2  -1.7  -0.9  -0.9  -0.9  -0.9  -1.1  -1.2  -2.1  -2.2  -2.4  -1.9  -1.0  -1.0  -1.0  -1.0  -1.0  -1.0  -1.8
+                 +55 ms   -1.9  -2.2  -1.9  -1.1  -1.1  -1.1
+             13   32.80    4.1     -4.16   -4.14    0.0      0.0       0.3     0.7    1.3    1.3    1.7    -4.14  -4.14
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -1.4  -3.2  -1.4  -2.9  -4.1  -3.4  -1.8  -3.1  -3.5  -3.5  -1.9  -0.5  -2.9
+                 +15 ms   -3.0  -2.8  -2.3  -1.5  -0.7  -0.7  -0.7  -1.5  -2.6  -2.3  -2.2  -2.2  -1.5  -0.8  -0.8  -0.8  -0.8  -2.0  -2.4  -2.5
+                 +35 ms   -2.5  -2.6  -1.9  -1.0  -1.0  -1.0  -1.0  -0.9  -0.9  -1.6  -2.1  -2.2  -2.2  -2.3  -1.6  -1.1  -1.1  -1.1  -1.1  -1.0
+                 +55 ms   -1.1  -1.1  -2.1  -2.3  -2.4  -2.5
+             14   34.40    4.0     -4.00   -3.99   -0.0      0.0       0.7     0.3    1.0    1.0    1.3    -3.99  -3.99
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.2  -2.7  -2.1  -1.9  -3.7  -3.7  -2.0  -2.8  -3.0  -3.3  -3.0  -1.2  -1.0  -2.9  -2.9  -2.6
+                 +15 ms   -2.1  -1.5  -0.7  -0.6  -0.6  -0.7  -2.5  -2.4  -2.2  -2.2  -2.2  -1.1  -0.8  -0.8  -0.8  -0.8  -2.1  -2.4  -2.5  -2.5
+                 +35 ms   -2.6  -2.3  -1.1  -1.0  -1.0  -1.0  -1.0  -1.0  -1.0  -2.0  -2.1  -2.2  -2.2  -2.3  -1.6  -1.1  -1.1  -1.1  -1.1  -1.1
+                 +55 ms   -1.1  -1.1  -1.6  -2.3  -2.3  -2.5
+             15   43.71    4.2     -4.19   -4.19    0.0      0.0       0.3     0.7    1.3    1.3    1.7    -4.19  -4.19
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a   n/a   n/a   n/a   n/a   n/a   n/a  -0.0   n/a  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.5  -2.9  -1.8  -3.6  -3.8  -2.7  -3.6  -4.1  -3.2  -0.8  -3.1  -3.2  -3.1  -2.0  -0.6
+                 +15 ms   -0.6  -1.5  -2.7  -2.5  -2.4  -1.7  -0.7  -0.7  -0.7  -2.0  -2.4  -2.4  -2.4  -1.8  -0.9  -0.9  -0.9  -0.8  -0.9  -1.8
+                 +35 ms   -1.9  -2.1  -2.1  -1.1  -0.9  -0.9  -0.9  -1.1  -0.9  -2.0  -2.1  -2.4  -2.3  -1.2  -1.0  -1.0  -1.0  -1.0  -1.0  -1.6
+                 +55 ms   -1.9  -2.1  -2.1  -1.3  -1.1  -1.1
+             16   47.35    4.1     -4.16   -4.15    0.0      0.0       0.7     0.3    1.0    1.3    1.3    -4.15  -4.15
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -2.7  -2.6  -1.9  -3.8  -4.0  -2.4  -3.0  -3.3  -3.6  -2.9  -0.9  -2.6
+                 +15 ms   -3.0  -3.0  -2.5  -2.0  -0.8  -0.7  -0.7  -0.7  -2.4  -2.4  -2.3  -2.2  -2.0  -0.9  -0.8  -0.8  -0.8  -1.2  -2.5  -2.4
+                 +35 ms   -2.5  -2.5  -2.5  -1.2  -1.0  -1.0  -1.0  -1.0  -0.9  -1.1  -2.1  -2.1  -2.2  -2.3  -2.1  -1.2  -1.1  -1.1  -1.1  -1.0
+                 +55 ms   -1.1  -1.1  -1.6  -2.3  -2.3  -2.5
+             17   48.94    3.6     -3.67   -3.67   -0.0      0.0       0.3     0.3    1.0    1.3    1.3    -3.67  -3.67
+                 GR trace -25..+60 ms:
+                 -25 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -1.9  -2.4  -0.5  -2.8  -3.6  -2.6  -1.6  -2.7  -3.0  -3.0  -1.9  -0.4  -2.5  -2.7  -2.6
+                 +15 ms   -2.1  -1.7  -0.7  -0.6  -0.6  -0.6  -1.7  -2.3  -2.2  -2.0  -2.1  -1.4  -0.7  -0.7  -0.7  -0.7  -1.2  -2.4  -2.4  -2.4
+                 +35 ms   -2.4  -2.5  -1.4  -0.9  -0.9  -0.9  -0.9  -0.9  -0.9  -1.5  -2.0  -2.1  -2.1  -2.3  -2.0  -1.1  -1.0  -1.0  -1.0  -1.0
+                 +55 ms   -1.0  -1.0  -1.1  -2.2  -2.2  -2.4
+             18   52.35    4.1     -4.16   -4.15   -0.0      0.0       0.7     0.3    1.0    1.3    1.3    -4.15  -4.15
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -2.7  -2.6  -1.9  -3.8  -4.0  -2.4  -3.0  -3.3  -3.6  -2.9  -0.9  -2.6
+                 +15 ms   -3.0  -3.0  -2.5  -2.0  -0.8  -0.7  -0.7  -0.7  -2.4  -2.4  -2.3  -2.2  -2.0  -0.9  -0.8  -0.8  -0.8  -1.2  -2.5  -2.4
+                 +35 ms   -2.5  -2.5  -2.5  -1.2  -1.0  -1.0  -1.0  -1.0  -0.9  -1.1  -2.1  -2.1  -2.2  -2.3  -2.1  -1.2  -1.1  -1.1  -1.1  -1.0
+                 +55 ms   -1.1  -1.1  -1.6  -2.3  -2.3  -2.5
+             19   54.62    4.1     -4.16   -4.16    0.0      0.0       0.3     0.7    1.3    1.3    1.3    -4.16  -4.16
+                 GR trace -25..+60 ms:
+                 -25 ms    n/a   n/a   n/a   n/a   n/a   n/a  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0   n/a   n/a  -0.0  -0.0
+                  -5 ms   -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.0  -0.4  -3.1  -2.1  -2.4  -4.0  -3.7  -1.7  -3.1  -3.4  -3.6  -2.4  -0.5  -2.8
+                 +15 ms   -3.0  -2.9  -2.4  -1.7  -0.7  -0.7  -0.7  -1.1  -2.6  -2.4  -2.3  -2.2  -1.7  -0.8  -0.8  -0.8  -0.8  -1.7  -2.5  -2.5
+                 +35 ms   -2.5  -2.6  -2.2  -1.0  -1.0  -1.0  -1.0  -1.0  -0.9  -1.4  -2.1  -2.2  -2.2  -2.3  -1.8  -1.1  -1.1  -1.1  -1.1  -1.0
+                 +55 ms   -1.1  -1.0  -1.9  -2.3  -2.4  -2.5
+ROW case=bass_sustain tag=proL2 aligned=1 offset=235 outI=-7.09 inI=-5.74 tp=-0.03 overs=0 edgeOvers=2 grMean=-1.01 grStd=0.70 crestOut=4.5 hits=20 retMed=-4.16 t63med=1.3 t90med=1.3 lrStd=0.00
+
+== case bass_sustain       tag v2          REFUSED: offset is NOT constant across the file - the render is not sample-comparable (resampled, slipped, or a different take)
+     window @   0.00 s  offset      0  corr  0.994 
+     window @   7.92 s  offset      0  corr  0.993 
+     window @  15.84 s  offset     -1  corr  0.997 
+     window @  23.76 s  offset      0  corr  0.994 
+     window @  31.69 s  offset      0  corr  0.993 
+     window @  39.61 s  offset -16384  corr  0.000 (ambiguous: periodic)
+     window @  47.53 s  offset     -1  corr  0.996 
+     window @  55.45 s  offset     -1  corr  0.995 
+ROW case=bass_sustain tag=v2 aligned=0
+
+-- rule: echojay vs proL2 on bass_sustain
+  FAIL  level matched within 0.1 LU  [-7.68 vs -7.09 LUFS]
+  PASS  zero true-peak overs above the ceiling  [0 overs, -0.20 dBTP (Pro-L 2: 0, -0.03 dBTP)]
+  PASS  transient retention within 1 dB of Pro-L 2 on every hit  [worst 0.16 dB at hit 14 (34.39 s)]
+  FAIL  release limbs within 10% (median t63, t90)  [t63 343.3 vs 1.3 ms, t90 683.0 vs 1.3 ms]
+  FAIL  pumping (momentary GR std) no worse than Pro-L 2 + 0.2 dB  [1.00 vs 0.70 dB]
+
+==== limiter_ab_guard analyse: RED (1 problem(s)) ====

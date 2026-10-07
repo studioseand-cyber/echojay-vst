@@ -15,7 +15,7 @@ CASES="tone_997 tone_50 tone_imd probe_transients panned_transient fullmix bass_
   done
   for c in $CASES; do
     [ -f $R/source_$c.wav ] || continue
-    $B/limiter_ab_guard analyse $R --case $c --gain $(gain_for $c) --ceiling 0.0 --trace
+    $B/limiter_ab_guard analyse $R --case $c --gain $(gain_for $c) --ceiling 0.0 --trace || echo "## analyse of $c exited non-zero (a refused render?) - continuing"
   done
 } > "$OUT" 2>&1
 echo "saved $OUT"

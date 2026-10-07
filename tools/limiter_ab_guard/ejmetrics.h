@@ -88,8 +88,13 @@ inline AlignResult align (const ejwav::Audio& src, const ejwav::Audio& proc, con
         const bool valid = rmsDb > -60.0 && std::abs (best) >= 0.3 && ! ambiguous;
         r.windowStarts.push_back (p); r.windowOffsets.push_back ((int) bestM - (int) L); r.windowPeaks.push_back (best); r.windowValid.push_back (valid); r.windowAmbiguous.push_back (ambiguous);
     }
-    int nValid = 0, nAmbiguous = 0; int off = 0; bool first = true; bool consistent = true; bool anyInverted = false;
-    for (size_t i = 0; i < r.windowValid.size(); ++i) { if (r.windowAmbiguous[i]) ++nAmbiguous; if (r.windowValid[i]) { ++nValid; if (first) { off = r.windowOffsets[i]; first = false; } else if (r.windowOffsets[i] != off) consistent = false; if (r.windowPeaks[i] < 0) anyInverted = true; } }
+    // Windows may disagree by ONE sample: a limiter that reshapes the waveform (Pro-L 2 and v2 Transparent on bass)
+    // moves the correlation peak by a sample either way. The offset is the MEDIAN of the valid windows; a spread of
+    // more than one sample is a slip and is refused.
+    int nValid = 0, nAmbiguous = 0; bool anyInverted = false; std::vector<int> offs;
+    for (size_t i = 0; i < r.windowValid.size(); ++i) { if (r.windowAmbiguous[i]) ++nAmbiguous; if (r.windowValid[i]) { ++nValid; offs.push_back (r.windowOffsets[i]); if (r.windowPeaks[i] < 0) anyInverted = true; } }
+    bool consistent = true; int off = 0;
+    if (! offs.empty()) { std::sort (offs.begin(), offs.end()); off = offs[offs.size() / 2]; consistent = offs.back() - offs.front() <= 1; }
     r.offset = off; r.inverted = anyInverted;
     if (nValid < 2) { r.why = nAmbiguous > 0 ? "alignment AMBIGUOUS: periodic material gives more than one correlation peak in " + std::to_string (nAmbiguous) + " window(s) and fewer than 2 unambiguous windows remain" : "fewer than 2 windows with signal and a correlation peak >= 0.3 (silence, or not the same material)"; return r; }
     if (! consistent) { r.why = "offset is NOT constant across the file - the render is not sample-comparable (resampled, slipped, or a different take)"; return r; }

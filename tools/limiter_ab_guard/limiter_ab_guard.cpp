@@ -143,12 +143,18 @@ int selftest()
         const auto src = noiseStereo (sr, 10.0, 1);
         auto r = ejm::align (src, delayed (src, 480, 0.5)); check (r.ok && r.offset == 480, "alignment finds a +480-sample, -6 dB render", "offset " + std::to_string (r.offset) + " " + r.why);
         r = ejm::align (src, delayed (src, -7, 1.0)); check (r.ok && r.offset == -7, "alignment finds a -7-sample render", "offset " + std::to_string (r.offset));
-        ejwav::Audio slipped = delayed (src, 480, 0.5); for (auto& c : slipped.ch) c.insert (c.begin() + (long) (5 * sr), 0.0), c.pop_back();
-        r = ejm::align (src, slipped); check (! r.ok && r.why.find ("NOT constant") != std::string::npos, "a render with one sample inserted mid-file is REFUSED (offset not constant)", r.why);
+        ejwav::Audio slipped = delayed (src, 480, 0.5); for (auto& c : slipped.ch) { c.insert (c.begin() + (long) (5 * sr), 3, 0.0); c.resize (src.frames()); }
+        r = ejm::align (src, slipped); check (! r.ok && r.why.find ("NOT constant") != std::string::npos, "a render with three samples inserted mid-file is REFUSED (offset not constant)", r.why);
         r = ejm::align (src, delayed (src, 100, -1.0)); check (! r.ok && r.why.find ("inverted") != std::string::npos, "a polarity-inverted render is REFUSED", r.why);
         r = ejm::align (src, noiseStereo (sr, 10.0, 2)); check (! r.ok, "unrelated material is REFUSED", r.why);
         ejwav::Audio clipped = delayed (src, 480, 3.0); for (auto& c : clipped.ch) for (double& v : c) v = std::max (-1.0, std::min (1.0, v));
         r = ejm::align (src, clipped); check (r.ok && r.offset == 480, "a hard-clipped (heavily limited) render still aligns", "offset " + std::to_string (r.offset) + " corr " + f2 (r.windowPeaks[0]));
+        {   // one-sample disagreement between windows is peak jitter, not a slip: accepted at the median; two samples is refused
+            ejwav::Audio jit = delayed (src, 480, 0.5); for (auto& c : jit.ch) { c.insert (c.begin() + (long) (6 * sr), 0.0); c.pop_back(); }   // from 6 s on, offset 481
+            r = ejm::align (src, jit); check (r.ok && (r.offset == 480 || r.offset == 481), "windows reading 480 and 481 (one sample apart) align at the median", r.why + " offset " + std::to_string (r.offset));
+            ejwav::Audio slip2 = delayed (src, 480, 0.5); for (auto& c : slip2.ch) { c.insert (c.begin() + (long) (6 * sr), 2, 0.0); c.pop_back(); c.pop_back(); }
+            r = ejm::align (src, slip2); check (! r.ok && r.why.find ("NOT constant") != std::string::npos, "...but two samples apart is REFUSED", r.why);
+        }
         ejwav::Audio longer = delayed (src, 480, 0.5); for (auto& c : longer.ch) c.resize (c.size() + (size_t) (3 * sr), 0.0);
         r = ejm::align (src, longer); check (r.ok && r.offset == 480 && std::abs (r.tailSeconds - 3.0) < 0.01, "a fixed-length bounce 3 s longer than the source, silent tail, aligns (tail reported)", r.why + " tail " + f2 (r.tailSeconds));
         for (auto& c : longer.ch) for (size_t n = c.size() - (size_t) sr; n < c.size(); ++n) c[n] = 0.1;
