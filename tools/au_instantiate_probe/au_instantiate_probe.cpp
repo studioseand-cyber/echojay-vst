@@ -137,6 +137,21 @@ int main (int argc, char** argv)
     {
         if (! done)          { std::printf ("refused timeout after %d ms\n", boundMs); std::fflush (stdout); std::_Exit (3); }
         if (inst == nullptr) { std::printf ("refused %s\n", err.replace ("\n", " ").toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+        // THE PRESET (Kathy's NEXT BUILD item E, channel strips, 7 Oct): EJ_PROBE_PRESET="i:norm,i:norm" is written before any mode runs -
+        // a strip's section engage switch (Rule 1) rides under every probe process of that section; each write is confirmed and printed
+        // (`preset`), so a trace always says what was in force. Absent: nothing changes.
+        if (const char* preset = std::getenv ("EJ_PROBE_PRESET"); preset != nullptr && *preset != 0)
+        {
+            auto ps0 = inst->getParameters();
+            for (auto& t : juce::StringArray::fromTokens (juce::String::fromUTF8 (preset), ",", ""))
+            {
+                const int idx = t.upToFirstOccurrenceOf (":", false, false).getIntValue(); const float norm = (float) t.fromFirstOccurrenceOf (":", false, false).getDoubleValue();
+                if (! juce::isPositiveAndBelow (idx, ps0.size()) || ps0[idx] == nullptr) { std::printf ("refused preset: no parameter %d\n", idx); std::fflush (stdout); std::_Exit (3); }
+                ps0[idx]->setValueNotifyingHost (norm);
+                const auto l = ejprobe::landWrite (*ps0[idx], norm, nullptr);
+                std::printf ("preset\t%d\t%.6f\tgetValue\t%.6f\tlanded_by\t%s\ttext\t%s\n", idx, norm, l.read, l.ms >= 0 ? l.by : "unlanded", ps0[idx]->getCurrentValueAsText().replace ("\t", " ").toRawUTF8());
+            }
+        }
         // AN EMPTY LIST AT CREATION IS RE-READ AFTER PREPARE AND A FIRST RENDER (Kathy's NEXT BUILD item C, 6-7 Oct: Soundtoys and 2C
         // listed NOTHING - Decapitator's trace is the header line alone - yet they automate in Logic). JUCE reads the AU's
         // kAudioUnitProperty_ParameterList at creation, BEFORE AudioUnitInitialize; a unit that publishes its parameters only once

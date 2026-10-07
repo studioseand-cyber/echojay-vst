@@ -59,6 +59,7 @@
 #include "EjmapSampleRate.h"
 #include "EjmapLicence.h"
 #include "EjmapUadPreflight.h"
+#include "EjmapStrip.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include "EjmapCertReview.h"
@@ -490,6 +491,8 @@ inline juce::String externalHardwareNeeded (const juce::String& product, const j
 }
 // --assume-uad-device for the whole process (the hold below and the gate read it)
 inline bool& assumeUadDeviceFlag() { static bool f = false; return f; }
+// --only-controls for the whole process (item E): sampledFixture narrows every mode's fixture to these
+inline std::set<int>& onlyControlsFlag() { static std::set<int> f; return f; }
 // THE UAD-2 UNHOLD (Sean, 6 Oct): a UAD product held for its hardware is measurable when the preflight finds the Satellite; the
 // licence gate then decides owned / demo / needs_licence per product
 inline bool uadHardwareHeld (const juce::String& componentCode)
@@ -1452,6 +1455,7 @@ struct SweepOptions
     bool ignoreCeilingName = false;                  // --cert-limiter --ignore-ceiling-name (test only): the measured-ceiling path on a product with the word
     juce::File certRoot;                             // --cert-root: the real cert folder when --out is a Phase B temp folder (combined settings read their inputs there)
     bool assumeUadDevice = false;                    // --assume-uad-device: the UAD-2 preflight found none but Sean says the Satellite is connected (the registry lines are recorded)
+    std::set<int> onlyControls;                      // --only-controls i,j,k (item E, 7 Oct): the mode's fixture holds these controls alone (a strip's section)
     bool gainAll = false;                            // --cert-gain-cal --kind all (the gain-all rows, 6 Oct item 6): the product is not a compressor, so the plan's amount is a gain target too
     bool deriveOnly = false;                         // --derive-only (tone-check mode): re-derive, apply the rules and export, load NOTHING - the projection for a zipped-back folder
     juce::StringArray resweepProducts;               // the follow-up's own re-sweep set (planDiffers): forced back onto the worklist
@@ -2801,7 +2805,8 @@ inline ModeFixture sampledFixture (const SweepOptions& opt, const juce::PluginDe
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra, int timeoutMs) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
         const auto r = runChild (args, timeoutMs); raw.getChildFile (stem + "." + mode + "." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
     const auto lp = run ("list-params", { "--list-params" }, opt.timeoutMs); if (! lp.cleanExit()) { fx.why = "--list-params " + lp.describe(); return fx; }
-    const auto list = parseListParams (lp.out); fx.params = (int) list.size();
+    auto list = parseListParams (lp.out); fx.params = (int) list.size();
+    { const auto& only = opt.onlyControls.empty() ? onlyControlsFlag() : opt.onlyControls; if (! only.empty()) { std::map<int, ListRow> kept; for (const auto& [i, r] : list) if (only.count (i)) kept[i] = r; list = kept; fx.params = (int) list.size(); } }   // a strip's section (item E): the mode sees these controls alone
     const auto date = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
     // the names fixture: composeFixture builds controls from text rows, so before the text pass the list rows stand in (index, name, numSteps)
     juce::var base0; { auto* o = new juce::DynamicObject(); juce::Array<juce::var> cs; for (const auto& [i, r] : list) { if (! r.automatable || r.meta) continue; auto* c = new juce::DynamicObject(); c->setProperty ("index", i); c->setProperty ("name", r.name); c->setProperty ("numSteps", r.numSteps); cs.add (juce::var (c)); } o->setProperty ("controls", cs); base0 = juce::var (o); }
@@ -2866,6 +2871,80 @@ inline LicenceGate licenceGate (const SweepOptions& opt, const juce::String& pro
     return g;
 }
 inline LicenceGate licenceGate (const SweepOptions& opt, const juce::PluginDescription& desc) { return licenceGate (opt, desc.name, desc.manufacturerName, opt.certRoot != juce::File() ? opt.certRoot : opt.out, opt.retryLicence); }
+
+// CHANNEL STRIPS (Kathy's NEXT BUILD item E, 7 Oct; the rules in EjmapStrip.h): the strip's controls in sections, each section's
+// engage switch (Rule 1), each section through its category's mode as a child with --only-controls and the engage as the probe's
+// preset; the compressor section's plan recorded, its sweep and tone check not built here. Record: <out>/strip/<stem>.strip.json.
+inline int runStrip (const SweepOptions& opt)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("STRIP: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    if (hits.size() != 1) { say ("STRIP: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
+    const auto& desc = hits[0].desc;
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty()) { say ("STRIP: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("strip"); outDir.createDirectory();
+    Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
+    const auto fx = sampledFixture (opt, desc, raw, stem, "strip", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, {});
+    if (! fx.ok) { say ("STRIP: " + fx.why); return 1; }
+    say ("STRIP: " + fx.note);
+    std::vector<strip::Control> controls;
+    if (const auto* cs = fx.base.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            strip::Control k; k.index = (int) c.getProperty ("index", -1); k.name = c.getProperty ("name", "").toString(); k.numSteps = (int) c.getProperty ("numSteps", 0);
+            if (const auto at = c.getProperty ("displayAt", {}); at.isObject()) for (const auto& kv : at.getDynamicObject()->getProperties()) k.texts[kv.value.toString()] = (float) kv.name.toString().getDoubleValue();
+            controls.push_back (k);
+        }
+    const auto sections = strip::sectionsOf (controls);
+    juce::String line = "STRIP: " + opt.product + " " + desc.version + ": " + juce::String ((int) controls.size()) + " control(s) in " + juce::String ((int) sections.size()) + " section(s):";
+    for (const auto& sec : sections) line << "  " << sec.name << " " << (int) sec.controls.size() << (sec.engage ? " (engage " + sec.engage->name + " -> '" + sec.engageText + "')" : juce::String());
+    say (line);
+    const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
+    auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_strip_prototype/0"); o->setProperty ("status", "PROTOTYPE (item E, 7 Oct): sections by name, each through its category's mode with its engage switch as the probe's preset; data only, nothing exported");
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("rule", "Rule 1 (2 Oct): the section's own engage switch rides with it; every other section at its instantiate value - a section's measurement is the strip with that section engaged, the others as instantiated");
+    juce::Array<juce::var> secs; int ran = 0;
+    for (const auto& sec : sections)
+    {
+        auto* so = new juce::DynamicObject(); so->setProperty ("section", sec.name); juce::Array<juce::var> cs; for (const auto& c : sec.controls) { auto* co = new juce::DynamicObject(); co->setProperty ("index", c.index); co->setProperty ("name", c.name); co->setProperty ("steps", c.numSteps); cs.add (juce::var (co)); } so->setProperty ("controls", cs);
+        if (sec.engage) { so->setProperty ("engage", sec.engage->name); so->setProperty ("engage_index", sec.engage->index); so->setProperty ("engage_norm", sec.engageNorm); so->setProperty ("engage_text", sec.engageText); } else if (sec.note.isNotEmpty()) so->setProperty ("note", sec.note);
+        const auto mode = strip::modeFor (sec.name);
+        if (mode.isEmpty() || sec.numeric == 0) { so->setProperty ("mode", mode.isEmpty() ? juce::String ("none (global controls)") : mode); so->setProperty ("outcome", "not run (" + juce::String (sec.numeric == 0 ? "no numeric control" : "no mode") + ")"); secs.add (juce::var (so)); continue; }
+        if (sec.name == "compressor")
+        {   // the plan over the section's controls (Rule 1 pick, engage); the sweep and the tone check are not built here
+            juce::var sub = fx.base; { auto* b = new juce::DynamicObject(); juce::Array<juce::var> kept; if (const auto* cs2 = fx.base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs2) for (const auto& k : sec.controls) if ((int) c.getProperty ("index", -1) == k.index) kept.add (c); b->setProperty ("controls", kept); for (const auto& kv : fx.base.getDynamicObject()->getProperties()) if (kv.name.toString() != "controls") b->setProperty (kv.name, kv.value); sub = juce::var (b); }
+            const auto plan = sweep::planFromFixture (sub);
+            so->setProperty ("mode", "compressor plan (the sweep and tone check for a strip section are not built: the worklist admits compressors only)");
+            so->setProperty ("plan_ok", plan.ok); so->setProperty ("amount", plan.ok ? juce::var (plan.thrName) : juce::var ()); so->setProperty ("plan_why", plan.why); juce::StringArray cands; for (const auto& c : plan.candidates) cands.add (c.name); so->setProperty ("candidates", cands.joinIntoString (", "));
+            so->setProperty ("compressor_sweep", "not built"); so->setProperty ("outcome", plan.ok ? "planned" : "no plan"); say ("  compressor: plan " + (plan.ok ? "amount " + plan.thrName : plan.why) + (cands.isEmpty() ? juce::String() : "; candidates " + cands.joinIntoString (", ")));
+            secs.add (juce::var (so)); continue;
+        }
+        const auto tmp = opt.out.getChildFile (".strip-" + sec.name); tmp.deleteRecursively(); tmp.createDirectory();
+        juce::StringArray args { exe.getFullPathName(), mode, opt.product };
+        if (sec.name == "gate") { args.add ("--kind"); args.add ("gate"); }
+        args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName(), "--only-controls", strip::indicesOf (sec) });
+        if (sec.engage) { args.add ("--preset"); args.add (strip::presetOf (sec)); }
+        say ("  " + sec.name + ": " + mode + " over " + juce::String ((int) sec.controls.size()) + " control(s)" + (sec.engage ? " with " + sec.engage->name + " -> '" + sec.engageText + "'" : juce::String ("")));
+        const auto t1 = juce::Time::getMillisecondCounterHiRes();
+        const auto r = runChild (args, (int) (1800.0 * 1000.0));
+        const double secs2 = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0;
+        tmp.getChildFile ("log.txt").replaceWithText (r.out, false, false, "\n");
+        juce::StringArray recs; for (const auto& d : tmp.findChildFiles (juce::File::findDirectories, false)) { if (d.getFileName() == "raw") { for (const auto& f : d.findChildFiles (juce::File::findFiles, false)) f.moveFileTo (raw.getChildFile (f.getFileName())); continue; } for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.json")) { const auto target = outDir.getChildFile (sec.name + "." + f.getFileName()); target.deleteFile(); f.moveFileTo (target); recs.add (target.getFileName()); } }
+        const auto lg = outDir.getChildFile (stem + "." + sec.name + ".log.txt"); lg.deleteFile(); tmp.getChildFile ("log.txt").moveFileTo (lg); tmp.deleteRecursively();
+        so->setProperty ("mode", mode); so->setProperty ("child", r.describe()); so->setProperty ("exit_code", r.code); so->setProperty ("seconds", std::round (secs2)); so->setProperty ("records", recs.joinIntoString (", ")); so->setProperty ("log", lg.getFileName());
+        so->setProperty ("outcome", r.kind == ChildResult::Kind::uiShown ? "window" : r.kind == ChildResult::Kind::exited && (r.code == 0 || r.code == 4) ? "ok" : "failed");
+        if (r.kind == ChildResult::Kind::exited && r.code == 0) ++ran;
+        say ("    -> " + r.describe() + " in " + juce::String (secs2, 0) + " s" + (recs.isEmpty() ? juce::String() : "; " + recs.joinIntoString (", ")));
+        if (r.kind == ChildResult::Kind::uiShown) { secs.add (juce::var (so)); o->setProperty ("sections", secs); outDir.getChildFile (stem + ".strip.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n"); say ("STRIP: a window appeared; stopping"); return 5; }
+        secs.add (juce::var (so));
+    }
+    o->setProperty ("sections", secs); o->setProperty ("measuredAt", nowStamp());
+    outDir.getChildFile (stem + ".strip.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    say ("STRIP: -> " + outDir.getChildFile (stem + ".strip.json").getFullPathName());
+    return ran > 0 ? 0 : 4;
+}
 
 // --uad-preflight: say what the registry shows, load nothing
 inline int runUadPreflight (const SweepOptions& opt)

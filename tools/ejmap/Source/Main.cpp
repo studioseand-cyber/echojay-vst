@@ -711,12 +711,24 @@ namespace
             // --cert-material <product> [--cert-root <cert dir>] [--out <dir>] [--probe <path>] [--ejmap-ledger <dir>]: accuracy pass A2 (6 Oct), data only
             // --uad-preflight [--assume-uad-device]; --licence-check <cert dir> [--licences <csv>] [--date YYYY-MM-DD]; --licence-stamp <cert dir> [...] (6 Oct, Sean's UAD rulings)
             for (int j = 1; j < argc; ++j) if (argAt (argc, argv, j) == "--assume-uad-device") ejmap::cert::assumeUadDeviceFlag() = true;   // every command: the hold and the gate read it
+            // a strip section's child (item E, 7 Oct): --only-controls i,j,k narrows every mode's fixture; --preset i:n,... is the probe's preset (EJ_PROBE_PRESET) under every probe process
+            for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--only-controls") for (const auto& t : juce::StringArray::fromTokens (v, ",", "")) ejmap::cert::onlyControlsFlag().insert (t.getIntValue()); else if (k == "--preset") setenv ("EJ_PROBE_PRESET", v.toRawUTF8(), 1); }
             if (a == "--uad-preflight") { ejmap::cert::SweepOptions o; o.assumeUadDevice = ejmap::cert::assumeUadDeviceFlag(); return ejmap::cert::runUadPreflight (o); }
             if ((a == "--licence-check" || a == "--licence-stamp") && i + 1 < argc)
             {
                 ejmap::cert::SweepOptions o; o.out = cwdFile (argAt (argc, argv, i + 1)); juce::File csv; juce::String date;
                 for (int j = i + 2; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--licences") csv = cwdFile (v); else if (k == "--date") date = v; }
                 return a == "--licence-check" ? ejmap::cert::runLicenceCheck (o, csv, date) : ejmap::cert::runLicenceStamp (o, csv, date);
+            }
+            if (a == "--cert-strip" && i + 1 < argc)   // channel strips (item E, 7 Oct), data only
+            {
+                ejmap::cert::SweepOptions o; o.product = argAt (argc, argv, i + 1);
+                for (int j = i + 2; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
+                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); }
+                if (o.out == juce::File()) o.out = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap/cert");
+                if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
+                if (o.ledger == juce::File()) o.ledger = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap");
+                return ejmap::cert::runStrip (o);
             }
             if (a == "--cert-samplerate" && i + 1 < argc)   // accuracy pass A4 (6 Oct), data only
             {

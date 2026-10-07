@@ -2828,3 +2828,22 @@ and +5.57 at −6 at Depth 100, 0.00 at Depth 0, and its `global` role is judged
 and down cancel at −12); (2) **the offset ladder stops at the control's end** (`offsetRepeatsLast`, pin MB-O1): the 354E's
 thresholds end at −20 dB, so −24 writes the same point as −18 and the ladder stops there (`clamped_from_offset_db`). Rehearsed on
 OTT (12 s) and Lindell 354E (26 s). Melda needs its licence (not loaded here).
+
+## 74. Channel strips: `--cert-strip`, `--redo strips` (NEXT BUILD item E, 7 Oct; CHANNEL_STRIP_RULE_DECISION.md)
+
+`EjmapStrip.h` (pins ST1–ST5): every control goes to a SECTION by its name's whole-token word (comp / dyn → compressor; gate /
+expander → gate; eq / band / LF … / hpf / filter / freq / q → eq; sat / drive / tape / tube / preamp → saturation; an
+unprefixed threshold / ratio / knee / makeup / attack / release → compressor, as bx_console SSL names them; the rest global).
+A section's ENGAGE switch is its two-step control with on / in / enable / bypass in its name, the ON norm by its text (bypass
+inverted) — **Rule 1 as ruled 2 Oct: the section's own switch rides with it, every other section at its instantiate value**
+(said on the record: a section is measured on the strip with that section engaged, the others as instantiated). Each section
+runs through its category's mode as a child (`--cert-eq`, `--cert-dynamics --kind gate`, `--cert-saturation`) with
+`--only-controls i,j,k` (every mode's `sampledFixture` narrows its list to those) and `--preset i:n` → the probe's
+`EJ_PROBE_PRESET`, written and confirmed (`preset` line) before any mode runs under every probe process. The compressor
+section: the threshold plan over its controls is recorded (`candidates`, Rule 1's pick where it applies); **its full sweep and
+tone check are not built** — the certification worklist admits category `compressor` only; a strip section would need the
+loop to take a filtered fixture + preset as a subject. Records: `phaseb/strips/strip/<stem>.strip.json` + the sections'
+records beside it. Phase B category `strips` (opt-in, the ledger's `channel_strip`). Rehearsed on three installed strips, ~35 s
+each: bx_console SSL 4000 E (compressor 12 with `Dyn On/Off`, eq 21 with `HPF On/Off`, saturation 1), Lindell 80 Channel
+(compressor 11 `Comp In`, plan amount Comp Threshold; eq 10; gate 9 `Gate In`; saturation 1 — every section ran), bx_console N
+(eq 22, saturation 1). The EQ engage found is the HPF's switch where no `EQ In` exists: the record names it.

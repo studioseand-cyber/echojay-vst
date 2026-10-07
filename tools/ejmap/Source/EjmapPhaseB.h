@@ -55,6 +55,8 @@ inline const std::vector<Category>& categories()
         { "frequency",   "--cert-frequency",     "",          {},                              600.0,  "three tone-check processes: ~30 s", true },
         // sample rate (A4, 6 Oct; opt-in: --redo samplerate): the tone check's process at 44.1 / 48 / 96 kHz on a spread of ten
         { "samplerate",  "--cert-samplerate",    "",          {},                              600.0,  "three tone-check processes: ~30 s", true },
+        // strips (item E, 7 Oct; opt-in: --redo strips): the ledger's channel strips, each section through its category's mode
+        { "strips",      "--cert-strip",         "",          { "channel_strip" },             2400.0, "a section per mode (eq ~6-12 min, gate ~5, saturation ~4): ~15-25 min", true },
         { "gainall",     "--cert-gain-cal",      "all",       { "eq", "limiter", "de-esser", "saturation", "amp_sim", "reverb", "delay", "transient_shaper", "gate" }, 600.0, "21 norms x 2-3 levels per gain control + the unnamed pool: ~1-4 min", true } };
     return k;
 }

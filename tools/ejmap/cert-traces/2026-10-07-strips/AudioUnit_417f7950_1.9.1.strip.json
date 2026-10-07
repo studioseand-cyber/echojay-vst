@@ -1,0 +1,337 @@
+{
+  "schema": "ej_strip_prototype/0",
+  "status": "PROTOTYPE (item E, 7 Oct): sections by name, each through its category's mode with its engage switch as the probe's preset; data only, nothing exported",
+  "product": "bx_console N",
+  "version": "1.9.1",
+  "identity": "AudioUnit|417f7950|1.9.1",
+  "rule": "Rule 1 (2 Oct): the section's own engage switch rides with it; every other section at its instantiate value - a section's measurement is the strip with that section engaged, the others as instantiated",
+  "sections": [
+    {
+      "section": "eq",
+      "controls": [
+        {
+          "index": 11,
+          "name": "HPF On/Off",
+          "steps": 2
+        },
+        {
+          "index": 12,
+          "name": "HPF Frequency",
+          "steps": 2147483647
+        },
+        {
+          "index": 13,
+          "name": "HPF x3",
+          "steps": 2
+        },
+        {
+          "index": 14,
+          "name": "LPF On/Off",
+          "steps": 2
+        },
+        {
+          "index": 15,
+          "name": "LPF Frequency",
+          "steps": 2147483647
+        },
+        {
+          "index": 16,
+          "name": "LPF /3",
+          "steps": 2
+        },
+        {
+          "index": 37,
+          "name": "EQ On/Off",
+          "steps": 2
+        },
+        {
+          "index": 38,
+          "name": "EQ Position",
+          "steps": 3
+        },
+        {
+          "index": 39,
+          "name": "EQ Low Frequency",
+          "steps": 2147483647
+        },
+        {
+          "index": 40,
+          "name": "EQ Low Q",
+          "steps": 2
+        },
+        {
+          "index": 41,
+          "name": "EQ Low Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 42,
+          "name": "EQ Low Shelf",
+          "steps": 2
+        },
+        {
+          "index": 43,
+          "name": "EQ Low Mid Frequency",
+          "steps": 2147483647
+        },
+        {
+          "index": 44,
+          "name": "EQ Low Mid Q",
+          "steps": 2147483647
+        },
+        {
+          "index": 45,
+          "name": "EQ Low Mid Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 46,
+          "name": "EQ High Mid Frequency",
+          "steps": 2147483647
+        },
+        {
+          "index": 47,
+          "name": "EQ High Mid Q",
+          "steps": 2147483647
+        },
+        {
+          "index": 48,
+          "name": "EQ High Mid Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 49,
+          "name": "EQ High Frequency",
+          "steps": 2147483647
+        },
+        {
+          "index": 50,
+          "name": "EQ High Q",
+          "steps": 2
+        },
+        {
+          "index": 51,
+          "name": "EQ High Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 52,
+          "name": "EQ High Shelf",
+          "steps": 2
+        }
+      ],
+      "engage": "HPF On/Off",
+      "engage_index": 11,
+      "engage_norm": 1.0,
+      "engage_text": "On",
+      "mode": "--cert-eq",
+      "child": "exit 0",
+      "exit_code": 0,
+      "seconds": 18.0,
+      "records": "eq.AudioUnit_417f7950_1.9.1.eq.json",
+      "log": "AudioUnit_417f7950_1.9.1.eq.log.txt",
+      "outcome": "ok"
+    },
+    {
+      "section": "saturation",
+      "controls": [
+        {
+          "index": 6,
+          "name": "THD",
+          "steps": 2147483647
+        }
+      ],
+      "note": "no engage switch named in the section: measured as instantiated",
+      "mode": "--cert-saturation",
+      "child": "exit 4",
+      "exit_code": 4,
+      "seconds": 2.0,
+      "records": "saturation.AudioUnit_417f7950_1.9.1.saturation.json",
+      "log": "AudioUnit_417f7950_1.9.1.saturation.log.txt",
+      "outcome": "ok"
+    },
+    {
+      "section": "global",
+      "controls": [
+        {
+          "index": 0,
+          "name": "Bypass",
+          "steps": 2
+        },
+        {
+          "index": 1,
+          "name": "Mute",
+          "steps": 2
+        },
+        {
+          "index": 2,
+          "name": "Setting",
+          "steps": 4
+        },
+        {
+          "index": 3,
+          "name": "In Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 4,
+          "name": "Phase",
+          "steps": 2
+        },
+        {
+          "index": 5,
+          "name": "Virtual Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 7,
+          "name": "Out Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 8,
+          "name": "Monitoring",
+          "steps": 3
+        },
+        {
+          "index": 9,
+          "name": "Console Channel",
+          "steps": 72
+        },
+        {
+          "index": 10,
+          "name": "Stereo Mode",
+          "steps": 2
+        },
+        {
+          "index": 17,
+          "name": "LC On/Off",
+          "steps": 2
+        },
+        {
+          "index": 18,
+          "name": "LC Link",
+          "steps": 2
+        },
+        {
+          "index": 19,
+          "name": "LC Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 20,
+          "name": "LC Threshold",
+          "steps": 2147483647
+        },
+        {
+          "index": 21,
+          "name": "LC Threshold Range",
+          "steps": 2
+        },
+        {
+          "index": 22,
+          "name": "LC Ratio",
+          "steps": 2147483647
+        },
+        {
+          "index": 23,
+          "name": "LC Attack",
+          "steps": 2
+        },
+        {
+          "index": 24,
+          "name": "LC Release",
+          "steps": 2147483647
+        },
+        {
+          "index": 25,
+          "name": "LC 2nd Thresh Level",
+          "steps": 2147483647
+        },
+        {
+          "index": 26,
+          "name": "LC Highpass",
+          "steps": 2147483647
+        },
+        {
+          "index": 27,
+          "name": "LC Mix",
+          "steps": 2147483647
+        },
+        {
+          "index": 28,
+          "name": "GE On/Off",
+          "steps": 2
+        },
+        {
+          "index": 29,
+          "name": "GE Key",
+          "steps": 2
+        },
+        {
+          "index": 30,
+          "name": "GE Invert",
+          "steps": 2
+        },
+        {
+          "index": 31,
+          "name": "GE Hysteresis",
+          "steps": 2147483647
+        },
+        {
+          "index": 32,
+          "name": "GE Threshold",
+          "steps": 2147483647
+        },
+        {
+          "index": 33,
+          "name": "GE Threshold Range",
+          "steps": 2
+        },
+        {
+          "index": 34,
+          "name": "GE Range",
+          "steps": 2147483647
+        },
+        {
+          "index": 35,
+          "name": "GE Attack",
+          "steps": 2
+        },
+        {
+          "index": 36,
+          "name": "GE Release",
+          "steps": 2147483647
+        },
+        {
+          "index": 53,
+          "name": "Metertype",
+          "steps": 2
+        },
+        {
+          "index": 54,
+          "name": "L/C Gain Reduction",
+          "steps": 2147483647
+        },
+        {
+          "index": 55,
+          "name": "L/C Gain Reduction",
+          "steps": 2147483647
+        },
+        {
+          "index": 56,
+          "name": "Expansion",
+          "steps": 2147483647
+        },
+        {
+          "index": 57,
+          "name": "Expansion",
+          "steps": 2147483647
+        }
+      ],
+      "mode": "none (global controls)",
+      "outcome": "not run (no mode)"
+    }
+  ],
+  "measuredAt": "20261007T105323"
+}

@@ -79,6 +79,7 @@
 #include "EjmapSampleRate.h"
 #include "EjmapLicence.h"
 #include "EjmapUadPreflight.h"
+#include "EjmapStrip.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include <functional>
@@ -7457,6 +7458,27 @@ void testMultibandRules()
            "multiband MB-G1: OTT at Depth 100 against Depth 0 reads GR -11.9 at -30 (gain: upward) and +5.6 at -6; a level with no zero reading is not carried");
     check (! offsetRepeatsLast ("", "-4.0 / -4.0") && ! offsetRepeatsLast ("-4.0 / -4.0", "-10.0 / -10.0") && offsetRepeatsLast ("-20.0 / -20.0", "-20.0 / -20.0"), "multiband MB-O1: an offset whose displays repeat the last offset's is the clamp (354E at -20): the ladder stops");
 }
+/** CHANNEL STRIPS (EjmapStrip.h; item E, 7 Oct): sections by name, the engage switch per section, the child's arguments. */
+void testStrip()
+{
+    using namespace ejmap::strip;
+    check (sectionOf ("Comp Thresh") == "compressor" && sectionOf ("Compressor Ratio") == "compressor" && sectionOf ("Gate Thresh") == "gate" && sectionOf ("Expander Range") == "gate" && sectionOf ("LF Gain") == "eq" && sectionOf ("HMF Freq") == "eq" && sectionOf ("EQ In") == "eq"
+           && sectionOf ("Drive") == "saturation" && sectionOf ("Preamp Gain") == "saturation" && sectionOf ("Output") == "global" && sectionOf ("Bank") == "global" && sectionOf ("Compare") == "global",
+           "strip ST1: the section by whole-token word (Comp / Gate / LF / Drive); Output, Bank and 'Compare' are global");
+    check (sectionOf ("Threshold") == "compressor" && sectionOf ("Ratio") == "compressor" && sectionOf ("Gate Attack") == "gate" && sectionOf ("Release") == "compressor", "strip ST1b: an unprefixed Threshold / Ratio / Attack / Release is the compressor's (bx_console SSL); 'Gate Attack' stays the gate's");
+    std::vector<Control> cs { { 0, "Comp On", 2, { { "Off", 0.0f }, { "On", 1.0f } } }, { 1, "Comp Thresh", 0, {} }, { 2, "Comp Ratio", 0, {} }, { 3, "EQ Bypass", 2, { { "Off", 0.0f }, { "On", 1.0f } } }, { 4, "LF Gain", 0, {} }, { 5, "LF Freq", 0, {} },
+                              { 6, "Gate Thresh", 0, {} }, { 7, "Gate Range", 0, {} }, { 8, "Output", 0, {} }, { 9, "Drive", 0, {} }, { 10, "Sat In", 2, { { "Out", 0.0f }, { "In", 1.0f } } } };
+    const auto secs = sectionsOf (cs);
+    auto sec = [&] (const char* n) -> const Section* { for (const auto& s : secs) if (s.name == n) return &s; return nullptr; };
+    check (secs.size() == 5 && sec ("compressor") && sec ("compressor")->controls.size() == 3 && sec ("compressor")->engage && sec ("compressor")->engage->index == 0 && sec ("compressor")->engageNorm == 1.0f && sec ("compressor")->engageText == "On",
+           "strip ST2: the compressor section holds its three controls and its 'Comp On' engage (On -> 1)");
+    check (sec ("eq") && sec ("eq")->engage && sec ("eq")->engage->index == 3 && sec ("eq")->engageNorm == 0.0f && sec ("eq")->engageText == "Off" && sec ("saturation")->engage->index == 10 && sec ("saturation")->engageText == "In",
+           "strip ST3: 'EQ Bypass' engages at Off (norm 0); 'Sat In' engages at In");
+    check (sec ("gate") && ! sec ("gate")->engage && sec ("gate")->note.contains ("no engage switch") && sec ("gate")->numeric == 2 && sec ("global")->controls.size() == 1,
+           "strip ST4: a section without a switch says so; Output is global");
+    check (indicesOf (*sec ("eq")) == "3,4,5" && presetOf (*sec ("eq")) == "3:0.000000" && presetOf (*sec ("gate")).isEmpty() && modeFor ("eq") == "--cert-eq" && modeFor ("gate") == "--cert-dynamics" && modeFor ("global").isEmpty(),
+           "strip ST5: the child's --only-controls lists the section's indices, --preset the engage write (none without a switch), the mode per section");
+}
 void testTimingSegments()
 {
     using namespace ejmap::timing;
@@ -7959,7 +7981,7 @@ void testTextPassTimeout()
 void testPhaseB()
 {
     using namespace ejmap::phaseb;
-    check (categories().size() == 17 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories()[14].name == "frequency" && categories()[15].name == "samplerate" && categories().back().name == "gainall", "phaseb P1: seventeen categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, frequency, samplerate, gain-all)");
+    check (categories().size() == 18 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories()[14].name == "frequency" && categories()[15].name == "samplerate" && categories()[16].name == "strips" && categories().back().name == "gainall", "phaseb P1: eighteen categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, frequency, samplerate, strips, gain-all)");
     for (const auto& c : categories()) check (c.guardS >= 600.0 && c.guardWhy.isNotEmpty(), "phaseb P2: " + c.name + " has a stated hang guard of at least 10 min (" + juce::String (c.guardS / 60.0, 0) + ")");
     check (categoryNamed ("saturation")->ledgerCategories.contains ("amp_sim") && modeWord ("--cert-reverb-delay") == "reverbdelay" && modeWord ("--cert-gain-cal") == "gaincal", "phaseb P3: amp sims ride with saturation; the mode word is the record folder");
     // the done marker: a row file, whole or absent
@@ -8202,6 +8224,7 @@ int main (int, char**)
     testLicence();
     testUadAndWindows();
     testMultibandRules();
+    testStrip();
     testTimingSegments();
     testLimiter();
     testEq();

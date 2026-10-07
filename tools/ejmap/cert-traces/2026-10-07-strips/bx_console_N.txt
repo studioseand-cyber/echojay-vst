@@ -1,0 +1,11 @@
+STRIP: text pass: 58 of 62 controls sampled in 13.7 s (timeout 120 s, scaled to the count)
+STRIP: bx_console N 1.9.1: 58 control(s) in 3 section(s):  eq 22 (engage HPF On/Off -> 'On')  saturation 1  global 35
+  eq: --cert-eq over 22 control(s) with HPF On/Off -> 'On'
+    -> exit 0 in 18.157 s; eq.AudioUnit_417f7950_1.9.1.eq.json
+  saturation: --cert-saturation over 1 control(s)
+    -> exit 4 in 1.64505 s; saturation.AudioUnit_417f7950_1.9.1.saturation.json
+STRIP: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/st/strip/AudioUnit_417f7950_1.9.1.strip.json
+
+real	0m34.411s
+user	0m11.669s
+sys	0m1.127s
