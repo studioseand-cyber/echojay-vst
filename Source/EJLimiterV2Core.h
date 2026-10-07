@@ -63,6 +63,8 @@ struct Tuning
     double slowReleaseMs  = 500.0;  // time constant of the slow limb's recovery
     double slowAttackMs   = 60.0;   // how quickly sustained over-level raises the slow floor
     double slowFraction   = 1.0;    // the slow floor's target as a fraction of the required reduction (Pro-L 2 measured ~0.72)
+    double slowFraction2  = 1.0;    // a SECOND, slower charge of the floor toward this fraction (sustained material keeps charging)
+    double slowAttack2Ms  = 0.0;    // its time constant; 0 disables the second stage
     double slowWindowMs   = 20.0;   // the slow limb charges from the largest reduction over this window (> one LF cycle)
     double link           = 1.0;    // 1 = fully linked channels, 0 = independent
     double tpMarginDb     = 0.1;    // detector margin under the ceiling with true peak on
@@ -88,6 +90,9 @@ inline Tuning transparent()
     t.smoothStages  = 1;       // C3: a box of that width is all the smoothing Pro-L 2 shows
     t.link          = 0.75;    // C5: a left-only burst dips the right channel 75 % as much (dB), measured on panned_transient
     t.tpMarginDb    = 0.05;    // C6: Pro-L 2 lands at -0.01..-0.04 dBTP; the 96-tap detector and the post-check keep overs at zero
+    t.slowWindowMs  = 8.0;     // C7: the floor's source holds across an LF cycle (Pro-L 2: 97 % of the reduction at 997 Hz, 81 % at 50 Hz)
+    t.slowFraction2 = 1.0;     // C7: sustained material keeps charging the floor toward the full reduction ...
+    t.slowAttack2Ms = 1200.0;  // C7: ... slowly: 72 % after 1 s (the first stage), ~97 % after 4 s (measured on tone_997)
     return t;
 }
 
@@ -201,7 +206,7 @@ public:
     {
         for (int c = 0; c < kMaxChannels; ++c)
         {
-            tp_[c].reset(); held_[c].reset(); for (auto& m : ma_[c]) m.reset(); slowWin_[c].reset(); eFast_[c] = eSlow_[c] = 0.0; std::fill (delay_[c].begin(), delay_[c].end(), 0.0f);
+            tp_[c].reset(); held_[c].reset(); for (auto& m : ma_[c]) m.reset(); slowWin_[c].reset(); eFast_[c] = eSlow_[c] = eSlow2_[c] = 0.0; std::fill (delay_[c].begin(), delay_[c].end(), 0.0f);
             tp2_[c].reset(); held2_[c].reset(); ma2_[c].reset(); std::fill (delay2_[c].begin(), delay2_[c].end(), 0.0f);
         }
         std::fill (gaRing_.begin(), gaRing_.end(), 1.0f);
@@ -288,7 +293,9 @@ public:
                 eFast_[c] = std::max (d, eFast_[c] * decayFast_);
                 const double slowTarget = dWin * tuning_.slowFraction;
                 eSlow_[c] += (slowTarget - eSlow_[c]) * (slowTarget > eSlow_[c] ? coefSlowAtk_ : coefSlowRel_);
-                const double env = std::max (eFast_[c], eSlow_[c]);
+                double floor = eSlow_[c];
+                if (coefSlowAtk2_ > 0.0) { const double t2 = dWin * tuning_.slowFraction2; eSlow2_[c] += (t2 - eSlow2_[c]) * (t2 > eSlow2_[c] ? coefSlowAtk2_ : coefSlowRel_); floor = std::max (floor, eSlow2_[c]); }
+                const double env = std::max (eFast_[c], floor);
                 float ge = (float) std::pow (10.0, -env / 20.0);
                 for (int s = 0; s < S_; ++s) ge = ma_[c][s].push (ge);
                 g[c] = ge;
@@ -359,16 +366,17 @@ private:
         decayFast_   = std::exp (-1.0 / (std::max (0.1, tuning_.fastReleaseMs) * 0.001 * sr_));
         coefSlowRel_ = 1.0 - std::exp (-1.0 / (std::max (1.0, tuning_.slowReleaseMs) * 0.001 * sr_));
         coefSlowAtk_ = 1.0 - std::exp (-1.0 / (std::max (0.1, tuning_.slowAttackMs) * 0.001 * sr_));
+        coefSlowAtk2_ = tuning_.slowAttack2Ms > 0.0 ? 1.0 - std::exp (-1.0 / (tuning_.slowAttack2Ms * 0.001 * sr_)) : 0.0;
         gainCoef_ = (float) (1.0 - std::exp (-1.0 / (0.02 * sr_)));
     }
 
     double sr_ = 48000.0; Tuning tuning_;
     TruePeak8x tp_[kMaxChannels]; RunningMin held_[kMaxChannels], slowWin_[kMaxChannels]; MovingAverage ma_[kMaxChannels][4];
     TruePeak8x tp2_[kMaxChannels]; RunningMin held2_[kMaxChannels]; MovingAverage ma2_[kMaxChannels];
-    double eFast_[kMaxChannels] { 0.0, 0.0 }, eSlow_[kMaxChannels] { 0.0, 0.0 };
+    double eFast_[kMaxChannels] { 0.0, 0.0 }, eSlow_[kMaxChannels] { 0.0, 0.0 }, eSlow2_[kMaxChannels] { 0.0, 0.0 };
     std::vector<float> delay_[kMaxChannels], delay2_[kMaxChannels], gaRing_; int delayCap_ = 1, delaySamples_ = 0, wpos_ = 0, delayCap2_ = 1, delaySamples2_ = 0, wpos2_ = 0;
     int S_ = 3, K_ = 1, K2_ = 1;
-    double decayFast_ = 0.0, coefSlowRel_ = 0.0, coefSlowAtk_ = 0.0;
+    double decayFast_ = 0.0, coefSlowRel_ = 0.0, coefSlowAtk_ = 0.0, coefSlowAtk2_ = 0.0;
     float inputGain_ = 1.0f, gainNow_ = 1.0f, gainCoef_ = 0.0f, ceilLin_ = 1.0f, ceilTarget_ = 1.0f, tpMarginLin_ = 1.0f, grDb_ = 0.0f;
     bool truePeak_ = true, prepared_ = false, fixedLatency_ = false, scHpfOn_ = false;
     int maxLatency_ = 0; std::vector<float> scDelay_[kMaxChannels]; int scDelayCap_ = 1, scPos_ = 0;
