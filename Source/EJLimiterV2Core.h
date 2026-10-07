@@ -87,11 +87,13 @@ inline Tuning transparent()
 }
 
 // 8x true-peak interpolator: 8 phases of a 96-tap Kaiser (beta 9) windowed sinc. Fixed arrays, no allocation.
-// Cost: 768 MACs per sample per channel, twice (detector + post-check): ~150 M MAC/s at 48 kHz stereo.
+// The history is kept twice over (hist[p] and hist[p + kTaps]) so every phase is one CONTIGUOUS dot product the
+// compiler can vectorise, with eight independent accumulators so it may; a circular index in the inner loop cost
+// 15x the old limiter's whole process (measured 8 Oct 2026).
 struct TruePeak8x
 {
     static constexpr int kPhases = 8, kTaps = 96, kDelay = kTaps / 2;
-    float coef[kPhases][kTaps] {}; float hist[kTaps] {}; int pos = 0;
+    float coef[kPhases][kTaps] {}; float hist[2 * kTaps] {}; int pos = 0;
     static double i0 (double x) { double s = 1, t = 1; for (int k = 1; k < 60; ++k) { t *= (x / (2.0 * k)) * (x / (2.0 * k)); s += t; if (t < 1e-14 * s) break; } return s; }
     void prepare() noexcept
     {
@@ -106,15 +108,25 @@ struct TruePeak8x
                 const double r = 2.0 * x / (double) kTaps; const double w = std::abs (r) >= 1.0 ? 0.0 : i0 (beta * std::sqrt (1.0 - r * r)) / i0b;
                 coef[ph][k] = (float) (sinc * w); sum += sinc * w;
             }
-            for (int k = 0; k < kTaps; ++k) coef[ph][k] = (float) (coef[ph][k] / sum);
+            // tap k multiplies the sample k back in time; stored REVERSED so the window reads forward in memory
+            float tmp[kTaps]; for (int k = 0; k < kTaps; ++k) tmp[k] = (float) (coef[ph][k] / sum);
+            for (int k = 0; k < kTaps; ++k) coef[ph][k] = tmp[kTaps - 1 - k];
         }
         reset();
     }
     void reset() noexcept { for (auto& h : hist) h = 0.0f; pos = 0; }
     inline float maxAbs (float x) noexcept
     {
-        hist[pos] = x; float m = 0.0f;
-        for (int ph = 0; ph < kPhases; ++ph) { float a = 0.0f; int idx = pos; for (int k = 0; k < kTaps; ++k) { a += coef[ph][k] * hist[idx]; idx = idx == 0 ? kTaps - 1 : idx - 1; } m = std::max (m, std::abs (a)); }
+        hist[pos] = x; hist[pos + kTaps] = x;
+        const float* w = hist + pos + 1;   // the last kTaps samples, oldest first, contiguous
+        float m = 0.0f;
+        for (int ph = 0; ph < kPhases; ++ph)
+        {
+            const float* c = coef[ph];
+            float a0 = 0, a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0, a7 = 0;
+            for (int k = 0; k < kTaps; k += 8) { a0 += c[k] * w[k]; a1 += c[k + 1] * w[k + 1]; a2 += c[k + 2] * w[k + 2]; a3 += c[k + 3] * w[k + 3]; a4 += c[k + 4] * w[k + 4]; a5 += c[k + 5] * w[k + 5]; a6 += c[k + 6] * w[k + 6]; a7 += c[k + 7] * w[k + 7]; }
+            m = std::max (m, std::abs (((a0 + a1) + (a2 + a3)) + ((a4 + a5) + (a6 + a7))));
+        }
         pos = (pos + 1) % kTaps; return m;
     }
 };
@@ -141,7 +153,9 @@ struct MovingAverage
     std::vector<float> ring; int cap = 0, pos = 0, M = 1; double sum = 0.0;
     void prepare (int capacity) { cap = std::max (1, capacity); ring.assign ((size_t) cap, 1.0f); reset(); }
     void reset() noexcept { std::fill (ring.begin(), ring.end(), 1.0f); pos = 0; sum = (double) M; }
-    void setLength (int m) noexcept { M = std::max (1, std::min (m, cap)); reset(); }
+    // A length change keeps the current average: the ring is refilled with it, so a dial move mid-reduction does
+    // not snap the gain to unity (which is a click).
+    void setLength (int m) noexcept { const float cur = (float) (sum / (double) std::max (1, M)); M = std::max (1, std::min (m, cap)); std::fill (ring.begin(), ring.end(), cur); pos = 0; sum = (double) cur * (double) M; }
     inline float push (float v) noexcept
     {
         const int old = (pos + cap - M) % cap;   // the value leaving the window
@@ -170,7 +184,12 @@ public:
         for (auto& d : delay_) d.assign ((size_t) maxDelay, 0.0f);
         const int maxDelay2 = maxPost + TruePeak8x::kDelay + 1;
         for (auto& d : delay2_) d.assign ((size_t) maxDelay2, 0.0f);
-        delayCap_ = maxDelay; delayCap2_ = maxDelay2; applyTuning(); reset();
+        gaRing_.assign ((size_t) maxDelay2, 1.0f);
+        delayCap_ = maxDelay; delayCap2_ = maxDelay2;
+        // the fixed-latency maximum: the largest window the storage allows, true peak on, post-check on
+        { const int S = std::max (1, std::min (t.smoothStages, 4)); const int laMax = std::max (1, (int) std::lround (t.maxLookaheadMs * 0.001 * sr_)); const int M = (laMax + S - 1) / S + 1; const int Kmax = S * (M - 1) + 1; const int K2 = t.postMs > 0.0 ? std::max (2, (int) std::lround (t.postMs * 0.001 * sr_) + 1) : 1; maxLatency_ = (Kmax - 1) + TruePeak8x::kDelay + (K2 > 1 ? (K2 - 1) + TruePeak8x::kDelay : 0); }
+        for (auto& d : scDelay_) d.assign ((size_t) maxLatency_ + 1, 0.0f);
+        scDelayCap_ = maxLatency_ + 1; prepared_ = true; ceilLin_ = ceilTarget_; applyTuning(); reset();
     }
 
     void reset() noexcept
@@ -180,35 +199,66 @@ public:
             tp_[c].reset(); held_[c].reset(); for (auto& m : ma_[c]) m.reset(); slowWin_[c].reset(); eFast_[c] = eSlow_[c] = 0.0; std::fill (delay_[c].begin(), delay_[c].end(), 0.0f);
             tp2_[c].reset(); held2_[c].reset(); ma2_[c].reset(); std::fill (delay2_[c].begin(), delay2_[c].end(), 0.0f);
         }
-        wpos_ = 0; wpos2_ = 0; gainNow_ = inputGain_; grDb_ = 0.0f;
+        std::fill (gaRing_.begin(), gaRing_.end(), 1.0f);
+        for (int c = 0; c < kMaxChannels; ++c) { std::fill (scDelay_[c].begin(), scDelay_[c].end(), 0.0f); hpfZ_[c][0] = hpfZ_[c][1] = 0.0; }
+        wpos_ = 0; wpos2_ = 0; scPos_ = 0; gainNow_ = inputGain_; grDb_ = 0.0f; bypassMix_ = bypassTarget_; ceilLin_ = ceilTarget_;
     }
 
     void setTuning (const Tuning& t) { tuning_ = t; applyTuning(); }
     const Tuning& tuning() const noexcept { return tuning_; }
     void setInputGainDb (double db) noexcept { inputGain_ = (float) std::pow (10.0, db / 20.0); }
-    void setCeilingDb (double db) noexcept { ceilLin_ = (float) std::pow (10.0, db / 20.0); applyTuning(); }
+    // The ceiling is smoothed over 20 ms toward its target; the detector always uses the LOWER of target and current,
+    // so it is never above the clip while the clip ramps, and the output level ramps instead of stepping.
+    void setCeilingDb (double db) noexcept { ceilTarget_ = (float) std::pow (10.0, db / 20.0); if (! prepared_) { ceilLin_ = ceilTarget_; } applyTuning(); }
     void setTruePeak (bool on) noexcept { truePeak_ = on; applyTuning(); }
     bool truePeak() const noexcept { return truePeak_; }
 
-    int latencySamples() const noexcept { return (K_ - 1) + (truePeak_ ? TruePeak8x::kDelay + postLatency() : 0); }
+    // The latency of the CURRENT settings (window, true peak), or - with setFixedLatency (true), the plugin's choice -
+    // the maximum over every setting the prepare()d storage allows, identical whatever the dials say. The detector
+    // is delayed by the difference so the timing of the gain against the audio is unchanged.
+    int latencySamples() const noexcept { return fixedLatency_ ? fixedLatency_samples() : naturalLatency(); }
+    int naturalLatency() const noexcept { return (K_ - 1) + (truePeak_ ? TruePeak8x::kDelay + postLatency() : 0); }
     int postLatency() const noexcept { return (truePeak_ && K2_ > 1) ? (K2_ - 1) + TruePeak8x::kDelay : 0; }
-    float gainReductionDb() const noexcept { return grDb_; }   // the most negative gain of the last block, dB
+    int fixedLatency_samples() const noexcept { return maxLatency_; }
+    void setFixedLatency (bool on) noexcept { fixedLatency_ = on; applyTuning(); }
+    bool fixedLatency() const noexcept { return fixedLatency_; }
+    float gainReductionDb() const noexcept { return grDb_; }   // the most negative gain of the last block, dB (peak GR)
+    float currentInputGain() const noexcept { return gainNow_; }
+
+    // A 2nd-order high-pass on the DETECTOR only (0 = off): what the detector cannot hear can exceed the ceiling,
+    // which the schema says in as many words; the sample-domain clip remains the last resort.
+    void setSidechainHpfHz (double hz) noexcept { scHpfHz_ = std::max (0.0, hz); applyTuning(); }
+
+    // Bypass keeps the delay and the detector running and crossfades the applied gain to unity over 10 ms, so
+    // neither edge of a bypass clicks and the track never moves in time.
+    void setBypassed (bool b) noexcept { bypassTarget_ = b ? 0.0f : 1.0f; }
 
     // In place. numCh 1 or 2; a mono input is processed as one channel.
     void process (float* const* ch, int numCh, int n) noexcept
     {
         numCh = std::max (1, std::min (numCh, kMaxChannels));
         const float gCoef = gainCoef_; float gMin = 1.0f;
+        const int scD = std::max (0, maxLatency_ - naturalLatency());   // the detector's delay under fixed latency
         for (int i = 0; i < n; ++i)
         {
             gainNow_ += (inputGain_ - gainNow_) * gCoef;
+            if (std::abs (ceilLin_ - ceilTarget_) > 1e-7f) { ceilLin_ += (ceilTarget_ - ceilLin_) * gCoef; if (std::abs (ceilLin_ - ceilTarget_) < 1e-6f) ceilLin_ = ceilTarget_; }
+            const float ceilNow = std::min (ceilLin_, ceilTarget_);
+            const float ceilDetNow = truePeak_ ? ceilNow * tpMarginLin_ : ceilNow;
+            bypassMix_ += (bypassTarget_ - bypassMix_) * bypassCoef_;
             float x[kMaxChannels] { 0.0f, 0.0f }, r[kMaxChannels] { 1.0f, 1.0f };
             for (int c = 0; c < numCh; ++c)
             {
                 x[c] = ch[c][i] * gainNow_;
-                const float p = truePeak_ ? tp_[c].maxAbs (x[c]) : std::abs (x[c]);
-                r[c] = p > ceilDet_ ? ceilDet_ / p : 1.0f;
+                // the detector input: delayed under fixed latency (so the gain lands on the same sample it would
+                // without it), then high-passed when asked
+                float sc = x[c];
+                if (fixedLatency_) { float* sd = scDelay_[c].data(); sd[scPos_] = x[c]; sc = sd[(scPos_ + scDelayCap_ - scD) % scDelayCap_]; }
+                if (scHpfOn_) { const double y = hpfB0_ * sc + hpfZ_[c][0]; hpfZ_[c][0] = hpfB1_ * sc - hpfA1_ * y + hpfZ_[c][1]; hpfZ_[c][1] = hpfB2_ * sc - hpfA2_ * y; sc = (float) y; }
+                const float p = truePeak_ ? tp_[c].maxAbs (sc) : std::abs (sc);
+                r[c] = p > ceilDetNow ? ceilDetNow / p : 1.0f;
             }
+            if (fixedLatency_) scPos_ = (scPos_ + 1) % scDelayCap_;
             // channel linking (dB blend of own and linked)
             if (numCh > 1)
             {
@@ -233,32 +283,41 @@ public:
                 g[c] = ge;
             }
             if (numCh > 1 && tuning_.link >= 1.0) { held_[1].push (r[1]); }   // keep the second deque's clock in step (unused output)
-            // the delayed audio, then the gain
-            float y[kMaxChannels] { 0.0f, 0.0f };
+            // the delayed audio (by the fixed maximum when asked), then the gain, crossfaded to unity under bypass
+            float y[kMaxChannels] { 0.0f, 0.0f }; float gaMin = 1.0f;
+            const int audioDelay = fixedLatency_ ? maxLatency_ - postLatency() : delaySamples_;
             for (int c = 0; c < numCh; ++c)
             {
                 float* dl = delay_[c].data(); dl[wpos_] = x[c];
-                const int rp = (wpos_ + delayCap_ - delaySamples_) % delayCap_;
-                y[c] = dl[rp] * g[c];
-                gMin = std::min (gMin, g[c]);
+                const int rp = (wpos_ + delayCap_ - audioDelay) % delayCap_;
+                const float ga = bypassMix_ >= 1.0f ? g[c] : 1.0f + (g[c] - 1.0f) * bypassMix_;   // exact at the default: no rounding in the gain
+                y[c] = dl[rp] * ga;
+                gaMin = std::min (gaMin, ga);
             }
             wpos_ = (wpos_ + 1) % delayCap_;
+            // the gain REPORTED for a block is the gain applied to the samples that LEAVE in that block: stage 1's
+            // gain rides through the post stage's delay before it meets g2 (gaRing_), so a meter reading and a
+            // measurement of the same block agree (limiter_v2_core_test proves it)
+            float gOut = gaMin;
             // the post-check: the output's own true peak, trimmed by a short stage of the same construction (linked)
             if (truePeak_ && K2_ > 1)
             {
                 float r2 = 1.0f;
-                for (int c = 0; c < numCh; ++c) { const float p = tp2_[c].maxAbs (y[c]); r2 = std::min (r2, p > ceilDet_ ? ceilDet_ / p : 1.0f); }
-                const float g2 = ma2_[0].push (held2_[0].push (r2));
+                for (int c = 0; c < numCh; ++c) { const float p = tp2_[c].maxAbs (y[c]); r2 = std::min (r2, p > ceilDetNow ? ceilDetNow / p : 1.0f); }
+                const float g2raw = ma2_[0].push (held2_[0].push (r2)); const float g2 = bypassMix_ >= 1.0f ? g2raw : 1.0f + (g2raw - 1.0f) * bypassMix_;
+                gaRing_[wpos2_] = gaMin;
+                const int rp2 = (wpos2_ + delayCap2_ - delaySamples2_) % delayCap2_;
                 for (int c = 0; c < numCh; ++c)
                 {
                     float* dl = delay2_[c].data(); dl[wpos2_] = y[c];
-                    const int rp = (wpos2_ + delayCap2_ - delaySamples2_) % delayCap2_;
-                    y[c] = dl[rp] * g2;
+                    y[c] = dl[rp2] * g2;
                 }
+                gOut = gaRing_[rp2] * g2;
                 wpos2_ = (wpos2_ + 1) % delayCap2_;
-                gMin = std::min (gMin, g2);
             }
-            for (int c = 0; c < numCh; ++c) ch[c][i] = std::max (-ceilLin_, std::min (ceilLin_, y[c]));
+            gMin = std::min (gMin, gOut);
+            const float clipAt = bypassMix_ < 1.0f ? 1.0e9f : ceilLin_;   // the clip is the limiter's; under bypass the signal passes
+            for (int c = 0; c < numCh; ++c) ch[c][i] = std::max (-clipAt, std::min (clipAt, y[c]));
         }
         grDb_ = gMin < 1.0f ? 20.0f * std::log10 (gMin) : 0.0f;
     }
@@ -275,10 +334,18 @@ private:
         for (int c = 0; c < kMaxChannels; ++c) { held_[c].setWindow (K_); for (int s = 0; s < S_; ++s) ma_[c][s].setLength (M); slowWin_[c].setWindow (std::max (1, (int) std::lround (tuning_.slowWindowMs * 0.001 * sr_))); held2_[c].setWindow (K2_); ma2_[c].setLength (K2_); }
         delaySamples_ = std::min (delayCap_ - 1, (K_ - 1) + (truePeak_ ? TruePeak8x::kDelay : 0));
         delaySamples2_ = std::min (delayCap2_ - 1, postLatency());
+        if (fixedLatency_ && delayCap_ <= maxLatency_) { delay_[0].assign ((size_t) maxLatency_ + 1, 0.0f); delay_[1].assign ((size_t) maxLatency_ + 1, 0.0f); delayCap_ = maxLatency_ + 1; }   // only reachable from prepare(): the fixed delay fits the storage sized there
+        tpMarginLin_ = (float) std::pow (10.0, -tuning_.tpMarginDb / 20.0);
+        bypassCoef_ = (float) (1.0 - std::exp (-1.0 / (0.01 * sr_)));
+        scHpfOn_ = scHpfHz_ > 0.0;
+        if (scHpfOn_)
+        {   // RBJ 2nd-order high-pass, Q 0.707
+            const double w0 = 2.0 * 3.14159265358979323846 * std::min (scHpfHz_, 0.45 * sr_) / sr_, cw = std::cos (w0), sw = std::sin (w0), alpha = sw / (2.0 * 0.70710678);
+            const double a0 = 1.0 + alpha; hpfB0_ = (1.0 + cw) / 2.0 / a0; hpfB1_ = -(1.0 + cw) / a0; hpfB2_ = (1.0 + cw) / 2.0 / a0; hpfA1_ = -2.0 * cw / a0; hpfA2_ = (1.0 - alpha) / a0;
+        }
         decayFast_   = std::exp (-1.0 / (std::max (0.1, tuning_.fastReleaseMs) * 0.001 * sr_));
         coefSlowRel_ = 1.0 - std::exp (-1.0 / (std::max (1.0, tuning_.slowReleaseMs) * 0.001 * sr_));
         coefSlowAtk_ = 1.0 - std::exp (-1.0 / (std::max (0.1, tuning_.slowAttackMs) * 0.001 * sr_));
-        ceilDet_ = truePeak_ ? ceilLin_ * (float) std::pow (10.0, -tuning_.tpMarginDb / 20.0) : ceilLin_;
         gainCoef_ = (float) (1.0 - std::exp (-1.0 / (0.02 * sr_)));
     }
 
@@ -286,11 +353,14 @@ private:
     TruePeak8x tp_[kMaxChannels]; RunningMin held_[kMaxChannels], slowWin_[kMaxChannels]; MovingAverage ma_[kMaxChannels][4];
     TruePeak8x tp2_[kMaxChannels]; RunningMin held2_[kMaxChannels]; MovingAverage ma2_[kMaxChannels];
     double eFast_[kMaxChannels] { 0.0, 0.0 }, eSlow_[kMaxChannels] { 0.0, 0.0 };
-    std::vector<float> delay_[kMaxChannels], delay2_[kMaxChannels]; int delayCap_ = 1, delaySamples_ = 0, wpos_ = 0, delayCap2_ = 1, delaySamples2_ = 0, wpos2_ = 0;
+    std::vector<float> delay_[kMaxChannels], delay2_[kMaxChannels], gaRing_; int delayCap_ = 1, delaySamples_ = 0, wpos_ = 0, delayCap2_ = 1, delaySamples2_ = 0, wpos2_ = 0;
     int S_ = 3, K_ = 1, K2_ = 1;
     double decayFast_ = 0.0, coefSlowRel_ = 0.0, coefSlowAtk_ = 0.0;
-    float inputGain_ = 1.0f, gainNow_ = 1.0f, gainCoef_ = 0.0f, ceilLin_ = 1.0f, ceilDet_ = 1.0f, grDb_ = 0.0f;
-    bool truePeak_ = true;
+    float inputGain_ = 1.0f, gainNow_ = 1.0f, gainCoef_ = 0.0f, ceilLin_ = 1.0f, ceilTarget_ = 1.0f, tpMarginLin_ = 1.0f, grDb_ = 0.0f;
+    bool truePeak_ = true, prepared_ = false, fixedLatency_ = false, scHpfOn_ = false;
+    int maxLatency_ = 0; std::vector<float> scDelay_[kMaxChannels]; int scDelayCap_ = 1, scPos_ = 0;
+    double scHpfHz_ = 0.0, hpfB0_ = 1, hpfB1_ = 0, hpfB2_ = 0, hpfA1_ = 0, hpfA2_ = 0; double hpfZ_[kMaxChannels][2] { { 0, 0 }, { 0, 0 } };
+    float bypassTarget_ = 1.0f, bypassMix_ = 1.0f, bypassCoef_ = 0.0f;
 };
 
 } // namespace limv2

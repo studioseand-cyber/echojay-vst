@@ -1,61 +1,47 @@
 /*
-    EedLimiterProcessor.h  —  "EchoJay Limiter".
+    EedLimiterProcessor.h  —  "EchoJay Limiter", on the v2 engine (session L, 7-8 Oct 2026).
 
-    DynamicsCore in Limit mode — an infinite ratio, so whatever goes in above the
-    ceiling comes out AT the ceiling — plus the one thing the other five faces do
-    not have: LOOKAHEAD.
+    THE ENGINE is Source/EJLimiterV2Core.h (limv2::Core): held-minimum lookahead with a smooth window, an 8x
+    true-peak detector of the same class as the harness that judges it, a two-limb program-dependent release (an
+    instant part over a slow floor at a fraction of the reduction), a post-check on the output, channel linking,
+    and styles as Tunings measured against FabFilter Pro-L 2 Transparent (docs/limiter_ab/SESSION_L_NOTES.md).
+    This file is the device around it: the dialable contract, the meters the loudness loop and the editor read,
+    latency reporting, and the registration.
 
-    WHY LOOKAHEAD, AND WHAT IT COSTS. A limiter with no lookahead has to choose
-    between an attack fast enough to catch a transient (which distorts, because
-    a per-sample gain change on a low-frequency waveform IS distortion) and an
-    attack slow enough to be clean (which lets the transient through). Lookahead
-    removes the choice: the DETECTOR reads the input undelayed while the SIGNAL
-    is delayed, so the gain is already where it needs to be by the time the peak
-    arrives, and the attack can be gentle.
+    THE CONTRACT IS UNCHANGED. Same parameter ids, ranges, defaults and state: ceiling_db, input_db, release_ms,
+    lookahead_ms, mode, true_peak, sc_hpf_hz. What each one does on v2:
+      ceiling_db    the ceiling (smoothed over 20 ms in the engine, the detector always at or below the clip)
+      input_db      the loudness push, eased over 20 ms inside the engine
+      true_peak     drives the oversampled detector and the post-check (off: sample-domain detection)
+      sc_hpf_hz     a 2nd-order high-pass on the detector only, as before
+      mode          ALL THREE VALUES RUN THE TRANSPARENT TUNING tonight (punchy and clip are recorded, not yet
+                    tuned); the dial keeps its value so a later build can give them their own Tunings
+      lookahead_ms  scales the engine's window around its tuned value: 2 ms (the default) IS the tuned window,
+                    so an existing chain sounds like the measurement; 0 is the shortest window, 10 is 5x
+      release_ms    scales the slow floor's recovery around its tuned value: 50 ms (the default) IS the tuned
+                    180 ms; 1000 is 20x slower
+    So a chain, preset or server-sent ceiling saved against the old limiter loads and sounds like the new one at
+    its defaults, and the two dials still turn and still do something, in the engine's own terms.
 
-    The cost is latency, and it is REPORTED, via setLatencySamples(). This is not
-    optional politeness: an unreported delay puts this track out of time with
-    every other track in the session, and the error is a few milliseconds — small
-    enough to sound like a mix problem rather than like a bug. ChainHost sums the
-    reported latency of every slot (getTotalLatencySamples) and PluginProcessor
-    mirrors it to the DAW, so a correct number here is all the device owes.
+    LATENCY IS FIXED. One number per sample rate, identical for every setting (true peak on or off, any
+    lookahead): the engine delays the audio by its maximum and delays its own detector by the difference. A
+    limiter whose latency moved when a dial moved would put the track out of time with the session each time.
+    Reported through ejSetLatencyLogged as before. BYPASS STILL DELAYS, for the same reason it always did, and the
+    gain crossfades over 10 ms either way so neither edge of a bypass clicks.
 
-    ATTACK IS DERIVED, not published. It is tied to the lookahead — roughly a
-    third of it — because those are the two halves of one decision: an attack
-    slower than the lookahead lets peaks past, and one much faster throws away
-    the transparency the lookahead was bought for. Publishing both would let the
-    model set a combination that is simply wrong, and it would have no way to
-    know that from the schema.
+    gainReductionDb() is the DEEPEST gain of the last block (peak GR, negative), as the loudness loop has always
+    read it. It is measured, not estimated: limiter_v2_core_test compares it with the block's actual output/input.
 
-    THE DEPTH PASS added three things (DEVICE_DEPTH_PLAN.md, Dynamics):
-
-      * `mode` — transparent | punchy | clip.
-          transparent  the lookahead limiter above, uncoloured.
-          punchy       the same, on the core's `punch` character: a faster attack
-                       and recovery and a touch of drive as it works, which is
-                       what makes a loud master feel dense rather than merely
-                       loud.
-          clip         a HARD CEILING. Attack and release both go to zero, so the
-                       gain is the instantaneous ceiling/peak ratio, which IS
-                       clipping — and the lookahead is forced off, because a hard
-                       clip has nothing to look ahead FOR. Cheap, obvious, and
-                       the loudest of the three; the release dial and the
-                       lookahead dial are both meaningless here, and the editor
-                       hides them rather than leaving them live and ignored.
-      * `true_peak` — detect between the samples, so the ceiling holds against
-        what a converter or a codec actually reconstructs rather than against the
-        samples alone.
-      * `sc_hpf_hz` — a detector high-pass, WITH A CAVEAT the schema carries:
-        anything the detector cannot hear can exceed the ceiling, so on a master
-        this is a deliberate trade and not a default.
+    THE DWELL HISTOGRAM AND DETECTOR LEVEL the transfer-curve editor draws still come from the shared DynamicsCore
+    detector, which is fed the gained input and asked for nothing else; its gain is not used.
 */
 
 #pragma once
 
 #include "EedDeviceProcessor.h"
 #include "EchoJayLevelTally.h"
-#include "EJTruePeakInterp.h"
 #include "EedDynamicsCore.h"
+#include "EJLimiterV2Core.h"
 
 class EedLimiterProcessor : public EedDeviceProcessor
 {
@@ -90,9 +76,8 @@ public:
     static constexpr const char* kScHpfHz     = "sc_hpf_hz";
     static constexpr const char* kInputDb     = "input_db";   // 18 Sep 2026 (item 5): gain INTO the limiter, the loudness push
 
-    // The ceiling the lookahead buffer is sized for, once, in prepareToPlay.
-    // Also the schema's maximum: asking for more than the buffer holds would be
-    // an allocation on the audio thread, which the real-time contract forbids.
+    // The schema's maximum for lookahead_ms, unchanged. On v2 it scales the engine's window around the tuned value
+    // (see the header comment); the engine's storage is sized once, in prepareToPlay, for the largest window.
     static constexpr double kMaxLookaheadMs = 10.0;
 
     // The three limiter modes, in the schema's order. Named rather than bare
@@ -103,13 +88,13 @@ public:
 
     Mode mode() const noexcept { return mode_; }
 
-    // Whether the dialled release and lookahead are doing anything at all. The
-    // editor asks rather than testing the mode itself, so the interlock is stated
-    // once, next to the code that implements it.
-    bool releaseInUse()   const noexcept { return mode_ != Mode::Clip; }
-    bool lookaheadInUse() const noexcept { return mode_ != Mode::Clip; }
+    // Whether the dialled release and lookahead are doing anything. On v2 every mode runs the Transparent tuning,
+    // in which both dials scale the engine (see the header), so both are always in use. The editor asks rather than
+    // testing the mode itself, so the interlock is stated once, next to the code that implements it.
+    bool releaseInUse()   const noexcept { return true; }
+    bool lookaheadInUse() const noexcept { return true; }
 
-    float gainReductionDb() const noexcept { return wallGrDb_.load (std::memory_order_relaxed); }   // the WALL's reduction (18 Sep 2026), negative
+    float gainReductionDb() const noexcept { return wallGrDb_.load (std::memory_order_relaxed); }   // the engine's deepest gain of the last block (peak GR), negative
     float detectorLevelDb()  const noexcept { return core_.detectorLevelDb(); }
 
     // Where the signal LIVES on that curve — the dwell histogram behind the
@@ -121,45 +106,23 @@ public:
     }
 
 private:
-    // Recompute the delay, the derived attack, the release and the reported
-    // latency together. They are four views of one decision — the mode and the
-    // lookahead between them settle all of it — so they are never updated apart.
+    // Re-derive the engine's Tuning from the dials (mode, lookahead_ms, release_ms) and push every other setting;
+    // the four are one decision and are never updated apart.
     void applyLookahead();
 
-    echojay::DynamicsCore   core_;
-    echojay::LookaheadDelay delay_;
+    echojay::DynamicsCore    core_;     // the editor's dwell histogram and detector level only
+    echojay::limv2::Core     engine_;   // the limiter
 
     Mode   mode_        = Mode::Transparent;
     double lookaheadMs_ = 2.0;
+    double releaseMs_   = 50.0;
     double sampleRate_  = 44100.0;
-
-    // The DIALLED release. `clip` drives the core's release to zero, so the core
-    // can no longer be asked what the user set — and a state round-trip that gave
-    // back 0 ms would quietly rewrite the dial the next time the mode changed.
-    double releaseMs_ = 50.0;
-    double inputDb_   = 0.0;    // dialled input gain, dB; linear factor recomputed on set
-    float  inputGain_ = 1.0f;
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> inputGainSmooth_ { 1.0f };   // 50 ms ease (loudness loop)
+    double inputDb_     = 0.0;    // dialled input gain, dB
+    float  inputGain_   = 1.0f;   // its linear value, for the input meter's scaled copy
     echojay::LevelTally inMeter_ { echojay::LevelTally::Weighting::K }, outMeter_ { echojay::LevelTally::Weighting::K };   // 18e (item 4)
-    std::atomic<float> outPeakMax_ { 0.0f };   // max |output sample| since resetOutputPeak (\"Peaks\" in the loop bubble)
-    // THE WALL (18 Sep 2026): a brick-wall gain computed from the running MAX of the sidechain over the lookahead
-    // window (instant attack, one-pole release), on the 4x-oversampled sidechain when true_peak is on, plus a
-    // sample-domain safety clip at the ceiling. The core's one-pole attack let a +6 dBFS burst leave at +2.2 dBFS.
-    static constexpr int kMaxWindow = 1024;
-    float winVal_[kMaxWindow] {}; int winIdx_[kMaxWindow] {}; int winHead_ = 0, winTail_ = 0, winN_ = 0; long long winSample_ = 0;
-    int   windowSamples_ = 1;
-    float wallGain_ = 1.0f; float wallRelCoeff_ = 0.0f; float ceilLin_ = 1.0f;
-    echojay::TruePeakInterp tpL_, tpR_; bool truePeakOn_ = false;
-    std::atomic<float> wallGrDb_ { 0.0f };
-    inline float windowMaxPush (float v) noexcept
-    {   // monotonic deque over the last windowSamples_ values, fixed storage
-        while (winN_ > 0) { const int last = (winTail_ + kMaxWindow - 1) % kMaxWindow; if (winVal_[last] <= v) { winTail_ = last; --winN_; } else break; }
-        winVal_[winTail_] = v; winIdx_[winTail_] = (int) (winSample_ % 1000000000LL); winTail_ = (winTail_ + 1) % kMaxWindow; ++winN_;
-        const long long oldest = winSample_ - windowSamples_;
-        while (winN_ > 0 && (long long) winIdx_[winHead_] <= (oldest % 1000000000LL) && winSample_ >= (long long) windowSamples_) { winHead_ = (winHead_ + 1) % kMaxWindow; --winN_; }
-        ++winSample_;
-        return winN_ > 0 ? winVal_[winHead_] : v;
-    }
+    std::atomic<float> outPeakMax_ { 0.0f };   // max |output sample| since resetOutputPeak ("Peaks" in the loop bubble)
+    std::atomic<float> wallGrDb_ { 0.0f };     // the engine's deepest gain of the last block, dB (negative)
+    bool   truePeakOn_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedLimiterProcessor)
 };

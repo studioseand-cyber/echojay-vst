@@ -3,6 +3,7 @@
 */
 
 #include "EedLimiterProcessor.h"
+#include <atomic>
 #include <cmath>
 #include "EedLatencyLog.h"
 #include "EedLimiterEditor.h"
@@ -10,12 +11,10 @@
 
 EedLimiterProcessor::EedLimiterProcessor()
 {
+    // The shared DynamicsCore is kept for the editor's picture only (dwell histogram, detector level): Limit mode,
+    // peak detector, hard knee, so what it draws matches a brick wall. Its gain is never applied.
     core_.setMode (echojay::DynamicsMode::Limit);
     core_.setDetectorMode (echojay::DetectorMode::Peak);
-
-    // A limiter's ceiling is a hard number: a soft knee would start reducing
-    // BELOW the ceiling, which is a compressor, not a limiter. The whole promise
-    // of the device is "nothing above this line", so the corner is hard.
     core_.setKneeDb (0.0f);
 
     resetParamsToDefaults();
@@ -70,13 +69,12 @@ const echojay::ParamSchema& EedLimiterProcessor::schema()
 
 bool EedLimiterProcessor::setParamValue (const juce::String& id, double value)
 {
-    if (id == kCeilingDb) { core_.setThresholdDb ((float) value); ceilLin_ = (float) std::pow (10.0, value / 20.0); return true; }
-    if (id == kInputDb)   { inputDb_ = value; inputGain_ = (float) std::pow (10.0, value / 20.0); inputGainSmooth_.setTargetValue (inputGain_); return true; }
-    if (id == kScHpfHz)   { core_.setSidechainHpfHz (value);      return true; }
-    if (id == kTruePeak)  { core_.setTruePeak (value >= 0.5); truePeakOn_ = value >= 0.5; applyLookahead();     return true; }
+    if (id == kCeilingDb) { core_.setThresholdDb ((float) value); engine_.setCeilingDb (value); return true; }
+    if (id == kInputDb)   { inputDb_ = value; inputGain_ = (float) std::pow (10.0, value / 20.0); engine_.setInputGainDb (value); return true; }
+    if (id == kScHpfHz)   { core_.setSidechainHpfHz (value); engine_.setSidechainHpfHz (value); return true; }
+    if (id == kTruePeak)  { truePeakOn_ = value >= 0.5; core_.setTruePeak (truePeakOn_); engine_.setTruePeak (truePeakOn_); return true; }
 
-    // Release and lookahead are both stored and then re-derived, because `clip`
-    // overrides what the core runs for each of them.
+    // Release, lookahead and mode are stored and then re-derived together into the engine's Tuning.
     if (id == kReleaseMs)   { releaseMs_   = value; applyLookahead(); return true; }
     if (id == kLookaheadMs) { lookaheadMs_ = value; applyLookahead(); return true; }
 
@@ -84,12 +82,6 @@ bool EedLimiterProcessor::setParamValue (const juce::String& id, double value)
     {
         const int i = juce::jlimit (0, kNumModes - 1, (int) std::lround (value));
         mode_ = (Mode) i;
-
-        // `punchy` is the shared core's punch character — a faster attack and
-        // recovery and gentle drive as it works. The other two are uncoloured:
-        // a limiter's job is to be inaudible unless asked otherwise.
-        core_.setCharacter (mode_ == Mode::Punchy ? echojay::CharacterMode::Punch
-                                                 : echojay::CharacterMode::Clean);
         applyLookahead();
         return true;
     }
@@ -103,52 +95,28 @@ double EedLimiterProcessor::getParamValue (const juce::String& id) const
     if (id == kReleaseMs)   return releaseMs_;
     if (id == kLookaheadMs) return lookaheadMs_;
     if (id == kMode)        return (double) (int) mode_;
-    if (id == kTruePeak)    return core_.isTruePeak() ? 1.0 : 0.0;
+    if (id == kTruePeak)    return truePeakOn_ ? 1.0 : 0.0;
     if (id == kScHpfHz)     return core_.getSidechainHpfHz();
     return 0.0;
 }
 
 void EedLimiterProcessor::applyLookahead()
 {
-    // the wall's window = the lookahead (at least 1 sample, at most kMaxWindow); its release = the dialled release
-    windowSamples_ = juce::jlimit (1, kMaxWindow - 1, (int) std::lround ((mode_ == Mode::Clip ? 0.0 : lookaheadMs_) * 0.001 * sampleRate_) + 1 + (truePeakOn_ && mode_ != Mode::Clip ? echojay::TruePeakInterp::kDelay : 0));
-    wallRelCoeff_  = (float) (releaseMs_ > 0.0 ? 1.0 - std::exp (-1.0 / (0.001 * releaseMs_ * sampleRate_)) : 1.0f);
-    // CLIP is a hard ceiling, and that is entirely expressed by three zeroes: no
-    // delay, no attack and no release. The gain then becomes the instantaneous
-    // ceiling/peak ratio applied to the sample it was measured from, which IS
-    // clipping — with the one improvement that it is stereo-LINKED, so a clipped
-    // transient does not pull the image toward the quieter channel.
-    //
-    // The delay has to go with it. A lookahead means the gain is computed from a
-    // sample the audio has not reached yet, which is exactly right for a limiter
-    // with an attack and exactly wrong for an instantaneous one: the clip would
-    // land milliseconds away from the peak that caused it.
-    const bool clip = mode_ == Mode::Clip;
+    // Every mode runs the Transparent tuning tonight (8 Oct 2026): punchy and clip keep their dial value and are
+    // recorded in SESSION_L_NOTES.md as "not yet tuned". The two dials scale the tuned values around their defaults,
+    // so a saved chain at the defaults sounds like the measurement.
+    echojay::limv2::Tuning t = echojay::limv2::transparent();
+    const echojay::limv2::Tuning base = echojay::limv2::transparent();
+    t.lookaheadMs    = base.lookaheadMs * juce::jlimit (0.0, kMaxLookaheadMs, lookaheadMs_) / 2.0;   // 2 ms -> tuned window; 0 -> the shortest; 10 -> 5x
+    t.slowReleaseMs  = base.slowReleaseMs * juce::jlimit (1.0, 1000.0, releaseMs_) / 50.0;          // 50 ms -> tuned 180 ms; 1000 -> 20x
+    engine_.setTuning (t);
 
-    // CHECK 2 (18 Sep 2026): the true-peak interpolator reads the sidechain kTaps/2 samples LATE, so under true_peak
-    // the audio is delayed by that much more - the wall then covers every inter-sample peak the output carries.
-    // The extra delay is REPORTED like the rest (ejSetLatencyLogged below reads delay_.delaySamples()).
-    const double tpDelayMs = (truePeakOn_ && ! clip) ? 1000.0 * (double) (echojay::TruePeakInterp::kDelay) / sampleRate_ : 0.0;
-    delay_.setDelayMs (clip ? 0.0 : lookaheadMs_ + tpDelayMs);
+    // The editor's picture: the shared detector follows the window it used to (about a third of the lookahead).
+    core_.setAttackMs (lookaheadMs_ > 0.0 ? juce::jmax (0.05, lookaheadMs_ / 3.0) : 0.05);
+    core_.setReleaseMs (releaseMs_);
 
-    if (clip)
-    {
-        core_.setAttackMs (0.0);
-        core_.setReleaseMs (0.0);
-    }
-    else
-    {
-        // Attack derived from the lookahead: about a third of it, so the gain is
-        // ~95% of the way to its target by the time the peak arrives. With no
-        // lookahead there is nothing to hide behind, so it falls back to the
-        // fastest attack the core will run.
-        core_.setAttackMs (lookaheadMs_ > 0.0 ? juce::jmax (0.05, lookaheadMs_ / 3.0)
-                                              : 0.05);
-        core_.setReleaseMs (releaseMs_);
-    }
-
-    // The number the DAW needs to keep this track in time with every other one.
-    ejSetLatencyLogged (*this, delay_.delaySamples(), "EedLimiterProcessor #1");
+    // Fixed by construction (the engine's maximum, every setting), so this number only changes with the sample rate.
+    ejSetLatencyLogged (*this, engine_.latencySamples(), "EedLimiterProcessor #1");
 }
 
 // ---------------------------------------------------------------------------
@@ -160,16 +128,19 @@ void EedLimiterProcessor::prepareToPlay (double sampleRate, int)
 
     core_.prepare (sampleRate_);
     core_.reset();
-    inputGainSmooth_.reset (sampleRate_, 0.05);   // 50 ms ease on the loudness push
-    inputGainSmooth_.setCurrentAndTargetValue (inputGain_);
-    tpL_.prepare(); tpR_.prepare(); wallGain_ = 1.0f; winHead_ = winTail_ = winN_ = 0; winSample_ = 0;
     inMeter_.prepare (sampleRate_); outMeter_.prepare (sampleRate_);   // 18e (item 4)
-    ceilLin_ = (float) std::pow (10.0, core_.getThresholdDb() / 20.0);
 
-    // Sized ONCE, for the schema's maximum. Every later lookahead change is a
-    // read-pointer move inside this buffer, never a reallocation.
-    delay_.prepare (sampleRate_, kMaxLookaheadMs + 1.0, 2);   // + the true-peak interpolator's group delay (kTaps/2 samples < 1 ms at 44.1k)
-    delay_.reset();
+    // Sized ONCE, for the largest window the lookahead dial can ask for (5x the tuned window at 10 ms) with true
+    // peak on; every later change is a window or coefficient change inside that storage, never an allocation.
+    echojay::limv2::Tuning t = echojay::limv2::transparent();
+    t.maxLookaheadMs = t.lookaheadMs * kMaxLookaheadMs / 2.0;
+    engine_.prepare (sampleRate_, t);
+    engine_.setFixedLatency (true);
+    engine_.setCeilingDb (core_.getThresholdDb());
+    engine_.setInputGainDb (inputDb_);
+    engine_.setTruePeak (truePeakOn_);
+    engine_.setSidechainHpfHz (core_.getSidechainHpfHz());
+    engine_.reset();
 
     applyLookahead();
 }
@@ -188,64 +159,30 @@ void EedLimiterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     float* r = numCh > 1 ? buffer.getWritePointer (1) : nullptr;
     const int n = buffer.getNumSamples();
 
-    // BYPASS STILL DELAYS. The device is reporting latency to the host, and the
-    // host is compensating for it whether or not the device is bypassed; if
-    // bypass returned the signal early, toggling it would shift this track in
-    // time against the rest of the session. So bypass skips the limiting and
-    // keeps the delay.
+    // BYPASS STILL DELAYS (see the header): the engine keeps its delay and its detector running and crossfades the
+    // gain to unity over 10 ms, so toggling bypass neither shifts the track in time nor clicks.
     const bool byp = isBypassed();
+    engine_.setBypassed (byp);
 
-    {   // 18e (item 4): the INPUT meter reads the signal INTO the wall (after input_db, before the delay): a scaled copy at the block's current gain
-        const float igNow = byp ? 1.0f : inputGainSmooth_.getCurrentValue();
+    {   // 18e (item 4): the INPUT meter reads the signal INTO the limiter (after input_db): a scaled copy at the dialled gain.
+        // The shared detector is fed the same copy, for the editor's dwell histogram and detector level only.
+        const float ig = byp ? 1.0f : inputGain_;
         float tl[512], tr[512];
         for (int off = 0; off < n; off += 512)
         {
             const int m = juce::jmin (512, n - off);
-            for (int i = 0; i < m; ++i) { tl[i] = l[off + i] * igNow; tr[i] = r != nullptr ? r[off + i] * igNow : tl[i]; }
+            for (int i = 0; i < m; ++i) { tl[i] = l[off + i] * ig; tr[i] = r != nullptr ? r[off + i] * ig : tl[i]; }
             inMeter_.push (tl, tr, m);
+            if (! byp) for (int i = 0; i < m; ++i) (void) core_.gainForSidechain (tl[i], tr[i]);
         }
     }
+
+    float* chs[2] = { l, r };
+    engine_.process (chs, r != nullptr ? 2 : 1, n);
+
     float pk = 0.0f;
-    for (int i = 0; i < n; ++i)
-    {
-        const float ig = byp ? 1.0f : inputGainSmooth_.getNextValue();   // the loudness push, eased over 50 ms, before the detector and the delay
-        l[i] *= ig; if (r != nullptr) r[i] *= ig;
-        // The detector reads the input BEFORE the delay — that is the whole
-        // trick: it sees the peak while the audio carrying it is still in flight.
-        const float scL = l[i];
-        const float scR = r != nullptr ? r[i] : l[i];
-        const float gCore = byp ? 1.0f : core_.gainForSidechain (scL, scR);   // the core still meters (dwell, character depth)
-        // THE WALL: the largest sidechain value the delayed output is about to carry (4x true peak when asked)
-        const float scPeak = truePeakOn_ ? std::max (tpL_.maxAbs4 (scL), tpR_.maxAbs4 (scR)) : std::max (std::abs (scL), std::abs (scR));
-        const float wmax   = windowMaxPush (scPeak);
-        const float ceilDet = truePeakOn_ ? ceilLin_ * 0.98855f : ceilLin_;   // 18e (item 12): -0.1 dB detector margin under true peak (was -0.2); limiter_wall_guard holds the output within [-0.25, -0.10] dBTP
-        const float gTarget = wmax > ceilDet ? ceilDet / wmax : 1.0f;
-        if (gTarget < wallGain_) wallGain_ = gTarget; else wallGain_ += (gTarget - wallGain_) * wallRelCoeff_;
-        const float g = byp ? 1.0f : std::min (gCore, wallGain_);
-
-        float frame[2] = { l[i], r != nullptr ? r[i] : 0.0f };
-        delay_.process (frame, 2);
-
-        if (byp)
-        {
-            // Delayed and otherwise untouched. In particular NOT shaped: the
-            // core's last gain reduction is still sitting in its meter, so
-            // asking for the character here would drive a bypassed device.
-            l[i] = frame[0];
-            if (r != nullptr) r[i] = frame[1];
-            continue;
-        }
-
-        // `punchy`'s drive, applied where a gain element physically sits: after
-        // the gain, on the way out. Identity in the other two modes and identity
-        // in punchy while it is not reducing, so the ceiling is never coloured by
-        // a limiter that is doing nothing. It can only ever pull a sample toward
-        // zero, so it cannot break the wall it sits behind.
-        l[i] = juce::jlimit (-ceilLin_, ceilLin_, core_.shapeCharacter (frame[0] * g));   // the safety clip: nothing above the ceiling in the sample domain
-        if (r != nullptr) r[i] = juce::jlimit (-ceilLin_, ceilLin_, core_.shapeCharacter (frame[1] * g));
-        pk = juce::jmax (pk, std::abs (l[i]), r != nullptr ? std::abs (r[i]) : 0.0f);
-    }
-    wallGrDb_.store (wallGain_ < 1.0f ? 20.0f * std::log10 (wallGain_) : 0.0f, std::memory_order_relaxed);
+    for (int i = 0; i < n; ++i) pk = juce::jmax (pk, std::abs (l[i]), r != nullptr ? std::abs (r[i]) : 0.0f);
+    wallGrDb_.store (byp ? 0.0f : engine_.gainReductionDb(), std::memory_order_relaxed);
     if (pk > outPeakMax_.load (std::memory_order_relaxed)) outPeakMax_.store (pk, std::memory_order_relaxed);
     outMeter_.push (l, r, n);   // 18e (item 4): the OUTPUT meter
 }
