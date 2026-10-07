@@ -11,12 +11,14 @@
 //           its structured params (text fallback) arms the loop at build finish. If the chain has a target but no
 //           "EchoJay Level" slot, the editor inserts one before the last slot first (armLoudnessLoopIfTargeted).
 //  Drive    THE LEVEL SLOT'S gain_db, never a limiter parameter. The last slot - any brand - only holds the ceiling.
-//  Measure  the loudest 3 s (max short-term LUFS-S, LevelTally::maxShortTermDb) across a window of 10 s of counted
-//           audio (hops above -40 LUFS) at the chain OUTPUT; the INPUT side (before the Level slot) is measured
-//           over the same window for the window sanity check.
+//  Measure  the INTEGRATED loudness of the window (LevelTally::levelDb, K-weighted, so it IS LUFS) across a window
+//           of 10 s of counted audio (hops above -40 LUFS) at the chain OUTPUT, post limiter. The loudest 3 s
+//           (maxShortTermDb) is still measured and is the SAFETY CHECK, never the target: 7 Oct 2026 ruling, after
+//           a bus that measured -11.4 loudest-3-s was proposed +3.4 dB when the right answer was +8. The INPUT side
+//           (before the Level slot) is measured over the same window for the window sanity check.
 //  Sanity   counted audio >= 3 dB under the build-time integrated input -> "that sounded like a quiet section -
 //           play the chorus and I'll try again", nothing applied, the window restarts.
-//  Ask      "Measured -X LUFS (loudest 3 s). Push +Y dB to reach -8? say go" -> apply on go/apply -> re-measure ->
+//  Ask      "Measured -X LUFS integrated. Push +Y dB to reach -8? say go" -> apply on go/apply -> re-measure ->
 //           propose again; up to four rounds, then "stuck at -X: the limiter is working N dB average, up to M dB on
 //           the hits - say push it or leave it". Numbers always, including at the +24 dB Level ceiling.
 //  Track    after applying, keep measuring max short-term; a later section more than 1 dB over the target ->
@@ -87,19 +89,41 @@ public:
     // -10.8 with the worst hit at 4.8 dB (+1.1 offered); Sean pushed +2..+3 by hand and judged it right - a worst peak of ~8-9 dB
     // at his setting. The typical figure was not logged by 21l, so these are the ruled starting points: Pushed 8 sits above his
     // setting, Commercial 6 at or just below it; the first 21m log carries both figures for the re-calibration.
+    // 7 Oct 2026 RULING (Sean, 20:09, on measurements): these were below normal mastering practice. His reference
+    // is Pro-L 2 at +8.2 dB on a -8 LUFS master, where 4-6 dB of real GR on the loud sections is ordinary, and the
+    // bx_limiter in his own chain showed 1.3-1.7 dB where the old model predicted 6.3. A cap of 6 dB on what we
+    // will even OFFER is a cap below what the work needs.
     static float grCapDb (const juce::String& option) noexcept
     {
-        if (option == "pushed")  return 8.0f;
-        if (option == "dynamic") return 3.0f;
-        if (option == "keep")    return 1.0f;
-        return 6.0f;   // commercial (and the default)
+        if (option == "pushed")  return 12.0f;
+        if (option == "dynamic") return 3.0f;    // unchanged: "dynamic" is a promise to keep the dynamics
+        if (option == "keep")    return 1.0f;    // unchanged: "keep" is a promise to change nothing
+        return 10.0f;  // commercial (and the default) - was 6.0
     }
-    static constexpr float kOpeningHeadroomDb = 3.0f;
-    static constexpr float kOpeningFloorDb    = -6.0f;   // ruling 5b (22 Sep 2026): the opening gain never goes below -6.0 dB   // 22 Sep 2026 (item 5): peaks into the limiter never open more than 3 dB over the ceiling
+    // THE THIRD-PARTY GR ESTIMATE (7 Oct 2026). Where the limiter's GR is readable - the EchoJay Limiter - it is
+    // MEASURED and no model is used at all. For a third-party limiter the old fallback was "every dB of true peak
+    // above the ceiling becomes gain reduction", which is what a sample-peak brickwall does and not what a
+    // lookahead true-peak limiter shows: at +4 dB Sean's chain had about 7.0 dB of excess over the ceiling against
+    // 1.5 dB of real GR, a ratio of about 0.21. So the estimate is scaled and CLAMPED, and the clamp is the point -
+    // an estimate that cannot exceed 3 dB cannot hold a master 5 dB down on a guess, and the loud-window
+    // correction, which reads the real thing, is what finishes the job. PROVISIONAL on Sean's calibration points:
+    // every window logs estimate vs measured so the next point arrives for free.
+    static constexpr float kThirdPartyGrFactor = 0.25f;
+    static constexpr float kThirdPartyGrMaxDb  = 3.0f;
     static constexpr int   kMaxProposals     = 3;        // 18g: at most 3 proposals, then the result bubble (was 4 rounds)
     static constexpr float kRatioMin         = 0.5f, kRatioMax = 2.0f;   // 18g: achieved/commanded clamp for the step scaling
     static constexpr float kGrOfferDb        = 6.0f;
     static constexpr int   kWaitWallMs       = 60000;
+    // LISTEN ALWAYS RESOLVES (7 Oct 2026 ruling, Sean 20:00). He cued the loudest section, played, tapped Listen
+    // twice, and then nothing happened indefinitely. There was no deadline anywhere: three returns in the tick -
+    // not enough counted audio, a sensor that never reports, and an open knob gesture - each waited for ever, and
+    // the only thing ever said while waiting was one line at kWaitWallMs (SIXTY seconds), said once.
+    // The window now resolves within kResolveMs of PLAYBACK: measured from the Listen tap, and extended ONCE to
+    // kResolveMs after the first counted audio, so the clock means playback rather than the time he spent cueing.
+    static constexpr int   kResolveMs        = 20000;
+    // The loud window is a SAFETY CHECK on the decision, never the target (the target is integrated). This is how
+    // far above the target the projected loudest 3 s may sit before the log calls it out.
+    static constexpr float kShortTermWatchDb = 6.0f;
     static constexpr int   kTickMs           = 250;
 
     explicit LoudnessLoop (ChainHost& host) : host_ (host) {}
@@ -113,6 +137,12 @@ public:
     std::function<bool()>               transportKnown { [] { return false; } };
     std::function<void (float beforeDb, float afterDb)> onGainWritten;      // 21n item 3: every loop write of the Level gain (an undo entry)
     std::function<bool()>               knobGestureOpen { [] { return echojay::knobGestureOpen(); } };
+    // 7 Oct 2026 (item 2c): EchoJay'S OWN BUS GAIN, which the loop could not see. applyBusGainSmoothed runs
+    // BETWEEN chainHost.process and the meter tap (PluginProcessor.cpp), so the loop lands the chain output
+    // PRE bus gain while the user reads POST. The loop does not correct for it - the landing is a closed-loop
+    // measurement at the chain output - but it must NAME it, because a non-zero trim means the figure the loop
+    // reports and the figure on the meters differ by exactly that, for ever, and nothing said so.
+    std::function<float()>              busGainDb  { [] { return 0.0f; } };
     std::function<juce::int64()>        nowMs      { [] { return juce::Time::currentTimeMillis(); } };
 
     // A limiter settings text naming a LUFS target (an older server's chain). Returns the target or NaN.
@@ -256,19 +286,38 @@ public:
         if (! haveUndo_) { preLoopGainDb_ = (float) lv->gainDb(); haveUndo_ = true; }
         const auto in = host_.getChainInLevels();
         buildInputLufs_ = in.known ? in.levelDb : std::numeric_limits<float>::quiet_NaN();
-        // 22 Sep 2026 (item 5): opening gain at build = min (estimate, ceiling + 3 dB - build-time true peak of the loudest
-        // section), so peaks into the limiter never open more than 3 dB over the ceiling.
-        if (in.known && in.truePeakDb > -150.0f && std::isfinite (ceilingDb_))
+        // ---- THE PEAK-HEADROOM CAP IS GONE (7 Oct 2026 ruling, Sean 19:52) ----------------------------------
+        // What was here: opening gain = min (estimate, ceiling + 3 dB - build-time true peak), so "peaks into the
+        // limiter never open more than 3 dB over the ceiling". It was a BLIND distortion guard, applied before
+        // anything had been heard. The intent was right and 3 dB was the wrong number for a master: on Sean's mix
+        // bus it computed -0.1 + 3.0 - 2.9 = 0.0 dB and turned a +4.4 dB Level into ZERO, which is why every
+        // mix-bus build came out quiet. A hot bus got no push at all, whatever the target said.
+        // SAFETY NOW COMES FROM TWO THINGS INSTEAD, both with evidence behind them: the limiter's own ceiling,
+        // and the one automatic correction after the first loud window, which reads ACTUAL GR and backs off only
+        // when the loud sections exceed grCapDb. A cap for TRACK chains was offered and not taken: its only stated
+        // purpose was blind safety before any listening, and the GR check is that same safety with a measurement.
+        //
+        // THE OPENING FIGURE, and it is an ESTIMATE until something has been heard - said so, in the log.
+        // Closed loop where we can: the output integrated with the Level where it is now tells us the whole chain's
+        // behaviour in one number, past the pre-chain gain, the slot gains and the bus trim alike (item 2c). Open
+        // loop only when nothing has been heard yet, and then it is the build-time input plus nothing - never a
+        // prediction of what the plugins will do.
         {
-            const float maxOpen = juce::jmax (kOpeningFloorDb, ceilingDb_ + kOpeningHeadroomDb - in.truePeakDb);   // ruling 5b: floored at -6.0
-            if ((float) lv->gainDb() > maxOpen)
+            const auto outNow = host_.getChainOutLevels();
+            const float cur = (float) lv->gainDb();
+            if (outNow.known && std::isfinite (outNow.levelDb))
             {
-                const float was = (float) lv->gainDb();
-                writeGainDb (juce::jlimit (-kLevelMaxDb, kLevelMaxDb, maxOpen));
-                log ("opening gain capped: " + fmtSigned (was) + " -> " + fmtSigned ((float) lv->gainDb()) + " dB (ceiling " + fmt (ceilingDb_) + " + 3 - build-time true peak " + fmt (in.truePeakDb) + " dBTP" + (maxOpen <= kOpeningFloorDb + 0.001f ? ", floored at -6.0" : "") + ")");
-                if ((float) lv->gainDb() < 0.0f)   // ruling 5b: the chain card says why the Level opened below zero
-                    host_.setSlotSettings (slot_, "Level " + fmtSigned ((float) lv->gainDb()) + " dB: the mix already peaks above the ceiling");
+                const float want = juce::jlimit (-kLevelMaxDb, kLevelMaxDb, cur + (target_ - outNow.levelDb));
+                log ("opening gain (closed loop): output integrated " + fmt (outNow.levelDb) + " LUFS at Level "
+                     + fmtSigned (cur) + " dB -> " + fmtSigned (want) + " dB for target " + fmt (target_)
+                     + " LUFS. No peak-headroom cap (7 Oct ruling): the ceiling and the loud-window GR check are the safety."
+                     + busGainNote());
+                if (std::abs (want - cur) >= 0.05f) writeGainDb (want);
             }
+            else
+                log ("opening gain left at " + fmtSigned (cur) + " dB: nothing heard at the chain output yet, so there is "
+                     "no measurement to open from - the first loud window sets it. No peak-headroom cap (7 Oct ruling)."
+                     + busGainNote());
         }
         log ("armed: target " + fmt (target_) + " LUFS (" + armSource_ + (loudnessOption_.isNotEmpty() ? ", " + loudnessOption_ : juce::String()) + "), Level slot " + juce::String (slot_)
              + " gain " + fmtSigned ((float) lv->gainDb()) + " dB, limiter slot " + juce::String (limiterSlot_) + " (" + limiterName() + "), build-time input " + fmt (buildInputLufs_) + " LUFS");
@@ -282,6 +331,16 @@ public:
     bool listen()
     {
         if (levelNow() == nullptr) return false;
+        // A LISTEN TAP WHILE A PROPOSAL IS OPEN RE-SHOWS THE CARD (7 Oct 2026). It used to be refused outright,
+        // which is indistinguishable from the plugin ignoring the tap - and a proposal the user has scrolled past
+        // is exactly when they tap Listen again. A fresh window would throw away a measurement they can still act
+        // on, so the card comes back instead.
+        if (state_ == State::proposed && pendingKind_ != PendingKind::none)
+        {
+            log ("Listen while a proposal is open: re-showing it rather than starting a new window");
+            reShowProposal();
+            return true;
+        }
         if (state_ == State::waitAudio || state_ == State::measuring || state_ == State::proposed) return false;
         quietMeasured_ = std::numeric_limits<float>::quiet_NaN(); continueAfterGo_ = false; proposals_ = 0; lastCommanded_ = 0.0f;   // a fresh listen is a fresh sequence
         startWindow();
@@ -480,7 +539,13 @@ public:
                 const float lvOut = lv->outputLevels().shortTermDb, chOut = out.shortTermDb;
                 if (std::isfinite (lvOut) && std::isfinite (chOut)) { const float e = lvOut - chOut; estSum_ += e; ++estN_; estMax_ = juce::jmax (estMax_, e); }
             }
-            if (state_ == State::waitAudio) state_ = State::measuring;
+            if (state_ == State::waitAudio)
+            {
+                state_ = State::measuring;
+                firstAudioMs_ = nowMs();   // the deadline is extended ONCE, from here: 20 s of PLAYBACK
+                log ("state -> measuring: first audio after " + juce::String ((int) ((firstAudioMs_ - passStartMs_) / 1000))
+                     + " s of waiting; the resolve deadline now runs " + juce::String (kResolveMs / 1000) + " s from here");
+            }
         }
         lastCounted_ = counted;
         if (state_ == State::tracking)
@@ -498,14 +563,41 @@ public:
         const float progress = juce::jlimit (0.0f, 1.0f, counted / kNeedSeconds);
         if (counted < kNeedSeconds)
         {
+            // THE DEADLINE, FIRST. Not enough loud audio is the ordinary reason a window never finishes, and it
+            // used to be the reason it waited for ever. Now it resolves and says which of the four things happened.
+            if (pastResolveDeadline()) { resolveUnfinished (counted, out); return; }
             if (counted <= 0.0f && ! waitingSaid_ && nowMs() - passStartMs_ >= kWaitWallMs)
             { waitingSaid_ = true; emit ("Still waiting for audio - play the loudest part of the song and I'll measure it.", 0.0f, true, false, Bubble::Kind::progress); }
             else if (counted > 0.0f) emit (round_ == 0 && pendingKind_ == PendingKind::none ? "Listening..." : "Checking...", progress, true, false, Bubble::Kind::progress);
             return;
         }
-        if (knobGestureOpen()) return;
-        const float measured = out.maxShortTermDb;
-        if (! std::isfinite (measured)) return;
+        // A KNOB GESTURE MUST NOT BE ABLE TO BLOCK A MEASUREMENT FOR EVER. knobGestureEnded only decrements, so a
+        // single missed mouse-up leaves the count at 1 for the rest of the session and this return fired on every
+        // tick. Past the deadline the window resolves anyway, and the log says the gesture was open.
+        if (knobGestureOpen())
+        {
+            if (! pastResolveDeadline()) return;
+            if (! resolvedLate_) { resolvedLate_ = true; log ("resolving although a knob gesture is still open - past the "
+                                   + juce::String (kResolveMs / 1000) + " s deadline, and a gesture never blocks a measurement"); }
+        }
+        // ---- THE TARGET IS INTEGRATED, NOT THE LOUDEST 3 SECONDS (7 Oct 2026 ruling, Sean 20:09) ----------
+        // What was here: `measured = out.maxShortTermDb`, so every proposal made the LOUDEST 3 SECONDS equal the
+        // target. A "-8 commercial" target means the song's INTEGRATED loudness is about -8, with the loud
+        // sections sitting above it, so the loop was aiming low by the whole short-term-to-integrated distance -
+        // about 4.5 dB on Sean's mix bus, which is exactly what his ear found (+8 was right, the loop proposed
+        // +3.4). Both chain tallies are K-weighted, so levelDb IS integrated LUFS, and startWindow() resets the
+        // out tally, so this is the integrated loudness OF THIS WINDOW at the chain output, post limiter.
+        const float measured = out.levelDb;
+        if (! out.known || ! std::isfinite (measured))
+        {
+            if (pastResolveDeadline()) { resolveUnfinished (counted, out); return; }
+            return;
+        }
+        // The loud window is kept as a SAFETY CHECK, as ruled - never as the target. It rides the log.
+        if (std::isfinite (out.maxShortTermDb))
+            log ("window: integrated " + fmt (measured) + " LUFS (the target), loudest 3 s "
+                 + fmt (out.maxShortTermDb) + " LUFS (+" + fmt (out.maxShortTermDb - measured)
+                 + " over it, the safety check), " + fmt (counted) + " s counted" + busGainNote());
         const auto in = host_.getChainInLevels();
         lastInputWindow_ = in.maxShortTermDb;
         lastMeasured_ = measured;
@@ -577,7 +669,22 @@ public:
         const float lvTP = std::isfinite (hm.typicalLvTpDb) ? hm.typicalLvTpDb : worstTP;
         // the base the trim is projected onto: the MEASURED typical reduction when the hits are already being limited (a clipper's
         // intersample overshoot makes "true peak - ceiling" read high), else the typical hit's distance to the ceiling
-        const float base = (std::isfinite (hm.typicalDb) && hm.typicalDb > 0.5f) ? hm.typicalDb : (lvTP - ceilingDb_);
+        // THE BASE THE CAP PROJECTS ONTO (7 Oct 2026 ruling). Three tiers, measurement first:
+        //  1. hm.typicalDb - the MEASURED reduction (Level OUT true peak minus chain OUT true peak over the top
+        //     20 % of blocks). Real for any limiter, third-party included, once it is actually working.
+        //  2. the EchoJay Limiter's OWN GR reading, when the measure above has not filled yet.
+        //  3. only then an estimate, and a scaled, clamped one: 0.25 x the excess over the ceiling, never more
+        //     than 3 dB. The old fallback was the raw excess, which predicted 6.3 dB against a real 1.3-1.7 on
+        //     Sean's bx_limiter and is what held every master down.
+        const float excess = juce::jmax (0.0f, lvTP - ceilingDb_);
+        float base; const char* baseFrom;
+        if (std::isfinite (hm.typicalDb) && hm.typicalDb > 0.5f)                { base = hm.typicalDb;                        baseFrom = "measured (typical over the hits)"; }
+        else if (! grIsEstimated() && std::isfinite (grAvg()) && grAvg() > 0.5f) { base = grAvg();                             baseFrom = "measured (the EchoJay Limiter's own GR)"; }
+        else                                                                     { base = juce::jmin (kThirdPartyGrMaxDb, kThirdPartyGrFactor * excess); baseFrom = "ESTIMATED (0.25 x excess, clamped at 3 dB)"; }
+        log ("GR base " + fmt (base) + " dB from " + juce::String (baseFrom) + " - excess over the ceiling "
+             + fmt (excess) + " dB, cap " + fmt (cap) + " dB (" + loudnessOption_ + "); measured typical "
+             + fmt (hm.typicalDb) + ", worst " + fmt (hm.worstDb) + ", limiter GR avg " + fmt (grAvg())
+             + " max " + fmt (grMax()) + " (this line is the calibration record: estimate vs measured, every window)");
         if (trim > 0.0f && lvTP > -150.0f && std::isfinite (ceilingDb_))
         {
             const float predictedHits = juce::jmax (0.0f, base + trim);
@@ -586,7 +693,7 @@ public:
         bool atCeiling = false;
         if (cur + trim > kLevelMaxDb) { trim = kLevelMaxDb - cur; atCeiling = true; }
         if (cur + trim < -kLevelMaxDb) { trim = -kLevelMaxDb - cur; atCeiling = true; }
-        log ("measured: max short-term " + fmt (measured) + " LUFS (input window " + fmt (lastInputWindow_) + "), target " + fmt (target_) + ", needed " + fmtSigned (needed) + " dB, Level " + fmtSigned (cur) + " dB, trim " + fmtSigned (trim) + (atCeiling ? " (Level ceiling)" : "") + ", limiter GR avg " + fmt (grAvg()) + " max " + fmt (grMax()) + " dB, round " + juce::String (round_));
+        log ("measured: INTEGRATED " + fmt (measured) + " LUFS at the chain output (input window max short-term " + fmt (lastInputWindow_) + "), target " + fmt (target_) + ", needed " + fmtSigned (needed) + " dB, Level " + fmtSigned (cur) + " dB, trim " + fmtSigned (trim) + (atCeiling ? " (Level ceiling)" : "") + ", limiter GR avg " + fmt (grAvg()) + " max " + fmt (grMax()) + " dB, round " + juce::String (round_));
         const juce::String grText = grText_();
         // 22 Sep 2026 (ruling 4): the true-peak values THEMSELVES, not only their difference
         { const auto hm2 = hitsMeasure(); log ("hits: typical " + fmt (hm2.typicalDb) + " dB over the top 20 % of " + juce::String (hm2.blocks) + " blocks, worst " + fmt (hm2.worstDb) + " dB"); }   // 21m item 3: both figures, for the re-calibration
@@ -596,20 +703,20 @@ public:
             state_ = State::proposed; pendingTrim_ = trim; pendingKind_ = PendingKind::propose; ++proposals_;
             const float cappedLevel = measured + trim;
             juce::StringArray pills { "Push it anyway", "Leave it" }; if (applied_) pills.add ("Undo");
-            emit ("Measured " + fmt (measured) + " LUFS (loudest 3 s). " + fmt (cappedLevel) + " is as loud as this goes with the limiter working <=" + juce::String ((int) std::round (cap)) + " dB. Push to " + fmt (target_) + " anyway? " + grText, -1.0f, false, false, Bubble::Kind::proposal, pills);
+            emit ("Measured " + fmt (measured) + " LUFS integrated. " + fmt (cappedLevel) + " is as loud as this goes with the limiter working <=" + juce::String ((int) std::round (cap)) + " dB. Push to " + fmt (target_) + " anyway? " + grText, -1.0f, false, false, Bubble::Kind::proposal, pills);
             return;
         }
         if (reportOnly_)
         {   // 18h (item 4): a Check REPORTS - on target, or the distance - with the result pills (Push it only when short), then watches
             reportOnly_ = false; state_ = State::tracking; startTracking();
             const bool on = std::abs (needed) <= kCloseEnoughDb;
-            emit ("Hitting " + fmt (measured) + " LUFS (loudest 3 s), target " + fmt (target_) + (on ? " - on target." : " - " + fmt (std::abs (needed)) + " dB " + (needed > 0 ? "under." : "over.")) + " Peaks " + fmt (truePeakDb) + " dBTP, " + grText, -1.0f, false, true, Bubble::Kind::result, pillsFor (needed));
+            emit ("Hitting " + fmt (measured) + " LUFS integrated, target " + fmt (target_) + (on ? " - on target." : " - " + fmt (std::abs (needed)) + " dB " + (needed > 0 ? "under." : "over.")) + " Peaks " + fmt (truePeakDb) + " dBTP, " + grText, -1.0f, false, true, Bubble::Kind::result, pillsFor (needed));
             return;
         }
         if (std::abs (needed) <= kCloseEnoughDb)
         {
             state_ = State::tracking; startTracking();
-            emit ("Hitting " + fmt (measured) + " LUFS (loudest 3 s), target " + fmt (target_) + " - on target. Peaks " + fmt (truePeakDb) + " dBTP, " + grText + " I'll keep watching for a louder section.", -1.0f, false, true, Bubble::Kind::result, resultPills());
+            emit ("Hitting " + fmt (measured) + " LUFS integrated, target " + fmt (target_) + " - on target. Peaks " + fmt (truePeakDb) + " dBTP, " + grText + " I'll keep watching for a louder section.", -1.0f, false, true, Bubble::Kind::result, resultPills());
             return;
         }
         if (proposals_ >= kMaxProposals)
@@ -627,7 +734,7 @@ public:
             return;
         }
         pendingTrim_ = trim; pendingKind_ = PendingKind::propose; state_ = State::proposed; stopTimer(); ++proposals_;
-        emit ("Measured " + fmt (measured) + " LUFS (loudest 3 s). Push " + fmtSigned (trim) + " dB to reach " + fmt (target_) + "?" + (atCeiling ? " (that is the Level slot's limit)" : "") + " " + grText, -1.0f, false, false, Bubble::Kind::proposal, applied_ ? proposalAfterApplyPills() : proposalPills());
+        emit ("Measured " + fmt (measured) + " LUFS integrated. Push " + fmtSigned (trim) + " dB to reach " + fmt (target_) + "?" + (atCeiling ? " (that is the Level slot's limit)" : "") + " " + grText, -1.0f, false, false, Bubble::Kind::proposal, applied_ ? proposalAfterApplyPills() : proposalPills());
     }
 
 private:
@@ -676,6 +783,81 @@ private:
             if (std::isfinite (hm.typicalDb)) return "limiter working " + fmt (hm.typicalDb) + " dB on the hits (worst peak " + fmt (juce::jmax (hm.worstDb, grMax())) + ")."; }
         return "limiter catching up to " + fmt (grMax()) + " dB on the hits.";
     }
+    // ---- THE RESOLVE DEADLINE (7 Oct 2026 ruling) -------------------------------------------------------
+    // 20 s from the Listen tap, extended ONCE to 20 s after the first counted audio, so "20 s" means 20 s of
+    // playback and not 20 s of the user cueing the chorus.
+    bool pastResolveDeadline() const
+    {
+        const juce::int64 from = firstAudioMs_ > 0 ? firstAudioMs_ : passStartMs_;
+        return from > 0 && nowMs() - from >= (juce::int64) kResolveMs;
+    }
+    // EchoJay's own bus trim, named wherever a figure is reported, because the loop measures PRE bus gain and the
+    // user reads POST (item 2c). Silent at 0.0 dB - there is nothing to say then.
+    juce::String busGainNote() const
+    {
+        const float b = busGainDb ? busGainDb() : 0.0f;
+        if (! std::isfinite (b) || std::abs (b) < 0.05f) return {};
+        return ", and EchoJay's bus trim is " + fmtSigned (b) + " dB, so the meters read that much "
+               + juce::String (b > 0.0f ? "above" : "below") + " these figures";
+    }
+    // "NO SIGNAL" IS DECIDED BY THE READING, NOT BY THE COUNTER. A chain does not fall silent the instant the
+    // transport stops: the Level slot's gain smoother and a limiter's release keep a few hops above the counting
+    // floor, so a genuinely silent 20 s window lands with counted at 0.2 s rather than exactly 0 - and
+    // "I heard 0 of the 10 seconds I need" is the wrong thing to tell someone whose cable is unplugged. Under a
+    // second of counted audio AND a current reading below the floor is no signal; anything else is a short window.
+    bool noSignalNow (const echojay::LevelTally::Snapshot& out, float counted) const
+    {
+        if (counted > 1.0f) return false;
+        const float now = std::isfinite (out.shortTermDb) ? out.shortTermDb
+                        : (std::isfinite (out.rmsDb) ? out.rmsDb : -200.0f);
+        return now <= kCountFloorLufs;
+    }
+    // THE ONE PLACE A WINDOW CAN END WITHOUT A MEASUREMENT, and it always names which of the four things happened.
+    // Before this existed the loop simply returned from the tick and waited for ever: Sean tapped Listen twice,
+    // got "Already listening", and then silence (20:00, 7 Oct).
+    void resolveUnfinished (float counted, const echojay::LevelTally::Snapshot& out)
+    {
+        const bool stopped = transportKnown && transportKnown() && isPlaying && ! isPlaying();
+        juce::String why, said;
+        if (stopped)
+        {
+            why  = "the transport is stopped";
+            said = "The transport is stopped, so there was nothing to measure. Start playback on the loudest part and tap Listen.";
+        }
+        else if (noSignalNow (out, counted))
+        {
+            // THE FIGURE, not a bare "no signal": his meters read RMS -61.8 and Momentary "--" at that moment, and
+            // that reading IS the evidence for what to do next.
+            // The figure the user can see on the meters: short-term when a 3 s window has closed, else the
+            // decayed RMS, which is what read -61.8 dB on Sean's screenshot. Never a bare "no signal".
+            const juce::String lvl = std::isfinite (out.shortTermDb) && out.shortTermDb > -150.0f
+                                       ? fmt (out.shortTermDb) + " LUFS short-term"
+                                       : (std::isfinite (out.rmsDb) && out.rmsDb > -150.0f
+                                              ? fmt (out.rmsDb) + " dB RMS"
+                                              : juce::String ("nothing above the noise floor"));
+            why  = "no signal reached the plugin (" + lvl + ", nothing above the " + fmt (kCountFloorLufs) + " LUFS counting floor)";
+            said = "No signal is reaching EchoJay - the chain output reads " + lvl + ". Check the track is playing and "
+                   "routed through this plugin, then tap Listen.";
+        }
+        else if (counted < kNeedSeconds)
+        {
+            why  = "only " + fmt (counted) + " s of the " + juce::String ((int) kNeedSeconds) + " s needed was loud enough";
+            said = "I heard " + juce::String ((int) std::round (counted)) + " of the " + juce::String ((int) kNeedSeconds)
+                 + " seconds I need. Play a longer stretch of the loudest part and tap Listen.";
+        }
+        else
+        {
+            // Counted enough and still no figure: that is a SENSOR fault, not a user problem, and it is logged as one.
+            why  = "the chain-output reading never became usable (known=" + juce::String (out.known ? "y" : "n")
+                 + ", integrated " + fmt (out.levelDb) + ") - THIS IS A SENSOR FAULT, not something the user did";
+            said = "I counted enough audio but could not get a reading from the chain output. That is a fault on my "
+                   "side - tap Listen to try again.";
+        }
+        state_ = State::hold; stopTimer();
+        log ("state -> hold: resolved at the " + juce::String (kResolveMs / 1000) + " s deadline without a measurement - "
+             + why + "; counted " + fmt (counted) + " s" + busGainNote());
+        emit (said, -1.0f, false, false, Bubble::Kind::info, { "Listen" });
+    }
     void startWindow()
     {
         host_.setChainOutCountFloor (kCountFloorLufs);
@@ -684,9 +866,24 @@ private:
         if (auto* lim = echoJayLimiter()) lim->resetOutputPeak();
         if (auto* lv = levelNow()) lv->resetMeters();   // 18h: the Level's IN/OUT meters (and their peak holds) describe THIS window
         lastCounted_ = 0.0f; waitingSaid_ = false; passStartMs_ = nowMs();
+        firstAudioMs_ = 0; resolvedLate_ = false;   // the kResolveMs clocks (7 Oct ruling: Listen always resolves)
+        log ("state -> listening: window open, needs " + juce::String ((int) kNeedSeconds) + " s above "
+             + fmt (kCountFloorLufs) + " LUFS momentary, resolves within " + juce::String (kResolveMs / 1000)
+             + " s of playback either way");
         grMin_ = std::numeric_limits<float>::max(); grMax_ = 0.0f; grSum_ = 0.0f; grN_ = 0;
         estSum_ = 0.0f; estN_ = 0; estMax_ = 0.0f;
         state_ = State::waitAudio;
+    }
+    // THE OPEN PROPOSAL, SHOWN AGAIN. Composed from the SAME state the original was (pendingTrim_, lastMeasured_,
+    // target_), so the card cannot drift from the thing Go will apply - a second card with a different number on
+    // it would be worse than no card.
+    void reShowProposal()
+    {
+        auto* lv = levelNow(); if (lv == nullptr) return;
+        const juce::String grText = grText_();
+        emit ("Still waiting on this: measured " + fmt (lastMeasured_) + " LUFS integrated. Push "
+              + fmtSigned (pendingTrim_) + " dB to reach " + fmt (target_) + "? " + grText,
+              -1.0f, false, false, Bubble::Kind::proposal, applied_ ? proposalAfterApplyPills() : proposalPills());
     }
     void startTracking()
     {
@@ -745,6 +942,8 @@ public:
     float pendingTrim_ = 0.0f; PendingKind pendingKind_ = PendingKind::none;
     float preLoopGainDb_ = 0.0f; bool haveUndo_ = false;
     float lastCounted_ = 0.0f; bool waitingSaid_ = false; juce::int64 passStartMs_ = 0;
+    juce::int64 firstAudioMs_ = 0;   // 7 Oct 2026: the deadline's second clock - 0 until audio is counted
+    bool resolvedLate_ = false;      // the "resolved with a gesture open" line is said once per window
     float grMin_ = std::numeric_limits<float>::max(), grMax_ = 0.0f, grSum_ = 0.0f; int grN_ = 0;
     juce::String lastBubble_; Bubble::Kind lastKind_ = Bubble::Kind::info; juce::StringArray lastPills_; int bubbleCount_ = 0;
     float quietMeasured_ = std::numeric_limits<float>::quiet_NaN();   // the measurement held while the quiet-window question is open

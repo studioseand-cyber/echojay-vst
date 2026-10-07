@@ -2231,6 +2231,47 @@ loud window (3-6 s of real signal), ceiling held, no user action; Go unchanged a
 ASKS; the server's static `gain_db` for a bus/master Level slot is ignored and that is logged. Legs as listed there.
 B is holding the matching server change so the two ship together.
 
+#### 2z. ITEM 6/10 FINAL - BUILT, AND loudness_loop_guard IS GREEN (overnight item 2, 8 Oct 00:41)
+Everything in the 2a plan landed. What the code now does:
+  • **THE TARGET IS INTEGRATED.** `measured = out.levelDb` (K-weighted, so it IS LUFS, and `startWindow()` resets
+    the tally, so it is the integrated loudness OF THE WINDOW at the chain output, post limiter). The loudest 3 s
+    is still measured and rides the log as the SAFETY CHECK, never the target, as ruled.
+  • **THE PEAK-HEADROOM CAP IS GONE**, and so is the -6.0 floor that existed only to bound it. In its place the
+    opening gain is a CLOSED-LOOP write: `Level + (target - output integrated)` when a reading exists, logged as a
+    measurement; when nothing has been heard the Level is left alone and the log says the first loud window will
+    set it. The decision is logged either way, as ruled.
+  • **THE GR MODEL IS MEASUREMENT-FIRST**, in three tiers, logged every window as the calibration record:
+    the measured typical reduction over the hits; else the EchoJay Limiter's own GR; else `0.25 x excess` CLAMPED
+    at 3 dB. `grCapDb` commercial 6 -> **10**, pushed 8 -> 12, dynamic and keep unchanged (they are promises about
+    dynamics, not loudness).
+  • **LISTEN ALWAYS RESOLVES** within 20 s of playback - from the Listen tap, extended once to 20 s after the
+    first counted audio. A deadline now sits in front of all three previously unbounded returns, and "no signal"
+    is decided by the READING rather than the counter (a chain does not fall silent the instant the transport
+    stops: a genuinely silent window lands at ~0.2 s counted, and telling someone "I heard 0 of 10 seconds" when
+    their cable is out is the wrong sentence). A leaked knob gesture can no longer block a measurement.
+  • **THE BUS TRIM IS NAMED** in every figure the loop reports, through a new `busGainDb` hook the processor fills.
+  • **A LISTEN TAP ON AN OPEN PROPOSAL RE-SHOWS THE CARD** instead of being refused, composed from the same state
+    the original was, so the two cards cannot disagree.
+
+**SEAN'S ACCEPTANCE LEG (Z) IS GREEN:** input integrated -14.5, the chain 0.7 dB down so the output at Level 0 is
+-15.2 as his is, target -8 -> the Level lands within 1 dB of **+8** and an INDEPENDENT meter reads the output within
+1 LU of **-8**. Plus Z2: 20 s of silence resolves with the no-signal sentence AND the figure, at the deadline,
+driven by the loop's own clock (the harness feeds 40 s of audio in 2 s of wall time, so a real clock would never
+reach the deadline and the leg would have asserted nothing).
+
+**THIRTY-THREE OTHER ASSERTIONS WENT RED FIRST, and every one of them was the ruling, not a bug.** Recorded because
+a future reader will want to know why a guard was touched this much:
+  - most of them because arm() now LANDS the Level from the reading, so legs whose subject is the window and the
+    pills were suddenly starting from on-target. They arm through a new `Rig::armNoReading()` - which resets the
+    out tally AND feeds one silent block, because `LevelTally::reset()` is deferred to the audio thread and
+    resetting without a block leaves the old snapshot in place. The opening write has its own legs instead.
+  - K3 and L1 are INVERTED, exactly as 06c inverted the footer legs: they asserted the cap and the floor, and now
+    assert that neither is applied and that the log says so, so a reintroduction cannot pass quietly.
+  - K1/K2/O2 are re-aimed at the 10 dB cap, which also meant giving them a target ABOVE what the chain can reach:
+    with the opening write landing a -8 target outright, a window that is already on target proposes nothing to cap.
+  - K5's bypass rig is a RULER, not a second experiment: it used to reach the clipper through [Push it anyway] off
+    a capped proposal, which this fixture no longer produces, so it is now set to the clipper rig's own gain.
+
 #### 2a. THE IMPLEMENTATION PLAN FOR ITEM 6/10 FINAL, read off the code (overnight run, 7/8 Oct)
 Written before touching anything so a compaction loses nothing. Every line number is from LoudnessLoop.h as of
 397b380.

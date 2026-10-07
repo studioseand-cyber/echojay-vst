@@ -437,6 +437,10 @@ EchoJayProcessor::EchoJayProcessor()
     selfKeyWorker_.startThread();
     loudnessLoop_.isPlaying = [this] { return isTransportPlaying(); };   // ruling G
     loudnessLoop_.transportKnown = [this] { return isTransportKnown(); };   // 21p item 1: unknown never blocks
+    // 7 Oct 2026 (item 2c): the loop measures the chain output PRE bus gain and the user reads POST, because
+    // applyBusGainSmoothed runs between chainHost.process and the meter tap. The loop does not correct for it -
+    // its landing is a closed-loop measurement - but every figure it reports now NAMES the trim when there is one.
+    loudnessLoop_.busGainDb = [this] { return getBusGainDb(); };
     startTimer(1000);
 }
 

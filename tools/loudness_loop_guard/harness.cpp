@@ -240,6 +240,21 @@ struct Rig
         { auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", limiterInputDb); pp->setProperty ("ceiling_db", -0.1); pp->setProperty ("true_peak", 1);
           auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (limSlot, juce::var (w)); }
     }
+    // 8 Oct 2026: ARM WITH NO OUTPUT READING YET - a build made before anything has played, which is the shape
+    // every leg below was written for. It matters now because arm() LANDS the Level from the chain-output
+    // integrated reading when it has one (7 Oct ruling, item 10 FINAL), and these legs are about what the window
+    // and the pills do afterwards. Clearing the out tally first keeps each leg testing its own subject instead of
+    // the opening write, which has its own legs (Z and Z3). The reset is the product's own call, not a fixture
+    // poke: startWindow() makes it on every window.
+    bool armNoReading()
+    {
+        // reset() is DEFERRED - it raises a flag the AUDIO THREAD clears on its next push, so resetting and
+        // arming in the same breath leaves the old snapshot in place and arm sees a reading after all. One
+        // silent block is what makes the clear real, and it is the product's own mechanism, not a poke.
+        h.resetChainOutLevels();
+        feed (proc, prog, 1, /*silent*/ true, nullptr, nullptr);
+        return loop.armFromChain();
+    }
     float levelGain() const { return (float) dynamic_cast<EedLevelProcessor*> (h.getSlotProcessor (levelSlot))->gainDb(); }
     void setGainDb (float db)   // the Gain stand-in (slot 1 when the Rig has one), through the schema path
     { auto* pp = new juce::DynamicObject(); pp->setProperty ("level_db", (double) db); auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (1, juce::var (w)); }
@@ -293,13 +308,13 @@ static int guardMain()
     {
         Rig r (false); r.setTarget (-9.0f, 0.0);
         const float cal = calibrate (r.proc, r.prog, -18.0f); check (std::abs (cal + 18.0f) < 0.6f, "programme calibrated at the chain input to -18 LUFS", f1 (cal));
-        check (r.loop.armFromChain(), "armed from the Level slot's params", r.logs.joinIntoString (" | ").substring (0, 200));
+        check (r.armNoReading(), "armed from the Level slot's params", r.logs.joinIntoString (" | ").substring (0, 200));
         check (r.loop.armSource() == "level_params" && r.loop.levelSlot() == 0 && r.loop.limiterSlot() == 1, "arm source level_params, Level slot 0, limiter slot 1", r.loop.armSource());
         r.runWindow();
         check (r.loop.state() == LoudnessLoop::State::proposed, "after the window the loop PROPOSES (state proposed)", juce::String ((int) r.loop.state()));
         check (std::abs (r.levelGain()) < 0.01f, "A. ask before applying: nothing moves until go", "Level gain " + f1 (r.levelGain()) + " dB");
         const auto prop = r.last();
-        check (prop.startsWith ("Measured -1") && prop.contains ("(loudest 3 s)") && prop.contains ("Push +") && prop.contains ("to reach -9.0?"), "the proposal reads \"Measured -x LUFS (loudest 3 s). Push +y dB to reach -9.0?\"", prop);
+        check (prop.startsWith ("Measured -1") && prop.contains ("integrated") && ! prop.contains ("loudest 3 s") && prop.contains ("Push +") && prop.contains ("to reach -9.0?"), "the proposal reads \"Measured -x LUFS integrated. Push +y dB to reach -9.0?\" - 7 Oct ruling: the target is the INTEGRATED loudness, and the words say which figure it is", prop);
 #ifdef EJ_LOUDNESSLOOP_PILLS
         check (r.loop.lastKind() == LoudnessLoop::Bubble::Kind::proposal && r.loop.lastPills().joinIntoString ("|") == "Go|Leave it", "A. the proposal bubble carries [Go] [Leave it]", r.loop.lastPills().joinIntoString ("|"));
 #else
@@ -328,13 +343,14 @@ static int guardMain()
         check (r.loop.lastPills().joinIntoString ("|") == "Go|Leave it|Undo", "M3. the second proposal (it follows an apply) carries [Go] [Leave it] [Undo]", r.loop.lastPills().joinIntoString ("|"));
         r.loop.go(); r.loop.check(); r.runWindow();
         check (r.loop.state() == LoudnessLoop::State::tracking && r.last().startsWith ("Hitting -") && r.last().contains ("on target"), "A. after go + Check the second window lands within +-1 dB and the loop tracks", r.last() + " | Level " + f1 (r.levelGain()));
-        check (r.logs.size() >= 6 && r.logs[0].startsWith ("EJLoudness: armed") && r.logs.joinIntoString ("\n").contains ("EJLoudness: measured:") && r.logs.joinIntoString ("\n").contains ("EJLoudness: applied on go"), "item 5: EJLoudness lines for arm, measurement and apply", r.logs.joinIntoString (" | ").substring (0, 300));
+        check (r.logs.size() >= 6 && r.logs.joinIntoString ("\n").contains ("EJLoudness: armed")
+               && r.logs[0].startsWith ("EJLoudness: opening gain") && r.logs.joinIntoString ("\n").contains ("EJLoudness: measured:") && r.logs.joinIntoString ("\n").contains ("EJLoudness: applied on go"), "item 5: EJLoudness lines for the opening gain, arm, measurement and apply (7 Oct: the opening line comes first and says whether it opened from a measurement or left the Level alone)", r.logs.joinIntoString (" | ").substring (0, 300));
     }
     std::printf ("== B. quiet section: build-time input -18, the window plays at -24 ==\n");
     {
         Rig r (false); r.setTarget (-9.0f, 0.0);
         calibrate (r.proc, r.prog, -18.0f);
-        r.loop.armFromChain();
+        r.armNoReading();
         check (std::abs (r.loop.buildInputLufs() + 18.0f) < 0.8f, "the build-time integrated input is captured at arm (-18)", f1 (r.loop.buildInputLufs()));
         r.runWindow (-6.0f);   // the verse: 6 dB under
 #ifdef EJ_LOUDNESSLOOP_PILLS
@@ -362,7 +378,7 @@ static int guardMain()
     {
         Rig r (false); r.setTarget (-9.0f, 0.0);
         calibrate (r.proc, r.prog, -12.0f);   // needs +3 (within one pass)
-        r.loop.armFromChain(); r.runWindow(); r.loop.go(); r.loop.check(); r.runWindow();
+        r.armNoReading(); r.runWindow(); r.loop.go(); r.loop.check(); r.runWindow();
         check (r.loop.state() == LoudnessLoop::State::tracking, "on target and tracking", r.last());
         const float g0 = r.levelGain();
         r.runTracking (+3.0f);   // a louder section while the loop tracks
@@ -380,7 +396,7 @@ static int guardMain()
     {
         Rig r (true); r.setTarget (-9.0f);
         calibrate (r.proc, r.prog, -14.0f);
-        check (r.loop.armFromChain() && r.loop.limiterSlot() == 1 && r.h.getSlotInfo (1).name == "EJ Test Limiter", "armed with a non-EchoJay limiter last", r.logs.joinIntoString (" | ").substring (0, 160));
+        check (r.armNoReading() && r.loop.limiterSlot() == 1 && r.h.getSlotInfo (1).name == "EJ Test Limiter", "armed with a non-EchoJay limiter last", r.logs.joinIntoString (" | ").substring (0, 160));
         r.runWindow(); r.loop.go(); r.loop.check(); r.runWindow();
         check (r.loop.state() == LoudnessLoop::State::tracking || (r.loop.state() == LoudnessLoop::State::proposed && std::abs (numberAfter (r.last(), "Push ")) < 1.0f), "D. third-party limiter last: the target is reached through the Level slot", r.last() + " | Level " + f1 (r.levelGain()));
 #ifdef EJ_LOUDNESSLOOP_MANNERS
@@ -393,7 +409,7 @@ static int guardMain()
     {
         Rig r (false); r.setTarget (-9.0f, 0.0);
         calibrate (r.proc, r.prog, -12.0f);
-        r.loop.armFromChain(); r.runWindow(); r.loop.go(); r.loop.check(); r.runWindow();
+        r.armNoReading(); r.runWindow(); r.loop.go(); r.loop.check(); r.runWindow();
         const float g0 = r.levelGain();
 #ifdef EJ_LOUDNESSLOOP_PILLS
         check (r.loop.lastKind() == LoudnessLoop::Bubble::Kind::result && r.loop.lastPills().joinIntoString ("|") == "Undo|A bit louder|A bit softer|Done", "E. the result bubble (on target) carries [Undo] [A bit louder] [A bit softer] [Done] - no Push it on target (18h item 3)", r.loop.lastPills().joinIntoString ("|"));
@@ -438,7 +454,7 @@ static int guardMain()
     {
         Rig r (false); r.setTarget (-9.0f, 0.0); r.prog.peaky = true;
         calibrate (r.proc, r.prog, -15.0f);
-        r.loop.armFromChain(); r.runWindow();
+        r.armNoReading(); r.runWindow();
         // 22 Sep 2026 (item 5): on a peaky programme the first proposal is CAPPED (the limiter would work > 4 dB) - driving into the
         // limiter is now the user's [Push it anyway]; then Check runs the window and the GR text reads as before
         // 21m: the cap is on the TYPICAL hits, so this programme may or may not cap - either way drive into the limiter (Push it anyway / Go)
@@ -458,7 +474,7 @@ static int guardMain()
         r.setTarget (-9.0f, 8.8);                                                  // then the structured settings: the exact apply replaces the text
         EchoJayBorrowHostTestAccess::applyExact (r.h, r.levelSlot); EchoJayBorrowHostTestAccess::applyExact (r.h, r.limSlot);
         check (r.h.getSlotInfo (r.levelSlot).settings.startsWith ("Applied automatically"), "the exact apply replaced the Level slot's text", r.h.getSlotInfo (r.levelSlot).settings.substring (0, 60));
-        check (r.loop.armFromChain() && std::abs (r.loop.target() + 9.0f) < 0.01f && r.loop.armSource() == "level_params", "G. arm after the exact built-in apply (18d) stays GREEN", r.loop.armSource());
+        check (r.armNoReading() && std::abs (r.loop.target() + 9.0f) < 0.01f && r.loop.armSource() == "level_params", "G. arm after the exact built-in apply (18d) stays GREEN", r.loop.armSource());
         r.loop.leaveIt();
     }
     std::printf ("== I. COMPATIBILITY: a LIVE-shaped chain (88x7asebn: target_lufs on the EchoJay Limiter with input_db +8.8, NO Level slot) ==\n");
@@ -472,6 +488,11 @@ static int guardMain()
           auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (limAt, juce::var (w)); }
         auto& loop = proc.loudnessLoop(); juce::StringArray logs, bubbles; loop.logLine = [&] (const juce::String& l) { logs.add (l); }; loop.onBubble = [&] (const LoudnessLoop::Bubble& b) { if (! b.text.startsWith ("Listening") && ! b.text.startsWith ("Checking...")) bubbles.add (b.text); }; loop.isPlaying = [] { return true; };
         Programme prog; calibrate (proc, prog, -15.0f);
+        // 8 Oct 2026: arm() LANDS the Level from the chain-output reading when it has one (item 10 FINAL), and
+        // this leg is about the INSERTION and the server's input_db, so it arms with no reading - the deferred
+        // reset is made real by one silent block, exactly as Rig::armNoReading does.
+        h.resetChainOutLevels();
+        { juce::AudioBuffer<float> z (2, 512); z.clear(); juce::MidiBuffer m; proc.processBlock (z, m); }
         const bool armed = loop.armFromChain();
         check (armed, "I. the live-shaped chain ARMS (the loop inserts the Level slot it needs; RED as it stood: not armed, the insertion lived in the editor)", logs.joinIntoString (" | ").substring (0, 200));
         check (h.getNumSlots() == limAt + 2 && h.getSlotInfo (limAt).name == "EchoJay Level" && h.getSlotInfo (limAt + 1).name == "EchoJay Limiter", "I. EchoJay Level was inserted immediately before the limiter", h.getSlotInfo (0).name + " | " + h.getSlotInfo (1).name + (h.getNumSlots() > 2 ? " | " + h.getSlotInfo (2).name : juce::String()));
@@ -494,7 +515,7 @@ static int guardMain()
 #ifdef EJ_LOUDNESSLOOP_MANNERS
     {   // J1: no window before Listen
         Rig r (false); r.setTarget (-9.0f, 0.0); calibrate (r.proc, r.prog, -18.0f);
-        r.loop.armFromChain();
+        r.armNoReading();
         check (r.loop.state() == LoudnessLoop::State::armed && r.last() == "Cue the loudest section, press play, then tap Listen." && r.loop.lastPills().joinIntoString ("|") == "Listen", "J1. the arm bubble reads \"Cue the loudest section, press play, then tap Listen\" with [Listen]", r.last() + " [" + r.loop.lastPills().joinIntoString ("|") + "]");
         for (int k = 0; k < 16; ++k) feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);   // 16 x ~1 s of the loudest part, ticking - no Listen
         check (r.loop.state() == LoudnessLoop::State::armed && ! r.logs.joinIntoString ("\n").contains ("measured:") && std::abs (r.levelGain()) < 0.01f, "J1. NO window runs on the first audio: 16 s of audio without Listen measures nothing, proposes nothing", "state " + juce::String ((int) r.loop.state()));
@@ -516,7 +537,7 @@ static int guardMain()
         // stood, tolerance 0.5) needs 3 shrinking passes (2.7, 1.1, 0.4); the scaled loop lands in 2. (At -22 in the need was
         // only 2.3 dB and BOTH loops converged in <= 2 - the fixture did not discriminate; Sean's HOLD, 20 Sep.)
         Rig r (true, true, "EJ Test Soft Limiter"); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -25.5f);
-        r.loop.armFromChain(); r.loop.listen(); r.runWindow();
+        r.armNoReading(); r.loop.listen(); r.runWindow();
         int proposals = 0; float lastNeeded = 99.0f;
         for (int k = 0; k < 6 && r.loop.state() == LoudnessLoop::State::proposed; ++k) { ++proposals; r.loop.go(); r.loop.check(); r.runWindow(); }
         lastNeeded = r.loop.target() - r.loop.lastMeasured();
@@ -533,7 +554,7 @@ static int guardMain()
     }
     {   // J5: the GR estimate (Level OUT - chain OUT) against the EchoJay Limiter's REAL GR on a steadily limited programme
         Rig r (false); r.setTarget (-9.0f, 0.0); calibrate (r.proc, r.prog, +2.0f);   // noise at +2 LUFS in (peaks ~+3 dBFS): the -0.1 dBTP wall works steadily
-        r.loop.armFromChain(); r.loop.listen(); r.runWindow();
+        r.armNoReading(); r.loop.listen(); r.runWindow();
         const float real = r.loop.grAvg(), est = r.loop.grEstimateDb();
         check (std::isfinite (est) && real > 0.5f && std::abs (est - real) <= 1.0f, "J5. the estimate lands within 1 dB of the EchoJay Limiter's real GR", "estimate " + f1 (est) + " vs real " + f1 (real) + " dB");
     }
@@ -550,8 +571,19 @@ static int guardMain()
         // 22 Sep 2026 (item 5): arming CLAMPS the opening gain (peaks +7 dBTP over a -0.5 ceiling -> the Level opens below 0 dB) and the
         // first proposal is capped, so both rigs are driven into the clipper the user's way - [Push it anyway] (+6, the same on both) -
         // and the estimate window is measured after that push with fresh tallies and fresh independent meters
-        r.loop.armFromChain(); r.loop.listen(); r.runWindow(); r.loop.pushIt(); r.loop.check(); IndependentMeter ind; r.runWindow (0.0f, &ind);
-        b.loop.armFromChain(); b.loop.listen(); b.runWindow(); b.loop.pushIt(); b.loop.check(); IndependentMeter indB; b.runWindow (0.0f, &indB);
+        r.armNoReading(); r.loop.listen(); r.runWindow();
+        if (r.last().contains ("is as loud as this goes")) r.loop.pushIt(); else r.loop.go();
+        r.loop.check(); IndependentMeter ind; r.runWindow (0.0f, &ind);
+        // THE BYPASS RIG IS A RULER, NOT A SECOND EXPERIMENT. It must sit at the clipper rig's gain, and until
+        // the 7 Oct ruling it got there by both rigs taking [Push it anyway] off a capped proposal. With the
+        // commercial cap at 10 dB this fixture no longer caps, so the two loops would land on different numbers
+        // and the comparison would be between two different signals. The gain is set to the clipper rig's instead.
+        b.armNoReading(); b.loop.listen(); b.runWindow();
+        if (b.last().contains ("is as loud as this goes")) b.loop.pushIt(); else b.loop.go();   // leave the proposal, or check() refuses
+        { auto* pp = new juce::DynamicObject(); pp->setProperty ("gain_db", (double) r.levelGain());
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          b.h.setSlotStructuredSettings (b.levelSlot, juce::var (w)); }
+        b.loop.check(); IndependentMeter indB; b.runWindow (0.0f, &indB);
         feed (r.proc, r.prog, 400, false, nullptr, nullptr, 0.0f); feed (b.proc, b.prog, 400, false, nullptr, nullptr, 0.0f);   // 21m: a full 3 s window on both tallies after the loop's own window (its tracking reset empties the chain-out ring)
         const float g = r.levelGain();
         const auto in = r.h.getChainInLevels(), out = r.h.getChainOutLevels();
@@ -573,7 +605,7 @@ static int guardMain()
     {   // J6: the ceiling safety net - a third-party limiter with NO ceiling readback is replaced by EchoJay Limiter, said in one line
         Rig r (true, false); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -14.0f);
         const int nb = r.loop.bubbleCount();
-        check (r.loop.armFromChain() && r.h.getSlotInfo (1).name == "EchoJay Limiter" && r.loop.limiterSlot() == 1 && r.h.getSlotInfo (0).name == "EchoJay Level", "J6. ceiling readback absent -> EchoJay Limiter substituted at the last slot, the Level slot untouched", r.h.getSlotInfo (0).name + " | " + r.h.getSlotInfo (1).name);
+        check (r.armNoReading() && r.h.getSlotInfo (1).name == "EchoJay Limiter" && r.loop.limiterSlot() == 1 && r.h.getSlotInfo (0).name == "EchoJay Level", "J6. ceiling readback absent -> EchoJay Limiter substituted at the last slot, the Level slot untouched", r.h.getSlotInfo (0).name + " | " + r.h.getSlotInfo (1).name);
         check (r.loop.bubbleCount() == nb + 2 && r.bubbles.size() >= 2 && r.bubbles[r.bubbles.size() - 2] == "EJ Test Limiter's ceiling could not be confirmed, so EchoJay Limiter holds the ceiling instead (-0.1 dBTP).", "J6. ...said in one line before the arm bubble", r.bubbles.size() >= 2 ? r.bubbles[r.bubbles.size() - 2] : juce::String ("(none)"));
         check (r.logs.joinIntoString ("\n").contains ("substituted EchoJay Limiter for EJ Test Limiter"), "J6. ...and logged");
         r.loop.listen(); r.runWindow();
@@ -581,7 +613,7 @@ static int guardMain()
     }
     {   // J6b: a third-party limiter WITH a ceiling readback is kept
         Rig r (true, true); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -14.0f);
-        check (r.loop.armFromChain() && r.h.getSlotInfo (1).name == "EJ Test Limiter", "J6. a third-party limiter whose ceiling READ BACK is kept", r.h.getSlotInfo (1).name);
+        check (r.armNoReading() && r.h.getSlotInfo (1).name == "EJ Test Limiter", "J6. a third-party limiter whose ceiling READ BACK is kept", r.h.getSlotInfo (1).name);
     }
 #else
     for (const char* leg : { "J1. the arm bubble reads \"Cue the loudest section, press play, then tap Listen\" with [Listen]", "J1. NO window runs on the first audio: 16 s of audio without Listen measures nothing, proposes nothing",
@@ -591,26 +623,36 @@ static int guardMain()
         check (false, leg, "no 18g on this build");
     {   // the 0.6x fixture AS IT STOOD, for the record: how many proposals does the unscaled loop need?
         Rig r (true, true, "EJ Test Soft Limiter"); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -25.5f);
-        r.loop.armFromChain(); r.runWindow(); int proposals = 0;
+        r.armNoReading(); r.runWindow(); int proposals = 0;
         for (int k = 0; k < 6 && r.loop.state() == LoudnessLoop::State::proposed; ++k) { ++proposals; r.loop.go(); r.loop.check(); r.runWindow(); }
         check (proposals <= 2, "J3 (AS IT STOOD): the unscaled loop on the 0.6x fixture converges in at most 2 proposals - this build's count", juce::String (proposals) + " proposal(s), last: " + r.last());
     }
 #endif
     std::printf ("== K. 22 Sep 2026 (item 5): the GR cap per loudness option, the capped proposal, the opening-gain clamp, the estimated-GR line ==\n");
     {
-        Rig r (true); r.setTarget (-8.0f, 0.0); r.prog.peaky = true; r.prog.burst = 30.0f;   // third-party limiter (hard clip -0.5 dBTP), Commercial (option 0) -> cap 6 dB (21m); hits typically ~+7 dBTP so the typical reduction is over the cap
+        // 8 Oct 2026: the commercial cap is TEN dB (7 Oct ruling - 6 was below normal mastering practice), so the
+        // fixture has to drive the clipper past ten for the cap to be the thing under test. burst 30 gave ~6.4 dB
+        // of typical reduction, which no longer caps; 90 puts the hits far enough over the ceiling.
+        // The TARGET is what makes the cap bite, not only the programme: with the opening write landing the
+        // Level from the measurement, a -8 target is simply reached and there is nothing to cap. -4 is above what
+        // this chain can give, so a trim is proposed, and base 5.5 + trim 8 is over the 10 dB cap.
+        Rig r (true); r.setTarget (-4.0f, 0.0); r.prog.peaky = true; r.prog.burst = 90.0f;   // third-party limiter (hard clip -0.5 dBTP), Commercial (option 0) -> cap 10 dB
         const float cal = calibrate (r.proc, r.prog, -18.0f); check (std::abs (cal + 18.0f) < 0.8f, "K. peaky programme calibrated to -18 LUFS", f1 (cal));
+        // WITH the reading, deliberately: the cap can only engage once the Level is open far enough for the
+        // clipper to work, and the opening write (item 10 FINAL) is what opens it. armNoReading would leave the
+        // Level at 0 against a -18 LUFS programme, the limiter would do nothing, and this leg would assert
+        // nothing at all - which is what it did on the first run after the change.
         check (r.loop.armFromChain(), "K. armed (third-party limiter last, Commercial)", r.logs.joinIntoString (" | ").substring (0, 200));
         r.runWindow();
         const auto prop = r.last(); const auto logAll = r.logs.joinIntoString ("\n");
-        check (r.loop.state() == LoudnessLoop::State::proposed && prop.contains ("is as loud as this goes with the limiter working <=6 dB. Push to -8.0 anyway?"),
-               "K1. the proposal is CAPPED by limiter GR on the hits (Commercial <= 6 dB, 21m): \"<level> is as loud as this goes with the limiter working <=6 dB. Push to -8.0 anyway?\"", prop);
+        check (r.loop.state() == LoudnessLoop::State::proposed && prop.contains ("is as loud as this goes with the limiter working <=10 dB. Push to -4.0 anyway?"),
+               "K1. the proposal is CAPPED by limiter GR on the hits (Commercial <= 10 dB after the 7 Oct ruling): \"<level> is as loud as this goes with the limiter working <=10 dB. Push to -4.0 anyway?\"", prop);
         check (r.loop.lastPills().joinIntoString ("|") == "Push it anyway|Leave it", "K2. the capped proposal carries [Push it anyway] [Leave it]", r.loop.lastPills().joinIntoString ("|"));
-        check (logAll.contains ("GR cap: typical hit true peak") && logAll.contains ("> cap 6.0 (commercial) -> trim +"), "K1. the cap arithmetic is logged (typical hit true peak + trim - ceiling > cap -> trim; 21m: the top-20 % block measure)", logAll.fromLastOccurrenceOf ("GR cap", false, false).substring (0, 160));
+        check (logAll.contains ("GR cap: typical hit true peak") && logAll.contains ("> cap 10.0 (commercial) -> trim +"), "K1. the cap arithmetic is logged (typical hit true peak + trim - ceiling > cap -> trim; 21m: the top-20 % block measure)", logAll.fromLastOccurrenceOf ("GR cap", false, false).substring (0, 160));
         check (logAll.contains ("true peak: Level OUT TP ") && logAll.contains ("(third-party limiter: the hits figure is the report)"),
                "K4 (ruling 4): with a third-party limiter the measured line is followed by the true-peak line (Level OUT TP, chain OUT TP, hits) and the hits figure is the report", logAll.fromLastOccurrenceOf ("true peak:", true, false).substring (0, 140));
-        const float cappedGain = numberAfter (prop, "(loudest 3 s). ") - r.loop.lastMeasured();   // the capped level minus the measured = the capped trim
-        check (cappedGain > 0.3f && cappedGain < 6.5f, "K1. the capped trim is positive and under the cap (the limiter would work <= 6 dB)", f1 (cappedGain));
+        const float cappedGain = numberAfter (prop, "integrated. ") - r.loop.lastMeasured();   // the capped level minus the measured = the capped trim
+        check (cappedGain > 0.3f && cappedGain < 10.5f, "K1. the capped trim is positive and under the cap (the limiter would work <= 10 dB)", f1 (cappedGain));
         check (r.loop.pushIt() && r.levelGain() > cappedGain + 0.5f, "K2. Push it anyway applies the UNCAPPED step (the pass clamp, +6)", f1 (r.levelGain()));
     }
     {
@@ -620,9 +662,19 @@ static int guardMain()
         r.h.resetAllLevels(); feed (r.proc, r.prog, 900, false, nullptr, nullptr, 0.0f);   // ~9.6 s of the peaky programme: the chain-in tally knows its true peak
         const auto in = r.h.getChainInLevels(); const float maxOpen = -0.1f + 3.0f - in.truePeakDb;
         check (in.known && in.truePeakDb > -60.0f, "K3. the chain-in tally carries the build-time true peak", f1 (in.truePeakDb) + " dBTP known=" + juce::String ((int) in.known));
-        check (r.loop.armFromChain(), "K3. armed");
-        check (r.levelGain() <= maxOpen + 0.05f && r.levelGain() < 11.9f && r.logs.joinIntoString ("\n").contains ("opening gain capped:"),
-               "K3. opening gain at build = min (estimate, ceiling + 3 dB - build-time true peak): +12 is clamped so peaks never open more than 3 dB over the ceiling", "Level " + f1 (r.levelGain()) + " dB, allowed " + f1 (maxOpen) + " (ceiling -0.1 + 3 - TP " + f1 (in.truePeakDb) + ")");
+        // ---- INVERTED 8 Oct 2026: THE PEAK-HEADROOM CAP IS GONE (7 Oct ruling, Sean 19:52) ----------------
+        // What this leg asserted: the server's +12 estimate was clamped to ceiling + 3 - build-time true peak, so
+        // "peaks never open more than 3 dB over the ceiling". On Sean's mix bus that arithmetic turned a +4.4 dB
+        // Level into 0.0 and every mix-bus build came out quiet. The leg now asserts the opposite, and names the
+        // figure that used to be imposed so a reintroduction cannot pass quietly.
+        check (r.armNoReading(), "K3. armed");
+        check (r.levelGain() > maxOpen + 0.5f && ! r.logs.joinIntoString ("\n").contains ("opening gain capped:"),
+               "K3. the opening gain is NOT capped by peak headroom any more: the Level stays above the old "
+               "ceiling + 3 - true peak clamp, and nothing logs \"opening gain capped\"",
+               "Level " + f1 (r.levelGain()) + " dB, the old clamp would have allowed " + f1 (maxOpen)
+               + " (ceiling -0.1 + 3 - TP " + f1 (in.truePeakDb) + ")");
+        check (r.logs.joinIntoString ("\n").contains ("No peak-headroom cap (7 Oct ruling)"),
+               "K3. ...and the log says so, so the decision is visible either way as ruled");
     }
     std::printf ("== L. 22 Sep 2026 rulings 5b + 2: the opening-gain FLOOR (-6.0) with the card's reason, and the complaint verb (softer x2) ==\n");
     {
@@ -631,13 +683,21 @@ static int guardMain()
         r.h.resetAllLevels(); feed (r.proc, r.prog, 900, false, nullptr, nullptr, 0.0f);
         const auto in = r.h.getChainInLevels(); const float raw = -0.1f + 3.0f - in.truePeakDb;
         check (in.known && raw < -6.5f, "L1. precondition: ceiling + 3 - build-time true peak is below the floor", f1 (raw) + " (TP " + f1 (in.truePeakDb) + ")");
-        check (r.loop.armFromChain(), "L1. armed");
-        check (std::abs (r.levelGain() + 6.0f) < 0.01f && r.logs.joinIntoString ("\n").contains ("floored at -6.0"), "L1 (5b). the opening gain is FLOORED at -6.0 dB", "Level " + f1 (r.levelGain()));
-        check (r.h.getSlotInfo (r.levelSlot).settings == "Level -6.0 dB: the mix already peaks above the ceiling", "L1 (5b). the chain card's Level line reads \"Level -6.0 dB: the mix already peaks above the ceiling\"", r.h.getSlotInfo (r.levelSlot).settings);
+        check (r.armNoReading(), "L1. armed");
+        // ---- INVERTED 8 Oct 2026: the -6.0 FLOOR was the cap's floor, and it goes with the cap ------------
+        // Ruling 5b existed to stop the cap pulling a Level down without limit. With no cap there is nothing to
+        // floor: the server's +6 stands, the Level is not pushed below zero on a peaky mix, and the card does not
+        // tell the user their mix peaks above the ceiling as if that were a reason to be quiet.
+        check (r.levelGain() > -0.01f && ! r.logs.joinIntoString ("\n").contains ("floored at -6.0"),
+               "L1. the opening gain is NOT pulled below zero and nothing is \"floored at -6.0\" - the cap that "
+               "needed a floor is gone (7 Oct ruling)", "Level " + f1 (r.levelGain()));
+        check (r.h.getSlotInfo (r.levelSlot).settings != "Level -6.0 dB: the mix already peaks above the ceiling",
+               "L1. ...and the chain card no longer carries the capped-Level reason",
+               r.h.getSlotInfo (r.levelSlot).settings.substring (0, 80));
     }
     {
         Rig r (false); r.setTarget (-9.0f, 0.0);
-        calibrate (r.proc, r.prog, -18.0f); r.loop.armFromChain(); r.runWindow(); r.loop.go();
+        calibrate (r.proc, r.prog, -18.0f); r.armNoReading(); r.runWindow(); r.loop.go();
         const float before = r.levelGain(), tBefore = r.loop.target(); const int nb = r.loop.bubbleCount();
         check (r.loop.backOffComplaint() && std::abs (r.levelGain() - (before - 2.0f)) < 0.05f && std::abs (r.loop.target() - (tBefore - 2.0f)) < 0.01f && r.loop.bubbleCount() == nb + 1 && r.last().startsWith ("Applied -2.0 dB (Level now "),
                "L2 (item 2, client half). a complaint after the apply = the softer step twice: Level -2, target -2, ONE bubble \"Applied -2.0 dB (Level now ...)\"", r.last() + " | Level " + f1 (before) + " -> " + f1 (r.levelGain()));
@@ -646,7 +706,7 @@ static int guardMain()
     {
         Rig r (false); r.setTarget (-9.0f, 0.0);
         calibrate (r.proc, r.prog, -18.0f);
-        check (r.loop.armFromChain() && r.loop.levelSlot() == 0, "N0. armed on the Level at slot 0", juce::String (r.loop.levelSlot()));
+        check (r.armNoReading() && r.loop.levelSlot() == 0, "N0. armed on the Level at slot 0", juce::String (r.loop.levelSlot()));
         auto* levelBefore = r.h.getSlotProcessor (0);
         const auto* byp = BuiltinDeviceRegistry::instance().findByName ("EJ Test Bypass");
         check (byp != nullptr && r.h.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*byp), 0).isEmpty() && r.h.getNumSlots() == 3 && r.h.getSlotInfo (1).name == "EchoJay Level", "N1. a slot inserted BEFORE the Level moves it to index 1", r.h.getSlotInfo (0).name + " | " + r.h.getSlotInfo (1).name);
@@ -663,7 +723,7 @@ static int guardMain()
     {   // one 9 dB transient among hits typically ~4 dB over the ceiling -> NOT capped under Commercial (6)
         Rig r (true); r.setTarget (-10.5f, 0.0); r.prog.peaky = true;   // target ~1.5 dB above the measured level: a small trim, so the projected typical stays under the cap
         calibrate (r.proc, r.prog, -18.0f); r.prog.burst = 18.0f;   // the hits AFTER calibration: typically ~3-4 dB over the -0.5 dBTP clip
-        r.loop.armFromChain(); r.prog.spikeEvery = 300; r.prog.spike = 45.0f;   // ONE hit at 45x (~+8 dB over the others) about once per 3 s window
+        r.armNoReading(); r.prog.spikeEvery = 300; r.prog.spike = 45.0f;   // ONE hit at 45x (~+8 dB over the others) about once per 3 s window
         r.runWindow();
         const auto hm = r.loop.hitsMeasure(); const auto prop = r.last();
         std::printf ("  O1 measure: typical %.1f dB, worst %.1f dB over %d blocks | %s\n", hm.typicalDb, hm.worstDb, hm.blocks, prop.toRawUTF8());
@@ -673,12 +733,14 @@ static int guardMain()
         check (r.logs.joinIntoString ("\n").contains ("hits: typical ") && r.logs.joinIntoString ("\n").contains ("blocks, worst "), "O1. the EJLoudness log carries both figures (for the re-calibration)", r.logs.joinIntoString (" | ").fromLastOccurrenceOf ("hits: typical", true, false).substring (0, 90));
     }
     {   // hits typically ABOVE the Commercial cap -> capped, with the capped-proposal wording
-        Rig r (true); r.setTarget (-8.0f, 0.0); r.prog.peaky = true;
+        // -4, not -8: the opening write lands a -8 target outright (item 10 FINAL), and a window that is
+        // already on target proposes nothing to cap.
+        Rig r (true); r.setTarget (-4.0f, 0.0); r.prog.peaky = true;
         calibrate (r.proc, r.prog, -18.0f); r.prog.burst = 30.0f;   // the hits AFTER calibration
-        r.loop.armFromChain(); r.runWindow();
+        r.loop.armFromChain(); r.runWindow();   // WITH the reading: see the K leg - the cap needs the Level open
         const auto hm = r.loop.hitsMeasure(); const auto prop = r.last();
         std::printf ("  O2 measure: typical %.1f dB, worst %.1f dB over %d blocks | %s\n", hm.typicalDb, hm.worstDb, hm.blocks, prop.toRawUTF8());
-        check (prop.contains ("is as loud as this goes with the limiter working <=6 dB. Push to -8.0 anyway?") && r.loop.lastPills().joinIntoString ("|").startsWith ("Push it anyway|Leave it"), "O2. hits typically above the cap -> capped with the capped-proposal wording", prop);
+        check (prop.contains ("is as loud as this goes with the limiter working <=10 dB. Push to -4.0 anyway?") && r.loop.lastPills().joinIntoString ("|").startsWith ("Push it anyway|Leave it"), "O2. hits typically above the cap -> capped with the capped-proposal wording", prop);
     }
     // ---- 21t-k item 3 (28 Sep 2026 ruling): THE LEVEL SENSOR MEASURES THE PLUGIN, NOT THE STAGING ---------
     // Sean's Zip build: pre -15 on EchoJay's own staging, a plugin doing nothing, and the sensor reported
@@ -718,7 +780,7 @@ static int guardMain()
     std::printf ("== P (reduced). keep-level survives the deletion of the compare trim ==\n");
     {   // the keep flag holds, and persists
         Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f); r.h.setSlotKeepLevel (1, true);
-        calibrate (r.proc, r.prog, -18.0f); r.loop.armFromChain(); r.runWindow();
+        calibrate (r.proc, r.prog, -18.0f); r.armNoReading(); r.runWindow();
         check (r.h.getSlotKeepLevel (1) && r.h.getSlotInfo (1).keepLevel,
                "P3. the keep flag holds", r.h.getSlotKeepLevel (1) ? "kept" : "NOT kept");
         feed (r.proc, r.prog, 400, false, nullptr, nullptr); const auto lv = r.h.getSlotLevels (1);
@@ -741,7 +803,7 @@ static int guardMain()
         { juce::ignoreUnused (h); p.getApi().setUnityChain (false);
           return EchoJayAPIRequestPin::body (p.getApi(), {}, {}, {}, {}); };
         Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
-        calibrate (r.proc, r.prog, -18.0f); r.loop.armFromChain();
+        calibrate (r.proc, r.prog, -18.0f); r.armNoReading();
         { const auto b = bodyOf (r.proc, r.h); check (! b.contains ("unityChain"), "Q2. a populated rack BEFORE Listen carries no unityChain"); }
         r.runWindow();
         { const auto b = bodyOf (r.proc, r.h);
@@ -752,7 +814,7 @@ static int guardMain()
     std::printf ("== V21P. 23 Sep 2026 (21p items 1-4): the validity gate, the per-slot picture, the pre-trim, and the plugin's own log ==\n");
     {   // (1) a reading taken with the transport STOPPED writes nothing, and says so
         Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
-        calibrate (r.proc, r.prog, -18.0f); r.loop.armFromChain();
+        calibrate (r.proc, r.prog, -18.0f); r.armNoReading();
         // 21t-m: measureUnityTrims is deleted, so there is no trim pass to gate. What SURVIVES from V1 is the
         // reading gate itself and the picture it produces - a stopped transport is still not a reading.
         r.loop.isPlaying = [] { return false; }; r.loop.transportKnown = [] { return true; };   // the host SAYS it is stopped
@@ -777,7 +839,7 @@ static int guardMain()
         Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
         calibrate (r.proc, r.prog, -18.0f);
         r.prog.amp *= juce::Decibels::decibelsToGain (16.0f);   // drive the chain so slot 1's INPUT sits about -1 dBTP
-        r.loop.armFromChain(); r.runWindow();
+        r.armNoReading(); r.runWindow();
         const auto pic = r.h.slotPicture (1);
         // SUPERSEDED 1 Oct 2026 by (q): a compressor build writes no drive, so the fixture no longer pushes the slot's input up.
         supersededCheck (pic.valid && pic.inTpDb > -60.0f && pic.outTpDb > -60.0f, "V2. after Listen the slot carries a picture: input peak, output peak", "in " + f1 (pic.inTpDb) + " out " + f1 (pic.outTpDb) + " dBTP");
@@ -823,7 +885,7 @@ static int guardMain()
         // the arithmetic the stale trim used to break: Level OUT = the slot before it + the Level's gain
         // The arithmetic the stale trim used to break. The Level is the FIRST slot in this fixture, so what feeds
         // it is the chain input - and with the exempt pre-trim cleared, its own gain is the whole difference.
-        r.h.resetAllLevels(); r.loop.armFromChain(); r.runWindow();
+        r.h.resetAllLevels(); r.armNoReading(); r.runWindow();
         auto* lv = dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (r.levelSlot));
         if (lv != nullptr)
         {
@@ -841,7 +903,7 @@ static int guardMain()
         std::printf ("\n== R2 (21s-b): the proposal and Done agree on one figure ==\n");
         Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
         calibrate (r.proc, r.prog, -14.0f);
-        r.loop.armFromChain(); r.runWindow();
+        r.armNoReading(); r.runWindow();
         const float atProposal = r.loop.lastMeasured();
         juce::String doneLine;
         r.logs.clear();
@@ -859,7 +921,7 @@ static int guardMain()
         std::printf ("\n== R3 (21s-b): per-slot loudness in and out, and 'working X dB' ==\n");
         Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
         calibrate (r.proc, r.prog, -18.0f);
-        r.loop.armFromChain(); r.runWindow();
+        r.armNoReading(); r.runWindow();
         const auto txt = r.h.slotPictureText (1);
         const auto card = r.h.listenCardLines().joinIntoString (" | ");
         // SUPERSEDED 1 Oct 2026 by (q): no drive, so the Listen pair this asserted is not measured.
@@ -889,6 +951,79 @@ static int guardMain()
           check (after.contains ("EJLoudness: slot picture: guard route check"), "V4. ...and a loop line routed the way the editor routes it lands in the file", after.substring (juce::jmax (0, after.length() - 120)).replace ("\n", " | ")); }
         check (text.contains ("EJ"), "V4. ...the file is the plugin's own log, not an empty file", juce::String (text.length()) + " bytes");
         check (echojay::FileLog::kFiles == 5 && echojay::FileLog::kMaxBytes == 2L * 1024L * 1024L, "V4. five files of 2 MB", juce::String (echojay::FileLog::kFiles));
+    }
+    // ================= 06d item 6/10 FINAL: SEAN'S ACCEPTANCE CASE (7/8 Oct 2026) =======================
+    // His mix bus, his figures, his ear. Chain input integrated -14.5 LUFS, target -8 "commercial", and the chain
+    // itself 0.7 dB down at the output (the EchoJay Gain stand-in), so the OUTPUT integrated at Level 0 is -15.2 -
+    // which is what his 20:59 reading says: at Level +4 the V2 meters read integrated -11.2.
+    // HIS EAR, which is the acceptance: "+6.5 to +8 sounds right and reads -9.5 to -8. +8 = -8." His reference is
+    // Pro-L 2 at +8.2.
+    // WHAT THIS LEG WOULD HAVE CAUGHT: the loop used to make the LOUDEST 3 SECONDS equal the target, so it
+    // proposed +3.4 dB where the right answer was +8 - about 4.5 dB short, which is the short-term-to-integrated
+    // distance on this material. RED before the 7 Oct change, GREEN after.
+    // WHAT IT DOES NOT MODEL, said plainly: the harness limiter is not bx_limiter, so the residual GR loss at the
+    // landing level is its own, not his 0.8 dB. The leg therefore asserts his acceptance bounds (1 dB on the Level,
+    // 1 LU on the output), not an exact figure.
+    std::printf ("== Z. 06d acceptance: -14.5 LUFS in, chain -0.7 dB, target -8 -> Level about +8, output about -8 ==\n");
+    {
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.setGainDb (-0.7f);                  // the chain's own loss, so output-at-Level-0 is -15.2 as his is
+        r.setTarget (-8.0f, 0.0);
+        const float cal = calibrate (r.proc, r.prog, -14.5f);
+        check (std::abs (cal + 14.5f) < 0.6f, "Z. programme calibrated at the chain input to -14.5 LUFS (his build-time figure)", f1 (cal));
+        // DELIBERATELY NOT armNoReading(): this leg is about the opening write itself, so arm() must see the
+        // reading the calibrate pass just produced - that is the whole subject.
+        check (r.loop.armFromChain(), "Z. armed from the Level slot's params, WITH a chain-output reading in hand");
+        r.runWindow();
+        // The proposal is on the table; the figure it names must be the INTEGRATED one, not the loudest 3 s.
+        const auto proposal = r.last();
+        check (proposal.contains ("integrated"), "Z. the proposal names what it measured: integrated, not the loudest 3 s", proposal);
+        if (r.last().contains ("is as loud as this goes")) r.loop.pushIt(); else r.loop.go();
+        const float landed = r.levelGain();
+        check (std::abs (landed - 8.0f) <= 1.0f,
+               "Z. THE LANDING IS WITHIN 1 dB OF +8 - his ear's answer, on the first pass",
+               "Level " + f1 (landed) + " dB (his acceptance: 7.0 to 9.0; the old loudest-3-s rule proposed +3.4)");
+        // And the output itself, by the INDEPENDENT meter - the loop's own tally is not allowed to be the witness.
+        r.loop.check();
+        IndependentMeter ind; r.runWindow (0.0f, &ind);
+        const float outLufs = ind.lufs();
+        check (std::abs (outLufs + 8.0f) <= 1.0f,
+               "Z. ...and the OUTPUT integrated is within 1 LU of -8 by an independent meter",
+               f1 (outLufs) + " LUFS (his acceptance: -9.0 to -7.0)");
+        // The log must carry the calibration record, so the next real-world point lands for free.
+        const auto allLogs = r.logs.joinIntoString (" | ");
+        check (allLogs.contains ("GR base "), "Z. the GR base line is logged (measured vs estimated, every window)",
+               allLogs.contains ("GR base ") ? "present" : allLogs.substring (0, 200));
+        check (allLogs.contains ("No peak-headroom cap"),
+               "Z. and the opening says the peak-headroom cap is gone, as ruled");
+    }
+    std::printf ("== Z2. Listen always resolves: 20 s of silence ends with the no-signal reason, not a silent wait ==\n");
+    {
+        Rig r (false); r.setTarget (-8.0f, 0.0);
+        calibrate (r.proc, r.prog, -14.5f);
+        // THE LEG CARRIES THE TIMING, AND STATES ITS CLOCK. The deadline is wall-clock in the product - 20 s of
+        // the user's time - and this harness feeds forty seconds of audio in about two seconds of wall time, so a
+        // real clock would never reach it and the leg would pass by never testing anything. The loop takes its
+        // time through the nowMs hook; the leg drives it, 250 ms per tick, exactly as the plugin's timer would.
+        juce::int64 fake = 1000;
+        r.loop.nowMs = [&fake] { return fake; };
+        check (r.armNoReading(), "Z2. armed");
+        r.loop.listen();
+        // SILENCE, fed for longer than the deadline. Before the 7 Oct change this waited for ever: one line at
+        // sixty seconds and then nothing, which is what Sean saw at 20:00.
+        for (int k = 0; k < 160 && r.loop.state() != LoudnessLoop::State::hold; ++k)
+        { feed (r.proc, r.prog, 23, /*silent*/ true, &r.loop, nullptr, 0.0f); fake += 250; }   // 23 blocks = one tick = 250 ms
+        check (fake - 1000 >= 20000 && fake - 1000 <= 21000,
+               "Z2. it resolved AT the 20 s deadline, not before and not never",
+               juce::String ((int) (fake - 1000)) + " ms of fed time");
+        check (r.loop.state() == LoudnessLoop::State::hold,
+               "Z2. the loop RESOLVED instead of waiting (state hold)", juce::String ((int) r.loop.state()));
+        const auto said = r.last();
+        check (said.contains ("No signal is reaching EchoJay"),
+               "Z2. ...and it says no signal is reaching the plugin", said);
+        check (said.contains ("reads"), "Z2. ...WITH the figure the meters show, not a bare \"no signal\"", said);
+        check (r.loop.lastPills().joinIntoString ("|").contains ("Listen"),
+               "Z2. ...and it offers Listen, so the user has a way forward", r.loop.lastPills().joinIntoString ("|"));
     }
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     // ---- 21t-d: the compressor calibration loop --------------------------------------------------------------
