@@ -39,6 +39,9 @@ REPO=~/src/echojay-vst            # wherever the checkout is
 #   THE 7 OCT BUILD, FINAL (Kathy's "before Sean gets it": the licence file governs only its vendors' plugins, the LC / GE ruling, A1's three
 #   reads at a scaled hold): dc77d0a5 - derive-only EQUAL to 0d2ccd5d on the four sets except "detector_f_source" (cert-traces/2026-10-07-equality/).
 #   0f175c51 IS THE FALLBACK. The runbook's top section ("Running the 7 Oct build") is the one Sean follows.
+#   THE NEXT BUILD (7 Oct evening, Kathy's four new specs + drafts for all eight): ac9e3bfb - derive-only EQUAL to dc77d0a5 on the four
+#   sets with 0 differences (tools/ejmap/cert-traces/2026-10-07-four-specs/); packaged at ~/Desktop/ejmap-dist-7oct-c. NOT Sean's yet:
+#   the runbook's "Next build" section says when. dc77d0a5 IS THE FALLBACK (and stays Sean's build until Kathy hands this one over).
 git -C "$REPO" fetch && git -C "$REPO" checkout dc77d0a5     # branch feat/ejmap-cert; the commit after it is this documentation (0f175c51: the fallback)
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
@@ -82,6 +85,13 @@ ledger, the iLok, the power. Exit 0 = the probe verifies. From here the mapper r
 nothing on this page is needed again until the code changes.
 
 ## What was tested where
+
+**7 Oct evening, the next build (ac9e3bfb):** rebuilt from the clean checkout (stamp `ac9e3bfb`), packaged into
+`~/Desktop/ejmap-dist-7oct-c`, both signatures Developer ID / team 8BT5F9B887; preflight exit 0. Derive-only against dc77d0a5 (its
+packaged binary) on Sean's current folder, his 4 Oct zip, cert_sc and cert_tc35, run with the PACKAGED binary: 181/181, 181/181, 90/90,
+87/87 rows, 0 state-or-reason differences; fixtures, profiles and controls identical (no allowed exceptions this time). Rehearsed from
+the build tree: bx_limiter True Peak / bx_limiter, bx_digital V3 / Maag EQ4 / MAutoEqualizer, Lindell 902 / SPL De-Esser, MSaturator /
+CamelCrusher / bx_saturator V2 / Ampeg B15N; `--phaseb-drafts` over a copy of Sean's folder (337 drafts, profiles/ byte-identical).
 
 **6 Oct 16:12, tonight's build, final (0d2ccd5d):** rebuilt from the clean checkout (stamp `0d2ccd5d`), packaged into
 `~/Desktop/ejmap-dist-6oct-c`, both signatures Developer ID / team 8BT5F9B887; preflight exit 0; from the packaged app Zip through

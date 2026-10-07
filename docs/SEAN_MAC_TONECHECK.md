@@ -80,6 +80,33 @@ Ctrl-C stops any command; the product mid-measurement leaves nothing behind. The
 ```
 `config.json` is never in a zip (the command skips it). Projected ~700 MB gzipped for the three nights together.
 
+## Next build — NOT YET: run only when Kathy says the next build is yours (ac9e3bfb; the build above, dc77d0a5, is the fallback)
+
+Built from commit **ac9e3bfb** (packaged and signed at ~/Desktop/ejmap-dist-7oct-c; derive-only EQUAL to dc77d0a5 on your current
+folder, your 4 Oct zip, cert_sc and cert_tc35 - 0 differences in rows, records, profiles and controls, so the compressor path above is
+untouched). It adds the four new specs (limiters, EQ, de-essers, saturation) and a DRAFT profile for every Phase B category, written to
+`cert/phaseb/<category>/drafts/`, never to `cert/profiles`. Install it the same way as the build above, then, after the three nights
+above are done (or on a night of its own), in this order:
+
+```
+# N1. drafts for what you have ALREADY measured (gain, timing, tuners, multiband, and the old limiter / EQ / de-esser /
+#     saturation rows): nothing is loaded, about a second
+"$BIN" --phaseb-drafts
+# N2. the four categories whose MEASUREMENT changed - every row of each runs again (the old numbers were taken with the old signal):
+#     limiters: driven at the ceiling label + 6 dB, BS.1770 true peak, every detent, the -1 / -0.3 dBTP acceptance   ~20-25 min
+#     de-essers: the noise ladder as the curve, TripleD's section, the acceptance on noise                               ~10 min
+#     saturation + amp sims: verdicts incl. level_only, steps 1-3 acceptance with the output compensated, amp cabinets   ~1-1.5 h
+#     EQ: 10 Hz-23.5 kHz grid, 1/24 oct Q, the -30 dBFS level check, Q at +3 and +6, the shape guard, the acceptance    ~3.5-4.5 h
+"$BIN" --phaseb-all --redo limiter,deesser,saturation,eq
+# N3. a status line any time
+"$BIN" --phaseb-status
+```
+
+About 5-6.5 hours in all (projected from your 5/6 Oct row times and this Mac's rehearsals of the new modes; EQ is most of it). It
+resumes like every other run. The zip (as above) grows by roughly 90-120 MB, nearly all of it the EQ's extra responses; the drafts
+themselves are under 1 MB. Saturation runs after `--redo gain-all` on purpose: it compensates through the gain draft when one exists
+(otherwise it measures the output control itself and says so).
+
 ---
 
 # History — do not follow: the follow-up as first written (2 Oct 2026; L per level, licence skip and CL 1B import 3 Oct; re-sweeps 4 Oct)
