@@ -1,0 +1,14 @@
+STRIP: text pass: 53 of 61 controls sampled in 13.0 s (timeout 120 s, scaled to the count)
+STRIP: bx_console SSL 4000 E 1.7.1: 53 control(s) in 5 section(s):  compressor 11 (engage Dyn On/Off -> 'On')  eq 21 (engage HPF On/Off -> 'On')  gate 8  saturation 1  global 12
+  compressor: needs_review - the strip's gate section has no engage control: it cannot be switched off for the compressor sweep
+  eq: --cert-eq over 21 control(s) with HPF On/Off -> 'On'
+    -> exit 0 in 17.7024 s; eq.AudioUnit_41747d65_1.7.1.eq.json
+  gate: --cert-dynamics over 8 control(s); the other dynamics off: Dyn On/Off -> ''
+    -> exit 0 in 9.07354 s; gate.AudioUnit_41747d65_1.7.1.dynamics.json
+  saturation: --cert-saturation over 1 control(s)
+    -> exit 0 in 3.95832 s; saturation.AudioUnit_41747d65_1.7.1.saturation.json
+STRIP: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/st7/strip/AudioUnit_41747d65_1.7.1.strip.json
+
+real	0m44.479s
+user	0m17.900s
+sys	0m1.560s

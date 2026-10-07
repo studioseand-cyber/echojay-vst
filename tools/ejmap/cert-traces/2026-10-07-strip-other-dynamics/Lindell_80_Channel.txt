@@ -1,0 +1,15 @@
+STRIP: text pass: 43 of 43 controls sampled in 10.4 s (timeout 120 s, scaled to the count)
+STRIP: Lindell 80 Channel 1.0.6: 43 control(s) in 5 section(s):  compressor 11 (engage Comp In -> 'On')  eq 10  gate 9 (engage Gate In -> 'On')  saturation 1  global 12
+  compressor: the full compressor path over 11 control(s) with Comp In -> 'On'; the other dynamics off: Gate In -> '' -> AudioUnit_6f3f2163_1.0.6.compressor
+    -> exit 0 in 147.379 s; exported: profile exported with its tone check; tone check GR 2.01 dB at g 2.0 PASS
+  eq: --cert-eq over 10 control(s)
+    -> exit 0 in 10.7242 s; eq.AudioUnit_6f3f2163_1.0.6.eq.json
+  gate: --cert-dynamics over 9 control(s) with Gate In -> 'On'; the other dynamics off: Comp In -> ''
+    -> exit 0 in 8.52538 s; gate.AudioUnit_6f3f2163_1.0.6.dynamics.json
+  saturation: --cert-saturation over 1 control(s)
+    -> exit 0 in 3.918 s; saturation.AudioUnit_6f3f2163_1.0.6.saturation.json
+STRIP: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/st7/strip/AudioUnit_6f3f2163_1.0.6.strip.json
+
+real	3m2.019s
+user	2m0.893s
+sys	0m3.802s

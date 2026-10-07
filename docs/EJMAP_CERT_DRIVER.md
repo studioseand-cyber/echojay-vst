@@ -2933,3 +2933,23 @@ level): under the section's `LC On/Off → On` the quiet-reference rungs (−90.
 (`level_db −128.7` at `in_rms_db −93.0`), i.e. the strip's GATE section, engaged at instantiate (Rule 1 leaves the other sections
 as they are), closes on the ladder. The pick stands on file; the record cannot carry it until that section's sweep reads —
 a ruling question (bypass the other dynamics sections while a section is swept, or not), not decided here.
+
+## 79. A strip's other dynamics sections are switched off for a dynamics section's sweep (Kathy's ruling, 7 Oct; next build, no re-cut)
+
+`strip::otherDynamicsFor` (pins ST7–ST10; the mutant that leaves the gate on goes red): when a dynamics section (compressor or
+gate) is swept, every OTHER dynamics section engaged at instantiate (its engage control reads its ON text) is switched off by
+its own engage control — the OFF position — for the whole sweep, detector and tone check, as part of the probe's preset; EQ
+and saturation sections stay at instantiate and are recorded (`other_sections_at_instantiate`). An other dynamics section
+with no engage control refuses: the section is `needs_review` with that reason. The child receives `--strip-writes` and
+the record, the profile and the tone check carry `strip_writes`; on the profile the section's engage joins `engage` and the
+off writes join `neutral` (source "strip: another dynamics section switched off for the sweep (ruled 7 Oct)"), so a server
+writing the profile writes them too and the profile holds as it ran. Kathy's review picks (`review_picks.json` in the cert
+root) are copied into the section folder so the section's own loop applies them. A text seen at several norms ("Off" at 0.0
+and 0.5) keeps its end position.
+Rehearsed: **bx_console N** — `GE On/Off → Off` for the compressor sweep; `LC Threshold` and `LC Threshold Range` now certify
+(both were unreadable under the instantiate gate), Kathy's pick `LC Threshold` applies, exported into the section folder with
+`engage: LC On/Off = On`, `neutral: GE On/Off = Off`, tone check **PASS 1.92 dB at g 2** (144 s). **Lindell 80 Channel** —
+unchanged in outcome (Rule 1 picks Comp Threshold, exported, tone check PASS 2.01 dB), now with `Gate In → Off` carried as a
+neutral write (147 s). **bx_console SSL 4000 E** — `needs_review: the strip's gate section has no engage control: it cannot be
+switched off for the compressor sweep` (its GE controls have no switch; `Dyn On/Off` engages the whole dynamics block) — as
+the ruling says; its gate section still runs through the gate mode with `Dyn On/Off → Off`.

@@ -1465,6 +1465,7 @@ struct SweepOptions
     bool assumeUadDevice = false;                    // --assume-uad-device: the UAD-2 preflight found none but Sean says the Satellite is connected (the registry lines are recorded)
     std::set<int> onlyControls;                      // --only-controls i,j,k (item E, 7 Oct): the mode's fixture holds these controls alone (a strip's section)
     std::shared_ptr<Subject> sectionSubject;         // item E (7 Oct): a subject the CALLER supplies (a strip's compressor section) - the sweep takes it instead of the worklist's
+    juce::String stripWritesJson;                    // --strip-writes <json> (7 Oct ruling): the section's engage + the other dynamics sections' off writes, for the record and profile
     bool gainAll = false;                            // --cert-gain-cal --kind all (the gain-all rows, 6 Oct item 6): the product is not a compressor, so the plan's amount is a gain target too
     bool deriveOnly = false;                         // --derive-only (tone-check mode): re-derive, apply the rules and export, load NOTHING - the projection for a zipped-back folder
     juce::StringArray resweepProducts;               // the follow-up's own re-sweep set (planDiffers): forced back onto the worklist
@@ -2908,7 +2909,12 @@ inline int runStrip (const SweepOptions& opt)
         for (const auto& c : *cs)
         {
             strip::Control k; k.index = (int) c.getProperty ("index", -1); k.name = c.getProperty ("name", "").toString(); k.numSteps = (int) c.getProperty ("numSteps", 0);
-            if (const auto at = c.getProperty ("displayAt", {}); at.isObject()) for (const auto& kv : at.getDynamicObject()->getProperties()) k.texts[kv.value.toString()] = (float) kv.name.toString().getDoubleValue();
+            if (const auto at = c.getProperty ("displayAt", {}); at.isObject()) for (const auto& kv : at.getDynamicObject()->getProperties())
+            {   // a text seen at several norms ("Off" at 0.0 and 0.5) keeps the one nearest an end: the switch's own position, not the midpoint
+                const float n = (float) kv.name.toString().getDoubleValue(); const auto t = kv.value.toString();
+                if (! k.texts.count (t) || std::abs (n - 0.5f) > std::abs (k.texts[t] - 0.5f)) k.texts[t] = n;
+            }
+            const auto inst = c.getProperty ("defaultOnInstantiate", {}); k.instNorm = (float) inst.getProperty ("normalised", 0.0); k.instText = inst.getProperty ("display", "").toString();
             controls.push_back (k);
         }
     const auto sections = strip::sectionsOf (controls);
@@ -2926,13 +2932,24 @@ inline int runStrip (const SweepOptions& opt)
         if (sec.engage) { so->setProperty ("engage", sec.engage->name); so->setProperty ("engage_index", sec.engage->index); so->setProperty ("engage_norm", sec.engageNorm); so->setProperty ("engage_text", sec.engageText); } else if (sec.note.isNotEmpty()) so->setProperty ("note", sec.note);
         const auto mode = strip::modeFor (sec.name);
         if (mode.isEmpty() || sec.numeric == 0) { so->setProperty ("mode", mode.isEmpty() ? juce::String ("none (global controls)") : mode); so->setProperty ("outcome", "not run (" + juce::String (sec.numeric == 0 ? "no numeric control" : "no mode") + ")"); secs.add (juce::var (so)); continue; }
+        // THE OTHER DYNAMICS SECTIONS (Kathy's ruling, 7 Oct) for a dynamics section: switched off by their own engage for the whole run,
+        // carried as neutral writes; EQ / saturation at instantiate, recorded; one without an engage control -> needs_review
+        const auto od = strip::isDynamics (sec.name) ? strip::otherDynamicsFor (sections, sec.name) : strip::OtherDynamics();
+        const auto sws = strip::stripWrites (sec, od);
+        if (strip::isDynamics (sec.name))
+        {
+            so->setProperty ("strip_writes", strip::stripWritesVar (sws)); so->setProperty ("other_sections_at_instantiate", od.atInstantiate.joinIntoString ("; ")); if (! od.alreadyOff.isEmpty()) so->setProperty ("other_dynamics_already_off", od.alreadyOff.joinIntoString ("; "));
+            if (! od.ok) { so->setProperty ("mode", mode); so->setProperty ("outcome", "needs_review"); so->setProperty ("reason", od.refused); say ("  " + sec.name + ": needs_review - " + od.refused); secs.add (juce::var (so)); continue; }
+        }
         if (sec.name == "compressor")
         {   // THE FULL COMPRESSOR PATH (7 Oct): a child --cert-strip-section with the section's controls and engage - the sweep, the detector,
             // the rules, the record and the tone check into the section's own folder; no profile reaches cert/profiles
             const auto secDir = outDir.getChildFile (stem + ".compressor"); secDir.createDirectory();
+            if (opt.out.getChildFile ("review_picks.json").existsAsFile()) opt.out.getChildFile ("review_picks.json").copyFileTo (secDir.getChildFile ("review_picks.json"));   // Kathy's picks reach the section's own loop
             juce::StringArray args { exe.getFullPathName(), "--cert-strip-section", opt.product, "--out", secDir.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName(), "--only-controls", strip::indicesOf (sec), "--section", "compressor" };
-            if (sec.engage) { args.add ("--preset"); args.add (strip::presetOf (sec)); }
-            say ("  compressor: the full compressor path over " + juce::String ((int) sec.controls.size()) + " control(s)" + (sec.engage ? " with " + sec.engage->name + " -> '" + sec.engageText + "'" : juce::String()) + " -> " + secDir.getFileName());
+            if (! sws.empty()) { args.add ("--preset"); args.add (strip::presetOf (sws)); args.add ("--strip-writes"); args.add (juce::JSON::toString (strip::stripWritesVar (sws), true)); }
+            juce::StringArray offs; for (const auto& w : od.offWrites) offs.add (w.control + " -> '" + w.set + "'");
+            say ("  compressor: the full compressor path over " + juce::String ((int) sec.controls.size()) + " control(s)" + (sec.engage ? " with " + sec.engage->name + " -> '" + sec.engageText + "'" : juce::String()) + (offs.isEmpty() ? juce::String() : "; the other dynamics off: " + offs.joinIntoString (", ")) + " -> " + secDir.getFileName());
             const auto t1 = juce::Time::getMillisecondCounterHiRes();
             const auto r = runChild (args, (int) (3600.0 * 1000.0));
             const double secs2 = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0;
@@ -2952,8 +2969,9 @@ inline int runStrip (const SweepOptions& opt)
         juce::StringArray args { exe.getFullPathName(), mode, opt.product };
         if (sec.name == "gate") { args.add ("--kind"); args.add ("gate"); }
         args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName(), "--only-controls", strip::indicesOf (sec) });
-        if (sec.engage) { args.add ("--preset"); args.add (strip::presetOf (sec)); }
-        say ("  " + sec.name + ": " + mode + " over " + juce::String ((int) sec.controls.size()) + " control(s)" + (sec.engage ? " with " + sec.engage->name + " -> '" + sec.engageText + "'" : juce::String ("")));
+        if (! sws.empty()) { args.add ("--preset"); args.add (strip::presetOf (sws)); }
+        { juce::StringArray offs; for (const auto& w : od.offWrites) offs.add (w.control + " -> '" + w.set + "'");
+          say ("  " + sec.name + ": " + mode + " over " + juce::String ((int) sec.controls.size()) + " control(s)" + (sec.engage ? " with " + sec.engage->name + " -> '" + sec.engageText + "'" : juce::String ("")) + (offs.isEmpty() ? juce::String() : "; the other dynamics off: " + offs.joinIntoString (", "))); }
         const auto t1 = juce::Time::getMillisecondCounterHiRes();
         const auto r = runChild (args, (int) (1800.0 * 1000.0));
         const double secs2 = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0;
@@ -3057,6 +3075,7 @@ inline int runStripSection (const SweepOptions& opt0)
     std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt0.product) hits.push_back (r);
     if (hits.size() != 1) { say ("SECTION: '" + opt0.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     SweepOptions opt = opt0; opt.fixtures = opt.out.getChildFile ("fixtures"); opt.fixtures.createDirectory(); opt.profile = true;   // the profile sweep, as the certification loop runs it (31 levels, 2.5 s)
+    const auto stripWrites = juce::JSON::parse (opt0.stripWritesJson);   // the section's engage and the other dynamics sections' off writes (Kathy's ruling, 7 Oct)
     auto sub = std::make_shared<Subject>(); sub->desc = hits[0].desc; sub->product = opt0.product; sub->uid = juce::String::toHexString (hits[0].desc.uniqueId).toLowerCase(); sub->version = hits[0].desc.version;
     sub->reach = Subject::Reach::unfixtured; sub->installedUnique = true; sub->category = "compressor";
     juce::StringArray only; for (int i : onlyControlsFlag()) only.add (juce::String (i));
@@ -3092,7 +3111,25 @@ inline int runStripSection (const SweepOptions& opt0)
         }
         engageVar = ws;
     }
-    auto mark = [&] (const juce::File& f, const char* status) { auto p = juce::JSON::parse (f.loadFileAsString()); if (auto* o = p.getDynamicObject()) { o->setProperty ("strip_section", "compressor"); o->setProperty ("not_for_publication", true); if (status != nullptr) o->setProperty ("status", status); if (engageVar.isArray()) o->setProperty ("strip_engage", engageVar); f.replaceWithText (juce::JSON::toString (p) + "\n", false, false, "\n"); } };
+    auto mark = [&] (const juce::File& f, const char* status) { auto p = juce::JSON::parse (f.loadFileAsString()); if (auto* o = p.getDynamicObject()) { o->setProperty ("strip_section", "compressor"); o->setProperty ("not_for_publication", true); if (status != nullptr) o->setProperty ("status", status); if (engageVar.isArray()) o->setProperty ("strip_engage", engageVar);
+        if (stripWrites.isArray())
+        {   // THE RULING'S WRITES ON THE PROFILE (7 Oct): the section's engage joins `engage`, the other dynamics sections' off writes join `neutral` - the server writes both, so the profile holds as it ran
+            o->setProperty ("strip_writes", stripWrites);
+            if (o->hasProperty ("amount"))
+            {
+                juce::Array<juce::var> eng, neu; if (const auto* e = p.getProperty ("engage", {}).getArray()) eng = *e; if (const auto* n = p.getProperty ("neutral", {}).getArray()) neu = *n;
+                for (const auto& w : *stripWrites.getArray())
+                {
+                    auto* x = new juce::DynamicObject(); x->setProperty ("control", w.getProperty ("control", "")); x->setProperty ("set", w.getProperty ("set", "")); x->setProperty ("norm", w.getProperty ("norm", 0.0)); x->setProperty ("index", w.getProperty ("index", -1));
+                    const bool isEngage = w.getProperty ("role", "").toString() == "engage";
+                    x->setProperty ("source", isEngage ? "strip: the section's engage switch (Rule 1), written under every process" : "strip: another dynamics section switched off for the sweep (ruled 7 Oct), written under every process");
+                    bool dup = false; for (const auto& e : (isEngage ? eng : neu)) if ((int) e.getProperty ("index", -2) == (int) w.getProperty ("index", -1)) dup = true;
+                    if (! dup) (isEngage ? eng : neu).add (juce::var (x));
+                }
+                o->setProperty ("engage", eng); o->setProperty ("neutral", neu);
+            }
+        }
+        f.replaceWithText (juce::JSON::toString (p) + "\n", false, false, "\n"); } };
     for (const auto& f : opt.out.getChildFile ("profiles").findChildFiles (juce::File::findFiles, false, "*.json")) mark (f, "channel strip section: NOT a published profile (strip profiles wait for a ruling)");
     mark (rec, nullptr);
     return rc != 0 ? rc : trc;

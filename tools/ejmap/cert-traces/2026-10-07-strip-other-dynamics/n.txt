@@ -1,0 +1,15 @@
+STRIP: text pass: 58 of 62 controls sampled in 14.2 s (timeout 120 s, scaled to the count)
+STRIP: bx_console N 1.9.1: 58 control(s) in 5 section(s):  compressor 11 (engage LC On/Off -> 'On')  eq 22 (engage HPF On/Off -> 'On')  gate 9 (engage GE On/Off -> 'On')  saturation 1  global 15
+  compressor: the full compressor path over 11 control(s) with LC On/Off -> 'On'; the other dynamics off: GE On/Off -> 'Off' -> AudioUnit_417f7950_1.9.1.compressor
+    -> exit 0 in 143.948 s; exported: profile exported with its tone check; tone check GR 1.92 dB at g 2.0 PASS
+  eq: --cert-eq over 22 control(s) with HPF On/Off -> 'On'
+    -> exit 0 in 18.3451 s; eq.AudioUnit_417f7950_1.9.1.eq.json
+  gate: --cert-dynamics over 9 control(s) with GE On/Off -> 'On'; the other dynamics off: LC On/Off -> 'Off'
+    -> exit 0 in 8.74191 s; gate.AudioUnit_417f7950_1.9.1.dynamics.json
+  saturation: --cert-saturation over 1 control(s)
+    -> exit 4 in 1.73509 s; saturation.AudioUnit_417f7950_1.9.1.saturation.json
+STRIP: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/st8/strip/AudioUnit_417f7950_1.9.1.strip.json
+
+real	3m8.428s
+user	1m52.689s
+sys	0m4.878s

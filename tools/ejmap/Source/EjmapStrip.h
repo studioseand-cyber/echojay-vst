@@ -43,8 +43,9 @@ inline juce::String sectionOf (const juce::String& name)
     return "global";
 }
 
-struct Control { int index = -1; juce::String name; int numSteps = 0; std::map<juce::String, float> texts; };   // texts: display -> norm (two-step switches)
-struct Section { juce::String name; std::vector<Control> controls; std::optional<Control> engage; float engageNorm = 1.0f; juce::String engageText, note; int numeric = 0; using engage_type = Control; };
+struct Control { int index = -1; juce::String name; int numSteps = 0; std::map<juce::String, float> texts; float instNorm = 0.0f; juce::String instText; };   // texts: display -> norm (two-step switches); inst*: as instantiated
+struct Section { juce::String name; std::vector<Control> controls; std::optional<Control> engage; float engageNorm = 1.0f, engageOffNorm = 0.0f; juce::String engageText, engageOffText, note; int numeric = 0; bool engagedAtInstantiate = false; using engage_type = Control; };
+inline bool isDynamics (const juce::String& section) { return section == "compressor" || section == "gate"; }
 
 inline bool switchWord (const juce::String& t) { for (const char* w : { "on", "in", "enable", "enabled", "active", "engage", "power", "bypass", "mute", "off", "out" }) if (t == w) return true; return false; }
 
@@ -72,13 +73,43 @@ inline std::vector<Section> sectionsOf (const std::vector<Control>& controls)
                 if ((! bypass && onLike) || (bypass && offLike)) { onNorm = norm; onText = text; found = true; }
             }
             if (! found) for (const auto& [text, norm] : c.texts) if (std::abs (norm - onNorm) < 1e-6f) onText = text;
-            s.engage = e; s.engageNorm = onNorm; s.engageText = onText; break;
+            s.engage = e; s.engageNorm = onNorm; s.engageText = onText; s.engageOffNorm = onNorm > 0.5f ? 0.0f : 1.0f;
+            for (const auto& [text, norm] : c.texts) if (std::abs (norm - s.engageOffNorm) < 1e-6f) s.engageOffText = text;
+            s.engagedAtInstantiate = std::abs (c.instNorm - onNorm) < 1e-6f; break;
         }
         if (! s.engage) s.note = "no engage switch named in the section: measured as instantiated";
     }
     return out;
 }
 
+// THE OTHER DYNAMICS SECTIONS (Kathy's ruling, 7 Oct): when a dynamics section is swept, every OTHER dynamics section (gate / expander /
+// a second compressor or limiter) engaged at instantiate is switched OFF by its own engage control for the whole sweep, detector and tone
+// check, carried as a neutral write on the record and the profile (the server writes it too). EQ and saturation stay at instantiate,
+// recorded. An other dynamics section WITHOUT an engage control -> refused: needs_review with that reason.
+struct StripWrite { int index = -1; juce::String control, set, role; float norm = 0.0f; };   // role: "engage" (this section on) | "other_off" (another dynamics section off)
+struct OtherDynamics { bool ok = true; juce::String refused; std::vector<StripWrite> offWrites; juce::StringArray atInstantiate, alreadyOff; };
+inline OtherDynamics otherDynamicsFor (const std::vector<Section>& sections, const juce::String& thisSection)
+{
+    OtherDynamics o;
+    for (const auto& s : sections)
+    {
+        if (s.name == thisSection || s.name == "global") continue;
+        if (! isDynamics (s.name)) { o.atInstantiate.add (s.name + (s.engage ? " (" + s.engage->name + " = '" + s.engage->instText + "')" : juce::String (" (no engage control)"))); continue; }
+        if (! s.engage) { o.ok = false; o.refused = "the strip's " + s.name + " section has no engage control: it cannot be switched off for the " + thisSection + " sweep"; return o; }
+        if (s.engagedAtInstantiate) o.offWrites.push_back ({ s.engage->index, s.engage->name, s.engageOffText, "other_off", s.engageOffNorm });
+        else o.alreadyOff.add (s.name + " (" + s.engage->name + " = '" + s.engage->instText + "')");
+    }
+    return o;
+}
+inline std::vector<StripWrite> stripWrites (const Section& sec, const OtherDynamics& od)
+{
+    std::vector<StripWrite> ws;
+    if (sec.engage) ws.push_back ({ sec.engage->index, sec.engage->name, sec.engageText, "engage", sec.engageNorm });
+    for (const auto& w : od.offWrites) ws.push_back (w);
+    return ws;
+}
+inline juce::String presetOf (const std::vector<StripWrite>& ws) { juce::StringArray a; for (const auto& w : ws) a.add (juce::String (w.index) + ":" + juce::String (w.norm, 6)); return a.joinIntoString (","); }
+inline juce::var stripWritesVar (const std::vector<StripWrite>& ws) { juce::Array<juce::var> a; for (const auto& w : ws) { auto* o = new juce::DynamicObject(); o->setProperty ("index", w.index); o->setProperty ("control", w.control); o->setProperty ("set", w.set); o->setProperty ("norm", w.norm); o->setProperty ("role", w.role); a.add (juce::var (o)); } return a; }
 inline juce::String indicesOf (const Section& s) { juce::StringArray a; for (const auto& c : s.controls) a.add (juce::String (c.index)); return a.joinIntoString (","); }
 inline juce::String presetOf (const Section& s) { return s.engage ? juce::String (s.engage->index) + ":" + juce::String (s.engageNorm, 6) : juce::String(); }
 inline juce::String modeFor (const juce::String& section) { return section == "eq" ? "--cert-eq" : section == "gate" ? "--cert-dynamics" : section == "saturation" ? "--cert-saturation" : section == "compressor" ? "--cert-gain-cal" : juce::String(); }

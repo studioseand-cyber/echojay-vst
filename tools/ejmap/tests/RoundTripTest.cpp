@@ -7515,8 +7515,26 @@ void testStrip()
         flag.clear();
         check (ok && ejmap::cert::parseListParams ("0\tGain\tdB\t0\t0\t1\t0\n1\tThresh\tdB\t0\t0\t1\t0\n").size() == 2, "strip ST6: --only-controls narrows parseListParams and parseTextAt to the section (Thresh alone, its own at/def, not Gain's); cleared, both rows return");
     }
-    check (indicesOf (*sec ("eq")) == "3,4,5" && presetOf (*sec ("eq")) == "3:0.000000" && presetOf (*sec ("gate")).isEmpty() && modeFor ("eq") == "--cert-eq" && modeFor ("gate") == "--cert-dynamics" && modeFor ("global").isEmpty(),
+    check (indicesOf (*sec ("eq")) == "3,4,5" && presetOf (stripWrites (*sec ("eq"), {})) == "3:0.000000" && presetOf (stripWrites (*sec ("gate"), {})).isEmpty() && modeFor ("eq") == "--cert-eq" && modeFor ("gate") == "--cert-dynamics" && modeFor ("global").isEmpty(),
            "strip ST5: the child's --only-controls lists the section's indices, --preset the engage write (none without a switch), the mode per section");
+    {   // ST7-ST9 (Kathy's ruling, 7 Oct): the OTHER dynamics sections engaged at instantiate are switched off by their own engage for the dynamics
+        // section's whole run and carried as writes; EQ / saturation stay at instantiate, recorded; an other dynamics section with no engage -> refused
+        auto ctl = [] (int i, const char* n, int steps, std::map<juce::String, float> t, float inst, const char* it) { Control c; c.index = i; c.name = n; c.numSteps = steps; c.texts = t; c.instNorm = inst; c.instText = it; return c; };
+        std::vector<Control> n { ctl (17, "LC On/Off", 2, { { "Off", 0.0f }, { "On", 1.0f } }, 1.0f, "On"), ctl (20, "LC Threshold", 0, {}, 0.5f, "0 dB"), ctl (30, "GE On/Off", 2, { { "Off", 0.0f }, { "On", 1.0f } }, 1.0f, "On"), ctl (31, "GE Threshold", 0, {}, 0.2f, "-40"),
+                                ctl (2, "HPF On/Off", 2, { { "Off", 0.0f }, { "On", 1.0f } }, 0.0f, "Off"), ctl (3, "LF Gain", 0, {}, 0.5f, "0"), ctl (9, "Drive", 0, {}, 0.0f, "0") };
+        const auto ss = sectionsOf (n); auto secOf = [&] (const char* nm) -> const Section* { for (const auto& x : ss) if (x.name == nm) return &x; return nullptr; };
+        const auto odC = otherDynamicsFor (ss, "compressor"), odG = otherDynamicsFor (ss, "gate");
+        check (secOf ("compressor")->engagedAtInstantiate && secOf ("gate")->engagedAtInstantiate && std::abs (secOf ("gate")->engageOffNorm) < 1e-6f && secOf ("gate")->engageOffText == "Off",
+               "strip ST7: a section whose engage instantiates at its ON text is engaged at instantiate; its OFF write is the other position");
+        check (odC.ok && odC.offWrites.size() == 1 && odC.offWrites[0].index == 30 && odC.offWrites[0].role == "other_off" && odC.offWrites[0].norm == 0.0f && odC.offWrites[0].set == "Off" && odC.atInstantiate.size() == 2 && odC.atInstantiate[0].startsWith ("eq") && odG.offWrites.size() == 1 && odG.offWrites[0].index == 17,
+               "strip ST8: sweeping the compressor switches the gate off (GE On/Off -> Off) and leaves eq / saturation at instantiate, recorded; sweeping the gate switches the compressor off");
+        const auto ws = stripWrites (*secOf ("compressor"), odC);
+        check (ws.size() == 2 && ws[0].role == "engage" && ws[0].index == 17 && ws[0].norm == 1.0f && ws[1].role == "other_off" && ws[1].index == 30 && presetOf (ws) == "17:1.000000,30:0.000000" && stripWritesVar (ws).size() == 2,
+               "strip ST9: the child's preset carries the section's engage ON and the other dynamics OFF, in that order");
+        std::vector<Control> noSwitch { ctl (17, "LC On/Off", 2, { { "Off", 0.0f }, { "On", 1.0f } }, 1.0f, "On"), ctl (20, "LC Threshold", 0, {}, 0.5f, "0 dB"), ctl (31, "GE Threshold", 0, {}, 0.2f, "-40"), ctl (32, "GE Range", 0, {}, 0.2f, "-40") };
+        const auto odN = otherDynamicsFor (sectionsOf (noSwitch), "compressor");
+        check (! odN.ok && odN.refused.contains ("gate section has no engage control"), "strip ST10: an other dynamics section with no engage control refuses the sweep (needs_review with that reason)");
+    }
 }
 /** CATEGORISING THE UNCATEGORISED (EjmapCategorise.h; item F, 7 Oct): out of scope, the words, the signatures' decision. */
 void testCategorise()

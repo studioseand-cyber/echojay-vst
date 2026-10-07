@@ -1,0 +1,328 @@
+{
+  "schema": "ej_strip_prototype/0",
+  "status": "PROTOTYPE (item E, 7 Oct): sections by name, each through its category's mode with its engage switch as the probe's preset; data only, nothing exported",
+  "product": "Lindell 80 Channel",
+  "version": "1.0.6",
+  "identity": "AudioUnit|6f3f2163|1.0.6",
+  "rule": "Rule 1 (2 Oct): the section's own engage switch rides with it; every other section at its instantiate value - a section's measurement is the strip with that section engaged, the others as instantiated",
+  "sections": [
+    {
+      "section": "compressor",
+      "controls": [
+        {
+          "index": 18,
+          "name": "Comp Ratio",
+          "steps": 5
+        },
+        {
+          "index": 19,
+          "name": "Comp Niveau",
+          "steps": 2
+        },
+        {
+          "index": 21,
+          "name": "Comp In",
+          "steps": 2
+        },
+        {
+          "index": 25,
+          "name": "Comp High Pass Filter",
+          "steps": 2147483647
+        },
+        {
+          "index": 26,
+          "name": "Comp Mix",
+          "steps": 2147483647
+        },
+        {
+          "index": 28,
+          "name": "Comp Recovery",
+          "steps": 5
+        },
+        {
+          "index": 33,
+          "name": "Comp External Side Chain",
+          "steps": 2
+        },
+        {
+          "index": 36,
+          "name": "Comp Fast",
+          "steps": 2
+        },
+        {
+          "index": 37,
+          "name": "Comp Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 38,
+          "name": "Comp Smash",
+          "steps": 2
+        },
+        {
+          "index": 41,
+          "name": "Comp Threshold",
+          "steps": 2147483647
+        }
+      ],
+      "engage": "Comp In",
+      "engage_index": 21,
+      "engage_norm": 1.0,
+      "engage_text": "On",
+      "strip_writes": [
+        {
+          "index": 21,
+          "control": "Comp In",
+          "set": "On",
+          "norm": 1.0,
+          "role": "engage"
+        },
+        {
+          "index": 24,
+          "control": "Gate In",
+          "set": "",
+          "norm": 0.0,
+          "role": "other_off"
+        }
+      ],
+      "other_sections_at_instantiate": "eq (no engage control); saturation (no engage control)",
+      "mode": "--cert-strip-section (sweep, detector, rules, record, tone check; no export)",
+      "folder": "AudioUnit_6f3f2163_1.0.6.compressor",
+      "child": "exit 0",
+      "exit_code": 0,
+      "seconds": 147.0,
+      "state": "exported",
+      "reason": "profile exported with its tone check",
+      "tone_check": "GR 2.01 dB at g 2.0 PASS",
+      "not_for_publication": true,
+      "outcome": "ok"
+    },
+    {
+      "section": "eq",
+      "controls": [
+        {
+          "index": 9,
+          "name": "Low Frequency",
+          "steps": 5
+        },
+        {
+          "index": 10,
+          "name": "Low Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 11,
+          "name": "Low Pass",
+          "steps": 6
+        },
+        {
+          "index": 13,
+          "name": "High Frequency",
+          "steps": 4
+        },
+        {
+          "index": 14,
+          "name": "High Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 15,
+          "name": "High Pass",
+          "steps": 5
+        },
+        {
+          "index": 16,
+          "name": "Mid High Q",
+          "steps": 2
+        },
+        {
+          "index": 23,
+          "name": "Filter",
+          "steps": 2
+        },
+        {
+          "index": 29,
+          "name": "Mid Frequency",
+          "steps": 7
+        },
+        {
+          "index": 30,
+          "name": "Mid Gain",
+          "steps": 2147483647
+        }
+      ],
+      "note": "no engage switch named in the section: measured as instantiated",
+      "mode": "--cert-eq",
+      "child": "exit 0",
+      "exit_code": 0,
+      "seconds": 11.0,
+      "records": "eq.AudioUnit_6f3f2163_1.0.6.eq.json",
+      "log": "AudioUnit_6f3f2163_1.0.6.eq.log.txt",
+      "outcome": "ok"
+    },
+    {
+      "section": "gate",
+      "controls": [
+        {
+          "index": 8,
+          "name": "Gate Recovery",
+          "steps": 2147483647
+        },
+        {
+          "index": 12,
+          "name": "Gate Hysteresis",
+          "steps": 2147483647
+        },
+        {
+          "index": 17,
+          "name": "Gate Fast",
+          "steps": 2
+        },
+        {
+          "index": 20,
+          "name": "Gate Range",
+          "steps": 2147483647
+        },
+        {
+          "index": 24,
+          "name": "Gate In",
+          "steps": 2
+        },
+        {
+          "index": 32,
+          "name": "Gate Expander",
+          "steps": 2
+        },
+        {
+          "index": 34,
+          "name": "Gate Threshold",
+          "steps": 2147483647
+        },
+        {
+          "index": 35,
+          "name": "Gate External Side Chain",
+          "steps": 2
+        },
+        {
+          "index": 39,
+          "name": "Gate Inverted",
+          "steps": 2
+        }
+      ],
+      "engage": "Gate In",
+      "engage_index": 24,
+      "engage_norm": 1.0,
+      "engage_text": "On",
+      "strip_writes": [
+        {
+          "index": 24,
+          "control": "Gate In",
+          "set": "On",
+          "norm": 1.0,
+          "role": "engage"
+        },
+        {
+          "index": 21,
+          "control": "Comp In",
+          "set": "",
+          "norm": 0.0,
+          "role": "other_off"
+        }
+      ],
+      "other_sections_at_instantiate": "eq (no engage control); saturation (no engage control)",
+      "mode": "--cert-dynamics",
+      "child": "exit 0",
+      "exit_code": 0,
+      "seconds": 9.0,
+      "records": "gate.AudioUnit_6f3f2163_1.0.6.dynamics.json",
+      "log": "AudioUnit_6f3f2163_1.0.6.gate.log.txt",
+      "outcome": "ok"
+    },
+    {
+      "section": "saturation",
+      "controls": [
+        {
+          "index": 1,
+          "name": "THD",
+          "steps": 2147483647
+        }
+      ],
+      "note": "no engage switch named in the section: measured as instantiated",
+      "mode": "--cert-saturation",
+      "child": "exit 0",
+      "exit_code": 0,
+      "seconds": 4.0,
+      "records": "saturation.AudioUnit_6f3f2163_1.0.6.saturation.json",
+      "log": "AudioUnit_6f3f2163_1.0.6.saturation.log.txt",
+      "outcome": "ok"
+    },
+    {
+      "section": "global",
+      "controls": [
+        {
+          "index": 0,
+          "name": "Pad",
+          "steps": 2
+        },
+        {
+          "index": 2,
+          "name": "Gain",
+          "steps": 2147483647
+        },
+        {
+          "index": 3,
+          "name": "Mute",
+          "steps": 2
+        },
+        {
+          "index": 4,
+          "name": "Output Level",
+          "steps": 2147483647
+        },
+        {
+          "index": 5,
+          "name": "Level",
+          "steps": 2147483647
+        },
+        {
+          "index": 6,
+          "name": "Phase",
+          "steps": 2
+        },
+        {
+          "index": 7,
+          "name": "Unity",
+          "steps": 2
+        },
+        {
+          "index": 22,
+          "name": "Equalizer",
+          "steps": 2
+        },
+        {
+          "index": 27,
+          "name": "TMT Link",
+          "steps": 2
+        },
+        {
+          "index": 31,
+          "name": "84 Mode",
+          "steps": 2
+        },
+        {
+          "index": 40,
+          "name": "Input Level",
+          "steps": 2147483647
+        },
+        {
+          "index": 42,
+          "name": "TMT Channel",
+          "steps": 2147483647
+        }
+      ],
+      "mode": "none (global controls)",
+      "outcome": "not run (no mode)"
+    }
+  ],
+  "measuredAt": "20261007T135626"
+}
