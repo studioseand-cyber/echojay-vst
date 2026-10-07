@@ -5091,173 +5091,207 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
             }
         }
     auto named = [] (const Ctl& c) { return c.index < 0 ? juce::String ("-") : "[" + juce::String (c.index) + "] " + c.name; };
-    say ("DYN: " + opt.product + " " + desc.version + " (" + kind + "): " + (kind == "transient" ? "attack " + named (attack) + "; sustain " + named (sustain) : "threshold " + named (threshold) + "; range " + named (range) + "; attack " + named (gAttack) + "; hold " + named (gHold) + "; release " + named (gRelease)));
+    say ("DYN: " + opt.product + " " + desc.version + " (" + kind + "), names propose: " + (kind == "transient" ? "attack " + named (attack) + "; sustain " + named (sustain) : "threshold " + named (threshold) + "; range " + named (range) + "; attack " + named (gAttack) + "; hold " + named (gHold) + "; release " + named (gRelease)));
     auto* o = new juce::DynamicObject();
-    o->setProperty ("schema", "ej_dynamics_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.8, not exported, not published");
+    o->setProperty ("schema", "ej_dynamics_prototype/1"); o->setProperty ("status", "PROTOTYPE - roadmap 2.8 against TRANSIENT_GATE_PROFILE_SPEC v0.1, not exported, not published"); o->setProperty ("tg_fields", "7 Oct: 500 ms hits + held tone, roles by measurement, timing at a ramp-taken threshold, both definitions, verdicts, acceptance");
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version); o->setProperty ("kind", kind);
     auto setOf = [] (int idx, double norm) { return juce::String (idx) + ":" + juce::String (norm, 6); };
-    auto fiveNorms = [] { return std::vector<double> { 0.0, 0.25, 0.5, 0.75, 1.0 }; };
-    int measured = 0;
-    std::vector<roleevidence::RoleVerdict> roles; std::vector<int> nominated;
+    auto sevenNorms = [&] (int idx) { std::vector<double> v; const auto ctl = sweep::findControl (base, idx); const int st = (int) ctl.getProperty ("numSteps", 0); if (sweep::isSteppedControl (ctl) && st > 2 && st <= 24) for (int k = 0; k < st; ++k) v.push_back ((double) k / (st - 1)); else for (int k = 0; k <= 6; ++k) v.push_back (k / 6.0); return v; };
+    int measured = 0; std::vector<roleevidence::RoleVerdict> roles; juce::Array<juce::var> acc;
+    std::vector<std::pair<int, juce::String>> numeric;
+    if (const auto* cs = base.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs) { const int idx = (int) c.getProperty ("index", -1); const auto n = c.getProperty ("name", "").toString(); if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (n)) continue; if (! fx.sampled.empty() && ! fx.sampled.count (idx) && idx != attack.index && idx != sustain.index && idx != threshold.index && idx != range.index) continue; if ((int) numeric.size() < kUnnamedCap) numeric.push_back ({ idx, n }); }
+    auto nameOf = [&] (int idx) { for (const auto& [i, n] : numeric) if (i == idx) return n; return juce::String(); };
     if (kind == "transient")
     {
-        if (attack.index < 0 && sustain.index < 0) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  no attack / sustain control by name; controls: " + names.joinIntoString (", ")); return 4; }
-        // THE HIT LENGTH (5 Oct evening, item 2): the attack control is read on the short hit (150 ms decay); the sustain control on a
-        // LONG hit (500 ms decay, 1500 ms period) so the 80-250 ms sustain window sits in a body that is still there - MTransient's
-        // +-24 dB sustain lane read +-2.9 on the short hit. Each hit shape has its own neutral run.
-        const juce::StringArray hitArgs { "--hits", "db=-6", "hz=997", "decay_ms=150", "period_ms=600", "hits=4", "win_ms=1" };
-        const juce::StringArray longHitArgs { "--hits", "db=-6", "hz=997", "decay_ms=500", "period_ms=1500", "hits=4", "win_ms=1" };
-        const auto n0 = run ("neutral", hitArgs);
-        if (n0.kind == ChildResult::Kind::uiShown) { say ("DYN: a window appeared; stopping"); return 5; }
-        const auto neutral = hitFigures (parseHits (n0.cleanExit() ? n0.out : juce::String()));
-        if (! neutral.ok) { say ("  neutral run: " + neutral.why + " (" + n0.describe() + ")"); return 4; }
-        ++measured;
-        say ("  neutral (as instantiated, short hit): transient " + juce::String (neutral.transientDb, 2) + " dB, sustain " + juce::String (neutral.sustainDb, 2) + " dB against the input, over " + juce::String (neutral.hitsUsed) + " hits");
-        auto* nv = new juce::DynamicObject(); nv->setProperty ("transient_db", std::round (neutral.transientDb * 100.0) / 100.0); nv->setProperty ("sustain_db", std::round (neutral.sustainDb * 100.0) / 100.0); o->setProperty ("neutral", juce::var (nv));
-        HitFigures neutralLong;
-        if (sustain.index >= 0)
+        // THE SIGNAL (section 4): 500 ms hits (decay time constant), four, 1.2 s apart, then four periods of a held tone at -18 dBFS with a 10 ms
+        // transient on top, in ONE process per position: the transient from the hits, the sustain from the held tone (the hits' sustain beside it)
+        const juce::StringArray hitArgs { "--hits", "db=-6", "hz=997", "decay_ms=500", "period_ms=1200", "hits=4", "win_ms=1", "held_db=-18", "held_hits=4", "held_hit_ms=10" };
+        struct Fig { bool ok = false; double tr = 0.0, su = 0.0, suHits = 0.0; };
+        auto figAt = [&] (const juce::String& tag, const juce::StringArray& sets, bool& window) -> Fig
         {
-            const auto n1 = run ("neutral.long", longHitArgs);
-            if (n1.kind == ChildResult::Kind::uiShown) { say ("DYN: a window appeared; stopping"); return 5; }
-            neutralLong = hitFigures (parseHits (n1.cleanExit() ? n1.out : juce::String()));
-            if (neutralLong.ok) say ("  neutral (long hit, 500 ms decay): transient " + juce::String (neutralLong.transientDb, 2) + " dB, sustain " + juce::String (neutralLong.sustainDb, 2) + " dB");
-            auto* nl = new juce::DynamicObject(); nl->setProperty ("transient_db", std::round (neutralLong.transientDb * 100.0) / 100.0); nl->setProperty ("sustain_db", std::round (neutralLong.sustainDb * 100.0) / 100.0); nl->setProperty ("hit", "500 ms decay, 1500 ms period"); o->setProperty ("neutral_long_hit", juce::var (nl));
+            juce::StringArray a2 = hitArgs; if (! sets.isEmpty()) a2.add ("set=" + sets.joinIntoString (","));
+            const auto r = run (tag, a2); if (r.kind == ChildResult::Kind::uiShown) { window = true; return {}; }
+            const auto h = parseHits (r.cleanExit() ? r.out : juce::String()); const auto f = hitFigures (h); const auto hs = heldSustainDb (h);
+            Fig x; x.ok = f.ok && hs.has_value(); if (x.ok) { x.tr = f.transientDb; x.su = *hs; x.suHits = f.sustainDb; } return x;
+        };
+        bool window = false;
+        const auto neutral = figAt ("neutral", {}, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+        if (! neutral.ok) { say ("DYN: the neutral run read nothing"); return 4; }
+        say ("  neutral: transient " + juce::String (neutral.tr, 2) + " dB, sustain (held) " + juce::String (neutral.su, 2) + " dB, sustain (hits) " + juce::String (neutral.suHits, 2) + " dB");
+        // ROLES BY MEASUREMENT (section 3): every numeric control at its two ends
+        std::map<int, double> attackScore, sustainScore;
+        for (const auto& [idx, n] : numeric)
+        {
+            const auto fa = figAt ("r" + juce::String (idx) + ".n0", { setOf (idx, 0.0) }, window), fb = figAt ("r" + juce::String (idx) + ".n1", { setOf (idx, 1.0) }, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+            if (! fa.ok || ! fb.ok) continue;
+            const double dT = fb.tr - fa.tr, dS = fb.su - fa.su; const auto role = transientRole (dT, dS);
+            if (role == "attack") attackScore[idx] = std::abs (dT); if (role == "sustain") sustainScore[idx] = std::abs (dS);
+            say ("  [" + juce::String (idx) + "] " + n + ": transient moves " + juce::String (dT, 2) + " dB, sustain " + juce::String (dS, 2) + " dB" + (role.isNotEmpty() ? " -> " + role : juce::String()));
         }
-        // the sustain control is read on BOTH hits (the long hit read sustain SMALLER on Smack Attack and MTransient, not larger: the
-        // sustain window against the unit's own envelope is the open question, said in the proposal); the attack control on the short one
-        std::vector<std::pair<Ctl, bool>> passes; if (attack.index >= 0) passes.push_back ({ attack, false }); if (sustain.index >= 0) { passes.push_back ({ sustain, false }); if (neutralLong.ok) passes.push_back ({ sustain, true }); }
-        for (const auto& [ctl, longHit] : passes)
+        const int aIdx = pickByScore (attack.index, attackScore); std::map<int, double> sus2 = sustainScore; sus2.erase (aIdx); const int sIdx = pickByScore (sustain.index, sus2);
+        for (const auto& [role, idx, nameIdx] : std::vector<std::tuple<juce::String, int, int>> { { "attack", aIdx, attack.index }, { "sustain", sIdx, sustain.index } })
         {
-            const auto& hitArgsFor = longHit ? longHitArgs : hitArgs; const auto& neutralFor = longHit ? neutralLong : neutral;
-            juce::Array<juce::var> rows; int withinLabel = 0, labelled = 0; roleevidence::Figure endA, endB; nominated.push_back (ctl.index);
-            for (double norm : fiveNorms())
+            if (idx < 0) { say ("  " + role + ": none - no control moves the " + (role == "attack" ? juce::String ("transient") : juce::String ("sustain")) + " by more than 1 dB" + (nameIdx >= 0 ? " (the name's nominee [" + juce::String (nameIdx) + "] " + nameOf (nameIdx) + " does not: no_effect)" : juce::String())); auto* m = new juce::DynamicObject(); m->setProperty ("control", nameIdx >= 0 ? juce::var (nameOf (nameIdx)) : juce::var()); m->setProperty ("verdict", "no_effect"); m->setProperty ("why", "moves nothing by more than 1 dB"); o->setProperty (role + "_map", nameIdx >= 0 ? juce::var (m) : juce::var()); continue; }
+            const juce::String foundBy = idx == nameIdx ? "name" : "measurement";
+            juce::Array<juce::var> rows; std::vector<std::pair<double, double>> map;
+            for (double norm : sevenNorms (idx))
             {
-                juce::StringArray a = hitArgsFor; a.add ("set=" + setOf (ctl.index, norm));
-                const auto r = run ("c" + juce::String (ctl.index) + (longHit ? ".long" : "") + ".n" + juce::String (norm, 2), a);
-                if (r.kind == ChildResult::Kind::uiShown) { say ("DYN: a window appeared; stopping"); return 5; }
-                const auto h = parseHits (r.cleanExit() ? r.out : juce::String()); const auto f = hitFigures (h);
-                const auto text = h.setTexts.count (ctl.index) ? h.setTexts.at (ctl.index) : juce::String();
-                const auto pt = transientPoint ((float) norm, text, f, neutralFor);
-                if (! pt.ok) { say ("  " + ctl.name + " = '" + text + "': " + f.why); continue; }
-                ++measured;
-                const bool isAttack = ctl.index == attack.index; const double effect = isAttack ? pt.dTransientDb : pt.dSustainDb;
-                { roleevidence::Figure f; f.ok = true; f.transientDb = pt.transientDb; f.sustainDb = pt.sustainDb; if (norm < 0.01) endA = f; if (norm > 0.99) endB = f; }
-                bool within = false; if (pt.labelDb) { ++labelled; within = std::abs (effect - *pt.labelDb) <= 1.0; if (within) ++withinLabel; }
-                say ("  " + ctl.name + (longHit ? " [long hit]" : "") + " = '" + text + "' (norm " + juce::String (norm, 2) + "): transient " + juce::String (pt.dTransientDb, 2) + " dB, sustain " + juce::String (pt.dSustainDb, 2) + " dB against neutral" + (pt.labelDb ? " | label " + juce::String (*pt.labelDb, 1) + " dB -> " + (within ? "within 1 dB" : "OFF by " + juce::String (effect - *pt.labelDb, 2)) : juce::String()));
-                auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", text); ro->setProperty ("transient_db", std::round (pt.transientDb * 100.0) / 100.0); ro->setProperty ("sustain_db", std::round (pt.sustainDb * 100.0) / 100.0); ro->setProperty ("d_transient_db", std::round (pt.dTransientDb * 100.0) / 100.0); ro->setProperty ("d_sustain_db", std::round (pt.dSustainDb * 100.0) / 100.0); ro->setProperty ("label_db", pt.labelDb ? juce::var (*pt.labelDb) : juce::var()); rows.add (juce::var (ro));
+                const auto f = figAt (role.substring (0, 1) + juce::String (norm, 3), { setOf (idx, norm) }, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+                if (! f.ok) continue; ++measured;
+                const double dT = f.tr - neutral.tr, dS = f.su - neutral.su; map.push_back ({ norm, role == "attack" ? dT : dS });
+                auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", displayNear (base, idx, norm)); ro->setProperty ("transient_db", std::round (dT * 100.0) / 100.0); ro->setProperty ("sustain_db", std::round (dS * 100.0) / 100.0); ro->setProperty ("sustain_hits_db", std::round ((f.suHits - neutral.suHits) * 100.0) / 100.0); rows.add (juce::var (ro));
             }
-            auto* m = new juce::DynamicObject(); m->setProperty ("index", ctl.index); m->setProperty ("control", ctl.name); m->setProperty ("positions", rows); m->setProperty ("labelled", labelled); m->setProperty ("within_1db", withinLabel); m->setProperty ("hit", longHit ? "500 ms decay, 1500 ms period (the long hit)" : "150 ms decay, 600 ms period"); o->setProperty (ctl.index == attack.index ? "attack" : longHit ? "sustain_long_hit" : "sustain", juce::var (m));
-            if (! longHit) roles.push_back (roleevidence::nominee (ctl.index, ctl.name, ctl.index == attack.index ? "transient" : "sustain", roleevidence::signatureHolds (ctl.index == attack.index ? "transient" : "sustain", endA, endB)));
-        }
-        // the unnamed pool: one --hits pair per control, read for both signatures
-        for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
-        {
-            roleevidence::Figure ua, ub;
-            for (double n : { 0.0, 1.0 })
+            auto* m = new juce::DynamicObject(); m->setProperty ("control", nameOf (idx)); m->setProperty ("found_by", foundBy); m->setProperty ("positions", rows); m->setProperty ("verdict", rows.isEmpty() ? "unreadable" : "measured"); o->setProperty (role + "_map", juce::var (m));
+            say ("  " + role + ": [" + juce::String (idx) + "] " + nameOf (idx) + " (" + foundBy + "), " + juce::String (rows.size()) + " position(s)");
+            // THE ACCEPTANCE (section 8): +3 and -3 dB of this role's figure from neutral, the norm inverted, re-measured within 1 dB
+            for (double target : { kStepDb, -kStepDb })
             {
-                juce::StringArray a = hitArgs; a.add ("set=" + setOf (pc.index, n));
-                const auto r = run ("u" + juce::String (pc.index) + ".n" + juce::String (n, 0), a);
-                if (r.kind == ChildResult::Kind::uiShown) { say ("DYN: a window appeared; stopping"); return 5; }
-                const auto f = hitFigures (parseHits (r.cleanExit() ? r.out : juce::String())); if (! f.ok) continue;
-                auto& g = n < 0.5 ? ua : ub; g.ok = true; g.transientDb = f.transientDb; g.sustainDb = f.sustainDb;
+                auto* x = new juce::DynamicObject(); x->setProperty ("step", role + " " + juce::String (target > 0 ? "+" : "") + juce::String (target, 0) + " dB");
+                const auto norm = invertLinear (map, target);
+                if (! norm) { x->setProperty ("ran", false); x->setProperty ("pass", false); x->setProperty ("why", "outside the measured range: at the end the server says so"); acc.add (juce::var (x)); continue; }
+                const auto f = figAt ("acc." + role + juce::String (target, 0), { setOf (idx, *norm) }, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+                const double got = role == "attack" ? f.tr - neutral.tr : f.su - neutral.su;
+                x->setProperty ("norm", *norm); x->setProperty ("ran", f.ok); if (f.ok) x->setProperty ("measured_db", std::round (got * 100.0) / 100.0); x->setProperty ("pass", f.ok && std::abs (got - target) <= kAcceptTransientDb); x->setProperty ("why", f.ok ? juce::String (got - target, 2) + " dB off" : juce::String ("no reading")); acc.add (juce::var (x));
+                say ("  acceptance " + role + " " + juce::String (target, 0) + " dB: " + (f.ok ? juce::String (got, 2) + " dB -> " + (std::abs (got - target) <= kAcceptTransientDb ? "PASS" : "FAIL") : juce::String ("no reading")));
             }
-            for (const char* role : { "transient", "sustain" }) roles.push_back (roleevidence::unnamed (pc.index, pc.name, role, roleevidence::signatureHolds (role, ua, ub)));
         }
+        o->setProperty ("method", "probe --hits: a 997 Hz drum-like hit (one-sample rise to -6 dBFS peak, 500 ms exponential decay), four 1.2 s apart, then four periods of a held tone at -18 dBFS with a 10 ms transient on top, one process per position; transient = output peak over input peak in the first 10 ms, sustain = output RMS over input RMS 150-400 ms into each held period (and each hit, recorded beside it), medians over periods 2-4, relative to the neutral run; roles by measurement (attack > 1 dB of transient; sustain > 1 dB of sustain and more than the transient); acceptance +3 / -3 dB within 1 dB");
     }
     else
     {
-        if (threshold.index < 0) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  no threshold control by name; controls: " + names.joinIntoString (", ")); return 4; }
         const juce::StringArray rampArgs { "--ramp", "from=-70", "to=-6", "up_s=3", "down_s=3", "hz=997", "win_ms=5" };
-        juce::Array<juce::var> rows; std::optional<double> midOpenRms; roleevidence::Figure thrA, thrB; nominated.push_back (threshold.index);
-        for (double norm : fiveNorms())
+        struct RampFig { bool ok = false; GateLevels g; std::optional<double> width; };
+        auto rampAt = [&] (const juce::String& tag, const juce::StringArray& sets, bool& window) -> RampFig
         {
-            juce::StringArray a = rampArgs; a.add ("set=" + setOf (threshold.index, norm));
-            const auto r = run ("thr.n" + juce::String (norm, 2), a);
-            if (r.kind == ChildResult::Kind::uiShown) { say ("DYN: a window appeared; stopping"); return 5; }
-            const auto rp = parseRamp (r.cleanExit() ? r.out : juce::String()); const auto g = gateLevels (rp);
-            const auto text = rp.setTexts.count (threshold.index) ? rp.setTexts.at (threshold.index) : juce::String(); const auto lab = labelNumber (text);
-            if (! g.ok) { say ("  " + threshold.name + " = '" + text + "': " + g.why); continue; }
-            ++measured;
-            const std::optional<double> openPeak = g.openAtInDb ? std::optional<double> (*g.openAtInDb + 3.01) : std::nullopt;
-            if (std::abs (norm - 0.5) < 1e-6 && g.openAtInDb) midOpenRms = *g.openAtInDb;
-            { roleevidence::Figure f; f.ok = true; f.openLevelDb = g.openAtInDb; if (g.gating) f.rangeDb = -g.rangeDb; if (norm < 0.01) thrA = f; if (norm > 0.99) thrB = f; }
-            say ("  " + threshold.name + " = '" + text + "' (norm " + juce::String (norm, 2) + "): " + g.why + (g.gating && openPeak ? " (" + juce::String (*openPeak, 1) + " dBFS peak)" : juce::String()) + (g.hysteresisDb ? ", hysteresis " + juce::String (*g.hysteresisDb, 1) + " dB" : juce::String()) + (lab && openPeak && text.containsIgnoreCase ("db") ? " | label " + juce::String (*lab, 1) + " -> " + juce::String (*openPeak - *lab, 1) + " dB above it (peak)" : juce::String()));
-            auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", text); ro->setProperty ("label", lab ? juce::var (*lab) : juce::var()); ro->setProperty ("gating", g.gating); ro->setProperty ("range_db", std::round (g.rangeDb * 100.0) / 100.0);
-            ro->setProperty ("open_at_rms_dbfs", g.openAtInDb ? juce::var (std::round (*g.openAtInDb * 100.0) / 100.0) : juce::var()); ro->setProperty ("open_at_peak_dbfs", openPeak ? juce::var (std::round (*openPeak * 100.0) / 100.0) : juce::var()); ro->setProperty ("close_at_rms_dbfs", g.closeAtInDb ? juce::var (std::round (*g.closeAtInDb * 100.0) / 100.0) : juce::var()); ro->setProperty ("hysteresis_db", g.hysteresisDb ? juce::var (std::round (*g.hysteresisDb * 100.0) / 100.0) : juce::var()); rows.add (juce::var (ro));
+            juce::StringArray a2 = rampArgs; if (! sets.isEmpty()) a2.add ("set=" + sets.joinIntoString (","));
+            const auto r = run (tag, a2); if (r.kind == ChildResult::Kind::uiShown) { window = true; return {}; }
+            const auto rp = parseRamp (r.cleanExit() ? r.out : juce::String()); RampFig x; x.g = gateLevels (rp); x.ok = x.g.ok; x.width = transitionWidthDb (rp, x.g); return x;
+        };
+        auto peakOf = [] (std::optional<double> rmsDb) { return rmsDb ? std::optional<double> (*rmsDb + kSinePeakOverRmsDb) : std::nullopt; };
+        bool window = false;
+        // ROLES BY MEASUREMENT (section 3), two stages: the THRESHOLD - every numeric control at norms 0.3 / 0.7 on the ramp (an end can sit at
+        // -inf where nothing ever closes: G8); then the RANGE - every other control at its ends with the found threshold mid-way
+        std::map<int, double> thrScore, rangeScore;
+        for (const auto& [idx, n] : numeric)
+        {
+            const auto fa = rampAt ("r" + juce::String (idx) + ".n03", { setOf (idx, 0.3) }, window), fb = rampAt ("r" + juce::String (idx) + ".n07", { setOf (idx, 0.7) }, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+            if (! fa.ok || ! fb.ok) continue;
+            if (gateThresholdRole (fa.g.openAtInDb, fb.g.openAtInDb, fa.g.gating, fb.g.gating, fa.g.openGainDb, fb.g.openGainDb)) { thrScore[idx] = std::abs (*fb.g.openAtInDb - *fa.g.openAtInDb); say ("  [" + juce::String (idx) + "] " + n + ": opens at " + juce::String (*fa.g.openAtInDb, 1) + " / " + juce::String (*fb.g.openAtInDb, 1) + " dBFS RMS at 0.3 / 0.7 -> threshold"); }
         }
-        { auto* m = new juce::DynamicObject(); m->setProperty ("index", threshold.index); m->setProperty ("control", threshold.name); m->setProperty ("positions", rows); o->setProperty ("threshold", juce::var (m)); }
-        // the gate's open level at the threshold's ends is often "never opened" / "not gating" at an end (-inf, 0 dB): the signature then
-        // reads the two positions nearest the ends that opened
-        { std::vector<std::pair<double, double>> opened; for (const auto& r : rows) { const auto v = r.getProperty ("open_at_rms_dbfs", {}); if (! v.isVoid()) opened.push_back ({ (double) r.getProperty ("norm", 0.0), (double) v }); }
-          if (opened.size() >= 2) { thrA.ok = thrB.ok = true; thrA.openLevelDb = opened.front().second; thrB.openLevelDb = opened.back().second; } }
-        roles.push_back (roleevidence::nominee (threshold.index, threshold.name, "gate_threshold", roleevidence::signatureHolds ("gate_threshold", thrA, thrB)));
-        if (range.index >= 0)
+        const int tIdx = pickByScore (threshold.index, thrScore);
+        for (const auto& [idx, n] : numeric)
         {
-            juce::Array<juce::var> rr; roleevidence::Figure rA, rB; nominated.push_back (range.index);
-            for (double norm : { 0.0, 0.5, 1.0 })
+            if (idx == tIdx) continue;
+            juce::StringArray base0; if (tIdx >= 0) base0.add (setOf (tIdx, 0.5));
+            juce::StringArray sa = base0, sb = base0; sa.add (setOf (idx, 0.0)); sb.add (setOf (idx, 1.0));
+            const auto fa = rampAt ("q" + juce::String (idx) + ".n0", sa, window), fb = rampAt ("q" + juce::String (idx) + ".n1", sb, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+            if (! fa.ok || ! fb.ok) continue;
+            if (gateRangeRole (fa.g.closedGainDb, fb.g.closedGainDb, fa.g.openGainDb, fb.g.openGainDb, fa.g.gating, fb.g.gating)) { rangeScore[idx] = std::abs (fb.g.closedGainDb - fa.g.closedGainDb); say ("  [" + juce::String (idx) + "] " + n + ": closed gain " + juce::String (fa.g.closedGainDb, 1) + " / " + juce::String (fb.g.closedGainDb, 1) + " dB at its ends, open gain held -> range"); }
+        }
+        const int rIdx = pickByScore (range.index, rangeScore);
+        if (tIdx < 0 && threshold.index >= 0) say ("  threshold: the name's nominee [" + juce::String (threshold.index) + "] " + nameOf (threshold.index) + " does not move the opening level, and no other control does");
+        // THRESHOLD MAP: 7 norms on the ramp - open / close in dBFS peak, hysteresis the median
+        std::vector<std::pair<double, double>> openMap; std::vector<double> hyst; bool anyGating = false; std::optional<double> width; double openLo = 1e9, openHi = -1e9;
+        if (tIdx >= 0)
+        {
+            juce::Array<juce::var> rows;
+            for (double norm : sevenNorms (tIdx))
             {
-                juce::StringArray a = rampArgs; a.add ("set=" + setOf (threshold.index, 0.5) + "," + setOf (range.index, norm));
-                const auto r = run ("range.n" + juce::String (norm, 2), a);
-                if (r.kind == ChildResult::Kind::uiShown) { say ("DYN: a window appeared; stopping"); return 5; }
-                const auto rp = parseRamp (r.cleanExit() ? r.out : juce::String()); const auto g = gateLevels (rp);
-                const auto text = rp.setTexts.count (range.index) ? rp.setTexts.at (range.index) : juce::String(); const auto lab = labelNumber (text);
-                if (! g.ok) { say ("  " + range.name + " = '" + text + "': " + g.why); continue; }
-                ++measured;
-                say ("  " + range.name + " = '" + text + "' (threshold at norm 0.5): closed " + juce::String (-g.rangeDb, 1) + " dB" + (lab && text.containsIgnoreCase ("db") ? " vs label " + juce::String (*lab, 1) + " -> " + juce::String (-g.rangeDb - *lab, 1) + " dB off" : juce::String()));
-                auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", text); ro->setProperty ("label", lab ? juce::var (*lab) : juce::var()); ro->setProperty ("closed_db", std::round (-g.rangeDb * 100.0) / 100.0); rr.add (juce::var (ro));
-                { roleevidence::Figure f; f.ok = true; f.rangeDb = -g.rangeDb; f.openGainDb = g.openGainDb; if (norm < 0.01) rA = f; if (norm > 0.99) rB = f; }
+                const auto f = rampAt ("t" + juce::String (norm, 3), { setOf (tIdx, norm) }, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+                if (! f.ok) continue; ++measured; if (f.g.gating) anyGating = true; if (f.width && (! width || *f.width > *width)) width = f.width;
+                const auto op = peakOf (f.g.openAtInDb), cl = peakOf (f.g.closeAtInDb);
+                if (op) { openMap.push_back ({ norm, *op }); openLo = std::min (openLo, *op); openHi = std::max (openHi, *op); } if (f.g.hysteresisDb) hyst.push_back (*f.g.hysteresisDb);
+                auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", displayNear (base, tIdx, norm)); ro->setProperty ("open_level_dbfs_peak", op ? juce::var (std::round (*op * 100.0) / 100.0) : juce::var()); ro->setProperty ("close_level_dbfs_peak", cl ? juce::var (std::round (*cl * 100.0) / 100.0) : juce::var()); ro->setProperty ("range_db", std::round (f.g.rangeDb * 100.0) / 100.0); rows.add (juce::var (ro));
+                say ("  threshold '" + displayNear (base, tIdx, norm) + "': " + f.g.why);
             }
-            auto* m = new juce::DynamicObject(); m->setProperty ("index", range.index); m->setProperty ("control", range.name); m->setProperty ("positions", rr); o->setProperty ("range", juce::var (m));
-            roles.push_back (roleevidence::nominee (range.index, range.name, "range", roleevidence::signatureHolds ("range", rA, rB)));
+            auto* m = new juce::DynamicObject(); m->setProperty ("control", nameOf (tIdx)); m->setProperty ("found_by", tIdx == threshold.index ? "name" : "measurement"); m->setProperty ("positions", rows); o->setProperty ("threshold_map", juce::var (m));
         }
-        // timing on the burst: the threshold at norm 0.5; quiet 12 dB under its open level, loud 12 dB over (peak), or -50 / -10 when it never opened
-        const double openRms = midOpenRms ? *midOpenRms : -33.0;
-        const juce::String quiet = juce::String (juce::jmax (-80.0, openRms + 3.01 - 12.0), 1), loud = juce::String (juce::jmin (-1.0, openRms + 3.01 + 12.0), 1);
-        for (const auto& ctl : { gAttack, gHold, gRelease })
+        o->setProperty ("hysteresis_db", hyst.empty() ? juce::var() : juce::var (std::round (timing::medianOf (hyst) * 100.0) / 100.0));
+        // RANGE MAP: 7 norms, the threshold mid-way
+        std::vector<std::pair<double, double>> rangeMap; const double tMid = tIdx >= 0 ? 0.5 : -1.0;
+        if (rIdx >= 0)
         {
-            if (ctl.index < 0) continue;
-            juce::Array<juce::var> rr; roleevidence::Figure tA, tB; nominated.push_back (ctl.index);
-            for (double norm : { 0.0, 0.5, 1.0 })
+            juce::Array<juce::var> rows;
+            for (double norm : sevenNorms (rIdx))
             {
-                juce::StringArray a { "--burst", "quiet=" + quiet, "loud=" + loud, "pre=1.0", "hold=1.0", "post=3.0", "hz=997", "win_ms=1", "set=" + setOf (threshold.index, 0.5) + "," + setOf (ctl.index, norm) };
-                const auto r = run ("c" + juce::String (ctl.index) + ".n" + juce::String (norm, 2), a);
-                if (r.kind == ChildResult::Kind::uiShown) { say ("DYN: a window appeared; stopping"); return 5; }
-                const auto b = timing::parseBurst (r.cleanExit() ? r.out : juce::String()); const auto t = gateTiming (b);
-                juce::String text; for (const auto& line : juce::StringArray::fromLines (r.out)) { const auto f = juce::StringArray::fromTokens (line, "\t", ""); if (f.size() > 2 && f[0] == "set" && f[1].getIntValue() == ctl.index) for (int i = 2; i + 1 < f.size(); ++i) if (f[i] == "text") text = f[i + 1]; }
-                const auto lab = labelMs (text);
-                if (! t.ok) { say ("  " + ctl.name + " = '" + text + "': " + t.why); continue; }
-                ++measured;
-                const std::optional<double> meas = ctl.index == gAttack.index ? t.attackMs : ctl.index == gHold.index ? t.holdMs : t.releaseMs;
-                { roleevidence::Figure f; f.ok = true; f.attackMs = t.attackMs; f.holdMs = t.holdMs; f.releaseMs = t.releaseMs; if (norm < 0.01) tA = f; if (norm > 0.99) tB = f; }
-                say ("  " + ctl.name + " = '" + text + "' (norm " + juce::String (norm, 2) + "): " + t.why + (lab && meas ? " | this control's figure " + juce::String (*meas, 1) + " ms vs label " + juce::String (*lab, 1) + " ms (ratio " + juce::String (*meas / juce::jmax (1e-6, *lab), 2) + ")" : juce::String()));
-                auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", text); ro->setProperty ("label_ms", lab ? juce::var (*lab) : juce::var()); ro->setProperty ("attack_ms", t.attackMs ? juce::var (std::round (*t.attackMs * 10.0) / 10.0) : juce::var()); ro->setProperty ("hold_ms", t.holdMs ? juce::var (std::round (*t.holdMs * 10.0) / 10.0) : juce::var()); ro->setProperty ("release_ms", t.releaseMs ? juce::var (std::round (*t.releaseMs * 10.0) / 10.0) : juce::var()); rr.add (juce::var (ro));
+                juce::StringArray sets; if (tIdx >= 0) sets.add (setOf (tIdx, tMid)); sets.add (setOf (rIdx, norm));
+                const auto f = rampAt ("g" + juce::String (norm, 3), sets, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+                if (! f.ok) continue; ++measured; if (f.g.gating) anyGating = true;
+                rangeMap.push_back ({ norm, -f.g.rangeDb });
+                auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", displayNear (base, rIdx, norm)); ro->setProperty ("range_db", std::round (-f.g.rangeDb * 100.0) / 100.0); rows.add (juce::var (ro));
             }
-            auto* m = new juce::DynamicObject(); m->setProperty ("index", ctl.index); m->setProperty ("control", ctl.name); m->setProperty ("positions", rr); o->setProperty (ctl.index == gAttack.index ? "attack" : ctl.index == gHold.index ? "hold" : "release", juce::var (m));
-            const juce::String role = ctl.index == gAttack.index ? "attack" : ctl.index == gHold.index ? "hold" : "release";
-            roles.push_back (roleevidence::nominee (ctl.index, ctl.name, role, roleevidence::signatureHolds (role, tA, tB)));
+            auto* m = new juce::DynamicObject(); m->setProperty ("control", nameOf (rIdx)); m->setProperty ("found_by", rIdx == range.index ? "name" : "measurement"); m->setProperty ("positions", rows); o->setProperty ("range_map", juce::var (m));
         }
-        // the unnamed pool: one --ramp pair per control with the threshold at norm 0.5, read for the open level and the closed level
-        for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
+        // label_not_threshold (section 6): the name's threshold nominee exists but nothing moves the opening level (SSL X-Gate in its default mode);
+        // a gate that gates anywhere in the role tests counts as gating
+        if (tIdx < 0) { const auto f = rampAt ("instantiate", {}, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; } if (f.ok && f.g.gating) { anyGating = true; width = f.width; } }
+        const auto verdict = (tIdx < 0 && threshold.index >= 0 && anyGating) ? juce::String ("label_not_threshold") : gateVerdict (anyGating, width, openHi - openLo, tIdx >= 0);
+        o->setProperty ("verdict", verdict); o->setProperty ("verdict_why", verdict == "expander" ? "the 10-90 % transition spans " + juce::String (*width, 1) + " dB of input (over 15)" : verdict == "label_not_threshold" ? (tIdx < 0 ? "the name's threshold [" + juce::String (threshold.index) + "] " + nameOf (threshold.index) + " does not move the opening level; no control does" : "the open level moves " + juce::String (openHi - openLo, 1) + " dB across the threshold's positions") : verdict == "no_effect" ? juce::String ("no position gated") : juce::String());
+        say ("  verdict: " + verdict);
+        // TIMING (section 4): the burst at a threshold TAKEN FROM THE RAMP - the threshold mid-way, quiet 12 dB under its measured open level, loud 12 over; both definitions
+        if (tIdx >= 0 && verdict == "measured")
         {
-            roleevidence::Figure ua, ub;
-            for (double n : { 0.0, 1.0 })
+            std::optional<double> openMid; for (const auto& [n2, op] : openMap) if (std::abs (n2 - 0.5) < 0.09) openMid = op;
+            if (! openMid && ! openMap.empty()) openMid = openMap[openMap.size() / 2].second;
+            if (openMid)
             {
-                juce::StringArray a = rampArgs; a.add ("set=" + setOf (threshold.index, 0.5) + "," + setOf (pc.index, n));
-                const auto r = run ("u" + juce::String (pc.index) + ".n" + juce::String (n, 0), a);
+                juce::StringArray sets { setOf (tIdx, 0.5) };
+                const auto r = run ("timing", { "--burst", "quiet=" + juce::String (*openMid - 12.0, 2), "loud=" + juce::String (juce::jmin (-1.0, *openMid + 12.0), 2), "pre=1.0", "hold=1.0", "post=3.0", "hz=997", "win_ms=1", "set=" + sets.joinIntoString (",") });
                 if (r.kind == ChildResult::Kind::uiShown) { say ("DYN: a window appeared; stopping"); return 5; }
-                const auto g = gateLevels (parseRamp (r.cleanExit() ? r.out : juce::String())); if (! g.ok) continue;
-                auto& f = n < 0.5 ? ua : ub; f.ok = true; f.openLevelDb = g.openAtInDb; f.rangeDb = -g.rangeDb; f.openGainDb = g.openGainDb;
+                const auto t = gateTimingBoth (timing::parseBurst (r.cleanExit() ? r.out : juce::String()));
+                if (t.oneDb.ok)
+                {
+                    auto* tm = new juce::DynamicObject(); tm->setProperty ("attack_ms_to_1db", t.oneDb.attackMs ? juce::var (std::round (*t.oneDb.attackMs * 10.0) / 10.0) : juce::var()); tm->setProperty ("hold_ms", t.oneDb.holdMs ? juce::var (std::round (*t.oneDb.holdMs * 10.0) / 10.0) : juce::var()); tm->setProperty ("release_ms_to_20db", t.oneDb.releaseMs ? juce::var (std::round (*t.oneDb.releaseMs * 10.0) / 10.0) : juce::var());
+                    tm->setProperty ("attack_ms_full", t.attackFullMs ? juce::var (std::round (*t.attackFullMs * 10.0) / 10.0) : juce::var()); tm->setProperty ("release_ms_full", t.releaseFullMs ? juce::var (std::round (*t.releaseFullMs * 10.0) / 10.0) : juce::var());
+                    tm->setProperty ("burst_dbfs_peak", juce::String (*openMid - 12.0, 1) + " -> " + juce::String (juce::jmin (-1.0, *openMid + 12.0), 1)); tm->setProperty ("definition", "to within 1 dB of open; release to 20 dB below open (or within 1 dB of closed); full = to within 0.1 dB of open / 1 dB of closed");
+                    o->setProperty ("timing", juce::var (tm)); ++measured; say ("  timing: " + t.oneDb.why);
+                }
+                else say ("  timing: " + t.oneDb.why);
             }
-            for (const char* role : { "gate_threshold", "range" }) roles.push_back (roleevidence::unnamed (pc.index, pc.name, role, roleevidence::signatureHolds (role, ua, ub)));
         }
+        // THE ACCEPTANCE (section 8): the threshold for open levels of -40 and -25 dBFS peak; a range of -20 dB
+        if (tIdx >= 0)
+            for (double target : kAcceptOpenLevelsDbfsPeak)
+            {
+                auto* x = new juce::DynamicObject(); x->setProperty ("step", "open at " + juce::String (target, 0) + " dBFS peak");
+                const auto norm = invertLinear (openMap, target);
+                if (! norm) { x->setProperty ("ran", false); x->setProperty ("pass", false); x->setProperty ("why", "outside the measured open levels " + juce::String (openLo, 1) + " .. " + juce::String (openHi, 1)); acc.add (juce::var (x)); continue; }
+                const auto f = rampAt ("acc.open" + juce::String ((int) -target), { setOf (tIdx, *norm) }, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+                const auto got = peakOf (f.g.openAtInDb);
+                x->setProperty ("norm", *norm); x->setProperty ("ran", got.has_value()); if (got) x->setProperty ("measured_open_dbfs_peak", std::round (*got * 100.0) / 100.0); x->setProperty ("pass", got && std::abs (*got - target) <= kAcceptGateDb); x->setProperty ("why", got ? juce::String (*got - target, 2) + " dB off" : f.g.why); acc.add (juce::var (x));
+                say ("  acceptance open at " + juce::String (target, 0) + ": " + (got ? juce::String (*got, 2) + " -> " + (std::abs (*got - target) <= kAcceptGateDb ? "PASS" : "FAIL") : f.g.why));
+            }
+        if (rIdx >= 0)
+        {
+            auto* x = new juce::DynamicObject(); x->setProperty ("step", "range " + juce::String (kAcceptRangeDb, 0) + " dB");
+            const auto norm = invertLinear (rangeMap, kAcceptRangeDb);
+            if (! norm) { x->setProperty ("ran", false); x->setProperty ("pass", false); x->setProperty ("why", "-20 dB is outside the measured range"); }
+            else
+            {
+                juce::StringArray sets; if (tIdx >= 0) sets.add (setOf (tIdx, tMid)); sets.add (setOf (rIdx, *norm));
+                const auto f = rampAt ("acc.range", sets, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+                const double got = -f.g.rangeDb;
+                x->setProperty ("norm", *norm); x->setProperty ("ran", f.ok); if (f.ok) x->setProperty ("measured_range_db", std::round (got * 100.0) / 100.0); x->setProperty ("pass", f.ok && std::abs (got - kAcceptRangeDb) <= kAcceptGateDb); x->setProperty ("why", f.ok ? juce::String (got - kAcceptRangeDb, 2) + " dB off" : f.g.why);
+                say ("  acceptance range -20: " + (f.ok ? juce::String (got, 2) + " -> " + (std::abs (got - kAcceptRangeDb) <= kAcceptGateDb ? "PASS" : "FAIL") : f.g.why));
+            }
+            acc.add (juce::var (x));
+        }
+        o->setProperty ("method", "probe --ramp: a 997 Hz sine rising -70 -> -6 dBFS over 3 s and back, per position; open / close where the gain crosses the middle of its range, in dBFS peak (RMS + 3.01); hysteresis the median over the threshold's positions; range = open gain minus closed; roles by measurement (threshold moves the open level > 3 dB, range the closed gain); expander when the 10-90 % transition spans over 15 dB of input; timing on probe --burst at the threshold mid-way, quiet 12 dB under its open level, loud 12 over, both definitions; acceptance: open at -40 / -25 dBFS peak and range -20 dB, each within 1 dB");
     }
-    sayRoles (say, roles, kind == "gate" ? "unnamed controls are probed for the threshold and range signatures (a burst pair per control is not run)" : juce::String());
-    setRoles (o, roles, kind == "gate" ? "unnamed controls probed for threshold and range only" : juce::String());
+    o->setProperty ("acceptance", acc);
+    { juce::Array<juce::var> neutral; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) { const auto doi = c.getProperty ("defaultOnInstantiate", {}); if (! doi.isObject()) continue; auto* n = new juce::DynamicObject(); n->setProperty ("control", c.getProperty ("name", "")); n->setProperty ("set", doi.getProperty ("display", "")); n->setProperty ("norm", doi.getProperty ("normalised", juce::var())); neutral.add (juce::var (n)); } o->setProperty ("neutral", neutral); }
     o->setProperty ("processes", processN); o->setProperty ("measuredAt", nowStamp());
-    o->setProperty ("method", kind == "transient" ? juce::String ("probe --hits: a 997 Hz drum-like burst (one-sample attack, 150 ms exponential decay, -6 dBFS peak) four times at 600 ms; transient = output peak over input peak in the first 10 ms, sustain = output RMS over input RMS at 80-250 ms, medians over hits 2-4; each position against the neutral (instantiate) run; a dB label compared within 1 dB")
-                                                 : juce::String ("probe --ramp: a 997 Hz sine rising -70 -> -6 dBFS over 3 s and back; closed / open gain = medians at the quiet / loud tenth, range = their difference (gating when >= 3 dB), open / close level = the input RMS where the gain crosses midway up / down, hysteresis = open - close; probe --burst for attack (90 % open after the step up), hold (to 1 dB of fall after the step down) and release (from there to 90 % closed), interpolated between 1 ms windows"));
-    outDir.getChildFile (stem + ".dynamics.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    const juce::var rec (o);
+    outDir.getChildFile (stem + ".dynamics.json").replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n");
     say ("DYN: -> " + outDir.getChildFile (stem + ".dynamics.json").getFullPathName() + " (" + juce::String (processN) + " processes)");
+    {
+        const auto plugin = drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, base.getProperty ("map_fp", juce::var()));
+        const auto D = kind == "transient" ? dynamics::transientProfile (rec, plugin, drafts::measuredBlock ("EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, "997 Hz hits, 500 ms decay, -6 dBFS; held tone at -18 dBFS with a 10 ms transient"), drafts::statusLine ("TRANSIENT_GATE_PROFILE_SPEC"), drafts::specTag ("TRANSIENT_GATE_PROFILE_SPEC"))
+                                           : dynamics::gateProfile (rec, plugin, drafts::measuredBlock ("EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, "997 Hz ramp -70 -> -6 dBFS and back; burst at a ramp-taken threshold"), drafts::statusLine ("TRANSIENT_GATE_PROFILE_SPEC"), drafts::specTag ("TRANSIENT_GATE_PROFILE_SPEC"));
+        const auto f = drafts::draftFile (opt.out, stem, kind == "transient" ? "transient_profile" : "gate_profile"); const auto problem = drafts::writeDraft (f, D);
+        say (problem.isEmpty() ? "DYN: draft " + D.getProperty ("schema", "").toString() + " -> " + f.getFullPathName() : "DYN: " + problem);
+    }
     return measured > 0 ? 0 : 4;
 }
 

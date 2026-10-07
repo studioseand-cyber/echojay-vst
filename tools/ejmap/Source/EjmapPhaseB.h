@@ -38,8 +38,8 @@ inline const std::vector<Category>& categories()
         { "saturation",  "--cert-saturation",    "",          { "saturation", "amp_sim" },     1200.0, "three levels per drive control + the pool + the output curve + three acceptance writes (+ an amp sim's cabinet response): ~3-7 min (Saphira's twelve drives: 7)" },
         { "reverb",      "--cert-reverb-delay",  "reverb",    { "reverb" },                    3600.0, "every control's end pair, 11 mix, 7 time, 7 pink + 7 sine decay tails to 35 dB down or 20 s, 8 acceptance writes: ~10-25 min" },
         { "delay",       "--cert-reverb-delay",  "delay",     { "delay" },                     3600.0, "every control's end pair, 11 mix, 7 time, 7 feedback, each note value at 120 bpm + 2 tempos, 8 acceptance writes: ~8-20 min" },
-        { "transient",   "--cert-dynamics",      "transient", { "transient_shaper" },          600.0,  "two neutral runs + 5-10 hit runs + the pool's hit pairs: ~2-4 min" },
-        { "gate",        "--cert-dynamics",      "gate",      { "gate" },                      900.0,  "5 ramps + 3 range ramps + 9 bursts + the pool's ramp pairs: ~4-6 min" },
+        { "transient",   "--cert-dynamics",      "transient", { "transient_shaper" },          1800.0, "every control's end pair + 7 per role on 9.6 s of hits and held tone + 4 acceptance writes: ~5-15 min" },
+        { "gate",        "--cert-dynamics",      "gate",      { "gate" },                      1800.0, "every control's ramp pair + 7 threshold and 7 range ramps + a burst + 3 acceptance ramps: ~5-15 min" },
         { "multiband",   "--cert-multiband",     "",          {},                              1500.0, "a pairing response per threshold, a ladder per band, 25-30 vocal responses: ~4-8 min measured" },
         // tuners (Kathy, 6 Oct item 5): the tuner certification run again for its data (Humanize with the vibrato held note); the record
         // lands beside the row (phaseb/tuners/tuner/), NEVER in the one store (cert/fixtures/), which --redo tuners leaves untouched

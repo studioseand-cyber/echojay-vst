@@ -30,7 +30,8 @@
 namespace ejprobe
 {
 
-struct HitsSpec { double dbfs = -6.0, hz = 997.0, decayMs = 150.0, periodMs = 600.0, winMs = 1.0; int hits = 4; std::vector<std::pair<int, float>> sets; bool reset = false; };
+struct HitsSpec { double dbfs = -6.0, hz = 997.0, decayMs = 150.0, periodMs = 600.0, winMs = 1.0; int hits = 4; std::vector<std::pair<int, float>> sets; bool reset = false;
+                  double heldDb = 0.0, heldHitMs = 10.0; int heldHits = 4; };   // 7 Oct (TRANSIENT_GATE_PROFILE_SPEC v0.1 section 4): held_db < 0 adds `held_hits` periods of a held tone at held_db with a held_hit_ms transient on top, after the hits
 struct RampSpec { double fromDb = -60.0, toDb = -6.0, upS = 3.0, downS = 3.0, hz = 997.0, winMs = 5.0; std::vector<std::pair<int, float>> sets; bool reset = false; };
 
 inline bool parseSets (const juce::String& v, std::vector<std::pair<int, float>>& sets)
@@ -53,6 +54,9 @@ inline bool parseHitsArgs (int argc, char** argv, int first, HitsSpec& s, juce::
         else if (k == "win_ms")    s.winMs = v.getDoubleValue();
         else if (k == "reset")     s.reset = v.getIntValue() != 0;
         else if (k == "set")       parseSets (v, s.sets);
+        else if (k == "held_db")   s.heldDb = v.getDoubleValue();
+        else if (k == "held_hit_ms") s.heldHitMs = v.getDoubleValue();
+        else if (k == "held_hits") s.heldHits = v.getIntValue();
         else { why = "unknown hits argument '" + a + "'"; return false; }
     }
     if (s.dbfs > 0.0 || s.hz < 5.0 || s.decayMs < 5.0 || s.periodMs < s.decayMs * 2.0 || s.hits < 1 || s.hits > 32 || s.winMs < 0.25) { why = "db, hz, decay_ms, period_ms, hits or win_ms out of range"; return false; }
@@ -142,21 +146,30 @@ inline void renderWindows (juce::AudioPluginInstance& p, SweepRenderer& r, long 
 
 inline void runHits (juce::AudioPluginInstance& p, const HitsSpec& s, const RenderSpec& rs = {})
 {
-    std::printf ("hits\tproto\t1\tdb\t%.2f\thz\t%.3f\tdecay_ms\t%.2f\tperiod_ms\t%.2f\thits\t%d\twin_ms\t%.2f\n", s.dbfs, s.hz, s.decayMs, s.periodMs, s.hits, s.winMs);
+    const int heldN = s.heldDb < 0.0 ? juce::jlimit (1, 32, s.heldHits) : 0;
+    std::printf ("hits\tproto\t1\tdb\t%.2f\thz\t%.3f\tdecay_ms\t%.2f\tperiod_ms\t%.2f\thits\t%d\twin_ms\t%.2f\theld_db\t%.2f\theld_hits\t%d\theld_hit_ms\t%.2f\n", s.dbfs, s.hz, s.decayMs, s.periodMs, s.hits, s.winMs, s.heldDb, heldN, s.heldHitMs);
     configureAndPrepare (p, rs);
     SweepRenderer r (p, rs.sampleRate, rs.block, s.hz);
     if (! dynamicsPreamble (p, r, s.sets, s.reset)) return;
     stage ("hits");
     const double sr = rs.sampleRate;
-    const long long period = (long long) std::llround (s.periodMs * 0.001 * sr), total = period * s.hits;
+    const long long period = (long long) std::llround (s.periodMs * 0.001 * sr), hitsTotal = period * s.hits, total = period * (s.hits + heldN);
     const long long winN = juce::jmax (1LL, (long long) std::llround (s.winMs * 0.001 * sr));
     const double amp = std::pow (10.0, s.dbfs / 20.0), tau = s.decayMs * 0.001 * sr, step = juce::MathConstants<double>::twoPi * s.hz / sr;
-    auto gen = [&] (long long t) -> float { if (t >= total) return 0.0f; const long long within = t % period; return (float) (amp * std::exp (-(double) within / tau) * std::sin (step * (double) t)); };
+    const double heldAmp = std::pow (10.0, s.heldDb / 20.0), tauShort = s.heldHitMs * 0.001 * sr;
+    // the hits; then the held part: a steady tone at held_db, each period starting with a short transient (to the hit's peak) on top
+    auto gen = [&] (long long t) -> float
+    {
+        if (t >= total) return 0.0f;
+        const long long within = t % period;
+        if (t < hitsTotal) return (float) (amp * std::exp (-(double) within / tau) * std::sin (step * (double) t));
+        return (float) ((heldAmp + (amp - heldAmp) * std::exp (-(double) within / tauShort)) * std::sin (step * (double) t));
+    };
     long long windows = 0, nonFinite = 0;
     renderWindows (p, r, total, winN, gen, [&] (double tMs, double inDb, double outDb, double inPk, double outPk)
     {
         const int hit = tMs < 0.0 ? -1 : (int) (tMs / s.periodMs);
-        std::printf ("hwin\tt_ms\t%.3f\thit\t%d\tin_db\t%.3f\tout_db\t%.3f\tin_peak_db\t%.3f\tout_peak_db\t%.3f\n", tMs, hit < s.hits ? hit : -1, inDb, outDb, inPk, outPk);
+        std::printf ("hwin\tt_ms\t%.3f\thit\t%d\tin_db\t%.3f\tout_db\t%.3f\tin_peak_db\t%.3f\tout_peak_db\t%.3f\n", tMs, hit < s.hits + heldN ? hit : -1, inDb, outDb, inPk, outPk);   // hit >= hits: the held part
     }, windows, nonFinite);
     std::printf ("hdone\twindows\t%lld\tnonfinite\t%lld\n", windows, nonFinite);
     stage ("done");

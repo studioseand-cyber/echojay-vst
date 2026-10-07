@@ -8289,6 +8289,50 @@ void testDynamics()
         check (sg.ok && sg.gating && sg.rangeDb > 80.0 && sg.openAtInDb && std::abs (*sg.openAtInDb + 33.01) < 0.3 && sg.closeAtInDb && std::abs (*sg.closeAtInDb + 39.01) < 0.3, "dyn G4: a gate that closes to digital silence reads a floor range (-150 dBFS against the quiet input) and still gives its open and close levels (" + sg.why + ")");
     }
     check (labelMs ("12.5 ms") && *labelMs ("12.5 ms") == 12.5 && labelMs ("1.20 s") && std::abs (*labelMs ("1.20 s") - 1200.0) < 1e-9 && labelNumber ("-30.0 dB") && *labelNumber ("-30.0 dB") == -30.0 && ! labelNumber ("Off"), "dyn L1: labels");
+    // TRANSIENT_GATE_PROFILE_SPEC v0.1 (7 Oct, item 6)
+    {
+        using namespace ejmap::dynamics;
+        check (kSustainFromMs == 150.0 && kSustainToMs == 400.0, "tg TG1: the sustain window is 150-400 ms into each hit (section 4)");
+        // TG2: the held tone's sustain - a 4-hit + 4-held trace, the held part's out 2 dB over its in at 150-400 ms
+        { Hits h; h.ok = true; h.hits = 4; h.heldHits = 4; h.periodMs = 1200.0;
+          for (int k = 0; k < 8; ++k) for (int ms = 0; ms < 1200; ms += 10) { HitWin w; w.tMs = k * 1200.0 + ms; w.hit = k; w.inDb = -21.0; w.outDb = k >= 4 ? -19.0 : -25.0; w.inPk = -18.0; w.outPk = -18.0; h.wins.push_back (w); }
+          const auto hs = heldSustainDb (h); check (hs && std::abs (*hs - 2.0) < 1e-9, "tg TG2: the held tone's sustain reads +2 dB from the held periods only (the hits read -4)");
+          Hits none = h; none.heldHits = 0; check (! heldSustainDb (none), "tg TG2b: no held part -> no held sustain"); }
+        // TG3: the transient roles
+        check (transientRole (6.0, 0.3) == "attack" && transientRole (-0.2, -5.4) == "sustain" && transientRole (0.5, 0.4) == "" && transientRole (2.0, 4.5) == "sustain" && transientRole (4.5, 2.0) == "attack", "tg TG3: attack moves the transient > 1 dB; sustain moves the sustain > 1 dB and more than the transient; under 1 dB both -> nothing (Punctuate's Attack)");
+        // TG4: the gate roles
+        check (gateThresholdRole (-60.0, -20.0, true, true) && ! gateThresholdRole (-60.0, -20.0, true, false) && ! gateThresholdRole (-25.5, -25.6, true, true) && ! gateThresholdRole (-15.9, -35.1, true, true, -10.0, 9.0),
+               "tg TG4: threshold moves the open level > 3 dB with both readings gating and the open gain held (SSL X-Gate's Lower Threshold: 0.1 dB, and its Input Gain moving the open gain 19 dB - neither is a threshold)");
+        check (gateRangeRole (-80.0, -20.0, 0.0, 0.2, true, true) && gateRangeRole (-60.0, 0.0, 0.0, 0.0, true, false) && ! gateRangeRole (-60.0, -56.2, 0.0, 3.8, true, true) && ! gateRangeRole (0.0, -60.0, 0.0, -3.8, false, true),
+               "tg TG4a: range moves the closed gain with the open gain held (an end at 0 dB range does not gate and still counts); an output or input gain moves the open gain too: not a range");
+        check (transientRole (30.0, 30.0) == "" && transientRole (48.0, 48.0) == "" && transientRole (24.0, 0.0) == "attack", "tg TG3b: a control moving transient and sustain by the same amount is a level (Transient Master's Gain, Punctuate's Input Level), never attack / sustain");
+        check (pickByScore (3, { { 3, 1.0 }, { 5, 9.0 } }) == 3 && pickByScore (2, { { 3, 1.0 }, { 5, 9.0 } }) == 5 && pickByScore (-1, {}) == -1, "tg TG4b: the name's nominee when it shows the signature, else the strongest");
+        // TG5: inversion and the verdicts
+        check (invertLinear ({ { 0.0, -12.9 }, { 0.5, 0.0 }, { 1.0, 6.0 } }, 3.0) && std::abs (*invertLinear ({ { 0.0, -12.9 }, { 0.5, 0.0 }, { 1.0, 6.0 } }, 3.0) - 0.75) < 1e-9 && ! invertLinear ({ { 0.0, 0.0 }, { 1.0, 6.0 } }, 9.0), "tg TG5: +3 dB on Transient Master's -12.9 / 0 / +6 map -> 0.75; beyond the range -> none (the server says so)");
+        check (gateVerdict (true, 6.0, 40.0, true) == "measured" && gateVerdict (true, 22.0, 40.0, true) == "expander" && gateVerdict (true, 6.0, 0.8, true) == "label_not_threshold" && gateVerdict (false, std::nullopt, 0.0, true) == "no_effect", "tg TG5b: measured / expander (a 22 dB transition) / label_not_threshold (SSL X-Gate's 0.8 dB) / no_effect");
+        // TG6: the expander width from a ramp - a hard gate (2 dB wide) and a soft expander (30 dB wide)
+        auto ramp = [] (double width) { Ramp r; r.ok = true; r.upS = 3.0; r.downS = 3.0; for (int k = 0; k <= 600; ++k) { RampWin w; w.up = k <= 300; w.tMs = k * 10.0; w.inDb = w.up ? -70.0 + 64.0 * k / 300.0 : -6.0 - 64.0 * (k - 300) / 300.0; const double x = (w.inDb + 40.0) / width; const double gain = -60.0 + 60.0 / (1.0 + std::exp (-4.4 * x)); w.outDb = w.inDb + gain; r.wins.push_back (w); } return r; };
+        const auto hard = ramp (2.0), soft = ramp (30.0); const auto gh = gateLevels (hard), gs = gateLevels (soft);
+        const auto wh = transitionWidthDb (hard, gh), ws = transitionWidthDb (soft, gs);
+        check (gh.gating && wh && *wh < 5.0 && gs.gating && ws && *ws > 15.0, "tg TG6: a hard gate's 10-90 % transition is " + juce::String (wh ? *wh : -1.0, 1) + " dB, a soft expander's " + juce::String (ws ? *ws : -1.0, 1) + " dB (over 15: expander)");
+        // TG7: the drafts
+        auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+        juce::Array<juce::var> ap { mk ({ { "norm", 1.0 }, { "display", "+100 %" }, { "transient_db", 6.0 }, { "sustain_db", 0.3 }, { "sustain_hits_db", 0.5 } }) };
+        juce::Array<juce::var> acc { mk ({ { "step", "attack +3 dB" }, { "ran", true }, { "pass", true } }), mk ({ { "step", "sustain -3 dB" }, { "ran", false }, { "pass", false }, { "why", "outside the measured range" } }) };
+        const auto am = mk ({ { "control", "Attack" }, { "found_by", "measurement" }, { "verdict", "measured" }, { "positions", ap } }), sm = mk ({ { "control", "Sustain" }, { "verdict", "no_effect" }, { "why", "moves nothing" } });
+        const auto T = transientProfile (mk ({ { "tg_fields", "x" }, { "attack_map", am }, { "sustain_map", sm }, { "acceptance", acc } }), juce::var(), juce::var(), "DRAFT", ejmap::drafts::specTag ("TRANSIENT_GATE_PROFILE_SPEC"));
+        juce::StringArray tn; if (const auto* na = T.getProperty ("notes", {}).getArray()) for (const auto& n : *na) tn.add (n.toString());
+        check (T.getProperty ("schema", "") == "ej_transient_profile/1" && T.getProperty ("attack", {}).getProperty ("found_by", "") == "measurement" && (double) T.getProperty ("attack", {}).getProperty ("map", {})[0].getProperty ("transient_db", 0.0) == 6.0 && tn.size() == 2 && tn[0].contains ("sustain: no_effect") && tn[1].contains ("sustain -3 dB: null"),
+               "tg TG7a: ej_transient_profile/1 with the attack map, the no_effect sustain noted, the null step noted (" + tn.joinIntoString (" | ") + ")");
+        juce::Array<juce::var> tp { mk ({ { "norm", 0.5 }, { "display", "-40.0 dB" }, { "open_level_dbfs_peak", -40.0 }, { "close_level_dbfs_peak", -46.5 } }) }, rp { mk ({ { "norm", 0.3 }, { "display", "-13.7 dB" }, { "range_db", -13.72 } }) };
+        const auto tm = mk ({ { "control", "Threshold" }, { "found_by", "name" }, { "positions", tp } }), rm = mk ({ { "control", "Range" }, { "found_by", "name" }, { "positions", rp } }), tim = mk ({ { "attack_ms_to_1db", 0.9 }, { "hold_ms", 50.2 }, { "release_ms_to_20db", 98.0 }, { "attack_ms_full", 1.4 }, { "release_ms_full", 160.0 } });
+        const auto G = gateProfile (mk ({ { "tg_fields", "x" }, { "verdict", "measured" }, { "threshold_map", tm }, { "hysteresis_db", 6.5 }, { "range_map", rm }, { "timing", tim } }), juce::var(), juce::var(), "DRAFT", ejmap::drafts::specTag ("TRANSIENT_GATE_PROFILE_SPEC"));
+        check (G.getProperty ("schema", "") == "ej_gate_profile/1" && (double) G.getProperty ("threshold", {}).getProperty ("map", {})[0].getProperty ("close_level_dbfs_peak", 0.0) == -46.5 && (double) G.getProperty ("hysteresis_db", 0.0) == 6.5 && (double) G.getProperty ("range", {}).getProperty ("map", {})[0].getProperty ("range_db", 0.0) == -13.72 && (double) G.getProperty ("timing", {}).getProperty ("release_ms_full", 0.0) == 160.0 && G.getProperty ("notes", {}).size() == 0,
+               "tg TG7b: ej_gate_profile/1 - threshold map in dBFS peak, hysteresis, range map, both timing definitions; nothing to note");
+        const auto X = gateProfile (mk ({ { "tg_fields", "x" }, { "verdict", "expander" }, { "verdict_why", "22 dB" } }), juce::var(), juce::var(), "DRAFT", "x v0.1 PROPOSAL");
+        check (X.getProperty ("notes", {}).size() == 4 && X.getProperty ("notes", {})[3].toString().contains ("verdict expander"), "tg TG7c: an expander with nothing mapped: threshold, range, timing and the verdict noted");
+    }
+
 }
 
 /** DE-ESSERS (EjmapDeesser.h, roadmap 2.9 PROTOTYPE, 5 Oct R6): the ladder against the open end, the centre and the mode from a deviation. */

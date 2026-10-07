@@ -26,14 +26,14 @@
 namespace ejmap::dynamics
 {
 
-inline constexpr double kTransientMs = 10.0, kSustainFromMs = 80.0, kSustainToMs = 250.0;
+inline constexpr double kTransientMs = 10.0, kSustainFromMs = 150.0, kSustainToMs = 400.0;   // TRANSIENT_GATE_PROFILE_SPEC v0.1 section 4 (7 Oct; was 80-250 on a 150 ms hit)
 inline constexpr double kGateMinRangeDb = 3.0;   // a unit that attenuates less than this when "closed" is not gating
 inline constexpr double kSilenceDb = -150.0;     // an output window below this is silence: its gain is read as -150 relative, never skipped (a closed gate IS silent)
 inline constexpr double kReleaseFallDb = 20.0;   // release = the time to fall this far below open (or to within 1 dB of closed when the range is smaller)
 
 //==============================================================================
 struct HitWin { double tMs = 0.0; int hit = -1; double inDb = -999.0, outDb = -999.0, inPk = -999.0, outPk = -999.0; };
-struct Hits { bool ok = false; juce::String refused; double dbfs = 0.0, decayMs = 0.0, periodMs = 0.0; int hits = 0; std::vector<HitWin> wins; std::map<int, juce::String> setTexts; };
+struct Hits { bool ok = false; juce::String refused; double dbfs = 0.0, decayMs = 0.0, periodMs = 0.0; int hits = 0, heldHits = 0; std::vector<HitWin> wins; std::map<int, juce::String> setTexts; };
 inline Hits parseHits (const juce::String& out)
 {
     Hits h;
@@ -43,7 +43,7 @@ inline Hits parseHits (const juce::String& out)
         if (line.startsWith ("refused")) { h.refused = line.fromFirstOccurrenceOf ("refused", false, false).trim(); return h; }
         const auto f = juce::StringArray::fromTokens (line, "\t", "");
         if (f.size() < 3) continue;
-        if (f[0] == "hits") { h.ok = true; h.dbfs = kv (f, 1, "db").getDoubleValue(); h.decayMs = kv (f, 1, "decay_ms").getDoubleValue(); h.periodMs = kv (f, 1, "period_ms").getDoubleValue(); h.hits = kv (f, 1, "hits").getIntValue(); }
+        if (f[0] == "hits") { h.ok = true; h.dbfs = kv (f, 1, "db").getDoubleValue(); h.decayMs = kv (f, 1, "decay_ms").getDoubleValue(); h.periodMs = kv (f, 1, "period_ms").getDoubleValue(); h.hits = kv (f, 1, "hits").getIntValue(); h.heldHits = kv (f, 1, "held_hits").getIntValue(); }
         else if (f[0] == "set") h.setTexts[f[1].getIntValue()] = kv (f, 2, "text");
         else if (f[0] == "hwin") { HitWin w; w.tMs = kv (f, 1, "t_ms").getDoubleValue(); w.hit = kv (f, 1, "hit").getIntValue(); w.inDb = kv (f, 1, "in_db").getDoubleValue(); w.outDb = kv (f, 1, "out_db").getDoubleValue(); w.inPk = kv (f, 1, "in_peak_db").getDoubleValue(); w.outPk = kv (f, 1, "out_peak_db").getDoubleValue(); h.wins.push_back (w); }
     }
@@ -78,6 +78,23 @@ inline HitFigures hitFigures (const Hits& h)
     return f;
 }
 
+// THE HELD TONE'S SUSTAIN (section 4, 7 Oct): out over in RMS, 150-400 ms into each held period (a steady part, not a falling one), the
+// median over the periods after the first
+inline std::optional<double> heldSustainDb (const Hits& h)
+{
+    if (! h.ok || h.heldHits <= 0) return std::nullopt;
+    std::vector<double> per;
+    for (int k = h.hits; k < h.hits + h.heldHits; ++k)
+    {
+        const double on = k * h.periodMs; std::vector<double> inS, outS;
+        for (const auto& w : h.wins) { if (w.tMs < on + kSustainFromMs || w.tMs >= on + kSustainToMs || w.inDb < -500.0 || w.outDb < -500.0) continue; inS.push_back (w.inDb); outS.push_back (w.outDb); }
+        if (inS.empty()) continue;
+        auto pm = [] (const std::vector<double>& v) { double s2 = 0.0; for (double d : v) s2 += std::pow (10.0, d / 10.0); return 10.0 * std::log10 (s2 / (double) v.size() + 1e-30); };
+        per.push_back (pm (outS) - pm (inS));
+    }
+    if (per.empty()) return std::nullopt;
+    std::vector<double> use (per.begin() + (per.size() > 1 ? 1 : 0), per.end()); return timing::medianOf (use);
+}
 struct TransientPoint { float norm = 0.0f; juce::String text; bool ok = false; double transientDb = 0.0, sustainDb = 0.0, dTransientDb = 0.0, dSustainDb = 0.0; std::optional<double> labelDb; };
 // the effect of a position = its figures minus the neutral run's; labelDb when the display is in dB
 inline TransientPoint transientPoint (float norm, const juce::String& text, const HitFigures& at, const HitFigures& neutral)
@@ -203,6 +220,122 @@ inline std::optional<double> labelMs (const juce::String& display)
 {
     const auto n = labelNumber (display); if (! n) return {}; const auto s = display.trim().toLowerCase();
     if (s.contains ("ms")) return *n; if (s.endsWith ("s") || s.contains (" s") || s.contains ("sec")) return *n * 1000.0; return *n;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// TRANSIENT_GATE_PROFILE_SPEC v0.1 (Kathy, 7 Oct 2026, item 6)
+// ---------------------------------------------------------------------------------------------------------------------------
+inline constexpr double kRoleMoveDb = 1.0;           // section 3: a control "moves" a figure by more than this
+inline constexpr double kStepDb = 3.0, kAcceptTransientDb = 1.0, kAcceptGateDb = 1.0;
+inline const std::vector<double> kAcceptOpenLevelsDbfsPeak { -40.0, -25.0 };
+inline constexpr double kAcceptRangeDb = -20.0;
+inline constexpr double kSinePeakOverRmsDb = 3.0103;
+inline constexpr double kExpanderWidthDb = 15.0;     // a 10-90 % transition wider than this on the ramp: an expander, not a gate
+inline constexpr double kThresholdMovesDb = 3.0;     // a threshold whose open level moves less than this across its positions: label_not_threshold
+
+// THE TRANSIENT ROLES (section 3): attack moves the transient > 1 dB; sustain moves the sustain > 1 dB and the transient by less
+inline constexpr double kLevelSameDb = 1.0;   // a control moving transient and sustain by the same amount (within this) is a LEVEL (Punctuate's Input Level, Transient Master's Gain: 30 / 30 dB)
+inline juce::String transientRole (double dTransientDb, double dSustainDb)
+{
+    const double t = std::abs (dTransientDb), su = std::abs (dSustainDb);
+    if (t > kRoleMoveDb && std::abs (dTransientDb - dSustainDb) < kLevelSameDb) return {};
+    if (su > kRoleMoveDb && t < su) return "sustain";
+    if (t > kRoleMoveDb) return "attack";
+    return {};
+}
+// THE GATE ROLES (section 3): threshold moves the opening level on the ramp (both readings gating - tested at norms 0.3 / 0.7, so a threshold
+// instantiated at an extreme still opens somewhere: G8's -inf dB); range moves the closed gain while the OPEN (loud) gain stays within 1 dB
+// (an output, input or mix moves the open gain too) - tested at its ends with the threshold mid-way
+inline constexpr double kOpenGainSameDb = 1.0;
+inline bool gateThresholdRole (std::optional<double> openA, std::optional<double> openB, bool gatingA, bool gatingB, double openGainA = 0.0, double openGainB = 0.0)
+{ return gatingA && gatingB && openA && openB && std::abs (*openB - *openA) > kThresholdMovesDb && std::abs (openGainB - openGainA) <= kOpenGainSameDb; }   // an INPUT gain moves the opening level too, and the open gain with it (SSL X-Gate's Input Gain)
+inline bool gateRangeRole (double closedA, double closedB, double openGainA, double openGainB, bool gatingA, bool gatingB) { return (gatingA || gatingB) && std::abs (closedB - closedA) > kThresholdMovesDb && std::abs (openGainB - openGainA) <= kOpenGainSameDb; }
+// the strength for choosing among several (the strongest wins, the name's nominee when it holds)
+inline int pickByScore (int namedIndex, const std::map<int, double>& scores)
+{
+    if (namedIndex >= 0 && scores.count (namedIndex) && scores.at (namedIndex) > 0.0) return namedIndex;
+    int best = -1; double bs = 0.0; for (const auto& [i, sc] : scores) if (sc > bs) { bs = sc; best = i; } return best;
+}
+// LINEAR INVERSION of a measured map (norm, figure): the norm whose figure is the target
+inline std::optional<double> invertLinear (std::vector<std::pair<double, double>> pts, double target)
+{
+    std::sort (pts.begin(), pts.end());
+    for (size_t i = 0; i + 1 < pts.size(); ++i) { const double a = pts[i].second, b = pts[i + 1].second; if ((target - a) * (target - b) <= 0.0 && std::abs (b - a) > 1e-12) return pts[i].first + (target - a) / (b - a) * (pts[i + 1].first - pts[i].first); }
+    return std::nullopt;
+}
+// THE EXPANDER TEST (section 6): the input span over which the gain crosses from 10 % to 90 % of its range on the way up
+inline std::optional<double> transitionWidthDb (const Ramp& r, const GateLevels& g)
+{
+    if (! g.gating) return std::nullopt;
+    const double lo = g.closedGainDb + 0.1 * g.rangeDb, hi = g.closedGainDb + 0.9 * g.rangeDb; std::optional<double> a, b;
+    for (const auto& w : r.wins) { if (! w.up || w.inDb < -500.0) continue; const double gain = juce::jmax (kSilenceDb, w.outDb) - w.inDb; if (! a && gain >= lo) a = w.inDb; if (! b && gain >= hi) b = w.inDb; }
+    if (! a || ! b) return std::nullopt; return *b - *a;
+}
+inline juce::String gateVerdict (bool anyGating, std::optional<double> widthDb, double openSpanDb, bool thresholdFound)
+{
+    if (! anyGating) return "no_effect";
+    if (widthDb && *widthDb > kExpanderWidthDb) return "expander";
+    if (thresholdFound && openSpanDb < kThresholdMovesDb) return "label_not_threshold";
+    return "measured";
+}
+// BOTH TIMING DEFINITIONS (section 4): to within 1 dB of open / release to 20 dB down (the proposed), and the full rise / fall (to within
+// 0.1 dB of open / to within 1 dB of closed); the burst is read at a threshold taken from the ramp (quiet 12 under, loud 12 over the open level)
+struct GateTimingBoth { GateTiming oneDb; std::optional<double> attackFullMs, releaseFullMs; };
+inline GateTimingBoth gateTimingBoth (const timing::Burst& b)
+{
+    GateTimingBoth t; t.oneDb = gateTiming (b); if (! t.oneDb.ok) return t;
+    const double preMs = b.preS * 1000.0, holdEndMs = (b.preS + b.holdS) * 1000.0;
+    auto gainOf = [] (const timing::Win& w) { return juce::jmax (kSilenceDb, w.outDb) - w.inDb; };
+    auto first = [&] (const char* seg, double fromMs, std::function<bool (double)> ok) -> std::optional<double> { for (const auto& w : b.wins) { if (w.seg != seg || w.tMs < fromMs || w.inDb < -500.0) continue; if (ok (gainOf (w))) return w.tMs; } return std::nullopt; };
+    if (const auto a = first ("loud", preMs, [&] (double g) { return g >= t.oneDb.openDb - 0.1; })) t.attackFullMs = *a - preMs;
+    if (const auto rl = first ("post", holdEndMs, [&] (double g) { return g <= t.oneDb.closedDb + 1.0; })) t.releaseFullMs = *rl - holdEndMs;
+    return t;
+}
+
+// THE DRAFTS (section 7), from the records
+inline juce::var transientProfile (const juce::var& rec, const juce::var& plugin, const juce::var& measured, const juce::String& status, const juce::String& spec)
+{
+    auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_transient_profile/1"); P->setProperty ("spec", spec); P->setProperty ("status", status); P->setProperty ("plugin", plugin); P->setProperty ("measured", measured);
+    juce::Array<juce::var> notes; if (! rec.hasProperty ("tg_fields")) notes.add ("drafted from a record without the 7 Oct fields (500 ms hits, held tone, roles by measurement, acceptance): partial");
+    for (const char* role : { "attack", "sustain" })
+    {
+        const auto m = rec.getProperty (juce::String (role) + "_map", {});
+        if (! m.isObject()) { P->setProperty (role, juce::var()); notes.add (juce::String (role) + ": no control found"); continue; }
+        auto* x = new juce::DynamicObject(); x->setProperty ("control", m.getProperty ("control", {})); x->setProperty ("found_by", m.getProperty ("found_by", {})); x->setProperty ("verdict", m.getProperty ("verdict", {}));
+        juce::Array<juce::var> pts; if (const auto* ps = m.getProperty ("positions", {}).getArray()) for (const auto& p : *ps) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", p.getProperty ("norm", {})); q->setProperty ("display", p.getProperty ("display", "")); q->setProperty ("transient_db", p.getProperty ("transient_db", {})); q->setProperty ("sustain_db", p.getProperty ("sustain_db", {})); if (p.hasProperty ("sustain_hits_db")) q->setProperty ("sustain_hits_db", p.getProperty ("sustain_hits_db", {})); pts.add (juce::var (q)); }
+        x->setProperty ("map", pts); P->setProperty (role, juce::var (x));
+        if (m.getProperty ("verdict", "").toString() == "no_effect") notes.add (juce::String (role) + ": no_effect - " + m.getProperty ("why", "").toString());
+    }
+    if (rec.hasProperty ("acceptance")) { P->setProperty ("acceptance", rec.getProperty ("acceptance", {})); if (const auto* a = rec.getProperty ("acceptance", {}).getArray()) for (const auto& x : *a) if (! (bool) x.getProperty ("pass", false)) notes.add (x.getProperty ("step", "").toString() + ": " + ((bool) x.getProperty ("ran", false) ? "FAIL - " : "null - ") + x.getProperty ("why", "").toString()); }
+    P->setProperty ("neutral", rec.hasProperty ("neutral") ? rec.getProperty ("neutral", {}) : juce::var (juce::Array<juce::var>())); P->setProperty ("notes", notes);
+    return juce::var (P);
+}
+inline juce::var gateProfile (const juce::var& rec, const juce::var& plugin, const juce::var& measured, const juce::String& status, const juce::String& spec)
+{
+    auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_gate_profile/1"); P->setProperty ("spec", spec); P->setProperty ("status", status); P->setProperty ("plugin", plugin); P->setProperty ("measured", measured);
+    juce::Array<juce::var> notes; if (! rec.hasProperty ("tg_fields")) notes.add ("drafted from a record without the 7 Oct fields (roles by measurement, timing at a ramp-taken threshold, both definitions, verdicts, acceptance): partial");
+    P->setProperty ("verdict", rec.getProperty ("verdict", juce::var()));
+    if (const auto t = rec.getProperty ("threshold_map", {}); t.isObject())
+    {
+        auto* x = new juce::DynamicObject(); x->setProperty ("control", t.getProperty ("control", {})); x->setProperty ("found_by", t.getProperty ("found_by", {}));
+        juce::Array<juce::var> pts; if (const auto* ps = t.getProperty ("positions", {}).getArray()) for (const auto& p : *ps) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", p.getProperty ("norm", {})); q->setProperty ("display", p.getProperty ("display", "")); q->setProperty ("open_level_dbfs_peak", p.getProperty ("open_level_dbfs_peak", {})); q->setProperty ("close_level_dbfs_peak", p.getProperty ("close_level_dbfs_peak", {})); pts.add (juce::var (q)); }
+        x->setProperty ("map", pts); P->setProperty ("threshold", juce::var (x));
+    }
+    else { P->setProperty ("threshold", juce::var()); notes.add ("threshold: no control moves the opening level"); }
+    P->setProperty ("hysteresis_db", rec.getProperty ("hysteresis_db", juce::var()));
+    if (const auto r = rec.getProperty ("range_map", {}); r.isObject())
+    {
+        auto* x = new juce::DynamicObject(); x->setProperty ("control", r.getProperty ("control", {})); x->setProperty ("found_by", r.getProperty ("found_by", {}));
+        juce::Array<juce::var> pts; if (const auto* ps = r.getProperty ("positions", {}).getArray()) for (const auto& p : *ps) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", p.getProperty ("norm", {})); q->setProperty ("display", p.getProperty ("display", "")); q->setProperty ("range_db", p.getProperty ("range_db", {})); pts.add (juce::var (q)); }
+        x->setProperty ("map", pts); P->setProperty ("range", juce::var (x));
+    }
+    else { P->setProperty ("range", juce::var()); notes.add ("range: no control moves the closed gain"); }
+    P->setProperty ("timing", rec.getProperty ("timing", juce::var()));
+    if (rec.getProperty ("timing", {}).isVoid()) notes.add ("timing: not read (no gating at the ramp-taken threshold, or no threshold)");
+    if (rec.hasProperty ("acceptance")) { P->setProperty ("acceptance", rec.getProperty ("acceptance", {})); if (const auto* a = rec.getProperty ("acceptance", {}).getArray()) for (const auto& x : *a) if (! (bool) x.getProperty ("pass", false)) notes.add (x.getProperty ("step", "").toString() + ": " + ((bool) x.getProperty ("ran", false) ? "FAIL - " : "null - ") + x.getProperty ("why", "").toString()); }
+    const auto v = rec.getProperty ("verdict", "").toString(); if (v == "expander" || v == "label_not_threshold" || v == "no_effect") notes.add ("verdict " + v + ": " + rec.getProperty ("verdict_why", "").toString());
+    P->setProperty ("neutral", rec.hasProperty ("neutral") ? rec.getProperty ("neutral", {}) : juce::var (juce::Array<juce::var>())); P->setProperty ("notes", notes);
+    return juce::var (P);
 }
 
 } // namespace ejmap::dynamics
