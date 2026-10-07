@@ -3090,6 +3090,14 @@ inline int runStripSection (const SweepOptions& opt0)
     auto outcomes = juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()); if (! outcomes.isArray()) outcomes = juce::Array<juce::var>();
     auto row = finishRecord (opt, rec, "compressor");
     if (auto* o = row.getDynamicObject()) { o->setProperty ("strip_section", "compressor"); o->setProperty ("not_for_publication", true); }
+    {   // CONFIRMED BY MEASUREMENT (the refined ruling): a section neutralised by its controls must leave the swept section's quiet reference rungs
+        // readable; every candidate unreadable = it did not, needs_review with that reason
+        bool neutralised = false; if (const auto* ws = stripWrites.getArray()) for (const auto& w : *ws) if (w.getProperty ("role", "").toString() == "other_neutral") neutralised = true;
+        const auto rec3 = juce::JSON::parse (rec.loadFileAsString()); bool anyReadable = false, any = false;
+        if (const auto* cs = rec3.getProperty ("thresholdCandidates", {}).getArray()) for (const auto& c : *cs) { any = true; if (c.getProperty ("thresholdSweep", {}).getProperty ("result", "").toString() != "unreadable") anyReadable = true; }
+        if (! any && rec3.getProperty ("thresholdSweep", {}).isObject()) { any = true; anyReadable = rec3.getProperty ("thresholdSweep", {}).getProperty ("result", "").toString() != "unreadable"; }
+        if (neutralised && any && ! anyReadable) if (auto* o = row.getDynamicObject()) { o->setProperty ("state", "needs_review"); o->setProperty ("reason", "another dynamics section was neutralised by its controls, but the swept section's quiet reference rungs did not read (every candidate unreadable): the neutralising did not open it"); }
+    }
     outcomes = loop::mergeRow (outcomes, row); opt.out.getChildFile ("outcomes.json").replaceWithText (juce::JSON::toString (outcomes) + "\n", false, false, "\n");
     say ("SECTION: " + row.getProperty ("state", "").toString() + ": " + row.getProperty ("reason", "").toString());
     int trc = 0;
@@ -3122,7 +3130,8 @@ inline int runStripSection (const SweepOptions& opt0)
                 {
                     auto* x = new juce::DynamicObject(); x->setProperty ("control", w.getProperty ("control", "")); x->setProperty ("set", w.getProperty ("set", "")); x->setProperty ("norm", w.getProperty ("norm", 0.0)); x->setProperty ("index", w.getProperty ("index", -1));
                     const bool isEngage = w.getProperty ("role", "").toString() == "engage";
-                    x->setProperty ("source", isEngage ? "strip: the section's engage switch (Rule 1), written under every process" : "strip: another dynamics section switched off for the sweep (ruled 7 Oct), written under every process");
+                    const bool neutral = w.getProperty ("role", "").toString() == "other_neutral";
+                    x->setProperty ("source", isEngage ? "strip: the section's engage switch (Rule 1), written under every process" : neutral ? "strip: another dynamics section neutralised by its controls" : "strip: another dynamics section switched off for the sweep (ruled 7 Oct), written under every process");
                     bool dup = false; for (const auto& e : (isEngage ? eng : neu)) if ((int) e.getProperty ("index", -2) == (int) w.getProperty ("index", -1)) dup = true;
                     if (! dup) (isEngage ? eng : neu).add (juce::var (x));
                 }

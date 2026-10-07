@@ -86,8 +86,49 @@ inline std::vector<Section> sectionsOf (const std::vector<Control>& controls)
 // a second compressor or limiter) engaged at instantiate is switched OFF by its own engage control for the whole sweep, detector and tone
 // check, carried as a neutral write on the record and the profile (the server writes it too). EQ and saturation stay at instantiate,
 // recorded. An other dynamics section WITHOUT an engage control -> refused: needs_review with that reason.
-struct StripWrite { int index = -1; juce::String control, set, role; float norm = 0.0f; };   // role: "engage" (this section on) | "other_off" (another dynamics section off)
-struct OtherDynamics { bool ok = true; juce::String refused; std::vector<StripWrite> offWrites; juce::StringArray atInstantiate, alreadyOff; };
+struct StripWrite { int index = -1; juce::String control, set, role; float norm = 0.0f; };   // role: "engage" (this section on) | "other_off" (another dynamics section off by its engage) | "other_neutral" (neutralised by its own controls)
+struct OtherDynamics { bool ok = true; juce::String refused; std::vector<StripWrite> offWrites; juce::StringArray atInstantiate, alreadyOff, neutralised; };
+// NEUTRALISING BY ITS OWN CONTROLS (Kathy's refined ruling, 7 Oct): an other dynamics section with no engage control is not held - a gate /
+// expander's threshold goes to its fully-open end (the LOWEST threshold) and its range / depth to 0 where it has one; a second compressor /
+// limiter's threshold to its no-compression end (the HIGHEST). The ends are read from the control's own texts at the ends (a dB number);
+// a control whose ends do not read as numbers cannot be neutralised and the section refuses. Confirmed by measurement afterwards: the swept
+// section's quiet reference rungs must read, else needs_review with that reason.
+inline std::optional<double> dbOf (const juce::String& text) { const auto t = text.trim().removeCharacters ("+"); const auto num = t.upToFirstOccurrenceOf (" ", false, false).replace ("dB", ""); if (num.isEmpty() || ! num.containsAnyOf ("0123456789") || num.retainCharacters ("0123456789.-").length() != num.length()) return std::nullopt; return num.getDoubleValue(); }
+inline std::optional<std::pair<float, juce::String>> endOf (const Control& c, bool lowest)
+{
+    std::optional<std::pair<float, juce::String>> best; std::optional<double> bestDb;
+    for (const auto& [text, norm] : c.texts) if (const auto v = dbOf (text)) { if (! bestDb || (lowest ? *v < *bestDb : *v > *bestDb)) { bestDb = v; best = { norm, text }; } }
+    return best;
+}
+inline std::optional<std::pair<float, juce::String>> zeroOf (const Control& c)
+{
+    std::optional<std::pair<float, juce::String>> best; double bestAbs = 1e9;
+    for (const auto& [text, norm] : c.texts) if (const auto v = dbOf (text)) if (std::abs (*v) < bestAbs) { bestAbs = std::abs (*v); best = { norm, text }; }
+    return best;
+}
+inline bool thresholdWord (const juce::String& name) { for (const auto& t : tokens (name)) if (t == "threshold" || t == "thresh" || t == "thr") return true; return false; }
+inline bool rangeWord (const juce::String& name) { for (const auto& t : tokens (name)) if (t == "range" || t == "depth" || t == "floor") return true; return false; }
+inline bool neutraliseByControls (const Section& s, std::vector<StripWrite>& out, juce::String& why)
+{
+    int n = 0;
+    for (const auto& c : s.controls)
+    {
+        if (c.numSteps == 2) continue;
+        if (thresholdWord (c.name) && ! rangeWord (c.name))
+        {
+            const auto e = endOf (c, s.name == "gate");   // a gate opens at its lowest threshold; a compressor stops at its highest
+            if (! e) { why = "the strip's " + s.name + " section has no engage control and its '" + c.name + "' ends do not read as dB: it cannot be neutralised"; return false; }
+            out.push_back ({ c.index, c.name, e->second, "other_neutral", e->first }); ++n;
+        }
+        else if (s.name == "gate" && rangeWord (c.name))
+        {
+            const auto z = zeroOf (c); if (! z) { why = "the strip's gate section has no engage control and its '" + c.name + "' has no 0 position readable: it cannot be neutralised"; return false; }
+            out.push_back ({ c.index, c.name, z->second, "other_neutral", z->first }); ++n;
+        }
+    }
+    if (n == 0) { why = "the strip's " + s.name + " section has no engage control and no threshold or range control to neutralise it by"; return false; }
+    return true;
+}
 inline OtherDynamics otherDynamicsFor (const std::vector<Section>& sections, const juce::String& thisSection)
 {
     OtherDynamics o;
@@ -95,7 +136,14 @@ inline OtherDynamics otherDynamicsFor (const std::vector<Section>& sections, con
     {
         if (s.name == thisSection || s.name == "global") continue;
         if (! isDynamics (s.name)) { o.atInstantiate.add (s.name + (s.engage ? " (" + s.engage->name + " = '" + s.engage->instText + "')" : juce::String (" (no engage control)"))); continue; }
-        if (! s.engage) { o.ok = false; o.refused = "the strip's " + s.name + " section has no engage control: it cannot be switched off for the " + thisSection + " sweep"; return o; }
+        if (! s.engage)
+        {   // no engage control: neutralised by its own controls (the refined ruling), confirmed by measurement afterwards
+            std::vector<StripWrite> ws; juce::String why;
+            if (! neutraliseByControls (s, ws, why)) { o.ok = false; o.refused = why; return o; }
+            for (const auto& w : ws) o.offWrites.push_back (w);
+            juce::StringArray what; for (const auto& w : ws) what.add (w.control + " -> '" + w.set + "'"); o.neutralised.add (s.name + " (" + what.joinIntoString (", ") + ")");
+            continue;
+        }
         if (s.engagedAtInstantiate) o.offWrites.push_back ({ s.engage->index, s.engage->name, s.engageOffText, "other_off", s.engageOffNorm });
         else o.alreadyOff.add (s.name + " (" + s.engage->name + " = '" + s.engage->instText + "')");
     }

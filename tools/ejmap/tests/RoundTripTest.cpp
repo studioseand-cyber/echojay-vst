@@ -7531,9 +7531,24 @@ void testStrip()
         const auto ws = stripWrites (*secOf ("compressor"), odC);
         check (ws.size() == 2 && ws[0].role == "engage" && ws[0].index == 17 && ws[0].norm == 1.0f && ws[1].role == "other_off" && ws[1].index == 30 && presetOf (ws) == "17:1.000000,30:0.000000" && stripWritesVar (ws).size() == 2,
                "strip ST9: the child's preset carries the section's engage ON and the other dynamics OFF, in that order");
-        std::vector<Control> noSwitch { ctl (17, "LC On/Off", 2, { { "Off", 0.0f }, { "On", 1.0f } }, 1.0f, "On"), ctl (20, "LC Threshold", 0, {}, 0.5f, "0 dB"), ctl (31, "GE Threshold", 0, {}, 0.2f, "-40"), ctl (32, "GE Range", 0, {}, 0.2f, "-40") };
+        std::vector<Control> noSwitch { ctl (17, "LC On/Off", 2, { { "Off", 0.0f }, { "On", 1.0f } }, 1.0f, "On"), ctl (20, "LC Threshold", 0, {}, 0.5f, "0 dB"), ctl (31, "GE Attack", 0, {}, 0.2f, "1 ms"), ctl (32, "GE Hysteresis", 0, {}, 0.2f, "0") };
         const auto odN = otherDynamicsFor (sectionsOf (noSwitch), "compressor");
-        check (! odN.ok && odN.refused.contains ("gate section has no engage control"), "strip ST10: an other dynamics section with no engage control refuses the sweep (needs_review with that reason)");
+        // ST10 (refined, 7 Oct): a gate with no engage control is neutralised by its controls - its threshold to the LOWEST end (fully open), its range to 0;
+        // a second compressor's threshold to the HIGHEST end; ends that do not read as dB refuse
+        std::vector<Control> gateNoSw { ctl (17, "LC On/Off", 2, { { "Off", 0.0f }, { "On", 1.0f } }, 1.0f, "On"), ctl (20, "LC Threshold", 0, {}, 0.5f, "0 dB"),
+                                        ctl (30, "GE Threshold", 0, { { "-60.0 dB", 0.0f }, { "-42.0 dB", 0.5f }, { "0.0 dB", 1.0f } }, 0.0f, "-60.0 dB"), ctl (31, "GE Threshold Range", 0, { { "0 dB", 0.0f }, { "-30 dB", 1.0f } }, 1.0f, "-30 dB") };
+        check (! odN.ok && odN.refused.contains ("no threshold or range control"), "strip ST10: an other dynamics section with no engage AND nothing to neutralise it by refuses (needs_review with that reason)");
+        const auto odS = otherDynamicsFor (sectionsOf (gateNoSw), "compressor");
+        check (odS.ok && odS.offWrites.size() == 2 && odS.offWrites[0].index == 30 && odS.offWrites[0].norm == 0.0f && odS.offWrites[0].set == "-60.0 dB" && odS.offWrites[0].role == "other_neutral" && odS.offWrites[1].index == 31 && odS.offWrites[1].norm == 0.0f && odS.offWrites[1].set == "0 dB" && odS.neutralised.size() == 1,
+               "strip ST11: an engage-less gate is neutralised - GE Threshold to -60 dB (its lowest end) and GE Threshold Range to 0 dB, as other_neutral writes");
+        std::vector<Control> gateClosing = gateNoSw; gateClosing[2].instNorm = 0.5f; gateClosing[2].instText = "-42.0 dB";   // the gate CLOSES at instantiate (-42 dB): the write must still be the open end, never the instantiate value
+        const auto odC2 = otherDynamicsFor (sectionsOf (gateClosing), "compressor");
+        check (odC2.ok && odC2.offWrites[0].index == 30 && odC2.offWrites[0].norm == 0.0f && odC2.offWrites[0].set == "-60.0 dB", "strip ST11b: a gate closing at instantiate (-42 dB) is written to its open end (-60 dB), not left where it was");
+        std::vector<Control> comp2 { ctl (17, "Gate In", 2, { { "Out", 0.0f }, { "In", 1.0f } }, 1.0f, "In"), ctl (6, "Gate Thresh", 0, {}, 0.5f, "-30"), ctl (40, "Limiter Thresh", 0, { { "-20.0 dB", 0.0f }, { "+10.0 dB", 1.0f } }, 0.3f, "-11 dB") };
+        const auto odL = otherDynamicsFor (sectionsOf (comp2), "gate");
+        check (odL.ok && odL.offWrites.size() == 1 && odL.offWrites[0].index == 40 && odL.offWrites[0].norm == 1.0f && odL.offWrites[0].set == "+10.0 dB", "strip ST12: an engage-less limiter / second compressor's threshold goes to its HIGHEST end (no compression)");
+        std::vector<Control> unreadable { ctl (17, "LC On/Off", 2, { { "Off", 0.0f }, { "On", 1.0f } }, 1.0f, "On"), ctl (20, "LC Threshold", 0, {}, 0.5f, "0 dB"), ctl (30, "GE Threshold", 0, { { "Low", 0.0f }, { "High", 1.0f } }, 0.0f, "Low") };
+        check (! otherDynamicsFor (sectionsOf (unreadable), "compressor").ok && otherDynamicsFor (sectionsOf (unreadable), "compressor").refused.contains ("do not read as dB"), "strip ST13: a threshold whose ends are words cannot be neutralised: refused");
     }
 }
 /** CATEGORISING THE UNCATEGORISED (EjmapCategorise.h; item F, 7 Oct): out of scope, the words, the signatures' decision. */

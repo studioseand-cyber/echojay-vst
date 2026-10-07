@@ -1,0 +1,15 @@
+STRIP: text pass: 53 of 61 controls sampled in 13.1 s (timeout 120 s, scaled to the count)
+STRIP: bx_console SSL 4000 E 1.7.1: 53 control(s) in 5 section(s):  compressor 11 (engage Dyn On/Off -> 'On')  eq 21 (engage HPF On/Off -> 'On')  gate 8  saturation 1  global 12
+  compressor: the full compressor path over 11 control(s) with Dyn On/Off -> 'On'; the other dynamics off: GE Range -> '0.0 dB', GE Threshold -> '-60.0 dB' -> AudioUnit_41747d65_1.7.1.compressor
+    -> exit 0 in 131.54 s; exported: profile exported with its tone check; tone check GR 1.97 dB at g 2.0 PASS
+  eq: --cert-eq over 21 control(s) with HPF On/Off -> 'On'
+    -> exit 0 in 17.5933 s; eq.AudioUnit_41747d65_1.7.1.eq.json
+  gate: --cert-dynamics over 8 control(s); the other dynamics off: Dyn On/Off -> 'Off'
+    -> exit 0 in 8.66207 s; gate.AudioUnit_41747d65_1.7.1.dynamics.json
+  saturation: --cert-saturation over 1 control(s)
+    -> exit 0 in 3.76118 s; saturation.AudioUnit_41747d65_1.7.1.saturation.json
+STRIP: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/st9/strip/AudioUnit_41747d65_1.7.1.strip.json
+
+real	2m56.565s
+user	1m44.264s
+sys	0m4.419s

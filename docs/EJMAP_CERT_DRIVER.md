@@ -2953,3 +2953,18 @@ unchanged in outcome (Rule 1 picks Comp Threshold, exported, tone check PASS 2.0
 neutral write (147 s). **bx_console SSL 4000 E** — `needs_review: the strip's gate section has no engage control: it cannot be
 switched off for the compressor sweep` (its GE controls have no switch; `Dyn On/Off` engages the whole dynamics block) — as
 the ruling says; its gate section still runs through the gate mode with `Dyn On/Off → Off`.
+
+## 80. An engage-less other dynamics section is neutralised by its own controls (Kathy's refined ruling, 7 Oct; next build)
+
+`strip::neutraliseByControls` (pins ST10–ST13; the mutant leaving a closing gate's threshold at instantiate goes red): when
+another dynamics section has no engage control, the strip is not held — a gate / expander's threshold-worded controls go to
+their fully-open end (the LOWEST dB in the control's own end texts) and its range / depth / floor to its 0 position; a second
+compressor / limiter's threshold to its no-compression end (the HIGHEST). Two-step switches are left as they are. A control
+whose ends are not dB numbers, or a section with nothing to neutralise it by, still refuses (`needs_review` with that reason).
+The writes ride in the probe's preset as `other_neutral` and reach the record and the profile's `neutral` with source
+"strip: another dynamics section neutralised by its controls". **Confirmed by measurement:** after the sweep, if every
+candidate's sweep is `unreadable` (the quiet reference rungs did not read), the section's row is `needs_review` with that
+reason. Rehearsed: **bx_console SSL 4000 E** — `GE Range → 0.0 dB`, `GE Threshold → −60.0 dB` (its `GE Threshold Range` is a
+two-step 0 / −30 dB switch, left as it is); both LC candidates certify, Kathy's pick `LC Threshold` applies, exported into the
+section folder (not for publication) with `engage: Dyn On/Off = On` and the two neutral writes, tone check **PASS 1.97 dB at
+g 2** (132 s).
