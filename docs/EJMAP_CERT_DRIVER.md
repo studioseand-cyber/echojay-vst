@@ -2866,3 +2866,25 @@ with "the gain also moves" noted; bx_rooMS and bx_delay2500 → a tail, unsettle
 compressors at instantiate → their word, unsettled) and the first 40 uncategorised installed here (5 min: 11 out of scope,
 5 settled, 24 unsettled, 12 PACE not loaded; ~7.5 s per measured product, 28 s for a Waves B360 surround unit).
 Sean's 605: ~25% out of scope by name alone, the rest ~8–10 s each with `--include-pace` → roughly 1–1.5 h.
+
+## 76. The strip's compressor section through the full compressor path (Kathy, 7 Oct)
+
+**What blocked it, exactly:** `runCertSweep` admitted only a subject that `buildWorklist` produced, and the worklist is keyed on
+the ledger's category (`compressor` | `pitch`), so a channel strip (`channel_strip`) could never be a subject; and the sweep's
+own defaults sampling read the whole parameter list, so a section could not be swept alone. **The fix:** `SweepOptions::
+sectionSubject` — a subject the caller supplies (the strip's installed component, category compressor, reach unfixtured) and
+the sweep takes it instead of the worklist's; and the section filter (`--only-controls`, process-wide `onlyControlsFlag`) now
+lives in `parseListParams` AND `parseTextAt` (a filtered param's own def / at lines go with it: pin ST6, mutant red), so every
+list read in the process — the sweep's defaults, every mode's `sampledFixture`, the pool — sees the section's controls alone.
+`--cert-strip-section <product> --out <section folder>` (the caller sets `--only-controls` / `--preset`) runs the PROFILE sweep
+(31 levels, 2.5 s — Rule 1's pick exports only profile-grade), `finishRecord` (the rules, the record's outcome, the profile
+written INTO THE SECTION FOLDER), then the loop's second pass on that folder (the detector, the export there, the tone check).
+Nothing reaches `cert/profiles`; the record, the profile and the tone check carry `strip_section`, `not_for_publication` and
+`strip_engage` (the engage switch written as the probe's preset under every process — a server writing the profile must write
+it first). `runStrip` calls it for the compressor section; the record is `phaseb/strips/strip/<stem>.compressor/`.
+Rehearsed on last night's three: **Lindell 80 Channel** — Rule 1 picks `Comp Threshold` with `Comp In → On`, certifies,
+detector measured, exported into the section folder, tone check **PASS 2.01 dB at g 2** and every deep level 9–12 (144 s);
+**bx_console SSL 4000 E** — its dynamics section's `LC Threshold` / `LC 2nd Thresh Level` (the GE gate thresholds now go to the
+gate section: "GE" / "LC" are section words) carry no comp word, so Rule 1 as ruled does not apply: `needs_review`, two
+candidates swept (114 s) — Kathy's call whether "LC" is a compressor word; **bx_console N** — five candidates, `needs_review`
+(163 s). Each strip: 1–3 min here.

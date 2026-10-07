@@ -34,8 +34,8 @@ inline juce::String sectionOf (const juce::String& name)
 {
     const auto tk = tokens (name);
     auto has = [&] (std::initializer_list<const char*> ws) { for (const auto& t : tk) for (const char* w : ws) if (t == w) return true; return false; };
-    if (has ({ "comp", "compressor", "compression", "dyn", "dynamics", "limiter", "lim" })) return "compressor";
-    if (has ({ "gate", "expander", "exp", "expand", "gating" })) return "gate";
+    if (has ({ "gate", "expander", "exp", "expand", "gating", "ge" })) return "gate";          // "GE" = bx_console SSL's gate / expander
+    if (has ({ "comp", "compressor", "compression", "dyn", "dynamics", "limiter", "lim", "lc" })) return "compressor";   // "LC" = its limiter / compressor
     if (has ({ "eq", "band", "lf", "lmf", "mf", "hmf", "hf", "low", "mid", "high", "hpf", "lpf", "filter", "filters", "shelf", "bell", "q", "freq", "frequency", "hz" })) return "eq";
     if (has ({ "sat", "saturation", "saturate", "drive", "harmonics", "color", "colour", "tape", "tube", "preamp", "pre", "thd" })) return "saturation";
     // an unprefixed compressor control (bx_console SSL 4000 E: "Threshold", "Ratio", "Attack", "Release" beside "Dyn On/Off"): the role word alone

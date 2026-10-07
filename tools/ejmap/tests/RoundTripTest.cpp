@@ -7477,6 +7477,15 @@ void testStrip()
            "strip ST3: 'EQ Bypass' engages at Off (norm 0); 'Sat In' engages at In");
     check (sec ("gate") && ! sec ("gate")->engage && sec ("gate")->note.contains ("no engage switch") && sec ("gate")->numeric == 2 && sec ("global")->controls.size() == 1,
            "strip ST4: a section without a switch says so; Output is global");
+    {   // ST6 (7 Oct): the section filter is process-wide - the list AND the text pass see the section's controls alone, and a filtered
+        // param's own def / at lines go with it (never onto the previous row); cleared, everything is back
+        auto& flag = ejmap::cert::onlyControlsFlag(); flag = { 1 };
+        const auto list = ejmap::cert::parseListParams ("0\tGain\tdB\t0\t0\t1\t0\n1\tThresh\tdB\t0\t0\t1\t0\n2\tRatio\t\t0\t0\t1\t0\n");
+        const auto text = ejmap::cert::parseTextAt ("param\t0\tGain\tunit\tdB\ndef\t0.5\t0.0\tdeclared\t0.5\nat\t0.000000\t-12.0\nparam\t1\tThresh\tunit\tdB\ndef\t0.25\t-10.0\tdeclared\t0.25\nat\t1.000000\t+10.0\n");
+        const bool ok = list.size() == 1 && list.count (1) && text.size() == 1 && text[0].index == 1 && text[0].at.size() == 1 && text[0].at.count ("1.000000") && std::abs (text[0].defNorm - 0.25) < 1e-9;
+        flag.clear();
+        check (ok && ejmap::cert::parseListParams ("0\tGain\tdB\t0\t0\t1\t0\n1\tThresh\tdB\t0\t0\t1\t0\n").size() == 2, "strip ST6: --only-controls narrows parseListParams and parseTextAt to the section (Thresh alone, its own at/def, not Gain's); cleared, both rows return");
+    }
     check (indicesOf (*sec ("eq")) == "3,4,5" && presetOf (*sec ("eq")) == "3:0.000000" && presetOf (*sec ("gate")).isEmpty() && modeFor ("eq") == "--cert-eq" && modeFor ("gate") == "--cert-dynamics" && modeFor ("global").isEmpty(),
            "strip ST5: the child's --only-controls lists the section's indices, --preset the engage write (none without a switch), the mode per section");
 }

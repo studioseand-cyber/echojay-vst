@@ -1,0 +1,80 @@
+SWEEP: subject supplied by the caller (channel strip, compressor section: controls 18,19,21,25,26,28,33,36,37,38,41; engage preset 21:1.000000; the other sections at their instantiate values (Rule 1)), not the worklist
+  neutral: [26] Comp Mix -> norm 1 ('100 %') for mix_wet
+  sweeping Lindell 80 Channel (unseen version 1.0.6: defaults sampled first) - 1 reference + 16 position processes
+EJ Map threshold sweep - Lindell 80 Channel -> AudioUnit_6f3f2163_1.0.6.json  (DISCOVERED: channel strip, compressor section: controls 18,19,21,25,26,28,33,36,37,38,41; engage preset 21:1.000000; the other sections at their instantiate values (Rule 1); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 1f1bab392abc13a1f84125a99aa63eb41fe94591
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [41] Comp Threshold unit '' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: [18] ran at '3:1' -> 3 | auto make-up disabled: no
+default-threshold reference ('-4.00', spec 4.7 check only):  -60.00 out-in 3.06  -58.00 out-in 3.06  -56.00 out-in 3.06  -54.00 out-in 3.06  -52.00 out-in 3.06  -50.00 out-in 3.06  -48.00 out-in 3.06  -46.00 out-in 3.06  -44.00 out-in 3.06  -42.00 out-in 3.06  -40.00 out-in 3.06  -38.00 out-in 3.06  -36.00 out-in 3.06  -34.00 out-in 3.06  -32.00 out-in 3.06  -30.00 out-in 3.06  -28.00 out-in 3.06  -26.00 out-in 3.06  -24.00 out-in 3.06  -22.00 out-in 3.06  -20.00 out-in 2.43  -18.00 out-in 0.94  -16.00 out-in -0.08  -14.00 out-in -0.76  -12.00 out-in -1.45  -10.00 out-in -2.34  -8.00 out-in -3.40  -6.00 out-in -4.58  -4.00 out-in -5.85  -2.00 out-in -7.18  0.00 out-in -8.56  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 16
+processes: 37 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -20.00          6.47    14.45    18.83       -34.1          
+  1  0.0667    -18.00          5.41    13.02    17.36       -32.1          
+  2  0.1333    -16.00          4.51    11.61    15.90       -30.1          
+  3  0.2000    -14.00          3.83    10.24    14.45       -28.1          
+  4  0.2667    -12.00          3.15     8.91    13.02       -26.1          
+  5  0.3333    -10.00          2.13     7.65    11.61       -24.1          
+  6  0.4000    -8.00           0.63     6.47    10.24       -22.1          
+  7  0.4667    -6.00          -0.00     5.41     8.92       -20.1          
+  8  0.5333    -4.00          -0.00     4.51     7.65       -18.1          
+  9  0.6000    -2.00          -0.00     3.83     6.48       -16.4          
+ 10  0.6667    -0.00          -0.00     3.16     5.42       -14.8          
+ 11  0.7333    2.00           -0.00     2.14     4.52       -13.3          
+ 12  0.8000    4.00           -0.00     0.64     3.84       -11.8          
+ 13  0.8667    6.00           -0.00     0.00     3.16       -10.3          
+ 14  0.9333    8.00           -0.00     0.00     2.14        -8.8          
+ 15  1.0000    10.00          -0.00     0.00     0.64        -6.9          
+
+1 MAP:             certified | sense lower_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:0 -34.00:1 -32.00:2 -30.00:3 -28.00:4 -26.00:5 -24.00:6 -22.00:7 -20.00:8 -18.00:9 -16.00:10 -14.00:11 -12.00:12 -10.00:13 -8.00:14 -6.00:15 -4.00:15 -2.00:15 0.00:15
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_6f3f2163_1.0.6.json
+SECTION: sweep exit 0
+DETECTOR: sine     at norm 0.6667: 2 dB reached at -14.181709265175721 dBFS peak-equivalent (unreadable)
+DETECTOR: two-tone at norm 0.6667: 2 dB reached at -16.907512930656615 dBFS peak-equivalent (unreadable)
+DETECTOR: Lindell 80 Channel - sine 2 dB at -14.18, two-tone at -16.91: shift 2.73 dB -> f = 0.91 (peak) -> written into AudioUnit_6f3f2163_1.0.6.json
+TONE: Lindell 80 Channel - [41] Comp Threshold landing at 41 norms: continuous (every write landed where it was written)
+TONE: Lindell 80 Channel - L -10.04 dBFS RMS (-7.03 peak), g 2.0; section 6 picks norm 0.9058 between points 13 and 14 (in_at_gr at g: -11.21 / -9.21; pick's 1 dB point -11.34); ratio 3:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell 80 Channel - GR 2.01 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB)
+RESAMPLE: [25] Comp High Pass Filter read at 21 norms: 20.199999999999999..400.0
+RESAMPLE: [28] Comp Recovery read at 21 norms: 1.5..800.0
+TONE: Lindell 80 Channel - L -10.04 dBFS RMS (-7.03 peak), g 4.0; section 6 picks norm 0.7491 between points 11 and 12 (in_at_gr at g: -10.51 / -8.51; pick's 1 dB point -16.04); ratio 3:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell 80 Channel - GR 3.95 dB at L (target 4.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell 80 Channel - L -10.04 dBFS RMS (-7.03 peak), g 5.0; section 6 picks norm 0.6624 between points 9 and 10 (in_at_gr at g: -11.91 / -9.91; pick's 1 dB point -18.64); ratio 3:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell 80 Channel - GR 4.94 dB at L (target 5.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell 80 Channel - L -10.04 dBFS RMS (-7.03 peak), g 6.0; section 6 picks norm 0.5958 between points 8 and 9 (in_at_gr at g: -11.91 / -9.91; pick's 1 dB point -20.64); ratio 3:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell 80 Channel - GR 5.92 dB at L (target 6.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell 80 Channel - L -10.04 dBFS RMS (-7.03 peak), g 7.0; section 6 picks norm 0.5358 between points 8 and 9 (in_at_gr at g: -10.11 / -8.11; pick's 1 dB point -22.44); ratio 3:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell 80 Channel - GR 6.93 dB at L (target 7.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell 80 Channel - L -10.04 dBFS RMS (-7.03 peak), g 8.0; section 6 picks norm 0.4791 between points 7 and 8 (in_at_gr at g: -10.41 / -8.41; pick's 1 dB point -24.14); ratio 3:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell 80 Channel - GR 7.96 dB at L (target 8.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell 80 Channel - L -10.04 dBFS RMS (-7.03 peak), g 9.0; section 6 picks norm 0.4291 between points 6 and 7 (in_at_gr at g: -10.91 / -8.91; pick's 1 dB point -25.64); ratio 3:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell 80 Channel - GR 8.92 dB at L (target 9.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell 80 Channel - L -10.04 dBFS RMS (-7.03 peak), g 10.0; section 6 picks norm 0.3791 between points 5 and 6 (in_at_gr at g: -11.41 / -9.41; pick's 1 dB point -27.14); ratio 3:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell 80 Channel - GR 9.91 dB at L (target 10.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell 80 Channel - L -10.04 dBFS RMS (-7.03 peak), g 11.0; section 6 picks norm 0.3291 between points 4 and 5 (in_at_gr at g: -11.91 / -9.91; pick's 1 dB point -28.64); ratio 3:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell 80 Channel - GR 10.93 dB at L (target 11.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell 80 Channel - L -10.04 dBFS RMS (-7.03 peak), g 12.0; section 6 picks norm 0.2797 between points 4 and 5 (in_at_gr at g: -10.41 / -8.51; pick's 1 dB point -30.12); ratio 3:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell 80 Channel - GR 11.96 dB at L (target 12.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell 80 Channel - g 2.0 PASS; deep levels checked 9, nulled 0 -> Lindell_80_Channel_1.0.6.tonecheck.json
+SECTION: exported: profile exported with its tone check
+TONECHECK-ALL: /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/st3/strip/AudioUnit_6f3f2163_1.0.6.compressor  iLok ABSENT  no review_picks.json
+SIDECHAIN POLICY CHECK: 0 product(s) swept under enabled_silent with a second input bus
+RE-SWEEP (the plan under this build differs from the plan the record was swept under): 0 product(s) before the re-derive (a measured pick that still needs refinement joins after its re-derive)
+
+RE-SWEEP: 0 product(s)
+OUTCOMES (/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/st3/strip/AudioUnit_6f3f2163_1.0.6.compressor/outcomes.json): 1 rows - exported 1, recorded 0, refused 0, held 0, needs_review 0, quarantined_at_scan 0, needs_licence 0, multiband 0, surround 0
+
+TONECHECK-ALL: 0 re-checked, 1 already at v1.7 (skipped), 0 needs_licence, 0 not exported now, 0 without traces
+review sheet: /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/st3/strip/AudioUnit_6f3f2163_1.0.6.compressor/review_sheet.txt
+SECTION: tone check pass exit 0
+SECTION: exported: profile exported with its tone check

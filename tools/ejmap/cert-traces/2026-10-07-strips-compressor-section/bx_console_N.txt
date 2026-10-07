@@ -1,0 +1,13 @@
+STRIP: text pass: 58 of 62 controls sampled in 13.6 s (timeout 120 s, scaled to the count)
+STRIP: bx_console N 1.9.1: 58 control(s) in 4 section(s):  compressor 10  eq 22 (engage HPF On/Off -> 'On')  saturation 1  global 25
+  compressor: the full compressor path over 10 control(s) -> AudioUnit_417f7950_1.9.1.compressor
+    -> exit 0 in 162.922 s; needs_review: 5 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  eq: --cert-eq over 22 control(s) with HPF On/Off -> 'On'
+    -> exit 0 in 18.6027 s; eq.AudioUnit_417f7950_1.9.1.eq.json
+  saturation: --cert-saturation over 1 control(s)
+    -> exit 4 in 1.78991 s; saturation.AudioUnit_417f7950_1.9.1.saturation.json
+STRIP: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/st3/strip/AudioUnit_417f7950_1.9.1.strip.json
+
+real	3m17.733s
+user	2m17.292s
+sys	0m3.408s
