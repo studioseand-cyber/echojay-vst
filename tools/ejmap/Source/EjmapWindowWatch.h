@@ -15,6 +15,7 @@
 #pragma once
 #include <juce_core/juce_core.h>
 #include <CoreGraphics/CoreGraphics.h>
+#include <ApplicationServices/ApplicationServices.h>
 #include <libproc.h>
 #include <map>
 
@@ -70,6 +71,93 @@ inline juce::StringArray newWindows (const OwnerCounts& baseline, const OwnerCou
         if (it == baseline.end() || n > it->second) out.add (owner);
     }
     return out;
+}
+
+// THE WINDOW'S TEXT (Sean, 6 Oct): whenever the watch catches a window, its owner, title and static text are recorded before
+// the tree is killed - everywhere. The title and bounds come from the window server; the static text needs the Accessibility
+// API, which reads another process's UI only when ejmap is trusted in System Settings > Privacy & Security > Accessibility:
+// untrusted, the record says so (ax_trusted false) and carries the title alone. Nothing is clicked.
+inline void collectAxText (AXUIElementRef el, juce::StringArray& out, int depth, int& budget)
+{
+    if (el == nullptr || depth > 8 || budget <= 0) return;
+    CFTypeRef role = nullptr; if (AXUIElementCopyAttributeValue (el, kAXRoleAttribute, &role) == kAXErrorSuccess && role != nullptr)
+    {
+        const auto r = juce::String::fromCFString ((CFStringRef) role); CFRelease (role);
+        if (r == "AXStaticText" || r == "AXButton" || r == "AXLink" || r == "AXCheckBox" || r == "AXTextField")
+        {
+            for (auto attr : { kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute })
+            {
+                CFTypeRef v = nullptr;
+                if (AXUIElementCopyAttributeValue (el, attr, &v) == kAXErrorSuccess && v != nullptr)
+                {
+                    if (CFGetTypeID (v) == CFStringGetTypeID()) { const auto t = juce::String::fromCFString ((CFStringRef) v).trim(); if (t.isNotEmpty() && ! out.contains (t)) { out.add (r == "AXButton" ? "[button] " + t : t); --budget; } }
+                    CFRelease (v);
+                }
+            }
+        }
+    }
+    CFTypeRef kids = nullptr;
+    if (AXUIElementCopyAttributeValue (el, kAXChildrenAttribute, &kids) == kAXErrorSuccess && kids != nullptr)
+    {
+        if (CFGetTypeID (kids) == CFArrayGetTypeID()) for (CFIndex i = 0; i < CFArrayGetCount ((CFArrayRef) kids) && budget > 0; ++i) collectAxText ((AXUIElementRef) CFArrayGetValueAtIndex ((CFArrayRef) kids, i), out, depth + 1, budget);
+        CFRelease (kids);
+    }
+}
+inline juce::Array<juce::var> describeWindows (pid_t root, bool onScreenOnly = true)
+{
+    juce::Array<juce::var> out;
+    const bool trusted = AXIsProcessTrusted();
+    const CGWindowListOption opt = onScreenOnly ? kCGWindowListOptionOnScreenOnly : kCGWindowListOptionAll;
+    CFArrayRef list = CGWindowListCopyWindowInfo (opt, kCGNullWindowID);
+    if (list == nullptr) return out;
+    std::map<int, juce::StringArray> axByPid;
+    for (CFIndex i = 0; i < CFArrayGetCount (list); ++i)
+    {
+        auto w = (CFDictionaryRef) CFArrayGetValueAtIndex (list, i);
+        auto pidRef = (CFNumberRef) CFDictionaryGetValue (w, kCGWindowOwnerPID); int pid = 0;
+        if (pidRef == nullptr || ! CFNumberGetValue (pidRef, kCFNumberIntType, &pid)) continue;
+        if (! inTreeOf ((pid_t) pid, root)) continue;
+        auto* o = new juce::DynamicObject();
+        auto owner = (CFStringRef) CFDictionaryGetValue (w, kCGWindowOwnerName); auto title = (CFStringRef) CFDictionaryGetValue (w, kCGWindowName);
+        o->setProperty ("owner", owner != nullptr ? juce::String::fromCFString (owner) : juce::String ("?")); o->setProperty ("pid", pid);
+        o->setProperty ("title", title != nullptr ? juce::String::fromCFString (title) : juce::String());
+        if (auto bounds = (CFDictionaryRef) CFDictionaryGetValue (w, kCGWindowBounds)) { CGRect r; if (CGRectMakeWithDictionaryRepresentation (bounds, &r)) o->setProperty ("bounds", juce::String ((int) r.size.width) + "x" + juce::String ((int) r.size.height)); }
+        o->setProperty ("ax_trusted", trusted);
+        if (trusted && ! axByPid.count (pid))
+        {
+            juce::StringArray texts; int budget = 60;
+            if (auto app = AXUIElementCreateApplication ((pid_t) pid))
+            {
+                CFTypeRef wins = nullptr;
+                if (AXUIElementCopyAttributeValue (app, kAXWindowsAttribute, &wins) == kAXErrorSuccess && wins != nullptr)
+                { if (CFGetTypeID (wins) == CFArrayGetTypeID()) for (CFIndex k = 0; k < CFArrayGetCount ((CFArrayRef) wins); ++k) collectAxText ((AXUIElementRef) CFArrayGetValueAtIndex ((CFArrayRef) wins, k), texts, 0, budget); CFRelease (wins); }
+                CFRelease (app);
+            }
+            axByPid[pid] = texts;
+        }
+        juce::Array<juce::var> ts; if (axByPid.count (pid)) for (const auto& t : axByPid[pid]) ts.add (t); o->setProperty ("text", ts);
+        out.add (juce::var (o));
+    }
+    CFRelease (list);
+    return out;
+}
+// a log line "windows\t<json array>" back to the details
+inline juce::Array<juce::var> parseDetailLines (const juce::String& line)
+{
+    juce::Array<juce::var> out; const auto v = juce::JSON::parse (line.fromFirstOccurrenceOf ("windows\t", false, false));
+    if (const auto* a = v.getArray()) for (const auto& w : *a) out.add (w);
+    return out;
+}
+// the licence words in a window's title or text (Sean, 6 Oct: demo / expired / authoriz; PACE's activation and licence words too): the
+// first match, or empty. PURE (pins WT1-WT2).
+inline juce::String licenceWords (const juce::Array<juce::var>& details)
+{
+    for (const auto& w : details)
+    {
+        juce::StringArray all { w.getProperty ("title", "").toString() }; if (const auto* ts = w.getProperty ("text", {}).getArray()) for (const auto& t : *ts) all.add (t.toString());
+        for (const auto& t : all) { const auto l = t.toLowerCase(); for (const char* k : { "demo", "expired", "authoriz", "authoris", "activation", "licen", "trial" }) if (l.contains (k)) return "'" + t.substring (0, 80) + "'"; }
+    }
+    return {};
 }
 
 inline bool isPaceOwner (const juce::StringArray& ownersSeen)

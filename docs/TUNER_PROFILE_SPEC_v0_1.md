@@ -146,7 +146,7 @@ A tuner profile is accepted when, for each step 1–4, the setting the server wo
 | Auto-Tune Artist 9.5.0 | Not settled within 1 s at most positions | 1.0 throughout | Test fix: adaptive half period |
 | Auto-Tune EFX 9.5.0 | As Artist | 1.0 throughout | Test fix: adaptive half period |
 | Auto-Tune Access 10.5.0 | Written at in-between positions that don't exist | Measured at 2 of 8 positions | Test fix: detents only (Slow / Medium / Fast) |
-| UAD Auto-Tune ×4 | — | — | Held for the Apollo |
+| UAD Auto-Tune ×4 | — | — | Held for the UAD-2 Satellite (not an Apollo) |
 
 Flex-Tune, Humanize and key and scale read-backs are not measured yet (section 4, new).
 

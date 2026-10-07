@@ -2759,3 +2759,46 @@ The probe's `--sweep` takes `sr=` (the plugin prepared at that rate; the config 
 "the profile would need a rate field for this unit". The spread: without `--only`, every k-th of the sorted certified list so
 ten are measured (`samplerate::spreadOf`). Rehearsed on the six local profiles (53 s): every unit within 0.01 dB across the
 three rates — on these six, profiles need no rate field; Sean's ten decide for his set.
+
+## 71. UAD: the Satellite preflight, the window's text, the licence file (Sean's rulings, 6 Oct; NEXT BUILD item B)
+
+Sean's UAD is a **UAD-2 Satellite**, not an Apollo (every doc corrected); it runs at the host's rate, so nothing probes at a
+device rate. A UAD plugin's window means "no device" or authorisation.
+- **The preflight** (`EjmapUadPreflight.h`, pins UD1–UD3): once per process, before any UAD product loads, the I/O registry
+  (`ioreg -r -l -w0`) and the hardware listing (`system_profiler` Thunderbolt / USB / FireWire / PCI) are searched for a
+  "UAD-2" / "Universal Audio" DEVICE entry (the UAD Meter & Control Panel running says the software is installed, never a
+  device — it runs here with none). Absent: every UAD product is filed **`UAD-2 device not connected`** (Phase B outcome
+  `needs_device`, a certification outcome `needs_device`), no load, no window, said once at the start of the run; the matching
+  lines are on the record. `--uad-preflight` prints it; `--assume-uad-device` overrides a wrong "absent" (the lines still
+  recorded). The 41 held UAD compressors **unhold** when the preflight finds the device (`uadHardwareHeld`); the licence gate
+  then decides each. Not measurable here (no device): the preflight itself is rehearsed (ABSENT, two UAD rows filed in 0 s,
+  nothing loaded).
+- **The window's text** (`windowwatch::describeWindows`, pins WT1–WT2): whenever the watch catches a window, its owner, pid,
+  title, bounds and — when ejmap is trusted under System Settings › Privacy & Security › **Accessibility** — the static text
+  and buttons are recorded before the kill, printed as a `windows\t<json>` line (so every mode's log and every Phase B row
+  carries it: `row.windows`) and in `describe()`. Untrusted: title only, `ax_trusted: false`. A title or text with demo /
+  expired / authoriz / activation / licen / trial files the row `needs_licence` by itself (the exact word quoted).
+- **The licence file** (`EjmapLicence.h`, pins LC1–LC12; Sean's format, `cert/licences.csv`: vendor, product, state, demo_end,
+  note). The alias table plugin → line, in order and never a silent guess: exact name (the "UAD " prefix dropped) or name +
+  descriptor ("Cambridge" → "Cambridge EQ"; two lines fitting = ambiguous unless the extra lines belong to a LONGER sibling
+  plugin — "AMS RMX16 Expanded Digital Reverb" is `UAD AMS RMX16 Expanded`'s — then sibling-resolved and listed), the note's
+  "covers / includes" (model names), the explicit vendor-model table (`kExplicit`: the 1176 Collection, Tube-Tech EQ, API 500,
+  MDWEQ5, Fairchild, LA-2A, Neve 1073 / Dynamics, Pultec, Massive Passive, SSL G, Helios, Shadow Hills, bx_digital, Precision
+  Multiband, Oxford Limiter V2 — every match listed for review), and "bundled with UAD-2 hardware" for the CS-1 set (CS-1,
+  Precision Delay Mod / Mod L / Reflection Engine, EX-1, DM-1, DM-1L, RS-1: owned, never on the review sheet). The verdict on
+  the run date: owned loads; a demo until its `demo_end` loads and **stamps** `"licence": {"state": "demo", "expires": …}` on
+  the Phase B row and every record it moved, on the certification fixture (`finishRecord`), the profile, the tone check, and as
+  the LAST LINE of every probe trace (`licence\tstate\tdemo\texpires\t…`, appended in `runChild`); a demo past its end is expired;
+  expired / unowned / unmatched never load, filed `needs_licence` with the reason. The gate (`licenceGate`) runs at every mode's
+  entry, in the sweep loop and in the Phase B parent. Phase B summaries list `demo_measured`, `needs_device`, `needs_licence`.
+- **`--licence-check <cert dir> [--licences <csv>] [--date …]`** writes `licence_review.txt` (unmatched / ambiguous first, then
+  the explicit and sibling-resolved matches, then the rest) and prints Sean's three checks; **`--licence-stamp <cert dir>`** is
+  derive-only over an existing folder (demo rows and records stamped; expired / unowned / unmatched rows filed `needs_licence`,
+  `outcome_before_licence_file` kept). **`--redo uad`** (pin P19): a UAD row that showed a window, failed, timed out or was filed
+  `needs_device`, never one filed `needs_licence`.
+- Rehearsed on a copy of Sean's 6 Oct folder with his CSV (date 2026-10-07): 217 governed plugins → 70 owned, 6 demo, 141 not
+  loaded (44 unmatched, 0 ambiguous after the sibling rule); (a) all 26 UAD window rows (4 `window` + 22 exit-5) map to
+  unowned / expired / unmatched; (b) of 97 UAD ok rows 38 owned, 5 demo (Lexicon 224, PE 1C, ME 1B, RMX16, SuprEsser DS), 54
+  now expired / unowned / unmatched; (c) of the 41 held UAD compressors 21 owned (unhold), 1 demo (Auto-Tune Realtime
+  Advanced), 19 needs_licence. The stamp: 5 rows stamped, 80 filed, 38 left. Precision Delay Mod / Mod L / Reflection Engine
+  match the hardware bundle (owned).

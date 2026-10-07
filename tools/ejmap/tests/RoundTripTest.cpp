@@ -77,6 +77,8 @@
 #include "EjmapMaterial.h"
 #include "EjmapFrequency.h"
 #include "EjmapSampleRate.h"
+#include "EjmapLicence.h"
+#include "EjmapUadPreflight.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include <functional>
@@ -7371,6 +7373,78 @@ void testSampleRate()
     const auto sp = spreadOf (41); const auto few = spreadOf (7);
     check (sp.size() == 10 && sp.front() == 0 && sp.back() == 40 && sp[5] == 22 && few.size() == 7 && few.back() == 6 && spreadOf (0).empty(), "samplerate SR3: ten of 41 evenly from the first to the last (0 .. 40, the sixth 22); seven of seven is all");
 }
+/** THE LICENCE FILE (EjmapLicence.h; Sean's rulings, 6 Oct): the CSV, the alias table in order, the verdict on a date, the stamp. */
+void testLicence()
+{
+    using namespace ejmap::licence;
+    const auto lines = parseCsv ("vendor,product,state,demo_end,note\n"
+                                 "UAD-2,Precision Limiter,owned,,\n"
+                                 "UAD-2,Cambridge EQ,owned,,\n"
+                                 "UAD-2,Neve 1073 Legacy EQ,owned,,\n"
+                                 "UAD-2,Neve 1073 Preamp and EQ Collection,owned,,\n"
+                                 "UAD-2,Lexicon 224 Digital Reverb,demo,2026-10-08,\n"
+                                 "UAD-2,Tube-Tech EQ Collection,demo,2026-10-09,\"covers PE 1C and ME 1B\"\n"
+                                 "UAD-2,UA 1176 Limiter Collection,owned,,\n"
+                                 "UAD-2,dbx 160 Compressor,expired,,\n"
+                                 "UAD-2,Topline Vocal Tune,unowned,,listed as UPDATE SOFTWARE\n"
+                                 "Soundtoys,Decapitator,owned,,\n");
+    check (lines.size() == 10 && lines[0].product == "Precision Limiter" && lines[5].note == "covers PE 1C and ME 1B" && lines[4].demoEnd == "2026-10-08" && lines[9].vendor == "Soundtoys", "licence LC1: the CSV parses (the header dropped, quoted notes, demo_end), " + juce::String ((int) lines.size()));
+    auto m = [&] (const char* n, const char* v = "Universal Audio") { return matchPlugin (n, v, lines); };
+    check (m ("UAD Precision Limiter").matched && m ("UAD Precision Limiter").how == "exact name" && m ("UAD Cambridge").matched && m ("UAD Cambridge").line->product == "Cambridge EQ" && m ("UAD Cambridge").how.startsWith ("name + descriptor"),
+           "licence LC2: 'UAD Precision Limiter' is the exact line; 'UAD Cambridge' is 'Cambridge EQ' by descriptor");
+    const auto amb = m ("UAD Neve 1073"), leg = m ("UAD Neve 1073 Legacy");
+    check (amb.ambiguous && ! amb.matched && amb.candidates.size() == 2 && leg.matched && leg.line->product == "Neve 1073 Legacy EQ", "licence LC3: 'UAD Neve 1073' fits two lines (ambiguous, both listed); 'UAD Neve 1073 Legacy' fits one");
+    check (m ("UAD Tube-Tech PE 1C").matched && m ("UAD Tube-Tech PE 1C").how.startsWith ("the note's covers") && m ("UAD Tube-Tech ME 1B").matched, "licence LC4: the note's 'covers PE 1C and ME 1B' matches both Tube-Tech plugins");
+    check (m ("UAD UA 1176LN Rev E").matched && m ("UAD UA 1176LN Rev E").explicitTable && m ("UAD UA 1176LN Rev E").line->product == "UA 1176 Limiter Collection", "licence LC5: the 1176LN Rev E is the 1176 Collection by the explicit table, flagged for review");
+    check (m ("UAD Precision Reflection Engine").matched && m ("UAD Precision Reflection Engine").bundled && m ("UAD Precision Reflection Engine").line->state == "owned" && m ("UAD CS-1").bundled && m ("UAD Precision Delay Mod L").bundled, "licence LC6: the CS-1 set (Precision Delay Mod / Mod L / Reflection Engine / CS-1) is owned as bundled with the hardware");
+    const auto un = m ("UAD Capitol Chambers"), out = m ("bx_opto", "Plugin Alliance"), st = m ("Decapitator", "Soundtoys");
+    check (! un.matched && ! un.ambiguous && un.how.startsWith ("unmatched") && ! out.matched && out.how.startsWith ("no licence line governs") && st.matched, "licence LC7: Capitol Chambers is unmatched; a Plugin Alliance plugin is outside the file; Soundtoys' own line governs Decapitator");
+    const auto vOwned = verdictFor (m ("UAD Precision Limiter"), "2026-10-07"), vDemo = verdictFor (m ("UAD Lexicon 224"), "2026-10-07"), vPast = verdictFor (m ("UAD Lexicon 224"), "2026-10-09"), vExp = verdictFor (m ("UAD dbx 160"), "2026-10-07"), vUn = verdictFor (un, "2026-10-07"), vOut = verdictFor (out, "2026-10-07"), vUnowned = verdictFor (m ("UAD Topline Vocal Tune"), "2026-10-07");
+    check (vOwned.load && ! vOwned.demo && vDemo.load && vDemo.demo && vDemo.expires == "2026-10-08" && ! vPast.load && vPast.state == "expired" && vPast.reason.contains ("ended 2026-10-08"),
+           "licence LC8: owned loads; a demo loads and stamps until its end; the day after its end it is expired and not loaded");
+    check (! vExp.load && vExp.reason.contains ("expired") && ! vUn.load && vUn.state == "unmatched" && vUn.reason.contains ("licence_review") && vOut.load && vOut.outsideFile && ! vUnowned.load && vUnowned.reason.contains ("UPDATE SOFTWARE"),
+           "licence LC9: expired and unowned never load (the note in the reason); unmatched never loads until reviewed; outside the file the file says nothing");
+    check (stampVar (vDemo).getProperty ("state", "").toString() == "demo" && stampVar (vDemo).getProperty ("expires", "").toString() == "2026-10-08", "licence LC10: the stamp is exactly {state: demo, expires: <date>}");
+    std::vector<Reviewed> rows { { "UAD Precision Limiter", m ("UAD Precision Limiter"), vOwned }, { "UAD Capitol Chambers", un, vUn }, { "UAD UA 1176LN Rev E", m ("UAD UA 1176LN Rev E"), verdictFor (m ("UAD UA 1176LN Rev E"), "2026-10-07") } };
+    const auto sheet = reviewSheet (rows, "2026-10-07", "licences.csv");
+    check (sheet.contains ("3 governed plugin(s)") && sheet.contains ("UAD Capitol Chambers: unmatched") && sheet.contains ("UAD UA 1176LN Rev E -> UA 1176 Limiter Collection") && sheet.indexOf ("Capitol") < sheet.indexOf ("1176LN"), "licence LC11: the review sheet counts, lists the unmatched first, then the explicit matches");
+}
+/** THE UAD-2 PREFLIGHT, THE WINDOW'S TEXT, --redo uad (6 Oct, Sean's rulings). */
+void testUadAndWindows()
+{
+    {
+        using namespace ejmap::uad;
+        const auto absent = deviceFromLines ("+-o AppleT8112USBXHCI\n   | \"IOName\" = \"usb-xhci\"\n", "USB:\n  USB 3.1 Bus:\n", true);
+        const auto present = deviceFromLines ("+-o UAD-2 Satellite Thunderbolt@0  <class IOThunderboltDevice>\n   | \"Device Model\" = \"UAD-2 Satellite\"\n", "", false);
+        const auto software = deviceFromLines ("", "  Applications:\n    /Applications/Universal Audio/UAD Meter & Control Panel.app\n", true);
+        check (! absent.present && absent.how.contains ("Control Panel is running") && present.present && present.lines.size() == 2 && ! software.present,
+               "uad UD1: no device line -> absent (the running control panel says software, not device); a Satellite entry -> present with its lines; an .app path never counts");
+        check (isUadProduct ("UAD Cambridge", "Universal Audio") && isUadProduct ("Something", "Universal Audio") && ! isUadProduct ("bx_opto", "Plugin Alliance"), "uad UD2: a UAD product by name prefix or manufacturer");
+        check (juce::String (kNotConnected) == "UAD-2 device not connected", "uad UD3: the filing text is exactly 'UAD-2 device not connected'");
+    }
+    {
+        using namespace ejmap::windowwatch;
+        const auto details = parseDetailLines ("windows\t[{\"owner\":\"EchoJayProbe\",\"pid\":12,\"title\":\"UAD Authorization\",\"text\":[\"Your demo has expired\",\"[button] Buy\"]},{\"owner\":\"X\",\"pid\":13,\"title\":\"\",\"text\":[]}]");
+        check (details.size() == 2 && details[0].getProperty ("title", "").toString() == "UAD Authorization" && licenceWords (details) == "'UAD Authorization'", "windows WT1: the log line parses back; the title's 'Authoriz' is the first licence word");
+        juce::Array<juce::var> plain; { auto* o = new juce::DynamicObject(); o->setProperty ("title", "Settings"); juce::Array<juce::var> t; t.add ("Sample rate 48000"); o->setProperty ("text", t); plain.add (juce::var (o)); }
+        juce::Array<juce::var> demo; { auto* o = new juce::DynamicObject(); o->setProperty ("title", ""); juce::Array<juce::var> t; t.add ("Start Demo"); o->setProperty ("text", t); demo.add (juce::var (o)); }
+        check (licenceWords (plain).isEmpty() && licenceWords (demo) == "'Start Demo'", "windows WT2: a settings window has no licence word; 'Start Demo' in the static text files the row");
+    }
+    {
+        using namespace ejmap::phaseb;
+        auto row = [] (const char* product, const char* outcome) { auto* o = new juce::DynamicObject(); o->setProperty ("product", product); o->setProperty ("outcome", outcome); o->setProperty ("records", juce::Array<juce::var>()); return juce::var (o); };
+        check (rowToRedo (row ("UAD Oxford EQ", "window"), "eq", { "uad" }) && rowToRedo (row ("UAD API 550A", "failed"), "eq", { "uad" }) && rowToRedo (row ("UAD Cambridge", "needs_device"), "eq", { "uad" })
+               && ! rowToRedo (row ("UAD Oxford EQ", "needs_licence"), "eq", { "uad" }) && ! rowToRedo (row ("UAD Cambridge", "ok"), "eq", { "uad" }) && ! rowToRedo (row ("Gold Clip", "window"), "saturation", { "uad" }),
+               "phaseb P19: --redo uad takes a UAD row that showed a window, failed, timed out or was filed needs_device; never one filed needs_licence, an ok row, or a non-UAD window");
+    }
+    {   // the sibling rule (LC12): a descriptor line that is a longer sibling's is the sibling's
+        using namespace ejmap::licence;
+        const auto lines = parseCsv ("vendor,product,state,demo_end,note\nUAD-2,AMS RMX16 Digital Reverb,demo,2026-10-14,\nUAD-2,AMS RMX16 Expanded Digital Reverb,unowned,,\n");
+        const auto alone = matchPlugin ("UAD AMS RMX16", "Universal Audio", lines), withSib = matchPlugin ("UAD AMS RMX16", "Universal Audio", lines, { "UAD AMS RMX16", "UAD AMS RMX16 Expanded" }), exp = matchPlugin ("UAD AMS RMX16 Expanded", "Universal Audio", lines, { "UAD AMS RMX16", "UAD AMS RMX16 Expanded" });
+        check (alone.ambiguous && withSib.matched && withSib.siblingResolved && withSib.line->product == "AMS RMX16 Digital Reverb" && exp.matched && exp.line->product == "AMS RMX16 Expanded Digital Reverb" && ! exp.siblingResolved,
+               "licence LC12: 'UAD AMS RMX16' is ambiguous alone; with 'UAD AMS RMX16 Expanded' installed the Expanded line is the sibling's and RMX16 resolves to its own (listed for review); Expanded matches by descriptor");
+    }
+}
 void testTimingSegments()
 {
     using namespace ejmap::timing;
@@ -8113,6 +8187,8 @@ int main (int, char**)
     testMaterial();
     testFrequency();
     testSampleRate();
+    testLicence();
+    testUadAndWindows();
     testTimingSegments();
     testLimiter();
     testEq();

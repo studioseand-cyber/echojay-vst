@@ -1,0 +1,224 @@
+LICENCE REVIEW (licences.csv, run date 2026-10-07): 217 governed plugin(s): 70 owned, 6 demo (measured, stamped), 141 not loaded (44 unmatched, 0 ambiguous, the rest expired / unowned); 20 matched by the explicit table, 6 sibling-resolved, 4 bundled with the hardware
+
+UNMATCHED / AMBIGUOUS - not loaded until reviewed (add a line, a 'covers' note, or an explicit entry):
+  UAD 4K Buss Compressor: unmatched: no line's product, note or the explicit table names it
+  UAD 4K Channel Strip: unmatched: no line's product, note or the explicit table names it
+  UAD Ampeg SVT3Pro: unmatched: no line's product, note or the explicit table names it
+  UAD Ampeg SVTVR: unmatched: no line's product, note or the explicit table names it
+  UAD Ampeg SVTVR Classic: unmatched: no line's product, note or the explicit table names it
+  UAD Auto-Tune Realtime Access: unmatched: no line's product, note or the explicit table names it
+  UAD Auto-Tune Realtime X: unmatched: no line's product, note or the explicit table names it
+  UAD Dangerous BAX EQ Master: unmatched: no line's product, note or the explicit table names it
+  UAD Dangerous BAX EQ Mix: unmatched: no line's product, note or the explicit table names it
+  UAD elysia alpha master: unmatched: no line's product, note or the explicit table names it
+  UAD elysia alpha mix: unmatched: no line's product, note or the explicit table names it
+  UAD Empirical Labs Distressor: unmatched: no line's product, note or the explicit table names it
+  UAD Empirical Labs FATSO Jr: unmatched: no line's product, note or the explicit table names it
+  UAD Empirical Labs FATSO Sr: unmatched: no line's product, note or the explicit table names it
+  UAD ENGL E646 VS: unmatched: no line's product, note or the explicit table names it
+  UAD ENGL E765 RT: unmatched: no line's product, note or the explicit table names it
+  UAD Friedman BE100: unmatched: no line's product, note or the explicit table names it
+  UAD Friedman DS40: unmatched: no line's product, note or the explicit table names it
+  UAD Harrison 32C SE: unmatched: no line's product, note or the explicit table names it
+  UAD Hitsville EQ Mastering: unmatched: no line's product, note or the explicit table names it
+  UAD Ibanez Tube Screamer TS808: unmatched: no line's product, note or the explicit table names it
+  UAD LA-6176 Channel Strip: unmatched: no line's product, note or the explicit table names it
+  UAD Maag EQ4 MS: unmatched: no line's product, note or the explicit table names it
+  UAD Manley Reference Mic Preamp: unmatched: no line's product, note or the explicit table names it
+  UAD Moog Multimode Filter SE: unmatched: no line's product, note or the explicit table names it
+  UAD Moog Multimode Filter XL: unmatched: no line's product, note or the explicit table names it
+  UAD Neve 1073SE Legacy: unmatched: no line's product, note or the explicit table names it
+  UAD Neve 1081SE: unmatched: no line's product, note or the explicit table names it
+  UAD Neve 31102SE: unmatched: no line's product, note or the explicit table names it
+  UAD Ocean Way Mic Collection: unmatched: no line's product, note or the explicit table names it
+  UAD Ocean Way Mic Collection 180: unmatched: no line's product, note or the explicit table names it
+  UAD OTO Biscuit 8-bit Effects: unmatched: no line's product, note or the explicit table names it
+  UAD Precision Channel Strip: unmatched: no line's product, note or the explicit table names it
+  UAD Putnam Mic Collection: unmatched: no line's product, note or the explicit table names it
+  UAD Putnam Mic Collection 180: unmatched: no line's product, note or the explicit table names it
+  UAD Roland CE-1: unmatched: no line's product, note or the explicit table names it
+  UAD Roland Dimension D: unmatched: no line's product, note or the explicit table names it
+  UAD Roland RE-201: unmatched: no line's product, note or the explicit table names it
+  UAD Sphere Mic Collection 180: unmatched: no line's product, note or the explicit table names it
+  UAD SSL E Channel Strip: unmatched: no line's product, note or the explicit table names it
+  UAD SSL E Channel Strip Legacy: unmatched: no line's product, note or the explicit table names it
+  UAD Tonelux Tilt Live: unmatched: no line's product, note or the explicit table names it
+  UAD UA 175-B: unmatched: no line's product, note or the explicit table names it
+  UAD UA 176: unmatched: no line's product, note or the explicit table names it
+
+EXPLICIT TABLE / SIBLING-RESOLVED (matched by rule, please confirm):
+  UAD AMS RMX16 -> AMS RMX16 Digital Reverb (demo, until 2026-10-14): sibling-resolved
+  UAD API 550A -> API 500 EQ Collection (unowned): explicit table
+  UAD API 560 -> API 500 EQ Collection (unowned): explicit table
+  UAD API Vision Channel Strip -> API Vision Channel Strip Collection (unowned): sibling-resolved
+  UAD bx_digital V2 Mono -> bx_digital V2 EQ (owned): explicit table
+  UAD bx_digital V3 mix -> bx_digital V3 EQ Collection (owned): explicit table
+  UAD Fairchild 660 -> Fairchild Tube Limiter Collection (owned): explicit table
+  UAD Helios Type 69 -> Helios Type 69 Preamp and EQ Collection (owned): sibling-resolved
+  UAD Manley Massive Passive MST -> Manley Massive Passive EQ Collection (owned): explicit table
+  UAD Neve 1073 -> Neve 1073 Preamp and EQ Collection (owned): sibling-resolved
+  UAD Neve 2254 E -> Neve Dynamics Collection (expired): explicit table
+  UAD Neve 2254 E Dual -> Neve Dynamics Collection (expired): explicit table
+  UAD Neve 33609 C -> Neve Dynamics Collection (expired): explicit table
+  UAD Neve 33609SE -> Neve Dynamics Collection (expired): explicit table
+  UAD Neve 88RS -> Neve 88RS Channel Strip Collection (unowned): sibling-resolved
+  UAD Pultec HLF-3C -> Pultec Passive EQ Collection (owned): explicit table
+  UAD Pultec MEQ-5 -> Pultec Passive EQ Collection (owned): explicit table
+  UAD Shadow Hills Class A Mastering Comp -> Shadow Hills Mastering Compressor (owned): explicit table
+  UAD SSL G Bus Compressor -> SSL 4000 G Bus Compressor Collection (owned): explicit table
+  UAD SSL G Bus Compressor Legacy -> SSL 4000 G Legacy Bus Compressor (owned): explicit table
+  UAD Teletronix LA-2 -> Teletronix LA-2A Leveler Collection (owned): explicit table
+  UAD Teletronix LA-2A Gray -> Teletronix LA-2A Leveler Collection (owned): explicit table
+  UAD Teletronix LA-2A Silver -> Teletronix LA-2A Leveler Collection (owned): explicit table
+  UAD Tube-Tech CL 1B -> Tube-Tech CL 1B Compressor (owned): sibling-resolved
+  UAD UA 1176 Rev A -> UA 1176 Limiter Collection (owned): explicit table
+  UAD UA 1176LN Rev E -> UA 1176 Limiter Collection (owned): explicit table
+
+EVERY OTHER MATCH:
+  UAD ADA Flanger -> ADA Flanger (unowned): exact name -> NOT loaded
+  UAD ADA STD-1 Stereo Tapped Delay -> ADA STD-1 Stereo Tapped Delay (unowned): exact name -> NOT loaded
+  UAD AKG BX 20 -> AKG BX 20 Spring Reverb (unowned): name + descriptor (AKG BX 20 Spring Reverb) -> NOT loaded
+  UAD Ampeg B15N -> Ampeg B15N Bass Amplifier (unowned): name + descriptor (Ampeg B15N Bass Amplifier) -> NOT loaded
+  UAD Ampex ATR-102 -> Ampex ATR-102 Tape Recorder (owned): name + descriptor (Ampex ATR-102 Tape Recorder) -> load
+  UAD AMS DMX 15-80 S -> AMS DMX 15-80 S Digital Delay and Pitch Shifter (unowned): name + descriptor (AMS DMX 15-80 S Digital Delay and Pitch Shifter) -> NOT loaded
+  UAD AMS Neve DFC Channel Strip -> AMS Neve DFC Channel Strip (unowned): exact name -> NOT loaded
+  UAD AMS RMX16 Expanded -> AMS RMX16 Expanded Digital Reverb (unowned): name + descriptor (AMS RMX16 Expanded Digital Reverb) -> NOT loaded
+  UAD Antares Auto-Tune Realtime -> Antares Auto-Tune Realtime (unowned): exact name -> NOT loaded
+  UAD API 2500 -> API 2500 Bus Compressor (unowned): name + descriptor (API 2500 Bus Compressor) -> NOT loaded
+  UAD API Preamp -> API Preamp (unowned): exact name -> NOT loaded
+  UAD API Vision Channel Strip Legacy -> API Vision Channel Strip Legacy (unowned): exact name -> NOT loaded
+  UAD Auto-Tune Realtime Advanced -> Auto-Tune Realtime Advanced (demo, until 2026-10-08): exact name -> demo, measured and stamped
+  UAD Avalon VT-737sp -> Avalon VT-737sp Channel Strip (unowned): name + descriptor (Avalon VT-737sp Channel Strip) -> NOT loaded
+  UAD Bermuda Triangle -> Bermuda Triangle Distortion (owned): name + descriptor (Bermuda Triangle Distortion) -> load
+  UAD Brigade Chorus -> Brigade Chorus (owned): exact name -> load
+  UAD bx_digital V2 -> bx_digital V2 EQ (owned): name + descriptor (bx_digital V2 EQ) -> load
+  UAD bx_digital V3 -> bx_digital V3 EQ Collection (owned): name + descriptor (bx_digital V3 EQ Collection) -> load
+  UAD bx_masterdesk -> bx_masterdesk (unowned): exact name -> NOT loaded
+  UAD bx_masterdesk Classic -> bx_masterdesk Classic (unowned): exact name -> NOT loaded
+  UAD bx_refinement -> bx_refinement (unowned): exact name -> NOT loaded
+  UAD bx_saturator V2 -> bx_saturator V2 (unowned): exact name -> NOT loaded
+  UAD bx_subsynth -> bx_subsynth Subharmonic Synth (owned): name + descriptor (bx_subsynth Subharmonic Synth) -> load
+  UAD bx_tuner -> bx_tuner (unowned): exact name -> NOT loaded
+  UAD C-Suite C-Axe -> C-Suite C-Axe Guitar Noise Suppressor (unowned): name + descriptor (C-Suite C-Axe Guitar Noise Suppressor) -> NOT loaded
+  UAD C-Suite C-Max -> C-Suite C-Max Limiter (unowned): name + descriptor (C-Suite C-Max Limiter) -> NOT loaded
+  UAD C-Suite C-Vox -> C-Suite C-Vox Noise and Ambience Reduction (unowned): name + descriptor (C-Suite C-Vox Noise and Ambience Reduction) -> NOT loaded
+  UAD Cambridge -> Cambridge EQ (owned): name + descriptor (Cambridge EQ) -> load
+  UAD Capitol Chambers -> Capitol Chambers (unowned): exact name -> NOT loaded
+  UAD Century Tube Channel Strip -> Century Tube Channel Strip (unowned): exact name -> NOT loaded
+  UAD Chandler GAV19T -> Chandler GAV19T Guitar Amplifier (unowned): name + descriptor (Chandler GAV19T Guitar Amplifier) -> NOT loaded
+  UAD Chandler Limited Curve Bender -> Chandler Limited Curve Bender EQ (unowned): name + descriptor (Chandler Limited Curve Bender EQ) -> NOT loaded
+  UAD Chandler Limited Zener Limiter -> Chandler Limited Zener Limiter (unowned): exact name -> NOT loaded
+  UAD Cooper Time Cube -> Cooper Time Cube Delay (owned): name + descriptor (Cooper Time Cube Delay) -> load
+  UAD CS-1 -> bundled with UAD-2 hardware (owned): bundled with UAD-2 hardware (the CS-1 set) -> load
+  UAD dbx 160 -> dbx 160 Compressor (expired): name + descriptor (dbx 160 Compressor) -> NOT loaded
+  UAD Diezel Herbert -> Diezel Herbert Amplifier (unowned): name + descriptor (Diezel Herbert Amplifier) -> NOT loaded
+  UAD Diezel VH4 -> Diezel VH4 Amplifier (unowned): name + descriptor (Diezel VH4 Amplifier) -> NOT loaded
+  UAD DreamVerb -> DreamVerb Room Modeler (owned): name + descriptor (DreamVerb Room Modeler) -> load
+  UAD Dytronics Cyclosonic Panner -> Dytronics Cyclosonic Panner (unowned): exact name -> NOT loaded
+  UAD Dytronics Tri-Stereo Chorus -> Dytronics Tri-Stereo Chorus (unowned): exact name -> NOT loaded
+  UAD Eden WT800 -> Eden WT800 Bass Amplifier (unowned): name + descriptor (Eden WT800 Bass Amplifier) -> NOT loaded
+  UAD elysia mpressor -> elysia mpressor (unowned): exact name -> NOT loaded
+  UAD EMT 140 -> EMT 140 Plate Reverb (owned): name + descriptor (EMT 140 Plate Reverb) -> load
+  UAD EMT 250 -> EMT 250 Digital Reverb (expired): name + descriptor (EMT 250 Digital Reverb) -> NOT loaded
+  UAD ENGL Savage 120 -> ENGL Savage 120 Guitar Amplifier (unowned): name + descriptor (ENGL Savage 120 Guitar Amplifier) -> NOT loaded
+  UAD EP-34 Tape Echo -> EP-34 Tape Echo (unowned): exact name -> NOT loaded
+  UAD Eventide H910 Harmonizer -> Eventide H910 Harmonizer (expired): exact name -> NOT loaded
+  UAD Fairchild 670 -> Fairchild 670 Legacy Limiter (owned): name + descriptor (Fairchild 670 Legacy Limiter) -> load
+  UAD Fairchild 670 Legacy -> Fairchild 670 Legacy Limiter (owned): name + descriptor (Fairchild 670 Legacy Limiter) -> load
+  UAD Fender 55 Tweed Deluxe -> Fender 55 Tweed Deluxe Amplifier (unowned): name + descriptor (Fender 55 Tweed Deluxe Amplifier) -> NOT loaded
+  UAD Friedman Buxom Betty -> Friedman Buxom Betty Amplifier (unowned): name + descriptor (Friedman Buxom Betty Amplifier) -> NOT loaded
+  UAD Fuchs Overdrive Supreme 50 -> Fuchs Overdrive Supreme 50 Amplifier (unowned): name + descriptor (Fuchs Overdrive Supreme 50 Amplifier) -> NOT loaded
+  UAD Fuchs Train II -> Fuchs Train II Guitar Amplifier (unowned): name + descriptor (Fuchs Train II Guitar Amplifier) -> NOT loaded
+  UAD Galaxy Tape Echo -> Galaxy Tape Echo (owned): exact name -> load
+  UAD Gallien Krueger 800RB -> Gallien-Krueger 800RB Bass Amplifier (unowned): name + descriptor (Gallien-Krueger 800RB Bass Amplifier) -> NOT loaded
+  UAD Harrison 32C -> Harrison 32C EQ (unowned): name + descriptor (Harrison 32C EQ) -> NOT loaded
+  UAD Helios Type 69 Legacy -> Helios Type 69 Legacy EQ (owned): name + descriptor (Helios Type 69 Legacy EQ) -> load
+  UAD Hemisphere Mic Collection -> Hemisphere Mic Collection (unowned): exact name -> NOT loaded
+  UAD Hitsville EQ -> Hitsville EQ Collection (unowned): name + descriptor (Hitsville EQ Collection) -> NOT loaded
+  UAD Hitsville Reverb Chambers -> Hitsville Reverb Chambers (unowned): exact name -> NOT loaded
+  UAD Korg SDD-3000 -> Korg SDD-3000 Digital Delay (unowned): name + descriptor (Korg SDD-3000 Digital Delay) -> NOT loaded
+  UAD Lexicon 224 -> Lexicon 224 Digital Reverb (demo, until 2026-10-08): name + descriptor (Lexicon 224 Digital Reverb) -> demo, measured and stamped
+  UAD Lexicon 480L -> Lexicon 480L Digital Reverb and Effects (unowned): name + descriptor (Lexicon 480L Digital Reverb and Effects) -> NOT loaded
+  UAD Little Labs IBP -> Little Labs IBP Phase Alignment (unowned): name + descriptor (Little Labs IBP Phase Alignment) -> NOT loaded
+  UAD Little Labs VOG -> Little Labs VOG Bass Enhancer (owned): name + descriptor (Little Labs VOG Bass Enhancer) -> load
+  UAD Maag EQ4 -> Maag EQ4 EQ (expired): name + descriptor (Maag EQ4 EQ) -> NOT loaded
+  UAD Manley Massive Passive -> Manley Massive Passive EQ Collection (owned): name + descriptor (Manley Massive Passive EQ Collection) -> load
+  UAD Manley Variable Mu -> Manley Variable Mu Limiter (unowned): name + descriptor (Manley Variable Mu Limiter) -> NOT loaded
+  UAD Manley VOXBOX -> Manley VOXBOX Channel Strip (unowned): name + descriptor (Manley VOXBOX Channel Strip) -> NOT loaded
+  UAD Marshall Bluesbreaker 1962 -> Marshall Bluesbreaker 1962 Amplifier (unowned): name + descriptor (Marshall Bluesbreaker 1962 Amplifier) -> NOT loaded
+  UAD Marshall JMP 2203 -> Marshall JMP 2203 Amplifier (unowned): name + descriptor (Marshall JMP 2203 Amplifier) -> NOT loaded
+  UAD Marshall Plexi Classic -> Marshall Plexi Classic Amplifier (owned): name + descriptor (Marshall Plexi Classic Amplifier) -> load
+  UAD Marshall Plexi Super Lead 1959 -> Marshall Plexi Super Lead 1959 Amplifier (unowned): name + descriptor (Marshall Plexi Super Lead 1959 Amplifier) -> NOT loaded
+  UAD Marshall Silver Jubilee 2555 -> Marshall Silver Jubilee 2555 Amplifier (unowned): name + descriptor (Marshall Silver Jubilee 2555 Amplifier) -> NOT loaded
+  UAD MDWEQ5-3B -> Massenburg DesignWorks MDWEQ5 EQ (unowned): the note's covers/includes (Massenburg DesignWorks MDWEQ5 EQ) -> NOT loaded
+  UAD MDWEQ5-5B -> Massenburg DesignWorks MDWEQ5 EQ (unowned): the note's covers/includes (Massenburg DesignWorks MDWEQ5 EQ) -> NOT loaded
+  UAD Millennia NSEQ-2 -> Millennia NSEQ-2 EQ (unowned): name + descriptor (Millennia NSEQ-2 EQ) -> NOT loaded
+  UAD Moog Multimode Filter -> Moog Multimode Filter Collection (unowned): name + descriptor (Moog Multimode Filter Collection) -> NOT loaded
+  UAD MXR Flanger-Doubler -> MXR Flanger-Doubler (unowned): exact name -> NOT loaded
+  UAD Neve 1073 Legacy -> Neve 1073 Legacy EQ (owned): name + descriptor (Neve 1073 Legacy EQ) -> load
+  UAD Neve 1081 -> Neve 1081 EQ (expired): name + descriptor (Neve 1081 EQ) -> NOT loaded
+  UAD Neve 1084 -> Neve 1084 Preamp and EQ (unowned): name + descriptor (Neve 1084 Preamp and EQ) -> NOT loaded
+  UAD Neve 31102 -> Neve 31102 EQ (unowned): name + descriptor (Neve 31102 EQ) -> NOT loaded
+  UAD Neve 88RS Legacy -> Neve 88RS Legacy Channel Strip (unowned): name + descriptor (Neve 88RS Legacy Channel Strip) -> NOT loaded
+  UAD Neve Preamp -> Neve Preamp (unowned): exact name -> NOT loaded
+  UAD Ocean Way Studios -> Ocean Way Studios Room Modeler (unowned): name + descriptor (Ocean Way Studios Room Modeler) -> NOT loaded
+  UAD Oxford Dynamic EQ -> Oxford Dynamic EQ (unowned): exact name -> NOT loaded
+  UAD Oxford Envolution -> Oxford Envolution Envelope Shaper (owned): name + descriptor (Oxford Envolution Envelope Shaper) -> load
+  UAD Oxford EQ -> Oxford EQ (unowned): exact name -> NOT loaded
+  UAD Oxford Inflator -> Oxford Inflator (owned): exact name -> load
+  UAD Oxford Limiter -> Oxford Limiter V2 (expired): name + descriptor (Oxford Limiter V2) -> NOT loaded
+  UAD Oxford SuprEsser DS -> Oxford SuprEsser DS (demo, until 2026-10-15): exact name -> demo, measured and stamped
+  UAD Oxide Tape -> Oxide Tape Recorder (owned): name + descriptor (Oxide Tape Recorder) -> load
+  UAD Precision Buss Compressor -> Precision Buss Compressor (owned): exact name -> load
+  UAD Precision De-Esser -> Precision De-Esser (owned): exact name -> load
+  UAD Precision Delay Mod -> bundled with UAD-2 hardware (owned): bundled with UAD-2 hardware (the CS-1 set) -> load
+  UAD Precision Delay Mod L -> bundled with UAD-2 hardware (owned): bundled with UAD-2 hardware (the CS-1 set) -> load
+  UAD Precision Enhancer Hz -> Precision Enhancer Hz (owned): exact name -> load
+  UAD Precision Enhancer kHz -> Precision Enhancer kHz (owned): exact name -> load
+  UAD Precision Equalizer -> Precision Equalizer (owned): exact name -> load
+  UAD Precision K-Stereo -> Precision K-Stereo Ambience Recovery (unowned): name + descriptor (Precision K-Stereo Ambience Recovery) -> NOT loaded
+  UAD Precision Limiter -> Precision Limiter (owned): exact name -> load
+  UAD Precision Maximizer -> Precision Maximizer (owned): exact name -> load
+  UAD Precision Multiband -> Precision Multiband Compressor (owned): name + descriptor (Precision Multiband Compressor) -> load
+  UAD Precision Reflection Engine -> bundled with UAD-2 hardware (owned): bundled with UAD-2 hardware (the CS-1 set) -> load
+  UAD Pultec EQP-1A -> Pultec EQP-1A Legacy EQ (owned): name + descriptor (Pultec EQP-1A Legacy EQ) -> load
+  UAD Pultec EQP-1A Legacy -> Pultec EQP-1A Legacy EQ (owned): name + descriptor (Pultec EQP-1A Legacy EQ) -> load
+  UAD Pultec-Pro Legacy -> Pultec-Pro Legacy EQ (owned): name + descriptor (Pultec-Pro Legacy EQ) -> load
+  UAD Pure Plate -> Pure Plate Reverb (owned): name + descriptor (Pure Plate Reverb) -> load
+  UAD Raw -> Raw Distortion (owned): name + descriptor (Raw Distortion) -> load
+  UAD RealVerb-Pro -> RealVerb-Pro Room Modeler (owned): name + descriptor (RealVerb-Pro Room Modeler) -> load
+  UAD Shadow Hills Mastering Compressor -> Shadow Hills Mastering Compressor (owned): exact name -> load
+  UAD Softube Amp Room Half-Stack -> Softube Amp Room Half-Stack (owned): exact name -> load
+  UAD Softube Bass Amp Room -> Softube Bass Amp Room (unowned): exact name -> NOT loaded
+  UAD Softube Bass Amp Room 8x10 -> Softube Bass Amp Room 8x10 (owned): exact name -> load
+  UAD Softube Metal Amp Room -> Softube Metal Amp Room (unowned): exact name -> NOT loaded
+  UAD Softube Vintage Amp Room -> Softube Vintage Amp Room (unowned): exact name -> NOT loaded
+  UAD Softube Vocoder -> Softube Vocoder (unowned): exact name -> NOT loaded
+  UAD Sound Machine Wood Works -> Sound Machine Wood Works (unowned): exact name -> NOT loaded
+  UAD Sphere Mic Collection -> Sphere Mic Collection (unowned): exact name -> NOT loaded
+  UAD SPL Transient Designer -> SPL Transient Designer (expired): exact name -> NOT loaded
+  UAD SPL TwinTube -> SPL TwinTube Saturation (expired): name + descriptor (SPL TwinTube Saturation) -> NOT loaded
+  UAD SPL Vitalizer MK2-T -> SPL Vitalizer MK2-T (unowned): exact name -> NOT loaded
+  UAD Studer A800 -> Studer A800 Tape Recorder (expired): name + descriptor (Studer A800 Tape Recorder) -> NOT loaded
+  UAD Studio D Chorus -> Studio D Chorus (owned): exact name -> load
+  UAD Suhr PT100 -> Suhr PT100 Amplifier (unowned): name + descriptor (Suhr PT100 Amplifier) -> NOT loaded
+  UAD Suhr SE100 -> Suhr SE100 Amplifier (unowned): name + descriptor (Suhr SE100 Amplifier) -> NOT loaded
+  UAD Summit Audio TLA-100A -> Summit Audio TLA-100A Compressor (unowned): name + descriptor (Summit Audio TLA-100A Compressor) -> NOT loaded
+  UAD Teletronix LA-2A Legacy -> Teletronix LA-2A Legacy Leveler (owned): name + descriptor (Teletronix LA-2A Legacy Leveler) -> load
+  UAD Teletronix LA-3A -> Teletronix LA-3A Audio Leveler (owned): name + descriptor (Teletronix LA-3A Audio Leveler) -> load
+  UAD Thermionic Culture Vulture -> Thermionic Culture Vulture Distortion (unowned): name + descriptor (Thermionic Culture Vulture Distortion) -> NOT loaded
+  UAD Tonelux Tilt -> Tonelux Tilt EQ (unowned): name + descriptor (Tonelux Tilt EQ) -> NOT loaded
+  UAD Trident A-Range -> Trident A-Range EQ (unowned): name + descriptor (Trident A-Range EQ) -> NOT loaded
+  UAD TS Overdrive -> TS Overdrive (owned): exact name -> load
+  UAD Tube-Tech CL 1B mk II -> Tube-Tech CL 1B mk II (owned): exact name -> load
+  UAD Tube-Tech ME 1B -> Tube-Tech EQ Collection (demo, until 2026-10-09): the note's covers/includes (Tube-Tech EQ Collection) -> demo, measured and stamped
+  UAD Tube-Tech PE 1C -> Tube-Tech EQ Collection (demo, until 2026-10-09): the note's covers/includes (Tube-Tech EQ Collection) -> demo, measured and stamped
+  UAD UA 1176AE -> UA 1176 Limiter Collection (owned): the note's covers/includes (UA 1176 Limiter Collection) -> load
+  UAD UA 1176LN Legacy -> UA 1176LN Legacy Limiter (owned): name + descriptor (UA 1176LN Legacy Limiter) -> load
+  UAD UA 1176SE Legacy -> UA 1176SE Legacy Limiter (owned): name + descriptor (UA 1176SE Legacy Limiter) -> load
+  UAD UA 610-A -> UA 610-A Tube Preamp and EQ (owned): name + descriptor (UA 610-A Tube Preamp and EQ) -> load
+  UAD UA 610-B -> UA 610-B Tube Preamp and EQ (owned): name + descriptor (UA 610-B Tube Preamp and EQ) -> load
+  UAD V76 Preamp -> V76 Preamp (owned): exact name -> load
+  UAD Valley People Dyna-mite -> Valley People Dyna-mite Dynamics (unowned): name + descriptor (Valley People Dyna-mite Dynamics) -> NOT loaded
+  UAD Vertigo VSC-2 -> Vertigo VSC-2 Compressor (unowned): name + descriptor (Vertigo VSC-2 Compressor) -> NOT loaded
+  UAD Vertigo VSM-3 -> Vertigo VSM-3 Saturator (unowned): name + descriptor (Vertigo VSM-3 Saturator) -> NOT loaded

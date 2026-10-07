@@ -253,3 +253,15 @@ server's write order (engage, neutral including the other candidates, ratio, amo
 a missing end sample, or an instantiate value outside the sampled ends), the follow-up reads the control at 21 norms and
 writes `cert/controls/<identity>.controls.json` — the full taper and the corrected range. It is in the zip you send back;
 nothing is published from EJ Map. It adds roughly 15 s per such control.
+
+## Step 2 additions (7 Oct build): UAD and the licence file
+
+Before step 2: copy your licence file into the cert folder as `cert/licences.csv` (Sean's format: vendor,product,state,demo_end,note).
+Then, with nothing loaded:
+    ejmap --uad-preflight                      # says whether the UAD-2 Satellite is seen; if it says ABSENT while the Satellite is connected, add --assume-uad-device to every command below and send the printed lines
+    ejmap --licence-check <cert dir>           # writes <cert>/licence_review.txt (the unmatched / ambiguous plugins first) and prints checks (a) (b) (c)
+    ejmap --licence-stamp <cert dir>           # derive-only: stamps last night's demo rows and records, files expired / unowned / unmatched rows needs_licence
+For the window's TEXT to be recorded, ejmap must be allowed under System Settings › Privacy & Security › Accessibility (once);
+without it the title alone is recorded. Nothing is ever clicked.
+The --redo sets, in this order: `--redo uad` (the UAD rows that showed a window or failed and are not filed needs_licence),
+then the rest as listed below.

@@ -91,9 +91,17 @@ inline bool categoryRuns (const Category& c, const juce::StringArray& onlyCatego
     if (! onlyCategories.isEmpty()) return onlyCategories.contains (c.name);
     return ! c.optIn || redo.contains (c.name);
 }
+// --redo uad (6 Oct): a UAD product's row that did not measure (window, failed, timed out, or filed needs_device because the
+// Satellite was not connected) runs again - never one the licence file or the window's own text filed needs_licence
+inline bool rowIsUadRedo (const juce::var& row)
+{
+    const auto oc = row.getProperty ("outcome", "").toString();
+    return row.getProperty ("product", "").toString().startsWithIgnoreCase ("UAD ") && (oc == "window" || oc == "failed" || oc == "timed_out" || oc == "needs_device");
+}
 inline bool rowToRedo (const juce::var& row, const juce::String& category, const juce::StringArray& redo)
 {
     if (redo.contains (category)) return true;
+    if (redo.contains ("uad") && rowIsUadRedo (row)) return true;
     return redo.contains ("nothing_nominated") && rowIsNothingNominated (row);
 }
 

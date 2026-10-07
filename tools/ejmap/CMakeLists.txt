@@ -104,7 +104,7 @@ target_link_libraries(ejmap PRIVATE
     juce::juce_recommended_warning_flags)
 
 if(APPLE)
-    target_link_libraries(ejmap PRIVATE "-framework AudioToolbox" "-framework CoreAudioKit"
+    target_link_libraries(ejmap PRIVATE "-framework AudioToolbox" "-framework CoreAudioKit" "-framework ApplicationServices"
                                         "-framework Network")   # Option A: the TLS stream
 endif()
 
@@ -154,7 +154,7 @@ target_link_libraries(ejmap-roundtrip-test PRIVATE
 # juce_audio_processors, which references AUGenericView. Same framework
 # ejextract and the ejmap app already link for the same reason.
 if(APPLE)
-    target_link_libraries(ejmap-roundtrip-test PRIVATE "-framework CoreAudioKit")
+    target_link_libraries(ejmap-roundtrip-test PRIVATE "-framework CoreAudioKit" "-framework ApplicationServices")
 endif()
 
 #==============================================================================

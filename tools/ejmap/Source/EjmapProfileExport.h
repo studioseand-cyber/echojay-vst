@@ -480,6 +480,7 @@ inline Export exportCompProfile (const juce::var& f)
 
     auto* P = new juce::DynamicObject();
     P->setProperty ("schema", "ej_comp_profile/1");
+    if (f.getProperty ("licence", {}).isObject()) P->setProperty ("licence", f.getProperty ("licence", {}));   // a demo-licensed record's stamp rides onto the profile (Sean, 6 Oct)
     {
         auto* pl = new juce::DynamicObject();
         pl->setProperty ("name", f.getProperty ("product", ""));

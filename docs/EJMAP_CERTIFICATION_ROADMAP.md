@@ -18,7 +18,7 @@ Counts are from Sean's Mac census (4 Oct): installed AudioUnits by category, not
 - [ ] Investigate and re-run the 12 flat or passthrough products: RComp, SSLComp, C1 comp, VComp, NEOLD U2A, U17, dbx-160 (m) and SSL Fusion HF.
 - [ ] Fix and re-run API-2500 (m/s), where the repeat pass never ran, and Purple MC 77, where the curve dips.
 - [ ] Make the one-time review picks for the genuine choices: Shadow Hills ×2, Maag, MaxxVolume ×2, VBC Rack, Auto-Tune Vocal Compressor and dbx-160 (s).
-- [ ] Re-run the UAD units with the Apollo attached: 41 compressors and tuners.
+- [ ] Re-run the UAD units with the UAD-2 Satellite connected (Sean, 6 Oct: a Satellite, not an Apollo; it runs at the host's rate): 41 compressors and tuners.
 - [ ] CL 1B's 0.7 dB live gap: wait for A's live quiet-window reading.
 
 ### Tuners
@@ -26,7 +26,7 @@ Counts are from Sean's Mac census (4 Oct): installed AudioUnits by category, not
 - [ ] Auto-Tune Artist and EFX: lengthen the speed test, because they don't settle within the 1 s flip.
 - [ ] Auto-Tune Access: test only the three Retune Speed detents (Slow, Medium, Fast).
 - [ ] Agree a tuner spec with Sean, so the records reach the server.
-- [ ] Re-run the 4 UAD Auto-Tune units with the Apollo.
+- [ ] Re-run the 4 UAD Auto-Tune units with the UAD-2 Satellite connected.
 
 ---
 

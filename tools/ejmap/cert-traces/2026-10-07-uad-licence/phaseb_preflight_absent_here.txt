@@ -1,0 +1,12 @@
+PHASEB: UAD-2 device ABSENT: no UAD-2 / Universal Audio device in the I/O registry or the hardware listing (the UAD Meter & Control Panel is running: the software is installed, no device) -> 2 UAD row(s) will be filed 'UAD-2 device not connected', none loaded
+PHASEB: licence file licences.csv: 181 line(s); governed products are gated (owned / demo load, the rest never)
+PHASEB: 3 product(s) over 1 category -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/uadpf/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  eq           3 product(s), 0 already done; hang guard 30 min (three sweeps per band, up to ten bands, the engage search and the pool: ~6-12 min measured)
+[eq 1/3 | all 1/3] Q10 (m): ok 264.895 s | elapsed 0:04:25 | ETA 0:08:50
+[eq 2/3 | all 2/3] UAD Cambridge: needs_device 0 s | elapsed 0:04:26 | ETA 0:02:12
+[eq 3/3 | all 3/3] UAD Pultec EQP-1A: needs_device 0 s | elapsed 0:04:26 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261007T101649, updated 20261007T102114); summary /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/uadpf/phaseb/summary.json
+
+real	4m32.644s
+user	0m15.540s
+sys	0m3.489s

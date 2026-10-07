@@ -709,6 +709,15 @@ namespace
             // --cert-gain-cal <product> [--out <cert dir>] [--probe <path>] [--ejmap-ledger <dir>]: roadmap 2.1 PROTOTYPE (B1), nothing exported
             // --cert-combined <product> [--cert-root <cert dir>] [--out <dir>] [--probe <path>] [--ejmap-ledger <dir>]: accuracy pass A1 (6 Oct), data only
             // --cert-material <product> [--cert-root <cert dir>] [--out <dir>] [--probe <path>] [--ejmap-ledger <dir>]: accuracy pass A2 (6 Oct), data only
+            // --uad-preflight [--assume-uad-device]; --licence-check <cert dir> [--licences <csv>] [--date YYYY-MM-DD]; --licence-stamp <cert dir> [...] (6 Oct, Sean's UAD rulings)
+            for (int j = 1; j < argc; ++j) if (argAt (argc, argv, j) == "--assume-uad-device") ejmap::cert::assumeUadDeviceFlag() = true;   // every command: the hold and the gate read it
+            if (a == "--uad-preflight") { ejmap::cert::SweepOptions o; o.assumeUadDevice = ejmap::cert::assumeUadDeviceFlag(); return ejmap::cert::runUadPreflight (o); }
+            if ((a == "--licence-check" || a == "--licence-stamp") && i + 1 < argc)
+            {
+                ejmap::cert::SweepOptions o; o.out = cwdFile (argAt (argc, argv, i + 1)); juce::File csv; juce::String date;
+                for (int j = i + 2; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--licences") csv = cwdFile (v); else if (k == "--date") date = v; }
+                return a == "--licence-check" ? ejmap::cert::runLicenceCheck (o, csv, date) : ejmap::cert::runLicenceStamp (o, csv, date);
+            }
             if (a == "--cert-samplerate" && i + 1 < argc)   // accuracy pass A4 (6 Oct), data only
             {
                 ejmap::cert::SweepOptions o; o.product = argAt (argc, argv, i + 1);
@@ -774,7 +783,8 @@ namespace
                 // --redo gain-cal,timing names categories (their rows run again); --redo nothing_nominated re-runs the rows that finished with no record
                 for (auto& r : redo) { if (r == "gain-cal") r = "gaincal"; if (r == "gain-all") r = "gainall"; }
                 for (auto& c : cats) { if (c == "gain-cal") c = "gaincal"; if (c == "gain-all") c = "gainall"; }
-                for (const auto& r : redo) if (r != "nothing_nominated" && ejmap::phaseb::categoryNamed (r) == nullptr) { std::cerr << "--redo: '" << r << "' is not a Phase B category or nothing_nominated" << std::endl; return 2; }
+                for (const auto& r : redo) if (r != "nothing_nominated" && r != "uad" && ejmap::phaseb::categoryNamed (r) == nullptr) { std::cerr << "--redo: '" << r << "' is not a Phase B category, nothing_nominated or uad" << std::endl; return 2; }
+                for (int j = 1; j < argc; ++j) if (argAt (argc, argv, j) == "--assume-uad-device") o.assumeUadDevice = true;
                 ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
                 return a == "--phaseb-status" ? ejmap::cert::runPhaseBStatus (o) : ejmap::cert::runPhaseBAll (o, cats, only, redo);
             }

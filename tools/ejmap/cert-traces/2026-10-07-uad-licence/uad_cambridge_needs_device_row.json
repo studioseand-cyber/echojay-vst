@@ -1,0 +1,12 @@
+{
+  "product": "UAD Cambridge",
+  "identity": "AudioUnit|2116669|11.2.0",
+  "category": "eq",
+  "mode": "--cert-eq",
+  "reason": "UAD-2 device not connected (no UAD-2 / Universal Audio device in the I/O registry or the hardware listing (the UAD Meter & Control Panel is running: the software is installed, no device)); not loaded",
+  "records": [],
+  "outcome": "needs_device",
+  "seconds": 0.0,
+  "at": "20261007T102114",
+  "probe": "e8fd0810c10539c1f7d1b6fa0318de85b40be145"
+}

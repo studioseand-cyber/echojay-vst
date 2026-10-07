@@ -57,6 +57,8 @@
 #include "EjmapMaterial.h"
 #include "EjmapFrequency.h"
 #include "EjmapSampleRate.h"
+#include "EjmapLicence.h"
+#include "EjmapUadPreflight.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include "EjmapCertReview.h"
@@ -108,6 +110,7 @@ struct ChildResult
     int signal = 0;           // terminating signal when signaled
     juce::String out;         // stdout and stderr, interleaved
     juce::StringArray windowsInTree;   // owner names of on-screen windows the child's tree showed
+    juce::Array<juce::var> windowDetails;   // owner, pid, title, bounds, static text (when Accessibility is trusted) of each, taken before the kill (6 Oct)
     double ms = 0.0;                   // AWAKE time the child ran for (the clock every timeout is measured on)
     double sleptMs = 0.0;              // continuous minus awake time over the run: > 0 means the Mac slept during it
 
@@ -120,7 +123,7 @@ struct ChildResult
             case Kind::signaled:    return "killed by signal " + juce::String (signal)
                                            + (signal == SIGTERM ? " (SIGTERM: a caller's timeout, not a refusal)" : "");
             case Kind::timedOut:    return "timed out after " + juce::String (ms / 1000.0, 1) + " s (killed by the driver)";
-            case Kind::uiShown:     return "SHOWED A WINDOW (" + windowsInTree.joinIntoString (", ")
+            case Kind::uiShown:     return "SHOWED A WINDOW (" + windowsInTree.joinIntoString (", ") + [this] { juce::StringArray t; for (const auto& w : windowDetails) { const auto ti = w.getProperty ("title", "").toString(); if (ti.isNotEmpty()) t.add ("'" + ti + "'"); } return t.isEmpty() ? juce::String() : "; title " + t.joinIntoString (", "); }()
                                            + ") after " + juce::String (ms / 1000.0, 1) + " s; killed by the driver";
             case Kind::spawnFailed: return "could not be started";
             case Kind::sleptTwice:  return "the Mac slept during both attempts: refused (a measurement across a wake is not trusted)";
@@ -136,6 +139,7 @@ struct ChildResult
 using windowwatch::parentOf;
 using windowwatch::inTreeOf;
 
+inline juce::Array<juce::var> windowsOwnedByTreeDetails (pid_t root, bool onScreenOnly = true) { return windowwatch::describeWindows (root, onScreenOnly); }
 inline juce::StringArray windowsOwnedByTree (pid_t root, bool onScreenOnly = true)
 {
     juce::StringArray owners;
@@ -158,6 +162,14 @@ inline juce::StringArray windowsOwnedByTree (pid_t root, bool onScreenOnly = tru
 }
 
 struct WatchOptions { bool watchWindows = true; bool onScreenOnly = true; int pollMs = 250; };
+
+// THE LICENCE STAMP IN FORCE for the product being measured in this process (Sean, 6 Oct): set by licenceGate for a demo
+// (cleared for anything else), appended as the last line of every probe trace runChild returns, and written onto every
+// record by the mode's writers through licenceStampVar(). Empty = no stamp.
+inline juce::String& licenceStampLine() { static juce::String l; return l; }
+inline juce::var& licenceStampVar() { static juce::var v; return v; }
+inline void stampLicence (juce::DynamicObject* o) { if (o != nullptr && licenceStampVar().isObject()) o->setProperty ("licence", licenceStampVar()); }   // onto a record object (a no-op without a stamp)
+inline juce::var stampLicence (juce::var v) { stampLicence (v.getDynamicObject()); return v; }
 
 //==============================================================================
 // SLEEP (ruled 29 Sep; spec section 6: unattended runs happen on laptops).
@@ -260,6 +272,8 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
             if (! shown.isEmpty())
             {
                 r.windowsInTree = shown;
+                r.windowDetails = windowsOwnedByTreeDetails (pid, watch.onScreenOnly);   // the title and text, before the kill (Sean, 6 Oct)
+                { juce::Array<juce::var> arr; for (const auto& w : r.windowDetails) arr.add (w); std::cout << "windows\t" << juce::JSON::toString (juce::var (arr), true) << std::endl; }
                 // The whole tree goes: the wrapper's UI process is a child of the probe.
                 for (int k = 0; k < 16; ++k)
                 {
@@ -290,6 +304,7 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
     r.ms  = clock.awakeMs() - t0;
     r.sleptMs = juce::jmax (0.0, (clock.withSleepMs() - w0) - r.ms);
     r.out = collected.toString();
+    if (licenceStampLine().isNotEmpty()) r.out << (r.out.endsWithChar ('\n') || r.out.isEmpty() ? "" : "\n") << licenceStampLine() << "\n";   // every trace of a demo-licensed product carries the stamp (Sean, 6 Oct)
     if (uiKilled)                r.kind = ChildResult::Kind::uiShown;
     else if (killed)             r.kind = ChildResult::Kind::timedOut;
     else if (WIFEXITED (status))   { r.kind = ChildResult::Kind::exited;   r.code = WEXITSTATUS (status); }
@@ -473,6 +488,15 @@ inline juce::String externalHardwareNeeded (const juce::String& product, const j
     if (componentCode.endsWith (",!UAD")) return "UAD hardware (UAD-2)";
     return {};
 }
+// --assume-uad-device for the whole process (the hold below and the gate read it)
+inline bool& assumeUadDeviceFlag() { static bool f = false; return f; }
+// THE UAD-2 UNHOLD (Sean, 6 Oct): a UAD product held for its hardware is measurable when the preflight finds the Satellite; the
+// licence gate then decides owned / demo / needs_licence per product
+inline bool uadHardwareHeld (const juce::String& componentCode)
+{
+    if (! componentCode.endsWith (",!UAD")) return true;
+    return ! uad::device (assumeUadDeviceFlag()).present;
+}
 inline bool requiresExternalHardware (const juce::String& product, const juce::String& componentCode)
 {
     return externalHardwareNeeded (product, componentCode).isNotEmpty();
@@ -625,8 +649,9 @@ inline void classify (std::vector<Subject>& subjects, bool includePace)
             {
                 s.desc = installed.getReference (0);
                 s.installedUnique = true;
-                s.hardware = requiresExternalHardware (s.product, s.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false));
+                s.hardware = requiresExternalHardware (s.product, s.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)) && uadHardwareHeld (s.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false));
                 if (s.hardware) s.detail << "; needs " << externalHardwareNeeded (s.product, s.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)) << " present";
+                else if (s.desc.fileOrIdentifier.endsWith (",!UAD")) s.detail << "; UAD-2 device present (preflight)";
                 juce::String why;
                 s.licenceBound = isPace (s.desc, why);
             }
@@ -1360,7 +1385,7 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
         s.desc = c.inst.desc;
         s.reach = Subject::Reach::unfixtured;
         s.installedUnique = true;
-        s.hardware = requiresExternalHardware (s.product, c.inst.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false));
+        s.hardware = requiresExternalHardware (s.product, c.inst.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)) && uadHardwareHeld (c.inst.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false));
         juce::String why;
         s.licenceBound = paceHeld (c.inst.desc, bundles, why);
         s.mapState = c.mappedBy;
@@ -1426,6 +1451,7 @@ struct SweepOptions
     bool retryLicence = false;                       // --retry-licence: re-check the needs-licence set (the licence is back)
     bool ignoreCeilingName = false;                  // --cert-limiter --ignore-ceiling-name (test only): the measured-ceiling path on a product with the word
     juce::File certRoot;                             // --cert-root: the real cert folder when --out is a Phase B temp folder (combined settings read their inputs there)
+    bool assumeUadDevice = false;                    // --assume-uad-device: the UAD-2 preflight found none but Sean says the Satellite is connected (the registry lines are recorded)
     bool gainAll = false;                            // --cert-gain-cal --kind all (the gain-all rows, 6 Oct item 6): the product is not a compressor, so the plan's amount is a gain target too
     bool deriveOnly = false;                         // --derive-only (tone-check mode): re-derive, apply the rules and export, load NOTHING - the projection for a zipped-back folder
     juce::StringArray resweepProducts;               // the follow-up's own re-sweep set (planDiffers): forced back onto the worklist
@@ -2560,6 +2586,7 @@ inline juce::File latestRecordFor (const juce::File& fixturesDir, const juce::St
 inline juce::var finishRecord (const SweepOptions& opt, const juce::File& recordFile, const juce::String& category)
 {
     auto record = juce::JSON::parse (recordFile.loadFileAsString());
+    if (licenceStampVar().isObject() && record.isObject() && ! record.hasProperty ("licence")) { stampLicence (record.getDynamicObject()); recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n"); }   // a demo-licensed product's record carries the stamp (6 Oct)
     const auto identity = record.getProperty ("identity", recordFile.getFileNameWithoutExtension()).toString();
     const auto product = record.getProperty ("product", "").toString();
     { const auto what = loop::applyReviewPick (record, juce::JSON::parse (opt.out.getChildFile ("review_picks.json").loadFileAsString())); if (what.isNotEmpty()) { std::cout << "  " << what << std::endl; if (what.startsWith ("review pick applied")) recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n"); } }
@@ -2812,6 +2839,131 @@ inline juce::String setText (const juce::String& out, int idx)
 // its gain-role controls (output, makeup, input when not the amount control, and names answering trim / gain / level) each
 // at 21 norms, -20 then -40 dBFS, everything else as instantiated; writes cert/gaincal/<identity>.gaincal.json. Nothing
 // exported, nothing published. Returns 0 when at least one control was measured.
+// THE LICENCE GATE (Sean's rulings, 6 Oct): before any product loads, in this order - (1) the session's known stops (the scan's,
+// this folder's needs_licence rows; --retry-licence passes them), (2) for a UAD product the UAD-2 device preflight (absent ->
+// "UAD-2 device not connected", no load), (3) cert/licences.csv: owned loads; a running demo loads and sets the stamp; expired /
+// unowned / unmatched never load. The stop text is the reason on the row. Reads the file from the real cert folder.
+struct LicenceGate { juce::String stop; bool demo = false; juce::var stamp; juce::String note; };
+inline juce::String runDateIso() { return juce::Time::getCurrentTime().formatted ("%Y-%m-%d"); }
+inline std::vector<licence::Line> licenceLinesOf (const juce::File& certRoot) { return licence::parseCsv (certRoot.getChildFile ("licences.csv").loadFileAsString()); }
+inline LicenceGate licenceGate (const SweepOptions& opt, const juce::String& product, const juce::String& manufacturer, const juce::File& certRoot, bool retryLicence)
+{
+    LicenceGate g; licenceStampLine().clear(); licenceStampVar() = juce::var();
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (certRoot.getChildFile ("outcomes.json").loadFileAsString()), product, retryLicence); known.isNotEmpty()) { g.stop = known; return g; }
+    if (uad::isUadProduct (product, manufacturer))
+    {
+        const auto& d = uad::device (opt.assumeUadDevice || assumeUadDeviceFlag());
+        if (! d.present) { g.stop = juce::String (uad::kNotConnected) + " (" + d.how + "); not loaded"; return g; }
+    }
+    const auto lines = licenceLinesOf (certRoot);
+    if (lines.empty()) return g;
+    juce::StringArray siblings; for (const auto& r : installedAudioUnits()) siblings.add (r.desc.name);
+    const auto m = licence::matchPlugin (product, manufacturer, lines, siblings); const auto v = licence::verdictFor (m, runDateIso());
+    if (v.outsideFile) return g;
+    g.note = v.reason;
+    if (! v.load) { g.stop = v.reason; return g; }
+    if (v.demo) { g.demo = true; g.stamp = licence::stampVar (v); licenceStampVar() = g.stamp; licenceStampLine() = "licence\tstate\tdemo\texpires\t" + v.expires + "\tproduct\t" + m.line->product; }
+    return g;
+}
+inline LicenceGate licenceGate (const SweepOptions& opt, const juce::PluginDescription& desc) { return licenceGate (opt, desc.name, desc.manufacturerName, opt.certRoot != juce::File() ? opt.certRoot : opt.out, opt.retryLicence); }
+
+// --uad-preflight: say what the registry shows, load nothing
+inline int runUadPreflight (const SweepOptions& opt)
+{
+    const auto& d = uad::device (opt.assumeUadDevice);
+    std::cout << "UAD-2 device " << (d.present ? "PRESENT" : "ABSENT") << ": " << d.how << std::endl;
+    for (const auto& l : d.lines) std::cout << "  " << l << std::endl;
+    std::cout << juce::JSON::toString (uad::deviceVar (d)) << std::endl;
+    return d.present ? 0 : 4;
+}
+// --licence-check <cert dir> [--licences <csv>] [--date YYYY-MM-DD]: the alias table over every installed governed plugin -> <cert>/licence_review.txt,
+// and Sean's three checks over the folder: (a) every Phase B row that showed a window maps to unowned / expired / unmatched, (b) every
+// UAD Phase B record maps to owned or demo, (c) the held UAD compressors split into owned (to unhold) and the rest. READ-ONLY but for
+// the review sheet.
+inline int runLicenceCheck (const SweepOptions& opt, const juce::File& csv, const juce::String& dateArg)
+{
+    const auto root = opt.out; const auto file = csv != juce::File() ? csv : root.getChildFile ("licences.csv");
+    const auto lines = licence::parseCsv (file.loadFileAsString()); const auto date = dateArg.isNotEmpty() ? dateArg : runDateIso();
+    if (lines.empty()) { std::cout << "LICENCE: no lines in " << file.getFullPathName() << std::endl; return 2; }
+    // every governed plugin: installed here, or named in this folder's rows (Sean's products are not all installed here); the siblings are all of them
+    std::map<juce::String, juce::String> names; for (const auto& r : installedAudioUnits()) names[r.desc.name] = r.desc.manufacturerName;
+    const auto outcomesVar = juce::JSON::parse (root.getChildFile ("outcomes.json").loadFileAsString());
+    if (const auto* a = outcomesVar.getArray()) for (const auto& r : *a) { const auto n = r.getProperty ("product", "").toString(); if (n.isNotEmpty() && ! names.count (n)) names[n] = {}; }
+    for (const auto& catDir : root.getChildFile ("phaseb").findChildFiles (juce::File::findDirectories, false)) for (const auto& f : catDir.findChildFiles (juce::File::findFiles, false, "*.phaseb.json")) { const auto n = juce::JSON::parse (f.loadFileAsString()).getProperty ("product", "").toString(); if (n.isNotEmpty() && ! names.count (n)) names[n] = {}; }
+    juce::StringArray siblings; for (const auto& [n, mf] : names) siblings.add (n);
+    std::map<juce::String, std::pair<licence::Match, licence::Verdict>> by; std::vector<licence::Reviewed> rows;
+    for (const auto& [n, mf] : names)
+    {
+        const auto m = licence::matchPlugin (n, mf, lines, siblings); const auto v = licence::verdictFor (m, date);
+        if (v.outsideFile) continue;
+        by[n] = { m, v }; rows.push_back ({ n, m, v });
+    }
+    std::sort (rows.begin(), rows.end(), [] (const licence::Reviewed& a, const licence::Reviewed& b) { return a.plugin.compareIgnoreCase (b.plugin) < 0; });
+    const auto sheet = licence::reviewSheet (rows, date, file.getFileName());
+    root.getChildFile ("licence_review.txt").replaceWithText (sheet, false, false, "\n");
+    std::cout << sheet.upToFirstOccurrenceOf ("\n", false, false) << std::endl << "  -> " << root.getChildFile ("licence_review.txt").getFullPathName() << std::endl;
+    // (a) (b): the Phase B rows
+    juce::StringArray aBad, bBad, bDemo, bOwned, bUnlisted; int aN = 0, bN = 0;
+    for (const auto& catDir : root.getChildFile ("phaseb").findChildFiles (juce::File::findDirectories, false))
+        for (const auto& f : catDir.findChildFiles (juce::File::findFiles, false, "*.phaseb.json"))
+        {
+            const auto row = juce::JSON::parse (f.loadFileAsString()); const auto product = row.getProperty ("product", "").toString(); const auto oc = row.getProperty ("outcome", "").toString();
+            if (! product.startsWithIgnoreCase ("UAD ")) continue;
+            const auto it = by.find (product); const juce::String state = it == by.end() ? juce::String ("not installed here") : it->second.second.state;
+            const bool window = oc == "window" || (oc == "failed" && (int) row.getProperty ("exit_code", 0) == 5);
+            if (window) { ++aN; if (state != "unowned" && state != "expired" && state != "unmatched") aBad.add (product + " -> " + state); }
+            if (oc == "ok") { ++bN; if (state == "owned") bOwned.add (product); else if (state == "demo") bDemo.add (product + " (until " + it->second.second.expires + ")"); else bBad.add (product + " -> " + state + (it != by.end() ? ": " + it->second.first.how : juce::String())); }
+        }
+    std::cout << "(a) " << aN << " UAD window row(s): " << (aBad.isEmpty() ? "ALL map to unowned / expired / unmatched" : juce::String (aBad.size()) + " do NOT: " + aBad.joinIntoString ("; ")) << std::endl;
+    std::cout << "(b) " << bN << " UAD Phase B ok row(s): " << bOwned.size() << " owned, " << bDemo.size() << " demo (" << bDemo.joinIntoString (", ") << ")" << (bBad.isEmpty() ? "" : "; " + juce::String (bBad.size()) + " NEITHER: " + bBad.joinIntoString ("; ")) << std::endl;
+    // (c) the held UAD compressors
+    juce::StringArray cOwned, cDemo, cStop; int cN = 0;
+    if (const auto* a = outcomesVar.getArray())
+        for (const auto& r : *a)
+        {
+            const auto product = r.getProperty ("product", "").toString(); if (! product.startsWithIgnoreCase ("UAD ") || r.getProperty ("state", "").toString() != "held") continue;
+            ++cN; const auto it = by.find (product); const juce::String state = it == by.end() ? juce::String ("not installed here") : it->second.second.state;
+            if (state == "owned") cOwned.add (product); else if (state == "demo") cDemo.add (product); else cStop.add (product + " -> " + state);
+        }
+    std::cout << "(c) " << cN << " held UAD compressor(s): " << cOwned.size() << " owned (unhold for the full run, with the Satellite preflight): " << cOwned.joinIntoString (", ") << std::endl
+              << "    " << cDemo.size() << " demo: " << cDemo.joinIntoString (", ") << std::endl << "    " << cStop.size() << " unowned / expired / unmatched (needs_licence): " << cStop.joinIntoString ("; ") << std::endl;
+    return 0;
+}
+// --licence-stamp <cert dir> [--licences <csv>] [--date YYYY-MM-DD]: DERIVE-ONLY over an existing folder (Sean, 6 Oct item 3): every Phase B row
+// of a governed product - a running demo gets the stamp on the row and each of its records; expired / unowned / unmatched rows are
+// filed needs_licence (their records kept, never loaded again). Nothing is loaded.
+inline int runLicenceStamp (const SweepOptions& opt, const juce::File& csv, const juce::String& dateArg)
+{
+    const auto root = opt.out; const auto file = csv != juce::File() ? csv : root.getChildFile ("licences.csv");
+    const auto lines = licence::parseCsv (file.loadFileAsString()); const auto date = dateArg.isNotEmpty() ? dateArg : runDateIso();
+    if (lines.empty()) { std::cout << "LICENCE: no lines in " << file.getFullPathName() << std::endl; return 2; }
+    std::map<juce::String, juce::String> manu; juce::StringArray siblings; for (const auto& r : installedAudioUnits()) { manu[r.desc.name] = r.desc.manufacturerName; siblings.add (r.desc.name); }
+    for (const auto& catDir : root.getChildFile ("phaseb").findChildFiles (juce::File::findDirectories, false)) for (const auto& f : catDir.findChildFiles (juce::File::findFiles, false, "*.phaseb.json")) siblings.addIfNotAlreadyThere (juce::JSON::parse (f.loadFileAsString()).getProperty ("product", "").toString());
+    int stamped = 0, filed = 0, kept = 0;
+    for (const auto& catDir : root.getChildFile ("phaseb").findChildFiles (juce::File::findDirectories, false))
+        for (const auto& f : catDir.findChildFiles (juce::File::findFiles, false, "*.phaseb.json"))
+        {
+            auto row = juce::JSON::parse (f.loadFileAsString()); const auto product = row.getProperty ("product", "").toString();
+            const auto m = licence::matchPlugin (product, manu.count (product) ? manu[product] : juce::String(), lines, siblings); const auto v = licence::verdictFor (m, date);
+            if (v.outsideFile) continue;
+            auto* o = row.getDynamicObject(); if (o == nullptr) continue;
+            if (v.demo)
+            {
+                o->setProperty ("licence", licence::stampVar (v)); o->setProperty ("licence_note", v.reason); ++stamped;
+                if (const auto* rs = row.getProperty ("records", {}).getArray()) for (const auto& rp : *rs) { const auto rf = catDir.getChildFile (rp.toString()); auto rec = juce::JSON::parse (rf.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { ro->setProperty ("licence", licence::stampVar (v)); rf.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } }
+                std::cout << "  stamped " << product << " (" << catDir.getFileName() << "): demo until " << v.expires << std::endl;
+            }
+            else if (! v.load)
+            {
+                if (row.getProperty ("outcome", "").toString() != "needs_licence") { o->setProperty ("outcome_before_licence_file", row.getProperty ("outcome", "")); o->setProperty ("outcome", "needs_licence"); o->setProperty ("reason", v.reason + " (filed by --licence-stamp on " + date + ")"); ++filed; std::cout << "  needs_licence " << product << " (" << catDir.getFileName() << "): " << v.reason << std::endl; }
+            }
+            else { ++kept; continue; }
+            f.replaceWithText (juce::JSON::toString (row) + "\n", false, false, "\n");
+        }
+    std::cout << "LICENCE STAMP: " << stamped << " row(s) stamped demo, " << filed << " filed needs_licence, " << kept << " owned left as they were; nothing loaded" << std::endl;
+    return 0;
+}
+
 // COMBINED SETTINGS (Kathy's NEXT BUILD item A1, 6 Oct; derivation in EjmapCombined.h): the certified profile + its tone check +
 // the time draft + the gain draft -> one server-style setting at g = 4 (pick, engage, neutrals, ratio, attack, release, make-up),
 // ONE fresh process at L, GR and output level against the prediction; the miss on the record. Data only, nothing exported.
@@ -2824,8 +2976,8 @@ inline int runCombined (const SweepOptions& opt)
     if (hits.size() != 1) { say ("COMBINED: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (root.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
-    { say ("COMBINED: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("COMBINED: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
     const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
     const auto recordFile = latestRecordFor (root.getChildFile ("fixtures"), opt.product);
@@ -2905,8 +3057,8 @@ inline int runMaterial (const SweepOptions& opt)
     if (hits.size() != 1) { say ("MATERIAL: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (root.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
-    { say ("MATERIAL: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("MATERIAL: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
     const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
     const auto pstem = juce::File::createLegalFileName (opt.product).replaceCharacter (' ', '_') + "_" + desc.version;
@@ -2966,8 +3118,8 @@ inline int runFrequency (const SweepOptions& opt)
     if (hits.size() != 1) { say ("FREQUENCY: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (root.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
-    { say ("FREQUENCY: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("FREQUENCY: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
     const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
     const auto pstem = juce::File::createLegalFileName (opt.product).replaceCharacter (' ', '_') + "_" + desc.version;
@@ -3033,8 +3185,8 @@ inline int runSampleRate (const SweepOptions& opt)
     if (hits.size() != 1) { say ("SAMPLERATE: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (root.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
-    { say ("SAMPLERATE: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("SAMPLERATE: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
     const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
     const auto pstem = juce::File::createLegalFileName (opt.product).replaceCharacter (' ', '_') + "_" + desc.version;
@@ -3097,8 +3249,8 @@ inline int runGainCal (const SweepOptions& opt)
     std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("GAINCAL: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
-    { say ("GAINCAL: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("GAINCAL: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("gaincal"); outDir.createDirectory();
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
     const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
@@ -3247,8 +3399,8 @@ inline int runTiming (const SweepOptions& opt)
     std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("TIMING: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
-    { say ("TIMING: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("TIMING: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     const auto recordFile = latestRecordFor (opt.out.getChildFile ("fixtures"), opt.product);
     auto record = juce::JSON::parse (recordFile.loadFileAsString());
     if (! record.isObject()) { say ("TIMING: no record for " + opt.product + " in " + opt.out.getChildFile ("fixtures").getFullPathName() + " (sweep it first)"); return 2; }
@@ -3431,8 +3583,8 @@ inline int runLimiter (const SweepOptions& opt)
     std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("LIMITER: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
-    { say ("LIMITER: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("LIMITER: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("limiter"); outDir.createDirectory();
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
     const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
@@ -3619,8 +3771,8 @@ inline int runEq (const SweepOptions& opt)
     std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("EQ: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
-    { say ("EQ: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("EQ: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("eq"); outDir.createDirectory();
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
     const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
@@ -3848,8 +4000,8 @@ inline int runSaturation (const SweepOptions& opt)
     std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("SAT: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
-    { say ("SAT: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("SAT: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("saturation"); outDir.createDirectory();
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
@@ -3974,8 +4126,8 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("RD: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
-    { say ("RD: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("RD: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
     if (kind.isEmpty()) { const auto in = loadDiscoveryInputs (opt.ledger); const auto it = in.categoryByUid.find ("AudioUnit|" + uidHex); kind = it != in.categoryByUid.end() ? it->second : juce::String(); }
     if (kind != "reverb" && kind != "delay") { say ("RD: '" + opt.product + "' is category '" + kind + "' in the ledger; say --kind reverb or --kind delay"); return 2; }
@@ -4209,8 +4361,8 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
     std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("DYN: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
-    { say ("DYN: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("DYN: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
     if (kind.isEmpty()) { const auto in = loadDiscoveryInputs (opt.ledger); const auto it = in.categoryByUid.find ("AudioUnit|" + uidHex); kind = it != in.categoryByUid.end() ? it->second : juce::String(); if (kind == "transient_shaper") kind = "transient"; }
     if (kind != "transient" && kind != "gate") { say ("DYN: '" + opt.product + "' is category '" + kind + "' in the ledger; say --kind transient or --kind gate"); return 2; }
@@ -4426,8 +4578,8 @@ inline int runDeesser (const SweepOptions& opt)
     std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("DS: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
-    { say ("DS: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("DS: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("deesser"); outDir.createDirectory();
     int processN = 0;
@@ -4599,8 +4751,8 @@ inline int runMultiband (const SweepOptions& opt)
     std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("MB: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
-    { say ("MB: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("MB: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("multiband"); outDir.createDirectory();
     int processN = 0;
@@ -4817,7 +4969,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     for (const auto& cat : categories()) if (work.count (cat.name))
     {
         auto& c = prog.cats[cat.name]; c.total = (int) work[cat.name].size(); c.done = 0; c.ok = c.timedOut = c.failed = c.skipped = 0;
-        for (const auto& pp : work[cat.name]) if (isDone (phasebDir, cat.name, pp.stem)) { ++c.done; const auto row = juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()); const auto oc = row.getProperty ("outcome", "").toString(); if (oc == "ok") ++c.ok; else if (oc == "timed_out") ++c.timedOut; else if (oc == "skipped") ++c.skipped; else ++c.failed; }
+        for (const auto& pp : work[cat.name]) if (isDone (phasebDir, cat.name, pp.stem)) { ++c.done; const auto row = juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()); const auto oc = row.getProperty ("outcome", "").toString(); if (oc == "ok") ++c.ok; else if (oc == "timed_out") ++c.timedOut; else if ((oc == "skipped" || oc == "needs_licence" || oc == "needs_device")) ++c.skipped; else ++c.failed; }
         totalAll += c.total;
     }
     if (! redo.isEmpty()) prog.redo = redo.joinIntoString (",");
@@ -4827,6 +4979,11 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
         writeAtomic (phasebDir.getChildFile ("progress.json"), juce::JSON::toString (progressVar (prog)));
         writeAtomic (phasebDir.getChildFile ("progress.txt"), progressText (prog));
     };
+    {   // THE UAD-2 PREFLIGHT, once, said at the start (Sean, 6 Oct): absent -> every UAD product below is filed "UAD-2 device not connected", none loaded
+        int uadN = 0; for (const auto& [c, l] : work) for (const auto& pp : l) if (uad::isUadProduct (pp.product, pp.desc.manufacturerName)) ++uadN;
+        if (uadN > 0) { const auto& d = uad::device (opt.assumeUadDevice); say ("PHASEB: UAD-2 device " + juce::String (d.present ? "present" : "ABSENT") + ": " + d.how + (d.present ? juce::String() : " -> " + juce::String (uadN) + " UAD row(s) will be filed '" + uad::kNotConnected + "', none loaded")); }
+        const auto lines = licenceLinesOf (opt.out); if (! lines.empty()) say ("PHASEB: licence file licences.csv: " + juce::String ((int) lines.size()) + " line(s); governed products are gated (owned / demo load, the rest never)");
+    }
     say ("PHASEB: " + juce::String (totalAll) + " product(s) over " + juce::String ((int) work.size()) + " categor" + (work.size() == 1 ? "y" : "ies") + " -> " + phasebDir.getFullPathName() + "  (resumable; Ctrl-C any time; a product's result lands only when it is complete)");
     for (const auto& cat : categories()) if (work.count (cat.name)) say ("  " + cat.name.paddedRight (' ', 11) + juce::String ((int) work[cat.name].size()).paddedLeft (' ', 3) + " product(s), " + juce::String (prog.cats[cat.name].done) + " already done; hang guard " + juce::String (cat.guardS / 60.0, 0) + " min (" + cat.guardWhy + ")");
     saveProgress ({});
@@ -4847,10 +5004,17 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             saveProgress (cat.name + ": " + pp.product);
             auto* row = new juce::DynamicObject(); row->setProperty ("product", pp.product); row->setProperty ("identity", "AudioUnit|" + juce::String::toHexString (pp.desc.uniqueId) + "|" + pp.desc.version); row->setProperty ("category", cat.name); row->setProperty ("mode", cat.mode);
             juce::String outcome; double seconds = 0.0;
-            // licence: the scan's stop, or a needs_licence row in this folder - never loaded
-            if (const auto known = loop::knownLicenceStop (scanStops, outcomes, pp.product, false); known.isNotEmpty()) { outcome = "skipped"; row->setProperty ("reason", "licence: " + known); }
+            // THE LICENCE GATE (6 Oct): the scan's stop or a needs_licence row (skipped), the UAD-2 device (needs_device), the licence
+            // file (needs_licence: expired / unowned / unmatched); a running demo measures and stamps the row and its records
+            const auto gate = licenceGate (opt, pp.product, pp.desc.manufacturerName, opt.out, false);
+            if (gate.stop.isNotEmpty())
+            {
+                outcome = gate.stop.contains (uad::kNotConnected) ? "needs_device" : gate.stop.startsWith ("licence file") ? "needs_licence" : "skipped";
+                row->setProperty ("reason", gate.stop); row->setProperty ("records", juce::Array<juce::var>());
+            }
             else
             {
+                if (gate.demo) { row->setProperty ("licence", gate.stamp); row->setProperty ("licence_note", gate.note); }
                 if (cat.name == "timing" && pp.recordFile.isNotEmpty()) { tmp.getChildFile ("fixtures").createDirectory(); juce::File (pp.recordFile).copyFileTo (tmp.getChildFile ("fixtures").getChildFile (juce::File (pp.recordFile).getFileName())); }
                 juce::StringArray args { exe.getFullPathName(), cat.mode, pp.product };
                 if (cat.kindArg.isNotEmpty()) { args.add ("--kind"); args.add (cat.kindArg); }
@@ -4864,7 +5028,19 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 if (r.kind == ChildResult::Kind::timedOut) outcome = "timed_out";
                 else if (r.kind == ChildResult::Kind::uiShown) outcome = "window";
                 else if (r.kind == ChildResult::Kind::exited && (r.code == 0 || r.code == 4)) outcome = slept ? "slept" : "ok";   // 4 = the mode found nothing to measure (said in its log)
+                else if (r.kind == ChildResult::Kind::exited && r.code == kToneLicenceKnownExit) { outcome = r.out.contains (uad::kNotConnected) ? "needs_device" : "needs_licence"; juce::String why; for (const auto& line : juce::StringArray::fromLines (r.out)) if (line.contains (" - ")) why = line.fromFirstOccurrenceOf (" - ", false, false); row->setProperty ("reason", why); }
+                else if (r.kind == ChildResult::Kind::exited && r.code == 5) { outcome = "window"; }   // the mode stopped on a window it saw mid-measurement (exit 5)
                 else outcome = "failed";
+                // THE WINDOW'S TEXT (Sean, 6 Oct): title, owner and static text of every window the watch caught; demo / expired /
+                // authorisation words file the row needs_licence by themselves
+                if (! r.windowDetails.isEmpty() || outcome == "window")
+                {
+                    juce::Array<juce::var> wd; for (const auto& w : r.windowDetails) wd.add (w);
+                    if (wd.isEmpty()) for (const auto& line : juce::StringArray::fromLines (r.out)) if (line.startsWith ("windows\t")) { for (const auto& w : windowwatch::parseDetailLines (line)) wd.add (w); }
+                    row->setProperty ("windows", wd);
+                    const auto lw = windowwatch::licenceWords (wd);
+                    if (lw.isNotEmpty()) { outcome = "needs_licence"; row->setProperty ("reason", "the window's text says " + lw + ": unauthorised on this Mac; not loaded again"); }
+                }
                 row->setProperty ("child", r.describe()); row->setProperty ("exit_code", r.code); row->setProperty ("slept_ms", r.sleptMs);
                 if (r.kind == ChildResult::Kind::exited && r.code == 4) row->setProperty ("nothing_measured", true);   // exit 4 = nothing to measure (nothing nominated, or nothing moved): --redo nothing_nominated finds it even with a record
                 if (slept) row->setProperty ("reason", "the Mac slept during the measurement (" + juce::String (r.sleptMs / 1000.0, 1) + " s): recorded, the data is not trusted; delete this row to re-run");
@@ -4876,7 +5052,8 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                     if (d.getFileName() == "fixtures" && cat.name != "tuners") continue;   // a timing fixture copied in; for tuners the mode's record IS the fixture: kept as phaseb/tuners/tuner/, the one store untouched
                     const auto dstName = cat.name == "tuners" && d.getFileName() == "fixtures" ? juce::String ("tuner") : d.getFileName();
                     const auto dst = catDir.getChildFile (dstName); dst.createDirectory();
-                    for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.json")) { const auto target = dst.getChildFile (f.getFileName()); target.deleteFile(); f.moveFileTo (target); records.add (dstName + "/" + f.getFileName()); }
+                    for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.json")) { const auto target = dst.getChildFile (f.getFileName()); target.deleteFile(); f.moveFileTo (target); records.add (dstName + "/" + f.getFileName());
+                        if (gate.demo) { auto rec = juce::JSON::parse (target.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { ro->setProperty ("licence", gate.stamp); target.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } } }
                 }
                 { const auto lg = catDir.getChildFile ("logs"); lg.createDirectory(); const auto target = lg.getChildFile (pp.stem + ".log.txt"); target.deleteFile(); tmp.getChildFile ("log.txt").moveFileTo (target); }
                 row->setProperty ("records", records); row->setProperty ("raw_files", rawN);
@@ -4885,7 +5062,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             row->setProperty ("outcome", outcome); row->setProperty ("seconds", std::round (seconds)); row->setProperty ("at", nowStamp()); row->setProperty ("probe", id.cdhash);
             writeAtomic (rowFile (phasebDir, cat.name, pp.stem), juce::JSON::toString (juce::var (row)));   // the DONE marker, whole or absent
             tmp.deleteRecursively();
-            ++c.done; if (outcome == "ok") c.ok++; else if (outcome == "timed_out") c.timedOut++; else if (outcome == "skipped") c.skipped++; else c.failed++;
+            ++c.done; if (outcome == "ok") c.ok++; else if (outcome == "timed_out") c.timedOut++; else if (outcome == "skipped" || outcome == "needs_licence" || outcome == "needs_device") c.skipped++; else c.failed++;   // a licence / device stop is not a failure
             if (outcome != "skipped") c.seconds.push_back (seconds);
             saveProgress ({});
             say (progressLine (prog, cat.name, pp.product, outcome, seconds));
@@ -4895,6 +5072,11 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     // THE SUMMARY: every row, by category
     { auto* sm = new juce::DynamicObject(); auto* cats = new juce::DynamicObject();
       for (const auto& cat : categories()) if (work.count (cat.name)) { juce::Array<juce::var> rows; for (const auto& pp : work[cat.name]) if (isDone (phasebDir, cat.name, pp.stem)) rows.add (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString())); cats->setProperty (cat.name, rows); }
+      { juce::Array<juce::var> demo, device, lic;   // demo-measured products listed separately (Sean, 6 Oct); the device and licence stops beside them
+        for (const auto& cat : categories()) if (work.count (cat.name)) for (const auto& pp : work[cat.name]) if (isDone (phasebDir, cat.name, pp.stem)) { const auto row = juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()); const auto oc = row.getProperty ("outcome", "").toString();
+            if (row.getProperty ("licence", {}).isObject()) { auto* d = new juce::DynamicObject(); d->setProperty ("product", pp.product); d->setProperty ("category", cat.name); d->setProperty ("expires", row.getProperty ("licence", {}).getProperty ("expires", "")); demo.add (juce::var (d)); }
+            if (oc == "needs_device") device.add (pp.product + " (" + cat.name + ")"); if (oc == "needs_licence") lic.add (pp.product + " (" + cat.name + "): " + row.getProperty ("reason", "").toString()); }
+        sm->setProperty ("demo_measured", demo); sm->setProperty ("needs_device", device); sm->setProperty ("needs_licence", lic); }
       sm->setProperty ("categories", juce::var (cats)); sm->setProperty ("progress", progressVar (prog)); sm->setProperty ("probe", id.cdhash); sm->setProperty ("writtenAt", nowStamp());
       writeAtomic (phasebDir.getChildFile ("summary.json"), juce::JSON::toString (juce::var (sm))); }
     say ("PHASEB: done - " + progressText (prog).upToFirstOccurrenceOf ("\n", false, false) + "; summary " + phasebDir.getChildFile ("summary.json").getFullPathName());
@@ -5219,6 +5401,13 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
                 record (row);
                 continue;
             }
+        if (const auto gate = licenceGate (opt, s.desc); gate.stop.isNotEmpty())   // the UAD-2 device and the licence file (6 Oct)
+        {
+            loop::Outcome lo; lo.state = gate.stop.contains (uad::kNotConnected) ? "needs_device" : "needs_licence"; lo.reason = gate.stop;
+            std::cout << "  " << s.product << ": " << gate.stop << std::endl;
+            record (withMap (loop::makeRow (identity, s.product, s.category, lo, {}, {}, {}, nowStamp())));
+            continue;
+        }
         if (! tuner && ! planLater && ! sweep::planFromFixture (s.pushed).ok)
         {
             loop::Outcome o; o.state = "needs_review"; o.reason = "no plan from the record's controls: " + sweep::planFromFixture (s.pushed).why;
@@ -5619,8 +5808,8 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     if (const auto vm = profile::versionMismatch (record.getProperty ("version", "").toString(), desc.version); vm.isNotEmpty()) { say ("TONE: " + product + " - " + vm); return kToneVersionExit; }
     // DO NOT LOAD A PRODUCT THE SESSION KNOWS NEEDS A LICENCE THAT IS NOT PRESENT (ruled 3 Oct): the scan's licence stops
     // in this ledger, or a needs_licence row in this cert folder; --retry-licence is the only way past.
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), product, opt.retryLicence); known.isNotEmpty())
-    { say ("TONE: " + product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
+    { say ("TONE: " + product + " - " + gate.stop); return kToneLicenceKnownExit; }
     // THE WRITES (2 Oct): engage + neutral + ratio, every one from the exported profile, resolved to indices through the
     // record's controls (profile::toneWrites, pinned); then the section 6 pick. The check rehearses the server's writes.
     juce::StringArray sets; juce::Array<juce::var> writes; juce::String ratioNote;
@@ -5863,6 +6052,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     if (! main.ran) o->setProperty ("why_not_run", main.why);
     o->setProperty ("probe", id.cdhash); o->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
     o->setProperty ("ratio_norm_source", ratioNote); o->setProperty ("spec", "v1.7");
+    if (profile.getProperty ("licence", {}).isObject()) o->setProperty ("licence", profile.getProperty ("licence", {})); else stampLicence (o);   // the demo stamp (6 Oct)
     // THE DEEP LEVELS (v1.7 section 8): every deep level the profile carries on any position, same tolerance; a level that
     // FAILS is null across ALL positions of the exported profile and never fails the profile.
     juce::Array<juce::var> deepArr, nulled; juce::StringArray toneNullLines;
@@ -5937,8 +6127,8 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
     if (hits.size() != 1) { say ("DETECTOR: '" + product + "' resolves to " + juce::String ((int) hits.size()) + " component(s)"); return 2; }
     // the same two guards as the tone check, before any load: section 11 and the known licence (ruled 3 Oct)
     if (const auto vm = profile::versionMismatch (record.getProperty ("version", "").toString(), hits[0].desc.version); vm.isNotEmpty()) { say ("DETECTOR: " + product + " - " + vm); return kToneVersionExit; }
-    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), product, opt.retryLicence); known.isNotEmpty())
-    { say ("DETECTOR: " + product + " - " + known); return kToneLicenceKnownExit; }
+    if (const auto gate = licenceGate (opt, hits[0].desc); gate.stop.isNotEmpty())
+    { say ("DETECTOR: " + product + " - " + gate.stop); return kToneLicenceKnownExit; }
     auto plan = sweep::planFromFixture (record);
     if (! plan.ok) { say ("DETECTOR: no plan: " + plan.why); return 4; }
     if (candIndex >= 0) { std::optional<sweep::Plan::Candidate> pc; for (const auto& c : plan.candidates) if (c.index == candIndex) pc = c; if (pc) plan = plan.forCandidate (*pc); plan.candidates.clear(); }   // copy first (see the exporter)
