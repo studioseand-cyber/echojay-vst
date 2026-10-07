@@ -172,6 +172,8 @@ struct Verdict { bool load = false, demo = false, outsideFile = false; juce::Str
 inline Verdict verdictFor (const Match& m, const juce::String& runDate)
 {
     Verdict v;
+    // THE FILE'S SCOPE (Kathy, 7 Oct): "unmatched -> not loaded" applies ONLY to plugins of a vendor that appears in licences.csv. A plugin
+    // of a vendor not in the file (Waves, Plugin Alliance ... when only UAD-2 lines exist) is outside the file and runs as before.
     if (! m.matched && ! m.ambiguous && m.how.startsWith ("no licence line governs")) { v.outsideFile = true; v.load = true; v.state = "outside_file"; v.reason = m.how; return v; }
     if (m.ambiguous) { v.state = "unmatched"; v.reason = "licence file: " + m.how + " (" + m.candidates.joinIntoString (" / ") + "): on licence_review.txt, not loaded until reviewed"; return v; }
     if (! m.matched) { v.state = "unmatched"; v.reason = "licence file: " + m.how + ": on licence_review.txt, not loaded until reviewed"; return v; }

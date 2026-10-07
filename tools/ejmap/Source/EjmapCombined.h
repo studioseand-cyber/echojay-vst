@@ -40,12 +40,18 @@ struct Setting
     double g = kTargetGDb, Lrms = 0.0, Lpeak = 0.0;      // the tone
     int amountIndex = -1; juce::String amountControl; double amountNorm = 0.0;
     juce::String attackDisplay, releaseDisplay; double attackShiftDb = 0.0, releaseShiftDb = 0.0;
+    int attackIndex = -1, releaseIndex = -1; std::optional<Write> attackBefore, releaseBefore;   // the time controls written, and what the tone check wrote there before (none = at instantiate)
+    double attackMs = 0.0, releaseMs = 0.0, holdS = 2.5;   // the chosen positions' times from the draft, and THE HOLD: at least 10x the slower of them, never under the tone check's 2.5 s (Kathy, 7 Oct)
     juce::String makeupControl; double makeupTargetDb = 0.0, makeupGivesDb = 0.0, makeupNeutralDb = 0.0; bool makeupClamped = false;
     double staticGainDb = 0.0, predictedGrDb = 0.0; std::optional<double> predictedOutDb;
 };
 
+// THE HOLD (Kathy, 7 Oct): the combined read and the attack-only / release-only reads all settle at least 10x the slower time constant
+// written, never under the tone check's 2.5 s, capped at 20 s (a 4 s release = 20 s)
+inline constexpr double kMinHoldS = 2.5, kMaxHoldS = 20.0, kHoldFactor = 10.0;
+inline double holdFor (double attackMs, double releaseMs) { return juce::jlimit (kMinHoldS, kMaxHoldS, kHoldFactor * juce::jmax (attackMs, releaseMs) / 1000.0); }
 // the time draft's position of a role with the largest |gr_shift_db| (ties: the first); none when the role has no positions
-struct TimePos { bool ok = false; double norm = 0.0, shiftDb = 0.0; juce::String display; };
+struct TimePos { bool ok = false; double norm = 0.0, shiftDb = 0.0, ms = 0.0; juce::String display; };
 inline TimePos largestShift (const juce::var& timeDraft, const juce::String& role)
 {
     TimePos best;
@@ -55,7 +61,8 @@ inline TimePos largestShift (const juce::var& timeDraft, const juce::String& rol
         {
             if (! p.hasProperty ("gr_shift_db")) continue;
             const double s = (double) p.getProperty ("gr_shift_db", 0.0);
-            if (! best.ok || std::abs (s) > std::abs (best.shiftDb)) { best.ok = true; best.norm = (double) p.getProperty ("norm", 0.0); best.shiftDb = s; best.display = p.getProperty ("display", "").toString(); }
+            if (! best.ok || std::abs (s) > std::abs (best.shiftDb)) { best.ok = true; best.norm = (double) p.getProperty ("norm", 0.0); best.shiftDb = s; best.display = p.getProperty ("display", "").toString();
+                const auto ms = p.getProperty (role == "attack" ? "attack_ms" : "release_ms", juce::var()); best.ms = ms.isDouble() || ms.isInt() ? (double) ms : p.hasProperty ("faster_than_ms") ? (double) p.getProperty ("faster_than_ms", 0.0) : (double) p.getProperty (role == "attack" ? "attack_faster_than_ms" : "release_faster_than_ms", 0.0); }
         }
     return best;
 }
@@ -121,10 +128,12 @@ inline Setting compose (const juce::var& profile, const juce::var& toneWrites, c
         if (name.isEmpty() || ! tp.ok) { s.notes.add ("no " + role + " position in the time draft: left as the tone check has it"); return; }
         if (! controlIndex.count (name)) { s.notes.add ("the " + role + " control '" + name + "' is not on the record's control list: left as is"); return; }
         const int idx = controlIndex.at (name); display = tp.display; shift = tp.shiftDb;
-        for (auto& w : s.writes) if (w.index == idx) { w.display = tp.display; w.norm = tp.norm; w.from = "time draft " + role + " (gr_shift " + juce::String (tp.shiftDb, 2) + " dB)"; return; }
+        if (role == "attack") { s.attackIndex = idx; s.attackMs = tp.ms; } else { s.releaseIndex = idx; s.releaseMs = tp.ms; }
+        for (auto& w : s.writes) if (w.index == idx) { (role == "attack" ? s.attackBefore : s.releaseBefore) = w; w.display = tp.display; w.norm = tp.norm; w.from = "time draft " + role + " (gr_shift " + juce::String (tp.shiftDb, 2) + " dB)"; return; }
         s.writes.push_back ({ idx, name, tp.display, "time draft " + role + " (gr_shift " + juce::String (tp.shiftDb, 2) + " dB)", tp.norm }); taken.insert (idx);
     };
     place ("attack", s.attackDisplay, s.attackShiftDb); place ("release", s.releaseDisplay, s.releaseShiftDb);
+    s.holdS = holdFor (s.attackMs, s.releaseMs);
     s.predictedGrDb = std::round ((g + s.attackShiftDb + s.releaseShiftDb) * 100.0) / 100.0;
     // the make-up: the draft's curve inverted for +GR_pred
     const auto mk = makeupControlOf (gainDraft);
@@ -158,6 +167,34 @@ inline Setting compose (const juce::var& profile, const juce::var& toneWrites, c
     s.ok = true; return s;
 }
 
+// THE VARIANTS: the setting with only the attack written (the release as the tone check had it, else at instantiate), and only the release
+inline std::vector<Write> writesWithOnly (const Setting& s, const juce::String& role)
+{
+    std::vector<Write> out;
+    const int drop = role == "attack" ? s.releaseIndex : s.attackIndex; const auto& before = role == "attack" ? s.releaseBefore : s.attackBefore;
+    for (const auto& w : s.writes) { if (w.index == drop) { if (before) out.push_back (*before); continue; } out.push_back (w); }
+    return out;
+}
+// THE ADDITIVITY CHECK, at one hold: the attack-only and release-only shifts from g, their sum, against the combined shift; within kPassDb = additive
+struct Additivity { bool ok = false; double attackOnlyShiftDb = 0.0, releaseOnlyShiftDb = 0.0, sumDb = 0.0, combinedShiftDb = 0.0, missDb = 0.0; bool additive = false; juce::String why; };
+inline Additivity additivity (double g, std::optional<double> grAttackOnly, std::optional<double> grReleaseOnly, std::optional<double> grCombined)
+{
+    Additivity a;
+    if (! grAttackOnly || ! grReleaseOnly || ! grCombined) { a.why = "not all three reads landed"; return a; }
+    a.ok = true; a.attackOnlyShiftDb = std::round ((*grAttackOnly - g) * 100.0) / 100.0; a.releaseOnlyShiftDb = std::round ((*grReleaseOnly - g) * 100.0) / 100.0;
+    a.sumDb = std::round ((a.attackOnlyShiftDb + a.releaseOnlyShiftDb) * 100.0) / 100.0; a.combinedShiftDb = std::round ((*grCombined - g) * 100.0) / 100.0;
+    a.missDb = std::round ((a.combinedShiftDb - a.sumDb) * 100.0) / 100.0; a.additive = std::abs (a.missDb) <= kPassDb;
+    a.why = (a.additive ? "the shifts add at this hold (" : "the shifts do NOT add at this hold (") + juce::String (a.attackOnlyShiftDb, 2) + " + " + juce::String (a.releaseOnlyShiftDb, 2) + " = " + juce::String (a.sumDb, 2) + " against the combined " + juce::String (a.combinedShiftDb, 2) + ", miss " + juce::String (a.missDb, 2) + ")";
+    return a;
+}
+inline juce::var additivityVar (const Additivity& a, double holdS)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty ("hold_s", holdS); o->setProperty ("note", "all three reads at this hold: the time draft's shifts came from short bursts; a miss here that the draft did not show means the draft was under-settled, a miss at this hold too means the shifts truly do not add");
+    if (! a.ok) { o->setProperty ("why", a.why); return juce::var (o); }
+    o->setProperty ("attack_only_shift_db", a.attackOnlyShiftDb); o->setProperty ("release_only_shift_db", a.releaseOnlyShiftDb); o->setProperty ("sum_db", a.sumDb); o->setProperty ("combined_shift_db", a.combinedShiftDb); o->setProperty ("miss_db", a.missDb); o->setProperty ("additive_within_0_5_db", a.additive); o->setProperty ("why", a.why);
+    return juce::var (o);
+}
+
 // THE MISS: GR and output level, measured against the prediction
 struct Miss { bool grRead = false, outRead = false, outPredicted = false, grPass = false; double grMeasuredDb = 0.0, grMissDb = 0.0, outMeasuredDb = 0.0, outMissDb = 0.0; };
 inline Miss judge (const Setting& s, std::optional<double> grDb, std::optional<double> outRmsDb)
@@ -174,6 +211,8 @@ inline juce::var settingVar (const Setting& s, const Miss& m)
     o->setProperty ("g_db", s.g); o->setProperty ("L_rms_dbfs", std::round (s.Lrms * 100.0) / 100.0); o->setProperty ("L_peak_dbfs", std::round (s.Lpeak * 100.0) / 100.0);
     o->setProperty ("amount_control", s.amountControl); o->setProperty ("amount_norm", s.amountNorm);
     o->setProperty ("attack", s.attackDisplay); o->setProperty ("attack_gr_shift_db", s.attackShiftDb); o->setProperty ("release", s.releaseDisplay); o->setProperty ("release_gr_shift_db", s.releaseShiftDb);
+    o->setProperty ("attack_ms", s.attackMs); o->setProperty ("release_ms", s.releaseMs); o->setProperty ("hold_s", s.holdS);
+    o->setProperty ("gr_shift_sign", "gr_shift_db = GR step at the position minus the GR step at the instantiate position: positive = MORE gain reduction at that position");
     o->setProperty ("makeup_control", s.makeupControl.isNotEmpty() ? juce::var (s.makeupControl) : juce::var()); o->setProperty ("makeup_target_db", std::round (s.makeupTargetDb * 100.0) / 100.0); o->setProperty ("makeup_gives_db", std::round (s.makeupGivesDb * 100.0) / 100.0); if (s.makeupClamped) o->setProperty ("makeup_clamped", true);
     o->setProperty ("static_gain_db", s.staticGainDb);
     o->setProperty ("predicted_gr_db", s.predictedGrDb); o->setProperty ("predicted_out_rms_dbfs", s.predictedOutDb ? juce::var (*s.predictedOutDb) : juce::var());

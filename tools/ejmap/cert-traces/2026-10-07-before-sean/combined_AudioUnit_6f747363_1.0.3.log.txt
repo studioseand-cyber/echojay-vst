@@ -1,0 +1,6 @@
+COMBINED: Lindell SBC 1.0.3: g 4.0 at L -18.40 dBFS RMS; amount [13] Threshold norm 0.7119; attack '0.03 ms' (shift 0.01), release '0.050' (shift -0.00); no make-up; predicted GR 4.01 dB, out (no prediction)
+  note: the gain draft has no writable make-up or output control: no make-up written, no output prediction
+  hold 2.5 s for all three reads (attack 2.0 ms, release 27.3 ms)
+  additivity at 2.5 s: the shifts add at this hold (0.01 + -0.00 = 0.01 against the combined -0.01, miss -0.02)
+COMBINED: Lindell SBC - GR 3.99 dB (miss -0.02, within 0.5); out -22.41 dBFS RMS (no prediction)
+COMBINED: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/cb/phaseb/combined/.tmp-AudioUnit_6f747363_1.0.3/combined/AudioUnit_6f747363_1.0.3.combined.json

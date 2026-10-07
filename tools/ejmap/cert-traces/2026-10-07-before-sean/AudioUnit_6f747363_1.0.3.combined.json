@@ -1,0 +1,182 @@
+{
+  "g_db": 4.0,
+  "L_rms_dbfs": -18.399999999999999,
+  "L_peak_dbfs": -15.390000000000001,
+  "amount_control": "Threshold",
+  "amount_norm": 0.711929705263158,
+  "attack": "0.03 ms",
+  "attack_gr_shift_db": 0.01,
+  "release": "0.050",
+  "release_gr_shift_db": -0.0,
+  "attack_ms": 2.0,
+  "release_ms": 27.300000000000001,
+  "hold_s": 2.5,
+  "gr_shift_sign": "gr_shift_db = GR step at the position minus the GR step at the instantiate position: positive = MORE gain reduction at that position",
+  "makeup_control": null,
+  "makeup_target_db": 0.0,
+  "makeup_gives_db": 0.0,
+  "static_gain_db": -0.01,
+  "predicted_gr_db": 4.01,
+  "predicted_out_rms_dbfs": null,
+  "prediction": "GR = g + attack gr_shift + release gr_shift; out = L + static_gain - GR + (make-up written - make-up at neutral)",
+  "writes": [
+    {
+      "index": 0,
+      "control": "SC HPF",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 1,
+      "control": "Mix",
+      "norm": 1.0,
+      "set": "100",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 2,
+      "control": "THD",
+      "norm": 0.5,
+      "set": "-0.00",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 3,
+      "control": "Gain",
+      "norm": 0.0,
+      "set": "0.00",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 4,
+      "control": "Knee",
+      "norm": 0.0,
+      "set": "SOFT",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 5,
+      "control": "Link",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 6,
+      "control": "Smash",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 7,
+      "control": "Input Gain",
+      "norm": 0.5,
+      "set": "-0.00",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 9,
+      "control": "Style",
+      "norm": 0.0,
+      "set": "Feed Back",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 10,
+      "control": "Link HP",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 11,
+      "control": "Link LP",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 12,
+      "control": "External Side Chain",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 14,
+      "control": "Output Gain",
+      "norm": 0.5,
+      "set": "-0.00",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 15,
+      "control": "Manual Gain",
+      "norm": 1.0,
+      "set": "On",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 16,
+      "control": "Release",
+      "norm": 0.0,
+      "set": "0.050",
+      "from": "time draft release (gr_shift -0.00 dB)"
+    },
+    {
+      "index": 18,
+      "control": "Compress",
+      "norm": 1.0,
+      "set": "On",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 19,
+      "control": "Attack",
+      "norm": 0.0,
+      "set": "0.03 ms",
+      "from": "time draft attack (gr_shift 0.01 dB)"
+    },
+    {
+      "index": 21,
+      "control": "Filter",
+      "norm": 0.0,
+      "set": "OFF",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 8,
+      "control": "Ratio",
+      "norm": 0.5,
+      "set": "4:1",
+      "from": "tone check: ratio.curve[0] from the profile"
+    }
+  ],
+  "gr_measured_db": 3.99,
+  "gr_miss_db": -0.02,
+  "gr_within_0_5_db": true,
+  "out_measured_rms_dbfs": -22.41,
+  "notes": [
+    "the gain draft has no writable make-up or output control: no make-up written, no output prediction"
+  ],
+  "schema": "ej_combined_setting/0",
+  "status": "ACCURACY PASS A1 (6 Oct): data only, not exported, not published",
+  "product": "Lindell SBC",
+  "version": "1.0.3",
+  "identity": "AudioUnit|6f747363|1.0.3",
+  "inputs": "Lindell_SBC_1.0.3.json; Lindell_SBC_1.0.3.tonecheck.json; AudioUnit_6f747363_1.0.3.timing.json; AudioUnit_6f747363_1.0.3.gain_profile.draft.json",
+  "additivity_check": {
+    "hold_s": 2.5,
+    "note": "all three reads at this hold: the time draft's shifts came from short bursts; a miss here that the draft did not show means the draft was under-settled, a miss at this hold too means the shifts truly do not add",
+    "attack_only_shift_db": 0.01,
+    "release_only_shift_db": -0.0,
+    "sum_db": 0.01,
+    "combined_shift_db": -0.01,
+    "miss_db": -0.02,
+    "additive_within_0_5_db": true,
+    "why": "the shifts add at this hold (0.01 + -0.00 = 0.01 against the combined -0.01, miss -0.02)"
+  },
+  "measuredAt": "20261007T124635"
+}

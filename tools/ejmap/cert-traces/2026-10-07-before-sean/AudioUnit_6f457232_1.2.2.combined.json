@@ -1,0 +1,132 @@
+{
+  "g_db": 4.0,
+  "L_rms_dbfs": -17.210000000000001,
+  "L_peak_dbfs": -14.199999999999999,
+  "amount_control": "Input",
+  "amount_norm": 0.326151984091579,
+  "attack": "Fast",
+  "attack_gr_shift_db": 3.41,
+  "release": "Slow",
+  "release_gr_shift_db": 3.2,
+  "attack_ms": 0.0,
+  "release_ms": 231.099999999999994,
+  "hold_s": 2.5,
+  "gr_shift_sign": "gr_shift_db = GR step at the position minus the GR step at the instantiate position: positive = MORE gain reduction at that position",
+  "makeup_control": "Output",
+  "makeup_target_db": 12.42,
+  "makeup_gives_db": 12.42,
+  "static_gain_db": 6.81,
+  "predicted_gr_db": 10.609999999999999,
+  "predicted_out_rms_dbfs": -10.4,
+  "prediction": "GR = g + attack gr_shift + release gr_shift; out = L + static_gain - GR + (make-up written - make-up at neutral)",
+  "writes": [
+    {
+      "index": 1,
+      "control": "Output",
+      "norm": 0.649461206896552,
+      "set": "0.6495",
+      "from": "gain draft make-up (+10.61 dB)"
+    },
+    {
+      "index": 2,
+      "control": "Attack",
+      "norm": 0.0,
+      "set": "Fast",
+      "from": "time draft attack (gr_shift 3.41 dB)"
+    },
+    {
+      "index": 3,
+      "control": "Release",
+      "norm": 1.0,
+      "set": "Slow",
+      "from": "time draft release (gr_shift 3.20 dB)"
+    },
+    {
+      "index": 4,
+      "control": "Mix",
+      "norm": 1.0,
+      "set": "10.0",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 6,
+      "control": "SC High Pass Filter",
+      "norm": 0.0,
+      "set": "OFF",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 7,
+      "control": "Continuous Attack",
+      "norm": 0.5,
+      "set": "5.0",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 8,
+      "control": "Continuous Release",
+      "norm": 0.5,
+      "set": "5.0",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 9,
+      "control": "Stereo Link",
+      "norm": 0.5,
+      "set": "50%",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 11,
+      "control": "Continuous ON",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 12,
+      "control": "Link ON",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 13,
+      "control": "Analog ON",
+      "norm": 1.0,
+      "set": "On",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 5,
+      "control": "Ratio",
+      "norm": 0.0,
+      "set": "4:1",
+      "from": "tone check: ratio.curve[0] from the profile"
+    }
+  ],
+  "gr_measured_db": 7.83,
+  "gr_miss_db": -2.78,
+  "gr_within_0_5_db": false,
+  "out_measured_rms_dbfs": -11.869999999999999,
+  "out_miss_db": -1.47,
+  "notes": [],
+  "schema": "ej_combined_setting/0",
+  "status": "ACCURACY PASS A1 (6 Oct): data only, not exported, not published",
+  "product": "Lindell 7X-500",
+  "version": "1.2.2",
+  "identity": "AudioUnit|6f457232|1.2.2",
+  "inputs": "Lindell_7X-500_1.2.2.json; Lindell_7X-500_1.2.2.tonecheck.json; AudioUnit_6f457232_1.2.2.timing.json; AudioUnit_6f457232_1.2.2.gain_profile.draft.json",
+  "additivity_check": {
+    "hold_s": 2.5,
+    "note": "all three reads at this hold: the time draft's shifts came from short bursts; a miss here that the draft did not show means the draft was under-settled, a miss at this hold too means the shifts truly do not add",
+    "attack_only_shift_db": 3.38,
+    "release_only_shift_db": 3.18,
+    "sum_db": 6.56,
+    "combined_shift_db": 3.83,
+    "miss_db": -2.73,
+    "additive_within_0_5_db": false,
+    "why": "the shifts do NOT add at this hold (3.38 + 3.18 = 6.56 against the combined 3.83, miss -2.73)"
+  },
+  "measuredAt": "20261007T124630"
+}

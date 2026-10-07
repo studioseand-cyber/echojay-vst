@@ -7321,6 +7321,21 @@ void testCombined()
     check (none.ok && std::abs (none.predictedGrDb - 4.0) < 1e-9 && ! none.predictedOutDb && none.makeupControl.isEmpty() && none.notes.size() == 3 && none.writes.size() == 3,
            "combined CB6: no time draft and no writable make-up: the setting is the tone check's writes and the pick, GR predicted = g, no output prediction, each absence noted (" + juce::String (none.notes.size()) + ")");
     check (! compose (juce::JSON::parse (R"json({"amount": {"control": "Threshold"}})json"), writes, timing, gain, { { "Other", 0 } }).ok, "combined CB7: an amount control not on the record's control list refuses");
+    // CB8-CB10 (Kathy, 7 Oct): the hold is 10x the slower time written (never under 2.5 s, capped at 20); the attack-only and release-only
+    // variants keep the other time control as the tone check had it; the additivity check compares the three reads at one hold
+    const auto timingMs = juce::JSON::parse (R"json({"attack": {"control": "Attack", "positions": [{"norm": 0.0, "display": "Fast", "gr_shift_db": 1.5, "attack_ms": null, "faster_than_ms": 1.0}]},
+        "release": {"control": "Release", "positions": [{"norm": 1.0, "display": "Slow", "gr_shift_db": -2.0, "release_ms": 420.0}]}})json");
+    const auto writes2 = juce::JSON::parse (R"json([{"control": "Mode", "index": 5, "norm": 1.0, "set": "On", "why": "engage"}, {"control": "Release", "index": 3, "norm": 0.25, "set": "80 ms", "why": "neutral"}, {"control": "Threshold", "index": 0, "norm": 0.3, "set": "x", "why": "pick"}])json");
+    const auto s2 = compose (profile, writes2, timingMs, gain, idx);
+    check (std::abs (holdFor (11.5, 231.1) - 2.5) < 1e-9 && std::abs (holdFor (1.0, 420.0) - 4.2) < 1e-9 && std::abs (holdFor (50.0, 4000.0) - 20.0) < 1e-9 && std::abs (s2.holdS - 4.2) < 1e-9 && std::abs (s2.releaseMs - 420.0) < 1e-9 && std::abs (s2.attackMs - 1.0) < 1e-9,
+           "combined CB8: hold = 10x the slower time constant, 2.5 s floor (11.5 / 231 ms -> 2.5), 420 ms release -> 4.2 s, 4 s -> capped 20; a bound attack counts at its bound");
+    const auto aOnly = writesWithOnly (s2, "attack"), rOnly = writesWithOnly (s2, "release");
+    auto normOf = [] (const std::vector<Write>& ws, int i) { for (const auto& w : ws) if (w.index == i) return w.norm; return -1.0; };
+    check (normOf (aOnly, 1) == 0.0 && std::abs (normOf (aOnly, 3) - 0.25) < 1e-9 && normOf (rOnly, 1) < 0.0 && normOf (rOnly, 3) == 1.0 && normOf (aOnly, 5) == 1.0,
+           "combined CB9: attack-only keeps the tone check's release write (80 ms) and drops the draft's; release-only drops the attack write (at instantiate) and keeps the engage");
+    const auto ad = additivity (4.0, 5.5, 2.0, 3.6), ad2 = additivity (4.0, 5.5, 2.0, 1.2);
+    check (ad.ok && std::abs (ad.attackOnlyShiftDb - 1.5) < 1e-9 && std::abs (ad.releaseOnlyShiftDb + 2.0) < 1e-9 && std::abs (ad.sumDb + 0.5) < 1e-9 && std::abs (ad.combinedShiftDb + 0.4) < 1e-9 && ad.additive && ! ad2.additive && std::abs (ad2.missDb + 2.3) < 1e-9 && ! additivity (4.0, std::nullopt, 2.0, 3.6).ok,
+           "combined CB10: attack-only +1.5 and release-only -2.0 sum to -0.5; a combined -0.4 is additive (miss 0.1), -2.8 is not (miss -2.3); an unread variant refuses");
 }
 /** REAL MATERIAL (EjmapMaterial.h; Kathy's NEXT BUILD A2, 6 Oct): the probe's mwin trace, the curve at the pick, the prediction per window, the miss. */
 void testMaterial()
@@ -7406,6 +7421,12 @@ void testLicence()
            "licence LC8: owned loads; a demo loads and stamps until its end; the day after its end it is expired and not loaded");
     check (! vExp.load && vExp.reason.contains ("expired") && ! vUn.load && vUn.state == "unmatched" && vUn.reason.contains ("licence_review") && vOut.load && vOut.outsideFile && ! vUnowned.load && vUnowned.reason.contains ("UPDATE SOFTWARE"),
            "licence LC9: expired and unowned never load (the note in the reason); unmatched never loads until reviewed; outside the file the file says nothing");
+    {   // LC13 (Kathy, 7 Oct): the file's scope - a Waves plugin, with only UAD-2 lines in the file, is OUTSIDE the file and loads; it is never "unmatched"
+        const auto waves = matchPlugin ("C1 comp (s)", "Waves", lines), pa = matchPlugin ("bx_opto", "Plugin Alliance", lines);
+        const auto vw = verdictFor (waves, "2026-10-07"), vp = verdictFor (pa, "2026-10-07");
+        check (! waves.matched && vw.load && vw.outsideFile && vw.state == "outside_file" && ! vw.reason.contains ("not loaded") && vp.load && vp.outsideFile,
+               "licence LC13: a plugin whose vendor has no line in the file is outside it and runs as before (Waves, Plugin Alliance): never held as unmatched");
+    }
     check (stampVar (vDemo).getProperty ("state", "").toString() == "demo" && stampVar (vDemo).getProperty ("expires", "").toString() == "2026-10-08", "licence LC10: the stamp is exactly {state: demo, expires: <date>}");
     std::vector<Reviewed> rows { { "UAD Precision Limiter", m ("UAD Precision Limiter"), vOwned }, { "UAD Capitol Chambers", un, vUn }, { "UAD UA 1176LN Rev E", m ("UAD UA 1176LN Rev E"), verdictFor (m ("UAD UA 1176LN Rev E"), "2026-10-07") } };
     const auto sheet = reviewSheet (rows, "2026-10-07", "licences.csv");
@@ -7467,6 +7488,7 @@ void testStrip()
            && sectionOf ("Drive") == "saturation" && sectionOf ("Preamp Gain") == "saturation" && sectionOf ("Output") == "global" && sectionOf ("Bank") == "global" && sectionOf ("Compare") == "global",
            "strip ST1: the section by whole-token word (Comp / Gate / LF / Drive); Output, Bank and 'Compare' are global");
     check (sectionOf ("Threshold") == "compressor" && sectionOf ("Ratio") == "compressor" && sectionOf ("Gate Attack") == "gate" && sectionOf ("Release") == "compressor", "strip ST1b: an unprefixed Threshold / Ratio / Attack / Release is the compressor's (bx_console SSL); 'Gate Attack' stays the gate's");
+    check (sectionOf ("LC Threshold") == "compressor" && sectionOf ("LC 2nd Thresh Level") == "compressor" && sectionOf ("GE Threshold") == "gate" && sectionOf ("GE Release") == "gate", "strip ST1c (Kathy's ruling, 7 Oct): on SSL-style strips LC is the compressor section word and GE the gate section word");
     std::vector<Control> cs { { 0, "Comp On", 2, { { "Off", 0.0f }, { "On", 1.0f } } }, { 1, "Comp Thresh", 0, {} }, { 2, "Comp Ratio", 0, {} }, { 3, "EQ Bypass", 2, { { "Off", 0.0f }, { "On", 1.0f } } }, { 4, "LF Gain", 0, {} }, { 5, "LF Freq", 0, {} },
                               { 6, "Gate Thresh", 0, {} }, { 7, "Gate Range", 0, {} }, { 8, "Output", 0, {} }, { 9, "Drive", 0, {} }, { 10, "Sat In", 2, { { "Out", 0.0f }, { "In", 1.0f } } } };
     const auto secs = sectionsOf (cs);

@@ -3267,33 +3267,48 @@ inline int runCombined (const SweepOptions& opt)
          + "; predicted GR " + juce::String (setting.predictedGrDb, 2) + " dB, out " + (setting.predictedOutDb ? juce::String (*setting.predictedOutDb, 2) + " dBFS RMS" : juce::String ("(no prediction)")));
     for (const auto& n : setting.notes) say ("  note: " + n);
     juce::String toneLevels; { std::vector<double> q; for (const auto& [lo, hi] : sweep::kQuietLadder) { q.push_back (lo); q.push_back (hi); } std::sort (q.begin(), q.end()); for (double L : q) toneLevels << juce::String ((int) L) << ","; }
-    juce::StringArray sets; for (const auto& w : setting.writes) sets.add (juce::String (w.index) + ":" + juce::String (w.norm, 6));
-    juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
-                             "--sweep", "thr=" + juce::String (setting.amountIndex), "norms=" + juce::String (setting.amountNorm, 6),
-                             "levels=" + toneLevels + juce::String (setting.Lpeak, 4), "hz=997", "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
-    if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
-    const auto r = runChild (args, opt.timeoutMs);
-    raw.getChildFile (stem + ".combined.1.txt").replaceWithText (r.out, false, false, "\n");
-    if (r.kind == ChildResult::Kind::uiShown) { say ("COMBINED: a window appeared; stopping"); return 5; }
-    std::optional<double> gr, outRms; juce::String unlanded;
-    if (r.cleanExit())
+    // THE READS (Kathy, 7 Oct): the combined setting, then attack-only and release-only, ALL at the same long hold (10x the slower time
+    // constant, never under 2.5 s), so the record says whether the shifts truly do not add or the draft's short bursts were under-settled
+    const double holdS = setting.holdS, discardS = holdS - 0.3;
+    juce::String unlanded; std::optional<double> gr, outRms, grA, grR;
+    auto readAt = [&] (const juce::String& tag, const std::vector<combined::Write>& ws, std::optional<double>& grOut, std::optional<double>* outOut) -> bool
     {
-        for (const auto& line : juce::StringArray::fromLines (r.out)) if (line.startsWith ("pos\t") && line.contains ("write_unlanded")) unlanded = line;
+        juce::StringArray sets; for (const auto& w : ws) sets.add (juce::String (w.index) + ":" + juce::String (w.norm, 6));
+        juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
+                                 "--sweep", "thr=" + juce::String (setting.amountIndex), "norms=" + juce::String (setting.amountNorm, 6),
+                                 "levels=" + toneLevels + juce::String (setting.Lpeak, 4), "hz=997", "hold=" + juce::String (holdS, 2), "discard=" + juce::String (discardS, 2), "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
+        if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
+        const auto r = runChild (args, juce::jmax (opt.timeoutMs, (int) (holdS * 8000.0)));
+        raw.getChildFile (stem + ".combined." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
+        if (r.kind == ChildResult::Kind::uiShown) return false;
+        if (! r.cleanExit()) return true;
+        for (const auto& line : juce::StringArray::fromLines (r.out)) if (line.startsWith ("pos\t") && line.contains ("write_unlanded") && unlanded.isEmpty()) unlanded = tag + ": " + line;
         sweep::ProcessOut po { r.out, true, r.describe(), (float) setting.amountNorm };
         const auto d = sweep::derive (sweep::mergeProcesses ({ juce::String(), true, "none", -1.0f }, { po }), { setting.Lpeak }, -1, true);
         const auto key = sweep::levelKey (setting.Lpeak);
-        gr = d.reduction.count (key) && ! d.reduction.at (key).empty() ? d.reduction.at (key)[0] : std::nullopt;
-        for (const auto& line : juce::StringArray::fromLines (r.out))
+        grOut = d.reduction.count (key) && ! d.reduction.at (key).empty() ? d.reduction.at (key)[0] : std::nullopt;
+        if (outOut != nullptr) for (const auto& line : juce::StringArray::fromLines (r.out))
         {
             if (! line.startsWith ("hold\t")) continue;
             const auto f = juce::StringArray::fromTokens (line, "\t", "");
             if (f.size() < 3 || std::abs (f[2].getDoubleValue() - setting.Lpeak) > 0.01) continue;
             const int kl = f.indexOf ("level_db"); if (kl < 0) continue;
-            outRms = f[kl + 1].getDoubleValue();   // the hold's level_db is the OUTPUT RMS in dBFS (in_rms_db beside it is the input's)
+            *outOut = f[kl + 1].getDoubleValue();   // the hold's level_db is the OUTPUT RMS in dBFS (in_rms_db beside it is the input's)
         }
+        return true;
+    };
+    say ("  hold " + juce::String (holdS, 1) + " s for all three reads (attack " + juce::String (setting.attackMs, 1) + " ms, release " + juce::String (setting.releaseMs, 1) + " ms)");
+    if (! readAt ("all", setting.writes, gr, &outRms)) { say ("COMBINED: a window appeared; stopping"); return 5; }
+    const bool haveTiming = setting.attackIndex >= 0 || setting.releaseIndex >= 0;
+    if (haveTiming)
+    {
+        if (! readAt ("attack-only", combined::writesWithOnly (setting, "attack"), grA, nullptr)) { say ("COMBINED: a window appeared; stopping"); return 5; }
+        if (! readAt ("release-only", combined::writesWithOnly (setting, "release"), grR, nullptr)) { say ("COMBINED: a window appeared; stopping"); return 5; }
     }
+    const auto add = combined::additivity (setting.g, grA, grR, gr);
+    if (haveTiming) say ("  additivity at " + juce::String (holdS, 1) + " s: " + add.why);
     const auto miss = combined::judge (setting, gr, outRms);
-    say ("COMBINED: " + opt.product + " - GR " + (miss.grRead ? juce::String (miss.grMeasuredDb, 2) + " dB (miss " + juce::String (miss.grMissDb, 2) + (miss.grPass ? ", within 0.5)" : ", OVER 0.5)") : juce::String ("unreadable (" + r.describe() + ")"))
+    say ("COMBINED: " + opt.product + " - GR " + (miss.grRead ? juce::String (miss.grMeasuredDb, 2) + " dB (miss " + juce::String (miss.grMissDb, 2) + (miss.grPass ? ", within 0.5)" : ", OVER 0.5)") : juce::String ("unreadable"))
          + "; out " + (miss.outRead ? juce::String (miss.outMeasuredDb, 2) + " dBFS RMS" + (miss.outPredicted ? " (miss " + juce::String (miss.outMissDb, 2) + ")" : juce::String (" (no prediction)")) : juce::String ("not read")) + (unlanded.isNotEmpty() ? "; A WRITE DID NOT LAND: " + unlanded : juce::String()));
     auto rec = combined::settingVar (setting, miss);
     if (auto* o = rec.getDynamicObject())
@@ -3302,7 +3317,7 @@ inline int runCombined (const SweepOptions& opt)
         o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
         o->setProperty ("inputs", juce::StringArray { profileFile.getFileName(), tcFile.getFileName(), timingFile.getFileName(), gainFile.getFileName() }.joinIntoString ("; "));
         if (unlanded.isNotEmpty()) o->setProperty ("write_unlanded", unlanded);
-        if (! r.cleanExit()) o->setProperty ("probe", r.describe());
+        if (haveTiming) o->setProperty ("additivity_check", combined::additivityVar (add, holdS));
         o->setProperty ("measuredAt", nowStamp());
     }
     outDir.getChildFile (stem + ".combined.json").replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n");

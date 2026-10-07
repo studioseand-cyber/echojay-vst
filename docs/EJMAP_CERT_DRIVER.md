@@ -2888,3 +2888,23 @@ detector measured, exported into the section folder, tone check **PASS 2.01 dB a
 gate section: "GE" / "LC" are section words) carry no comp word, so Rule 1 as ruled does not apply: `needs_review`, two
 candidates swept (114 s) — Kathy's call whether "LC" is a compressor word; **bx_console N** — five candidates, `needs_review`
 (163 s). Each strip: 1–3 min here.
+
+## 77. Before Sean gets it (Kathy, 7 Oct): the licence file's scope, the LC / GE ruling, A1's three reads
+
+- **The licence file's scope** (pin LC13; Kathy's mutant — a Waves plugin held because Waves is not in the file — goes red):
+  "unmatched → not loaded" applies ONLY to plugins of a vendor that has lines in `licences.csv`. A plugin of a vendor not in the
+  file is outside it and runs as before.
+- **Kathy's ruling:** on SSL-style strips "LC" (limiter / compressor) is the compressor section word and "GE" (gate / expander)
+  the gate section word (pin ST1c). bx_console SSL 4000 E re-run: compressor 11 (`Dyn On/Off → On`), gate 8; the compressor
+  section's two candidates `LC Threshold` / `LC 2nd Thresh Level` both sweep, no comp word → `needs_review` under Rule 1 as
+  ruled (whether "LC" is also Rule 1's stage word is not ruled). bx_console N's dynamics controls (no ruling yet): LC
+  Threshold, LC Threshold Range, LC Ratio, LC Attack, LC Release, LC 2nd Thresh Level, GE Threshold, GE Threshold Range, GE
+  Attack, GE Release — the same LC / GE labels, so the section words apply to it by construction.
+- **A1's additivity check** (pins CB8–CB10, mutant red): `--redo combined` now reads the combined setting AND the attack-only and
+  release-only settings (the other time control as the tone check had it, else at instantiate) all at the SAME hold — 10× the
+  slower time constant written, never under 2.5 s, capped at 20 s — and records `additivity_check` (the two shifts, their sum,
+  the combined shift, the miss, additive within 0.5). `gr_shift_sign` is on the record: gr_shift_db = GR step at the position
+  minus the GR step at instantiate, positive = more gain reduction. Rehearsed: Lindell 7X-500 at 2.5 s: attack-only +3.38 and
+  release-only +3.18 (the draft said +3.41 / +3.20) sum to 6.56 against the combined 3.83 — **the shifts truly do not add**;
+  elysia mpressor −1.38 + −1.58 = −2.96 against −1.59 (the draft's release shift was −2.32: partly under-settled, mostly not
+  additive); Lindell SBC additive (0.01); bx_opto no timing positions.

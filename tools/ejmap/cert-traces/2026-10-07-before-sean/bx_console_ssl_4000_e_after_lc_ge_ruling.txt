@@ -1,0 +1,15 @@
+STRIP: text pass: 53 of 61 controls sampled in 13.7 s (timeout 120 s, scaled to the count)
+STRIP: bx_console SSL 4000 E 1.7.1: 53 control(s) in 5 section(s):  compressor 11 (engage Dyn On/Off -> 'On')  eq 21 (engage HPF On/Off -> 'On')  gate 8  saturation 1  global 12
+  compressor: the full compressor path over 11 control(s) with Dyn On/Off -> 'On' -> AudioUnit_41747d65_1.7.1.compressor
+    -> exit 0 in 117.308 s; needs_review: 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  eq: --cert-eq over 21 control(s) with HPF On/Off -> 'On'
+    -> exit 0 in 17.7386 s; eq.AudioUnit_41747d65_1.7.1.eq.json
+  gate: --cert-dynamics over 8 control(s)
+    -> exit 0 in 8.84163 s; gate.AudioUnit_41747d65_1.7.1.dynamics.json
+  saturation: --cert-saturation over 1 control(s)
+    -> exit 0 in 3.94361 s; saturation.AudioUnit_41747d65_1.7.1.saturation.json
+STRIP: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/st5/strip/AudioUnit_41747d65_1.7.1.strip.json
+
+real	2m43.074s
+user	1m36.611s
+sys	0m3.594s

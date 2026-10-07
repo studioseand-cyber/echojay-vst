@@ -1,0 +1,168 @@
+{
+  "g_db": 4.0,
+  "L_rms_dbfs": -14.720000000000001,
+  "L_peak_dbfs": -11.710000000000001,
+  "amount_control": "Threshold",
+  "amount_norm": 0.328317611557895,
+  "attack": "150.0 ms",
+  "attack_gr_shift_db": -1.41,
+  "release": "5.0 ms",
+  "release_gr_shift_db": -2.32,
+  "attack_ms": 59.5,
+  "release_ms": 3.4,
+  "hold_s": 2.5,
+  "gr_shift_sign": "gr_shift_db = GR step at the position minus the GR step at the instantiate position: positive = MORE gain reduction at that position",
+  "makeup_control": null,
+  "makeup_target_db": 0.0,
+  "makeup_gives_db": 0.0,
+  "static_gain_db": -0.02,
+  "predicted_gr_db": 0.27,
+  "predicted_out_rms_dbfs": null,
+  "prediction": "GR = g + attack gr_shift + release gr_shift; out = L + static_gain - GR + (make-up written - make-up at neutral)",
+  "writes": [
+    {
+      "index": 0,
+      "control": "Floor",
+      "norm": 1.0,
+      "set": "On",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 1,
+      "control": "Link",
+      "norm": 1.0,
+      "set": "On",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 2,
+      "control": "Active",
+      "norm": 1.0,
+      "set": "On",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 4,
+      "control": "SC Extern",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 5,
+      "control": "Attack",
+      "norm": 1.0,
+      "set": "150.0 ms",
+      "from": "time draft attack (gr_shift -1.41 dB)"
+    },
+    {
+      "index": 6,
+      "control": "Auto Fast",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 7,
+      "control": "Release",
+      "norm": 0.0,
+      "set": "5.0 ms",
+      "from": "time draft release (gr_shift -2.32 dB)"
+    },
+    {
+      "index": 8,
+      "control": "Anti Log",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 10,
+      "control": "EQ Gain",
+      "norm": 0.5,
+      "set": "0.0 dB",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 11,
+      "control": "EQ On",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 12,
+      "control": "EQ Freq",
+      "norm": 0.5,
+      "set": "230.0 Hz",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 13,
+      "control": "EQ Freq x10",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 14,
+      "control": "GR Limit",
+      "norm": 0.5,
+      "set": "10.0 dB",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 15,
+      "control": "GR Limit On",
+      "norm": 0.0,
+      "set": "Off",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 16,
+      "control": "Gain",
+      "norm": 0.0,
+      "set": "0.0 dB",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 17,
+      "control": "Gain Reduction",
+      "norm": 0.0,
+      "set": "0.00 dB",
+      "from": "tone check: neutral[] from the profile"
+    },
+    {
+      "index": 9,
+      "control": "Ratio",
+      "norm": 0.363636,
+      "set": "2.8",
+      "from": "tone check: ratio.curve[0] from the profile"
+    }
+  ],
+  "gr_measured_db": 2.41,
+  "gr_miss_db": 2.14,
+  "gr_within_0_5_db": false,
+  "out_measured_rms_dbfs": -17.16,
+  "notes": [
+    "the gain draft has no writable make-up or output control: no make-up written, no output prediction"
+  ],
+  "schema": "ej_combined_setting/0",
+  "status": "ACCURACY PASS A1 (6 Oct): data only, not exported, not published",
+  "product": "elysia mpressor",
+  "version": "1.15.1",
+  "identity": "AudioUnit|49696d78|1.15.1",
+  "inputs": "elysia_mpressor_1.15.1.json; elysia_mpressor_1.15.1.tonecheck.json; AudioUnit_49696d78_1.15.1.timing.json; AudioUnit_49696d78_1.15.1.gain_profile.draft.json",
+  "additivity_check": {
+    "hold_s": 2.5,
+    "note": "all three reads at this hold: the time draft's shifts came from short bursts; a miss here that the draft did not show means the draft was under-settled, a miss at this hold too means the shifts truly do not add",
+    "attack_only_shift_db": -1.38,
+    "release_only_shift_db": -1.58,
+    "sum_db": -2.96,
+    "combined_shift_db": -1.59,
+    "miss_db": 1.37,
+    "additive_within_0_5_db": false,
+    "why": "the shifts do NOT add at this hold (-1.38 + -1.58 = -2.96 against the combined -1.59, miss 1.37)"
+  },
+  "measuredAt": "20261007T124627"
+}
