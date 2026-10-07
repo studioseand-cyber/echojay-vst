@@ -18,6 +18,7 @@
 
 #include <juce_core/juce_core.h>
 #include "EjmapEq.h"
+#include "EjmapGainCal.h"
 #include <vector>
 #include <map>
 #include <optional>
@@ -32,6 +33,7 @@ inline constexpr double kInertHarmDb  = -90.0;   // ...with no harmonic above th
 inline constexpr double kNoEffectGainDb = 0.1;   // a control whose level span and THD span stay under these at every level did nothing to the tone
 inline constexpr double kNoEffectThdDb  = 0.5;
 inline constexpr double kSilentDb     = -150.0;  // a fundamental below this at the output while the input carried it = silent (no output at all)
+inline constexpr double kDriveThdSpanDb = 3.0;   // section 5 (7 Oct): a drive's THD rises by at least this across its positions at some level (the role signature's bar); less, with the level moving, is level_only
 
 struct Harmonic { int order = 0; double hz = 0.0, inDb = -999.0, outDb = -999.0; };
 struct HarmPosition { int k = -1; float norm = 0.0f; juce::String text; bool landed = true; double fundHz = 0.0, fundInDb = -999.0, fundOutDb = -999.0, totalOutRmsDb = -999.0; std::vector<Harmonic> harmonics; };
@@ -129,6 +131,7 @@ struct ControlResult
 {
     int index = -1; juce::String name; std::vector<LevelResult> levels;
     bool inert = false, silent = false, noEffect = false; juce::String note;
+    juce::String verdict;                                                     // SATURATION_PROFILE_SPEC v0.1 section 5 (7 Oct): drive | no_effect | inert | silent | level_only
     // level dependence: THD at the drive's top position across the levels (a saturator by nature distorts more when driven harder)
     std::map<double, double> thdAtTopByLevel;
 };
@@ -141,13 +144,17 @@ inline ControlResult judge (int index, const juce::String& name, std::vector<Lev
         for (const auto& r : L.readings) { if (r.silent) { ++silentN; ++landedN; } if (! r.valid) continue; ++landedN; anyValid = true; if (std::abs (r.gainDb) >= kInertGainDb || r.thdDb > kInertHarmDb) moved = true; }
         if (! L.readings.empty()) { const auto& top = L.readings.back(); if (top.valid) c.thdAtTopByLevel[L.levelDbfs] = top.thdDb; }
     }
-    if (silentN > 0 && silentN == landedN) { c.silent = true; c.note = "silent: the output holds no tone at any of " + juce::String (silentN) + " landed position(s) (below " + juce::String (kSilentDb, 0) + " dB) while the input carried it - no output at all (a licence shape distinct from inert); nothing to profile"; return c; }
-    if (! anyValid) { c.note = "no position read (the probe landed nothing or printed no fundamental)"; return c; }
-    if (! moved) { c.inert = true; c.note = "inert: the fundamental within " + juce::String (kInertGainDb, 2) + " dB and no harmonic above " + juce::String (kInertHarmDb, 0) + " dB at every position and level - the processing never ran (the licence shape); nothing to profile"; return c; }
+    if (silentN > 0 && silentN == landedN) { c.silent = true; c.verdict = "silent"; c.note = "silent: the output holds no tone at any of " + juce::String (silentN) + " landed position(s) (below " + juce::String (kSilentDb, 0) + " dB) while the input carried it - no output at all (a licence shape distinct from inert); nothing to profile"; return c; }
+    if (! anyValid) { c.verdict = "unread"; c.note = "no position read (the probe landed nothing or printed no fundamental)"; return c; }
+    if (! moved) { c.inert = true; c.verdict = "inert"; c.note = "inert: the fundamental within " + juce::String (kInertGainDb, 2) + " dB and no harmonic above " + juce::String (kInertHarmDb, 0) + " dB at every position and level - the processing never ran (the licence shape); nothing to profile"; return c; }
     // NO EFFECT (MSaturator's "Harmonics - Gain" beside its own "Even harmonics", 5 Oct): the product distorts, this control
     // changes neither the level nor the THD across its positions at any level - said, so a flat curve is never read as a drive law
     { bool flat = true; for (const auto& L : c.levels) if (L.gainSpanDb >= kNoEffectGainDb || L.thdSpanDb >= kNoEffectThdDb) flat = false;
-      if (flat) { c.noEffect = true; c.note = "no effect: neither the level (span < " + juce::String (kNoEffectGainDb, 1) + " dB) nor the THD (span < " + juce::String (kNoEffectThdDb, 1) + " dB) changed across the positions at any level, though the product distorts from its other settings"; return c; } }
+      if (flat) { c.noEffect = true; c.verdict = "no_effect"; c.note = "no effect: neither the level (span < " + juce::String (kNoEffectGainDb, 1) + " dB) nor the THD (span < " + juce::String (kNoEffectThdDb, 1) + " dB) changed across the positions at any level, though the product distorts from its other settings"; return c; } }
+    // LEVEL ONLY (spec section 5, 7 Oct): the level moves but the THD never rises by the drive signature's bar at any level - a trim, not a drive
+    { bool thdRises = false; for (const auto& L : c.levels) if (L.thdSpanDb >= kDriveThdSpanDb) thdRises = true;
+      if (! thdRises) { c.verdict = "level_only"; juce::StringArray sp; for (const auto& L : c.levels) sp.add (juce::String (L.levelDbfs, 0) + " dBFS gain span " + juce::String (L.gainSpanDb, 2) + " dB, THD span " + juce::String (L.thdSpanDb, 1)); c.note = "level_only: the level moves but the THD never rises " + juce::String (kDriveThdSpanDb, 0) + " dB across the positions at any level (" + sp.joinIntoString ("; ") + "): a trim, not a drive (the gain spec's business)"; return c; } }
+    c.verdict = "drive";
     juce::StringArray parts;
     for (const auto& L : c.levels)
         parts.add (juce::String (L.levelDbfs, 0) + " dBFS: max THD " + (L.maxThdDb > -200.0 ? juce::String (L.maxThdDb, 1) + " dB" : juce::String ("none")) + ", gain span " + juce::String (L.gainSpanDb, 2) + " dB, 1 % onset " + (L.onset1pctNorm ? "'" + L.onset1pctText + "' (norm " + juce::String (*L.onset1pctNorm, 2) + ")" : juce::String ("never")));
@@ -157,7 +164,7 @@ inline ControlResult judge (int index, const juce::String& name, std::vector<Lev
 
 inline juce::var toVar (const ControlResult& c)
 {
-    auto* o = new juce::DynamicObject(); o->setProperty ("index", c.index); o->setProperty ("control", c.name); o->setProperty ("inert", c.inert); o->setProperty ("silent", c.silent); o->setProperty ("no_effect", c.noEffect); o->setProperty ("note", c.note);
+    auto* o = new juce::DynamicObject(); o->setProperty ("index", c.index); o->setProperty ("control", c.name); o->setProperty ("inert", c.inert); o->setProperty ("silent", c.silent); o->setProperty ("no_effect", c.noEffect); o->setProperty ("verdict", c.verdict); o->setProperty ("note", c.note);
     juce::Array<juce::var> levels;
     for (const auto& L : c.levels)
     {
@@ -182,6 +189,119 @@ inline juce::var toVar (const ControlResult& c)
     o->setProperty ("levels", levels);
     auto* ld = new juce::DynamicObject(); for (const auto& [lv, thd] : c.thdAtTopByLevel) ld->setProperty (juce::String (lv, 0), std::round (thd * 10.0) / 10.0); o->setProperty ("thd_at_top_by_level_db", juce::var (ld));
     return juce::var (o);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// SATURATION_PROFILE_SPEC v0.1 (Kathy, 7 Oct 2026, item 4): the feel ladder, the acceptance with level compensation, the draft
+// ---------------------------------------------------------------------------------------------------------------------------
+// THE FEEL LADDER (section 4; starting points, to be set by ear): step 0 clean < -60 dB THD; 1 subtle -60..-40; 2 warm -40..-26;
+// 3 driven -26..-14; 4 crushed > -14. The acceptance (section 8) runs steps 1-3 at -12 dBFS.
+inline constexpr double kAcceptLevelDbfs = -12.0, kAcceptLevelBarDb = 0.5;
+struct Step { int step; const char* word; double loDb, hiDb; };
+inline const std::vector<Step>& steps() { static const std::vector<Step> k { { 0, "clean", -999.0, -60.0 }, { 1, "subtle", -60.0, -40.0 }, { 2, "warm", -40.0, -26.0 }, { 3, "driven", -26.0, -14.0 }, { 4, "crushed", -14.0, 999.0 } }; return k; }
+inline const Step& stepOf (int n) { return steps()[(size_t) juce::jlimit (0, 4, n)]; }
+inline int stepFor (double thdDb) { for (const auto& s : steps()) if (thdDb >= s.loDb && thdDb < s.hiDb) return s.step; return thdDb < -60.0 ? 0 : 4; }
+inline bool inBand (int step, double thdDb) { const auto& s = stepOf (step); return thdDb >= s.loDb && thdDb < s.hiDb; }
+// THE POSITION FOR A STEP (section 6.2) at one level: the valid reading whose THD falls in the band, nearest the band's middle
+inline std::optional<Reading> positionForStep (const LevelResult& L, int step, juce::String& why)
+{
+    const auto& s = stepOf (step); const double mid = step == 0 ? -70.0 : step == 4 ? -8.0 : 0.5 * (s.loDb + s.hiDb);
+    std::optional<Reading> best; double bestD = 1e9;
+    for (const auto& r : L.readings) { if (! r.valid || r.thdDb < -200.0) { if (r.valid && step == 0) { /* no harmonics at all is the cleanest */ } else continue; } const double t = r.thdDb < -200.0 ? -120.0 : r.thdDb; if (! inBand (step, t)) continue; const double d = std::abs (t - mid); if (d < bestD) { bestD = d; best = r; } }
+    if (! best) why = "no position at " + juce::String (L.levelDbfs, 0) + " dBFS has THD in the " + juce::String (s.word) + " band (" + juce::String (s.loDb, 0) + ".." + juce::String (s.hiDb, 0) + " dB)";
+    return best;
+}
+// THE OUTPUT CONTROL (section 6.3): from a gain draft (the gain spec's order output, makeup, trim / gain - the first writable), else none
+struct OutputChoice { bool ok = false; juce::String control, role, source, why; std::vector<gaincal::Reading> curve; bool stepped = false; };
+inline OutputChoice outputFromGainDraft (const juce::var& gainDraft, const juce::String& excludeControl)
+{
+    OutputChoice o;
+    if (! gainDraft.isObject()) { o.why = "no gain draft for this product"; return o; }
+    for (const char* role : { "output", "makeup", "trim", "gain" })
+        if (const auto* cs = gainDraft.getProperty ("controls", {}).getArray())
+            for (const auto& c : *cs)
+            {
+                if (c.getProperty ("role", "").toString() != role || c.getProperty ("control", "").toString() == excludeControl) continue;
+                if (! gaincal::writable (c.getProperty ("verdict", "").toString())) continue;
+                o.ok = true; o.control = c.getProperty ("control", "").toString(); o.role = role; o.source = "gain draft (" + c.getProperty ("verdict", "").toString() + ")"; o.stepped = (bool) c.getProperty ("stepped", false);
+                if (const auto* cv = c.getProperty ("curve", {}).getArray()) for (const auto& pt : *cv) { gaincal::Reading r; r.norm = (double) pt.getProperty ("norm", 0.0); r.display = pt.getProperty ("display", "").toString(); const auto m = pt.getProperty ("measured_db", {}); if (m.isDouble() || m.isInt()) r.measuredDb[-40.0] = (double) m; else r.landed = false; o.curve.push_back (r); }
+                return o;
+            }
+    o.why = "the gain draft has no writable output / makeup / trim control"; return o;
+}
+// THE COMPENSATION: the output norm whose curve value is the instantiate value minus the drive's level change
+struct Compensation { bool ok = false; double instDb = 0.0, wantDb = 0.0, norm = 0.0, givesDb = 0.0; bool clamped = false; juce::String why; };
+inline Compensation compensate (const OutputChoice& out, double instNorm, double levelChangeDb)
+{
+    Compensation c; if (! out.ok) { c.why = out.why; return c; }
+    std::optional<double> inst; double bd = 1e9; for (const auto& r : out.curve) if (r.landed && r.measuredDb.count (-40.0) && std::abs (r.norm - instNorm) < bd) { bd = std::abs (r.norm - instNorm); inst = r.measuredDb.at (-40.0); }
+    if (! inst) { c.why = "the output curve has no point near the instantiate norm"; return c; }
+    c.instDb = *inst; c.wantDb = *inst - levelChangeDb;
+    const auto inv = gaincal::normForDb (out.curve, c.wantDb, -40.0, out.stepped);
+    if (! inv.ok) { c.why = inv.why; return c; }
+    c.ok = true; c.norm = inv.norm; c.givesDb = inv.givesDb; c.clamped = inv.clamped; c.why = inv.clamped ? "clamped to the span: gives " + juce::String (inv.givesDb - *inst, 2) + " dB of the " + juce::String (-levelChangeDb, 2) + " asked" : juce::String();
+    return c;
+}
+// THE ACCEPTANCE ROW (section 8): THD in the step's band and the output within 0.5 dB of the input after compensation
+struct StepAcceptance { int step = 0; bool offered = false, ran = false; Reading position; Compensation comp; double measuredThdDb = -999.0, measuredLevelDb = 0.0; bool pass = false, thdOk = false, levelOk = false; juce::String why; };
+inline void judgeStep (StepAcceptance& a)
+{
+    if (! a.ran) { a.pass = false; return; }
+    a.thdOk = inBand (a.step, a.measuredThdDb); a.levelOk = std::abs (a.measuredLevelDb) <= kAcceptLevelBarDb; a.pass = a.thdOk && a.levelOk;
+    a.why = juce::String ("THD ") + juce::String (a.measuredThdDb, 1) + " dB " + (a.thdOk ? "in" : "OUTSIDE") + " the " + stepOf (a.step).word + " band; output " + juce::String (a.measuredLevelDb, 2) + " dB from the input" + (a.levelOk ? "" : " (over 0.5)") + (a.comp.ok ? juce::String() : "; no compensation: " + a.comp.why);
+}
+inline juce::var stepAcceptanceVar (const StepAcceptance& a)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty ("step", a.step); o->setProperty ("word", stepOf (a.step).word); o->setProperty ("offered", a.offered);
+    if (a.offered) { o->setProperty ("drive_norm", a.position.norm); o->setProperty ("drive_display", a.position.text); o->setProperty ("thd_db_from_curve", a.position.thdDb > -200.0 ? juce::var (std::round (a.position.thdDb * 10.0) / 10.0) : juce::var()); o->setProperty ("level_change_db_from_curve", std::round (a.position.gainDb * 100.0) / 100.0); }
+    { auto* c = new juce::DynamicObject(); c->setProperty ("ok", a.comp.ok); if (a.comp.ok) { c->setProperty ("output_norm", a.comp.norm); c->setProperty ("output_from_db", std::round (a.comp.instDb * 100.0) / 100.0); c->setProperty ("output_to_db", std::round (a.comp.givesDb * 100.0) / 100.0); c->setProperty ("clamped", a.comp.clamped); } if (a.comp.why.isNotEmpty()) c->setProperty ("why", a.comp.why); o->setProperty ("compensation", juce::var (c)); }
+    o->setProperty ("ran", a.ran); if (a.ran) { o->setProperty ("measured_thd_db", std::round (a.measuredThdDb * 10.0) / 10.0); o->setProperty ("measured_level_db", std::round (a.measuredLevelDb * 100.0) / 100.0); o->setProperty ("thd_in_band", a.thdOk); o->setProperty ("level_within_0_5", a.levelOk); }
+    o->setProperty ("pass", a.pass); if (a.why.isNotEmpty()) o->setProperty ("why", a.why);
+    return juce::var (o);
+}
+
+// THE DRAFT ej_saturation_profile/1 (section 7) FROM THE RECORD: the first `drive` control is `drive` (others under other_drives), per level
+// {norm, display, thd_db, even_odd_db, level_change_db}, the onsets per level, the output control, neutral, notes (a reason per unusable
+// control and per null even_odd), the acceptance and an amp sim's cabinet response when the record carries them
+inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, const juce::var& measured, const juce::String& status, const juce::String& spec)
+{
+    auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_saturation_profile/1"); P->setProperty ("spec", spec); P->setProperty ("status", status); P->setProperty ("plugin", plugin); P->setProperty ("measured", measured);
+    juce::Array<juce::var> notes, others; juce::var drive;
+    const bool old = ! rec.hasProperty ("spec_fields");
+    if (old) notes.add ("drafted from a record without the 7 Oct fields (verdict, acceptance, cabinet): verdicts derived from inert / silent / no_effect flags");
+    auto levelKey = [] (double lv) { return juce::String ((int) std::lround (lv)); };
+    if (const auto* cs = rec.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            juce::String verdict = c.getProperty ("verdict", "").toString();
+            if (verdict.isEmpty()) verdict = (bool) c.getProperty ("silent", false) ? "silent" : (bool) c.getProperty ("inert", false) ? "inert" : (bool) c.getProperty ("no_effect", false) ? "no_effect" : "drive";
+            auto* d = new juce::DynamicObject(); d->setProperty ("control", c.getProperty ("control", "")); d->setProperty ("found_by", c.hasProperty ("found_by") ? c.getProperty ("found_by", {}) : juce::var (rec.getProperty ("nominated_by", "").toString().startsWith ("names") ? "name" : "measurement")); d->setProperty ("verdict", verdict); d->setProperty ("stepped", c.hasProperty ("stepped") ? c.getProperty ("stepped", {}) : juce::var());
+            auto* levels = new juce::DynamicObject(); auto* on1 = new juce::DynamicObject(); auto* on01 = new juce::DynamicObject(); int nullEvenOdd = 0;
+            if (const auto* lv = c.getProperty ("levels", {}).getArray())
+                for (const auto& L : *lv)
+                {
+                    const double level = (double) L.getProperty ("level_dbfs", 0.0); juce::Array<juce::var> rows;
+                    if (const auto* cv = L.getProperty ("curve", {}).getArray()) for (const auto& r : *cv)
+                    { auto* q = new juce::DynamicObject(); q->setProperty ("norm", r.getProperty ("norm", 0.0)); q->setProperty ("display", r.getProperty ("display", ""));
+                      if ((bool) r.getProperty ("valid", false)) { q->setProperty ("thd_db", r.getProperty ("thd_db", {})); q->setProperty ("even_odd_db", r.getProperty ("even_odd_db", {})); q->setProperty ("level_change_db", r.getProperty ("gain_db", {})); if (r.getProperty ("even_odd_db", {}).isVoid()) { ++nullEvenOdd; q->setProperty ("character", r.getProperty ("character", "")); } }
+                      else q->setProperty ("why", "not read"); rows.add (juce::var (q)); }
+                    levels->setProperty (levelKey (level), rows);
+                    on1->setProperty (levelKey (level), L.getProperty ("onset_1pct", {}).isObject() ? L.getProperty ("onset_1pct", {}).getProperty ("norm", {}) : juce::var());
+                    on01->setProperty (levelKey (level), L.getProperty ("onset_0_1pct", {}).isObject() ? L.getProperty ("onset_0_1pct", {}).getProperty ("norm", {}) : juce::var());
+                }
+            d->setProperty ("levels", juce::var (levels)); d->setProperty ("onset_1pct_norm", juce::var (on1)); d->setProperty ("onset_0_1pct_norm", juce::var (on01));
+            if (nullEvenOdd > 0) notes.add (c.getProperty ("control", "").toString() + ": even_odd_db null at " + juce::String (nullEvenOdd) + " position(s) - one side at the floor (the `character` field says which side carries the harmonics)");
+            if (verdict != "drive") notes.add (c.getProperty ("control", "").toString() + ": " + verdict + " - " + c.getProperty ("note", "").toString().upToFirstOccurrenceOf (";", false, false));
+            if (verdict == "drive" && drive.isVoid()) drive = juce::var (d); else others.add (juce::var (d));
+        }
+    P->setProperty ("drive", drive); P->setProperty ("other_drives", others);
+    if (drive.isVoid()) notes.add ("no control with the drive verdict: nothing for the server to use");
+    P->setProperty ("output_control", rec.hasProperty ("output_control") ? rec.getProperty ("output_control", {}) : juce::var());
+    P->setProperty ("neutral", rec.hasProperty ("neutral") ? rec.getProperty ("neutral", {}) : juce::var (juce::Array<juce::var>()));
+    if (rec.hasProperty ("acceptance")) { P->setProperty ("acceptance", rec.getProperty ("acceptance", {})); if (const auto* acc = rec.getProperty ("acceptance", {}).getArray()) for (const auto& a : *acc) if (! (bool) a.getProperty ("pass", false)) notes.add ("step " + a.getProperty ("step", juce::var()).toString() + " (" + a.getProperty ("word", "").toString() + "): " + (a.getProperty ("offered", false) ? (a.getProperty ("ran", false) ? "FAIL - " + a.getProperty ("why", "").toString() : "not run") : "not offered - " + a.getProperty ("why", "").toString()) + "; null for this unit (section 8)"); }
+    if (rec.hasProperty ("cabinet_response")) P->setProperty ("cabinet_response", rec.getProperty ("cabinet_response", {}));
+    P->setProperty ("notes", notes);
+    return juce::var (P);
 }
 
 } // namespace ejmap::saturation

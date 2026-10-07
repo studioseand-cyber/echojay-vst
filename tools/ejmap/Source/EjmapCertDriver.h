@@ -4561,11 +4561,114 @@ inline int runSaturation (const SweepOptions& opt)
     setRoles (o, roles);
     o->setProperty ("schema", "ej_saturation_prototype/1"); o->setProperty ("status", "PROTOTYPE - roadmap 2.5, not exported, not published");
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
-    o->setProperty ("method", "one 997 Hz sine (an exact bin) at -20, -12 and -6 dBFS peak, the drive control at 11 norms; per position the fundamental's gain (out - in) and the 2nd-5th harmonics by exact Goertzel bins (probe --response tones=1 harmonics=5): thd_db = 10 log10 (sum of harmonic power / fundamental power), thd_pct its square root x 100, even_odd_db = (h2 + h4) / (h3 + h5) in dB; onset = the first position by norm whose THD reaches 1 % / 0.1 %; inert = fundamental within 0.05 dB and no harmonic above -90 dB everywhere");
+    o->setProperty ("method", "one 997 Hz sine (an exact bin) at -20, -12 and -6 dBFS peak, the drive control at 11 norms; per position the fundamental's gain (out - in) and the 2nd-5th harmonics by exact Goertzel bins (probe --response tones=1 harmonics=5): thd_db = 10 log10 (sum of harmonic power / fundamental power), thd_pct its square root x 100, even_odd_db = (h2 + h4) / (h3 + h5) in dB; onset = the first position by norm whose THD reaches 1 % / 0.1 %; inert = fundamental within 0.05 dB and no harmonic above -90 dB everywhere; verdicts (7 Oct, spec section 5): drive / no_effect / inert / silent / level_only (THD never rises 3 dB); acceptance (section 8): steps 1-3 at -12 dBFS, the drive position nearest the band's middle, the level compensated on the output control (the gain draft's, else an inline 21-norm curve at -40 dBFS), re-measured: THD in band and output within 0.5 dB of the input");
     o->setProperty ("controls", controls); o->setProperty ("inert_or_silent_controls", inertN); o->setProperty ("no_effect_controls", noEffectN); o->setProperty ("measuredAt", nowStamp());
     o->setProperty ("nominated_by", measuredNominees.empty() ? "names" : "measurement (unnamed: the lexicon nominated nothing; " + juce::String ((int) measuredNominees.size()) + " control(s) whose THD rises at their ends)");
-    outDir.getChildFile (stem + ".saturation.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    o->setProperty ("spec_fields", "7 Oct: verdict, acceptance, output_control, cabinet_response");
+    // THE OUTPUT CONTROL (spec section 6.3, 7 Oct): the gain draft's first writable output / makeup / trim when the cert folder holds one
+    // (phaseb/gainall/drafts, the gaincal drafts, or the older gain-cal/ path), else an INLINE curve - the first control named output /
+    // out / level / volume / trim / makeup that is not a drive or a mix, 21 norms at -40 dBFS in one process (the gain spec's judging
+    // level), said as such; no such control -> the acceptance says "no usable output control"
+    const juce::String firstDrive = [&] { for (int i = 0; i < controls.size(); ++i) if (controls[i].getProperty ("verdict", "") == "drive") return controls[i].getProperty ("control", "").toString(); return juce::String(); }();
+    saturation::OutputChoice outc;
+    {
+        const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
+        for (const auto& rel : { "phaseb/gainall/drafts/", "phaseb/gaincal/drafts/", "phaseb/gainall/gain-cal/", "phaseb/gaincal/gain-cal/" })
+        { const auto f = root.getChildFile (rel).getChildFile (stem + ".gain_profile.draft.json"); if (f.existsAsFile()) { outc = saturation::outputFromGainDraft (juce::JSON::parse (f.loadFileAsString()), firstDrive); if (outc.ok) { outc.source += " at " + juce::String (rel); break; } } }
+        if (! outc.ok)
+        {
+            int outIdx = -1; juce::String outName;
+            if (const auto* cs = base.getProperty ("controls", {}).getArray())
+                for (const auto& c : *cs)
+                {
+                    const int idx = (int) c.getProperty ("index", -1); const auto n = c.getProperty ("name", "").toString();
+                    if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (n) || nametokens::controlAnswersTerm (n, "mix")) continue;
+                    bool isTarget = false; for (const auto& t : targets) isTarget = isTarget || t.index == idx; if (isTarget) continue;
+                    bool outLike = false; for (const char* t : { "output", "out", "level", "volume", "trim", "makeup", "make-up" }) if (nametokens::controlAnswersTerm (n, t)) outLike = true;
+                    if (outLike && outIdx < 0) { outIdx = idx; outName = n; }
+                }
+            if (outIdx >= 0)
+            {
+                juce::StringArray gnorms; for (int k = 0; k < gaincal::kNorms; ++k) gnorms.add (juce::String ((float) k / (float) (gaincal::kNorms - 1), 6));
+                const auto r = run ("out" + juce::String (outIdx), { "--sweep", "thr=" + juce::String (outIdx), "norms=" + gnorms.joinIntoString (","), "levels=-40", "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
+                if (r.kind == ChildResult::Kind::uiShown) { say ("SAT: a window appeared; stopping"); return 5; }
+                const auto rows = gaincal::mergeLevels ({ gaincal::parseLevelRun (r.cleanExit() ? r.out : juce::String(), -40.0) });
+                const auto c = gaincal::judge (rows, sweep::findControl (base, outIdx).getProperty ("unit", "").toString(), -40.0);
+                if (gaincal::writable (c.verdict)) { outc.ok = true; outc.control = outName; outc.role = "output"; outc.curve = rows; outc.stepped = sweep::isSteppedControl (sweep::findControl (base, outIdx)); outc.source = "inline: 21 norms at -40 dBFS, one process (" + c.verdict + "; no gain draft in the cert folder)"; }
+                else outc.why = "[" + juce::String (outIdx) + "] " + outName + " measured inline is " + c.verdict + " (" + c.note + "): not usable for level matching";
+            }
+            else if (outc.why.isEmpty()) outc.why = "no control named output / out / level / volume / trim / makeup beside the drive";
+        }
+        auto* oc = new juce::DynamicObject(); oc->setProperty ("control", outc.ok ? juce::var (outc.control) : juce::var()); oc->setProperty ("role", outc.ok ? juce::var (outc.role) : juce::var()); oc->setProperty ("source", outc.ok ? outc.source : "none: " + outc.why);
+        if (outc.ok) { juce::Array<juce::var> cv; for (const auto& rr : outc.curve) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", rr.norm); q->setProperty ("display", rr.display); q->setProperty ("measured_db", rr.landed && rr.measuredDb.count (-40.0) ? juce::var (std::round (rr.measuredDb.at (-40.0) * 100.0) / 100.0) : juce::var()); cv.add (juce::var (q)); } oc->setProperty ("curve", cv); }
+        o->setProperty ("output_control", juce::var (oc));
+        say ("SAT: output control: " + (outc.ok ? "[" + outc.control + "] " + outc.source : "none - " + outc.why));
+    }
+    // THE ACCEPTANCE (spec section 8, 7 Oct): steps 1-3 at -12 dBFS on the first drive control - the position whose THD is nearest the
+    // band's middle, the output compensated by its level change, written together in a fresh process and re-measured
+    {
+        juce::Array<juce::var> acc; int outIdx = -1; if (outc.ok) { if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if (c.getProperty ("name", "").toString() == outc.control) outIdx = (int) c.getProperty ("index", -1); }
+        const double outInstNorm = outIdx >= 0 ? (double) sweep::findControl (base, outIdx).getProperty ("defaultOnInstantiate", {}).getProperty ("normalised", 0.0) : 0.0;
+        int driveIdx = -1; const saturation::LevelResult* L12 = nullptr; saturation::LevelResult L12copy;
+        for (const auto& t : targets) if (t.name == firstDrive) driveIdx = t.index;
+        if (driveIdx >= 0) for (int i = 0; i < controls.size(); ++i) if ((int) controls[i].getProperty ("index", -1) == driveIdx)
+            if (const auto* lv = controls[i].getProperty ("levels", {}).getArray()) for (const auto& L : *lv) if (std::abs ((double) L.getProperty ("level_dbfs", 0.0) - saturation::kAcceptLevelDbfs) < 0.1)
+            {   // rebuild the -12 level's readings from the record's curve
+                L12copy.levelDbfs = saturation::kAcceptLevelDbfs;
+                if (const auto* cv = L.getProperty ("curve", {}).getArray()) for (const auto& r : *cv) { saturation::Reading rd; rd.norm = (float) (double) r.getProperty ("norm", 0.0); rd.text = r.getProperty ("display", "").toString(); rd.valid = (bool) r.getProperty ("valid", false); rd.gainDb = (double) r.getProperty ("gain_db", 0.0); const auto t = r.getProperty ("thd_db", {}); rd.thdDb = (t.isDouble() || t.isInt()) ? (double) t : -999.0; L12copy.readings.push_back (rd); }
+                L12 = &L12copy;
+            }
+        for (int step = 1; step <= 3; ++step)
+        {
+            saturation::StepAcceptance a; a.step = step; juce::String why;
+            if (driveIdx < 0) a.why = "no control with the drive verdict";
+            else if (! L12) a.why = "no -12 dBFS level on the drive";
+            else if (const auto pos = saturation::positionForStep (*L12, step, why))
+            {
+                a.offered = true; a.position = *pos; a.comp = saturation::compensate (outc, outInstNorm, pos->gainDb);
+                juce::StringArray extra { "--response", "ctl=" + juce::String (driveIdx), "norms=" + juce::String (pos->norm, 6), "tones=1", "lo=997", "harmonics=5", "db=" + juce::String (saturation::kAcceptLevelDbfs, 0), "hold=1.0", "discard=0.5" };
+                if (a.comp.ok && outIdx >= 0) extra.add ("set=" + juce::String (outIdx) + ":" + juce::String (a.comp.norm, 6));
+                const auto r = run ("acc.s" + juce::String (step), extra);
+                if (r.kind == ChildResult::Kind::uiShown) { say ("SAT: a window appeared; stopping"); return 5; }
+                const auto L = saturation::deriveLevel (saturation::parseHarmonics (r.cleanExit() ? r.out : juce::String()), saturation::kAcceptLevelDbfs);
+                for (const auto& rd : L.readings) if (rd.valid) { a.ran = true; a.measuredThdDb = rd.thdDb > -200.0 ? rd.thdDb : -120.0; a.measuredLevelDb = rd.gainDb; }
+                if (! a.ran) a.why = "the acceptance process gave no reading (" + r.describe() + ")";
+                saturation::judgeStep (a);
+            }
+            else a.why = why;
+            acc.add (saturation::stepAcceptanceVar (a));
+            say ("  acceptance step " + juce::String (step) + " (" + saturation::stepOf (step).word + "): " + (a.ran ? juce::String (a.pass ? "PASS" : "FAIL") + " - drive '" + a.position.text + "'" + (a.comp.ok ? ", output to norm " + juce::String (a.comp.norm, 3) + " (" + juce::String (a.comp.givesDb - a.comp.instDb, 2) + " dB for a " + juce::String (a.position.gainDb, 2) + " dB level change)" : juce::String()) + ": " + a.why : a.why));
+        }
+        o->setProperty ("acceptance", acc);
+    }
+    // AMP SIMS (spec section 3, data only for v1): the multitone response at the instantiate cabinet, when the ledger's category is amp_sim
+    {
+        juce::String category; { const auto in = loadDiscoveryInputs (opt.ledger); if (const auto it = in.categoryByUid.find (hits[0].uidKey); it != in.categoryByUid.end()) category = it->second; }
+        if (category == "amp_sim" && ! targets.empty())
+        {
+            const auto r = run ("cabinet", { "--response", "ctl=" + juce::String (targets.front().index), "norms=current", "tones=" + juce::String (eq::kGridTones), "lo=" + juce::String (eq::kGridLoHz, 0), "hi=" + juce::String (eq::kGridHiHz, 0), "db=-12", "hold=" + juce::String (eq::kHoldS, 1), "discard=" + juce::String (eq::kDiscardS, 1) });
+            if (r.kind == ChildResult::Kind::uiShown) { say ("SAT: a window appeared; stopping"); return 5; }
+            const auto resp = eq::parseResponse (r.cleanExit() ? r.out : juce::String());
+            auto* cab = new juce::DynamicObject(); cab->setProperty ("signal", eq::gridDescription()); cab->setProperty ("note", "data only (spec section 3): the amp's response as instantiated, cabinet included; not used by the server in v1");
+            juce::Array<juce::var> tones; if (resp.ok && ! resp.positions.empty()) for (const auto& t : resp.positions[0].tones) if (t.outDb > -200.0) { auto* q = new juce::DynamicObject(); q->setProperty ("hz", std::round (t.hz * 10.0) / 10.0); q->setProperty ("gain_db", std::round ((t.outDb - t.inDb) * 100.0) / 100.0); tones.add (juce::var (q)); }
+            cab->setProperty ("tones", tones); if (tones.isEmpty()) cab->setProperty ("why", resp.refused.isNotEmpty() ? resp.refused : r.describe());
+            o->setProperty ("cabinet_response", juce::var (cab));
+            say ("SAT: amp sim: cabinet response at instantiate, " + juce::String (tones.size()) + " tone(s)");
+        }
+        else o->setProperty ("ledger_category", category.isNotEmpty() ? juce::var (category) : juce::var());
+    }
+    { juce::Array<juce::var> neutral; std::set<int> used; for (const auto& t : targets) used.insert (t.index); if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) { const int ci = (int) c.getProperty ("index", -1); if (used.count (ci)) continue; const auto doi = c.getProperty ("defaultOnInstantiate", {}); if (! doi.isObject()) continue; auto* n = new juce::DynamicObject(); n->setProperty ("control", c.getProperty ("name", "")); n->setProperty ("set", doi.getProperty ("display", "")); n->setProperty ("norm", doi.getProperty ("normalised", juce::var())); neutral.add (juce::var (n)); } o->setProperty ("neutral", neutral); }
+    const juce::var rec (o);   // one var owns the record
+    outDir.getChildFile (stem + ".saturation.json").replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n");
     say ("SAT: -> " + outDir.getChildFile (stem + ".saturation.json").getFullPathName());
+    // THE DRAFT ej_saturation_profile/1 (section 7), from the record, cert/phaseb/saturation/drafts/
+    {
+        auto recForDraft = rec; if (auto* ro = recForDraft.getDynamicObject()) ro->setProperty ("output_control", outc.ok ? juce::var (outc.control) : juce::var());
+        const auto D = saturation::profileDraft (recForDraft, drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, base.getProperty ("map_fp", juce::var())),
+                                                 drafts::measuredBlock ("EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, "997 Hz sine at -20, -12 and -6 dBFS peak; harmonics 2-5"), drafts::statusLine ("SATURATION_PROFILE_SPEC"), drafts::specTag ("SATURATION_PROFILE_SPEC"));
+        const auto f = drafts::draftFile (opt.out, stem, "saturation_profile"); const auto problem = drafts::writeDraft (f, D);
+        say (problem.isEmpty() ? "SAT: draft ej_saturation_profile/1 -> " + f.getFullPathName() : "SAT: " + problem);
+    }
     return measured > 0 ? 0 : 4;
 }
 
@@ -5543,7 +5646,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 if (cat.name == "timing" && pp.recordFile.isNotEmpty()) { tmp.getChildFile ("fixtures").createDirectory(); juce::File (pp.recordFile).copyFileTo (tmp.getChildFile ("fixtures").getChildFile (juce::File (pp.recordFile).getFileName())); }
                 juce::StringArray args { exe.getFullPathName(), cat.mode, pp.product };
                 if (cat.kindArg.isNotEmpty()) { args.add ("--kind"); args.add (cat.kindArg); }
-                if (cat.name == "combined" || cat.name == "material" || cat.name == "frequency" || cat.name == "samplerate") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts) live in the real folder
+                if (cat.name == "combined" || cat.name == "material" || cat.name == "frequency" || cat.name == "samplerate" || cat.name == "saturation") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts; a saturator's gain draft) live in the real folder
                 args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName() });
                 const auto t1 = juce::Time::getMillisecondCounterHiRes();
                 const auto r = runChild (args, (int) (cat.guardS * 1000.0));

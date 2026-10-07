@@ -35,7 +35,7 @@ inline const std::vector<Category>& categories()
         { "limiter",     "--cert-limiter",       "",          { "limiter" },                   600.0,  "five ceilings x two oversampling states + the pool's drive test: ~2-3 min" },
         { "eq",          "--cert-eq",            "",          { "eq" },                        2700.0, "ten responses per band (baselines at two levels and two grids, gain at -12 / -30, freq, Q at +6 / +3, two acceptance writes), up to ten bands, the engage search and the pool: ~12-25 min" },
         { "deesser",     "--cert-deesser",       "",          { "de-esser" },                  900.0,  "three ladders (noise primary, 6.5 kHz, 997 Hz), up to six responses, two acceptance processes, the pool: ~3-5 min" },
-        { "saturation",  "--cert-saturation",    "",          { "saturation", "amp_sim" },     900.0,  "three levels per drive control + the pool: ~2-6 min measured (Saphira's twelve: 6)" },
+        { "saturation",  "--cert-saturation",    "",          { "saturation", "amp_sim" },     1200.0, "three levels per drive control + the pool + the output curve + three acceptance writes (+ an amp sim's cabinet response): ~3-7 min (Saphira's twelve drives: 7)" },
         { "reverb",      "--cert-reverb-delay",  "reverb",    { "reverb" },                    1200.0, "11 mix + 5 decay + 5 time tails + the pool's tail pairs: ~5-8 min measured" },
         { "delay",       "--cert-reverb-delay",  "delay",     { "delay" },                     1200.0, "as reverb plus 5 feedback + 3 tempos: ~5-8 min measured" },
         { "transient",   "--cert-dynamics",      "transient", { "transient_shaper" },          600.0,  "two neutral runs + 5-10 hit runs + the pool's hit pairs: ~2-4 min" },

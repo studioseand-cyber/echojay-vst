@@ -7958,6 +7958,59 @@ void testSaturation()
     const auto v = toVar (c);
     check (v.getProperty ("control", "").toString() == "Drive" && v.getProperty ("levels", {}).size() == 1 && v.getProperty ("levels", {})[0].getProperty ("curve", {}).size() == 3 && (double) v.getProperty ("levels", {})[0].getProperty ("curve", {})[2].getProperty ("harmonics_db", {}).getProperty ("h3", 0.0) == -26.0 && v.getProperty ("levels", {})[0].getProperty ("onset_1pct", {}).getProperty ("display", "").toString() == "10",
            "sat S13: the JSON carries the curve per level with the harmonics and the onset");
+    // SATURATION_PROFILE_SPEC v0.1 (7 Oct, item 4): the verdicts incl. level_only, the feel ladder, the acceptance with compensation, the draft
+    {
+        auto reading = [] (float norm, double thd, double gain, bool valid = true) { Reading r; r.norm = norm; r.text = juce::String (norm, 1); r.valid = valid; r.thdDb = thd; r.gainDb = gain; return r; };
+        auto level = [&] (double lv, std::vector<Reading> rs) { LevelResult L; L.levelDbfs = lv; L.readings = rs; double gmin = 1e9, gmax = -1e9, tmin = 1e9, tmax = -1e9; for (const auto& r : rs) if (r.valid) { gmin = std::min (gmin, r.gainDb); gmax = std::max (gmax, r.gainDb); const double t = std::max (-120.0, r.thdDb); tmin = std::min (tmin, t); tmax = std::max (tmax, t); L.maxThdDb = std::max (L.maxThdDb, r.thdDb); } L.gainSpanDb = gmax - gmin; L.thdSpanDb = tmax - tmin; return L; };
+        // V1: a drive (THD rises 30 dB, level +6); a trim (level +12, THD flat within 1 dB): level_only; the older verdicts keep their names
+        const auto drive = judge (1, "Drive", { level (-12.0, { reading (0.0f, -70.0, 0.0), reading (0.5f, -50.0, 3.0), reading (1.0f, -40.0, 6.0) }) });
+        const auto trim = judge (2, "Output", { level (-12.0, { reading (0.0f, -70.0, -6.0), reading (0.5f, -69.5, 0.0), reading (1.0f, -69.0, 6.0) }) });
+        check (drive.verdict == "drive" && trim.verdict == "level_only" && trim.note.contains ("a trim, not a drive"), "sat V1: THD rising 30 dB -> drive; level moving 12 dB with THD flat -> level_only (the gain spec's business)");
+        const auto flat = judge (3, "Bias", { level (-12.0, { reading (0.0f, -50.0, 0.0), reading (1.0f, -50.2, 0.02) }) });
+        check (flat.verdict == "no_effect" && flat.noEffect, "sat V1b: nothing moves -> no_effect");
+        // V2: the feel ladder
+        check (stepFor (-70.0) == 0 && stepFor (-50.0) == 1 && stepFor (-30.0) == 2 && stepFor (-20.0) == 3 && stepFor (-10.0) == 4 && stepFor (-40.0) == 2 && stepFor (-26.0) == 3, "sat V2: the five steps by THD (-60 / -40 / -26 / -14 dB edges, an edge belongs to the step above)");
+        { juce::String why; const auto L = level (-12.0, { reading (0.0f, -75.0, 0.0), reading (0.2f, -56.0, 1.0), reading (0.4f, -45.0, 2.0), reading (0.6f, -33.0, 3.5), reading (0.8f, -22.0, 4.0), reading (1.0f, -12.0, 5.0) });
+          const auto p1 = positionForStep (L, 1, why), p2 = positionForStep (L, 2, why), p3 = positionForStep (L, 3, why), p4 = positionForStep (L, 4, why);
+          check (p1 && p1->norm == 0.4f && p2 && p2->norm == 0.6f && p3 && p3->norm == 0.8f && p4 && p4->norm == 1.0f, "sat V2b: the position for a step is the reading in its band nearest the band's middle (-45 for subtle's -50, -33 for warm's -33, -22 for driven's -20)");
+          const auto L2 = level (-12.0, { reading (0.0f, -75.0, 0.0), reading (1.0f, -12.0, 5.0) }); const auto none = positionForStep (L2, 2, why);
+          check (! none && why.contains ("warm band"), "sat V2c: no reading in the band -> none, with the band named"); }
+        // V3: the output from a gain draft and the compensation
+        { auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+          juce::Array<juce::var> curve; for (int k = 0; k <= 4; ++k) curve.add (mk ({ { "norm", k / 4.0 }, { "display", juce::String (-12 + 6 * k) }, { "measured_db", -12.0 + 6.0 * k } }));
+          juce::Array<juce::var> cs { mk ({ { "control", "Mix" }, { "role", "output" }, { "verdict", "no_effect" } }), mk ({ { "control", "Drive" }, { "role", "output" }, { "verdict", "display_matches" }, { "curve", curve } }), mk ({ { "control", "Makeup" }, { "role", "makeup" }, { "verdict", "display_off" }, { "stepped", false }, { "curve", curve } }), mk ({ { "control", "Output" }, { "role", "output" }, { "verdict", "level_dependent" } }) };
+          const auto draft = mk ({ { "controls", cs } });
+          const auto oc = outputFromGainDraft (draft, "Drive");
+          check (oc.ok && oc.control == "Makeup" && oc.role == "makeup" && oc.curve.size() == 5, "sat V3a: the gain draft's first WRITABLE output / makeup / trim that is not the drive itself: Makeup (Mix no_effect, Output level_dependent, Drive excluded)");
+          check (! outputFromGainDraft (juce::var(), "").ok && ! outputFromGainDraft (mk ({ { "controls", juce::Array<juce::var> { cs[0] } } }), "").ok, "sat V3b: no draft, or no writable control -> none, said");
+          const auto comp = compensate (oc, 0.5, 3.0);   // instantiate at norm 0.5 = 0 dB; the drive adds 3 dB -> want -3 dB -> norm 0.375
+          check (comp.ok && std::abs (comp.instDb) < 1e-9 && std::abs (comp.wantDb + 3.0) < 1e-9 && std::abs (comp.norm - 0.375) < 1e-9 && ! comp.clamped, "sat V3c: +3 dB of level change -> the output written to the norm that gives -3 (0.375 on a -12..+12 curve from 0 at 0.5)");
+          const auto far = compensate (oc, 0.5, 20.0); check (far.ok && far.clamped && far.why.contains ("clamped"), "sat V3d: 20 dB wanted on a 12 dB span: clamped, said with the shortfall");
+          OutputChoice none; none.why = "no gain draft"; check (! compensate (none, 0.5, 3.0).ok, "sat V3e: no output control -> no compensation, the reason carried"); }
+        // V4: the step judgement
+        { StepAcceptance a; a.step = 2; a.ran = true; a.measuredThdDb = -33.0; a.measuredLevelDb = 0.3; a.comp.ok = true; judgeStep (a); check (a.pass && a.thdOk && a.levelOk, "sat V4a: THD -33 in the warm band, output 0.3 dB from the input -> PASS");
+          a.measuredLevelDb = 0.8; judgeStep (a); check (! a.pass && a.thdOk && ! a.levelOk && a.why.contains ("over 0.5"), "sat V4b: 0.8 dB off -> FAIL on level");
+          a.measuredLevelDb = 0.1; a.measuredThdDb = -45.0; judgeStep (a); check (! a.pass && ! a.thdOk && a.why.contains ("OUTSIDE"), "sat V4c: THD -45 for the warm band -> FAIL on THD");
+          StepAcceptance nr; nr.step = 1; judgeStep (nr); check (! nr.pass, "sat V4d: not run -> not passed"); }
+        // V5: the draft from a record: the first drive is `drive`, the trim lands in other_drives with a note, levels keyed by dBFS, level_change_db named
+        { auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+          auto row = [&] (double norm, double thd, double gain, juce::var eo) { return mk ({ { "norm", norm }, { "display", juce::String (norm) }, { "valid", true }, { "thd_db", thd }, { "even_odd_db", eo }, { "character", eo.isVoid() ? "even" : "mixed" }, { "gain_db", gain } }); };
+          juce::Array<juce::var> c20 { row (0.0, -78.0, 0.0, 6.1), row (0.5, -41.2, 2.1, juce::var()) }, c12 { row (0.0, -70.0, 0.0, 5.0), row (0.5, -35.0, 3.0, 4.0) };
+          juce::Array<juce::var> levels { mk ({ { "level_dbfs", -20.0 }, { "curve", c20 }, { "onset_1pct", mk ({ { "norm", 0.6 }, { "display", "6" } }) }, { "onset_0_1pct", juce::var() } }), mk ({ { "level_dbfs", -12.0 }, { "curve", c12 }, { "onset_1pct", mk ({ { "norm", 0.5 }, { "display", "5" } }) }, { "onset_0_1pct", mk ({ { "norm", 0.1 }, { "display", "1" } }) } }) };
+          juce::Array<juce::var> controls { mk ({ { "control", "Output" }, { "verdict", "level_only" }, { "note", "level_only: a trim; more" }, { "levels", levels } }), mk ({ { "control", "Drive" }, { "verdict", "drive" }, { "note", "x" }, { "levels", levels } }) };
+          juce::Array<juce::var> acc { mk ({ { "step", 1 }, { "word", "subtle" }, { "offered", true }, { "ran", true }, { "pass", true } }), mk ({ { "step", 3 }, { "word", "driven" }, { "offered", false }, { "why", "no position in the driven band" }, { "pass", false } }) };
+          const auto rec = mk ({ { "spec_fields", "x" }, { "controls", controls }, { "nominated_by", "names" }, { "output_control", "Output" }, { "neutral", juce::Array<juce::var>() }, { "acceptance", acc } });
+          const auto D = profileDraft (rec, juce::var(), juce::var(), "DRAFT", ejmap::drafts::specTag ("SATURATION_PROFILE_SPEC"));
+          const auto& dr = D.getProperty ("drive", {});
+          check (D.getProperty ("schema", "") == "ej_saturation_profile/1" && dr.getProperty ("control", "") == "Drive" && dr.getProperty ("verdict", "") == "drive" && dr.getProperty ("found_by", "") == "name" && D.getProperty ("other_drives", {}).size() == 1 && D.getProperty ("output_control", "") == "Output", "sat V5a: the first drive-verdict control is `drive`; the trim sits in other_drives; found_by from the record's nomination");
+          const auto& l12 = dr.getProperty ("levels", {}).getProperty ("-12", {});
+          check (l12.size() == 2 && (double) l12[1].getProperty ("level_change_db", 0.0) == 3.0 && (double) l12[1].getProperty ("thd_db", 0.0) == -35.0 && (double) dr.getProperty ("onset_1pct_norm", {}).getProperty ("-12", 0.0) == 0.5 && dr.getProperty ("onset_0_1pct_norm", {}).getProperty ("-20", {}).isVoid(), "sat V5b: levels keyed '-20' / '-12', gain_db renamed level_change_db, the onsets per level (null where never reached)");
+          juce::StringArray ns; if (const auto* na = D.getProperty ("notes", {}).getArray()) for (const auto& n : *na) ns.add (n.toString());
+          check (ns.size() == 4 && ns[0].contains ("Output: even_odd_db null") && ns[1].contains ("Output: level_only - level_only: a trim") && ns[2].contains ("Drive: even_odd_db null") && ns[3].contains ("step 3 (driven): not offered"), "sat V5c: a note per null even_odd, per unusable control and per unconfirmed step (" + ns.joinIntoString (" | ") + ")");
+          const auto old = mk ({ { "controls", juce::Array<juce::var> { mk ({ { "control", "Drive" }, { "inert", true }, { "note", "inert: x" }, { "levels", juce::Array<juce::var>() } }) } } });
+          const auto D2 = profileDraft (old, juce::var(), juce::var(), "DRAFT", ejmap::drafts::specTag ("SATURATION_PROFILE_SPEC"));
+          check (D2.getProperty ("drive", {}).isVoid() && D2.getProperty ("other_drives", {})[0].getProperty ("verdict", "") == "inert" && D2.getProperty ("notes", {})[0].toString().contains ("without the 7 Oct fields"), "sat V5d: a 5 Oct record drafts with verdicts derived from its flags and the provisional note"); }
+    }
 }
 
 /** REVERB AND DELAY (EjmapReverbDelay.h, roadmap 2.7 PROTOTYPE, 5 Oct R4): synthetic tails - a delay with repeats, a reverb with RT60 2 s - and the mix law. */
