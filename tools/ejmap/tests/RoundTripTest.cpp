@@ -8041,7 +8041,11 @@ void testSaturation()
           const auto comp = compensate (oc, 0.5, 3.0);   // instantiate at norm 0.5 = 0 dB; the drive adds 3 dB -> want -3 dB -> norm 0.375
           check (comp.ok && std::abs (comp.instDb) < 1e-9 && std::abs (comp.wantDb + 3.0) < 1e-9 && std::abs (comp.norm - 0.375) < 1e-9 && ! comp.clamped, "sat V3c: +3 dB of level change -> the output written to the norm that gives -3 (0.375 on a -12..+12 curve from 0 at 0.5)");
           const auto far = compensate (oc, 0.5, 20.0); check (far.ok && far.clamped && far.why.contains ("clamped"), "sat V3d: 20 dB wanted on a 12 dB span: clamped, said with the shortfall");
-          OutputChoice none; none.why = "no gain draft"; check (! compensate (none, 0.5, 3.0).ok, "sat V3e: no output control -> no compensation, the reason carried"); }
+          OutputChoice none; none.why = "no gain draft"; check (! compensate (none, 0.5, 3.0).ok, "sat V3e: no output control -> no compensation, the reason carried");
+          // V3f (follow-up 3, CamelCrusher): an instantiate norm BETWEEN curve points is interpolated, not snapped to the nearest point
+          OutputChoice cc; cc.ok = true; for (auto [n, db] : std::vector<std::pair<double, double>> { { 0.70, 18.63 }, { 0.75, 20.27 }, { 0.80, 21.81 }, { 0.85, 23.25 } }) { ejmap::gaincal::Reading r; r.norm = n; r.measuredDb[-40.0] = db; cc.curve.push_back (r); }
+          const auto cf = compensate (cc, 0.78, 4.44);
+          check (cf.ok && std::abs (cf.instDb - 21.194) < 0.01 && std::abs (cf.wantDb - 16.754) < 0.01, "sat V3f: MasterVolume at 0.78 reads 21.19 dB (interpolated between 0.75 and 0.80), not the nearest point's 21.81: the 0.62 dB the acceptance missed by"); }
         // V4: the step judgement
         { StepAcceptance a; a.step = 2; a.ran = true; a.measuredThdDb = -33.0; a.measuredLevelDb = 0.3; a.comp.ok = true; judgeStep (a); check (a.pass && a.thdOk && a.levelOk, "sat V4a: THD -33 in the warm band, output 0.3 dB from the input -> PASS");
           a.measuredLevelDb = 0.8; judgeStep (a); check (! a.pass && a.thdOk && ! a.levelOk && a.why.contains ("over 0.5"), "sat V4b: 0.8 dB off -> FAIL on level");

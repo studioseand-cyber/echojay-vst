@@ -229,12 +229,25 @@ inline OutputChoice outputFromGainDraft (const juce::var& gainDraft, const juce:
             }
     o.why = "the gain draft has no writable output / makeup / trim control"; return o;
 }
+inline std::optional<double> levelAtNorm (const std::vector<gaincal::Reading>& curve, double norm, bool stepped)
+{
+    std::vector<std::pair<double, double>> pts; for (const auto& r : curve) if (r.landed && r.measuredDb.count (-40.0)) pts.push_back ({ r.norm, r.measuredDb.at (-40.0) });
+    if (pts.empty()) return std::nullopt;
+    std::sort (pts.begin(), pts.end());
+    if (stepped || norm <= pts.front().first || norm >= pts.back().first || pts.size() == 1)
+    { double bd = 1e9; std::optional<double> v; for (const auto& [n, db] : pts) if (std::abs (n - norm) < bd) { bd = std::abs (n - norm); v = db; } return v; }
+    for (size_t i = 0; i + 1 < pts.size(); ++i) if (pts[i].first <= norm && norm <= pts[i + 1].first) { const double t = (norm - pts[i].first) / juce::jmax (1e-12, pts[i + 1].first - pts[i].first); return pts[i].second + t * (pts[i + 1].second - pts[i].second); }
+    return std::nullopt;
+}
 // THE COMPENSATION: the output norm whose curve value is the instantiate value minus the drive's level change
 struct Compensation { bool ok = false; double instDb = 0.0, wantDb = 0.0, norm = 0.0, givesDb = 0.0; bool clamped = false; juce::String why; };
 inline Compensation compensate (const OutputChoice& out, double instNorm, double levelChangeDb)
 {
     Compensation c; if (! out.ok) { c.why = out.why; return c; }
-    std::optional<double> inst; double bd = 1e9; for (const auto& r : out.curve) if (r.landed && r.measuredDb.count (-40.0) && std::abs (r.norm - instNorm) < bd) { bd = std::abs (r.norm - instNorm); inst = r.measuredDb.at (-40.0); }
+    // THE INSTANTIATE LEVEL, INTERPOLATED (7 Oct follow-up 3): CamelCrusher's MasterVolume instantiates at 0.78 between the curve's 0.75
+    // (20.27 dB) and 0.80 (21.81); the nearest point put it at 21.81, 0.62 dB high - exactly the acceptance's +0.61 / +0.62 miss. The level
+    // at the instantiate norm is linear in dB between its two neighbours (a stepped control: its own detent, the nearest point)
+    std::optional<double> inst = levelAtNorm (out.curve, instNorm, out.stepped);
     if (! inst) { c.why = "the output curve has no point near the instantiate norm"; return c; }
     c.instDb = *inst; c.wantDb = *inst - levelChangeDb;
     const auto inv = gaincal::normForDb (out.curve, c.wantDb, -40.0, out.stepped);
