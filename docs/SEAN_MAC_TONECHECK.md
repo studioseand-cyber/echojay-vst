@@ -265,3 +265,16 @@ For the window's TEXT to be recorded, ejmap must be allowed under System Setting
 without it the title alone is recorded. Nothing is ever clicked.
 The --redo sets, in this order: `--redo uad` (the UAD rows that showed a window or failed and are not filed needs_licence),
 then the rest as listed below.
+
+## Step 2, the full order for the 7 Oct build (times projected from this Mac, Sean's ~2.7x faster; Ctrl-C any time, every set resumes)
+
+1. The compressor follow-up (command 1): ~35-40 min (47 checks + 2 re-sweeps).
+2. `--phaseb-all --redo gain-cal,timing`: ~50 min (69 x 2).
+3. The redo sets, one `--phaseb-all` each, in this order:
+   `--redo uad` (after --licence-stamp: the window rows are filed needs_licence; only UAD rows the stamp left - with the Satellite seen - run: ~0-10 min);
+   `--redo no_pool` (the 10 Soundtoys / 2C: ~30 min); `--redo multiband` (17: ~1.5-2 h); `--redo strips` (106 channel strips:
+   an EQ section with named bands is 6-12 min here, so plan a NIGHT: ~8-14 h; `--only` picks a few first);
+   `--categorise-propose --include-pace` (the 605: ~1-1.5 h; writes proposed_categories.json + category_review.txt, never categories.json);
+   then the accuracy passes `--redo combined` (~20 min), `--redo material` (~70 min), `--redo frequency` (~70 min), `--redo samplerate` (10: ~8 min);
+   then `--redo tuners` (6: ~30 min), `--redo gain-all` (~500 products: ~7 h - another night), `--redo nothing_nominated` (205: ~4.5 h).
+4. Zip: as before, `find -newer` the marker; projected ~700 MB gzipped for everything above (Phase B was ~550 MB).
