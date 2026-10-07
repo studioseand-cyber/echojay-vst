@@ -98,10 +98,19 @@ inline bool rowIsUadRedo (const juce::var& row)
     const auto oc = row.getProperty ("outcome", "").toString();
     return row.getProperty ("product", "").toString().startsWithIgnoreCase ("UAD ") && (oc == "window" || oc == "failed" || oc == "timed_out" || oc == "needs_device");
 }
-inline bool rowToRedo (const juce::var& row, const juce::String& category, const juce::StringArray& redo)
+// --redo no_pool (item C, 7 Oct): a row whose mode found "no control to sample" (an empty parameter list: Soundtoys, 2C) - the row
+// says so from this build (no_pool), an older row through its log text
+inline constexpr const char* kNoPoolText = "no control to sample";
+inline bool rowIsNoPool (const juce::var& row, const juce::String& logText = {})
+{
+    if ((bool) row.getProperty ("no_pool", false)) return true;
+    return row.getProperty ("outcome", "").toString() == "failed" && logText.contains (kNoPoolText);
+}
+inline bool rowToRedo (const juce::var& row, const juce::String& category, const juce::StringArray& redo, const juce::String& logText = {})
 {
     if (redo.contains (category)) return true;
     if (redo.contains ("uad") && rowIsUadRedo (row)) return true;
+    if (redo.contains ("no_pool") && rowIsNoPool (row, logText)) return true;
     return redo.contains ("nothing_nominated") && rowIsNothingNominated (row);
 }
 

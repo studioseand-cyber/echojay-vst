@@ -2802,3 +2802,18 @@ device rate. A UAD plugin's window means "no device" or authorisation.
   now expired / unowned / unmatched; (c) of the 41 held UAD compressors 21 owned (unhold), 1 demo (Auto-Tune Realtime
   Advanced), 19 needs_licence. The stamp: 5 rows stamped, 80 filed, 38 left. Precision Delay Mod / Mod L / Reflection Engine
   match the hardware bundle (owned).
+
+## 72. Soundtoys / 2C: the empty pool, and `--redo no_pool` (NEXT BUILD item C, 7 Oct)
+
+Sean's ten rows (Decapitator, Radiator, Little Radiator, Little Plate, EchoBoy, EchoBoy Jr, PrimalTap, Little PrimalTap,
+2C-Aether, Sie-Q) failed with "no control to sample"; Decapitator's `--list-params` trace is the header line alone — JUCE's
+AU instance read `kAudioUnitProperty_ParameterList` at creation, BEFORE `AudioUnitInitialize`, and these units publish their
+parameters only once initialised (JUCE itself re-reads the list in `prepareToPlay` when it was empty, which `--list-params`
+never reached). **The probe now, in every list mode, when the list is empty at creation:** prepares (`configureAndPrepare`),
+`refreshParameterList()`, counts again; still empty, renders one silent block, pumps the run loop 300 ms, refreshes and
+counts again; prints `paramcount at_create N after_prepare N after_render N` and lists what it then holds. A plugin with a
+list at creation is untouched (no extra line: derive-only equality holds). Soundtoys is PACE-wrapped (`__Pace_Eden.bundle`)
+and the 2C units are not installed here, so the fix is **proven only on Sean's Mac**: the `paramcount` line on each trace says
+which stage filled the list (all three zero = the cause is elsewhere: the next thing to read is the AU's own property
+listener, since a ParameterList change notification updates JUCE's parameter INFO, not its list). `--redo no_pool` (pin P20)
+re-runs a row flagged `no_pool` by this build, or an older failed row whose log says "no control to sample".

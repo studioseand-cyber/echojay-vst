@@ -4959,7 +4959,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     if (! redo.isEmpty())
         for (const auto& cat : categories()) if (work.count (cat.name))
             for (const auto& pp : work[cat.name])
-                if (isDone (phasebDir, cat.name, pp.stem) && rowToRedo (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()), cat.name, redo)) { rowFile (phasebDir, cat.name, pp.stem).deleteFile(); ++redone; }
+                if (isDone (phasebDir, cat.name, pp.stem) && rowToRedo (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()), cat.name, redo, redo.contains ("no_pool") ? phasebDir.getChildFile (cat.name).getChildFile ("logs").getChildFile (pp.stem + ".log.txt").loadFileAsString() : juce::String())) { rowFile (phasebDir, cat.name, pp.stem).deleteFile(); ++redone; }
     if (! redo.isEmpty()) say ("PHASEB: --redo " + redo.joinIntoString (",") + ": " + juce::String (redone) + " finished row(s) run again");
     // PROGRESS: resumed from the file (the elapsed and the measured seconds carry over); the totals are tonight's discovery
     Progress prog = progressFromVar (juce::JSON::parse (phasebDir.getChildFile ("progress.json").loadFileAsString()));
@@ -5031,6 +5031,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 else if (r.kind == ChildResult::Kind::exited && r.code == kToneLicenceKnownExit) { outcome = r.out.contains (uad::kNotConnected) ? "needs_device" : "needs_licence"; juce::String why; for (const auto& line : juce::StringArray::fromLines (r.out)) if (line.contains (" - ")) why = line.fromFirstOccurrenceOf (" - ", false, false); row->setProperty ("reason", why); }
                 else if (r.kind == ChildResult::Kind::exited && r.code == 5) { outcome = "window"; }   // the mode stopped on a window it saw mid-measurement (exit 5)
                 else outcome = "failed";
+                if (r.out.contains (phaseb::kNoPoolText)) { row->setProperty ("no_pool", true); row->setProperty ("reason", "no control to sample: an empty parameter list (--redo no_pool re-runs it; the probe now re-reads the list after prepare and a first render)"); }
                 // THE WINDOW'S TEXT (Sean, 6 Oct): title, owner and static text of every window the watch caught; demo / expired /
                 // authorisation words file the row needs_licence by themselves
                 if (! r.windowDetails.isEmpty() || outcome == "window")

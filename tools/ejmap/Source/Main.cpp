@@ -783,7 +783,7 @@ namespace
                 // --redo gain-cal,timing names categories (their rows run again); --redo nothing_nominated re-runs the rows that finished with no record
                 for (auto& r : redo) { if (r == "gain-cal") r = "gaincal"; if (r == "gain-all") r = "gainall"; }
                 for (auto& c : cats) { if (c == "gain-cal") c = "gaincal"; if (c == "gain-all") c = "gainall"; }
-                for (const auto& r : redo) if (r != "nothing_nominated" && r != "uad" && ejmap::phaseb::categoryNamed (r) == nullptr) { std::cerr << "--redo: '" << r << "' is not a Phase B category, nothing_nominated or uad" << std::endl; return 2; }
+                for (const auto& r : redo) if (r != "nothing_nominated" && r != "uad" && r != "no_pool" && ejmap::phaseb::categoryNamed (r) == nullptr) { std::cerr << "--redo: '" << r << "' is not a Phase B category, nothing_nominated, uad or no_pool" << std::endl; return 2; }
                 for (int j = 1; j < argc; ++j) if (argAt (argc, argv, j) == "--assume-uad-device") o.assumeUadDevice = true;
                 ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
                 return a == "--phaseb-status" ? ejmap::cert::runPhaseBStatus (o) : ejmap::cert::runPhaseBAll (o, cats, only, redo);

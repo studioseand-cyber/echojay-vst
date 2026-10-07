@@ -7436,6 +7436,9 @@ void testUadAndWindows()
         check (rowToRedo (row ("UAD Oxford EQ", "window"), "eq", { "uad" }) && rowToRedo (row ("UAD API 550A", "failed"), "eq", { "uad" }) && rowToRedo (row ("UAD Cambridge", "needs_device"), "eq", { "uad" })
                && ! rowToRedo (row ("UAD Oxford EQ", "needs_licence"), "eq", { "uad" }) && ! rowToRedo (row ("UAD Cambridge", "ok"), "eq", { "uad" }) && ! rowToRedo (row ("Gold Clip", "window"), "saturation", { "uad" }),
                "phaseb P19: --redo uad takes a UAD row that showed a window, failed, timed out or was filed needs_device; never one filed needs_licence, an ok row, or a non-UAD window");
+        auto np = row ("Decapitator", "failed"); np.getDynamicObject()->setProperty ("no_pool", true);
+        check (rowToRedo (np, "saturation", { "no_pool" }) && rowToRedo (row ("Decapitator", "failed"), "saturation", { "no_pool" }, "SAT: no control to sample (nothing nominated, no numeric pool)\n") && ! rowToRedo (row ("Decapitator", "failed"), "saturation", { "no_pool" }, "SAT: a window appeared\n") && ! rowToRedo (row ("Decapitator", "ok"), "saturation", { "no_pool" }, "no control to sample"),
+               "phaseb P20: --redo no_pool takes a row flagged no_pool, or an older failed row whose log says 'no control to sample'; never an ok row or another failure");
     }
     {   // the sibling rule (LC12): a descriptor line that is a longer sibling's is the sibling's
         using namespace ejmap::licence;

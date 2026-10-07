@@ -137,6 +137,30 @@ int main (int argc, char** argv)
     {
         if (! done)          { std::printf ("refused timeout after %d ms\n", boundMs); std::fflush (stdout); std::_Exit (3); }
         if (inst == nullptr) { std::printf ("refused %s\n", err.replace ("\n", " ").toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+        // AN EMPTY LIST AT CREATION IS RE-READ AFTER PREPARE AND A FIRST RENDER (Kathy's NEXT BUILD item C, 6-7 Oct: Soundtoys and 2C
+        // listed NOTHING - Decapitator's trace is the header line alone - yet they automate in Logic). JUCE reads the AU's
+        // kAudioUnitProperty_ParameterList at creation, BEFORE AudioUnitInitialize; a unit that publishes its parameters only once
+        // initialised shows an empty list until prepareToPlay re-reads it (JUCE: `if (! haveParameterList) refreshParameterList()`
+        // after AudioUnitInitialize), and some publish only after a first render. So: count at creation; if zero, prepare and count;
+        // still zero, render one silent block, refresh and count. A plugin with a list at creation is untouched (no extra line).
+        if (inst->getParameters().isEmpty() && ! renderTest)
+        {
+            const int n0 = inst->getParameters().size();
+            ejprobe::configureAndPrepare (*inst, {});
+            inst->refreshParameterList();
+            const int n1 = inst->getParameters().size();
+            int n2 = n1;
+            if (n1 == 0)
+            {
+                juce::AudioBuffer<float> io (juce::jmax (2, inst->getTotalNumInputChannels(), inst->getTotalNumOutputChannels()), 512); io.clear(); juce::MidiBuffer midi;
+                inst->processBlock (io, midi);
+                const double t1 = juce::Time::getMillisecondCounterHiRes();
+                while (juce::Time::getMillisecondCounterHiRes() - t1 < 300.0) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+                inst->refreshParameterList();
+                n2 = inst->getParameters().size();
+            }
+            std::printf ("\nparamcount\tat_create\t%d\tafter_prepare\t%d\tafter_render\t%d\n", n0, n1, n2);
+        }
         const auto& ps = inst->getParameters();
         const auto clean = [] (juce::String t) { return t.replace ("\t", " ").replace ("\n", " ").replace ("\r", " "); };
         std::printf ("\n");   // 21 Sep 2026: row 0 starts a line of its own - WaveShell-AU writes a banner to stdout with no trailing newline
