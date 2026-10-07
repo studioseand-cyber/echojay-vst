@@ -121,3 +121,24 @@ EQUALITY ON THE FINAL COMMIT (c03e23e2 code, fd6eecf7 head) vs 0d2ccd5d, all fou
    181/181, 90/90, 87/87 with 0 state-or-reason differences; fixtures 245, 245, 19, 14 identical; controls 45, 0, 2, 0 identical;
    profiles 83, 45, 7, 4 differ ONLY by "+detector_f_source" (81, 45, 7, 4; the two null-detector profiles keep "unknown").
    PASSES Kathy's condition exactly. The cut is withheld on the "everything in" rule alone (E's compressor-section sweep).
+
+## FINISH AND CUT (Kathy, 7 Oct, done 12:10)
+1. E's compressor section through the full path - DONE / pinned (ST6; mutant red) / rehearsed on the three strips. The blocker,
+   exactly: runCertSweep admitted only subjects from buildWorklist, which is keyed on the ledger's category (compressor | pitch),
+   so a channel strip could never be a subject; and the sweep's defaults read the whole list. Fixed (not worked around): the
+   sweep takes a caller-supplied section subject (SweepOptions::sectionSubject); the section filter lives in parseListParams AND
+   parseTextAt (process-wide). Lindell 80 Channel: Rule 1 picks Comp Threshold with Comp In engaged, profile sweep, detector,
+   exported INTO THE SECTION FOLDER (not cert/profiles; strip_section / not_for_publication / strip_engage on the record, the
+   profile and the tone check), tone check PASS 2.01 dB at g 2 + every deep level. bx_console SSL 4000 E (LC thresholds) and
+   bx_console N: needs_review under Rule 1 as ruled (no comp word) - Kathy's call whether "LC" is a compressor word. 2e90a639.
+2. THE CUT: build 0f175c51 (+ --zip --since), equality vs 0d2ccd5d on its binary over the four sets: rows / fixtures / controls
+   identical, profiles differ only by detector_f_source. Packaged, signed (Developer ID, hardened runtime, timestamp), verified
+   (--cert-preflight clean, stamp 0f175c51 in the binary): ~/Desktop/ejmap-dist-7oct. PACKAGING_EJMAP_APP.md and
+   SEAN_MAC_TONECHECK.md name 0f175c51 with 0d2ccd5d the fallback; step 2 in order with the three nights, the licence CSV copy
+   first, the Satellite check line, and the zip commands (whole cert/ first; "ejmap --zip ~/Library/ejmap/cert --out <zip>
+   --since marker" once the folder passes 500 MB). Docs commit 06c6f241.
+3. The one-page proposal for Sean: ~/Desktop/PROPOSAL_SERVER_TIMING_AND_FREQUENCY_7OCT.md (also docs/).
+PROVEN HERE: items 3-6, A1-A4, D, E (full path on Lindell 80), F, the licence file / review / stamp over a copy of Sean's folder,
+   the preflight's ABSENT reading, the sidechain-feed fix, equality. ONLY SEAN'S MAC: the UAD-2 device reading and every UAD
+   measurement, Soundtoys / 2C paramcount stages (PACE here), Auto-Tune Humanize, L-18's "Peak" ceiling, the strips' and the
+   605's full sets.
