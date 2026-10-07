@@ -40,7 +40,8 @@ void printReport (const ejm::Report& R, bool trace)
     std::printf ("\n  gain %+.1f dB  ceiling %+.1f dB\n", R.gainDb, R.ceilingDb);
     std::printf ("  loudness   in+gain  I %s LUFS  Mmax %s  Smax %s   |  out  I %s LUFS  Mmax %s  Smax %s   |  S std %s -> %s LU\n",
                  f2 (R.inLoud.integrated).c_str(), f1 (R.inLoud.maxMomentary).c_str(), f1 (R.inLoud.maxShortTerm).c_str(), f2 (R.outLoud.integrated).c_str(), f1 (R.outLoud.maxMomentary).c_str(), f1 (R.outLoud.maxShortTerm).c_str(), f2 (R.inLoud.stdShortTerm).c_str(), f2 (R.outLoud.stdShortTerm).c_str());
-    std::printf ("  peaks      sample %s dBFS  TRUE PEAK %s dBTP  overs above ceiling+0.05 dB: %zu%s\n", f2 (R.pk.samplePeakDb).c_str(), f2 (R.pk.truePeakDb).c_str(), R.pk.overs, R.pk.overs ? ("  (worst at " + f2 (R.pk.worstSec) + " s)").c_str() : "");
+    std::printf ("  peaks      sample %s dBFS  TRUE PEAK %s dBTP  overs above ceiling+0.05 dB: %zu%s%s\n", f2 (R.pk.samplePeakDb).c_str(), f2 (R.pk.truePeakDb).c_str(), R.pk.overs, R.pk.overs ? ("  (worst at " + f2 (R.pk.worstSec) + " s)").c_str() : "",
+                 R.pk.edgeOvers ? ("  [EDGE: " + std::to_string (R.pk.edgeOvers) + " overs, " + f2 (R.pk.edgePeakDb) + " dBTP within 2 ms of a file end - a print cut mid-waveform, not counted]").c_str() : "");
     std::printf ("  dynamics   GR mean %s dB  max %s  std %s  p2p %s  |  crest in %s -> out %s dB  |  L-R GR std %s dB\n", f2 (R.dyn.grMeanDb).c_str(), f2 (R.dyn.grMaxDb).c_str(), f2 (R.dyn.grStdDb).c_str(), f2 (R.dyn.grP2pDb).c_str(), f1 (R.dyn.crestInDb).c_str(), f1 (R.dyn.crestOutDb).c_str(), f2 (R.dyn.grLRstdDb).c_str());
     if (R.isTone)
     {
@@ -56,8 +57,8 @@ void printReport (const ejm::Report& R, bool trace)
         for (size_t i = 0; i < R.hits.size(); ++i) { const auto& h = R.hits[i]; std::printf ("             %2zu  %6.2f  %5s  %8s  %6s  %5s  %7s  %8s  %6s %6s %6s %6s   %6s %6s\n", i, h.tSec, f1 (h.overDb).c_str(), f2 (h.retentionDb).c_str(), f2 (h.grMinDb).c_str(), f1 (h.baselineDb).c_str(), f1 (h.preDipMs).c_str(), f1 (h.holdMs).c_str(), f1 (h.t10).c_str(), f1 (h.t50).c_str(), f1 (h.t63).c_str(), f1 (h.t90).c_str(), f2 (h.dipLDb).c_str(), f2 (h.dipRDb).c_str()); if (trace) { std::printf ("                 GR trace -25..+60 ms:"); for (size_t k = 0; k < h.trace.size(); ++k) { if (k % 20 == 0) std::printf ("\n                 %+3d ms ", (int) k - 25); std::printf (" %5s", std::isnan (h.trace[k]) ? "  n/a" : f1 (h.trace[k]).c_str()); } std::printf ("\n"); } }
     }
     std::vector<double> t63, t90, ret; for (const auto& h : R.hits) { t63.push_back (h.t63); t90.push_back (h.t90); ret.push_back (h.retentionDb); }
-    std::printf ("ROW case=%s tag=%s aligned=1 offset=%d outI=%s inI=%s tp=%s overs=%zu grMean=%s grStd=%s crestOut=%s hits=%zu retMed=%s t63med=%s t90med=%s lrStd=%s",
-                 R.caseName.c_str(), R.tag.c_str(), R.align.offset, f2 (R.outLoud.integrated).c_str(), f2 (R.inLoud.integrated).c_str(), f2 (R.pk.truePeakDb).c_str(), R.pk.overs, f2 (R.dyn.grMeanDb).c_str(), f2 (R.dyn.grStdDb).c_str(), f1 (R.dyn.crestOutDb).c_str(), R.hits.size(), f2 (ejm::median (ret)).c_str(), f1 (ejm::median (t63)).c_str(), f1 (ejm::median (t90)).c_str(), f2 (R.dyn.grLRstdDb).c_str());
+    std::printf ("ROW case=%s tag=%s aligned=1 offset=%d outI=%s inI=%s tp=%s overs=%zu edgeOvers=%zu grMean=%s grStd=%s crestOut=%s hits=%zu retMed=%s t63med=%s t90med=%s lrStd=%s",
+                 R.caseName.c_str(), R.tag.c_str(), R.align.offset, f2 (R.outLoud.integrated).c_str(), f2 (R.inLoud.integrated).c_str(), f2 (R.pk.truePeakDb).c_str(), R.pk.overs, R.pk.edgeOvers, f2 (R.dyn.grMeanDb).c_str(), f2 (R.dyn.grStdDb).c_str(), f1 (R.dyn.crestOutDb).c_str(), R.hits.size(), f2 (ejm::median (ret)).c_str(), f1 (ejm::median (t63)).c_str(), f1 (ejm::median (t90)).c_str(), f2 (R.dyn.grLRstdDb).c_str());
     if (R.isTone && ! R.tone.segs.empty()) { const auto& s = R.tone.segs[std::min<size_t> (3, R.tone.segs.size() - 1)]; std::printf (" thdMax=%s thdnMax=%s", f1 (s.thdDb).c_str(), f1 (s.thdnDb).c_str()); }
     std::printf ("\n");
 }
@@ -169,9 +170,18 @@ int selftest()
         const auto p20 = ejm::peaks (t20.ch, sr, 0.0); check (std::abs (p20.truePeakDb) < 0.05, "20 kHz sine at 0 dBFS: true peak 0.0 dBTP (+-0.05)", f2 (p20.samplePeakDb) + " / " + f2 (p20.truePeakDb));
         ejwav::Audio t1; t1.sampleRate = sr; t1.ch.assign (1, std::vector<double> (N)); for (size_t n = 0; n < N; ++n) t1.ch[0][n] = fade (n) * std::sin (2 * ejdsp::kPi * 997.0 * (double) n / sr);
         const auto p1 = ejm::peaks (t1.ch, sr, 0.0); check (std::abs (p1.truePeakDb) < 0.01, "997 Hz sine at 0 dBFS: true peak 0.0 dBTP (+-0.01)", f2 (p1.truePeakDb));
-        { ejwav::Audio hard; hard.sampleRate = sr; hard.ch.assign (1, std::vector<double> (N)); for (size_t n = 0; n < N; ++n) hard.ch[0][n] = std::sin (2 * ejdsp::kPi * 20000.0 * (double) n / sr + 0.3); const auto ph = ejm::peaks (hard.ch, sr, 0.0); check (ph.truePeakDb > 0.3, "a 20 kHz sine that starts from silence in one sample overs by its Gibbs overshoot (the meter sees the edge)", f2 (ph.truePeakDb)); }
+        { ejwav::Audio hard; hard.sampleRate = sr; hard.ch.assign (1, std::vector<double> (N)); for (size_t n = 0; n < N; ++n) hard.ch[0][n] = std::sin (2 * ejdsp::kPi * 20000.0 * (double) n / sr + 0.3); const auto ph = ejm::peaks (hard.ch, sr, 0.0); check (ph.edgePeakDb > 0.3 && ph.edgeOvers > 0 && ph.truePeakDb < 0.05, "a 20 kHz sine that starts from silence in one sample: its Gibbs overshoot is seen, and reported as an EDGE reading, not an over", "edge " + f2 (ph.edgePeakDb) + " dBTP, in-audio " + f2 (ph.truePeakDb)); }
         check (ejm::peaks (t.ch, sr, -0.5).overs > 0, "overs are counted against a -0.5 dB ceiling", std::to_string (ejm::peaks (t.ch, sr, -0.5).overs));
         check (ejm::peaks (t.ch, sr, 0.2).overs == 0, "no overs against a +0.2 dB ceiling", std::to_string (ejm::peaks (t.ch, sr, 0.2).overs));
+        {   // EDGE handling: a 997 Hz sine at -0.5 dBFS cut mid-cycle at the end overs only at the edge; the same sine with a
+            // real over in the middle is counted; faded, nothing at all
+            ejwav::Audio cut; cut.sampleRate = sr; cut.ch.assign (1, std::vector<double> (N)); for (size_t n = 0; n < N; ++n) cut.ch[0][n] = ejdsp::lin (-0.5) * std::sin (2 * ejdsp::kPi * 997.0 * (double) n / sr);
+            { size_t best = N - 60; for (size_t n = N - 60; n < N; ++n) if (std::abs (cut.ch[0][n]) > std::abs (cut.ch[0][best])) best = n; cut.ch[0].resize (best + 1); }   // cut AT a peak, the worst case for a print
+            const auto pc = ejm::peaks (cut.ch, sr, -0.5); check (pc.overs == 0 && pc.edgeOvers > 0 && pc.edgePeakDb > -0.5 + 0.05, "a print cut mid-cycle at the end: overs 0, EDGE overs counted and reported separately", std::to_string (pc.overs) + " / edge " + std::to_string (pc.edgeOvers) + " at " + f2 (pc.edgePeakDb) + " dBTP");
+            for (size_t n = N / 2; n < N / 2 + 200; ++n) cut.ch[0][n] *= ejdsp::lin (0.8);
+            const auto pm = ejm::peaks (cut.ch, sr, -0.5); check (pm.overs > 0, "...but an over in the middle of the file is still counted", std::to_string (pm.overs) + " overs, " + f2 (pm.truePeakDb) + " dBTP");
+            const auto pf = ejm::peaks (t1.ch, sr, 0.05); check (pf.overs == 0 && pf.edgeOvers == 0, "a faded sine has no overs and no edge overs", std::to_string (pf.edgeOvers));
+        }
     }
     {   // THD and the tone steps, on the tone_997 layout with a synthetic limiter: steady GR = -(level + 8.2) where
         // positive, reached through a 50 ms (dB-domain) one-pole at each boundary; plus a 3rd harmonic at -40 dB

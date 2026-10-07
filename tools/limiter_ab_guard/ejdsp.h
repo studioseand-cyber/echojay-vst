@@ -50,7 +50,11 @@ inline std::vector<double> kWeight (const std::vector<double>& x, double sr)
 // phase. The product's 24-tap Blackman interpolator over-reads a 12 kHz sine by 0.11 dB (its passband ripple), which
 // is more than the over margin; an independent meter has to be better than the thing it judges. Counts the samples
 // whose interpolated peak exceeds `ceilingLin` by more than `marginDb`, and returns the index of the worst one.
-struct TruePeakResult { double peakLin = 0; size_t peakIndex = 0; size_t overs = 0; double samplePeakLin = 0; };
+// `overs` counts inter-sample overs inside the audio; `edgeOvers` those within one kernel span (kTaps) of either
+// end of the file or in the final flush - a print that starts or stops mid-waveform has a step there, and every
+// interpolator reconstructs that step with an overshoot that is the cut, not the limiter. `edgePeakLin` is the
+// largest value seen in those spans, reported beside the in-audio peak so nothing is hidden.
+struct TruePeakResult { double peakLin = 0; size_t peakIndex = 0; size_t overs = 0; double samplePeakLin = 0; size_t edgeOvers = 0; double edgePeakLin = 0; };
 struct TruePeakMeter
 {
     static constexpr int kPhases = 8, kTaps = 96;
@@ -83,9 +87,16 @@ struct TruePeakMeter
 inline TruePeakResult truePeak (const std::vector<double>& x, double ceilingLin, double marginDb = 0.01)
 {
     TruePeakMeter tp; TruePeakResult r; const double limit = ceilingLin * lin (marginDb);
-    auto feed = [&] (double v, size_t idx) { const double m = tp.maxAbs (v); if (m > r.peakLin) { r.peakLin = m; r.peakIndex = idx; } if (m > limit) ++r.overs; };
-    for (size_t n = 0; n < x.size(); ++n) { feed (x[n], n); r.samplePeakLin = std::max (r.samplePeakLin, std::abs (x[n])); }
-    for (int i = 0; i < TruePeakMeter::kTaps; ++i) feed (0.0, x.size());   // flush the group delay
+    const size_t N = x.size(), span = (size_t) TruePeakMeter::kTaps;
+    auto feed = [&] (double v, size_t idx)
+    {
+        const double m = tp.maxAbs (v);
+        const bool edge = idx < span || idx + span >= N;   // the reading at `idx` describes the sample kDelay earlier; both ends covered by the full span
+        if (edge) { r.edgePeakLin = std::max (r.edgePeakLin, m); if (m > limit) ++r.edgeOvers; return; }
+        if (m > r.peakLin) { r.peakLin = m; r.peakIndex = idx; } if (m > limit) ++r.overs;
+    };
+    for (size_t n = 0; n < N; ++n) { feed (x[n], n); r.samplePeakLin = std::max (r.samplePeakLin, std::abs (x[n])); }
+    for (int i = 0; i < TruePeakMeter::kTaps; ++i) feed (0.0, N);   // flush the group delay: always an edge reading
     return r;
 }
 
