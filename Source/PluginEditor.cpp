@@ -1,6 +1,7 @@
 #include "EJDialWrites.h"
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginEditor.h"
+#include "EJAffirmation.h"   // 06d test 5: the narrow client-side yes to a staged proposal
 #include "EJNetCensus.h"   // 7 Oct 2026 (06d item 1): the editor's fetches are in the census too
 #include "DashboardWeb.h"        // stage 2: the lazy webview Dashboard surface
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
@@ -25355,6 +25356,82 @@ bool EchoJayEditor::editWasRefused (const juce::String& editJson) const
     return false;      // no result recorded yet: not a refusal, and the callers below say so
 }
 
+// ---- 06d test 5 (7 Oct 2026): THE STAGED PROPOSAL, APPLIED ON A YES OR ON APPLY -------------
+// Sean typed "yes do it" to "Want me to add that to the EQ in slot 1?" and got "Nothing is waiting
+// to be applied", because the reply carried prose and nothing else. B now attaches the ops it is
+// offering; these two functions are the half that uses them.
+//
+// THE OPS NEED NO TRANSLATION: a proposal's "edit" array is the same array a CHAIN_EDIT block
+// carries, so applying one is applying the other - it is moved into editData and the existing
+// apply path runs, staleness guards and all. What differs is WHEN: an edit turn is a decision the
+// server already made and applies itself; a proposal waits for the user.
+void EchoJayEditor::applyStagedProposal(int msgIdx, const juce::String& why)
+{
+    if (msgIdx < 0 || msgIdx >= (int) chatMessages.size()) return;
+    auto& cm = chatMessages[(size_t) msgIdx];
+    if (cm.proposalData.isEmpty() || cm.editApplied) return;
+
+    auto pv = juce::JSON::parse (cm.proposalData);
+    auto* po = pv.getDynamicObject();
+    if (po == nullptr || po->getProperty ("edit").getArray() == nullptr)
+    {
+        EchoJay_NSLog ("EJProposal: nothing usable staged on that turn (no edit array) - not applying");
+        return;
+    }
+    // Rebuild the edit payload from the proposal's own array, so the apply path parses exactly
+    // what B sent. The base revision is taken NOW, not when the offer arrived: the user may have
+    // changed the rack in between, and the staleness guards exist to catch precisely that.
+    auto* eo = new juce::DynamicObject();
+    eo->setProperty ("edit", po->getProperty ("edit"));
+    if (po->hasProperty ("explanation")) eo->setProperty ("explanation", po->getProperty ("explanation"));
+    cm.editData = juce::JSON::toString (juce::var (eo));
+    const juce::String cUid = activeChatLinkUid();
+    if (cUid.isNotEmpty())
+    {
+        cm.editTargetUid  = cUid;
+        cm.editTargetName = channelDisplayLabel (cUid);
+        auto rack = readLinkRackSidecar (cUid);
+        cm.editBaseRevision = rack.valid ? rack.revision : -1;
+    }
+    else
+        cm.editBaseRevision = processorRef.getChainHost().getChainRevision();
+
+    EchoJay_NSLog (("EJProposal: applying the staged ops (" + why + "), base rev "
+                    + juce::String (cm.editBaseRevision) + ", offer=\""
+                    + po->getProperty ("offer").toString() + "\"").toRawUTF8());
+    applyChainEditFromMsg (msgIdx);
+}
+
+bool EchoJayEditor::handleProposalAffirmation(const juce::String& typed)
+{
+    // ONLY THE NEWEST ASSISTANT TURN COUNTS. A yes answers the last thing that was said; an offer
+    // from four turns ago is not waiting for one, and applying it would be the opposite of asking.
+    int idx = -1;
+    for (int i = (int) chatMessages.size() - 1; i >= 0; --i)
+    {
+        if (chatMessages[(size_t) i].role != "assistant") continue;
+        if (! chatMessages[(size_t) i].proposalData.isEmpty() && ! chatMessages[(size_t) i].editApplied)
+            idx = i;
+        break;
+    }
+    if (idx < 0) return false;                               // rule 5: nothing staged -> the turn goes to B
+    if (! echojay::isProposalAffirmation (typed)) return false;
+
+    // The user's own words go into the record first, exactly as a sent turn would, so the next
+    // turn's history reads as the conversation it was: question, offer, yes.
+    chatMessages.push_back ({ "user", typed });
+    processorRef.chatHistory.push_back ({ "user", typed });
+    processorRef.chatRoles.add ("user");
+    processorRef.chatContents.add (typed);
+    if (currentChatId.isNotEmpty())
+        workspace.appendMessageToChat (currentChatId, "user", typed);
+
+    EchoJay_NSLog (("EJProposal: \"" + typed + "\" affirms the staged offer on turn "
+                    + juce::String (idx) + " - applying locally, no model call").toRawUTF8());
+    applyStagedProposal (idx, "affirmed: \"" + typed + "\"");
+    return true;
+}
+
 void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
 {
     if (msgIdx < 0 || msgIdx >= (int)chatMessages.size()) return;
@@ -29347,6 +29424,10 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
                                     const juce::String& turnTypeOverride)
 {
     if (handleLoudnessVerb(msg)) return;   // ruling G: local first, no network
+    // 06d test 5: a yes to the last reply's STAGED PROPOSAL is applied here - the whole point of
+    // B attaching the ops is that "yes" needs no second model call. Same rule as above: local
+    // first, and it only takes the turn when there is something staged to take it with.
+    if (handleProposalAffirmation(msg)) return;
     // ---- DEV ONLY: /eqtest {...} -----------------------------------------
     // Intercepted before the send-quota gate and before any network call, so
     // it costs nothing and never reaches the backend. Compiled in always but
@@ -30040,6 +30121,7 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
     juce::String gainJson;
     juce::String askJson;
     juce::String editJson;
+    juce::String proposalJson;   // 06d test 5: B's staged offer, declared here beside the other blocks
     // Always try to extract chain + gain + ask blocks; the model may
     // or may not have included any. Gain proposals are measurement-
     // backed APPLY cards (never auto-applied); ask blocks render as
@@ -30088,6 +30170,22 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         }
         if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
             EchoJay_NSLog("EJChat: CHAIN_EDIT block received");
+        // 06d test 5: THE PROPOSAL BLOCK - OUT of the visible reply on every route, and NOT applied.
+        // It is an offer: it waits for Apply or for a yes. A CHAIN_EDIT block on the same reply is a
+        // decision and still wins the card; a proposal alongside one would be the server both doing
+        // and offering the same thing, and the decision is the honest surface then.
+        if (EchoJayAPI::extractProposalBlock(visibleReply, proposalJson))
+        {
+            auto pv = juce::JSON::parse(proposalJson);
+            auto* po = pv.getDynamicObject();
+            const bool usable = po != nullptr && po->getProperty("edit").getArray() != nullptr;
+            EchoJay_NSLog(("EJChat: PROPOSAL block received (" + juce::String(proposalJson.length())
+                           + "b, " + juce::String(usable ? "usable" : "NOT usable - no edit array, so no Apply button")
+                           + (po != nullptr && po->hasProperty("offer")
+                                  ? ", offer=\"" + po->getProperty("offer").toString() + "\"" : juce::String())
+                           + ")").toRawUTF8());
+            if (! usable) proposalJson.clear();
+        }
         // 21t-h: THE LEVEL-MATCH BLOCK, ON THIS ROUTE TOO. It is taken OUT of the visible reply either way - a
         // marker the user can read is a bug whatever we then do with it - and turned into the same card the build
         // route shows, with one line per member and its delta. Where a CHAIN_EDIT block also arrived, that one wins
@@ -30338,6 +30436,7 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         cm.gainData  = gainJson;    // empty if no gain proposal block
         cm.askData   = askJson;     // empty if no ask block
         cm.editData  = editJson;    // empty if no chain-edit block
+        cm.proposalData = proposalJson;   // 06d test 5: STAGED - the card offers it, nothing applies it here
 
         // The server refused an add and said so in the BLOCK, not in the
         // prose; without this the reply still claims it happened. Fresh
@@ -30422,7 +30521,12 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
             // never touched them.
             processorRef.chatHistory.push_back({"assistant", visibleReply});
             processorRef.chatRoles.add("assistant");
-            processorRef.chatContents.add(visibleReply);
+            // 06d test 5: THE WIRE KEEPS THE PROPOSAL BLOCK. The user saw the prose; B's
+            // server-side affirmation rule reads this message and must ship IDENTICAL ops,
+            // so it needs them attached. Every other block is stripped from history and
+            // this one is not - the one place the visible turn and the wire turn differ by
+            // design, which is why reattachProposalBlock is named for what it does.
+            processorRef.chatContents.add(EchoJayAPI::reattachProposalBlock(visibleReply, proposalJson));
             // The ONLY place an assistant turn joins the wire history. If this
             // never logs, history can never be non-empty on the next send, and
             // "cleared between turns" is ruled out without reading clear sites.

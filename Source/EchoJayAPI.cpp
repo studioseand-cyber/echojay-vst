@@ -1331,6 +1331,10 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
                    + " (dropped: countCap " + juce::String(turns.trim.droppedByCap)
                    + ", byteBudget " + juce::String(turns.trim.droppedByBudget)
                    + ", roleAlign " + juce::String(turns.trim.droppedByRole)
+                   + (turns.trim.pairedBack > 0
+                          ? ", pairedBack " + juce::String(turns.trim.pairedBack)
+                            + " (kept the assistant turn with the user turn before it)"
+                          : juce::String())
                    + ((turns.trim.droppedByCap == 0 && turns.trim.droppedByBudget == 0
                        && turns.trim.droppedByRole == 0)
                         ? juce::String(" -- nothing dropped") : juce::String())
@@ -1355,6 +1359,14 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // turnType is staged per send ("" = plain "chat"); capture payloads only
     // ride on explicit capture turns (the callers enforce that pairing).
     body += ",\"appVersion\":\"" + juce::String(JucePlugin_VersionString) + "\"";
+    // ---- 06d test 5 (7 Oct 2026, B's 574177e): WHAT THIS CLIENT UNDERSTANDS ----------------
+    // "proposal" = this build extracts <<<ECHOJAY_PROPOSAL>>> from a reply, never prints it,
+    // keeps it on the assistant turn when the history goes back, and applies its staged ops on
+    // Apply or on a yes. B gates on this: without it the block is stripped server-side and the
+    // model is never asked for one, which is exactly why 06b and 06c - which would have printed
+    // the raw JSON at the user - stay safe. It is a CAPABILITY, not a preference: it says what
+    // the binary can do, so it is hardcoded here and not a setting anyone can get wrong.
+    body += ",\"capabilities\":[\"proposal\"]";
     // THE REQUEST CONTRACT (21s-b, 24 Sep 2026): the chat's stable id and the TARGET CHANNEL identity, on every
     // turn, whichever tab / selector / strip chose the target. Absent rather than empty when unknown, so "no
     // channel" is distinguishable from "a channel whose name is the empty string" - and so the server can tell
@@ -4186,6 +4198,16 @@ bool EchoJayAPI::extractGainBlock(juce::String& replyInOut, juce::String& gainJs
 bool EchoJayAPI::extractChainEditBlock(juce::String& replyInOut, juce::String& editJsonOut)
 {
     return EJReplyBlocks::extractChainEditBlock(replyInOut, editJsonOut);
+}
+
+bool EchoJayAPI::extractProposalBlock(juce::String& replyInOut, juce::String& proposalJsonOut)
+{
+    return EJReplyBlocks::extractProposalBlock(replyInOut, proposalJsonOut);
+}
+
+juce::String EchoJayAPI::reattachProposalBlock(const juce::String& visibleReply, const juce::String& proposalJson)
+{
+    return EJReplyBlocks::reattachProposalBlock(visibleReply, proposalJson);
 }
 
 bool EchoJayAPI::extractLevelMatchBlock(juce::String& replyInOut, juce::String& lmJsonOut)

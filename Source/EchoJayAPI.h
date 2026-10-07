@@ -1035,6 +1035,17 @@ public:
     // ruling, and a route that does not extract it prints the marker to the user.
     static bool extractLevelMatchBlock(juce::String& replyInOut, juce::String& lmJsonOut);
 
+    // 06d test 5 (7 Oct 2026, B's 574177e): the PROPOSAL block - an offer plus the staged ops that
+    // match it. Payload {"edit":[{op,...}],"offer":"...","staged":true}, the SAME edit array the
+    // chain-edit path already parses, so no translation. Extracted on every route (a marker the
+    // user can read is a bug) and NEVER auto-applied. Delimiters: <<<ECHOJAY_PROPOSAL>>> /
+    // <<<END_PROPOSAL>>>, to keep in sync with api/_blocks.js.
+    static bool extractProposalBlock(juce::String& replyInOut, juce::String& proposalJsonOut);
+    // The wire half: the block goes BACK on the assistant turn when history is sent, so B's
+    // server-side affirmation rule ships identical ops. Every other block is stripped from
+    // history; this one is not.
+    static juce::String reattachProposalBlock(const juce::String& visibleReply, const juce::String& proposalJson);
+
     // Same contract for the ASK question/choices block (Phase 1b): payload
     // {"question","choices":[{"label","detail"}...],"allowFreeText"}.
     // Delimiters: keep in sync with api/_blocks.js BLOCK_TYPES.ask

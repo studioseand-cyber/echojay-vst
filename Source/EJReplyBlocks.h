@@ -107,6 +107,54 @@ inline bool extractChainEditBlock(juce::String& replyInOut, juce::String& editJs
     return true;
 }
 
+// PROPOSAL block (06d, 7 Oct 2026, B's 574177e). THE OFFER AND THE OPS THAT MATCH IT, STAGED.
+//
+// WHY IT IS ITS OWN BLOCK and not CHAIN_EDIT: a CHAIN_EDIT block is a decision - the plugin applies it (subject to
+// the staleness guards) and says so. A PROPOSAL is an OFFER: nothing is applied until the user presses Apply or
+// says yes. Sean's 20:18 turn is the defect it closes - the reply ended "Want me to add that to the EQ in slot 1?"
+// and carried nothing to apply, so "yes do it" dead-ended on "Nothing is waiting to be applied".
+//
+// TWO RULES THE REST OF THE CLIENT DEPENDS ON:
+//  1. the block is NEVER displayed - it comes out of the visible reply here, like every other block;
+//  2. the block IS kept on the WIRE when the turn goes back as history (reattachProposalBlock), because B's
+//     server-side affirmation rule reads the assistant turn it is attached to and must ship IDENTICAL ops.
+//     Every other block is stripped from history; this one is not, and that difference is the whole point.
+inline bool extractProposalBlock(juce::String& replyInOut, juce::String& proposalJsonOut)
+{
+    const juce::String kOpen  = "<<<ECHOJAY_PROPOSAL>>>";
+    const juce::String kClose = "<<<END_PROPOSAL>>>";
+
+    int start = replyInOut.indexOf(kOpen);
+    if (start < 0) return false;
+
+    int jsonStart = start + (int)kOpen.length();
+    int end = replyInOut.indexOf(start, kClose);
+
+    if (end >= 0)
+    {
+        proposalJsonOut = replyInOut.substring(jsonStart, end).trim();
+        replyInOut      = replyInOut.substring(0, start).trimEnd()
+                        + replyInOut.substring(end + (int)kClose.length());
+    }
+    else
+    {
+        // A truncated block is still an offer we must not print. The JSON may not parse;
+        // the caller decides, and an unparseable proposal simply has no Apply button.
+        proposalJsonOut = replyInOut.substring(jsonStart).trim();
+        replyInOut      = replyInOut.substring(0, start).trimEnd();
+    }
+    return true;
+}
+
+// The wire half of rule 2: put the block back on the assistant turn that goes out as history.
+// Appended, not re-inserted where it was: the server reads the whole message, and the visible
+// prose is what the user saw, so this is the one place the two differ by construction.
+inline juce::String reattachProposalBlock(const juce::String& visibleReply, const juce::String& proposalJson)
+{
+    if (proposalJson.trim().isEmpty()) return visibleReply;
+    return visibleReply.trimEnd() + "\n\n<<<ECHOJAY_PROPOSAL>>>" + proposalJson.trim() + "<<<END_PROPOSAL>>>";
+}
+
 // LEVEL_MATCH block (21t-h, 27 Sep 2026). THE SERVER EMITS IT ON EVERY ROUTE by ruling, so the client extracts it
 // on every route - the same tolerant truncation semantics as the others.
 //

@@ -2422,7 +2422,89 @@ and the loop leaves the waiting state; (b) the other direction, so the deadline 
 loud audio inside the deadline still resolves with a PROPOSAL and the measured figure; (c) a leaked knob gesture
 (one `knobGestureBegan` with no end) still resolves at the deadline.
 
-### 6. Reset the heard counter in [CHAIN LEVELS] when the rack changes
+### 6. TEST 5 - MY HALF: THE STRING IS THE SERVER'S, AND I CAN PROVE THE PLUGIN SENT WHAT IT NEEDED
+Sean typed "yes do it" to "Want me to add that to the EQ in slot 1?" and got "Nothing is waiting to be applied -
+say what you want changed."
+
+**WHERE THE STRING IS PRODUCED: NOT THE PLUGIN.** It does not appear anywhere in Source/ in any spelling. It is
+produced by the server, in `api/_offer-affirmed.js` and `api/_level-match.js` (read-only check; B owns that tree).
+
+**AND THE PLUGIN SENT EVERYTHING THE RULE NEEDS - evidence, not inference.** The dev-mode body dump for that very
+turn is on disk (`~/Documents/EchoJay/chat-body-debug.json`, 20:16, 302987 b). Its messages array is 12 long and
+ends:
+    [9]  user       37b   "is the low-mid too thick on this bus?"
+    [10] assistant  967b  "...a bell centred around 183-227 Hz ... Want me to add that to the EQ in slot 1?"
+    [11] user   106211b   "yes do it" + the injections
+So the prior assistant turn went out IN FULL. I then ran the server's own live rule against those exact bytes:
+    isAffirmation("yes do it")                -> true
+    affirmsAnOffer(...)                       -> { offer: "Want me to add that to the EQ in slot 1?" }
+    targetFromOffer(...)                      -> { slot: 1, name: "EchoJay EQ", via: "offer_affirmed", how: "slot_number" }
+The committed rule resolves this turn correctly. So the dead-end was NOT a missing prior assistant and NOT the
+plugin. **FOR B: the next question is whether the DEPLOYMENT serving Sean carries a765d30 - the rule is committed
+on main and "shipped" in the 7 Oct record, which this repo's history has meant "committed" before - or whether
+`_level-match.js` produced the line on a different path.** The prod/main divergence rule applies: check what is
+live before changing code.
+
+**WHAT I FIXED ANYWAY, because the log proves it fires: the history trim could throw the offer away.**
+`trimChatHistory`'s role alignment skipped FORWARD off a leading assistant turn to satisfy the API's
+"messages[] opens on a user turn". Sean's live log shows it firing on ordinary turns - `roleAlign 1` at 20:14:41
+and 20:16:43, `roleAlign 2` at 20:13:13 - where it has been discarding OLD assistant turns, which costs little.
+But when the cap or the budget happens to open the window on the assistant's own last reply, the message thrown
+away is the offer the user is answering, and the turn cannot resolve however good the server is. It now steps
+BACK to the user turn that prompted the assistant and re-admits the pair (`pairedBack`, printed in the trim log);
+it only skips forward when there is no earlier user turn at all, so the API rule still holds. The step back may
+take history one message past `maxHistoryBytes` - a named, bounded exception, because an assistant turn without
+the user turn that prompted it is not history the model can use.
+**LEGS, in `history_guard` (it already drives the real `buildChatRequestBody`):** (1) Sean's exact shape - ten
+turns of edit chatter, his question, the 967-byte offer, then "yes do it" with 100 KB of injections - asserts the
+offer sentence is on the wire as the last assistant turn AND that it is the whole reply, not a stub; (2) a window
+that would open on the offer keeps it, paired back, with `roleAlign 0`; (3) the other direction - no earlier user
+turn, so the leading assistant turn is still skipped and `messages[]` still opens on a user turn.
+
+**STILL QUEUED, and deliberately not guessed:** when B starts attaching a structured pending proposal to an offer,
+apply it on "yes" and put an Apply button on the offer card. That needs B's wire shape; inventing a schema tonight
+would be two sessions building different things. The card and the apply path are ready for it - the editJson
+pathway already applies staged ops with a base-revision check.
+
+### 6b. THE STAGED PROPOSAL - BUILT AND GREEN, EXCEPT THE BUTTON (B's 574177e wire format, 7 Oct 2026)
+B appends to any reply that offers a rack change:
+    <<<ECHOJAY_PROPOSAL>>>{"edit":[{"op":"set","slot":1,"slot_name":"EchoJay EQ","settings_structured":
+    {"eq_bands":[{"type":"bell","freq_hz":200,"gain_db":-2,"q":1.4}]}}],"offer":"...","staged":true}<<<END_PROPOSAL>>>
+**THE FORMAT NEEDS NO TRANSLATION, and that is the find that made this cheap:** a proposal's `edit` array is the
+SAME array `ChainHost::parseChainEditOps` already parses, and `op:"set"` with `settings_structured` is already a
+supported op (ChainHost.cpp:2099/2420 - "a settings-only op, never the instance"). So applying a proposal is
+applying an edit; what differs is WHEN.
+
+DONE, and `proposal_guard` is GREEN on all 16 assertions:
+  • `extractProposalBlock` / `reattachProposalBlock` in EJReplyBlocks.h, re-exported through EchoJayAPI, following
+    the existing block extractors exactly. The block is taken out of the VISIBLE reply on the chat route and
+    `cm.proposalData` holds it. **Nothing applies it there** - that is the difference from a CHAIN_EDIT block,
+    which is a decision the server already made.
+  • **the wire KEEPS it**: `chatContents.add(reattachProposalBlock(visibleReply, proposalJson))`. Every other block
+    is stripped from history; this one is not, so B's server-side yes ships identical ops. Asserted through the
+    real `buildChatRequestBody`, so the history trim cannot quietly eat it.
+  • **`capabilities:["proposal"]` in every chat request body** (not a header - corrected ruling), hardcoded because
+    it states what the binary can do. Without it B emits no block, which is exactly why 06b and 06c - which would
+    print raw JSON at the user - stay safe.
+  • **a yes applies it with no model call**: `handleProposalAffirmation` sits beside `handleLoudnessVerb` in
+    `sendChatMessage` ("local first, no network"), and `applyStagedProposal` moves the ops into `editData`, takes
+    the base revision NOW (the rack may have changed since the offer) and runs the existing apply with its
+    staleness guards. ONLY the newest assistant turn counts - a yes answers the last thing said.
+  • **the client's yes is deliberately NARROW** (`Source/EJAffirmation.h`): B's rule is the source of truth and
+    this is a fast path, so the asymmetry runs one way - a miss costs a round trip, a false positive writes a
+    change nobody asked for. 12 plain affirmations taken, 10 doubtful ones refused ("yes but make it 300 Hz
+    instead", "do it on slot 2 instead", "yes and also add a de-esser after the comp").
+  • **rule 5 was already satisfied**: an affirmation with nothing staged returns false and the turn goes to B
+    exactly as today. The body dump proves the plugin already sends what B's rule needs (item 6).
+
+**LEFT, AND IT IS THE ONLY PIECE: the Apply button on the offer card.** `applyStagedProposal(msgIdx, why)` is the
+entry point and is already written and used; what is missing is the card drawing a button that calls it. The route
+I would take, and the reason I did not take it tonight: the edit card already renders ops as "dial <name> (slot N):
+<payload>" and has a not-yet-applied state, so the button is a matter of letting `proposalData` render through that
+card WITHOUT the auto-apply that an edit turn triggers - and separating those two in `handleChatReply`'s dial path
+is not a change to start at 21:35 with a gate owed. The data path ships without it: a yes works today.
+
+### 7. Reset the heard counter in [CHAIN LEVELS] when the rack changes
 "set from N min" must mean THIS build. The phrase is composed in EJCalibLoop.h (~1968 and ~2146,
 `", set from " + roundToInt (blockHeardS) + " s of this track"`), and the CHAIN LEVELS block is assembled at
 EchoJayAPI.cpp:3263. The reset point is a rack change - the same bump that already invalidates per-slot tallies

@@ -1150,6 +1150,12 @@ private:
         juce::String askData;     // non-empty when AI returned an <<<ECHOJAY_ASK>>> block
         bool askAnswered = false; // chip tapped — chips render disabled/hidden
         juce::String editData;    // non-empty when AI returned <<<ECHOJAY_CHAIN_EDIT>>>
+        // 06d test 5 (7 Oct 2026): THE OFFER'S OWN OPS, STAGED. Non-empty when the reply carried
+        // <<<ECHOJAY_PROPOSAL>>>. It is NOT editData and must never be auto-applied: an edit turn
+        // is a decision the server already made, a proposal is an offer waiting on Apply or a yes.
+        // Sean's 20:18 turn is why it exists - a prose offer with nothing attached, so "yes do it"
+        // had nothing to apply. The block is stripped from the VISIBLE reply and kept on the WIRE.
+        juce::String proposalData;
         bool editApplied = false; // Apply pressed (or edit aborted) — card retired
         juce::String editResult;  // outcome summary shown on the retired card
         juce::String editAltPrompt; // "Suggest an alternative" follow-up (load
@@ -1350,6 +1356,12 @@ private:
     void sendLinkMasterWetCommand(const juce::String& uid, float wet);   // F5 (21s-b): the rack's own chain mix                   // F2: the composer pill's text, from that one answer
     void maybeOfferRescan();               // 21r item 3: "Plugins changed since the last scan - Scan now?", once per launch
     void appendLocalUserBubble(const juce::String& text);
+    // 06d test 5 (7 Oct 2026): a yes to the LAST reply's staged proposal is applied here, with no
+    // model call. Returns true when it took the turn. It refuses unless the newest assistant turn
+    // carries a usable proposal AND the message is a narrow affirmation (EJAffirmation.h) - anything
+    // else goes to the server exactly as today, where B's wider rule resolves it.
+    bool handleProposalAffirmation(const juce::String& typed);
+    void applyStagedProposal(int msgIdx, const juce::String& why);   // Apply button and the yes both land here
     bool handleLoudnessVerb(const juce::String& msg, bool forced = false);   // 18e: forced = the server answered loop_verb   // \"a bit louder\" / \"a bit softer\" / \"check the level again\" / \"undo\"
     int  loopBubbleSeq_ = 0;
     void rerouteChatTurn(const juce::String& sysPrompt, const juce::String& activeChatId,

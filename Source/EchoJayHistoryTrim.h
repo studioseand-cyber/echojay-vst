@@ -33,6 +33,7 @@ struct HistoryTrimResult
     int droppedByCap    = 0;  // lost to the message-count cap
     int droppedByBudget = 0;  // lost to the history byte budget
     int droppedByRole   = 0;  // lost aligning the first message onto a user turn
+    int pairedBack      = 0;  // re-admitted so an assistant turn keeps the user turn before it (7 Oct 2026)
 };
 
 // strippedSizes: stripped-content byte size of EVERY message, newest last.
@@ -73,16 +74,47 @@ inline HistoryTrimResult trimChatHistory (const std::vector<int>& strippedSizes,
         firstIdx = std::max (firstIdx, cutIdx);
     }
 
-    // The Anthropic API requires messages[] to open with a user turn: skip
-    // forward off any leading assistant turns. Degenerate case (nothing
-    // qualifies): send the newest alone.
+    // The Anthropic API requires messages[] to open with a user turn. Two ways
+    // to get there, and WHICH ONE MATTERS (7 Oct 2026, test 5):
+    //
+    // Skipping FORWARD off a leading assistant turn throws that turn away. When
+    // the window happens to start on the assistant's own last reply, the thing
+    // thrown away is the reply the user is answering - and the server's
+    // affirmation rule reads exactly that message to find the offer being
+    // accepted ("Want me to add that to the EQ in slot 1?" -> "yes do it").
+    // Lose it and the turn dead-ends on "Nothing is waiting to be applied".
+    // Sean's live log shows this alignment firing with roleAlign 1 and 2 on
+    // ordinary turns, so it is not hypothetical; it has simply been discarding
+    // OLD assistant turns, where it costs little.
+    //
+    // So: step BACK to the user turn before it when there is one, re-admitting
+    // that pair, and only skip forward when there is no earlier user turn at
+    // all. The step back can take history one message past maxHistoryBytes -
+    // a named, bounded exception, because an assistant turn without the user
+    // turn that prompted it is not history the model can use.
     {
         const int before = firstIdx;
-        while (firstIdx < n && roleIsUser[(size_t) firstIdx] == 0)
-            ++firstIdx;
-        if (firstIdx >= n)
-            firstIdx = n - 1;
-        r.droppedByRole = firstIdx - before;
+        if (firstIdx < n && roleIsUser[(size_t) firstIdx] == 0)
+        {
+            int back = firstIdx;
+            while (back > 0 && roleIsUser[(size_t) (back - 1)] == 0)
+                --back;                                    // walk over consecutive assistant turns
+            if (back > 0 && roleIsUser[(size_t) (back - 1)] != 0)
+            {
+                firstIdx = back - 1;                       // the user turn that prompted them
+                r.pairedBack = before - firstIdx;
+                if (r.droppedByBudget > 0) r.droppedByBudget = std::max (0, r.droppedByBudget - r.pairedBack);
+                else                       r.droppedByCap    = std::max (0, r.droppedByCap    - r.pairedBack);
+            }
+            else
+            {
+                while (firstIdx < n && roleIsUser[(size_t) firstIdx] == 0)
+                    ++firstIdx;
+                if (firstIdx >= n)
+                    firstIdx = n - 1;
+                r.droppedByRole = firstIdx - before;
+            }
+        }
     }
 
     r.firstIdx = firstIdx;
