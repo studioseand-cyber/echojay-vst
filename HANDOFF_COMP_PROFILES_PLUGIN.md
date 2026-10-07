@@ -2209,6 +2209,37 @@ loud window (3-6 s of real signal), ceiling held, no user action; Go unchanged a
 ASKS; the server's static `gain_db` for a bus/master Level slot is ignored and that is logged. Legs as listed there.
 B is holding the matching server change so the two ship together.
 
+#### 2a. THE IMPLEMENTATION PLAN FOR ITEM 6/10 FINAL, read off the code (overnight run, 7/8 Oct)
+Written before touching anything so a compaction loses nothing. Every line number is from LoudnessLoop.h as of
+397b380.
+  1. **THE TARGET IS INTEGRATED.** `measured = out.maxShortTermDb` (:506) becomes `out.levelDb`, which IS integrated
+     LUFS because both chain tallies are `Weighting::K` (ChainHost.h:2668-9) - and it is integrated OVER THIS
+     WINDOW, because `startWindow()` calls `resetChainOutLevels()` (:682). `known` is required, as everywhere else
+     on the tally. maxShortTerm stays, as the SAFETY CHECK Sean ruled it should be, never as the target. Every
+     bubble saying "loudest 3 s" changes to name what it measured.
+     **THE ARITHMETIC CHECKS OUT AGAINST HIS EAR:** at Level +4 his window-integrated was -11.2, so
+     `needed = -8 - -11.2 = +3.2` -> Level +7.2, inside the 1 dB his acceptance leg allows around +8, and the
+     output then reads about -8.7, inside the 1 LU it allows around -8. One pass. The residual is the limiter
+     costing more at the higher level, which the step-scaling ratio (:560-567) already closes on the next pass.
+  2. **THE OPENING CAP GOES on a bus/master with a loudness target** (:263-270, `kOpeningHeadroomDb`). Replaced by
+     the opening estimate from 2f: `currentLevel + (target - integrated at the output)` when the tally is known,
+     else the open-loop sum, logged AS an estimate. The decision is logged either way, as ruled.
+  3. **THE GR MODEL.** `grCapDb("commercial")` 6.0 -> **10.0** and `kGrOfferDb` 6.0 -> **10.0** (:90-96, :103).
+     The cap's `base` (:579) becomes: EchoJay Limiter -> the MEASURED GR (`hm.typicalDb`, else `grAvg()`);
+     third-party -> `hm.typicalDb` when it is finite and > 0.5 (it is already a MEASURED reduction, Level OUT TP
+     minus chain OUT TP over the top blocks, :435-455), else `0.25 * max(0, lvTP - ceiling)` CLAMPED AT 3 dB.
+     The old fallback `lvTP - ceilingDb_` is the pessimism that predicted 6.3 dB against a real 1.3-1.7.
+  4. **LISTEN ALWAYS RESOLVES.** `kResolveMs = 20000` from the Listen tap, extended once to 20 s after the first
+     counted audio. A deadline check in front of all three unbounded returns (:499 counted < needed, :505
+     non-finite measured, :506 `knobGestureOpen()`), resolving with the named reason from item 5 and logging every
+     transition. `kWaitWallMs` 60000 stays as the mid-wait nudge but is no longer the only thing that ever fires.
+  5. **THE LEAKED KNOB GESTURE** cannot block a measurement: at the deadline the window resolves anyway and the log
+     says the gesture was open (EJKnobGesture.h: `knobGestureEnded` only decrements, so a missed mouse-up leaves it
+     at 1 for the session).
+  6. **THE BUS-GAIN TAP** (2c): the landing sum names bus gain as its own term and the log prints it.
+  7. **THE PROPOSAL CARD ALWAYS RENDERS**, and a Listen tap in state `proposed` re-shows it rather than being
+     refused by `listen()`'s state filter (:285).
+
 #### 2b. THE PEAK-HEADROOM CAP IS WHY EVERY MIX-BUS BUILD WAS QUIET (Sean 19:52, 7 Oct, on the 06c install)
 THE OBSERVATION, his log, after the Level was dialled +4.4 dB as sent:
     EJLoudness: opening gain capped: +4.4 -> +0.0 dB (ceiling -0.1 + 3 - build-time true peak 2.9 dBTP)
@@ -2503,6 +2534,23 @@ I would take, and the reason I did not take it tonight: the edit card already re
 <payload>" and has a not-yet-applied state, so the button is a matter of letting `proposalData` render through that
 card WITHOUT the auto-apply that an edit turn triggers - and separating those two in `handleChatReply`'s dial path
 is not a change to start at 21:35 with a gate owed. The data path ships without it: a yes works today.
+
+### 6c. place_ship.sh's IDENTICAL-UUID BLIND SPOT - CLOSED (overnight item 8, 7/8 Oct)
+WHAT WAS WRONG: check (2) read "a rebuilt binary cannot keep its UUID, so a match means nothing was built". False
+for a reproducible build whose inputs did not change - 06c changed PluginEditor.cpp, PluginProcessor.cpp and
+EchoJayAPI.cpp, the Link archive compiles NONE of them, the Link bundle relinked bit-identical, and the script
+refused the whole folder. The round was then placed BY HAND, which is the one thing the script exists to stop.
+THE REAL FAULT was not the UUID comparison: it was comparing every bundle against the newest source in the WHOLE
+tree. **Both checks are now scoped per bundle, from the object list of the target that built it**
+(`$BUILD/CMakeFiles/<EchoJay|EchoJayLink>.dir/Source/*.o` -> the .cpp files that bundle actually contains; falls
+back to the whole-tree rule when the object dir is absent, because a check that silently weakens itself is worse
+than one that is occasionally strict). An identical UUID is a REFUSAL only for a bundle that is ALSO stale against
+its own sources; otherwise it prints a note saying the match is correct and must be reported as unchanged, not as
+a new binary.
+PROVEN BOTH DIRECTIONS on a fixture build tree (no repo files touched): (A) the 06c shape - every bundle newer than
+its own sources, Link UUID identical to installed -> PLACED, with the note; (B) the V2 bundles backdated to before
+PluginEditor.cpp, which the V2 compiles and the Link does not -> V2 REFUSED (stale) and REFUSED (unchanged), nothing
+placed, and the LINK NOT DRAGGED DOWN by a change to a file it does not compile. That last line is the whole fix.
 
 ### 7. Reset the heard counter in [CHAIN LEVELS] when the rack changes
 "set from N min" must mean THIS build. The phrase is composed in EJCalibLoop.h (~1968 and ~2146,
