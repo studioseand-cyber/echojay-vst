@@ -312,6 +312,94 @@ inline std::vector<CrashLine> crashesIn (const juce::String& runJsonl, int skipL
 
 //==============================================================================
 // THE REPORT. Every section prints its count even when it is zero, so an empty section is a statement, not an omission.
+// PHASE B BY CATEGORY, THE DRAFTS, THE TOP FINDINGS (8 Oct stretch S2): from cert/phaseb/<category>/ - the rows' outcomes, the records,
+// the drafts and every acceptance row found anywhere inside a record or a draft (an object with "pass"), so a morning zip is checked in minutes
+struct AcceptanceCount { int rows = 0, ran = 0, passed = 0; std::vector<juce::String> failed; };
+inline void collectAcceptance (const juce::var& v, AcceptanceCount& c, const juce::String& where, int depth = 0)
+{
+    if (depth > 12) return;
+    if (auto* o = v.getDynamicObject())
+    {
+        if (o->hasProperty ("pass") && (o->hasProperty ("ran") || o->hasProperty ("step") || o->hasProperty ("target_db") || o->hasProperty ("request_dbtp")))
+        {
+            ++c.rows; const bool ran = ! o->hasProperty ("ran") || (bool) o->getProperty ("ran");
+            if (ran) { ++c.ran; if ((bool) o->getProperty ("pass")) ++c.passed; else if (c.failed.size() < 400) c.failed.push_back (where + ": " + o->getProperty ("step").toString() + o->getProperty ("why").toString().substring (0, 80)); }
+        }
+        for (const auto& kv : o->getProperties()) collectAcceptance (kv.value, c, where, depth + 1);
+    }
+    else if (const auto* a = v.getArray()) for (const auto& x : *a) collectAcceptance (x, c, where, depth + 1);
+}
+struct CategoryReview
+{
+    juce::String name; int rows = 0, records = 0, drafts = 0, draftsBadSpec = 0, draftsWithNotes = 0;
+    std::map<juce::String, int> outcomes; AcceptanceCount acc; std::map<juce::String, int> noteKinds; juce::StringArray failedRows;
+};
+inline juce::String noteKind (const juce::String& note)
+{   // the note's kind: its text up to the first colon, numbers and bracketed indices taken out ("Band 'Air': dynamic ..." -> "Band: dynamic")
+    juce::String k = note.upToFirstOccurrenceOf (" - ", false, false).substring (0, 60);
+    juce::String out; for (int i = 0; i < k.length(); ++i) { const auto ch = k[i]; if (juce::CharacterFunctions::isDigit (ch)) continue; out << ch; }
+    return out.trim();
+}
+inline std::vector<CategoryReview> phaseBReview (const juce::File& phasebDir)
+{
+    std::vector<CategoryReview> out;
+    for (const auto& d : phasebDir.findChildFiles (juce::File::findDirectories, false))
+    {
+        CategoryReview c; c.name = d.getFileName(); if (c.name.startsWith (".")) continue;
+        for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.phaseb.json"))
+        { const auto r = juce::JSON::parse (f.loadFileAsString()); ++c.rows; const auto oc = r.getProperty ("outcome", "?").toString(); ++c.outcomes[oc]; if (oc == "failed" || oc == "timed_out" || oc == "window") c.failedRows.add (r.getProperty ("product", "").toString() + " (" + oc + (r.getProperty ("reason", "").toString().isNotEmpty() ? ": " + r.getProperty ("reason", "").toString().substring (0, 70) : juce::String()) + ")"); }
+        for (const auto& sub : d.findChildFiles (juce::File::findDirectories, false))
+        {
+            const auto sn = sub.getFileName(); if (sn == "raw" || sn == "logs" || sn.startsWith (".")) continue;
+            for (const auto& f : sub.findChildFiles (juce::File::findFiles, false, "*.json"))
+            {
+                const auto v = juce::JSON::parse (f.loadFileAsString()); const auto product = v.getProperty ("product", v.getProperty ("plugin", {}).getProperty ("name", v.getProperty ("parent", {}).getProperty ("name", ""))).toString();
+                if (sn == "drafts")
+                {
+                    ++c.drafts; if (! v.getProperty ("spec", "").toString().endsWith (" v0.1 PROPOSAL") || ! f.getFileName().endsWith (".draft.json")) ++c.draftsBadSpec;
+                    if (const auto* n = v.getProperty ("notes", {}).getArray(); n && ! n->isEmpty()) { ++c.draftsWithNotes; for (const auto& x : *n) ++c.noteKinds[noteKind (x.toString())]; }
+                    collectAcceptance (v, c.acc, product);
+                }
+                else { ++c.records; }
+            }
+        }
+        if (c.rows > 0 || c.drafts > 0 || c.records > 0) out.push_back (c);
+    }
+    std::sort (out.begin(), out.end(), [] (const CategoryReview& a, const CategoryReview& b) { return a.name < b.name; });
+    return out;
+}
+inline juce::String renderPhaseB (const std::vector<CategoryReview>& cats)
+{
+    juce::String s; auto line = [&] (const juce::String& t = {}) { s << t << "\n"; }; auto head = [&] (const juce::String& t) { line(); line (t); line (juce::String::repeatedString ("-", t.length())); };
+    head ("10. PHASE B BY CATEGORY (rows: done / failed / needs licence / needs device / other; records; acceptance passed of ran)");
+    if (cats.empty()) line ("no cert/phaseb in this folder");
+    int allRan = 0, allPass = 0;
+    for (const auto& c : cats)
+    {
+        auto n = [&] (const char* k) { return c.outcomes.count (k) ? c.outcomes.at (k) : 0; };
+        const int other = c.rows - n ("ok") - n ("failed") - n ("timed_out") - n ("needs_licence") - n ("needs_device");
+        allRan += c.acc.ran; allPass += c.acc.passed;
+        line ("  " + c.name.paddedRight (' ', 11) + juce::String (c.rows).paddedLeft (' ', 4) + " rows: " + juce::String (n ("ok")) + " ok / " + juce::String (n ("failed") + n ("timed_out")) + " failed / " + juce::String (n ("needs_licence")) + " licence / " + juce::String (n ("needs_device")) + " device / " + juce::String (other) + " other; "
+              + juce::String (c.records) + " record(s); acceptance " + (c.acc.ran > 0 ? juce::String (c.acc.passed) + "/" + juce::String (c.acc.ran) + " (" + juce::String (100.0 * c.acc.passed / c.acc.ran, 0) + " %)" + (c.acc.rows > c.acc.ran ? ", " + juce::String (c.acc.rows - c.acc.ran) + " null" : juce::String()) : juce::String ("none in the drafts")));
+    }
+    if (allRan > 0) line ("  all categories: acceptance " + juce::String (allPass) + "/" + juce::String (allRan) + " (" + juce::String (100.0 * allPass / allRan, 1) + " %)");
+    head ("11. DRAFTS (cert/phaseb/<category>/drafts/; never cert/profiles)");
+    int total = 0, bad = 0; for (const auto& c : cats) { total += c.drafts; bad += c.draftsBadSpec; if (c.drafts > 0) line ("  " + c.name.paddedRight (' ', 11) + juce::String (c.drafts).paddedLeft (' ', 4) + " draft(s), " + juce::String (c.draftsWithNotes) + " with notes" + (c.draftsBadSpec > 0 ? ", " + juce::String (c.draftsBadSpec) + " WITHOUT the 'v0.1 PROPOSAL' spec tag or the .draft.json name" : juce::String())); }
+    line ("  " + juce::String (total) + " draft(s)" + (bad > 0 ? ", " + juce::String (bad) + " break the drafts rule" : ", all tagged v0.1 PROPOSAL"));
+    head ("12. TOP FINDINGS");
+    int shown = 0;
+    for (const auto& c : cats) if (! c.failedRows.isEmpty()) { line ("  " + c.name + ": " + juce::String (c.failedRows.size()) + " failed row(s): " + c.failedRows.joinIntoString ("; ").substring (0, 300)); ++shown; }
+    for (const auto& c : cats) if (! c.acc.failed.empty()) { juce::StringArray f; for (size_t i = 0; i < c.acc.failed.size() && i < 4; ++i) f.add (c.acc.failed[i]); line ("  " + c.name + ": " + juce::String ((int) c.acc.failed.size()) + " acceptance FAIL(s), e.g. " + f.joinIntoString (" | ")); ++shown; }
+    for (const auto& c : cats)
+    {
+        std::vector<std::pair<int, juce::String>> k; for (const auto& [t, n] : c.noteKinds) k.push_back ({ n, t }); std::sort (k.rbegin(), k.rend());
+        juce::StringArray top; for (size_t i = 0; i < k.size() && i < 3; ++i) top.add (juce::String (k[i].first) + "x " + k[i].second);
+        if (! top.isEmpty()) { line ("  " + c.name + " notes: " + top.joinIntoString ("; ")); ++shown; }
+    }
+    if (shown == 0) line ("  nothing failed; no acceptance FAIL; no draft notes");
+    return s;
+}
+
 struct ReportInput
 {
     juce::String subjectName, baselineName, scratchDir, note;
@@ -328,6 +416,7 @@ struct ReportInput
     std::vector<CrashLine> crashes; int runLinesAdded = 0;
     std::map<juce::String, int> probesSeen;                       // cdhash prefix -> count, from the follow-up's tone checks
     bool logPresent = false; juce::String logLastLine;
+    std::vector<CategoryReview> phaseb;                           // 8 Oct S2: every Phase B category and its drafts
 };
 inline juce::String render (const ReportInput& in)
 {
@@ -439,6 +528,7 @@ inline juce::String render (const ReportInput& in)
     line (juce::String ((int) in.crashes.size()) + " (over " + juce::String (in.runLinesAdded) + " run.jsonl line(s) the follow-up added)");
     for (const auto& c : in.crashes) line ("  " + c.where + ": " + c.what);
     line();
+    s << renderPhaseB (in.phaseb);
     return s;
 }
 

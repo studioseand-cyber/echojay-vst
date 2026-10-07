@@ -8562,6 +8562,37 @@ void testRunAll()
     check (progressLine (3, 24, "eq", 3725.0, 7200.0, d1).contains ("[run-all 3/24 eq | elapsed 1:02:05 | ETA 2:00:00 | stops at 07:00]"), "runall RA8: the progress line");
 }
 
+/** THE REVIEW'S PHASE B SECTIONS (EjmapCertReview.h, 8 Oct stretch S2): rows by outcome, acceptance found anywhere in a draft, drafts, findings. */
+void testReviewPhaseB()
+{
+    using namespace ejmap::review;
+    auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+    // RV1: acceptance rows nested anywhere (EQ bands, the ceiling block, a list at the top)
+    { juce::Array<juce::var> bandAcc { mk ({ { "target_db", 3.0 }, { "ran", true }, { "pass", true } }), mk ({ { "target_db", -3.0 }, { "ran", true }, { "pass", false }, { "why", "figure 18 % off" } }) };
+      juce::Array<juce::var> bands { mk ({ { "acceptance", bandAcc } }) }; juce::Array<juce::var> top { mk ({ { "step", "touch" }, { "ran", false }, { "pass", false } }) };
+      AcceptanceCount c; collectAcceptance (mk ({ { "bands", bands }, { "acceptance", top } }), c, "X");
+      check (c.rows == 3 && c.ran == 2 && c.passed == 1 && c.failed.size() == 1 && c.failed[0].contains ("figure 18 % off"), "review RV1: acceptance rows found nested anywhere - 3 rows, 2 ran, 1 passed, the failure named"); }
+    check (noteKind ("Band 'Air': dynamic - 4 dB between levels") == "Band 'Air': dynamic" && noteKind ("step 3 (driven): FAIL - x") == "step  (driven): FAIL", "review RV2: a note's kind drops the reason and the numbers");
+    // RV3: a phaseb folder on disk
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap-review-pin-" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
+    const auto eq = dir.getChildFile ("eq"); eq.getChildFile ("drafts").createDirectory(); eq.getChildFile ("eq").createDirectory(); eq.getChildFile ("raw").createDirectory();
+    eq.getChildFile ("A.phaseb.json").replaceWithText (juce::JSON::toString (mk ({ { "product", "A" }, { "outcome", "ok" } })));
+    eq.getChildFile ("B.phaseb.json").replaceWithText (juce::JSON::toString (mk ({ { "product", "B" }, { "outcome", "failed" }, { "reason", "crashed" } })));
+    eq.getChildFile ("C.phaseb.json").replaceWithText (juce::JSON::toString (mk ({ { "product", "C" }, { "outcome", "needs_licence" } })));
+    eq.getChildFile ("eq").getChildFile ("A.eq.json").replaceWithText ("{}");
+    juce::Array<juce::var> acc { mk ({ { "step", "+3" }, { "ran", true }, { "pass", true } }) }; juce::Array<juce::var> notes { juce::var ("Band 'Air': dynamic - 4 dB") };
+    eq.getChildFile ("drafts").getChildFile ("A.eq_profile.draft.json").replaceWithText (juce::JSON::toString (mk ({ { "spec", "EQ_PROFILE_SPEC v0.1 PROPOSAL" }, { "plugin", mk ({ { "name", "A" } }) }, { "acceptance", acc }, { "notes", notes } })));
+    eq.getChildFile ("drafts").getChildFile ("Z.eq_profile.draft.json").replaceWithText (juce::JSON::toString (mk ({ { "spec", "EQ v0.1" } })));
+    const auto r = phaseBReview (dir);
+    check (r.size() == 1 && r[0].name == "eq" && r[0].rows == 3 && r[0].outcomes.at ("ok") == 1 && r[0].records == 1 && r[0].drafts == 2 && r[0].draftsBadSpec == 1 && r[0].acc.ran == 1 && r[0].acc.passed == 1 && r[0].failedRows.size() == 1 && r[0].noteKinds.size() == 1,
+           "review RV3: rows by outcome, records beside drafts (raw / logs ignored), the drafts rule checked (one untagged), acceptance from the drafts, the failed row named");
+    const auto text = renderPhaseB (r);
+    check (text.contains ("10. PHASE B BY CATEGORY") && text.contains ("3 rows: 1 ok / 1 failed / 1 licence / 0 device / 0 other; 1 record(s); acceptance 1/1 (100 %)") && text.contains ("1 break the drafts rule") && text.contains ("eq: 1 failed row(s): B (failed: crashed)") && text.contains ("1x Band 'Air': dynamic"),
+           "review RV4: the three sections render (counts, the rule break, the failed row, the top note)");
+    check (renderPhaseB ({}).contains ("no cert/phaseb in this folder"), "review RV5: a folder with no Phase B says so");
+    dir.deleteRecursively();
+}
+
 /** THE NOISE SIGNAL (probe_noise.h, 7 Oct): deterministic in the seed, at the asked RMS, band-limited to 4-10 kHz. */
 void testNoise()
 {
@@ -8979,6 +9010,7 @@ int main (int, char**)
     testDraftsPass();
     testStripDraft();
     testRunAll();
+    testReviewPhaseB();
     testMultiband();
     testRoleEvidence();
     testTextPassTimeout();

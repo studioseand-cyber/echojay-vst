@@ -7615,6 +7615,7 @@ inline int runReviewZip (const juce::File& subject, const juce::File& against, c
     in.crashes = crashesIn (runText, baseRunLines, outcomes, byStem);
     std::sort (in.resweeps.begin(), in.resweeps.end(), [] (const ResweepLine& a, const ResweepLine& b) { return a.product.compareIgnoreCase (b.product) < 0; });
     std::sort (in.sidechain.begin(), in.sidechain.end(), [] (const SidechainLine& a, const SidechainLine& b) { return a.word == b.word ? a.product.compareIgnoreCase (b.product) < 0 : a.word < b.word; });
+    in.phaseb = review::phaseBReview (cert.getChildFile ("phaseb"));   // 8 Oct S2: every category, the drafts, the top findings
     if (! keepScratch) in.scratchDir = {};   // deleted below: two unzipped folders are ~800 MB; --keep leaves them and says where
     std::cout << render (in);
     if (! keepScratch) scratch.deleteRecursively();
