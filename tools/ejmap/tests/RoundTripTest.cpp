@@ -93,6 +93,8 @@
 #include "EjmapMultiband.h"
 #include "EjmapRoleEvidence.h"
 #include "EjmapPhaseB.h"
+#include "EjmapDrafts.h"
+#include "../../au_instantiate_probe/probe_truepeak.h"   // standalone (std only): the probe's BS.1770 interpolator, pinned here
 
 namespace
 {
@@ -7622,6 +7624,111 @@ void testLimiter()
         check (! judgeMeasuredCeiling ({ lp (0.0, -25.0), lp (-6.0, -31.0) }).holds && ! judgeMeasuredCeiling ({ lp (-1.0, -1.0), lp (-7.0, -7.0, false) }).holds && ! judgeMeasuredCeiling ({ lp (-1.0, -1.0), lp (-1.5, -1.5) }).holds,
                "limiter LM-M4: a peak 25 dB under its label (a post gain behind a hard limit), one position unread, or labels under 1 dB apart: not a ceiling");
     }
+    // THE 7 OCT SPEC WORK (LIMITER_PROFILE_SPEC v0.1 sections 3, 4, 5, 6, 7)
+    {
+        // L10: a 7 Oct hold line carries the input peak and the cubic estimate; a 5 Oct line has neither (judged on the output alone)
+        const auto pk7 = parsePeaks ("hold\t0\t5.00\tlevel_db\t-4.51\tin_rms_db\t1.99\ttone_frac\t1.0\tch\t-4.51\tdoubled\t0\tlast_move_db\t0\tfinal_move_db\t0\twin\t-4.5\tnonfinite\t0\tout_peak_db\t-1.0000\tout_true_peak_db\t-0.4200\tout_true_peak_cubic_db\t-0.5000\tin_peak_db\t5.0000\n");
+        check (pk7.ok && pk7.inPeakDb && std::abs (*pk7.inPeakDb - 5.0) < 1e-9 && pk7.truePeakCubicDb && std::abs (*pk7.truePeakCubicDb + 0.5) < 1e-9, "limiter L10: the 7 Oct hold line's in_peak_db and out_true_peak_cubic_db parse");
+        const auto pk5 = parsePeaks ("hold\t0\t-1.00\tlevel_db\t-4.51\tin_rms_db\t-4.01\ttone_frac\t1.0\tch\t-4.51\tdoubled\t0\tlast_move_db\t0\tfinal_move_db\t0\twin\t-4.5\tnonfinite\t0\tout_peak_db\t-1.5000\tout_true_peak_db\t-0.9200\n");
+        check (pk5.ok && ! pk5.inPeakDb && ! pk5.truePeakCubicDb, "limiter L10b: a 5 Oct line has no input peak and no cubic field");
+        // L11: the drive rule - the sine sits at the label + 6; a position whose input peak fell short is not_driven with its reason
+        check (std::abs (driveLevelFor (-1.0) - 5.0) < 1e-9 && std::abs (driveLevelFor (-6.0) - 0.0) < 1e-9, "limiter L11a: the drive is the label + 6 dB (-1 -> +5 dBFS, -6 -> 0 dBFS)");
+        auto row = [] (double label, double peak, double tpeak, std::optional<double> inPeak) { CeilingResult r; r.pos.labelDb = label; r.pos.display = juce::String (label, 2) + " dB"; r.reading.ok = true; r.reading.peakDb = peak; r.reading.truePeakDb = tpeak; r.reading.inPeakDb = inPeak; r.sampleErrDb = peak - label; r.trueErrDb = tpeak - label; r.driveLevelDb = driveLevelFor (label); return r; };
+        check (! driven (row (0.0, 0.0, 0.0, 3.9)) && notDrivenWhy (row (0.0, 0.0, 0.0, 3.9)).contains ("did not reach the label + 6"), "limiter L11b: an input peak of 3.9 dBFS at a 0.0 label did not drive the position (needs 5.9)");
+        check (driven (row (0.0, 0.0, 0.0, 5.95)) && driven (row (0.0, 0.0, 0.0, std::nullopt)), "limiter L11c: 5.95 dBFS drives it (0.1 dB short is allowed); a 5 Oct row without an input peak is judged on the output");
+        check (! driven (row (-1.0, -1.8, -1.8, 5.0)) && notDrivenWhy (row (-1.0, -1.8, -1.8, 5.0)).contains ("under the label"), "limiter L11d: an output 0.8 dB under its label was never pushed into the ceiling: not_driven");
+        // L12: the four verdicts
+        check (positionVerdict (row (-1.0, -1.0, -1.05, 5.0)) == "holds_true_peak" && positionVerdict (row (-1.0, -1.0, -0.42, 5.0)) == "holds_sample_peak_only"
+               && positionVerdict (row (-1.0, -0.2, 0.3, 5.0)) == "overshoots" && positionVerdict (row (-1.0, -1.0, -1.0, 2.0)) == "not_driven", "limiter L12: holds_true_peak / holds_sample_peak_only / overshoots / not_driven");
+        // L13: a stepped ceiling is measured at every dB-labelled detent, label order, the five targets carried where a detent falls near one
+        { std::vector<std::pair<float, juce::String>> g; const double labels[] = { 0.0, -0.5, -1.0, -2.0, -3.0, -6.0, -10.0, -20.0 }; for (int k = 0; k < 8; ++k) g.push_back ({ k / 7.0f, juce::String (labels[k], 1) + " dB" }); g.push_back ({ 1.0f, "Off" });
+          const auto all = ceilingPositions (g, true); int nearTargets = 0; for (const auto& p : all) for (double t : kCeilingTargetsDb) if (std::abs (p.target - t) < 1e-9) ++nearTargets;
+          check (all.size() == 8 && all.front().labelDb == 0.0 && all.back().labelDb == -20.0 && nearTargets >= 5, "limiter L13: every detent (8 of 9 read as dB, 'Off' skipped), in label order, the targets carried (" + juce::String ((int) all.size()) + ", " + juce::String (nearTargets) + " near a target)"); }
+        // L14: the server's setting (section 5.2)
+        std::vector<CeilingResult> mlx { row (0.0, 0.0, 0.58, 6.0), row (-0.3, -0.3, 0.28, 5.7), row (-1.0, -1.0, -0.42, 5.0), row (-3.0, -3.0, -2.42, 3.0), row (-6.0, -6.0, -5.42, 0.0) };   // MLimiterX: sample exact, true +0.58
+        const auto s1 = settingFor (-1.0, mlx);
+        check (s1.ok && std::abs (s1.pos.labelDb + 3.0) < 1e-9 && std::abs (s1.loweredByDb - 2.0) < 1e-9 && s1.why.contains ("set 2.00 dB lower"), "limiter L14a: holds sample peak only (+0.58): -1 dBTP lowers to -1.58, rounded DOWN to the next measured position -3 (lowered by 2.0, said)");
+        std::vector<CeilingResult> l2 { row (0.0, -0.01, -0.01, 6.0), row (-0.3, -0.31, -0.3, 5.7), row (-1.0, -1.0, -1.0, 5.0), row (-6.0, -6.0, -6.0, 0.0) };
+        const auto s2 = settingFor (-1.0, l2);
+        check (s2.ok && std::abs (s2.pos.labelDb + 1.0) < 1e-9 && s2.loweredByDb == 0.0 && s2.verdictAtRequest == "holds_true_peak", "limiter L14b: holds true peak at -1: the label is written, nothing lowered");
+        std::vector<CeilingResult> l360 { row (-1.0, -1.0, 4.2, 5.0), row (-3.0, -3.0, 2.2, 3.0) };
+        check (! settingFor (-1.0, l360).ok && settingFor (-1.0, l360).why.contains ("does not hold true peaks"), "limiter L14c: true peak +5.2 dB over (L360): over the 1 dB cap, not offered");
+        std::vector<CeilingResult> clip { row (-1.0, 0.14, 0.2, 5.0), row (-3.0, -1.86, -1.8, 3.0) };
+        check (! settingFor (-1.0, clip).ok && settingFor (-1.0, clip).why.contains ("overshoots on sample peak"), "limiter L14d: a clipper (sample peak +1.14) is not offered");
+        std::vector<CeilingResult> nd { row (-1.0, -1.0, -1.0, 2.0), row (-3.0, -3.0, -3.0, 3.0) };
+        check (! settingFor (-1.0, nd).ok && settingFor (-1.0, nd).why.contains ("not driven"), "limiter L14e: a not_driven position at the request has no verdict: not offered");
+        std::vector<CeilingResult> sparse { row (-0.5, -0.5, -0.5, 5.5), row (-2.0, -2.0, -2.0, 4.0) };
+        const auto s6 = settingFor (-1.0, sparse);
+        check (s6.ok && std::abs (s6.pos.labelDb + 2.0) < 1e-9 && s6.why.contains ("at or under it"), "limiter L14f: no position within 0.3 dB of -1: the nearest measured label at or under it (-2.0), said");
+        check (! settingFor (-1.0, {}).ok && ! settingFor (-9.0, sparse).ok, "limiter L14g: no rows, or nothing at or under the request: not offered");
+        std::vector<CeilingResult> straddle { row (-0.26, -0.28, -0.28, 5.74), row (-0.32, -0.33, -0.33, 5.68), row (-1.05, -1.07, -1.07, 4.95) };
+        const auto s8 = settingFor (-0.3, straddle);
+        check (s8.ok && std::abs (s8.pos.labelDb + 0.32) < 1e-9, "limiter L14h: labels -0.26 and -0.32 both within 0.3 of a -0.3 request: the one AT OR UNDER the request is written (-0.32)");
+        std::vector<CeilingResult> aboveOnly { row (-0.26, -0.28, -0.28, 5.74), row (-1.05, -1.07, -1.07, 4.95) };
+        const auto s9 = settingFor (-0.3, aboveOnly);
+        check (s9.ok && std::abs (s9.pos.labelDb + 0.26) < 1e-9 && s9.why.contains ("above the request"), "limiter L14i: only -0.26 within 0.3 of -0.3 (bx_limiter True Peak): written, said to sit 0.04 above the request, the re-measured true peak decides");
+        // L15: the switch and the section 6 block
+        std::vector<CeilingResult> on { row (0.0, 0.0, 0.14, 6.0), row (-0.3, -0.3, -0.16, 5.7), row (-1.0, -1.0, -0.86, 5.0), row (-3.0, -3.0, -2.86, 3.0), row (-6.0, -6.0, -5.86, 0.0) };
+        const auto red = onReducesOvershootDb (mlx, on);
+        check (red && std::abs (*red - 0.44) < 1e-9 && ! onReducesOvershootDb (mlx, {}), "limiter L15a: oversampling ON reduces the worst true overshoot by 0.44 dB; no ON rows -> unknown");
+        std::vector<AcceptanceRow> acc; { AcceptanceRow a; a.requestDbtp = -1.0; a.setting = settingFor (-1.0, on, true); a.ran = true; a.measuredTruePeakDb = -0.95; a.pass = acceptancePasses (-1.0, -0.95); acc.push_back (a); }
+        const auto blk = ceilingBlock ("Ceiling", "name", mlx, on, "True Peak", "On", acc);
+        check (blk.getProperty ("oversampling", {}).getProperty ("written_on_for_true_peak", false) && std::abs ((double) blk.getProperty ("oversampling", {}).getProperty ("on_reduces_overshoot_db", 0.0) - 0.44) < 1e-9 && blk.getProperty ("positions", {}).size() == 5
+               && blk.getProperty ("positions", {})[0].getProperty ("verdict", "") == "holds_sample_peak_only" && ! (bool) blk.getProperty ("holds_true_peak", true) && blk.getProperty ("acceptance", {}).size() == 1 && (bool) blk.getProperty ("acceptance", {})[0].getProperty ("pass", false),
+               "limiter L15b: the block carries the ON state's positions when ON reduces the overshoot, its verdicts, the switch and the acceptance");
+        std::vector<CeilingResult> withNd = mlx; withNd.push_back (row (-10.0, -10.0, -10.0, -5.0));
+        const auto blk2 = ceilingBlock ("Ceiling", "name", withNd, {}, {}, {}, {});
+        check (blk2.getProperty ("notes", {}).size() == 1 && blk2.getProperty ("notes", {})[0].toString().contains ("not_driven") && (int) blk2.getProperty ("not_driven_positions", 0) == 1 && blk2.getProperty ("oversampling", {}).isVoid(),
+               "limiter L15c: a not_driven position gets a note with its reason; no switch -> oversampling null");
+        check (acceptancePasses (-1.0, -0.9) && ! acceptancePasses (-1.0, -0.85) && acceptancePasses (-0.3, -0.25), "limiter L16: acceptance = true peak <= request + 0.1");
+    }
+    // THE DRAFT RULES (EjmapDrafts.h, 7 Oct): drafts/ only, never profiles/, the spec tag, the status; a bad path or content is refused, not written
+    {
+        using namespace ejmap::drafts;
+        const auto out = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap-drafts-pin-" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
+        check (specTag ("LIMITER_PROFILE_SPEC") == "LIMITER_PROFILE_SPEC v0.1 PROPOSAL", "draft D1: the spec tag");
+        check (pathAllowed (draftFile (out, "AudioUnit_1_1.0", "limiter_ceiling")) && ! pathAllowed (out.getChildFile ("profiles").getChildFile ("x.draft.json")) && ! pathAllowed (out.getChildFile ("profiles").getChildFile ("drafts").getChildFile ("x.draft.json")) && ! pathAllowed (out.getChildFile ("drafts").getChildFile ("x.profile.json")),
+               "draft D2: <out>/drafts/<stem>.<kind>.draft.json is allowed; anything under profiles/, or not a .draft.json, is not");
+        auto* o = new juce::DynamicObject(); o->setProperty ("schema", "x/1"); o->setProperty ("status", "DRAFT"); o->setProperty ("spec", specTag ("X_SPEC")); juce::var good (o);
+        check (contentProblem (good).isEmpty() && contentProblem (juce::var()).isNotEmpty(), "draft D3a: the content rule");
+        { auto* b = new juce::DynamicObject(); b->setProperty ("schema", "x/1"); b->setProperty ("status", "DRAFT"); b->setProperty ("spec", "X_SPEC v0.1"); check (contentProblem (juce::var (b)).contains ("PROPOSAL"), "draft D3b: a spec tag without PROPOSAL is refused"); }
+        const auto f = draftFile (out, "AudioUnit_1_1.0", "limiter_ceiling");
+        check (writeDraft (f, good).isEmpty() && f.existsAsFile() && juce::JSON::parse (f.loadFileAsString()).getProperty ("spec", "") == specTag ("X_SPEC"), "draft D4: a good draft is written whole");
+        check (writeDraft (out.getChildFile ("profiles").getChildFile ("x.draft.json"), good).isNotEmpty() && ! out.getChildFile ("profiles").getChildFile ("x.draft.json").existsAsFile(), "draft D5: a profiles/ path is refused and nothing is written");
+        check (stemOfIdentity ("AudioUnit|417f6e6e|1.2.1") == "AudioUnit_417f6e6e_1.2.1" && uidOfIdentity ("AudioUnit|417f6e6e|1.2.1") == "417f6e6e", "draft D6: identity -> stem");
+        out.deleteRecursively();
+    }
+}
+
+/** THE TRUE PEAK (probe_truepeak.h, 7 Oct; LIMITER_PROFILE_SPEC section 3 "BS.1770, 4x oversampled"): sines whose sample peak sits
+    between samples; the 4x interpolator reads the amplitude to within the 4x bound itself, where the cubic under-reads. */
+void testTruePeak()
+{
+    using namespace ejprobe::truepeak;
+    const double sr = 48000.0;
+    auto sine = [&] (double hz, double phase0, double amp, int n) { std::vector<double> v ((size_t) n); for (int i = 0; i < n; ++i) v[(size_t) i] = amp * std::sin (phase0 + 2.0 * kPi * hz * i / sr); return v; };
+    auto samplePeak = [] (const std::vector<double>& v) { double m = 0.0; for (double x : v) m = std::max (m, std::abs (x)); return m; };
+    // every phase of the interpolator sums to unity: a DC line comes out at its own level
+    { const auto& ph = phases(); bool unity = true; for (const auto& h : ph.h) { double sum = 0.0; for (double c : h) sum += c; if (std::abs (sum - 1.0) > 1e-9) unity = false; } check (unity, "truepeak T1: every polyphase branch has unity DC gain"); }
+    const size_t warm = 200;   // the probe pushes the discard span before reading: the buffer form skips the first 200 samples the same way
+    // 997 Hz (48 samples per cycle): the sample peak is already within 0.01 dB of the amplitude, and so is the interpolated one
+    { const auto v = sine (997.0, 0.3, 0.5, 48000); const double tp = truePeakOf (v, warm); check (std::abs (toDb (tp) - toDb (0.5)) < 0.01 && tp >= samplePeak (v), "truepeak T2: 997 Hz sine at -6.02 dBFS reads " + juce::String (toDb (tp), 3) + " dB (within 0.01)"); }
+    // 12 kHz (fs/4) with the samples at 45 degrees from the crest: every sample reads 0.707 of the amplitude (-3.01 dB) and the
+    // interpolator must find the crest within the 4x bound (cos (pi/16) = -0.17 dB)
+    { const double f = 12000.0, amp = 0.8; const auto v = sine (f, kPi / 4.0, amp, 48000);
+      const double sp = samplePeak (v), tp = truePeakOf (v, warm), bound = 20.0 * std::log10 (std::cos (kPi * f / (4.0 * sr)));
+      check (toDb (amp) - toDb (sp) > 2.9, "truepeak T3a: at fs/4 with the samples 45 degrees off the crest the sample peak sits " + juce::String (toDb (amp) - toDb (sp), 2) + " dB under the amplitude (the case the interpolator exists for)");
+      check (tp >= sp && toDb (tp) >= toDb (amp) + bound - 0.02 && toDb (tp) <= toDb (amp) + 0.02, "truepeak T3b: the 4x interpolated peak reads " + juce::String (toDb (tp), 3) + " dB for an amplitude of " + juce::String (toDb (amp), 3) + " (4x bound " + juce::String (bound, 3) + ")"); }
+    // 19 kHz: within the 4x bound (-0.43 dB), never under the sample peak, never over the amplitude (the filter is flat to 21 kHz)
+    { const double f = 19000.0, amp = 0.9; const auto v = sine (f, 0.9, amp, 48000); const double sp = samplePeak (v), tp = truePeakOf (v, warm), bound = 20.0 * std::log10 (std::cos (kPi * f / (4.0 * sr)));
+      check (tp >= sp && toDb (tp) >= toDb (amp) + bound - 0.05 && toDb (tp) <= toDb (amp) + 0.02, "truepeak T4: 19 kHz reads " + juce::String (toDb (tp), 3) + " dB for " + juce::String (toDb (amp), 3) + " (4x bound " + juce::String (bound, 2) + ")"); }
+    // a cold start is a step: without the warm-up the interpolator rings +0.1 dB or more on a running sine; warm, it does not
+    { const auto v = sine (997.0, kPi / 2.0, 0.5, 48000); const double cold = truePeakOf (v, 0), warmed = truePeakOf (v, warm); check (toDb (cold) > toDb (0.5) + 0.1 && toDb (warmed) < toDb (0.5) + 0.01, "truepeak T4b: a cold tracker rings on the edge (" + juce::String (toDb (cold), 3) + " dB); warmed through the discard it reads " + juce::String (toDb (warmed), 3)); }
+    // a digitally clipped (flat-topped) sine: the TRUE peak sits ABOVE the flat top - the reconstruction rings at the corners (why
+    // true-peak meters read over 0 dBFS on a clipped master, and why the spec's `overshoots` verdict exists); by 0.1 to 0.5 dB here
+    { auto v = sine (997.0, 0.0, 1.0, 48000); for (auto& x : v) x = std::max (-0.5, std::min (0.5, x)); const double sp = samplePeak (v), tp = truePeakOf (v, warm); check (toDb (tp) - toDb (sp) > 0.1 && toDb (tp) - toDb (sp) < 0.5, "truepeak T5: a flat-topped clip at -6.02 reads " + juce::String (toDb (tp), 3) + " dB true peak (" + juce::String (toDb (tp) - toDb (sp), 2) + " over its sample peak)"); }
+    // the tracker's running form equals the whole-buffer form
+    { const auto v = sine (5000.0, 1.1, 0.7, 24000); Tracker t; for (size_t i = 0; i < v.size(); ++i) { if (i == warm) t.resetPeaks(); t.push (v[i]); } check (std::abs (t.truePeak - truePeakOf (v, warm)) < 1e-12, "truepeak T6: the running tracker and the buffer form agree"); }
 }
 
 /** EQ RESPONSE (EjmapEq.h, roadmap 2.2 PROTOTYPE, 5 Oct B4): a synthetic peaking band and a shelf on the 61-tone grid; the band grouping on real names. */
@@ -8324,6 +8431,7 @@ int main (int, char**)
     testCategorise();
     testTimingSegments();
     testLimiter();
+    testTruePeak();
     testEq();
     testCertReview();
     testSaturation();
