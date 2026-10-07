@@ -7448,6 +7448,15 @@ void testUadAndWindows()
                "licence LC12: 'UAD AMS RMX16' is ambiguous alone; with 'UAD AMS RMX16 Expanded' installed the Expanded line is the sibling's and RMX16 resolves to its own (listed for review); Expanded matches by descriptor");
     }
 }
+/** MULTIBAND (EjmapMultiband.h; item D, 7 Oct): the global family's reference at the control's zero, the offset ladder's end. */
+void testMultibandRules()
+{
+    using namespace ejmap::multiband;
+    const auto gr = grAgainstZero ({ { -30.0, 0.0 }, { -18.0, 0.0 }, { -6.0, 0.0 } }, { { -30.0, 11.9 }, { -18.0, 5.9 }, { -6.0, -5.6 } });
+    check (gr.size() == 3 && std::abs (gr.at (-30.0) + 11.9) < 1e-9 && std::abs (gr.at (-6.0) - 5.6) < 1e-9 && grAgainstZero ({ { -30.0, 0.0 } }, { { -30.0, 2.0 }, { -6.0, 1.0 } }).size() == 1,
+           "multiband MB-G1: OTT at Depth 100 against Depth 0 reads GR -11.9 at -30 (gain: upward) and +5.6 at -6; a level with no zero reading is not carried");
+    check (! offsetRepeatsLast ("", "-4.0 / -4.0") && ! offsetRepeatsLast ("-4.0 / -4.0", "-10.0 / -10.0") && offsetRepeatsLast ("-20.0 / -20.0", "-20.0 / -20.0"), "multiband MB-O1: an offset whose displays repeat the last offset's is the clamp (354E at -20): the ladder stops");
+}
 void testTimingSegments()
 {
     using namespace ejmap::timing;
@@ -8192,6 +8201,7 @@ int main (int, char**)
     testSampleRate();
     testLicence();
     testUadAndWindows();
+    testMultibandRules();
     testTimingSegments();
     testLimiter();
     testEq();

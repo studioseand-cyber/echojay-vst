@@ -4849,18 +4849,26 @@ inline int runMultiband (const SweepOptions& opt)
         roleevidence::Figure globalA, globalB;
         if (globalIdx >= 0)
         {
-            // (a) the global control walked at six norms
+            // (a) the global control walked at six norms. THE OPEN REFERENCE FOR A GLOBAL-DEPTH UNIT IS THE CONTROL'S ZERO (proposal finding 2, built
+            // 7 Oct): OTT's and Melda's instantiate state is the full effect, so "GR against instantiate" read +11.9 at Depth 0; the point at norm 0
+            // is the reference and every other point's GR is against it. The sign is carried per level: positive = reduction, negative = GAIN
+            // (upward compression at quiet levels: OTT, Melda's positive side), said on the record.
+            std::map<double, double> zeroGain;
             for (int k = 0; k <= 5; ++k)
             {
                 const double norm = k / 5.0; OffsetPoint pt; pt.offsetDb = norm;
-                for (double L : levels) if (const auto g = response ("global" + juce::String (k) + ".L" + juce::String ((int) -L), L, { setOf (globalIdx, norm) })) if (openGain.count (L)) pt.grByLevel[L] = openGain[L] - *g;
+                std::map<double, double> gainHere;
+                for (double L : levels) if (const auto g = response ("global" + juce::String (k) + ".L" + juce::String ((int) -L), L, { setOf (globalIdx, norm) })) { if (k == 0) zeroGain[L] = *g; gainHere[L] = *g; }
+                pt.grByLevel = grAgainstZero (zeroGain, gainHere);
                 juce::String text; { const auto r = raw.getChildFile (stem + ".multiband.global" + juce::String (k) + ".L12.1.txt").loadFileAsString(); for (const auto& l : juce::StringArray::fromLines (r)) { const auto f = juce::StringArray::fromTokens (l, "\t", ""); if (f.size() > 2 && f[0] == "set" && f[1].getIntValue() == globalIdx) for (int i = 2; i + 1 < f.size(); ++i) if (f[i] == "text") text = f[i + 1]; } }
                 pt.displays = text; if (! pt.grByLevel.empty()) ++measured;
-                { roleevidence::Figure f; f.ok = true; if (pt.grByLevel.count (-12.0)) f.grDb = pt.grByLevel.at (-12.0); if (k == 0) globalA = f; if (k == 5) globalB = f; }
+                { roleevidence::Figure f; f.ok = true; double best = 0.0; for (const auto& [L, g] : pt.grByLevel) if (std::abs (g) >= std::abs (best)) best = g; if (! pt.grByLevel.empty()) f.grDb = best; if (k == 0) globalA = f; if (k == 5) globalB = f; }   // the level where the whole unit moves most (OTT's up and down cancel at -12)
                 juce::String l2 = "  " + globalName + " = '" + text + "' (norm " + juce::String (norm, 2) + "): whole-unit GR"; for (const auto& [L, g] : pt.grByLevel) l2 << "  " << juce::String (L, 0) << " dBFS " << juce::String (g, 2); say (l2);
                 auto* po = new juce::DynamicObject(); po->setProperty ("norm", norm); po->setProperty ("display", text); auto* gr = new juce::DynamicObject(); for (const auto& [L, g] : pt.grByLevel) gr->setProperty (juce::String (L, 0), std::round (g * 100.0) / 100.0); po->setProperty ("gr_db_by_level", juce::var (gr)); pts.add (juce::var (po));
             }
             auto* m = new juce::DynamicObject(); m->setProperty ("topology", "multiband_global"); m->setProperty ("control", globalName); m->setProperty ("index", globalIdx); m->setProperty ("points", pts); o->setProperty ("amount", juce::var (m));
+            m->setProperty ("reference", "the control at norm 0 (its zero), not the instantiate state"); m->setProperty ("gr_sign", "positive = gain reduction, negative = gain (upward compression) at that level");
+            { auto* zg = new juce::DynamicObject(); for (const auto& [L, g] : zeroGain) zg->setProperty (juce::String (L, 0), std::round (g * 100.0) / 100.0); m->setProperty ("zero_gain_db_by_level", juce::var (zg)); }
             roles.push_back (roleevidence::nominee (globalIdx, globalName, "global", roleevidence::signatureHolds ("global", globalA, globalB)));
         }
         else
@@ -4870,6 +4878,7 @@ inline int runMultiband (const SweepOptions& opt)
             for (const auto& t : thresholds) { ranges.push_back (dbRangeOf (t.display0, t.display1)); if (! ranges.back().ok) { allOk = false; say ("  " + t.name + ": its ends '" + t.display0 + "' / '" + t.display1 + "' are not both numbers: no dB offset can be written to it"); } }
             if (allOk)
             {
+                juce::String lastDisplays; bool clamped = false; double clampedFrom = 0.0;   // THE CONTROL'S END (proposal finding 1, built 7 Oct): 354E's thresholds end at -20, two offsets collapse into one - stop at the last distinct one
                 for (double off : { 0.0, -6.0, -12.0, -18.0, -24.0 })
                 {
                     juce::StringArray sets; juce::StringArray displays;
@@ -4878,10 +4887,14 @@ inline int runMultiband (const SweepOptions& opt)
                     for (double L : levels) if (const auto g = response ("off" + juce::String ((int) -off) + ".L" + juce::String ((int) -L), L, sets)) if (openGain.count (L)) pt.grByLevel[L] = openGain[L] - *g;
                     { const auto r = raw.getChildFile (stem + ".multiband.off" + juce::String ((int) -off) + ".L12.1.txt").loadFileAsString(); for (const auto& l : juce::StringArray::fromLines (r)) { const auto f = juce::StringArray::fromTokens (l, "\t", ""); if (f.size() > 2 && f[0] == "set") for (int i = 2; i + 1 < f.size(); ++i) if (f[i] == "text") displays.add (f[i + 1]); } }
                     pt.displays = displays.joinIntoString (" / "); if (! pt.grByLevel.empty()) ++measured;
+                    if (offsetRepeatsLast (lastDisplays, pt.displays)) { say ("  offset " + juce::String (off, 0) + " dB: every threshold already at its end (" + pt.displays + ") - the same point as the last; the ladder stops here"); clamped = true; clampedFrom = off; break; }
+                    lastDisplays = pt.displays;
                     juce::String l2 = "  offset " + juce::String (off, 0) + " dB on every band (" + pt.displays + "): whole-unit GR"; for (const auto& [L, g] : pt.grByLevel) l2 << "  " << juce::String (L, 0) << " dBFS " << juce::String (g, 2); say (l2);
                     auto* po = new juce::DynamicObject(); po->setProperty ("offset_db", off); po->setProperty ("displays", pt.displays); auto* gr = new juce::DynamicObject(); for (const auto& [L, g] : pt.grByLevel) gr->setProperty (juce::String (L, 0), std::round (g * 100.0) / 100.0); po->setProperty ("gr_db_by_level", juce::var (gr)); pts.add (juce::var (po));
                 }
                 auto* m = new juce::DynamicObject(); m->setProperty ("topology", "multiband_offset"); juce::StringArray names; for (const auto& t : thresholds) names.add (t.name); m->setProperty ("controls", names.joinIntoString (", ")); m->setProperty ("points", pts); o->setProperty ("amount", juce::var (m));
+                if (clamped) m->setProperty ("clamped_from_offset_db", clampedFrom);
+                m->setProperty ("reference", "the unit as instantiated (open)"); m->setProperty ("gr_sign", "positive = gain reduction, negative = gain at that level");
             }
         }
         auto* og = new juce::DynamicObject(); for (const auto& [L, g] : openGain) og->setProperty (juce::String (L, 0), std::round (g * 100.0) / 100.0); o->setProperty ("open_gain_db_by_level", juce::var (og));

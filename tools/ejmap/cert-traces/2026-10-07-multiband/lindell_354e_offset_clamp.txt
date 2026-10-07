@@ -1,0 +1,34 @@
+MB: text pass: 31 of 38 controls sampled in 7.5 s (timeout 120 s, scaled to the count)
+MB: Lindell 354E 1.0.4: 3 band threshold(s) [Low Threshold @ '-4.0dB', Mid Threshold @ '-4.0dB', High Threshold @ '-4.0dB']; crossovers [Low XOverParameter, High XOverParameter] -> 3 band(s); global amount none
+  pairing [6] Low Threshold: cuts nothing by 3 dB between its ends on the multitone (deepest -1.07)
+  pairing [15] Mid Threshold: cuts 422-3170 Hz (deepest -3.6 dB, centre 1157.52) -> band 2
+  pairing [24] High Threshold: cuts 11914-20000 Hz (deepest -4.6 dB, centre 15435.9) -> band 3
+  band 2 (200-5000 Hz, tone 1000) Mid Threshold: open end at norm 1.000, max GR 15.62 dB
+      '-20.0dB':  -12 dBFS GR 12.33  -18 dBFS GR 8.66  -24 dBFS GR 4.82  -30 dBFS GR 1.21  -6 dBFS GR 15.62
+      '-14.0dB':  -12 dBFS GR 9.18  -18 dBFS GR 5.41  -24 dBFS GR 3.57  -30 dBFS GR 8.25  -6 dBFS GR 12.35
+      '-8.0dB':  -12 dBFS GR 5.69  -18 dBFS GR 2.40  -24 dBFS GR 2.09  -30 dBFS GR 5.48  -6 dBFS GR 8.78
+      '-2.0dB':  -12 dBFS GR 2.65  -18 dBFS GR 0.86  -24 dBFS GR 1.07  -30 dBFS GR 3.00  -6 dBFS GR 5.19
+      '4.0dB':  -12 dBFS GR 0.61  -18 dBFS GR 0.29  -24 dBFS GR 0.34  -30 dBFS GR 1.22  -6 dBFS GR 2.06
+      '10.0dB':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  band 3 (5000-20000 Hz, tone 10000) High Threshold: open end at norm 1.000, max GR 10.36 dB
+      '-20.0dB':  -12 dBFS GR 9.77  -18 dBFS GR 7.99  -24 dBFS GR 4.89  -30 dBFS GR 0.66  -6 dBFS GR 10.36
+      '-14.0dB':  -12 dBFS GR 9.10  -18 dBFS GR 7.20  -24 dBFS GR 4.98  -30 dBFS GR 6.67  -6 dBFS GR 9.79
+      '-8.0dB':  -12 dBFS GR 7.71  -18 dBFS GR 5.50  -24 dBFS GR 3.28  -30 dBFS GR 5.59  -6 dBFS GR 8.55
+      '-2.0dB':  -12 dBFS GR 5.39  -18 dBFS GR 3.11  -24 dBFS GR 1.87  -30 dBFS GR 3.96  -6 dBFS GR 6.39
+      '4.0dB':  -12 dBFS GR 2.48  -18 dBFS GR 0.88  -24 dBFS GR 0.78  -30 dBFS GR 1.94  -6 dBFS GR 3.35
+      '10.0dB':  -12 dBFS GR 0.00  -18 dBFS GR 0.00  -24 dBFS GR 0.00  -30 dBFS GR 0.00  -6 dBFS GR 0.00
+  whole unit, as instantiated (open): gain  -30 dBFS 2.30  -24 dBFS 2.30  -18 dBFS 2.30  -12 dBFS 1.97  -6 dBFS -0.14
+  offset 0 dB on every band (-4.0dB / -4.0dB / -4.0dB): whole-unit GR  -30 dBFS 0.00  -24 dBFS 0.00  -18 dBFS 0.00  -12 dBFS 0.00  -6 dBFS 0.00
+  offset -6 dB on every band (-10.0dB / -10.0dB / -10.0dB): whole-unit GR  -30 dBFS 0.00  -24 dBFS 0.00  -18 dBFS 0.33  -12 dBFS 2.11  -6 dBFS 2.02
+  offset -12 dB on every band (-16.0dB / -16.0dB / -16.0dB): whole-unit GR  -30 dBFS 0.00  -24 dBFS 0.33  -18 dBFS 2.45  -12 dBFS 4.13  -6 dBFS 5.08
+  offset -18 dB on every band (-20.0dB / -20.0dB / -20.0dB): whole-unit GR  -30 dBFS 0.06  -24 dBFS 1.71  -18 dBFS 3.75  -12 dBFS 6.02  -6 dBFS 7.68
+  offset -24 dB: every threshold already at its end (-20.0dB / -20.0dB / -20.0dB) - the same point as the last; the ladder stops here
+  ROLES BY MEASUREMENT: 3 verdict(s); unnamed controls not probed in this mode (the pairing response per nominee is the measurement step)
+    role band_threshold DROPPED    [6] Low Threshold - cuts nothing by 3 dB between its ends on the multitone (deepest -1.07)
+    role band_threshold CONFIRMED  [15] Mid Threshold - GR moves 12.33 dB between the ends
+    role band_threshold CONFIRMED  [24] High Threshold - GR moves 9.77 dB between the ends
+MB: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/mb/multiband/AudioUnit_6f457234_1.0.4.multiband.json (35 processes)
+
+real	0m26.473s
+user	0m14.169s
+sys	0m0.869s

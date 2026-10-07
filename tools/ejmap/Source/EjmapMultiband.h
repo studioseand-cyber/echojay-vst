@@ -63,4 +63,16 @@ inline std::optional<double> totalGainDb (const eq::Position& p)
 
 struct OffsetPoint { double offsetDb = 0.0; juce::String displays; std::map<double, double> grByLevel; };   // level dBFS -> whole-unit GR
 
+// THE GLOBAL FAMILY'S REFERENCE (proposal finding 2, 7 Oct): GR at a position = gain at the control's ZERO minus gain there, per level;
+// a negative GR is gain (upward compression). The instantiate state is not the reference (OTT instantiates at the full effect).
+inline std::map<double, double> grAgainstZero (const std::map<double, double>& zeroGainByLevel, const std::map<double, double>& gainByLevel)
+{
+    std::map<double, double> out;
+    for (const auto& [L, g] : gainByLevel) if (zeroGainByLevel.count (L)) out[L] = std::round ((zeroGainByLevel.at (L) - g) * 100.0) / 100.0;
+    return out;
+}
+// THE OFFSET LADDER'S END (proposal finding 1, 7 Oct): an offset whose written displays equal the previous offset's has every threshold
+// at its end (354E at -20 dB) - the same point again: the ladder stops before it
+inline bool offsetRepeatsLast (const juce::String& lastDisplays, const juce::String& displays) { return lastDisplays.isNotEmpty() && displays == lastDisplays; }
+
 } // namespace ejmap::multiband

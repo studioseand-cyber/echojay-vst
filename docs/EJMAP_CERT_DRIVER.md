@@ -2817,3 +2817,14 @@ and the 2C units are not installed here, so the fix is **proven only on Sean's M
 which stage filled the list (all three zero = the cause is elsewhere: the next thing to read is the AU's own property
 listener, since a ParameterList change notification updates JUCE's parameter INFO, not its list). `--redo no_pool` (pin P20)
 re-runs a row flagged `no_pool` by this build, or an older failed row whose log says "no control to sample".
+
+## 73. Multibands: the proposal's two findings built; `--redo multiband` (NEXT BUILD item D, 7 Oct)
+
+The measurement itself (per-band GR on the band's own tone, pairing by measurement, the global amount or the common offset) was the
+5 Oct prototype; `--redo multiband` (the category name) re-runs Sean's 17. Built now, from the proposal's findings: (1) **the
+global family's reference is the control's zero** (`multiband::grAgainstZero`, pin MB-G1): GR at each position = gain at norm 0
+minus gain there, per level, the sign carried (positive = reduction, negative = gain) — OTT now reads −11.87 at −30 dBFS (upward)
+and +5.57 at −6 at Depth 100, 0.00 at Depth 0, and its `global` role is judged at the level where the unit moves most (its up
+and down cancel at −12); (2) **the offset ladder stops at the control's end** (`offsetRepeatsLast`, pin MB-O1): the 354E's
+thresholds end at −20 dB, so −24 writes the same point as −18 and the ladder stops there (`clamped_from_offset_db`). Rehearsed on
+OTT (12 s) and Lindell 354E (26 s). Melda needs its licence (not loaded here).

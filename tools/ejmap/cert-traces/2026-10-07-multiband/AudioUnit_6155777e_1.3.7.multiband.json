@@ -1,0 +1,114 @@
+{
+  "schema": "ej_multiband_prototype/0",
+  "status": "PROTOTYPE - the multiband proposal with real numbers, not exported, not published",
+  "product": "OTT",
+  "version": "1.3.7",
+  "identity": "AudioUnit|6155777e|1.3.7",
+  "bands": [],
+  "crossover_controls": "",
+  "band_ladders": [],
+  "amount": {
+    "topology": "multiband_global",
+    "control": "Depth",
+    "index": 0,
+    "points": [
+      {
+        "norm": 0.0,
+        "display": "0",
+        "gr_db_by_level": {
+          "-30": 0.0,
+          "-24": 0.0,
+          "-18": 0.0,
+          "-12": 0.0,
+          "-6": 0.0
+        }
+      },
+      {
+        "norm": 0.2,
+        "display": "20",
+        "gr_db_by_level": {
+          "-30": -3.02,
+          "-24": -2.84,
+          "-18": -2.22,
+          "-12": -1.05,
+          "-6": 0.14
+        }
+      },
+      {
+        "norm": 0.4,
+        "display": "40",
+        "gr_db_by_level": {
+          "-30": -5.62,
+          "-24": -5.25,
+          "-18": -3.8,
+          "-12": -1.45,
+          "-6": 0.92
+        }
+      },
+      {
+        "norm": 0.6,
+        "display": "60",
+        "gr_db_by_level": {
+          "-30": -7.9,
+          "-24": -7.31,
+          "-18": -4.88,
+          "-12": -1.35,
+          "-6": 2.2
+        }
+      },
+      {
+        "norm": 0.8,
+        "display": "80",
+        "gr_db_by_level": {
+          "-30": -9.94,
+          "-24": -9.08,
+          "-18": -5.55,
+          "-12": -0.85,
+          "-6": 3.81
+        }
+      },
+      {
+        "norm": 1.0,
+        "display": "100",
+        "gr_db_by_level": {
+          "-30": -11.869999999999999,
+          "-24": -10.6,
+          "-18": -5.91,
+          "-12": -0.06,
+          "-6": 5.57
+        }
+      }
+    ],
+    "reference": "the control at norm 0 (its zero), not the instantiate state",
+    "gr_sign": "positive = gain reduction, negative = gain (upward compression) at that level",
+    "zero_gain_db_by_level": {
+      "-30": -0.01,
+      "-24": -0.01,
+      "-18": -0.01,
+      "-12": -0.01,
+      "-6": -0.01
+    }
+  },
+  "open_gain_db_by_level": {
+    "-30": 11.859999999999999,
+    "-24": 10.59,
+    "-18": 5.91,
+    "-12": 0.06,
+    "-6": -5.57
+  },
+  "roles_by_measurement": [
+    {
+      "index": 0,
+      "control": "Depth",
+      "role": "global",
+      "verdict": "confirmed",
+      "reason": "the whole-unit GR moves 11.87 dB"
+    }
+  ],
+  "unnamed_probed_without_signature": 0,
+  "unnamed_not_probed": "unnamed controls not probed; every nominated threshold got a pairing response",
+  "role_rule": "names propose, measurement decides (5 Oct): a nominee keeps its role only when its two ends show the role's signature; an unnamed control that shows it is reported, not swept as the role",
+  "processes": 38,
+  "measuredAt": "20261007T104209",
+  "method": "bands from the crossover controls' instantiate displays (20 .. x1 .. xn .. 20000 Hz, geometric centres); per band: probe --sweep at the centre, that band's threshold at 6 norms, levels -30..-6, GR = open-end gain minus the position's gain; whole unit: probe --response shape=vocal (121 tones, pink below 1 kHz, -12 dB/oct below 100 Hz, -6 dB/oct more above 1 kHz) at five levels, gain = total output power over total input power, GR against the instantiate state; amount = the global control at 6 norms where one exists, else a common dB offset (0 .. -24) written to every band threshold from each control's own dB ends (linear in dB, said)"
+}

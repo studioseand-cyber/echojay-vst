@@ -1,0 +1,15 @@
+MB: text pass: 13 of 19 controls sampled in 3.0 s (timeout 120 s, scaled to the count)
+MB: OTT 1.3.7: 3 band threshold(s) [Thresh L @ '100', Thresh M @ '100', Thresh H @ '100']; crossovers [] -> 0 band(s); global amount [0] Depth
+  pairing [5] Thresh L: cuts 20-84 Hz (deepest -39.8 dB, centre 41.1723) -> no band holds that centre
+  pairing [6] Thresh M: cuts 120-2000 Hz (deepest -35.3 dB, centre 501.757) -> no band holds that centre
+  pairing [7] Thresh H: cuts 2668-20000 Hz (deepest -40.9 dB, centre 7303.54) -> no band holds that centre
+  whole unit, as instantiated (open): gain  -30 dBFS 11.86  -24 dBFS 10.59  -18 dBFS 5.91  -12 dBFS 0.06  -6 dBFS -5.57
+  Depth = '0' (norm 0.00): whole-unit GR  -30 dBFS 0.00  -24 dBFS 0.00  -18 dBFS 0.00  -12 dBFS 0.00  -6 dBFS 0.00
+  Depth = '20' (norm 0.20): whole-unit GR  -30 dBFS -3.02  -24 dBFS -2.84  -18 dBFS -2.22  -12 dBFS -1.05  -6 dBFS 0.14
+  Depth = '40' (norm 0.40): whole-unit GR  -30 dBFS -5.62  -24 dBFS -5.25  -18 dBFS -3.80  -12 dBFS -1.45  -6 dBFS 0.92
+  Depth = '60' (norm 0.60): whole-unit GR  -30 dBFS -7.90  -24 dBFS -7.31  -18 dBFS -4.88  -12 dBFS -1.35  -6 dBFS 2.20
+  Depth = '80' (norm 0.80): whole-unit GR  -30 dBFS -9.94  -24 dBFS -9.08  -18 dBFS -5.55  -12 dBFS -0.85  -6 dBFS 3.81
+  Depth = '100' (norm 1.00): whole-unit GR  -30 dBFS -11.87  -24 dBFS -10.60  -18 dBFS -5.91  -12 dBFS -0.06  -6 dBFS 5.57
+  ROLES BY MEASUREMENT: 1 verdict(s); unnamed controls not probed in this mode (the pairing response per nominee is the measurement step)
+    role global CONFIRMED  [0] Depth - the whole-unit GR moves 11.87 dB
+MB: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/mb/multiband/AudioUnit_6155777e_1.3.7.multiband.json (38 processes)
