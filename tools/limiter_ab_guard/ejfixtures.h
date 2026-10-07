@@ -22,7 +22,7 @@ struct Layout
     double backgroundHz = 0, backgroundDb = -600;   // probe cases: the steady tone the GR envelope is read from
     std::vector<Segment> segments;
     std::vector<Event> events;
-    std::vector<std::pair<double, double>> markers;   // broadband alignment markers (t0, t1): white noise peaking at -10 dBFS
+    std::vector<std::pair<double, double>> markers;   // broadband alignment markers (t0, t1): Gaussian white noise, -28 dBFS RMS
     bool isTone()  const { return toneHz > 0; }
     bool isProbe() const { return ! events.empty(); }
 };
@@ -33,8 +33,9 @@ inline const std::vector<std::string>& syntheticNames()
     return n;
 }
 
-// Every synthetic case opens and closes with 0.4 s of white noise peaking at -10 dBFS (-1.8 dBFS after the +8.2 dB
-// gain, so no limiter touches it). A tone is periodic, so correlating a tone render against its source is ambiguous to within
+// Every synthetic case opens and closes with 0.4 s of Gaussian white noise at -28 dBFS RMS (sample peaks near
+// -16 dBFS, true peaks a little higher; -8 dBFS or so after the +8.2 dB gain, so no limiter touches it. Uniform
+// noise was tried first: its inter-sample peaks run 6 dB above its sample peaks and a true-peak limiter DID touch it). A tone is periodic, so correlating a tone render against its source is ambiguous to within
 // a period; the alignment is taken on these broadband markers instead, where there is exactly one answer.
 constexpr double kLead = 0.6;
 
@@ -139,11 +140,11 @@ inline ejwav::Audio generate (const Layout& L, double sr)
     for (const auto& m : L.markers)   // LAST, so nothing above overwrites them
     {
         const size_t n0 = (size_t) std::llround (m.first * sr), n1 = std::min (N, (size_t) std::llround (m.second * sr)), edge = (size_t) std::llround (0.005 * sr);
-        uint32_t seed = 0x5EED1234u + (uint32_t) n0; const double A = ejdsp::lin (-10.0);   // PEAK -10 dBFS (uniform noise: RMS -14.8)
+        uint32_t seed = 0x5EED1234u + (uint32_t) n0; const double A = ejdsp::lin (-28.0) * std::sqrt (3.0);   // sum of 4 uniforms (sigma = A/sqrt(3)) -> Gaussian, RMS -28 dBFS
         for (size_t n = n0; n < n1; ++n)
         {
             double w = 1.0; if (n - n0 < edge) w = 0.5 - 0.5 * std::cos (ejdsp::kPi * (double) (n - n0) / (double) edge); else if (n1 - n <= edge) w = 0.5 - 0.5 * std::cos (ejdsp::kPi * (double) (n1 - n) / (double) edge);
-            for (int c = 0; c < 2; ++c) { seed = seed * 1664525u + 1013904223u; a.ch[(size_t) c][n] = A * w * (((double) (seed >> 8) / 16777216.0) * 2.0 - 1.0); }
+            for (int c = 0; c < 2; ++c) { double g = 0; for (int j = 0; j < 4; ++j) { seed = seed * 1664525u + 1013904223u; g += ((double) (seed >> 8) / 16777216.0) * 2.0 - 1.0; } a.ch[(size_t) c][n] = A * w * g * 0.5; }
         }
     }
     return a;
