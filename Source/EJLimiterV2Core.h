@@ -83,6 +83,8 @@ inline Tuning transparent()
     t.slowReleaseMs = 180.0;   // C1: and decays with 160-185 ms (measured on every limb)
     t.slowWindowMs  = 1.0;     // C1: charged from the reduction itself, so an LF tone gets the shallower floor Pro-L 2 shows
     t.fastReleaseMs = 0.3;     // C2: the fast part is instant - after a burst Pro-L 2 is back within 0.6 dB in < 0.33 ms
+    t.lookaheadMs   = 0.3;     // C3: no pre-dip beyond 0.33 ms; a 1-sample impulse gets a ~0.5 ms dip and lands at the ceiling
+    t.smoothStages  = 1;       // C3: a box of that width is all the smoothing Pro-L 2 shows
     return t;
 }
 
