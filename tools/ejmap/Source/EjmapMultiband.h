@@ -21,6 +21,7 @@
 #include <juce_core/juce_core.h>
 #include "EjmapEq.h"
 #include "EjmapDeesser.h"
+#include "EjmapStrip.h"
 #include <vector>
 #include <optional>
 #include <map>
@@ -75,6 +76,10 @@ inline std::map<double, double> grAgainstZero (const std::map<double, double>& z
 // at its end (354E at -20 dB) - the same point again: the ladder stops before it
 inline bool offsetRepeatsLast (const juce::String& lastDisplays, const juce::String& displays) { return lastDisplays.isNotEmpty() && displays == lastDisplays; }
 
+// THE ENABLE STEP'S SCOPE (8 Oct, MDynamicsMB): only a COMPRESSION threshold is enabled - a gate / expander stage's threshold (the strip's section
+// words read it as a gate) is another stage (proposal finding 4); switching it on would add gating to every whole-unit figure after it
+inline bool enableEligible (const juce::String& thresholdName) { return strip::sectionOf (thresholdName) != "gate"; }
+
 // THE MULTIBAND DRAFT (docs/MULTIBAND_PROFILE_PROPOSAL.md; 7 Oct, item 5) FROM THE RECORD: the proposal's names, said to await Sean's decision -
 // topology (multiband_global | multiband_offset), per band its centre tone and in_at_gr ladder on that tone, the amount (the global
 // control's norms or the common offset_db to every band threshold) with the WHOLE-UNIT GR on the vocal-shaped signal per level at each
@@ -110,14 +115,22 @@ inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, co
         auto* a = new juce::DynamicObject(); a->setProperty ("topology", topology);
         if (topology == "multiband_global") a->setProperty ("control", amount.getProperty ("control", "")); else a->setProperty ("controls", amount.getProperty ("controls", ""));
         juce::Array<juce::var> pts; if (const auto* ps = amount.getProperty ("points", {}).getArray()) for (const auto& p : *ps) { auto* q = new juce::DynamicObject(); if (p.hasProperty ("offset_db")) q->setProperty ("offset_db", p.getProperty ("offset_db", {})); else q->setProperty ("norm", p.getProperty ("norm", {})); q->setProperty ("displays", p.hasProperty ("displays") ? p.getProperty ("displays", {}) : p.getProperty ("display", {})); q->setProperty ("whole_unit_gr_db_by_level", p.getProperty ("gr_db_by_level", juce::var())); pts.add (juce::var (q)); }
-        a->setProperty ("points", pts); a->setProperty ("sign", "positive = more GR (less output) than the unit as instantiated");
-        if (topology == "multiband_global") notes.add ("global-depth unit: the GR reference on this prototype is the INSTANTIATE state; the proposal's finding (5 Oct) is that the reference should be the depth control's zero, and that a positive side can make gain at quiet levels (upward compression) - the sign must be read per level");
+        a->setProperty ("points", pts);
+        // the REFERENCE and the SIGN as the record states them (proposal findings 1-2, built 7 Oct: a global-depth unit's reference is the depth
+        // control's ZERO, the sign per level); a 5 Oct record states neither and was referenced to the instantiate state
+        a->setProperty ("reference", amount.hasProperty ("reference") ? amount.getProperty ("reference", {}) : juce::var ("the unit as instantiated (a record before 7 Oct)"));
+        a->setProperty ("sign", amount.hasProperty ("gr_sign") ? amount.getProperty ("gr_sign", {}) : juce::var ("positive = more GR than the reference"));
+        if (amount.hasProperty ("zero_gain_db_by_level")) a->setProperty ("zero_gain_db_by_level", amount.getProperty ("zero_gain_db_by_level", {}));
+        if (topology == "multiband_global" && ! amount.hasProperty ("reference")) notes.add ("global-depth unit on a record before 7 Oct: the GR is against the INSTANTIATE state, not the depth control's zero as the proposal requires - re-run (--redo multiband) for the zero reference and the per-level sign");
         if (topology == "multiband_offset") notes.add ("offset family: the thresholds' ends clamp the offset (354E at -20 dB): two offsets with the same displays are one position - stop at the last distinct offset");
         P->setProperty ("amount", juce::var (a));
     }
     else { P->setProperty ("amount", juce::var()); notes.add ("no amount: neither a global control nor band thresholds were measured"); }
     P->setProperty ("whole_unit_signal", "vocal-shaped multitone (121 tones; pink below 1 kHz, -12 dB/oct below 100 Hz, -6 dB/oct more above 1 kHz) at -30 / -24 / -18 / -12 / -6 dBFS; gain = total output power over total input power");
     P->setProperty ("instantiate_gain_db_by_level", rec.getProperty ("open_gain_db_by_level", juce::var()));
+    // THE ENABLE STEP (8 Oct): the switches written on every process because a band cut nothing without them - the server writes them too
+    P->setProperty ("enable_writes", rec.hasProperty ("enabled_by") ? rec.getProperty ("enabled_by", {}) : juce::var (juce::Array<juce::var>()));
+    if (! rec.hasProperty ("enabled_by")) notes.add ("enable step: not on this record (a run before 8 Oct): a band off at instantiate reads as cutting nothing");
     P->setProperty ("notes", notes);
     return juce::var (P);
 }

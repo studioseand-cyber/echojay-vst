@@ -5629,12 +5629,35 @@ inline int runMultiband (const SweepOptions& opt)
     // hard end cuts by 3 dB or more names the band it owns (its centre picks the band by the edges); a threshold that cuts nothing is
     // dropped here (Melda's gate / processor thresholds, C6's thresholds on tones that are not theirs)
     std::vector<int> pairedBand (thresholds.size(), -1); std::vector<juce::String> pairNote (thresholds.size());
+    // THE ENABLE STEP (Kathy, 7 Oct item 8 - as the EQ got): a band threshold that cuts nothing between its ends may sit in a band that is OFF
+    // at instantiate (Pro-MB, Ozone 12 Dynamics, DynOne3, SSL G3): its own switches are tried, closest name first, at most four; one that makes
+    // it cut is written on EVERY later process of the unit (the ladders, the whole-unit responses, the offsets) and recorded as `enabled_by`
+    std::vector<std::tuple<int, juce::String, bool, std::map<juce::String, float>>> mbSwitches;
+    if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) { if ((int) c.getProperty ("numSteps", 0) != 2 && ! sweep::wordValued (c)) continue; std::map<juce::String, float> texts; if (const auto at = c.getProperty ("displayAt", {}); at.isObject()) for (const auto& kv : at.getDynamicObject()->getProperties()) texts[kv.value.toString()] = (float) kv.name.toString().getDoubleValue(); mbSwitches.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", "").toString(), true, texts }); }
+    juce::StringArray enableSets; juce::Array<juce::var> enabledBy;
+    auto pairOnce = [&] (const juce::String& tag, int idx, const juce::StringArray& sets) -> std::pair<eq::Response, bool>
+    { juce::StringArray a { "--response", "ctl=" + juce::String (idx), "norms=0,1", "tones=121", "lo=20", "hi=20000", "db=-12", "hold=1.0", "discard=0.5" }; if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (",")); const auto r = run (tag, a); return { eq::parseResponse (r.cleanExit() ? r.out : juce::String()), r.kind == ChildResult::Kind::uiShown }; };
+    auto worstOf = [] (const eq::Response& resp) { if (! resp.ok || resp.positions.size() < 2) return 0.0; double w = 0.0; for (const auto& [f, d] : eq::deviation (resp.positions[1], resp.positions[0])) w = juce::jmin (w, d); for (const auto& [f, d] : eq::deviation (resp.positions[0], resp.positions[1])) w = juce::jmin (w, d); return w; };
     for (size_t i = 0; i < thresholds.size(); ++i)
     {
         const auto& t = thresholds[i];
-        const auto r = run ("pair" + juce::String (t.index), { "--response", "ctl=" + juce::String (t.index), "norms=0,1", "tones=121", "lo=20", "hi=20000", "db=-12", "hold=1.0", "discard=0.5" });
-        if (r.kind == ChildResult::Kind::uiShown) { say ("MB: a window appeared; stopping"); return 5; }
-        const auto resp = eq::parseResponse (r.cleanExit() ? r.out : juce::String());
+        auto [resp, win] = pairOnce ("pair" + juce::String (t.index), t.index, enableSets);
+        if (win) { say ("MB: a window appeared; stopping"); return 5; }
+        if (resp.ok && resp.positions.size() >= 2 && worstOf (resp) > -deesser::kBandCutDb && ! multiband::enableEligible (t.name)) say ("  enable step: [" + juce::String (t.index) + "] " + t.name + " cut nothing; a gate stage's threshold - not enabled (another stage, proposal finding 4)");
+        else if (resp.ok && resp.positions.size() >= 2 && worstOf (resp) > -deesser::kBandCutDb)
+        {
+            std::vector<int> excl; for (const auto& th : thresholds) excl.push_back (th.index);
+            int tried = 0; bool enabledHere = false;
+            for (const auto& c : eq::engageCandidates (eq::bandKey (t.name), mbSwitches, excl))
+            {
+                if (++tried > 4) break;
+                juce::StringArray sets = enableSets; sets.add (juce::String (c.index) + ":" + juce::String (c.onNorm, 6));
+                auto [r2, w2] = pairOnce ("pair" + juce::String (t.index) + ".e" + juce::String (c.index), t.index, sets);
+                if (w2) { say ("MB: a window appeared; stopping"); return 5; }
+                if (worstOf (r2) <= -deesser::kBandCutDb) { resp = r2; enableSets.add (juce::String (c.index) + ":" + juce::String (c.onNorm, 6)); auto* e = new juce::DynamicObject(); e->setProperty ("threshold", t.name); e->setProperty ("switch", c.name); e->setProperty ("set", c.onText); e->setProperty ("norm", c.onNorm); enabledBy.add (juce::var (e)); enabledHere = true; say ("  enable step: [" + juce::String (t.index) + "] " + t.name + " cut nothing; with [" + juce::String (c.index) + "] " + c.name + " = '" + c.onText + "' it cuts"); break; }
+            }
+            if (! enabledHere) say ("  enable step: [" + juce::String (t.index) + "] " + t.name + " cut nothing; " + juce::String (juce::jmin (tried, 4)) + " switch(es) of its own tried, still nothing");
+        }
         if (! resp.ok || resp.positions.size() < 2) { pairNote[i] = "no response at both ends"; roles.push_back (roleevidence::nominee (t.index, t.name, "band_threshold", { false, pairNote[i] })); continue; }
         const auto d01 = eq::deviation (resp.positions[1], resp.positions[0]); double worst01 = 0.0; for (const auto& [f, d] : d01) worst01 = juce::jmin (worst01, d);
         const auto d10 = eq::deviation (resp.positions[0], resp.positions[1]); double worst10 = 0.0; for (const auto& [f, d] : d10) worst10 = juce::jmin (worst10, d);
@@ -5646,6 +5669,7 @@ inline int runMultiband (const SweepOptions& opt)
         pairedBand[i] = best; pairNote[i] = "cuts " + juce::String (lo, 0) + "-" + juce::String (hi, 0) + " Hz (deepest " + juce::String (worst, 1) + " dB, centre " + juce::String (centre, 0) + ")" + (best >= 0 ? " -> band " + juce::String (bands[(size_t) best].index) : juce::String (" -> no band holds that centre"));
         say ("  pairing [" + juce::String (t.index) + "] " + t.name + ": " + pairNote[i]);
     }
+    o->setProperty ("enabled_by", enabledBy);
     // 1. PER-BAND LADDERS: each threshold against the tone at the centre of the band the MEASUREMENT paired it with
     {
         juce::Array<juce::var> lv;
@@ -5653,7 +5677,9 @@ inline int runMultiband (const SweepOptions& opt)
         {
             if (pairedBand[i] < 0) continue;
             const auto& t = thresholds[i]; const auto& b = bands[(size_t) pairedBand[i]];
-            const auto r = run ("band" + juce::String ((int) i + 1), { "--sweep", "thr=" + juce::String (t.index), "norms=" + norms.joinIntoString (","), "levels=-30,-24,-18,-12,-6", "hz=" + juce::String (b.centreHz, 0), "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
+            juce::StringArray la { "--sweep", "thr=" + juce::String (t.index), "norms=" + norms.joinIntoString (","), "levels=-30,-24,-18,-12,-6", "hz=" + juce::String (b.centreHz, 0), "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" };
+            if (! enableSets.isEmpty()) la.add ("set=" + enableSets.joinIntoString (","));   // the enable step's switches (none on a unit that needed none: the args as before)
+            const auto r = run ("band" + juce::String ((int) i + 1), la);
             if (r.kind == ChildResult::Kind::uiShown) { say ("MB: a window appeared; stopping"); return 5; }
             const auto L = deesser::ladderOf (sweep::parseSweep (r.cleanExit() ? r.out : juce::String()), b.centreHz);
             if (! L.ok) { say ("  band " + juce::String (b.index) + " (" + juce::String (b.centreHz, 0) + " Hz) " + t.name + ": " + L.why + " (" + r.describe() + ")"); continue; }
@@ -5670,7 +5696,8 @@ inline int runMultiband (const SweepOptions& opt)
     }
     // 2. THE WHOLE UNIT on the vocal-shaped multitone: open (as instantiated) then the amount positions, five levels each
     auto response = [&] (const juce::String& tag, double levelDb, const juce::StringArray& sets) {
-        juce::StringArray a { "--response", "ctl=" + juce::String (thresholds[0].index), "norms=current", "tones=121", "lo=20", "hi=20000", "shape=vocal", "db=" + juce::String (levelDb, 0), "hold=1.5", "discard=0.75" }; if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (","));
+        juce::StringArray all = enableSets; all.addArray (sets);   // the enable step's switches ride on every whole-unit response
+        juce::StringArray a { "--response", "ctl=" + juce::String (thresholds[0].index), "norms=current", "tones=121", "lo=20", "hi=20000", "shape=vocal", "db=" + juce::String (levelDb, 0), "hold=1.5", "discard=0.75" }; if (! all.isEmpty()) a.add ("set=" + all.joinIntoString (","));
         const auto r = run (tag, a); const auto p = eq::parseResponse (r.cleanExit() ? r.out : juce::String()); return p.ok && ! p.positions.empty() ? totalGainDb (p.positions[0]) : std::nullopt; };
     const std::vector<double> levels { -30.0, -24.0, -18.0, -12.0, -6.0 };
     std::map<double, double> openGain;
