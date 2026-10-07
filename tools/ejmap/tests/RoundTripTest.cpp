@@ -8230,6 +8230,90 @@ void testDeesser()
     }
 }
 
+/** THE DRAFTS FOR THE OTHER FOUR (7 Oct, item 5): ej_gain_profile/1 from a gaincal record, the time block from a b0258a7b timing record
+    (no time_draft), the multiband draft per the proposal, the tuner wrapper; and the derive-only pass's placement. */
+void testDraftsPass()
+{
+    auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+    // G1: the gain draft against GAIN_PROFILE_SPEC section 7's field rules
+    {
+        juce::Array<juce::var> curve; for (int k = 0; k <= 4; ++k) curve.add (mk ({ { "norm", k / 4.0 }, { "display", juce::String (-10 + 5 * k) + ".00" }, { "measured_db_at_-40", -10.0 + 5.0 * k + 2.35 }, { "measured_db_at_-20", -10.0 + 5.0 * k + 2.36 } }));
+        juce::Array<juce::var> cs { mk ({ { "index", 3 }, { "control", "Output" }, { "role", "output" }, { "verdict", "display_matches" }, { "worst_off_db", 0.05 }, { "match_bar_db", 0.1 }, { "worst_level_dependence_db", 0.01 }, { "has_zero_point", true }, { "zero_ref_db", 2.35 }, { "gain_curve", curve }, { "stepped", false } }),
+                                   mk ({ { "index", 5 }, { "control", "Virtual Gain" }, { "role", "gain" }, { "verdict", "no_effect" }, { "note", "span 0.0 dB over 21 positions" }, { "gain_curve", juce::Array<juce::var>() } }) };
+        juce::Array<juce::var> gNeutral { mk ({ { "control", "Mix" }, { "set", "100 %" }, { "norm", 1.0 } }) };
+        const auto rec = mk ({ { "controls", cs }, { "neutral", gNeutral } });
+        const auto D = ejmap::gaincal::profileDraft (rec, juce::var(), juce::var(), "DRAFT", ejmap::drafts::specTag ("GAIN_PROFILE_SPEC"));
+        const auto& c0 = D.getProperty ("controls", {})[0];
+        check (D.getProperty ("schema", "") == "ej_gain_profile/1" && c0.getProperty ("control", "") == "Output" && (double) c0.getProperty ("bar_db", 0.0) == 0.1 && (double) c0.getProperty ("level_dependent_db", 1.0) == 0.01 && ! (bool) c0.getProperty ("stepped", true)
+               && (double) c0.getProperty ("unity_norm", -1.0) == 0.5 && (double) c0.getProperty ("unity_offset_db", 0.0) == 2.35 && c0.getProperty ("curve", {}).size() == 5 && (double) c0.getProperty ("curve", {})[2].getProperty ("measured_db", 0.0) == 2.35 && (double) c0.getProperty ("curve", {})[2].getProperty ("measured_db_at_m20", 0.0) == 2.36,
+               "drafts G1: the spec's fields - bar_db, level_dependent_db, stepped, unity_norm (the '0.00' label at 0.5) / unity_offset_db (+2.35), curve with measured_db and measured_db_at_m20");
+        juce::StringArray ns; if (const auto* na = D.getProperty ("notes", {}).getArray()) for (const auto& n : *na) ns.add (n.toString());
+        check (ns.size() == 1 && ns[0].startsWith ("Virtual Gain: no_effect") && D.getProperty ("neutral", {}).size() == 1, "drafts G1b: a reason for every control that cannot be written; neutral carried (" + ns.joinIntoString (" | ") + ")");
+        const auto old = mk ({ { "controls", cs } }); const auto D2 = ejmap::gaincal::profileDraft (old, juce::var(), juce::var(), "DRAFT", ejmap::drafts::specTag ("GAIN_PROFILE_SPEC"));
+        check (D2.getProperty ("neutral", {}).size() == 0 && D2.getProperty ("notes", {}).size() == 2 && D2.getProperty ("notes", {})[1].toString().startsWith ("neutral: not on this record"), "drafts G1c: a 5 Oct record (no neutral) says so");
+        // stepped inferred from the curve's count when the record has no flag: 5 points of 21 -> stepped
+        juce::Array<juce::var> cs2 { mk ({ { "index", 3 }, { "control", "Output" }, { "role", "output" }, { "verdict", "display_off" }, { "gain_curve", curve } }) };
+        check ((bool) ejmap::gaincal::profileDraft (mk ({ { "controls", cs2 } }), juce::var(), juce::var(), "DRAFT", "x v0.1 PROPOSAL").getProperty ("controls", {})[0].getProperty ("stepped", false), "drafts G1d: without a flag, a curve of 5 points (not the mode's 21) is read as stepped");
+    }
+    // T1: the time block from a b0258a7b record (no time_draft): positions with the bound fields renamed, gr_shift_db null with a note each, the GR step as the median
+    {
+        juce::Array<juce::var> ap { mk ({ { "result", "measured" }, { "gr_step_db", 9.68 }, { "attack_faster_than_ms", 7.5 }, { "release_ms", 55.7 }, { "norm", 0.0 }, { "display", "0.1 ms" } }), mk ({ { "result", "measured" }, { "gr_step_db", 9.7 }, { "attack_ms", 48.0 }, { "norm", 1.0 }, { "display", "30 ms" } }), mk ({ { "result", "refused" }, { "reason", "GR step under 2 dB" }, { "norm", 0.5 }, { "display", "3 ms" } }) };
+        juce::Array<juce::var> rp { mk ({ { "result", "measured" }, { "gr_step_db", 9.6 }, { "release_ms", 27.0 }, { "norm", 0.0 }, { "display", "0.050" } }), mk ({ { "result", "bound" }, { "gr_step_db", 9.6 }, { "release_longer_than_ms", 4000.0 }, { "norm", 1.0 }, { "display", "3.000" } }) };
+        juce::Array<juce::var> tControls { mk ({ { "control", "Attack" }, { "role", "attack" }, { "positionsBy", "landing" }, { "positions", ap } }), mk ({ { "control", "Release" }, { "role", "release" }, { "positionsBy", "detents" }, { "positions", rp } }) };
+        const auto sb = mk ({ { "release_ms", 60.8 } }), lb = mk ({ { "release_ms", 157.3 } }); const auto pdep = mk ({ { "short_burst", sb }, { "long_burst", lb }, { "program_dependent", true } });
+        const auto rec = mk ({ { "amount_control", "Threshold" }, { "amount_norm", 0.267 }, { "quiet_dbfs", -35.6 }, { "loud_dbfs", -19.6 }, { "method", "m" }, { "controls", tControls }, { "program_dependence", pdep } });
+        const auto T = ejmap::timing::timeBlockDraft (rec);
+        const auto& a = T.getProperty ("attack", {}), r = T.getProperty ("release", {});
+        check (T.getProperty ("definition", "").toString().contains ("63%") && a.getProperty ("positions", {}).size() == 3 && a.getProperty ("positions", {})[0].getProperty ("attack_ms", {}).isVoid() && (double) a.getProperty ("positions", {})[0].getProperty ("faster_than_ms", 0.0) == 7.5 && (double) a.getProperty ("positions", {})[1].getProperty ("attack_ms", 0.0) == 48.0 && a.getProperty ("positions", {})[2].hasProperty ("why"),
+               "drafts T1: definition required; attack_ms null with faster_than_ms for a bound; a refused position carries why");
+        check (! (bool) a.getProperty ("stepped", true) && (bool) r.getProperty ("stepped", false) && r.getProperty ("positions", {})[1].getProperty ("release_ms", {}).isVoid() && (double) r.getProperty ("positions", {})[1].getProperty ("longer_than_ms", 0.0) == 4000.0, "drafts T1b: stepped from positionsBy = detents; release bound -> release_ms null + longer_than_ms");
+        check (std::abs ((double) T.getProperty ("measured_at", {}).getProperty ("gr_step_db", 0.0) - 9.68) < 1e-9 && (bool) T.getProperty ("program_dependent", false) && (double) T.getProperty ("release_long_burst_ms", 0.0) == 157.3, "drafts T1c: the GR step is the median over the measured positions; both program-dependence times carried");
+        juce::StringArray ns; if (const auto* na = T.getProperty ("notes", {}).getArray()) for (const auto& n : *na) ns.add (n.toString());
+        int shiftNotes = 0; for (const auto& n : ns) if (n.contains ("gr_shift_db null")) ++shiftNotes;
+        check (shiftNotes == 5 && T.getProperty ("source", "").toString().contains ("no time_draft"), "drafts T1d: gr_shift_db null on every position (5) with its reason - the section 7 rule; the source said");
+        juce::Array<juce::var> tdPos { mk ({ { "norm", 0.0 }, { "attack_ms", 8.8 }, { "gr_shift_db", 0.1 } }), mk ({ { "norm", 1.0 }, { "attack_ms", 48.0 } }) }; juce::Array<juce::var> noNotes;
+        const auto tdAttack = mk ({ { "positions", tdPos } }); const auto td = mk ({ { "definition", "d" }, { "attack", tdAttack }, { "notes", noNotes } });
+        const auto withDraft = mk ({ { "time_draft", td } });
+        const auto T2 = ejmap::timing::timeBlockDraft (withDraft);
+        check (T2.getProperty ("source", "").toString().contains ("own time_draft") && T2.getProperty ("notes", {}).size() == 1 && T2.getProperty ("notes", {})[0].toString().contains ("gr_shift_db null"), "drafts T1e: a record with its own time_draft is carried, a position without gr_shift_db noted");
+    }
+    // M1: the multiband draft per the proposal
+    {
+        juce::Array<juce::var> cells { mk ({ { "norm", 0.0 }, { "display", "20.0" }, { "level_dbfs", -12.0 }, { "gr_db", 0.0 } }), mk ({ { "norm", 0.0 }, { "display", "20.0" }, { "level_dbfs", -6.0 }, { "gr_db", 0.0 } }), mk ({ { "norm", 1.0 }, { "display", "-20" }, { "level_dbfs", -12.0 }, { "gr_db", 6.5 } }), mk ({ { "norm", 1.0 }, { "display", "-20" }, { "level_dbfs", -6.0 }, { "gr_db", 9.1 } }) };
+        juce::Array<juce::var> mbBands { mk ({ { "band", 1 }, { "lo_hz", 20.0 }, { "hi_hz", 92.0 }, { "centre_hz", 43.0 } }), mk ({ { "band", 2 }, { "lo_hz", 92.0 }, { "hi_hz", 4000.0 }, { "centre_hz", 607.0 } }) };
+        juce::Array<juce::var> mbLadders { mk ({ { "band", 1 }, { "control", "Band 1 Thresh" }, { "max_gr_db", 9.1 }, { "pairing", "cuts 20-80" }, { "cells", cells } }) };
+        const auto g0 = mk ({ { "-12", 0.0 } }), g24 = mk ({ { "-12", 5.4 } });
+        juce::Array<juce::var> mbPoints { mk ({ { "offset_db", 0.0 }, { "displays", "-27 / -19" }, { "gr_db_by_level", g0 } }), mk ({ { "offset_db", -24.0 }, { "displays", "-51 / -43" }, { "gr_db_by_level", g24 } }) };
+        const auto mbAmount = mk ({ { "topology", "multiband_offset" }, { "controls", "Band 1 Thresh, Band 2 Thresh" }, { "points", mbPoints } }); const auto openG = mk ({ { "-12", -2.1 } });
+        const auto rec = mk ({ { "bands", mbBands }, { "band_ladders", mbLadders }, { "amount", mbAmount }, { "open_gain_db_by_level", openG } });
+        const auto D = ejmap::multiband::profileDraft (rec, juce::var(), juce::var(), "DRAFT", ejmap::drafts::specTag ("MULTIBAND_PROFILE_PROPOSAL"));
+        const auto& b1 = D.getProperty ("bands", {})[0], b2 = D.getProperty ("bands", {})[1];
+        check (D.getProperty ("topology", "") == "multiband_offset" && b1.getProperty ("threshold_control", "") == "Band 1 Thresh" && b1.getProperty ("in_at_gr", {}).size() == 2 && (double) b1.getProperty ("in_at_gr", {})[1].getProperty ("gr_db_by_level", {}).getProperty ("-6", 0.0) == 9.1 && b2.getProperty ("in_at_gr", {}).isVoid(),
+               "drafts M1: topology, per-band in_at_gr from the ladder's cells grouped by norm with GR per level; a band without a ladder is null");
+        const auto& am = D.getProperty ("amount", {});
+        check (am.getProperty ("points", {}).size() == 2 && (double) am.getProperty ("points", {})[1].getProperty ("offset_db", 0.0) == -24.0 && (double) am.getProperty ("points", {})[1].getProperty ("whole_unit_gr_db_by_level", {}).getProperty ("-12", 0.0) == 5.4 && am.getProperty ("sign", "").toString().contains ("positive = more GR"),
+               "drafts M1b: the amount's points carry offset_db and the whole-unit GR per level; the sign convention said");
+        juce::StringArray ns; if (const auto* na = D.getProperty ("notes", {}).getArray()) for (const auto& n : *na) ns.add (n.toString());
+        check (ns.size() == 3 && ns[0].contains ("await Sean's decision") && ns[1].contains ("band 2: no ladder") && ns[2].contains ("offset family"), "drafts M1c: the names await Sean's decision; the missing ladder and the clamp finding noted (" + juce::String (ns.size()) + ")");
+        juce::Array<juce::var> noBands, noPoints; const auto gAmount = mk ({ { "topology", "multiband_global" }, { "control", "Depth" }, { "points", noPoints } });
+        const auto G = ejmap::multiband::profileDraft (mk ({ { "bands", noBands }, { "amount", gAmount } }), juce::var(), juce::var(), "DRAFT", "x v0.1 PROPOSAL");
+        check (G.getProperty ("amount", {}).getProperty ("control", "") == "Depth" && G.getProperty ("notes", {})[1].toString().contains ("depth control's zero"), "drafts M1d: a global-depth unit's amount names its control and the reference finding");
+    }
+    // P1: the pass's placement rule - the draft file for a record stem lands under <phaseb>/<category>/drafts/ with the category's kind
+    {
+        using namespace ejmap::cert::draftpass;
+        check (specFor ("gainall") && juce::String (specFor ("gainall")->recordDir) == "gaincal" && juce::String (specFor ("gainall")->kind) == "gain_profile" && specFor ("tuners") && juce::String (specFor ("tuners")->recordDir) == "tuner" && ! specFor ("reverb"), "drafts P1: gainall reads the gaincal records and drafts a gain_profile; tuners read phaseb/tuners/tuner/; reverb has no draft");
+        const auto f = ejmap::drafts::draftFile (juce::File ("/x/cert/phaseb/timing"), "AudioUnit_2520b63_1.4.5", specFor ("timing")->kind);
+        check (f.getFullPathName() == "/x/cert/phaseb/timing/drafts/AudioUnit_2520b63_1.4.5.time_block.draft.json" && ejmap::drafts::pathAllowed (f), "drafts P1b: the timing draft's path");
+        juce::String why; const auto none = ejmap::cert::draftFromRecord ("reverb", juce::var(), {}, why); check (none.isVoid() && why.contains ("no draft for category"), "drafts P1c: a category without a draft is refused with the reason");
+        juce::Array<juce::var> limRows { mk ({ { "ceiling_display", "-1.05 dB" }, { "ceiling_db", -1.05 }, { "norm", 0.9 }, { "out_sample_peak_db", -1.07 }, { "out_true_peak_db", -1.07 } }), mk ({ { "ceiling_display", "-0.12 dB" }, { "ceiling_db", -0.12 }, { "norm", 0.95 }, { "out_sample_peak_db", -1.02 }, { "out_true_peak_db", -1.02 } }) };
+        const auto lim = ejmap::cert::draftFromRecord ("limiter", mk ({ { "product", "X" }, { "identity", "AudioUnit|417f6e6e|1.2.1" }, { "measuredAt", "20261005T010203" }, { "ceiling_control", "Ceiling" }, { "nominated_by", "names" }, { "ceiling", limRows } }), "Plugin Alliance", why);
+        const auto& cb = lim.getProperty ("ceiling", {});
+        check (lim.getProperty ("spec", "") == ejmap::drafts::specTag ("LIMITER_PROFILE_SPEC") && lim.getProperty ("plugin", {}).getProperty ("version", "") == "1.2.1" && lim.getProperty ("measured", {}).getProperty ("date", "") == "2026-10-05" && cb.getProperty ("positions", {}).size() == 2 && cb.getProperty ("positions", {})[0].getProperty ("verdict", "") == "holds_true_peak" && cb.getProperty ("positions", {})[1].getProperty ("verdict", "") == "not_driven" && cb.getProperty ("notes", {})[0].toString().contains ("driven at -1 dBFS flat"),
+               "drafts P1d: a 5 Oct limiter record drafts its block from its rows (judged on the output: -0.12 not_driven) with the old-drive note, the date from measuredAt, the version from the identity");
+    }
+}
+
 /** THE NOISE SIGNAL (probe_noise.h, 7 Oct): deterministic in the seed, at the asked RMS, band-limited to 4-10 kHz. */
 void testNoise()
 {
@@ -8644,6 +8728,7 @@ int main (int, char**)
     testDynamics();
     testDeesser();
     testNoise();
+    testDraftsPass();
     testMultiband();
     testRoleEvidence();
     testTextPassTimeout();

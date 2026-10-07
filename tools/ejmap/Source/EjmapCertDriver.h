@@ -70,6 +70,7 @@
 #include "EjmapDynamics.h"
 #include "EjmapDeesser.h"
 #include "EjmapMultiband.h"
+#include "EjmapTunerProfile.h"
 #include "EjmapRoleEvidence.h"
 #include "EjmapPhaseB.h"
 #include "EjmapWindowWatch.h"
@@ -3295,7 +3296,9 @@ inline int runCombined (const SweepOptions& opt)
     const auto record = juce::JSON::parse (recordFile.loadFileAsString());
     const auto pstem = juce::File::createLegalFileName (opt.product).replaceCharacter (' ', '_') + "_" + desc.version;
     const auto profileFile = root.getChildFile ("profiles").getChildFile (pstem + ".json"), tcFile = root.getChildFile ("profiles").getChildFile (pstem + ".tonecheck.json");
-    const auto timingFile = root.getChildFile ("phaseb/timing/timing").getChildFile (stem + ".timing.json"), gainFile = root.getChildFile ("phaseb/gaincal/gain-cal").getChildFile (stem + ".gain_profile.draft.json");
+    const auto timingFile = root.getChildFile ("phaseb/timing/timing").getChildFile (stem + ".timing.json");
+    auto gainFile = root.getChildFile ("phaseb/gaincal/drafts").getChildFile (stem + ".gain_profile.draft.json");   // 7 Oct: drafts/ (the old gain-cal/ path for a 6 Oct run)
+    if (! gainFile.existsAsFile()) gainFile = root.getChildFile ("phaseb/gaincal/gain-cal").getChildFile (stem + ".gain_profile.draft.json");
     const auto profile = juce::JSON::parse (profileFile.loadFileAsString()), tc = juce::JSON::parse (tcFile.loadFileAsString());
     const auto timing = juce::JSON::parse (timingFile.loadFileAsString()).getProperty ("time_draft", {}), gain = juce::JSON::parse (gainFile.loadFileAsString());
     juce::StringArray missing;
@@ -3681,33 +3684,21 @@ inline int runGainCal (const SweepOptions& opt)
     o->setProperty ("measuredAt", nowStamp()); o->setProperty ("controls", controls);
     outDir.getChildFile (stem + ".gaincal.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
     say ("GAINCAL: -> " + outDir.getChildFile (stem + ".gaincal.json").getFullPathName());
-    // THE ej_gain_profile/1 DRAFT (Kathy's gain spec v0.1 section 7, 6 Oct): the section 7 shape in cert/phaseb/gain-cal/, data only, not exported
+    // THE ej_gain_profile/1 DRAFT (Kathy's gain spec v0.1 section 7; 7 Oct: from the record, by the same function the derive-only pass uses,
+    // into cert/phaseb/gaincal/drafts/). The record carries what the draft needs: stepped per control, neutral.
     {
-        auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_gain_profile/1"); P->setProperty ("status", "DRAFT against GAIN_PROFILE_SPEC v0.1 (a proposal): data only, not exported, not published");
-        { auto* pl = new juce::DynamicObject(); pl->setProperty ("name", opt.product); pl->setProperty ("manufacturer", desc.manufacturerName); pl->setProperty ("format", "AudioUnit"); pl->setProperty ("plugin_id", "AudioUnit|" + uidHex + "|" + desc.version); pl->setProperty ("version", desc.version); pl->setProperty ("map_fp", base.getProperty ("map_fp", juce::var())); P->setProperty ("plugin", juce::var (pl)); }
-        { auto* m = new juce::DynamicObject(); m->setProperty ("tool", "EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12)); m->setProperty ("date", juce::Time::getCurrentTime().formatted ("%Y-%m-%d")); m->setProperty ("sample_rate", 48000); m->setProperty ("signal", "997 Hz sine, 1.5 s per position; -40 and -20 dBFS (inputs also -60, judged there)"); P->setProperty ("measured", juce::var (m)); }
-        juce::Array<juce::var> pcs;
-        for (const auto& cv : controls)
+        auto recVar = juce::JSON::parse (outDir.getChildFile (stem + ".gaincal.json").loadFileAsString());
+        if (auto* ro = recVar.getDynamicObject())
         {
-            auto* pc = new juce::DynamicObject(); pc->setProperty ("control", cv.getProperty ("control", "")); pc->setProperty ("role", cv.getProperty ("role", "")); pc->setProperty ("verdict", cv.getProperty ("verdict", ""));
-            pc->setProperty ("writable", gaincal::writable (cv.getProperty ("verdict", "").toString()));
-            pc->setProperty ("worst_off_db", cv.getProperty ("worst_off_db", juce::var())); pc->setProperty ("bar_db", cv.getProperty ("match_bar_db", juce::var())); pc->setProperty ("level_dependent_db", cv.getProperty ("worst_level_dependence_db", juce::var()));
-            const auto ctl = sweep::findControl (base, (int) cv.getProperty ("index", -1)); pc->setProperty ("stepped", sweep::isSteppedControl (ctl));
-            if ((bool) cv.getProperty ("has_zero_point", false) || cv.hasProperty ("zero_ref_db")) { pc->setProperty ("unity_offset_db", cv.getProperty ("zero_ref_db", juce::var())); }
-            juce::Array<juce::var> curve;
-            if (const auto* gc = cv.getProperty ("gain_curve", {}).getArray()) for (const auto& pt : *gc)
-            { auto* q = new juce::DynamicObject(); q->setProperty ("norm", pt.getProperty ("norm", 0.0)); q->setProperty ("display", pt.getProperty ("display", ""));
-              const auto ref = cv.getProperty ("role", "") == "input" ? "measured_db_at_-60" : "measured_db_at_-40"; q->setProperty ("measured_db", pt.getProperty (ref, juce::var())); q->setProperty ("measured_db_at_m20", pt.getProperty ("measured_db_at_-20", juce::var())); if (pt.hasProperty ("measured_db_at_-60")) q->setProperty ("measured_db_at_m60", pt.getProperty ("measured_db_at_-60", juce::var())); if (pt.hasProperty ("unlanded")) q->setProperty ("unlanded", true); curve.add (juce::var (q)); }
-            pc->setProperty ("curve", curve);
-            if (cv.hasProperty ("acceptance")) pc->setProperty ("acceptance", cv.getProperty ("acceptance", juce::var()));
-            pcs.add (juce::var (pc));
+            if (auto* cs = ro->getProperty ("controls").getArray()) for (auto& cv : *cs) if (auto* co = cv.getDynamicObject()) co->setProperty ("stepped", sweep::isSteppedControl (sweep::findControl (base, (int) cv.getProperty ("index", -1))));
+            juce::Array<juce::var> neutral; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) { bool isT = false; for (const auto& t : targets) isT = isT || t.index == (int) c.getProperty ("index", -1); if (isT || (int) c.getProperty ("index", -1) == plan.thr) continue; const auto doi = c.getProperty ("defaultOnInstantiate", {}); if (! doi.isObject()) continue; auto* n = new juce::DynamicObject(); n->setProperty ("control", c.getProperty ("name", "")); n->setProperty ("set", doi.getProperty ("display", "")); n->setProperty ("norm", doi.getProperty ("normalised", juce::var())); neutral.add (juce::var (n)); }
+            ro->setProperty ("neutral", neutral);
+            outDir.getChildFile (stem + ".gaincal.json").replaceWithText (juce::JSON::toString (recVar) + "\n", false, false, "\n");
         }
-        P->setProperty ("controls", pcs);
-        juce::Array<juce::var> neutral; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) { bool isT = false; for (const auto& t : targets) isT = isT || t.index == (int) c.getProperty ("index", -1); if (isT || (int) c.getProperty ("index", -1) == plan.thr) continue; const auto doi = c.getProperty ("defaultOnInstantiate", {}); if (! doi.isObject()) continue; auto* n = new juce::DynamicObject(); n->setProperty ("control", c.getProperty ("name", "")); n->setProperty ("set", doi.getProperty ("display", "")); n->setProperty ("norm", doi.getProperty ("normalised", juce::var())); neutral.add (juce::var (n)); }
-        P->setProperty ("neutral", neutral); P->setProperty ("notes", gainNotes);
-        auto dir = opt.out.getChildFile ("gain-cal"); dir.createDirectory();
-        dir.getChildFile (stem + ".gain_profile.draft.json").replaceWithText (juce::JSON::toString (juce::var (P)) + "\n", false, false, "\n");
-        say ("GAINCAL: draft ej_gain_profile/1 -> " + dir.getChildFile (stem + ".gain_profile.draft.json").getFullPathName());
+        const auto D = gaincal::profileDraft (recVar, drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, base.getProperty ("map_fp", juce::var())),
+                                              drafts::measuredBlock ("EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, "997 Hz sine, 1.5 s per position; -40 and -20 dBFS (inputs also -60, judged there)"), drafts::statusLine ("GAIN_PROFILE_SPEC"), drafts::specTag ("GAIN_PROFILE_SPEC"));
+        const auto f = drafts::draftFile (opt.out, stem, "gain_profile"); const auto problem = drafts::writeDraft (f, D);
+        say (problem.isEmpty() ? "GAINCAL: draft ej_gain_profile/1 -> " + f.getFullPathName() : "GAINCAL: " + problem);
     }
     return measured > 0 ? 0 : 4;
 }
@@ -3894,8 +3885,18 @@ inline int runTiming (const SweepOptions& opt)
     o->setProperty ("amount_control", plan.thrName); o->setProperty ("amount_norm", (double) norms[best]); o->setProperty ("one_db_point_dbfs_peak", bestOne);
     o->setProperty ("quiet_dbfs", quiet); o->setProperty ("loud_dbfs", loud); o->setProperty ("method", "997 Hz sine, 1 s at quiet, step to loud, step back; gain per 5 ms window; attack = 63 % of the GR step, release = 63 % recovery");
     o->setProperty ("controls", controls); o->setProperty ("program_dependence", juce::var (pd)); o->setProperty ("measuredAt", nowStamp());
-    outDir.getChildFile (stem + ".timing.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    const juce::var rec (o);   // one var owns the record
+    outDir.getChildFile (stem + ".timing.json").replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n");
     say ("TIMING: -> " + outDir.getChildFile (stem + ".timing.json").getFullPathName());
+    // THE DRAFT: the time block as its own file under cert/phaseb/timing/drafts/ (7 Oct item 5; time_draft stays on the record for --cert-combined)
+    {
+        auto* D = new juce::DynamicObject(); D->setProperty ("schema", "ej_comp_profile time block (COMP_TIMING_SPEC section 7)"); D->setProperty ("spec", drafts::specTag ("COMP_TIMING_SPEC")); D->setProperty ("status", drafts::statusLine ("COMP_TIMING_SPEC") + "; the time block only - it becomes the compressor profile's time field when the spec is agreed (v2.2)"); D->setProperty ("block", "time");
+        D->setProperty ("plugin", drafts::pluginBlock (opt.product, desc.manufacturerName, drafts::uidOfIdentity (record.getProperty ("identity", "").toString()), desc.version, record.getProperty ("map_fp", juce::var())));
+        D->setProperty ("measured", drafts::measuredBlock ("EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, "997 Hz burst, 16 dB step, 5 ms windows; fast attacks at 4 kHz with 1 ms windows"));
+        D->setProperty ("time", timing::timeBlockDraft (rec));
+        const auto f = drafts::draftFile (opt.out, stem, "time_block"); const auto problem = drafts::writeDraft (f, juce::var (D));
+        say (problem.isEmpty() ? "TIMING: draft time block -> " + f.getFullPathName() : "TIMING: " + problem);
+    }
     return measured > 0 ? 0 : 4;
 }
 
@@ -5529,6 +5530,115 @@ inline int runMultiband (const SweepOptions& opt)
 // (the batch's row - THE DONE MARKER, written last by rename), <cert>/phaseb/progress.{json,txt}, <cert>/phaseb/summary.json.
 using phaseb::writeAtomic; using phaseb::gzipInto;
 struct PhaseBProduct { juce::String product, stem, category; juce::PluginDescription desc; juce::String recordFile; };
+// THE DRAFTS, DERIVE-ONLY (Kathy, 7 Oct item 5): --phaseb-drafts [--category x]... walks cert/phaseb/<category>/<records>/ and writes
+// cert/phaseb/<category>/drafts/<stem>.<kind>.draft.json FROM THE RECORDS - no plugin loaded, nothing measured - with the same
+// functions the modes call at run end, so Sean's existing rows (5/6 Oct) get their drafts without a re-run; where a record lacks a
+// 7 Oct field the draft says so in its notes. The tuner records live in phaseb/tuners/tuner/ (a --redo tuners row) and in the one
+// store cert/fixtures/ (schema ej_cert_tuner/1): both are read, the store's drafts land in phaseb/tuners/drafts/ too.
+namespace draftpass
+{
+    struct Spec { const char* category; const char* recordDir; const char* recordSuffix; const char* kind; const char* specName; const char* schema; };
+    inline const std::vector<Spec>& specs()
+    {
+        static const std::vector<Spec> k {
+            { "gaincal",    "gaincal",    ".gaincal.json",    "gain_profile",       "GAIN_PROFILE_SPEC",          "ej_gain_profile/1" },
+            { "gainall",    "gaincal",    ".gaincal.json",    "gain_profile",       "GAIN_PROFILE_SPEC",          "ej_gain_profile/1" },
+            { "timing",     "timing",     ".timing.json",     "time_block",         "COMP_TIMING_SPEC",           "ej_comp_profile time block (COMP_TIMING_SPEC section 7)" },
+            { "tuners",     "tuner",      ".json",            "tuner_profile",      "TUNER_PROFILE_SPEC",         "ej_tuner_profile/1" },
+            { "multiband",  "multiband",  ".multiband.json",  "multiband_profile",  "MULTIBAND_PROFILE_PROPOSAL", "ej_multiband_profile/0" },
+            { "limiter",    "limiter",    ".limiter.json",    "limiter_ceiling",    "LIMITER_PROFILE_SPEC",       "ej_comp_profile ceiling block (LIMITER_PROFILE_SPEC section 6)" },
+            { "eq",         "eq",         ".eq.json",         "eq_profile",         "EQ_PROFILE_SPEC",            "ej_eq_profile/1" },
+            { "deesser",    "deesser",    ".deesser.json",    "deesser_block",      "DEESSER_PROFILE_SPEC",       "ej_comp_profile deesser block (DEESSER_PROFILE_SPEC section 6)" },
+            { "saturation", "saturation", ".saturation.json", "saturation_profile", "SATURATION_PROFILE_SPEC",    "ej_saturation_profile/1" } };
+        return k;
+    }
+    inline const Spec* specFor (const juce::String& category) { for (const auto& s : specs()) if (category == s.category) return &s; return nullptr; }
+    inline juce::String signalFor (const juce::String& category)
+    {
+        if (category == "gaincal" || category == "gainall") return "997 Hz sine, 1.5 s per position; -40 and -20 dBFS (inputs also -60, judged there)";
+        if (category == "timing") return "997 Hz burst, 16 dB step, 5 ms windows; fast attacks at 4 kHz with 1 ms windows";
+        if (category == "tuners") return "220 Hz sung-like note; 30-cent square vibrato; static detunes";
+        if (category == "multiband") return "one tone per band at its centre; vocal-shaped multitone for the whole unit";
+        if (category == "limiter") return "997 Hz sine, peak at the ceiling label + 6 dB; sample peak and BS.1770 4x-oversampled true peak";
+        if (category == "eq") return eq::gridDescription();
+        if (category == "deesser") return deesser::noiseSignalDescription();
+        if (category == "saturation") return "997 Hz sine at -20, -12 and -6 dBFS peak; harmonics 2-5";
+        return {};
+    }
+}
+// one record -> one draft var (empty when the category has no draft or the record is not its shape; `why` says)
+inline juce::var draftFromRecord (const juce::String& category, const juce::var& rec, const juce::String& manufacturer, juce::String& why)
+{
+    const auto* sp = draftpass::specFor (category); if (! sp) { why = "no draft for category '" + category + "'"; return {}; }
+    const auto identity = rec.getProperty ("identity", "").toString(); const auto product = rec.getProperty ("product", rec.getProperty ("plugin", {}).getProperty ("name", "")).toString();
+    const auto uid = drafts::uidOfIdentity (identity), version = drafts::versionOfIdentity (identity);
+    const auto plugin = drafts::pluginBlock (product, manufacturer, uid, version, juce::var());   // map_fp: not on a record; the local map's when the mode runs
+    const auto date = rec.getProperty ("measuredAt", "").toString().substring (0, 8); const auto dateIso = date.length() == 8 ? date.substring (0, 4) + "-" + date.substring (4, 6) + "-" + date.substring (6, 8) : runDateIso();
+    const auto measured = drafts::measuredBlock ("EJ Map (feat/ejmap-cert) derive-only pass over the record", dateIso, 48000, draftpass::signalFor (category));
+    const auto status = drafts::statusLine (sp->specName) + "; derived from the record (map_fp: not on a record, null)"; const auto spec = drafts::specTag (sp->specName);
+    if (category == "gaincal" || category == "gainall") return gaincal::profileDraft (rec, plugin, measured, status, spec);
+    if (category == "eq") return eq::profileDraft (rec, plugin, measured, status, spec);
+    if (category == "saturation") return saturation::profileDraft (rec, plugin, measured, status, spec);
+    if (category == "multiband") return multiband::profileDraft (rec, plugin, measured, status, spec);
+    if (category == "timing")
+    {
+        if (! rec.getProperty ("controls", {}).isArray() && ! rec.getProperty ("time_draft", {}).isObject()) { why = "not a timing record"; return {}; }
+        auto* D = new juce::DynamicObject(); D->setProperty ("schema", sp->schema); D->setProperty ("spec", spec); D->setProperty ("status", status + "; the time block only - it becomes the compressor profile's `time` field when the spec is agreed (v2.2)"); D->setProperty ("block", "time"); D->setProperty ("plugin", plugin); D->setProperty ("measured", measured);
+        D->setProperty ("time", timing::timeBlockDraft (rec)); return juce::var (D);
+    }
+    if (category == "limiter")
+    {
+        if (! rec.getProperty ("ceiling", {}).isArray()) { why = "not a limiter record with ceiling rows"; return {}; }
+        auto* D = new juce::DynamicObject(); D->setProperty ("schema", sp->schema); D->setProperty ("spec", spec); D->setProperty ("status", status + "; the ceiling block only"); D->setProperty ("block", "ceiling"); D->setProperty ("plugin", plugin); D->setProperty ("measured", measured);
+        D->setProperty ("ceiling", limiter::ceilingBlockFromRecord (rec)); return juce::var (D);
+    }
+    if (category == "deesser")
+    {
+        auto* D = new juce::DynamicObject(); D->setProperty ("schema", sp->schema); D->setProperty ("spec", spec); D->setProperty ("status", status + "; the deesser block only"); D->setProperty ("block", "deesser"); D->setProperty ("plugin", plugin); D->setProperty ("measured", measured);
+        D->setProperty ("deesser", deesser::deesserBlock (rec)); return juce::var (D);
+    }
+    if (category == "tuners")
+    {
+        const auto e = tunerprofile::exportTunerProfileDraft (rec);
+        if (e.refused.isNotEmpty()) { why = e.refused; return {}; }
+        auto prof = e.profile; if (auto* o = prof.getDynamicObject()) { o->setProperty ("spec", spec); o->setProperty ("status", status + "; " + juce::String (tunerprofile::kStatus)); if (! o->hasProperty ("plugin") || ! o->getProperty ("plugin").isObject()) o->setProperty ("plugin", plugin); o->setProperty ("measured_by", measured); }
+        return prof;
+    }
+    why = "no derivation"; return {};
+}
+inline int runPhaseBDrafts (const SweepOptions& opt, const juce::StringArray& onlyCategories)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto phasebDir = opt.out.getChildFile ("phaseb");
+    std::map<juce::String, juce::String> manufacturerOf; for (const auto& r : installedAudioUnits()) manufacturerOf[r.desc.name] = r.desc.manufacturerName;   // the registry, no instantiation
+    int total = 0, written = 0, refusedN = 0;
+    for (const auto& sp : draftpass::specs())
+    {
+        const juce::String category = sp.category;
+        if (! onlyCategories.isEmpty() && ! onlyCategories.contains (category)) continue;
+        std::vector<juce::File> records; const auto dir = phasebDir.getChildFile (category).getChildFile (sp.recordDir);
+        if (dir.isDirectory()) for (const auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.json")) if (f.getFileName().endsWith (sp.recordSuffix) && ! f.getFileName().endsWith (".defaults.json")) records.push_back (f);
+        if (category == "tuners") { const auto store = opt.out.getChildFile ("fixtures"); if (store.isDirectory()) for (const auto& f : store.findChildFiles (juce::File::findFiles, false, "*.json")) { if (f.getFileName().endsWith (".defaults.json")) continue; const auto v = juce::JSON::parse (f.loadFileAsString()); if (v.getProperty ("schema", "").toString() == "ej_cert_tuner/1") records.push_back (f); } }
+        if (records.empty()) { if (dir.isDirectory() || category == "tuners") say ("DRAFTS " + category.paddedRight (' ', 11) + " no records under " + dir.getFullPathName()); continue; }
+        int w = 0, r = 0; juce::StringArray reasons;
+        for (const auto& f : records)
+        {
+            ++total; const auto rec = juce::JSON::parse (f.loadFileAsString()); juce::String why;
+            auto stem = f.getFileNameWithoutExtension(); for (const char* suf : { ".gaincal", ".timing", ".multiband", ".limiter", ".eq", ".deesser", ".saturation", ".tuner" }) if (stem.endsWith (suf)) stem = stem.dropLastCharacters (juce::String (suf).length());
+            const auto product = rec.getProperty ("product", rec.getProperty ("plugin", {}).getProperty ("name", "")).toString();
+            const auto D = draftFromRecord (category, rec, manufacturerOf.count (product) ? manufacturerOf[product] : juce::String(), why);
+            if (D.isVoid()) { ++r; ++refusedN; reasons.add (f.getFileName() + ": " + why); continue; }
+            const auto out = drafts::draftFile (phasebDir.getChildFile (category), stem, sp.kind);
+            const auto problem = drafts::writeDraft (out, D);
+            if (problem.isNotEmpty()) { ++r; ++refusedN; reasons.add (f.getFileName() + ": " + problem); continue; }
+            ++w; ++written;
+        }
+        say ("DRAFTS " + category.paddedRight (' ', 11) + juce::String (w) + " draft(s) from " + juce::String ((int) records.size()) + " record(s) -> " + phasebDir.getChildFile (category).getChildFile (drafts::kFolder).getFullPathName() + (r > 0 ? "; " + juce::String (r) + " refused" : juce::String()));
+        for (const auto& rs : reasons) say ("    " + rs);
+    }
+    say ("DRAFTS: " + juce::String (written) + " written from " + juce::String (total) + " record(s), " + juce::String (refusedN) + " refused; nothing loaded, nothing measured, nothing under cert/profiles touched");
+    return total > 0 ? 0 : 2;
+}
 inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyCategories, const juce::StringArray& onlyProducts, const juce::StringArray& redo = {})
 {
     using namespace phaseb;
@@ -5685,6 +5795,19 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                         if (gate.demo) { auto rec = juce::JSON::parse (target.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { ro->setProperty ("licence", gate.stamp); target.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } } }
                 }
                 { const auto lg = catDir.getChildFile ("logs"); lg.createDirectory(); const auto target = lg.getChildFile (pp.stem + ".log.txt"); target.deleteFile(); tmp.getChildFile ("log.txt").moveFileTo (target); }
+                // THE DRAFT FOR THIS ROW (7 Oct item 5): gaincal / gainall / timing / tuners / multiband derive theirs here from the moved record
+                // (the four spec modes write their own at run end, with the fixture's map_fp); the draft is a record folder like any other
+                if (cat.name == "gaincal" || cat.name == "gainall" || cat.name == "timing" || cat.name == "tuners" || cat.name == "multiband")
+                    for (const auto& relPath : records)
+                    {
+                        const auto f = catDir.getChildFile (relPath); if (! f.existsAsFile() || relPath.startsWith (juce::String (drafts::kFolder) + "/")) continue;
+                        const auto rec = juce::JSON::parse (f.loadFileAsString()); juce::String why;
+                        auto stem = f.getFileNameWithoutExtension(); for (const char* suf : { ".gaincal", ".timing", ".multiband", ".tuner" }) if (stem.endsWith (suf)) stem = stem.dropLastCharacters (juce::String (suf).length());
+                        const auto D = draftFromRecord (cat.name, rec, pp.desc.manufacturerName, why);
+                        if (D.isVoid()) continue;
+                        const auto out = drafts::draftFile (catDir, stem, draftpass::specFor (cat.name)->kind);
+                        if (drafts::writeDraft (out, D).isEmpty()) records.add (juce::String (drafts::kFolder) + "/" + out.getFileName());
+                    }
                 row->setProperty ("records", records); row->setProperty ("raw_files", rawN);
                 if (outcome == "timed_out") row->setProperty ("reason", "hang guard " + juce::String (cat.guardS / 60.0, 0) + " min reached: partial data kept (" + juce::String (rawN) + " trace(s)), the record " + (records.isEmpty() ? juce::String ("not written") : juce::String ("written")));
             }

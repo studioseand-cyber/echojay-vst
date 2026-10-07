@@ -225,4 +225,41 @@ inline juce::var toVar (int index, const juce::String& name, const juce::String&
     return juce::var (o);
 }
 
+// THE DRAFT ej_gain_profile/1 (GAIN_PROFILE_SPEC v0.1 section 7) FROM THE RECORD (7 Oct, item 5: a derive-only function - the mode calls
+// it on the record it just wrote, the --phaseb-drafts pass on an existing one). Checked against the spec's field rules: control, role,
+// verdict, worst_off_db, bar_db, level_dependent_db, stepped, curve[{norm, display, measured_db, measured_db_at_m20}] in norm order with
+// every position (an unlanded one flagged), unity_norm / unity_offset_db when the "0" label is not unity, neutral, notes (a reason for
+// every control that cannot be written). `writable` and the acceptance rows are carried beside the spec's fields.
+inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, const juce::var& measured, const juce::String& status, const juce::String& spec)
+{
+    auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_gain_profile/1"); P->setProperty ("spec", spec); P->setProperty ("status", status); P->setProperty ("plugin", plugin); P->setProperty ("measured", measured);
+    juce::Array<juce::var> pcs, notes;
+    if (const auto* cs = rec.getProperty ("controls", {}).getArray())
+        for (const auto& cv : *cs)
+        {
+            auto* pc = new juce::DynamicObject(); const auto verdict = cv.getProperty ("verdict", "").toString(); const auto role = cv.getProperty ("role", "").toString();
+            pc->setProperty ("control", cv.getProperty ("control", "")); pc->setProperty ("role", role); pc->setProperty ("verdict", verdict); pc->setProperty ("writable", writable (verdict));
+            pc->setProperty ("worst_off_db", cv.getProperty ("worst_off_db", juce::var())); pc->setProperty ("bar_db", cv.getProperty ("match_bar_db", juce::var())); pc->setProperty ("level_dependent_db", cv.getProperty ("worst_level_dependence_db", juce::var()));
+            // stepped: the record's flag when the mode wrote one; else inferred from the curve (fewer positions than the mode's 21 norms = detents)
+            if (cv.hasProperty ("stepped")) pc->setProperty ("stepped", cv.getProperty ("stepped", false)); else if (const auto* gc = cv.getProperty ("gain_curve", {}).getArray()) pc->setProperty ("stepped", gc->size() != kNorms); else pc->setProperty ("stepped", juce::var());
+            const auto ref = role == "input" ? "measured_db_at_-60" : "measured_db_at_-40";
+            juce::Array<juce::var> curve; std::optional<double> unityNorm;
+            if (const auto* gc = cv.getProperty ("gain_curve", {}).getArray()) for (const auto& pt : *gc)
+            { auto* q = new juce::DynamicObject(); q->setProperty ("norm", pt.getProperty ("norm", 0.0)); q->setProperty ("display", pt.getProperty ("display", "")); q->setProperty ("measured_db", pt.getProperty (ref, juce::var())); q->setProperty ("measured_db_at_m20", pt.getProperty ("measured_db_at_-20", juce::var())); if (pt.hasProperty ("measured_db_at_-60")) q->setProperty ("measured_db_at_m60", pt.getProperty ("measured_db_at_-60", juce::var())); if (pt.hasProperty ("unlanded")) q->setProperty ("unlanded", true);
+              if (! unityNorm) if (const auto d = displayDb (pt.getProperty ("display", "").toString())) if (std::abs (*d) < 1e-9) unityNorm = (double) pt.getProperty ("norm", 0.0);   // the "0" label's norm
+              curve.add (juce::var (q)); }
+            pc->setProperty ("curve", curve);
+            if ((bool) cv.getProperty ("has_zero_point", false) || cv.hasProperty ("zero_ref_db")) { pc->setProperty ("unity_norm", unityNorm ? juce::var (*unityNorm) : juce::var()); pc->setProperty ("unity_offset_db", cv.getProperty ("zero_ref_db", juce::var())); }
+            if (cv.hasProperty ("acceptance")) pc->setProperty ("acceptance", cv.getProperty ("acceptance", juce::var()));
+            if (! writable (verdict)) notes.add (cv.getProperty ("control", "").toString() + ": " + verdict + " - " + cv.getProperty ("note", "").toString());
+            if (const auto* acc = cv.getProperty ("acceptance", {}).getArray()) { int fails = 0; for (const auto& a : *acc) if ((bool) a.getProperty ("ran", false) && ! (bool) a.getProperty ("pass", false)) ++fails; if (fails > 0) notes.add (cv.getProperty ("control", "").toString() + ": " + juce::String (fails) + " acceptance write(s) missed the 0.2 dB bar (section 8): not writable until re-measured"); }
+            pcs.add (juce::var (pc));
+        }
+    P->setProperty ("controls", pcs);
+    P->setProperty ("neutral", rec.hasProperty ("neutral") ? rec.getProperty ("neutral", {}) : juce::var (juce::Array<juce::var>()));
+    if (! rec.hasProperty ("neutral")) notes.add ("neutral: not on this record (a run before 7 Oct); the mode records it from now on");
+    P->setProperty ("notes", notes);
+    return juce::var (P);
+}
+
 } // namespace ejmap::gaincal

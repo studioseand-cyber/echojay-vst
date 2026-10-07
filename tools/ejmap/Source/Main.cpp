@@ -813,6 +813,15 @@ namespace
                 if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
                 return ejmap::cert::runSaturation (o);
             }
+            // --phaseb-drafts [--out <cert>] [--category <name>]...: the drafts derived from the Phase B records already on disk (7 Oct item 5) - nothing loaded
+            if (a == "--phaseb-drafts")
+            {
+                ejmap::cert::SweepOptions o; juce::StringArray cats;
+                for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--out") o.out = cwdFile (v); else if (k == "--category") cats.add (v); }
+                for (auto& c : cats) { if (c == "gain-cal") c = "gaincal"; if (c == "gain-all") c = "gainall"; }
+                if (o.out == juce::File()) o.out = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap/cert");
+                return ejmap::cert::runPhaseBDrafts (o, cats);
+            }
             // --phaseb-all [--out <cert>] [--probe <path>] [--ejmap-ledger <dir>] [--category <name>]... [--only <product>]...: the Phase B batch (5 Oct evening), and --phaseb-status
             if (a == "--phaseb-all" || a == "--phaseb-status")
             {

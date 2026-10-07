@@ -199,4 +199,55 @@ inline juce::var timePosition (double norm, const juce::String& display, const j
     if (first.result == "refused") o->setProperty ("refused", first.reason);
     return juce::var (o);
 }
+// THE `time` BLOCK DRAFT (COMP_TIMING_SPEC v0.1 section 7) FROM THE RECORD (7 Oct, item 5): the record's own time_draft when the run wrote one
+// (dc77d0a5 and later), else built from the controls' positions of an older record (b0258a7b: attack_ms / attack_faster_than_ms /
+// release_ms / release_longer_than_ms per position, no gr_shift_db - null with the reason, section 7's rule). Field rules checked:
+// definition required; gr_shift_db on every position (null + note where the build had no instantiate reference); attack_ms / release_ms
+// null when only a bound was measurable, faster_than_ms / longer_than_ms carrying it; both program-dependence times always recorded.
+inline juce::var timeBlockDraft (const juce::var& rec)
+{
+    if (rec.getProperty ("time_draft", {}).isObject())
+    {
+        auto tb = rec.getProperty ("time_draft", {}); juce::Array<juce::var> notes; if (const auto* n = tb.getProperty ("notes", {}).getArray()) notes = *n;
+        // the field rule: every position carries gr_shift_db - null with a note when the run could not read it
+        for (const char* role : { "attack", "release" }) if (const auto* ps = tb.getProperty (role, {}).getProperty ("positions", {}).getArray()) for (const auto& p : *ps) if (! p.hasProperty ("gr_shift_db")) { notes.add (juce::String (role) + " at norm " + p.getProperty ("norm", juce::var()).toString() + ": gr_shift_db null - no instantiate reference step on this run"); }
+        if (auto* o = tb.getDynamicObject()) { o->setProperty ("notes", notes); o->setProperty ("source", "the run's own time_draft"); }
+        return tb;
+    }
+    auto* tb = new juce::DynamicObject(); juce::Array<juce::var> notes;
+    tb->setProperty ("status", "DRAFT against COMP_TIMING_SPEC v0.1 (a proposal): data only, not in any compressor profile, not exported; built from a record without time_draft (a run before 6 Oct)");
+    tb->setProperty ("definition", kDefinition);
+    { auto* ma = new juce::DynamicObject(); ma->setProperty ("amount_control", rec.getProperty ("amount_control", juce::var())); ma->setProperty ("norm", rec.getProperty ("amount_norm", juce::var()));
+      // the GR step: the median gr_step_db over the measured positions (the run had no instantiate reference of its own)
+      std::vector<double> steps; if (const auto* cs = rec.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if (const auto* ps = c.getProperty ("positions", {}).getArray()) for (const auto& p : *ps) if (p.getProperty ("result", "") == "measured" && (p.getProperty ("gr_step_db", {}).isDouble() || p.getProperty ("gr_step_db", {}).isInt())) steps.push_back ((double) p.getProperty ("gr_step_db", 0.0));
+      if (! steps.empty()) { std::sort (steps.begin(), steps.end()); ma->setProperty ("gr_step_db", std::round (steps[steps.size() / 2] * 100.0) / 100.0); ma->setProperty ("gr_step_source", "median over the measured positions (no instantiate reference on this run)"); } else ma->setProperty ("gr_step_db", juce::var());
+      juce::Array<juce::var> bd { rec.getProperty ("quiet_dbfs", juce::var()), rec.getProperty ("loud_dbfs", juce::var()) }; ma->setProperty ("burst_dbfs", bd); tb->setProperty ("measured_at", juce::var (ma)); }
+    bool anyAttack = false, anyRelease = false;
+    if (const auto* cs = rec.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            const auto role = c.getProperty ("role", "").toString(); if (role != "attack" && role != "release") continue;
+            auto* rb = new juce::DynamicObject(); rb->setProperty ("control", c.getProperty ("control", "")); rb->setProperty ("stepped", c.getProperty ("positionsBy", "") == "detents"); juce::Array<juce::var> out;
+            if (const auto* ps = c.getProperty ("positions", {}).getArray()) for (const auto& p : *ps)
+            {
+                auto* q = new juce::DynamicObject(); q->setProperty ("norm", p.getProperty ("norm", juce::var())); q->setProperty ("display", p.getProperty ("display", ""));
+                const auto res = p.getProperty ("result", "").toString();
+                if (role == "attack") { const auto ms = p.getProperty ("attack_ms", {}); q->setProperty ("attack_ms", (ms.isDouble() || ms.isInt()) ? ms : juce::var()); if (p.hasProperty ("attack_faster_than_ms")) q->setProperty ("faster_than_ms", p.getProperty ("attack_faster_than_ms", {})); }
+                else { const auto ms = p.getProperty ("release_ms", {}); q->setProperty ("release_ms", (ms.isDouble() || ms.isInt()) ? ms : juce::var()); if (p.hasProperty ("release_longer_than_ms")) q->setProperty ("longer_than_ms", p.getProperty ("release_longer_than_ms", {})); }
+                q->setProperty ("gr_shift_db", juce::var()); notes.add (role + " at '" + p.getProperty ("display", "").toString() + "': gr_shift_db null - this run read no steady GR against the instantiate position (built before the 6 Oct amount-shift reading)");
+                if (res != "measured" && res != "bound") { q->setProperty ("why", p.getProperty ("reason", res)); notes.add (role + " at '" + p.getProperty ("display", "").toString() + "': " + res + (p.getProperty ("reason", "").toString().isNotEmpty() ? " - " + p.getProperty ("reason", "").toString() : juce::String())); }
+                out.add (juce::var (q));
+            }
+            rb->setProperty ("positions", out); tb->setProperty (role, juce::var (rb)); if (role == "attack") anyAttack = true; else anyRelease = true;
+        }
+    if (! anyAttack) { tb->setProperty ("attack", juce::var()); notes.add ("attack: no attack control measured"); }
+    if (! anyRelease) { tb->setProperty ("release", juce::var()); notes.add ("release: no release control measured"); }
+    const auto pd = rec.getProperty ("program_dependence", {});
+    tb->setProperty ("program_dependent", pd.hasProperty ("program_dependent") ? pd.getProperty ("program_dependent", {}) : juce::var());
+    tb->setProperty ("release_short_burst_ms", pd.getProperty ("short_burst", {}).getProperty ("release_ms", juce::var())); tb->setProperty ("release_long_burst_ms", pd.getProperty ("long_burst", {}).getProperty ("release_ms", juce::var()));
+    if (pd.getProperty ("program_dependent", {}).isVoid()) notes.add ("program_dependent null: one of the two bursts did not read");
+    tb->setProperty ("method", rec.getProperty ("method", "")); tb->setProperty ("source", "built from the record's controls (no time_draft on this run)"); tb->setProperty ("notes", notes);
+    return juce::var (tb);
+}
+
 } // namespace ejmap::timing

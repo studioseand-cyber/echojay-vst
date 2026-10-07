@@ -264,4 +264,28 @@ inline juce::var ceilingBlock (const juce::String& control, const juce::String& 
     return juce::var (o);
 }
 
+// THE BLOCK FROM A RECORD (the derive-only pass, 7 Oct item 5): the ceiling rows rebuilt from the record's `ceiling` array (a 7 Oct record
+// carries verdicts, in_peak_db and drive_dbfs_peak; a 5 Oct one is judged on its output alone), the acceptance var carried as written
+inline juce::var ceilingBlockFromRecord (const juce::var& rec)
+{
+    std::vector<CeilingResult> off, on;
+    if (const auto* rows = rec.getProperty ("ceiling", {}).getArray())
+        for (const auto& r : *rows)
+        {
+            CeilingResult c; c.pos.norm = (float) (double) r.getProperty ("norm", 0.0); c.pos.display = r.getProperty ("ceiling_display", "").toString(); c.pos.labelDb = (double) r.getProperty ("ceiling_db", 0.0); c.pos.target = c.pos.labelDb;
+            c.hasOs = r.hasProperty ("oversampling"); c.oversampling = (bool) r.getProperty ("oversampling", false);
+            if (! (bool) r.getProperty ("no_reading", false) && r.hasProperty ("out_sample_peak_db")) { c.reading.ok = true; c.reading.peakDb = (double) r.getProperty ("out_sample_peak_db", -999.0); c.reading.truePeakDb = (double) r.getProperty ("out_true_peak_db", -999.0); if (r.hasProperty ("in_peak_db")) c.reading.inPeakDb = (double) r.getProperty ("in_peak_db", 0.0); c.sampleErrDb = c.reading.peakDb - c.pos.labelDb; c.trueErrDb = c.reading.truePeakDb - c.pos.labelDb; }
+            if (r.hasProperty ("drive_dbfs_peak")) c.driveLevelDb = (double) r.getProperty ("drive_dbfs_peak", 0.0);
+            (c.hasOs && c.oversampling ? on : off).push_back (c);
+        }
+    const auto osName = rec.getProperty ("oversampling_control", juce::var()).toString();
+    auto blk = ceilingBlock (rec.getProperty ("ceiling_control", "").toString(), rec.getProperty ("nominated_by", "").toString().startsWith ("names") ? "name" : "measurement", off, on, osName, osName.isNotEmpty() ? "On" : juce::String(), {});
+    if (auto* o = blk.getDynamicObject())
+    {
+        if (rec.hasProperty ("acceptance")) o->setProperty ("acceptance", rec.getProperty ("acceptance", {}));
+        if (! rec.hasProperty ("drive_over_label_db")) { auto notes = o->getProperty ("notes"); if (auto* na = notes.getArray()) { na->insert (0, "drafted from a record driven at -1 dBFS flat (a run before 7 Oct): positions above about -1 dB were never driven; the 7 Oct drive is the label + 6"); o->setProperty ("notes", notes); } o->setProperty ("drive", "997 Hz sine at -1 dBFS peak flat (a run before 7 Oct); amount at its hard end"); }
+    }
+    return blk;
+}
+
 } // namespace ejmap::limiter
