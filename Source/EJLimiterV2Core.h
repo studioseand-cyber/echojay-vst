@@ -46,6 +46,7 @@
     STYLES are Tunings of the numbers above (lookahead, S, the three release constants, the link, the margin).
     `transparent()` is the only one so far; its numbers are STARTING POINTS until the Pro-L 2 renders are measured.
 */
+#include "EJLimiterMeterTap.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -85,6 +86,7 @@ inline Tuning transparent()
     t.fastReleaseMs = 0.3;     // C2: the fast part is instant - after a burst Pro-L 2 is back within 0.6 dB in < 0.33 ms
     t.lookaheadMs   = 0.3;     // C3: no pre-dip beyond 0.33 ms; a 1-sample impulse gets a ~0.5 ms dip and lands at the ceiling
     t.smoothStages  = 1;       // C3: a box of that width is all the smoothing Pro-L 2 shows
+    t.link          = 0.75;    // C5: a left-only burst dips the right channel 75 % as much (dB), measured on panned_transient
     return t;
 }
 
@@ -235,6 +237,10 @@ public:
     // neither edge of a bypass clicks and the track never moves in time.
     void setBypassed (bool b) noexcept { bypassTarget_ = b ? 0.0f : 1.0f; }
 
+    // The panel's data path (EedLimiterPanelV2): when attached, every sample is pushed with its gained input, its
+    // output, the gain applied and the detector's true-peak values the engine already has. nullptr = not attached.
+    void setMeterTap (MeterTap* t) noexcept { tap_ = t; }
+
     // In place. numCh 1 or 2; a mono input is processed as one channel.
     void process (float* const* ch, int numCh, int n) noexcept
     {
@@ -249,6 +255,7 @@ public:
             const float ceilDetNow = truePeak_ ? ceilNow * tpMarginLin_ : ceilNow;
             bypassMix_ += (bypassTarget_ - bypassMix_) * bypassCoef_;
             float x[kMaxChannels] { 0.0f, 0.0f }, r[kMaxChannels] { 1.0f, 1.0f };
+            float tpInMax = 0.0f;
             for (int c = 0; c < numCh; ++c)
             {
                 x[c] = ch[c][i] * gainNow_;
@@ -258,6 +265,7 @@ public:
                 if (fixedLatency_) { float* sd = scDelay_[c].data(); sd[scPos_] = x[c]; sc = sd[(scPos_ + scDelayCap_ - scD) % scDelayCap_]; }
                 if (scHpfOn_) { const double y = hpfB0_ * sc + hpfZ_[c][0]; hpfZ_[c][0] = hpfB1_ * sc - hpfA1_ * y + hpfZ_[c][1]; hpfZ_[c][1] = hpfB2_ * sc - hpfA2_ * y; sc = (float) y; }
                 const float p = truePeak_ ? tp_[c].maxAbs (sc) : std::abs (sc);
+                tpInMax = std::max (tpInMax, p);
                 r[c] = p > ceilDetNow ? ceilDetNow / p : 1.0f;
             }
             if (fixedLatency_) scPos_ = (scPos_ + 1) % scDelayCap_;
@@ -302,24 +310,26 @@ public:
             // measurement of the same block agree (limiter_v2_core_test proves it)
             float gOut = gaMin;
             // the post-check: the output's own true peak, trimmed by a short stage of the same construction (linked)
+            float tpOutMax = 0.0f;
             if (truePeak_ && K2_ > 1)
             {
                 float r2 = 1.0f;
-                for (int c = 0; c < numCh; ++c) { const float p = tp2_[c].maxAbs (y[c]); r2 = std::min (r2, p > ceilDetNow ? ceilDetNow / p : 1.0f); }
+                for (int c = 0; c < numCh; ++c) { const float p = tp2_[c].maxAbs (y[c]); tpOutMax = std::max (tpOutMax, p); r2 = std::min (r2, p > ceilDetNow ? ceilDetNow / p : 1.0f); }
                 const float g2raw = ma2_[0].push (held2_[0].push (r2)); const float g2 = bypassMix_ >= 1.0f ? g2raw : 1.0f + (g2raw - 1.0f) * bypassMix_;
-                gaRing_[wpos2_] = gaMin;
+                gaRing_[(size_t) wpos2_] = gaMin;
                 const int rp2 = (wpos2_ + delayCap2_ - delaySamples2_) % delayCap2_;
                 for (int c = 0; c < numCh; ++c)
                 {
                     float* dl = delay2_[c].data(); dl[wpos2_] = y[c];
                     y[c] = dl[rp2] * g2;
                 }
-                gOut = gaRing_[rp2] * g2;
+                gOut = gaRing_[(size_t) rp2] * g2;
                 wpos2_ = (wpos2_ + 1) % delayCap2_;
             }
             gMin = std::min (gMin, gOut);
             const float clipAt = bypassMix_ < 1.0f ? 1.0e9f : ceilLin_;   // the clip is the limiter's; under bypass the signal passes
             for (int c = 0; c < numCh; ++c) ch[c][i] = std::max (-clipAt, std::min (clipAt, y[c]));
+            if (tap_ != nullptr) tap_->push (x[0], numCh > 1 ? x[1] : x[0], ch[0][i], numCh > 1 ? ch[1][i] : ch[0][i], gOut, tpInMax, tpOutMax > 0.0f ? tpOutMax : std::max (std::abs (ch[0][i]), numCh > 1 ? std::abs (ch[1][i]) : 0.0f));
         }
         grDb_ = gMin < 1.0f ? 20.0f * std::log10 (gMin) : 0.0f;
     }
@@ -363,6 +373,7 @@ private:
     int maxLatency_ = 0; std::vector<float> scDelay_[kMaxChannels]; int scDelayCap_ = 1, scPos_ = 0;
     double scHpfHz_ = 0.0, hpfB0_ = 1, hpfB1_ = 0, hpfB2_ = 0, hpfA1_ = 0, hpfA2_ = 0; double hpfZ_[kMaxChannels][2] { { 0, 0 }, { 0, 0 } };
     float bypassTarget_ = 1.0f, bypassMix_ = 1.0f, bypassCoef_ = 0.0f;
+    MeterTap* tap_ = nullptr;
 };
 
 } // namespace limv2
