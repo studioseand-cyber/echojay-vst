@@ -1,0 +1,43 @@
+derive-only equality: d0587ff4 (build tree) vs dc77d0a5 (~/Desktop/ejmap-dist-7oct-b), 8 Oct 00:30
+== current (head d0587ff4 vs dc77d0a5)
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 82 old / 82 new, only-old [], only-new [], differ 0
+  controls: 45 old / 45 new, only-old [], only-new [], differ 0
+== seanzip (head d0587ff4 vs dc77d0a5)
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 45 old / 45 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+== cert_sc (head d0587ff4 vs dc77d0a5)
+  rows 90 90 state/reason diffs 0 []
+  fixtures: 19 old / 19 new, only-old [], only-new [], differ 0
+  profiles: 7 old / 7 new, only-old [], only-new [], differ 0
+  controls: 2 old / 2 new, only-old [], only-new [], differ 0
+== cert_tc35 (head d0587ff4 vs dc77d0a5)
+  rows 87 87 state/reason diffs 0 []
+  fixtures: 14 old / 14 new, only-old [], only-new [], differ 0
+  profiles: 4 old / 4 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+
+the same with the PACKAGED d0587ff4 (~/Desktop/ejmap-dist-8oct)
+== current (packaged d0587ff4 vs dc77d0a5)
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 82 old / 82 new, only-old [], only-new [], differ 0
+  controls: 45 old / 45 new, only-old [], only-new [], differ 0
+== seanzip (packaged d0587ff4 vs dc77d0a5)
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 45 old / 45 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+== cert_sc (packaged d0587ff4 vs dc77d0a5)
+  rows 90 90 state/reason diffs 0 []
+  fixtures: 19 old / 19 new, only-old [], only-new [], differ 0
+  profiles: 7 old / 7 new, only-old [], only-new [], differ 0
+  controls: 2 old / 2 new, only-old [], only-new [], differ 0
+== cert_tc35 (packaged d0587ff4 vs dc77d0a5)
+  rows 87 87 state/reason diffs 0 []
+  fixtures: 14 old / 14 new, only-old [], only-new [], differ 0
+  profiles: 4 old / 4 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
