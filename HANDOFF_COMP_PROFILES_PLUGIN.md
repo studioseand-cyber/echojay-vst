@@ -2146,6 +2146,28 @@ writes it as a param (237), so once the value is in scope there is nothing new t
 
 ---
 
+## THE 7/8 OCT FULL GATE (overnight item 1): 60 of 61, and the one red is the harness's own precondition
+
+Run on 397b380 + aae53d6, archives deleted first so both are provably built from the tree's headers.
+    S1 archives 0 errors | S2 51 guards 0 errors | S3 4 bundles 0 errors | S4 ctest 98%, 1 of 61 failed
+    S5 link_state_guard GREEN both sides | GATE3 DONE 23:40:18
+**`dialinfo_keep_guard` PASSED - the teardown race is closed by ad7f131**, which is what item 1 of the queue asked
+to be confirmed. The scribble leg that segfaulted on a config-fetch callback after `~EchoJayProcessor` now exits 0.
+
+**THE ONE RED: `lease_id_guard` (v2 side), "the command carries the borrow session's lease id".** Link side GREEN.
+Re-run ALONE: PASSED (210 s). Re-run again WITH `alias_mirror_guard` in parallel: PASSED (214 s). So one RED in
+three runs, and it was the gate's own `ctest -j 2` scheduling.
+**WHAT I CHANGED, because "intermittent" is not a diagnosis:** the leg asserted its claim five seconds after
+checking its precondition. It engages a borrow, pumps the message thread for 5 s to clear the Link's 3.5 s lease
+gate, then writes a command and asserts the written file carries that session's lease id - which is only meaningful
+WHILE THE SESSION IS STILL ENGAGED. On a machine also linking a second 200-second guard, that pumping is not a
+measurement. The leg now re-checks `borrowActive()` and the uid AT THE WRITE, prints both, and if the session has
+lapsed it exits 2 as a RUNNER REFUSED with the reason, instead of reporting a product failure. If the next
+occurrence prints `borrowActive=yes` and still fails, that is a product finding and the leg will say so - which is
+the point: the next failure diagnoses itself instead of being guessed at a fourth time.
+**NOT CLAIMED:** I did not reproduce the RED. Two green runs do not prove the lapse was the cause; they prove the
+leg is not deterministically broken. The instrumentation is what turns the next occurrence into evidence.
+
 ## ROUND 06d — QUEUED (ruled 7 Oct; do NOT start until 06c is reported AND Sean has tested it)
 
 In this order:

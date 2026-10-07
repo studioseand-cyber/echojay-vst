@@ -61,6 +61,22 @@ int main()
     // the chat-card apply's exact call: an edit JSON's "edit" array + baseSlots, source "EchoJay V2 chat edit", NO lease id
     juce::Array<juce::var> ops; { auto* op = new juce::DynamicObject(); op->setProperty ("op", "remove"); op->setProperty ("slot", 3); ops.add (juce::var (op)); }
     juce::Array<juce::var> base; for (const char* n : kSix) base.add (juce::String (n));
+    // 8 Oct 2026: THE PRECONDITION IS CHECKED AT THE MOMENT IT MATTERS, NOT FIVE SECONDS EARLIER.
+    // This leg went RED in the 7 Oct gate under ctest -j 2 and GREEN on its own, twice. What it asserts -
+    // "the written command carries the borrow session's lease id" - is only meaningful while that session is
+    // STILL ENGAGED, and the 5 s pumpMs above is message-thread pumping on a machine that was also linking a
+    // second 200-second guard. A lease that lapsed during the wait is a scheduling fact about the harness, and
+    // reporting it as a product failure is how a flake gets diagnosed three times.
+    std::printf ("    at the write: borrowActive=%s borrowUid=\"%s\"\n",
+                 bp.borrowActive() ? "yes" : "NO", bp.borrowUid().toRawUTF8());
+    if (! bp.borrowActive() || bp.borrowUid() != uid)
+    {
+        std::printf ("  RUNNER REFUSED: the borrow session lapsed during the 5 s lease-gate wait (active=%s, uid=\"%s\"),\n"
+                     "                  so \"the command carries the session's lease id\" has no session to carry one from.\n"
+                     "                  This is the harness losing its precondition under load, not a product result.\n",
+                     bp.borrowActive() ? "yes" : "no", bp.borrowUid().toRawUTF8());
+        return 2;
+    }
     const int seq = bp.writeChainEditCommand (uid, juce::var (ops), juce::var (base), "EchoJay V2 chat edit", {});
     check (seq > 0, "V1. chain-cmd written (seq " + juce::String (seq) + ")");
     { int e = 0; auto c = juce::JSON::parse (juce::File (LinkShm::resolveDir (e) + "chain-cmd-" + uid + ".json").loadFileAsString());
