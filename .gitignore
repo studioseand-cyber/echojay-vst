@@ -34,3 +34,4 @@ latency-logs/build/
 build-limiter-ab/
 docs/limiter_ab/renders/*.wav
 docs/limiter_ab/renders/*
+docs/limiter_ab/READY_FOR_GATE.md

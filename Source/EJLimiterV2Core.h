@@ -91,7 +91,7 @@ inline Tuning transparent()
     t.link          = 0.75;    // C5: a left-only burst dips the right channel 75 % as much (dB), measured on panned_transient
     t.tpMarginDb    = 0.05;    // C6: Pro-L 2 lands at -0.01..-0.04 dBTP; the 96-tap detector and the post-check keep overs at zero
     t.slowWindowMs  = 8.0;     // C7: the floor's source holds across an LF cycle (Pro-L 2: 97 % of the reduction at 997 Hz, 81 % at 50 Hz)
-    t.slowFraction2 = 1.0;     // C7: sustained material keeps charging the floor toward the full reduction ...
+    t.slowFraction2 = 0.9;     // C7b: sustained material keeps charging the floor toward 90 % of the reduction (1.0 cost 0.11 LU on the hot mix) ...
     t.slowAttack2Ms = 1200.0;  // C7: ... slowly: 72 % after 1 s (the first stage), ~97 % after 4 s (measured on tone_997)
     return t;
 }
