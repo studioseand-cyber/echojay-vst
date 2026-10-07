@@ -31,7 +31,12 @@ REPO=~/src/echojay-vst            # wherever the checkout is
 #   TONIGHT'S BUILD, FINAL (6 Oct 16:12, Sean's ruling on the Vocal Compressor): 0d2ccd5d - as 9d3a1972 plus: an attempted, unmeasured
 #   detector exports as detector_f null / detector_f_source "unknown" (reason in notes), measured profiles carry no detector_f_source,
 #   a null detector_f is tone-checked at both L_ref values, the detector retries at the -27 dBFS position. 9d3a1972 IS THE FALLBACK.
-git -C "$REPO" fetch && git -C "$REPO" checkout 0d2ccd5d     # branch feat/ejmap-cert; the commit after it is this documentation (9d3a1972: the fallback)
+#   THE 7 OCT BUILD (Kathy's PLAN CHANGE list 1-6, NEXT BUILD A-F, Sean's UAD licence rulings, the strip's compressor section; the
+#   overnight report docs/REPORT_2026-10-07_overnight.md): 0f175c51 - certification derive-only EQUAL to 0d2ccd5d on Sean's current folder,
+#   his 4 Oct zip, cert_sc and cert_tc35 except the "detector_f_source": "measured" key on measured profiles (tools/ejmap/cert-traces/2026-10-07-equality/).
+#   New: --redo tuners / gain-all / uad / no_pool / multiband / strips / combined / material / frequency / samplerate, --categorise-propose,
+#   --licence-check / --licence-stamp / --uad-preflight, --zip --since. 0d2ccd5d IS THE FALLBACK for the 7 Oct build.
+git -C "$REPO" fetch && git -C "$REPO" checkout 0f175c51     # branch feat/ejmap-cert; the commit after it is this documentation (0d2ccd5d: the fallback)
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
 cmake --build build-ejmap --target ejmap EchoJayProbe -j 4

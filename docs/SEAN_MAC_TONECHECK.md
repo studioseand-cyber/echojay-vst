@@ -7,7 +7,7 @@ re-derives each exported record from its traces, re-exports the profile with the
 certified plugin only for the tone checks. **The rows whose plan changed under this build are re-swept by the
 same command, which decides that itself** (below); you never name a product. It is resumable and uses the same window watch.
 
-**Tonight's build is commit `0d2ccd5d`** (6 Oct, 16:12; branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
+**The 7 Oct build is commit `0f175c51`** (0d2ccd5d the fallback; see step 2 below for the order). Tonight-of-6-Oct's build was `0d2ccd5d` (6 Oct, 16:12; branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
 step 1 with that commit checked out). It is `9d3a1972` plus your Vocal Compressor ruling (an unmeasured detector exported as
 `detector_f: null, detector_f_source: "unknown"` with the reason in notes; such a profile tone-checked at both L_ref values; the
 detector retried at the −27 dBFS position). `9d3a1972` is the fallback: it runs everything else identically (checked equal,
@@ -266,15 +266,29 @@ without it the title alone is recorded. Nothing is ever clicked.
 The --redo sets, in this order: `--redo uad` (the UAD rows that showed a window or failed and are not filed needs_licence),
 then the rest as listed below.
 
-## Step 2, the full order for the 7 Oct build (times projected from this Mac, Sean's ~2.7x faster; Ctrl-C any time, every set resumes)
+## Step 2 — THE 7 OCT BUILD (`ejmap.app` from **0f175c51**, ~/Desktop/ejmap-dist-7oct; 0d2ccd5d the fallback). The order, with nights
 
-1. The compressor follow-up (command 1): ~35-40 min (47 checks + 2 re-sweeps).
-2. `--phaseb-all --redo gain-cal,timing`: ~50 min (69 x 2).
-3. The redo sets, one `--phaseb-all` each, in this order:
-   `--redo uad` (after --licence-stamp: the window rows are filed needs_licence; only UAD rows the stamp left - with the Satellite seen - run: ~0-10 min);
-   `--redo no_pool` (the 10 Soundtoys / 2C: ~30 min); `--redo multiband` (17: ~1.5-2 h); `--redo strips` (106 channel strips:
-   an EQ section with named bands is 6-12 min here, so plan a NIGHT: ~8-14 h; `--only` picks a few first);
-   `--categorise-propose --include-pace` (the 605: ~1-1.5 h; writes proposed_categories.json + category_review.txt, never categories.json);
-   then the accuracy passes `--redo combined` (~20 min), `--redo material` (~70 min), `--redo frequency` (~70 min), `--redo samplerate` (10: ~8 min);
-   then `--redo tuners` (6: ~30 min), `--redo gain-all` (~500 products: ~7 h - another night), `--redo nothing_nominated` (205: ~4.5 h).
-4. Zip: as before, `find -newer` the marker; projected ~700 MB gzipped for everything above (Phase B was ~550 MB).
+0. **First: copy your licence file into the cert folder** — `cp ~/Desktop/licence_states_UAD_2026-10-06.csv ~/Library/ejmap/cert/licences.csv`
+   (your format: vendor,product,state,demo_end,note; other vendors go in the same file). Then, nothing loaded:
+   `"$BIN" --licence-check ~/Library/ejmap/cert` (writes cert/licence_review.txt: the unmatched / ambiguous plugins first — a plugin on
+   that list is not loaded until you add a line or a "covers" note) and `"$BIN" --licence-stamp ~/Library/ejmap/cert` (stamps last night's
+   demo rows and records, files the expired / unowned / unmatched rows needs_licence).
+   **The Satellite check:** `"$BIN" --uad-preflight` with the UAD-2 Satellite connected must say PRESENT; if it says ABSENT while the
+   Satellite is on, add `--assume-uad-device` to every command below and send me the lines it printed. Window TEXT (titles are always
+   recorded) needs ejmap allowed once under System Settings › Privacy & Security › Accessibility.
+1. The compressor follow-up (command 1 above): ~35-40 min (47 checks + 2 re-sweeps). The 21 owned held UAD compressors unhold when the
+   preflight sees the Satellite; the licence file decides each (owned / demo measured and stamped; the rest needs_licence).
+2. `"$BIN" --phaseb-all --redo gain-cal,timing`: ~50 min.
+3. The redo sets, each its own `"$BIN" --phaseb-all --redo <set>` (resumable; Ctrl-C any time), in this order:
+   NIGHT 1 (~8 h): `uad` (~0-10 min: only UAD rows the stamp left and the Satellite admits), `no_pool` (the 10 Soundtoys / 2C: ~30 min),
+     `multiband` (17: ~1.5-2 h), `"$BIN" --categorise-propose --include-pace` (the 605: ~1-1.5 h; proposed_categories.json +
+     category_review.txt, never categories.json), `combined` (~20 min), `material` (~70 min), `frequency` (~70 min), `samplerate` (10: ~8 min),
+     `tuners` (6: ~30 min).
+   NIGHT 2: `strips` (106 channel strips; each section through its mode, the compressor section through the full sweep + tone check into its
+     own folder, nothing exported: 1-3 min per strip here, an EQ section with named bands 6-12 min — plan 8-14 h; `--only` picks a few first).
+   NIGHT 3: `gain-all` (~500 products, ~7 h), `nothing_nominated` (205 rows, ~4.5 h).
+4. **The morning zip** (stop the run first): the first morning, whole cert/:
+   `"$BIN" --zip ~/Library/ejmap/cert --out ~/Desktop/ejmap-$(hostname -s)-$(date +%Y%m%d).zip`
+   Once the folder passes 500 MB (the command says so), every morning only what is new since the last zip:
+   `"$BIN" --zip ~/Library/ejmap/cert --out ~/Desktop/ejmap-$(hostname -s)-$(date +%Y%m%d).zip --since marker`
+   (the marker cert/.zipped is touched by every zip; config.json is never in a zip). Projected ~700 MB gzipped for all three nights.
