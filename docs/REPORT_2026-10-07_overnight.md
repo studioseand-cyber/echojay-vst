@@ -142,3 +142,24 @@ PROVEN HERE: items 3-6, A1-A4, D, E (full path on Lindell 80), F, the licence fi
    the preflight's ABSENT reading, the sidechain-feed fix, equality. ONLY SEAN'S MAC: the UAD-2 device reading and every UAD
    measurement, Soundtoys / 2C paramcount stages (PACE here), Auto-Tune Humanize, L-18's "Peak" ceiling, the strips' and the
    605's full sets.
+
+## BEFORE SEAN GETS IT (Kathy, 7 Oct; done 13:05) - the re-cut
+BUILD: dc77d0a5 (0f175c51 the fallback), packaged + signed + verified at ~/Desktop/ejmap-dist-7oct-b (stamp in the binary,
+   --cert-preflight clean). Docs commit 79ba85d8. Equality vs 0d2ccd5d on dc77d0a5's binary, four sets: rows / fixtures /
+   controls identical; profiles differ only by detector_f_source (81 / 45 / 7 / 4).
+1. RUNBOOK: SEAN_MAC_TONECHECK.md now opens with ONE section "Running the 7 Oct build (dc77d0a5)": the BIN line + preflight,
+   step 0 (copy licences.csv, --licence-check, --licence-stamp, --uad-preflight, the Accessibility note, the file's scope),
+   Night 1 / 2 / 3 with every command in full and its time, stop / resume / status, the morning zip (whole cert/ first, then
+   --since marker once over 500 MB). No reference to a later section. Every older Step 1 / Step 2 section is under
+   "History - do not follow"; the Step 1 heading that said 0d2ccd5d is a History heading now.
+2. LICENCE: "unmatched -> not loaded" applies only to plugins of vendors present in licences.csv; the rest run as before.
+   Pinned (LC13); Kathy's mutant (a Waves plugin held because Waves is not in the file) goes red. Stated in step 0.
+3. RULING LC / GE: pinned (ST1c). bx_console SSL 4000 E's compressor section re-run: compressor 11 (Dyn On/Off -> On), gate 8;
+   LC Threshold and LC 2nd Thresh Level both certify, no comp word -> needs_review under Rule 1 as ruled (117 s). bx_console N's
+   dynamics controls: LC Threshold, LC Threshold Range, LC Ratio, LC Attack, LC Release, LC 2nd Thresh Level, GE Threshold,
+   GE Threshold Range, GE Attack, GE Release - the same LC / GE labels (no ruling asked; the section words apply by construction).
+4. A1 CHECK: --redo combined reads attack-only and release-only at the same scaled hold (10x the slower time constant, >= 2.5 s,
+   <= 20 s) and records additivity_check; pinned (CB8-CB10; mutant red). Rehearsed: Lindell 7X-500 +3.38 + 3.18 = 6.56 against
+   a combined +3.83 at 2.5 s - the shifts truly do not add (the draft's +3.41 / +3.20 were settled); elysia mpressor -1.38 +
+   -1.58 = -2.96 against -1.59 (the draft's release -2.32 partly under-settled, mostly not additive); Lindell SBC additive.
+   The proposal carries the sign convention (positive = more GR) and "decide part 1 only after this data".
