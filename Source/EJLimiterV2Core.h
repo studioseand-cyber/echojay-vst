@@ -87,6 +87,7 @@ inline Tuning transparent()
     t.lookaheadMs   = 0.3;     // C3: no pre-dip beyond 0.33 ms; a 1-sample impulse gets a ~0.5 ms dip and lands at the ceiling
     t.smoothStages  = 1;       // C3: a box of that width is all the smoothing Pro-L 2 shows
     t.link          = 0.75;    // C5: a left-only burst dips the right channel 75 % as much (dB), measured on panned_transient
+    t.tpMarginDb    = 0.05;    // C6: Pro-L 2 lands at -0.01..-0.04 dBTP; the 96-tap detector and the post-check keep overs at zero
     return t;
 }
 

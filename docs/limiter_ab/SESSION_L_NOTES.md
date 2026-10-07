@@ -150,3 +150,34 @@ source+gain), max GR 0.96 dB on 400 ms blocks, release 0.3-2 ms; current EchoJay
 max GR 2.78, t90 ~140 ms; v2 -11.28 (1.2 LU under), max GR 3.23, t90 up to 900 ms. All three hold the ceiling
 (0 overs; -0.01 / -0.08 / -0.10 dBTP). Retention on the hardest hit (30.07 s, +4.5): Pro-L 2 -4.58, EchoJay -5.09,
 v2 -4.78 - all three land the peak at the ceiling; the difference is entirely what happens AROUND the hit.
+
+## 8 Oct 2026, overnight run (Sean's approvals of 7 Oct, late): TUNE, INTEGRATE, listening files, hand-off
+
+Rulings recorded: EchoJay bass print dial 16.7 = +8.5 nominal (measured effective +8.41, see 7 Oct late); Pro-L 2
+hovered Attack 275.0 ms, Release 400.0 ms - NOT the measured constants (floor charge 120-185 ms, decay 160-185 ms);
+tuned to the measurements. fullmix_hot at --gain 10.86 (coordinator: unlimited blocks = source x 10.86 dB,
+residual -108 dB). A was not gating; builds at -j 2 in build-limiter-ab only; df checked before every build (78 GB).
+
+Tuning steps, each a commit with its rule lines (results/2026-10-07_C*.txt):
+  C1 slow floor 72 % / 150 ms charge / 180 ms decay / 1 ms source window  bass -8.15 -> -7.57 LUFS (Pro-L 2 -7.09; current -7.68)
+  C2 fast part instant (0.3 ms)                                          bass -7.40, hot -10.39 (current -10.69; Pro-L 2 -10.06)
+  C3 window 0.3 ms, box                                                  bass -6.92, hot -10.12 PASS; pumping PASS on both; tones now ride
+  C5 link 0.75                                                           panned dips 5.99/8.01 (Pro-L 2 5.61/7.53); limbs rule flips by 1 ms
+  C6 ceiling margin 0.05                                                 (see results)
+  C4 is a consequence of C2/C3 (riding), approved; CLEAN keeps the first behaviour as limv2::clean().
+Open after C6: tone THD - 50 Hz clipped 4.5 dB deeper than Pro-L 2 (h3 -15.5 vs -20.0), 997 Hz clipped less (h3 -37 vs
+-27) with higher-order harmonics from the box window; probe pumping 1.74 vs 1.53; levels on the tone cases. The
+measurements say Pro-L 2's floor keeps charging on sustained material (72 % after 1 s, ~97 % after 4 s at 997 Hz,
+81 % at 50 Hz) and holds across an LF cycle - a second, slower charge (tau ~1.2 s toward 100 %) from an ~8 ms window.
+Proposed as C7, run as its own step, kept only if it is better on the primaries.
+
+INTEGRATE (commit 04ff1bf): EedLimiterProcessor on limv2::Core, same ids/ranges/state; mode -> Transparent for every
+value (punchy, clip not yet tuned); lookahead_ms scales the window (2 = tuned), release_ms scales the floor's
+recovery (50 = tuned 180 ms); fixed latency 1344 samples at 48 k (5x window storage, TP on; identical for TP off and
+every dial); GR report = the gain applied to the block's output samples (peak GR), proven 0.00 dB; CPU 1.13 % of
+real time vs the current limiter's 0.76 % (1.48x) after vectorising the 96-tap interpolator (15.65x before).
+Syntax-checked with the plugin's own compile line (build-release/compile_commands.json): exit 0, no new warnings.
+The plugin itself is NOT built here (A's gate).
+
+The current limiter at any gain = ejlegacy.h, the port of EedLimiterProcessor's old path, proven against the Pro
+Tools prints (-40.1 / -50.5 dB residual) by the core test.
