@@ -95,6 +95,7 @@
 #include "EjmapPhaseB.h"
 #include "EjmapDrafts.h"
 #include "../../au_instantiate_probe/probe_truepeak.h"   // standalone (std only): the probe's BS.1770 interpolator, pinned here
+#include "../../au_instantiate_probe/probe_noise.h"      // standalone: the --sweep signal=noise generator, pinned here
 
 namespace
 {
@@ -8129,6 +8130,70 @@ void testDeesser()
     std::vector<std::pair<double, double>> flat; for (int k = 0; k < 121; ++k) flat.push_back ({ 20.0 * std::pow (1000.0, k / 120.0), -0.5 });
     check (! centreOf (flat).ok && modeWord (centreOf (flat)) == "unknown", "ds C4: nothing cut 3 dB -> no centre, mode unknown");
     check (labelHz ("6.50 kHz") && std::abs (*labelHz ("6.50 kHz") - 6500.0) < 1e-6 && labelHz ("7200 Hz") && *labelHz ("7200 Hz") == 7200.0 && labelHz ("5.2k") && *labelHz ("5.2k") == 5200.0 && ! labelHz ("Wide"), "ds H1: frequency labels");
+    // DEESSER_PROFILE_SPEC v0.1 (7 Oct, item 3): the section choice, the pick, tone vs noise, selectivity, the acceptance, the block
+    {
+        // S1: TripleD - the de-ess word names the section; the other sections' prefixes are never nominees
+        std::vector<std::pair<int, juce::String>> tripleD { { 0, "Input Gain" }, { 1, "DeBoxy Thresh" }, { 2, "DeBoxy Freq" }, { 3, "DeBoxy Range" }, { 5, "DeMud Thresh" }, { 6, "DeMud Freq" }, { 9, "DeEss Thresh" }, { 10, "DeEss Freq" }, { 11, "DeEss Mode" }, { 13, "Output Gain" } };
+        const auto tok = deessSectionToken (tripleD);
+        check (tok == "deess" && inSection ("DeEss Thresh", tok) && ! inSection ("DeBoxy Thresh", tok) && ! inSection ("Input Gain", tok), "ds S1: TripleD's section word is 'deess'; DeBoxy Thresh and Input Gain are outside it");
+        check (otherSectionPrefixed ("DeBoxy Thresh", tok, tripleD) && otherSectionPrefixed ("DeMud Freq", tok, tripleD) && ! otherSectionPrefixed ("DeEss Thresh", tok, tripleD) && ! otherSectionPrefixed ("Input Gain", tok, tripleD), "ds S1b: a control prefixed by another two-control section (DeBoxy, DeMud) is excluded; a lone 'Input Gain' is not a section");
+        std::vector<std::pair<int, juce::String>> waves { { 0, "Threshold" }, { 1, "Frequency" }, { 2, "Mode" }, { 3, "Range" }, { 4, "Monitor" } };
+        check (deessSectionToken (waves).isEmpty() && inSection ("Threshold", {}) && ! otherSectionPrefixed ("Threshold", {}, waves), "ds S1c: a single-section de-esser (Waves DeEsser) has no section word: every control stays a candidate");
+        std::vector<std::pair<int, juce::String>> sib { { 0, "Sibilance Threshold" }, { 1, "Sibilance Frequency" }, { 2, "Output" } };
+        check (deessSectionToken (sib) == "sibilance", "ds S1d: 'Sibilance' shared by two controls is a de-ess section word");
+        // S2: the pick and the comparisons
+        auto ladder = [] (double hz, std::function<double (float, double)> grAt) { Ladder L; L.ok = true; L.hz = hz; L.openIndex = 0; for (float n : { 0.0f, 0.2f, 0.4f, 0.6f, 0.8f, 1.0f }) for (double lv : { -30.0, -18.0, -12.0, -6.0 }) { LadderCell c; c.norm = n; c.text = juce::String (n, 1); c.levelDbfs = lv; c.ok = true; c.grDb = grAt (n, lv); L.cells.push_back (c); } return L; };
+        const auto noise = ladder (0.0, [] (float n, double lv) { return n * 10.0 * (lv == -12.0 ? 1.0 : lv == -6.0 ? 1.5 : 0.5); });   // at -12: 0, 2, 4, 6, 8, 10 dB
+        const auto pk = pickCell (noise);
+        check (pk && pk->norm == 0.4f && std::abs (pk->grDb - 4.0) < 1e-6 && pk->levelDbfs == -12.0, "ds S2a: the pick is the -12 dBFS noise cell nearest 5 dB of GR (0.4 -> 4 dB; 0.6 -> 6 is as near, the first wins)");
+        Ladder empty; check (! pickCell (empty), "ds S2b: no cells -> no pick");
+        const auto toneAgree = ladder (6500.0, [] (float n, double lv) { return n * 10.0 * (lv == -12.0 ? 1.2 : 1.0); });     // at the pick: 4.8 vs 4.0
+        const auto toneFar = ladder (6500.0, [] (float n, double lv) { return n * 10.0 * (lv == -12.0 ? 2.5 : 1.0); });       // 10 vs 4
+        const auto a = toneVsNoise (toneAgree, noise, pk), d = toneVsNoise (toneFar, noise, pk);
+        check (a.known && ! a.disagree && std::abs (a.diffDb - 0.8) < 1e-6 && d.known && d.disagree && std::abs (d.diffDb - 6.0) < 1e-6 && d.note.contains ("tone_noise_disagree") && d.note.contains ("the noise curve rules"), "ds S2c: tone 4.8 vs noise 4.0 agree; tone 10 vs 4 -> tone_noise_disagree, the noise curve rules");
+        check (! toneVsNoise (toneAgree, noise, std::nullopt).known, "ds S2d: no pick -> tone vs noise unknown, said");
+        const auto l997clean = ladder (997.0, [] (float, double) { return 0.1; }), l997dirty = ladder (997.0, [] (float n, double) { return n * 4.0; });
+        const auto s1 = selectivityAtPick (l997clean, pk, "split_band"), s2 = selectivityAtPick (l997dirty, pk, "split_band"), s3 = selectivityAtPick (l997dirty, pk, "wideband");
+        check (s1.known && s1.selective && s2.known && ! s2.selective && s2.note.contains ("not_selective") && ! s3.selective && s3.note.contains ("not claimed"), "ds S2e: 0.1 dB at 997 is selective; 1.6 dB in a split-band mode is not_selective; the same in wideband is not a claim");
+        // S3: the acceptance on noise
+        { Acceptance ac; ac.ran = true; ac.promisedGrDb = 4.0; ac.measuredGrDb = 4.3; ac.gr997Db = 0.2; judgeAcceptance (ac, true); check (ac.pass && std::abs (ac.missDb - 0.3) < 1e-9, "ds S3a: 4.3 for 4.0 on noise, 0.2 at 997 in split mode -> PASS");
+          ac.measuredGrDb = 4.7; judgeAcceptance (ac, true); check (! ac.pass && ac.why.contains ("MISSES"), "ds S3b: 0.7 dB off -> FAIL");
+          ac.measuredGrDb = 4.2; ac.gr997Db = 1.2; judgeAcceptance (ac, true); check (! ac.pass && ! ac.pass997 && ac.why.contains ("OVER the split-band bar"), "ds S3c: 1.2 dB at 997 in split mode fails the selectivity claim");
+          judgeAcceptance (ac, false); check (ac.pass && ac.why.contains ("wideband: not judged"), "ds S3d: the same 997 reading in wideband is not judged");
+          Acceptance nr; judgeAcceptance (nr, true); check (! nr.pass, "ds S3e: not run -> not passed"); }
+        // S4: the section 6 block from a record
+        { auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+          juce::Array<juce::var> centre { mk ({ { "freq_norm", 0.5 }, { "display", "5657 Hz" }, { "shape", "shelf" }, { "deepest_hz", 20000.0 }, { "corner_hz", 6938.0 }, { "depth_db", -8.2 }, { "mode_read", "split_band" } }), mk ({ { "freq_norm", 1.0 }, { "display", "9 kHz" }, { "shape", "notch" }, { "deepest_hz", 9100.0 }, { "corner_hz", 7000.0 }, { "depth_db", -6.0 }, { "mode_read", "split_band" } }) };
+          juce::Array<juce::var> mode { mk ({ { "display", "Split" }, { "norm", 0.0 }, { "mode_read", "split_band" } }), mk ({ { "display", "Wide" }, { "norm", 1.0 }, { "mode_read", "wideband" } }) };
+          const auto rec = mk ({ { "pick", mk ({ { "norm", 0.4 }, { "display", "-20" } }) }, { "centre", centre }, { "mode", mode }, { "mode_control", "Mode" }, { "frequency_control", "Frequency" }, { "mode_read", "split_band" }, { "selectivity_997_db", 0.0 }, { "not_selective", false }, { "tone_vs_noise_at_pick_db", 6.0 }, { "tone_noise_disagree", true }, { "tone_noise_note", "10 vs 4" }, { "acceptance", mk ({ { "pass", false }, { "why", "MISSES by 0.7" } }) }, { "section_token", "" } });
+          const auto B = deesserBlock (rec);
+          const auto& ps = B.getProperty ("band", {}).getProperty ("positions", {});
+          check (B.getProperty ("mode", {}).getProperty ("positions", {}).size() == 2 && B.getProperty ("mode", {}).getProperty ("positions", {})[1].getProperty ("verdict", "") == "wideband" && ps.size() == 2 && ps[0].hasProperty ("corner_hz") && ! ps[0].hasProperty ("centre_hz") && ps[1].hasProperty ("centre_hz") && (double) ps[1].getProperty ("centre_hz", 0.0) == 9100.0 && B.getProperty ("band", {}).getProperty ("shape", "") == "shelf",
+                 "ds S4a: the block carries the mode positions with their verdicts, and the band's positions with corner_hz for a shelf, centre_hz for a notch");
+          juce::StringArray ns; if (const auto* na = B.getProperty ("notes", {}).getArray()) for (const auto& n : *na) ns.add (n.toString());
+          check (ns.size() == 2 && ns[0].startsWith ("tone_noise_disagree") && ns[1].startsWith ("acceptance on noise") && std::abs ((double) B.getProperty ("tone_vs_noise_at_pick_db", 0.0) - 6.0) < 1e-9 && (double) B.getProperty ("selectivity_997_db", 1.0) == 0.0, "ds S4b: notes for the disagreement and the failed acceptance; the figures carried (" + ns.joinIntoString (" | ") + ")");
+          const auto old = mk ({ { "centre", centre } }); const auto B2 = deesserBlock (old);
+          check (B2.getProperty ("notes", {})[0].toString().contains ("without the 7 Oct fields") && B2.getProperty ("pick", {}).isVoid() && B2.getProperty ("mode", {}).isVoid(), "ds S4c: a 5 Oct record drafts a partial block with the note, null pick and mode"); }
+    }
+}
+
+/** THE NOISE SIGNAL (probe_noise.h, 7 Oct): deterministic in the seed, at the asked RMS, band-limited to 4-10 kHz. */
+void testNoise()
+{
+    using namespace ejprobe::noise;
+    const double sr = 48000.0; const long long n = 72000;   // a 1.5 s hold
+    const double target = std::pow (10.0, -15.01 / 20.0);   // the sine's RMS at -12 dBFS peak
+    const auto a = bandLimited (sr, n, 4000.0, 10000.0, 20261007ULL, target), b = bandLimited (sr, n, 4000.0, 10000.0, 20261007ULL, target), c = bandLimited (sr, n, 4000.0, 10000.0, 7ULL, target);
+    check (a.size() == (size_t) n && a == b, "noise N1: the same seed gives the same samples (a re-run is a re-measurement)");
+    { bool differ = false; for (size_t i = 0; i < 100; ++i) if (a[i] != c[i]) differ = true; check (differ, "noise N1b: another seed gives other samples"); }
+    { double ss = 0.0, pk = 0.0; for (double x : a) { ss += x * x; pk = std::max (pk, std::abs (x)); } const double rms = std::sqrt (ss / (double) n);
+      check (std::abs (20.0 * std::log10 (rms / target)) < 0.001 && 20.0 * std::log10 (pk / rms) > 8.0 && 20.0 * std::log10 (pk / rms) < 14.0, "noise N2: RMS at the target within 0.001 dB (the sine's RMS at the level); crest " + juce::String (20.0 * std::log10 (pk / rms), 1) + " dB (a Gaussian, 8-14 expected)"); }
+    // band-limited: the mean power over ten bins in the band against ten at 1 kHz (two octaves under, -24 dB/oct -> about -48) and ten at 16 kHz
+    auto meanDb = [&] (double hz) { double s = 0.0; for (int k = 0; k < 10; ++k) s += powerDbAt (a, sr, hz + k * 2.0); return s / 10.0; };
+    const double in = meanDb (6500.0), low = meanDb (1000.0), high = meanDb (16000.0), lo4k = meanDb (4000.0), hi10k = meanDb (10000.0);
+    check (in - low > 30.0 && in - high > 8.0, "noise N3: in-band power is " + juce::String (in - low, 1) + " dB over 1 kHz and " + juce::String (in - high, 1) + " dB over 16 kHz");
+    check (std::abs ((in - lo4k) - 3.0) < 3.0 && std::abs ((in - hi10k) - 3.0) < 3.0, "noise N3b: the band edges (4 and 10 kHz) sit about 3 dB under the band's middle (" + juce::String (in - lo4k, 1) + " / " + juce::String (in - hi10k, 1) + ")");
+    check (bandLimited (sr, 0, 4000.0, 10000.0, 1ULL, target).empty(), "noise N4: zero samples asked -> empty, no division by zero");
 }
 
 /** MULTIBAND (EjmapMultiband.h, the proposal's prototype, 5 Oct R7): bands from crossovers, the dB offset to a norm, the whole-unit gain. */
@@ -8525,6 +8590,7 @@ int main (int, char**)
     testReverbDelay();
     testDynamics();
     testDeesser();
+    testNoise();
     testMultiband();
     testRoleEvidence();
     testTextPassTimeout();

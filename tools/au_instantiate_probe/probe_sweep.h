@@ -33,10 +33,23 @@
 //   - Every write says which mechanism landed it (landWrite): instack, pump, render (silence rendered after the pump
 //     timed out), or unlanded. Every hold prints tone_frac, the share of output power at the test tone.
 //   - Nothing is ever written back: the process exits after the sweep, and the instance dies with it.
+//
+// THE NOISE SIGNAL (7 Oct 2026, DEESSER_PROFILE_SPEC v0.1 section 3: "band-limited noise 4-10 kHz" as the de-esser ladder's
+// primary signal - real sibilance is noise, and a detector tuned to a narrow band reacts to a tone very differently):
+//   signal=noise [lo=4000] [hi=10000] [seed=20261007]
+//   Seeded Gaussian white noise (xorshift64*, Box-Muller) through a 4th-order Butterworth band-pass (two high-pass biquads at
+//   lo, two low-pass at hi, Butterworth Q pair 0.5412 / 1.3066: -24 dB/oct outside the band), the filter run for half a second
+//   before the first sample is taken, the whole hold generated up front and NORMALISED SO ITS RMS EQUALS THE SINE'S AT THE
+//   LEVEL (level - 3.01 dB): a noise cell and a tone cell at the same `level` present the same RMS to the detector, so the two
+//   ladders compare. Its peak is then about 9 dB over its RMS (a Gaussian crest), printed as in_peak_db. The same seed gives
+//   the same noise in every process and every hold (a doubled hold replays it), so a re-run is a re-measurement, not a new
+//   sample. The spec line carries signal / noise_lo / noise_hi / seed; tone_frac is printed as computed at hz= and means
+//   nothing for noise (said here, not decided by the probe).
 #pragma once
 
 #include "probe_write.h"
 #include "probe_truepeak.h"
+#include "probe_noise.h"
 #include <array>
 #include <map>
 
@@ -56,6 +69,8 @@ struct SweepSpec
     // reads it as the sine; a peak detector reaches the same GR 3.01 dB lower in level. `level` keeps meaning sine-peak dBFS.
     double hz2 = 0.0;      // 0 = sine; > 0 = two-tone at hz and hz2
     double sampleRate = 0.0;   // sr= (6 Oct, accuracy A4): 0 = the render default (48 kHz); 44100 / 96000 prepare the plugin at that rate
+    // signal=noise (7 Oct): band-limited seeded noise instead of the sine (see the header); lo / hi in Hz, the seed
+    bool noise = false; double noiseLoHz = 4000.0, noiseHiHz = 10000.0; unsigned long long seed = 20261007ULL;
 };
 
 inline bool parseSweepArgs (int argc, char** argv, int first, SweepSpec& s, juce::String& why)
@@ -71,6 +86,10 @@ inline bool parseSweepArgs (int argc, char** argv, int first, SweepSpec& s, juce
         else if (k == "hz") s.hz = v.getDoubleValue();
         else if (k == "hz2") s.hz2 = v.getDoubleValue();
         else if (k == "sr") s.sampleRate = v.getDoubleValue();
+        else if (k == "signal") { if (v == "noise") s.noise = true; else if (v == "sine") s.noise = false; else { why = "signal= is sine or noise"; return false; } }
+        else if (k == "lo") s.noiseLoHz = v.getDoubleValue();
+        else if (k == "hi") s.noiseHiHz = v.getDoubleValue();
+        else if (k == "seed") s.seed = (unsigned long long) v.getLargeIntValue();
         else if (k == "hold") s.holdS = v.getDoubleValue();
         else if (k == "discard") s.discardS = v.getDoubleValue();
         else if (k == "win") s.winS = v.getDoubleValue();
@@ -86,6 +105,7 @@ inline bool parseSweepArgs (int argc, char** argv, int first, SweepSpec& s, juce
     if (s.thr < 0) { why = "no thr=<index>"; return false; }
     if (s.norms.empty() && s.refS <= 0) { why = "nothing to measure: no norms= and ref=0"; return false; }
     if (s.levels.empty() || s.holdS <= s.discardS || s.winS <= 0) { why = "bad levels/hold/discard/win"; return false; }
+    if (s.noise && (s.noiseLoHz < 20.0 || s.noiseHiHz <= s.noiseLoHz || s.seed == 0)) { why = "noise lo/hi/seed out of range"; return false; }
     return true;
 }
 
@@ -99,6 +119,8 @@ struct SweepRenderer
     double phase2 = 0.0, step2 = 0.0;     // the second tone of a two-tone signal (0 = sine only)
     int block, mainIn, mainOut, fedIn = 0;   // fedIn: the channels the stimulus is WRITTEN to under the sidechain policy (main + the first extra bus under "echojay") - EVERY mode writes r.fedIn, never r.mainIn (6 Oct: a connected, silent sidechain read no compression on Waves C1 (s))
 
+    // signal=noise: set by runSweep before any render; the hold's samples come from noise::bandLimited at the level's RMS
+    bool useNoise = false; double noiseLoHz = 4000.0, noiseHiHz = 10000.0; unsigned long long seed = 20261007ULL;
     SweepRenderer (juce::AudioPluginInstance& proc, double sampleRate, int blockSize, double hz, double hz2 = 0.0)
         : p (proc), io (juce::jmax (2, proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels()), blockSize),
           sr (sampleRate), step (juce::MathConstants<double>::twoPi * hz / sampleRate),
@@ -144,6 +166,8 @@ struct SweepRenderer
         double outPeak = 0.0, outTruePeakCubic = 0.0;
         std::vector<std::array<double, 4>> last ((size_t) juce::jmax (1, mainOut), std::array<double, 4> { 0.0, 0.0, 0.0, 0.0 });   // the last four samples per channel for the cubic interpolation
         std::vector<truepeak::Tracker> tp ((size_t) juce::jmax (1, mainOut));   // BS.1770 4x oversampled true peak, per channel
+        // signal=noise: the whole render's samples up front, RMS = the sine's at this level (amp / sqrt 2); replayed identically by the seed
+        const std::vector<double> nz = useNoise ? ejprobe::noise::bandLimited (sr, total, noiseLoHz, noiseHiHz, seed, amp / std::sqrt (2.0)) : std::vector<double>();
         // Goertzel at the tone over the measured span, per main output channel: is the output still the INPUT's tone?
         const double gcoef = 2.0 * std::cos (step), gcoef2 = step2 > 0.0 ? 2.0 * std::cos (step2) : 0.0;
         std::vector<double> gs1 ((size_t) juce::jmax (1, mainOut), 0.0), gs2 ((size_t) juce::jmax (1, mainOut), 0.0);
@@ -154,7 +178,8 @@ struct SweepRenderer
             for (int n = 0; n < block; ++n)
             {
                 // Two-tone: each tone at amp / sqrt 2, so the RMS equals the sine's (amp^2/2) and the peak is 3.01 dB higher.
-                const float v = step2 > 0.0 ? (float) (amp * (std::sin (phase) + std::sin (phase2)) / std::sqrt (2.0)) : (float) (amp * std::sin (phase));
+                const long long tt = done + n;
+                const float v = useNoise ? (tt < total ? (float) nz[(size_t) tt] : 0.0f) : step2 > 0.0 ? (float) (amp * (std::sin (phase) + std::sin (phase2)) / std::sqrt (2.0)) : (float) (amp * std::sin (phase));
                 for (int ch = 0; ch < fedIn; ++ch) io.setSample (ch, n, v);
                 phase += step;
                 if (phase > juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
@@ -195,8 +220,8 @@ struct SweepRenderer
                 if (mainOut > 0) ss /= mainOut;
                 winSs += ss;
                 if (t >= from) ++measured;
-                const double x = step2 > 0.0 ? amp * (std::sin (phase - step * (block - n)) + std::sin (phase2 - step2 * (block - n))) / std::sqrt (2.0)
-                                             : amp * std::sin (phase - step * (block - n));   // the input sample, for the input level (two-tone when set)
+                const double x = useNoise ? nz[(size_t) t] : step2 > 0.0 ? amp * (std::sin (phase - step * (block - n)) + std::sin (phase2 - step2 * (block - n))) / std::sqrt (2.0)
+                                                              : amp * std::sin (phase - step * (block - n));   // the input sample, for the input level (two-tone / noise when set)
                 inSs += x * x; inPeak = juce::jmax (inPeak, std::abs (x));
                 if (++inWin == winN) { h.windowsDb.push_back (toDb (std::sqrt (winSs / winN))); winSs = 0.0; inWin = 0; }
             }
@@ -287,10 +312,11 @@ inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const Re
     { std::printf ("refused no parameter at index %d (%d parameters)\n", s.thr, ps.size()); return; }
     std::printf ("sweep\tproto\t1\tthr\t%d\tname\t%s\tpositions\t%d\tlevels\t%d\n", s.thr,
                  clean (ps[s.thr]->getName (128)).toRawUTF8(), (int) s.norms.size(), (int) s.levels.size());
-    std::printf ("spec\thz\t%.3f\thold_s\t%.3f\tdiscard_s\t%.3f\twin_s\t%.3f\tref_s\t%.3f\tmoving_db\t%.3f\tamplitude\tpeak_at_level\treset_per_hold\t%d\tsignal\t%s\thz2\t%.3f\n",
-                 s.hz, s.holdS, s.discardS, s.winS, s.refS, s.movingDb, s.resetPerHold ? 1 : 0, s.hz2 > 0.0 ? "two_tone_same_rms" : "sine", s.hz2);
+    std::printf ("spec\thz\t%.3f\thold_s\t%.3f\tdiscard_s\t%.3f\twin_s\t%.3f\tref_s\t%.3f\tmoving_db\t%.3f\tamplitude\tpeak_at_level\treset_per_hold\t%d\tsignal\t%s\thz2\t%.3f\tnoise_lo\t%.1f\tnoise_hi\t%.1f\tseed\t%llu\n",
+                 s.hz, s.holdS, s.discardS, s.winS, s.refS, s.movingDb, s.resetPerHold ? 1 : 0, s.noise ? "noise_band_limited_same_rms" : s.hz2 > 0.0 ? "two_tone_same_rms" : "sine", s.hz2, s.noise ? s.noiseLoHz : 0.0, s.noise ? s.noiseHiHz : 0.0, s.noise ? s.seed : 0ULL);
     configureAndPrepare (p, rs);
     SweepRenderer r (p, rs.sampleRate, rs.block, s.hz, s.hz2);
+    r.useNoise = s.noise; r.noiseLoHz = s.noiseLoHz; r.noiseHiHz = s.noiseHiHz; r.seed = s.seed;
     std::printf ("config\tmain_in\t%d\tmain_out\t%d\tlatency\t%d\tsr\t%.0f\n", r.mainIn, r.mainOut, p.getLatencySamples(), rs.sampleRate);
     if (r.mainIn == 0 || r.mainOut == 0) { std::printf ("refused no main input or output bus\n"); return; }
 

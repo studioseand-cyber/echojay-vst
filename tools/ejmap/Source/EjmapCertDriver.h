@@ -5046,11 +5046,18 @@ inline int runDeesser (const SweepOptions& opt)
     struct Ctl { int index = -1; juce::String name; std::map<juce::String, double> texts; };
     Ctl threshold, freq, mode;
     auto answers = [] (const juce::String& name, std::initializer_list<const char*> terms) { for (const char* t : terms) if (nametokens::controlAnswersTerm (name, t)) return true; return false; };
+    // THE SECTION (spec section 8, 7 Oct: TripleD's "DeBoxy Thresh" was taken for its "DeEss Thresh"): the strip's token logic - a de-ess
+    // word shared by two or more controls names the de-esser's section, and the nominees come from that section only; a control whose
+    // first token names ANOTHER section of two or more controls is never a nominee
+    std::vector<std::pair<int, juce::String>> allControls; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) allControls.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", "").toString() });
+    const auto sectionToken = deesser::deessSectionToken (allControls);
+    if (sectionToken.isNotEmpty()) { int n = 0; for (const auto& [i, nm] : allControls) if (deesser::inSection (nm, sectionToken)) ++n; say ("DS: the de-esser's section by word: '" + sectionToken + "' (" + juce::String (n) + " control(s)); nominees come from it"); }
     if (const auto* cs = base.getProperty ("controls", {}).getArray())
         for (const auto& c : *cs)
         {
             const int idx = (int) c.getProperty ("index", -1); const auto n = c.getProperty ("name", "").toString();
             if (sweep::neverTouchName (n)) continue;
+            if (! deesser::inSection (n, sectionToken) || deesser::otherSectionPrefixed (n, sectionToken, allControls)) continue;
             const bool word = sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2;
             if (! word && threshold.index < 0 && answers (n, { "threshold", "thresh", "thr", "sensitivity", "amount", "reduction", "range" })) threshold = { idx, n, {} };
             else if (! word && freq.index < 0 && answers (n, { "frequency", "freq", "hz", "center", "centre", "tune" })) freq = { idx, n, {} };
@@ -5063,6 +5070,7 @@ inline int runDeesser (const SweepOptions& opt)
     auto* o = new juce::DynamicObject();
     o->setProperty ("schema", "ej_deesser_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.9, not exported, not published");
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("section_token", sectionToken); o->setProperty ("threshold_control", threshold.name); o->setProperty ("frequency_control", freq.index >= 0 ? juce::var (freq.name) : juce::var()); o->setProperty ("mode_control", mode.index >= 0 ? juce::var (mode.name) : juce::var());
     auto setOf = [] (int idx, double norm) { return juce::String (idx) + ":" + juce::String (norm, 6); };
     juce::StringArray norms; for (int k = 0; k <= 5; ++k) norms.add (juce::String (k / 5.0f, 6));
     int measured = 0;
@@ -5098,28 +5106,34 @@ inline int runDeesser (const SweepOptions& opt)
         if (ladders.count (6500.0) && ladders.count (997.0) && ladders.at (6500.0).ok && ladders.at (997.0).ok)
             say ("  band selectivity on the ladder: max GR " + juce::String (ladders.at (6500.0).maxGrDb, 2) + " dB at 6.5 kHz vs " + juce::String (ladders.at (997.0).maxGrDb, 2) + " dB at 997 Hz");
     }
-    // 1b. THE NOISE LADDER (5 Oct evening, item 2): band-limited noise 4-10 kHz - 121 random-phase tones over that band through the
-    // probe's --response, the threshold at 6 norms per process, one process per level; GR = total output power against the open
-    // end's at that level (the de-esser's own band, not one tone)
+    // 1b. THE NOISE LADDER AS THE PRIMARY CURVE (DEESSER_PROFILE_SPEC v0.1 section 3, 7 Oct): the SAME compressor ladder (the probe's
+    // --sweep, the threshold at 6 norms, five levels, one process) on band-limited Gaussian noise 4-10 kHz (probe_noise.h: seeded,
+    // RMS = the sine's at the level), so the noise cells and the 6.5 kHz tone's compare cell for cell; the tone is the cross-check
+    // (until 7 Oct this was 121 random-phase tones through --response, total power - a different signal and a different reading)
+    Ladder Lnoise;
     {
-        juce::Array<juce::var> rows; double maxNoiseGr = 0.0; int readN = 0;
-        std::map<double, std::vector<std::pair<float, double>>> gainByLevel;   // level -> (norm, total gain)
-        for (double Lv : { -30.0, -24.0, -18.0, -12.0, -6.0 })
+        const auto r = run ("ladderNoise", { "--sweep", "thr=" + juce::String (threshold.index), "norms=" + norms.joinIntoString (","), "levels=-30,-24,-18,-12,-6", "hz=" + juce::String (deesser::kToneHz, 0), "signal=noise", "lo=" + juce::String (deesser::kNoiseLoHz, 0), "hi=" + juce::String (deesser::kNoiseHiHz, 0), "seed=" + juce::String ((juce::int64) deesser::kNoiseSeed), "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
+        if (r.kind == ChildResult::Kind::uiShown) { say ("DS: a window appeared; stopping"); return 5; }
+        const auto m = sweep::parseSweep (r.cleanExit() ? r.out : juce::String());
+        Lnoise = ladderOf (m, 0.0);
+        auto* nl = new juce::DynamicObject(); nl->setProperty ("signal", deesser::noiseSignalDescription()); nl->setProperty ("ok", Lnoise.ok); nl->setProperty ("note", Lnoise.why); nl->setProperty ("max_gr_db", std::round (Lnoise.maxGrDb * 100.0) / 100.0); nl->setProperty ("primary", true);
+        juce::Array<juce::var> cells; for (const auto& c : Lnoise.cells) { auto* co = new juce::DynamicObject(); co->setProperty ("norm", c.norm); co->setProperty ("display", c.text); co->setProperty ("level_dbfs", c.levelDbfs); co->setProperty ("gain_db", std::round (c.gainDb * 100.0) / 100.0); co->setProperty ("gr_db", std::round (c.grDb * 100.0) / 100.0); cells.add (juce::var (co)); }
+        nl->setProperty ("cells", cells); o->setProperty ("noise_ladder", juce::var (nl));
+        if (! Lnoise.ok) say ("  noise ladder (4-10 kHz): " + Lnoise.why + " (" + r.describe() + ")");
+        else
         {
-            const auto r = run ("noise.L" + juce::String ((int) -Lv), { "--response", "ctl=" + juce::String (threshold.index), "norms=" + norms.joinIntoString (","), "tones=121", "lo=4000", "hi=10000", "db=" + juce::String (Lv, 0), "hold=1.5", "discard=0.75" });
-            if (r.kind == ChildResult::Kind::uiShown) { say ("DS: a window appeared; stopping"); return 5; }
-            const auto resp = eq::parseResponse (r.cleanExit() ? r.out : juce::String()); if (! resp.ok) continue;
-            for (const auto& p : resp.positions) if (p.landed) if (const auto g = multiband::totalGainDb (p)) gainByLevel[Lv].push_back ({ p.norm, *g });
+            ++measured;
+            say ("  noise ladder (4-10 kHz, primary): " + Lnoise.why + (ladders.count (6500.0) && ladders.at (6500.0).ok ? " (the 6.5 kHz tone gave " + juce::String (ladders.at (6500.0).maxGrDb, 2) + ")" : juce::String()));
+            juce::StringArray texts; for (const auto& c : Lnoise.cells) texts.addIfNotAlreadyThere (c.text);
+            for (const auto& t : texts) { juce::String line = "      " + threshold.name + " = '" + t + "':"; for (const auto& c : Lnoise.cells) if (c.text == t && c.ok) line << "  " << juce::String (c.levelDbfs, 0) << " dBFS GR " << juce::String (c.grDb, 2); say (line); }
         }
-        for (auto& [Lv, v] : gainByLevel)
-        {
-            double open = -1e9; for (const auto& [n, g] : v) open = juce::jmax (open, g);
-            for (const auto& [n, g] : v) { const double gr = open - g; maxNoiseGr = juce::jmax (maxNoiseGr, gr); ++readN; auto* ro = new juce::DynamicObject(); ro->setProperty ("level_dbfs", Lv); ro->setProperty ("norm", n); ro->setProperty ("gr_db", std::round (gr * 100.0) / 100.0); rows.add (juce::var (ro)); }
-        }
-        auto* m = new juce::DynamicObject(); m->setProperty ("signal", "121 random-phase tones 4-10 kHz (band-limited noise), total power"); m->setProperty ("max_gr_db", std::round (maxNoiseGr * 100.0) / 100.0); m->setProperty ("cells", rows); o->setProperty ("noise_ladder", juce::var (m));
-        say ("  noise ladder (4-10 kHz, " + juce::String (readN) + " readings): max GR " + juce::String (maxNoiseGr, 2) + " dB" + (ladders.count (6500.0) && ladders.at (6500.0).ok ? " (the 6.5 kHz tone gave " + juce::String (ladders.at (6500.0).maxGrDb, 2) + ")" : juce::String()));
-        if (readN > 0) ++measured;
     }
+    // THE PICK (section 5.2 as the acceptance reads it), TONE VS NOISE (section 4) and SELECTIVITY at it (sections 3 / 4)
+    const auto pick = deesser::pickCell (Lnoise);
+    const auto tn = deesser::toneVsNoise (ladders[6500.0], Lnoise, pick);
+    o->setProperty ("pick", pick ? [&] { auto* pk = new juce::DynamicObject(); pk->setProperty ("norm", pick->norm); pk->setProperty ("display", pick->text); pk->setProperty ("level_dbfs", pick->levelDbfs); pk->setProperty ("gr_db", std::round (pick->grDb * 100.0) / 100.0); pk->setProperty ("rule", "the noise cell at -12 dBFS nearest 5 dB of GR"); return juce::var (pk); }() : juce::var());
+    o->setProperty ("tone_vs_noise_at_pick_db", tn.known ? juce::var (std::round (tn.diffDb * 100.0) / 100.0) : juce::var()); o->setProperty ("tone_noise_disagree", tn.known && tn.disagree); o->setProperty ("tone_noise_note", tn.note);
+    say ("  pick: " + (pick ? pick->text + " at " + juce::String (pick->levelDbfs, 0) + " dBFS, " + juce::String (pick->grDb, 2) + " dB of GR on noise" : juce::String ("none")) + " | " + tn.note);
     // ROLES BY MEASUREMENT: the threshold nominee by GR at -12 dBFS on the sibilance tone between its ends
     const auto& L65 = ladders[6500.0];
     {
@@ -5175,6 +5189,40 @@ inline int runDeesser (const SweepOptions& opt)
         }
     }
     if (freq.index >= 0) roles.push_back (roleevidence::nominee (freq.index, freq.name, "frequency", roleevidence::signatureHolds ("frequency", freqA, freqB)));
+    // the mode as read (the centre rows' most common reading: the unit as it is), the selectivity at the pick, and THE ACCEPTANCE ON NOISE
+    // (section 7): the pick's threshold written in a fresh process on the noise at the pick's level, the GR re-measured against the
+    // ladder's open end; in split mode 997 Hz at the pick must stay within 0.5 dB
+    juce::String modeRead;
+    { std::map<juce::String, int> count; if (const auto* cr = o->getProperty ("centre").getArray()) for (const auto& r : *cr) ++count[r.getProperty ("mode_read", "").toString()]; int best = 0; for (const auto& [k, n] : count) if (k.isNotEmpty() && n > best) { best = n; modeRead = k; } }
+    o->setProperty ("mode_read", modeRead.isNotEmpty() ? juce::var (modeRead) : juce::var());
+    const auto sel = deesser::selectivityAtPick (ladders[997.0], pick, modeRead);
+    o->setProperty ("selectivity_997_db", sel.known ? juce::var (std::round (sel.grDb * 100.0) / 100.0) : juce::var()); o->setProperty ("not_selective", sel.known && ! sel.selective && modeRead == "split_band"); o->setProperty ("selectivity_note", sel.note);
+    say ("  selectivity: " + sel.note + (modeRead.isNotEmpty() ? " (mode as read: " + modeRead + ")" : juce::String()));
+    {
+        deesser::Acceptance a;
+        if (pick && Lnoise.ok && Lnoise.openIndex >= 0)
+        {
+            a.promisedGrDb = pick->grDb;
+            std::optional<double> openNoise, open997; for (const auto& c : Lnoise.cells) if (c.ok && std::abs (c.norm - Lnoise.cells[(size_t) Lnoise.openIndex].norm) < 1e-6 && std::abs (c.levelDbfs - pick->levelDbfs) < 0.01) openNoise = c.gainDb;
+            if (const auto& L9 = ladders[997.0]; L9.ok && L9.openIndex >= 0) for (const auto& c : L9.cells) if (c.ok && std::abs (c.norm - L9.cells[(size_t) L9.openIndex].norm) < 1e-6 && std::abs (c.levelDbfs - pick->levelDbfs) < 0.01) open997 = c.gainDb;
+            const auto r = run ("accNoise", { "--sweep", "thr=" + juce::String (threshold.index), "norms=" + juce::String (pick->norm, 6), "levels=" + juce::String (pick->levelDbfs, 0), "hz=" + juce::String (deesser::kToneHz, 0), "signal=noise", "lo=" + juce::String (deesser::kNoiseLoHz, 0), "hi=" + juce::String (deesser::kNoiseHiHz, 0), "seed=" + juce::String ((juce::int64) deesser::kNoiseSeed), "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
+            if (r.kind == ChildResult::Kind::uiShown) { say ("DS: a window appeared; stopping"); return 5; }
+            const auto m = sweep::parseSweep (r.cleanExit() ? r.out : juce::String());
+            for (const auto& pos : m.positions) for (const auto& [lk, h] : pos.holds) if (h.present && h.levelDb > -200.0 && openNoise) { a.ran = true; a.measuredGrDb = *openNoise - (h.levelDb - h.inRmsDb); }
+            if (a.ran && open997)
+            {
+                const auto r9 = run ("acc997", { "--sweep", "thr=" + juce::String (threshold.index), "norms=" + juce::String (pick->norm, 6), "levels=" + juce::String (pick->levelDbfs, 0), "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
+                if (r9.kind == ChildResult::Kind::uiShown) { say ("DS: a window appeared; stopping"); return 5; }
+                const auto m9 = sweep::parseSweep (r9.cleanExit() ? r9.out : juce::String());
+                for (const auto& pos : m9.positions) for (const auto& [lk, h] : pos.holds) if (h.present && h.levelDb > -200.0) a.gr997Db = *open997 - (h.levelDb - h.inRmsDb);
+            }
+            if (! a.ran) a.why = "the acceptance process gave no reading (" + r.describe() + ")" + (openNoise ? juce::String() : "; the noise ladder has no open-end cell at the pick's level");
+            deesser::judgeAcceptance (a, modeRead == "split_band");
+        }
+        else a.why = pick ? "the noise ladder has no open end: nothing to re-measure against" : "no pick: the noise ladder has no cell at -12 dBFS";
+        o->setProperty ("acceptance", deesser::acceptanceVar (a, pick));
+        say ("  acceptance on noise: " + (a.ran ? juce::String (a.pass ? "PASS" : "FAIL") + " - " + a.why : a.why));
+    }
     // the unnamed pool: one --sweep per control at its ends on the sibilance tone at -12 dBFS; GR between the ends = the threshold signature
     for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
     {
@@ -5187,9 +5235,19 @@ inline int runDeesser (const SweepOptions& opt)
     sayRoles (say, roles, "unnamed controls probed for the threshold signature only");
     setRoles (o, roles, "unnamed controls probed for the threshold signature only (a frequency probe needs the hard threshold)");
     o->setProperty ("processes", processN); o->setProperty ("measuredAt", nowStamp());
-    o->setProperty ("method", "ladder: probe --sweep with a 6.5 kHz sine (and 997 Hz as the control), the threshold at 6 norms, levels -30..-6 dBFS, GR = gain at the open end minus gain at the position; centre and mode: probe --response (121-tone multitone at -12 dBFS) at the hardest threshold against the open end, the deepest deviation's frequency (parabolic) is the centre; split_band = within 1 dB at 997 Hz while the band is cut 3 dB or more, wideband = 997 Hz cut within 1.5 dB of the band, else partial");
-    outDir.getChildFile (stem + ".deesser.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    o->setProperty ("method", "ladders: probe --sweep, the threshold at 6 norms, levels -30..-6 dBFS, GR = gain at the open end minus gain at the position - PRIMARY on band-limited Gaussian noise 4-10 kHz (seeded, RMS = the sine's at the level), the 6.5 kHz sine as the cross-check, 997 Hz for selectivity; the pick = the noise cell at -12 dBFS nearest 5 dB of GR; tone_noise_disagree when the tone's GR at the pick differs by over 3 dB; not_selective when 997 Hz is reduced over 0.5 dB at the pick in a mode read as split band; centre and mode: probe --response (121-tone multitone at -12 dBFS) at the hardest tone threshold against the open end, the deepest deviation's frequency (parabolic) is the centre; split_band = within 1 dB at 997 Hz while the band is cut 3 dB or more, wideband = 997 Hz cut within 1.5 dB of the band, else partial; acceptance: the pick re-measured on noise in a fresh process within 0.5 dB, 997 Hz within 0.5 dB in split mode; the de-esser's section by the strip's token logic");
+    const juce::var rec (o);   // one var owns the record
+    outDir.getChildFile (stem + ".deesser.json").replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n");
     say ("DS: -> " + outDir.getChildFile (stem + ".deesser.json").getFullPathName() + " (" + juce::String (processN) + " processes)");
+    // THE DRAFT: the spec's section 6 `deesser` block (a de-esser profile is a compressor profile measured on the sibilance signal PLUS this block)
+    {
+        auto* D = new juce::DynamicObject(); D->setProperty ("schema", "ej_comp_profile deesser block (DEESSER_PROFILE_SPEC section 6)"); D->setProperty ("spec", drafts::specTag ("DEESSER_PROFILE_SPEC")); D->setProperty ("status", drafts::statusLine ("DEESSER_PROFILE_SPEC") + "; the deesser block only - the amount curve on noise is the compressor profile's"); D->setProperty ("block", "deesser");
+        D->setProperty ("plugin", drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, base.getProperty ("map_fp", juce::var())));
+        D->setProperty ("measured", drafts::measuredBlock ("EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, deesser::noiseSignalDescription()));
+        D->setProperty ("deesser", deesser::deesserBlock (rec));
+        const auto f = drafts::draftFile (opt.out, stem, "deesser_block"); const auto problem = drafts::writeDraft (f, juce::var (D));
+        say (problem.isEmpty() ? "DS: draft deesser block -> " + f.getFullPathName() : "DS: " + problem);
+    }
     return measured > 0 ? 0 : 4;
 }
 
