@@ -1799,3 +1799,632 @@ level_loop_guard: 100% GREEN.
 6. **Re-aim `sidechain_guard`** at a mock whose sidechain survives adoption: it is green while asserting the
    built-in case.
 7. **Fold `link_state_guard` into the CMake tree** so it stops being the one thing outside the gate.
+
+---
+
+## ROUND 06b (6/7 Oct 2026) — two crashes, and a sensor that reported 0.6 against 20 dB
+
+### 1. Quit crash (17:54) — `drainPendingDispose` from the timer, into a dying library
+`~EchoJayEditor` → `borrowEditorClosed()` → `borrowRelease(false)` is what releases on a quit (hence `keepEdits=N`).
+Logic destroys the EDITOR first, so the borrow released four instances into the pending list and the 1 Hz timer
+disposed them 220 ms later, while the Link's teardown was in flight. Fixes: a process-wide one-way teardown flag set
+by `~EchoJayProcessor` (AP_Close), plus a 2.5 s quiet window before the timer may dispose — the window is what wins
+the race, because at the moment of that crash no processor had been destroyed yet. Release and drain both KEEP once
+the flag is set. `~EchoJayEditor` is deliberately NOT a signal: that window closes constantly mid-session.
+**I had to narrow my own first attempt**: setting the flag in `clearBorrowPoolForTeardown` meant destroying any
+ChainHost disabled disposal for the rest of the session, which `teardown_dispose_guard (3)` caught immediately.
+
+### 2. Mid-session crash (18:32:09) — a Softube observer, 44 s after we disposed its instance
+A CL 1B disposed at 18:31:24 on rack release left an NSWindow observer registered; the NLS Buss popout's window
+frame change posted into it. Same class as the AMEK EQ 250's leaked timer, which is why `removeSlot` has always kept
+a graveyard — the release path never had one.
+**Ruling applied: a hosted third-party AU is never disposed mid-session.** Built-ins (anything that is NOT a
+`juce::AudioPluginInstance`) remain the only things disposed. Third-party instances are PARKED for reuse, or kept
+forever when the pool is full. Caps: `kBorrowPoolPerKey = 1`, `kBorrowPoolMaxTotal = 24`, both named in the log line.
+**Why parking rather than only keeping:** a cap on a never-freed store cannot free anything, so keeping alone grows
+with every close/reopen cycle; parking is bounded by construction at one spare per (plugin, rack).
+**Why EJNoReuse was on, and why parking is safe again:** reuse was disabled after the 16 Sep render crash, where a
+parked node kept its nodeID in the graph's `preparedNodes` so `applySettings` skipped re-preparing it and a later
+reseed reconfigured an AU whose render resources were never rebuilt. That fix is in (the park path calls
+`suspendProcessing(true)` then `releaseResources()`, and the reattach re-prepares after seeding) and the reference
+accounting is correct now. **JUDGEMENT CALL, FLAGGED:** this parks third-party instances whatever `reuse_on` says,
+because the ruling leaves no option that is both safe and bounded. `reuse_on` still governs whether a parked
+instance is REUSED.
+**NOT DONE, and deliberately:** the editor-view half ("never destroy or detach a third-party editor view
+ourselves"). `LinkEditor.h:597` does `openPopoutForSelected(); // destroys the inline editor first`, so the concern
+is real — but rewriting third-party editor lifecycle in a UI subsystem I have only skimmed, unattended, is how a
+worse build ships. Sean's own diagnosis attributes this crash to the DISPOSE at 18:31:24, which is now fixed, so
+this is belt-and-braces rather than the cause. Owed next round, with the inline/popout leg.
+
+### 3. The 1176: 0.6 dB reported against a meter showing 20
+Three fixes, each asserted by `level_loop_guard (4i)`:
+- crest is not trusted alone on an input-drive unit. When crest and the level method disagree by more than
+  `kSensorDisagreeDb` (3.0 dB) the sensor is `unmeasurable-inputdrive` and the GR figure is NaN. His numbers were
+  0.6 against -5.0, i.e. 5.6 apart.
+- a BUILD hold never writes before its settle windows: `holdWindows < kSettleMaxSteps` (3) returns `hold-settling`
+  and writes nothing. `judged` could not be used - the ask and settle paths reset it, so the hold keeps its own count.
+- the card can no longer say "level matched" on a figure nobody measured; it says the gain reduction could not be
+  measured, and why (an input drive mixes the drive and the reduction into one number).
+**On reading a GR meter parameter:** the mechanism already exists (`senseParams` / `grReadable` / `sensedGrDb`, and
+06a's rule prefers the meter when the block names one). Whether the UAD 1176 Rev E exposes one is NOT something this
+tree can answer: resolving it means loading a PACE-wrapped plugin, which is barred on this Mac. The block's
+`sense_params` come from the map, so it is B/Kathy's side to confirm.
+
+### 4. Log-only lines (done)
+Every IN write logs slot, before→after, clamped or not, and the slot's current OUT. Every window line now carries
+`out90=`, `slotDiff=`, `chainIn=`, `chainOut=`, `chainDiff=` beside `in90=`, on both twins.
+**NOT DONE:** the "once a second while playing with no hold running" line — that needs a timer path outside the loop,
+which is more than a log statement. Owed.
+
+### 5. Why `borrowHost_` never gets the Link track's role — and why that is not the bug
+`setChainRole` is called exactly once, at `PluginProcessor.cpp:1597`, for V2's own `chainHost`. It is never called
+for `borrowHost_`, which therefore carries the default `ChainRole::Kind::channel` — correct by luck for a borrowed
+track rack. The role has ONE consumer inside ChainHost: `setPendingLevelsState`, which decides whether a SAVED level
+tally may be restored on load. A borrowed host is built fresh at engage and never goes through that path, so the
+role is inert there. I did not wire it: it would be code with no behaviour behind it. The latent trap is recorded
+instead — the default is `channel`, so the day something does read the role on a borrowed BUS rack it will be
+silently wrong in the other direction.
+
+---
+
+## ROUND 06c — BUILT AND PLACED 7 Oct 19:38 as `ship_2026-10-06c`, LABELLED **UNGATED**, NOT INSTALLED
+
+**THE GATE WAS RED: 58 of 59.** Stages 1-3 clean (archives, 39 guard binaries, 4 bundles, 0 errors each),
+`link_state_guard` GREEN both sides, GATE3 DONE 19:27:39. The single failure was `dialinfo_keep_guard`, and it failed
+AFTER passing every assertion: the scribble leg segfaulted at teardown (exit 139) on a config-fetch callback landing
+after `~EchoJayProcessor`. Two immediate re-runs passed. Sean ruled: place it UNGATED with the whole record written
+in so he can test tonight, and queue the race as **06d item 1**. `ship_2026-10-06c/UNGATED.txt` carries that record.
+Per the standing rule, UNGATED.txt is never removed from this folder.
+
+**THE FIVE ITEMS, all in the V2 binary only:** (1) an explicit control-by-control edit never starts a loop
+(startCalibrationFromOps skips ops carrying `controls`/`controls_norm`/non-empty `settings_structured`, and names any
+target it ignored); (2) a bus never claims a landing (sayCalibrationCouldNotStart asks calibTargetIsBus first and
+returns silently; "land it" retired); (3) "changes applied" is judged on the slots via the new pure
+`EchoJayEditor::everySlotFullyApplied`, so `partial`/`builtinPayloadUnmatched` make the sentence name what was
+ignored - closes items 6 and 11; (4) the reroute footer is gone (`renderRerouteReply` returns the reply unchanged;
+`rerouteQuietLine()` KEPT so both guards can assert it ABSENT); (5) the substitution card names the licence reason
+and the replacement. Legs green for 1-4; 5 is card wording.
+
+**THE LINK BINARY IS BIT-IDENTICAL TO 06b AND THAT IS CORRECT:** arm64 2EBEB279 both places, because the Link
+archive compiles none of PluginEditor.cpp / PluginProcessor.cpp / EchoJayAPI.cpp. `place_ship.sh` REFUSED the folder
+on that basis - its "a rebuilt binary cannot keep its UUID" rule is false for a reproducible build of unchanged
+inputs - so the folder was placed by hand and UNGATED.txt says so. TOOLING ITEM: the UUID check must defer to the
+binary-vs-source staleness check, which already covers the case the UUID rule was written for.
+
+UUIDs as placed (arm64 first): V2.component 46771422 / 0AC36772 - Link.component 2EBEB279 / E097175A -
+V2.vst3 B9F8A5A5 / D9BC481F - Link.vst3 732A699A / F19DA546. Installed at the time: 06b V2 045CB611, Link 2EBEB279.
+
+---
+
+## ROUND 06c — THE RULING AS GIVEN (ruled 7 Oct 2026; no gate while Sean is testing in Logic)
+
+### 1. AN EXPLICIT CONTROL-BY-CONTROL EDIT NEVER STARTS A LOOP (ruled, plugin-side regardless of the server)
+Sean set slot 2 (EchoJay Compressor) SC HPF 110 Hz and attack 40 ms. The edit applied - and then a loop started
+anyway, "set from the working position, landing it as it plays", drove the input to +5.0 dB and closed with "band not
+reached, working 0.1 dB". On an edit where the user named every value, that is the plugin overwriting the user.
+
+**THE RULE:** an edit the user specified control-by-control never starts a calibration loop, never resets a dynamics
+slot to its working position, and never moves IN / OUT / drive. The loop runs on a BUILD, or when the user asks for
+an amount. If a block carries BOTH explicit controls and a target, apply the controls, IGNORE the target, and log
+that it was ignored.
+
+**WHERE IT GOES, found read-only:**
+- `PluginEditor.cpp` ~25541: after any applied local edit, `startCalibrationForEdit(..., Purpose::buildHold)` runs,
+  gated ONLY on `editWasRefused(editJson)` (the 3 Oct "a loop starts only from an edit that applied" ruling). There is
+  no test for "the user named the values".
+- `startCalibrationForEdit` tries `startCalibrationFromChain`, then falls back to `startCalibrationFromOps`.
+- `startCalibrationFromOps` decides per op on: the slot exists, the slot's CATEGORY is dynamics, then reads
+  `gr_target_db` and `slot_pre_gain_db`. It never looks at whether the op carries explicit control values.
+So the discriminator to add is "does this op carry explicit controls" - `controls` / `controls_norm` /
+`settings_structured` naming parameters - and it belongs in `startCalibrationFromOps` (per op, so a mixed batch is
+handled op by op) with the same test mirrored wherever `startCalibrationFromChain` reads a chain block.
+
+**LEG (this exact case):** an op for a dynamics slot carrying explicit controls (SC HPF 110 Hz, attack 40 ms) and NO
+amount request starts ZERO loops, leaves the slot's IN / OUT / drive untouched, and the working position is not
+written. A second leg: the same op WITH a `gr_target_db` applies the controls, starts no loop, and logs that the
+target was ignored. A third: a plain build block still starts its loop, so the fix does not disable builds.
+
+### 2. THE EDITOR-VIEW HALF OF THE 18:32 RULING (carried over from 06b)
+"Never destroy or detach a third-party editor view ourselves - close it through the plugin's own editor teardown, or
+keep the view alive (hidden) until the instance goes." `LinkEditor.h:597` does
+`openPopoutForSelected(); // destroys the inline editor first`. Not done in 06b deliberately: rewriting third-party
+editor lifecycle unattended, in a subsystem I had only skimmed, is how a worse build ships - and the 18:32 crash is
+attributed to the 18:31:24 DISPOSE, which 06b fixes. Leg: a third-party editor inline, switch slots, then open a
+popout (an NSWindow frame change) with no crash and zero third-party disposes mid-session.
+
+### ALSO STILL QUEUED (unchanged)
+the chain IN/OUT readout and per-slot IN/OUT on the tiles; the profiled compressor's measured GR in the multi-hold
+card line; the classify small body built from scratch (<8 KB leg - note the 100,963 b "trimmed" figure proves history
+was only ~96 KB of the 197 KB); the once-a-second level line while playing with no hold running; the non-blocking
+release wait then 10 s; parked-edit identity + satisfied check + background delivery; the `.o.d` header narrowing so
+neither staleness check needs a forced rebuild.
+
+### 3. THE EQ BAND THAT WAS SKIPPED SILENTLY (Pro Tools, 10:37:23, ruled 7 Oct)
+Sean asked for a 3-4 dB cut at ~281 Hz on the EchoJay EQ (slot 1). Log: `EXACT built-in apply, 0 band(s), 1 skipped`
+with no reason, and the chat still said "Changes applied" / "Settings applied to EchoJay EQ".
+
+**WHY IT WAS SKIPPED, from the code.** `applyEqMoves` (EqMove.h ~117) has exactly ONE skip:
+`if (idx < 0) { ++skipped; continue; }  // nowhere to put it`. It fires only when the band carried NO explicit index
+(`mv.band` outside `1..kNumBands`) AND every band was already `enabled`, so the "lowest free (disabled) band" search
+found nothing. So it is NOT the key names, the type string, or the freq/gain/Q ranges: a band rejected on those
+grounds dies earlier, at `specFromVar(...); if (! ok) continue;` in SurgicalEqProcessor::applyEqBands (~269), which
+increments NEITHER counter and would have logged "0 band(s), 0 skipped". The log said 1 skipped, so the band parsed
+cleanly and was dropped purely because THE EQ WAS FULL AND THE REQUEST NAMED NO INDEX - which is exactly why fix (3)
+is "an EQ edit that adds a band ADDS it and keeps the existing bands".
+
+**THE THREE FIXES:**
+ (1) log WHY each band is skipped, with the band's raw JSON. Note the asymmetry: `specFromVar` failures are invisible
+     in BOTH counters today, so a malformed band and a full EQ differ only by the number. The skip needs a reason
+     string, not a count - and the silent `continue` at specFromVar needs to count and say so too.
+ (2) never print "Changes applied" when every requested change was skipped. The verdict already exists -
+     `s.dialStatus = (skipped > 0) ? DialStatus::partial : DialStatus::applied` in ChainHost.cpp ~5815 - and
+     `applied == 0 && skipped > 0` is the case that must read as a failure with its reason, not as success.
+ (3) an EQ edit that ADDS a band adds it and keeps the existing bands, rather than needing a disabled slot to land in.
+**LEG:** a full EQ plus an add with no band index ADDS the band and keeps the others; the card says what happened; and
+a genuinely malformed band is reported with its raw JSON and its reason.
+
+### 4. THE AAX IS A 29 SEPTEMBER BUILD - a decision is owed
+Installed: EchoJay V2.aaxplugin and EchoJay Link.aaxplugin both built 29 Sep 10:10 (arm64 AA0C2737 / 13D36AE3), plus
+a legacy EchoJay.aaxplugin from 9 Jul. **It has NONE of 05a-06b.** place_ship.sh places .component and .vst3 only and
+every gate builds the four AU/VST3 format targets; AAX has never been in the build command, and the last shippable
+AAX bundles sit in DO_NOT_SIGN_ship_* folders because AAX needs PACE signing, which cannot happen on this Mac.
+CONSEQUENCES: (a) any Pro Tools finding is a finding about 29 Sep code - the EQ skip above is real and still present,
+but other symptoms may already be fixed or may belong to code that has since moved; (b) Pro Tools cannot validate any
+of the crash work, because those fixes are not in the binary it loads.
+DECISION FOR SEAN: either AAX joins the gate and the ship folders (and the signing step gets solved), or Pro Tools
+comes off the validation path and the AAX is recorded as a known-stale build.
+
+### 5. THE "(sent as a chat, not a build...)" FOOTER IS OURS — REMOVE IT (ruled 7 Oct, B traced it)
+`EchoJayAPI.h:292 rerouteQuietLine()` + `:301-302 renderRerouteReply()`, called from
+`PluginEditor.cpp:30507 rerouteChatTurn()`, appends it to every reply re-sent after a 403 chat_turn_not_streamed.
+Remove the append. RE-AIM the two guards that currently assert it is PRESENT so they assert it is ABSENT:
+`ui_round_guard` 1846-1852 and `stream_reroute_guard` harness:27. B strips it server-side and from history too, so the
+client must stop adding it or it comes back on the reroute path alone.
+
+### 6. EQ SKIP — MY DIAGNOSIS WAS WRONG, B's IS RIGHT
+I said "the EQ was full and the request named no index", reading the `eq_bands` path (`applyEqMoves`, EqMove.h ~117,
+whose only skip is `idx < 0`). That was wrong, and B's two facts disprove it: Sean's screenshot shows ONE band in use
+(HPF 20 Hz) so free bands existed, and the compressor logged "2 band(s)" for two PARAMS (sc_hpf_hz, attack_ms), so the
+counter was never band-only.
+**THE REAL PATH.** The op shipped as flat `settings_structured.params` (freq_hz / gain_db / q) with no `eq_bands`, so
+it went to `EedDeviceProcessor::applyParams` (EedDeviceProcessor.cpp ~85), which increments the SAME `skipped` counter
+for three reasons: an id the device does not publish, a value outside a legal enum or not a number, and
+"not implemented". `freq_hz` / `gain_db` / `q` are not ids the EQ publishes - its band shape is `eq_bands` - so this
+was an UNKNOWN ID skip, not a full-EQ skip.
+**AND THE REASONS ALREADY EXIST.** applyParams builds a `juce::StringArray unknown` naming each one
+("<id>", "<id> \"v\" is not one of: ...", "<id> (not a number)", "<id> (not implemented)") and returns them in the
+summary as "ignored <list>". So fix (1) is mostly plumbing: that summary is not reaching the EJParamApply line Sean
+read. The genuinely silent one is `specFromVar`'s `if (! ok) continue;` in SurgicalEqProcessor::applyEqBands (~269),
+which counts NOTHING - a malformed band shows as "0 band(s), 0 skipped".
+**FIXES (as ruled):** reason per skip with the band's raw JSON; never "Changes applied" when applied == 0 and
+skipped > 0 (the verdict exists at ChainHost.cpp ~5815, `(skipped > 0) ? partial : applied` - the missing case is
+applied == 0 reading as success); an add with no index lands when bands are free AND when full; and an unknown params
+id on a built-in is logged by name and counted as skipped with its reason. B converts band-shaped params to eq_bands
+server-side, so this is the client's belt-and-braces.
+
+### 7. AAX: RULED OFF THE VALIDATION PATH; BUILD-ONLY IN THE GATE
+Pro Tools comes off validation, Logic AU is the validation DAW. Add the AAX targets to the gate as BUILD-ONLY
+(compile, not signed, not placed) so the AAX stops rotting. Installed AAX is 29 Sep 10:10 (V2 arm64 AA0C2737, Link
+13D36AE3) and has NONE of 05a-06b.
+**WHAT BLOCKS PACE SIGNING ON THIS MAC — checked, not guessed:**
+  - wraptool: PRESENT and executable at `/Applications/PACEAntiPiracy/Eden/Fusion/Versions/6/bin/wraptool`
+    (25 Aug), not on PATH, exactly as RELEASE.md:51-53 records. NOT a blocker.
+  - Apple signing identity `Developer ID Application: Sean Donoghue (8BT5F9B887)`: PRESENT and valid
+    (1 identity found). NOT a blocker.
+  - iLok: an iLok IS visible on this Mac (2 USB matches), and iLok License Manager is installed. So the earlier
+    "Sean's iLok is on another Mac" note looks stale for AAX SIGNING - worth confirming it holds the right licence.
+  - **THE AAX SDK IS MISSING: `~/AAX_SDK/Interfaces/AAX.h` does not exist.** RELEASE.md:57 says CMake looks exactly
+    there. This is the hard blocker for even BUILDING AAX, before signing is reached - so "add AAX build-only to the
+    gate" needs the SDK restored first, and that is the one thing to fetch.
+  - **THE OTHER BLOCKER IS BY DESIGN, AND IT IS NOT FIXABLE BY ME:** RELEASE.md:79-80 - "wraptool prompts for the iLok
+    password, so it is run from a Terminal with a TTY, by a person". Signing can therefore never be automated from
+    this session; it is a step Sean runs. The canonical invocation (account seand123, wcguid
+    B4184F90-2F4F-11F1-A9B9-00505692C25A, out-of-place --out) is already written down at RELEASE.md:85-95.
+  SO, FOR BETA: fetch the AAX SDK to ~/AAX_SDK (blocks the build), confirm the iLok licence (likely fine), and keep
+  the signing step human (cannot be otherwise).
+
+### 8. THE FALSE LANDING MESSAGE ON A BUS (12:10:57, ruled 7 Oct)
+`.008` the 1176's four settings APPLIED; `.030` "NOT STARTED - role is bus"; `.031` "COULD NOT START LANDING ... its
+settings never landed", and the chat told Sean to say "land it".
+**CAUSE, found.** `calibStart` refuses correctly on a bus: `calibTargetIsBus(uid, whyNot)` returns true and logs
+"NOT STARTED - this chain's role is a bus - on a bus the last stage sets the level, and after Go the Level slot"
+(PluginProcessor.cpp 6890/6961-6967). But the CALLER treats `started == 0` as a failure: `startCalibrationForEdit`
+returning 0 runs `sayCalibrationCouldNotStart` (PluginEditor.cpp ~25552), whose reason chain is
+`host == nullptr` / `calSlot < 0` / `calSlot >= getNumSlots()` / **else "its settings never landed"** (24670-24672).
+There is NO case for "deliberately not started", so a bus lands in the else and the user is told a falsehood - the
+apply log one line earlier says the settings DID land.
+**FIXES:** `started == 0` must distinguish "must not start" from "could not start" - the caller should ask
+`calibTargetIsBus` (it already returns the reason) and say NOTHING about landing on a bus; never claim settings did
+not land when the apply path reported them applied; and retire "land it" from user-facing text (PluginEditor.cpp
+~24683 is the one bubble that offers it).
+**LEG:** a bus-role build that applies settings produces ZERO landing bubbles and no "land it", while the applied
+count is unchanged; a genuine failure (the named plugin absent) still says what went wrong.
+
+### 9. SUBSTITUTION MUST INHERIT THE SLOT'S JOB (ruled 7 Oct)
+Card said "Chain built - 6 of 6 loaded (Gold Clip failed)". It must say: "Gold Clip isn't licensed on this Mac, so I
+used the EchoJay Limiter instead. Press Suggest an alternative to try something else."
+The substitute arrived with NO settings (`settings_structured=n`), so the planned ceiling (-0.1 dBTP) was never mapped
+onto it: a substitute that inherits the slot's JOB must carry the planned intent across, not just occupy the slot.
+And the substitute must be shown in the chain list.
+**LEG:** a licence-failed slot substituted by a built-in shows the licence reason and the substitute's name on the
+card, the planned ceiling lands on the substitute, and the chain list shows the substitute rather than the original.
+
+### 10. MIX BUS FINAL LEVEL - what the log line means, and why nothing reached target
+**WHAT IT MEANS.** "on a bus the last stage sets the level, and after Go the Level slot" (PluginProcessor.cpp 6967) is
+the rule that a BUS's output level is not set by per-plugin holds at all. Two things set it: the chain's last stage,
+and - after the user says "Go" - the **Level slot**, driven by `LoudnessLoop` (LoudnessLoop.h, "deterministic inside
+V2, no server round-trip"). That is why `calibTargetIsBus` refuses a hold on a bus: a hold would fight the Level slot.
+**WHY NOTHING BROUGHT THE OUTPUT TO TARGET.** The LoudnessLoop is ARMED from the chain
+(`armLoudnessLoopIfTargeted` -> `loop.armFromChain()`, PluginEditor.cpp 23270/23640) but it only MEASURES AND WRITES
+on an explicit user verb - `listen`, `check`, `go`, `louder`, `softer`, `loudest`, `back off`, `done` (the verb table
+at ~23325-23341, all gated behind `if (! loop.everArmed()) return false`). Nothing in a build drives it. So the Level
+slot kept the static `gain_db 5.4` the build gave it, nobody measured the real output, and the bus sat at -20 LUFS
+against a -8 target with peaks at -2 dBFS. The limiter "wasn't limiting" for the same reason: at -20 LUFS nothing was
+reaching its ceiling.
+**RULING TO BUILD:** on a bus build WITH a loudness target, once the build settles the Level stage measures the
+chain's real output on loud sections and sets its gain so the output reaches the target INTO the limiter, ceiling
+held; and the card reports the result ("now -8.3 LUFS short-term, ceiling -0.1 dBTP"). In effect: a build with a
+target arms AND runs the loop's measure-and-set, instead of waiting for a verb the user was never told to say.
+**SUPERSEDED - see item 10 REVISED below.**
+
+### 10 FINAL (Sean, 7 Oct, simplified after the addendum): SET AT LANDING, THEN ONE AUTOMATIC CORRECTION
+Supersedes both the "arm and wait for a verb" reading and the predict-every-slot addendum. Bus/master compression is
+meant to be subtle, so the build-time set is deliberately simple and the safety net is a measurement, not a model.
+
+ 1. **THE BUILD-TIME SET.**  `gain = target - the song's integrated LUFS`, plus the exactly-known change of EchoJay's
+    own devices WHERE THAT IS CHEAP. What is cheap and exact: the plain scalar gains - each slot's OUT gain
+    (`getSlotOutGainDb`), its IN pre-trim (`getSlotPreTrimDb`) and the master wet (`getMasterWet`). What is NOT cheap
+    and is therefore EXCLUDED: the EQ's effect on loudness and any compressor's dynamic effect. (An analytic EQ
+    magnitude evaluator does exist - EqEngine.h:194 fills magsDb[] at given frequencies - and an FFT exists in
+    MeterEngine/EqFft, so this was not impossible; but turning spectrum x curve into a LOUDNESS delta needs
+    K-weighted integration over the band, which is new DSP and not a cheap addition.)
+    The integrated reading is already there: `chainInTally_` is `Weighting::K` (ChainHost.h 2668), so
+    `getChainInLevels().levelDb` IS integrated LUFS, with `known` as the trustworthiness flag and `heardSeconds` for
+    the too-little-heard case.
+    Third-party compressors are NOT predicted from their profiles - dropped by ruling.
+ 2. **ONE AUTOMATIC CORRECTION, and it is the safety net for exactly what (1) does not model.** After the build, on
+    the first loud window the new chain plays (3-6 s of real signal), measure the level arriving at the Level slot and
+    correct its gain ONCE - no user action, ceiling held. Log predicted vs measured per slot, so the quality of the
+    prediction is visible as EJ Map profiles arrive. NO correction without real signal.
+ 3. **Go stays** as the longer listen and fine-tune, running the existing LoudnessLoop
+    (`arm(targetLufs, levelSlot, limiterSlot)`, LoudnessLoop.h 250). Not pressing Go leaves the set value standing.
+ 4. **Too little heard** (`! known`): say so and ask Sean to play the loudest section first, then set. Never guess.
+ 5. **The server's static `gain_db` for the Level slot on bus/master is IGNORED** in favour of this, and the fact that
+    it was ignored is logged. (That is the 5.4 dB that sat there while the bus measured -20 against a -8 target.)
+ 6. **THE CARD** says what it set, what the correction changed, where it landed, and "Press Go to listen longer and
+    fine-tune." Unpredicted slots are named as "not predicted".
+
+**LEGS:** the prediction is EXACT for a chain whose only level changes are EchoJay's own scalar gains; an unprofiled
+compressor taking 8 dB lands within 1 dB after the one correction; no correction happens without real signal; too
+little heard ASKS instead of guessing; and the server's static gain_db is ignored with a line saying so.
+
+**ORDER: ITEM 9 FIRST.** This pushes the Level slot up by of the order of +11 dB into the limiter, and item 9 is what
+gives a SUBSTITUTED limiter its ceiling - the EchoJay Limiter arrived with settings_structured=n, i.e. no ceiling at
+all. Landing 10 before 9 means an 11 dB push into a limiter that was never told -0.1 dBTP, which clips.
+
+### 11. "CHANGES APPLIED" IS DRIVEN BY AN OP COUNT, NOT BY WHAT LANDED (13:19:28, ruled 7 Oct)
+Third shape of the same lie: `BUILT-IN PAYLOAD NOT UNDERSTOOD ... got keys: []` for the EchoJay EQ, then
+`EXACT built-in apply, 0 band(s), 0 skipped`, and the chat still said "Changes applied". `got keys: []` means
+`structuredSettings` carried no keys at all - the op reached the slot with nothing the device could use, and nothing
+was even attempted (0 applied AND 0 skipped, so it is not the unknown-id case of item 6 nor the full-EQ case).
+**THE ROOT, AND IT IS ONE ROOT FOR ALL THREE.** PluginEditor.cpp ~25636: `else if (applied == total) summary =
+"Changes applied";`. The comment directly above it says what `applied` is: "the number counted OPS -- `total` is
+ops.size() and `applied` is incremented once per op in finishOpAndContinue". So it counts ops DELIVERED, not settings
+that LANDED. One op that achieved nothing still gives 1 == 1 and prints success. That is why 10:37 (unknown id,
+0 applied / 1 skipped), 13:19 (payload unmatched, 0 / 0) and the full-EQ case all produced the same sentence.
+**THE VERDICT ALREADY EXISTS AND IS DISTINCT PER SLOT:** ChainHost.cpp ~5815 sets
+`dialStatus = (skipped > 0) ? DialStatus::partial : DialStatus::applied`, and ~5830 sets
+`DialStatus::builtinPayloadUnmatched` for the unmatched-shape case, logging the keys it was handed and the shapes it
+wanted. The chat summary never consults any of it.
+**FIX (covers items 6 and 11 together):** drive the summary from the per-slot dialStatus, not from an op count.
+`applied == total` may read as success ONLY when every touched slot came back DialStatus::applied. If any slot is
+builtinPayloadUnmatched, the card says what arrived (the `got keys` list, or "nothing at all") and what the device
+wanted (`"params":{...}` or its array form, e.g. `eq_bands`). If any is partial, it names the settings that were
+ignored and why - those reasons already exist in EedDeviceProcessor::applyParams's `unknown` array and are already
+returned in the summary string as "ignored <list>"; they are simply discarded before the user sees them.
+**LEGS:** (a) an op whose payload matches no shape produces a card that names the keys received and the shapes
+wanted, and the chat does NOT say "Changes applied"; (b) an op with one unknown param id says which id and why, and
+does not read as success; (c) an op where everything lands still says "Changes applied", so the fix does not turn
+every success amber.
+
+### 12. SUBSTITUTE CEILING - QUEUED (timeboxed out on 7 Oct, with Sean's pre-authorisation)
+B now sends it: a third-party loudness-limiter slot carries
+`substitute: {name: "EchoJay Limiter", settings_structured: {params: {ceiling_db, true_peak, mode}}}`.
+On a LICENCE substitution, dial that `substitute.settings_structured` onto the replacement.
+**WHY IT WAS NOT DONE TONIGHT (Sean's 20-minute bar):** the licence substitution runs inside a loadAsync callback at
+ChainHost.cpp ~7676 whose scope is `fullDesc` (the third party) and `bd` (the built-in). It has NO access to the
+server payload, so the substitute block must either be threaded down to that site or applied by a post-load pass in
+the editor keyed on `SlotDialInfo::substitutedFrom`. The leg also has to reach the licence branch, which is gated on
+`echojay::refuseIfPaceWrapped(fullDesc)` - so it needs a desc that LOOKS PACE-wrapped (that call reads the desc off
+disk and instantiates nothing, so this is possible, but it is fixture work). Together: well past 20 minutes.
+**SAFE IN THE MEANTIME, verified:** `kCeilingDb` defaults to **-0.3 dB** (EedLimiterProcessor.cpp:30, range -24..0),
+so a substituted EchoJay Limiter is never ceiling-less. It limits at -0.3 rather than the planned -0.1 - more
+conservative, not less. THIS CORRECTS my earlier warning that item 10 before item 9 would CLIP: it would limit at
+-0.3. The 9-before-10 order is still preferable (the planned ceiling is the intended one) but it is not a hazard.
+**THE HOOK EXISTS:** LoudnessLoop reads `ceiling_db` from the limiter slot's own params (LoudnessLoop.h:163) and
+writes it as a param (237), so once the value is in scope there is nothing new to build.
+
+---
+
+## ROUND 06d — QUEUED (ruled 7 Oct; do NOT start until 06c is reported AND Sean has tested it)
+
+In this order:
+
+### 1. THE TEARDOWN RACE — THE CRASH REPORT SAYS IT IS NOT WHAT I FIRST WROTE (corrected 7 Oct 20:0x)
+FOUND BY THE 06c GATE, which it turned red: `dialinfo_keep_guard`'s scribble leg segfaulted (exit 139) AFTER the
+test had passed every assertion. MY FIRST ATTRIBUTION - "a network callback writes EchoJayAPI members without
+consulting `aliveToken_`" - IS WRONG, and the report proves it twice over. The members that callback writes
+(`remoteSystemPrompt`, `remotePromptVersion`, `remoteConfigLoaded`, `latestVersion`, the channel prompts) are CLASS
+STATICS (EchoJayAPI.h:1085-1097), so they outlive every instance and writing them after a destructor is not a
+use-after-free at all. And the faulting thread is not ours:
+
+    .ips BC815958-2E14-4DC1-9D6D-A30022695FC5, 2026-10-07 19:12:25, SIGSEGV KERN_INVALID_ADDRESS at 0x0
+    faulting thread 4, queue com.apple.NSURLSession-work
+      objc_msgSend / objc_getProperty
+      -[__NSCFURLSessionDelegateWrapper didBecomeInvalidWithError:]
+      -[NSURLSession finalizeDelegateWithError:]
+      __56-[__NSURLSessionLocal _onqueue_invokeInvalidateCallback]_block_invoke
+
+CFNetwork is finalising the shared NSURLSession and messaging a delegate that has already been released. The
+delegate is JUCE's: `SharedSession` in juce_Network_mac.mm:132-200 holds a runtime-registered `JUCE_URLDelegate_`
+object and is reference-counted by `SharedResourcePointer`, so it is destroyed when the LAST in-flight
+WebInputStream/URLConnectionState goes away. MallocScribble is why only the scribble leg sees it: the released
+delegate's memory is poisoned instead of merely stale.
+
+**WHAT WE CONTROL, AND IT IS A REAL DEFECT:** `~EchoJayProcessor` does not wait for, or cancel, ANY in-flight
+EchoJay network request. It is careful about its own threads - `pluginScanner.requestStop()` then
+`loadThread.join()`, then `saveThread->waitForThreadToExit(5000)` (PluginProcessor.cpp:537-558) - and then exits
+with up to seven detached network workers still inside a blocking read. SIX in EchoJayAPI (`postJSON` :293,
+`patchJSON` :391, `deleteJSON` :448, `getJSON` :568, `startChatStream` :2003, `fetchRemoteConfig` :2627) and four
+more in the editor. Every one checks its `alive` flag only BEFORE the blocking call; the config fetch's connection
+timeout is **60 seconds** (EchoJayAPI.cpp:2643). So quitting a host within a minute of opening EchoJay, offline or
+on a slow network, leaves the session being torn down while the process comes down - the condition in the report.
+Only the chat stream is cancellable (`ChatStreamHandle::attach`/`cancel`, EchoJayAPI.h:112-139, which the header
+already documents as safe from any thread); the other seven use `url.createInputStream(options)`, which cannot be
+interrupted at all.
+
+**THE MEASURED RATE, before any fix (7 Oct, both ways, 20 runs each):** 0 of 20 RED unsealed, 0 of 20 RED through
+`run_guard.sh --scribble` exactly as ctest runs it. "config fetch ok" appeared in only **5 of 20**, so in 15 of 20
+a request WAS still in flight at exit and did not crash. In-flight-at-exit is therefore necessary but not
+sufficient: the invalidation has to land inside the exit window. ONE crash in ~41 runs. That rate is why the leg
+cannot be the crash itself.
+
+**THE FIX, and the leg that can actually fail:** make the invariant the thing under test - NO EchoJay network
+worker is in flight once `~EchoJayProcessor` has returned. A process-wide census (entered/left by an RAII guard in
+every launched worker), a one-way shutdown flag the workers check AFTER the blocking call, cancellation for the
+seven uncancellable sites (the WebInputStream pattern the chat stream already proves), and a BOUNDED wait in the
+destructor that logs what is still in flight if it times out. Gate the shutdown on being the LAST live instance:
+process-wide is right for AU disposal, but killing another instance's chat request when one plugin leaves a track
+is not. LEG, made deterministic by pointing the base URL at an unroutable address
+(`$ECHOJAY_STATE_HOME/Library/EchoJay/dev_base_url.txt` = `http://10.255.255.1`, so the connect hangs): construct
+the processor, destroy it, and assert the census is 0 and the destructor returned inside the bound. RED today (the
+census is 1 and the destructor returns at once), GREEN after, 20 runs reported as a count. THE CRASH ITSELF stays
+a 20-run observation reported honestly: 0/20 before the fix means those runs are NOT evidence the fix worked - the
+invariant leg is.
+
+### 2. Item 6 / 10 FINAL — set the Level at landing, plus the one automatic correction
+As recorded in "10 FINAL" above: `gain = target - the song's integrated LUFS` plus EchoJay's own SCALAR gains where
+cheap (slot OUT, slot IN pre-trim, master wet); no EQ or compressor prediction; one automatic correction on the first
+loud window (3-6 s of real signal), ceiling held, no user action; Go unchanged as the longer listen; too little heard
+ASKS; the server's static `gain_db` for a bus/master Level slot is ignored and that is logged. Legs as listed there.
+B is holding the matching server change so the two ship together.
+
+#### 2b. THE PEAK-HEADROOM CAP IS WHY EVERY MIX-BUS BUILD WAS QUIET (Sean 19:52, 7 Oct, on the 06c install)
+THE OBSERVATION, his log, after the Level was dialled +4.4 dB as sent:
+    EJLoudness: opening gain capped: +4.4 -> +0.0 dB (ceiling -0.1 + 3 - build-time true peak 2.9 dBTP)
+THE ARITHMETIC IS THE RULE DOING EXACTLY WHAT IT SAYS: `maxOpen = max (kOpeningFloorDb, ceiling + kOpeningHeadroomDb
+- truePeak)` = -0.1 + 3.0 - 2.9 = **0.0 dB**, so a hot mix bus gets ZERO push no matter what the target is.
+LoudnessLoop.h:97-98 (`kOpeningHeadroomDb = 3.0f`, `kOpeningFloorDb = -6.0f`) and the cap at :263-270.
+WHAT IT WAS FOR, from its own comment (22 Sep 2026, item 5 / ruling 5b): "peaks into the limiter never open more than
+3 dB over the ceiling" - a BLIND DISTORTION GUARD, applied at build time before anything has been heard, so the
+limiter is never handed a large peak reduction on trust. The intent was right; 3 dB is the wrong number for a
+master. Sean's reference point: Pro-L 2 at +8.2 dB sounded excellent, and a -8 LUFS hip-hop master routinely limits
+6-8 dB on peaks.
+
+**SEAN'S RULING (part of item 6/10 above):** on BUS/MASTER builds with a loudness target the opening gain is set from
+the target and the integrated reading (item 10) and is **NOT** capped by peak headroom. Safety comes from two things
+instead: the limiter's own ceiling, and the one automatic correction after the first loud window, which reads ACTUAL
+limiter GR and backs off only if GR on loud sections exceeds a sane limit. A cap may stay for TRACK chains if it
+serves a purpose there, and the purpose must be stated. The decision is LOGGED either way.
+
+**MY PROPOSAL FOR THE GR LIMIT, to be ruled on:** back off on the loud window when EITHER
+  • p90 GR over the window exceeds **6 dB** (sustained limiting, not transients), or
+  • peak GR exceeds **10 dB** (a single section being crushed),
+and back off BY THE EXCESS, once, then hold - never a second automatic cut. Both figures come from the limiter's own
+GR, which the tick already reads for the Level card, so nothing new is measured. I am NOT proposing a distortion
+metric: we have no validated one (LevelTally computes true peak, 100 ms hop peaks, short-term p90 and max - no
+crest-factor or THD figure), and inventing one tonight would be a number nobody can defend.
+**FOR TRACK CHAINS I propose the cap simply goes:** its stated purpose was blind safety before any listening, and the
+GR check is the same safety with evidence. If it stays anywhere it should be stated as "a track's Level never opens
+more than N dB over the ceiling" with N argued, not inherited.
+
+**LEG (Sean's case, exactly):** chain input -14.5 LUFS integrated, +2.9 dBTP, target -8 LUFS, ceiling -0.1, on a BUS
+=> the Level opens at about **+6.5 dB** (-8 - -14.5), NOT 0.0, and the log says the cap was not applied and why.
+Second leg: the same figures on a TRACK chain assert whatever the ruling on the track cap turns out to be.
+
+#### 2c. THE TAPS, RECONCILED (Sean 20:09 asked for this BEFORE anything else - read-only, done 7 Oct)
+His four figures, and the tap each one comes from. THEY DO NOT CONTRADICT EACH OTHER; they are four different
+measurements and nothing in the UI said so.
+  1. **V2 meters** (Momentary / Short-term / Integrated / RMS / spectrum) = `MeterEngine`, and the comment at
+     PluginProcessor.cpp:1385-1398 is explicit: a **POST-CHAIN tap**, read AFTER `chainHost.process`, so it is what
+     LEAVES EchoJay. Its Integrated is BS.1770 CUMULATIVE since the last `meterEngine.reset()` (prepareToPlay,
+     :639) - it keeps integrating across a gain change, so a +4 dB move part way through a pass leaves it reading
+     between the two levels. -11.8 is a running average, not a level.
+  2. **the loop's "input window" / build-time input** = `chainInTally_`, the RAW chain input, taken BEFORE
+     EchoJay's own pre-chain gain (ChainHost.cpp:1310-1330, and the comment says why: slot 1's input tally is the
+     operating level and must see the trim, this one must not). K-weighted, so its `levelDb` IS integrated LUFS.
+  3. **the loop's measurement** = `chainOutTally_`, the chain OUTPUT after the whole graph - post Level slot, POST
+     LIMITER - post master wet, and **pre bus trim** (ChainHost.cpp:1391/1428). `maxShortTermDb` is the loudest
+     3 s IN THIS WINDOW, reset by `startWindow()`. So yes: the loop measures at the chain output, post limiter.
+  4. **bx_limiter's own LUFS** is bx's meter, inside the chain, cumulative from whenever bx last reset it. A
+     cumulative integrated sits several LU below the loudest 3 s of the same material; -13.3 against a -11.4
+     loudest-3-s at 4 dB less gain is the ordinary gap, not a disagreement.
+**THE ONE REAL DISCREPANCY I FOUND, and it is ours:** `applyBusGainSmoothed(buffer)` runs BETWEEN
+`chainHost.process` and the meter tap (PluginProcessor.cpp, 4 lines above `meterEngine.processBlock`). So the loop
+measures PRE bus gain and the meters read POST bus gain. With the bus trim at anything but 0 dB the loop lands the
+chain output and the user reads a different number, by exactly that trim, for ever. The loop does not know the bus
+gain exists. **Sean: what was your bus/output trim set to at 20:09?** If it was 0.0 the two taps agree and this is
+only a latent fault; if it was not, it is part of why the landing missed.
+**WHAT THIS MEANS FOR THE ARITHMETIC:** the gain arithmetic must be stated as a tap-to-tap sum, and every figure
+logged with its tap name: `landing gain = target - (chainIn integrated + EchoJay's own scalar gains between the two
+taps)`, where the scalar gains are pre-chain gain + slot pre-trims + slot OUT gains + master wet + BUS GAIN. Any
+stage not in that list (an EQ, a compressor's make-up) is NOT predicted, and the one loud-window correction is what
+catches it.
+
+#### 2d. TWO CALCULATION FAULTS, RULED BY SEAN 20:09 (both inside item 2 above)
+**(a) THE TARGET IS INTEGRATED, NOT MAX SHORT-TERM.** The loop makes the loudest 3 s equal the target
+(`measured = out.maxShortTermDb`, LoudnessLoop.h:506-511, and every proposal is `target_ - m`). A "-8 commercial"
+target means the SONG's integrated loudness is about -8, with loud sections 1-2 LU above it. So the loop has been
+aiming 1-4 LU low by construction, which is exactly what he heard. RULE: the target is integrated. Landing gain =
+`target - (song integrated at the chain output with the Level at 0)`, the song integrated coming from the
+build-time `chainInTally_` reading plus the chain's measured gain between the taps (2c). The loud window then
+REFINES and acts as a safety check - never as the target.
+**(b) THE GR MODEL IS FAR TOO PESSIMISTIC.** At 20:01 the true-peak model predicted ~6.3 dB of GR on the hits at
++3.4 dB; the real bx GR at +4 dB is **1.3-1.7**. The model assumes every dB of true peak above the ceiling becomes
+gain reduction, which is what a sample-peak brickwall does and is not what a lookahead true-peak limiter shows: at
++4 dB the excess over the ceiling was about 7.0 dB (build-time TP +2.9, +4 gain, ceiling -0.1) against 1.5 dB of
+real GR - a ratio of about **0.21**.
+MY PROPOSAL, and I am calling it provisional because ONE point is not a calibration:
+  • where GR is readable (EchoJay Limiter) use the MEASURED GR - `gainReductionDb()`, already read every tick for
+    the Level card. No model at all;
+  • for a third-party limiter, `GR_est = 0.25 x max (0, truePeak + gain - ceiling)`, and CLAMP the estimate at
+    3 dB. An estimate that cannot exceed 3 dB cannot hold a master 5 dB down, and the loud-window correction -
+    which reads the real thing - is what finishes the job;
+  • raise `kGrOfferDb` from **6.0 to 10.0** dB: 4-6 dB of real GR at -8 LUFS is normal for a transparent limiter
+    (Sean's Pro-L 2 at +8.2 dB), and 6 dB as a ceiling on what we will even offer is below normal practice;
+  • Sean is sending a calibration point (his chosen Level, bx LUFS, bx GR). The 0.25 goes in the leg as a named
+    constant so his point either confirms it or replaces it, and the log prints estimate vs measured on every
+    window so the next point arrives for free.
+**LEG (his):** a fixture with input integrated -14.5 LUFS, target -8, lands within **1 LU of -8 integrated at the
+chain output on the FIRST pass** - not after three proposals. Plus the 2b leg (+6.5 dB opening, no cap) and a leg
+that asserts estimate-vs-measured is logged.
+
+#### 2e. SEAN'S CALIBRATION POINT, 20:20, AND WHAT THE ARITHMETIC SAYS ABOUT IT
+HIS CHAIN: EchoJay EQ, VSC-2, Lindell 80 Bus (OUT -4.0), EchoJay Exciter, EchoJay Level, bx_limiter (TP, -0.1).
+Target -8 commercial. **HIS EAR: Level +6.5 to +8 dB is right, reading about -9.5 to -8 LUFS; +8 dB = -8.**
+(Pro-L 2 reference +8.2.) Tonight's machine figures: server +4.4, Listen proposal +3.4 (claiming -8.3), opening cap
+0.0. The loop is about 4.5 dB short.
+
+**FAULT (a) ALONE ACCOUNTS FOR THE 4.5 dB, arithmetically.** The loop measured max short-term -11.4 at the output
+and proposed `target - measured` = -8 - -11.4 = +3.4, which makes the LOUDEST 3 SECONDS equal -8. A commercial -8
+means INTEGRATED -8, and integrated sits several LU below the loudest 3 s. Sean's ear put the right answer at +8,
+which is +4.6 above the loop's proposal: that IS the short-term-to-integrated gap on this material. No tap error is
+needed to explain the shortfall - the loop was answering a different question.
+
+**THE "+2.6 dB OF CHAIN GAIN" IS NOT THE SLOTS' GAIN, and this is a real trap I found while checking his
+hypothesis.** `chainInTally_` is taken BEFORE EchoJay's own automatic PRE-CHAIN gain, and
+`ChainHost::autoPreGain` sets that gain at every build to `-18 - chainIn integrated`
+(ChainHost.cpp:3289, `kPreGainTargetLufs = -18.0f`, clamped +-24). On his bus, with the input integrated about
+-14.5, **the pre-gain is about -3.5 dB**. So `chainOut - chainIn` spans EchoJay's own -3.5 as well as every slot,
+and "the chain is +2.6 dB" is the sum of pre-gain, the Lindell's -4.0, and whatever the EQ/VSC-2/Exciter add. Any
+arithmetic that treats out-minus-in as "what the plugins did" is wrong by the pre-gain, every time, and the
+pre-gain is BIGGER on a quiet bus. The landing sum in 2c must name pre-chain gain as its own term, and the log
+must print it.
+
+**THE ONE FIGURE I STILL CANNOT RECONCILE, and I am not going to guess it.** bx_limiter is the LAST slot and the
+Level sits before it, so bx's output IS the chain output. At Level 0 the V2 meters read integrated -11.8; at Level
++4 with 1.3-1.7 dB of GR the output should read about -9.3 integrated. bx read **-13.3**. Four dB in the wrong
+direction, and the bus gain cannot explain it (it would move the V2 meter DOWN relative to bx, not up). The
+remaining candidates are different integration windows (bx's integrated running from an earlier, quieter span) or
+a reset we are not seeing. **WHAT I NEED FROM SEAN: four readings taken at the SAME moment**, with the chorus
+looping and Listen running - (1) V2 Integrated, (2) V2 Short-term, (3) bx's LUFS figure AND which mode it is in
+(integrated or short-term), (4) EchoJay's bus/output trim value. That pins it; his four figures from four different
+moments cannot.
+
+**ACCEPTANCE LEG (his, as ruled):** build-time integrated -14.5, target -8, this chain -> the landing Level is
+within 1 dB of **+8** and the output within **1 LU of -8 INTEGRATED**, with the GR cap allowing it (he judged +8
+clean on bx_limiter). So the cap calibration in 2d is part of this leg's pass condition, not a separate item.
+
+#### 2f. THE FOUR SIMULTANEOUS READINGS, AND THE CALIBRATION THEY GIVE (Sean 20:59, Level +4, chorus looping)
+V2 (post-chain): Momentary **-10.7**, Short-term **-12.9**, Integrated **-11.2**, LRA 7.2, sample peaks -1.0/-0.8,
+true peak -0.0/-0.1. Still open, and neither changes the ruling: was Integrated reset first, and what is the rack
+trim (assumed 0.0). **RULED: V2 / `chainOutTally_` is the truth; the bx -13.3 is its own meter's window and is
+dropped from the investigation.** My -9.3 prediction was about 2 dB optimistic - it leaned on the cumulative -11.8
+at Level 0 and a 1.5 dB GR allowance - and the reading supersedes it.
+
+**THE CALIBRATION, from this reading and Sean's ear point, and this is what the landing must reproduce:**
+  • at Level **+4** the output integrated is **-11.2**, so the output integrated at Level 0 is about **-15.2**;
+  • landing at Level **+8** therefore gives about **-7.2** before limiter loss and about **-8.0** after, which is
+    exactly Sean's "+8 = -8" and his +6.5-to-8 window reading -9.5 to -8;
+  • so the limiter costs about **0.8 dB** of integrated at this level - NOT the 6.3 dB the true-peak model
+    predicted, and in the same direction as 2d's measured 1.3-1.7 dB of GR on peaks;
+  • **THE RULE THAT FALLS OUT:** the landing is a CLOSED-LOOP measurement at the output, never an open-loop
+    prediction. `landing = currentLevel + (target - integrated measured at the chain output NOW)`, which needs no
+    model of the chain at all and is immune to every term in 2c (pre-chain gain, slot gains, bus trim) because it
+    measures past all of them. The open-loop sum in 2c stays only as the OPENING estimate before anything has been
+    heard, and it is logged as an estimate.
+  • **ACCEPTANCE, calibrated:** input integrated -14.5, target -8, this chain -> landing Level within 1 dB of
+    **+8** and output integrated within 1 LU of **-8**, with the limiter allowance taken from MEASURED GR and the
+    cap in 2d permitting it. The fixture's numbers are this reading: output integrated -15.2 at Level 0.
+
+### 3. Item 12 — dial `substitute.settings_structured` onto a licence substitute
+B sends `substitute: {name, settings_structured: {params: {ceiling_db, true_peak, mode}}}` on a third-party
+loudness-limiter slot. THE OBSTACLE IS KNOWN: the licence branch runs inside a loadAsync callback at
+ChainHost.cpp ~7676 whose scope is only `fullDesc` and the built-in `bd` - it cannot see the server payload. So
+either thread the substitute block down to that site, or apply it in a post-load pass keyed on
+`SlotDialInfo::substitutedFrom`. The leg needs a desc that LOOKS PACE-wrapped to reach the branch
+(`echojay::refuseIfPaceWrapped` reads the desc off disk and instantiates nothing, so this is fixture work, not a
+plugin load). The hook is already there: LoudnessLoop reads `ceiling_db` from the limiter slot's params
+(LoudnessLoop.h:163) and writes it (237). Safe meanwhile: `kCeilingDb` defaults to -0.3 dB.
+
+### 4. SCRAPPED: the [UNLICENSED] list, and then the new button too (Sean, 7 Oct)
+First the [UNLICENSED] list idea was replaced by a "Don't suggest <plugin> again" button; then Sean pointed out the
+plugin ALREADY HAS a "Don't suggest this plugin again" box. So nothing new is built. The only work left is a CHECK:
+does that existing box appear on the LICENCE-SUBSTITUTION card - the new card from 06c item 5 - and if it does not,
+add it there. Nothing is ever added to the exclusion store automatically: an unplugged iLok also fails for licence,
+and auto-excluding would blacklist a plugin Sean owns.
+(Kept for reference, since it is where the store lives if the check finds the box missing: `plugin_disabled.json`
+under `Application Support/EchoJay/`, a JSON array of SCANNER UIDS - PluginScanner.cpp:992,
+LinkProcessor.cpp:2470-2473 - read back through the `isDisabledByName` predicate the chain build already takes,
+ChainHost.cpp:11512/11555. Note the mismatch if it is ever touched: the file keys on uid, the build-time predicate
+matches by NAME, and PluginChecklist.cpp:152 records the file as "unattributable".)
+
+### 5. LISTEN MUST ALWAYS RESOLVE - IT CAN WAIT FOR EVER TODAY (Sean 20:00, 7 Oct, on the 06c install)
+HIS REPORT: after the mix-bus build he cued the loudest section, played, tapped Listen twice. The second tap said
+"Already listening - keep the loudest part playing." Then nothing, indefinitely. His screenshot at that moment:
+Momentary and Short-term "--", RMS -61.8, spectrum "no signal".
+
+**READ-ONLY CHECK, done first, and it confirms the stall exactly (LoudnessLoop.h):**
+  • the window needs `kNeedSeconds = 10.0` seconds of audio whose MOMENTARY LUFS is above
+    `kCountFloorLufs = -40.0` - `heardAboveSeconds`, counted in 100 ms hops by LevelTally (:77-78, :473, :681);
+  • the ONLY thing said while it waits is one line at `kWaitWallMs = 60000` - SIXTY seconds - and it is said
+    ONCE, behind `waitingSaid_` (:500-502). After that the loop is silent for ever;
+  • there is NO deadline anywhere. Three returns at the resolution point have no timeout behind them:
+      `if (counted < kNeedSeconds) ... return;`      - silence, or output under the floor, waits for ever
+      `if (! std::isfinite (measured)) return;`      - a sensor that never reports stalls it for ever
+      `if (knobGestureOpen()) return;`               - and this one is worse: `knobGestureEnded` only decrements,
+         so a single missed mouse-up leaves the count at 1 and Listen can never resolve again this session
+    (EJKnobGesture.h:8, LoudnessLoop.h:506);
+  • "Already listening" is correct behaviour, not the bug: `listen()` refuses from waitAudio/measuring/proposed
+    (:285). The bug is that the first Listen never finished.
+**IS THE 19:52 CAP IMPLICATED? NO, and I am not going to let the two run together.** With the Level at 0.0 dB the
+chain output is the mix at its own level, which on a bus sits far above a -40 LUFS momentary floor; the counter
+would have run. The stall is the missing deadline. The cap made the build quiet (item 2b); it did not make Listen
+hang.
+
+**THE FIX, as ruled: Listen resolves within ~20 s of playback, always, with a figure or a named reason.**
+  • a wall-clock deadline per window, `kResolveMs = 20000` from the Listen tap, EXTENDED ONCE to 20 s after the
+    first counted audio so that "20 s of playback" means playback, not the time he spent cueing;
+  • at the deadline it resolves in this order, naming the evidence it has:
+      - Level or limiter slot gone               -> the existing "no longer in the chain" line;
+      - `transportKnown() && ! isPlaying()`      -> "the transport is stopped";
+      - counted == 0                             -> "no signal is reaching the plugin", WITH the figure the meters
+                                                    show (chain-out momentary / RMS), because -61.8 dB RMS is the
+                                                    evidence and a bare "no signal" is not;
+      - 0 < counted < kNeedSeconds                -> "I heard N of the 10 seconds I need" + Listen again;
+      - counted >= kNeedSeconds, measured not finite -> names the sensor, and logs it as a fault, not a shrug;
+      - a knob gesture still open at the deadline -> resolve ANYWAY, and log that it was open. A gesture must
+        never be able to block a measurement for ever.
+  • EVERY state transition logged, as Sean asked: armed, listening, first audio, window found, window quiet,
+    proposal, timeout-with-reason. One line each, with the counted seconds and the measured figure.
+**LEGS:** (a) his case - an armed loop plus 20 s of SILENCE resolves with the no-signal message and the figure,
+and the loop leaves the waiting state; (b) the other direction, so the deadline cannot eat a good window - 10 s of
+loud audio inside the deadline still resolves with a PROPOSAL and the measured figure; (c) a leaked knob gesture
+(one `knobGestureBegan` with no end) still resolves at the deadline.
+
+### 6. Reset the heard counter in [CHAIN LEVELS] when the rack changes
+"set from N min" must mean THIS build. The phrase is composed in EJCalibLoop.h (~1968 and ~2146,
+`", set from " + roundToInt (blockHeardS) + " s of this track"`), and the CHAIN LEVELS block is assembled at
+EchoJayAPI.cpp:3263. The reset point is a rack change - the same bump that already invalidates per-slot tallies
+(`bumpChainRevision`). LEG: a rack change resets the heard figure, so a build cannot quote minutes heard before the
+chain it describes existed.

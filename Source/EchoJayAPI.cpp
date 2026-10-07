@@ -1,4 +1,5 @@
 #include "EchoJayAPI.h"
+#include "EJNetCensus.h"   // 7 Oct 2026 (06d item 1): no network worker outlives the last processor
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "EJStreamFraming.h" // SSE byte-to-frame splitter (spec step 2)
 #include "EJReplyBlocks.h"   // the whole-reply block strip (moved verbatim, spec step 3)
@@ -292,10 +293,13 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
 
     juce::Thread::launch([=]()
     {
+        // 06d item 1: in the census for as long as this worker is inside a
+        // request, so the last processor's destructor can cancel it and WAIT.
+        echojay::net::Worker netw ("postJSON " + path);
         juce::var json;
         int statusCode = 0;
 
-        // Retry only on connection-level failures (createInputStream returns
+        // Retry only on connection-level failures (the request returns
         // nullptr — timeout, dropped connection, TLS/DNS blip, cold-start
         // stall before first byte). These never reach the server, so retrying
         // is safe. Real HTTP responses (200/4xx/5xx) are NOT retried here —
@@ -308,7 +312,7 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
             // plugin module. On Windows that surfaces as Cubase freezing a few
             // seconds after removal, with a perfectly clean teardown log
             // (this thread is not part of teardown and leaves no trace).
-            if (!aliveFlag->load()) return;
+            if (!aliveFlag->load() || netw.stopping()) return;
 
             juce::URL url(transportEndpoint(endpoint, path) + path);
             url = url.withPOSTData(body);
@@ -324,9 +328,9 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
                                .withConnectionTimeoutMs(connectTimeoutMs)
                                .withStatusCode(&statusCode);
 
-            auto stream = url.createInputStream(options);
+            echojay::net::Request stream (netw, url, options);
 
-            if (stream != nullptr)
+            if (stream)
             {
                 juce::MemoryBlock mb;
                 stream->readIntoMemoryBlock(mb);
@@ -340,7 +344,7 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
                 << "/" << maxAttempts << ") path=" << path << " statusCode=" << statusCode);
 
             // Bail out of the backoff sleep too if torn down mid-retry.
-            if (!aliveFlag->load()) return;
+            if (!aliveFlag->load() || netw.stopping()) return;
             if (attempt < maxAttempts)
                 juce::Thread::sleep(attempt * 1000); // 1s, then 2s backoff
         }
@@ -358,7 +362,7 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
         // plugin" report. Checking alive BEFORE posting (not just inside the
         // lambda) means a request that finishes after removal quietly does
         // nothing instead of queueing a time-bomb into the host loop.
-        if (!aliveFlag->load()) return;
+        if (!aliveFlag->load() || netw.stopping()) return;   // 06d item 1: a late completion posts nothing
         juce::MessageManager::callAsync([callback, j, sc, aliveFlag]() {
             ejTeardownLog("[callAsync] postJSON completion firing");
             if (!aliveFlag->load()) { ejTeardownLog("[callAsync] postJSON: alive=false, bailing"); return; }
@@ -390,7 +394,8 @@ void EchoJayAPI::patchJSON(const juce::String& path, const juce::String& body,
 
     juce::Thread::launch([=]()
     {
-        if (!aliveFlag->load()) return;
+        echojay::net::Worker netw ("patchJSON " + path);
+        if (!aliveFlag->load() || netw.stopping()) return;
 
         juce::URL url(transportEndpoint(endpoint, path) + path);
         url = url.withPOSTData(body);
@@ -407,10 +412,10 @@ void EchoJayAPI::patchJSON(const juce::String& path, const juce::String& body,
                            .withStatusCode(&statusCode)
                            .withHttpRequestCmd("PATCH");
 
-        auto stream = url.createInputStream(options);
+        echojay::net::Request stream (netw, url, options);
 
         juce::var json;
-        if (stream != nullptr)
+        if (stream)
         {
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
@@ -422,7 +427,7 @@ void EchoJayAPI::patchJSON(const juce::String& path, const juce::String& body,
         auto callback = cb;
         auto sc = statusCode;
         auto j = json;
-        if (!aliveFlag->load()) return;
+        if (!aliveFlag->load() || netw.stopping()) return;   // 06d item 1: a late completion posts nothing
         juce::MessageManager::callAsync([callback, j, sc, aliveFlag]() {
             ejTeardownLog("[callAsync] patchJSON completion firing");
             if (!aliveFlag->load()) { ejTeardownLog("[callAsync] patchJSON: alive=false, bailing"); return; }
@@ -447,7 +452,8 @@ void EchoJayAPI::deleteJSON(const juce::String& path,
 
     juce::Thread::launch([=]()
     {
-        if (!aliveFlag->load()) return;
+        echojay::net::Worker netw ("deleteJSON " + path);
+        if (!aliveFlag->load() || netw.stopping()) return;
 
         juce::URL url(transportEndpoint(endpoint, path) + path);
 
@@ -463,10 +469,10 @@ void EchoJayAPI::deleteJSON(const juce::String& path,
                            .withStatusCode(&statusCode)
                            .withHttpRequestCmd("DELETE");
 
-        auto stream = url.createInputStream(options);
+        echojay::net::Request stream (netw, url, options);
 
         juce::var json;
-        if (stream != nullptr)
+        if (stream)
         {
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
@@ -478,7 +484,7 @@ void EchoJayAPI::deleteJSON(const juce::String& path,
         auto callback = cb;
         auto sc = statusCode;
         auto j = json;
-        if (!aliveFlag->load()) return;
+        if (!aliveFlag->load() || netw.stopping()) return;   // 06d item 1: a late completion posts nothing
         juce::MessageManager::callAsync([callback, j, sc, aliveFlag]() {
             ejTeardownLog("[callAsync] deleteJSON completion firing");
             if (!aliveFlag->load()) { ejTeardownLog("[callAsync] deleteJSON: alive=false, bailing"); return; }
@@ -570,7 +576,8 @@ void EchoJayAPI::getJSON(const juce::String& path,
         // Bail immediately if the plugin was removed before this thread ran.
         // See postJSON for why: a detached worker on a dead socket outliving
         // the plugin module is what freezes the host seconds after removal.
-        if (!aliveFlag->load()) return;
+        echojay::net::Worker netw ("getJSON " + path);
+        if (!aliveFlag->load() || netw.stopping()) return;
 
         juce::URL url(transportEndpoint(endpoint, path) + path);
         
@@ -587,10 +594,10 @@ void EchoJayAPI::getJSON(const juce::String& path,
                            .withConnectionTimeoutMs(timeoutMs)
                            .withStatusCode(&statusCode);
         
-        auto stream = url.createInputStream(options);
+        echojay::net::Request stream (netw, url, options);
         
         juce::var json;
-        if (stream != nullptr)
+        if (stream)
         {
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
@@ -605,7 +612,7 @@ void EchoJayAPI::getJSON(const juce::String& path,
         // See postJSON: do not queue a callback into the host message loop
         // after teardown, or it fires on the user's next click and touches
         // destroyed objects (Cubase freeze on first click after removal).
-        if (!aliveFlag->load()) return;
+        if (!aliveFlag->load() || netw.stopping()) return;   // 06d item 1: a late completion posts nothing
         juce::MessageManager::callAsync([callback, j, sc, aliveFlag]() {
             ejTeardownLog("[callAsync] getJSON completion firing");
             if (!aliveFlag->load()) { ejTeardownLog("[callAsync] getJSON: alive=false, bailing"); return; }
@@ -2002,6 +2009,11 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
 
     juce::Thread::launch ([this, endpoint, token, aliveFlag, handle, body, ev]()
     {
+        // 06d item 1: the stream already has its OWN cancel path
+        // (ChatStreamHandle), which is where the pattern came from - but
+        // nothing WAITED for it, so the destructor could still return with
+        // this worker inside a read. The census closes that.
+        echojay::net::Worker netw ("chat stream /api/chat-stream");
         // The per-delta guard: both teardown levers, checked on both sides
         // of the queue hop. `this` is only touched inside dispatched
         // lambdas, where aliveFlag has already vouched for it (postJSON's
@@ -2042,6 +2054,8 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
             ws.withExtraHeaders (headers).withConnectionTimeout (kConnectTimeoutMs);
 
             handle->attach (&ws);
+            netw.setStream (&ws);   // so a teardown cancel reaches it even with no handle in the caller's hands
+            const struct ClearSlot { echojay::net::Worker& w; ~ClearSlot() { w.setStream (nullptr); } } clearSlot { netw };
             const bool connected = ws.connect (nullptr);
             const int statusCode = connected ? ws.getStatusCode() : 0;
 
@@ -2626,7 +2640,14 @@ void EchoJayAPI::fetchRemoteConfig()
     
     juce::Thread::launch([=]()
     {
-        if (!aliveFlag->load()) return; // plugin removed before thread ran
+        // 06d item 1: THE WORKER FROM THE 19:12 CRASH REPORT. It used to check
+        // this flag here and never again, then sit in a blocking read with a
+        // SIXTY SECOND connection timeout; if the process came down while the
+        // shared NSURLSession was being invalidated, CFNetwork messaged a
+        // released delegate. Now it is in the census, so the last processor's
+        // destructor cancels the read and waits for it.
+        echojay::net::Worker netw ("fetchRemoteConfig /api/vst-config");
+        if (!aliveFlag->load() || netw.stopping()) return; // plugin removed before thread ran
 
         // ROUTED LIKE EVERY OTHER REQUEST (3 Sep 2026). This site used the raw
         // apiEndpoint and sent no transport headers, so it was the ONE call
@@ -2644,12 +2665,12 @@ void EchoJayAPI::fetchRemoteConfig()
                            .withConnectionTimeoutMs(60000)
                            .withStatusCode(&statusCode);
         
-        auto stream = url.createInputStream(options);
+        echojay::net::Request stream (netw, url, options);
 
         // The one request site the non-2xx sweep missed: config fetch
         // failures were fully silent (the 200 branch just never ran).
         // Same one-line observable as every other endpoint.
-        if (stream != nullptr && (statusCode < 200 || statusCode >= 300))
+        if (stream && (statusCode < 200 || statusCode >= 300))
         {
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
@@ -2671,7 +2692,7 @@ void EchoJayAPI::fetchRemoteConfig()
                                                  "recommendation rules) - a protected preview needs "
                                                  "the bypass header in ~/.echojay/dev.json"))).toRawUTF8());
         }
-        else if (stream != nullptr && statusCode == 200)
+        else if (stream && statusCode == 200)
         {
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
@@ -2703,6 +2724,7 @@ void EchoJayAPI::fetchRemoteConfig()
                 if (obj->hasProperty("announcement"))
                     announcement = obj->getProperty("announcement").toString();
                 
+                if (netw.stopping()) { EchoJay_NSLog ("EJNet: config fetch landed during teardown - nothing applied"); return; }
                 remoteConfigLoaded = true;
                 EchoJay_NSLog((juce::String("EJNet: config fetch ok, prompt in force = REMOTE v")
                                + juce::String(remotePromptVersion)

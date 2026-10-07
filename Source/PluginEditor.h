@@ -3964,6 +3964,20 @@ private:
     static int calibrationSlotIndexOf (const juce::var& payload);
     /** 21t-m item 1: the chat line owed when a dynamics slot ends a build or edit with no loop. */
     void sayCalibrationCouldNotStart (const juce::String& uid, const juce::String& payloadJson);
+    /** 7 Oct 2026 (Sean's ruling): IS THIS A FULL SUCCESS, judged on the SLOTS rather than on op delivery?
+        "Changes applied" used to fire on `applied == total`, where `applied` counts OPS DELIVERED - so an op that
+        reached the right slot and achieved nothing still printed success. It did so three times on 7 Oct over three
+        different failures (an unknown param id; a payload matching neither accepted shape, "got keys: []"; and a
+        full EQ with no index named). Pure and static so a guard can assert the decision directly rather than having
+        to reach into the chat-send lambda that composes the sentence. */
+    static bool everySlotFullyApplied (const std::vector<ChainHost::SlotDialInfo>& infos)
+    {
+        for (const auto& di : infos)
+            if (di.status == ChainHost::DialStatus::builtinPayloadUnmatched
+             || di.status == ChainHost::DialStatus::partial)
+                return false;
+        return true;
+    }
 public:
     /** 21t-l item 5: true when the edit adds or replaces a plugin, so its calibration block must wait for the
         ops to land before it is judged. Public so the guard reads the same answer the apply path does. */

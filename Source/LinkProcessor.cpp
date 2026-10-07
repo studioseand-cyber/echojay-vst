@@ -530,7 +530,7 @@ void LinkProcessor::calibTickOwnRack()
         // this slot has a static offset. Sean's session: the map had no comp_profile, the block carried
         // from_profile, and the crest fallback reported about 0 dB on a compressor doing 2-3.
         w.inShortTermDb = I.shortTermDb;
-    w.inShortTermP90Db = I.shortTermP90Db;   // item 4, log only   // 4 Oct: for the "not responding" guard; plain dBFS on a slot tally
+    w.inShortTermP90Db = I.shortTermP90Db;   // item 4, log only
         w.grLevelKnown = have90;
         w.grLevelDb = have90 ? (-(O.shortTermP90Db - I.shortTermP90Db) + calibLoop_.staticGainDb()) : 0.0f;
         // ---- 3 Oct 2026 (Kathy, refined): THE UNIT'S LOW-LEVEL GAIN, SAMPLED LIVE. LOG ONLY --------------
@@ -600,10 +600,24 @@ void LinkProcessor::calibTickOwnRack()
         }
         else if (inputDrive && ! haveStatic)
         {
-            // No meter and no profile: crest is blind to static level, which is exactly what makes it the only
-            // honest fallback here - and when there is no crest either, the figure is UNKNOWN and says so.
-            w.grDb = haveCrest ? w.grCrestDb : std::numeric_limits<float>::quiet_NaN();
-            w.grSensor = haveCrest ? "crest-inputdrive" : "unmeasurable-inputdrive";
+            // 6 Oct 2026 (Sean's revision): CREST IS NOT TRUSTED ON ITS OWN HERE. His 1176's own meter showed about
+            // 20 dB of gain reduction while crest-inputdrive read 0.6 and the level method read -5.0 - crest is
+            // blind to static level by design, and on a heavily driven input-drive unit the programme's crest barely
+            // moves, so a near-zero crest figure says nothing. When the two sensors disagree by more than a few dB
+            // neither is usable and the honest answer is that GR cannot be measured. A WRONG number is worse than no
+            // number: 0.6 against a 20 dB reality is what let the hold write OUT -5.0 and call it level matched.
+            const bool bothKnown = haveCrest && have90;
+            const float disagreeDb = bothKnown ? std::abs (w.grCrestDb - w.grLevelDb) : 0.0f;
+            if (bothKnown && disagreeDb > echojay::CalibLoop::kSensorDisagreeDb)
+            {
+                w.grDb = std::numeric_limits<float>::quiet_NaN();
+                w.grSensor = "unmeasurable-inputdrive";
+            }
+            else
+            {
+                w.grDb = haveCrest ? w.grCrestDb : std::numeric_limits<float>::quiet_NaN();
+                w.grSensor = haveCrest ? "crest-inputdrive" : "unmeasurable-inputdrive";
+            }
         }
         else if (haveStatic && have90)
         {
@@ -624,6 +638,12 @@ void LinkProcessor::calibTickOwnRack()
     // the slot can see its own correction instead of re-reading the same untouched excess four times.
     w.slotOutGainDb = chainHost.getSlotOutGainDb (calibLoop_.slot);
     w.slotPreTrimDb = chainHost.getSlotPreTrimDb (calibLoop_.slot);   // 21t-m item 1: the drive in front of the plugin
+    // 6 Oct 2026 (Sean's item 1), LOG ONLY: this slot's OUT loud-phrase level and the CHAIN's pair, so a session log
+    // shows where level is lost rather than only that it was. O is the slot's own output tally; the chain pair is the
+    // host's own in/out, which exist whether or not a hold is running.
+    w.outShortTermP90Db = chainHost.getSlotLevels (calibLoop_.slot).out.shortTermP90Db;
+    { const auto ci = chainHost.getChainInLevels();  w.chainInP90Db  = ci.shortTermP90Db;
+      const auto co = chainHost.getChainOutLevels(); w.chainOutP90Db = co.shortTermP90Db; }
     w.inTruePeakDb = w.measured ? lv.in.truePeakDb : -200.0f;
     w.heardSeconds = lv.in.heardSeconds;   // 21t-i: the question quotes what was actually heard
     // 21t-j (B's note 1): THE PLUGIN'S OWN GR METER, when the block named one. Read as the plugin prints it; a

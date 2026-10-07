@@ -235,6 +235,9 @@ ej_add_guard(deltas_guard             SOURCE tools/deltas_guard/harness.cpp     
 ej_add_guard(bubble_parity_guard      SOURCE tools/bubble_parity_guard/harness.cpp            LABEL fast SCRIBBLE)
 ej_add_guard(substitute_guard         SOURCE tools/substitute_guard/harness.cpp               LABEL fast SCRIBBLE)
 ej_add_guard(dialinfo_keep_guard      SOURCE tools/dialinfo_keep_guard/harness.cpp            LABEL fast SCRIBBLE)
+# 06d item 1 (7 Oct 2026): the network census - no worker outlives the last processor. SCRIBBLE because the
+# crash it closes was only ever seen under MallocScribble, so this guard runs the same way the evidence did.
+ej_add_guard(net_quiet_guard          SOURCE tools/net_quiet_guard/harness.cpp               LABEL fast SCRIBBLE)
 ej_add_guard(near_map_guard           SOURCE tools/near_map_guard/harness.cpp                 LABEL fast SCRIBBLE)
 ej_add_guard(dial_wait_guard          SOURCE tools/dial_wait_guard/harness.cpp                LABEL fast SCRIBBLE)
 ej_add_guard(preflight_guard          SOURCE tools/preflight_guard/harness.cpp                LABEL plugins SCRIBBLE)

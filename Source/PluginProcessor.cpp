@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "EJRackSidecarFill.h"   // ruling 1 (21s-b)
+#include "EJNetCensus.h"   // 7 Oct 2026 (06d item 1): no network worker outlives the last processor
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include <signal.h>
 #include <unistd.h>
@@ -270,6 +271,10 @@ EchoJayProcessor::EchoJayProcessor()
     // which instance hosts them, so a feed fact derived from THIS channel's
     // own audio is recognisable by this instance's own consumers. Must match
     // publishKeyFeed's publisherId stamp.
+    // 06d item 1: the census counts PROCESSORS as well as workers, because the
+    // network shutdown belongs to the LAST one. Taking EchoJay off one track
+    // while another instance is mid-chat must not cancel that chat.
+    echojay::net::liveProcessors().fetch_add (1);
     chainHost.setKeyFeedOwnerId ((uint64_t) (uintptr_t) this);
     // 21n item 3: the plugin-wide undo history - dispatcher, status line, the local rack's hooks, the loop's writes
     undoHistory_.apply  = [this](echojay::UndoEntry& e, bool toBefore) { return applyUndoEntry(e, toBefore); };
@@ -478,6 +483,13 @@ void ejDashLog(const juce::String& msg)
 
 EchoJayProcessor::~EchoJayProcessor()
 {
+    // 6 Oct 2026: THE PROCESS IS COMING DOWN. Set before anything else in this destructor, because from here any
+    // hosted AU dispose - in this instance or any other in the process, on any timer - can land in a shared library
+    // another plugin has already torn down. That is the 17:54 crash: quitting Logic destroyed the EDITOR, the borrow
+    // released four instances into the pending list, and the timer disposed them 220 ms later while the Link's own
+    // teardown was in flight. ~EchoJayEditor is deliberately NOT a signal: that window closes constantly
+    // mid-session, and mid-session disposal is correct and must keep working.
+    ChainHost::noteHostTeardownBegan ("an EchoJayProcessor destructor (AP_Close)");
     // §5a-R: drop any in-flight apply poll — its lambdas hold this token
     // weakly and go inert now, never calling into freed memory.
     *aliveToken_ = false;
@@ -548,6 +560,43 @@ EchoJayProcessor::~EchoJayProcessor()
         ejTeardownLog("waiting for saveThread...");
         saveThread->waitForThreadToExit(5000);
         ejTeardownLog("saveThread done");
+    }
+
+    // ---- 06d item 1: NO NETWORK WORKER OUTLIVES THE LAST PROCESSOR ----------
+    // The crash this closes is in the 06c gate's report (.ips BC815958): CFNetwork
+    // finalising the shared NSURLSession and messaging JUCE's already-released
+    // delegate, on com.apple.NSURLSession-work, while this process came down with a
+    // request still in flight. Everything above this line joins OUR threads; until
+    // today nothing waited for the network ones, and the config fetch alone can sit
+    // in a connect for 60 seconds. Cancel unblocks the reads, so the wait is
+    // normally microseconds; it is BOUNDED either way, and it says which way it
+    // ended, because a wait nobody can see time out is the whole bug again.
+    if (echojay::net::liveProcessors().fetch_sub (1) == 1)
+    {
+        // THE BOUND IS MEASURED, NOT GUESSED (7 Oct 2026). NSURLSession's cancel is
+        // best-effort: the task's completion is delivered when the OS finishes with
+        // it, so a connect to a route that answers nothing still takes a couple of
+        // seconds to come back cancelled. net_quiet_guard's blackhole fixture
+        // (10.255.255.1) measured 2.1 s; 2.0 s timed the wait out with the worker
+        // about to leave. 2.5 s clears that case with margin. A cancel on a LIVE
+        // socket comes back in milliseconds, which is the case at a normal quit.
+        constexpr int kNetQuietMs = 2500;
+        const int before = echojay::net::inFlight();
+        if (before > 0)
+            ejTeardownLog ("network: " + juce::String (before) + " request(s) in flight ("
+                           + echojay::net::inFlightNames() + ") - cancelling");
+        const auto t0 = juce::Time::getMillisecondCounter();
+        echojay::net::beginShutdown();
+        const bool quiet = echojay::net::waitUntilQuiet (kNetQuietMs);
+        const auto took = (int) (juce::Time::getMillisecondCounter() - t0);
+        if (quiet)
+            ejTeardownLog ("network quiet in " + juce::String (took) + " ms (was "
+                           + juce::String (before) + " in flight)");
+        else
+            ejTeardownLog ("NETWORK NOT QUIET after " + juce::String (took) + " ms: "
+                           + juce::String (echojay::net::inFlight()) + " still in flight ("
+                           + echojay::net::inFlightNames()
+                           + ") - exiting with a session that may be torn down late");
     }
 
     ejTeardownLog("~EchoJayProcessor exit (members destruct next)");
@@ -7203,7 +7252,7 @@ void EchoJayProcessor::fillCalibWindow(ChainHost* host, echojay::CalibLoop& loop
         // this slot has a static offset. Sean's session: the map had no comp_profile, the block carried
         // from_profile, and the crest fallback reported about 0 dB on a compressor doing 2-3.
         w.inShortTermDb = I.shortTermDb;
-    w.inShortTermP90Db = I.shortTermP90Db;   // item 4, log only   // 4 Oct: for the "not responding" guard; plain dBFS on a slot tally
+    w.inShortTermP90Db = I.shortTermP90Db;   // item 4, log only
         w.grLevelKnown = have90;
         w.grLevelDb = have90 ? (-(O.shortTermP90Db - I.shortTermP90Db) + loop.staticGainDb()) : 0.0f;
         // ---- 3 Oct 2026 (Kathy, refined): THE UNIT'S LOW-LEVEL GAIN, SAMPLED LIVE. LOG ONLY --------------
@@ -7273,10 +7322,24 @@ void EchoJayProcessor::fillCalibWindow(ChainHost* host, echojay::CalibLoop& loop
         }
         else if (inputDrive && ! haveStatic)
         {
-            // No meter and no profile: crest is blind to static level, which is exactly what makes it the only
-            // honest fallback here - and when there is no crest either, the figure is UNKNOWN and says so.
-            w.grDb = haveCrest ? w.grCrestDb : std::numeric_limits<float>::quiet_NaN();
-            w.grSensor = haveCrest ? "crest-inputdrive" : "unmeasurable-inputdrive";
+            // 6 Oct 2026 (Sean's revision): CREST IS NOT TRUSTED ON ITS OWN HERE. His 1176's own meter showed about
+            // 20 dB of gain reduction while crest-inputdrive read 0.6 and the level method read -5.0 - crest is
+            // blind to static level by design, and on a heavily driven input-drive unit the programme's crest barely
+            // moves, so a near-zero crest figure says nothing. When the two sensors disagree by more than a few dB
+            // neither is usable and the honest answer is that GR cannot be measured. A WRONG number is worse than no
+            // number: 0.6 against a 20 dB reality is what let the hold write OUT -5.0 and call it level matched.
+            const bool bothKnown = haveCrest && have90;
+            const float disagreeDb = bothKnown ? std::abs (w.grCrestDb - w.grLevelDb) : 0.0f;
+            if (bothKnown && disagreeDb > echojay::CalibLoop::kSensorDisagreeDb)
+            {
+                w.grDb = std::numeric_limits<float>::quiet_NaN();
+                w.grSensor = "unmeasurable-inputdrive";
+            }
+            else
+            {
+                w.grDb = haveCrest ? w.grCrestDb : std::numeric_limits<float>::quiet_NaN();
+                w.grSensor = haveCrest ? "crest-inputdrive" : "unmeasurable-inputdrive";
+            }
         }
         else if (haveStatic && have90)
         {
@@ -7297,6 +7360,12 @@ void EchoJayProcessor::fillCalibWindow(ChainHost* host, echojay::CalibLoop& loop
     // the slot can see its own correction instead of re-reading the same untouched excess four times.
     w.slotOutGainDb = (*host).getSlotOutGainDb (loop.slot);
     w.slotPreTrimDb = (*host).getSlotPreTrimDb (loop.slot);   // 21t-m item 1: the drive in front of the plugin
+    // 6 Oct 2026 (Sean's item 1), LOG ONLY: this slot's OUT loud-phrase level and the CHAIN's pair, so a session log
+    // shows where level is lost rather than only that it was. O is the slot's own output tally; the chain pair is the
+    // host's own in/out, which exist whether or not a hold is running.
+    w.outShortTermP90Db = lv.out.shortTermP90Db;
+    { const auto ci = (*host).getChainInLevels();  w.chainInP90Db  = ci.shortTermP90Db;
+      const auto co = (*host).getChainOutLevels(); w.chainOutP90Db = co.shortTermP90Db; }
     // 21t-d: the slot's INPUT true peak at the drive this window ran at - what decides whether another dB of
     // drive would clip the input rather than buy gain reduction.
     w.inTruePeakDb = w.measured ? lv.in.truePeakDb : -200.0f;

@@ -983,6 +983,26 @@ ChainHost::ChainHost(Mode mode) : mode_(mode)
 // UNLOADED code, jump to 0x0). Keeping the instances alive until the process
 // exits makes the stray timers permanently harmless; the OS reclaims
 // everything when the hosting service quits.
+// 6 Oct 2026: see noteHostTeardownBegan in the header. Process-wide and one-way - a process that has started
+// tearing down never goes back to being healthy.
+static std::atomic<bool> g_hostTeardownBegun { false };
+// How long a released instance is held before the timer may dispose it. Quitting destroys the EDITOR first and the
+// processor a beat later, so a release caused by a quit is indistinguishable from a window close until the processor
+// goes. This is the window in which the teardown flag can win that race: Sean's 17:53:59 quit ran editor .238 ->
+// fatal dispose .461, i.e. 223 ms, so 2.5 s covers it with room, while a mid-session close still disposes promptly.
+static constexpr double kDisposeQuietMs = 2500.0;
+
+void ChainHost::noteHostTeardownBegan (const char* why)
+{
+    if (! g_hostTeardownBegun.exchange (true))
+        EchoJay_NSLog (("ChainHost: HOST TEARDOWN HAS BEGUN (" + juce::String (why) + ") - from here NO hosted AU is"
+                        " disposed anywhere in this process; pending and released instances go to the never-freed"
+                        " store. A deliberate leak at exit is the ruled answer; a dispose into a library another"
+                        " plugin has already shut down is the 17:54 crash.").toRawUTF8());
+}
+
+bool ChainHost::hostTeardownBegun() noexcept { return g_hostTeardownBegun.load(); }
+
 static std::vector<juce::AudioProcessorGraph::Node::Ptr>& leakedNodeStore()
 {
     static auto* store = new std::vector<juce::AudioProcessorGraph::Node::Ptr>();
@@ -1072,6 +1092,13 @@ void ChainHost::leakHostedPluginsAtTeardown()
 
 void ChainHost::clearBorrowPoolForTeardown()
 {
+    // 6 Oct 2026: A CHAINHOST TEARDOWN IS **NOT** A TEARDOWN SIGNAL, and setting the flag here was wrong. A
+    // ChainHost is destroyed in ordinary mid-session life - a Link releasing its rack first is exactly the shape
+    // teardown_dispose_guard (3) models - so raising the process-wide flag here disabled disposal for the rest of
+    // the session after the first one went. That is the same over-broad mistake as treating ~EchoJayEditor as the
+    // signal. Only a PROCESSOR destructor (AP_Close) says the process is coming down.
+    // Nothing is lost by not setting it: this function already pushes every node it owns into the process-lifetime
+    // store rather than disposing, so ~ChainHost is safe either way.
     if (! borrowPool_.empty() || ! planPark_.empty())
     {
         int removed = 0;
@@ -2905,8 +2932,22 @@ void ChainHost::setSlotPreTrimDb(int i, float db)
     // compressor HARDER until it works in its band. What keeps the old protection is the MIRROR: every drive the
     // loop writes is matched by a post-trim of the same size and the opposite sign, so the next slot's input
     // does not move by a single dB. A hand-set pre-trim still cannot exceed +12, and the -24 floor is unchanged.
+    const float wasPre = s.preTrimDb;
     s.preTrimDb = juce::jlimit(-24.0f, 12.0f, db);
     if (s.preTrimShared) s.preTrimShared->store(s.preTrimDb, std::memory_order_relaxed);
+    // 6 Oct 2026 (Sean's item 1): EVERY IN WRITE SAYS SO, with the slot and the value. The chain came out much
+    // quieter than it went in after a build while every per-plugin hold reported "level matched", and the IN trim is
+    // the one gain in the chain that nothing prints - so there was no way to tell a staging trim that was never paid
+    // back from a measurement that was wrong. The caller's REASON is not an argument here (the setter has four
+    // callers and adding one would touch them all), so the line states the move and the slot; the caller's own line
+    // sits next to it in the log, which is enough to attribute it.
+    if (std::abs (s.preTrimDb - wasPre) > 0.005f)
+        EchoJay_NSLog(("EJSlotIn: slot " + juce::String(i + 1) + " (\"" + s.desc.name + "\") IN trim "
+                       + juce::String(wasPre, 2) + " -> " + juce::String(s.preTrimDb, 2) + " dB"
+                       + (std::abs (db - s.preTrimDb) > 0.005f
+                              ? " (asked for " + juce::String(db, 2) + ", clamped)" : juce::String())
+                       + "; OUT is " + juce::String(getSlotOutGainDb(i), 2) + " dB. An IN trim taken for staging has"
+                         " to be paid back at an OUT, or the chain comes out quieter than it went in.").toRawUTF8());
     bumpChainValue();   // ruling 2 (21s-b): a VALUE write, not a structural edit
 }
 float ChainHost::getSlotPreTrimDb(int i) const { return (i >= 0 && i < (int) slots_.size()) ? slots_[(size_t) i].preTrimDb : 0.0f; }
@@ -6452,6 +6493,23 @@ void ChainHost::markBorrowPoolIneligible(const juce::PluginDescription& d,
 void ChainHost::drainPendingDispose (const char* why)
 {
     if (pendingDispose_.empty()) return;
+    // TEARDOWN: dispose NOTHING, keep everything, say what by name. This is the 17:54 crash - the timer fired 220 ms
+    // into a quit and disposed into Softube's dying library.
+    if (hostTeardownBegun())
+    {
+        juce::StringArray kept;
+        for (auto& n : pendingDispose_)
+            if (n != nullptr)
+            {
+                kept.add (n->getProcessor() != nullptr ? n->getProcessor()->getName() : juce::String ("(unnamed)"));
+                leakedNodeStore().push_back (n);
+            }
+        pendingDispose_.clear(); pendingDisposeTries_.clear(); pendingDisposeNotBeforeMs_.clear();
+        EchoJay_NSLog (("EJBorrowPool: teardown has begun (" + juce::String (why) + ") - KEPT "
+                        + juce::String (kept.size()) + " instance(s) alive instead of disposing them ["
+                        + kept.joinIntoString (", ") + "]").toRawUTF8());
+        return;
+    }
     // kDisposeTries x the processor's timer period is the budget. JUCE's exchange frees the retired sequence on a
     // 500 ms timer, so a couple of seconds is generous; past that something is genuinely holding it and we choose a
     // leak over a crash - loudly, and counted, so a guard can insist this never happens on the normal path.
@@ -6459,16 +6517,26 @@ void ChainHost::drainPendingDispose (const char* why)
     for (int i = (int) pendingDispose_.size(); --i >= 0;)
     {
         auto& n = pendingDispose_[(size_t) i];
-        if (n == nullptr) { pendingDispose_.erase (pendingDispose_.begin() + i);
-                            pendingDisposeTries_.erase (pendingDisposeTries_.begin() + i); continue; }
+        auto dropAt = [this] (int k)
+        {
+            pendingDispose_.erase (pendingDispose_.begin() + k);
+            pendingDisposeTries_.erase (pendingDisposeTries_.begin() + k);
+            if (k < (int) pendingDisposeNotBeforeMs_.size())
+                pendingDisposeNotBeforeMs_.erase (pendingDisposeNotBeforeMs_.begin() + k);
+        };
+        if (n == nullptr) { dropAt (i); continue; }
+        // THE QUIET WINDOW: not eligible yet, because a quit may still be on its way and the flag above is what must
+        // decide. Holding it costs a beat on a window close and prevents the crash on a quit.
+        if (i < (int) pendingDisposeNotBeforeMs_.size()
+            && juce::Time::getMillisecondCounterHiRes() < pendingDisposeNotBeforeMs_[(size_t) i])
+            continue;
         const int refs = n->getReferenceCount();
         const juce::String nm = n->getProcessor() != nullptr ? n->getProcessor()->getName() : juce::String ("(gone)");
         if (refs <= 1)
         {
             EchoJay_NSLog(("EJBorrowPool: disposing \"" + nm + "\" now - nothing else holds it ("
                            + juce::String (why) + "); this is the ONE dispose of this instance").toRawUTF8());
-            pendingDispose_.erase (pendingDispose_.begin() + i);          // the dispose happens on this line
-            pendingDisposeTries_.erase (pendingDisposeTries_.begin() + i);
+            dropAt (i);          // the dispose happens on this line
             continue;
         }
         if (++pendingDisposeTries_[(size_t) i] >= kDisposeTries)
@@ -6481,8 +6549,7 @@ void ChainHost::drainPendingDispose (const char* why)
                              " never happen on a healthy release - if it does, something outside this class owns a"
                              " hosted node and that is the bug to find.").toRawUTF8());
             keepHostedNodeForever (n, nm);
-            pendingDispose_.erase (pendingDispose_.begin() + i);
-            pendingDisposeTries_.erase (pendingDisposeTries_.begin() + i);
+            dropAt (i);
         }
     }
 }
@@ -6524,6 +6591,60 @@ void ChainHost::releaseBorrowToPool()
         // which never enters the graph until attach, gets the pure spec path.)
         s.lowGainWatch = false;   // 4 Oct: the rack is going; the measurement describes a setting that no longer exists
         if (auto* p = s.node->getProcessor()) { p->suspendProcessing(true); p->releaseResources(); }
+        // ---- 6 Oct 2026 (Sean's ruling): A HOSTED THIRD-PARTY AU IS NEVER DISPOSED MID-SESSION ---------------
+        //
+        // The 18:32:09 SIGSEGV. A CL 1B disposed at 18:31:24 on rack release ("0 instance(s) parked ... destroyed")
+        // left a Softube NSWindow observer registered, and 44 s later the NLS Buss popout's window frame change
+        // posted a notification into it. Same class as the AMEK EQ 250's leaked repeating timer, which is why
+        // removeSlot has kept a graveyard from the start - this path never had one.
+        //
+        // Built-ins are ours and tear down safely; they remain the ONLY things disposed. Anything that is an
+        // AudioPluginInstance is somebody else's code: PARKED for reuse, or kept forever when the pool is full. The
+        // exactly-once work is not wasted - it still governs built-ins, and the quit-teardown flag covers everything.
+        //
+        // WHY PARKING RATHER THAN ONLY KEEPING. A cap on a never-freed store cannot free anything, since the premise
+        // is that we must not dispose - keeping alone grows with every close/reopen cycle. Parking is bounded by
+        // construction: one spare per (plugin, rack). Caps: kBorrowPoolPerKey = 1, kBorrowPoolMaxTotal = 24; the
+        // pool is the primary home and the never-freed store is the overflow.
+        //
+        // WHY EJNoReuse WAS ON, AND WHY PARKING IS SAFE AGAIN. Reuse was disabled after the 16 Sep render crash: a
+        // parked node kept its nodeID in the graph's preparedNodes, so applySettings skipped re-preparing it and a
+        // later reseed reconfigured an AU whose render resources were never rebuilt. That fix is in - the lines just
+        // above call suspendProcessing(true) then releaseResources(), and the reattach re-prepares after seeding -
+        // and the reference accounting is correct now too. JUDGEMENT CALL, FLAGGED FOR SEAN: this parks third-party
+        // instances whatever reuse_on says, because the ruling leaves no option that is both safe and bounded.
+        // reuse_on still governs whether a parked instance is REUSED by borrowTryReuseInto.
+        if (dynamic_cast<juce::AudioPluginInstance*> (s.node->getProcessor()) != nullptr)
+        {
+            const auto nm  = s.desc.name;
+            const auto key = borrowPoolKey (s.desc);
+            const bool roomForKey = (int) borrowPool_[key].size() < kBorrowPoolPerKey;
+            const bool roomTotal  = (int) borrowPoolTotal_ < kBorrowPoolMaxTotal;
+            auto keepNode = s.node;
+            s.node = nullptr;                    // the slot stops owning it on either path
+            if (roomForKey && roomTotal)
+            {
+                borrowPool_[key].push_back ({ nullptr, keepNode, s.desc, {} });
+                ++borrowPoolTotal_;
+                EchoJay_NSLog(("EJBorrowPool: PARKED \"" + nm + "\" - a third-party AU is never disposed"
+                               " mid-session (the 18:32 Softube observer crash); pool "
+                               + juce::String((int) borrowPoolTotal_) + "/" + juce::String(kBorrowPoolMaxTotal)
+                               + " total, " + juce::String((int) borrowPool_[key].size()) + "/"
+                               + juce::String(kBorrowPoolPerKey) + " for this plugin [+" + sinceT0()
+                               + " ms]").toRawUTF8());
+            }
+            else
+            {
+                keepHostedNodeForever (keepNode, nm);
+                EchoJay_NSLog(("EJBorrowPool: KEPT \"" + nm + "\" forever - the pool is full ("
+                               + juce::String((int) borrowPoolTotal_) + "/" + juce::String(kBorrowPoolMaxTotal)
+                               + " total). NOT disposed: a third-party AU is never disposed mid-session. [+"
+                               + sinceT0() + " ms]").toRawUTF8());
+            }
+            graph_->removeNode (keepNode->nodeID);
+            if (s.blendNode) graph_->removeNode (s.blendNode->nodeID);
+            continue;
+        }
         if (noReuseActive())
         {
             // ---- 5 Oct 2026: THE DISPOSAL HAPPENS HERE, AND THE LOG PROVES IT ------------------------------
@@ -6542,7 +6663,15 @@ void ChainHost::releaseBorrowToPool()
             graph_->removeNode(keep->nodeID);
             pumpGraphToRetireOldSequence ("borrowed rack released");
             const int refs = keep->getReferenceCount();
-            if (refs <= 1)
+            // TEARDOWN: never dispose on the release path either. Sean's quit released four slots at refs=2 and the
+            // timer finished them off; had any reached refs<=1 the dispose would have happened right here instead.
+            if (hostTeardownBegun())
+            {
+                EchoJay_NSLog(("EJBorrowPool: teardown has begun - KEEPING \"" + nm + "\" alive instead of disposing"
+                               " it at release (refs=" + juce::String(refs) + ")").toRawUTF8());
+                leakedNodeStore().push_back (keep);
+            }
+            else if (refs <= 1)
             {
                 EchoJay_NSLog(("EJBorrowPool: destroyed \"" + nm + "\" on release (default: a borrowed instance is"
                                " not parked); node refs after the pump = " + juce::String(refs)
@@ -6563,6 +6692,7 @@ void ChainHost::releaseBorrowToPool()
                                + " ms]").toRawUTF8());
                 pendingDispose_.push_back (keep);
                 pendingDisposeTries_.push_back (0);
+                pendingDisposeNotBeforeMs_.push_back (juce::Time::getMillisecondCounterHiRes() + kDisposeQuietMs);
             }
         }
         else

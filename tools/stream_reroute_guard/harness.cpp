@@ -24,7 +24,12 @@ int main()
     check (EchoJayAPI::shouldRenderStreamedReply (done, "A drum bus usually wants glue compression..."), "(2) a resolvedTurnType=general reply WITH text is rendered");
     check (! EchoJayAPI::shouldRenderStreamedReply (done, "   "), "(2) control: an empty reply has nothing to render");
     const auto r = EchoJayAPI::renderRerouteReply ("Here is what I would do.");
-    check (r.startsWith ("Here is what I would do.") && r.endsWith (EchoJayAPI::rerouteQuietLine()) && r.contains ("sent as a chat, not a build"), "(3) the re-sent reply carries ONE quiet line", r);
+    // 7 Oct 2026 (Sean's ruling): the quiet line is no longer appended by the client at all. rerouteQuietLine() is
+    // kept deliberately so this assertion has the exact string to prove ABSENT - deleting it would assert nothing.
+    check (r == juce::String ("Here is what I would do.")
+           && ! r.contains (EchoJayAPI::rerouteQuietLine())
+           && ! r.containsIgnoreCase ("sent as a chat"),
+           "(3) a re-sent reply is rendered UNCHANGED - no quiet line  (RED as it stood: the client appended it)", r);
     check (! r.containsIgnoreCase ("send it again"), "(3) and never a resend prompt");
     // source pin: the parser's 403 branch calls the seam and the editor wires onRerouteToChat
     const auto api = juce::File ("/Users/SeanD/echojay-vst/Source/EchoJayAPI.cpp").loadFileAsString();

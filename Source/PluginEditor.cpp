@@ -1,6 +1,7 @@
 #include "EJDialWrites.h"
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginEditor.h"
+#include "EJNetCensus.h"   // 7 Oct 2026 (06d item 1): the editor's fetches are in the census too
 #include "DashboardWeb.h"        // stage 2: the lazy webview Dashboard surface
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
@@ -4775,13 +4776,17 @@ void EchoJayEditor::startUpdateDownload()
             });
         };
         
+        // 06d item 1: counted and cancellable. This one reads in a loop to
+        // report progress, so it keeps its own loop - the Request wrapper is
+        // what makes the read interruptible at teardown.
+        echojay::net::Worker netw ("update download");
         juce::URL url(urlCopy);
         int statusCode = 0;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                            .withConnectionTimeoutMs(60000)
                            .withStatusCode(&statusCode);
-        auto stream = url.createInputStream(options);
-        if (stream == nullptr || statusCode < 200 || statusCode >= 400)
+        echojay::net::Request stream (netw, url, options);
+        if (! stream || statusCode < 200 || statusCode >= 400)
         {
             reportFailure("Couldn't reach the download server (HTTP "
                           + juce::String(statusCode) + ").");
@@ -12811,10 +12816,11 @@ void EchoJayEditor::fetchProjectArt(const juce::String& url)
 
     juce::Thread::launch([safeThis, url]()
     {
+        echojay::net::Worker netw ("project art");
         juce::Image img;
         auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                            .withConnectionTimeoutMs(8000);
-        if (auto stream = juce::URL(url).createInputStream(options))
+        if (echojay::net::Request stream { netw, juce::URL (url), options })
         {
             juce::MemoryBlock mb;
             stream->readIntoMemoryBlock(mb);
@@ -24666,6 +24672,25 @@ void EchoJayEditor::sayCalibrationCouldNotStart (const juce::String& uid, const 
     if (name.isEmpty() && host != nullptr && calSlot >= 0 && calSlot < host->getNumSlots())
         name = host->getSlotInfo (calSlot).name;   // last resort, and only when the block named nobody
     if (name.isEmpty()) name = "that compressor";
+    // ---- 7 Oct 2026 (Sean's ruling): "MUST NOT START" IS NOT "COULD NOT START" ------------------------------
+    //
+    // 12:10:57 .008 the 1176's four settings APPLIED; .030 "NOT STARTED - role is bus"; .031 "COULD NOT START
+    // LANDING ... its settings never landed", and the chat told Sean to say "land it". Every word of that last
+    // sentence was false: the settings had landed, nothing had failed, and on a bus the hold is deliberately OFF
+    // because the last stage and then the Level slot set the level.
+    //
+    // The cause is that `started == 0` was read as failure. calibStart refuses correctly on a bus and says why;
+    // this function is called for every zero and had no case for "refused on purpose", so a bus fell into the
+    // final else. A bus now says NOTHING about landing.
+    {
+        juce::String whyNotBus;
+        if (processorRef.calibTargetIsBus (uid, whyNotBus))
+        {
+            EchoJay_NSLog (("EJThreshold: no landing message - the loop was refused on purpose (" + whyNotBus
+                            + "). Nothing failed, so there is nothing to tell the user.").toRawUTF8());
+            return;
+        }
+    }
     const juce::String why = (host == nullptr)            ? "its rack is not held here"
                            : (calSlot < 0)                ? "the build named no slot to land"
                            : (calSlot >= host->getNumSlots()) ? "it never arrived in the rack"
@@ -24679,9 +24704,11 @@ void EchoJayEditor::sayCalibrationCouldNotStart (const juce::String& uid, const 
     // and that reports itself by name. The old line turned one failure into two messages, the second about the
     // wrong plugin entirely.
     if (liveSlot >= 0)
+        // "land it" is RETIRED from user-facing text (7 Oct ruling): it was only ever offered by this bubble, and
+        // it asked the user to re-trigger something they never asked for. The sentence now states the fact and
+        // stops - there is nothing for them to type.
         appendLocalResultBubble ("I could not start landing " + name + " - " + why
-                                 + ". It is running at the settings the build gave it; say \"land it\" and I will "
-                                 "try again.");
+                                 + ". It is running at the settings the build gave it.");
 }
 
 int EchoJayEditor::calibrationSlotIndexOf (const juce::var& payload)
@@ -24906,6 +24933,40 @@ int EchoJayEditor::startCalibrationFromOps (const juce::String& uid, const juce:
         const bool dynamics = cat.contains ("dynamic") || cat.contains ("compress") || cat.contains ("limit")
                            || cat.contains ("gate") || cat.contains ("expand");
         if (! dynamics) continue;
+        // ---- 7 Oct 2026 (Sean's ruling): AN EXPLICIT CONTROL-BY-CONTROL EDIT NEVER STARTS A LOOP -------------
+        //
+        // Sean set slot 2's SC HPF to 110 Hz and its attack to 40 ms. The edit applied - and then a loop started
+        // anyway, "set from the working position, landing it as it plays", drove the input to +5.0 dB and closed
+        // with "band not reached, working 0.1 dB". The loop had overwritten the values he had just named.
+        //
+        // The decision above is made on the slot's CATEGORY alone: if the plugin is a compressor, a loop starts.
+        // Nothing asked whether the user had already said what every control should be. So: an op that carries
+        // explicit control values is the user's own move. Apply it and start nothing. A loop runs on a BUILD, or
+        // when the user asks for an AMOUNT - never on an edit that named the values.
+        //
+        // If a block carries BOTH explicit controls and a target, the controls win and the target is ignored OUT
+        // LOUD, because silently honouring the target is how this happened in the first place.
+        const bool hasExplicitControls =
+               o->hasProperty ("controls")
+            || o->hasProperty ("controls_norm")
+            || [o]
+               {
+                   const auto ss = o->getProperty ("settings_structured");
+                   auto* so = ss.getDynamicObject();
+                   return so != nullptr && ! so->getProperties().isEmpty();
+               }();
+        if (hasExplicitControls)
+        {
+            const bool hadTarget = o->hasProperty ("gr_target_db") || o->hasProperty ("slot_pre_gain_db");
+            EchoJay_NSLog (("EJThreshold: NOT STARTED on slot " + juce::String (slot + 1) + " (\"" + info.name
+                            + "\") - the edit names its controls, so it is the user's own move: no loop, no working"
+                              " position, no IN/OUT/drive change"
+                            + (hadTarget ? juce::String (". The block ALSO carried a target (gr_target_db /"
+                                                         " slot_pre_gain_db) and it is IGNORED - explicit controls"
+                                                         " win.")
+                                         : juce::String())).toRawUTF8());
+            continue;
+        }
         float lo = bus ? 1.0f : 2.0f, hi = bus ? 2.0f : 3.0f;
         if (auto* band = o->getProperty ("gr_target_db").getArray())
             if (band->size() == 2)
@@ -25620,7 +25681,22 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 // editResultIsFullSuccess leaves it amber.
                 summary = "Structure applied. Dialling is turned off in Settings, so no "
                           "values were written - they are on the card to set by hand.";
-            else if (applied == total)
+            // ---- 7 Oct 2026 (Sean's ruling): "CHANGES APPLIED" IS NOT AN OP COUNT ----------------------------
+            //
+            // `applied` counts OPS DELIVERED, as the comment below says in its own words - it is incremented once
+            // per op in finishOpAndContinue. An op that reached the right slot and achieved nothing still counts.
+            // With one op, 1 == 1, and the chat said "Changes applied" three different times today over three
+            // different failures:
+            //   10:37  "0 band(s), 1 skipped"          an unknown param id on the flat params path
+            //   13:19  "got keys: []", "0 band(s), 0 skipped"   the payload matched NEITHER accepted shape
+            //   (EQ)   "0 applied, 1 skipped"          no free band and no index named
+            // The per-slot verdict already knows the truth and already distinguishes all three - ChainHost sets
+            // DialStatus::applied / ::partial / ::builtinPayloadUnmatched - and the summary never consulted it.
+            // So: a full success must be true of the SLOTS, not of the delivery.
+            else if (applied == total
+                     && (safeThis == nullptr
+                         || EchoJayEditor::everySlotFullyApplied (
+                                safeThis->processorRef.getChainHost().getDialInfos())))
                 // NO COUNT (25 Aug 2026). The number counted OPS -- `total` is
                 // ops.size() and `applied` is incremented once per op in
                 // finishOpAndContinue -- while the card printed beneath it
@@ -25634,6 +25710,26 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 // list beside it. There is no case where the count tells the
                 // reader something the list does not.
                 summary = "Changes applied";
+            else if (applied == total)
+            {
+                // Every op was delivered, and at least one slot could not use what it was given. Say what arrived
+                // and why it could not be used - the device already worked both out and they were discarded here.
+                juce::StringArray bad;
+                for (const auto& di : safeThis->processorRef.getChainHost().getDialInfos())
+                {
+                    if (di.status == ChainHost::DialStatus::builtinPayloadUnmatched)
+                        bad.add (di.name + ": nothing it understood arrived"
+                                 + (di.manual.isEmpty() ? juce::String()
+                                                        : " (it wanted " + di.manual.joinIntoString (", ") + ")"));
+                    else if (di.status == ChainHost::DialStatus::partial)
+                        bad.add (di.name + ": " + (di.manual.isEmpty()
+                                                     ? juce::String ("some settings were ignored")
+                                                     : "ignored " + di.manual.joinIntoString (", ")));
+                }
+                summary = bad.isEmpty() ? juce::String ("Nothing was applied - the settings could not be used.")
+                                        : "Nothing was applied - " + bad.joinIntoString ("; ") + ".";
+                if (! results.isEmpty()) summary += " " + results.joinIntoString ("; ");
+            }
             else
                 summary = "Applied " + juce::String(applied) + " of "
                         + juce::String(total) + " - "
@@ -34626,9 +34722,30 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                     if (cleanLoad)
                         resultBubble.clear();   // composed by finishChainBubbleWhenDialSettled
                     else if (ch3.getNumSlots() > 0)
-                        resultBubble = "Chain built - " + juce::String(ch3.getNumSlots())
-                                     + " of " + juce::String((int)slots.size()) + " loaded ("
-                                     + skipped->joinIntoString(", ") + " failed).";
+                    {
+                        // ---- 7 Oct 2026 (Sean's ruling): A SUBSTITUTION IS NOT A FAILURE, AND "failed" IS NOT A
+                        // REASON. The card said "Chain built - 6 of 6 loaded (Gold Clip failed)", which tells Sean
+                        // nothing he can act on and calls a working chain a failure. The host already knows both
+                        // facts: SlotDialInfo::substitutedFrom names what was replaced and ::substitutedWhy carries
+                        // "licence" (ChainHost.cpp 7680) or "hangs on load". Say that, and name what took its place.
+                        juce::StringArray subs;
+                        for (const auto& di : ch3.getDialInfos())
+                            if (di.substitutedFrom.isNotEmpty())
+                                subs.add (di.substitutedWhy == "licence"
+                                              ? di.substitutedFrom + " isn't licensed on this Mac, so I used "
+                                                + di.name + " instead"
+                                              : di.substitutedFrom + " could not be used ("
+                                                + (di.substitutedWhy.isNotEmpty() ? di.substitutedWhy
+                                                                                  : juce::String ("it did not load"))
+                                                + "), so I used " + di.name + " instead");
+                        if (! subs.isEmpty())
+                            resultBubble = subs.joinIntoString (". ")
+                                         + ". Press Suggest an alternative to try something else.";
+                        else
+                            resultBubble = "Chain built - " + juce::String(ch3.getNumSlots())
+                                         + " of " + juce::String((int)slots.size()) + " loaded ("
+                                         + skipped->joinIntoString(", ") + " could not be used).";
+                    }
                     else
                         resultBubble = "The chain could not be built - no plugins loaded.";
 

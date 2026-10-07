@@ -244,6 +244,12 @@ struct EchoJayTabStripTestAccess
     // 30 Sep 2026: startCalibrationFromOps now carries the PURPOSE - the ops road was where a build lost it and
     // ran as an ask. This accessor keeps the ask meaning it always had.
     static int  calibFromOps (EchoJayEditor& e, const juce::String& uid, const juce::var& ops) { return e.startCalibrationFromOps (uid, ops, echojay::CalibLoop::Purpose::askRung); }
+    // 7 Oct 2026: the card-truth decision, so a leg asserts it directly instead of reaching into the send lambda.
+    static bool allApplied (const std::vector<ChainHost::SlotDialInfo>& v)
+    { return EchoJayEditor::everySlotFullyApplied (v); }
+    // 7 Oct 2026: the landing-message door, so a leg can prove a BUS says nothing.
+    static void sayCouldNotStart (EchoJayEditor& e, const juce::String& uid, const juce::String& payloadJson)
+    { e.sayCalibrationCouldNotStart (uid, payloadJson); }
     static void calibTick (EchoJayEditor& e, const juce::String& uid) { e.calibTickAndPost (uid); }
     // 21t-i: THE EDITOR'S OWN TICK. The old legs called calibTickAndPost directly, which is exactly why none of
     // them could see that nothing in the product called it.
@@ -1255,6 +1261,119 @@ int main()
                 const auto loop = proc.calibLoad (tuid);
                 check (loop.slot == 1 && loop.plugin.containsIgnoreCase ("Compressor"),
                        "21t-d w. ...on the compressor's slot", juce::String (loop.slot) + " \"" + loop.plugin + "\"");
+
+                // ---- 7 OCT 2026 (Sean's ruling): AN EXPLICIT CONTROL-BY-CONTROL EDIT STARTS NO LOOP ----------
+                // Sean set slot 2's SC HPF to 110 Hz and attack to 40 ms. The edit applied, then a loop started
+                // anyway, set the working position, drove the input to +5.0 dB and reported "band not reached".
+                // The decision was made on the slot's CATEGORY alone - nothing asked whether the user had already
+                // said what every control should be.
+                {
+                    proc.calibCancelSettle (tuid, 1, "leg reset");
+                    auto explicitOp = [] (int slot1, bool withTarget)
+                    {
+                        auto* ctrls = new juce::DynamicObject();
+                        ctrls->setProperty ("sc_hpf_hz", 110.0);
+                        ctrls->setProperty ("attack_ms", 40.0);
+                        auto* o = new juce::DynamicObject();
+                        o->setProperty ("slot", slot1);
+                        o->setProperty ("settings_structured", juce::var (ctrls));
+                        if (withTarget)
+                        {
+                            juce::Array<juce::var> b; b.add (2.0); b.add (3.0);
+                            o->setProperty ("gr_target_db", juce::var (b));
+                            o->setProperty ("slot_pre_gain_db", 5.0);
+                        }
+                        return juce::var (o);
+                    };
+                    const float inBefore  = own.getSlotPreTrimDb (1);
+                    const float outBefore = own.getSlotOutGainDb (1);
+
+                    juce::Array<juce::var> e1; e1.add (explicitOp (2, false));
+                    const int startedExplicit = A::calibFromOps (*ed, tuid, juce::var (e1));
+                    check (startedExplicit == 0,
+                           "(7 Oct) an edit that NAMES its controls starts ZERO loops - it is the user's own move "
+                           "(RED as it stood: a loop started, set the working position and drove IN to +5.0 dB)",
+                           juce::String (startedExplicit) + " loop(s)");
+                    check (std::abs (own.getSlotPreTrimDb (1) - inBefore) < 0.001f
+                        && std::abs (own.getSlotOutGainDb (1) - outBefore) < 0.001f,
+                           "(7 Oct) ...and the slot's IN and OUT are untouched",
+                           "IN " + juce::String (own.getSlotPreTrimDb (1), 2) + " OUT "
+                           + juce::String (own.getSlotOutGainDb (1), 2));
+
+                    // BOTH explicit controls AND a target: the controls win, the target is ignored.
+                    juce::Array<juce::var> e2; e2.add (explicitOp (2, true));
+                    const int startedBoth = A::calibFromOps (*ed, tuid, juce::var (e2));
+                    check (startedBoth == 0,
+                           "(7 Oct) ...and a block carrying BOTH explicit controls and a target still starts none - "
+                           "the controls win and the target is ignored",
+                           juce::String (startedBoth) + " loop(s)");
+
+                    // CONTROL: a plain amount request still starts its loop, so the guard has not disabled builds.
+                    juce::Array<juce::var> e3;
+                    juce::Array<juce::var> b3; b3.add (2.5); b3.add (3.5);
+                    { auto* o = new juce::DynamicObject(); o->setProperty ("slot", 2);
+                      o->setProperty ("gr_target_db", juce::var (b3)); o->setProperty ("slot_pre_gain_db", 4.0);
+                      e3.add (juce::var (o)); }
+                    const int startedPlain = A::calibFromOps (*ed, tuid, juce::var (e3));
+                    check (startedPlain == 1,
+                           "(7 Oct) CONTROL: an amount request with no explicit controls still starts its loop - the "
+                           "guard must not disable builds", juce::String (startedPlain) + " loop(s)");
+                }
+
+                // ---- 7 OCT 2026: A BUS SAYS NOTHING ABOUT LANDING, AND NEVER THAT SETTINGS DID NOT LAND --------
+                // 12:10:57 .008 the 1176's four settings APPLIED; .030 "NOT STARTED - role is bus"; .031 "COULD NOT
+                // START LANDING ... its settings never landed", and the chat told Sean to say "land it". All false:
+                // the settings landed, nothing failed, and on a bus the hold is deliberately off. The cause was that
+                // `started == 0` was read as failure, with no case for "refused on purpose".
+                {
+                    const int before = A::msgCount (*ed);
+                    const juce::String payload =
+                        "{\"calibration\":{\"slot\":2,\"plugin\":\"EchoJay Compressor\"}}";
+                    A::sayCouldNotStart (*ed, juce::String(), payload);   // uid empty = this instance's own rack
+                    const int after = A::msgCount (*ed);
+                    juce::String said;
+                    for (int i = before; i < after; ++i) said += A::msgs (*ed)[(size_t) i].content + " ";
+                    // The fixture's own rack is a BUS in this leg's channel type, so the whole message is refused.
+                    const bool isBus = [&]
+                    { juce::String w; return proc.calibTargetIsBus (juce::String(), w); }();
+                    if (isBus)
+                    {
+                        check (after == before,
+                               "(7 Oct) a BUS produces NO landing bubble at all  (RED as it stood: it said \"its "
+                               "settings never landed\" one line after the apply log said they did)",
+                               juce::String (after - before) + " bubble(s): " + said);
+                        check (! said.containsIgnoreCase ("land it"),
+                               "(7 Oct) ...and \"land it\" is retired from user-facing text", said);
+                    }
+                    else
+                    {
+                        // Not a bus in this fixture: then the message is allowed, but it must still never offer
+                        // "land it" - the verb is retired either way.
+                        check (! said.containsIgnoreCase ("land it"),
+                               "(7 Oct) \"land it\" is retired from user-facing text (non-bus path)", said);
+                    }
+                }
+
+                // ---- 7 OCT 2026: "CHANGES APPLIED" IS JUDGED ON THE SLOTS, NOT ON OP DELIVERY ------------------
+                // `applied == total` counted OPS DELIVERED, so one op that achieved nothing printed success. It did
+                // so three times on 7 Oct: an unknown param id (0 applied / 1 skipped); a payload matching neither
+                // shape ("got keys: []", 0 / 0); and a full EQ with no index named. The per-slot verdict always knew.
+                {
+                    using DS = ChainHost::DialStatus;
+                    auto mk = [] (DS st) { ChainHost::SlotDialInfo d; d.status = st; return d; };
+                    check (A::allApplied ({ mk (DS::applied), mk (DS::applied) }),
+                           "(7 Oct) two slots that fully applied ARE a full success - the fix must not turn every "
+                           "success amber");
+                    check (! A::allApplied ({ mk (DS::applied),
+                                                                     mk (DS::builtinPayloadUnmatched) }),
+                           "(7 Oct) a slot whose payload matched NO shape is not a success  (RED as it stood: "
+                           "\"Changes applied\", with got keys: [])");
+                    check (! A::allApplied ({ mk (DS::partial) }),
+                           "(7 Oct) ...and nor is a slot that ignored some of what it was given  (RED as it stood: "
+                           "\"Changes applied\" with 1 skipped)");
+                    check (A::allApplied ({}),
+                           "(7 Oct) CONTROL: no slots touched is not a failure either");
+                }
                 check (std::abs (loop.lo - 2.5f) < 0.01f && std::abs (loop.hi - 3.5f) < 0.01f,
                        "21t-d w. ...with the band from the op's gr_target_db, not the fallback",
                        juce::String (loop.lo, 1) + "-" + juce::String (loop.hi, 1));
@@ -1843,9 +1962,13 @@ int main()
                 "\"delta_db\":1.4}]}\n<<<END_LEVEL_MATCH>>>\n";
             const auto renderedPlain = EchoJayAPI::renderRerouteReply (plain);
             const auto renderedLm    = EchoJayAPI::renderRerouteReply (withLm);
-            check (renderedPlain.contains ("sent as a chat"),
-                   "21t-i (footer). an ordinary re-sent reply still carries the quiet line - it is true there",
-                   renderedPlain.fromFirstOccurrenceOf ("(", true, false));
+            // 7 Oct 2026 (Sean's ruling, B traced it): INVERTED. The client no longer appends the quiet line to
+            // ANY re-sent reply - B strips it server-side and from history, so the client appending it was the only
+            // thing putting it back, on replies where it was untrue. This used to assert it was present.
+            check (! renderedPlain.contains ("sent as a chat") && ! renderedPlain.contains ("say 'build'"),
+                   "21t-i (footer). an ordinary re-sent reply carries NO quiet line  (RED as it stood: the client "
+                   "appended it to every reroute)",
+                   renderedPlain.isEmpty() ? juce::String ("(empty)") : renderedPlain);
             check (! renderedLm.contains ("sent as a chat") && ! renderedLm.contains ("say 'build'"),
                    "21t-i (footer). a reply carrying a LEVEL_MATCH block does NOT  (RED as it stood: the footer "
                    "printed under the card and told the user to say \"build\")",

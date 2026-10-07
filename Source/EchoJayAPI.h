@@ -298,8 +298,16 @@ public:
     // about the reply, not an edit of it.
     static bool replyCarriesLevelMatch (const juce::String& reply)
     { juce::String r = reply, lm; return extractLevelMatchBlock (r, lm) && lm.isNotEmpty(); }
+    // ---- 7 Oct 2026 (Sean's ruling, B traced it): THE QUIET LINE IS NOT APPENDED AT ALL --------------------
+    //
+    // "(sent as a chat, not a build - say 'build' to build)" was appended to every reply re-sent after a 403
+    // chat_turn_not_streamed. B now strips it server-side and from history, so the client appending it was the only
+    // thing putting it back - and it put it on replies where it was simply untrue.
+    // The renderer now returns the reply UNCHANGED. rerouteQuietLine() and replyCarriesLevelMatch() are kept: the
+    // first because the string is still what the two guards assert the ABSENCE of (deleting it would make them
+    // assert nothing), the second because it is a question about a reply that other code may want.
     static juce::String renderRerouteReply (const juce::String& reply)
-    { return replyCarriesLevelMatch (reply) ? reply.trim() : reply.trim() + "\n\n" + rerouteQuietLine(); }
+    { return reply.trim(); }
     std::shared_ptr<ChatStreamHandle> streamChat(const juce::StringArray& roles,
                                                  const juce::StringArray& contents,
                                                  const juce::String& systemPrompt,

@@ -167,6 +167,19 @@ public:
     // on the message thread, with the host healthy, exactly once. Driven by the processor's own timer, and also
     // called at the start of the next release and at teardown.
     void drainPendingDispose (const char* why);
+    // ---- 6 Oct 2026: TEARDOWN HAS BEGUN, PROCESS-WIDE ----------------------------------------------------------
+    // The 17:54 crash. Quitting Logic destroys the plugin EDITOR first; ~EchoJayEditor releases the borrow, which
+    // queued four instances at refs=2, and the processor's own timer disposed them 220 ms later - by which time the
+    // Link's teardown had begun and Softube's shared library was going down, so the CL 1B's dispose freed memory
+    // that library had already released. The mid-session path (10:44 the same day) is correct and must stay: there,
+    // disposing at release is exactly what we want.
+    //
+    // ~EchoJayEditor is NOT the signal - that window closes all the time mid-session. The signal is any instance in
+    // this process beginning to go away: a processor destructor (AP_Close) or a ChainHost teardown. It is a PROCESS
+    // flag, not a per-object one, because the hazard is cross-instance: one plugin's teardown can pull a shared
+    // library out from under another plugin's dispose.
+    static void noteHostTeardownBegan (const char* why);
+    static bool hostTeardownBegun() noexcept;
     int  pendingDisposeCount() const { return (int) pendingDispose_.size(); }
     // How many times the never-freed fallback fired. A guard asserts this is ZERO on the normal path: the fallback
     // exists so a stubborn holder cannot crash the host, NOT so a broken release can look healthy.
@@ -2536,10 +2549,21 @@ private:
     // skip it — inert until the reattach re-prepares it once, after the seed.
     std::map<juce::String, std::vector<BorrowPoolEntry>> borrowPool_;
     size_t            borrowPoolTotal_ = 0;
+    // 6 Oct 2026: THE CAPS, and what they are for. A third-party AU is never disposed mid-session, so the only way
+    // to bound memory is to REUSE rather than accumulate. One spare per plugin is all reuse can ever use (a rack
+    // holds a plugin once), and 24 total covers the largest rack several times over; past either, the instance goes
+    // to the never-freed store instead, which is logged by name. These are the numbers in the log lines.
+    static constexpr int kBorrowPoolPerKey   = 1;
+    static constexpr int kBorrowPoolMaxTotal = 24;
     // See drainPendingDispose. Each entry is the LAST reference to a released hosted AU; letting go of it IS the
     // dispose, so the vector owning it is what makes the dispose exactly-once and message-thread-only.
     std::vector<juce::AudioProcessorGraph::Node::Ptr> pendingDispose_;
     std::vector<int>  pendingDisposeTries_;
+    // The earliest moment each entry may be disposed. A quit destroys the editor FIRST and the processor a little
+    // later, so a release caused by a quit looks exactly like a release caused by a window close until the processor
+    // goes. Holding the dispose briefly lets the teardown flag win that race: a window close still disposes (just a
+    // beat later), a quit never does. See kDisposeQuietMs.
+    std::vector<double> pendingDisposeNotBeforeMs_;
     int               disposeFallbackCount_ = 0;
     juce::StringArray borrowPoolIneligible_;
     int               borrowFresh_ = 0;      // fresh instantiations, for the gate

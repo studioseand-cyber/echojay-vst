@@ -213,6 +213,9 @@ struct CalibLoop
     //                new host rather than measured against another host's clock.
     float  heardAtWriteS = -1.0f;
     float  lastInP90Db = std::numeric_limits<float>::quiet_NaN();   // item 4, log only: see Window::inShortTermP90Db
+    float  lastOutP90Db = std::numeric_limits<float>::quiet_NaN();      // 6 Oct, log only
+    float  lastChainInP90Db = std::numeric_limits<float>::quiet_NaN();  // 6 Oct, log only
+    float  lastChainOutP90Db = std::numeric_limits<float>::quiet_NaN(); // 6 Oct, log only
     // ---- THE SETTLE IS THE TAIL OF THE BUILD (28 Sep 2026 ruling) -------------------------------------------
     // One build, one chat line. The build is not complete until the slot has heard the vocal and landed, and the
     // SAME line completes in place. No ask state, no "check it", no timer: a build waits for audio as long as it
@@ -220,6 +223,11 @@ struct CalibLoop
     // three steps within 15 s of heard audio; after landing nothing moves except on a comparative.
     bool   settling   = false;
     bool   landed     = false;
+    // 6 Oct 2026 (Sean's item 3c): JUDGED WINDOWS SINCE THIS HOLD OPENED. `judged` is reset by the ask and the
+    // settle paths, so the hold cannot lean on it. His 1176 wrote OUT -5.0 after two windows with settle=0/3 and the
+    // card said "level matched" - on a reading (crest 0.6) that was 20 dB from the unit's own meter. A build hold now
+    // waits for its settle's worth of judged windows before it writes anything.
+    int    holdWindows = 0;
     int    settleSteps = 0;
     float  settleHeardS = 0.0f;
     float  settleStartHeardS = -1.0f;
@@ -280,6 +288,10 @@ struct CalibLoop
     static constexpr int   kHoldMaxWrites   = 2;     // ruled: one correction, at most one refinement
     static constexpr float kHoldOpenDb      = 1.0f;  // ...the first write is owed above this
     static constexpr float kHoldRefineDb    = 0.5f;  // ...and the refinement above this
+    // 6 Oct 2026 (Sean's revision): HOW FAR TWO SENSORS MAY DISAGREE BEFORE NEITHER IS USED. His 1176 read crest 0.6
+    // against level -5.0 with the unit's own meter showing about 20 dB - 5.6 dB apart. Past this, GR is reported as
+    // unmeasurable rather than picking the sensor that happens to be convenient.
+    static constexpr float kSensorDisagreeDb = 3.0f;
     // 21t-m (29 Sep 2026 ruling): the slot output gain's own range, and the ONLY thing that limits the hold.
     static constexpr float kSlotGainMinDb = -24.0f, kSlotGainMaxDb = 12.0f;
 
@@ -348,6 +360,13 @@ struct CalibLoop
         // ASSUMED (the profile's 1 dB point), so level footing can be told apart from the static-gain term without
         // guessing. Free: the figure is already in the IN tally the window is filled from.
         float  inShortTermP90Db = std::numeric_limits<float>::quiet_NaN();
+        // 6 Oct 2026 (Sean's item 1), LOG ONLY: the slot's OUT loud-phrase level, and the CHAIN's in/out pair. The
+        // chain came out much quieter than it went in after a build while every per-plugin hold reported "level
+        // matched", and there was no figure anywhere that could show where it went. Per-slot in/out says which slot
+        // loses it; chain in/out says the net. Plain dBFS, SHORT90, the same statistic the holds already use.
+        float  outShortTermP90Db = std::numeric_limits<float>::quiet_NaN();
+        float  chainInP90Db      = std::numeric_limits<float>::quiet_NaN();
+        float  chainOutP90Db     = std::numeric_limits<float>::quiet_NaN();
         // WHICH sensor produced grDb this window: "level-static" (a profile gave the static offset), "crest"
         // (nothing did, so the crest difference stands), or "none". Logged, never acted on.
         juce::String grSensor;
@@ -1212,6 +1231,9 @@ struct CalibLoop
         if (! running()) { s.card = card(); return s; }
         if (w.heardSeconds > 0.0f) slotHeardS = w.heardSeconds;
         if (std::isfinite (w.inShortTermP90Db)) lastInP90Db = w.inShortTermP90Db;   // item 4, log only
+        if (std::isfinite (w.outShortTermP90Db))  lastOutP90Db      = w.outShortTermP90Db;    // 6 Oct, log only
+        if (std::isfinite (w.chainInP90Db))       lastChainInP90Db  = w.chainInP90Db;
+        if (std::isfinite (w.chainOutP90Db))      lastChainOutP90Db = w.chainOutP90Db;
         if (w.sensedGrDb == w.sensedGrDb) sensedGrDb = std::abs (w.sensedGrDb);   // positive, always (ruled)
 
         // (1) NOT A MEASUREMENT. Dropped frames mean the host did not see a whole window; that is not evidence of
@@ -1611,8 +1633,18 @@ struct CalibLoop
                 // never waits for a fresh window here: Sean's 10:45 build spent FIVE windows getting to the hold
                 // (landed at window 1, held at window 6) for a level match it could have made on the first.
                 freshWanted = (purpose == Purpose::buildHold) ? 0 : (settleSteps > 0 ? kFreshAfterWrite : 0);
-                if (freshWanted == 0)
+                // 6/7 Oct 2026: ...UNLESS THE FIGURE CANNOT BE TRUSTED. This is the door Sean's 1176 came through -
+                // a build landing on its first window and writing OUT -5.0 from a reading that was 20 dB out. See
+                // buildMayWriteNow for how the 30 Sep one-shot and the 6 Oct wait are reconciled.
+                if (freshWanted == 0 && buildMayWriteNow())
                     return holdStep (s);   // nothing moved: judge this window and close the line now
+                if (freshWanted == 0)
+                {
+                    ++holdWindows;
+                    s.card = card();
+                    s.logLine = log ("hold-settling-unmeasured");
+                    return s;
+                }
                 s.card = card();
                 s.logLine = log (inBand ? "landed-holding"
                                         : (purpose == Purpose::buildHold
@@ -1677,7 +1709,20 @@ struct CalibLoop
             // inRange, notEngaging and noCheck all fall through to the hold, which is section 7's last line.
         }
         if (landed && holdOpen && ! holdDone)
+        {
+            ++holdWindows;
+            // A BUILD DOES NOT WRITE FROM FEWER THAN ITS SETTLE WINDOWS (6 Oct ruling). An ask is the user waiting on
+            // an answer and keeps its existing behaviour; a build is unattended and has no excuse for writing from
+            // two windows. If the audio runs out before then, the loop says so rather than writing - the no-signal
+            // path above is what says it, and holdDone stays false so nothing is claimed.
+            if (! buildMayWriteNow())
+            {
+                s.card = card();
+                s.logLine = log ("hold-settling");
+                return s;
+            }
             return holdStep (s);
+        }
 
         // AFTER LANDING nothing moves except on a comparative, and nothing is said.
         s.card = card();
@@ -1835,6 +1880,29 @@ struct CalibLoop
         writes is an input/drive control. The name test is deliberately narrow - "input" and "drive" are what the
         units that work this way call it (1176 "Input", distressor "Input", Zip "Drive") - and a false NEGATIVE here
         only returns the old behaviour, while a false positive would refuse a level figure that was fine. */
+    /** 6/7 Oct 2026: MAY A BUILD WRITE ITS LEVEL MATCH FROM THIS WINDOW YET?
+
+        Two rulings meet here and they point opposite ways, so this is the reconciliation - FLAGGED FOR SEAN.
+          - 30 Sep: "A BUILD IS A ONE-SHOT - one measurement window, one write, one line", made because his 10:45
+            build spent FIVE windows reaching a hold it could have made on the first.
+          - 6 Oct: "a BUILD hold never writes before its settle windows", made because his 1176 wrote OUT -5.0 from
+            two windows while the unit's own meter showed about 20 dB and the card claimed the level was matched.
+        The 6 Oct complaint is not about speed, it is about writing from a figure that cannot be trusted: crest read
+        0.6 against a level reading of -5.0 on an input-drive unit. So the one-shot is kept where the measurement is
+        sound, and the wait applies only where it is not. A build on an ordinary compressor still lands in one window;
+        a build on a unit whose gain reduction we cannot measure waits for its settle's worth and then says so rather
+        than writing a number nobody verified.
+        If Sean wants the blanket form instead, it is this function returning `holdWindows >= kSettleMaxSteps`. */
+    bool buildMayWriteNow() const
+    {
+        if (purpose != Purpose::buildHold) return true;              // an ask keeps its existing behaviour
+        const bool untrustworthy = lastSensor.startsWith ("unmeasurable")
+                                || (amountIsInputDrive() && ! staticGainKnown()
+                                    && ! (grReadable && std::isfinite (sensedGrDb)));
+        if (! untrustworthy) return true;                            // the 30 Sep one-shot, unchanged
+        return holdWindows >= kSettleMaxSteps;                       // the 6 Oct wait, where it is needed
+    }
+
     bool amountIsInputDrive() const
     {
         // Actuator::Drive is ECHOJAY'S OWN pre-trim, deliberately NOT included: the IN tally is taken AFTER that
@@ -2028,6 +2096,19 @@ struct CalibLoop
                 return p;
             }
             const float gr = measuredGrDb();
+            // 6 Oct 2026 (Sean's item 3): NEVER "LEVEL MATCHED" ON A FIGURE WE DO NOT HAVE. On an input-drive unit
+            // with no meter and no profile, crest and the level method disagreed by 5.6 dB (0.6 against -5.0) while
+            // the unit itself was doing about 20 dB - so there is no GR figure, and a card that says the level is
+            // matched is claiming a measurement nobody made.
+            if (! (gr == gr) && lastSensor.startsWith ("unmeasurable"))
+            {
+                juce::String u = plugin + ": set as dialled, but I could not measure its gain reduction";
+                if (amountIsInputDrive())
+                    u << " - its amount control is an input drive, so output minus input is the drive and the"
+                         " reduction mixed together, and its own meter is not readable from here";
+                u << ". The level is NOT matched; play more and I can try again.";
+                return u;
+            }
             if (std::abs (preDb) > 0.05f)
                 b << " Drive " << signed1 (preDb) << " dB,";
             if (gr == gr)
@@ -2477,6 +2558,15 @@ struct CalibLoop
              // survive a reload or a handover: a missing figure must not read as zero.
              // item 4 (log only): what the compressor's input actually sits at, beside what the dial assumed.
              + (std::isfinite (lastInP90Db) ? " in90=" + juce::String (lastInP90Db, 1) : juce::String())
+             // 6 Oct, log only: this slot's own in -> out, and the chain's, with both differences spelled out so
+             // nobody has to subtract dBFS in their head while reading a session log.
+             + (std::isfinite (lastOutP90Db) ? " out90=" + juce::String (lastOutP90Db, 1) : juce::String())
+             + ((std::isfinite (lastInP90Db) && std::isfinite (lastOutP90Db))
+                    ? " slotDiff=" + signed1 (lastOutP90Db - lastInP90Db) : juce::String())
+             + (std::isfinite (lastChainInP90Db) ? " chainIn=" + juce::String (lastChainInP90Db, 1) : juce::String())
+             + (std::isfinite (lastChainOutP90Db) ? " chainOut=" + juce::String (lastChainOutP90Db, 1) : juce::String())
+             + ((std::isfinite (lastChainInP90Db) && std::isfinite (lastChainOutP90Db))
+                    ? " chainDiff=" + signed1 (lastChainOutP90Db - lastChainInP90Db) : juce::String())
              + (std::isfinite (inAtGr1Dbfs) ? " assumed=" + juce::String (inAtGr1Dbfs, 1) : juce::String())
              + " sinceWrite=" + (heardAtWriteS >= 0.0f && slotHeardS >= heardAtWriteS
                                      ? juce::String (slotHeardS - heardAtWriteS, 1) + "s"

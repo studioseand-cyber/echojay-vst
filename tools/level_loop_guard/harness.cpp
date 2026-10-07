@@ -1007,6 +1007,57 @@ void guardMain()
                (reported == reported) ? juce::String (reported, 2) + " dB" : juce::String ("unknown"));
     }
 
+    {   // (4i) 6 OCT 2026, SEAN'S RULING: A HEAVILY DRIVEN INPUT-DRIVE COMP SAYS "CAN'T MEASURE", NOT 0.6 dB.
+        // His 1176LN Rev E at 18:39:00.847, window 2: gr=0.6 grLevel=-5.0 grVia=crest-inputdrive, while the unit's
+        // OWN meter showed about 20 dB of gain reduction. The hold then wrote OUT -5.0 after 6 s with settle=0/3 and
+        // the card said "level matched". Three things were wrong and all three are asserted here: crest on its own is
+        // not a GR figure on such a unit; a build must not write before its settle windows; and a card must never
+        // claim a match on a figure nobody measured.
+        echojay::CalibLoop l;
+        auto c = passiveDriveCfg ("UAD UA 1176LN Rev E");
+        c.actuator = echojay::CalibLoop::Actuator::Input;
+        c.params.clear(); c.params.add ("Input");
+        c.purpose = echojay::CalibLoop::Purpose::buildHold;
+        c.noFreshWait = true;
+        l.begin (c);
+        echojay::CalibLoop::Window w;
+        w.measured = true; w.silent = false; w.inTruePeakDb = -12.0f;
+        // The host's verdict for this shape: crest says ~nothing, the level method says -5.0, so they disagree by far
+        // more than kSensorDisagreeDb and neither is usable.
+        w.grSensor = "unmeasurable-inputdrive";
+        w.grDb = std::numeric_limits<float>::quiet_NaN();
+        w.grCrestDb = 0.6f; w.grLevelDb = -5.0f; w.grLevelKnown = true;
+        w.levelChangeDb = -5.0f;
+        int writes = 0;
+        for (int k = 0; k < 2; ++k)
+        {
+            w.heardSeconds = 40.0f + 3.0f * (float) k;
+            const auto st = l.onWindow (w, 3000.0);
+            // THE HOLD'S WRITE IS THE OUT WRITE. The loop's opening parameter write is part of setting the unit up
+            // and is not what Sean objected to - "the hold wrote OUT -5.0 after 6 s with settle=0/3" is, so
+            // writeSlotGain is the thing that must not happen early.
+            if (st.writeSlotGain) ++writes;
+        }
+        check (writes == 0,
+               "(4i) a BUILD hold writes NOTHING from two windows  (RED as it stood: it wrote OUT -5.0 after 6 s with "
+               "settle=0/3)",
+               juce::String (writes) + " write(s) in 2 window(s)");
+        const float reported = l.measuredGrDb();
+        check (! (reported == reported),
+               "(4i) ...and the GR figure is UNKNOWN, not 0.6 - crest is blind to static level, so on a unit whose "
+               "amount control is an input drive it says nothing at all",
+               (reported == reported) ? juce::String (reported, 2) : juce::String ("unknown"));
+        // Run it out to its end and read the sentence the user would see.
+        for (int k = 2; k < 12; ++k)
+        { w.heardSeconds = 40.0f + 3.0f * (float) k; l.onWindow (w, 3000.0); }
+        const auto said = l.completedLine();
+        check (! said.contains ("level matched") && ! said.contains ("level already matched"),
+               "(4i) ...and the card NEVER says the level is matched on a figure nobody measured",
+               said.isEmpty() ? juce::String ("(nothing said)") : said);
+        check (said.contains ("could not measure") || said.contains ("not matched"),
+               "(4i) ...it says plainly that the gain reduction could not be measured", said);
+    }
+
     {   // (4g) 5 OCT 2026, SEAN'S RULING: AN UNKNOWN HEARD CLOCK MEANS WAIT, NOT "JUDGE IT ANYWAY".
         // The dangerous direction is the silent one: if a production begin site ever fails to fill heardAtBeginS,
         // the loop must lose one window rather than go back to judging a window that predates the block. So this
