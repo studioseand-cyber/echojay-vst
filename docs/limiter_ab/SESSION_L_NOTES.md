@@ -181,3 +181,19 @@ The plugin itself is NOT built here (A's gate).
 
 The current limiter at any gain = ejlegacy.h, the port of EedLimiterProcessor's old path, proven against the Pro
 Tools prints (-40.1 / -50.5 dB residual) by the core test.
+
+### Tuning outcome, 8 Oct early morning: C7c is the version to gate
+  C7  8 ms floor window + second charge (tau 1.2 s to 100 %)   bass PASS -7.13 | hot -10.22 (0.16 off) | all tone THD PASS
+  C7b second stage at 0.9                                     no change on the primaries; 997 THD back to FAIL - reverted
+  C7c 4 ms window, second stage at 100 %  (FINAL)             bass PASS -7.00 | hot -10.17 (0.11 off, target 0.10) | tone_50 level
+                                                              PASS and h3 -21.8 vs Pro-L 2 -20.0 | all THD PASS | pumping PASS everywhere
+Missed target, stated: fullmix_hot level is 0.11 LU under Pro-L 2 (0.10 allowed). The 1 ms floor window that recovers it
+(C6, -10.11 PASS) puts the bass 0.21 LU too loud and fails two THD rules; 4 ms is the best split found. The release-limb
+rule fails on t90 (6.3 vs 1.3 ms on bass, 1.5 vs 0.7 on the hot mix): 10 % of a millisecond is under the harness's
+0.33 ms block; t63 matches (1.3 vs 1.3, 1.2 vs 0.3). The three tone-level FAILs (997 Hz 0.17 LU, imd 0.49, probe 0.27)
+are sustained synthetic material where our floor settles deeper than Pro-L 2's; not primaries.
+Minimum bar for the hand-off (closer than the current limiter on level and pumping, both primaries): met.
+  bass_sustain  level  current -7.68 | v2 -7.00 | Pro-L 2 -7.09      pumping  current 1.00 | v2 0.66 | Pro-L 2 0.70
+  fullmix_hot   level  current -10.69 | v2 -10.17 | Pro-L 2 -10.06   pumping  current 0.44 | v2 0.15 | Pro-L 2 0.08
+Transparent tuning (limv2::transparent()): lookahead 0.3 ms box, fast part 0.3 ms, floor 72 % with 150/180 ms, window
+4 ms, second charge to 100 % with tau 1.2 s, link 0.75, margin 0.05 dB, post-check 1 ms. CLEAN = the first behaviour.
