@@ -813,6 +813,23 @@ namespace
                 if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
                 return ejmap::cert::runSaturation (o);
             }
+            // --run-all [--until HH:MM] [--only <product>]... [--steps a,b] [--skip a,b] [--dry-run] [--out <cert>] [--probe <p>] [--ejmap-ledger <d>]
+            // [--assume-uad-device]: Sean's whole sequence, resumable (8 Oct stretch S1; EjmapRunAll.h)
+            if (a == "--run-all")
+            {
+                ejmap::cert::RunAllOptions ro;
+                for (int j = 1; j < argc; ++j)
+                {
+                    const auto k = argAt (argc, argv, j); const auto v = j + 1 < argc ? argAt (argc, argv, j + 1) : juce::String();
+                    if (k == "--until") ro.until = v; else if (k == "--only") ro.only.add (v); else if (k == "--steps") ro.steps.addTokens (v, ",", ""); else if (k == "--skip") ro.skip.addTokens (v, ",", "");
+                    else if (k == "--dry-run") ro.dryRun = true; else if (k == "--out") ro.opt.out = cwdFile (v); else if (k == "--probe") { ro.opt.probe = cwdFile (v); ro.probeGiven = true; } else if (k == "--ejmap-ledger") { ro.opt.ledger = cwdFile (v); ro.ledgerGiven = true; }
+                    else if (k == "--assume-uad-device") ro.opt.assumeUadDevice = true;
+                }
+                for (const auto& n : ro.steps) if (ejmap::runall::stepNamed (n) == nullptr) { std::cerr << "--steps: '" << n << "' is not a step" << std::endl; return 2; }
+                for (const auto& n : ro.skip) if (ejmap::runall::stepNamed (n) == nullptr) { std::cerr << "--skip: '" << n << "' is not a step" << std::endl; return 2; }
+                if (ro.opt.out == juce::File()) ro.opt.out = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap/cert");
+                return ejmap::cert::runRunAll (ro);
+            }
             // --phaseb-drafts [--out <cert>] [--category <name>]...: the drafts derived from the Phase B records already on disk (7 Oct item 5) - nothing loaded
             if (a == "--phaseb-drafts")
             {

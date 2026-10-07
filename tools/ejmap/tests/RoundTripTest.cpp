@@ -94,6 +94,7 @@
 #include "EjmapRoleEvidence.h"
 #include "EjmapPhaseB.h"
 #include "EjmapDrafts.h"
+#include "EjmapRunAll.h"
 #include "../../au_instantiate_probe/probe_truepeak.h"   // standalone (std only): the probe's BS.1770 interpolator, pinned here
 #include "../../au_instantiate_probe/probe_noise.h"      // standalone: the --sweep signal=noise generator, pinned here
 
@@ -8537,6 +8538,30 @@ void testStripDraft()
     dir.deleteRecursively();
 }
 
+/** THE ONE-COMMAND RUN (EjmapRunAll.h, 8 Oct stretch S1): the arguments on a first start and on a resume, the plan, the deadline, the ETA. */
+void testRunAll()
+{
+    using namespace ejmap::runall;
+    const auto* eq = stepNamed ("eq"); const auto* sel = stepNamed ("nothing_nominated"); const auto* lic = stepNamed ("licence_check"); const auto* rd = stepNamed ("reverb_delay");
+    check (eq && sel && lic && rd && steps().front().name == "preflight" && steps().back().name == "drafts" && stepNamed ("preflight")->stopOnFail, "runall RA1: the sequence starts with the preflight (a failure stops it) and ends with the drafts");
+    check (argsFor (*eq, false, "/c", {}).joinIntoString (" ") == "--phaseb-all --redo eq --out /c" && argsFor (*eq, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --category eq --out /c",
+           "runall RA2: a redo step's FIRST start is --redo (its rows deleted and run again); its RESUME is --category (finished rows kept, only the missing run)");
+    check (argsFor (*rd, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --category reverb --category delay --out /c", "runall RA2b: a two-category redo resumes both categories");
+    check (argsFor (*sel, false, "/c", {}).joinIntoString (" ") == "--phaseb-all --redo nothing_nominated --out /c" && argsFor (*sel, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --out /c", "runall RA3: a redo selector resumes as a plain --phaseb-all (the rows its start deleted are the missing ones)");
+    check (argsFor (*lic, false, "/c", {}).joinIntoString (" ") == "--licence-check /c" && argsFor (*eq, false, "/c", { "Maag EQ4" }).joinIntoString (" ") == "--phaseb-all --redo eq --only Maag EQ4 --out /c", "runall RA4: {cert} substituted; --only passed to the Phase B steps");
+    State st; st["preflight"].state = "done"; st["eq"].state = "started"; st["limiter"].state = "failed";
+    const auto pl = plan (st, {}, { "categorise" }); bool hasPre = false, hasCat = false, hasEq = false; for (const auto* x : pl) { if (x->name == "preflight") hasPre = true; if (x->name == "categorise") hasCat = true; if (x->name == "eq") hasEq = true; }
+    check (! hasPre && ! hasCat && hasEq && isResume (st, "eq") && isResume (st, "limiter") && ! isResume (st, "deesser") && (int) pl.size() == (int) steps().size() - 2, "runall RA5: done steps never rerun, --skip removes, a started or failed step resumes");
+    check (plan (st, { "eq", "drafts" }, {}).size() == 2, "runall RA5b: --steps narrows the plan");
+    const juce::Time evening (2026, 9, 7, 23, 30, 0, 0, true), early (2026, 9, 8, 6, 0, 0, 0, true);   // months are 0-based: 7 / 8 Oct
+    const auto d1 = deadlineFor ("07:00", evening), d2 = deadlineFor ("07:00", early);
+    check (d1 && d1->getDayOfMonth() == 8 && d1->getHours() == 7 && d2 && d2->getDayOfMonth() == 8 && d2->getHours() == 7 && ! deadlineFor ("7", evening) && ! deadlineFor ("25:00", evening) && ! deadlineFor ("", evening),
+           "runall RA6: --until 07:00 at 23:30 is tomorrow's 07:00, at 06:00 today's; '7' and '25:00' are not hours");
+    std::vector<const Step*> two { eq, sel };
+    check (std::abs (etaSeconds (two, st) - (0.5 * eq->estimateS + sel->estimateS)) < 1e-9, "runall RA7: the ETA counts a started step at half its estimate");
+    check (progressLine (3, 24, "eq", 3725.0, 7200.0, d1).contains ("[run-all 3/24 eq | elapsed 1:02:05 | ETA 2:00:00 | stops at 07:00]"), "runall RA8: the progress line");
+}
+
 /** THE NOISE SIGNAL (probe_noise.h, 7 Oct): deterministic in the seed, at the asked RMS, band-limited to 4-10 kHz. */
 void testNoise()
 {
@@ -8953,6 +8978,7 @@ int main (int, char**)
     testNoise();
     testDraftsPass();
     testStripDraft();
+    testRunAll();
     testMultiband();
     testRoleEvidence();
     testTextPassTimeout();

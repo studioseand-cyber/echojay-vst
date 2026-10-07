@@ -63,6 +63,7 @@
 #include "EjmapCategorise.h"
 #include "EjmapLimiter.h"
 #include "EjmapDrafts.h"
+#include "EjmapRunAll.h"
 #include "EjmapEq.h"
 #include "EjmapCertReview.h"
 #include "EjmapSaturation.h"
@@ -6091,6 +6092,80 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
       writeAtomic (phasebDir.getChildFile ("summary.json"), juce::JSON::toString (juce::var (sm))); }
     say ("PHASEB: done - " + progressText (prog).upToFirstOccurrenceOf ("\n", false, false) + "; summary " + phasebDir.getChildFile ("summary.json").getFullPathName());
     return 0;
+}
+// THE ONE-COMMAND RUN (Kathy, 8 Oct stretch S1; the pure parts in EjmapRunAll.h). Each step a child ejmap in its own process group, output
+// to cert/run_all/<step>.log; the state in cert/run_all.json, written before a step starts (started) and after it ends (done / failed).
+inline volatile sig_atomic_t& runAllInterrupted() { static volatile sig_atomic_t f = 0; return f; }
+struct RunAllOptions { SweepOptions opt; juce::String until; juce::StringArray only, steps, skip; bool dryRun = false, probeGiven = false, ledgerGiven = false; };
+inline int runRunAll (const RunAllOptions& ro)
+{
+    using namespace runall;
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto cert = ro.opt.out; cert.createDirectory(); const auto logDir = cert.getChildFile ("run_all"); logDir.createDirectory();
+    const auto stateFile = cert.getChildFile ("run_all.json");
+    State st = stateFromVar (juce::JSON::parse (stateFile.loadFileAsString()));
+    auto save = [&] { phaseb::writeAtomic (stateFile, juce::JSON::toString (stateVar (st))); };
+    const auto p = plan (st, ro.steps, ro.skip); const int totalN = (int) p.size();
+    const auto until = deadlineFor (ro.until, juce::Time::getCurrentTime());
+    if (ro.until.isNotEmpty() && ! until) { say ("RUN-ALL: --until '" + ro.until + "' is not HH:MM"); return 2; }
+    const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
+    say ("RUN-ALL: " + juce::String (totalN) + " step(s) to run, " + juce::String ((int) steps().size() - totalN) + " done or skipped; ETA " + hms (etaSeconds (p, st)) + (until ? "; stops at " + until->formatted ("%H:%M %d %b") : juce::String()) + "; state " + stateFile.getFullPathName());
+    for (const auto* s : p) say ("  " + s->name.paddedRight (' ', 18) + (isResume (st, s->name) ? "RESUME " : "       ") + argsFor (*s, isResume (st, s->name), cert.getFullPathName(), ro.only).joinIntoString (" ") + "   (~" + hms (s->estimateS) + ", " + s->why + ")");
+    if (ro.dryRun) return 0;
+    runAllInterrupted() = 0; std::signal (SIGINT, [] (int) { runAllInterrupted() = 1; }); std::signal (SIGTERM, [] (int) { runAllInterrupted() = 1; });
+    const auto t0 = juce::Time::getMillisecondCounterHiRes(); int doneN = 0, failedN = 0; juce::String stopped;
+    for (const auto* s : p)
+    {
+        if (runAllInterrupted()) { stopped = "interrupted (Ctrl-C) before " + s->name; break; }
+        if (until && juce::Time::getCurrentTime() >= *until) { stopped = "the hour (" + until->formatted ("%H:%M") + ") reached before " + s->name; break; }
+        if (s->kind == "licence" && ! cert.getChildFile ("licences.csv").existsAsFile()) { say ("  " + s->name + ": skipped - no cert/licences.csv"); st[s->name].state = "done"; st[s->name].finishedAt = nowStamp(); save(); ++doneN; continue; }
+        const bool resume = isResume (st, s->name);
+        auto args = argsFor (*s, resume, cert.getFullPathName(), ro.only);
+        if (s->name == "followup" && ! ro.only.isEmpty()) { const auto slice = logDir.getChildFile ("slice.txt"); slice.replaceWithText (ro.only.joinIntoString ("\n") + "\n"); args.add ("--slice"); args.add (slice.getFullPathName()); }
+        const bool takesPaths = args.contains ("--phaseb-all") || args.contains ("--cert-tonecheck-all") || args.contains ("--categorise-propose");
+        if (takesPaths && ro.probeGiven) { args.add ("--probe"); args.add (ro.opt.probe.getFullPathName()); }
+        if (takesPaths && ro.ledgerGiven) { args.add ("--ejmap-ledger"); args.add (ro.opt.ledger.getFullPathName()); }
+        if (ro.opt.assumeUadDevice && (takesPaths || s->name == "uad_preflight")) args.add ("--assume-uad-device");
+        auto& ss = st[s->name]; ss.state = "started"; ss.startedAt = nowStamp(); ++ss.runs; save();
+        const auto logFile = logDir.getChildFile (s->name + ".log");
+        say (progressLine (doneN, totalN, s->name + (resume ? " (resume)" : ""), (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, etaSeconds (runall::plan (st, ro.steps, ro.skip), st), until));
+        // the child: its own process group, stdout + stderr appended to the step's log
+        std::vector<std::string> av { exe.getFullPathName().toStdString() }; for (const auto& a : args) av.push_back (a.toStdString());
+        std::vector<char*> cav; for (auto& x : av) cav.push_back (x.data()); cav.push_back (nullptr);
+        const pid_t pid = fork();
+        if (pid == 0)
+        {
+            setpgid (0, 0);
+            const int fd = open (logFile.getFullPathName().toRawUTF8(), O_WRONLY | O_CREAT | O_APPEND, 0644); if (fd >= 0) { dup2 (fd, 1); dup2 (fd, 2); close (fd); }
+            std::signal (SIGINT, SIG_DFL); std::signal (SIGTERM, SIG_DFL);
+            execv (cav[0], cav.data()); _exit (127);
+        }
+        if (pid < 0) { say ("RUN-ALL: fork failed"); return 3; }
+        setpgid (pid, pid);
+        int status = 0; bool sentInt = false; double intAt = 0.0, lastLine = juce::Time::getMillisecondCounterHiRes(); juce::String why;
+        while (true)
+        {
+            const pid_t w = waitpid (pid, &status, WNOHANG);
+            if (w == pid) break;
+            const double now = juce::Time::getMillisecondCounterHiRes();
+            if (! sentInt && (runAllInterrupted() || (until && juce::Time::getCurrentTime() >= *until))) { kill (-pid, SIGINT); sentInt = true; intAt = now; why = runAllInterrupted() ? "Ctrl-C" : "the hour " + until->formatted ("%H:%M"); say ("RUN-ALL: " + why + ": stopping " + s->name + " (SIGINT to its process group; it resumes next time)"); }
+            if (sentInt && now - intAt > 60000.0) { kill (-pid, SIGKILL); }
+            if (now - lastLine > 60000.0) { lastLine = now; say (progressLine (doneN, totalN, s->name, (now - t0) / 1000.0, etaSeconds (runall::plan (st, ro.steps, ro.skip), st), until)); }
+            juce::Thread::sleep (500);
+        }
+        const int code = WIFEXITED (status) ? WEXITSTATUS (status) : -1;
+        ss.exitCode = code; ss.finishedAt = nowStamp();
+        if (sentInt) { ss.state = "started"; save(); stopped = s->name + " stopped by " + why + " (it resumes next time)"; break; }
+        // a step's success: exit 0; the preflight and the probe-backed steps also accept 4 (nothing to measure) as done
+        const bool ok = code == 0 || (code == 4 && takesPaths) || s->name == "uad_preflight";   // the Satellite check is information: PRESENT or ABSENT is in its log, the run goes on
+        ss.state = ok ? "done" : "failed"; save();
+        if (ok) ++doneN; else ++failedN;
+        say ("  " + s->name + ": " + (ok ? juce::String ("done") : "FAILED (exit " + juce::String (code) + ") - see " + logFile.getFullPathName()) + "  " + progressLine (doneN, totalN, {}, (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, etaSeconds (runall::plan (st, ro.steps, ro.skip), st), until));
+        if (! ok && s->stopOnFail) { stopped = s->name + " failed: nothing after it can be trusted"; break; }
+    }
+    std::signal (SIGINT, SIG_DFL); std::signal (SIGTERM, SIG_DFL);
+    say ("RUN-ALL: " + juce::String (doneN) + " done, " + juce::String (failedN) + " failed" + (stopped.isNotEmpty() ? "; stopped: " + stopped + ". Run the same command again to continue; --dry-run shows what is left." : juce::String ("; the sequence is complete (cert/run_all.json: every step done; delete it to run the whole sequence again).")));
+    return failedN > 0 ? 1 : 0;
 }
 inline int runPhaseBStatus (const SweepOptions& opt)
 {
