@@ -32,7 +32,7 @@ inline double stddev (const std::vector<double>& v) { const double m = mean (v);
 // ---------------------------------------------------------------------------------------------------------------
 struct AlignResult
 {
-    bool ok = false; bool inverted = false; int offset = 0;
+    bool ok = false; bool inverted = false; int offset = 0; double tailSeconds = 0;   // tailSeconds: silent tail beyond the source's length
     std::vector<int> windowOffsets; std::vector<double> windowPeaks; std::vector<size_t> windowStarts; std::vector<bool> windowValid; std::vector<bool> windowAmbiguous;
     std::string why;
 };
@@ -53,7 +53,15 @@ inline AlignResult align (const ejwav::Audio& src, const ejwav::Audio& proc, con
     const auto s = monoSum (src), q = monoSum (proc);
     const size_t N = s.size();
     if (N < 8192 || q.size() < 8192) { r.why = "file too short to align (< 8192 samples)"; return r; }
-    if ((q.size() > N ? q.size() - N : N - q.size()) > (size_t) maxLag) { r.why = "lengths differ by more than the lag window (" + std::to_string (N) + " vs " + std::to_string (q.size()) + " frames)"; return r; }
+    // A render may be LONGER than its source (a fixed-length bounce: material, then silence); it may not be shorter by
+    // more than the lag window. The tail beyond the source's length must be silent (< -80 dBFS RMS), else refuse.
+    if (q.size() < N && N - q.size() > (size_t) maxLag) { r.why = "render is shorter than the source by more than the lag window (" + std::to_string (N) + " vs " + std::to_string (q.size()) + " frames)"; return r; }
+    if (q.size() > N + (size_t) maxLag)
+    {
+        double e = 0; for (size_t n = N + (size_t) maxLag; n < q.size(); ++n) e += q[n] * q[n]; const double tailDb = ejdsp::dB (std::sqrt (e / (double) (q.size() - N - (size_t) maxLag)));
+        if (tailDb > -80.0) { r.why = "render is longer than the source and the tail beyond it is NOT silent (" + std::to_string ((int) tailDb) + " dBFS RMS)"; return r; }
+        r.tailSeconds = (double) (q.size() - N) / src.sampleRate;
+    }
     size_t W = 1 << 17; while (W > N / 2 && W > 4096) W >>= 1;
     const size_t L = (size_t) maxLag;
     std::vector<std::pair<size_t, size_t>> windows = anchors;

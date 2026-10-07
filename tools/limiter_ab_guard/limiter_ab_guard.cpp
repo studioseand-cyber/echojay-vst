@@ -35,7 +35,7 @@ void printReport (const ejm::Report& R, bool trace)
 {
     std::printf ("\n== case %-18s tag %-10s", R.caseName.c_str(), R.tag.c_str());
     if (! R.aligned) { std::printf ("  REFUSED: %s\n", R.align.why.c_str()); for (size_t i = 0; i < R.align.windowOffsets.size(); ++i) std::printf ("     window @%7.2f s  offset %6d  corr %6.3f %s\n", (double) R.align.windowStarts[i] / R.sr, R.align.windowOffsets[i], R.align.windowPeaks[i], R.align.windowValid[i] ? "" : R.align.windowAmbiguous[i] ? "(ambiguous: periodic)" : "(ignored)"); std::printf ("ROW case=%s tag=%s aligned=0\n", R.caseName.c_str(), R.tag.c_str()); return; }
-    std::printf ("  %.0f Hz  %zu frames  offset %+d samples (%.2f ms)  corr", R.sr, R.frames, R.align.offset, 1000.0 * R.align.offset / R.sr);
+    std::printf ("  %.0f Hz  %zu frames  offset %+d samples (%.2f ms)%s  corr", R.sr, R.frames, R.align.offset, 1000.0 * R.align.offset / R.sr, R.align.tailSeconds > 0 ? ("  [render " + f1 (R.align.tailSeconds) + " s longer, tail silent]").c_str() : "");
     for (size_t i = 0; i < R.align.windowPeaks.size(); ++i) std::printf (" %.3f", R.align.windowPeaks[i]);
     std::printf ("\n  gain %+.1f dB  ceiling %+.1f dB\n", R.gainDb, R.ceilingDb);
     std::printf ("  loudness   in+gain  I %s LUFS  Mmax %s  Smax %s   |  out  I %s LUFS  Mmax %s  Smax %s   |  S std %s -> %s LU\n",
@@ -148,6 +148,10 @@ int selftest()
         r = ejm::align (src, noiseStereo (sr, 10.0, 2)); check (! r.ok, "unrelated material is REFUSED", r.why);
         ejwav::Audio clipped = delayed (src, 480, 3.0); for (auto& c : clipped.ch) for (double& v : c) v = std::max (-1.0, std::min (1.0, v));
         r = ejm::align (src, clipped); check (r.ok && r.offset == 480, "a hard-clipped (heavily limited) render still aligns", "offset " + std::to_string (r.offset) + " corr " + f2 (r.windowPeaks[0]));
+        ejwav::Audio longer = delayed (src, 480, 0.5); for (auto& c : longer.ch) c.resize (c.size() + (size_t) (3 * sr), 0.0);
+        r = ejm::align (src, longer); check (r.ok && r.offset == 480 && std::abs (r.tailSeconds - 3.0) < 0.01, "a fixed-length bounce 3 s longer than the source, silent tail, aligns (tail reported)", r.why + " tail " + f2 (r.tailSeconds));
+        for (auto& c : longer.ch) for (size_t n = c.size() - (size_t) sr; n < c.size(); ++n) c[n] = 0.1;
+        r = ejm::align (src, longer); check (! r.ok && r.why.find ("NOT silent") != std::string::npos, "...but a longer render whose tail carries signal is REFUSED", r.why);
     }
     {   // loudness
         ejwav::Audio t; t.sampleRate = sr; const size_t N = (size_t) (5 * sr); t.ch.assign (2, std::vector<double> (N)); for (size_t n = 0; n < N; ++n) t.ch[0][n] = t.ch[1][n] = ejdsp::lin (-20.0) * std::sin (2 * ejdsp::kPi * 997.0 * (double) n / sr);
