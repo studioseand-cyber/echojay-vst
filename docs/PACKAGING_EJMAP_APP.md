@@ -36,7 +36,10 @@ REPO=~/src/echojay-vst            # wherever the checkout is
 #   his 4 Oct zip, cert_sc and cert_tc35 except the "detector_f_source": "measured" key on measured profiles (tools/ejmap/cert-traces/2026-10-07-equality/).
 #   New: --redo tuners / gain-all / uad / no_pool / multiband / strips / combined / material / frequency / samplerate, --categorise-propose,
 #   --licence-check / --licence-stamp / --uad-preflight, --zip --since. 0d2ccd5d IS THE FALLBACK for the 7 Oct build.
-git -C "$REPO" fetch && git -C "$REPO" checkout 0f175c51     # branch feat/ejmap-cert; the commit after it is this documentation (0d2ccd5d: the fallback)
+#   THE 7 OCT BUILD, FINAL (Kathy's "before Sean gets it": the licence file governs only its vendors' plugins, the LC / GE ruling, A1's three
+#   reads at a scaled hold): dc77d0a5 - derive-only EQUAL to 0d2ccd5d on the four sets except "detector_f_source" (cert-traces/2026-10-07-equality/).
+#   0f175c51 IS THE FALLBACK. The runbook's top section ("Running the 7 Oct build") is the one Sean follows.
+git -C "$REPO" fetch && git -C "$REPO" checkout dc77d0a5     # branch feat/ejmap-cert; the commit after it is this documentation (0f175c51: the fallback)
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
 cmake --build build-ejmap --target ejmap EchoJayProbe -j 4

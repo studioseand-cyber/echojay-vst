@@ -17,6 +17,15 @@ attack with a slow release holds more GR than either alone).
 When the server writes a different attack or release (a brief that says "slow attack", or a genre preset), the pick it computes
 from the curve is off by the shift — up to ~3 dB on these units, nothing on units whose timing does not move the amount.
 
+**Sign convention.** `gr_shift_db` = the GR step at the position minus the GR step at the instantiate position; positive =
+MORE gain reduction at that position (the 7X-500's Fast attack +3.41, Slow release +3.20; the mpressor's 150 ms attack −1.41).
+
+**Decide part 1 only after tonight's data.** The 7 Oct build's `--redo combined` reads the attack-only and release-only
+settings at the SAME scaled hold as the combined read (10× the slower time constant, never under 2.5 s) and records
+`additivity_check`: if the two shifts add at that hold, the time draft's short-burst shifts were under-settled and part 1
+holds; if they still do not add (here: 7X-500 +3.38 + 3.18 = 6.56 against a combined +3.83 at 2.5 s), part 1 is only a first
+estimate and part 2 carries the correction.
+
 **Proposal (three parts, smallest first).**
 1. **Carry the shifts, write the pick from them.** Put the time draft's `gr_shift_db` per attack and per release position into
    the profile as `time.attack[].gr_shift_db` / `time.release[].gr_shift_db` (already measured; a schema addition only). When
