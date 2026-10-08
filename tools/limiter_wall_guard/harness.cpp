@@ -76,6 +76,48 @@ int main()
         for (int pos = 0; pos < total; pos += 512) { for (int i = 0; i < 512; ++i) { b.setSample (0, i, probe (pos + i)); b.setSample (1, i, probe (pos + i)); } lim.processBlock (b, m); for (int i = 0; i < 512; ++i) { const int n = pos + i; if (n >= lat + 512) worst = juce::jmax (worst, std::abs (b.getSample (0, i) - probe (n - lat))); } }
         check (worst < 1.0e-4f, "a sub-ceiling signal comes out identical, delayed by exactly the reported latency", "worst delta " + juce::String (worst, 7) + " at latency " + juce::String (lat));
     }
+    std::printf ("== ZERO DIFFERENCE (8 Oct 2026, session G's test): the real processor at the schema defaults == limv2::transparent() ==\n");
+    {
+        const double sr = 48000.0; juce::Random rng (23); const int total = 48000 * 2;
+        auto signal = [&] (int n) { const bool burst = (n / 4800) % 3 == 0; return burst ? (rng.nextFloat() * 2.0f - 1.0f) * 1.2f : 0.3f * std::sin (0.009f * (float) n) + 0.05f * std::sin (0.7f * (float) n); };
+        EedLimiterProcessor proc; proc.setPlayConfigDetails (2, 2, sr, 512); proc.prepareToPlay (sr, 512);
+        { auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", 9.0); auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); int a = 0, k = 0; proc.applyStructured (juce::var (w), EedDeviceProcessor::ParamSource::Assistant, &a, &k); }
+        proc.prepareToPlay (sr, 512);   // the parameters landed before prepare, as a restored chain's do (the ceiling ramp is not in play)
+        echojay::limv2::Core core; auto t = echojay::limv2::transparent(); t.maxLookaheadMs = t.lookaheadMs * EedLimiterProcessor::kMaxLookaheadMs / 0.18; core.prepare (sr, t); core.setFixedLatency (true); core.setInputGainDb (9.0); core.setCeilingDb (0.0); core.setTruePeak (true); core.reset();
+        check (proc.getLatencySamples() == core.latencySamples(), "the processor reports the core's fixed latency", juce::String (proc.getLatencySamples()) + " vs " + juce::String (core.latencySamples()));
+        juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m; std::vector<float> cl (512), cr (512); double worst = 0; long long differing = 0;
+        juce::Random rngA (23), rngB (23);
+        for (int pos = 0; pos < total; pos += 512)
+        {
+            for (int i = 0; i < 512; ++i) { rng = rngA; const float v = signal (pos + i); rngA = rng; b.setSample (0, i, v); b.setSample (1, i, v); }
+            for (int i = 0; i < 512; ++i) { rng = rngB; const float v = signal (pos + i); rngB = rng; cl[(size_t) i] = v; cr[(size_t) i] = v; }
+            proc.processBlock (b, m); float* p[2] = { cl.data(), cr.data() }; core.process (p, 2, 512);
+            for (int i = 0; i < 512; ++i) { const double d = std::abs ((double) b.getSample (0, i) - (double) cl[(size_t) i]); worst = std::max (worst, d); if (d != 0.0) ++differing; }
+        }
+        check (worst == 0.0 && differing == 0, "EedLimiterProcessor at its defaults (ceiling 0.0, TRUE PK on, lookahead 0.18, attack 275, release 400, link 75/100) renders SAMPLE-IDENTICAL to limv2::transparent() over 2 s", "worst " + juce::String (worst, 9) + ", differing samples " + juce::String (differing));
+    }
+    std::printf ("== state migration (8 Oct 2026): a pre-v2 state at the OLD defaults loads as the NEW defaults; anything else literally ==\n");
+    {
+        const double sr = 48000.0;
+        auto stateOf = [] (const juce::String& paramsJson) { const juce::String json = "{\"bypassed\":false,\"params\":" + paramsJson + "}"; return json; };
+        auto render = [&] (EedLimiterProcessor& lim) { lim.setPlayConfigDetails (2, 2, sr, 512); lim.prepareToPlay (sr, 512); juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m; juce::Random rng (11); std::vector<float> out; const int total = 48000 * 2;
+            for (int pos = 0; pos < total; pos += 512) { for (int i = 0; i < 512; ++i) { const int n = pos + i; const bool burst = (n / 4800) % 2 == 0; const float v = burst ? (rng.nextFloat() * 2.0f - 1.0f) * 1.5f : 0.2f * std::sin (0.013f * (float) n); b.setSample (0, i, v); b.setSample (1, i, v); } lim.processBlock (b, m); for (int i = 0; i < 512; ++i) out.push_back (b.getSample (0, i)); } return out; };
+        // (a) old-format state (no attack_ms) at the OLD defaults == a fresh instance at the NEW defaults, sample for sample
+        EedLimiterProcessor fresh; auto* fp = new juce::DynamicObject(); fp->setProperty ("ceiling_db", 0.0); fp->setProperty ("true_peak", 1); fp->setProperty ("input_db", 8.0); auto* fw = new juce::DynamicObject(); fw->setProperty ("params", juce::var (fp)); int a1 = 0, s1 = 0; fresh.applyStructured (juce::var (fw), EedDeviceProcessor::ParamSource::Assistant, &a1, &s1);
+        EedLimiterProcessor old; const juce::String oldState = stateOf ("{\"ceiling_db\":0.0,\"input_db\":8.0,\"release_ms\":50.0,\"lookahead_ms\":2.0,\"mode\":0,\"true_peak\":1,\"sc_hpf_hz\":0.0}");
+        old.setStateInformation (oldState.toRawUTF8(), (int) oldState.getNumBytesAsUTF8());
+        check (std::abs (old.getParamValue ("lookahead_ms") - 0.18) < 1e-9 && std::abs (old.getParamValue ("release_ms") - 400.0) < 1e-9 && std::abs (old.getParamValue ("attack_ms") - 275.0) < 1e-9 && std::abs (old.getParamValue ("link_pct") - 75.0) < 1e-9, "a pre-v2 state at the old defaults (lookahead 2.0, release 50, no attack_ms) loads lookahead 0.18, release 400, attack 275, link 75", "la " + juce::String (old.getParamValue ("lookahead_ms")) + " rel " + juce::String (old.getParamValue ("release_ms")));
+        const auto A = render (fresh), B = render (old); double worst = 0; for (size_t i = 0; i < A.size(); ++i) worst = std::max (worst, (double) std::abs (A[i] - B[i]));
+        check (worst == 0.0, "...and renders SAMPLE-IDENTICAL to a fresh instance at the new defaults (2 s of bursts)", "worst diff " + juce::String (worst, 9));
+        // (b) old-format state with NON-default values keeps them literally
+        EedLimiterProcessor keep; const juce::String keepState = stateOf ("{\"ceiling_db\":-1.0,\"input_db\":3.0,\"release_ms\":200.0,\"lookahead_ms\":1.0,\"mode\":0,\"true_peak\":0,\"sc_hpf_hz\":40.0}");
+        keep.setStateInformation (keepState.toRawUTF8(), (int) keepState.getNumBytesAsUTF8());
+        check (std::abs (keep.getParamValue ("lookahead_ms") - 1.0) < 1e-9 && std::abs (keep.getParamValue ("release_ms") - 200.0) < 1e-9 && std::abs (keep.getParamValue ("ceiling_db") + 1.0) < 1e-9 && keep.getParamValue ("true_peak") < 0.5 && std::abs (keep.getParamValue ("attack_ms") - 275.0) < 1e-9, "a pre-v2 state with its own values (lookahead 1.0, release 200, ceiling -1, TP off) keeps every one; attack_ms at its default", "la " + juce::String (keep.getParamValue ("lookahead_ms")) + " rel " + juce::String (keep.getParamValue ("release_ms")) + " ceil " + juce::String (keep.getParamValue ("ceiling_db")));
+        // (c) a v2 state (attack_ms present) that really says lookahead 2.0 / release 50 is NOT migrated
+        EedLimiterProcessor v2s; const juce::String v2State = stateOf ("{\"ceiling_db\":0.0,\"input_db\":0.0,\"release_ms\":50.0,\"lookahead_ms\":2.0,\"attack_ms\":100.0,\"mode\":0,\"true_peak\":1}");
+        v2s.setStateInformation (v2State.toRawUTF8(), (int) v2State.getNumBytesAsUTF8());
+        check (std::abs (v2s.getParamValue ("lookahead_ms") - 2.0) < 1e-9 && std::abs (v2s.getParamValue ("release_ms") - 50.0) < 1e-9 && std::abs (v2s.getParamValue ("attack_ms") - 100.0) < 1e-9, "a v2 state (attack_ms present) saying lookahead 2.0 / release 50 loads literally - the user set them", "la " + juce::String (v2s.getParamValue ("lookahead_ms")) + " rel " + juce::String (v2s.getParamValue ("release_ms")));
+    }
     std::printf ("\n==== limiter_wall_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

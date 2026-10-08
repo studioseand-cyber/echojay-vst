@@ -8,20 +8,26 @@
     This file is the device around it: the dialable contract, the meters the loudness loop and the editor read,
     latency reporting, and the registration.
 
-    THE CONTRACT IS UNCHANGED. Same parameter ids, ranges, defaults and state: ceiling_db, input_db, release_ms,
-    lookahead_ms, mode, true_peak, sc_hpf_hz. What each one does on v2:
-      ceiling_db    the ceiling (smoothed over 20 ms in the engine, the detector always at or below the clip)
-      input_db      the loudness push, eased over 20 ms inside the engine
-      true_peak     drives the oversampled detector and the post-check (off: sample-domain detection)
-      sc_hpf_hz     a 2nd-order high-pass on the detector only, as before
-      mode          ALL THREE VALUES RUN THE TRANSPARENT TUNING tonight (punchy and clip are recorded, not yet
-                    tuned); the dial keeps its value so a later build can give them their own Tunings
-      lookahead_ms  scales the engine's window around its tuned value: 2 ms (the default) IS the tuned window,
-                    so an existing chain sounds like the measurement; 0 is the shortest window, 10 is 5x
-      release_ms    scales the slow floor's recovery around its tuned value: 50 ms (the default) IS the tuned
-                    180 ms; 1000 is 20x slower
-    So a chain, preset or server-sent ceiling saved against the old limiter loads and sounds like the new one at
-    its defaults, and the two dials still turn and still do something, in the engine's own terms.
+    THE DEFAULTS ARE PRO-L 2's DEFAULT SETTING (8 Oct 2026, Sean's ruling): ceiling 0.0, TRUE PK on, LOOKAHEAD 0.18 ms,
+    ATTACK 275 ms, RELEASE 400 ms, LINK 75 % transients / 100 % release. At these defaults the processor IS the tuned
+    Transparent engine (limv2::transparent()), sample for sample (session G's zero-difference test). Same ids, ranges
+    and state format for the old params; attack_ms, link_pct and release_link_pct are NEW ids - a saved chain without
+    them loads at their defaults, which is the sound that chain had. The knobs are LITERAL, in Pro-L 2's terms:
+      ceiling_db        the ceiling (smoothed over 20 ms; the detector always at or below the clip)
+      input_db          the loudness push, eased over 20 ms
+      true_peak         the 8x detector and the post-check (off: sample-domain detection)
+      lookahead_ms      the window: label 0.18 (default) = the tuned 0.06 ms window that matches Pro-L 2 at ITS 0.18 label
+                        (window = label / 3); more = smoother, more pre-dip, up to 5 (1.67 ms)
+      attack_ms         the floor's charge: slowAttackMs = 150 ms x (A / 275), slowAttack2Ms = 1200 ms x (A / 275);
+                        more = the floor charges slower = punchier, more per-hit dip
+      release_ms        the floor's recovery: slowReleaseMs = 180 ms x (R / 400) (Pro-L 2's 400 label measured 160-185 ms);
+                        more = steadier, quieter
+      link_pct          transient link = L / 100 (a left-only hit dips the right channel L % as much)
+      release_link_pct  release link = L / 100 (one floor for both channels at 100)
+      sc_hpf_hz         a 2nd-order high-pass on the detector only, as before
+      mode              ALL THREE VALUES RUN THE TRANSPARENT TUNING (punchy and clip are recorded, not yet tuned)
+    A chain saved with the old limiter's values (lookahead 2.0, release 50) now gets a 2 ms window and a 22 ms floor
+    recovery - closer to what that session sounded like with the old limiter than the Transparent tuning would be.
 
     LATENCY IS FIXED. One number per sample rate, identical for every setting (true peak on or off, any
     lookahead): the engine delays the audio by its maximum and delays its own detector by the difference. A
@@ -52,6 +58,13 @@ public:
     const juce::String getName() const override { return "EchoJay Limiter"; }
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
+    // 8 Oct 2026 (Sean's ruling): a state saved by a pre-v2 build carries EVERY parameter, so an untouched session
+    // holds lookahead_ms 2.0 and release_ms 50 - the OLD defaults, which with literal knobs would load as a 2 ms window
+    // and a 22 ms floor. Migration at load: a state with NO attack_ms (pre-v2) AND lookahead_ms == 2.0 AND
+    // release_ms == 50 loads lookahead 0.18 / release 400 (the new defaults), every new id at its default; any other
+    // saved value loads literally, as the user set it; ceiling_db is never touched (session B always sets it).
+    void setStateInformation (const void* data, int sizeInBytes) override;
+    static constexpr double kOldDefaultLookaheadMs = 2.0, kOldDefaultReleaseMs = 50.0;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     juce::AudioProcessorEditor* createEditor() override;
 
@@ -76,10 +89,13 @@ public:
     static constexpr const char* kTruePeak    = "true_peak";
     static constexpr const char* kScHpfHz     = "sc_hpf_hz";
     static constexpr const char* kInputDb     = "input_db";   // 18 Sep 2026 (item 5): gain INTO the limiter, the loudness push
+    static constexpr const char* kAttackMs    = "attack_ms";          // 8 Oct 2026: how quickly sustained level charges the floor (Pro-L 2's ATTACK)
+    static constexpr const char* kLinkPct     = "link_pct";           // 8 Oct 2026: transient channel linking, %
+    static constexpr const char* kReleaseLinkPct = "release_link_pct";   // 8 Oct 2026: release (floor) channel linking, %
 
-    // The schema's maximum for lookahead_ms, unchanged. On v2 it scales the engine's window around the tuned value
-    // (see the header comment); the engine's storage is sized once, in prepareToPlay, for the largest window.
-    static constexpr double kMaxLookaheadMs = 10.0;
+    // The schema's maximum for lookahead_ms: Pro-L 2's 5 ms. On v2 the label IS the window (see the header comment);
+    // the engine's storage is sized once, in prepareToPlay, for this largest window.
+    static constexpr double kMaxLookaheadMs = 5.0;
 
     // The three limiter modes, in the schema's order. Named rather than bare
     // indices because the processor branches on them and "mode_ == 2" in a
@@ -120,8 +136,10 @@ private:
     echojay::limv2::Core     engine_;   // the limiter
 
     Mode   mode_        = Mode::Transparent;
-    double lookaheadMs_ = 2.0;
-    double releaseMs_   = 50.0;
+    double lookaheadMs_ = 0.18;
+    double releaseMs_   = 400.0;
+    double attackMs_    = 275.0;
+    double linkPct_     = 75.0, releaseLinkPct_ = 100.0;
     double sampleRate_  = 44100.0;
     double inputDb_     = 0.0;    // dialled input gain, dB
     float  inputGain_   = 1.0f;   // its linear value, for the input meter's scaled copy

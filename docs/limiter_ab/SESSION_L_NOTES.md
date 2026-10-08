@@ -254,3 +254,63 @@ docs/limiter_ab/patches/2026-10-08_substitute_guard_latency_window.patch, proven
 build-guards-lv2 with it applied), NOT applied in this branch: A's file. The gate applies it like the gate-tools patch.
 Also from the report: the -lv2test bundles share the installed build's identifiers, so Logic sees one component (the
 name and UUIDs tell them apart); place_ship.sh hard-codes the non-marker names (G placed by hand).
+
+### 8 Oct, afternoon: the KICK FIX round (G's LIMITER_DEFAULTS_DIAGNOSIS), the Pro-L 2 defaults, the migration
+Brief: match Pro-L 2's per-kick GR shape on fullmix_hot (dip at +3/+8 ms within 10 %, t63 within 10 %, between-hit
+mean within 0.03 dB) without losing bass_sustain or overs; ship Pro-L 2's defaults; a load-time migration; UI preview.
+
+WHICH CAUSE, by sweep (kick_sweep.sh / kick_sweep2.sh / kick_summ.py; hot mix, Pro-L 2 = -0.29/-0.46/-0.76/-0.27 dB
+at +1/+3/+8/+20 ms after each kick that is over, t63 0.3 ms, between-hit mean GR -0.06 dB; C7c read
+-0.36/-0.57/-0.92/-0.34, t63 0.7-1.2, mean -0.14):
+  Nyquist margin 0            no change at all (the hot mix's first-difference fraction is below the 0.05 onset)  -> NOT a cause
+  post-check 0 / box kernel   no change                                                                           -> NOT a cause
+  window 0.3 -> 0.18 ms       dips 0.02-0.04 shallower                                                            -> small
+  fast part 0.3 -> 0.1 ms     t63 0.7 -> 0.3 ms (Pro-L 2's)                                                        -> the RECOVERY cause (post-hit hold)
+  floor window 4 -> 1 ms      mean -0.14 -> -0.10                                                                 -> the BETWEEN-HIT cause (floor charge window)
+All three together ("A": window 0.18, fast 0.1, floor window 1 ms): hot -0.36/-0.57/-0.92, mean -0.08, level -10.10
+PASS - but bass_sustain -6.86 (0.23 LU too LOUD; the 4 ms window was what let the floor ride the 50 Hz pulses).
+G's finding that this candidate "cost 0.23 LU on bass" is confirmed in size, opposite in sign: bass gets louder.
+
+THE DESIGN THAT SPLITS THEM: the floor's source is now a morphological CLOSING of the held gain (running minimum of the
+gain over slowWindowMs = dilation of the reduction, then running maximum over slowCloseMs = erosion), RunningMax in
+the core. An LF tone's half-cycle pulses (20 ms apart at 50 Hz) are bridged, so the floor sees the sustained reduction
+(bass -7.00 .. -7.09); an isolated kick is widened and then shrunk back to its own length, so the floor is not charged
+by a window longer than the hit (between-hit mean -0.09). Sweep (hot mean | bass level): plain 4 ms max -0.14 | -7.00;
+close 8/8 -0.11 | -6.91; 10/10 -0.10 | -7.03; 12/12 -0.11 | -7.09. Then the window: J1 (0.10 ms, fast 0.05, close 10)
+hot -0.30/-0.51/-0.80, bass -7.01; J2 (0.06 ms) hot -0.27/-0.47/-0.74/-0.29 = within 7 % at +3/+8, bass -7.00; J4 (J1 +
+margin 0.03 + close 12) hot -0.30/-0.51/-0.80, bass -7.07. J2 chosen: the dip shape is the brief's first target.
+
+FINAL transparent(): lookahead 0.06 ms (B-spline, 3 stages), fast part 0.05 ms, floor 72 % with 150/180 ms, closing 10/10
+ms, second charge to 100 % with tau 1.2 s, link 0.75, RELEASE link 1.0 (new: one floor for both channels, Pro-L 2's
+100 %), margin 0.05, Nyquist margin 0.75 (was 0.60: leg H of loudness_loop_guard read -0.04 at the shorter window).
+C10 (results/2026-10-08_C10_kickfix.txt), v2 vs Pro-L 2:
+  fullmix_hot  GR +1/+3/+8/+20 ms  -0.27/-0.47/-0.74/-0.29  vs  -0.29/-0.46/-0.76/-0.27   (7 %, 2 %, 3 %, 7 %)
+               t63 0.3 vs 0.3 ms | between-hit mean -0.09 vs -0.06 (0.03 off: AT the limit) | level -10.10 vs -10.06 PASS
+               retention worst 0.19 dB PASS | pumping 0.12 vs 0.08 PASS | 0 overs
+  bass_sustain level -7.00 vs -7.09 PASS | GR shape -0.88/-2.95/-2.28/-0.27 vs -0.91/-3.04/-2.43/-0.79 | t63 1.0 vs 1.0
+               retention 0.01 PASS | pumping 0.65 vs 0.70 PASS | 0 overs
+  fullmix      all PASS (level -12.61 vs -12.60, limbs 0.3/0.3 vs 0.3/0.3, pumping 0.01 vs 0.01)
+  probe_transients  ALL PASS now (level -4.65 vs -4.65, limbs 9.5/9.7 vs 9.5/9.5, pumping 1.53 vs 1.53; was level FAIL)
+  panned_transient  all PASS (limbs 9.7/9.7 vs 9.7/9.7)
+  what moved the other way (not primaries, stated): tone_50 level -4.61 vs -4.14 (was -4.20 PASS: the 50 Hz tone's
+  pulses are now ridden by the fast part at 0.05 ms, more reduction); tone_997 THD h7 -60.5 vs Pro-L 2 -76.7 (FAIL;
+  h3/h5 are 8 dB BETTER than Pro-L 2, h2/h4/h6/h8 under -119); tone_imd level -0.51 vs 0.80 (Pro-L 2 has 4 overs there).
+  tone_997 level is now PASS (-0.07 vs 0.01). Release-limb t90 on the hot mix 1.2 vs 0.7 ms (one harness block).
+NOT MATCHED, stated: the between-hit mean lands at -0.09 vs -0.06 (0.03 = the brief's limit, not inside it); the
+closing cannot go shorter without losing the bass (8/8 ms -> -6.91). The 50 Hz tone (not a primary) is 0.47 LU low.
+Core test: 59 legs GREEN. The two link legs were rewritten: at link 1 the harness's per-block ENERGY ratio differs by
+channel content (0.24 dB) for one and the same gain, so the leg now asserts the per-sample gain identity (1e-6) and
+keeps the block reading within 0.3 dB; "link 0" sets the release link to 0 too, and a new leg shows link 0 + release
+link 1 dipping R by the shared floor only (-0.37 dB).
+
+DEFAULTS (Pro-L 2 "Default Setting"): ceiling 0.0, TRUE PK on, lookahead label 0.18, release label 400, attack label
+275 (new id attack_ms, 10..2000), link_pct 75 (transients), release_link_pct 100 (new ids; old chains load at default).
+Knob -> Tuning (applyLookahead): window = 0.06 ms x label/0.18 (the label is Pro-L 2's; 5 = 1.67 ms);
+slowReleaseMs = 180 x release/400; slowAttackMs = 150 x attack/275 and slowAttack2Ms = 1200 x attack/275;
+link = link_pct/100; linkRelease = release_link_pct/100. At the defaults every factor is 1: the processor runs the
+tuned core, proven SAMPLE-IDENTICAL (worst 0, 0 samples differ over 2 s of bursts) by the new limiter_wall_guard leg
+(session G's zero-difference method, in-tree).
+MIGRATION (setStateInformation override): state without attack_ms AND lookahead 2.0 AND release 50 -> 0.18 / 400 and the
+new ids' defaults; any other saved value loads literally; ceiling untouched. Legs in limiter_wall_guard: (a) old-format
+state at the old defaults renders sample-identical to a fresh instance (worst diff 0); (b) old-format 1.0/200/-1/TP off
+keeps them, attack 275; (c) a v2 state with attack_ms present at 2.0/50 loads literally.

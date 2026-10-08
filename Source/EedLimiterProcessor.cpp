@@ -26,24 +26,33 @@ EedLimiterProcessor::EedLimiterProcessor()
 const echojay::ParamSchema& EedLimiterProcessor::schema()
 {
     static const echojay::ParamSchema s ({
-        { kCeilingDb, "dB", -24.0, 0.0, -0.3,
-          "the level nothing is allowed above; -0.3 leaves headroom for the "
-          "inter-sample peaks a lossy encoder will reconstruct", false },
+        { kCeilingDb, "dB", -24.0, 0.0, 0.0,
+          "the level nothing is allowed above, true-peak accurate; 0.0 is the default (Pro-L 2's), "
+          "-1.0 or lower leaves headroom for a lossy encoder", false },
 
         { kInputDb, "dB", -12.0, 12.0, 0.0,
           "gain into the limiter, the loudness push: on a bus or master aimed at a loudness target this is "
           "the measured integrated LUFS to the genre target (e.g. -15.5 measured, -8 target -> +7.5), "
           "clamped to +12; 0 leaves the level alone", false },
 
-        { kReleaseMs, "ms", 1.0, 1000.0, 50.0,
-          "how fast it lets go after a peak; short is louder and more audible, "
-          "long is smoother and can duck sustained material", false },
+        { kReleaseMs, "ms", 1.0, 1000.0, 400.0,
+          "how fast the sustained reduction lets go; 400 is the default (Pro-L 2's); short is louder and "
+          "more audible, long is steadier and can duck sustained material", false },
 
-        { kLookaheadMs, "ms", 0.0, kMaxLookaheadMs, 2.0,
-          "how far ahead it looks so it can catch a transient cleanly; this is "
-          "added latency, reported to the host. 0 is zero-latency and slightly "
-          "grittier on sharp transients. Ignored in clip mode, which has nothing "
-          "to look ahead for", false },
+        { kAttackMs, "ms", 10.0, 2000.0, 275.0,
+          "how quickly sustained level builds up reduction; 275 is the default (Pro-L 2's); shorter grabs "
+          "sustained material sooner (denser), longer leaves transients and bodies alone (punchier)", false },
+
+        { kLookaheadMs, "ms", 0.0, kMaxLookaheadMs, 0.18,
+          "how far ahead it looks, and how smoothly the gain moves; 0.18 is the default (Pro-L 2's). More is "
+          "smoother and softer on transients. The latency is fixed and reported to the host whatever this is", false },
+
+        { kLinkPct, "%", 0.0, 100.0, 75.0,
+          "channel linking on transients: 100 reduces both channels equally (the image never shifts), 0 treats "
+          "them independently; 75 is the default (Pro-L 2's)", false },
+
+        { kReleaseLinkPct, "%", 0.0, 100.0, 100.0,
+          "channel linking on the sustained reduction: 100 (the default) keeps one reduction for both channels", false },
 
         // ---- the depth pass ------------------------------------------------
         { kMode, "", 0.0, (double) (kNumModes - 1), 0.0,
@@ -53,11 +62,10 @@ const echojay::ParamSchema& EedLimiterProcessor::schema()
           "loudest and most aggressive, and it ignores release and lookahead",
           false, { "transparent", "punchy", "clip" } },
 
-        { kTruePeak, "", 0.0, 1.0, 0.0,
+        { kTruePeak, "", 0.0, 1.0, 1.0,
           "measure the peak BETWEEN samples, not just at them, so the ceiling "
           "still holds after a converter or a lossy encoder reconstructs the "
-          "waveform. Turn it on for anything being mastered or exported; it costs "
-          "a little loudness and no latency", true },
+          "waveform. On by default (8 Oct 2026); off is sample-peak limiting", true },
 
         { kScHpfHz, "Hz", 0.0, 500.0, 0.0,
           "high-pass on the detector only, so sub-bass rumble stops driving the "
@@ -74,9 +82,12 @@ bool EedLimiterProcessor::setParamValue (const juce::String& id, double value)
     if (id == kScHpfHz)   { core_.setSidechainHpfHz (value); engine_.setSidechainHpfHz (value); return true; }
     if (id == kTruePeak)  { truePeakOn_ = value >= 0.5; core_.setTruePeak (truePeakOn_); engine_.setTruePeak (truePeakOn_); return true; }
 
-    // Release, lookahead and mode are stored and then re-derived together into the engine's Tuning.
-    if (id == kReleaseMs)   { releaseMs_   = value; applyLookahead(); return true; }
-    if (id == kLookaheadMs) { lookaheadMs_ = value; applyLookahead(); return true; }
+    // Release, attack, lookahead, the links and mode are stored and then re-derived together into the engine's Tuning.
+    if (id == kReleaseMs)      { releaseMs_      = value; applyLookahead(); return true; }
+    if (id == kAttackMs)       { attackMs_       = value; applyLookahead(); return true; }
+    if (id == kLookaheadMs)    { lookaheadMs_    = value; applyLookahead(); return true; }
+    if (id == kLinkPct)        { linkPct_        = value; applyLookahead(); return true; }
+    if (id == kReleaseLinkPct) { releaseLinkPct_ = value; applyLookahead(); return true; }
 
     if (id == kMode)
     {
@@ -92,8 +103,11 @@ double EedLimiterProcessor::getParamValue (const juce::String& id) const
 {
     if (id == kCeilingDb)   return (double) core_.getThresholdDb();
     if (id == kInputDb)     return inputDb_;
-    if (id == kReleaseMs)   return releaseMs_;
-    if (id == kLookaheadMs) return lookaheadMs_;
+    if (id == kReleaseMs)      return releaseMs_;
+    if (id == kAttackMs)       return attackMs_;
+    if (id == kLookaheadMs)    return lookaheadMs_;
+    if (id == kLinkPct)        return linkPct_;
+    if (id == kReleaseLinkPct) return releaseLinkPct_;
     if (id == kMode)        return (double) (int) mode_;
     if (id == kTruePeak)    return truePeakOn_ ? 1.0 : 0.0;
     if (id == kScHpfHz)     return core_.getSidechainHpfHz();
@@ -102,13 +116,16 @@ double EedLimiterProcessor::getParamValue (const juce::String& id) const
 
 void EedLimiterProcessor::applyLookahead()
 {
-    // Every mode runs the Transparent tuning tonight (8 Oct 2026): punchy and clip keep their dial value and are
-    // recorded in SESSION_L_NOTES.md as "not yet tuned". The two dials scale the tuned values around their defaults,
-    // so a saved chain at the defaults sounds like the measurement.
+    // Every mode runs the Transparent tuning (8 Oct 2026); punchy and clip keep their dial value, recorded as not yet
+    // tuned. The knobs are LITERAL (see the header): at the schema defaults this is exactly limv2::transparent().
     echojay::limv2::Tuning t = echojay::limv2::transparent();
     const echojay::limv2::Tuning base = echojay::limv2::transparent();
-    t.lookaheadMs    = base.lookaheadMs * juce::jlimit (0.0, kMaxLookaheadMs, lookaheadMs_) / 2.0;   // 2 ms -> tuned window; 0 -> the shortest; 10 -> 5x
-    t.slowReleaseMs  = base.slowReleaseMs * juce::jlimit (1.0, 1000.0, releaseMs_) / 50.0;          // 50 ms -> tuned 180 ms; 1000 -> 20x
+    t.lookaheadMs   = base.lookaheadMs * juce::jlimit (0.0, kMaxLookaheadMs, lookaheadMs_) / 0.18;   // label 0.18 = the tuned window (0.06 ms); label/3
+    t.slowReleaseMs = base.slowReleaseMs * juce::jlimit (1.0, 1000.0, releaseMs_) / 400.0;
+    t.slowAttackMs  = base.slowAttackMs  * juce::jlimit (10.0, 2000.0, attackMs_) / 275.0;
+    t.slowAttack2Ms = base.slowAttack2Ms * juce::jlimit (10.0, 2000.0, attackMs_) / 275.0;
+    t.link          = juce::jlimit (0.0, 100.0, linkPct_) / 100.0;
+    t.linkRelease   = juce::jlimit (0.0, 100.0, releaseLinkPct_) / 100.0;
     engine_.setTuning (t);
 
     // The editor's picture: the shared detector follows the window it used to (about a third of the lookahead).
@@ -117,6 +134,24 @@ void EedLimiterProcessor::applyLookahead()
 
     // Fixed by construction (the engine's maximum, every setting), so this number only changes with the sample rate.
     ejSetLatencyLogged (*this, engine_.latencySamples(), "EedLimiterProcessor #1");
+}
+
+void EedLimiterProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+    EedDeviceProcessor::setStateInformation (data, sizeInBytes);   // full replace: defaults, then the saved values
+    if (data == nullptr || sizeInBytes <= 0) return;
+    const juce::var parsed = juce::JSON::parse (juce::String::createStringFromData (data, sizeInBytes));
+    const juce::var params = parsed.isObject() ? parsed.getProperty ("params", juce::var()) : juce::var();
+    if (! params.isObject()) return;
+    const bool preV2 = ! params.hasProperty (kAttackMs);
+    const bool oldDefaults = std::abs (lookaheadMs_ - kOldDefaultLookaheadMs) < 1e-9 && std::abs (releaseMs_ - kOldDefaultReleaseMs) < 1e-9;
+    if (preV2 && oldDefaults)
+    {
+        // the old defaults from an old build mean "the limiter as it came": load the limiter as it comes NOW
+        if (const auto* la = schema().find (kLookaheadMs)) lookaheadMs_ = la->def;
+        if (const auto* re = schema().find (kReleaseMs))   releaseMs_   = re->def;
+        applyLookahead();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +168,7 @@ void EedLimiterProcessor::prepareToPlay (double sampleRate, int)
     // Sized ONCE, for the largest window the lookahead dial can ask for (5x the tuned window at 10 ms) with true
     // peak on; every later change is a window or coefficient change inside that storage, never an allocation.
     echojay::limv2::Tuning t = echojay::limv2::transparent();
-    t.maxLookaheadMs = t.lookaheadMs * kMaxLookaheadMs / 2.0;
+    t.maxLookaheadMs = t.lookaheadMs * kMaxLookaheadMs / 0.18;   // the window the knob's 5 ms label asks for (1.67 ms)
     engine_.prepare (sampleRate_, t);
     engine_.setFixedLatency (true);
     engine_.setCeilingDb (core_.getThresholdDb());
