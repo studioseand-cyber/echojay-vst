@@ -22,6 +22,8 @@
 #include "EJAffirmation.h"
 #include "ChainHost.h"
 #include <cstdio>
+#include <sstream>
+#include <fstream>
 
 namespace {
 int failures = 0;
@@ -154,6 +156,54 @@ int main()
         check (refusedAll == 10,
                "and every doubtful one is refused - a miss costs a round trip, a false positive writes "
                "a change nobody asked for", juce::String (refusedAll) + " of 10");
+    }
+
+    std::printf ("== (6) 06d item 8d: params.eq_bands is hoisted, and the repair is announced ==\n");
+    {
+        // B's emitter sent settings_structured.params.eq_bands; a structured built-in reads eq_bands at the TOP
+        // of settings_structured, and nested in params it is a flat parameter name and is rejected - which is
+        // what produced "EchoJay EQ: some settings were ignored" on Sean's Apply. This asserts the SHAPE the
+        // client hands on, which is the thing the device's funnel actually looks at.
+        const juce::String wrongShape =
+            "{\"edit\":[{\"op\":\"set\",\"slot\":1,\"slot_name\":\"EchoJay EQ\",\"settings_structured\":"
+            "{\"params\":{\"eq_bands\":[{\"type\":\"bell\",\"freq_hz\":314,\"gain_db\":-4,\"q\":1.8}]}}}]}";
+        auto pv = juce::JSON::parse (wrongShape);
+        auto* po = pv.getDynamicObject();
+        check (po != nullptr, "the wrong-shaped proposal parses");
+        // The hoist, as applyStagedProposal performs it.
+        if (po != nullptr)
+            if (auto* arr = po->getProperty ("edit").getArray())
+                for (auto& ev : *arr)
+                    if (auto* op = ev.getDynamicObject())
+                        if (auto* ss = op->getProperty ("settings_structured").getDynamicObject())
+                            if (auto* pr = ss->getProperty ("params").getDynamicObject())
+                                if (pr->hasProperty ("eq_bands"))
+                                {
+                                    ss->setProperty ("eq_bands", pr->getProperty ("eq_bands"));
+                                    pr->removeProperty ("eq_bands");
+                                    if (pr->getProperties().isEmpty()) ss->removeProperty ("params");
+                                }
+        auto* op0 = po != nullptr ? (*po->getProperty ("edit").getArray())[0].getDynamicObject() : nullptr;
+        auto* ss0 = op0 != nullptr ? op0->getProperty ("settings_structured").getDynamicObject() : nullptr;
+        check (ss0 != nullptr && ss0->getProperty ("eq_bands").getArray() != nullptr,
+               "after the hoist eq_bands sits at the TOP of settings_structured, where the device reads it");
+        check (ss0 != nullptr && ! ss0->hasProperty ("params"),
+               "and the now-empty params map is gone rather than left as an empty object");
+        if (ss0 != nullptr)
+            if (auto* bands = ss0->getProperty ("eq_bands").getArray())
+                if (bands->size() == 1)
+                    if (auto* b = (*bands)[0].getDynamicObject())
+                        check ((double) b->getProperty ("freq_hz") == 314.0
+                               && (double) b->getProperty ("gain_db") == -4.0
+                               && (double) b->getProperty ("q") == 1.8,
+                               "the band's values are B's, unchanged by the move: 314 Hz, -4 dB, Q 1.8");
+        // STRUCTURAL: the repair must be LOGGED. A silent fix of someone else's payload leaves the emitter
+        // looking correct here for ever while every other consumer keeps rejecting it.
+        std::ifstream f ("Source/PluginEditor.cpp");
+        std::stringstream ss; ss << f.rdbuf();
+        const juce::String src (ss.str());
+        check (src.contains ("HOISTED params.eq_bands"),
+               "the hoist announces itself in the log, every time");
     }
 
     std::printf ("\n==== proposal_guard: %s (%d assertion(s) failed) ====\n",

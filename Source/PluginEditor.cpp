@@ -25411,6 +25411,34 @@ void EchoJayEditor::applyStagedProposal(int msgIdx, const juce::String& why)
     // Rebuild the edit payload from the proposal's own array, so the apply path parses exactly
     // what B sent. The base revision is taken NOW, not when the offer arrived: the user may have
     // changed the rack in between, and the staleness guards exist to catch precisely that.
+    // ---- 06d item 8d (2), 8 Oct 2026: THE DEFENSIVE HOIST, AND IT SAYS SO ----------------------------
+    // Sean 13:18: Apply reported "EchoJay EQ: some settings were ignored". The proposal carried
+    // settings_structured.params.eq_bands, and a structured built-in reads eq_bands at the TOP of
+    // settings_structured - the flat `params` map is the other shape, for devices that have no array form
+    // (ChainHost.h:2424-2428). Nested inside params it reads as a flat parameter called "eq_bands" and is
+    // rejected. B is fixing the emitter; this is the client refusing to be broken by a payload shape.
+    // IT IS LOGGED, EVERY TIME. A silent repair of someone else's payload is a fault that cannot be found twice:
+    // the emitter would look correct here for ever while every other consumer kept rejecting it.
+    {
+        if (auto* editArr = po->getProperty ("edit").getArray())
+            for (auto& ev : *editArr)
+                if (auto* op = ev.getDynamicObject())
+                    if (auto* ss = op->getProperty ("settings_structured").getDynamicObject())
+                        if (auto* pr = ss->getProperty ("params").getDynamicObject())
+                            if (pr->hasProperty ("eq_bands"))
+                            {
+                                ss->setProperty ("eq_bands", pr->getProperty ("eq_bands"));
+                                pr->removeProperty ("eq_bands");
+                                if (pr->getProperties().isEmpty()) ss->removeProperty ("params");
+                                EchoJay_NSLog (("EJProposal: HOISTED params.eq_bands -> settings_structured.eq_bands"
+                                                " on \"" + op->getProperty ("slot_name").toString()
+                                                + "\" (slot " + op->getProperty ("slot").toString()
+                                                + ") - a structured built-in reads eq_bands at the top of "
+                                                "settings_structured; nested in params it is a flat parameter name "
+                                                "and is rejected. The emitter needs fixing; this apply proceeds.")
+                                                   .toRawUTF8());
+                            }
+    }
     auto* eo = new juce::DynamicObject();
     eo->setProperty ("edit", po->getProperty ("edit"));
     if (po->hasProperty ("explanation")) eo->setProperty ("explanation", po->getProperty ("explanation"));
@@ -25821,21 +25849,53 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
             {
                 // Every op was delivered, and at least one slot could not use what it was given. Say what arrived
                 // and why it could not be used - the device already worked both out and they were discarded here.
+                // 8 Oct 2026 (06d item 8d, Sean 13:18): THIS APPLY'S OWN SLOTS, AND ONE HEADLINE.
+                // The walk was over getDialInfos() - EVERY slot in the rack - so a slot left `partial` by an
+                // earlier BUILD was reported as though this Apply had just done it: "Nothing was applied -
+                // EchoJay EQ: some settings were ignored; Bettermaker Bus Compressor DSP: ignored RATIO. dialled
+                // EchoJay EQ", where the Bettermaker was not in this Apply at all. And the per-op results were
+                // appended to a "Nothing was applied" headline, so one sentence carried both claims.
+                // Same class as 06c item 3, which closed it for the BUILD summary; the apply path kept it.
+                std::set<int> touched;
+                for (const auto& op : opsForAlt)
+                    if (op.slot >= 0) touched.insert (op.slot);
                 juce::StringArray bad;
-                for (const auto& di : safeThis->processorRef.getChainHost().getDialInfos())
+                bool anyDialled = false;
                 {
-                    if (di.status == ChainHost::DialStatus::builtinPayloadUnmatched)
-                        bad.add (di.name + ": nothing it understood arrived"
-                                 + (di.manual.isEmpty() ? juce::String()
-                                                        : " (it wanted " + di.manual.joinIntoString (", ") + ")"));
-                    else if (di.status == ChainHost::DialStatus::partial)
-                        bad.add (di.name + ": " + (di.manual.isEmpty()
-                                                     ? juce::String ("some settings were ignored")
-                                                     : "ignored " + di.manual.joinIntoString (", ")));
+                    const auto infos = safeThis->processorRef.getChainHost().getDialInfos();
+                    for (int si = 0; si < (int) infos.size(); ++si)
+                    {
+                        // An op with no slot index (an add names a position, not an existing slot) leaves `touched`
+                        // empty, and an empty set must not be read as "every slot": it is read as "this apply
+                        // cannot attribute a slot", and then nothing is attributed to it.
+                        if (touched.find (si) == touched.end()) continue;
+                        const auto& di = infos[(size_t) si];
+                        if (di.status == ChainHost::DialStatus::builtinPayloadUnmatched)
+                            bad.add (di.name + ": nothing it understood arrived"
+                                     + (di.manual.isEmpty() ? juce::String()
+                                                            : " (it wanted " + di.manual.joinIntoString (", ") + ")"));
+                        else if (di.status == ChainHost::DialStatus::partial)
+                            bad.add (di.name + ": " + (di.manual.isEmpty()
+                                                         ? juce::String ("some settings were ignored")
+                                                         : "ignored " + di.manual.joinIntoString (", ")));
+                        else if (di.status == ChainHost::DialStatus::applied)
+                            anyDialled = true;
+                    }
                 }
-                summary = bad.isEmpty() ? juce::String ("Nothing was applied - the settings could not be used.")
-                                        : "Nothing was applied - " + bad.joinIntoString ("; ") + ".";
-                if (! results.isEmpty()) summary += " " + results.joinIntoString ("; ");
+                EchoJay_NSLog (("EJEdit: apply summary scoped to " + juce::String ((int) touched.size())
+                                + " touched slot(s); " + juce::String (bad.size()) + " could not use what arrived, "
+                                + juce::String (anyDialled ? "at least one dialled" : "none dialled")).toRawUTF8());
+                if (bad.isEmpty())
+                    // Nothing this apply touched had a complaint. Whatever an earlier build left elsewhere in the
+                    // rack is not this turn's news.
+                    summary = "Changes applied";
+                else if (anyDialled)
+                    // ONE headline for a mixed outcome. The old code said "Nothing was applied" and then listed
+                    // what was applied; a reader cannot act on a sentence that contradicts itself.
+                    summary = "Partly applied - " + bad.joinIntoString ("; ") + "."
+                            + (results.isEmpty() ? juce::String() : " " + results.joinIntoString ("; "));
+                else
+                    summary = "Nothing was applied - " + bad.joinIntoString ("; ") + ".";
             }
             else
                 summary = "Applied " + juce::String(applied) + " of "

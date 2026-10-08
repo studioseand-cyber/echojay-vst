@@ -2813,7 +2813,7 @@ of the two ended it. **This is the fourth unbounded wait in two days.** The rule
 reads a sensor needs a deadline, a staleness test on the sensor, and a sentence for each way it can end.
 LEG: a slot with no GR and frozen readings ends inside the deadline with that message.
 
-### 8d. THE APPLY RESULT REPORTS THE WHOLE RACK, AND CONTRADICTS ITSELF (Sean 13:18, 8 Oct) - QUEUED AFTER CHAINS
+### 8d. THE APPLY RESULT REPORTS THE WHOLE RACK, AND CONTRADICTS ITSELF (Sean 13:18) - FIXED 8 Oct, GREEN
 **HIS LINE:** "Nothing was applied - EchoJay EQ: some settings were ignored; Bettermaker Bus Compressor DSP:
 ignored RATIO. dialled EchoJay EQ". The Bettermaker was not in this Apply at all, and the sentence says nothing
 was applied and then that something was.
@@ -2900,12 +2900,30 @@ than us deciding which writes "count": the Level is a built-in and its capture i
 **LEG Z3 in `loudness_loop_guard`, GREEN:** land a gain, then read `getCachedSlotStatesVar` - which is exactly what
 the host would write, since it serialises the cache and never calls into a plugin - decode the base64, and assert
 the saved `params.gain_db` equals the landed figure (saved 6.49 vs landed 6.49).
-**STILL OPEN, and it is the other half of his 13:22 report:** he saw **0 on screen** while the audio was right.
-That is a DISPLAY question and this fix does not answer it - the candidates are the Level plugin's own editor not
-refreshing on a programmatic write, or the slot card's IN/OUT readouts (which are the slot trims, 0.0, and are NOT
-the Level's gain) being read as the Level's figure. Item 5 makes the second reading more likely, not less, because
-the Link's cards now carry the same two readouts. Sean is confirming where he saw the 0; the answer decides whether
-the fix is in `EedLevelEditor` or in how the card labels those two figures.
+**THE DISPLAY HALF IS CLOSED BY THE TIMELINE (Sean, 8 Oct):** he checked the Level at 13:22, AFTER the host
+relaunched at 13:18, and the song was audibly low. So the 0 he saw WAS the real post-reload value - the cache bug
+above - and not a stale display. No `EedLevelEditor` work and no card-label work is owed. Worth recording because
+the two readings were indistinguishable from the report alone, and the clock is what told them apart.
+
+#### 8d-done. WHAT SHIPPED (8 Oct, in 08b)
+**(1) THIS APPLY'S OWN SLOTS, AND ONE HEADLINE.** The walk is now scoped to the slot indices the ops name
+(`opsForAlt`, already captured in the completion lambda), so a slot left `partial` by an earlier BUILD is not
+reported as this Apply's doing - that is where the Bettermaker's ignored RATIO came from, and the Bettermaker was
+not in the Apply at all. An empty touched-set is read as "this apply cannot attribute a slot" and attributes
+nothing, NEVER as "every slot". The headline now comes from one decision: nothing bad on the touched slots ->
+"Changes applied"; something ignored AND something dialled -> **"Partly applied - ..."**; nothing dialled ->
+"Nothing was applied - ...". The old code said "Nothing was applied" and then listed what was applied, and a reader
+cannot act on a sentence that contradicts itself. One log line records the scoping: how many slots were touched,
+how many could not use what arrived, and whether anything dialled.
+**(2) THE HOIST, ANNOUNCED.** A staged op whose `settings_structured.params` carries `eq_bands` has it moved to
+`settings_structured.eq_bands`, where a structured built-in actually reads it (the flat `params` map is the other
+shape, for devices with no array form - ChainHost.h:2424-8). The now-empty `params` map is removed rather than left
+as an empty object. **Logged every time**, naming the slot: a silent repair of someone else's payload is a fault
+that cannot be found twice - the emitter would look correct here for ever while every other consumer kept
+rejecting it. B is fixing the emitter; this is the client refusing to be broken by a shape.
+**LEGS (proposal_guard, GREEN):** the wrong-shaped payload hoists to the top of `settings_structured`, the empty
+params map is gone, B's values survive the move unchanged (314 Hz, -4 dB, Q 1.8), and a structural assertion that
+the repair is logged.
 
 ### 9. PER-RACK LOOP STATE IS NEVER RESET, AND THE LEVEL CHECK WAITS FOR EVER (Sean 11:10, 8 Oct, on 08a)
 Folded in here as ruled, with the heard counter. Second rap-vocal chain: the UI stuck on the level check and never
