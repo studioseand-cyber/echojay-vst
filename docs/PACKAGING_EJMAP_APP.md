@@ -53,6 +53,11 @@ REPO=~/src/echojay-vst            # wherever the checkout is
 #   level match uses the gain-all draft's output control). Derive-only EQUAL to dc77d0a5 on the four sets with 0 differences, build tree
 #   and packaged (tools/ejmap/cert-traces/2026-10-08-reorder/); packaged at ~/Desktop/ejmap-dist-8oct-d. NOT Sean's yet.
 #   bcc4eea9 IS ITS FALLBACK (~/Desktop/ejmap-dist-8oct-c); dc77d0a5 stays Sean's build until Kathy hands this one over.
+#   THE SWITCH-OVER BUILD (8 Oct, Kathy's next cut): 5ab8352b - a6c85e6f + the multiband fix (9c268e51: only each band's own
+#   compressor threshold, crossover qualifiers are not edges, floating bands) + the v0.2 drafts (277c4d82, Sean's rulings) + preflight /
+#   drafts on every --run-all run. Derive-only EQUAL to dc77d0a5 on the four sets with 0 differences, build tree and packaged
+#   (tools/ejmap/cert-traces/2026-10-08-switch/); packaged at ~/Desktop/ejmap-dist-8oct-e. Sean runs a6c85e6f tonight WITHOUT multiband
+#   and switches to this one on a later night (runbook "Tonight and the switch-over"). a6c85e6f IS ITS FALLBACK.
 git -C "$REPO" fetch && git -C "$REPO" checkout dc77d0a5     # branch feat/ejmap-cert; the commit after it is this documentation (0f175c51: the fallback)
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
@@ -96,6 +101,12 @@ ledger, the iLok, the power. Exit 0 = the probe verifies. From here the mapper r
 nothing on this page is needed again until the code changes.
 
 ## What was tested where
+
+**8 Oct, the switch-over build (5ab8352b):** rebuilt from the clean checkout (stamp `5ab8352b`), packaged into `~/Desktop/ejmap-dist-8oct-e`,
+both signatures Developer ID / team 8BT5F9B887; preflight exit 0 (probe cdhash ee97dfc9...). Derive-only against dc77d0a5 on the four
+sets: 181/181, 181/181, 90/90, 87/87 rows, 0 state-or-reason differences, fixtures / profiles / controls identical - from the build tree
+and again from the packaged binary (the first packaged pass died on a full scratch disk; re-run from fresh copies). Its fallback is
+a6c85e6f. The switch-over (a6c85e6f's run_all.json carried into it) rehearsed in cert-traces/2026-10-08-switch/.
 
 **8 Oct, the next build (a6c85e6f):** rebuilt from the clean checkout (stamp `a6c85e6f`), packaged into `~/Desktop/ejmap-dist-8oct-d`,
 both signatures Developer ID / team 8BT5F9B887; preflight exit 0 (probe cdhash ee97dfc9...). Derive-only against dc77d0a5 on the four

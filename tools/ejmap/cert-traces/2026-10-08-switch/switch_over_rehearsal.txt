@@ -1,0 +1,51 @@
+THE SWITCH-OVER, rehearsed 8 Oct on scratch copies of Sean's folder (~/Downloads/cert)
+
+A. a6c85e6f wrote cert/run_all.json (night A1: preflight, limiter, drafts done; night A2: deesser stopped by Ctrl-C after one product):
+{
+  "schema": "ej_run_all/1",
+  "steps": {
+    "deesser": {
+      "state": "started",
+      "started_at": "20261008T135247",
+      "finished_at": "20261008T135327",
+      "exit": -1,
+      "runs": 1
+    },
+    "drafts": {
+      "state": "done",
+      "started_at": "20261008T135246",
+      "finished_at": "20261008T135247",
+      "exit": 0,
+      "runs": 1
+    },
+    "limiter": {
+      "state": "done",
+      "started_at": "20261008T135152",
+      "finished_at": "20261008T135246",
+      "exit": 0,
+      "runs": 1
+    },
+    "preflight": {
+      "state": "done",
+      "started_at": "20261008T135152",
+      "finished_at": "20261008T135152",
+      "exit": 0,
+      "runs": 1
+    }
+  }
+}
+rows before the switch:
+limiter bx_limiter ('20261008T135221', 'ee97dfc98de5b492', 'ok')
+limiter bx_limiter True Peak ('20261008T135246', 'ee97dfc98de5b492', 'ok')
+deesser SPL De-Esser ABSENT (deleted by its redo, not yet re-run)
+deesser Lindell 902 De-esser ('20261008T135324', 'ee97dfc98de5b492', 'ok')
+multiband C6 (s) ('20261006T041620', '95b1eb82b66a452d', 'ok')
+draft tags {'v0.1 PROPOSAL': 478}
+
+B. 5ab8352b --run-all ... --dry-run over that state (the switch-over line):
+RUN-ALL: 8 step(s) to run, 17 done or skipped; ETA 29:13:30; stops at 07:00 09 Oct; state <cert>/run_all.json
+(the plan before B's run: preflight; multiband --redo; deesser RESUME --category; gain_all..strips --redo; drafts - limiter skipped as done)
+
+C. after 5ab8352b ran preflight,multiband,limiter,deesser,drafts on those units: limiter rows unchanged (13:52:21 / 13:52:46), Lindell 902 kept (13:53:24), SPL De-Esser run (14:04:25), drafts 479 all v0.2 PROPOSAL, every step done
+
+D. Sean's Night 1 reproduced with dc77d0a5 (--phaseb-all --redo multiband): C6 (s) row 20261008T141234 probe 1f1bab39; a6c85e6f tonight (no multiband); 5ab8352b switch-over with multiband: '--redo multiband: 1 finished row(s) run again', C6 (s) row 20261008T141628 probe ee97dfc9 - the Night-1 row was re-run, not kept

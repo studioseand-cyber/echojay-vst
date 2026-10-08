@@ -80,20 +80,37 @@ Ctrl-C stops any command; the product mid-measurement leaves nothing behind. The
 ```
 `config.json` is never in a zip (the command skips it). Projected ~700 MB gzipped for the three nights together.
 
-## Next build — NOT YET: run only when Kathy says the next build is yours (a6c85e6f; bcc4eea9 is its fallback, dc77d0a5 the build above)
+## Tonight and the switch-over (Kathy, 8 Oct): a6c85e6f WITHOUT multiband, then 5ab8352b WITH it
 
-Built from commit **a6c85e6f** (packaged and signed at ~/Desktop/ejmap-dist-8oct-d; derive-only EQUAL to dc77d0a5 on your current folder, your 4 Oct
-zip, cert_sc and cert_tc35 - 0 differences in rows, records, profiles and controls, from the build tree and again from the packaged
-binary, so the compressor path above is untouched). It supersedes bcc4eea9 (the same build with gain-all after saturation; the fallback), 99f80d36, d0587ff4 and ac9e3bfb. It adds the six new specs (limiters, EQ,
-de-essers, saturation + amp sims, reverb / delay, transient shapers / gates), the channel strips' and multiband drafts, a DRAFT
-profile for every Phase B category in `cert/phaseb/<category>/drafts/` (never `cert/profiles`), the one-command run and the review's
-Phase B sections. Install it the same way as the build above AFTER NIGHT 1 above (Nights 2 and 3 are not run on dc77d0a5: their
-strips and gain-all are in this line, and their nothing_nominated rows are all re-run by this line's category redos), then ONE
-command, every night:
+**Tonight, after Night 1 above: a6c85e6f** (packaged and signed at ~/Desktop/ejmap-dist-8oct-d; derive-only EQUAL to dc77d0a5 on your
+current folder, your 4 Oct zip, cert_sc and cert_tc35 - 0 differences in rows, records, profiles and controls, so the compressor path
+above is untouched). Nights 2 and 3 above are NOT run on dc77d0a5: their strips and gain-all are in this line, and their
+nothing_nominated rows are all re-run by its category redos. Install it the same way as the build above, then, every night until
+Kathy says to switch:
+
+```
+caffeinate -i "$BIN" --run-all --steps preflight,limiter,deesser,eq,saturation,reverb_delay,transient_gate,gain_all,strips,drafts --until 07:00
+```
+
+**Multiband is NOT in tonight's line on purpose.** a6c85e6f's multiband step takes Melda's gate / processor thresholds for band
+thresholds and C6's floating bands for crossovers; the fix is in the next build. Nothing else in the line uses that code.
+
+**The switch-over, on a later night: 5ab8352b** (packaged and signed at ~/Desktop/ejmap-dist-8oct-e; derive-only EQUAL to dc77d0a5 on
+the same four sets, build tree and packaged; a6c85e6f is its fallback). It adds the multiband fix (only each band's own compressor
+threshold; floating bands), the v0.2 drafts (Sean's rulings: full_wet, EQ default_bands, the gain drive curve, tuner step 1) and
+preflight / drafts on every run. Install it over a6c85e6f - same folder, same `cert/run_all.json`, nothing deleted - then the same
+line WITH multiband, every night:
 
 ```
 caffeinate -i "$BIN" --run-all --steps preflight,multiband,limiter,deesser,eq,saturation,reverb_delay,transient_gate,gain_all,strips,drafts --until 07:00
 ```
+
+What the switch does (rehearsed 8 Oct on scratch copies of your folder, `tools/ejmap/cert-traces/2026-10-08-switch/`):
+- every step a6c85e6f FINISHED stays finished and is not run again (its rows are kept as they are);
+- a step a6c85e6f was stopped in (07:00 or Ctrl-C) RESUMES: its finished products are kept, only the missing ones run;
+- multiband, new to the line, runs from the start: `--redo multiband` re-runs EVERY multiband row, including the 17 your Night 1
+  `--redo multiband` wrote on dc77d0a5 with the faulty nomination - none of them is kept;
+- preflight checks the new app and the drafts are re-derived (v0.2) from every record on disk, every night.
 
 It runs those steps in that order, each step's output in `cert/run_all/<step>.log`, one progress line a minute (done / total, elapsed,
 ETA, the hour it stops). At 07:00 it stops the step it is in (that step's finished products are kept) and starts nothing new; the SAME
@@ -106,10 +123,12 @@ output there falls back to a control named output / volume / level / trim / make
 
 | night (21:00-07:00) | runs | hours |
 |---|---|---|
-| A | multiband, limiters, de-essers, gain-all, then EQ starts (stopped at 07:00, ~2 h in) | ~10 |
+| A | limiters, de-essers, gain-all, then EQ starts (stopped at 07:00, ~2.3 h in) - tonight's line has no multiband | ~10 |
 | B | EQ finishes (~0.4 h), saturation, reverb / delay, transients / gates, then the strips start | ~10 |
 | C | strips | ~10 |
 | D | the last of the strips, then the drafts | ~0.2 |
+
+On the switch-over night, multiband (~20 min, every row) runs first, before whatever step the line had reached.
 
 **nothing_nominated is not in the line, on purpose.** Every row it would re-run (276 in your 5/6 Oct folder: EQ 101, saturation 116,
 limiter 16, timing 34, transient 2, reverb 3, gaincal 2, de-esser 1, delay 1) is in a category this line re-runs whole, or in gain /
