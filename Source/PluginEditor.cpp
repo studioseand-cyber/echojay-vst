@@ -7104,6 +7104,19 @@ void EchoJayEditor::ingestLinkStripFrame(const juce::String& addr, int regIdx,
                 st.frame.truePeakCur = frameLoudnessAsHeard (f.truePeakCur, trim, f);
                 st.frame.shortTermTP = frameLoudnessAsHeard (f.shortTermTP, trim, f);
                 st.frame.shortTermMax= frameLoudnessAsHeard (f.shortTermMax,trim, f);
+                // 8 Oct 2026 (06d item 4, Sean 11:22): THE BARS ARE POST-FADER TOO, LIKE A CONSOLE.
+                // The list above was the loudness fields only, so the strip's LUFS figures moved with the fader
+                // while the meter BAR beside them did not - the bar is drawn from peakFastL/R, with peakL/R and
+                // rmsL/R behind it (the old-frame fallback and the wide RMS marker). Moving one member's trim must
+                // not rewrite what the next decision is made from, which is why the LINK still publishes
+                // pre-trim and keeps kFrameHasPreTrim; this is the DISPLAY adding the trim back, at the one
+                // ingest site that already promised "every reader sees one consistent figure".
+                st.frame.peakL       = frameLoudnessAsHeard (f.peakL,       trim, f);
+                st.frame.peakR       = frameLoudnessAsHeard (f.peakR,       trim, f);
+                st.frame.peakFastL   = frameLoudnessAsHeard (f.peakFastL,   trim, f);
+                st.frame.peakFastR   = frameLoudnessAsHeard (f.peakFastR,   trim, f);
+                st.frame.rmsL        = frameLoudnessAsHeard (f.rmsL,        trim, f);
+                st.frame.rmsR        = frameLoudnessAsHeard (f.rmsR,        trim, f);
             }
             st.lastSeq      = f.seq;
             st.lastChangeMs = nowMs;
@@ -7451,6 +7464,11 @@ void EchoJayEditor::paintLinkStripMeter(juce::Graphics& g,
             // Clip latch: set at 0 dBFS from the RAW published value
             // (smoothing shapes motion, never truth), cleared only by the
             // lamp click.
+            // 8 Oct 2026 (item 4, approved): the lamp sits ON this bar and a console's clip lamp is post-fader,
+            // so it reads the same as-heard figure the bar does - mf is the CONVERTED frame. A channel pulled 6 dB
+            // down can no longer latch a clip the DAW never hears. The cost is stated rather than hidden: this
+            // lamp no longer warns about an overload UPSTREAM of the trim, and if that warning is wanted it needs
+            // its own indicator (a later, separate item).
             if ((ch == 0 ? mf.peakFastL : mf.peakFastR) >= 0.0f)
                 (ch == 0 ? st.clipL : st.clipR) = true;
             // RMS stays visible at WIDE as a thin marker inside the bar;

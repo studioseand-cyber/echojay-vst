@@ -2714,7 +2714,7 @@ which is what makes this a contained job.
 **LEG as ruled:** both views render IDENTICAL IN/OUT text for the same rack - the guard reads `readoutText()`
 ("IN +0.0" / "OUT -6.0"), which exists for exactly this purpose, from each editor and compares them slot by slot.
 
-### 8b. THE LINK MIXER'S CHANNEL METERS READ PRE-FADER (Sean 11:22, 8 Oct, on 08a) - DIAGNOSED, DISPLAY-ONLY
+### 8b. THE LINK MIXER'S CHANNEL METERS READ PRE-FADER (Sean 11:22, 8 Oct) - FIXED 8 Oct, shm_layout_guard GREEN
 **WHERE THE FADER IS APPLIED AND WHERE THE METER TAPS, which is what was asked:**
   • `LinkProcessor::processBlock` runs `chainHost.process()`, then **the meter tap**
     (`meterEngine_.processBlock`, `levelTally_.push`, `keyEngine_.pushBlock`, LinkProcessor.cpp:2279-2289), and
@@ -2837,6 +2837,21 @@ decision or they will disagree again.
 **LEGS:** an Apply that touches one slot reports ONLY that slot, with a rack whose other slot is deliberately left
 partial by an earlier build; a mixed Apply never produces a "Nothing was applied" headline beside a dialled slot;
 and a staged op carrying `params.eq_bands` dials the EQ, with the hoist logged.
+
+#### 8b-done. WHAT SHIPPED FOR THE POST-FADER BARS (8 Oct, in 08b)
+The six per-channel fields joined the EXISTING ingest conversion - `peakL/R`, `peakFastL/R`, `rmsL/R` - at the one
+site whose own comment already promised "ONE conversion, here at ingest, so every reader sees one consistent
+figure". The Link's tap does not move, `kFrameHasPreTrim` keeps its meaning, and calibration, loudness and group
+levelling still read the published pre-trim figure. The clip lamp follows the bar (approved): it reads the same
+as-heard figure, so a channel pulled 6 dB down can no longer latch a clip the DAW never hears - and the cost is
+written into the code rather than hidden, because that lamp no longer warns about an overload UPSTREAM of the trim.
+**LEGS in `shm_layout_guard`:** the arithmetic both ways (-6 reads 6 lower, trim 0 is unchanged), a field with no
+reading is NOT shifted into a fake one, an older frame without the bit is left exactly as it was - and a
+**STRUCTURAL** leg that asserts all THIRTEEN displayed fields are in the conversion. That last one is the half that
+matters: the bug was never the arithmetic, it was a list with six fields missing, and a new frame field added and
+forgotten is the same bug again. It earned its keep immediately - its first window was 1800 characters and stopped
+four lines short, reporting the product as broken over a boundary the leg itself had chosen; it is now bounded at
+the block's own closing brace.
 
 ### 9. PER-RACK LOOP STATE IS NEVER RESET, AND THE LEVEL CHECK WAITS FOR EVER (Sean 11:10, 8 Oct, on 08a)
 Folded in here as ruled, with the heard counter. Second rap-vocal chain: the UI stuck on the level check and never

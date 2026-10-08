@@ -14,6 +14,8 @@
 #include <JuceHeader.h>
 #include "LinkShm.h"
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <cstring>
 
 int main()
@@ -109,6 +111,54 @@ int main()
         check (tooLong < 0,
                "6d. a uid too long for the field is REFUSED (RED as it stood: strncpy cut it and said nothing)",
                juce::String (tooLong));
+    }
+
+    // ---- 06d item 4 (8 Oct 2026): THE STRIP SHOWS WHAT THE DAW HEARS, BARS INCLUDED --------------------
+    // Sean 11:22: moving a Link channel's fader did not move its meter. The Link taps its meters POST-chain and
+    // PRE-fader on purpose (the 21t-d ruling: levelling a group needs what each channel delivers INTO its trim),
+    // flags the frame kFrameHasPreTrim, and the V2 adds the trim back AT INGEST. That conversion covered the
+    // loudness fields only, and the bar is drawn from the per-channel ones.
+    std::printf ("== 06d item 4: as-heard conversion, and the ingest site converts EVERY displayed field ==\n");
+    {
+        LinkMeterFrame f {};
+        f.fieldsMask = kFrameHasPreTrim;
+        check (framePreTrim (f), "the frame says it published pre-trim");
+        // The arithmetic, both directions, on the figure a -6 dB fader produces.
+        check (std::abs (frameLoudnessAsHeard (-14.0f, -6.0f, f) + 20.0f) < 0.001f,
+               "a -6 dB trim reads 6 dB lower as-heard (-14 -> -20)",
+               juce::String (frameLoudnessAsHeard (-14.0f, -6.0f, f), 2));
+        check (std::abs (frameLoudnessAsHeard (-14.0f, 0.0f, f) + 14.0f) < 0.001f,
+               "and at trim 0 it is the published figure unchanged - a fader at unity cannot move a meter");
+        // A SILENT field stays silent: -100 is the frame's "no reading", and adding a trim to it would invent one.
+        check (frameLoudnessAsHeard (-100.0f, -6.0f, f) <= -99.0f,
+               "a field with no reading is not shifted into a fake one",
+               juce::String (frameLoudnessAsHeard (-100.0f, -6.0f, f), 1));
+        // A frame WITHOUT the bit is post-trim already and must not be touched twice.
+        LinkMeterFrame oldFrame {};
+        check (std::abs (frameLoudnessAsHeard (-14.0f, -6.0f, oldFrame) + 14.0f) < 0.001f,
+               "an older Link's frame carries no pre-trim bit and is left exactly as it always was");
+
+        // STRUCTURAL, and this is the half that catches the next one: every field the strip DISPLAYS must be in
+        // the ingest conversion. The bug was not the arithmetic - it was a list that had six fields missing, in a
+        // block whose own comment promises "ONE conversion, here at ingest, so every reader sees one consistent
+        // figure". A new frame field added and forgotten is the same bug again.
+        std::ifstream fed ("Source/PluginEditor.cpp");
+        std::stringstream sed_;
+        sed_ << fed.rdbuf();
+        const juce::String src (sed_.str());
+        const int at = src.indexOf ("if (framePreTrim (f))");
+        check (at > 0, "found the ingest conversion block");
+        // The window has to span the whole conversion block. 1800 characters stopped four lines short of the end
+        // and the leg reported the product as broken - a boundary the leg chose, not a fault it found. Bounded at
+        // the block's own closing brace instead, with a generous cap as a backstop.
+        const int closeAt = src.indexOf (at, "\n            }");
+        const juce::String block = src.substring (at, closeAt > at ? closeAt : at + 4000);
+        for (const char* fld : { "momentary", "shortTerm", "integrated", "truePeakMax", "truePeakCur",
+                                 "shortTermTP", "shortTermMax",
+                                 "peakL", "peakR", "peakFastL", "peakFastR", "rmsL", "rmsR" })
+            check (block.contains (juce::String ("st.frame.") + fld + " ")
+                       || block.contains (juce::String ("st.frame.") + fld + "="),
+                   juce::String ("ingest converts st.frame.") + fld, fld);
     }
 
     std::printf ("\n==== shm_layout_guard: %s (%d assertion(s) failed) ====\n",
