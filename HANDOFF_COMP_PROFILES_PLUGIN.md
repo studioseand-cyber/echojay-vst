@@ -2146,6 +2146,71 @@ writes it as a param (237), so once the value is in scope there is nothing new t
 
 ---
 
+## ROUND 08c — THE ORDERED LIST (supersedes the fragments below; Sean's 8 Oct 20:3x message replaces his
+## earlier 08b-results notes and their corrections). READ-ONLY night: diagnosed, not built.
+
+**08b PASSED:** no bypass after hand-back; Link meters follow the fader; the Level survived a reopen; the Apply
+message is scoped and the EQ dialled; **Save stores the viewed rack (CHAINS (C) CONFIRMED LIVE on both the mix bus
+and the Link)**; and the vocal build's picks matched the offer with everything dialled.
+
+### THE ORDER, harm first
+| # | item | one-line cause | risk |
+|---|---|---|---|
+| 1 | **F2** the landing under-lands | the opening gain is computed at build finish, BEFORE the dials land their losses | medium |
+| 2 | **E** the final ceiling is -1.2 | the server's block asked for `ceiling_db -1`; the plugin obeyed | low |
+| 3 | **C** a typed question vanishes | `handleLoudnessVerb` ate "check the level of the mix bus" as the Check verb | low |
+| 4 | **D** the CHAINS column blanks | the list is laid out against one bottom edge and painted against another | low |
+| 5 | **B** the Link's IN/OUT overlaps names | I gave the Link the V2's rects verbatim; its cards are narrower | very low |
+| 6 | **A** Undo ignores Link edits | the undo stack is wired to ChainHost mutations IN THIS PROCESS | medium |
+
+### F — THE QUESTIONS ANSWERED ONE BY ONE
+  • **target and source:** mix bus **-12.0 LUFS**, from `level_params`, option **dynamic**
+    (20:00:11.250 "armed: target -12.0 LUFS (level_params, dynamic)"). This morning's good landing: **-7.0**,
+    option **pushed** (13:16:20.997). **No fallback anywhere** - item 10's absence is not implicated.
+  • **every writeGainDb, and WHICH control:** one write, **+3.3 dB, on the VISIBLE Level slot's `gain_db`** - proven
+    twice over: the arm line names "Level slot 4 gain +3.3 dB", and the chain block at 20:07:42 shows slot 5
+    "EchoJay Level … out-in **3.3 dB** … settings: Level +3.3 dB (set by the level loop toward the -12.0 LUFS
+    target)". **It did NOT write the Link GAIN** (correctly - this was the V2's own mix-bus rack, not a Link), and
+    it wrote no slot output param and no hidden trim. **Sean's observation that the Link GAIN slider did not move
+    is the expected behaviour, not the fault.**
+  • **measured vs target per step:** build-finish reading **-15.3** -> opening write +3.3; first Listen window
+    **-14.6** integrated (10.1 s counted) -> proposed the remaining **+2.6**; second window **-15.2** -> proposed
+    +3.2, **capped to +3.0** by `dynamic`'s 3 dB GR cap. Final chain output **-14.8** (block, 20:07:42).
+  • **why the loop ended:** it did NOT end. It measured, proposed, and **waited for Go**. `kStaleRunEnd`,
+    `kMaxWindows`, `judgedAny` and the resolve deadline belong to other code or never fired - see the suspects.
+  • **the vocal build had NO landing at all:** not one `EJLoudness` line between 20:16 and 20:26. The 20:17:15
+    build was 7 ops into an EMPTY V2 rack (EchoJay EQ, Sibilance-Live, Lindell 69, Tube-Tech CL 1B, Newfangled
+    Saturate …) with **no EchoJay Level slot and no target**, so the loop never armed. Its quietness is the
+    chain's own gain structure, not a mis-landing. Whether a vocal chain should carry a target is a question for B.
+  • **suspect (1) cfce470:** ruled out - that deadline is in `EJCalibLoop` (the per-slot EJThreshold pass), a
+    different class in a different file from `LoudnessLoop`, and the window ran to a full measurement anyway.
+  • **suspect (2) 5983756:** ruled out - it changed the V2's INGEST of a **Link's** published meter frame
+    (`frameLoudnessAsHeard`). The loop reads `host_.getChainOutLevels()`, ChainHost's own `LevelTally`, which never
+    passes through that conversion, and the mix bus is not a Link frame at all. No double count.
+  • **suspect (3):** ruled out above.
+
+### F2 — THE CAUSE, AND IT IS OURS
+See the F2 section below for the slot-by-slot evidence. In one line: **the signal reaches the Level 4.1 dB below
+the chain input** (the API-2500 alone takes -2.4), and **the opening gain was computed before those losses
+existed** - the dials arrive after the arm, and nothing re-lands. ~2 dB of the 2.8 is that; the other ~0.9 dB is
+E's ceiling. **Fix:** compute the opening AFTER `ChainHost::dialStateSettled()` - the hook the build bubble
+already waits on - from a fresh output reading, and mark a landing STALE when the chain's gain changes afterwards
+(Sean's two EQ bells at 20:05 are exactly that) so it re-offers instead of standing on a figure that was true of a
+different chain. **Files:** PluginEditor (the arm path), LoudnessLoop (the re-offer), plus E's clamp.
+
+### C — THE CHECK DID NOT HANG; A VERB ATE THE MESSAGE
+Full timeline in the C section below. `Listen` at 20:06:38 saw audio immediately ("first audio after 0 s"),
+counted 10.1 s, measured **-14.6 integrated** and **showed a proposal** at 20:06:48 - so **no ending sentence was
+due and item 9's deadline was never in play**. Then "check the level of the mix bus" was taken by
+`handleLoudnessVerb` as the **Check** verb (20:06:58 "verb \"check the level of the mix bus\" state 3"), which
+opened the second window AND meant the turn never went to the server - that is the "no response". Chat sends are
+**not** queued or dropped by a pending check: the next different sentence went out normally at 20:07:44.
+**Fix:** the matcher must take a verb, not a sentence containing one (the narrow discipline `EJAffirmation.h`
+already uses for "yes"), and a taken verb must leave a visible line - a message that vanishes is indistinguishable
+from a dropped send.
+
+## (earlier fragments, kept for their evidence)
+
 ## ROUND 08c — THE LIST, FROM SEAN'S 08b TEST (diagnosed read-only 8 Oct ~20:15 from code + the 19:55-20:10 logs)
 
 08b PASSED items 1, 2, 4 and 5 (no bypass after hand-back; Link meters follow the fader; the Level survived the
