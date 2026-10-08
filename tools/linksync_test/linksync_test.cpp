@@ -886,7 +886,7 @@ int main()
         // is live - the case the prior list cannot describe, because it was taken before this slot existed.
         const auto* probe = BuiltinDeviceRegistry::instance().findByName ("EJ Sync Probe");
         if (probe != nullptr)
-            host.loadBuiltinNow (BuiltinDeviceRegistry::descriptionFor (*probe));
+            host.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*probe), host.getNumSlots());
         const int nUnderLease = host.getNumSlots();
         check (nUnderLease == nBefore + 1, "a slot was added while the rack was leased",
                juce::String (nBefore) + " -> " + juce::String (nUnderLease));

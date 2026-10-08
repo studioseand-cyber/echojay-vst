@@ -258,6 +258,13 @@ ej_add_guard(borrow_budget_guard      SOURCE tools/borrow_budget_guard/harness.c
 ej_add_guard(overlay_liveness_guard   SOURCE tools/overlay_liveness_guard/harness.cpp         LABEL fast)
 ej_add_guard(wet_rebuild_guard        SOURCE tools/wet_rebuild_guard/harness.cpp              LABEL fast)
 ej_add_guard(slotwet_readback         SOURCE tools/slotwet_readback/slotwet_readback.cpp      LABEL fast LINKSIDE)
+# 8 Oct 2026: linksync_test JOINS THE GATE, which is how it comes to be trusted at all. It had its own
+# build_and_run.sh, and that script (a) linked build/EchoJayLink_artefacts - a 30 SEPTEMBER archive, so it was
+# asserting against object code eight days old - and (b) never exported EJ_STATE_TEST_HOME, so the harness's own
+# isolation precondition refused it: "app-data resolves to /nonexistent/Library". A test that cannot run, against a
+# library that is not the one being changed, is not evidence. In the tree it links the Link archive by path like
+# every other LINKSIDE guard and takes its private state root from run_guard.sh.
+ej_add_guard(linksync_test            SOURCE tools/linksync_test/linksync_test.cpp           LABEL fast LINKSIDE)
 ej_add_guard(slotwet_knobpath         SOURCE tools/slotwet_knobpath/harness.cpp               LABEL fast)
 # 21t-i re-cut (27 Sep 2026): the tuner's WIRE LADDER (natural/balanced/hard/snap, "tuned" an alias) is ruled
 # behaviour, so its test joins the gate. pitch_mode_test has lived outside it since it was written - it also renders
