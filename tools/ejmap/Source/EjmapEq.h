@@ -440,6 +440,34 @@ inline std::vector<Interval> applyRound (const std::vector<Interval>& iv, const 
 
 // THE DRAFT ej_eq_profile/1 (section 6) FROM THE RECORD (a derive-only function: the mode calls it on the record it just wrote, the
 // --phaseb-drafts pass on an existing one). A 5 Oct record (no verdicts, no level check) drafts with the fields it has and says so.
+// DEFAULT BANDS (v0.2, Sean's ruling 8 Oct): the profile suggests a default band per region, chosen by MEASURED range. Each region has an
+// anchor frequency (the ruling names the regions, not their edges - these anchors are the proposal's, Sean may move them); a region's
+// default is the usable band whose measured frequency range (its freq map's centre / corner Hz) contains the anchor - of several, the one
+// whose range's log-centre is nearest it; with none containing it, the nearest range within kDefaultBandReachOct; else null, said in notes.
+inline const std::vector<std::pair<juce::String, double>>& regionAnchors() { static const std::vector<std::pair<juce::String, double>> k { { "low", 100.0 }, { "low_mid", 400.0 }, { "high_mid", 2500.0 }, { "high", 10000.0 } }; return k; }
+inline constexpr double kDefaultBandReachOct = 1.0;
+inline juce::var defaultBands (const juce::Array<juce::var>& bands, juce::Array<juce::var>& notes)
+{
+    auto* d = new juce::DynamicObject();
+    for (const auto& [region, anchor] : regionAnchors())
+    {
+        juce::String best; double bestOut = 1e9, bestDist = 1e9;
+        for (const auto& b : bands)
+        {
+            if (! serverMayUse (b.getProperty ("verdict", "").toString())) continue;
+            double lo = 1e9, hi = -1e9;
+            if (const auto* fm = b.getProperty ("freq_map", {}).getArray()) for (const auto& q : *fm) for (const char* k : { "centre_hz", "corner_hz" }) { const auto v = q.getProperty (k, {}); if (v.isDouble() || v.isInt() || v.isInt64()) { lo = juce::jmin (lo, (double) v); hi = juce::jmax (hi, (double) v); } }
+            if (lo > hi || lo <= 0.0) continue;
+            const double out = anchor >= lo && anchor <= hi ? 0.0 : juce::jmin (std::abs (std::log2 (anchor / lo)), std::abs (std::log2 (anchor / hi)));
+            const double dist = std::abs (std::log2 (anchor / std::sqrt (lo * hi)));
+            if (out < bestOut - 1e-9 || (std::abs (out - bestOut) <= 1e-9 && dist < bestDist)) { bestOut = out; bestDist = dist; best = b.getProperty ("name", "").toString(); }
+        }
+        if (best.isNotEmpty() && bestOut <= kDefaultBandReachOct) d->setProperty (region, best);
+        else { d->setProperty (region, juce::var()); notes.add ("default_bands." + region + ": no usable band's measured range reaches " + juce::String (anchor, 0) + " Hz (within " + juce::String (kDefaultBandReachOct, 0) + " octave)"); }
+    }
+    return juce::var (d);
+}
+
 inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, const juce::var& measured, const juce::String& status, const juce::String& spec)
 {
     auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_eq_profile/1"); P->setProperty ("spec", spec); P->setProperty ("status", status);
@@ -477,6 +505,7 @@ inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, co
             bands.add (juce::var (o));
         }
     P->setProperty ("bands", bands);
+    P->setProperty ("default_bands", defaultBands (bands, notes));   // v0.2: by measured range
     P->setProperty ("neutral", rec.hasProperty ("neutral") ? rec.getProperty ("neutral", {}) : juce::var (juce::Array<juce::var>()));
     P->setProperty ("notes", notes);
     return juce::var (P);

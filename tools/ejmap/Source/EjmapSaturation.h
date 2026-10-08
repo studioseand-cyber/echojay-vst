@@ -223,11 +223,13 @@ inline OutputChoice outputFromGainDraft (const juce::var& gainDraft, const juce:
             {
                 if (c.getProperty ("role", "").toString() != role || c.getProperty ("control", "").toString() == excludeControl) continue;
                 if (! gaincal::writable (c.getProperty ("verdict", "").toString())) continue;
+                // v0.2 (8 Oct): a level_dependent control is never a level match, whatever its verdict (a pre-7 Oct record flags it beside one)
+                if ((bool) c.getProperty ("level_dependent", false) || (c.hasProperty ("level_matching") && ! (bool) c.getProperty ("level_matching", true))) continue;
                 o.ok = true; o.control = c.getProperty ("control", "").toString(); o.role = role; o.source = "gain draft (" + c.getProperty ("verdict", "").toString() + ")"; o.stepped = (bool) c.getProperty ("stepped", false);
                 if (const auto* cv = c.getProperty ("curve", {}).getArray()) for (const auto& pt : *cv) { gaincal::Reading r; r.norm = (double) pt.getProperty ("norm", 0.0); r.display = pt.getProperty ("display", "").toString(); const auto m = pt.getProperty ("measured_db", {}); if (m.isDouble() || m.isInt()) r.measuredDb[-40.0] = (double) m; else r.landed = false; o.curve.push_back (r); }
                 return o;
             }
-    o.why = "the gain draft has no writable output / makeup / trim control"; return o;
+    o.why = "the gain draft has no output / makeup / trim control usable for level matching"; return o;
 }
 inline std::optional<double> levelAtNorm (const std::vector<gaincal::Reading>& curve, double norm, bool stepped)
 {

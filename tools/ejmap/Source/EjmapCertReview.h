@@ -356,7 +356,7 @@ inline std::vector<CategoryReview> phaseBReview (const juce::File& phasebDir)
                 const auto v = juce::JSON::parse (f.loadFileAsString()); const auto product = v.getProperty ("product", v.getProperty ("plugin", {}).getProperty ("name", v.getProperty ("parent", {}).getProperty ("name", ""))).toString();
                 if (sn == "drafts")
                 {
-                    ++c.drafts; if (! v.getProperty ("spec", "").toString().endsWith (" v0.1 PROPOSAL") || ! f.getFileName().endsWith (".draft.json")) ++c.draftsBadSpec;
+                    ++c.drafts; if (! (v.getProperty ("spec", "").toString().endsWith (" v0.1 PROPOSAL") || v.getProperty ("spec", "").toString().endsWith (" v0.2 PROPOSAL")) || ! f.getFileName().endsWith (".draft.json")) ++c.draftsBadSpec;
                     if (const auto* n = v.getProperty ("notes", {}).getArray(); n && ! n->isEmpty()) { ++c.draftsWithNotes; for (const auto& x : *n) ++c.noteKinds[noteKind (x.toString())]; }
                     collectAcceptance (v, c.acc, product);
                 }

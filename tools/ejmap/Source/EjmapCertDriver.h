@@ -2901,7 +2901,7 @@ inline LicenceGate licenceGate (const SweepOptions& opt, const juce::PluginDescr
 inline juce::var stripDraftFrom (const juce::var& stripRec, const juce::File& stripDir, const juce::String& stem, const juce::var& plugin)
 {
     auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_strip_profile/0"); P->setProperty ("spec", drafts::specTag ("STRIP (each section to its category spec)"));
-    P->setProperty ("status", "DRAFT: each section in its category's v0.1 PROPOSAL shape (EQ / gate / saturation / compressor); strip profiles' export is held (ruled 7 Oct): data only, not exported, not published");
+    P->setProperty ("status", "DRAFT: each section in its category's v0.2 PROPOSAL shape (EQ / gate / saturation / compressor); strip profiles' export is held (ruled 7 Oct): data only, not exported, not published");
     P->setProperty ("parent", plugin); P->setProperty ("rule", stripRec.getProperty ("rule", ""));
     juce::Array<juce::var> secs, notes; const auto date = stripRec.getProperty ("measuredAt", "").toString().substring (0, 8);
     const auto measured = drafts::measuredBlock ("EJ Map (feat/ejmap-cert), the strip's sections through their categories' modes", date.length() == 8 ? date.substring (0, 4) + "-" + date.substring (4, 6) + "-" + date.substring (6, 8) : runDateIso(), 48000, "per section: its category's signal");

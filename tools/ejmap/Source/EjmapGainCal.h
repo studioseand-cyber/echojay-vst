@@ -238,7 +238,14 @@ inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, co
         for (const auto& cv : *cs)
         {
             auto* pc = new juce::DynamicObject(); const auto verdict = cv.getProperty ("verdict", "").toString(); const auto role = cv.getProperty ("role", "").toString();
-            pc->setProperty ("control", cv.getProperty ("control", "")); pc->setProperty ("role", role); pc->setProperty ("verdict", verdict); pc->setProperty ("writable", writable (verdict));
+            // v0.2 (Sean's ruling 8 Oct): a level_dependent control - the verdict, or a pre-7 Oct record's flag beside a writable verdict - is
+            // NEVER used for level matching, but its curve (both levels) is kept: the server drives input-drive compressors and saturation with it
+            const bool levelDep = verdict == "level_dependent" || (bool) cv.getProperty ("level_dependent", false);
+            const bool hasCurve = cv.getProperty ("gain_curve", {}).size() > 0;
+            const bool levelMatch = writable (verdict) && ! levelDep, driveCurve = levelDep && hasCurve && (writable (verdict) || verdict == "level_dependent");
+            pc->setProperty ("control", cv.getProperty ("control", "")); pc->setProperty ("role", role); pc->setProperty ("verdict", verdict); pc->setProperty ("writable", levelMatch || driveCurve);
+            pc->setProperty ("level_dependent", levelDep); pc->setProperty ("level_matching", levelMatch); pc->setProperty ("drive_curve", driveCurve);
+            if (levelDep && driveCurve) notes.add (cv.getProperty ("control", "").toString() + ": level_dependent (" + cv.getProperty ("worst_level_dependence_db", juce::var()).toString() + " dB between levels) - never used for level matching; its curve is kept as a drive curve (v0.2)");
             pc->setProperty ("worst_off_db", cv.getProperty ("worst_off_db", juce::var())); pc->setProperty ("bar_db", cv.getProperty ("match_bar_db", juce::var())); pc->setProperty ("level_dependent_db", cv.getProperty ("worst_level_dependence_db", juce::var()));
             // stepped: the record's flag when the mode wrote one; else inferred from the curve (fewer positions than the mode's 21 norms = detents)
             if (cv.hasProperty ("stepped")) pc->setProperty ("stepped", cv.getProperty ("stepped", false)); else if (const auto* gc = cv.getProperty ("gain_curve", {}).getArray()) pc->setProperty ("stepped", gc->size() != kNorms); else pc->setProperty ("stepped", juce::var());
@@ -251,7 +258,7 @@ inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, co
             pc->setProperty ("curve", curve);
             if ((bool) cv.getProperty ("has_zero_point", false) || cv.hasProperty ("zero_ref_db")) { pc->setProperty ("unity_norm", unityNorm ? juce::var (*unityNorm) : juce::var()); pc->setProperty ("unity_offset_db", cv.getProperty ("zero_ref_db", juce::var())); }
             if (cv.hasProperty ("acceptance")) pc->setProperty ("acceptance", cv.getProperty ("acceptance", juce::var()));
-            if (! writable (verdict)) notes.add (cv.getProperty ("control", "").toString() + ": " + verdict + " - " + cv.getProperty ("note", "").toString());
+            if (! writable (verdict) && ! driveCurve) notes.add (cv.getProperty ("control", "").toString() + ": " + verdict + " - " + cv.getProperty ("note", "").toString());
             if (const auto* acc = cv.getProperty ("acceptance", {}).getArray()) { int fails = 0; for (const auto& a : *acc) if ((bool) a.getProperty ("ran", false) && ! (bool) a.getProperty ("pass", false)) ++fails; if (fails > 0) notes.add (cv.getProperty ("control", "").toString() + ": " + juce::String (fails) + " acceptance write(s) missed the 0.2 dB bar (section 8): not writable until re-measured"); }
             pcs.add (juce::var (pc));
         }

@@ -24,6 +24,9 @@
 namespace ejmap::tunerprofile
 {
 
+inline constexpr int kDefaultTuneStep = 1;   // v0.2 (Sean, 8 Oct): tuning asked for without a degree is step 1, Natural (v0.1 suggested 2)
+
+
 inline constexpr const char* kSchema = "ej_tuner_profile/1";
 inline constexpr const char* kStatus = "PROPOSAL v0.1 - not for publication";
 inline constexpr double kStrengthMovesBy = 0.2;      // a candidate whose static strength spans this much is a strength control
@@ -223,6 +226,16 @@ inline Export exportTunerProfileDraft (const juce::var& record)
             { double lo = 1e9, hi = 0.0; for (const auto& d : *ed) { lo = juce::jmin (lo, (double) d); hi = juce::jmax (hi, (double) d); } worst = juce::jmax (worst, hi - lo); }
         q->setProperty ("transition_spread_ms", worst); q->setProperty ("method", "edges per position from the square vibrato; spread = max - min of the edge durations");
         prof->setProperty ("quality", juce::var (q));
+    }
+    // THE FEEL LADDER (v0.2, Sean's rulings 8 Oct): five steps; tuning asked for without a degree -> step 1 Natural (v0.1 suggested 2);
+    // not asked -> 0; the step rides as tune_step on the slot's [CURRENT CHAIN] line; the key comes from the plugin's own detection
+    // (key + confidence per channel), chromatic when unknown or low-confidence. The step's settings are the server's (section 6).
+    {
+        auto* f = new juce::DynamicObject();
+        juce::Array<juce::var> steps; int k = 0; for (const char* w : { "Off", "Natural", "Polished", "Noticeable", "Hard" }) { auto* st = new juce::DynamicObject(); st->setProperty ("step", k++); st->setProperty ("name", w); steps.add (juce::var (st)); }
+        f->setProperty ("steps", steps); f->setProperty ("default_step", kDefaultTuneStep); f->setProperty ("default_step_not_asked", 0); f->setProperty ("field", "tune_step");
+        f->setProperty ("key_source", "the plugin's detected key (key + confidence per channel); chromatic when unknown or low-confidence");
+        prof->setProperty ("feel", juce::var (f));
     }
     juce::Array<juce::var> notes; for (const auto& n : e.notes) notes.add (n); prof->setProperty ("notes", notes);
     e.ok = true; e.profile = juce::var (prof);

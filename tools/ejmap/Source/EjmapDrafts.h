@@ -4,7 +4,8 @@
 
     - a draft lands in cert/phaseb/<category>/drafts/<stem>.<kind>.draft.json - the mode writes <out>/drafts/ and the Phase B
       parent moves that folder into place like any other record folder; NEVER cert/profiles (the exporter never reads drafts/)
-    - every draft carries "spec": "<SPEC NAME> v0.1 PROPOSAL" (specTag), "status" saying it is a draft, and the plugin /
+    - every draft carries "spec": "<SPEC NAME> v0.2 PROPOSAL" (specTag; v0.2 = Sean's rulings of 8 Oct, SPEC_RULINGS_v0_2.md, applied
+      to the v0.1 specs until each is re-issued), "status" saying it is a draft, and the plugin /
       measured blocks the specs share
     - a draft is DERIVED FROM THE RECORD, never measured separately: the same function runs at the end of the mode and in the
       derive-only pass (--phaseb-drafts) over an existing folder (Sean's), so a draft can be re-cut without a re-run
@@ -21,7 +22,8 @@
 namespace ejmap::drafts
 {
 
-inline juce::String specTag (const juce::String& specName) { return specName + " v0.1 PROPOSAL"; }
+inline constexpr const char* kSpecSuffix = " v0.2 PROPOSAL";   // 8 Oct: Sean's rulings (was v0.1)
+inline juce::String specTag (const juce::String& specName) { return specName + kSpecSuffix; }
 inline constexpr const char* kFolder = "drafts";
 inline juce::File draftDir (const juce::File& out) { return out.getChildFile (kFolder); }
 inline juce::String draftFileName (const juce::String& stem, const juce::String& kind) { return stem + "." + kind + ".draft.json"; }
@@ -35,12 +37,12 @@ inline bool pathAllowed (const juce::File& f)
     for (auto d = f.getParentDirectory(); d != juce::File() && d.getFileName().isNotEmpty(); d = d.getParentDirectory()) if (d.getFileName() == "profiles") return false;
     return f.getFileName().endsWith (".draft.json");
 }
-// the content rule: a spec tag ending in "v0.1 PROPOSAL", a status, a schema
+// the content rule: a spec tag ending in kSpecSuffix (v0.2 PROPOSAL), a status, a schema
 inline juce::String contentProblem (const juce::var& v)
 {
     if (! v.isObject()) return "not an object";
     const auto spec = v.getProperty ("spec", "").toString();
-    if (! spec.endsWith (" v0.1 PROPOSAL")) return "spec tag '" + spec + "' does not end in ' v0.1 PROPOSAL'";
+    if (! spec.endsWith (kSpecSuffix)) return "spec tag '" + spec + "' does not end in '" + juce::String (kSpecSuffix) + "'";
     if (v.getProperty ("status", "").toString().isEmpty()) return "no status";
     if (v.getProperty ("schema", "").toString().isEmpty()) return "no schema";
     return {};

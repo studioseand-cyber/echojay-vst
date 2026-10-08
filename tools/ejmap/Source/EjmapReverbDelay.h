@@ -359,6 +359,41 @@ inline juce::String mapVerdict (int positionsRead, int positionsAsked, bool anyM
 }
 
 // THE DRAFT ej_space_profile/1 (section 7) FROM THE RECORD (the mode and --phaseb-drafts both call it)
+// FULL WET (v0.2, Sean's ruling 8 Oct): EchoJay blends on the rack card's slot mix with the plugin FULLY WET where possible, so the mix map's
+// main use is the 100 %-wet setting. From the existing mix map, no re-measuring: the position with the least dry (ties: the highest norm);
+// dry_db and wet_gain_db relative to the input; full_wet only when the dry is kFullWetDryDb or more down (a send-only unit is already
+// fully wet), else cannot_full_wet (the server uses the mix map or skips the unit). A 7 Oct record's levels are relative to the input; an
+// older record's are absolute dBFS, made relative by the method's input (the -12 dBFS peak sine burst = kOldRecordInputDb RMS). A dry that
+// the old build left unread (a silent window) is silence: kSilentLevelDb.
+inline constexpr double kFullWetDryDb = -40.0, kOldRecordInputDb = -15.01;
+inline juce::var fullWetBlock (const juce::var& rec, juce::StringArray& notes)
+{
+    const auto m = rec.getProperty ("mix_law", {});
+    const auto* ps = m.isObject() ? m.getProperty ("positions", {}).getArray() : nullptr;
+    if (ps == nullptr || ps->isEmpty()) { notes.add ("full_wet: no mix map on this record (no mix control measured): not derivable"); return {}; }
+    const bool relative = m.getProperty ("levels", "").toString().contains ("relative");
+    const double ref = relative ? 0.0 : kOldRecordInputDb;
+    auto num = [] (const juce::var& v) { return v.isDouble() || v.isInt() || v.isInt64(); };
+    const juce::var* best = nullptr; double bestDry = 1e9;
+    for (const auto& p : *ps)
+    {
+        const double dry = num (p.getProperty ("dry_db", {})) ? (double) p.getProperty ("dry_db", {}) - ref : kSilentLevelDb;
+        if (best == nullptr || dry < bestDry - 1e-9 || (std::abs (dry - bestDry) <= 1e-9 && (double) p.getProperty ("norm", 0.0) > (double) best->getProperty ("norm", 0.0))) { best = &p; bestDry = dry; }
+    }
+    const bool sendOnly = (bool) m.getProperty ("send_only", false) || m.getProperty ("verdict", "").toString() == "send_only";
+    const bool full = sendOnly || bestDry <= kFullWetDryDb;
+    auto* x = new juce::DynamicObject();
+    x->setProperty ("control", m.getProperty ("control", rec.getProperty ("mix_control", {}).getProperty ("name", juce::var())));
+    x->setProperty ("norm", best->getProperty ("norm", {})); x->setProperty ("display", best->getProperty ("display", ""));
+    x->setProperty ("dry_db", std::round (juce::jmax (kSilentLevelDb, bestDry) * 100.0) / 100.0);
+    x->setProperty ("wet_gain_db", num (best->getProperty ("wet_db", {})) ? juce::var (std::round (((double) best->getProperty ("wet_db", {}) - ref) * 100.0) / 100.0) : juce::var());
+    x->setProperty ("verdict", full ? "full_wet" : "cannot_full_wet");
+    x->setProperty ("basis", juce::String ("the mix map's least-dry position; levels ") + (relative ? "relative to the input as recorded" : "absolute dBFS on the record, less the input burst's " + juce::String (kOldRecordInputDb, 2) + " dBFS RMS")
+                              + (num (best->getProperty ("dry_db", {})) ? juce::String() : juce::String ("; the dry was unread (a silent window): read as silence")) + "; wet = the tail's level just after the burst (reverb) / the first repeat (delay)");
+    if (! full) notes.add ("full_wet: cannot_full_wet - the least dry is " + juce::String (bestDry, 1) + " dB at '" + best->getProperty ("display", "").toString() + "' (needs " + juce::String (kFullWetDryDb, 0) + " dB or more down): the server uses the mix map or skips the unit");
+    return juce::var (x);
+}
+
 inline juce::var spaceProfile (const juce::var& rec, const juce::var& plugin, const juce::var& measured, const juce::String& status, const juce::String& spec)
 {
     auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_space_profile/1"); P->setProperty ("spec", spec); P->setProperty ("status", status);
@@ -375,6 +410,7 @@ inline juce::var spaceProfile (const juce::var& rec, const juce::var& plugin, co
         x->setProperty ("points", pts); if (m.hasProperty ("verdict")) x->setProperty ("verdict", m.getProperty ("verdict", {})); P->setProperty ("mix", juce::var (x));
     }
     else { P->setProperty ("mix", juce::var()); notes.add ("mix: no mix control measured"); }
+    { juce::StringArray fw; P->setProperty ("full_wet", fullWetBlock (rec, fw)); for (const auto& n : fw) notes.add (n); }
     auto timeMap = [&] (const juce::var& m, const char* figure, const char* outName)
     {
         auto* x = new juce::DynamicObject(); x->setProperty ("control", m.getProperty ("control", {})); x->setProperty ("found_by", m.getProperty ("found_by", old ? juce::var ("name") : juce::var())); if (m.hasProperty ("verdict")) x->setProperty ("verdict", m.getProperty ("verdict", {}));

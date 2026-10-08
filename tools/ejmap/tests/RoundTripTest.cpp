@@ -7688,7 +7688,7 @@ void testLimiter()
     {
         using namespace ejmap::drafts;
         const auto out = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap-drafts-pin-" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
-        check (specTag ("LIMITER_PROFILE_SPEC") == "LIMITER_PROFILE_SPEC v0.1 PROPOSAL", "draft D1: the spec tag");
+        check (specTag ("LIMITER_PROFILE_SPEC") == "LIMITER_PROFILE_SPEC v0.2 PROPOSAL", "draft D1: the spec tag");
         check (pathAllowed (draftFile (out, "AudioUnit_1_1.0", "limiter_ceiling")) && ! pathAllowed (out.getChildFile ("profiles").getChildFile ("x.draft.json")) && ! pathAllowed (out.getChildFile ("profiles").getChildFile ("drafts").getChildFile ("x.draft.json")) && ! pathAllowed (out.getChildFile ("drafts").getChildFile ("x.profile.json")),
                "draft D2: <out>/drafts/<stem>.<kind>.draft.json is allowed; anything under profiles/, or not a .draft.json, is not");
         auto* o = new juce::DynamicObject(); o->setProperty ("schema", "x/1"); o->setProperty ("status", "DRAFT"); o->setProperty ("spec", specTag ("X_SPEC")); juce::var good (o);
@@ -7899,7 +7899,7 @@ void testEq()
             check (qm.size() == 2 && (double) qm[0].getProperty ("bandwidth_oct_at_6db", 0.0) == 2.0 && (double) qm[0].getProperty ("bandwidth_oct_at_3db", 0.0) == 2.4 && qm[1].getProperty ("bandwidth_oct_at_3db", {}).isVoid(), "eq E27c: the Q map carries the bandwidth at +6 and at +3 (null where +3 was not read)");
             const auto& gm = B[0].getProperty ("gain_map", {});
             check (gm.size() == 3 && (double) gm[1].getProperty ("gain_db", 1.0) == 0.0 && (double) gm[2].getProperty ("gain_db", 0.0) == 6.1, "eq E27d: a flat gain position is 0 dB in the map");
-            const auto& N = D.getProperty ("notes", {}); juce::StringArray ns; if (const auto* na = N.getArray()) for (const auto& n : *na) ns.add (n.toString());
+            const auto& N = D.getProperty ("notes", {}); juce::StringArray ns; if (const auto* na = N.getArray()) for (const auto& n : *na) if (! n.toString().startsWith ("default_bands.")) ns.add (n.toString());   // v0.2's default_bands notes are E28's
             check (ns.size() == 2 && ns[0].contains ("Band 'HMF': 1 of 2 acceptance") && ns[1].contains ("Band 'Air': dynamic") && ns[1].contains ("not usable"), "eq E27e: notes - the failed acceptance write and the dynamic band (" + ns.joinIntoString (" | ") + ")");
             const auto old = mk ({ { "bands", bands } });
             const auto D2 = profileDraft (old, juce::var(), juce::var(), "DRAFT", ejmap::drafts::specTag ("EQ_PROFILE_SPEC"));
@@ -8224,10 +8224,11 @@ void testReverbDelay()
                && (double) P.getProperty ("decay", {}).getProperty ("map", {})[0].getProperty ("rt60_s", 0.0) == 2.06 && (double) P.getProperty ("decay", {}).getProperty ("map", {})[0].getProperty ("rt60_1k_s", 0.0) == 2.21
                && (double) P.getProperty ("predelay", {}).getProperty ("own_onset_ms", 0.0) == 18.0 && (double) P.getProperty ("predelay", {}).getProperty ("map", {})[0].getProperty ("relative_ms", 0.0) == 50.2 && P.getProperty ("time", {}).isVoid() && P.getProperty ("feedback", {}).isVoid(),
                "rd RD7a: the reverb profile - mix with its law and worst, decay with broadband and 1 kHz RT60, pre-delay relative with the unit's own onset; time / feedback / sync null");
-        check (P.getProperty ("notes", {}).size() == 1 && P.getProperty ("notes", {})[0].toString().contains ("decay huge: null"), "rd RD7b: a null acceptance step is a note");
+        { juce::StringArray pn; if (const auto* na = P.getProperty ("notes", {}).getArray()) for (const auto& n : *na) if (! n.toString().startsWith ("full_wet:")) pn.add (n.toString());   // v0.2's full_wet notes are RD9's
+          check (pn.size() == 1 && pn[0].contains ("decay huge: null"), "rd RD7b: a null acceptance step is a note"); }
         const auto delRec = mk ({ { "kind", "delay" }, { "space_fields", "x" } });
         const auto Q = spaceProfile (delRec, juce::var(), juce::var(), "DRAFT", "x v0.1 PROPOSAL");
-        check (Q.getProperty ("decay", {}).isVoid() && Q.getProperty ("time", {}).isVoid() && Q.getProperty ("notes", {}).size() == 4, "rd RD7c: a delay with nothing measured: every block null with a note (mix, time, feedback, sync)");
+        check (Q.getProperty ("decay", {}).isVoid() && Q.getProperty ("time", {}).isVoid() && Q.getProperty ("notes", {}).size() == 5 && Q.getProperty ("full_wet", {}).isVoid(), "rd RD7c: a delay with nothing measured: every block null with a note (mix, time, feedback, sync, full_wet)");
         const auto oldRec = mk ({ { "kind", "reverb" }, { "decay", mk ({ { "control", "Decay" }, { "positions", juce::Array<juce::var> { mk ({ { "norm", 0.0 }, { "display", "1 s" }, { "rt60_t20_s", 0.9 } }) } } }) } });
         const auto R = spaceProfile (oldRec, juce::var(), juce::var(), "DRAFT", "x v0.1 PROPOSAL");
         check (R.getProperty ("notes", {})[0].toString().contains ("without the 7 Oct fields") && (double) R.getProperty ("decay", {}).getProperty ("map", {})[0].getProperty ("rt60_s", 0.0) == 0.9, "rd RD7d: a 5 Oct record drafts with its T20 as rt60_s and the partial note");
@@ -8530,6 +8531,49 @@ void testDraftsPass()
         juce::StringArray ns; for (const auto& n : e.notes) ns.add (n);
         check (e.refused.isEmpty() && e.profile.getProperty ("flex", {}).getProperty ("control", "") == "Flex-Tune" && e.profile.getProperty ("humanize", {}).getProperty ("control", "") == "Humanize" && ns.joinIntoString ("|").contains ("vibrato retention not measured"),
                "drafts TU1: a 5 Oct record drafts Flex-Tune and Humanize from its pitchExtras; the note says only the held-note vibrato waits for --redo tuners (" + e.refused + ")");
+    }
+    // v0.2 (Sean's rulings, 8 Oct): the four draft changes, each derived from what a record already holds
+    {
+        // RD9 full_wet: a 7 Oct record (levels relative), an old record (absolute dBFS, the dry at 100 % unread = silent), one that cannot
+        juce::Array<juce::var> pNew { mk ({ { "norm", 0.0 }, { "display", "0" }, { "dry_db", 0.0 }, { "wet_db", -60.0 } }), mk ({ { "norm", 1.0 }, { "display", "100.0" }, { "dry_db", -135.0 }, { "wet_db", -7.39 } }) };
+        juce::Array<juce::var> pOld { mk ({ { "norm", 0.0 }, { "display", "0.00%" }, { "dry_db", -15.01 }, { "wet_db", -60.03 } }), mk ({ { "norm", 1.0 }, { "display", "100.0%" }, { "dry_db", juce::var() }, { "wet_db", -17.4 } }) };
+        juce::Array<juce::var> pCan { mk ({ { "norm", 0.0 }, { "display", "0" }, { "dry_db", -15.01 }, { "wet_db", -60.0 } }), mk ({ { "norm", 1.0 }, { "display", "100" }, { "dry_db", -46.71 }, { "wet_db", -20.0 } }) };
+        juce::Array<juce::var> pEdge { mk ({ { "norm", 1.0 }, { "display", "100" }, { "dry_db", -40.0 }, { "wet_db", -3.0 } }) };
+        juce::StringArray n1, n2, n3, n4;
+        const auto a = ejmap::reverbdelay::fullWetBlock (mk ({ { "mix_law", mk ({ { "control", "Dry:Wet" }, { "levels", "relative to the input (dB)" }, { "positions", pNew } }) } }), n1);
+        const auto b = ejmap::reverbdelay::fullWetBlock (mk ({ { "mix_law", mk ({ { "positions", pOld } }) }, { "mix_control", mk ({ { "name", "Mix" } }) } }), n2);
+        const auto c = ejmap::reverbdelay::fullWetBlock (mk ({ { "mix_law", mk ({ { "positions", pCan } }) } }), n3);
+        const auto e = ejmap::reverbdelay::fullWetBlock (mk ({ { "mix_law", mk ({ { "levels", "relative to the input (dB)" }, { "positions", pEdge } }) } }), n4);
+        check (a.getProperty ("verdict", "") == "full_wet" && (double) a.getProperty ("norm", 0.0) == 1.0 && (double) a.getProperty ("dry_db", 0.0) == -135.0 && (double) a.getProperty ("wet_gain_db", 0.0) == -7.39 && a.getProperty ("control", "") == "Dry:Wet"
+               && b.getProperty ("verdict", "") == "full_wet" && (double) b.getProperty ("dry_db", 0.0) == -150.0 && std::abs ((double) b.getProperty ("wet_gain_db", 0.0) + 2.39) < 1e-9 && b.getProperty ("control", "") == "Mix" && b.getProperty ("basis", "").toString().contains ("silence")
+               && c.getProperty ("verdict", "") == "cannot_full_wet" && std::abs ((double) c.getProperty ("dry_db", 0.0) + 31.7) < 1e-9 && n3.joinIntoString ("|").contains ("cannot_full_wet")
+               && e.getProperty ("verdict", "") == "full_wet" && n1.isEmpty() && n2.isEmpty(),
+               "rd RD9: full_wet from the mix map - relative levels as recorded, old absolute ones less the -15.01 dBFS input, an unread dry is silence; 40 dB down is full_wet, 31.7 is cannot_full_wet");
+        // E28 default_bands by measured range
+        auto band = [&] (const char* name, const char* verdict, double lo, double hi) { juce::Array<juce::var> fm { mk ({ { "norm", 0.0 }, { "centre_hz", lo } }), mk ({ { "norm", 1.0 }, { "centre_hz", hi } }) }; return mk ({ { "name", name }, { "verdict", verdict }, { "freq_map", fm } }); };
+        juce::Array<juce::var> bands { band ("LF", "measured", 30.0, 300.0), band ("LMF", "measured", 200.0, 2000.0), band ("HMF", "measured", 800.0, 8000.0), band ("HF", "measured", 3000.0, 16000.0), band ("Air", "dynamic", 5000.0, 20000.0) };
+        juce::Array<juce::var> dn; const auto db = ejmap::eq::defaultBands (bands, dn);
+        juce::Array<juce::var> one { band ("Bell", "measured", 150.0, 600.0) }; juce::Array<juce::var> dn1; const auto d1 = ejmap::eq::defaultBands (one, dn1);
+        check (db.getProperty ("low", "") == "LF" && db.getProperty ("low_mid", "") == "LMF" && db.getProperty ("high_mid", "") == "HMF" && db.getProperty ("high", "") == "HF" && dn.isEmpty()
+               && d1.getProperty ("low_mid", "") == "Bell" && d1.getProperty ("low", "") == "Bell" && d1.getProperty ("high_mid", {}).isVoid() && d1.getProperty ("high", {}).isVoid() && dn1.size() == 2,
+               "eq E28: default_bands by measured range (LF / LMF / HMF / HF; a dynamic band is never one); a 150-600 Hz bell is low (100 Hz is 0.58 octave below it) and low_mid, never high_mid or high");
+        // G9 gain: a level_dependent control is never a level match; its curve is kept for the drive
+        juce::Array<juce::var> curve { mk ({ { "norm", 0.0 }, { "display", "-10" }, { "measured_db_at_-40", -10.0 }, { "measured_db_at_-20", -7.0 } }), mk ({ { "norm", 1.0 }, { "display", "10" }, { "measured_db_at_-40", 10.0 }, { "measured_db_at_-20", 13.0 } }) };
+        juce::Array<juce::var> cs { mk ({ { "control", "Input" }, { "role", "input" }, { "verdict", "display_matches" }, { "level_dependent", true }, { "worst_level_dependence_db", 3.0 }, { "gain_curve", curve } }),
+                                    mk ({ { "control", "Output" }, { "role", "output" }, { "verdict", "display_matches" }, { "gain_curve", curve } }),
+                                    mk ({ { "control", "Limit" }, { "role", "output" }, { "verdict", "no_effect" }, { "level_dependent", true }, { "gain_curve", curve } }) };
+        const auto G = ejmap::gaincal::profileDraft (mk ({ { "controls", cs } }), {}, {}, "DRAFT", "GAIN v0.2 PROPOSAL");
+        const auto& gc = G.getProperty ("controls", {});
+        const auto outc = ejmap::saturation::outputFromGainDraft (mk ({ { "controls", juce::Array<juce::var> { mk ({ { "control", "Input" }, { "role", "output" }, { "verdict", "display_matches" }, { "level_dependent", true }, { "level_matching", false } }) } } }), "");
+        check (! (bool) gc[0].getProperty ("level_matching", true) && (bool) gc[0].getProperty ("drive_curve", false) && gc[0].getProperty ("curve", {}).size() == 2 && (bool) gc[0].getProperty ("writable", false)
+               && (bool) gc[1].getProperty ("level_matching", false) && ! (bool) gc[1].getProperty ("drive_curve", true)
+               && ! (bool) gc[2].getProperty ("level_matching", true) && ! (bool) gc[2].getProperty ("drive_curve", true) && ! (bool) gc[2].getProperty ("writable", true) && ! outc.ok,
+               "gain G9: a level_dependent control (a 5 Oct flag beside display_matches) is never a level match - its two-level curve is kept as a drive curve; saturation never levels through it; no_effect stays unwritable");
+        // TU2 the tuner's feel ladder: default step 1, Natural
+        const auto tu = ejmap::tunerprofile::exportTunerProfileDraft (mk ({ { "schema", "ej_cert_tuner/1" }, { "product", "x" }, { "pitchCandidates", juce::Array<juce::var> { mk ({ { "name", "Retune Speed" }, { "index", 0 } }) } } }));
+        const auto fe = tu.profile.getProperty ("feel", {});
+        check ((int) fe.getProperty ("default_step", -1) == 1 && fe.getProperty ("steps", {})[1].getProperty ("name", "") == "Natural" && fe.getProperty ("steps", {}).size() == 5 && (int) fe.getProperty ("default_step_not_asked", -1) == 0 && fe.getProperty ("field", "") == "tune_step",
+               "drafts TU2: the tuner's feel ladder - five steps, tuning asked for without a degree is step 1 Natural (v0.1 said 2), not asked 0, tune_step");
     }
     // P1: the pass's placement rule - the draft file for a record stem lands under <phaseb>/<category>/drafts/ with the category's kind
     {
