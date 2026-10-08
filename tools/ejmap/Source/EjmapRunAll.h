@@ -29,11 +29,13 @@ namespace ejmap::runall
 
 // kind: "plain" (fixed args, always the same), "redo" (a Phase B redo: --redo on the first start, --category on a resume),
 // "selector" (a redo selector: --redo on the first start, a plain --phaseb-all on a resume), "licence" (needs cert/licences.csv)
-struct Step { juce::String name, kind; juce::StringArray args; double estimateS; juce::String why; bool stopOnFail = false; };
+// everyRun (8 Oct, the switch-over): planned on every run even when done - preflight must check THIS app (a state file written by an
+// earlier build marks it done), and the drafts must be re-derived by THIS build's rules (v0.2) over every record on disk
+struct Step { juce::String name, kind; juce::StringArray args; double estimateS; juce::String why; bool stopOnFail = false; bool everyRun = false; };
 inline const std::vector<Step>& steps()
 {
     static const std::vector<Step> k {
-        { "preflight",        "plain",    { "--cert-preflight" },                                   5.0,     "the app, the probe beside it and its signature", true },
+        { "preflight",        "plain",    { "--cert-preflight" },                                   5.0,     "the app, the probe beside it and its signature", true, true },
         { "licence_check",    "licence",  { "--licence-check", "{cert}" },                         30.0,    "the alias table and the review sheet (cert/licences.csv)" },
         { "licence_stamp",    "licence",  { "--licence-stamp", "{cert}" },                         30.0,    "demo rows stamped, expired / unowned / unmatched filed needs_licence" },
         { "uad_preflight",    "plain",    { "--uad-preflight" },                                    5.0,     "the Satellite: PRESENT or ABSENT (recorded, the run continues)" },
@@ -59,7 +61,7 @@ inline const std::vector<Step>& steps()
         { "transient_gate",   "redo",     { "transient,gate" },                                     1900.0,  "transient shapers and gates (role tests twice: x1.3-1.65 rehearsed, 8 Oct)" },
         { "nothing_nominated","selector", { "nothing_nominated" },                                  16200.0, "rows the lexicon nominated nothing for" },
         { "strips",           "redo",     { "strips" },                                             50400.0, "channel strips, every section drafted" },
-        { "drafts",           "plain",    { "--phaseb-drafts" },                                    5.0,     "every draft from the records on disk" } };
+        { "drafts",           "plain",    { "--phaseb-drafts" },                                    5.0,     "every draft from the records on disk", false, true } };
     return k;
 }
 inline const Step* stepNamed (const juce::String& n) { for (const auto& s : steps()) if (s.name == n) return &s; return nullptr; }
@@ -105,7 +107,7 @@ inline std::vector<const Step*> plan (const State& st, const juce::StringArray& 
     {
         if (! onlySteps.isEmpty() && ! onlySteps.contains (s.name)) continue;
         if (skip.contains (s.name)) continue;
-        if (st.count (s.name) && st.at (s.name).state == "done") continue;
+        if (st.count (s.name) && st.at (s.name).state == "done" && ! s.everyRun) continue;
         p.push_back (&s);
     }
     return p;

@@ -8628,6 +8628,14 @@ void testRunAll()
     check (eq && sel && lic && rd && steps().front().name == "preflight" && steps().back().name == "drafts" && stepNamed ("preflight")->stopOnFail, "runall RA1: the sequence starts with the preflight (a failure stops it) and ends with the drafts");
     check (argsFor (*eq, false, "/c", {}).joinIntoString (" ") == "--phaseb-all --redo eq --out /c" && argsFor (*eq, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --category eq --out /c",
            "runall RA2: a redo step's FIRST start is --redo (its rows deleted and run again); its RESUME is --category (finished rows kept, only the missing run)");
+    // RA7 (8 Oct, the switch-over): a state file from an earlier build keeps its done steps done, but preflight and drafts run every time
+    {
+        State st; for (const char* n : { "preflight", "limiter", "deesser", "drafts" }) st[n].state = "done"; st["eq"].state = "started";
+        const auto p = plan (st, juce::StringArray::fromTokens ("preflight,multiband,limiter,deesser,gain_all,eq,drafts", ",", ""), {});
+        juce::StringArray names; for (const auto* x : p) names.add (x->name);
+        check (names.joinIntoString (",") == "preflight,multiband,gain_all,eq,drafts" && isResume (st, "eq") && ! isResume (st, "multiband"),
+               "runall RA7: done steps stay done (limiter, deesser), preflight and drafts run again, eq resumes, a step new to --steps (multiband) runs fresh (" + names.joinIntoString (",") + ")");
+    }
     // RA6 (Kathy, 8 Oct): gain_all is planned straight after deesser and before eq and saturation, whatever order --steps lists
     {
         auto at = [] (const std::vector<const Step*>& p, const juce::String& n) { for (size_t k = 0; k < p.size(); ++k) if (p[k]->name == n) return (int) k; return -1; };
@@ -8638,8 +8646,8 @@ void testRunAll()
     check (argsFor (*rd, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --category reverb --category delay --out /c", "runall RA2b: a two-category redo resumes both categories");
     check (argsFor (*sel, false, "/c", {}).joinIntoString (" ") == "--phaseb-all --redo nothing_nominated --out /c" && argsFor (*sel, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --out /c", "runall RA3: a redo selector resumes as a plain --phaseb-all (the rows its start deleted are the missing ones)");
     check (argsFor (*lic, false, "/c", {}).joinIntoString (" ") == "--licence-check /c" && argsFor (*eq, false, "/c", { "Maag EQ4" }).joinIntoString (" ") == "--phaseb-all --redo eq --only Maag EQ4 --out /c", "runall RA4: {cert} substituted; --only passed to the Phase B steps");
-    State st; st["preflight"].state = "done"; st["eq"].state = "started"; st["limiter"].state = "failed";
-    const auto pl = plan (st, {}, { "categorise" }); bool hasPre = false, hasCat = false, hasEq = false; for (const auto* x : pl) { if (x->name == "preflight") hasPre = true; if (x->name == "categorise") hasCat = true; if (x->name == "eq") hasEq = true; }
+    State st; st["licence_check"].state = "done"; st["eq"].state = "started"; st["limiter"].state = "failed";   // (preflight is every-run: RA7)
+    const auto pl = plan (st, {}, { "categorise" }); bool hasPre = false, hasCat = false, hasEq = false; for (const auto* x : pl) { if (x->name == "licence_check") hasPre = true; if (x->name == "categorise") hasCat = true; if (x->name == "eq") hasEq = true; }
     check (! hasPre && ! hasCat && hasEq && isResume (st, "eq") && isResume (st, "limiter") && ! isResume (st, "deesser") && (int) pl.size() == (int) steps().size() - 2, "runall RA5: done steps never rerun, --skip removes, a started or failed step resumes");
     check (plan (st, { "eq", "drafts" }, {}).size() == 2, "runall RA5b: --steps narrows the plan");
     const juce::Time evening (2026, 9, 7, 23, 30, 0, 0, true), early (2026, 9, 8, 6, 0, 0, 0, true);   // months are 0-based: 7 / 8 Oct
