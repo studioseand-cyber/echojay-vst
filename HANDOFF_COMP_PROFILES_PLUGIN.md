@@ -2151,6 +2151,43 @@ writes it as a param (237), so once the value is in scope there is nothing new t
 08b PASSED items 1, 2, 4 and 5 (no bypass after hand-back; Link meters follow the fader; the Level survived the
 reopen; the Apply message scoped and the EQ dialled). Five findings, each with its cause in the log.
 
+### F2. THE REAL CAUSE OF THE 2.8 dB SHORTFALL, from the per-slot block - AND IT IS OURS
+Sean's addendum corrects my reading of F: the -12 target was CORRECT (he asked to keep dynamics), and it still
+landed at -14.8. The chain block at 20:07:42 has the whole answer, slot by slot:
+    1: EchoJay EQ           in -15.6  out -16.1  out-in -0.4
+    2: API-2500 (s)         in -16.1  out -18.5  out-in -2.4      <-- the compressor's own loss
+    3: bx_saturator V2      in -18.5  out -17.3  out-in +1.2
+    4: elysia museq master  in -19.0  out -18.9  out-in +0.1
+    5: EchoJay Level        in -18.9  out -15.6  out-in +3.3      <-- the write DID land, in full
+    6: EchoJay Limiter      in -15.6  out -15.8  out-in -0.2
+    Chain in/out: in -14.8 RMS, out -14.8 (pk -1.2), out-in -0.0
+**THE LEVEL'S +3.3 dB IS APPLIED AND MEASURABLE** (slot 5, out-in +3.3), so nothing is eating the write and my
+"two different windows" explanation in F was incomplete. **What is eating the loudness is the chain itself: the
+signal arrives at the Level 4.1 dB BELOW the chain input**, almost all of it the API-2500's -2.4 dB.
+**AND THE OPENING GAIN WAS COMPUTED BEFORE THOSE LOSSES EXISTED.** The opening ran at 20:00:11, at build finish,
+from "output integrated -15.3 at Level +0.0". The compressor's -2.4 dB, the saturator's wet 15 % and the museq's
+settings arrived WITH THE DIALS, after that reading. So the landing solved for a chain that had not yet taken its
+own losses, and **nothing re-landed once the dials settled**. That is the 2.8 dB, and it is ours.
+**IT EXPLAINS BOTH CASES WITH ONE MECHANISM** - the mix bus and the vocal - and it explains why this morning was
+right: that chain's inter-slot loss was small, so the once-computed opening happened to be correct.
+**THE FIX, and the hook already exists.** The build bubble ALREADY waits for the dial state to settle
+(`finishChainBubbleWhenDialSettled` / `ChainHost::dialStateSettled()`). The landing must wait for the same signal:
+compute the opening AFTER the dials have settled, from a fresh reading of the chain output, not at build finish.
+And because a later edit changes the chain's gain again - Sean's two EQ bells at 20:05 are exactly that - a landing
+whose chain has changed since it was computed is STALE and must re-offer rather than sit on a figure that was true
+of a different chain.
+**THE CEILING IS THE OTHER 0.9 dB.** The chain output peaks at **-1.2 dBTP** because the server's block asked for
+`ceiling_db -1` and the limiter obeyed; the rule is **-0.1**. So of the 2.8 dB, about **0.9 dB is simply unused
+headroom** and about 2 dB is the un-relanded chain loss. The EchoJay Limiter's own default is -0.3
+(EedLimiterProcessor.cpp:30), so nothing in the plugin chose -1: it was told. **The plugin-side fix is item E's
+clamp** - a FINAL limiter's ceiling is held at -0.1 whatever the block says, with the override logged naming the
+figure that was asked for - and it recovers that 0.9 dB on its own.
+**FILES:** PluginEditor (the arm path: wait for dialStateSettled before the opening write, and mark a landing
+stale on a chain-gain change), LoudnessLoop (the re-offer), plus item E's clamp. **RISK:** medium - it moves WHEN
+the opening is written, so the legs must cover "the dials land after the build" and "an edit after the landing".
+**LEGS:** a build whose compressor dials in -2.4 dB after the arm lands the target anyway; an edit after a landing
+marks it stale and re-offers; a final limiter asked for -1 is held at -0.1 and says so.
+
 ### F. THE LANDING DID NOT REGRESS. THE SERVER ASKED FOR -12 "DYNAMIC", AND GO WAS NEVER PRESSED.
 **THE TWO BUILDS SIDE BY SIDE, both lines verbatim from the logs:**
     THIS MORNING (Sean: "+6.5 to +8, right")
