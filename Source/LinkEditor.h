@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "EJGainReadout.h"   // 06d item 5: the per-slot IN/OUT readout, shared with the V2 editor
 #include "LinkProcessor.h"
 #include "ChainWetKnob.h"
 #include "NativeClip.h"
@@ -101,6 +102,11 @@ public:
             juce::TextButton prevBtn   { "<" };
             juce::TextButton nextBtn   { ">" };
             ChainWetKnob     wetKnob;   // per-slot wet/dry (hidden for bypassed/missing)
+            // 06d item 5 (8 Oct 2026 ruling): THE SAME IN/OUT READOUTS THE V2 SHOWS, from the same struct -
+            // Source/EJGainReadout.h. Never built here until now (git log -S over this file returns nothing for
+            // it, ever), while the V2 has had them since the 30 Sep "IN AND OUT ON EVERY SLOT CARD" ruling. The
+            // Link owns its own rack, so these read and write its ChainHost directly: no sidecar, no lease.
+            echojay::GainReadout inReadout, outReadout;
 
             std::function<void()>      onSelect;
             std::function<void()>      onBypass;
@@ -186,6 +192,10 @@ public:
                 // Wet/dry knob — centred between name row and button row
                 // (same geometry as the main plugin's Chain tab block)
                 wetKnob.setBounds((getWidth() - 22) / 2, 20, 22, 22);
+                // 06d item 5: the SAME rects the V2 uses (PluginEditor.h), so the two cards cannot drift apart
+                // by a pixel either.
+                inReadout .setBounds(getWidth() - 48, 2,  46, 9);
+                outReadout.setBounds(getWidth() - 48, 11, 46, 9);
             }
         };
 
@@ -789,6 +799,33 @@ public:
                                        && !model[(size_t)i].missing);
                 bl->onWet    = [this, ci](float v) { proc.setChainSlotWet(ci, v); };
                 bl->onWetEnd = [this] { proc.commitChainWetChange(); };
+                // 06d item 5: IN/OUT, bound to THIS slot's own host controls. The getters read the live value
+                // every tick, so a write by the loop, a chat edit or the user's own drag all show the same way -
+                // one value, not a copy of one. hostIdx, not the model index: the model index is a display order
+                // and the host's is what owns the gain.
+                {
+                    const int hostIdx = model[(size_t)i].hostIdx;
+                    bl->inReadout.tag  = "IN";
+                    bl->outReadout.tag = "OUT";
+                    bl->inReadout.dimColour  = juce::Colour(0xffa0a0b8).withAlpha(0.45f);   // the Link's palette
+                    bl->outReadout.dimColour = juce::Colour(0xffa0a0b8).withAlpha(0.45f);
+                    if (hostIdx >= 0)
+                    {
+                        bl->inReadout.shown  = proc.getChainHost().getSlotPreTrimDb(hostIdx);
+                        bl->outReadout.shown = proc.getChainHost().getSlotOutGainDb(hostIdx);
+                        bl->inReadout.get  = [this, hostIdx] { return proc.getChainHost().getSlotPreTrimDb(hostIdx); };
+                        bl->outReadout.get = [this, hostIdx] { return proc.getChainHost().getSlotOutGainDb(hostIdx); };
+                        // A hand-set value is the same write the loop makes, as ruled for the V2.
+                        bl->inReadout.set  = [this, hostIdx](float v) { proc.getChainHost().setSlotPreTrimDb(hostIdx, v); };
+                        bl->outReadout.set = [this, hostIdx](float v) { proc.getChainHost().setSlotOutGainDb(hostIdx, v); };
+                    }
+                    else
+                    {   // a model row with no host slot (missing plugin): show nothing to drag
+                        bl->inReadout.set = nullptr; bl->outReadout.set = nullptr;
+                    }
+                    bl->addAndMakeVisible(bl->inReadout);
+                    bl->addAndMakeVisible(bl->outReadout);
+                }
                 bl->prevBtn.setEnabled(i > 0);
                 bl->nextBtn.setEnabled(i < (int)model.size() - 1);
                 // Stage 1: a slot under an edit lease is CONTROLLED from the

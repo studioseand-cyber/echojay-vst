@@ -2698,7 +2698,7 @@ nothing in it writes bypass.
 the rack lease; read the sidecar at that moment and assert the V2's rows are NOT bypassed while `controlled` is
 true for each; release and assert the intent survives. RED today on the first assertion.
 
-### 8. THE LINK'S WINDOW HAS NO PER-SLOT IN/OUT READOUTS (Sean 10:58, 8 Oct) - NEVER BUILT, NOT A REGRESSION
+### 8. THE LINK'S WINDOW HAS NO PER-SLOT IN/OUT READOUTS (Sean 10:58) - BUILT 8 Oct, ui_guard GREEN
 **THE HISTORY QUESTION, ANSWERED FIRST because it decides the shape of the work.** `git log -S 'IN +0.0'` and
 `-S 'outGainDb'` over `Source/LinkEditor.h` return **nothing, ever**. The readout is `GainReadout` in
 PluginEditor.h:1909-1998, introduced by the "Build 2 (30 Sep 2026 ruling): IN AND OUT ON EVERY SLOT CARD" in
@@ -2860,6 +2860,26 @@ rebuild. B's side is built (hold / proposal-apply). The source of truth is the L
 (`LoudnessLoop::target()` / `loudnessOption()`, which is what `armFromChain` read out of the slot's params), and
 the honest rule is the same one the rest of the body follows: the key is ABSENT when nothing has been confirmed on
 that channel, never a guessed default - a target the user never agreed to is worse than no target.
+
+#### 8-done. WHAT SHIPPED FOR THE LINK'S IN/OUT READOUTS (8 Oct, in 08b)
+**ONE STRUCT, NOT TWO.** `GainReadout` moved out of `EchoJayEditor::ChainListPanel` into
+`Source/EJGainReadout.h` as `echojay::GainReadout`, and both editors construct it. Copying a hundred lines into
+the Link would have satisfied the ruling on the day and then drifted: the next change to the drag idiom, the entry
+box or the number format would land on one card and not the other, and "the same readouts" would quietly stop
+being true. The V2 keeps its own palette through a `dimColour` member - the only thing that was a look-and-feel
+reference - so its cards look exactly as they did.
+**THE LINK'S SIDE** reads and writes its own `ChainHost` directly (`getSlotPreTrimDb` / `getSlotOutGainDb` and
+their setters), by **hostIdx, not the model index** - the model index is a display order and the host's is what
+owns the gain. No sidecar and no lease: the Link owns its rack. Same rects as the V2, same interactivity (0.1 dB/px
+drag, 0.02 with shift, double-click to type, wheel), and a row with no host slot gets no setter rather than a
+control that silently does nothing.
+**LEGS in `ui_guard`:** the shared behaviour on the struct itself ("OUT -6.0", "+0.0" dim at unity, "+8.1" flagged
+moved, and a getter-only readout that reads but cannot be written), then a STRUCTURAL pass over BOTH editor files
+asserting each holds the shared readouts, lays them out at the same rects, wires both getters AND both setters,
+that the Link carries no copy of the struct, and that it reads the same two accessors the V2 does.
+**THE LIMIT, stated:** the legs do not stand two live editors side by side and compare rendered text - they prove
+one shared implementation plus one shared source of truth, which is what makes the two equal. A leg that builds
+both editors in one process is the stronger test and is worth having later.
 
 ### 9. PER-RACK LOOP STATE IS NEVER RESET, AND THE LEVEL CHECK WAITS FOR EVER (Sean 11:10, 8 Oct, on 08a)
 Folded in here as ruled, with the heard counter. Second rap-vocal chain: the UI stuck on the level check and never

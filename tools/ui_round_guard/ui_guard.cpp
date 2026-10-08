@@ -24,6 +24,8 @@
 #include "NotDialableText.h"    // hurdle 1 item 3
 #endif
 #include <cstdio>
+#include <sstream>
+#include <fstream>
 #include <typeinfo>
 
 // The request body as the shipping client builds it (the same pin groups_guard uses).
@@ -3498,6 +3500,63 @@ int main()
                "test 5: an applied offer no longer offers Apply",
                A::chips (*ed, M[(size_t) idx]).joinIntoString ("|"));
     }
+    // ---- 06d item 5 (8 Oct 2026): THE LINK'S CARDS SHOW THE SAME IN/OUT READOUTS AS THE V2'S ----------
+    // Sean 10:58: the Link's window shows slot cards with no IN/OUT, while the V2 shows them on every card. The
+    // ruling is that both views show the same readouts from the same source of truth and behave the same. So
+    // there is now ONE struct (Source/EJGainReadout.h) and both editors construct it - which makes "the same"
+    // structural rather than hopeful, and is why this leg reads the two files as well as the behaviour.
+    std::printf ("== 06d item 5: one IN/OUT readout, both editors ==\n");
+    {
+        // (1) THE SHARED BEHAVIOUR, on the struct both cards now hold.
+        echojay::GainReadout r;
+        float held = -6.0f;
+        r.tag = "OUT";
+        r.get = [&held] { return held; };
+        r.set = [&held] (float v) { held = v; };
+        r.refreshNow();
+        check (r.readoutText() == "OUT -6.0", "the readout formats as \"OUT -6.0\" - one decimal, signed",
+               r.readoutText());
+        held = 0.0f; r.refreshNow();
+        check (r.readoutText() == "OUT +0.0" && ! r.isMoved(),
+               "...and \"OUT +0.0\" at unity, which is the dim state", r.readoutText());
+        held = 8.1f; r.refreshNow();
+        check (r.readoutText() == "OUT +8.1" && r.isMoved(),
+               "...and a moved slot reads its figure and is flagged moved", r.readoutText());
+        // Read-only when no setter is given, which is what a remote rack gets.
+        echojay::GainReadout ro; ro.tag = "IN"; ro.get = [] { return -2.5f; }; ro.refreshNow();
+        check (ro.readoutText() == "IN -2.5" && ! ro.set,
+               "a readout with no setter still READS, and cannot be written", ro.readoutText());
+
+        // (2) STRUCTURAL: both editors construct the shared struct, give it both tags, and lay it out at the
+        // SAME rects. A copy of the struct in one file, or a different rect, is the drift this is here to stop.
+        const auto readFile = [] (const char* path)
+        {
+            std::ifstream f (path); std::stringstream ss; ss << f.rdbuf(); return juce::String (ss.str());
+        };
+        const auto v2   = readFile ("Source/PluginEditor.h");
+        const auto link = readFile ("Source/LinkEditor.h");
+        for (const auto& pair : { std::pair<const char*, const juce::String*> { "PluginEditor.h", &v2 },
+                                  std::pair<const char*, const juce::String*> { "LinkEditor.h",   &link } })
+        {
+            const juce::String& f = *pair.second;
+            check (f.contains ("GainReadout inReadout, outReadout"),
+                   juce::String (pair.first) + " holds the shared readouts on its slot card");
+            check (f.contains ("inReadout .setBounds(getWidth() - 48, 2,  46, 9)")
+                   || f.contains ("inReadout .setBounds (getWidth() - 48, 2,  46, 9)"),
+                   juce::String (pair.first) + " lays IN out at the same rect as the other editor");
+            check (f.contains ("outReadout.setBounds(getWidth() - 48, 11, 46, 9)")
+                   || f.contains ("outReadout.setBounds (getWidth() - 48, 11, 46, 9)"),
+                   juce::String (pair.first) + " lays OUT out at the same rect");
+            check (f.contains ("inReadout.get") && f.contains ("outReadout.get")
+                   && f.contains ("inReadout.set") && f.contains ("outReadout.set"),
+                   juce::String (pair.first) + " wires both getters AND both setters (interactive, as ruled)");
+        }
+        check (! link.contains ("struct GainReadout"),
+               "the Link does NOT carry its own copy of the struct - one definition, or they drift");
+        check (link.contains ("getSlotPreTrimDb") && link.contains ("getSlotOutGainDb"),
+               "and it reads the SAME source of truth the V2 does (getSlotPreTrimDb / getSlotOutGainDb)");
+    }
+
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }
