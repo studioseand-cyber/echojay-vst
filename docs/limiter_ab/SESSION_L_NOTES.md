@@ -243,3 +243,14 @@ must pass as it stands); gainReductionDb() became BLOCK GR (energy ratio) for th
 meter (J5: estimate 2.32 vs real 2.36); the loop restructure briefly dropped the bypass crossfade's update line (caught
 by the core test's bypass leg, restored). Final: core test GREEN (57), stress 0 of 360 over for both v2 styles,
 limiter_wall_guard / loudness_loop_guard / builtin_registry_test all PASS on build-guards-lv2 (arm64, no LTO).
+
+## 8 Oct 2026, 14:12: gate round b (session G) on 6870d4f - RED BY ONE GUARD, substitute_guard
+58 of 59 passed; everything red in round a is GREEN (limiter_wall_guard, loudness_loop_guard, builtin_registry_test).
+G's own arbiter check on the built marker-ON archive: GREEN (-0.47..-1.00 dBTP on the bursts). The one red is an
+untouched guard's window: tools/substitute_guard/harness.cpp (session A's file) asserts a 0.1 impulse leaves above 0.2
+INSIDE its own 512-sample block, and the limiter now delays 1160 samples; the gain is applied (G measured 0.232 at
++1160, 0.237 expected). Fix: drain silent blocks until the reported latency has passed and take the peak - written as
+docs/limiter_ab/patches/2026-10-08_substitute_guard_latency_window.patch, proven here (substitute_guard Passed on
+build-guards-lv2 with it applied), NOT applied in this branch: A's file. The gate applies it like the gate-tools patch.
+Also from the report: the -lv2test bundles share the installed build's identifiers, so Logic sees one component (the
+name and UUIDs tell them apart); place_ship.sh hard-codes the non-marker names (G placed by hand).
