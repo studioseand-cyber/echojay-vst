@@ -24,6 +24,7 @@ int main (int argc, char** argv)
         else if (a == "--fast") t.fastReleaseMs = next(); else if (a == "--slow") t.slowReleaseMs = next(); else if (a == "--slowatk") t.slowAttackMs = next();
         else if (a == "--link") t.link = next(); else if (a == "--margin") t.tpMarginDb = next(); else if (a == "--block") block = (int) next();
         else if (a == "--slowwin") t.slowWindowMs = next(); else if (a == "--post") t.postMs = next(); else if (a == "--slowfrac") t.slowFraction = next(); else if (a == "--slowfrac2") t.slowFraction2 = next(); else if (a == "--slowatk2") t.slowAttack2Ms = next();
+        else if (a == "--nyq") t.nyquistMarginDb = next(); else if (a == "--slowclose") t.slowCloseMs = next();
         else if (a == "--style") { const std::string st = i + 1 < argc ? argv[++i] : ""; if (st == "clean") t = echojay::limv2::clean(); else if (st == "transparent") t = echojay::limv2::transparent(); else { std::fprintf (stderr, "unknown style %s\n", st.c_str()); return 2; } }
         else if (a == "--no-pdc") pdc = false; else { std::fprintf (stderr, "unknown option %s\n", a.c_str()); return 2; }
     }

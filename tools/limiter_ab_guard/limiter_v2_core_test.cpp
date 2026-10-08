@@ -130,12 +130,30 @@ int main()
     }
     {   // linking: link 1 both channels dip; link 0 the right channel does not
         const auto L = ejfix::layout ("panned_transient"); const auto src = ejfix::generate (L, sr);
-        auto t0 = T; t0.link = 0.0; auto t1 = T; t1.link = 1.0;
+        auto t0 = T; t0.link = 0.0; t0.linkRelease = 0.0; auto t1 = T; t1.link = 1.0;   // link 0 here = transient AND release link off (Transparent's release link is 100 %: the floor is shared by design, see the leg below)
         const auto Rl = ejm::analyse ("panned_transient", "linked", src, render (src, 8.2, 0.0, true, t1), 8.2, 0.0), Ru = ejm::analyse ("panned_transient", "unlinked", src, render (src, 8.2, 0.0, true, t0), 8.2, 0.0), Rd = ejm::analyse ("panned_transient", "default", src, render (src, 8.2, 0.0, true, T), 8.2, 0.0);
         if (Rd.aligned && Rd.hits.size() == 12) check (std::abs (Rd.hits[0].dipRDb / Rd.hits[0].dipLDb - T.link) < 0.05, "the Transparent default links the right channel at the tuned fraction (Pro-L 2 measured 0.75)", f2 (Rd.hits[0].dipRDb) + " / " + f2 (Rd.hits[0].dipLDb));
         const bool ok = Rl.aligned && Ru.aligned && Rl.hits.size() == 12 && Ru.hits.size() == 12;
         check (ok, "panned_transient renders linked and unlinked", Rl.align.why + Ru.align.why);
-        if (ok) { check (std::abs (Rl.hits[0].dipLDb - Rl.hits[0].dipRDb) < 0.1, "link 1: L and R dip equally", f2 (Rl.hits[0].dipLDb) + " / " + f2 (Rl.hits[0].dipRDb)); check (Ru.hits[0].dipLDb < -5.0 && Ru.hits[0].dipRDb > -0.3, "link 0: only L dips", f2 (Ru.hits[0].dipLDb) + " / " + f2 (Ru.hits[0].dipRDb)); check (Rl.pk.overs == 0 && Ru.pk.overs == 0, "both hold the ceiling", std::to_string (Rl.pk.overs) + " / " + std::to_string (Ru.pk.overs)); }
+        if (ok)
+        {   // the harness's dip is a per-block ENERGY ratio of each channel's own content; with a 0.06 ms window and a 0.05 ms fast release
+            // the gain moves inside a block, so the two channels' ratios differ by up to ~0.3 dB for one and the same gain - the exact
+            // claim is per sample: at link 1 the right channel's gain IS the left channel's (one envelope), checked below to 1e-6
+            check (std::abs (Rl.hits[0].dipLDb - Rl.hits[0].dipRDb) < 0.3, "link 1: L and R dip equally (block energy ratio, within 0.3 dB)", f2 (Rl.hits[0].dipLDb) + " / " + f2 (Rl.hits[0].dipRDb));
+            {
+                const auto outL = render (src, 8.2, 0.0, true, t1); double worstG = 0; long n = 0; const double G = std::pow (10.0, 8.2 / 20.0);
+                for (size_t i = 0; i < src.frames() && i < outL.frames(); ++i)
+                {
+                    const double xl = src.ch[0][i] * G, xr = src.ch[1][i] * G; if (std::abs (xl) < 0.05 || std::abs (xr) < 0.05) continue;
+                    const double gl = outL.ch[0][i] / xl, gr = outL.ch[1][i] / xr; worstG = std::max (worstG, std::abs (gl - gr)); ++n;
+                }
+                check (n > 1000 && worstG < 1e-5, "link 1: the per-sample gain applied to R is identical to L's (one envelope)", "worst " + std::to_string (worstG) + " over " + std::to_string (n) + " samples");
+            }
+            {   // link 0 with the Transparent release link (100 %): the right channel is not dipped by the transient link but shares the floor
+                auto t0r = T; t0r.link = 0.0; const auto Rr = ejm::analyse ("panned_transient", "release-linked", src, render (src, 8.2, 0.0, true, t0r), 8.2, 0.0);
+                if (Rr.aligned && Rr.hits.size() == 12) check (Rr.hits[0].dipRDb < -0.1 && Rr.hits[0].dipRDb > -1.5 && Rr.hits[0].dipLDb < -5.0, "link 0 + release link 1: R takes only the shared floor (-0.1 .. -1.5 dB), L the full dip", f2 (Rr.hits[0].dipLDb) + " / " + f2 (Rr.hits[0].dipRDb));
+            } check (Ru.hits[0].dipLDb < -5.0 && Ru.hits[0].dipRDb > -0.3, "link 0 (both links off): only L dips", f2 (Ru.hits[0].dipLDb) + " / " + f2 (Ru.hits[0].dipRDb)); check (Rl.pk.overs == 0 && Ru.pk.overs == 0, "both hold the ceiling", std::to_string (Rl.pk.overs) + " / " + std::to_string (Ru.pk.overs));
+        }
     }
     {   // HARD REQUIREMENTS (overnight brief, 7 Oct): zero overs at +15 dB, near-silence, mono, every sample rate, no NaN,
         // no subnormal output, and no subnormal left in the state after 10 s of digital silence following a loud burst

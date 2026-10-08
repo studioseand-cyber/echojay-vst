@@ -66,13 +66,19 @@ struct Tuning
     double slowFraction2  = 1.0;    // a SECOND, slower charge of the floor toward this fraction (sustained material keeps charging)
     double slowAttack2Ms  = 0.0;    // its time constant; 0 disables the second stage
     double slowWindowMs   = 20.0;   // the slow limb charges from the largest reduction over this window (> one LF cycle)
-    double link           = 1.0;    // 1 = fully linked channels, 0 = independent
+    double slowCloseMs    = 0.0;    // 8 Oct 2026: a morphological CLOSING of the floor's source - dilate by slowWindowMs, then erode by this
+                                    // (the smallest reduction over the last slowCloseMs of the dilated signal): an isolated kick keeps its own
+                                    // length (it no longer charges the floor as if it lasted window + kick), while an LF tone's pulses, whose gaps
+                                    // the dilation bridged, stay bridged. 0 = no erosion (the plain running maximum)
+    double link           = 1.0;    // TRANSIENT link: 1 = the required gain is the smaller of the two channels', 0 = independent
+    double linkRelease    = 1.0;    // RELEASE link: 1 = one slow floor for both channels (the deeper), 0 = each channel its own
     double tpMarginDb     = 0.1;    // detector margin under the ceiling with true peak on
-    double nyquistMarginDb = 0.60;  // EXTRA margin, scaled by the input's energy fraction at Nyquist (0 for music, ~1 for white noise):
+    double nyquistMarginDb = 0.75;  // EXTRA margin, scaled by the input's energy fraction at Nyquist (0 for music, ~1 for white noise):
                                     // a truncated sinc under-reads full-band material by ~0.45/sqrt(512) = 0.17 dB, and no real-time
                                     // detector reads it exactly; starts at a fraction of 0.05, so music pays nothing. 0.60 rather than the
                                     // 0.30 the arbiter needs: the loudness loop's guard judges white-noise bursts with a 4x/24-tap meter
-                                    // that over-reads high-frequency content by up to 0.33 dB, and that leg must pass as it stands
+                                    // that over-reads high-frequency content by up to 0.33 dB, and that leg must pass as it stands (0.75 since the
+                                    // default window became 0.18 ms: at 0.60 that meter read -0.04 against its -0.05 limit)
     double postMs         = 1.0;    // the post-check stage's window (true peak only); 0 disables it
     double maxLookaheadMs = 20.0;   // storage sized once, in prepare()
 };
@@ -88,17 +94,20 @@ inline Tuning transparent()
     Tuning t;
     t.slowFraction  = 0.72;    // C1: the floor settles at ~72 % of the required reduction (10 ms burst 8 %, 1 s 72 %)
     t.slowAttackMs  = 150.0;   // C1: the floor charges with a 120-185 ms constant
-    t.slowReleaseMs = 180.0;   // C1: and decays with 160-185 ms (measured on every limb)
-    t.slowWindowMs  = 1.0;     // C1: charged from the reduction itself, so an LF tone gets the shallower floor Pro-L 2 shows
-    t.fastReleaseMs = 0.3;     // C2: the fast part is instant - after a burst Pro-L 2 is back within 0.6 dB in < 0.33 ms
-    t.lookaheadMs   = 0.3;     // C3: no pre-dip beyond 0.33 ms; a 1-sample impulse gets a ~0.5 ms dip and lands at the ceiling
-    t.smoothStages  = 3;       // C3 chose a box; 8 Oct: a B-spline of the SAME 0.3 ms support - a box's steps put the limiter's own
-                               // products right at Nyquist, where no detector can read them (the gate's +1 dBTP)
-    t.link          = 0.75;    // C5: a left-only burst dips the right channel 75 % as much (dB), measured on panned_transient
-    t.tpMarginDb    = 0.05;    // C6: Pro-L 2 lands at -0.01..-0.04 dBTP; the 96-tap detector and the post-check keep overs at zero
-    t.slowWindowMs  = 4.0;     // C7c: the floor's source holds across most of an LF cycle (8 ms cost 0.11 LU on the hot mix; Pro-L 2: 97 % at 997 Hz, 81 % at 50 Hz)
+    t.slowReleaseMs = 180.0;   // C1: and decays with 160-185 ms (measured on every limb); Pro-L 2's label for it reads 400
+    t.lookaheadMs   = 0.06;    // KICK FIX (8 Oct, afternoon): the window that rides a kick's body the way Pro-L 2 does - its
+                               // dip at +3/+8 ms within 7 % (0.18 ms held the gain across the body's dense peaks: 1.2x deeper).
+                               // Pro-L 2's LOOKAHEAD label at this behaviour reads 0.18; the knob maps label/3
+    t.smoothStages  = 3;       // a B-spline of that support (a box's steps put the limiter's own products at Nyquist)
+    t.fastReleaseMs = 0.05;    // KICK FIX: the fast part lets go in a sample or two (t63 0.3 ms, Pro-L 2's; 0.3 ms read 0.7-1.2)
+    t.slowWindowMs  = 10.0;    // KICK FIX: the floor's source is a morphological CLOSING (dilate 10 ms, erode 10 ms): an LF tone's
+    t.slowCloseMs   = 10.0;    //   pulses are bridged (bass_sustain -7.00 vs Pro-L 2 -7.09), an isolated kick keeps its own length
+                               //   (between-hit GR -0.09 vs -0.06; the plain 4 ms maximum read -0.14, the raw reduction lost the bass)
     t.slowFraction2 = 1.0;     // C7: sustained material keeps charging the floor toward the full reduction ...
     t.slowAttack2Ms = 1200.0;  // C7: ... slowly: 72 % after 1 s (the first stage), ~97 % after 4 s (measured on tone_997)
+    t.link          = 0.75;    // C5: a left-only burst dips the right channel 75 % as much (dB), measured on panned_transient
+    t.linkRelease   = 1.0;     // Pro-L 2's release link at 100 %: one floor for both channels
+    t.tpMarginDb    = 0.05;    // C6: Pro-L 2 lands at -0.01..-0.04 dBTP; the detector and the post-check keep overs at zero
     return t;
 }
 
@@ -233,6 +242,22 @@ struct RunningMin
     }
 };
 
+// Running MAXIMUM over the last W values pushed (the mirror of RunningMin).
+struct RunningMax
+{
+    std::vector<float> val; std::vector<long long> idx; int cap = 0, head = 0, tail = 0, n = 0; long long t = 0; int W = 1;
+    void prepare (int capacity) { cap = std::max (2, capacity + 1); val.assign ((size_t) cap, 0.0f); idx.assign ((size_t) cap, 0); reset(); }
+    void reset() noexcept { head = tail = n = 0; t = 0; }
+    void setWindow (int w) noexcept { W = std::max (1, std::min (w, cap - 1)); }
+    inline float push (float v) noexcept
+    {
+        while (n > 0) { const int last = (tail + cap - 1) % cap; if (val[(size_t) last] <= v) { tail = last; --n; } else break; }
+        val[(size_t) tail] = v; idx[(size_t) tail] = t; tail = (tail + 1) % cap; ++n;
+        while (n > 0 && idx[(size_t) head] <= t - W) { head = (head + 1) % cap; --n; }
+        ++t; return val[(size_t) head];
+    }
+};
+
 // A moving average of length M with a double accumulator (no drift at float precision over a session).
 struct MovingAverage
 {
@@ -259,11 +284,11 @@ public:
     {
         sr_ = sampleRate > 0.0 ? sampleRate : 48000.0; tuning_ = t;
         const int maxK = (int) std::ceil (t.maxLookaheadMs * 0.001 * sr_) + 8 * std::max (1, t.smoothStages);
-        const int maxSlow = (int) std::ceil (std::max (1.0, t.slowWindowMs) * 0.001 * sr_) + 1;
+        const int maxSlow = (int) std::ceil (std::max (1.0, std::max (t.slowWindowMs, t.slowCloseMs)) * 0.001 * sr_) + 1;
         const int maxPost = (int) std::ceil (std::max (0.0, t.postMs) * 0.001 * sr_) + 8;
         for (int c = 0; c < kMaxChannels; ++c)
         {
-            tp_[c].prepare(); held_[c].prepare (maxK + 1); for (auto& m : ma_[c]) m.prepare (maxK + 1); slowWin_[c].prepare (maxSlow + 1);
+            tp_[c].prepare(); held_[c].prepare (maxK + 1); for (auto& m : ma_[c]) m.prepare (maxK + 1); slowWin_[c].prepare (maxSlow + 1); slowClose_[c].prepare (maxSlow + 1);
             tp2_[c].prepare(); held2_[c].prepare (maxPost + 1); for (auto& m : ma2_[c]) m.prepare (maxPost + 1);
         }
         const int maxDelay = maxK + TruePeakHB::kDelay + 1;
@@ -282,7 +307,7 @@ public:
     {
         for (int c = 0; c < kMaxChannels; ++c)
         {
-            tp_[c].reset(); held_[c].reset(); for (auto& m : ma_[c]) m.reset(); slowWin_[c].reset(); eFast_[c] = eSlow_[c] = eSlow2_[c] = 0.0; std::fill (delay_[c].begin(), delay_[c].end(), 0.0f);
+            tp_[c].reset(); held_[c].reset(); for (auto& m : ma_[c]) m.reset(); slowWin_[c].reset(); slowClose_[c].reset(); eFast_[c] = eSlow_[c] = eSlow2_[c] = 0.0; std::fill (delay_[c].begin(), delay_[c].end(), 0.0f);
             tp2_[c].reset(); held2_[c].reset(); for (auto& m : ma2_[c]) m.reset(); std::fill (delay2_[c].begin(), delay2_[c].end(), 0.0f);
         }
         std::fill (gaRing_.begin(), gaRing_.end(), 1.0f);
@@ -378,25 +403,34 @@ public:
                 if (tuning_.link >= 1.0) r[0] = r[1] = linked;
                 else if (tuning_.link > 0.0) for (int c = 0; c < numCh; ++c) r[c] = std::pow (linked, (float) tuning_.link) * std::pow (r[c], (float) (1.0 - tuning_.link));
             }
-            float g[kMaxChannels] { 1.0f, 1.0f };
+            float g[kMaxChannels] { 1.0f, 1.0f }; double floorC[kMaxChannels] { 0.0, 0.0 }; double envFastC[kMaxChannels] { 0.0, 0.0 };
+            // pass 1: per channel, the held minimum, the fast limb and the floor (so the floors can be linked before use)
             for (int c = 0; c < numCh; ++c)
             {
-                if (c == 1 && tuning_.link >= 1.0) { g[1] = g[0]; break; }   // identical by construction: one envelope
+                if (c == 1 && tuning_.link >= 1.0) { held_[1].push (r[1]); break; }   // one envelope: channel 0's
                 const float held = held_[c].push (r[c]);
                 const double d = held < 1.0f ? -20.0 * std::log10 ((double) held) : 0.0;
-                const float heldSlow = slowWin_[c].push (held);
+                float heldSlow = slowWin_[c].push (held);                 // dilation: the smallest GAIN (largest reduction) over the window
+                if (closeOn_) heldSlow = slowClose_[c].push (heldSlow);     // erosion: the largest gain over the closing window of that
                 const double dWin = heldSlow < 1.0f ? -20.0 * std::log10 ((double) heldSlow) : 0.0;
                 eFast_[c] = std::max (d, eFast_[c] * decayFast_);
                 const double slowTarget = dWin * tuning_.slowFraction;
                 eSlow_[c] += (slowTarget - eSlow_[c]) * (slowTarget > eSlow_[c] ? coefSlowAtk_ : coefSlowRel_);
                 double floor = eSlow_[c];
                 if (coefSlowAtk2_ > 0.0) { const double t2 = dWin * tuning_.slowFraction2; eSlow2_[c] += (t2 - eSlow2_[c]) * (t2 > eSlow2_[c] ? coefSlowAtk2_ : coefSlowRel_); floor = std::max (floor, eSlow2_[c]); }
-                const double env = std::max (eFast_[c], floor);
+                floorC[c] = floor; envFastC[c] = eFast_[c];
+            }
+            // the release link: the floors blended toward the deeper of the two (1 = one floor for both)
+            if (numCh > 1 && tuning_.link < 1.0 && tuning_.linkRelease > 0.0) { const double fl = std::max (floorC[0], floorC[1]); for (int c = 0; c < 2; ++c) floorC[c] = tuning_.linkRelease * fl + (1.0 - tuning_.linkRelease) * floorC[c]; }
+            // pass 2: the envelope through the smoothing window
+            for (int c = 0; c < numCh; ++c)
+            {
+                if (c == 1 && tuning_.link >= 1.0) { g[1] = g[0]; break; }   // identical by construction: one envelope
+                const double env = std::max (envFastC[c], floorC[c]);
                 float ge = (float) std::pow (10.0, -env / 20.0);
                 for (int s = 0; s < S_; ++s) ge = ma_[c][s].push (ge);
                 g[c] = ge;
             }
-            if (numCh > 1 && tuning_.link >= 1.0) { held_[1].push (r[1]); }   // keep the second deque's clock in step (unused output)
             // the delayed audio (by the fixed maximum when asked), then the gain, crossfaded to unity under bypass
             float y[kMaxChannels] { 0.0f, 0.0f }; float gaMin = 1.0f;
             const int audioDelay = fixedLatency_ ? maxLatency_ - postLatency() : delaySamples_;
@@ -443,13 +477,14 @@ private:
     void applyTuning() noexcept
     {
         S_ = std::max (1, std::min (tuning_.smoothStages, 4));
+        closeOn_ = tuning_.slowCloseMs > 0.0;
         const int la = std::max (1, (int) std::lround (std::min (tuning_.lookaheadMs, tuning_.maxLookaheadMs) * 0.001 * sr_));
         const int M = (la + S_ - 1) / S_ + 1;            // per-stage length so the support covers the lookahead
         K_ = S_ * (M - 1) + 1;                            // kernel support
         int K2 = 1, M2 = 1;
         if (truePeak_ && tuning_.postMs > 0.0) { const int la2 = std::max (2, (int) std::lround (tuning_.postMs * 0.001 * sr_)); M2 = (la2 + 2) / 3 + 1; K2 = 3 * (M2 - 1) + 1; }   // a quadratic B-spline over postMs
         K2_ = K2;
-        for (int c = 0; c < kMaxChannels; ++c) { held_[c].setWindow (K_); for (int s = 0; s < S_; ++s) ma_[c][s].setLength (M); slowWin_[c].setWindow (std::max (1, (int) std::lround (tuning_.slowWindowMs * 0.001 * sr_))); held2_[c].setWindow (K2_); for (int s = 0; s < 3; ++s) ma2_[c][s].setLength (M2); }
+        for (int c = 0; c < kMaxChannels; ++c) { held_[c].setWindow (K_); for (int s = 0; s < S_; ++s) ma_[c][s].setLength (M); slowWin_[c].setWindow (std::max (1, (int) std::lround (tuning_.slowWindowMs * 0.001 * sr_))); slowClose_[c].setWindow (std::max (1, (int) std::lround (tuning_.slowCloseMs * 0.001 * sr_))); held2_[c].setWindow (K2_); for (int s = 0; s < 3; ++s) ma2_[c][s].setLength (M2); }
         delaySamples_ = std::min (delayCap_ - 1, (K_ - 1) + (truePeak_ ? TruePeakHB::kDelay : 0));
         delaySamples2_ = std::min (delayCap2_ - 1, postLatency());
         if (fixedLatency_ && delayCap_ <= maxLatency_) { delay_[0].assign ((size_t) maxLatency_ + 1, 0.0f); delay_[1].assign ((size_t) maxLatency_ + 1, 0.0f); delayCap_ = maxLatency_ + 1; }   // only reachable from prepare(): the fixed delay fits the storage sized there
@@ -470,7 +505,7 @@ private:
     }
 
     double sr_ = 48000.0; Tuning tuning_;
-    TruePeakHB tp_[kMaxChannels]; RunningMin held_[kMaxChannels], slowWin_[kMaxChannels]; MovingAverage ma_[kMaxChannels][4];
+    TruePeakHB tp_[kMaxChannels]; RunningMin held_[kMaxChannels], slowWin_[kMaxChannels]; RunningMax slowClose_[kMaxChannels]; MovingAverage ma_[kMaxChannels][4]; bool closeOn_ = false;
     TruePeakHB tp2_[kMaxChannels]; RunningMin held2_[kMaxChannels]; MovingAverage ma2_[kMaxChannels][3];
     double eFast_[kMaxChannels] { 0.0, 0.0 }, eSlow_[kMaxChannels] { 0.0, 0.0 }, eSlow2_[kMaxChannels] { 0.0, 0.0 };
     std::vector<float> delay_[kMaxChannels], delay2_[kMaxChannels], gaRing_; int delayCap_ = 1, delaySamples_ = 0, wpos_ = 0, delayCap2_ = 1, delaySamples2_ = 0, wpos2_ = 0;
