@@ -2151,6 +2151,54 @@ writes it as a param (237), so once the value is in scope there is nothing new t
 08b PASSED items 1, 2, 4 and 5 (no bypass after hand-back; Link meters follow the fader; the Level survived the
 reopen; the Apply message scoped and the EQ dialled). Five findings, each with its cause in the log.
 
+### F. THE LANDING DID NOT REGRESS. THE SERVER ASKED FOR -12 "DYNAMIC", AND GO WAS NEVER PRESSED.
+**THE TWO BUILDS SIDE BY SIDE, both lines verbatim from the logs:**
+    THIS MORNING (Sean: "+6.5 to +8, right")
+    13:16:20.996  opening gain (closed loop): output integrated -15.1 LUFS at Level +0.0 -> +8.1 dB for target -7.0
+    13:16:20.997  armed: target -7.0 LUFS (level_params, PUSHED), Level slot 3 gain +8.1, limiter slot 4
+    TONIGHT (Sean: "landed ~-14")
+    20:00:11.249  opening gain (closed loop): output integrated -15.3 LUFS at Level +0.0 -> +3.3 dB for target -12.0
+    20:00:11.250  armed: target -12.0 LUFS (level_params, DYNAMIC), Level slot 4 gain +3.3, limiter slot 5
+**THE ARITHMETIC IS IDENTICAL AND CORRECT IN BOTH:** opening = target - measured. -7.0 - -15.1 = +8.1;
+-12.0 - -15.3 = +3.3. The whole difference is the TARGET THE SERVER SENT - five dB of it - and the OPTION with it.
+There is no regression in the loop.
+**WHY IT STOPPED AT -14.6:** the first Listen window measured -14.6 integrated and proposed the remaining **+2.6
+dB** ("Push +2.6 dB to reach -12.0? [Go | Leave it]", 20:06:48). **Go was never pressed.** The only two verbs in
+the entire session are `listen` (20:06:38) and `check the level of the mix bus` (20:06:58) - and that second one is
+item C: his typed question was swallowed as the Check verb, which opened a second window whose proposal was then
+CAPPED by "dynamic" at 3 dB ("-12.2 is as loud as this goes with the limiter working <=3 dB"). So the Level stayed
+at the opening +3.3 and the output stayed at -14.6. **Item C is not a separate bug from F - it is why F could not
+be finished.**
+**THE VOCAL BUILD HAD NO LANDING AT ALL.** There is not one `EJLoudness` line between 20:16:30 and 20:26: the
+loudness loop never armed on it, so nothing under-landed. Only the dynamics loop started ("EJDialSummary: loops
+started 1 of 2 dynamics slots", 20:17:25). Whether a vocal TRACK chain should carry a loudness target at all is a
+question for B, but no landing ran, so no landing misbehaved.
+
+**THE THREE 08b SUSPECTS, each ruled out with its reason:**
+  1. **cfce470's deadline/staleness does NOT touch the landing loop.** It is in `EJCalibLoop` - the EJThreshold
+     per-slot pass - a different class in a different file. `LoudnessLoop` has its own `kResolveMs` bound from
+     a8defea, and the evidence says it never fired: the window ran to a full measurement (10.1 s counted, a
+     figure, a proposal). Nothing was cut short.
+  2. **5983756 cannot be read by the landing loop, so it cannot double-count.** That change is in
+     `PluginEditor.cpp`'s `LinkStripState` INGEST - the V2's display of a LINK's published meter frame, converted
+     through `frameLoudnessAsHeard`. The loudness loop reads `host_.getChainOutLevels()` and `getChainInLevels()`,
+     which are ChainHost's own `LevelTally` and never pass through that conversion. The mix bus is the V2's own
+     rack, not a Link frame at all. And the figures prove it: -15.3 before the write and -14.6 after a +3.3 write
+     are a build-time window and a chorus window of DIFFERENT audio, not one number counted twice.
+  3. **NOT a -14 fallback.** Both builds took their target from `level_params` with an explicit option -
+     -7.0/pushed and -12.0/dynamic. Item 10's absence is not implicated anywhere in this.
+
+**SO THE CAUSE IS NOT OURS, EXCEPT FOR TWO THINGS THAT ARE:**
+  (i) **item C** - the swallowed verb stopped him pressing Go, which is the step that would have landed it. That
+      is already first in 08c and this is a second, independent reason for it.
+  (ii) **NOTHING ON SCREEN SAID WHICH PROMISE THE BUILD WAS KEEPING.** A -12 "dynamic" build and a -8 "pushed"
+      build behave completely differently - 3 dB of GR allowed against 12 - and the only place that appears is a
+      log line. The arm bubble and the Level card must name the target AND the option in words, so "it is quieter
+      than this morning" is answerable on screen instead of from a log.
+**FOR B, and it is the actual question:** why did this mix-bus build ask for **-12 LUFS, dynamic** when the same
+engineer on the same material had -7 pushed this morning? The client honoured what it was sent, both times.
+**FILES for (ii):** LoudnessLoop (armBubbleText, the Level card line). **RISK:** very low, wording only.
+
 ### C. THE LEVEL CHECK DID NOT FAIL - IT WORKED TWICE. THE CHAT MESSAGE WAS EATEN BY A VERB.
 **THE TIMELINE, verbatim:**
     20:06:38.585  verb "listen" state 7            <- armed
