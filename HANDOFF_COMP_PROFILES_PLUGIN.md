@@ -2963,6 +2963,28 @@ the uid the view is showing it takes the BORROWED host, asserted as a different 
 is the whole bug, since one of them holds the vocal chain and the other the mix bus - and the log phrase names
 which it took.
 
+#### 9-part2. THE LEVEL CHECK NOW ENDS, AND SAYS WHICH THING HAPPENED (8 Oct, in 08b; level_loop_guard GREEN)
+Sean's EJThreshold pass on MDynamicsMBLarge ran 400+ windows over twenty minutes with byte-identical readings and
+was still running. The loop already refused each repeated window - correctly - and already had a no-signal clock
+that ASKS at 30 s. What it had no notion of was an ENDING.
+**TWO BOUNDS, both terminal:** a run of `kStaleRunEnd = 20` consecutive non-sample windows (about a minute at 3 s
+- long enough that a tape stop or a punch does not end a pass, short enough that nobody watches a dead loop), and
+an outer `kMaxWindows = 200` (about ten minutes) checked BEFORE every early return, so a silent window, a dropped
+window and a repeated window all count against it. Sean had passed the outer bound twice over.
+**THE ENDING ASKS RATHER THAN GUESSES.** `judgedAny` records whether this pass ever had a single sample: a pass
+that never did has an AUDIO problem, which is the user's to fix ("No audio reaching <plugin> - press play on the
+loudest part and tap Listen."); a pass that had samples and still went nowhere is OURS ("Nothing dialled on
+<plugin> - set it by ear."). Both are logged with the window count and the reason, so a pass that ended early and
+one that ran its full cap are told apart.
+**LEGS (16) in `level_loop_guard`, GREEN:** his exact case - one judged window, then frozen readings - ends after
+**20** frozen windows with the no-audio sentence, naming the plugin, with something the user can do, and the log
+records which ending it was; and a pass fed nothing but SILENCE also ends inside the outer bound with a sentence
+instead of waiting for ever.
+**ONE LEG IS OWED AND I AM NOT FAKING IT:** the "Nothing dialled on ..." branch is reached through the same cap
+when a pass HAS judged windows and still makes no progress. A fixture that keeps feeding fresh audio makes this
+loop progress and finish normally in eight windows - which is correct behaviour, not the case under test - so that
+leg needs a sensor that reports samples while refusing to move, and it is written down rather than approximated.
+
 ### 9. PER-RACK LOOP STATE IS NEVER RESET, AND THE LEVEL CHECK WAITS FOR EVER (Sean 11:10, 8 Oct, on 08a)
 Folded in here as ruled, with the heard counter. Second rap-vocal chain: the UI stuck on the level check and never
 resolved, and the post-build summary on that NEW rack named the PREVIOUS chain's dynamics slots -

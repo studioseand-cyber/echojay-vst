@@ -3203,6 +3203,66 @@ void guardMain()
                "(15) a report made AFTER the change prints normally", r.h.loopsWatchdogLine().substring (0, 90));
     }
 
+    std::printf ("== (16) 06d item 9: a loop that cannot progress ENDS, and says which thing happened ==\n");
+    {
+        // Sean 11:26: EJThreshold on MDynamicsMBLarge ran 400+ windows over twenty minutes with byte-identical
+        // readings and was STILL RUNNING. Nothing had been dialled on that slot, so GR could never appear, and an
+        // unchanged chainIn for twenty minutes means no fresh audio. The loop refused each repeated window
+        // correctly and simply never ended.
+        {
+            echojay::CalibLoop l;
+            beginDriven (l, passiveDriveCfg ("MDynamicsMBLarge"));
+            echojay::CalibLoop::Window w;
+            w.measured = true; w.silent = false; w.grDb = 0.0f; w.levelChangeDb = 0.0f; w.inTruePeakDb = -12.0f;
+            w.heardSeconds = 30.0f;                       // one real window, to set the clock
+            l.onWindow (w, 3000.0);
+            check (l.running(), "(16) the pass is running after a first judged window");
+            // NOW THE READINGS FREEZE: the heard clock stops advancing, exactly as his did.
+            juce::String ask, logLine;
+            int n = 0;
+            for (; n < 60 && l.running(); ++n)
+            {
+                const auto st = l.onWindow (w, 3000.0);    // same heardSeconds every time
+                if (st.ask.isNotEmpty())     ask = st.ask;
+                if (st.logLine.isNotEmpty()) logLine = st.logLine;
+            }
+            check (! l.running(),
+                   "(16) THE PASS ENDED instead of waiting for ever (RED as it stood: 400+ windows over twenty "
+                   "minutes and still running)", juce::String (n) + " frozen windows");
+            check (n <= 25, "(16) ...within about a minute of frozen windows, not ten",
+                   juce::String (n) + " windows at 3 s");
+            check (ask.contains ("No audio reaching") && ask.contains ("MDynamicsMBLarge"),
+                   "(16) ...and it SAYS no audio is reaching the plugin, by name", ask);
+            check (ask.contains ("tap Listen"), "(16) ...with something the user can do about it", ask);
+            check (logLine.contains ("no new audio"), "(16) ...and the log records which of the two endings it was",
+                   logLine);
+        }
+        // THE OTHER UNBOUNDED PATH: SILENT windows. Each one adds to the no-signal clock, which ASKS once at
+        // 30 s and then waited for ever. The outer cap ends it, and because this pass never had a sample at all
+        // the honest sentence is the audio one - a pass that never heard anything has the user's problem, not
+        // ours. (A pass that HAS judged windows and still goes nowhere gets "Nothing dialled on ..., set it by
+        // ear"; that branch is reached through the same cap and its leg is owed - a fixture that keeps feeding
+        // fresh audio makes this loop PROGRESS and finish normally in eight windows, which is correct behaviour
+        // and not the case under test. Noted rather than faked.)
+        {
+            echojay::CalibLoop l;
+            beginDriven (l, passiveDriveCfg ("MDynamicsMBLarge"));
+            echojay::CalibLoop::Window w;
+            w.measured = true; w.silent = true; w.grDb = 0.0f; w.levelChangeDb = 0.0f; w.inTruePeakDb = -120.0f;
+            juce::String ask;
+            int n = 0;
+            for (; n < 400 && l.running(); ++n)
+            {
+                const auto st = l.onWindow (w, 3000.0);
+                if (st.ask.isNotEmpty()) ask = st.ask;
+            }
+            check (! l.running(), "(16) a pass fed nothing but SILENCE also ends, instead of waiting for ever",
+                   juce::String (n) + " silent windows");
+            check (n <= 205, "(16) ...inside the outer window bound", juce::String (n));
+            check (ask.isNotEmpty(), "(16) ...and it leaves the user a sentence", ask);
+        }
+    }
+
     std::printf ("\n==== level_loop_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
 }

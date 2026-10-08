@@ -80,6 +80,21 @@ struct CalibLoop
     // numeric minimum; a write still has to land somewhere, and nothing a compressor is set to lives below this.
     static constexpr float kPracticalFloorDb = -96.0f;
     static constexpr double kNoSignalMs = 30000.0; // ruled
+    // ---- 06d item 9 (8 Oct 2026): A LOOP THAT CANNOT PROGRESS MUST END, AND SAY SO --------------------
+    // Sean 11:26: EJThreshold on MDynamicsMBLarge ran 400+ windows over about twenty minutes with BYTE-IDENTICAL
+    // readings every window - gr=-0.0 chainIn=-20.8 chainOut=-20.2, settle=0/3 - and was still running. Nothing
+    // had been dialled on that slot (status writesRejected), so GR could never appear, and an unchanged chainIn
+    // for twenty minutes means no fresh audio. The loop already refuses to treat a repeated window as a sample
+    // and already has a no-signal clock that ASKS - what it had no notion of was an ENDING. This is the fourth
+    // unbounded wait found in two days, so it is a rule now: a loop that reads a sensor needs a deadline, a
+    // staleness test on the sensor, and a sentence for each way it can end.
+    //
+    // THE NUMBERS. A window is about 3 s, so 20 consecutive stale windows is a minute of nothing new - long
+    // enough that a tape stop or a punch does not end a pass, short enough that nobody watches a dead loop. The
+    // overall cap is 200 windows, about ten minutes: that is not a judgement about music, it is the outer bound
+    // on a pass that is making no progress at all, and Sean had passed it twice over.
+    static constexpr int kStaleRunEnd  = 20;
+    static constexpr int kMaxWindows   = 200;
     static constexpr float kCeilingDbTp = -3.0f;   // the input ceiling the drive may not push past (21p item 3)
 
     // ---- the state that rides the sidecar ----
@@ -109,6 +124,8 @@ struct CalibLoop
     int    phraseIdx   = -1;           // which closing question was used last: never the same one twice running
     float  lastGr      = std::numeric_limits<float>::quiet_NaN();
     double noSignalMs  = 0.0;
+    int    staleRun    = 0;    // 06d item 9: consecutive windows that were not a sample
+    bool   judgedAny   = false; // 06d item 9: has ANY window ever been a sample? decides which ending is honest
     bool   awaitFresh  = false;        // a move or a handover just happened: the next window is not judged
     State  state       = State::Idle;
     // (g) 30 Sep 2026, with a correction of its own: the holding tail is deleted, so a loop that has finished goes
@@ -990,7 +1007,7 @@ struct CalibLoop
         // threshold keeps value. Both are set so a log line and a closing sentence can be written either way.
         value = c.startDb;
         preDb = (actuator == Actuator::Drive) ? c.startDb : 0.0f;   // a named control leaves the staging alone
-        steps = 0; window = 0; inBandRun = 0; noSignalMs = 0.0;
+        steps = 0; window = 0; inBandRun = 0; noSignalMs = 0.0; staleRun = 0; judgedAny = false;
         lastGr = std::numeric_limits<float>::quiet_NaN();
         // 5 Oct 2026 (Sean's item 3): A LOOP OPENS AWAITING A FRESH WINDOW, ANCHORED WHERE THE HOST SAYS THE CLOCK
         // WAS. begin() resets both of the slot's legs - the host logs "no window from before this can enter a
@@ -1025,7 +1042,7 @@ struct CalibLoop
         mode = Mode::Listen; actuator = Actuator::Drive; params.clear(); senseSign = -1;
         minDb = -60.0f; maxDb = 12.0f;
         preDb = openingDrive; value = openingDrive;
-        steps = 0; window = 0; inBandRun = 0; noSignalMs = 0.0;
+        steps = 0; window = 0; inBandRun = 0; noSignalMs = 0.0; staleRun = 0; judgedAny = false;
         lastGr = std::numeric_limits<float>::quiet_NaN();
         // 5 Oct 2026 (Sean's item 3): A LOOP OPENS AWAITING A FRESH WINDOW, ANCHORED WHERE THE HOST SAYS THE CLOCK
         // WAS. begin() resets both of the slot's legs - the host logs "no window from before this can enter a
@@ -1148,6 +1165,26 @@ struct CalibLoop
         over - no settling, no holding, no stale windows, no re-post, ever. The pending text is kept (the chat
         takes it on a later call, out of the stored loop) and the state goes Idle so nothing judges another
         window: active() is what calibTick gates on, and Adjusted/Clamped were active. */
+    /** 06d item 9: the ONE place a pass ends because it cannot progress. The sentence names which of the two
+        things happened, because "it stopped" is not actionable and these two have opposite answers: no audio is
+        the user's to fix, nothing dialled is ours. Logged with the window count either way, so a pass that ended
+        early and a pass that ran its full cap are told apart in the log. */
+    void endBecauseStuck (Step& s, bool frozen)
+    {
+        if (frozen)
+            askOwed = "No audio reaching " + plugin + " - press play on the loudest part and tap Listen.";
+        else
+            askOwed = "Nothing dialled on " + plugin + " - set it by ear.";
+        s.ask = askOwed;
+        s.logLine = log (frozen ? "ended: no new audio" : "ended: no progress");
+        EchoJay_NSLog (("EJThreshold: \"" + plugin + "\" ENDED after " + juce::String (window)
+                        + " window(s) - " + juce::String (frozen ? "the readings stopped changing ("
+                                                                 + juce::String (staleRun) + " consecutive stale windows)"
+                                                                 : "no progress within the " + juce::String (kMaxWindows)
+                                                                 + "-window bound")
+                        + "; said: \"" + askOwed + "\"").toRawUTF8());
+        endHere();
+    }
     void endHere()
     {
         if (closingOwed && closingOwedText.isEmpty()) closingOwedText = closingMessage();
@@ -1229,6 +1266,12 @@ struct CalibLoop
         Step s;
         ++window;
         if (! running()) { s.card = card(); return s; }
+        // 06d item 9: THE OUTER BOUND, checked before every early return below, so no path can wait for ever -
+        // a silent window, a dropped window and a repeated window all count against it.
+        // WHICH ENDING IS HONEST depends on whether this pass ever had a sample at all: a pass that never got
+        // one has an audio problem, which is the user's to fix; a pass that had samples and still went nowhere is
+        // ours. The cap does not guess - it asks.
+        if (window > kMaxWindows) { endBecauseStuck (s, /*frozen*/ ! judgedAny); s.card = card(); return s; }
         if (w.heardSeconds > 0.0f) slotHeardS = w.heardSeconds;
         if (std::isfinite (w.inShortTermP90Db)) lastInP90Db = w.inShortTermP90Db;   // item 4, log only
         if (std::isfinite (w.outShortTermP90Db))  lastOutP90Db      = w.outShortTermP90Db;    // 6 Oct, log only
@@ -1269,10 +1312,14 @@ struct CalibLoop
         const float minFreshS = juce::jmax (0.25f, (float) (windowMs * 0.001) * kFreshWindowFraction);
         if (w.heardSeconds > 0.0f && lastHeardS >= 0.0f && w.heardSeconds < lastHeardS + minFreshS)
         {
+            // 06d item 9: refusing the window is right; refusing it for ever is not. A run of them means the
+            // readings have stopped changing, which is a fact about the audio and not about this loop.
+            if (++staleRun >= kStaleRunEnd) { endBecauseStuck (s, /*frozen*/ true); s.card = card(); return s; }
             s.card = card();
             s.logLine = log (w.heardSeconds > lastHeardS + 1.0e-3f ? "stale-window (part)" : "stale-window");
             return s;
         }
+        staleRun = 0; judgedAny = true;   // a window worth judging arrived: the run is broken
         if (w.heardSeconds > 0.0f) lastHeardS = w.heardSeconds;
         // Signal is back: the wait ends where it started, with nothing changed while it waited.
         noSignalMs = 0.0;
