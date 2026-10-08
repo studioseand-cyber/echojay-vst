@@ -3170,6 +3170,39 @@ void guardMain()
                "re-derivable one", f1 (backB.inAtGr1Dbfs));
     }
 
+    std::printf ("== (15) 06d item 9: bookkeeping from another rack is not bookkeeping ==\n");
+    {
+        // Sean 11:10: a NEW rack was told "loops alive 0 of 2 dynamics slots - ended: UAD Neve 2254 E Dual
+        // (closed), UAD UA 176 (landed ...)" - two plugins it did not contain. The three fields behind that line
+        // had two writers and no resetter, so the last rack's dead loops were printed against the new rack's
+        // dynamics count. They now carry the revision they were reported for.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        pumpMs (200);
+        r.h.setLoopsAlive (1, "Some Old Comp (closed)");
+        const auto fresh = r.h.loopsWatchdogLine();
+        check (fresh.contains ("Some Old Comp"),
+               "(15) a report for THIS revision still prints its names", fresh.substring (0, 90));
+
+        // A STRUCTURAL CHANGE WITH NO NEW REPORT - a rebuild, a rack swap, a removal. This is the state Sean saw.
+        const int revBefore = r.h.getChainRevision();
+        while (r.h.getNumSlots() > 0) r.h.removeSlot (0);
+        check (r.h.getChainRevision() != revBefore, "(15) the structural revision moved",
+               juce::String (revBefore) + " -> " + juce::String (r.h.getChainRevision()));
+        const auto stale = r.h.loopsWatchdogLine();
+        check (! stale.contains ("Some Old Comp"),
+               "(15) THE STALE NAMES ARE GONE: a line about a rack that no longer exists is not printed "
+               "(RED as it stood - this is exactly the UAD Neve 2254 E Dual line on his new chain)", stale);
+        check (stale.contains ("nothing has reported a start on THIS rack"),
+               "(15) ...and it says so plainly instead of printing a count it cannot stand behind", stale);
+        check (stale.contains (juce::String (revBefore)) && stale.contains (juce::String (r.h.getChainRevision())),
+               "(15) ...naming BOTH revisions, so the gap is readable rather than inferred", stale);
+
+        // And a fresh report on the new rack is trusted again - the stamp is not a one-way latch.
+        r.h.setLoopsAlive (0, "A New Comp (landed)");
+        check (r.h.loopsWatchdogLine().contains ("A New Comp"),
+               "(15) a report made AFTER the change prints normally", r.h.loopsWatchdogLine().substring (0, 90));
+    }
+
     std::printf ("\n==== level_loop_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
 }

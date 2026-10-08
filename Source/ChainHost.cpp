@@ -5439,6 +5439,14 @@ ChainHost::CompProfileInfo ChainHost::readCompProfile (const juce::var& profile)
 juce::String ChainHost::loopsWatchdogLine() const
 {
     const int dyn = dynamicsSlotCount();
+    // 06d item 9: BOOKKEEPING FROM ANOTHER RACK IS NOT BOOKKEEPING. If the structural revision has moved since
+    // whoever owns the loops last reported, these counts and names describe a chain that no longer exists - which
+    // is how a new rack came to be told about "UAD Neve 2254 E Dual (closed)". The line says so plainly instead of
+    // printing them, and names the revisions so the gap is readable rather than inferred.
+    if (loopsStampRev_ >= 0 && loopsStampRev_ != getChainRevision())
+        return "EJDialSummary: loops - nothing has reported a start on THIS rack (the last report was for revision "
+             + juce::String(loopsStampRev_) + ", this rack is revision " + juce::String(getChainRevision())
+             + "; " + juce::String(dyn) + " dynamics slot(s) here)";
     const int shown = loopsAlive_ >= 0 ? loopsAlive_ : juce::jmax(0, loopsStarted_);
     juce::String l;
     l << "EJDialSummary: loops " << (loopsAlive_ >= 0 ? "alive " : "started ")
@@ -5725,6 +5733,14 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         // per-call: logDialSummary answers it once the build is done.
         if (trigger == DialTrigger::slotLoaded || trigger == DialTrigger::mapArrived)
         {
+            // 06d item 9 (low priority, Sean 11:10): ONCE PER RACK REVISION, NOT ONCE PER MAP PER SLOT.
+            // Every map arrival runs this for EVERY slot in the rack, so six slots times N maps printed the same
+            // expected-ordering line about whichever rack the host happened to hold - his mix bus - rather than
+            // the rack the map was for. Nothing was wrong except the volume; the line itself already says it is
+            // expected ordering. One line per slot per revision keeps the fact and drops the repetition.
+            const int rev = getChainRevision();
+            if (trigger == DialTrigger::mapArrived && s.noSettingsSaidRev == rev) return;
+            if (trigger == DialTrigger::mapArrived) s.noSettingsSaidRev = rev;
             EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
                            + "\") no settings yet [" + dialTriggerName(trigger)
                            + "] -- EXPECTED ORDERING, not a fault. Settings are attached "

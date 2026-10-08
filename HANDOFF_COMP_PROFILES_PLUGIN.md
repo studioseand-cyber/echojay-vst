@@ -2925,6 +2925,27 @@ rejecting it. B is fixing the emitter; this is the client refusing to be broken 
 params map is gone, B's values survive the move unchanged (314 Hz, -4 dB, Q 1.8), and a structural assertion that
 the repair is logged.
 
+#### 9-part1. THE STALE BOOKKEEPING IS CLOSED (8 Oct, in 08b; level_loop_guard GREEN)
+**A STAMP, NOT A RESET, and the reasons matter.** `loopsAlive_`/`loopsStarted_`/`loopsDead_` now carry
+`loopsStampRev_`, the structural revision they were reported for, set by their two existing setters and compared in
+`loopsWatchdogLine()`. Two reasons it is not a reset: the structural bump is reachable from the AUDIO THREAD and is
+`noexcept`, and clearing a `juce::String` there would allocate; and a reset has to be remembered by every future
+mutator, while a stamp is checked at the ONE place the data is read and cannot be forgotten. Bypass bumps the
+structural revision too, so a bypass toggle also invalidates the picture - deliberately: a cleared picture is
+honest and a stale one is not. A report made after the change prints normally, so the stamp is not a one-way latch.
+The line now names BOTH revisions, so the gap is readable instead of inferred.
+**THE MAP-ARRIVED LINE IS ONCE PER SLOT PER REVISION** (`ChainSlot::noSettingsSaidRev`), not once per slot per
+arriving map. Six slots times N maps printed the same expected-ordering sentence about whichever rack the host
+happened to hold. The fact is kept; the repetition is gone.
+**LEG (15) in `level_loop_guard`, GREEN:** a report for this revision prints its names; a structural change with no
+new report prints NO stale names and says "nothing has reported a start on THIS rack", naming both revisions; a
+fresh report afterwards prints normally.
+**STILL OWED on item 9, and it is the half with the teeth:** the LEVEL-CHECK DEADLINE and the no-new-audio
+staleness test (his 400-window, 20-minute EJThreshold pass on MDynamicsMBLarge). `EJCalibLoop` already has
+`noSignalMs`/`kNoSignalMs` and a stale-window rule that refuses to treat a repeated window as a sample - what it
+has NO notion of is an overall deadline, so a pass that can never make progress waits for ever rather than ending
+with a sentence. That work is sized and understood; it is not in 08b unless CHAINS lands early.
+
 ### 9. PER-RACK LOOP STATE IS NEVER RESET, AND THE LEVEL CHECK WAITS FOR EVER (Sean 11:10, 8 Oct, on 08a)
 Folded in here as ruled, with the heard counter. Second rap-vocal chain: the UI stuck on the level check and never
 resolved, and the post-build summary on that NEW rack named the PREVIOUS chain's dynamics slots -

@@ -763,12 +763,12 @@ public:
         Takes an INDEX, not the slot: ChainSlot is private and forward-declared far below this line. */
     bool slotIsDynamics (int slotIndex) const;
     /** Set by the editor after a build or an edit, for the headline above. */
-    void setLoopsStarted (int n) { loopsStarted_ = n; }
+    void setLoopsStarted (int n) { loopsStarted_ = n; loopsStampRev_ = getChainRevision(); }
     /** (o) 30 Sep 2026 ruling: the watchdog counts only loops still ALIVE and NAMES the dead ones. Set by whoever
         owns the loops (the processor) whenever one ends, so the headline cannot say "1 of 1" about a loop that
         died in silence. `dead` is a comma list of "<plugin> (<why>)". */
     void setLoopsAlive (int alive, const juce::String& dead)
-    { loopsAlive_ = alive; loopsDead_ = dead; }
+    { loopsAlive_ = alive; loopsDead_ = dead; loopsStampRev_ = getChainRevision(); }
     static constexpr int kMapFetchBoundMs = 4000;
     // True while an exact-map fetch OR a fallback lookup for fp is unanswered.
     bool mapFetchInFlight (const juce::String& fp) const
@@ -2259,6 +2259,9 @@ private:
         int    lowGainWatchWindows = 0;
         bool                                 bypassed = false;
         bool                                 intendedBypassed = false;   // v9: what the user/plan asked; `bypassed` is the effective state (lease overlays it)
+        // 06d item 9: the rack revision this slot last said "no settings yet [map-arrived]" for, so the line is
+        // printed once per slot per revision instead of once per slot per ARRIVING MAP.
+        int                                  noSettingsSaidRev = -1;
         juce::String                         settings;   // AI-suggested dial-in guidance
         // The model's tiered copy, held STRUCTURED rather than composed.
         //
@@ -2678,6 +2681,19 @@ private:
     double              tallySr_ = 0.0;   // rate the tallies were prepared at
     juce::String hostTrackName_;
     echojay::ChainRole chainRole_;        // 21t-m item 5: the role and WHICH of its three sources decided it
+    // 06d item 9 (8 Oct 2026): THE RACK REVISION THE BOOKKEEPING BELONGS TO.
+    //
+    // Sean's second rap-vocal chain reported "loops alive 0 of 2 dynamics slots - ended: UAD Neve 2254 E Dual
+    // (closed), UAD UA 176 (landed ...)" on a NEW rack that contained neither plugin. These three fields had
+    // exactly two writers and NO resetter - not removeSlot, not restoreSavedChain, not a rebuild - so the
+    // watchdog kept printing the last rack's dead loops against the new rack's dynamics count.
+    //
+    // A STAMP RATHER THAN A RESET, for two reasons. The structural bump (bumpChainRevision) is reachable from the
+    // audio thread and is noexcept, and clearing a juce::String there would allocate; and a reset must be
+    // remembered by every future mutator, while a stamp is checked at the ONE place the data is read and cannot
+    // be forgotten. Bypass bumps the structural revision too, so a bypass toggle also invalidates the picture -
+    // deliberately: a cleared picture is honest and a stale one is not.
+    int          loopsStampRev_ = -1;
     int          loopsStarted_ = -1;   // 21t-m item 1: -1 = nothing has reported yet
     int          loopsAlive_ = -1;     // (o): loops still running; -1 = nothing has reported
     juce::String loopsDead_;           // (o): "<plugin> (<why>)", comma separated
