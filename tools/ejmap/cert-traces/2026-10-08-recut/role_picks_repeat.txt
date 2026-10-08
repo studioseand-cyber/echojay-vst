@@ -1,0 +1,17 @@
+role picks, the nine units, 99f80d36 (5 ms, one pass: w5rd3/w5tg) vs bcc4eea9 (5 ms, two passes)
+SAME delay     bx_delay2500
+SAME delay     SSL X-Delay
+SAME reverb    MReverb
+SAME reverb    SSL Native FlexVerb
+w5rd3 vs rprd: 4 of 4 identical
+
+SAME gate      SSL X-Gate
+SAME gate      Unfiltered Audio G8
+SAME transient Transient Master
+SAME transient Newfangled Punctuate
+DIFF transient MTransient
+    before {'attack': 'Transient -> Attack', 'sustain': 'Param 33'}
+    after  {'attack': 'Transient -> Attack', 'sustain': None}
+    note: sustain: not_repeatable (needs_review) - pass 1 [10] Transient -> Resolution, pass 2 [32] Param 33; not assigned
+w5tg vs rptg: 4 of 5 identical
+

@@ -45,6 +45,10 @@ REPO=~/src/echojay-vst            # wherever the checkout is
 #   THE NEXT BUILD, SUPERSEDED BY (8 Oct overnight, FINISH EJ MAP items 1-9): d0587ff4 - derive-only EQUAL to dc77d0a5 on the four sets
 #   with 0 differences, from the build tree and from the packaged binary (tools/ejmap/cert-traces/2026-10-08-finish/); packaged at
 #   ~/Desktop/ejmap-dist-8oct. NOT Sean's yet: the runbook's "Next build" section says when. dc77d0a5 IS THE FALLBACK.
+#   THE NEXT BUILD (8 Oct, the 5 ms re-cut + role tests that repeat; supersedes d0587ff4 and 99f80d36): bcc4eea9 - S1 --run-all, S2 the
+#   review's Phase B sections, the tuner draft's vibrato note, role tests on 5 ms windows (time decided at 1 ms), every role test run
+#   twice (not_repeatable -> needs_review). Derive-only EQUAL to dc77d0a5 on the four sets with 0 differences, build tree and packaged
+#   (tools/ejmap/cert-traces/2026-10-08-recut/); packaged at ~/Desktop/ejmap-dist-8oct-c. NOT Sean's yet. dc77d0a5 IS THE FALLBACK.
 git -C "$REPO" fetch && git -C "$REPO" checkout dc77d0a5     # branch feat/ejmap-cert; the commit after it is this documentation (0f175c51: the fallback)
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
@@ -88,6 +92,12 @@ ledger, the iLok, the power. Exit 0 = the probe verifies. From here the mapper r
 nothing on this page is needed again until the code changes.
 
 ## What was tested where
+
+**8 Oct, the next build (bcc4eea9):** rebuilt from the clean checkout (stamp `bcc4eea9`), packaged into `~/Desktop/ejmap-dist-8oct-c`,
+both signatures Developer ID / team 8BT5F9B887; preflight exit 0 (probe beside the executable, cdhash ee97dfc9...). Derive-only against
+dc77d0a5's packaged binary on Sean's current folder, his 4 Oct zip, cert_sc and cert_tc35: 181/181, 181/181, 90/90, 87/87 rows, 0
+state-or-reason differences, fixtures / profiles / controls identical - from the build tree and again from the packaged binary. (99f80d36,
+the 5 ms cut before the repeat rule, passed the same at `~/Desktop/ejmap-dist-8oct-b`; superseded.)
 
 **8 Oct overnight, the next build (d0587ff4):** rebuilt from the clean checkout (stamp `d0587ff4`), packaged into `~/Desktop/ejmap-dist-8oct`,
 both signatures Developer ID / team 8BT5F9B887; preflight exit 0 (probe beside the executable, cdhash ee97dfc9...). Derive-only against

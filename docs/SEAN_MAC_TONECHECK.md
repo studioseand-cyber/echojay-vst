@@ -80,37 +80,50 @@ Ctrl-C stops any command; the product mid-measurement leaves nothing behind. The
 ```
 `config.json` is never in a zip (the command skips it). Projected ~700 MB gzipped for the three nights together.
 
-## Next build — NOT YET: run only when Kathy says the next build is yours (d0587ff4; the build above, dc77d0a5, is the fallback)
+## Next build — NOT YET: run only when Kathy says the next build is yours (bcc4eea9; the build above, dc77d0a5, is the fallback)
 
-Built from commit **d0587ff4** (packaged and signed at ~/Desktop/ejmap-dist-8oct; derive-only EQUAL to dc77d0a5 on your current folder,
-your 4 Oct zip, cert_sc and cert_tc35 - 0 differences in rows, records, profiles and controls, from the build tree and again from the
-packaged binary, so the compressor path above is untouched). It supersedes the 7 Oct candidate ac9e3bfb. It adds the six new specs
-(limiters, EQ, de-essers, saturation + amp sims, reverb / delay, transient shapers / gates), the channel strips' and multiband drafts,
-and a DRAFT profile for every Phase B category in `cert/phaseb/<category>/drafts/`, never in `cert/profiles`. Install it the same way as
-the build above, then - after the three nights above, on nights of their own - in this order:
+Built from commit **bcc4eea9** (packaged and signed at ~/Desktop/ejmap-dist-8oct-c; derive-only EQUAL to dc77d0a5 on your current folder, your 4 Oct
+zip, cert_sc and cert_tc35 - 0 differences in rows, records, profiles and controls, from the build tree and again from the packaged
+binary, so the compressor path above is untouched). It supersedes 99f80d36, d0587ff4 and ac9e3bfb. It adds the six new specs (limiters, EQ,
+de-essers, saturation + amp sims, reverb / delay, transient shapers / gates), the channel strips' and multiband drafts, a DRAFT
+profile for every Phase B category in `cert/phaseb/<category>/drafts/` (never `cert/profiles`), the one-command run and the review's
+Phase B sections. Install it the same way as the build above, then - after the three nights above - ONE command, every night:
 
 ```
-# N1. drafts for everything ALREADY measured (gain, timing, tuners, multiband, and the old rows of every category): nothing is loaded
-"$BIN" --phaseb-drafts                                                                                   # ~1 second
-# N2. the categories whose MEASUREMENT changed - every row of each runs again (the old numbers were taken the old way). One night:
-"$BIN" --phaseb-all --redo limiter                  # ceiling + 6 dB drive, BS.1770 true peak, every detent, -1 / -0.3 dBTP acceptance   ~20-25 min
-"$BIN" --phaseb-all --redo deesser                  # noise ladder as the curve, TripleD's section, acceptance on noise                  ~10 min
-"$BIN" --phaseb-all --redo eq                       # 10 Hz-23.5 kHz, adaptive frequency points, -30 dBFS check, Q at +3/+6, acceptance  ~2-2.5 h
-"$BIN" --phaseb-all --redo saturation               # level_only, steps 1-3 with the output compensated after the drive, amp cabinets  ~1.5-2.5 h
-"$BIN" --phaseb-all --redo reverb,delay             # roles by measurement, pink decay to 35 dB down / 20 s, relative pre-delay, sync  ~1.5-2 h
-"$BIN" --phaseb-all --redo transient,gate           # 500 ms hits + held tone, ramp-taken gate timing, both definitions               ~20 min
-"$BIN" --phaseb-all --redo multiband                # the enable step (a band off at instantiate is switched on by its own switch)    ~15-20 min
-# N3. the channel strips again, every section drafted in its category's shape (TWO nights; resumable, Ctrl-C any time)
-"$BIN" --phaseb-all --redo strips                                                                         # ~14 h for 106 strips
-# N4. a status line any time; the zip as above
-"$BIN" --phaseb-status
+caffeinate -i "$BIN" --run-all --steps preflight,multiband,limiter,deesser,eq,saturation,reverb_delay,transient_gate,strips,drafts --until 07:00
 ```
 
-About 6.5-8 hours for N2 (projected per product from your 5/6 Oct rows and this Mac's rehearsals of the new modes: new-mode time here
-over old-mode time on your Mac was 1.0-1.7 per category; amp sims that measured nothing before now measure, ~50 s each), and ~14 h for
-the strips (6-9.5 min each here). Every line resumes. THE ZIP GROWS: about +490 MB for N2 (delay ~+370 MB and transient ~+110 MB - 1 ms
-windows over long tails and every control's end test) and ~+70 MB for the strips; use `--zip ... --since marker` every morning.
-Saturation runs after `--redo gain-all` on purpose: it compensates through the gain draft when one exists.
+It runs those steps in that order, each step's output in `cert/run_all/<step>.log`, one progress line a minute (done / total, elapsed,
+ETA, the hour it stops). At 07:00 it stops the step it is in (that step's finished products are kept) and starts nothing new; the SAME
+line the next night carries on from there (a step it stopped resumes without re-deleting what it already redid). Ctrl-C works the
+same way. `--dry-run` on the end prints what it would run and changes nothing. About 8.5-10 hours before the strips (multiband
+~15-20 min, limiters ~20-25 min, de-essers ~10 min, EQ ~2-2.5 h, saturation ~1.5-2.5 h, reverb / delay ~2.5-3.2 h, transients / gates
+~30-35 min) and ~14 h for the strips: three nights in all.
+
+**Roles are found twice.** For reverbs, delays, transient shapers and gates, the test that finds which control is the mix, the time, the
+attack, the threshold... runs twice. If the two runs pick different controls, that role is left unassigned and filed `not_repeatable`
+(needs review, both picks in the record and the draft's notes) - MTransient's sustain does this here. That is why those two steps take
+about 1.6 times as long as a single run would.
+
+The drafts come last (~1 second, nothing loaded): every category's draft,
+the tuners' included - your Night 1 `--redo tuners` on dc77d0a5 already records whether a held note keeps its vibrato, and the
+draft carries it from there.
+
+**Multiband - not yet seen to work.** The enable step (a band that is off at instantiate is switched on by its own switch, never a gate
+stage's) is built and pinned, but it has NOT yet been seen to succeed on a real plugin: on this Mac SSL G3 needed no enable (its bands
+are on at instantiate) and MDynamicsMB's Processor 2 still cut nothing after it; FabFilter Pro-MB and Ozone 12 Dynamics are not
+installed here and DynOne3 needs its iLok. Your run is what proves it - in the morning review, a multiband row whose band was off and
+now cuts is the first live success.
+
+**The morning** (stop the run first, or let 07:00 stop it):
+
+```
+"$BIN" --zip ~/Library/ejmap/cert --out ~/Desktop/ejmap-$(hostname -s)-$(date +%Y%m%d).zip --since marker
+"$BIN" --cert-review-zip ~/Desktop/ejmap-$(hostname -s)-$(date +%Y%m%d).zip       # ~1 min: every Phase B category, its drafts, what ran and what did not
+```
+
+THE ZIP GROWS about +320 MB for these steps (the role tests read 5 ms windows and run twice; the maps keep 1 ms), and ~+70 MB for the strips; hence
+`--since marker`. Saturation runs after Night 3's `--redo gain-all` on purpose: it compensates through the gain draft when one exists.
 
 ---
 
