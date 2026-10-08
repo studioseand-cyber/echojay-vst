@@ -182,8 +182,13 @@ inline Export exportTunerProfileDraft (const juce::var& record)
         if (const auto* ps = hz.getProperty ("positions", {}).getArray())
             for (const auto& p : *ps) { auto* o = new juce::DynamicObject(); o->setProperty ("norm", p.getProperty ("norm", {})); o->setProperty ("display", p.getProperty ("display", {}));
                                         o->setProperty ("held_note_correction", p.getProperty ("held_note_correction", juce::var())); o->setProperty ("short_note_correction", p.getProperty ("short_note_correction", juce::var()));
-                                        o->setProperty ("held_over_short", p.getProperty ("held_over_short", juce::var())); curve.add (juce::var (o)); }
+                                        o->setProperty ("held_over_short", p.getProperty ("held_over_short", juce::var()));
+                                        if (p.hasProperty ("held_vibrato_retained")) o->setProperty ("held_vibrato_retained", p.getProperty ("held_vibrato_retained", {}));
+                                        curve.add (juce::var (o)); }
         h->setProperty ("curve", curve); prof->setProperty ("humanize", juce::var (h));
+        // the 5 Oct records read held-vs-short only; whether a held note KEEPS ITS VIBRATO is the 6 Oct measurement (--redo tuners)
+        bool vib = false; if (const auto* ps = hz.getProperty ("positions", {}).getArray()) for (const auto& p : *ps) if (p.hasProperty ("held_vibrato_retained")) vib = true;
+        if (! vib) e.notes.add ("humanize: held-vs-short correction from this record; held-note vibrato retention not measured on it (--redo tuners measures it)");
     }
     else { prof->setProperty ("humanize", juce::var()); e.notes.add (extras.isObject() ? "humanize null: no humanize control" : "humanize null: not measured (record predates the v0.1 measurements)"); }
     bool key = false, scale = false;

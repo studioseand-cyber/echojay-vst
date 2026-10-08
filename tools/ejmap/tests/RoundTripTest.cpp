@@ -8493,6 +8493,17 @@ void testDraftsPass()
         const auto G = ejmap::multiband::profileDraft (mk ({ { "bands", noBands }, { "amount", gAmount } }), juce::var(), juce::var(), "DRAFT", "x v0.1 PROPOSAL");
         check (G.getProperty ("amount", {}).getProperty ("control", "") == "Depth" && G.getProperty ("notes", {})[1].toString().contains ("depth control's zero") && G.getProperty ("amount", {}).getProperty ("reference", "").toString().contains ("before 7 Oct"), "drafts M1d: a global-depth unit on an old record: its control, the instantiate reference said, the re-run noted");
     }
+    // TU1 (8 Oct, Kathy's item 3): a 5 Oct tuner record's pitchExtras draft flex and humanize NOW; only the vibrato retention waits for --redo tuners
+    {
+        juce::Array<juce::var> fp { mk ({ { "norm", 0.0 }, { "display", "0" }, { "window_cents", "over_45" } }) }, hp { mk ({ { "norm", 0.0 }, { "display", "0" }, { "held_note_correction", 1.0 }, { "short_note_correction", 0.979 }, { "held_over_short", 1.021 } }) };
+        juce::Array<juce::var> flexA { mk ({ { "index", 89 }, { "name", "Flex-Tune" }, { "positions", fp } }) }, humA { mk ({ { "index", 61 }, { "name", "Humanize" }, { "positions", hp } }) };
+        juce::Array<juce::var> cands { mk ({ { "name", "Retune Speed" }, { "index", 0 } }) };
+        const auto rec = mk ({ { "schema", "ej_cert_tuner/1" }, { "product", "Auto-Tune Pro" }, { "pitchCandidates", cands }, { "pitchExtras", mk ({ { "flex", flexA }, { "humanize", humA } }) } });
+        const auto e = ejmap::tunerprofile::exportTunerProfileDraft (rec);
+        juce::StringArray ns; for (const auto& n : e.notes) ns.add (n);
+        check (e.refused.isEmpty() && e.profile.getProperty ("flex", {}).getProperty ("control", "") == "Flex-Tune" && e.profile.getProperty ("humanize", {}).getProperty ("control", "") == "Humanize" && ns.joinIntoString ("|").contains ("vibrato retention not measured"),
+               "drafts TU1: a 5 Oct record drafts Flex-Tune and Humanize from its pitchExtras; the note says only the held-note vibrato waits for --redo tuners (" + e.refused + ")");
+    }
     // P1: the pass's placement rule - the draft file for a record stem lands under <phaseb>/<category>/drafts/ with the category's kind
     {
         using namespace ejmap::cert::draftpass;
