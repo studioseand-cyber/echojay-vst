@@ -2677,6 +2677,40 @@ which is what makes this a contained job.
 **LEG as ruled:** both views render IDENTICAL IN/OUT text for the same rack - the guard reads `readoutText()`
 ("IN +0.0" / "OUT -6.0"), which exists for exactly this purpose, from each editor and compares them slot by slot.
 
+### 8b. THE LINK MIXER'S CHANNEL METERS READ PRE-FADER (Sean 11:22, 8 Oct, on 08a) - DIAGNOSED, DISPLAY-ONLY
+**WHERE THE FADER IS APPLIED AND WHERE THE METER TAPS, which is what was asked:**
+  • `LinkProcessor::processBlock` runs `chainHost.process()`, then **the meter tap**
+    (`meterEngine_.processBlock`, `levelTally_.push`, `keyEngine_.pushBlock`, LinkProcessor.cpp:2279-2289), and
+    THEN `applyGainSmoothed(buffer)` at :2292. So every published meter field is POST-chain and **PRE-fader**.
+  • That position is deliberate and recorded in the code: the 21t-d ruling (25 Sep 2026) MOVED the tap above the
+    gain stage, because levelling a GROUP needs what each channel delivers INTO its trim - "so moving one member's
+    trim does not rewrite the number the next decision is made from". A level MATCH wants the other side, so the
+    frame carries `kFrameHasPreTrim` and readers that want the DAW's figure add the trim back through
+    `frameLoudnessAsHeard` (LinkShm.h:396).
+  • **THE V2 ALREADY DOES THAT CONVERSION - for the loudness fields only.** At ingest (PluginEditor.cpp:7088-7102)
+    it adds the trim back to `momentary`, `shortTerm`, `integrated`, `truePeakMax`, `truePeakCur`, `shortTermTP`
+    and `shortTermMax`, with the comment "ONE conversion, here at ingest, so every reader sees one consistent
+    figure". **The PER-CHANNEL fields are not in that list**, and the meter bar is drawn from exactly those:
+    `mf.peakFastL/R` for the fast bar, `mf.peakL/R`, and `mf.rmsL/R` for the wide RMS marker
+    (PluginEditor.cpp:7400-7462). That is the whole bug - the LUFS numbers on the strip DO move with the fader
+    while the bar beside them does not.
+  • **THE LINK'S OWN WINDOW HAS NO CHANNEL METER AT ALL** (`Source/LinkEditor.h` has one incidental match for
+    "meter" and no meter engine, no frame fields, no bar). So the ruling applies to the V2 Link Mixer only, and
+    there is nothing to change on the Link side - which is worth stating rather than leaving open.
+
+**THE FIX, display-only and inside Sean's constraint:** extend the EXISTING ingest conversion to the per-channel
+fields - `peakL/R`, `peakFastL/R`, `rmsL/R` - so the bar reads as-heard like the numbers already do. The Link's tap
+does not move, `kFrameHasPreTrim` keeps its meaning, and every analysis consumer (calibration, loudness, group
+levelling) reads the published pre-trim figure exactly as it does now. One conversion site, already written, one
+list to complete.
+**THE ONE JUDGEMENT CALL, flagged rather than taken quietly:** the CLIP LATCH is set from the raw `peakFastL/R` at
+0 dBFS (PluginEditor.cpp:7453-7455). Converted, a channel pulled down 6 dB can no longer latch a clip the DAW
+never hears - which I believe is right, because the lamp sits on the bar and a console's clip lamp is post-fader
+too - but it does mean the lamp stops warning about a converter overload upstream of the trim. If that warning is
+wanted it needs its own indicator, not the channel lamp.
+**LEG as ruled:** the same frame at trim 0 and trim -6 -> the bar reads 6 dB lower and the strip's LUFS figures
+move by the same 6, while the published frame is untouched; and at trim 0 the rendering is identical to today.
+
 ### 9. PER-RACK LOOP STATE IS NEVER RESET, AND THE LEVEL CHECK WAITS FOR EVER (Sean 11:10, 8 Oct, on 08a)
 Folded in here as ruled, with the heard counter. Second rap-vocal chain: the UI stuck on the level check and never
 resolved, and the post-build summary on that NEW rack named the PREVIOUS chain's dynamics slots -
