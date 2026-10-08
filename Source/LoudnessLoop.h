@@ -909,6 +909,11 @@ public:
         host_.setSlotStructuredSettings (slot_, juce::var (w));
         if (auto* lv = levelNow()) if (std::abs (lv->gainDb() - db) > 0.01) lv->setParamValue ("gain_db", db);
         host_.setSlotSettings (slot_, "Level " + fmtSigned (db) + " dB (set by the level loop toward the " + fmt (target_) + " LUFS target)");
+        // 8 Oct 2026: AND IT HAS TO SURVIVE A RELOAD. The host saves the state CACHE, and nothing captured after
+        // a loop write - so Sean's landing of +8.1 dB held in the audio, was confirmed in the log, and came back
+        // at 0.0 after the host relaunched. The Level is a built-in: its capture is a small JSON, so every write
+        // takes it rather than us deciding which writes "count".
+        host_.captureSlotStateNow (slot_);
     }
     void emit (const juce::String& text, float progress, bool replace, bool final, Bubble::Kind kind = Bubble::Kind::info, juce::StringArray pills = {})
     {

@@ -2881,6 +2881,32 @@ that the Link carries no copy of the struct, and that it reads the same two acce
 one shared implementation plus one shared source of truth, which is what makes the two equal. A leg that builds
 both editors in one process is the stronger test and is worth having later.
 
+### 8e. THE LANDED LEVEL GAIN DID NOT SURVIVE A RELOAD - FIXED (Sean 13:22/13:24, 8 Oct, in 08b)
+**HIS TWO REPORTS, one cause.** At 13:16:20 the landing wrote "+8.1 dB for target -7.0" and at 13:16:55 the chain
+block confirmed it HELD ("out-in 8.1 dB, heard 18s"). He saw the Level at 0; then the host relaunched and the Level
+came back at 0.0.
+**THE CAUSE:** the host's save writes the state **CACHE**, not the live plugins - deliberately, because
+`getStateInformation` on a hosted plugin "can take seconds (samplers, convolution) and is not something to run
+inside the host's own save callback". The cache is filled by `refreshStateCacheIfIdle` (dirty slots past their
+backoff, called from an editor-teardown path) or `captureAllSlotStatesNow` ("for DELIBERATE user actions only,
+currently the explicit Save"). **Nothing captured after a loop write.** So the cache still held whatever the Level
+had before the landing, and the save looked completely successful - which is word for word the failure
+`captureAllSlotStatesNow`'s own comment warns about: "a knob moved a second before Save would otherwise be saved
+at its previous value". A landing is that knob.
+**THE FIX:** a new targeted `ChainHost::captureSlotStateNow(int)` - the one-slot form of the existing call, with
+the same deliberate disregard for the backoff, because the backoff protects the background cadence and not the
+correctness of a value somebody just set - called from `LoudnessLoop::writeGainDb`. EVERY write takes it rather
+than us deciding which writes "count": the Level is a built-in and its capture is a small JSON.
+**LEG Z3 in `loudness_loop_guard`, GREEN:** land a gain, then read `getCachedSlotStatesVar` - which is exactly what
+the host would write, since it serialises the cache and never calls into a plugin - decode the base64, and assert
+the saved `params.gain_db` equals the landed figure (saved 6.49 vs landed 6.49).
+**STILL OPEN, and it is the other half of his 13:22 report:** he saw **0 on screen** while the audio was right.
+That is a DISPLAY question and this fix does not answer it - the candidates are the Level plugin's own editor not
+refreshing on a programmatic write, or the slot card's IN/OUT readouts (which are the slot trims, 0.0, and are NOT
+the Level's gain) being read as the Level's figure. Item 5 makes the second reading more likely, not less, because
+the Link's cards now carry the same two readouts. Sean is confirming where he saw the 0; the answer decides whether
+the fix is in `EedLevelEditor` or in how the card labels those two figures.
+
 ### 9. PER-RACK LOOP STATE IS NEVER RESET, AND THE LEVEL CHECK WAITS FOR EVER (Sean 11:10, 8 Oct, on 08a)
 Folded in here as ruled, with the heard counter. Second rap-vocal chain: the UI stuck on the level check and never
 resolved, and the post-build summary on that NEW rack named the PREVIOUS chain's dynamics slots -

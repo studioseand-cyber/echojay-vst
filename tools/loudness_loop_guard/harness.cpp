@@ -997,6 +997,40 @@ static int guardMain()
         check (allLogs.contains ("No peak-headroom cap"),
                "Z. and the opening says the peak-headroom cap is gone, as ruled");
     }
+    std::printf ("== Z3. 06d: the landed gain SURVIVES a save - the cache is captured, not left behind ==\n");
+    {
+        // Sean 13:24: the landing wrote +8.1 dB, the log confirmed it held ("out-in 8.1 dB"), the host relaunched,
+        // and the Level came back at 0.0. The host saves the state CACHE, and nothing captured after a loop write,
+        // so the cache still held the pre-landing value and the save looked completely successful.
+        Rig r (false); r.setTarget (-8.0f, 0.0);
+        r.h.setStateCacheEnabled (true);
+        calibrate (r.proc, r.prog, -14.5f);
+        check (r.loop.armFromChain(), "Z3. armed with a reading, so the opening write lands");
+        const float landed = r.levelGain();
+        check (std::abs (landed) > 0.5f, "Z3. the loop wrote a gain to land on (the precondition)", f1 (landed));
+
+        // THE SAVE'S OWN VIEW. getCachedSlotStatesVar serialises the cache and nothing else - it never calls into
+        // a plugin - so this is exactly what the host would write.
+        const auto states = r.h.getCachedSlotStatesVar (ChainHost::kApiStateMaxSlotBytes,
+                                                        ChainHost::kApiStateMaxTotalBytes, "this session");
+        juce::String b64;
+        if (auto* o = states.getDynamicObject())
+            b64 = o->getProperty (juce::String (r.levelSlot + 1)).toString();
+        check (b64.isNotEmpty(), "Z3. the Level slot has a cached state at all (RED as it stood on a cold cache)",
+               juce::String (b64.length()) + " b64 chars");
+
+        juce::MemoryBlock mb;
+        { juce::MemoryOutputStream mos (mb, false); juce::Base64::convertFromBase64 (mos, b64); }
+        const auto parsed = juce::JSON::parse (juce::String::createStringFromData (mb.getData(), (int) mb.getSize()));
+        float savedGain = 0.0f; bool found = false;
+        if (auto* o = parsed.getDynamicObject())
+            if (auto* pr = o->getProperty ("params").getDynamicObject())
+                if (pr->hasProperty ("gain_db")) { savedGain = (float) (double) pr->getProperty ("gain_db"); found = true; }
+        check (found && std::abs (savedGain - landed) < 0.05f,
+               "Z3. THE SAVED STATE CARRIES THE LANDED GAIN, not the value it had before the landing",
+               found ? ("saved " + f1 (savedGain) + " vs landed " + f1 (landed))
+                     : juce::String ("no gain_db in the saved state"));
+    }
     std::printf ("== Z2. Listen always resolves: 20 s of silence ends with the no-signal reason, not a silent wait ==\n");
     {
         Rig r (false); r.setTarget (-8.0f, 0.0);

@@ -2051,6 +2051,14 @@ public:
     // the save would look completely successful. Correctness beats latency
     // when someone pressed a button and is waiting for it.
     void captureAllSlotStatesNow();
+    // ONE slot, now, ignoring the backoff - the targeted form of the call above, for a write the user is
+    // waiting on when sweeping every slot would be the wrong price. 8 Oct 2026: the level loop's landing wrote
+    // +8.1 dB into the Level, the log confirmed it held, and a host reload brought the slot back at 0.0, because
+    // NOTHING captures after a loop write - the cache still held whatever it had from before the landing, and the
+    // host's save writes the cache. The comment on captureAllSlotStatesNow already states the principle this
+    // serves: "a knob moved a second before Save would otherwise be saved at its previous value, and the save
+    // would look completely successful". A landing is that knob.
+    void captureSlotStateNow(int slotIndex);
     // {"1": "<base64>", "2": null} for a consumer that wants the settings.
     // Serialises the cache and nothing else: it never calls into a hosted
     // plugin, so it is safe inside getStateInformation. Nulls any slot over

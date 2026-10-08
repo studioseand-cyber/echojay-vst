@@ -11224,6 +11224,15 @@ void ChainHost::captureAllSlotStatesNow()
     stateDirty_.store(false, std::memory_order_relaxed);
 }
 
+void ChainHost::captureSlotStateNow(int slotIndex)
+{
+    if (!stateCacheEnabled_) return;
+    if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return;
+    // Same deliberate disregard for nextCaptureMs as captureAllSlotStatesNow, and for the same reason: the
+    // backoff protects the background cadence, not the correctness of a value somebody just set.
+    captureSlotState(slotIndex, juce::Time::getMillisecondCounterHiRes());
+}
+
 void ChainHost::captureSlotState(int i, double nowMs)
 {
     if (inStateCapture_) return;   // see inStateCapture_ in the header
