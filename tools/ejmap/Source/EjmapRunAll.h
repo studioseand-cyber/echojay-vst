@@ -50,11 +50,13 @@ inline const std::vector<Step>& steps()
         { "tuners",           "redo",     { "tuners" },                                             1800.0,  "tuners (humanize, flex)" },
         { "limiter",          "redo",     { "limiter" },                                            1500.0,  "limiters (ceiling + 6 dB, BS.1770 true peak)" },
         { "deesser",          "redo",     { "deesser" },                                            600.0,   "de-essers (the noise ladder)" },
+        // gain_all BEFORE eq and saturation (Kathy, 8 Oct): saturation's level match uses the measured output control from the gain-all
+        // drafts (phaseb/gainall/drafts, SATURATION spec section 6.3); the named / level-only fallback stays for products without one
+        { "gain_all",         "redo",     { "gainall" },                                            25200.0, "the gain spec on every other product (before saturation: its output control)" },
         { "eq",               "redo",     { "eq" },                                                 9000.0,  "EQ (adaptive frequency points)" },
         { "saturation",       "redo",     { "saturation" },                                         7200.0,  "saturation + amp sims" },
         { "reverb_delay",     "redo",     { "reverb,delay" },                                       11500.0, "reverb and delay (role tests twice: x1.5-1.65 rehearsed, 8 Oct)" },
         { "transient_gate",   "redo",     { "transient,gate" },                                     1900.0,  "transient shapers and gates (role tests twice: x1.3-1.65 rehearsed, 8 Oct)" },
-        { "gain_all",         "redo",     { "gainall" },                                            25200.0, "the gain spec on every other product" },
         { "nothing_nominated","selector", { "nothing_nominated" },                                  16200.0, "rows the lexicon nominated nothing for" },
         { "strips",           "redo",     { "strips" },                                             50400.0, "channel strips, every section drafted" },
         { "drafts",           "plain",    { "--phaseb-drafts" },                                    5.0,     "every draft from the records on disk" } };

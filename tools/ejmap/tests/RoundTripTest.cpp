@@ -8584,6 +8584,13 @@ void testRunAll()
     check (eq && sel && lic && rd && steps().front().name == "preflight" && steps().back().name == "drafts" && stepNamed ("preflight")->stopOnFail, "runall RA1: the sequence starts with the preflight (a failure stops it) and ends with the drafts");
     check (argsFor (*eq, false, "/c", {}).joinIntoString (" ") == "--phaseb-all --redo eq --out /c" && argsFor (*eq, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --category eq --out /c",
            "runall RA2: a redo step's FIRST start is --redo (its rows deleted and run again); its RESUME is --category (finished rows kept, only the missing run)");
+    // RA6 (Kathy, 8 Oct): gain_all is planned straight after deesser and before eq and saturation, whatever order --steps lists
+    {
+        auto at = [] (const std::vector<const Step*>& p, const juce::String& n) { for (size_t k = 0; k < p.size(); ++k) if (p[k]->name == n) return (int) k; return -1; };
+        const auto p = plan ({}, juce::StringArray::fromTokens ("drafts,strips,gain_all,saturation,eq,deesser,limiter,multiband,preflight", ",", ""), {});
+        const int gA = at (p, "gain_all"), sa = at (p, "saturation"), de = at (p, "deesser"), e = at (p, "eq");
+        check (gA >= 0 && gA == de + 1 && gA < e && gA < sa && at (p, "drafts") == (int) p.size() - 1, "runall RA6: gain_all runs straight after deesser, before eq and saturation, in table order whatever --steps lists (" + juce::String (gA) + " vs saturation " + juce::String (sa) + ")");
+    }
     check (argsFor (*rd, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --category reverb --category delay --out /c", "runall RA2b: a two-category redo resumes both categories");
     check (argsFor (*sel, false, "/c", {}).joinIntoString (" ") == "--phaseb-all --redo nothing_nominated --out /c" && argsFor (*sel, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --out /c", "runall RA3: a redo selector resumes as a plain --phaseb-all (the rows its start deleted are the missing ones)");
     check (argsFor (*lic, false, "/c", {}).joinIntoString (" ") == "--licence-check /c" && argsFor (*eq, false, "/c", { "Maag EQ4" }).joinIntoString (" ") == "--phaseb-all --redo eq --only Maag EQ4 --out /c", "runall RA4: {cert} substituted; --only passed to the Phase B steps");
