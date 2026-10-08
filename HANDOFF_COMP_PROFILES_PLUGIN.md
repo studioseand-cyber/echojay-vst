@@ -2146,6 +2146,133 @@ writes it as a param (237), so once the value is in scope there is nothing new t
 
 ---
 
+## ROUND 08c — THE LIST, FROM SEAN'S 08b TEST (diagnosed read-only 8 Oct ~20:15 from code + the 19:55-20:10 logs)
+
+08b PASSED items 1, 2, 4 and 5 (no bypass after hand-back; Link meters follow the fader; the Level survived the
+reopen; the Apply message scoped and the EQ dialled). Five findings, each with its cause in the log.
+
+### C. THE LEVEL CHECK DID NOT FAIL - IT WORKED TWICE. THE CHAT MESSAGE WAS EATEN BY A VERB.
+**THE TIMELINE, verbatim:**
+    20:06:38.585  verb "listen" state 7            <- armed
+    20:06:38.585  state -> listening: window open, needs 10 s above -40.0 LUFS, resolves within 20 s either way
+    20:06:38.888  state -> measuring: FIRST AUDIO after 0 s of waiting
+    20:06:48.728  window: integrated -14.6 LUFS (the target), loudest 3 s -14.0 (+0.6 over), 10.1 s counted
+    20:06:48.728  bubble: Measured -14.6 LUFS integrated. Push +2.6 dB to reach -12.0? [Go | Leave it]
+    20:06:58.805  state -> listening   <- A SECOND WINDOW
+    20:06:58.806  bubble: Checking the level again - play the loudest part.
+    20:07:08.816  bubble: Measured -15.2 LUFS integrated. -12.2 is as loud as this goes with the limiter
+                          working <=3 dB. Push to -12.0 anyway? [Push it anyway | Leave it]
+So audio WAS flowing (10.1 s counted in ten seconds), a measurement was made, and a proposal was shown. **No
+ending sentence was due, and item 9's deadline was never the question.** Sean's "I pressed Listen without
+playback" and the loop's "first audio after 0 s" cannot both be true of the same moment; the loop's reading is the
+one with a figure attached.
+**THE REAL DEFECT IS THE SECOND HALF: his typed "check the level of the mix bus" got no reply because it was
+swallowed as a LOOP VERB.** `sendChatMessage` runs `handleLoudnessVerb(msg)` first - "local first, no network" -
+and that matcher took a sentence containing "check the level" as the Check verb. That is what opened the second
+window at 20:06:58 ("Checking the level again"), and it is why no chat answer came: the turn never went out. The
+third message was a different sentence, so it went to the server normally.
+**FIX:** the verb matcher must take a VERB, not a sentence that contains one. It should match only a short message
+that is essentially the verb (the same discipline `EJAffirmation.h` already uses for "yes": every word must be in
+the list, bounded length, one negation refuses), and anything longer goes to the chat. A miss costs a round trip;
+a false positive eats the user's question, which is what happened. And when a verb IS taken, say so in the
+transcript - a message that vanishes with no bubble is indistinguishable from a dropped send.
+**FILES:** PluginEditor.cpp (`handleLoudnessVerb` and its call site), a new narrow matcher beside EJAffirmation.h.
+**RISK:** low. **LEG:** "check the level of the mix bus" reaches the chat; "check" alone runs the verb; a taken
+verb leaves a visible line.
+
+### E. THE -1.2 dBTP CEILING IS THE SERVER'S -1, AND THE TARGET WAS -12 "DYNAMIC", NOT A -14 FALLBACK.
+**THE EVIDENCE:**
+    20:07:42.486  EJChainBlock: ceiling_db -1 dB, input_db 0 dB, release_ms 50, lookahead_ms 2,
+                  mode transparent, true_peak on, sc_hpf_hz 0
+    20:00:11.250  EJLoudness: armed: target -12.0 LUFS (level_params, dynamic), Level slot 4 gain +3.3,
+                  limiter slot 5 (EchoJay Limiter), build-time input -14.7 LUFS
+So the build dialled **ceiling_db = -1** because the SERVER's chain block asked for it - not the EchoJay Limiter's
+own default (-0.3, EedLimiterProcessor.cpp:30) and not Sean's -0.1. And the target was **-12.0 from the chain's own
+level_params with loudness_option "dynamic"**: there is no -14 fallback in this story, so item 10's absence did not
+cause it.
+**AND "DYNAMIC" IS WHY IT STOPPED SHORT.** `grCapDb("dynamic") = 3.0` - unchanged on purpose, because "dynamic" is
+a promise to keep the dynamics - so the second proposal was CAPPED at 3 dB of GR: "-12.2 is as loud as this goes
+with the limiter working <=3 dB". The 7 Oct cap work raised COMMERCIAL to 10; this build never asked for
+commercial.
+**FIX, two parts.** (1) A FINAL LIMITER'S CEILING HAS A FLOOR: whatever the block says, the last limiter in the
+chain is clamped to -0.1 dBTP (Sean's rule), and the clamp is LOGGED naming the figure that was asked for - a
+silent override of the server is the fault we closed for the EQ hoist this morning. (2) The loudness OPTION rides
+the card and the log in words, because "dynamic" capping at 3 dB is correct behaviour that reads as a bug: the
+bubble should say which promise it is keeping.
+**FILES:** ChainHost (the limiter apply path) or LoudnessLoop's `ceilingDb_` resolution; LoudnessLoop bubble text.
+**RISK:** low for the clamp, and it needs B told so the block stops asking for -1.
+
+### D. THE CHAINS LIST IS LAID OUT AGAINST ONE BOTTOM EDGE AND PAINTED AGAINST ANOTHER.
+**WHAT THE NEW LOGGING PROVES - the panel, the fetch and the model are all FINE:**
+    19:55:34.873  EJChains: CHAINS panel opened (tab=6 compact=0 collapsed=0) - rows in memory 0
+    19:55:34.876  EJChains: fetch START GET /api/v2/chains
+    19:55:35.316  EJChains: fetch RESULT status 200, 1 chain(s) in the body
+    19:55:35.319  EJChains: RENDER 1 row(s) after parse
+`tab=6` IS `Tab::Chain` (Dashboard 0 ... Link 5, Chain 6), compact and collapsed are both 0, so every gate the
+mode depends on was satisfied - my earlier five-condition hypothesis is RULED OUT by this line. The list had a row
+and the disk cache kept it ("SAVED CHAINS injection attached -- 1 names, source=disk-cache" on every later turn).
+**SO IT IS GEOMETRY, AND THERE ARE TWO AUTHORS FOR ONE EDGE.** The layout bounds the rows with `chatScrollBottom`
+(a layout local, PluginEditor.cpp:20237) and pushes an EMPTY rect for any row past it; the painter bounds them
+with `chatScroll.getBottom()` (the live component, :18442) and skips any row whose bottom exceeds it. Those are
+two different numbers the moment the component is laid out after this block, hidden, or sized differently in
+chains mode - and either way every row is dropped, which is exactly a column with nothing in it but the chat input.
+This is the defect this file's own comment warns about one layer up: "ONE predicate, consulted here and never
+re-derived, so the paint pass and the layout pass cannot disagree". The predicate is shared; the GEOMETRY is not.
+**FIX:** author the list's bottom ONCE - a `chainListBottom_` member written by the layout beside
+`chainListStatusRect_` - and have the painter use it. Then add what Sean asked for in (A): the toggle never
+depends on the mode it switches, and the empty state renders.
+**WHAT I HAVE NOT PROVEN:** which of the two edges collapses. Both are defects; one line of logging in the layout
+("list bottom N, rows laid out M of K") settles it on the next press, and it belongs in the fix.
+**FILES:** PluginEditor.cpp (:18442, :20225-20258, :33817-33860), PluginEditor.h (the new member).
+**RISK:** low, and contained to chains mode.
+**SAVE/RACK: NO EVIDENCE EITHER WAY TONIGHT.** There is NO `EJChainSave` line anywhere in 19:50-20:12, so Sean did
+not save during that window. CHAINS (C) is proven by its leg (the borrowed host is a different object and is the
+one chosen), not by a live run. The live confirmation is still owed.
+
+### A. ECHOJAY'S UNDO DOES NOT RECORD ANYTHING SENT TO A LINK.
+**WHAT THE STACK RECORDS TODAY:** `EchoJayProcessor::undoHistory_`, fed by `wireUndoHooks(chainHost, {})` - so it
+is wired to **ChainHost mutations on a host this process owns** (the local rack and the borrowed copy): add,
+remove, move, bypass, wet, keep-level, one step per applyChainEdits batch, plus the loop's own level writes
+through `loudnessLoop_.onGainWritten`. A Link Mixer fader move is none of those: it is a TRANSPORT command
+(`proc.setLinkGainDb` / the chain-cmd file), so no ChainHost on this side mutates and no hook fires. Nothing is
+recorded, so Undo has nothing to undo - it is not failing, it was never told.
+**OTHER V2 ACTIONS THAT SKIP THE STACK, by the same rule** (anything whose effect lands on a Link rather than in
+this process): the Link Mixer's gain, mute, solo and pan; a slot bypass or wet sent to a Link; dials applied to a
+Link slot through a chain-cmd; a chain edit or proposal Apply that is diverted to the Link; the Link's pre-gain.
+Every one of them is invisible to Undo today.
+**FIX, as ruled:** one undo step per GESTURE, pushed on release rather than per pixel (the wet knob's existing
+"one step per knob gesture" is the precedent), carrying {uid, what, before, after}; undoing SENDS THE PREVIOUS
+VALUE back to the Link as an ordinary command and waits for its ack, so an undo that did not land says so instead
+of lying. The entry is a CHAIN entry in the plugin-wide history, the same class the local rack uses, so one Undo
+button walks both.
+**NOT Logic's plugin-header Undo:** that records host parameter gestures on the instance that owns the parameter,
+and a Link Mixer move is not a host parameter on the V2 at all. Making these host-visible parameters is a
+different and much larger decision - it would put every Link's gain into the V2's parameter list - and it belongs
+in the remote-control plan, not in 08c.
+**FILES:** PluginProcessor (the undo dispatcher + a Link entry kind), PluginEditor (the Mixer's gesture
+begin/end), the chain-cmd writer for the undo send. **RISK:** medium - it is new plumbing across the transport,
+and the ack path is where it can mislead. **LEG:** a fader gesture pushes exactly ONE step; undo sends the prior
+value and is acked; an unacked undo reports instead of claiming success.
+
+### B. THE LINK'S IN/OUT READOUTS OVERLAP THE PLUGIN NAME ON NARROW CARDS.
+**CAUSE:** I gave the Link the V2's rects verbatim - `getWidth() - 48, 2, 46, 9` and `+11` - deliberately, so the
+two cards could not drift by a pixel. But the Link's cards are NARROWER than the V2's, and the V2's name field was
+already sized around those 48 px while the Link's was not: the name draws full width and the readouts sit on top
+of it. "Identical rects" was the wrong invariant - what has to match is the READING, not the geometry.
+**FIX:** reserve the readout column in the Link's name row (truncate the name to `getWidth() - 52`), and when the
+card is narrower than a threshold put the readouts on their own row under the name instead of beside it. The
+guard's structural check changes with it: it should assert both editors SHOW both readouts and read the same two
+accessors, not that they use identical coordinates - and the slot-card WIDTH goes into the leg, as Sean asked.
+**FILES:** LinkEditor.h (Block::resized + the name paint), tools/ui_round_guard/ui_guard.cpp (the structural leg).
+**RISK:** very low, cosmetic and contained.
+
+### 08c ORDER I PROPOSE (harm first)
+1. **C** - a swallowed question is the worst of these: the user types and nothing happens at all.
+2. **E** - a wrong final ceiling ships in the audio, and the clamp is small.
+3. **D** - the list is unusable, with a known workaround (the Dashboard shows the chains).
+4. **B** - cosmetic but it makes the new readouts unreadable on the Link.
+5. **A** - real plumbing, and the remote-control plan may change its shape.
+
 ## THE 7/8 OCT FULL GATE (overnight item 1): 60 of 61, and the one red is the harness's own precondition
 
 Run on 397b380 + aae53d6, archives deleted first so both are provably built from the tree's headers.
