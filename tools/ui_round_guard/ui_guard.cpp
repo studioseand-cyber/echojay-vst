@@ -305,6 +305,7 @@ struct EchoJayTabStripTestAccess
     static int  targetWidth (EchoJayEditor& e) { return e.chatTargetChannelWidth(); }   // 21n ruling 1b
     using Block = EchoJayEditor::ChainListPanel::Block;   // the friend names the private nested type (as Msg)
     static void tapPill (EchoJayEditor& e, int msgIdx) { e.onResultChipTapped (msgIdx, 2); }
+    static void tapApply (EchoJayEditor& e, int msgIdx) { e.onResultChipTapped (msgIdx, 3); }   // 06d test 5
     static juce::StringArray chips (EchoJayEditor& e, const Msg& m) { juce::StringArray out; for (const auto& c : e.resultChipList (m)) out.add (c.label + "#" + juce::String (c.kind)); return out; }
     // 18h (1): the chip layout at a given width, the row count, the on-screen chip buttons
     static std::vector<juce::Rectangle<int>> layout (EchoJayEditor& e, const Msg& m, int w) { std::vector<juce::Rectangle<int>> r; e.layoutResultChips (m, { 0, 0, w, 26 }, r); return r; }
@@ -3459,6 +3460,44 @@ int main()
         else check (false, "teardown. fixture: the two built-ins are registered");
     }
 
+    // ---- 06d test 5 (8 Oct 2026): THE APPLY BUTTON ON AN OFFER CARD -----------------------------------
+    // B attaches the ops an offer is offering, so the card can apply them with no second model call. The chip is
+    // kind 3 and lands on the SAME applyStagedProposal a typed "yes" takes, so the two can never diverge.
+    std::printf ("== 06d test 5: the offer card's Apply chip ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (2000, 1100); A::toChat (*ed); pumpMs (60);
+        A::build (*ed, "{\"chain\":[{\"name\":\"EchoJay EQ\",\"role\":\"eq\"}]}");
+        pumpMs (2000);
+
+        auto& M = A::msgs (*ed);
+        M.emplace_back();                  // ChatMsg is private to the editor; the vector names it for us
+        auto& offer = M.back();
+        offer.role = "assistant";
+        offer.content = "Something like a bell centred around 200 Hz with a gentler Q. Want me to add that to the EQ in slot 1?";
+        offer.proposalData = "{\"edit\":[{\"op\":\"set\",\"slot\":1,\"slot_name\":\"EchoJay EQ\",\"settings_structured\":"
+                             "{\"params\":{\"band1_freq\":200,\"band1_gain\":-2,\"band1_q\":1.4}}}],"
+                             "\"offer\":\"Want me to add that to the EQ in slot 1?\",\"staged\":true}";
+        const int idx = (int) M.size() - 1;
+
+        const auto chips = A::chips (*ed, M[(size_t) idx]).joinIntoString ("|");
+        check (chips.contains ("Apply#3"),
+               "test 5: a reply carrying a staged proposal renders an Apply chip (kind 3)", chips);
+        check (! M[(size_t) idx].content.contains ("ECHOJAY_PROPOSAL"),
+               "test 5: ...and the bubble's own text carries none of the block");
+
+        A::tapApply (*ed, idx); pumpMs (400);
+        check (M[(size_t) idx].editData.contains ("\"op\"") && M[(size_t) idx].editData.contains ("200"),
+               "test 5: tapping Apply moves the offer's OWN ops into the apply path, values intact",
+               M[(size_t) idx].editData.substring (0, 90));
+
+        M[(size_t) idx].editApplied = true;
+        check (! A::chips (*ed, M[(size_t) idx]).joinIntoString ("|").contains ("Apply#3"),
+               "test 5: an applied offer no longer offers Apply",
+               A::chips (*ed, M[(size_t) idx]).joinIntoString ("|"));
+    }
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

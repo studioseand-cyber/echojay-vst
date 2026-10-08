@@ -23117,6 +23117,13 @@ EchoJayEditor::resultChipList(const ChatMsg& m) const
     // 29 Aug 2026: it had been unreachable since this removal, and its comment
     // described behaviour it never had.
     std::vector<ResultChip> chips;
+    // 06d test 5, kind 3: APPLY THE STAGED PROPOSAL. B attaches the ops it is offering, so the offer card can
+    // apply them with no second model call. It is the same action a typed "yes" takes
+    // (handleProposalAffirmation -> applyStagedProposal), and the chip exists because a user who has scrolled past
+    // the prose should not have to type anything. It disappears once applied: a card that still offers to do what
+    // it has already done is the "changes applied" class of lie this round has been closing all day.
+    if (m.proposalData.isNotEmpty() && ! m.editApplied)
+        chips.push_back({ "Apply", 3 });
     if (m.editAltPrompt.isNotEmpty())
         chips.push_back({ m.editAltPrompt.startsWith("These")
                             ? "Suggest alternatives" : "Suggest an alternative", 0 });
@@ -23188,6 +23195,11 @@ void EchoJayEditor::onResultChipTapped(int msgIdx, int kind)
             { handleLoudnessVerb(resultChipBtns[i].getButtonText()); return; }
         // no hovered button (a synthetic tap): the first pill of the bubble
         if (! m.loopPills.isEmpty()) handleLoudnessVerb(m.loopPills[0]);
+        return;
+    }
+    if (kind == 3)
+    {   // 06d test 5: the Apply button on an offer card. Same entry point as a yes, so the two cannot diverge.
+        applyStagedProposal (msgIdx, "the Apply button");
         return;
     }
     // The batch "stop suggesting" handler (kind == 1) was DELETED 29 Aug 2026.
