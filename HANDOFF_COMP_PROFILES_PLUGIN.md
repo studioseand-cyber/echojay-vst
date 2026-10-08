@@ -2711,6 +2711,71 @@ wanted it needs its own indicator, not the channel lamp.
 **LEG as ruled:** the same frame at trim 0 and trim -6 -> the bar reads 6 dB lower and the strip's LUFS figures
 move by the same 6, while the published frame is untouched; and at trim 0 the rendering is identical to today.
 
+### 8c. THE CHAINS PANEL: THREE SEPARATE FAULTS (Sean 11:24-11:30, 8 Oct; also broken on 06c)
+**(A) WHY THE PANEL GOES BLANK AND THE TOGGLE VANISHES - the coupling, with the one thing I cannot settle named.**
+`chainSidebarChainsMode` lives on the PROCESSOR (it survives tab switches and editor teardown), but every renderer
+of that mode is gated on being on the Chain tab:
+  • the toggle's own rects are authored only when `stripHasSwitch` - `currentTab == Tab::Chain && !compactMode &&
+    !visualOnlyMode && !reviewOverlay.visibleState && !chatSidebarCollapsed` (PluginEditor.cpp:20120-20134), and
+    the paint is `if (! chainModeAiRect_.isEmpty())` (:18349). Empty rects = no switch drawn AND no click target.
+  • the list is laid out only when `chainsMode = chainSidebar && chainSidebarChainsMode` (:20199), with the same
+    five conditions inside `chainSidebar`.
+  • `chainSidebarInChainsMode()` is `currentTab == Tab::Chain && chainSidebarChainsMode` (:33836).
+  • `chatTextSizeBtn` - the "Aa" - is the ONE control visible in either state:
+    `setVisible(chatScroll.isVisible() || chainSidebarInChainsMode())` (:20114).
+So the state "chains mode ON while any one of those five conditions is false" renders exactly what Sean
+photographed: a blank panel with only Aa and no way back. **WHAT I CANNOT SETTLE FROM THE CODE** is which of the
+five went false on his press, and his 11:26 finding - NOTHING in the log containing "chain" - says the press did
+not reach `setChainSidebarMode` either (that function calls `refreshChainList()` unconditionally, so a fetch
+would have been attempted). That points at the click landing on a rect authored in one frame and gone in the next.
+THE FIX IS THE SAME EITHER WAY, and it is what he asked for: the toggle is never conditional on the mode it
+switches; an empty list renders "No saved chains yet" (that branch already exists at :33821 and is simply never
+reached); and the CHAINS path logs open / fetch start / result count / render, so the next occurrence is evidence
+instead of a photograph.
+**HISTORY, as asked:** the panel was introduced by `faea329` ("Chain sidebar: AI | Chains mode, cached list,
+per-call GET timeout") and the current gating by `d20e094` ("the chat body paints only in AI mode") and `fc6d6aa`
+("Chain header: one strip authority"). `afcfea9` touched it last. Nothing since 08a, and he confirms 06c was
+broken too, so this is NOT an 08a regression - it is the shape it was built in.
+
+**(B) WHY THE LIST IS EMPTY WHILE THE DASHBOARD SHOWS THE CHAIN - two different routes, and ours is the dark one.**
+  • the native panel and Open call `EchoJayAPI::listChains` -> `GET /api/v2/chains` (EchoJayAPI.h:1163-1167), and
+    the header above those four endpoints says it outright: "Every one of these is gated on DASHBOARD_ENABLED
+    server side, so on production they answer **404 not_enabled** until the flag is flipped. That is the dark
+    state working, not a fault."
+  • the Dashboard tab is a **WEBVIEW**: it navigates `https://www.echojay.ai/dashboard?embed=plugin`
+    (DashboardWeb.h:36), so it reads whatever the live site reads - our own comment names `lib/dash/chains.js` as
+    the server's chain module. The save reaches that store, which is why "Aitch Vocal Chain, 5m ago" is listed
+    there and nowhere in the plugin.
+  • `collectSavedChainRefs` returning `source=server` with 0 names (:28211-28215) is the client faithfully
+    reporting an empty 200, or a never-filled list with a stamped fetch time - either way it is reporting the
+    v2 route's answer, not the one the Dashboard sees.
+  **FOR B / TO ROUTE:** which route is live on production for the chain library - `/api/v2/chains` with
+  DASHBOARD_ENABLED on, or the dash route the website uses? The client should call the SAME one the Dashboard
+  does. This half is not fixable here without that answer, and guessing a URL would be worse than asking.
+
+**(C) SAVE SERIALISES THE WRONG RACK WHEN A LINK RACK IS SELECTED - confirmed in the code.** The save body is
+built from `processorRef.getChainHost()` (PluginEditor.cpp:34348) - this V2 instance's OWN rack. The EDIT path is
+careful about exactly this and does the opposite: `if (auto* bh = processorRef.borrowHostIfActiveFor(uid))` with
+"path=SESSION (borrowed host)" and a comment explaining that the Link parks its own slots while leased so the
+content lives in the borrowed host (:26117). So with a Link rack selected, Save stores the MIX BUS under the name
+the user typed - which is exactly what the Dashboard shows: "EchoJay EQ -> UAD Shadow Hills ... -> Spec..." under
+"Aitch Vocal Chain". Sean's confirmation of which rack he was viewing decides whether this fired here, but the
+asymmetry is a fault either way: two paths, one question, two answers.
+**LEGS:** the empty list renders the empty state with the toggle intact; a save appears in the list without
+reopening; and Save with a Link rack selected serialises THAT rack's slots, not the instance's.
+
+### 9b. THE STUCK LEVEL CHECK, LIVE (Sean 11:26) - folded into item 9
+EJThreshold on MDynamicsMBLarge has run **400+ windows over about 20 minutes** with byte-identical readings every
+window: `gr=-0.0 chainIn=-20.8 chainOut=-20.2 chainDiff=+0.5 mode=passive settle=0/3
+lowLevelGain=(waiting, n=0) settleHeard=211`, and it is still running. Nothing was dialled on that slot
+(writesRejected), so GR can never appear, and an unchanged chainIn for twenty minutes means no fresh audio.
+So item 9 gains a **NO-NEW-AUDIO DETECTOR** beside the deadline: identical readings for N consecutive windows is
+itself a terminal condition, and it resolves with the named outcome - "nothing dialled on <plugin>, set it by ear"
+when the writes were rejected, "no audio, press play and tap Listen" when the readings are frozen - and logs which
+of the two ended it. **This is the fourth unbounded wait in two days.** The rule is now explicit: a loop that
+reads a sensor needs a deadline, a staleness test on the sensor, and a sentence for each way it can end.
+LEG: a slot with no GR and frozen readings ends inside the deadline with that message.
+
 ### 9. PER-RACK LOOP STATE IS NEVER RESET, AND THE LEVEL CHECK WAITS FOR EVER (Sean 11:10, 8 Oct, on 08a)
 Folded in here as ruled, with the heard counter. Second rap-vocal chain: the UI stuck on the level check and never
 resolved, and the post-build summary on that NEW rack named the PREVIOUS chain's dynamics slots -
