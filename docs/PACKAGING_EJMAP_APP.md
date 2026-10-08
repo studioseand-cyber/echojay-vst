@@ -49,6 +49,10 @@ REPO=~/src/echojay-vst            # wherever the checkout is
 #   review's Phase B sections, the tuner draft's vibrato note, role tests on 5 ms windows (time decided at 1 ms), every role test run
 #   twice (not_repeatable -> needs_review). Derive-only EQUAL to dc77d0a5 on the four sets with 0 differences, build tree and packaged
 #   (tools/ejmap/cert-traces/2026-10-08-recut/); packaged at ~/Desktop/ejmap-dist-8oct-c. NOT Sean's yet. dc77d0a5 IS THE FALLBACK.
+#   THE NEXT BUILD (8 Oct, Kathy's reorder): a6c85e6f - bcc4eea9 with --run-all's gain_all moved before eq and saturation (saturation's
+#   level match uses the gain-all draft's output control). Derive-only EQUAL to dc77d0a5 on the four sets with 0 differences, build tree
+#   and packaged (tools/ejmap/cert-traces/2026-10-08-reorder/); packaged at ~/Desktop/ejmap-dist-8oct-d. NOT Sean's yet.
+#   bcc4eea9 IS ITS FALLBACK (~/Desktop/ejmap-dist-8oct-c); dc77d0a5 stays Sean's build until Kathy hands this one over.
 git -C "$REPO" fetch && git -C "$REPO" checkout dc77d0a5     # branch feat/ejmap-cert; the commit after it is this documentation (0f175c51: the fallback)
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
@@ -93,7 +97,12 @@ nothing on this page is needed again until the code changes.
 
 ## What was tested where
 
-**8 Oct, the next build (bcc4eea9):** rebuilt from the clean checkout (stamp `bcc4eea9`), packaged into `~/Desktop/ejmap-dist-8oct-c`,
+**8 Oct, the next build (a6c85e6f):** rebuilt from the clean checkout (stamp `a6c85e6f`), packaged into `~/Desktop/ejmap-dist-8oct-d`,
+both signatures Developer ID / team 8BT5F9B887; preflight exit 0 (probe cdhash ee97dfc9...). Derive-only against dc77d0a5 on the four
+sets: 181/181, 181/181, 90/90, 87/87 rows, 0 state-or-reason differences, fixtures / profiles / controls identical - from the build tree
+and again from the packaged binary. Its fallback is bcc4eea9 (below).
+
+**8 Oct, the previous next build (bcc4eea9, now the fallback):** rebuilt from the clean checkout (stamp `bcc4eea9`), packaged into `~/Desktop/ejmap-dist-8oct-c`,
 both signatures Developer ID / team 8BT5F9B887; preflight exit 0 (probe beside the executable, cdhash ee97dfc9...). Derive-only against
 dc77d0a5's packaged binary on Sean's current folder, his 4 Oct zip, cert_sc and cert_tc35: 181/181, 181/181, 90/90, 87/87 rows, 0
 state-or-reason differences, fixtures / profiles / controls identical - from the build tree and again from the packaged binary. (99f80d36,

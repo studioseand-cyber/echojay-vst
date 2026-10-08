@@ -80,11 +80,11 @@ Ctrl-C stops any command; the product mid-measurement leaves nothing behind. The
 ```
 `config.json` is never in a zip (the command skips it). Projected ~700 MB gzipped for the three nights together.
 
-## Next build — NOT YET: run only when Kathy says the next build is yours (bcc4eea9; the build above, dc77d0a5, is the fallback)
+## Next build — NOT YET: run only when Kathy says the next build is yours (a6c85e6f; bcc4eea9 is its fallback, dc77d0a5 the build above)
 
-Built from commit **bcc4eea9** (packaged and signed at ~/Desktop/ejmap-dist-8oct-c; derive-only EQUAL to dc77d0a5 on your current folder, your 4 Oct
+Built from commit **a6c85e6f** (packaged and signed at ~/Desktop/ejmap-dist-8oct-d; derive-only EQUAL to dc77d0a5 on your current folder, your 4 Oct
 zip, cert_sc and cert_tc35 - 0 differences in rows, records, profiles and controls, from the build tree and again from the packaged
-binary, so the compressor path above is untouched). It supersedes 99f80d36, d0587ff4 and ac9e3bfb. It adds the six new specs (limiters, EQ,
+binary, so the compressor path above is untouched). It supersedes bcc4eea9 (the same build with gain-all after saturation; the fallback), 99f80d36, d0587ff4 and ac9e3bfb. It adds the six new specs (limiters, EQ,
 de-essers, saturation + amp sims, reverb / delay, transient shapers / gates), the channel strips' and multiband drafts, a DRAFT
 profile for every Phase B category in `cert/phaseb/<category>/drafts/` (never `cert/profiles`), the one-command run and the review's
 Phase B sections. Install it the same way as the build above AFTER NIGHT 1 above (Nights 2 and 3 are not run on dc77d0a5: their
@@ -98,11 +98,18 @@ caffeinate -i "$BIN" --run-all --steps preflight,multiband,limiter,deesser,eq,sa
 It runs those steps in that order, each step's output in `cert/run_all/<step>.log`, one progress line a minute (done / total, elapsed,
 ETA, the hour it stops). At 07:00 it stops the step it is in (that step's finished products are kept) and starts nothing new; the SAME
 line the next night carries on from there (a step it stopped resumes without re-deleting what it already redid). Ctrl-C works the
-same way. `--dry-run` on the end prints what it would run and changes nothing. About 30 hours in all (the dry-run's ETA 30:08):
-multiband ~20 min, limiters ~25 min, de-essers ~10 min, EQ ~2.5 h, saturation ~2 h, reverb / delay ~3.2 h, transients / gates ~32 min,
-gain-all ~7 h, strips ~14 h, drafts ~1 s. With 21:00-07:00 nights: night A runs everything up to and including transients / gates
-(~9.1 h) and starts gain-all; night B finishes gain-all (~6.1 h) and starts the strips; night C runs the strips; night D the last few
-minutes of the strips and the drafts. The steps always run in that order, whatever order `--steps` lists them in.
+same way. `--dry-run` on the end prints what it would run and changes nothing. The steps always run in THIS order, whatever order
+`--steps` lists them in: multiband ~20 min, limiters ~25 min, de-essers ~10 min, **gain-all ~7 h**, EQ ~2.5 h, saturation ~2 h, reverb /
+delay ~3.2 h, transients / gates ~32 min, strips ~14 h, drafts ~1 s - about 30 hours in all (the dry-run's ETA 30:08). Gain-all runs
+before saturation on purpose: saturation's level match uses the output control the gain-all draft measured; a product with no usable
+output there falls back to a control named output / volume / level / trim / makeup that is checked to be level-only after the drive.
+
+| night (21:00-07:00) | runs | hours |
+|---|---|---|
+| A | multiband, limiters, de-essers, gain-all, then EQ starts (stopped at 07:00, ~2 h in) | ~10 |
+| B | EQ finishes (~0.4 h), saturation, reverb / delay, transients / gates, then the strips start | ~10 |
+| C | strips | ~10 |
+| D | the last of the strips, then the drafts | ~0.2 |
 
 **nothing_nominated is not in the line, on purpose.** Every row it would re-run (276 in your 5/6 Oct folder: EQ 101, saturation 116,
 limiter 16, timing 34, transient 2, reverb 3, gaincal 2, de-esser 1, delay 1) is in a category this line re-runs whole, or in gain /
@@ -131,8 +138,7 @@ now cuts is the first live success.
 ```
 
 THE ZIP GROWS about +320 MB for these steps (the role tests read 5 ms windows and run twice; the maps keep 1 ms), and ~+70 MB for the strips; hence
-`--since marker`. Saturation runs BEFORE gain-all in this line, so it chooses its output control without the gain-all drafts (from the
-controls named output / volume / level / trim / makeup and the unnamed pool, each checked to be level-only after the drive).
+`--since marker`.
 
 ---
 
