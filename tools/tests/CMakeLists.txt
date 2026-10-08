@@ -197,6 +197,14 @@ function(ej_add_guard NAME)
         set(EJ_RUNNER ${CMAKE_SOURCE_DIR}/tools/tests/${G_WRAPPER})
         set(EJ_RUNNER_PRE ${G_WRAPPER_ARG})
     endif()
+    # 8 Oct 2026: A BIGGER MAIN-THREAD STACK, NOT A SIDE THREAD. Some guards hold several EchoJayProcessors as
+    # locals in one frame, and an EchoJayProcessor is large: ui_guard tipped over the 8 MB default the moment
+    # 06d item 6/10 added two clocks and a std::function to LoudnessLoop (a processor member). The crash is three
+    # frames deep - start -> main -> ___chkstk_darwin, SIGSEGV at a stack address - which is a stack overflow and
+    # not a product fault. Moving the work to a pthread with room DOES fix the overflow and breaks four GUI legs,
+    # because a JUCE GUI guard's message thread has to be the thread it was initialised on. So the stack itself is
+    # made bigger at link time and everything stays exactly where it was.
+    target_link_options(${NAME} PRIVATE -Wl,-stack_size,0x20000000)   # 512 MB
     add_test(NAME ${NAME} COMMAND ${EJ_RUNNER} ${EJ_RUNNER_PRE} ${ARGS})
     # WORKING_DIRECTORY is the repo root because that is the cwd harness_build.py ran every guard with, and
     # several guards read the checkout from it (own_diff reads Source/, the grep guards read tools/).
