@@ -308,6 +308,9 @@ struct EchoJayTabStripTestAccess
     using Block = EchoJayEditor::ChainListPanel::Block;   // the friend names the private nested type (as Msg)
     static void tapPill (EchoJayEditor& e, int msgIdx) { e.onResultChipTapped (msgIdx, 2); }
     static void tapApply (EchoJayEditor& e, int msgIdx) { e.onResultChipTapped (msgIdx, 3); }   // 06d test 5
+    // 06d CHAINS (C): the one author of "which rack does Save serialise", and the view uid it reads.
+    static ChainHost& saveHost (EchoJayEditor& e, juce::String* whichOut) { return e.chainHostForSave (whichOut); }
+    static void setChainViewUid (EchoJayEditor& e, const juce::String& uid) { e.selectRackForView (uid); }
     static juce::StringArray chips (EchoJayEditor& e, const Msg& m) { juce::StringArray out; for (const auto& c : e.resultChipList (m)) out.add (c.label + "#" + juce::String (c.kind)); return out; }
     // 18h (1): the chip layout at a given width, the row count, the on-screen chip buttons
     static std::vector<juce::Rectangle<int>> layout (EchoJayEditor& e, const Msg& m, int w) { std::vector<juce::Rectangle<int>> r; e.layoutResultChips (m, { 0, 0, w, 26 }, r); return r; }
@@ -3555,6 +3558,44 @@ int main()
                "the Link does NOT carry its own copy of the struct - one definition, or they drift");
         check (link.contains ("getSlotPreTrimDb") && link.contains ("getSlotOutGainDb"),
                "and it reads the SAME source of truth the V2 does (getSlotPreTrimDb / getSlotOutGainDb)");
+    }
+
+    // ---- 06d CHAINS (C), 8 Oct 2026: SAVE SERIALISES THE RACK THE USER IS LOOKING AT ------------------
+    // Sean saved "Aitch Vocal Chain" while viewing the vocal LINK rack; it reached the server and holds the MIX
+    // BUS. Save read processorRef.getChainHost() while the edit path, for the same question, diverts to the
+    // borrowed host because a leased Link parks its own slots. One author now - chainHostForSave().
+    std::printf ("== 06d CHAINS (C): Save takes the view's rack ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (2000, 1100); A::toChat (*ed); pumpMs (60);
+
+        // With no Link rack selected the answer is this instance's own host - unchanged behaviour.
+        juce::String which;
+        check (&A::saveHost (*ed, &which) == &proc.getChainHost(),
+               "(C) with no Link rack selected, Save serialises this instance's own rack", which);
+        check (which.contains ("own rack"), "(C) ...and the log phrase says so", which);
+
+        // Now a BORROWED rack is live for a uid the view is showing. The borrowed host is a different object, and
+        // that difference is the whole bug: one of them holds the vocal chain and the other holds the mix bus.
+        const juce::String uid = "lnk_save_c";
+        proc.borrowEngageBegin (uid, "lease-" + uid, true, true);
+        pumpMs (120);
+        auto* bh = proc.borrowHost();
+        check (bh != nullptr, "(C) a borrow is live for the test uid");
+        if (bh != nullptr)
+        {
+            A::setChainViewUid (*ed, uid);
+            juce::String which2;
+            auto& chosen = A::saveHost (*ed, &which2);
+            check (&chosen == bh && &chosen != &proc.getChainHost(),
+                   "(C) THE VIEW SHOWS A BORROWED LINK RACK, SO SAVE SERIALISES THAT ONE "
+                   "(RED as it stood: it took this instance's rack and stored the mix bus under the typed name)",
+                   which2);
+            check (which2.contains ("borrowed"), "(C) ...and the log names which rack it took", which2);
+        }
+        proc.borrowRelease (false);
     }
 
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);

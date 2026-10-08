@@ -1676,6 +1676,9 @@ private:
     juce::TextButton chainSaveAsBtn { "Save As" };
     juce::TextButton chainOpenBtn   { "Open" };
     // Save with no chain loaded behaves as Save As (prompts for a name).
+    // 06d CHAINS (C): the ONE author of "which rack does Save serialise" - the view's borrowed rack when a Link
+    // rack is selected, this instance's own otherwise. `whichOut` receives a phrase for the log.
+    ChainHost& chainHostForSave (juce::String* whichOut);
     void saveChainToApi(bool forceNew);
     // The request itself. id empty = create, id set = overwrite that chain.
     void sendChainSave(const juce::String& id, const juce::String& name);

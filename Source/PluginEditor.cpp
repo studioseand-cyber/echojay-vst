@@ -34389,7 +34389,10 @@ void EchoJayEditor::setChainSaveStatus(const juce::String& s)
 
 void EchoJayEditor::saveChainToApi(bool forceNew)
 {
-    auto& ch = processorRef.getChainHost();
+    // THE SAME HOST THE SAVE WILL SERIALISE (06d CHAINS (C)). Asking this instance's rack whether there is
+    // anything to save, and then saving a different one, is how "There are no plugins in the chain to save"
+    // could appear over a full Link rack - and how a full local rack could wave through a save of an empty one.
+    auto& ch = chainHostForSave (nullptr);
     if (ch.getNumSlots() == 0)
     {
         setChainSaveStatus("There are no plugins in the chain to save.");
@@ -34421,9 +34424,41 @@ void EchoJayEditor::saveChainToApi(bool forceNew)
         }));
 }
 
+// ---- 06d CHAINS (C), 8 Oct 2026: WHICH RACK DOES SAVE SERIALISE? -----------------------------------------
+// Sean saved "Aitch Vocal Chain" while viewing the vocal LINK rack. It reached the server - the Dashboard lists it
+// "5m ago" - and it holds the MIX BUS (EchoJay EQ -> Shadow Hills -> Spectre), because Save read
+// processorRef.getChainHost(): this instance's own rack.
+//
+// The EDIT path already answers this question the other way, and says why in its own comment: while a rack is
+// leased the Link PARKS its slots, so its chain is empty and the content lives in the BORROWED host - which is
+// why a chat edit on a Link rack is diverted there ("path=SESSION (borrowed host)"). Two paths, one question, two
+// answers, and the quiet one silently saved the wrong chain. One author now.
+//
+// It takes the VIEW's rack, not the chat's: Save is a button on the rack in front of the user, and
+// chainViewUid() is what that strip is showing. An empty uid, or a uid with no live borrow, is the local rack -
+// the same fallback the edit path uses, and the only honest reading of "no Link rack is selected".
+ChainHost& EchoJayEditor::chainHostForSave (juce::String* whichOut)
+{
+    const juce::String uid = chainViewUid();
+    if (uid.isNotEmpty())
+        if (auto* bh = processorRef.borrowHostIfActiveFor (uid))
+        {
+            if (whichOut != nullptr) *whichOut = "the borrowed rack \"" + uid + "\"";
+            return *bh;
+        }
+    if (whichOut != nullptr)
+        *whichOut = uid.isEmpty() ? juce::String ("this instance's own rack")
+                                  : "this instance's own rack (no live borrow for \"" + uid + "\")";
+    return processorRef.getChainHost();
+}
+
 void EchoJayEditor::sendChainSave(const juce::String& id, const juce::String& name)
 {
-    auto& ch = processorRef.getChainHost();
+    juce::String which;
+    auto& ch = chainHostForSave (&which);
+    EchoJay_NSLog (("EJChainSave: serialising " + which + " - " + juce::String (ch.getNumSlots())
+                    + " slot(s), name \"" + name + "\"" + (id.isEmpty() ? " (create)" : " (overwrite " + id + ")"))
+                      .toRawUTF8());
 
     // FORCE a fresh capture first. Save is a deliberate action, and the
     // debounce exists to keep the host's own save callback fast on quit, not

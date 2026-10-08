@@ -2946,6 +2946,23 @@ staleness test (his 400-window, 20-minute EJThreshold pass on MDynamicsMBLarge).
 has NO notion of is an overall deadline, so a pass that can never make progress waits for ever rather than ending
 with a sentence. That work is sized and understood; it is not in 08b unless CHAINS lands early.
 
+#### 8c-C-done. SAVE SERIALISES THE RACK THE USER IS LOOKING AT (8 Oct, in 08b; ui_guard GREEN)
+Sean saved "Aitch Vocal Chain" while viewing the vocal LINK rack; it reached the server and held the MIX BUS,
+because Save read `processorRef.getChainHost()`. The EDIT path already answered the same question the other way,
+and says why in its own comment: while a rack is leased the Link PARKS its slots, so the content lives in the
+BORROWED host. Two paths, one question, two answers - and the quiet one silently saved the wrong chain.
+**ONE AUTHOR NOW:** `EchoJayEditor::chainHostForSave(whichOut)` - the view's borrowed rack when a Link rack is
+selected, this instance's own otherwise. It takes the **VIEW's** uid (`chainViewUid()`), not the chat's, because
+Save is a button on the rack in front of the user. An empty uid, or one with no live borrow, is the local rack -
+the same fallback the edit path uses and the only honest reading of "no Link rack is selected". Every save logs
+WHICH rack it serialised and how many slots it had.
+**`saveChainToApi`'s emptiness check asks the same host**, or "There are no plugins in the chain to save" could
+appear over a full Link rack - and a full local rack could wave through a save of an empty one.
+**LEG in `ui_guard`, GREEN:** with no Link rack selected Save takes this instance's host; with a live borrow for
+the uid the view is showing it takes the BORROWED host, asserted as a different object from the local one - which
+is the whole bug, since one of them holds the vocal chain and the other the mix bus - and the log phrase names
+which it took.
+
 ### 9. PER-RACK LOOP STATE IS NEVER RESET, AND THE LEVEL CHECK WAITS FOR EVER (Sean 11:10, 8 Oct, on 08a)
 Folded in here as ruled, with the heard counter. Second rap-vocal chain: the UI stuck on the level check and never
 resolved, and the post-build summary on that NEW rack named the PREVIOUS chain's dynamics slots -
