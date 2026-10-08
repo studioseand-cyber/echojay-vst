@@ -152,11 +152,21 @@ inline Loudness loudness (const std::vector<std::vector<double>>& ch, double sr,
 // 3. PEAKS: sample peak, 4x true peak, and the count of inter-sample overs above the ceiling (+0.05 dB margin
 //    for the interpolator's own ripple; the dBTP maximum is printed so the margin is never hidden).
 // ---------------------------------------------------------------------------------------------------------------
-struct Peaks { double truePeakDb = -600, samplePeakDb = -600; size_t overs = 0; double worstSec = 0; size_t edgeOvers = 0; double edgePeakDb = -600; };
-inline Peaks peaks (const std::vector<std::vector<double>>& ch, double sr, double ceilingDb, double marginDb = 0.05)
+// Since 8 Oct 2026 the ARBITER (exact band-limited reconstruction, margin 0.02 dB) decides every overs result; the
+// 96-tap meter's reading is kept alongside for comparison (`meter*`), never for a verdict.
+struct Peaks { double truePeakDb = -600, samplePeakDb = -600; size_t overs = 0; double worstSec = 0; size_t edgeOvers = 0; double edgePeakDb = -600;
+               double meterPeakDb = -600; size_t meterOvers = 0; };
+inline Peaks peaks (const std::vector<std::vector<double>>& ch, double sr, double ceilingDb, double marginDb = 0.02)
 {
     Peaks p; const double cl = ejdsp::lin (ceilingDb);
-    for (const auto& c : ch) { const auto t = ejdsp::truePeak (c, cl, marginDb); const double tdb = ejdsp::dB (t.peakLin); if (tdb > p.truePeakDb) { p.truePeakDb = tdb; p.worstSec = (double) t.peakIndex / sr; } p.samplePeakDb = std::max (p.samplePeakDb, ejdsp::dB (t.samplePeakLin)); p.overs += t.overs; p.edgeOvers += t.edgeOvers; p.edgePeakDb = std::max (p.edgePeakDb, ejdsp::dB (t.edgePeakLin)); }
+    for (const auto& c : ch)
+    {
+        const auto a = ejdsp::truePeakExact (c, cl, marginDb); const double adb = ejdsp::dB (a.peakLin);
+        if (adb > p.truePeakDb) { p.truePeakDb = adb; p.worstSec = (double) a.peakIndex / sr; }
+        p.overs += a.overs; p.edgeOvers += a.edgeOvers; p.edgePeakDb = std::max (p.edgePeakDb, ejdsp::dB (a.edgePeakLin));
+        const auto t = ejdsp::truePeak (c, cl, 0.05); p.meterPeakDb = std::max (p.meterPeakDb, ejdsp::dB (t.peakLin)); p.meterOvers += t.overs;
+        p.samplePeakDb = std::max (p.samplePeakDb, ejdsp::dB (t.samplePeakLin));
+    }
     return p;
 }
 

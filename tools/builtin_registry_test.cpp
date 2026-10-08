@@ -2751,22 +2751,29 @@ int main()
         check (near (device->getParamValue ("ratio"), 20.0), "ratio clamped to the advertised 20 max");
     }
 
-    std::printf ("== the limiter REPORTS its lookahead latency ==\n");
+    std::printf ("== the limiter REPORTS the delay it applies: measured, and one number for every setting ==\n");
     {
+        // v2 (8 Oct 2026): the limiter's latency is FIXED - the engine delays the audio by its maximum and delays its
+        // own detector by the difference - so the contract is no longer "lookahead + 12". It is: the reported number
+        // equals the delay an impulse actually takes through the processor, and it is the same number whatever the
+        // dials say. Measured, not derived from a formula.
+        auto measureDelay = [] (juce::AudioProcessor& p)
+        {
+            juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m; int best = -1; float bestV = 0.0f;
+            for (int pos = 0; pos < 8192; pos += 512) { b.clear(); if (pos == 0) { b.setSample (0, 0, 0.25f); b.setSample (1, 0, 0.25f); } p.processBlock (b, m); for (int i = 0; i < 512; ++i) { const float v = std::abs (b.getSample (0, i)); if (v > bestV) { bestV = v; best = pos + i; } } }
+            return best;
+        };
         auto proc = makeByName ("EchoJay Limiter");
         auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
-
+        proc->setPlayConfigDetails (2, 2, 48000.0, 512);
         proc->prepareToPlay (48000.0, 512);
         device->applyStructured (paramsMove ({ { "lookahead_ms", 5.0 } }), EedDeviceProcessor::ParamSource::Assistant);
-
-        // 5 ms at 48 kHz. An unreported delay puts this track out of time with
-        // the whole session, so the number itself is the feature.
-        check (proc->getLatencySamples() == 240,
-               "5 ms lookahead at 48k reports 240 samples (got "
-               + juce::String (proc->getLatencySamples()) + ")");
-
+        const int at5 = proc->getLatencySamples(); const int measured5 = measureDelay (*proc);
+        check (at5 > 0 && at5 == measured5, "5 ms lookahead at 48k: reported latency == measured delay (reported " + juce::String (at5) + ", measured " + juce::String (measured5) + ")");
         device->applyStructured (paramsMove ({ { "lookahead_ms", 0.0 } }), EedDeviceProcessor::ParamSource::Assistant);
-        check (proc->getLatencySamples() == 0, "zero lookahead reports zero latency");
+        proc->prepareToPlay (48000.0, 512);
+        const int at0 = proc->getLatencySamples(); const int measured0 = measureDelay (*proc);
+        check (at0 == at5 && at0 == measured0, "zero lookahead reports the SAME latency, and it is still the measured delay (reported " + juce::String (at0) + ", measured " + juce::String (measured0) + ")");
     }
 
     std::printf ("== the de-esser's switches dial as on/off, in every spelling ==\n");
@@ -2980,44 +2987,37 @@ int main()
         device->applyStructured (paramsMove ({ { "mode", "punchy" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 1.0), "and punchy by name");
 
-        // CLIP ignores the lookahead, and must therefore report NO latency — a
-        // device that delays without a reason is a device that is wrong.
-        //
-        // 21t-m (29 Sep 2026): 240 -> 252, AND THE PRODUCT WAS RIGHT ALL ALONG. true_peak was switched ON three
-        // lines above, and under true_peak the interpolator reads the sidechain kTaps/2 samples late, so the
-        // audio is delayed by that much more and the limiter reports the delay it actually applies:
-        //     5 ms at 48 kHz            = 240 samples
-        //   + TruePeakInterp::kDelay    =  12 samples   (added 18 Sep 2026, "CHECK 2" in applyLookahead)
-        //   ------------------------------------------
-        //                                 252 samples
-        // The 18 Sep change said in its own comment that the extra delay "is REPORTED like the rest"; this
-        // expectation was never updated to match, and nothing noticed because this test was in NO ctest label
-        // and the only binary of it on the machine was dated 21 August. It is in the gate from this round.
+        // v2 (8 Oct 2026): every mode runs the Transparent engine tonight and the latency is FIXED (see the latency
+        // section above): one number for punchy, clip and transparent, true peak on or off, equal to the measured
+        // delay. The dialled lookahead is still remembered through a trip to clip.
+        auto measureDelay = [] (juce::AudioProcessor& p)
+        {
+            juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m; int best = -1; float bestV = 0.0f;
+            for (int pos = 0; pos < 8192; pos += 512) { b.clear(); if (pos == 0) { b.setSample (0, 0, 0.25f); b.setSample (1, 0, 0.25f); } p.processBlock (b, m); for (int i = 0; i < 512; ++i) { const float v = std::abs (b.getSample (0, i)); if (v > bestV) { bestV = v; best = pos + i; } } }
+            return best;
+        };
         device->applyStructured (paramsMove ({ { "lookahead_ms", 5.0 } }), EedDeviceProcessor::ParamSource::Assistant);
+        proc->setPlayConfigDetails (2, 2, 48000.0, 512);
         proc->prepareToPlay (48000.0, 512);
-        check (proc->getLatencySamples() == 252, "punchy honours the 5 ms lookahead PLUS the true-peak group "
-               "delay: 240 + 12 (reported " + juce::String (proc->getLatencySamples()) + " samples)");
+        const int latPunchy = proc->getLatencySamples();
+        check (latPunchy > 0 && latPunchy == measureDelay (*proc), "punchy with 5 ms lookahead and true peak: reported latency == measured delay (reported " + juce::String (latPunchy) + " samples)");
 
         device->applyStructured (paramsMove ({ { "mode", "clip" } }), EedDeviceProcessor::ParamSource::Assistant);
-        check (proc->getLatencySamples() == 0, "clip reports ZERO latency despite the 5 ms (reported "
+        check (proc->getLatencySamples() == latPunchy, "clip reports the SAME latency (fixed across modes; reported "
                + juce::String (proc->getLatencySamples()) + " samples)");
         check (near (device->getParamValue ("lookahead_ms"), 5.0),
                "while the dialled 5 ms is REMEMBERED, not destroyed");
 
         device->applyStructured (paramsMove ({ { "mode", "transparent" } }), EedDeviceProcessor::ParamSource::Assistant);
-        check (proc->getLatencySamples() == 252, "and comes back when the mode does, the same 240 + 12 (reported "
+        check (proc->getLatencySamples() == latPunchy, "and transparent reports the same (reported "
                + juce::String (proc->getLatencySamples()) + " samples)");
 
-        // 21t-m: ...AND THE OTHER PATH PINNED, so the two can never drift into each other again. With true_peak
-        // OFF the interpolator is not in circuit, there is no group delay to absorb, and the SAME 5 ms reports
-        // the lookahead alone. One of these two numbers on its own is an expectation; both of them is a rule.
         device->applyStructured (paramsMove ({ { "true_peak", false } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("true_peak"), 0.0), "true_peak is off");
-        check (proc->getLatencySamples() == 240, "with true_peak OFF the same 5 ms reports the lookahead alone: "
-               "240, no group delay (reported " + juce::String (proc->getLatencySamples()) + " samples)");
+        proc->prepareToPlay (48000.0, 512);
+        check (proc->getLatencySamples() == latPunchy && proc->getLatencySamples() == measureDelay (*proc), "with true_peak OFF the latency is unchanged and still the measured delay (reported " + juce::String (proc->getLatencySamples()) + " samples)");
         device->applyStructured (paramsMove ({ { "true_peak", true } }), EedDeviceProcessor::ParamSource::Assistant);
-        check (proc->getLatencySamples() == 252, "...and switching true_peak back on puts the 12 back, live, "
-               "with no re-prepare (reported " + juce::String (proc->getLatencySamples()) + " samples)");
+        check (proc->getLatencySamples() == latPunchy, "...and back on, unchanged, live, with no re-prepare (reported " + juce::String (proc->getLatencySamples()) + " samples)");
 
         // The release survives clip too, for the same reason: clip drives the
         // core's release to zero, so the dialled value has to live elsewhere.
@@ -3888,13 +3888,30 @@ int main()
 
             juce::AudioBuffer<float> before (buf);
             juce::MidiBuffer midi;
-            proc->processBlock (buf, midi);
-
             float worst = 0.0f;
-            for (int ch = 0; ch < 2; ++ch)
-                for (int i = 0; i < 512; ++i)
-                    worst = juce::jmax (worst, std::abs (buf.getSample (ch, i)
-                                                       - before.getSample (ch, i)));
+            if (name == "EchoJay Limiter")
+            {
+                // v2 (8 Oct 2026): the limiter has a fixed latency, so "transparent" is judged with the delay
+                // COMPENSATED: the probe is a function of the absolute sample, enough blocks run for the delay to
+                // pass, and the output at n is compared with the probe at n - latency.
+                const int lat = proc->getLatencySamples();
+                auto probe = [] (int n) { return 0.5f + 0.2f * std::sin ((float) n * 0.05f); };
+                for (int pos = 0; pos < lat + 512 * 4; pos += 512)
+                {
+                    for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 512; ++i) buf.setSample (ch, i, probe (pos + i));
+                    proc->processBlock (buf, midi);
+                    for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 512; ++i) { const int n = pos + i; if (n >= lat + 512) worst = juce::jmax (worst, std::abs (buf.getSample (ch, i) - probe (n - lat))); }
+                }
+                check (lat > 0, juce::String (d.name) + ": reports a (fixed) latency to compensate (" + juce::String (lat) + ")");
+            }
+            else
+            {
+                proc->processBlock (buf, midi);
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 512; ++i)
+                        worst = juce::jmax (worst, std::abs (buf.getSample (ch, i)
+                                                           - before.getSample (ch, i)));
+            }
 
             check (worst < 1.0e-4f,
                    juce::String (d.name) + ": untriggered, it is transparent (worst delta "

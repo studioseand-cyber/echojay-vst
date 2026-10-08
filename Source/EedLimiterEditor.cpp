@@ -59,7 +59,7 @@ EedLimiterEditor::EedLimiterEditor (EedLimiterProcessor& p)
     : EedDynamicsFaceEditor (p, "LIMITER", "brick wall, lookahead",
                              kKnobs, (int) std::size (kKnobs),
                              12.0f,
-                             [&p] { return p.gainReductionDb(); },
+                             [&p] { return p.gainReductionPeakDb(); },   // the needle shows the deepest gain of the block
                              kDefaultW, kDefaultH),
       limiter_ (p)
 {
@@ -175,7 +175,7 @@ void EedLimiterEditor::refreshExtras()
     curve_.setDwellSource (&limiter_.dwellHistogram(), ! byp);
     curve_.setInputLevelDb (byp ? echojay::viz::TransferCurveView::kNoLevel
                                 : limiter_.detectorLevelDb());
-    curve_.setGainReductionDb (byp ? 0.0f : limiter_.gainReductionDb());
+    curve_.setGainReductionDb (byp ? 0.0f : limiter_.gainReductionPeakDb());
 
     // ---- the latency line ---------------------------------------------------
     const int    samples = limiter_.getLatencySamples();

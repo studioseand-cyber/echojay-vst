@@ -100,6 +100,51 @@ inline TruePeakResult truePeak (const std::vector<double>& x, double ceilingLin,
     return r;
 }
 
+// THE ARBITER (8 Oct 2026, after the gate's finding): the EXACT band-limited true peak. The signal is reconstructed
+// by FFT zero-padding (16x) in 65536-sample chunks with 50 % overlap (only each chunk's central half is read, so a
+// chunk's edge affects nothing), and every local maximum of |x| on the 16x grid is refined with a parabola through
+// its two neighbours - the continuous peak, not the nearest grid point (at Nyquist a 16x grid alone can miss 0.17
+// dB). Shares no code with any windowed-sinc meter here or in the limiter. The same edge rule as the meters: a
+// reading within kEdgeSpan input samples of a file end, or in the final flush, is an EDGE reading (a cut print).
+struct ExactPeakResult { double peakLin = 0; size_t peakIndex = 0; size_t overs = 0; size_t edgeOvers = 0; double edgePeakLin = 0; };
+constexpr size_t kEdgeSpan = 96;
+inline ExactPeakResult truePeakExact (const std::vector<double>& x, double ceilingLin, double marginDb = 0.02)
+{
+    ExactPeakResult r; const double limit = ceilingLin * lin (marginDb);
+    const size_t N = x.size(); if (N == 0) return r;
+    const size_t C = 65536, H = C / 2, OS = 16;
+    std::vector<std::complex<double>> A (C), B (C * OS);
+    std::vector<double> y (C * OS);
+    size_t lastOverSample = (size_t) -1;
+    for (size_t p = 0; p + H <= N + H; p += H)   // chunks start every H; the last ones run past N with zeros
+    {
+        for (size_t i = 0; i < C; ++i) A[i] = (p + i < N) ? x[p + i] : 0.0;
+        fft (A, false);
+        std::fill (B.begin(), B.end(), std::complex<double> (0.0, 0.0));
+        for (size_t k = 0; k < C / 2; ++k) B[k] = A[k];
+        B[C / 2] = A[C / 2] * 0.5; B[C * OS - C / 2] = A[C / 2] * 0.5;
+        for (size_t k = C / 2 + 1; k < C; ++k) B[C * OS - C + k] = A[k];
+        fft (B, true);
+        for (size_t i = 0; i < C * OS; ++i) y[i] = B[i].real() * (double) OS;
+        // read the central half of the chunk (the first chunk also reads its first quarter, the last its final quarter)
+        const size_t i0 = (p == 0) ? 0 : C / 4, i1 = (p + C >= N + H) ? C : 3 * C / 4;
+        for (size_t i = i0 * OS + 1; i + 1 < i1 * OS; ++i)
+        {
+            const double a = std::abs (y[i - 1]), b = std::abs (y[i]), c = std::abs (y[i + 1]);
+            if (b < a || b < c) continue;
+            const double den = a - 2.0 * b + c; double pk = b;
+            if (den < 0.0) { const double d = 0.5 * (a - c) / den; if (std::abs (d) <= 1.0) pk = b - 0.25 * (a - c) * d; }
+            const size_t n = p + i / OS; if (n >= N + kEdgeSpan) break;
+            const bool edge = n < kEdgeSpan || n + kEdgeSpan >= N;
+            if (edge) { r.edgePeakLin = std::max (r.edgePeakLin, pk); if (pk > limit) ++r.edgeOvers; continue; }
+            if (pk > r.peakLin) { r.peakLin = pk; r.peakIndex = n; }
+            if (pk > limit && n != lastOverSample) { ++r.overs; lastOverSample = n; }   // one over per input sample
+        }
+        if (p + C >= N + H) break;
+    }
+    return r;
+}
+
 // Power spectrum of x[start .. start+n) with a 4-term Blackman-Harris window (sidelobes -92 dB; Hann's leakage
 // from a line that is not bin-centred put a -44 dB floor under THD+N), n a power of two. Returns |X|^2 per bin,
 // scaled so a full-scale sine reads 1.0 at its bin (coherent gain removed); the caller sums ±5 bins for a line.

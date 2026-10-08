@@ -197,3 +197,49 @@ Minimum bar for the hand-off (closer than the current limiter on level and pumpi
   fullmix_hot   level  current -10.69 | v2 -10.17 | Pro-L 2 -10.06   pumping  current 0.44 | v2 0.15 | Pro-L 2 0.08
 Transparent tuning (limv2::transparent()): lookahead 0.3 ms box, fast part 0.3 ms, floor 72 % with 150/180 ms, window
 4 ms, second charge to 100 % with tau 1.2 s, link 0.75, margin 0.05 dB, post-check 1 ms. CLEAN = the first behaviour.
+
+## 8 Oct 2026, day: the gate's RED (session G) and the arbiter round
+
+G's gate on 10fe9d3: RED. Build clean; limiter_wall_guard overs (+0.83 dBTP by its 4x/24 meter, +1.11 by exact
+reconstruction) on the 1 s +6 dBFS noise burst; latency 216 (not the 1344 the hand-off said - that number came from the
+core test's pre-C3 configuration, 5 ms x 5; 216 was right for the 0.3 ms window); builtin_registry_test asserting the
+old lookahead+12 formula and comparing one block in place.
+
+ARBITER (tools/limiter_ab_guard/ejdsp.h truePeakExact): exact band-limited reconstruction, FFT zero-padding 16x in 64k
+chunks with 50 % overlap, parabola through each local maximum. Shares nothing with any windowed-sinc meter. Validated on
+full-scale sines 997 Hz..23.9 kHz at three phases within 0.015 dB (the residual at 23.9 kHz is the test fade's own
+sideband folding at Nyquist: 0.18 dB with a 10 ms fade, 0.04 with 100 ms, 0.01 with 300 ms). It decides every overs
+result now (margin +0.02 dB); the 96-tap meter is printed alongside.
+
+THE PHYSICS: a windowed sinc of half-length M under-reads full-band white noise by about 0.45/sqrt(M): 96 taps 0.54 dB,
+1024 taps 0.20 dB (measured against the arbiter on the limiter's own output); 0.02 dB would need M ~ 38000 samples.
+No real-time detector reads white noise exactly; music has nothing at Nyquist and reads exactly with M ~ 500.
+
+THE FIX (EJLimiterV2Core.h): (1) TruePeakHB - a 2x half-band Kaiser interpolator with half-length 512 (every other
+tap zero: 1024 MACs per sample), then a 32-tap 4x stage on the 2x stream, then a parabola over the 8 points per sample;
+used by the main detector and the post-check. (2) B-spline gain windows instead of boxes (the box's steps put the
+limiter's own products at Nyquist; same 0.3 ms support, so the tuning is unchanged). (3) A Nyquist-band margin: the
+gained input's first-difference energy fraction (0 for music, 1 for white) above 0.05 scales an extra margin of up to
+0.30 dB. Cost: latency 1103 natural / 1160 fixed samples at 48 k (24.2 ms; was 216), CPU 4.65 % of real time (5.9x the
+current limiter's 0.79 %; was 1.5x). Stress set (stress_tp, 360 configs per limiter: guard bursts, white, pink, square
+100/1000 Hz, tones 20/22/23.5 kHz, hard-clipped mix, hot mix; +6/+10/+15; ceilings 0/-1; 44.1/48/96 k; mono/stereo):
+before the fix v2 Transparent +1.26 dB worst, CLEAN +0.48, the CURRENT LIMITER +1.60 (+1.94 at 96 k, 252 of 360 configs
+over) - the old limiter had this all along and its guard's meter could not see it; after the fix v2 Transparent +0.02
+worst, 0 of 360 over (the last six, pink at 44.1 k mono +0.03/+0.04, needed the margin onset lowered from 0.10 to 0.05).
+
+GR for the loop: gainReductionDb() is now BLOCK GR (output energy / gained-input energy), which is what the loop's
+estimate measures (J5 read estimate 2.27 vs peak GR 3.51); gainReductionPeakDb() feeds the meter's needle. Both
+measured in the core test.
+
+Guards: limiter_wall_guard judged by the arbiter, latency reported == measured impulse delay (44.1/48/96 k, TP on/off,
+2/10 ms), transparency with the delay compensated. builtin_registry_test: only the limiter's expectations changed
+(results/2026-10-08_builtin_registry_test_limiter.diff). loudness_loop_guard untouched.
+
+CMake: option ECHOJAY_TEST_MARKER (OFF): appends -lv2test to both products' names and to the Info.plist version strings
+via PLIST_TO_MERGE; the numeric VERSION (JucePlugin_VersionCode) is untouched.
+Late additions (8 Oct, midday): the Nyquist-band margin ended at 0.60 dB (0.30 satisfied the arbiter, but
+loudness_loop_guard's leg H judges white-noise bursts with a 4x/24-tap meter that over-reads HF by up to 0.33 dB and
+must pass as it stands); gainReductionDb() became BLOCK GR (energy ratio) for the loop, gainReductionPeakDb() for the
+meter (J5: estimate 2.32 vs real 2.36); the loop restructure briefly dropped the bypass crossfade's update line (caught
+by the core test's bypass leg, restored). Final: core test GREEN (57), stress 0 of 360 over for both v2 styles,
+limiter_wall_guard / loudness_loop_guard / builtin_registry_test all PASS on build-guards-lv2 (arm64, no LTO).

@@ -183,6 +183,7 @@ void EedLimiterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     float pk = 0.0f;
     for (int i = 0; i < n; ++i) pk = juce::jmax (pk, std::abs (l[i]), r != nullptr ? std::abs (r[i]) : 0.0f);
     wallGrDb_.store (byp ? 0.0f : engine_.gainReductionDb(), std::memory_order_relaxed);
+    blockGrDb_.store (byp ? 0.0f : engine_.blockGainReductionDb(), std::memory_order_relaxed);
     if (pk > outPeakMax_.load (std::memory_order_relaxed)) outPeakMax_.store (pk, std::memory_order_relaxed);
     outMeter_.push (l, r, n);   // 18e (item 4): the OUTPUT meter
 }

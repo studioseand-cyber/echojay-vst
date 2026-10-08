@@ -15,6 +15,20 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 # version at deploy; the 2.99.99 gate-test bump died uncommitted, as designed.
 project(EchoJay VERSION 2.26.4)
 
+# ---------------------------------------------------------------------------
+# ECHOJAY_TEST_MARKER (8 Oct 2026, session L): a TEST build must be tellable from a release build by eye, not only
+# by its UUID. ON appends "-lv2test" to each plugin's product name (the bundle display name and file name) and to
+# the version STRINGS in the bundle's Info.plist (CFBundleShortVersionString, CFBundleVersion). OFF by default:
+# a release build is byte-for-byte what it was. The numeric VERSION (JucePlugin_VersionCode, what the server's
+# dial gates pin) is never touched - only the strings people read.
+# ---------------------------------------------------------------------------
+option(ECHOJAY_TEST_MARKER "Append -lv2test to the product names and version strings (TEST builds only)" OFF)
+set(EJ_TEST_SUFFIX "")
+if(ECHOJAY_TEST_MARKER)
+    set(EJ_TEST_SUFFIX "-lv2test")
+    message(STATUS "EchoJay: TEST MARKER ON - product names and version strings carry ${EJ_TEST_SUFFIX}")
+endif()
+
 # Path to your JUCE installation — update this to match your setup
 # Download JUCE from https://juce.com/download/
 set(JUCE_PATH "${CMAKE_SOURCE_DIR}/../JUCE" CACHE PATH "Path to JUCE framework")
@@ -103,7 +117,8 @@ juce_add_plugin(EchoJay
     PLUGIN_MANUFACTURER_CODE Ecjy
     PLUGIN_CODE EcJ2
     FORMATS ${PLUGIN_FORMATS}
-    PRODUCT_NAME "EchoJay V2"
+    PRODUCT_NAME "EchoJay V2${EJ_TEST_SUFFIX}"
+    PLIST_TO_MERGE "<plist><dict><key>CFBundleShortVersionString</key><string>${PROJECT_VERSION}${EJ_TEST_SUFFIX}</string><key>CFBundleVersion</key><string>${PROJECT_VERSION}${EJ_TEST_SUFFIX}</string></dict></plist>"
     AAX_IDENTIFIER "com.echojay.plugin.v2"
     AU_MAIN_TYPE kAudioUnitType_Effect
     VST3_CATEGORIES "Fx" "Analyzer"
@@ -473,7 +488,8 @@ juce_add_plugin(EchoJayLink
     PLUGIN_MANUFACTURER_CODE Ecjy
     PLUGIN_CODE EjLk
     FORMATS ${LINK_FORMATS}
-    PRODUCT_NAME "EchoJay Link"
+    PRODUCT_NAME "EchoJay Link${EJ_TEST_SUFFIX}"
+    PLIST_TO_MERGE "<plist><dict><key>CFBundleShortVersionString</key><string>${LINK_VERSION}${EJ_TEST_SUFFIX}</string><key>CFBundleVersion</key><string>${LINK_VERSION}${EJ_TEST_SUFFIX}</string></dict></plist>"
     AU_MAIN_TYPE kAudioUnitType_Effect
     VST3_CATEGORIES "Fx"
     HARDENED_RUNTIME_ENABLED TRUE

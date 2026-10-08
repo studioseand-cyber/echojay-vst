@@ -29,8 +29,9 @@
     Reported through ejSetLatencyLogged as before. BYPASS STILL DELAYS, for the same reason it always did, and the
     gain crossfades over 10 ms either way so neither edge of a bypass clicks.
 
-    gainReductionDb() is the DEEPEST gain of the last block (peak GR, negative), as the loudness loop has always
-    read it. It is measured, not estimated: limiter_v2_core_test compares it with the block's actual output/input.
+    gainReductionDb() is the BLOCK gain reduction (output energy over gained-input energy, negative), which is what
+    the loudness loop's own estimate measures; gainReductionPeakDb() is the deepest gain of the block, for the meter.
+    Both are measured, not estimated: limiter_v2_core_test compares them with the block's actual output/input.
 
     THE DWELL HISTOGRAM AND DETECTOR LEVEL the transfer-curve editor draws still come from the shared DynamicsCore
     detector, which is fed the gained input and asked for nothing else; its gain is not used.
@@ -94,7 +95,12 @@ public:
     bool releaseInUse()   const noexcept { return true; }
     bool lookaheadInUse() const noexcept { return true; }
 
-    float gainReductionDb() const noexcept { return wallGrDb_.load (std::memory_order_relaxed); }   // the engine's deepest gain of the last block (peak GR), negative
+    // gainReductionDb(): BLOCK GR - 10log10 (output energy / gained-input energy) of the last block, negative. This is
+    // what the loudness loop reads ("working N dB average"), and it agrees with the loop's own loudness-based
+    // estimate (loudness_loop_guard J5) and with the harness's GR. gainReductionPeakDb(): the deepest gain applied
+    // in the last block, for the GR meter's needle. Both measured, neither estimated (limiter_v2_core_test).
+    float gainReductionDb() const noexcept     { return blockGrDb_.load (std::memory_order_relaxed); }
+    float gainReductionPeakDb() const noexcept { return wallGrDb_.load (std::memory_order_relaxed); }
     float detectorLevelDb()  const noexcept { return core_.detectorLevelDb(); }
 
     // Where the signal LIVES on that curve — the dwell histogram behind the
@@ -121,7 +127,8 @@ private:
     float  inputGain_   = 1.0f;   // its linear value, for the input meter's scaled copy
     echojay::LevelTally inMeter_ { echojay::LevelTally::Weighting::K }, outMeter_ { echojay::LevelTally::Weighting::K };   // 18e (item 4)
     std::atomic<float> outPeakMax_ { 0.0f };   // max |output sample| since resetOutputPeak ("Peaks" in the loop bubble)
-    std::atomic<float> wallGrDb_ { 0.0f };     // the engine's deepest gain of the last block, dB (negative)
+    std::atomic<float> wallGrDb_ { 0.0f };     // the engine's deepest gain of the last block, dB (negative): peak GR
+    std::atomic<float> blockGrDb_ { 0.0f };    // the engine's block GR (energy ratio), dB (negative)
     bool   truePeakOn_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedLimiterProcessor)
