@@ -5673,7 +5673,8 @@ inline int runMultiband (const SweepOptions& opt)
     // THE CONTROLS: band thresholds (threshold / thresh with a band word or number; never a sidechain "S" one), crossovers
     // (crossover / cross / xover / freq with low / high / a number), a global amount (amount / compression / depth; mix is not)
     struct Thr { int index; juce::String name, display0, display1, instantiate; double instNorm; };
-    std::vector<Thr> thresholds; std::vector<juce::String> crossoverDisplays; juce::StringArray crossoverNames; int globalIdx = -1; juce::String globalName;
+    std::vector<Thr> thresholds; std::vector<juce::String> crossoverDisplays; juce::StringArray crossoverNames, stageSkipped, qualifierSkipped; int globalIdx = -1; juce::String globalName;
+    std::vector<std::pair<juce::String, juce::String>> bandFreqs;   // "Band N Frequency" style: name, instantiate display
     auto answers = [] (const juce::String& name, std::initializer_list<const char*> terms) { for (const char* t : terms) if (nametokens::controlAnswersTerm (name, t)) return true; return false; };
     if (const auto* cs = base.getProperty ("controls", {}).getArray())
         for (const auto& c : *cs)
@@ -5682,19 +5683,40 @@ inline int runMultiband (const SweepOptions& opt)
             if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (n)) continue;
             const auto at = c.getProperty ("displayAt", {}); const auto inst = c.getProperty ("defaultOnInstantiate", {});
             auto d0 = at.getProperty ("0.000", "").toString(), d1 = at.getProperty ("1.000", "").toString();
-            if (answers (n, { "threshold", "thresh", "thr" }) && ! answers (n, { "s", "sc", "sidechain", "key" }))
+            if (answers (n, { "threshold", "thresh", "thr" }) && ! answers (n, { "s", "sc", "sidechain", "key" }) && multiband::stageThreshold (n))
+                stageSkipped.add (n);   // Sean's ruling (8 Oct): a gate / processor stage's threshold is never a band threshold
+            else if (answers (n, { "threshold", "thresh", "thr" }) && ! answers (n, { "s", "sc", "sidechain", "key" }))
                 thresholds.push_back ({ idx, n, d0, d1, inst.getProperty ("display", "").toString(), (double) inst.getProperty ("normalised", 0.0) });
-            else if (answers (n, { "crossover", "xover", "cross", "x-over" }) || (answers (n, { "freq", "frequency", "hz" }) && answers (n, { "low", "high", "mid", "band", "lo", "hi", "1", "2", "3", "4", "5" })))
-            { crossoverDisplays.push_back (inst.getProperty ("display", "").toString()); crossoverNames.add (n); }
+            else if (answers (n, { "crossover", "xover", "cross", "x-over" }))
+            { if (multiband::crossoverQualifier (n)) qualifierSkipped.add (n); else { crossoverDisplays.push_back (inst.getProperty ("display", "").toString()); crossoverNames.add (n); } }
+            else if (answers (n, { "freq", "frequency", "hz" }) && answers (n, { "low", "high", "mid", "band", "lo", "hi", "1", "2", "3", "4", "5" }))
+                bandFreqs.push_back ({ n, inst.getProperty ("display", "").toString() });   // an edge, or a floating band's centre when explicit crossovers exist (below)
             else if (globalIdx < 0 && (answers (n, { "amount", "depth" }) || (answers (n, { "compression" }) && answers (n, { "globals", "global" })))) { globalIdx = idx; globalName = n; }
         }
-    juce::StringArray skipped; const auto bands = crossoverDisplays.empty() ? std::vector<Band>() : bandsFromCrossovers (crossoverDisplays, skipped);
+    // floating bands (Sean's ruling 8 Oct): with explicit crossovers, a "Band N Frequency" is a floating band's centre; without, an edge (as before)
+    std::map<int, int> floatingBandOf; juce::Array<juce::var> floatingVar; const bool explicitCrossovers = ! crossoverNames.isEmpty();
+    if (! explicitCrossovers) for (const auto& [fn, fd] : bandFreqs) { crossoverDisplays.push_back (fd); crossoverNames.add (fn); }
+    juce::StringArray skipped; auto bands = crossoverDisplays.empty() ? std::vector<Band>() : bandsFromCrossovers (crossoverDisplays, skipped);
+    if (explicitCrossovers)
+        for (const auto& [fn, fd] : bandFreqs)
+        {
+            const int bn = bandNumberOf (fn); const auto hz = deesser::labelHz (fd);
+            if (bn < 0 || ! hz || *hz <= 20.0 || *hz >= 20000.0) { skipped.add (fn + " '" + fd + "'"); continue; }
+            bands.push_back (floatingBand ((int) bands.size() + 1, *hz)); floatingBandOf[bn] = (int) bands.size() - 1;
+            auto* fv = new juce::DynamicObject(); fv->setProperty ("band", (int) bands.size()); fv->setProperty ("control", fn); fv->setProperty ("centre_hz", std::round (*hz)); fv->setProperty ("band_number", bn); floatingVar.add (juce::var (fv));
+        }
+    if (! qualifierSkipped.isEmpty()) say ("  not crossovers (a crossover's qualifier): " + qualifierSkipped.joinIntoString (", "));
+    if (! floatingVar.isEmpty()) say ("  floating bands (a band's own frequency, explicit crossovers present): " + juce::String (floatingVar.size()));
     say ("MB: " + opt.product + " " + desc.version + ": " + juce::String ((int) thresholds.size()) + " band threshold(s) [" + [&] { juce::StringArray a; for (const auto& t : thresholds) a.add (t.name + " @ '" + t.instantiate + "'"); return a.joinIntoString (", "); }() + "]; crossovers [" + crossoverNames.joinIntoString (", ") + "] -> " + juce::String ((int) bands.size()) + " band(s)" + (skipped.isEmpty() ? juce::String() : " (skipped: " + skipped.joinIntoString (", ") + ")") + "; global amount " + (globalIdx >= 0 ? "[" + juce::String (globalIdx) + "] " + globalName : juce::String ("none")));
+    if (! stageSkipped.isEmpty()) say ("  not band thresholds (another stage's, Sean's ruling 8 Oct): " + stageSkipped.joinIntoString (", "));
     if (thresholds.empty()) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  no band thresholds by name; controls: " + names.joinIntoString (", ")); return 4; }
     auto* o = new juce::DynamicObject();
     o->setProperty ("schema", "ej_multiband_prototype/0"); o->setProperty ("status", "PROTOTYPE - the multiband proposal with real numbers, not exported, not published");
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
-    { juce::Array<juce::var> bv; for (const auto& b : bands) { auto* x = new juce::DynamicObject(); x->setProperty ("band", b.index); x->setProperty ("lo_hz", std::round (b.loHz)); x->setProperty ("hi_hz", std::round (b.hiHz)); x->setProperty ("centre_hz", std::round (b.centreHz)); bv.add (juce::var (x)); } o->setProperty ("bands", bv); o->setProperty ("crossover_controls", crossoverNames.joinIntoString (", ")); }
+    if (! stageSkipped.isEmpty()) { juce::Array<juce::var> sv; for (const auto& n : stageSkipped) sv.add (n); o->setProperty ("stage_thresholds_not_nominated", sv); }
+    if (! floatingVar.isEmpty()) o->setProperty ("floating_bands", floatingVar);
+    if (! qualifierSkipped.isEmpty()) { juce::Array<juce::var> qv; for (const auto& n : qualifierSkipped) qv.add (n); o->setProperty ("crossover_qualifiers_not_edges", qv); }
+    { juce::Array<juce::var> bv; for (const auto& b : bands) { auto* x = new juce::DynamicObject(); x->setProperty ("band", b.index); for (const auto& [bn, ix] : floatingBandOf) if (ix == b.index - 1) { x->setProperty ("floating", true); x->setProperty ("band_number", bn); } x->setProperty ("lo_hz", std::round (b.loHz)); x->setProperty ("hi_hz", std::round (b.hiHz)); x->setProperty ("centre_hz", std::round (b.centreHz)); bv.add (juce::var (x)); } o->setProperty ("bands", bv); o->setProperty ("crossover_controls", crossoverNames.joinIntoString (", ")); }
     auto setOf = [] (int idx, double norm) { return juce::String (idx) + ":" + juce::String (norm, 6); };
     juce::StringArray norms; for (int k = 0; k <= 5; ++k) norms.add (juce::String (k / 5.0f, 6));
     int measured = 0;
@@ -5703,6 +5725,7 @@ inline int runMultiband (const SweepOptions& opt)
     // hard end cuts by 3 dB or more names the band it owns (its centre picks the band by the edges); a threshold that cuts nothing is
     // dropped here (Melda's gate / processor thresholds, C6's thresholds on tones that are not theirs)
     std::vector<int> pairedBand (thresholds.size(), -1); std::vector<juce::String> pairNote (thresholds.size());
+    auto floatingBandIdx = [&] (size_t k) { for (const auto& [bn, ix] : floatingBandOf) if ((size_t) ix == k) return true; return false; };
     // THE ENABLE STEP (Kathy, 7 Oct item 8 - as the EQ got): a band threshold that cuts nothing between its ends may sit in a band that is OFF
     // at instantiate (Pro-MB, Ozone 12 Dynamics, DynOne3, SSL G3): its own switches are tried, closest name first, at most four; one that makes
     // it cut is written on EVERY later process of the unit (the ladders, the whole-unit responses, the offsets) and recorded as `enabled_by`
@@ -5739,7 +5762,8 @@ inline int runMultiband (const SweepOptions& opt)
         if (worst > -deesser::kBandCutDb) { pairNote[i] = "cuts nothing by " + juce::String (deesser::kBandCutDb, 0) + " dB between its ends on the multitone (deepest " + juce::String (worst, 2) + ")"; roles.push_back (roleevidence::nominee (t.index, t.name, "band_threshold", { false, pairNote[i] })); say ("  pairing [" + juce::String (t.index) + "] " + t.name + ": " + pairNote[i]); continue; }
         double lo = 0.0, hi = 0.0, sumLog = 0.0; int n = 0; for (const auto& [f, d] : dev) if (d <= worst / 2.0) { if (lo == 0.0) lo = f; hi = f; sumLog += std::log2 (f); ++n; }
         const double centre = std::pow (2.0, sumLog / juce::jmax (1, n));
-        int best = -1; for (size_t k = 0; k < bands.size(); ++k) if (centre >= bands[k].loHz && centre < bands[k].hiHz) best = (int) k;
+        int best = -1; for (size_t k = 0; k < bands.size(); ++k) if (! floatingBandIdx (k) && centre >= bands[k].loHz && centre < bands[k].hiHz) best = (int) k;
+        if (const int bn = bandNumberOf (t.name); floatingBandOf.count (bn)) best = floatingBandOf[bn];   // a floating band's own threshold: its own band, at its frequency
         pairedBand[i] = best; pairNote[i] = "cuts " + juce::String (lo, 0) + "-" + juce::String (hi, 0) + " Hz (deepest " + juce::String (worst, 1) + " dB, centre " + juce::String (centre, 0) + ")" + (best >= 0 ? " -> band " + juce::String (bands[(size_t) best].index) : juce::String (" -> no band holds that centre"));
         say ("  pairing [" + juce::String (t.index) + "] " + t.name + ": " + pairNote[i]);
     }

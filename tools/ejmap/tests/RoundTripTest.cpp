@@ -8680,6 +8680,43 @@ void testMultiband()
 }
 
 /** NAMES PROPOSE, MEASUREMENT DECIDES (EjmapRoleEvidence.h, 5 Oct evening ruling): every case run 2 found where the name was wrong, as a pin. */
+/** SEAN'S RULING (8 Oct): a multiband uses only each band's own compressor threshold - every threshold name in this Mac's multiband maps. */
+void testMultibandStageThresholds()
+{
+    using ejmap::multiband::stageThreshold;
+    const juce::StringArray own { "Band 1 -> Threshold", "Band 2 -> Threshold", "Band 3 -> Threshold", "Band 4 -> Threshold",          // MDynamicsMB (Large)
+                                  "Band 1 Threshold", "Band 6 Threshold", "Band 1 Thresh", "Band 5 Thresh",                         // C6 (+ SideChain), C4, LinMB
+                                  "C HMF Threshold", "LR MF Threshold", "S HF Threshold", "Low Threshold", "High Threshold", "Threshold" };   // DynOne3, SSL G3, L3
+    const juce::StringArray stage { "Band 1 - Gate - Threshold", "Band 1 - Processor 1 - Threshold", "Band 1 - Processor 2 - Threshold",
+                                    "Band 4 - Processor 1 - Threshold", "Band 6 - Gate - Threshold", "Band 5 - Processor 2 - Threshold" };
+    int ownOk = 0, stageOk = 0; for (const auto& n : own) ownOk += stageThreshold (n) ? 0 : 1; for (const auto& n : stage) stageOk += stageThreshold (n) ? 1 : 0;
+    // S2 (floating bands, crossover qualifiers): the names on MDynamicsMB and C6
+    {
+        using namespace ejmap::multiband;
+        const juce::StringArray qual { "Crossover -> Slope", "Crossover -> Linear-phase", "Crossover type", "Crossover analog mode", "Level crossover slope", "Level crossover value", "Crossover tone", "Crossover smoothing", "Crossover transient release", "Crossover spectral resolution", "Crossover Q" };
+        const juce::StringArray edge { "Crossover -> Cross 1", "Crossover -> Cross 2", "Crossover -> Cross 3", "Low Crossover", "Mid Crossover", "High Crossover" };
+        int q = 0, e = 0; for (const auto& n : qual) q += crossoverQualifier (n) ? 1 : 0; for (const auto& n : edge) e += crossoverQualifier (n) ? 0 : 1;
+        const auto fb = floatingBand (7, 2000.0);
+        check (q == qual.size() && e == edge.size() && bandNumberOf ("Band 6 Frequency") == 6 && bandNumberOf ("Band 1 Threshold") == 1 && bandNumberOf ("Band1 Thresh") == 1 && bandNumberOf ("Low Crossover") == -1
+               && fb.index == 7 && std::abs (fb.centreHz - 2000.0) < 1e-9 && std::abs (fb.loHz - 1414.21) < 0.01 && std::abs (fb.hiHz - 2828.43) < 0.01,
+               "mb S2: a crossover's qualifier is not an edge (" + juce::String (q) + "/" + juce::String (qual.size()) + "), the real crossovers are (" + juce::String (e) + "/" + juce::String (edge.size()) + "); a floating band is its own band at its frequency, its threshold found by band number");
+    }
+    // S3: the draft carries a floating band as floating, and says how many stage thresholds were not band thresholds
+    {
+        auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, x] : kv) o->setProperty (k, x); return juce::var (o); };
+        juce::Array<juce::var> bands { mk ({ { "band", 1 }, { "lo_hz", 20 }, { "hi_hz", 92 }, { "centre_hz", 43 } }), mk ({ { "band", 5 }, { "lo_hz", 141 }, { "hi_hz", 283 }, { "centre_hz", 200 }, { "floating", true }, { "band_number", 1 } }) };
+        juce::Array<juce::var> stages { juce::var ("Band 1 - Gate - Threshold"), juce::var ("Band 1 - Processor 1 - Threshold") };
+        const auto rec = mk ({ { "bands", bands }, { "stage_thresholds_not_nominated", stages } });
+        const auto d = ejmap::multiband::profileDraft (rec, {}, {}, "draft", "MULTIBAND v0.1 PROPOSAL");
+        juce::StringArray ns; if (const auto* a = d.getProperty ("notes", {}).getArray()) for (const auto& n : *a) ns.add (n.toString());
+        const auto* db = d.getProperty ("bands", {}).getArray();
+        check (db != nullptr && db->size() == 2 && ! (bool) (*db)[0].getProperty ("floating", false) && (bool) (*db)[1].getProperty ("floating", false) && (int) (*db)[1].getProperty ("band_number", 0) == 1
+               && ns.joinIntoString ("|").contains ("not band thresholds (gate / processor stages, Sean's ruling 8 Oct): 2 control(s)"),
+               "mb S3: the draft marks the floating band and counts the stage thresholds left out");
+    }
+    check (ownOk == own.size() && stageOk == stage.size(), "mb S1: only a band's own compressor threshold is nominated: " + juce::String (ownOk) + "/" + juce::String (own.size()) + " own kept, " + juce::String (stageOk) + "/" + juce::String (stage.size()) + " gate / processor stages refused (MDynamicsMB's Processor 1 cut and paired before)");
+}
+
 void testRoleEvidence()
 {
     // MN (Kathy's 6 Oct ruling, the Phase B fallback): measurement nominates when the lexicon found nothing - the role's signature at the
@@ -9076,6 +9113,7 @@ int main (int, char**)
     testRunAll();
     testReviewPhaseB();
     testMultiband();
+    testMultibandStageThresholds();
     testRoleEvidence();
     testTextPassTimeout();
     testPhaseB();

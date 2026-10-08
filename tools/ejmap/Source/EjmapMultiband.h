@@ -30,6 +30,14 @@ namespace ejmap::multiband
 {
 
 struct Band { int index = 0; double loHz = 0.0, hiHz = 0.0, centreHz = 0.0; };
+// a control name as lower-case letter / digit runs ("Band 1 - Processor 1 - Threshold" -> band 1 processor 1 threshold)
+inline juce::StringArray nameTokens (const juce::String& name)
+{
+    juce::StringArray toks; juce::String cur;
+    for (auto ch : name.toLowerCase()) { if (juce::CharacterFunctions::isLetterOrDigit (ch)) cur << ch; else if (cur.isNotEmpty()) { toks.add (cur); cur.clear(); } }
+    if (cur.isNotEmpty()) toks.add (cur);
+    return toks;
+}
 // crossover displays -> bands; a display that is not a number is skipped and named
 inline std::vector<Band> bandsFromCrossovers (const std::vector<juce::String>& displays, juce::StringArray& skipped)
 {
@@ -41,6 +49,27 @@ inline std::vector<Band> bandsFromCrossovers (const std::vector<juce::String>& d
     out.push_back ({ k, lo, 20000.0, std::sqrt (lo * 20000.0) });
     return out;
 }
+
+// FLOATING BANDS AND CROSSOVER QUALIFIERS (Sean's ruling 8 Oct: "handle floating bands (C6)"). Two name rules for the topology:
+// - a crossover-named control that QUALIFIES the crossover (its slope, type, mode, tone, Q, level, value, smoothing, resolution...) is not
+//   a crossover: MDynamicsMB's "Crossover -> Slope" and "Level crossover value" added phantom edges at 24 and 50 Hz (Band 1 filed as band 3);
+// - a "Band N Frequency" on a unit that ALSO has explicit crossovers is a FLOATING band's centre, not an edge: C6's Band 1 / Band 6
+//   Frequency split its four crossover bands into six. A floating band gets its own entry at its frequency (half an octave each side);
+//   its threshold (the same band number) is laddered there. A unit with no explicit crossover keeps "Band N Frequency" as edges (as before).
+inline bool crossoverQualifier (const juce::String& name)
+{
+    for (const auto& t : nameTokens (name))
+        if (t == "slope" || t == "type" || t == "mode" || t == "analog" || t == "tone" || t == "smoothing" || t == "release" || t == "resolution" || t == "transient"
+            || t == "spectral" || t == "linear" || t == "phase" || t == "q" || t == "level" || t == "value" || t == "width" || t == "steep") return true;
+    return false;
+}
+inline int bandNumberOf (const juce::String& name)
+{
+    const auto toks = nameTokens (name);
+    for (int i = 0; i < toks.size(); ++i) { if (toks[i] == "band" && i + 1 < toks.size() && toks[i + 1].containsOnly ("0123456789")) return toks[i + 1].getIntValue(); if (toks[i].startsWith ("band") && toks[i].length() > 4 && toks[i].substring (4).containsOnly ("0123456789")) return toks[i].substring (4).getIntValue(); }
+    return -1;
+}
+inline Band floatingBand (int index, double centreHz) { return { index, juce::jmax (20.0, centreHz / std::sqrt (2.0)), juce::jmin (20000.0, centreHz * std::sqrt (2.0)), centreHz }; }
 
 // a threshold control's dB ends from its displays at norm 0 and 1 (both numeric), and the norm for a dB value (linear in dB, said)
 struct DbRange { bool ok = false; double at0 = 0.0, at1 = 0.0; };
@@ -80,6 +109,17 @@ inline bool offsetRepeatsLast (const juce::String& lastDisplays, const juce::Str
 // words read it as a gate) is another stage (proposal finding 4); switching it on would add gating to every whole-unit figure after it
 inline bool enableEligible (const juce::String& thresholdName) { return strip::sectionOf (thresholdName) != "gate"; }
 
+// SEAN'S RULING (8 Oct, SPEC_RULINGS v0.2, multibands): use ONLY each band's own compressor threshold ("Band N -> Threshold" on Melda).
+// A threshold whose name carries another stage - "Band 1 - Gate - Threshold", "Band 1 - Processor 1 - Threshold" - belongs to a gate or
+// processor stage and is never nominated, even when it cuts: MDynamicsMB's Processor 1 thresholds cut the same regions as the bands'
+// own thresholds, paired to the same bands and had their ladders taken (d0587ff4..a6c85e6f; it hit a live build on 8 Oct).
+inline bool stageThreshold (const juce::String& name)
+{
+    const auto toks = nameTokens (name);
+    for (const auto& t : toks) if (t == "gate" || t == "processor" || t == "proc" || t == "expander" || t == "expand" || t == "ducker" || t == "duck") return true;
+    return false;
+}
+
 // THE MULTIBAND DRAFT (docs/MULTIBAND_PROFILE_PROPOSAL.md; 7 Oct, item 5) FROM THE RECORD: the proposal's names, said to await Sean's decision -
 // topology (multiband_global | multiband_offset), per band its centre tone and in_at_gr ladder on that tone, the amount (the global
 // control's norms or the common offset_db to every band threshold) with the WHOLE-UNIT GR on the vocal-shaped signal per level at each
@@ -89,6 +129,7 @@ inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, co
 {
     auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_multiband_profile/0"); P->setProperty ("spec", spec); P->setProperty ("status", status); P->setProperty ("plugin", plugin); P->setProperty ("measured", measured);
     juce::Array<juce::var> notes; notes.add ("field names are the proposal's (topology, offset_db, in_at_gr, whole_unit_gr_db_by_level): they await Sean's decision (MULTIBAND_PROFILE_PROPOSAL.md)");
+    if (const auto* st = rec.getProperty ("stage_thresholds_not_nominated", {}).getArray()) notes.add ("not band thresholds (gate / processor stages, Sean's ruling 8 Oct): " + juce::String (st->size()) + " control(s)");
     const auto amount = rec.getProperty ("amount", {}); const auto topology = amount.getProperty ("topology", "").toString();
     P->setProperty ("topology", topology.isNotEmpty() ? juce::var (topology) : juce::var());
     juce::Array<juce::var> bands;
@@ -96,6 +137,7 @@ inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, co
         for (const auto& b : *bs)
         {
             auto* o = new juce::DynamicObject(); o->setProperty ("band", b.getProperty ("band", juce::var())); o->setProperty ("lo_hz", b.getProperty ("lo_hz", juce::var())); o->setProperty ("hi_hz", b.getProperty ("hi_hz", juce::var())); o->setProperty ("centre_hz", b.getProperty ("centre_hz", juce::var()));
+            if ((bool) b.getProperty ("floating", false)) { o->setProperty ("floating", true); o->setProperty ("band_number", b.getProperty ("band_number", juce::var())); }
             juce::var ladder; if (const auto* ls = rec.getProperty ("band_ladders", {}).getArray()) for (const auto& L : *ls) if ((int) L.getProperty ("band", -1) == (int) b.getProperty ("band", -2)) ladder = L;
             if (ladder.isObject())
             {
