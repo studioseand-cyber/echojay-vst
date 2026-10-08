@@ -87,18 +87,26 @@ zip, cert_sc and cert_tc35 - 0 differences in rows, records, profiles and contro
 binary, so the compressor path above is untouched). It supersedes 99f80d36, d0587ff4 and ac9e3bfb. It adds the six new specs (limiters, EQ,
 de-essers, saturation + amp sims, reverb / delay, transient shapers / gates), the channel strips' and multiband drafts, a DRAFT
 profile for every Phase B category in `cert/phaseb/<category>/drafts/` (never `cert/profiles`), the one-command run and the review's
-Phase B sections. Install it the same way as the build above, then - after the three nights above - ONE command, every night:
+Phase B sections. Install it the same way as the build above AFTER NIGHT 1 above (Nights 2 and 3 are not run on dc77d0a5: their
+strips and gain-all are in this line, and their nothing_nominated rows are all re-run by this line's category redos), then ONE
+command, every night:
 
 ```
-caffeinate -i "$BIN" --run-all --steps preflight,multiband,limiter,deesser,eq,saturation,reverb_delay,transient_gate,strips,drafts --until 07:00
+caffeinate -i "$BIN" --run-all --steps preflight,multiband,limiter,deesser,eq,saturation,reverb_delay,transient_gate,gain_all,strips,drafts --until 07:00
 ```
 
 It runs those steps in that order, each step's output in `cert/run_all/<step>.log`, one progress line a minute (done / total, elapsed,
 ETA, the hour it stops). At 07:00 it stops the step it is in (that step's finished products are kept) and starts nothing new; the SAME
 line the next night carries on from there (a step it stopped resumes without re-deleting what it already redid). Ctrl-C works the
-same way. `--dry-run` on the end prints what it would run and changes nothing. About 8.5-10 hours before the strips (multiband
-~15-20 min, limiters ~20-25 min, de-essers ~10 min, EQ ~2-2.5 h, saturation ~1.5-2.5 h, reverb / delay ~2.5-3.2 h, transients / gates
-~30-35 min) and ~14 h for the strips: three nights in all.
+same way. `--dry-run` on the end prints what it would run and changes nothing. About 30 hours in all (the dry-run's ETA 30:08):
+multiband ~20 min, limiters ~25 min, de-essers ~10 min, EQ ~2.5 h, saturation ~2 h, reverb / delay ~3.2 h, transients / gates ~32 min,
+gain-all ~7 h, strips ~14 h, drafts ~1 s. With 21:00-07:00 nights: night A runs everything up to and including transients / gates
+(~9.1 h) and starts gain-all; night B finishes gain-all (~6.1 h) and starts the strips; night C runs the strips; night D the last few
+minutes of the strips and the drafts. The steps always run in that order, whatever order `--steps` lists them in.
+
+**nothing_nominated is not in the line, on purpose.** Every row it would re-run (276 in your 5/6 Oct folder: EQ 101, saturation 116,
+limiter 16, timing 34, transient 2, reverb 3, gaincal 2, de-esser 1, delay 1) is in a category this line re-runs whole, or in gain /
+timing, which Night 1's `--redo gain-cal,timing` re-ran.
 
 **Roles are found twice.** For reverbs, delays, transient shapers and gates, the test that finds which control is the mix, the time, the
 attack, the threshold... runs twice. If the two runs pick different controls, that role is left unassigned and filed `not_repeatable`
@@ -123,7 +131,8 @@ now cuts is the first live success.
 ```
 
 THE ZIP GROWS about +320 MB for these steps (the role tests read 5 ms windows and run twice; the maps keep 1 ms), and ~+70 MB for the strips; hence
-`--since marker`. Saturation runs after Night 3's `--redo gain-all` on purpose: it compensates through the gain draft when one exists.
+`--since marker`. Saturation runs BEFORE gain-all in this line, so it chooses its output control without the gain-all drafts (from the
+controls named output / volume / level / trim / makeup and the unnamed pool, each checked to be level-only after the drive).
 
 ---
 
