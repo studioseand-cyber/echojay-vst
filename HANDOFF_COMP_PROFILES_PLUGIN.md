@@ -2677,6 +2677,37 @@ which is what makes this a contained job.
 **LEG as ruled:** both views render IDENTICAL IN/OUT text for the same rack - the guard reads `readoutText()`
 ("IN +0.0" / "OUT -6.0"), which exists for exactly this purpose, from each editor and compares them slot by slot.
 
+### 9. PER-RACK LOOP STATE IS NEVER RESET, AND THE LEVEL CHECK WAITS FOR EVER (Sean 11:10, 8 Oct, on 08a)
+Folded in here as ruled, with the heard counter. Second rap-vocal chain: the UI stuck on the level check and never
+resolved, and the post-build summary on that NEW rack named the PREVIOUS chain's dynamics slots -
+"loops alive 0 of 2 dynamics slots - ended: UAD Neve 2254 E Dual (closed), UAD UA 176 (landed ...)".
+
+**(1) THE BOOKKEEPING IS NEVER CLEARED - proven by absence in the owning file.** `loopsAlive_`, `loopsStarted_`
+and `loopsDead_` (ChainHost.h:2673-5) have exactly two writers, `setLoopsStarted` and the alive+dead setter
+(ChainHost.h:766, 771). **Nothing resets them** - not `removeSlot`, not `restoreSavedChain`, not a revision bump,
+not a rebuild. So `loopsWatchdogLine()` (ChainHost.cpp:5438) keeps printing the last rack's dead loops against the
+new rack's `dynamicsSlotCount()`, which is exactly the line he read. The fix is a reset on the same bump that
+already invalidates the per-slot tallies, plus **the rack revision stamped on every loop** so a line can never
+describe a rack the loop did not belong to - that third part is what makes the first two checkable.
+
+**(2) THE LEVEL CHECK MUST RESOLVE, same shape as the Listen deadline (item 2, already shipped in 08a).** Slot 3,
+MDynamicsMBLarge, got two controls from the server ("Band 2/3 - Dynamic detection - Release mode"), requested=2
+applied=0 **status=writesRejected**, so nothing dialled and no loop started - and the UI kept waiting on something
+that was never going to report. A deadline of about 20 s with a NAMED outcome, and for this case the honest one is
+**"nothing dialled on MDynamicsMBLarge, set it by ear"**, said with the reason (writes rejected, or no usable
+controls). This is the third unbounded wait found in two days; the pattern is now explicit in the handoff
+(a state-only wait is not a wait, it needs a clock and a sentence).
+
+**(3) LOW PRIORITY, LOG HYGIENE, cause found:** every map arrival runs `applyStructuredIfReady(i,
+DialTrigger::mapArrived)` for **every slot in the rack** (ChainHost.cpp:4305-4312), and each slot with no settings
+yet logs "no settings yet [map-arrived]" (ChainHost.cpp:5726-5733). Six slots times N maps, describing whichever
+rack the host currently holds rather than the rack the map was for. The line itself already says "EXPECTED
+ORDERING, not a fault", so nothing is wrong except the volume: once per rack revision, not once per map per slot.
+
+**LEGS:** a rack with two dynamics slots whose loops have ended, replaced by a rebuild with one dynamics slot that
+dialled nothing -> the watchdog line names NO stale plugin and the level check resolves with "nothing dialled on
+<plugin>, set it by ear"; and a loop stamped with revision N is never reported against revision N+1.
+
 ### 9. Reset the heard counter in [CHAIN LEVELS] when the rack changes
 "set from N min" must mean THIS build. The phrase is composed in EJCalibLoop.h (~1968 and ~2146,
 `", set from " + roundToInt (blockHeardS) + " s of this track"`), and the CHAIN LEVELS block is assembled at
