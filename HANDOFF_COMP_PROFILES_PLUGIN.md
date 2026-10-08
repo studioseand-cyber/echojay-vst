@@ -2853,6 +2853,14 @@ forgotten is the same bug again. It earned its keep immediately - its first wind
 four lines short, reporting the product as broken over a boundary the leg itself had chosen; it is now bounded at
 the block's own closing brace.
 
+### 10. body.channelTarget ON EVERY CHAT REQUEST (ruled 8 Oct; AFTER 08b, not in it)
+`{lufs, option}` from the channel's LAST CONFIRMED loudness target - what the Level actually landed toward, not
+what a chat once asked for - on every chat request, so B can carry a channel's target into a new chat and into a
+rebuild. B's side is built (hold / proposal-apply). The source of truth is the Level slot's own armed target
+(`LoudnessLoop::target()` / `loudnessOption()`, which is what `armFromChain` read out of the slot's params), and
+the honest rule is the same one the rest of the body follows: the key is ABSENT when nothing has been confirmed on
+that channel, never a guessed default - a target the user never agreed to is worse than no target.
+
 ### 9. PER-RACK LOOP STATE IS NEVER RESET, AND THE LEVEL CHECK WAITS FOR EVER (Sean 11:10, 8 Oct, on 08a)
 Folded in here as ruled, with the heard counter. Second rap-vocal chain: the UI stuck on the level check and never
 resolved, and the post-build summary on that NEW rack named the PREVIOUS chain's dynamics slots -
