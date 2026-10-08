@@ -2813,6 +2813,31 @@ of the two ended it. **This is the fourth unbounded wait in two days.** The rule
 reads a sensor needs a deadline, a staleness test on the sensor, and a sentence for each way it can end.
 LEG: a slot with no GR and frozen readings ends inside the deadline with that message.
 
+### 8d. THE APPLY RESULT REPORTS THE WHOLE RACK, AND CONTRADICTS ITSELF (Sean 13:18, 8 Oct) - QUEUED AFTER CHAINS
+**HIS LINE:** "Nothing was applied - EchoJay EQ: some settings were ignored; Bettermaker Bus Compressor DSP:
+ignored RATIO. dialled EchoJay EQ". The Bettermaker was not in this Apply at all, and the sentence says nothing
+was applied and then that something was.
+
+**BOTH HALVES CONFIRMED IN THE CODE (PluginEditor.cpp:25802-25821), and they are the same class of fault 06c
+item 3 closed for the build summary:**
+  • the `bad` list walks **`getChainHost().getDialInfos()`** - every slot in the RACK - so a slot left `partial`
+    by an EARLIER BUILD is reported as though this Apply had just done it. That is where the Bettermaker's ignored
+    RATIO came from.
+  • `summary += " " + results.joinIntoString("; ")` appends the per-op results to a headline that opens "Nothing
+    was applied", so one sentence carries both claims.
+**THE FIX:** scope the walk to the slots THIS apply touched (the ops' own slot indices, which the apply path
+already has), and never concatenate a "nothing" headline with a results list that says otherwise - a mixed outcome
+gets the mixed sentence that already exists ("Applied N of M - ..."). The headline and the list come from one
+decision or they will disagree again.
+
+**(2) THE DEFENSIVE HOIST, as ruled.** The proposal carried `params.eq_bands` while the built-in EQ reads
+`settings_structured.eq_bands` (B is fixing the emitter). So when a staged op for a built-in EQ carries
+`params.eq_bands`, the client hoists it to `settings_structured.eq_bands` before applying **and logs that it did**
+- a silent repair of someone else's payload is a fault that cannot be found twice.
+**LEGS:** an Apply that touches one slot reports ONLY that slot, with a rack whose other slot is deliberately left
+partial by an earlier build; a mixed Apply never produces a "Nothing was applied" headline beside a dialled slot;
+and a staged op carrying `params.eq_bands` dials the EQ, with the hoist logged.
+
 ### 9. PER-RACK LOOP STATE IS NEVER RESET, AND THE LEVEL CHECK WAITS FOR EVER (Sean 11:10, 8 Oct, on 08a)
 Folded in here as ruled, with the heard counter. Second rap-vocal chain: the UI stuck on the level check and never
 resolved, and the post-build summary on that NEW rack named the PREVIOUS chain's dynamics slots -
