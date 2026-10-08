@@ -25,6 +25,7 @@
 #include <vector>
 #include <optional>
 #include <map>
+#include "EjmapRoleEvidence.h"
 
 namespace ejmap::reverbdelay
 {
@@ -81,8 +82,11 @@ inline Levels levelsOf (const Tail& t)
     for (const auto& w : t.windows)
     {
         // a SILENT window is a level, not a gap (7 Oct, MReverb at 100 % wet: no dry window at all made the whole end unreadable)
-        if (w.burst && w.tMs < kDryWindowMs) { dry.push_back (juce::jmax (kSilentLevelDb, w.outDb)); in.push_back (w.inDb); }
-        if (! w.burst && w.tMs >= t.burstMs && w.tMs < t.burstMs + kWetWindowMs) wet.push_back (juce::jmax (kSilentLevelDb, w.outDb));
+        // the probe's t_ms is a window's MIDPOINT: a window belongs by where it STARTS (8 Oct: on 5 ms role windows the first sits at 2.5 ms,
+        // and a midpoint test left the dry unread - FlexVerb's Dry:Wet lost its mix signature); at 1 ms this is the same set as before
+        const double start = w.tMs - 0.5 * t.winMs;
+        if (w.burst && start < kDryWindowMs) { dry.push_back (juce::jmax (kSilentLevelDb, w.outDb)); in.push_back (w.inDb); }
+        if (! w.burst && start >= t.burstMs - 1e-6 && start < t.burstMs + kWetWindowMs) wet.push_back (juce::jmax (kSilentLevelDb, w.outDb));
     }
     if (dry.empty()) { L.why = "no window inside the first " + juce::String (kDryWindowMs, 1) + " ms of the burst"; return L; }
     L.ok = true; L.dryDb = powerMeanDb (dry); L.wetDb = powerMeanDb (wet); L.inDb = powerMeanDb (in);
@@ -254,6 +258,16 @@ inline double tailForLabel (std::optional<double> labelS) { if (! labelS || *lab
 // the acceptance, ej_space_profile/1
 // ---------------------------------------------------------------------------------------------------------------------------
 inline constexpr double kStopDb = 35.0, kMaxTailS = 20.0;           // section 4: the tail runs to 35 dB down or 20 s
+// THE ROLE TESTS' WINDOW (Kathy, 8 Oct, "the 5 ms re-cut"): the role tests (every numeric control at its two ends + a time control's
+// midpoint) read 5 ms windows; the MAPS and the ACCEPTANCE keep 1 ms. A role is a >= 10 ms / 20 % onset move, a 3 dB ratio, a x1.5 RT60 -
+// none needs 1 ms - and the 1 ms role logs were most of the zip's growth. The dry level then reads the first 5 ms of the burst (t = 0 window).
+inline constexpr double kRoleWinMs = 5.0, kMapWinMs = 1.0;
+inline juce::StringArray tailProbeArgs (const juce::String& burstMs, const juce::StringArray& sets, double tempo, double tailS, bool pink, bool adaptive, double winMs)
+{
+    juce::StringArray a { "--tail", "db=-12", "burst_ms=" + burstMs, "tail_s=" + juce::String (tailS, 1), "hz=997", "win_ms=" + juce::String (winMs, 0) };
+    if (pink) a.add ("signal=pink"); if (adaptive) a.add ("stop_db=" + juce::String (kStopDb, 0)); if (tempo > 0.0) a.add ("tempo=" + juce::String (tempo, 0)); if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (","));
+    return a;
+}
 inline constexpr double kSendOnlyDb = -60.0;                        // section 6: no dry at the dry end (relative to the input) -> send_only
 inline const std::vector<std::pair<const char*, double>>& mixSteps() { static const std::vector<std::pair<const char*, double>> k { { "touch", -18.0 }, { "some", -12.0 }, { "lots", -6.0 }, { "drenched", 0.0 } }; return k; }
 inline const std::vector<std::pair<const char*, double>>& lengthTargets() { static const std::vector<std::pair<const char*, double>> k { { "short", 0.5 }, { "medium", 1.3 }, { "long", 2.6 }, { "huge", 5.0 } }; return k; }   // the middle of each band (section 5)
@@ -279,6 +293,12 @@ inline RolePick pickRole (const juce::String& role, int namedIndex, const std::m
 // signature at its ends. A time control puts the onset at its norm-0.5 position STRICTLY BETWEEN its ends (at least kMidFrac of the span from
 // each); a level control's midpoint onset sits at one end (the tap is either there or not). One extra process per time candidate.
 inline constexpr double kMidFrac = 0.05;
+// THE TIME ROLE IS DECIDED AT 1 MS (8 Oct, the 5 ms re-cut): a 5 ms window puts an onset on a 5 ms grid, so a 10 ms move (MReverb's Size,
+// 12.5 -> 22.5) has no representable midpoint strictly inside it and the >= 10 ms signature flips near its edge. Every control whose 5 ms
+// onset move COULD be a time move (>= kTimeMoveMs less one window) has its two ends and its midpoint read again at 1 ms, and the time
+// signature, its strength and the midpoint test are taken from those; the other signatures (mix, decay, feedback) stay on the 5 ms reads.
+inline bool timeNeedsFineRead (std::optional<double> onA, std::optional<double> onB, double roleWinMs = kRoleWinMs)
+{ return onA && onB && std::abs (*onB - *onA) >= ejmap::roleevidence::kTimeMoveMs - roleWinMs; }
 inline bool timeMidpointHolds (double onA, double onB, std::optional<double> onMid)
 {
     if (! onMid) return false;

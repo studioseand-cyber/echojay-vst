@@ -8091,11 +8091,11 @@ void testReverbDelay()
 {
     using namespace ejmap::reverbdelay;
     // a synthetic --tail trace: burst 200 ms at -12 dBFS (RMS -15.01), 1 ms windows, tail 3 s; dryDb = the dry's level in the burst, wet = f(t) in the tail
-    auto trace = [] (double dryDb, std::function<double (double)> wetDbAt, double burstMs = 200.0, double tailMs = 3000.0, double tempo = 0.0)
+    auto trace = [] (double dryDb, std::function<double (double)> wetDbAt, double burstMs = 200.0, double tailMs = 3000.0, double tempo = 0.0, double winMs = 1.0)
     {
-        juce::String s; s << "tail\tproto\t1\tdb\t-12.00\tburst_ms\t" << juce::String (burstMs, 2) << "\ttail_s\t" << juce::String (tailMs / 1000.0, 3) << "\thz\t997.000\twin_ms\t1.00\ttempo\t" << juce::String (tempo, 2) << "\nconfig\tmain_in\t2\tmain_out\t2\tlatency\t0\n";
+        juce::String s; s << "tail\tproto\t1\tdb\t-12.00\tburst_ms\t" << juce::String (burstMs, 2) << "\ttail_s\t" << juce::String (tailMs / 1000.0, 3) << "\thz\t997.000\twin_ms\t" << juce::String (winMs, 2) << "\ttempo\t" << juce::String (tempo, 2) << "\nconfig\tmain_in\t2\tmain_out\t2\tlatency\t0\n";
         auto db2p = [] (double db) { return db > -500.0 ? std::pow (10.0, db / 10.0) : 0.0; };
-        for (double t = 0.5; t < burstMs + tailMs; t += 1.0)
+        for (double t = 0.5 * winMs; t < burstMs + tailMs; t += winMs)   // the probe's t_ms is the window's MIDPOINT (0.5, 1.5 .. at 1 ms; 2.5, 7.5 .. at 5 ms)
         {
             const bool burst = t < burstMs;
             const double wet = wetDbAt (t);
@@ -8126,6 +8126,29 @@ void testReverbDelay()
     const auto lv = levelsOf (rv);
     check (lv.ok && std::abs (lv.dryDb + 15.01) < 0.05 && std::abs (lv.wetDb + 30.0) < 0.1, "rd D5: dry read in the burst's first 2 ms (before any wet), wet read just after the burst ends (" + juce::String (lv.dryDb, 2) + " / " + juce::String (lv.wetDb, 2) + ")");
     check (! decayOf (parseTail (trace (-15.01, [] (double) { return -999.0; }))).ok, "rd D6: a tail at the floor has no decay to read");
+    // THE 5 MS ROLE TESTS (Kathy, 8 Oct): the role tests' args ask 5 ms windows, the maps' 1 ms; on 5 ms windows the dry, the wet, the onset,
+    // the repeats and the decay still read, and the role signatures come out as they do at 1 ms
+    {
+        const auto role = tailProbeArgs ("200", { "3:1.0" }, 0.0, kMaxTailS, false, true, kRoleWinMs), map = tailProbeArgs ("200", { "3:1.0" }, 0.0, kMaxTailS, false, true, kMapWinMs);
+        const auto hr = ejmap::dynamics::hitProbeArgs (ejmap::dynamics::kRoleWinMs), hm = ejmap::dynamics::hitProbeArgs (ejmap::dynamics::kMapWinMs);
+        check (role.contains ("win_ms=5") && map.contains ("win_ms=1") && hr.contains ("win_ms=5") && hm.contains ("win_ms=1") && role.contains ("stop_db=35") && role.contains ("set=3:1.0"),
+               "rd W1: the role tests ask 5 ms windows (tail and hits), the maps and acceptance 1 ms (" + role.joinIntoString (" ") + " | " + hr.joinIntoString (" ") + ")");
+        const auto r5 = parseTail (trace (-15.01, reverbWet (-30.0, 30.0, 200.0), 200.0, 3000.0, 0.0, 5.0));
+        const auto l5 = levelsOf (r5); const auto d5 = decayOf (r5);
+        check (r5.windows.size() == 640 && l5.ok && std::abs (l5.dryDb + 15.01) < 0.05 && std::abs (l5.wetDb + 30.0) < 0.2 && d5.ok && std::abs (d5.t20RT60s - 2.0) < 0.1,
+               "rd W2: on 5 ms windows (midpoints 2.5, 7.5 ..) the dry reads from the window that STARTS at 0, the wet just after the burst, RT60 2.0 s (" + juce::String (l5.dryDb, 2) + " / " + juce::String (l5.wetDb, 2) + " / " + juce::String (d5.t20RT60s, 2) + ")");
+        auto fig = [&] (double delayMs, int win) { const auto t = parseTail (trace (-999.0, delayWet (delayMs, -6.02, -21.01), 200.0, 3000.0, 0.0, win)); const auto o = onsetsOf (t); ejmap::roleevidence::Figure f; f.ok = true; f.onsetMs = o.onsetMs; f.fallPerRepeatDb = o.fallPerRepeatDb; return f; };
+        const auto a1 = fig (250.0, 1), b1 = fig (600.0, 1), a5 = fig (250.0, 5), b5 = fig (600.0, 5);
+        const auto h1 = ejmap::roleevidence::signatureHolds ("time", a1, b1), h5 = ejmap::roleevidence::signatureHolds ("time", a5, b5);
+        check (h1.holds && h5.holds && a5.onsetMs && std::abs (*a5.onsetMs - 250.0) <= 5.0 && b5.onsetMs && std::abs (*b5.onsetMs - 600.0) <= 5.0 && a5.fallPerRepeatDb && std::abs (*a5.fallPerRepeatDb + 6.02) < 0.3
+               && ! ejmap::roleevidence::signatureHolds ("time", fig (300.0, 5), fig (304.0, 5)).holds,
+               "rd W3: a delay's time signature holds at 5 ms as at 1 ms (onsets " + juce::String (a5.onsetMs ? *a5.onsetMs : -1.0, 1) + " / " + juce::String (b5.onsetMs ? *b5.onsetMs : -1.0, 1) + "), and a 4 ms move still does not");
+        // W4 (MReverb's Size, 8 Oct): on the 5 ms grid a 10 ms onset move has no midpoint strictly inside it, so the time role is read at 1 ms
+        // for every control whose 5 ms move could be a time move (>= 10 - 5 ms), and only for those
+        check (! timeMidpointHolds (12.5, 22.5, 12.5) && ! timeMidpointHolds (12.5, 22.5, 22.5) && timeMidpointHolds (12.3, 22.4, 17.4)
+               && timeNeedsFineRead (12.5, 22.5) && timeNeedsFineRead (12.5, 17.5) && ! timeNeedsFineRead (12.5, 12.5) && ! timeNeedsFineRead (12.5, std::nullopt) && ! timeNeedsFineRead (12.5, 15.0),
+               "rd W4: a 10 ms move's midpoint is unrepresentable on 5 ms windows (12.5 / 22.5 only), representable at 1 ms; every 5 ms move of 5 ms or more is re-read at 1 ms");
+    }
     // a tail longer than the window (RT60 12 s = 5 dB/s over a 3 s tail): fitted over what fell, said as such
     { const auto lt = decayOf (parseTail (trace (-15.01, reverbWet (-30.0, 5.0, 200.0)))); check (lt.ok && lt.t10Only && std::abs (lt.t20RT60s - 12.0) < 0.6 && lt.why.contains ("longer than the window"), "rd D7: a tail that falls only 15 dB in the window is fitted over that fall and said to be longer than the window (" + juce::String (lt.t20RT60s, 2) + ")"); }
     // the mix law: eleven positions, linear and equal power
@@ -8225,10 +8248,10 @@ void testDynamics()
 {
     using namespace ejmap::dynamics;
     // HITS: 4 hits every 600 ms, input peak -6 dB decaying 150 ms; the unit boosts the transient by +4 dB (first 10 ms) and cuts the sustain by -3 dB
-    auto hitsTrace = [] (double trBoost, double suGain, int hits = 4)
+    auto hitsTrace = [] (double trBoost, double suGain, int hits = 4, double winMs = 1.0)
     {
-        juce::String s; s << "hits\tproto\t1\tdb\t-6.00\thz\t997.000\tdecay_ms\t150.00\tperiod_ms\t600.00\thits\t" << hits << "\twin_ms\t1.00\n";
-        for (double t = 0.5; t < 600.0 * hits; t += 1.0)
+        juce::String s; s << "hits\tproto\t1\tdb\t-6.00\thz\t997.000\tdecay_ms\t150.00\tperiod_ms\t600.00\thits\t" << hits << "\twin_ms\t" << juce::String (winMs, 2) << "\n";
+        for (double t = 0.5 * winMs; t < 600.0 * hits; t += winMs)
         {
             const int k = (int) (t / 600.0); const double rel = t - k * 600.0;
             const double env = -6.0 + 20.0 * std::log10 (std::exp (-rel / 150.0));   // the peak envelope in dB
@@ -8246,6 +8269,10 @@ void testDynamics()
     check (pt.ok && std::abs (pt.dTransientDb - 4.0) < 1e-6 && std::abs (pt.dSustainDb + 3.0) < 1e-6 && pt.labelDb && *pt.labelDb == 6.0, "dyn H3: a position's effect is its figures minus the neutral run's; a dB label is read");
     check (! transientPoint (1.0f, "50 %", boosted, neutral).labelDb, "dyn H4: a % label is not a dB expectation");
     check (! hitFigures (parseHits ("refused no main input or output bus\n")).ok, "dyn H5: a refusal is carried");
+    // the 5 ms role test (8 Oct): two 5 ms windows cover the transient's 10 ms; a +4 / -3 dB unit reads as it does on 1 ms windows
+    { const auto n5 = hitFigures (parseHits (hitsTrace (0.0, 0.0, 4, 5.0))), b5 = hitFigures (parseHits (hitsTrace (4.0, -3.0, 4, 5.0)));
+      check (n5.ok && b5.ok && std::abs ((b5.transientDb - n5.transientDb) - 4.0) < 1e-6 && std::abs ((b5.sustainDb - n5.sustainDb) + 3.0) < 1e-6 && transientRole (b5.transientDb - n5.transientDb, b5.sustainDb - n5.sustainDb) == transientRole (boosted.transientDb - neutral.transientDb, boosted.sustainDb - neutral.sustainDb),
+             "dyn H6: on 5 ms windows the transient and sustain moves read +4 / -3 dB and the role is the 1 ms role (" + juce::String (b5.transientDb - n5.transientDb, 2) + " / " + juce::String (b5.sustainDb - n5.sustainDb, 2) + ")"); }
     // RAMP through a gate: threshold at -30 dBFS RMS opening, closes at -36 (6 dB hysteresis), range -40 dB closed; up 3 s / down 3 s from -60 to -6
     auto rampTrace = [] (double openAt, double closeAt, double rangeDb)
     {

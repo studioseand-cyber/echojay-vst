@@ -4831,8 +4831,8 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     say ("RD: " + opt.product + " " + desc.version + " (" + kind + "), names propose: mix " + named (mix) + "; " + (kind == "delay" ? "time " + named (timeCtl) + "; feedback " + named (feedback) + "; sync " + named (sync) + "; note " + named (note) : "pre-delay " + named (timeCtl) + "; decay " + named (decayCtl)));
     const juce::String burstMs = kind == "delay" ? "50" : "200";
     // the tail: 997 Hz (timing, mix, feedback) or pink (decay); adaptive to 35 dB down or the cap (spec section 4: 20 s)
-    auto tailArgs = [&] (const juce::StringArray& sets, double tempo = 0.0, double tailS = 6.0, bool pink = false, bool adaptive = false)
-    { juce::StringArray a { "--tail", "db=-12", "burst_ms=" + burstMs, "tail_s=" + juce::String (tailS, 1), "hz=997", "win_ms=1" }; if (pink) a.add ("signal=pink"); if (adaptive) a.add ("stop_db=" + juce::String (kStopDb, 0)); if (tempo > 0.0) a.add ("tempo=" + juce::String (tempo, 0)); if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (",")); return a; };
+    auto tailArgs = [&] (const juce::StringArray& sets, double tempo = 0.0, double tailS = 6.0, bool pink = false, bool adaptive = false, double winMs = kMapWinMs)
+    { return tailProbeArgs (burstMs, sets, tempo, tailS, pink, adaptive, winMs); };
     auto setOf = [] (int idx, double norm) { return juce::String (idx) + ":" + juce::String (norm, 6); };
     auto* o = new juce::DynamicObject();
     o->setProperty ("schema", "ej_reverb_delay_prototype/1"); o->setProperty ("status", "PROTOTYPE - roadmap 2.7 against REVERB_DELAY_PROFILE_SPEC v0.1, not exported, not published"); o->setProperty ("space_fields", "7 Oct: roles by measurement, pink decay, adaptive tail, relative pre-delay, sync per note, verdicts, acceptance");
@@ -4858,7 +4858,7 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
                 {
                     juce::StringArray sets; if (idx != mix.index) sets = wetSets; else if (sync.index >= 0) sets.add (setOf (sync.index, sync.offNorm));
                     sets.add (setOf (idx, nn));
-                    const auto t = readTail ("r" + juce::String (idx) + ".n" + juce::String (nn, 0), tailArgs (sets, 0.0, kMaxTailS, false, true), windowSeen);
+                    const auto t = readTail ("r" + juce::String (idx) + ".n" + juce::String (nn, 0), tailArgs (sets, 0.0, kMaxTailS, false, true, kRoleWinMs), windowSeen);
                     if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
                     if (! t.ok) continue;
                     auto& f = nn < 0.5 ? fa : fb; f.ok = true;
@@ -4867,18 +4867,34 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
                     const auto dc = decayOf (t); if (dc.ok) f.rt60s = dc.t20RT60s;
                 }
                 nameOf[idx] = n;
+                // the time role at 1 ms (timeNeedsFineRead): the ends' onsets read again on 1 ms windows; nothing else is taken from them
+                roleevidence::Figure ta = fa, tb = fb; bool fine = false;
+                if (timeNeedsFineRead (fa.onsetMs, fb.onsetMs))
+                {
+                    for (double nn : { 0.0, 1.0 })
+                    {
+                        juce::StringArray sets; if (idx != mix.index) sets = wetSets; else if (sync.index >= 0) sets.add (setOf (sync.index, sync.offNorm));
+                        sets.add (setOf (idx, nn));
+                        const auto t = readTail ("r" + juce::String (idx) + ".t" + juce::String (nn, 0), tailArgs (sets, 0.0, kMaxTailS, false, true, kMapWinMs), windowSeen);
+                        if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+                        (nn < 0.5 ? ta : tb).onsetMs = t.ok ? onsetsOf (t).onsetMs : std::nullopt;
+                    }
+                    fine = true;
+                }
                 for (const char* role : { "mix", "time", "decay", "feedback" })
                 {
-                    const auto h = roleevidence::signatureHolds (role, fa, fb);
-                    double sc = roleStrength (role, fa.dryDb, fb.dryDb, fa.wetDb, fb.wetDb, fa.onsetMs, fb.onsetMs, fa.rt60s, fb.rt60s, fa.fallPerRepeatDb, fb.fallPerRepeatDb);
+                    const bool isTime = juce::String (role) == "time";
+                    const auto& ra = isTime && fine ? ta : fa; const auto& rb = isTime && fine ? tb : fb;
+                    const auto h = roleevidence::signatureHolds (role, ra, rb);
+                    double sc = roleStrength (role, ra.dryDb, rb.dryDb, ra.wetDb, rb.wetDb, ra.onsetMs, rb.onsetMs, ra.rt60s, rb.rt60s, ra.fallPerRepeatDb, rb.fallPerRepeatDb);
                     bool holdsHere = h.holds;
                     if (holdsHere && juce::String (role) == "time" && idx != mix.index)
                     {   // the midpoint: a time control's onset at norm 0.5 sits strictly between its ends (a tap's level jumps)
                         juce::StringArray sets = wetSets; sets.add (setOf (idx, 0.5));
-                        const auto tm = readTail ("r" + juce::String (idx) + ".mid", tailArgs (sets, 0.0, kMaxTailS, false, true), windowSeen);
+                        const auto tm = readTail ("r" + juce::String (idx) + ".mid", tailArgs (sets, 0.0, kMaxTailS, false, true, kMapWinMs), windowSeen);   // at 1 ms, as its ends
                         if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
                         const auto onm = tm.ok ? onsetsOf (tm).onsetMs : std::nullopt;
-                        if (! timeMidpointHolds (*fa.onsetMs, *fb.onsetMs, onm)) { holdsHere = false; say ("  [" + juce::String (idx) + "] " + n + ": the onset moves " + juce::String (*fa.onsetMs, 1) + " -> " + juce::String (*fb.onsetMs, 1) + " ms but sits at " + (onm ? juce::String (*onm, 1) : juce::String ("none")) + " ms at norm 0.5: not a time control (a tap's level, a switch)"); }
+                        if (! timeMidpointHolds (*ra.onsetMs, *rb.onsetMs, onm)) { holdsHere = false; say ("  [" + juce::String (idx) + "] " + n + ": the onset moves " + juce::String (*ra.onsetMs, 1) + " -> " + juce::String (*rb.onsetMs, 1) + " ms but sits at " + (onm ? juce::String (*onm, 1) : juce::String ("none")) + " ms at norm 0.5: not a time control (a tap's level, a switch)"); }
                     }
                     holds[idx][role] = holdsHere && (sc > 0.0 || juce::String (role) != "time") ? juce::jmax (1e-6, sc) : 0.0;
                     if (holdsHere) roles.push_back (roleevidence::unnamed (idx, n, role, h));
@@ -5155,11 +5171,11 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
     {
         // THE SIGNAL (section 4): 500 ms hits (decay time constant), four, 1.2 s apart, then four periods of a held tone at -18 dBFS with a 10 ms
         // transient on top, in ONE process per position: the transient from the hits, the sustain from the held tone (the hits' sustain beside it)
-        const juce::StringArray hitArgs { "--hits", "db=-6", "hz=997", "decay_ms=500", "period_ms=1200", "hits=4", "win_ms=1", "held_db=-18", "held_hits=4", "held_hit_ms=10" };
+        const auto hitArgs = hitProbeArgs (kMapWinMs), roleHitArgs = hitProbeArgs (kRoleWinMs);   // 8 Oct: the role tests at 5 ms, the maps + acceptance at 1 ms
         struct Fig { bool ok = false; double tr = 0.0, su = 0.0, suHits = 0.0; };
-        auto figAt = [&] (const juce::String& tag, const juce::StringArray& sets, bool& window) -> Fig
+        auto figAt = [&] (const juce::String& tag, const juce::StringArray& sets, bool& window, bool role = false) -> Fig
         {
-            juce::StringArray a2 = hitArgs; if (! sets.isEmpty()) a2.add ("set=" + sets.joinIntoString (","));
+            juce::StringArray a2 = role ? roleHitArgs : hitArgs; if (! sets.isEmpty()) a2.add ("set=" + sets.joinIntoString (","));
             const auto r = run (tag, a2); if (r.kind == ChildResult::Kind::uiShown) { window = true; return {}; }
             const auto h = parseHits (r.cleanExit() ? r.out : juce::String()); const auto f = hitFigures (h); const auto hs = heldSustainDb (h);
             Fig x; x.ok = f.ok && hs.has_value(); if (x.ok) { x.tr = f.transientDb; x.su = *hs; x.suHits = f.sustainDb; } return x;
@@ -5172,7 +5188,7 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
         std::map<int, double> attackScore, sustainScore;
         for (const auto& [idx, n] : numeric)
         {
-            const auto fa = figAt ("r" + juce::String (idx) + ".n0", { setOf (idx, 0.0) }, window), fb = figAt ("r" + juce::String (idx) + ".n1", { setOf (idx, 1.0) }, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+            const auto fa = figAt ("r" + juce::String (idx) + ".n0", { setOf (idx, 0.0) }, window, true), fb = figAt ("r" + juce::String (idx) + ".n1", { setOf (idx, 1.0) }, window, true); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
             if (! fa.ok || ! fb.ok) continue;
             const double dT = fb.tr - fa.tr, dS = fb.su - fa.su; const auto role = transientRole (dT, dS);
             if (role == "attack") attackScore[idx] = std::abs (dT); if (role == "sustain") sustainScore[idx] = std::abs (dS);

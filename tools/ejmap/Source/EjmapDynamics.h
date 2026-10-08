@@ -27,6 +27,11 @@ namespace ejmap::dynamics
 {
 
 inline constexpr double kTransientMs = 10.0, kSustainFromMs = 150.0, kSustainToMs = 400.0;   // TRANSIENT_GATE_PROFILE_SPEC v0.1 section 4 (7 Oct; was 80-250 on a 150 ms hit)
+// THE ROLE TESTS' WINDOW (8 Oct, the 5 ms re-cut): a transient role is a > 1 dB move of a 10 ms peak or a 150-400 ms RMS - 5 ms windows read
+// both (two windows cover the transient's 10 ms); the maps and the acceptance keep 1 ms
+inline constexpr double kRoleWinMs = 5.0, kMapWinMs = 1.0;
+inline juce::StringArray hitProbeArgs (double winMs)
+{ return { "--hits", "db=-6", "hz=997", "decay_ms=500", "period_ms=1200", "hits=4", "win_ms=" + juce::String (winMs, 0), "held_db=-18", "held_hits=4", "held_hit_ms=10" }; }
 inline constexpr double kGateMinRangeDb = 3.0;   // a unit that attenuates less than this when "closed" is not gating
 inline constexpr double kSilenceDb = -150.0;     // an output window below this is silence: its gain is read as -150 relative, never skipped (a closed gate IS silent)
 inline constexpr double kReleaseFallDb = 20.0;   // release = the time to fall this far below open (or to within 1 dB of closed when the range is smaller)
