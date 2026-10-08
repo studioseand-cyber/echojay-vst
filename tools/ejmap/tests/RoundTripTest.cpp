@@ -8695,6 +8695,25 @@ void testRoleEvidence()
     using namespace ejmap::roleevidence;
     auto fig = [] (std::function<void (Figure&)> fill) { Figure f; f.ok = true; fill (f); return f; };
     // drive: Saphira's "Warmth Band1 Gain" nominated by "warmth": THD -36.3 / -36.3 across its ends -> dropped; J37's Saturation -63.7 -> -10.6 -> confirmed
+    // REPEAT (Kathy, 8 Oct): a role is assigned only when kRolePasses (>= 2) passes pick the same control; MTransient's 1 ms runs picked
+    // Param 8 / 22 / 28 for sustain. One pass is not a repeat.
+    {
+        const auto same = repeatedPick ({ 8, 8 }), diff = repeatedPick ({ 7, 21 }), none = repeatedPick ({ -1, -1 }), half = repeatedPick ({ 8, -1 }), one = repeatedPick ({ 8 });
+        auto nm = [] (int i) { return "Param " + juce::String (i + 1); };
+        const auto v = notRepeatableVar ("sustain", diff, nm); const auto* ps = v.getProperty ("picks", {}).getArray();
+        check (kRolePasses >= 2 && same.repeatable && same.index == 8 && ! diff.repeatable && diff.index == -1 && none.repeatable && none.index == -1 && ! half.repeatable && half.index == -1 && ! one.repeatable && one.index == -1
+               && v.getProperty ("verdict", "") == "not_repeatable" && v.getProperty ("status", "") == "needs_review" && ps != nullptr && ps->size() == 2 && (*ps)[0].getProperty ("name", "") == "Param 8" && (*ps)[1].getProperty ("name", "") == "Param 22"
+               && picksText (half, nm) == "[8] Param 9 / none",
+               "role R1: assigned only when every pass picks the same control (8/8); 7 vs 21, 8 vs none and a single pass are not_repeatable, needs_review, both picks recorded");
+        // the draft: a not_repeatable role is null, its note names every pass's pick
+        auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, x] : kv) o->setProperty (k, x); return juce::var (o); };
+        juce::Array<juce::var> pos { mk ({ { "norm", 0.0 }, { "display", "0" }, { "transient_db", 1.0 }, { "sustain_db", 0.0 } }) };
+        const auto rec = mk ({ { "tg_fields", true }, { "attack_map", mk ({ { "control", "Transient -> Attack" }, { "found_by", "name" }, { "verdict", "measured" }, { "positions", pos } }) }, { "sustain_map", v } });
+        const auto d = ejmap::dynamics::transientProfile (rec, {}, {}, "draft", "TRANSIENT v0.1 PROPOSAL");
+        juce::StringArray ns; if (const auto* a = d.getProperty ("notes", {}).getArray()) for (const auto& n : *a) ns.add (n.toString());
+        check (d.getProperty ("attack", {}).isObject() && d.getProperty ("sustain", {}).isVoid() && ns.joinIntoString ("|").contains ("sustain: not_repeatable (needs_review) - pass 1 [7] Param 8, pass 2 [21] Param 22; not assigned"),
+               "role R2: the draft leaves a not_repeatable role null and names both passes' picks (" + ns.joinIntoString (" | ") + ")");
+    }
     check (! signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -36.3; }), fig ([] (Figure& f) { f.thdDb = -36.1; })).holds, "role D1: Saphira's band gain is not a drive (THD moves 0.2 dB)");
     check (signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -63.7; }), fig ([] (Figure& f) { f.thdDb = -10.6; })).holds, "role D2: J37's Saturation is a drive (THD -63.7 -> -10.6)");
     check (! signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -120.0; }), fig ([] (Figure& f) { f.thdDb = -95.0; })).holds && ! signatureHolds ("drive", fig ([] (Figure& f) { f.thdDb = -63.7; }), fig ([] (Figure& f) { f.thdDb = -56.1; })).holds, "role D3: MSaturator's per-harmonic trim (THD at the floor) and J37's slap level (-63.7 -> -56.1, under 0.3 %) are not drives");

@@ -297,6 +297,12 @@ inline GateTimingBoth gateTimingBoth (const timing::Burst& b)
     return t;
 }
 
+// a role the repeat rule left unassigned (roleevidence::repeatedPick): the draft says so, with every pass's pick
+inline juce::String notRepeatableNote (const juce::String& role, const juce::var& m)
+{
+    juce::StringArray ps; if (const auto* a = m.getProperty ("picks", {}).getArray()) for (const auto& p : *a) ps.add ("pass " + p.getProperty ("pass", 0).toString() + " " + (p.getProperty ("index", {}).isVoid() ? juce::String ("none") : "[" + p.getProperty ("index", {}).toString() + "] " + p.getProperty ("name", "").toString()));
+    return role + ": not_repeatable (needs_review) - " + ps.joinIntoString (", ") + "; not assigned";
+}
 // THE DRAFTS (section 7), from the records
 inline juce::var transientProfile (const juce::var& rec, const juce::var& plugin, const juce::var& measured, const juce::String& status, const juce::String& spec)
 {
@@ -306,6 +312,7 @@ inline juce::var transientProfile (const juce::var& rec, const juce::var& plugin
     {
         const auto m = rec.getProperty (juce::String (role) + "_map", {});
         if (! m.isObject()) { P->setProperty (role, juce::var()); notes.add (juce::String (role) + ": no control found"); continue; }
+        if (m.getProperty ("verdict", "").toString() == "not_repeatable") { P->setProperty (role, juce::var()); notes.add (notRepeatableNote (role, m)); continue; }
         auto* x = new juce::DynamicObject(); x->setProperty ("control", m.getProperty ("control", {})); x->setProperty ("found_by", m.getProperty ("found_by", {})); x->setProperty ("verdict", m.getProperty ("verdict", {}));
         juce::Array<juce::var> pts; if (const auto* ps = m.getProperty ("positions", {}).getArray()) for (const auto& p : *ps) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", p.getProperty ("norm", {})); q->setProperty ("display", p.getProperty ("display", "")); q->setProperty ("transient_db", p.getProperty ("transient_db", {})); q->setProperty ("sustain_db", p.getProperty ("sustain_db", {})); if (p.hasProperty ("sustain_hits_db")) q->setProperty ("sustain_hits_db", p.getProperty ("sustain_hits_db", {})); pts.add (juce::var (q)); }
         x->setProperty ("map", pts); P->setProperty (role, juce::var (x));
@@ -320,7 +327,8 @@ inline juce::var gateProfile (const juce::var& rec, const juce::var& plugin, con
     auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_gate_profile/1"); P->setProperty ("spec", spec); P->setProperty ("status", status); P->setProperty ("plugin", plugin); P->setProperty ("measured", measured);
     juce::Array<juce::var> notes; if (! rec.hasProperty ("tg_fields")) notes.add ("drafted from a record without the 7 Oct fields (roles by measurement, timing at a ramp-taken threshold, both definitions, verdicts, acceptance): partial");
     P->setProperty ("verdict", rec.getProperty ("verdict", juce::var()));
-    if (const auto t = rec.getProperty ("threshold_map", {}); t.isObject())
+    if (const auto t = rec.getProperty ("threshold_map", {}); t.isObject() && t.getProperty ("verdict", "").toString() == "not_repeatable") { P->setProperty ("threshold", juce::var()); notes.add (notRepeatableNote ("threshold", t)); }
+    else if (const auto t = rec.getProperty ("threshold_map", {}); t.isObject())
     {
         auto* x = new juce::DynamicObject(); x->setProperty ("control", t.getProperty ("control", {})); x->setProperty ("found_by", t.getProperty ("found_by", {}));
         juce::Array<juce::var> pts; if (const auto* ps = t.getProperty ("positions", {}).getArray()) for (const auto& p : *ps) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", p.getProperty ("norm", {})); q->setProperty ("display", p.getProperty ("display", "")); q->setProperty ("open_level_dbfs_peak", p.getProperty ("open_level_dbfs_peak", {})); q->setProperty ("close_level_dbfs_peak", p.getProperty ("close_level_dbfs_peak", {})); pts.add (juce::var (q)); }
@@ -328,7 +336,8 @@ inline juce::var gateProfile (const juce::var& rec, const juce::var& plugin, con
     }
     else { P->setProperty ("threshold", juce::var()); notes.add ("threshold: no control moves the opening level"); }
     P->setProperty ("hysteresis_db", rec.getProperty ("hysteresis_db", juce::var()));
-    if (const auto r = rec.getProperty ("range_map", {}); r.isObject())
+    if (const auto r0 = rec.getProperty ("range_map", {}); r0.isObject() && r0.getProperty ("verdict", "").toString() == "not_repeatable") { P->setProperty ("range", juce::var()); notes.add (notRepeatableNote ("range", r0)); }
+    else if (const auto r = rec.getProperty ("range_map", {}); r.isObject())
     {
         auto* x = new juce::DynamicObject(); x->setProperty ("control", r.getProperty ("control", {})); x->setProperty ("found_by", r.getProperty ("found_by", {}));
         juce::Array<juce::var> pts; if (const auto* ps = r.getProperty ("positions", {}).getArray()) for (const auto& p : *ps) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", p.getProperty ("norm", {})); q->setProperty ("display", p.getProperty ("display", "")); q->setProperty ("range_db", p.getProperty ("range_db", {})); pts.add (juce::var (q)); }

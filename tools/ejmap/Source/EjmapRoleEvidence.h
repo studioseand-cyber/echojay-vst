@@ -34,6 +34,7 @@
 #include <optional>
 #include <vector>
 #include <map>
+#include <functional>
 
 namespace ejmap::roleevidence
 {
@@ -279,5 +280,30 @@ inline std::vector<RoleVerdict> keep (const std::vector<RoleVerdict>& all, int& 
     for (const auto& v : all) { if (v.verdict == "confirmed" || v.verdict == "dropped" || v.verdict == "measured_unnamed") out.push_back (v); else ++notShown; }
     return out;
 }
+
+// ROLE TESTS MUST REPEAT (Kathy, 8 Oct, after the 5 ms cut): a role test (every numeric control at its ends, the picks made from them) runs
+// kRolePasses times, every reading its own process. A role whose picks differ between the passes is NOT_REPEATABLE: never assigned, filed
+// needs_review with every pass's pick recorded. One pass is not a repeat: fewer than kRolePasses picks never assign. MTransient is the case:
+// three 1 ms runs picked three different sustain controls (Param 8 / 22 / 28) and once no attack.
+inline constexpr int kRolePasses = 2;
+struct RepeatedPick { int index = -1; bool repeatable = false; std::vector<int> picks; };
+inline RepeatedPick repeatedPick (const std::vector<int>& picks)
+{
+    RepeatedPick r; r.picks = picks;
+    if ((int) picks.size() < kRolePasses) return r;
+    for (int p : picks) if (p != picks.front()) return r;
+    r.repeatable = true; r.index = picks.front(); return r;
+}
+// the record's entry for a role that did not repeat: { role, verdict: not_repeatable, status: needs_review, picks: [{pass, index, name}] }
+inline juce::var notRepeatableVar (const juce::String& role, const RepeatedPick& r, const std::function<juce::String (int)>& nameOf)
+{
+    auto* x = new juce::DynamicObject(); x->setProperty ("role", role); x->setProperty ("verdict", "not_repeatable"); x->setProperty ("status", "needs_review");
+    juce::Array<juce::var> ps; for (size_t i = 0; i < r.picks.size(); ++i) { auto* q = new juce::DynamicObject(); q->setProperty ("pass", (int) i + 1); q->setProperty ("index", r.picks[i] >= 0 ? juce::var (r.picks[i]) : juce::var()); q->setProperty ("name", r.picks[i] >= 0 ? juce::var (nameOf (r.picks[i])) : juce::var()); ps.add (juce::var (q)); }
+    x->setProperty ("picks", ps);
+    x->setProperty ("why", "the role test picked " + juce::String ((int) r.picks.size()) + " time(s) and the picks differ" + ((int) r.picks.size() < kRolePasses ? juce::String (" (fewer than ") + juce::String (kRolePasses) + " passes: not a repeat)" : juce::String()) + ": not assigned");
+    return juce::var (x);
+}
+inline juce::String picksText (const RepeatedPick& r, const std::function<juce::String (int)>& nameOf)
+{ juce::StringArray a; for (int p : r.picks) a.add (p >= 0 ? "[" + juce::String (p) + "] " + nameOf (p) : juce::String ("none")); return a.joinIntoString (" / "); }
 
 } // namespace ejmap::roleevidence

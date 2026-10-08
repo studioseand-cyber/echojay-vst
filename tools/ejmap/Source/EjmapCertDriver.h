@@ -4843,8 +4843,12 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     // 1. THE ROLES BY MEASUREMENT (section 3): every numeric control at its two ends (the name's mix at wet for the others; sync off), each pair
     //    read for every signature at once; each role to the name's nominee if it shows it, else the first control that does
     juce::StringArray wetSets; if (mix.index >= 0) wetSets.add (setOf (mix.index, 1.0)); if (sync.index >= 0) wetSets.add (setOf (sync.index, sync.offNorm));
-    std::map<int, std::map<juce::String, double>> holds; std::map<int, juce::String> nameOf; std::vector<roleevidence::RoleVerdict> roles;
+    // ROLE TESTS MUST REPEAT (8 Oct): the whole role test runs roleevidence::kRolePasses times (pass 2's readings tagged ".b"), each pass picks
+    // on its own, and a role whose picks differ is not_repeatable (never assigned); the evidence list is pass 1's
+    std::vector<std::map<int, std::map<juce::String, double>>> holdsBy ((size_t) roleevidence::kRolePasses); std::map<int, juce::String> nameOf; std::vector<roleevidence::RoleVerdict> roles;
+    for (int pass = 0; pass < roleevidence::kRolePasses; ++pass)
     {
+        auto& holds = holdsBy[(size_t) pass]; const juce::String pt = pass == 0 ? juce::String() : juce::String (".b");
         int probed = 0;
         if (const auto* cs = base.getProperty ("controls", {}).getArray())
             for (const auto& c : *cs)
@@ -4858,7 +4862,7 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
                 {
                     juce::StringArray sets; if (idx != mix.index) sets = wetSets; else if (sync.index >= 0) sets.add (setOf (sync.index, sync.offNorm));
                     sets.add (setOf (idx, nn));
-                    const auto t = readTail ("r" + juce::String (idx) + ".n" + juce::String (nn, 0), tailArgs (sets, 0.0, kMaxTailS, false, true, kRoleWinMs), windowSeen);
+                    const auto t = readTail ("r" + juce::String (idx) + ".n" + juce::String (nn, 0) + pt, tailArgs (sets, 0.0, kMaxTailS, false, true, kRoleWinMs), windowSeen);
                     if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
                     if (! t.ok) continue;
                     auto& f = nn < 0.5 ? fa : fb; f.ok = true;
@@ -4875,7 +4879,7 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
                     {
                         juce::StringArray sets; if (idx != mix.index) sets = wetSets; else if (sync.index >= 0) sets.add (setOf (sync.index, sync.offNorm));
                         sets.add (setOf (idx, nn));
-                        const auto t = readTail ("r" + juce::String (idx) + ".t" + juce::String (nn, 0), tailArgs (sets, 0.0, kMaxTailS, false, true, kMapWinMs), windowSeen);
+                        const auto t = readTail ("r" + juce::String (idx) + ".t" + juce::String (nn, 0) + pt, tailArgs (sets, 0.0, kMaxTailS, false, true, kMapWinMs), windowSeen);
                         if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
                         (nn < 0.5 ? ta : tb).onsetMs = t.ok ? onsetsOf (t).onsetMs : std::nullopt;
                     }
@@ -4891,24 +4895,41 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
                     if (holdsHere && juce::String (role) == "time" && idx != mix.index)
                     {   // the midpoint: a time control's onset at norm 0.5 sits strictly between its ends (a tap's level jumps)
                         juce::StringArray sets = wetSets; sets.add (setOf (idx, 0.5));
-                        const auto tm = readTail ("r" + juce::String (idx) + ".mid", tailArgs (sets, 0.0, kMaxTailS, false, true, kMapWinMs), windowSeen);   // at 1 ms, as its ends
+                        const auto tm = readTail ("r" + juce::String (idx) + ".mid" + pt, tailArgs (sets, 0.0, kMaxTailS, false, true, kMapWinMs), windowSeen);   // at 1 ms, as its ends
                         if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
                         const auto onm = tm.ok ? onsetsOf (tm).onsetMs : std::nullopt;
                         if (! timeMidpointHolds (*ra.onsetMs, *rb.onsetMs, onm)) { holdsHere = false; say ("  [" + juce::String (idx) + "] " + n + ": the onset moves " + juce::String (*ra.onsetMs, 1) + " -> " + juce::String (*rb.onsetMs, 1) + " ms but sits at " + (onm ? juce::String (*onm, 1) : juce::String ("none")) + " ms at norm 0.5: not a time control (a tap's level, a switch)"); }
                     }
                     holds[idx][role] = holdsHere && (sc > 0.0 || juce::String (role) != "time") ? juce::jmax (1e-6, sc) : 0.0;
-                    if (holdsHere) roles.push_back (roleevidence::unnamed (idx, n, role, h));
+                    if (holdsHere && pass == 0) roles.push_back (roleevidence::unnamed (idx, n, role, h));
                 }
             }
-        say ("RD: roles by measurement: " + juce::String ((int) holds.size()) + " control(s) probed at their ends");
+        say ("RD: roles by measurement, pass " + juce::String (pass + 1) + " of " + juce::String (roleevidence::kRolePasses) + ": " + juce::String ((int) holds.size()) + " control(s) probed at their ends");
     }
     auto ctlFrom = [&] (const RolePick& p) { Ctl k; if (p.index < 0) return k; k.index = p.index; k.name = nameOf[p.index]; return k; };
     // a control that is a TIME control (its onset moves smoothly, midpoint included) is never the mix: at time 0 a delay's echo lands inside the
     // dry window and reads as dry (bx_delay2500's Time L, 7 Oct)
-    std::set<int> timeLike; for (const auto& [i, m] : holds) if (m.count ("time") && m.at ("time") > 0.0) timeLike.insert (i);
-    const auto pMix = pickRole ("mix", mix.index, holds, timeLike); std::set<int> taken; if (pMix.index >= 0) taken.insert (pMix.index);
-    const auto pTime = pickRole ("time", timeCtl.index, holds, taken); if (pTime.index >= 0 && kind == "delay") taken.insert (pTime.index);
-    const auto pDecay = kind == "reverb" ? pickRole ("decay", decayCtl.index, holds, taken) : RolePick(), pFb = kind == "delay" ? pickRole ("feedback", feedback.index, holds, taken) : RolePick();
+    auto picksOf = [&] (const std::map<int, std::map<juce::String, double>>& holds) -> std::array<RolePick, 4>
+    {
+        std::set<int> timeLike; for (const auto& [i, m] : holds) if (m.count ("time") && m.at ("time") > 0.0) timeLike.insert (i);
+        const auto pMix = pickRole ("mix", mix.index, holds, timeLike); std::set<int> taken; if (pMix.index >= 0) taken.insert (pMix.index);
+        const auto pTime = pickRole ("time", timeCtl.index, holds, taken); if (pTime.index >= 0 && kind == "delay") taken.insert (pTime.index);
+        return { pMix, pTime, kind == "reverb" ? pickRole ("decay", decayCtl.index, holds, taken) : RolePick(), kind == "delay" ? pickRole ("feedback", feedback.index, holds, taken) : RolePick() };
+    };
+    std::vector<std::array<RolePick, 4>> passPicks; for (const auto& h : holdsBy) passPicks.push_back (picksOf (h));
+    juce::Array<juce::var> notRepeatable;
+    auto settle = [&] (int k, const juce::String& role) -> RolePick
+    {
+        std::vector<int> ix; for (const auto& pp : passPicks) ix.push_back (pp[(size_t) k].index);
+        const auto rp = roleevidence::repeatedPick (ix); if (rp.repeatable) return passPicks.front()[(size_t) k];
+        auto nm = [&] (int i) { return nameOf[i]; };
+        notRepeatable.add (roleevidence::notRepeatableVar (role, rp, nm));
+        RolePick none; none.why = "not_repeatable (needs_review): the passes picked " + roleevidence::picksText (rp, nm) + " - not assigned"; return none;
+    };
+    const auto pMix = settle (0, "mix"), pTime = settle (1, kind == "delay" ? "time" : "pre-delay");
+    const auto pDecay = kind == "reverb" ? settle (2, "decay") : RolePick(), pFb = kind == "delay" ? settle (3, "feedback") : RolePick();
+    if (! notRepeatable.isEmpty()) { o->setProperty ("roles_not_repeatable", notRepeatable); o->setProperty ("status_review", "needs_review"); }
+    o->setProperty ("role_passes", roleevidence::kRolePasses);
     for (const auto& [role, pk] : std::vector<std::pair<juce::String, RolePick>> { { "mix", pMix }, { kind == "delay" ? "time" : "pre-delay", pTime }, { kind == "reverb" ? "decay" : "feedback", kind == "reverb" ? pDecay : pFb } })
     { say ("  " + role + ": " + (pk.index >= 0 ? "[" + juce::String (pk.index) + "] " + nameOf[pk.index] + " (" + pk.foundBy + ")" : juce::String ("none")) + " - " + pk.why); roleNotes.add (role + ": " + pk.why); }
     if (pMix.index >= 0) mix = ctlFrom (pMix); else mix = Ctl();
@@ -5185,18 +5206,37 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
         if (! neutral.ok) { say ("DYN: the neutral run read nothing"); return 4; }
         say ("  neutral: transient " + juce::String (neutral.tr, 2) + " dB, sustain (held) " + juce::String (neutral.su, 2) + " dB, sustain (hits) " + juce::String (neutral.suHits, 2) + " dB");
         // ROLES BY MEASUREMENT (section 3): every numeric control at its two ends
-        std::map<int, double> attackScore, sustainScore;
-        for (const auto& [idx, n] : numeric)
+        // ROLE TESTS MUST REPEAT (8 Oct): the whole role test runs roleevidence::kRolePasses times (pass 2 tagged ".b"); a role whose picks differ
+        // is not_repeatable (needs_review, every pick recorded), never assigned
+        std::vector<int> aPicks, sPicks;
+        for (int pass = 0; pass < roleevidence::kRolePasses; ++pass)
         {
-            const auto fa = figAt ("r" + juce::String (idx) + ".n0", { setOf (idx, 0.0) }, window, true), fb = figAt ("r" + juce::String (idx) + ".n1", { setOf (idx, 1.0) }, window, true); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
-            if (! fa.ok || ! fb.ok) continue;
-            const double dT = fb.tr - fa.tr, dS = fb.su - fa.su; const auto role = transientRole (dT, dS);
-            if (role == "attack") attackScore[idx] = std::abs (dT); if (role == "sustain") sustainScore[idx] = std::abs (dS);
-            say ("  [" + juce::String (idx) + "] " + n + ": transient moves " + juce::String (dT, 2) + " dB, sustain " + juce::String (dS, 2) + " dB" + (role.isNotEmpty() ? " -> " + role : juce::String()));
+            const juce::String pt = pass == 0 ? juce::String() : juce::String (".b");
+            std::map<int, double> attackScore, sustainScore;
+            for (const auto& [idx, n] : numeric)
+            {
+                const auto fa = figAt ("r" + juce::String (idx) + ".n0" + pt, { setOf (idx, 0.0) }, window, true), fb = figAt ("r" + juce::String (idx) + ".n1" + pt, { setOf (idx, 1.0) }, window, true); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+                if (! fa.ok || ! fb.ok) continue;
+                const double dT = fb.tr - fa.tr, dS = fb.su - fa.su; const auto role = transientRole (dT, dS);
+                if (role == "attack") attackScore[idx] = std::abs (dT); if (role == "sustain") sustainScore[idx] = std::abs (dS);
+                say ("  pass " + juce::String (pass + 1) + " [" + juce::String (idx) + "] " + n + ": transient moves " + juce::String (dT, 2) + " dB, sustain " + juce::String (dS, 2) + " dB" + (role.isNotEmpty() ? " -> " + role : juce::String()));
+            }
+            const int a = pickByScore (attack.index, attackScore); std::map<int, double> sus2 = sustainScore; sus2.erase (a);
+            aPicks.push_back (a); sPicks.push_back (pickByScore (sustain.index, sus2));
         }
-        const int aIdx = pickByScore (attack.index, attackScore); std::map<int, double> sus2 = sustainScore; sus2.erase (aIdx); const int sIdx = pickByScore (sustain.index, sus2);
+        std::map<juce::String, juce::var> notRepeatable; juce::Array<juce::var> nrList;
+        auto settle = [&] (const juce::String& role, const std::vector<int>& picks) -> int
+        {
+            const auto rp = roleevidence::repeatedPick (picks); if (rp.repeatable) return rp.index;
+            const auto v = roleevidence::notRepeatableVar (role, rp, nameOf); notRepeatable[role] = v; nrList.add (v);
+            say ("  " + role + ": not_repeatable (needs_review) - the passes picked " + roleevidence::picksText (rp, nameOf) + "; not assigned"); return -1;
+        };
+        const int aIdx = settle ("attack", aPicks), sIdx = settle ("sustain", sPicks);
+        if (! nrList.isEmpty()) { o->setProperty ("roles_not_repeatable", nrList); o->setProperty ("status_review", "needs_review"); }
+        o->setProperty ("role_passes", roleevidence::kRolePasses);
         for (const auto& [role, idx, nameIdx] : std::vector<std::tuple<juce::String, int, int>> { { "attack", aIdx, attack.index }, { "sustain", sIdx, sustain.index } })
         {
+            if (notRepeatable.count (role)) { o->setProperty (role + "_map", notRepeatable[role]); continue; }
             if (idx < 0) { say ("  " + role + ": none - no control moves the " + (role == "attack" ? juce::String ("transient") : juce::String ("sustain")) + " by more than 1 dB" + (nameIdx >= 0 ? " (the name's nominee [" + juce::String (nameIdx) + "] " + nameOf (nameIdx) + " does not: no_effect)" : juce::String())); auto* m = new juce::DynamicObject(); m->setProperty ("control", nameIdx >= 0 ? juce::var (nameOf (nameIdx)) : juce::var()); m->setProperty ("verdict", "no_effect"); m->setProperty ("why", "moves nothing by more than 1 dB"); o->setProperty (role + "_map", nameIdx >= 0 ? juce::var (m) : juce::var()); continue; }
             const juce::String foundBy = idx == nameIdx ? "name" : "measurement";
             juce::Array<juce::var> rows; std::vector<std::pair<double, double>> map;
@@ -5237,25 +5277,42 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
         bool window = false;
         // ROLES BY MEASUREMENT (section 3), two stages: the THRESHOLD - every numeric control at norms 0.3 / 0.7 on the ramp (an end can sit at
         // -inf where nothing ever closes: G8); then the RANGE - every other control at its ends with the found threshold mid-way
+        // ROLE TESTS MUST REPEAT (8 Oct): both stages run roleevidence::kRolePasses times (pass 2 tagged ".b"), each pass's range stage under that
+        // pass's own threshold; a role whose picks differ is not_repeatable (needs_review), never assigned
+        std::vector<int> tPicks, rPicks;
+        for (int pass = 0; pass < roleevidence::kRolePasses; ++pass)
+        {
+        const juce::String pt = pass == 0 ? juce::String() : juce::String (".b");
         std::map<int, double> thrScore, rangeScore;
         for (const auto& [idx, n] : numeric)
         {
-            const auto fa = rampAt ("r" + juce::String (idx) + ".n03", { setOf (idx, 0.3) }, window), fb = rampAt ("r" + juce::String (idx) + ".n07", { setOf (idx, 0.7) }, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+            const auto fa = rampAt ("r" + juce::String (idx) + ".n03" + pt, { setOf (idx, 0.3) }, window), fb = rampAt ("r" + juce::String (idx) + ".n07" + pt, { setOf (idx, 0.7) }, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
             if (! fa.ok || ! fb.ok) continue;
             if (gateThresholdRole (fa.g.openAtInDb, fb.g.openAtInDb, fa.g.gating, fb.g.gating, fa.g.openGainDb, fb.g.openGainDb)) { thrScore[idx] = std::abs (*fb.g.openAtInDb - *fa.g.openAtInDb); say ("  [" + juce::String (idx) + "] " + n + ": opens at " + juce::String (*fa.g.openAtInDb, 1) + " / " + juce::String (*fb.g.openAtInDb, 1) + " dBFS RMS at 0.3 / 0.7 -> threshold"); }
         }
-        const int tIdx = pickByScore (threshold.index, thrScore);
+        const int tIdx = pickByScore (threshold.index, thrScore); tPicks.push_back (tIdx);
         for (const auto& [idx, n] : numeric)
         {
             if (idx == tIdx) continue;
             juce::StringArray base0; if (tIdx >= 0) base0.add (setOf (tIdx, 0.5));
             juce::StringArray sa = base0, sb = base0; sa.add (setOf (idx, 0.0)); sb.add (setOf (idx, 1.0));
-            const auto fa = rampAt ("q" + juce::String (idx) + ".n0", sa, window), fb = rampAt ("q" + juce::String (idx) + ".n1", sb, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
+            const auto fa = rampAt ("q" + juce::String (idx) + ".n0" + pt, sa, window), fb = rampAt ("q" + juce::String (idx) + ".n1" + pt, sb, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; }
             if (! fa.ok || ! fb.ok) continue;
             if (gateRangeRole (fa.g.closedGainDb, fb.g.closedGainDb, fa.g.openGainDb, fb.g.openGainDb, fa.g.gating, fb.g.gating)) { rangeScore[idx] = std::abs (fb.g.closedGainDb - fa.g.closedGainDb); say ("  [" + juce::String (idx) + "] " + n + ": closed gain " + juce::String (fa.g.closedGainDb, 1) + " / " + juce::String (fb.g.closedGainDb, 1) + " dB at its ends, open gain held -> range"); }
         }
-        const int rIdx = pickByScore (range.index, rangeScore);
-        if (tIdx < 0 && threshold.index >= 0) say ("  threshold: the name's nominee [" + juce::String (threshold.index) + "] " + nameOf (threshold.index) + " does not move the opening level, and no other control does");
+        rPicks.push_back (pickByScore (range.index, rangeScore));
+        }
+        std::map<juce::String, juce::var> gateNR; juce::Array<juce::var> gateNRList;
+        auto settleG = [&] (const juce::String& role, const std::vector<int>& picks) -> int
+        {
+            const auto rp = roleevidence::repeatedPick (picks); if (rp.repeatable) return rp.index;
+            const auto v = roleevidence::notRepeatableVar (role, rp, nameOf); gateNR[role] = v; gateNRList.add (v);
+            say ("  " + role + ": not_repeatable (needs_review) - the passes picked " + roleevidence::picksText (rp, nameOf) + "; not assigned"); return -1;
+        };
+        const int tIdx = settleG ("threshold", tPicks), rIdx = settleG ("range", rPicks);
+        if (! gateNRList.isEmpty()) { o->setProperty ("roles_not_repeatable", gateNRList); o->setProperty ("status_review", "needs_review"); if (gateNR.count ("threshold")) o->setProperty ("threshold_map", gateNR["threshold"]); if (gateNR.count ("range")) o->setProperty ("range_map", gateNR["range"]); }
+        o->setProperty ("role_passes", roleevidence::kRolePasses);
+        if (tIdx < 0 && threshold.index >= 0 && ! gateNR.count ("threshold")) say ("  threshold: the name's nominee [" + juce::String (threshold.index) + "] " + nameOf (threshold.index) + " does not move the opening level, and no other control does");
         // THRESHOLD MAP: 7 norms on the ramp - open / close in dBFS peak, hysteresis the median
         std::vector<std::pair<double, double>> openMap; std::vector<double> hyst; bool anyGating = false; std::optional<double> width; double openLo = 1e9, openHi = -1e9;
         if (tIdx >= 0)
@@ -5291,8 +5348,8 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
         // label_not_threshold (section 6): the name's threshold nominee exists but nothing moves the opening level (SSL X-Gate in its default mode);
         // a gate that gates anywhere in the role tests counts as gating
         if (tIdx < 0) { const auto f = rampAt ("instantiate", {}, window); if (window) { say ("DYN: a window appeared; stopping"); return 5; } if (f.ok && f.g.gating) { anyGating = true; width = f.width; } }
-        const auto verdict = (tIdx < 0 && threshold.index >= 0 && anyGating) ? juce::String ("label_not_threshold") : gateVerdict (anyGating, width, openHi - openLo, tIdx >= 0);
-        o->setProperty ("verdict", verdict); o->setProperty ("verdict_why", verdict == "expander" ? "the 10-90 % transition spans " + juce::String (*width, 1) + " dB of input (over 15)" : verdict == "label_not_threshold" ? (tIdx < 0 ? "the name's threshold [" + juce::String (threshold.index) + "] " + nameOf (threshold.index) + " does not move the opening level; no control does" : "the open level moves " + juce::String (openHi - openLo, 1) + " dB across the threshold's positions") : verdict == "no_effect" ? juce::String ("no position gated") : juce::String());
+        const auto verdict = gateNR.count ("threshold") ? juce::String ("not_repeatable") : (tIdx < 0 && threshold.index >= 0 && anyGating) ? juce::String ("label_not_threshold") : gateVerdict (anyGating, width, openHi - openLo, tIdx >= 0);
+        o->setProperty ("verdict", verdict); o->setProperty ("verdict_why", verdict == "not_repeatable" ? gateNR["threshold"].getProperty ("why", "").toString() : verdict == "expander" ? "the 10-90 % transition spans " + juce::String (*width, 1) + " dB of input (over 15)" : verdict == "label_not_threshold" ? (tIdx < 0 ? "the name's threshold [" + juce::String (threshold.index) + "] " + nameOf (threshold.index) + " does not move the opening level; no control does" : "the open level moves " + juce::String (openHi - openLo, 1) + " dB across the threshold's positions") : verdict == "no_effect" ? juce::String ("no position gated") : juce::String());
         say ("  verdict: " + verdict);
         // TIMING (section 4): the burst at a threshold TAKEN FROM THE RAMP - the threshold mid-way, quiet 12 dB under its measured open level, loud 12 over; both definitions
         if (tIdx >= 0 && verdict == "measured")
