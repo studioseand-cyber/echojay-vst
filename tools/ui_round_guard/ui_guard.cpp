@@ -310,6 +310,15 @@ struct EchoJayTabStripTestAccess
     static void tapApply (EchoJayEditor& e, int msgIdx) { e.onResultChipTapped (msgIdx, 3); }   // 06d test 5
     // 06d CHAINS (C): the one author of "which rack does Save serialise", and the view uid it reads.
     static ChainHost& saveHost (EchoJayEditor& e, juce::String* whichOut) { return e.chainHostForSave (whichOut); }
+    // 06d CHAINS (B)
+    static void mergeRow (EchoJayEditor& e, const juce::var& v) { e.mergeSavedChainRow (v); }
+    static void applyRows (EchoJayEditor& e, const juce::var& v, juce::int64 at, bool cached) { e.applyChainRows (v, at, cached); }
+    static int  savedChainCount (EchoJayEditor& e) { return (int) e.chainRows_.size(); }
+    static juce::String savedChainNames (EchoJayEditor& e)
+    { juce::StringArray n; for (const auto& r : e.chainRows_) n.add (r.name); return n.joinIntoString ("|"); }
+    static int savedRefs (EchoJayEditor& e, juce::String* srcOut)
+    { std::vector<EchoJayEditor::SavedChainRef> v; const auto s = e.collectSavedChainRefs (v);
+      if (srcOut != nullptr) *srcOut = s; return (int) v.size(); }
     static void setChainViewUid (EchoJayEditor& e, const juce::String& uid) { e.selectRackForView (uid); }
     static juce::StringArray chips (EchoJayEditor& e, const Msg& m) { juce::StringArray out; for (const auto& c : e.resultChipList (m)) out.add (c.label + "#" + juce::String (c.kind)); return out; }
     // 18h (1): the chip layout at a given width, the row count, the on-screen chip buttons
@@ -2928,7 +2937,12 @@ int main()
         A::build (*ed, "{\"chain\":[{\"name\":\"EchoJay Level\",\"role\":\"level\",\"settings\":\"\"},{\"name\":\"EchoJay Limiter\",\"role\":\"limiter\",\"settings\":\"\"}]}");
         pumpMs (400);
         auto& panel = A::panel (*ed);
-        panel.selectedIdx = 0; panel.openPopoutForSelected(); pumpMs (100);
+        panel.selectedIdx = 0; panel.openPopoutForSelected();
+        // 8 Oct 2026: WAIT FOR THE WINDOW, BOUNDED, RATHER THAN LOOK ONCE. A fixed 100 ms pump read the pop-out's
+        // existence at whatever moment it happened to arrive: this precondition failed once in several runs
+        // ("no pop-out ()") and passed on the next, which is a decision taken on scheduling rather than on the
+        // product. Up to 3 s, polled, and the leg still fails if it never appears - a bound, not a hope.
+        for (int w = 0; w < 60 && (panel.popout == nullptr || ! panel.popout->isAlwaysOnTop()); ++w) pumpMs (50);
         const bool havePopout = panel.popout != nullptr;
         check (havePopout && panel.popout->isAlwaysOnTop(), "(7) precondition: a hosted-editor pop-out window is open and always-on-top", havePopout ? "always-on-top=" + juce::String ((int) panel.popout->isAlwaysOnTop()) : "no pop-out (" + panel.statusText + ")");
         if (havePopout)
@@ -3596,6 +3610,63 @@ int main()
             check (which2.contains ("borrowed"), "(C) ...and the log names which rack it took", which2);
         }
         proc.borrowRelease (false);
+    }
+
+    // ---- 06d CHAINS (B), 8 Oct 2026: A SAVE APPEARS WITHOUT REOPENING, AND AN EMPTY MEMORY IS NOT PROOF ----
+    std::printf ("== 06d CHAINS (B): the saved row merges in, and an empty list is not evidence ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (2000, 1100); A::toChat (*ed); pumpMs (60);
+
+        // THE STATE SEAN WAS IN: one fetch had completed and come back empty, so the stamp was set and the rows
+        // were none. Every chat turn then reported "0 names, source=server" for the rest of the session, because
+        // nothing but the sidebar refills the rows.
+        A::applyRows (*ed, juce::var (juce::Array<juce::var>{}), juce::Time::currentTimeMillis(), false);
+        check (A::savedChainCount (*ed) == 0,
+               "(B) precondition: a completed fetch came back empty, so the list holds nothing");
+
+        // THE SAVE'S OWN RESPONSE ROW, exactly the shape lib/dash/chains.js returns from both the list and the
+        // save (id, name, slotCount, hasState, favourite, source, updatedAt).
+        auto* row = new juce::DynamicObject();
+        row->setProperty ("id", "ch_aitch_1");
+        row->setProperty ("name", "Aitch Vocal Chain");
+        row->setProperty ("slotCount", 5);
+        row->setProperty ("hasState", true);
+        row->setProperty ("favourite", false);
+        row->setProperty ("source", "plugin");
+        row->setProperty ("updatedAt", "2026-10-08T12:00:00Z");
+        A::mergeRow (*ed, juce::var (row));
+
+        check (A::savedChainCount (*ed) == 1,
+               "(B) THE SAVED CHAIN IS IN THE LIST WITH NO REFETCH (RED as it stood: the save touched neither the "
+               "rows nor the cache, so the one thing he had just done was the one thing the list could not show)",
+               juce::String (A::savedChainCount (*ed)));
+        check (A::savedChainNames (*ed).contains ("Aitch Vocal Chain"),
+               "(B) ...by name", A::savedChainNames (*ed));
+
+        // AND THE CHAT TURN SEES IT - the injection reads the same rows, and its source is named.
+        juce::String src;
+        const int n = A::savedRefs (*ed, &src);
+        check (n == 1, "(B) the [SAVED CHAINS] injection now has a name to carry",
+               juce::String (n) + " via " + src);
+
+        // SAVING AGAIN OVER THE SAME ID REPLACES, never duplicates: a rename and an overwrite both arrive here.
+        auto* again = new juce::DynamicObject();
+        again->setProperty ("id", "ch_aitch_1");
+        again->setProperty ("name", "Aitch Vocal Chain v2");
+        again->setProperty ("slotCount", 6);
+        A::mergeRow (*ed, juce::var (again));
+        check (A::savedChainCount (*ed) == 1 && A::savedChainNames (*ed).contains ("v2"),
+               "(B) a second save over the same id REPLACES its row rather than adding a twin",
+               juce::String (A::savedChainCount (*ed)) + ": " + A::savedChainNames (*ed));
+
+        // A row with no id is refused rather than stored as a nameless ghost.
+        auto* bad = new juce::DynamicObject(); bad->setProperty ("name", "No Id Here");
+        A::mergeRow (*ed, juce::var (bad));
+        check (A::savedChainCount (*ed) == 1, "(B) a row with no id is refused",
+               juce::String (A::savedChainCount (*ed)));
     }
 
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);

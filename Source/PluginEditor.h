@@ -1751,6 +1751,8 @@ private:
 
     void setChainSidebarMode(bool chainsMode);
     void refreshChainList();
+    // 06d CHAINS (B): merge ONE row (a save's own response) into the list and the disk cache, by id.
+    void mergeSavedChainRow (const juce::var& chainVar);
     void applyChainRows(const juce::var& chains, juce::int64 fetchedAtMs, bool fromCache);
     void toggleChainFavourite(int displayIdx);
     // Right click / ctrl-click on a row. Delete is NOT here: the API has no

@@ -28286,7 +28286,12 @@ juce::String EchoJayEditor::buildSavedChainsInjection()
 // the on-disk list cache, never a network fetch in front of a turn.
 juce::String EchoJayEditor::collectSavedChainRefs(std::vector<SavedChainRef>& out)
 {
-    if (chainListFetchedAtMs_ > 0)
+    // 06d CHAINS (B): AN EMPTY IN-MEMORY LIST IS NOT EVIDENCE OF AN EMPTY LIBRARY. This branch used to win on
+    // `chainListFetchedAtMs_ > 0` alone, so one fetch that happened to come back empty - before a save, or on a
+    // cold account - was then reported as "source=server, 0 names" on EVERY turn for the rest of the session,
+    // because nothing else fills chainRows_ and the sidebar is its only refresher. The disk cache is consulted
+    // when memory has nothing, which is the honest order: a remembered list beats a remembered absence.
+    if (chainListFetchedAtMs_ > 0 && ! chainRows_.empty())
     {
         for (const auto& r : chainRows_)
             out.push_back({ r.id, r.name });
@@ -33929,6 +33934,13 @@ void EchoJayEditor::setChainSidebarMode(bool chainsMode)
     // thread mid-sentence. That is why this is a mode and not a second panel.
     if (chainsMode)
     {
+        // 06d CHAINS (A, the logging half): Sean pressed CHAINS and the log carried NOTHING about chains, so
+        // there was no way to tell a panel that failed before it asked from a fetch that answered empty. Four
+        // lines now: open, fetch start, result count, render.
+        EchoJay_NSLog (("EJChains: CHAINS panel opened (tab=" + juce::String ((int) currentTab)
+                        + " compact=" + juce::String ((int) compactMode)
+                        + " collapsed=" + juce::String ((int) processorRef.chatSidebarCollapsed)
+                        + ") - rows in memory " + juce::String ((int) chainRows_.size())).toRawUTF8());
         // Show what we have IMMEDIATELY from cache, then refresh behind it.
         // An empty pane that fills in later reads as broken even when the
         // network is fine.
@@ -33944,11 +33956,12 @@ void EchoJayEditor::setChainSidebarMode(bool chainsMode)
 
 void EchoJayEditor::refreshChainList()
 {
-    if (chainListLoading_) return;
+    if (chainListLoading_) { EchoJay_NSLog ("EJChains: fetch SKIPPED - one is already in flight"); return; }
     chainListLoading_ = true;
     chainListError_.clear();
     repaint();
 
+    EchoJay_NSLog ("EJChains: fetch START GET /api/v2/chains");
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.listChains([safeThis](const juce::var& json, int sc)
     {
@@ -33971,11 +33984,75 @@ void EchoJayEditor::refreshChainList()
         juce::var chains;
         if (auto* obj = json.getDynamicObject())
             chains = obj->getProperty("chains");
-        if (!chains.isArray()) { safeThis->repaint(); return; }
+        if (!chains.isArray())
+        {
+            // A 200 whose body is not the shape we asked for is a FACT, not a silence. This returned without a
+            // word before, which is indistinguishable in the log from a fetch that never happened.
+            EchoJay_NSLog (("EJChains: fetch RESULT status " + juce::String (sc)
+                            + " but no { chains: [...] } array in the body - keeping "
+                            + juce::String ((int) safeThis->chainRows_.size()) + " row(s) on screen").toRawUTF8());
+            safeThis->repaint();
+            return;
+        }
 
+        EchoJay_NSLog (("EJChains: fetch RESULT status " + juce::String (sc) + ", "
+                        + juce::String (chains.getArray() != nullptr ? chains.getArray()->size() : 0)
+                        + " chain(s) in the body").toRawUTF8());
         writeChainListCache(safeThis->api.getUserInfo().email, chains);
         safeThis->applyChainRows(chains, juce::Time::currentTimeMillis(), false);
+        EchoJay_NSLog (("EJChains: RENDER " + juce::String ((int) safeThis->chainRows_.size())
+                        + " row(s) after parse").toRawUTF8());
     });
+}
+
+// 06d CHAINS (B): ONE ROW IN, BY ID. Used by a save to show what the user just did without a refetch, and
+// written through to the disk cache so the next session opens with it. An existing id is REPLACED rather than
+// duplicated - a rename and an overwrite both arrive this way, and two rows for one chain is its own bug.
+void EchoJayEditor::mergeSavedChainRow (const juce::var& chainVar)
+{
+    auto* o = chainVar.getDynamicObject();
+    if (o == nullptr) return;
+    const juce::String id = o->getProperty ("id").toString();
+    if (id.isEmpty()) { EchoJay_NSLog ("EJChains: merge refused - the saved row carries no id"); return; }
+
+    ChainRow r;
+    r.id        = id;
+    r.name      = o->getProperty ("name").toString();
+    r.slotCount = (int) o->getProperty ("slotCount");
+    r.hasState  = (bool) o->getProperty ("hasState");
+    r.favourite = (bool) o->getProperty ("favourite");
+    r.source    = o->getProperty ("source").toString();
+    r.updatedAt = o->getProperty ("updatedAt").toString();
+
+    bool replaced = false;
+    for (auto& existing : chainRows_)
+        if (existing.id == id) { existing = r; replaced = true; break; }
+    if (! replaced) chainRows_.insert (chainRows_.begin(), r);   // newest first, as the list reads
+
+    // The disk cache is the list the NEXT session opens with, so it gets the same row. Rebuilt from the rows we
+    // hold rather than patched, so the file and the memory cannot disagree.
+    juce::Array<juce::var> arr;
+    for (const auto& row : chainRows_)
+    {
+        auto* ro = new juce::DynamicObject();
+        ro->setProperty ("id", row.id);
+        ro->setProperty ("name", row.name);
+        ro->setProperty ("slotCount", row.slotCount);
+        ro->setProperty ("hasState", row.hasState);
+        ro->setProperty ("favourite", row.favourite);
+        ro->setProperty ("source", row.source);
+        ro->setProperty ("updatedAt", row.updatedAt);
+        arr.add (juce::var (ro));
+    }
+    writeChainListCache (api.getUserInfo().email, juce::var (arr));
+    if (chainListFetchedAtMs_ <= 0) chainListFetchedAtMs_ = juce::Time::currentTimeMillis();
+    EchoJay_NSLog (("EJChains: merged the saved row \"" + r.name + "\" (id " + id + ") "
+                    + juce::String (replaced ? "over its existing entry" : "as a new entry")
+                    + " - the list now holds " + juce::String ((int) chainRows_.size())
+                    + " and the disk cache was rewritten").toRawUTF8());
+    rebuildChainDisplayRows();
+    resized();
+    repaint();
 }
 
 void EchoJayEditor::applyChainRows(const juce::var& chains, juce::int64 fetchedAtMs,
@@ -34522,6 +34599,16 @@ void EchoJayEditor::sendChainSave(const juce::String& id, const juce::String& na
 
         if (newId.isNotEmpty()) safeThis->processorRef.savedChainId = newId;
         safeThis->processorRef.savedChainName = name;
+        // ---- 06d CHAINS (B), 8 Oct 2026: THE CHAIN APPEARS WITHOUT REOPENING ANYTHING ------------------
+        // Sean saved "Aitch Vocal Chain", the Dashboard listed it "5m ago", and the plugin's own list stayed
+        // empty: the save touched neither chainRows_ nor the disk cache, and chainRows_ is filled ONLY by
+        // refreshChainList, whose sole caller is the sidebar opening. So the thing he had just done was the one
+        // thing the list could not show him. The row the server just returned IS a list row (lib/dash/chains.js
+        // returns the same shape from both), so it is merged straight in - no second round trip to learn what we
+        // were just told.
+        if (auto* obj = json.getDynamicObject())
+            if (auto* c = obj->getProperty("chain").getDynamicObject())
+                safeThis->mergeSavedChainRow (juce::var (c));
         safeThis->processorRef.markStateDirty();   // the host must re-snapshot
 
         // Past tense is legitimate: saving IS something the user just did.
