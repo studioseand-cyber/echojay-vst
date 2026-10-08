@@ -2525,13 +2525,29 @@ void LinkProcessor::resyncChainModelFromHost()
         // business and never reaches the Link's own saved state — chainModel
         // is what the editor renders AND what persists, and a persisted
         // lease-bypass means a crash mid-borrow leaves the rack silently
-        // switched off. Under a lease the model records the TRUE state (the
-        // saved prior), not the lease's temporary dry rack.
-        if (rackLeaseActive_ && i < (int) rackLeasePrior_.size())
-            s.bypassed = rackLeasePrior_[(size_t) i];
-        else if (! rackLeaseActive_ && leaseSlot0_ == i
-                 && leaseActive_.load(std::memory_order_relaxed))
-            s.bypassed = leasePriorBypass_;
+        // switched off. Under a lease the model records the TRUE state, not
+        // the lease's temporary dry rack.
+        //
+        // 8 Oct 2026 - THE PERSISTENT BYPASS (Sean 11:41: "after the V2 hands
+        // a rack back, the Link's plugins RARELY stay bypassed"). This test
+        // used to be `i < rackLeasePrior_.size()`, and the prior list is
+        // captured AT ENGAGE - so a slot ADDED DURING the lease, which is
+        // what every build does, had no prior and fell through to
+        // `info.bypassed`. Under a lease that is TRUE for every slot
+        // (attachBypassed_), so the model - what the editor renders and what
+        // PERSISTS - recorded the new slot as bypassed, and nothing about
+        // releasing the lease could undo a value already saved. The host knew
+        // better the whole time: rackLeaseRelease() restores from
+        // `intendedBypassed`, and `setLeaseBypass` never touches it.
+        //
+        // So the model now reads the SAME source the release does, for every
+        // slot, and the prior list stops being the model's authority. One
+        // source of truth for "what did the user actually ask for", which is
+        // the only thing that may ever reach the saved state.
+        if (rackLeaseActive_)
+            s.bypassed = info.intendedBypassed;
+        else if (leaseSlot0_ == i && leaseActive_.load(std::memory_order_relaxed))
+            s.bypassed = info.intendedBypassed;
         else
             s.bypassed = info.bypassed;
         s.hostIdx  = i;
@@ -2548,6 +2564,19 @@ void LinkProcessor::resyncChainModelFromHost()
 
 void LinkProcessor::rackLeaseEngage()
 {
+    // 8 Oct 2026 (Sean's (a)): A SECOND ENGAGE NEVER OVERWRITES A LIVE SNAPSHOT.
+    // The prior list is only ever correct if it was taken while the rack was in the user's own state. Re-taking it
+    // under a lease would record the lease's own dry rack as "what the user asked for". With v9 the snapshot is of
+    // `intendedBypassed`, which the lease does not touch, so a re-entry is harmless TODAY - and the guard is here
+    // anyway, because the day someone changes what is snapshotted is the day a silent re-entry becomes a rack that
+    // never comes back. Logged either way: a skipped snapshot is a fact about a lease that was already held.
+    if (rackLeaseActive_)
+    {
+        EchoJay_NSLog(("EJLease: RACK engage while a lease is ALREADY held (id \"" + leaseGate_.activeId
+                       + "\") - snapshot SKIPPED, " + juce::String((int) rackLeasePrior_.size())
+                       + " prior state(s) kept; the rack is already dry").toRawUTF8());
+        return;
+    }
     chainHost.setAttachBypassed(true);    // v9 change A: BEFORE the existing slots are bypassed
     // WHOLE-RACK ENGAGE: save every slot's bypass, bypass all once, stream
     // dry. setSlotBypassed bumps the revision, so the sidecar republishes
@@ -2572,9 +2601,16 @@ void LinkProcessor::rackLeaseEngage()
     // never match. Both numbers the decision rests on are now ours, taken at two moments we control.
     leaseBaseRev_ = chainHost.getChainRevision();
     notifyChainModel();
-    EchoJay_NSLog(("EJLease: RACK engaged, " +
-                   juce::String((int) rackLeasePrior_.size())
-                   + " slot(s) bypassed, streaming dry").toRawUTF8());
+    // (c) EVERY ENGAGE AND RELEASE NAMES ITS LEASE AND WHAT IT DID TO THE RACK, so a rack that comes back wrong
+    // can be read out of the log instead of reasoned about from a photograph.
+    {
+        juce::String snap;
+        for (size_t k = 0; k < rackLeasePrior_.size(); ++k)
+            snap << (k ? "," : "") << juce::String ((int) k + 1) << (rackLeasePrior_[k] ? ":byp" : ":live");
+        EchoJay_NSLog(("EJLease: RACK engaged id \"" + leaseGate_.activeId + "\" rev " + juce::String(leaseBaseRev_)
+                       + ", snapshot TAKEN of " + juce::String((int) rackLeasePrior_.size())
+                       + " slot(s) [" + snap + "], all bypassed, streaming dry").toRawUTF8());
+    }
 }
 
 void LinkProcessor::rackLeaseRelease()
@@ -2585,9 +2621,17 @@ void LinkProcessor::rackLeaseRelease()
     for (int i = 0; i < chainHost.getNumSlots(); ++i)
         chainHost.setLeaseBypass(i, chainHost.getSlotInfo(i).intendedBypassed);
     chainHost.setAttachBypassed(false);   // v9 change A: AFTER the priors are restored
-    EchoJay_NSLog(("EJLease: RACK released/expired - "
-                   + juce::String((int) rackLeasePrior_.size())
-                   + " slot bypass state(s) restored").toRawUTF8());
+    {
+        juce::String restored;
+        for (int i = 0; i < chainHost.getNumSlots(); ++i)
+            restored << (i ? "," : "") << juce::String(i + 1)
+                     << (chainHost.getSlotInfo(i).intendedBypassed ? ":byp" : ":live");
+        EchoJay_NSLog(("EJLease: RACK released/expired id \"" + leaseGate_.activeId + "\" - restored "
+                       + juce::String(chainHost.getNumSlots()) + " slot(s) from INTENT [" + restored
+                       + "]; the engage snapshot held " + juce::String((int) rackLeasePrior_.size())
+                       + " (slots added under the lease have no prior and are restored from intent, which is why "
+                         "the model records intent too)").toRawUTF8());
+    }
     rackLeaseActive_ = false;
     leaseBaseRev_ = -1;   // the borrow is over: there is no baseline to compare a saved copy against
     slotWetParkedSaid_ = false;   // 2 Oct 2026: the parked-rack notice is once per LEASE, not once per process

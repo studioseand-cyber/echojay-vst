@@ -2619,6 +2619,43 @@ its own sources, Link UUID identical to installed -> PLACED, with the note; (B) 
 PluginEditor.cpp, which the V2 compiles and the Link does not -> V2 REFUSED (stale) and REFUSED (unchanged), nothing
 placed, and the LINK NOT DRAGGED DOWN by a change to a file it does not compile. That last line is the whole fix.
 
+### 0. THE REAL BYPASS BUG - FOUND AND FIXED (Sean 11:41, 8 Oct; code written, UNBUILT)
+**HIS REPORT:** rarely, after the V2 takes a Link rack and hands it back, the Link's plugins STAY bypassed - real,
+persistent, with no lease held. Exactly the caveat I flagged on the display bug.
+
+**WHERE IT WAS, and it is not any of the three places we expected.** The v9 design is sound where it was examined:
+`setLeaseBypass` touches only the EFFECTIVE `bypassed` and never the intent; `setSlotBypassed` records the intent
+and keeps the rack dry while `attachBypassed_`; `rackLeaseRelease` restores every slot from `intendedBypassed`,
+which is why it already handles slots that arrived mid-lease. Engage and release are properly paired, and the gate
+has an expiry path ("ONE restore path for every ending - clean release, expiry after a crash, a new id superseding
+a dead session", LinkProcessor.cpp:1090-1108), so (b) was already covered.
+**THE HOLE IS IN WHAT THE MODEL RECORDS**, and the model is "what the editor renders AND what persists":
+```
+    if (rackLeaseActive_ && i < (int) rackLeasePrior_.size())  s.bypassed = rackLeasePrior_[i];   // the intent
+    ...
+    else                                                        s.bypassed = info.bypassed;        // EFFECTIVE
+```
+`rackLeasePrior_` is captured AT ENGAGE. **A slot ADDED DURING the lease - which is what every build does - has no
+prior**, falls through to the effective bypass (true for every slot under a lease), and the model saves it as
+bypassed. Releasing the lease cannot undo a value that is already in the saved state, and the host was right the
+whole time: its `intendedBypassed` for that slot is LIVE. That is the persistence, and "rarely" is "only when a
+slot arrived while the rack was borrowed".
+**THE FIX:** under a lease the model reads `info.intendedBypassed` for EVERY slot - the same source
+`rackLeaseRelease` already restores from - so the prior list stops being the model's authority. One source of truth
+for "what did the user actually ask for", which is the only thing that may ever reach the saved state.
+**SEAN'S (a), done anyway and for the stated reason:** `rackLeaseEngage` now REFUSES to re-snapshot while a lease
+is held, and logs the skip. With v9 the snapshot is of the intent, so a re-entry is harmless today - the guard is
+there because the day someone changes what is snapshotted is the day a silent re-entry becomes a rack that never
+comes back.
+**SEAN'S (c):** every engage and release now names its lease id and prints the slot-by-slot states - snapshot
+TAKEN (with the list) or SKIPPED, and on release what was restored from intent beside how many priors the engage
+had held. A rack that comes back wrong can now be read out of the log instead of reasoned about from a photograph.
+**LEG, in `linksync_test` (it drives the REAL arms, not a copy):** mixed pre-borrow intent [live, BYP, live],
+engage, engage AGAIN, a slot added under the lease, then assert mid-lease that the model records the intent of
+every slot including the new one (RED as it stood), then hand back and assert the original mixed states return and
+the added slot is LIVE. Deliberately mixed so neither an all-live nor an all-bypassed restore can pass by accident.
+**UNBUILT:** guard builds wait for "Sean is out of Logic".
+
 ### 7. EVERY SLOT READS BYPASSED ON A LINK RACK (Sean 10:34, 8 Oct, on 08a) - DIAGNOSED, DISPLAY-ONLY
 **THE SYMPTOM:** switching the V2 rack selector to a Link rack (RACK: AITCH_4_01) SOMETIMES shows every plugin
 with a BYPASSED tag - EchoJay EQ, Tube-Tech, UAD UA 1176, NLS Buss, all four at once. His 10:58 screenshot of the

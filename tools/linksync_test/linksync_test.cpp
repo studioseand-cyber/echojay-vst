@@ -87,6 +87,10 @@ struct EchoJayLinkSyncTestAccess
     // Registration arms (26 Aug 2026): drive the REAL claim path the way
     // the 1s tick does, so the gate proves claim/wait/adopt end to end.
     static void releaseOnly (LinkProcessor& p) { p.releaseRegistrySlot(); }
+    // 06d item 0: the model is what the editor renders AND what persists, so a leg about a persistent
+    // bypass has to read it through the real resync rather than infer it from the host.
+    static void resync (LinkProcessor& p) { p.resyncChainModelFromHost(); }
+    static const std::vector<LinkProcessor::ChainSlotSpec>& model (LinkProcessor& p) { return p.chainModel; }
     static void releaseAndReclaim (LinkProcessor& p, int n)
     {
         p.releaseRegistrySlot();
@@ -857,6 +861,69 @@ int main()
         check (proc.userMuteOn(), "restore brings the user mute back");
         T::setUserMute (proc, false);
         T::setSolo (proc, false);
+    }
+
+    // ---- 8 Oct 2026 (06d item 0): THE PERSISTENT BYPASS AFTER A HAND-BACK -------------------------------
+    // Sean 11:41: "rarely, after the V2 releases a Link rack, the Link's plugins STAY bypassed" - real, persistent,
+    // with no lease held. The hole was in what the MODEL records, which is what the editor renders AND what
+    // persists: `resyncChainModelFromHost` tested `i < rackLeasePrior_.size()`, and the prior list is captured AT
+    // ENGAGE, so a slot ADDED DURING the lease - which is what every build does - had no prior and fell through to
+    // the EFFECTIVE bypass, true for every slot under a lease. Releasing could not undo a value already saved.
+    std::printf ("== 06d item 0: a hand-back restores the ORIGINAL states, including slots added under the lease ==\n");
+    {
+        using T = EchoJayLinkSyncTestAccess;
+        // Pre-borrow intent, deliberately mixed so an all-live or all-bypassed restore cannot pass by accident.
+        host.setSlotBypassed (0, false);
+        host.setSlotBypassed (1, true);
+        if (host.getNumSlots() > 2) host.setSlotBypassed (2, false);
+        const int nBefore = host.getNumSlots();
+
+        T::engage (proc);
+        // (a) A SECOND ENGAGE MUST NOT RE-SNAPSHOT. Called straight through the real arm, as a re-engage would.
+        T::engage (proc);
+
+        // A slot ARRIVES under the lease, as a build's add does. It is attach-bypassed (effective) and its INTENT
+        // is live - the case the prior list cannot describe, because it was taken before this slot existed.
+        const auto* probe = BuiltinDeviceRegistry::instance().findByName ("EJ Sync Probe");
+        if (probe != nullptr)
+            host.loadBuiltinNow (BuiltinDeviceRegistry::descriptionFor (*probe));
+        const int nUnderLease = host.getNumSlots();
+        check (nUnderLease == nBefore + 1, "a slot was added while the rack was leased",
+               juce::String (nBefore) + " -> " + juce::String (nUnderLease));
+
+        // MID-LEASE the model must record INTENT for every slot, the new one included. RED as it stood: the added
+        // slot recorded the lease's dry state and that is what would have persisted.
+        T::resync (proc);
+        const auto& model = T::model (proc);
+        bool modelHonest = (int) model.size() == nUnderLease;
+        for (int i = 0; i < (int) model.size() && modelHonest; ++i)
+            if (model[(size_t) i].bypassed != host.getSlotInfo (i).intendedBypassed) modelHonest = false;
+        juce::String got;
+        for (int i = 0; i < (int) model.size(); ++i)
+            got << (i ? "," : "") << juce::String (i + 1) << (model[(size_t) i].bypassed ? ":byp" : ":live");
+        check (modelHonest,
+               "mid-lease the model records the INTENT of every slot, including one added under the lease "
+               "(RED as it stood: the added slot recorded the lease's dry rack, and the model is what persists)",
+               got);
+
+        // THE HAND-BACK.
+        T::release (proc);
+        bool restored = true;
+        for (int i = 0; i < host.getNumSlots(); ++i)
+            if (host.getSlotInfo (i).bypassed != host.getSlotInfo (i).intendedBypassed) restored = false;
+        juce::String after;
+        for (int i = 0; i < host.getNumSlots(); ++i)
+            after << (i ? "," : "") << juce::String (i + 1)
+                  << (host.getSlotInfo (i).bypassed ? ":byp" : ":live");
+        check (restored, "after the hand-back every slot's EFFECTIVE state is its intent again", after);
+        check (! host.getSlotInfo (0).bypassed && host.getSlotInfo (1).bypassed,
+               "...and the ORIGINAL mixed states came back, not all-live and not all-bypassed", after);
+        if (probe != nullptr)
+            check (! host.getSlotInfo (nUnderLease - 1).bypassed,
+                   "...and the slot that arrived under the lease is LIVE, as its intent always said", after);
+
+        // Leave the rack as the later arms expect it.
+        host.setSlotBypassed (1, false);
     }
 
     // ---- negative control -------------------------------------------------
