@@ -1,20 +1,27 @@
 /*
-    EedLimiterPanelV2.h (session L, 8 Oct 2026): the redesigned limiter panel - the device SHOWS what it is doing.
-    A new component beside the shipping EedLimiterEditor (which is untouched); proposal and preview only until Sean's
-    go-ahead. Copies no FabFilter layout, colours, graphics or wording: EchoJay palette, EchoJay filmstrip dials,
+    EedLimiterPanelV2.h (session L, 8 Oct 2026; revised 8 Oct evening to Sean's notes): the redesigned limiter panel -
+    the device SHOWS what it is doing. A new component beside the shipping EedLimiterEditor (untouched until the
+    go-ahead). Copies no FabFilter layout, colours, graphics or wording: EchoJay palette, EchoJay filmstrip dials,
     EchoJay type.
 
-      header     LIMITER  <style>  TRUE PK  BYPASS
-      picture    a scrolling display: the input envelope (dim), the output envelope (bright) and the gain line (amber,
-                 0 at the top, down to -12 dB) over the last 1 / 3 / 10 seconds (speed buttons)
-      meters     IN and OUT peak bars with a true-peak max-hold readout; a GR bar with its deepest value
-      dials      GAIN (input_db, +-12) and CEILING; M / S / I LUFS with a reset; the latency line
+      header     LIMITER  (subtitle when it fits)  <style>  TRUE PK  BYPASS
+      picture    THE CENTREPIECE: a scrolling display over the last 1 / 3 / 10 s (speed buttons inside its corner):
+                 the INPUT waveform dim behind the OUTPUT waveform, both halves, on a dB amplitude scale (+12 at the
+                 edges, -36 at the centre); the gain line (amber) on top, 0 at the top down to -12 dB, its own scale
+      meters     slim bars: IN (left), OUT and GR (right), each with a dB scale and its number below; IN/OUT in the
+                 normal palette, red only for the part above 0 dBFS, with a true-peak max-hold; GR fills DOWN from 0
+                 with a max-hold line and the deepest value
+      dials      GAIN (input_db) and CEILING, large; a LUFS column: short-term bar, the integrated value large, M and
+                 S small, its own RESET LUFS button; the ADVANCED button and the latency line
       advanced   LOOKAHEAD, ATTACK, RELEASE, LINK, SC HPF - Pro-L 2's Default Setting as the defaults (0.18 ms, 275 ms,
-                 400 ms, 75 %); ATTACK is the floor's charge, the knob a Pro-L 2 user expects
+                 400 ms, 75 %)
 
-    DATA. The panel owns nothing live: it reads a limv2::MeterTap (lock-free, fed by the engine per sample) on a
-    30 Hz timer, folds the columns into its own picture ring and the hops into a LoudnessReader. The host (the
-    editor in the plugin, the preview app offline) gives it a Model of the dial values and a callback for changes.
+    Nothing truncates: every piece of text is chosen from a list of shorter forms until one fits its box (fitText).
+
+    DATA. The panel owns nothing live: it reads a limv2::MeterTap (lock-free, fed by the engine per sample; the tap
+    delays IN by the latency so it sits under OUT) on a 30 Hz timer, folds the columns into its own picture ring and
+    the hops into a LoudnessReader. The host (the editor in the plugin, the preview app offline) gives it a Model of
+    the dial values and a callback for changes.
 */
 #pragma once
 #include "EJLimiterPanelPalette.h"
@@ -48,8 +55,11 @@ public:
 private:
     void timerCallback() override { refreshNow(); }
     void paintPicture (juce::Graphics&, juce::Rectangle<int>);
-    void paintMeter (juce::Graphics&, juce::Rectangle<int>, float peakDb, float holdDb, const juce::String& caption, const juce::String& readout, bool isGr);
+    void paintLevelMeter (juce::Graphics&, juce::Rectangle<int>, float peakDb, float holdDb, const juce::String& caption, bool scaleOnRight);
+    void paintGrMeter (juce::Graphics&, juce::Rectangle<int>);
+    void paintLufs (juce::Graphics&, juce::Rectangle<int>);
     void layoutDial (juce::Slider&, juce::Label&, juce::Rectangle<int>);
+    bool small() const { return getWidth() < 420 || getHeight() < 300; }
 
     struct Dial : public juce::LookAndFeel_V4
     {
@@ -61,18 +71,17 @@ private:
     echojay::limv2::LoudnessReader loud_;
     Model model_;
     Dial dialLnf_;
-    juce::ComboBox styleBox_; juce::TextButton truePeakBtn_ { "TRUE PK" }, bypassBtn_ { "BYPASS" }, resetBtn_ { "RESET" }, advBtn_ { "ADVANCED" };
+    juce::ComboBox styleBox_; juce::TextButton truePeakBtn_ { "TRUE PK" }, bypassBtn_ { "BYPASS" }, lufsResetBtn_ { "RESET LUFS" }, advBtn_ { "ADVANCED" };
     juce::TextButton speed1_ { "1s" }, speed3_ { "3s" }, speed10_ { "10s" }; juce::TextButton* speedBtn_[3] { &speed1_, &speed3_, &speed10_ };
     juce::Slider gainDial_, ceilingDial_, lookaheadDial_, attackDial_, releaseDial_, linkDial_, hpfDial_;
     juce::Label gainCap_, ceilingCap_, lookaheadCap_, attackCap_, releaseCap_, linkCap_, hpfCap_;
-    juce::Label lufsLabel_, latencyLabel_;
     bool advancedOpen_ = false; int speed_ = 1; bool suppress_ = false;
 
     // the picture: the last kPictureCols columns, newest last
     static constexpr int kPictureCols = 1024;
     std::vector<echojay::limv2::ColumnRecord> picture_; int pictureHead_ = 0; int tapCursor_ = 0;
-    float inPeakDb_ = -200, outPeakDb_ = -200, grNowDb_ = 0, grHoldDb_ = 0, inHoldDb_ = -200, outHoldDb_ = -200; int holdAge_ = 0;
-    juce::Rectangle<int> pictureArea_, inMeterArea_, outMeterArea_, grMeterArea_, readoutArea_;
+    float inPeakDb_ = -200, outPeakDb_ = -200, grNowDb_ = 0, grHoldDb_ = 0; int holdAge_ = 0;
+    juce::Rectangle<int> headerArea_, pictureArea_, inMeterArea_, outMeterArea_, grMeterArea_, lufsArea_, latencyArea_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedLimiterPanelV2)
 };

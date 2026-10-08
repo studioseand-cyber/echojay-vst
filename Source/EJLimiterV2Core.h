@@ -359,6 +359,7 @@ public:
         numCh = std::max (1, std::min (numCh, kMaxChannels));
         const float gCoef = gainCoef_; float gMin = 1.0f; double eIn = 0.0, eOut = 0.0;
         const int scD = std::max (0, maxLatency_ - naturalLatency());   // the detector's delay under fixed latency
+        if (tap_ != nullptr) tap_->setInputDelay (latencySamples());      // the picture's IN sits under the OUT it became
         for (int i = 0; i < n; ++i)
         {
             gainNow_ += (inputGain_ - gainNow_) * gCoef;

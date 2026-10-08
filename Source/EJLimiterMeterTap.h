@@ -39,6 +39,7 @@ public:
         columns_.assign ((size_t) kColumns, ColumnRecord {}); hops_.assign ((size_t) kHops, HopRecord {});
         echojay::computeKWeightingCoeffs (sr_, k1_, k2_);
         hopSamples_ = (int) std::lround (0.1 * sr_);
+        inDelayCap_ = (int) std::lround (sr_) + 1; inDelay_.assign ((size_t) inDelayCap_ * 2, 0.0f);   // up to 1 s of input delay, so IN sits under OUT
         reset();
     }
     void reset() noexcept
@@ -46,7 +47,11 @@ public:
         colHead_.store (0, std::memory_order_relaxed); hopHead_.store (0, std::memory_order_relaxed);
         colFill_ = 0; hopFill_ = 0; cur_ = ColumnRecord {}; cur_.inMin = cur_.outMin = 1e9f; cur_.inMax = cur_.outMax = -1e9f; cur_.grDb = 0;
         hopZ_ = 0; hopTpIn_ = hopTpOut_ = 0; for (auto& z : zl_) z = 0; for (auto& z : zr_) z = 0;
+        std::fill (inDelay_.begin(), inDelay_.end(), 0.0f); inWrite_ = 0;
     }
+    // the input is delayed by the limiter's latency before it is folded into a column, so the picture shows IN under
+    // the OUT it became (the engine sets this to its latencySamples(); audio thread, a relaxed store per block)
+    void setInputDelay (int samples) noexcept { inDelaySamples_.store (std::max (0, std::min (samples, inDelayCap_ - 1)), std::memory_order_relaxed); }
     // the display speed: samples per column (the UI writes, the audio thread reads at a column boundary)
     void setColumnSamples (int n) noexcept { columnSamples_.store (std::max (8, n), std::memory_order_relaxed); }
     int  columnSamples() const noexcept { return columnSamples_.load (std::memory_order_relaxed); }
@@ -55,6 +60,12 @@ public:
     // true-peak envelope values the engine already computed for this sample (so nothing is interpolated twice).
     inline void push (float inL, float inR, float outL, float outR, float gainLin, float tpIn, float tpOut) noexcept
     {
+        if (inDelayCap_ > 0)
+        {
+            const int d = inDelaySamples_.load (std::memory_order_relaxed); const int rp = (inWrite_ + inDelayCap_ - d) % inDelayCap_;
+            inDelay_[(size_t) inWrite_ * 2] = inL; inDelay_[(size_t) inWrite_ * 2 + 1] = inR; inWrite_ = (inWrite_ + 1) % inDelayCap_;
+            inL = inDelay_[(size_t) rp * 2]; inR = inDelay_[(size_t) rp * 2 + 1];
+        }
         cur_.inMin = std::min (cur_.inMin, std::min (inL, inR)); cur_.inMax = std::max (cur_.inMax, std::max (inL, inR));
         cur_.outMin = std::min (cur_.outMin, std::min (outL, outR)); cur_.outMax = std::max (cur_.outMax, std::max (outL, outR));
         const float gDb = gainLin < 1.0f ? 20.0f * std::log10 (std::max (gainLin, 1e-6f)) : 0.0f; cur_.grDb = std::min (cur_.grDb, gDb);
@@ -88,6 +99,7 @@ private:
     std::vector<ColumnRecord> columns_; std::vector<HopRecord> hops_;
     std::atomic<int> colHead_ { 0 }, hopHead_ { 0 }; std::atomic<int> columnSamples_ { 96 };
     int colFill_ = 0, hopFill_ = 0, hopSamples_ = 4800; ColumnRecord cur_; double hopZ_ = 0; float hopTpIn_ = 0, hopTpOut_ = 0;
+    std::vector<float> inDelay_; int inDelayCap_ = 0, inWrite_ = 0; std::atomic<int> inDelaySamples_ { 0 };
 };
 
 // The consumer's loudness: momentary (400 ms = 4 hops), short-term (3 s = 30 hops), integrated with BS.1770-4's
