@@ -1,0 +1,39 @@
+GREEN - 8 Oct 2026. Full gate 61 of 61, every stage clean. Tree: 5ed4c17 (+ the handoff/report commits, no source).
+
+THE GATE, run 07:44 -> 09:31 with both archives deleted first so each is provably built from the headers in the tree:
+    S1 archives      exit 0   errors 0
+    S2 guards        exit 0   errors 0      (all 51 relinked - the new -Wl,-stack_size applies to every guard)
+    S3 four bundles  exit 0   errors 0
+    S4 ctest         exit 0   100% tests passed out of 61
+    S5 link_state_guard GREEN both sides
+    GATE3 DONE 09:31:00
+No failures of any kind. The two reds that preceded this round are both accounted for: dialinfo_keep_guard's
+teardown race is closed by ad7f131, and lease_id_guard - which went red once in three runs under ctest -j 2 - is
+green here with its precondition now checked at the write (81d5be9).
+
+THESE BINARIES ARE THE ONES THE GATE TESTED. The V2 arm64 UUID in this folder, 4E5A7D82, is byte-identical to the
+bundle in build-guards that S3 validated and S4 ran against; nothing was rebuilt between the placement and the
+gate. That is the whole point of checking rather than assuming it.
+
+UUIDs (arm64 first):
+  EchoJay V2.component    arm64 4E5A7D82-CB06-3AA6-80A2-E8C77A2953ED  x86_64 D2745F25-7341-397E-8CCA-EC5C9736B284
+  EchoJay V2.vst3         arm64 3FC919E2-9027-313A-BA8E-CA9862D37DC7  x86_64 2AE1D6BE-222B-300E-A493-09E3FA8F8EF8
+  EchoJay Link.component  arm64 2EBEB279-384B-32EC-8F46-1FF7EF996492  x86_64 E097175A-4D99-367A-ABED-3AC0A7749A75
+  EchoJay Link.vst3       arm64 732A699A-239A-3631-91E1-C7BB5667EAB6  x86_64 F19DA546-4FEF-3495-8F72-49577ABF0C91
+
+THE LINK IS UNCHANGED FROM 06b/06c AND THAT IS CORRECT: its archive compiles none of the files these rounds
+touched, so it relinks bit-identical. place_ship.sh said so itself instead of refusing - the item-8 fix working on
+a real round, the first one placed by the script since 06c had to be placed by hand.
+
+WHAT IS IN IT (newest first):
+  5ed4c17  06d item 3: the Apply button on a staged offer card (ResultChip kind 3 -> applyStagedProposal)
+  0d837ff  guards link with a 512 MB main-thread stack (ui_guard overflowed 8 MB when LoudnessLoop grew)
+  a8defea  06d item 6/10 FINAL: the target is INTEGRATED, the peak-headroom cap is GONE, Listen always resolves
+  81d5be9  lease_id_guard: the lease precondition is checked at the write
+  aae53d6  place_ship.sh: both staleness checks scoped to the bundle's own object list
+  397b380  06d test 5: the staged proposal - never printed, kept on the wire, applied on a yes
+  ad7f131  06c's five items + the 06d item 1 teardown-race fix
+
+STILL NOT IN IT: 06d items 6 (the don't-suggest box), 4 (item 12's substitute ceiling), 5 (the heard counter),
+7 (the editor-view half) and 9 (the EQ third-octave offer). Code-only work on those starts now, in that order,
+and nothing will be built until Sean says he is out of Logic.

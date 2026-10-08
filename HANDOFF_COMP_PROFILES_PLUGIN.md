@@ -2432,7 +2432,11 @@ clean on bx_limiter). So the cap calibration in 2d is part of this leg's pass co
 #### 2f. THE FOUR SIMULTANEOUS READINGS, AND THE CALIBRATION THEY GIVE (Sean 20:59, Level +4, chorus looping)
 V2 (post-chain): Momentary **-10.7**, Short-term **-12.9**, Integrated **-11.2**, LRA 7.2, sample peaks -1.0/-0.8,
 true peak -0.0/-0.1. Still open, and neither changes the ruling: was Integrated reset first, and what is the rack
-trim (assumed 0.0). **RULED: V2 / `chainOutTally_` is the truth; the bx -13.3 is its own meter's window and is
+trim (assumed 0.0). **ANSWERED 8 Oct:** Sean does not know whether Integrated was reset before the reading, and **the rack trim was at
+its DEFAULT** - so the bus-gain tap fault (2c) is LATENT on his chain, not implicated in the miss, and the
+acceptance leg stands as written. The unknown reset is why the reading is treated as the chorus's integrated rather
+than the song's, which is what the closed-loop landing wants anyway.
+**RULED: V2 / `chainOutTally_` is the truth; the bx -13.3 is its own meter's window and is
 dropped from the investigation.** My -9.3 prediction was about 2 dB optimistic - it leaned on the cumulative -11.8
 at Level 0 and a 1.5 dB GR allowance - and the reading supersedes it.
 
@@ -2615,7 +2619,65 @@ its own sources, Link UUID identical to installed -> PLACED, with the note; (B) 
 PluginEditor.cpp, which the V2 compiles and the Link does not -> V2 REFUSED (stale) and REFUSED (unchanged), nothing
 placed, and the LINK NOT DRAGGED DOWN by a change to a file it does not compile. That last line is the whole fix.
 
-### 7. Reset the heard counter in [CHAIN LEVELS] when the rack changes
+### 7. EVERY SLOT READS BYPASSED ON A LINK RACK (Sean 10:34, 8 Oct, on 08a) - DIAGNOSED, DISPLAY-ONLY
+**THE SYMPTOM:** switching the V2 rack selector to a Link rack (RACK: AITCH_4_01) SOMETIMES shows every plugin
+with a BYPASSED tag - EchoJay EQ, Tube-Tech, UAD UA 1176, NLS Buss, all four at once. His 10:58 screenshot of the
+**Link's own window shows NO slot bypassed**, which is the other half of the evidence.
+
+**THE MECHANISM, read off the code, and it accounts for all three oddities (all four at once / only sometimes /
+the Link disagreeing):**
+  1. `LinkProcessor::rackLeaseEngage()` (LinkProcessor.cpp:2548) does exactly this when the V2 takes the rack:
+     it saves each slot's INTENT in `rackLeasePrior_` and then calls `setLeaseBypass(i, true)` on **every slot**,
+     streaming dry. That is correct and deliberate - the main plugin is hosting those plugins now.
+  2. `setLeaseBypass` bumps the revision, so the sidecar republishes, and `fillRackSidecarSlots`
+     (EJRackSidecarFill.h:38) writes **`s.bypassed`** - the EFFECTIVE state, which the lease has just set true
+     for every slot. `RackSidecarSlot::controlled` is written alongside and already means exactly this ("leased to
+     the main plugin, bypassed here, edited there").
+  3. The V2 rack view reads `processorRef.linkRackCache` and builds its rows from `rs.bypassed`
+     (PluginEditor.cpp:9968). So whenever the cached sidecar is one published DURING the lease, every row is
+     bypassed. The same field reaches the model: PluginEditor.cpp:11217 appends "(byp)" to the name for
+     [CURRENT CHAIN], so the model is told the whole rack is bypassed too.
+  4. The LINK's own window shows no bypass because v9 keeps the two apart on purpose: `SlotInfo::bypassed` is the
+     effective state and `SlotInfo::intendedBypassed` is "the state a NON-lease caller asked for"
+     (ChainHost.h:59-60). The Link renders the intent. **Two views, two fields, one rack - and the V2 picked the
+     one the lease overlays.**
+  5. "ONLY SOMETIMES" is the timing: it depends on whether the cache holds a snapshot taken before or after the
+     lease engaged, and it clears on switching away and back because the release republishes the restored intent.
+     That matches Sean's third check exactly; his [yes/no] answers will confirm or kill it.
+
+**SO IT IS DISPLAY-ONLY ON THE V2 SIDE - with one caveat I will not paper over:** the audio on the LINK genuinely
+is bypassed while the lease is engaged, because the V2 is hosting those plugins itself. What is wrong is the
+V2 saying "BYPASSED" about slots it is at that moment processing. If Sean's "real audio bypass" check comes back
+YES *while the V2 is NOT holding a lease*, this diagnosis is wrong and the question becomes who called
+`setLeaseBypass` without a lease.
+
+**THE FIX I PROPOSE: publish the INTENT, not the overlay.** `fillRackSidecarSlots` writes `s.intendedBypassed`
+into `bypassed`, and `controlled` keeps carrying the lease - which is what it was added for. One authoritative
+field, so no reader can confuse the two, and it fixes the chat block in the same stroke. The alternative - every
+reader checks `controlled` first - leaves the trap in place for the next reader. **NOT the `close-apply FAILED`
+path:** that line in my overnight ui_guard output is a different fault (edits unacked in 5 s on a mock Link) and
+nothing in it writes bypass.
+**LEG (reproduces the race, not a snapshot of it):** a Link rack with slots whose intent is NOT bypassed; engage
+the rack lease; read the sidecar at that moment and assert the V2's rows are NOT bypassed while `controlled` is
+true for each; release and assert the intent survives. RED today on the first assertion.
+
+### 8. THE LINK'S WINDOW HAS NO PER-SLOT IN/OUT READOUTS (Sean 10:58, 8 Oct) - NEVER BUILT, NOT A REGRESSION
+**THE HISTORY QUESTION, ANSWERED FIRST because it decides the shape of the work.** `git log -S 'IN +0.0'` and
+`-S 'outGainDb'` over `Source/LinkEditor.h` return **nothing, ever**. The readout is `GainReadout` in
+PluginEditor.h:1909-1998, introduced by the "Build 2 (30 Sep 2026 ruling): IN AND OUT ON EVERY SLOT CARD" in
+commit **ba61a36**, which touched the V2's editor only. So it was **never built for the Link** - there is nothing
+to recover and no regression to explain.
+**WHAT IT IS IN V2, so "the same" is a real specification:** two readouts on the card's title line, dB to one
+decimal, and FULLY INTERACTIVE - vertical drag at 0.1 dB/px (0.02 with shift, the knobs' idiom), double-click to
+type a figure, and the mouse wheel. Every interaction is gated on the `set` callback being present.
+**THE SOURCE OF TRUTH IS THE SAME ONE:** `ChainHost::getSlotOutGainDb(i)` and `getSlotPreTrimDb(i)`, which the
+Link owns directly for its own rack - so the Link's card needs no sidecar and no lease negotiation, unlike the V2
+viewing a remote rack. The two `Block` structs are already near-parallel (LinkEditor.h:90 and PluginEditor.h:2004),
+which is what makes this a contained job.
+**LEG as ruled:** both views render IDENTICAL IN/OUT text for the same rack - the guard reads `readoutText()`
+("IN +0.0" / "OUT -6.0"), which exists for exactly this purpose, from each editor and compares them slot by slot.
+
+### 9. Reset the heard counter in [CHAIN LEVELS] when the rack changes
 "set from N min" must mean THIS build. The phrase is composed in EJCalibLoop.h (~1968 and ~2146,
 `", set from " + roundToInt (blockHeardS) + " s of this track"`), and the CHAIN LEVELS block is assembled at
 EchoJayAPI.cpp:3263. The reset point is a rack change - the same bump that already invalidates per-slot tallies
