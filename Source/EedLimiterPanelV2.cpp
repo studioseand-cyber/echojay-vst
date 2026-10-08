@@ -66,11 +66,12 @@ EedLimiterPanelV2::EedLimiterPanelV2 (echojay::limv2::MeterTap& tap) : tap_ (tap
     };
     dial (gainDial_, gainCap_, "GAIN", -12.0, 12.0, 0.1, " dB", "input_db");
     dial (ceilingDial_, ceilingCap_, "CEILING", -24.0, 0.0, 0.1, " dB", "ceiling_db");
-    dial (lookaheadDial_, lookaheadCap_, "LOOKAHEAD", 0.0, 10.0, 0.1, " ms", "lookahead_ms");
+    dial (lookaheadDial_, lookaheadCap_, "LOOKAHEAD", 0.0, 5.0, 0.01, " ms", "lookahead_ms");
+    dial (attackDial_, attackCap_, "ATTACK", 10.0, 2000.0, 1.0, " ms", "attack_ms");
     dial (releaseDial_, releaseCap_, "RELEASE", 1.0, 1000.0, 1.0, " ms", "release_ms");
-    dial (linkDial_, linkCap_, "LINK", 0.0, 100.0, 1.0, " %", "link");
+    dial (linkDial_, linkCap_, "LINK", 0.0, 100.0, 1.0, " %", "link_pct");
     dial (hpfDial_, hpfCap_, "SC HPF", 0.0, 500.0, 1.0, " Hz", "sc_hpf_hz");
-    releaseDial_.setSkewFactorFromMidPoint (100.0);
+    lookaheadDial_.setSkewFactorFromMidPoint (0.5); attackDial_.setSkewFactorFromMidPoint (275.0); releaseDial_.setSkewFactorFromMidPoint (400.0);
 
     lufsLabel_.setFont (panelFont (10.0f)); lufsLabel_.setColour (juce::Label::textColourId, C::text); lufsLabel_.setJustificationType (juce::Justification::centredLeft); addAndMakeVisible (lufsLabel_);
     latencyLabel_.setFont (panelFont (9.0f)); latencyLabel_.setColour (juce::Label::textColourId, C::text3); latencyLabel_.setJustificationType (juce::Justification::centredLeft); addAndMakeVisible (latencyLabel_);
@@ -88,7 +89,7 @@ void EedLimiterPanelV2::setModel (const Model& m)
 {
     model_ = m; const juce::ScopedValueSetter<bool> guard (suppress_, true);
     gainDial_.setValue (m.gainDb, juce::dontSendNotification); ceilingDial_.setValue (m.ceilingDb, juce::dontSendNotification);
-    lookaheadDial_.setValue (m.lookaheadMs, juce::dontSendNotification); releaseDial_.setValue (m.releaseMs, juce::dontSendNotification);
+    lookaheadDial_.setValue (m.lookaheadMs, juce::dontSendNotification); attackDial_.setValue (m.attackMs, juce::dontSendNotification); releaseDial_.setValue (m.releaseMs, juce::dontSendNotification);
     linkDial_.setValue (m.linkPct, juce::dontSendNotification); hpfDial_.setValue (m.scHpfHz, juce::dontSendNotification);
     styleBox_.setSelectedId (juce::jlimit (0, 2, m.style) + 1, juce::dontSendNotification); truePeakBtn_.setToggleState (m.truePeak, juce::dontSendNotification); bypassBtn_.setToggleState (m.bypassed, juce::dontSendNotification);
     juce::String lat = "latency " + juce::String (m.latencySamples) + " samples"; if (m.sampleRate > 0 && m.latencySamples > 0) lat += " (" + juce::String (m.latencySamples * 1000.0 / m.sampleRate, 1) + " ms)"; lat += " - fixed, reported to the host";
@@ -108,8 +109,8 @@ void EedLimiterPanelV2::setSpeedIndex (int i)
 void EedLimiterPanelV2::setAdvancedOpen (bool open)
 {
     advancedOpen_ = open; advBtn_.setToggleState (open, juce::dontSendNotification);
-    for (auto* c : { &lookaheadDial_, &releaseDial_, &linkDial_, &hpfDial_ }) c->setVisible (open);
-    for (auto* c : { &lookaheadCap_, &releaseCap_, &linkCap_, &hpfCap_ }) c->setVisible (open);
+    for (auto* c : { &lookaheadDial_, &attackDial_, &releaseDial_, &linkDial_, &hpfDial_ }) c->setVisible (open);
+    for (auto* c : { &lookaheadCap_, &attackCap_, &releaseCap_, &linkCap_, &hpfCap_ }) c->setVisible (open);
     resized();
 }
 
@@ -139,21 +140,23 @@ void EedLimiterPanelV2::resized()
     styleBox_.setBounds (header.removeFromRight (104).reduced (0, 2));
     r.removeFromTop (6);
     const bool small = getWidth() < 420 || getHeight() < 300;
-    auto bottom = r.removeFromBottom (small ? 70 : 84);
-    if (advancedOpen_) { auto adv = r.removeFromBottom (small ? 56 : 66); const int w = adv.getWidth() / 4; layoutDial (lookaheadDial_, lookaheadCap_, adv.removeFromLeft (w)); layoutDial (releaseDial_, releaseCap_, adv.removeFromLeft (w)); layoutDial (linkDial_, linkCap_, adv.removeFromLeft (w)); layoutDial (hpfDial_, hpfCap_, adv); r.removeFromBottom (4); }
+    // bottom-up: the ADVANCED row (when open) at the very bottom, then the main row - GAIN and CEILING up front, large,
+    // with the LUFS / true-peak / latency readouts and the ADVANCED and RESET buttons beside them - then the picture
+    if (advancedOpen_) { auto adv = r.removeFromBottom (small ? 58 : 68); const int w = adv.getWidth() / 5; layoutDial (lookaheadDial_, lookaheadCap_, adv.removeFromLeft (w)); layoutDial (attackDial_, attackCap_, adv.removeFromLeft (w)); layoutDial (releaseDial_, releaseCap_, adv.removeFromLeft (w)); layoutDial (linkDial_, linkCap_, adv.removeFromLeft (w)); layoutDial (hpfDial_, hpfCap_, adv); r.removeFromBottom (6); }
+    auto main = r.removeFromBottom (small ? 84 : 98);
+    auto dials = main.removeFromLeft (small ? 150 : 190); const int dw = dials.getWidth() / 2;
+    layoutDial (gainDial_, gainCap_, dials.removeFromLeft (dw)); layoutDial (ceilingDial_, ceilingCap_, dials);
+    main.removeFromLeft (10);
+    auto right = main.removeFromRight (small ? 64 : 76); advBtn_.setBounds (right.removeFromTop (22).reduced (0, 1)); right.removeFromTop (6); resetBtn_.setBounds (right.removeFromTop (22).reduced (0, 1));
+    main.removeFromRight (8);
+    lufsLabel_.setBounds (main.removeFromTop (20)); readoutArea_ = main.removeFromTop (small ? 16 : 20); latencyLabel_.setBounds (main.removeFromTop (16));
+    r.removeFromBottom (6);
     // the picture row: IN meter | picture | OUT meter + GR meter
     const int meterW = small ? 34 : 44;
     inMeterArea_ = r.removeFromLeft (meterW); r.removeFromLeft (6);
     grMeterArea_ = r.removeFromRight (meterW); r.removeFromRight (4); outMeterArea_ = r.removeFromRight (meterW); r.removeFromRight (6);
     auto speeds = r.removeFromTop (16); for (int i = 2; i >= 0; --i) { speedBtn_[i]->setBounds (speeds.removeFromRight (30).reduced (1)); speeds.removeFromRight (2); }
     r.removeFromTop (2); pictureArea_ = r;
-    // the bottom row: GAIN, CEILING, LUFS + RESET, latency, ADVANCED
-    auto dials = bottom.removeFromLeft (small ? 120 : 150); const int dw = dials.getWidth() / 2;
-    layoutDial (gainDial_, gainCap_, dials.removeFromLeft (dw)); layoutDial (ceilingDial_, ceilingCap_, dials);
-    bottom.removeFromLeft (8);
-    auto right = bottom.removeFromRight (small ? 64 : 76); advBtn_.setBounds (right.removeFromTop (20).reduced (0, 1)); right.removeFromTop (4); resetBtn_.setBounds (right.removeFromTop (20).reduced (0, 1));
-    bottom.removeFromRight (6);
-    lufsLabel_.setBounds (bottom.removeFromTop (18)); readoutArea_ = bottom.removeFromTop (small ? 16 : 20); latencyLabel_.setBounds (bottom.removeFromTop (14));
     setSpeedIndex (speed_);
 }
 

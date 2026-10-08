@@ -4,7 +4,7 @@
 # no JuceHeader.h - the palette mirror in EJLimiterPanelPalette.h covers it.
 #   cmake -S tools/limiter_preview -B build-limiter-preview -DCMAKE_BUILD_TYPE=Release && cmake --build build-limiter-preview -j 2
 cmake_minimum_required(VERSION 3.22)
-project(limiter_preview CXX)
+project(limiter_preview VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 if(NOT CMAKE_BUILD_TYPE)

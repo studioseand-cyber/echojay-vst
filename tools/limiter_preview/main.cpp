@@ -31,9 +31,10 @@ int main (int argc, char** argv)
         for (int sz = 0; sz < 2; ++sz)
         {
             echojay::limv2::MeterTap tap; tap.prepare (src.sampleRate);
-            echojay::limv2::Core core; core.prepare (src.sampleRate, echojay::limv2::transparent()); core.setFixedLatency (true); core.setInputGainDb (gain); core.setCeilingDb (0.0); core.setTruePeak (true); core.setMeterTap (&tap); core.reset();
+            auto tuning = echojay::limv2::transparent(); tuning.maxLookaheadMs = tuning.lookaheadMs * 5.0 / 0.18;   // the plugin's: the knob's 5 ms label = 1.67 ms of window
+            echojay::limv2::Core core; core.prepare (src.sampleRate, tuning); core.setFixedLatency (true); core.setInputGainDb (gain); core.setCeilingDb (0.0); core.setTruePeak (true); core.setMeterTap (&tap); core.reset();
             EedLimiterPanelV2 panel (tap); panel.setKnobFilmstrip (stripImg); panel.setSize (sizes[sz][0], sizes[sz][1]);
-            EedLimiterPanelV2::Model m; m.gainDb = gain; m.ceilingDb = 0.0; m.truePeak = true; m.latencySamples = core.latencySamples(); m.sampleRate = src.sampleRate; m.linkPct = 75.0; panel.setModel (m); panel.setSpeedIndex (1);
+            EedLimiterPanelV2::Model m; m.gainDb = gain; m.ceilingDb = 0.0; m.truePeak = true; m.latencySamples = core.latencySamples(); m.sampleRate = src.sampleRate; m.lookaheadMs = 0.18; m.attackMs = 275.0; m.releaseMs = 400.0; m.linkPct = 75.0; panel.setModel (m); panel.setSpeedIndex (1); panel.setAdvancedOpen (true);
             const size_t N = src.frames(); std::vector<float> L (N), R (N); for (size_t n = 0; n < N; ++n) { L[n] = (float) src.ch[0][n]; R[n] = (float) src.ch[src.channels() > 1 ? 1 : 0][n]; }
             size_t pos = 0; size_t ti = 0;
             while (pos < N && ti < times.size())
@@ -42,7 +43,7 @@ int main (int argc, char** argv)
                 while (pos < until) { const int n = (int) std::min<size_t> (512, until - pos); float* p[2] = { L.data() + pos, R.data() + pos }; core.process (p, 2, n); pos += (size_t) n; }
                 panel.refreshNow();
                 juce::Image img = panel.createComponentSnapshot (panel.getLocalBounds(), true, 2.0f);
-                const juce::File png = out.getChildFile (cs + "_" + juce::String (sizes[sz][0]) + "x" + juce::String (sizes[sz][1]) + "_" + juce::String ((int) times[ti]) + "s.png");
+                const juce::File png = out.getChildFile (juce::String (cs) + "_" + juce::String (sizes[sz][0]) + "x" + juce::String (sizes[sz][1]) + "_" + juce::String ((int) times[ti]) + "s.png");
                 juce::FileOutputStream os (png); if (os.openedOk()) { os.setPosition (0); os.truncate(); juce::PNGImageFormat().writeImageToStream (img, os); }
                 std::printf ("wrote %s (%d x %d at 2x)\n", png.getFullPathName().toRawUTF8(), img.getWidth(), img.getHeight());
                 ++ti;
