@@ -1487,6 +1487,9 @@ public:
     echojay::LevelTally::Snapshot getChainOutLevels() const { return chainOutTally_.snapshot(); }
     // 18 Sep 2026 (loudness loop): reset ONLY the chain-output tally and set its counting floor.
     void resetChainOutLevels() { chainOutTally_.reset(); }
+    // 08c F2 (9 Oct 2026): the INPUT tally too, so a level landing can measure chain IN and OUT over the SAME
+    // window. Without this the two taps describe different spans of audio and "out = in" is not a measurement.
+    void resetChainInLevels()  { chainInTally_.reset(); }
     void setChainOutCountFloor (float lufs) { chainOutTally_.setCountFloor (lufs); }
     void resetChainOutShortTermMax() { chainOutTally_.resetShortTermMax(); }   // 18e: the loop's measurement window
     void resetChainInShortTermMax()  { chainInTally_.resetShortTermMax(); }
