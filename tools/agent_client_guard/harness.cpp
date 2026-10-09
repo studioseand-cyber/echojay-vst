@@ -535,7 +535,7 @@ int main()
         // scene 2: the ask card with many chips
         r.client.approveAll(); pumpMs (10);
         r.round (2);
-        r.tool (R"({"id":"tc_4","name":"talk","args":{"ask":{"question":"How loud should the mix bus land?","choices":[{"label":"Commercial (-8 LUFS)"},{"label":"Pushed (-7)"},{"label":"Leave dynamics, keep punch and breathing room (-12)","detail":"option dynamic"},{"label":"Match the input"},{"label":"Something else"},{"label":"Skip this"}],"allowFreeText":true}},"approval":"free"})");
+        r.tool (R"EJ({"id":"tc_4","name":"talk","args":{"ask":{"question":"How loud should the mix bus land?","choices":[{"label":"Commercial (-8 LUFS)"},{"label":"Pushed (-7)"},{"label":"Leave dynamics, keep punch and breathing room (-12)","detail":"option dynamic"},{"label":"Match the input"},{"label":"Something else"},{"label":"Skip this"}],"allowFreeText":true}},"approval":"free"})EJ");
         r.await ({ "tc_4" }); pumpMs (10);
         check (r.client.askPending(), "L2 scene 2 is the ask card");
         sweep ("ask card with six chips");
