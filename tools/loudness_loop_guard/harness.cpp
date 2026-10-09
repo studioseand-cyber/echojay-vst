@@ -1368,6 +1368,46 @@ static int guardMain()
         check (std::abs (ChainHost::kFinalCeilingDb + 0.1f) < 1.0e-6f,
                "E. and the figure is -0.1, named once", f1 (ChainHost::kFinalCeilingDb));
     }
+    std::printf ("== L7. the ceiling safety net must not eat the Level slot ==\n");
+    {
+        // 9 Oct 2026, found by ui_guard's re-aimed Build 2 precondition. On a chain that does not end in a
+        // limiter the Level is placed LAST (CONTRACT_LEVEL_PARAMS), and findTarget's "any brand last: the last
+        // slot holds the ceiling" fallback then nominated the LEVEL as the limiter. The ceiling safety net could
+        // not read a ceiling off it - of course, it is a gain stage - and REPLACED it, so a one-op build came out
+        // as "<plugin> | EchoJay Limiter" with no Level at all. That function REMOVES the slot it substitutes, so
+        // a wrong limiterSlot does not mis-report, it destroys the slot the loop drives.
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        auto& h = proc.getChainHost();
+        const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        check (gn != nullptr, "L7. precondition: EchoJay Gain is registered");
+        if (gn != nullptr)
+        {
+            EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*gn));
+            check (h.getNumSlots() == 1, "L7. a one-op build, and nothing in it is a limiter",
+                   juce::String (h.getNumSlots()) + " slot(s)");
+            auto& loop = proc.loudnessLoop();
+            juce::StringArray logs; loop.logLine = [&logs] (const juce::String& l) { logs.add (l); };
+            loop.isPlaying = [] { return true; };
+            check (loop.armFromChain(), "L7. it arms (volume match - no option, no target)",
+                   logs.joinIntoString (" | ").substring (0, 160));
+
+            int levels = 0, lims = 0; juce::StringArray names;
+            for (int i = 0; i < h.getNumSlots(); ++i)
+            { const auto nm = h.getSlotInfo (i).name; names.add (nm);
+              if (nm == "EchoJay Level") ++levels; if (nm == "EchoJay Limiter") ++lims; }
+            check (levels == 1,
+                   "L7. THE RACK STILL HAS ITS ECHOJAY LEVEL (RED as it stood: the ceiling safety net replaced "
+                   "it with an EchoJay Limiter and the loop had no slot to drive)",
+                   names.joinIntoString (" | "));
+            check (h.getSlotInfo (h.getNumSlots() - 1).name == "EchoJay Level",
+                   "L7. ...and it is LAST, because no limiter ends this chain", names.joinIntoString (" | "));
+            check (loop.findTarget().limiterSlot != loop.levelSlot(),
+                   "L7. ...and findTarget never nominates the Level slot as the limiter",
+                   "limiterSlot " + juce::String (loop.findTarget().limiterSlot)
+                       + ", levelSlot " + juce::String (loop.levelSlot()));
+            juce::ignoreUnused (lims);
+        }
+    }
     std::printf ("== L6. ruling 3: commercial and pushed are DIFFERENT caps, and a missing option is commercial ==\n");
     {
         // Sean, 9 Oct: option = match | commercial | pushed | dynamic, with commercial's 10 dB and pushed's

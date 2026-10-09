@@ -203,7 +203,16 @@ public:
             return {};
         };
         for (int i = n - 1; i >= 0; --i) if (isLimiterName (host_.getSlotInfo (i).name)) { t.limiterSlot = i; break; }
-        if (t.limiterSlot < 0 && n > 0) t.limiterSlot = n - 1;   // any brand last: the last slot holds the ceiling
+        // "any brand last: the last slot holds the ceiling" - BUT NEVER THE ECHOJAY LEVEL. 9 Oct 2026: with the
+        // Level correctly placed LAST on a chain that does not end in a limiter, this fallback nominated the
+        // LEVEL as the limiter, the ceiling safety net below could not read a ceiling off it (of course - it is
+        // a gain stage), and it REPLACED the Level with an EchoJay Limiter. A one-op EQ build came out as
+        // "EchoJay EQ | EchoJay Limiter" with no Level at all. The fault is older than tonight's position fix,
+        // which only made it visible: before it the fallback nominated whatever sat last instead, and the
+        // substitution would have eaten that.
+        if (t.limiterSlot < 0)
+            for (int i = n - 1; i >= 0; --i)
+                if (host_.getSlotInfo (i).name != "EchoJay Level") { t.limiterSlot = i; break; }
         for (int i = n - 1; i >= 0; --i) if (host_.getSlotInfo (i).name == "EchoJay Level") { t.levelSlot = i; break; }
         if (t.levelSlot >= 0)
         {
@@ -393,6 +402,17 @@ public:
     {
         if (t.limiterSlot < 0 || t.limiterSlot >= host_.getNumSlots()) return false;
         if (dynamic_cast<EedLimiterProcessor*> (host_.getSlotProcessor (t.limiterSlot)) != nullptr) return false;
+        // THE BELT TO findTarget'S BRACES (9 Oct 2026): this function REMOVES the slot it substitutes, so a
+        // wrong limiterSlot does not merely mis-report - it destroys a slot. It must therefore refuse the one
+        // slot the loop cannot do without, whatever nominated it, rather than trust that nothing ever will.
+        // The closing comment here used to read "the Level slot sits before it and is untouched", which was an
+        // assumption about placement and stopped being true the moment the Level was placed last.
+        if (dynamic_cast<EedLevelProcessor*> (host_.getSlotProcessor (t.limiterSlot)) != nullptr)
+        {
+            log ("ceiling readback absent at slot " + juce::String (t.limiterSlot) + " but that slot is the "
+                 "EchoJay Level - REFUSED: substituting there would delete the slot the loop drives");
+            return false;
+        }
         const auto infos = host_.getDialInfos();
         bool ceilingReadBack = false;
         if (t.limiterSlot < (int) infos.size())
@@ -414,7 +434,7 @@ public:
         auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
         host_.setSlotStructuredSettings (at, juce::var (w));
         host_.setSlotSettings (at, "ceiling " + fmt (ceiling) + " dBTP, true peak on - holds the ceiling (substituted for " + oldName + ": its ceiling could not be confirmed)");
-        t.limiterSlot = at; ceilingDb_ = ceiling;   // the Level slot sits before it and is untouched by the remove/insert at 'at'
+        t.limiterSlot = at; ceilingDb_ = ceiling;   // never the Level: refused above, whatever nominated it
         log ("substituted EchoJay Limiter for " + oldName + " at slot " + juce::String (at) + ": its ceiling had no dial readback; ceiling " + fmt (ceiling) + " dBTP");
         emit (oldName + "'s ceiling could not be confirmed, so EchoJay Limiter holds the ceiling instead (" + fmt (ceiling) + " dBTP).", -1.0f, false, false, Bubble::Kind::info);
         return true;
