@@ -347,8 +347,25 @@ static int guardMain()
         check (r.loop.lastPills().joinIntoString ("|") == "Go|Leave it|Undo", "M3. the second proposal (it follows an apply) carries [Go] [Leave it] [Undo]", r.loop.lastPills().joinIntoString ("|"));
         r.loop.go(); r.loop.check(); r.runWindow();
         check (r.loop.state() == LoudnessLoop::State::tracking && r.last().startsWith ("Hitting -") && r.last().contains ("on target"), "A. after go + Check the second window lands within +-1 dB and the loop tracks", r.last() + " | Level " + f1 (r.levelGain()));
-        check (r.logs.size() >= 6 && r.logs.joinIntoString ("\n").contains ("EJLoudness: armed")
-               && r.logs[0].startsWith ("EJLoudness: opening gain") && r.logs.joinIntoString ("\n").contains ("EJLoudness: measured:") && r.logs.joinIntoString ("\n").contains ("EJLoudness: applied on go"), "item 5: EJLoudness lines for the opening gain, arm, measurement and apply (7 Oct: the opening line comes first and says whether it opened from a measurement or left the Level alone)", r.logs.joinIntoString (" | ").substring (0, 300));
+        // 9 Oct 2026: the ORDERING CLAIM, re-aimed and kept. It used to be logs[0], i.e. the opening is the very
+        // first line in the stream; 08c F2 puts the AIM decision ahead of it, because the aim is what decides
+        // whether a Level slot is owed at all. The claim that matters is unchanged and is now asserted directly:
+        // the opening line comes BEFORE the arm line, and says which of the two things it did.
+        {
+            const auto all = r.logs.joinIntoString ("\n");
+            int openIdx = -1, armIdx = -1;
+            for (int i = 0; i < r.logs.size(); ++i)
+            {
+                if (openIdx < 0 && r.logs[i].startsWith ("EJLoudness: opening gain")) openIdx = i;
+                if (armIdx  < 0 && r.logs[i].startsWith ("EJLoudness: armed"))        armIdx  = i;
+            }
+            check (r.logs.size() >= 6 && openIdx >= 0 && armIdx > openIdx
+                   && all.contains ("EJLoudness: measured:") && all.contains ("EJLoudness: applied on go"),
+                   "item 5: EJLoudness lines for the opening gain, arm, measurement and apply, with the opening "
+                   "BEFORE the arm and saying whether it opened from a measurement or left the Level alone",
+                   "opening at " + juce::String (openIdx) + ", armed at " + juce::String (armIdx) + " of "
+                   + juce::String (r.logs.size()) + " | " + all.substring (0, 200));
+        }
     }
     std::printf ("== B. quiet section: build-time input -18, the window plays at -24 ==\n");
     {
@@ -1351,6 +1368,31 @@ static int guardMain()
         check (std::abs (ChainHost::kFinalCeilingDb + 0.1f) < 1.0e-6f,
                "E. and the figure is -0.1, named once", f1 (ChainHost::kFinalCeilingDb));
     }
+    std::printf ("== L6. ruling 3: commercial and pushed are DIFFERENT caps, and a missing option is commercial ==\n");
+    {
+        // Sean, 9 Oct: option = match | commercial | pushed | dynamic, with commercial's 10 dB and pushed's
+        // 12 dB GR caps as ruled on 7 Oct. B's contract collapses a commercial brief to "pushed" server-side,
+        // so until B emits the fourth value the plugin will accept it and never see it - that is B's half, and
+        // this leg is the plugin's: the four words exist, they do NOT share a cap, and silence means commercial.
+        check (std::abs (LoudnessLoop::grCapDb ("commercial") - 10.0f) < 0.01f
+                   && std::abs (LoudnessLoop::grCapDb ("pushed") - 12.0f) < 0.01f,
+               "L6. commercial caps GR at 10 dB and pushed at 12 - the 7 Oct ruling, not one number for both",
+               f1 (LoudnessLoop::grCapDb ("commercial")) + " vs " + f1 (LoudnessLoop::grCapDb ("pushed")));
+        check (std::abs (LoudnessLoop::grCapDb ("dynamic") - 3.0f) < 0.01f
+                   && std::abs (LoudnessLoop::grCapDb ("match") - 3.0f) < 0.01f,
+               "L6. ...and dynamic and match both cap at 3 dB, for the same reason: neither is being pushed",
+               f1 (LoudnessLoop::grCapDb ("dynamic")) + " / " + f1 (LoudnessLoop::grCapDb ("match")));
+        Rig r (false); r.proc.setChannelType (ChannelType::FullMix);
+        { auto* pp = new juce::DynamicObject();
+          pp->setProperty ("target_lufs", -9.0);
+          pp->setProperty ("option", "commercial");      // the word Sean has ruled the server should send
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        calibrate (r.proc, r.prog, -18.0f);
+        check (r.loop.armFromChain() && r.loop.loudnessOption() == "commercial",
+               "L6. \"commercial\" is ACCEPTED from the server and kept as itself, not folded into pushed",
+               r.loop.loudnessOption());
+    }
     // ========== CONTRACT_LEVEL_PARAMS (B, 9 Oct 2026): THE FIELD IS `option`, AND WE WERE NOT READING IT =====
     // B's contract writes settings_structured.params.option = "match" | "pushed" | "dynamic". The plugin read the
     // Level device's NUMERIC loudness_option and nothing else, so `option` - absent from the device's schema -
@@ -1441,9 +1483,9 @@ static int guardMain()
                    "\"" + t.option + "\" via " + t.optionSource);
             calibrate (r.proc, r.prog, -18.0f);
             check (r.loop.armFromChain(), "L4. it arms");
-            // isMix: the fallback option is "pushed" (the contract's word for a target), so the card reads
-            // "-8.0 LUFS, pushed". The aim, not the chain's silence, decides what the loop says it is doing.
-            check (r.loop.aimWords() == (isMix ? juce::String ("-8.0 LUFS, pushed") : juce::String ("matched to input")),
+            // isMix: ruling 3 - a missing option falls back to COMMERCIAL, not pushed, so commercial's 10 dB
+            // cap is what a chain carrying no option gets. The card reads "-8.0 LUFS, commercial".
+            check (r.loop.aimWords() == (isMix ? juce::String ("-8.0 LUFS, commercial") : juce::String ("matched to input")),
                    juce::String ("L4. ") + (isMix ? "a MIX BUS with a target and no option hits it"
                                                   : "a DRUM BUS with a target and no option VOLUME-MATCHES (Sean's "
                                                     "ruling over the contract's \"pushed\" fallback)"),

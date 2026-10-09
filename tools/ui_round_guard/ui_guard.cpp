@@ -3057,9 +3057,21 @@ int main()
         auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
         ed->setSize (2000, 1100); pumpMs (60);
         A::build (*ed, "{\"chain\":[{\"name\":\"EchoJay EQ\",\"role\":\"eq\",\"settings\":\"\"}]}");
-        for (int k = 0; k < 40 && proc.getChainHost().getNumSlots() < 1; ++k) pumpMs (100);
-        check (proc.getChainHost().getNumSlots() == 1, "Build 2. precondition: one slot in the rack",
-               juce::String (proc.getChainHost().getNumSlots()) + " slot(s)");
+        for (int k = 0; k < 40 && proc.getChainHost().getNumSlots() < 2; ++k) pumpMs (100);
+        // 9 Oct 2026 (08c F2): EVERY BUILD GETS A LEVEL SLOT - Sean's ruling - so a one-op build is TWO slots
+        // now, the EQ and an EchoJay Level after it. The precondition is re-aimed rather than loosened: it names
+        // both slots and their order, so the ruling is visible here instead of a number quietly going from 1 to
+        // 2. (The Level goes LAST because no limiter ends this chain; before the limiter when one does.)
+        const auto& bh = proc.getChainHost();
+        const bool twoWithLevelLast = bh.getNumSlots() == 2
+                                   && bh.getSlotInfo (0).name == "EchoJay EQ"
+                                   && bh.getSlotInfo (1).name == "EchoJay Level";
+        check (twoWithLevelLast,
+               "Build 2. precondition: the one-op build is EQ + an EchoJay Level after it (08c F2: every build "
+               "gets a Level slot)",
+               juce::String (bh.getNumSlots()) + " slot(s): "
+                   + (bh.getNumSlots() > 0 ? bh.getSlotInfo (0).name : juce::String())
+                   + (bh.getNumSlots() > 1 ? " | " + bh.getSlotInfo (1).name : juce::String()));
         auto& panel = A::panel (*ed);
         check (! panel.blocks.empty(), "Build 2. precondition: the panel has a card for it",
                juce::String ((int) panel.blocks.size()) + " card(s)");

@@ -281,7 +281,12 @@ public:
         if (n <= 0) return -1;
         const auto* dev = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
         if (dev == nullptr) { log ("cannot insert EchoJay Level: not registered"); return -1; }
-        const int at = n - 1;
+        // 9 Oct 2026 (CONTRACT_LEVEL_PARAMS, difference 5): "before the final limiter when one ends the chain,
+        // ELSE LAST". This was always n - 1, so a chain that does not end on a limiter got the Level slot one
+        // from the end - and a one-slot EQ rack got it FIRST, ahead of the EQ, where a volume match corrects the
+        // level before the chain has done anything to it. The rule names two cases; this only served one.
+        const bool limiterLast = ChainHost::isLimiterLikeName (host_.getSlotInfo (n - 1).name);
+        const int at = limiterLast ? n - 1 : n;
         const auto err = host_.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*dev), at);
         if (err.isNotEmpty()) { log ("could not insert EchoJay Level: " + err); return -1; }
         const bool haveTarget = std::isfinite (t.lufs);
@@ -366,8 +371,12 @@ public:
         armSource_ = t.source; ceilingDb_ = t.ceiling;
         // 9 Oct 2026: the option the loop RUNS on is the aim it decided, not a word the chain may not carry. In
         // match mode that word is "match" whatever the chain said, so grCapDb and aimWords agree with the aim.
+        // Ruling 3 (Sean, 9 Oct): COMMERCIAL STAYS DISTINCT FROM PUSHED - 10 dB of allowed GR against 12, as
+        // ruled on 7 Oct. So a MISSING option falls back to "commercial", which is what the Level device has
+        // always defaulted to and the conservative cap of the two; falling back to "pushed" (as I first wrote
+        // it) would have retired the distinction by the back door on every chain that carries no option.
         loudnessOption_ = aim_ == Aim::matchInput ? juce::String ("match")
-                                                  : (t.option.isNotEmpty() ? t.option : juce::String ("pushed"));
+                                                  : (t.option.isNotEmpty() ? t.option : juce::String ("commercial"));
         substituteLimiterIfNoCeilingReadback (t);   // 18g (item 5): the ceiling must be CONFIRMED before the loop drives into it
         slot_ = t.levelSlot;   // recordAimOnSlot writes through slot_; arm() sets it again, harmlessly
         // Record the decision whenever it did not come from the contract's own field, so the next arm reads it
