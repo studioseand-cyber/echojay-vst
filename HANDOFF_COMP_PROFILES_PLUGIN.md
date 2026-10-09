@@ -2248,8 +2248,8 @@ The four items I landed this morning carried **no legs** - only B did. Writing t
 **Z and Z3 re-aimed:** the opening is owed now, so the gain has to be played for before it can be asserted.
 
 ### THREE THINGS FOR SEAN AND B, FROM 08c
-1. **MusicBus.** The ruling named "MIX BUS or MASTER", so `aimIsTarget` is FullMix and MasterBus only. MusicBus
-   is a plausible whole-mix role and I have NOT included it - widening the ruling is Sean's call.
+1. **MusicBus - RULED 9 Oct: it VOLUME-MATCHES.** Only FullMix and MasterBus hit a target, which is what
+   `aimIsTarget` does. Sean also confirmed level targets are **integrated LUFS** (the K-weighted `levelDb`).
 2. **E's gap.** The ceiling clamp is on the BUILT-IN dial funnel, so a THIRD-PARTY final limiter (Pro-L 2, bx)
    still takes the server's figure. Sean's 8 Oct chain ended on the EchoJay Limiter, which is why this closes his
    case; the general one needs B to stop emitting `ceiling_db -1`.

@@ -446,8 +446,9 @@ EchoJayProcessor::EchoJayProcessor()
     // TARGET". Taken literally that is two ChannelTypes and no others: FullMix ("Mix Bus") and MasterBus.
     // Every other type matches, including the per-instrument busses (VocalBus, DrumBus, GuitarBus, SynthBus,
     // InstrumentBus) - a drum bus that quietly came out 3 dB louder than it was fed is the fault this closes.
-    // I have NOT included MusicBus, although it is a plausible whole-mix role: the ruling named two and
-    // widening it is Sean's call, not mine. Flagged for him rather than decided here.
+    // MusicBus VOLUME-MATCHES: I raised it as the one plausible whole-mix role the ruling did not name, and
+    // Sean ruled on 9 Oct that only FullMix and MasterBus hit a target. Settled, not an open question.
+    // And the target is INTEGRATED LUFS (same ruling) - which is what LevelTally's K weighting makes levelDb.
     loudnessLoop_.aimIsTarget = [this]
     {
         const auto ct = getChannelType();
