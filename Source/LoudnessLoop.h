@@ -773,34 +773,6 @@ public:
                 return;
             }
         }
-        // ---- 08c F2: THE OWED OPENING, TAKEN BY THIS WINDOW -----------------------------------------------
-        // The opening normally lands from the tick while the loop is ARMED, on the audio the user plays while
-        // cueing. But a user can tap Listen the moment the build finishes, and then the arm's fresh window has no
-        // reading yet and the opening is still owed. It must not be skipped: the opening is the ONE uncapped
-        // write (7 Oct ruling - no peak-headroom cap), and a window's proposal is clamped per pass, so skipping
-        // it makes a first-pass landing fall short by exactly the clamp. That is the fault this item exists to
-        // close, arriving through a different door.
-        //
-        // So this window becomes the opening: one uncapped write from ITS measurement, and then the window
-        // RESTARTS so the refinement measures the chain as it now is. Two windows of playback instead of one,
-        // which is the honest cost of measuring rather than guessing - and in the ordinary path the opening has
-        // already landed while the user was cueing, so Listen is still a single window.
-        if (openingOwed_)
-        {
-            if (auto* lvNow = levelNow())
-            {
-                const float cur  = (float) lvNow->gainDb();
-                const float want = juce::jlimit (-kLevelMaxDb, kLevelMaxDb, cur + (target_ - measured));
-                log ("opening gain (this window, Listen came before any reading): " + fmt (measured)
-                     + " LUFS integrated at Level " + fmtSigned (cur) + " -> " + fmtSigned (want) + " dB for "
-                     + aimWords() + ". No peak-headroom cap (7 Oct ruling): the ceiling and the loud-window GR "
-                     "check are the safety. The window restarts to measure the chain as it now is."
-                     + busGainNote());
-                openingOwed_ = false;
-                if (std::abs (want - cur) >= 0.05f) { writeGainDb (want); startWindow(); return; }
-                noteLanded();
-            }
-        }
         // The loud window is kept as a SAFETY CHECK, as ruled - never as the target. It rides the log.
         if (std::isfinite (out.maxShortTermDb))
             log ("window: integrated " + fmt (measured) + " LUFS (the target), loudest 3 s "
@@ -1165,12 +1137,19 @@ private:
         // 08c F2: the loop's INPUT window is restarted with the output one, so a match compares the two over the
         // same span. The song's integrated reading (getChainInLevels) is untouched, as ruled.
         host_.resetChainInLoopLevels();
-        // 08c F2 (9 Oct, gate run 2): `openingOwed_` is DELIBERATELY NOT CLEARED HERE. It was, with the note "a
-        // window supersedes an owed opening" - and then the window handler that TAKES the owed opening was added
-        // below, needing the flag the moment the window completes. This cleared it first, so the opening never
-        // fired and legs K1, K2 and Z landed +6.00 against Sean's accepted +8: the per-pass clamp, which is
-        // exactly the shortfall this item exists to close. Two of my own edits disagreeing about one flag.
-        // A window does not supersede the opening, it PERFORMS it, and then restarts (see tickNow).
+        // ---- 08c F2 (9 Oct, final): A WINDOW SUPERSEDES THE OWED OPENING, and this is the ruling it serves.
+        // I tried the other way - a window that completes while the opening is owed TAKES it, one uncapped write,
+        // then restarts - because it stops a quick Listen landing short by the per-pass clamp. The gate showed
+        // what it costs: twelve legs across two guards went red, and the honest reading of them is not that they
+        // are stale. It is that the user taps Listen, sees "Listening...", and ten seconds later the Level jumps
+        // nine dB with no question asked. The opening at the ARM is invisible because a build is visibly setting
+        // levels; mid-Listen it is a surprise, and "ask before applying" (18g) is a ruling about exactly that.
+        //
+        // So the opening fires ONLY while armed, from the arm's own fresh window, which is the audio the user
+        // plays while cueing - what the arm bubble asks for in so many words ("Cue the loudest section, press
+        // play, then tap Listen"). A user who taps Listen with nothing played gets the ordinary loop: measure,
+        // propose, Go. That can take two passes, and two honest passes beat one silent jump.
+        openingOwed_ = false;
         host_.resetChainOutShortTermMax(); host_.resetChainInShortTermMax();
         if (auto* lim = echoJayLimiter()) lim->resetOutputPeak();
         if (auto* lv = levelNow()) lv->resetMeters();   // 18h: the Level's IN/OUT meters (and their peak holds) describe THIS window

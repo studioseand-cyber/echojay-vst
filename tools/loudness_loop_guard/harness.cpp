@@ -665,11 +665,15 @@ static int guardMain()
         // this chain can give, so a trim is proposed, and base 5.5 + trim 8 is over the 10 dB cap.
         Rig r (true); r.setTarget (-4.0f, 0.0); r.prog.peaky = true; r.prog.burst = 90.0f;   // third-party limiter (hard clip -0.5 dBTP), Commercial (option 0) -> cap 10 dB
         const float cal = calibrate (r.proc, r.prog, -18.0f); check (std::abs (cal + 18.0f) < 0.8f, "K. peaky programme calibrated to -18 LUFS", f1 (cal));
-        // WITH the reading, deliberately: the cap can only engage once the Level is open far enough for the
-        // clipper to work, and the opening write (item 10 FINAL) is what opens it. armNoReading would leave the
-        // Level at 0 against a -18 LUFS programme, the limiter would do nothing, and this leg would assert
-        // nothing at all - which is what it did on the first run after the change.
+        // WITH the reading, deliberately, and now with PLAYBACK before Listen as well (08c F2): the cap can only
+        // engage once the Level is open far enough for the clipper to work, and the opening is what opens it.
+        // armNoReading, or arming and tapping Listen with nothing played, would leave the Level at 0 against a
+        // -18 LUFS programme, the limiter would do nothing, and this leg would assert nothing at all.
         check (r.loop.armFromChain(), "K. armed (third-party limiter last, Commercial)", r.logs.joinIntoString (" | ").substring (0, 200));
+        // 08c F2: the cap can only engage once the Level is open far enough for the clipper to work, and the
+        // opening is what opens it - measured, while armed, from the audio the user cues before tapping Listen.
+        for (int k = 0; k < 14 && std::abs (r.levelGain()) < 0.05f; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
         r.runWindow();
         const auto prop = r.last(); const auto logAll = r.logs.joinIntoString ("\n");
         check (r.loop.state() == LoudnessLoop::State::proposed && prop.contains ("is as loud as this goes with the limiter working <=10 dB. Push to -4.0 anyway?"),
@@ -1003,6 +1007,15 @@ static int guardMain()
         // measured on a fresh window, because an integrated figure that predates the chain's dials is not a
         // measurement of that chain). The acceptance bounds below are unchanged and are the subject.
         check (r.loop.armFromChain(), "Z. armed from the Level slot's params");
+        // 08c F2 (9 Oct): THE USER CUES AND PLAYS, THEN TAPS LISTEN - which is what the arm bubble asks for in
+        // those words, and what the opening gain is measured from. This leg used to go straight to the window
+        // because the opening was written at the arm from whatever integrated figure was lying around; it is
+        // measured now, so the leg has to play the audio it is measured from. The acceptance bounds below are
+        // untouched: this models the host, it does not tune the assertion.
+        for (int k = 0; k < 14 && std::abs (r.levelGain()) < 0.05f; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+        check (std::abs (r.levelGain()) > 0.05f,
+               "Z. the opening landed while armed, from the audio the user cued", "Level " + f1 (r.levelGain()) + " dB");
         r.runWindow();
         // The proposal is on the table; the figure it names must be the INTEGRATED one, not the loudest 3 s.
         const auto proposal = r.last();
