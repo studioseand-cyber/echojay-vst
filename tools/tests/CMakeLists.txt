@@ -320,10 +320,29 @@ ej_add_guard(pregain_readback         SOURCE tools/pregain_readback/harness.cpp 
 # PREVIOUSLY: re-baselined 27 Sep 2026 by ruling, from 5f47897e..., for the ruled short90 token on the
 # [CHAIN LEVELS] header (OWN_CHANNEL_BASELINE_efdec55.txt).
 #
+# RE-BASELINED 9 OCT 2026 BY RULING (Sean), and only after the diff was read and reported RED first. ONE LINE
+# changed, 14,469 -> 14,530 bytes, and it is the 08c item F2 level contract showing up in the own-channel
+# injection because that text prints the built-in schemas:
+#
+#   -  loudness_option (commercial|pushed|dynamic|keep, default commercial) - which loudness the target came from
+#   +  loudness_option (commercial|pushed|dynamic|keep|match, default commercial) - ...; "match" means the aim is
+#      this chain's own input level
+#
+# "match" is the CHANNEL/BUS aim from CONTRACT_LEVEL_PARAMS: a chain that must not change the level. It is a ruled
+# product change, not a regression. The text is OWN_CHANNEL_BASELINE_6d42a67.txt so the next move can be diffed
+# rather than guessed.
+#
+# PROVEN BOTH DIRECTIONS, on the same text and two baselines: against 46da20e4 (the old one) this text is RED,
+# which is the run that reported it; against 4bf16c07 it is GREEN. A baseline that only ever passes is as useless
+# as one that only ever fails.
+#
+# PREVIOUSLY: re-baselined 29 Sep 2026 from the 21t-k feed change (OWN_CHANNEL_BASELINE_c7b142a.txt), and 27 Sep
+# from the short90 token (OWN_CHANNEL_BASELINE_efdec55.txt).
+#
 # THE STANDING RULE IS UNCHANGED for every future move: if this goes RED, STOP AND REPORT - never re-baseline.
 ej_add_guard(mapfps_sync_guard        SOURCE tools/mapfps_sync_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(own_diff                 SOURCE tools/own_diff/harness.cpp                       LABEL fast
-             WRAPPER run_own_diff.sh WRAPPER_ARG 46da20e4279c2f03ca9d0bd8d9b03fb976f7c59d8fb5d08c0b205e6a9b84800f)
+             WRAPPER run_own_diff.sh WRAPPER_ARG 4bf16c07ed95ffdb38d769e20e9f12227b3e3b5880ef7b8e8a7767f9baea4752)
 
 
 # 21t-m (29 Sep 2026): builtin_registry_test JOINS THE GATE. It is built by the ROOT CMakeLists as an
