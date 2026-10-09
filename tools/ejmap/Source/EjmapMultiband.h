@@ -71,6 +71,65 @@ inline int bandNumberOf (const juce::String& name)
 }
 inline Band floatingBand (int index, double centreHz) { return { index, juce::jmax (20.0, centreHz / std::sqrt (2.0)), juce::jmin (20000.0, centreHz * std::sqrt (2.0)), centreHz }; }
 
+// 9 Oct (Sean's rows, Pro-MB read as "8 bands, 6 floating"): a SIDECHAIN-named control is never a band - its "Band N Side Chain Low
+// Frequency" is the band's key filter, not the band
+inline bool sidechainNamed (const juce::String& name)
+{
+    const auto t = nameTokens (name);
+    for (int i = 0; i < t.size(); ++i) if (t[i] == "sidechain" || t[i] == "sc" || t[i] == "key" || (t[i] == "side" && i + 1 < t.size() && t[i + 1] == "chain")) return true;
+    return false;
+}
+// PER-BAND CROSSOVERS (9 Oct, Pro-MB): "Band N Low Crossover" / "Band N High Crossover" are THAT band's own edges, not global ones -
+// returns { N, "low" | "high" }, or { -1, "" } for a global crossover
+inline std::pair<int, juce::String> perBandEdge (const juce::String& name)
+{
+    const auto t = nameTokens (name); const int bn = bandNumberOf (name);
+    if (bn < 0 || ! (t.contains ("crossover") || t.contains ("xover") || t.contains ("cross"))) return { -1, {} };
+    if (t.contains ("low") || t.contains ("lo")) return { bn, "low" };
+    if (t.contains ("high") || t.contains ("hi")) return { bn, "high" };
+    return { -1, {} };
+}
+// a band from a measured region (9 Oct: OTT, Ozone 12 Dynamics - no crossover controls; each threshold's cut region IS its band)
+inline Band measuredBand (int index, double loHz, double hiHz) { const double lo = juce::jlimit (20.0, 20000.0, loHz), hi = juce::jlimit (lo, 20000.0, hiHz); return { index, lo, hi, std::sqrt (lo * juce::jmax (lo, hi)) }; }
+// THE ENABLE STEP'S DEPTH CANDIDATE (9 Oct: DynOne3's bands sit at Volume -Inf, Pro-MB's at Range 0 dB - no switch turns them on): a
+// numeric control of the SAME band (the threshold's name without its threshold word is the band's prefix) whose name is a depth /
+// level / range / volume / amount and which sits at its OFF end at instantiate (-Inf for a level or volume; 0 dB for a range, depth or
+// amount). Returns the norms to try, best first: a level / volume to the norm whose label is 0 dB (else its top); a range / depth both
+// ends (the one that makes the threshold cut is kept)
+inline std::optional<double> dbOfLabel (const juce::String& display)   // "0.00 dB", "-30.00 dB", "+30.00 dB", "12.0"; "-Inf dB" is no number
+{
+    const auto d = display.trim(); if (d.isEmpty() || d.containsIgnoreCase ("inf") || ! d.containsAnyOf ("0123456789")) return std::nullopt;
+    return d.getDoubleValue();
+}
+inline juce::String bandPrefixOf (const juce::String& thresholdName)
+{
+    auto t = nameTokens (thresholdName); while (! t.isEmpty() && (t[t.size() - 1] == "threshold" || t[t.size() - 1] == "thresh" || t[t.size() - 1] == "thr")) t.remove (t.size() - 1);
+    return t.joinIntoString (" ");
+}
+inline std::vector<double> depthTryNorms (const juce::String& thresholdName, const juce::var& control)
+{
+    const auto name = control.getProperty ("name", "").toString(); const auto prefix = bandPrefixOf (thresholdName);
+    if (prefix.isEmpty() || sidechainNamed (name)) return {};
+    auto t = nameTokens (name); if (t.size() < 2) return {};
+    const auto last = t[t.size() - 1]; t.remove (t.size() - 1);
+    if (t.joinIntoString (" ") != prefix) return {};
+    const auto inst = control.getProperty ("defaultOnInstantiate", {}).getProperty ("display", "").toString();
+    const auto at = control.getProperty ("displayAt", {});
+    if (last == "volume" || last == "level")
+    {
+        if (! inst.containsIgnoreCase ("inf")) return {};
+        double best = 1.0, bd = 1e9;
+        if (at.isObject()) for (const auto& kv : at.getDynamicObject()->getProperties()) if (const auto d = dbOfLabel (kv.value.toString()); d && std::abs (*d) < bd) { bd = std::abs (*d); best = kv.name.toString().getDoubleValue(); }
+        return { best };
+    }
+    if (last == "range" || last == "depth" || last == "amount")
+    {
+        const auto d = dbOfLabel (inst); if (! d || std::abs (*d) > 1e-6) return {};
+        return { 0.0, 1.0 };
+    }
+    return {};
+}
+
 // a threshold control's dB ends from its displays at norm 0 and 1 (both numeric), and the norm for a dB value (linear in dB, said)
 struct DbRange { bool ok = false; double at0 = 0.0, at1 = 0.0; };
 inline DbRange dbRangeOf (const juce::String& display0, const juce::String& display1)
@@ -116,7 +175,8 @@ inline bool enableEligible (const juce::String& thresholdName) { return strip::s
 inline bool stageThreshold (const juce::String& name)
 {
     const auto toks = nameTokens (name);
-    for (const auto& t : toks) if (t == "gate" || t == "processor" || t == "proc" || t == "expander" || t == "expand" || t == "ducker" || t == "duck") return true;
+    // 9 Oct: "lim" / "limiter" too - Ozone 12 Dynamics' "Band N Lim Threshold" is its limiter stage, not the band's compressor
+    for (const auto& t : toks) if (t == "gate" || t == "processor" || t == "proc" || t == "expander" || t == "expand" || t == "ducker" || t == "duck" || t == "lim" || t == "limiter") return true;
     return false;
 }
 

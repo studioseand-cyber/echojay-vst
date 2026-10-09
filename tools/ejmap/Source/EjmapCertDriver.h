@@ -259,7 +259,7 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
     juce::MemoryOutputStream collected;
     int status = 0;
     bool reaped = false, killed = false, uiKilled = false;
-    double lastWindowPoll = 0.0;
+    double lastWindowPoll = 0.0, lastGuardScan = 0.0; int effTimeoutMs = timeoutMs; bool guardRead = false;   // 9 Oct: a child's declared GUARD extends the hang guard
     char buf[8192];
     auto drain = [&] { for (;;) { const ssize_t n = read (fds[0], buf, sizeof buf); if (n > 0) collected.write (buf, (size_t) n); else break; } };
     for (;;)
@@ -296,7 +296,9 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
                 break;
             }
         }
-        if (timeoutPassed (t0, now, timeoutMs))
+        if (! guardRead && now - lastGuardScan >= 1000.0)
+        { lastGuardScan = now; if (const auto g = phaseb::declaredGuardS (collected.toString())) { guardRead = true; effTimeoutMs = (int) std::lround (1000.0 * phaseb::effectiveGuardS (timeoutMs / 1000.0, *g)); } }
+        if (timeoutPassed (t0, now, effTimeoutMs))
         {
             kill (pid, SIGKILL);
             waitpid (pid, &status, 0);
@@ -1457,6 +1459,7 @@ struct SweepOptions
 {
     juce::File fixtures, probe, out, ledger = defaultEjmapLedger();
     juce::String product, hostVersion, armLabel;
+    bool resumeTraces = false;   // 9 Oct: --resume-traces (the Phase B parent, a timed-out gain row): a complete trace already in raw/ is reused
     std::vector<std::pair<int, float>> extraSets;    // a DIAGNOSTIC arm: a non-swept control moved on purpose
     int timeoutMs = 120000;                          // per process
     bool includePace = false, resetPerHold = false, retryRefused = false, retryAll = false;
@@ -2813,6 +2816,10 @@ inline void setRoles (juce::DynamicObject* o, const std::vector<roleevidence::Ro
 // ("--text-at 3,7,12"), with the timeout scaled to the count actually sampled; the mode nominates again on the sampled fixture.
 inline constexpr double kTextSampleMs = 200.0;   // the measured 78 ms per sample (6 run-loop spins) with room; three samples per control
 inline int textPassTimeoutMs (int sampled, int floorMs) { return juce::jmax (floorMs, (int) std::lround (sampled * 3.0 * kTextSampleMs) + 30000); }
+inline constexpr int kTextChunk = 8;
+inline std::vector<std::vector<int>> textChunks (const std::vector<int>& idx, int k) { std::vector<std::vector<int>> out; for (size_t i = 0; i < idx.size(); i += (size_t) k) out.emplace_back (idx.begin() + (long) i, idx.begin() + (long) std::min (idx.size(), i + (size_t) k)); return out; }
+// a control the label pass could not read: present, with its name and no labels (no displayAt: never judged against a label)
+inline TextAtRow unlabelledRow (int index, const juce::String& name) { TextAtRow r; r.index = index; r.name = name; return r; }
 struct ModeFixture { bool ok = false; juce::String why, note; juce::var base; std::set<int> sampled; int params = 0; int timeoutMs = 0; double textSeconds = 0.0; };
 inline ModeFixture sampledFixture (const SweepOptions& opt, const juce::PluginDescription& desc, const juce::File& raw, const juce::String& stem, const juce::String& mode,
                                    const Subject& s, const juce::String& probeNote, const std::vector<const char*>& terms)
@@ -2822,7 +2829,12 @@ inline ModeFixture sampledFixture (const SweepOptions& opt, const juce::PluginDe
     ModeFixture fx;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra, int timeoutMs) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
         const auto r = runChild (args, timeoutMs); raw.getChildFile (stem + "." + mode + "." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
-    const auto lp = run ("list-params", { "--list-params" }, opt.timeoutMs); if (! lp.cleanExit()) { fx.why = "--list-params " + lp.describe(); return fx; }
+    const auto lp = run ("list-params", { "--list-params" }, opt.timeoutMs);
+    if (! lp.cleanExit())
+    {   // 9 Oct: the probe's own refusal text rides along (AVOX SYBIL: "refused An OS error occurred during initialisation of the plug-in (4097)")
+        juce::String refusal; for (const auto& line : juce::StringArray::fromLines (lp.out)) if (line.startsWith ("refused")) refusal = line;
+        fx.why = "--list-params " + lp.describe() + (refusal.isNotEmpty() ? " - " + refusal : juce::String()); return fx;
+    }
     auto list = parseListParams (lp.out); fx.params = (int) list.size();
     { const auto& only = opt.onlyControls.empty() ? onlyControlsFlag() : opt.onlyControls; if (! only.empty()) { std::map<int, ListRow> kept; for (const auto& [i, r] : list) if (only.count (i)) kept[i] = r; list = kept; fx.params = (int) list.size(); } }   // a strip's section (item E): the mode sees these controls alone
     const auto date = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
@@ -2838,8 +2850,27 @@ inline ModeFixture sampledFixture (const SweepOptions& opt, const juce::PluginDe
     const auto t0 = juce::Time::getMillisecondCounterHiRes();
     const auto ta = run ("text-at", { "--text-at", idx.joinIntoString (",") }, fx.timeoutMs);
     fx.textSeconds = (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0;
-    if (! ta.cleanExit()) { fx.why = "--text-at (" + juce::String ((int) needed.size()) + " of " + juce::String (fx.params) + " controls, timeout " + juce::String (fx.timeoutMs / 1000) + " s) " + ta.describe(); return fx; }
-    fx.base = composeFixture (s, list, parseTextAt (ta.out), lp.code, ta.code, probeNote, date);
+    std::vector<TextAtRow> rows; juce::StringArray unlabelled; int taCode = ta.code;
+    if (ta.cleanExit()) rows = parseTextAt (ta.out);
+    else if (ta.kind == ChildResult::Kind::uiShown) { fx.why = "--text-at (" + juce::String ((int) needed.size()) + " of " + juce::String (fx.params) + " controls) " + ta.describe(); return fx; }
+    else
+    {
+        // LABELS IN CHUNKS (9 Oct, bx_rooMS: --text-at over its 49 controls was killed by signal 11): the pass again kTextChunk controls
+        // at a time; a chunk that still fails leaves its controls UNLABELLED - measured, never judged against a label (said on the fixture)
+        std::cout << ("  text pass: --text-at over " + juce::String ((int) needed.size()) + " controls " + ta.describe() + "; again in chunks of " + juce::String (kTextChunk)) << std::endl;
+        const auto chunks = textChunks (std::vector<int> (needed.begin(), needed.end()), kTextChunk); int k = 0;
+        for (const auto& ch : chunks)
+        {
+            juce::StringArray ci; for (int i : ch) ci.add (juce::String (i));
+            const auto tc = run ("text-at.c" + juce::String (++k), { "--text-at", ci.joinIntoString (",") }, textPassTimeoutMs ((int) ch.size(), opt.timeoutMs));
+            if (tc.kind == ChildResult::Kind::uiShown) { fx.why = "--text-at chunk " + juce::String (k) + " " + tc.describe(); return fx; }
+            if (tc.cleanExit()) { for (const auto& r : parseTextAt (tc.out)) rows.push_back (r); continue; }
+            for (int i : ch) { rows.push_back (unlabelledRow (i, list.count (i) ? list.at (i).name : juce::String())); unlabelled.add (juce::String (i) + " " + (list.count (i) ? list.at (i).name : juce::String())); }
+        }
+        taCode = 0;
+    }
+    fx.base = composeFixture (s, list, rows, lp.code, taCode, probeNote, date);
+    if (! unlabelled.isEmpty()) if (auto* bo = fx.base.getDynamicObject()) { juce::Array<juce::var> u; for (const auto& x : unlabelled) u.add (x); bo->setProperty ("unlabelled_controls", u); }
     fx.sampled = needed; fx.ok = true;
     fx.note = "text pass: " + juce::String ((int) needed.size()) + " of " + juce::String (fx.params) + " controls sampled in " + juce::String (fx.textSeconds, 1) + " s (timeout " + juce::String (fx.timeoutMs / 1000) + " s, scaled to the count)";
     return fx;
@@ -3632,11 +3663,15 @@ inline int runGainCal (const SweepOptions& opt)
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("gaincal"); outDir.createDirectory();
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
     const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    int reusedTraces = 0;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra)
     {
+        const auto rf = raw.getChildFile (stem + ".gaincal." + tag + ".1.txt");
+        if (opt.resumeTraces && rf.existsAsFile())   // 9 Oct: a timed-out row resumes - a COMPLETE trace from the last run is the reading
+            if (const auto prev = rf.loadFileAsString(); phaseb::traceComplete (prev)) { ChildResult c; c.kind = ChildResult::Kind::exited; c.code = 0; c.out = prev; ++reusedTraces; return c; }
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
         const auto r = runChild (args, opt.timeoutMs);
-        raw.getChildFile (stem + ".gaincal." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
+        rf.replaceWithText (r.out, false, false, "\n");
         return r;
     };
     // the controls, from the plugin itself (list-params + text-at), roled with the compressor lexicon
@@ -3664,6 +3699,14 @@ inline int runGainCal (const SweepOptions& opt)
     }
     say ("GAINCAL: " + opt.product + " " + desc.version + ": " + juce::String ((int) targets.size()) + " gain-role control(s)" + (plan.thr >= 0 ? (opt.gainAll ? " (--kind all: the plan's amount [" + juce::String (plan.thr) + "] " + plan.thrName + " is a target like any other)" : " (amount [" + juce::String (plan.thr) + "] " + plan.thrName + " excluded)") : juce::String()));
     juce::StringArray norms; for (int k = 0; k < gaincal::kNorms; ++k) norms.add (juce::String ((float) k / (float) (gaincal::kNorms - 1), 6));
+    // THE DECLARED GUARD (9 Oct): every probe process this plan will run - each target's levels and its two acceptance writes, and the pool
+    {
+        int processes = 0; for (const auto& t : targets) processes += (int) (t.role == "input" ? gaincal::kInputLevelsDbfs : gaincal::kLevelsDbfs).size() + 2;
+        std::vector<int> nom0; for (const auto& t : targets) nom0.push_back (t.index); if (plan.thr >= 0) nom0.push_back (plan.thr);
+        processes += (int) unnamedPool (base, nom0, &fx.sampled).size();
+        std::cout << "GUARD\t" << juce::String (phaseb::gainGuardS (processes), 0) << std::endl;
+        say ("GAINCAL: the plan is " + juce::String (processes) + " probe process(es): guard declared " + juce::String (phaseb::gainGuardS (processes) / 60.0, 1) + " min" + (opt.resumeTraces ? " (resuming: complete traces from the timed-out run are reused)" : juce::String()));
+    }
     juce::Array<juce::var> controls; int measured = 0; juce::Array<juce::var> gainNotes;
     std::vector<roleevidence::RoleVerdict> roles; std::vector<int> nominated; for (const auto& t : targets) nominated.push_back (t.index); if (plan.thr >= 0) nominated.push_back (plan.thr);
     for (const auto& t : targets)
@@ -5651,6 +5694,98 @@ inline int runDeesser (const SweepOptions& opt)
 // band at each band's centre (from the default crossovers), the band's threshold swept against it; the whole-unit figure on
 // the vocal-shaped multitone at five levels; the amount = the global control where one exists, else every band threshold
 // moved by one common dB offset (-24 .. 0 in 6 dB steps). Nothing exported.
+// THE MULTIBAND NOMINATION AND TOPOLOGY, BEFORE ANY MEASUREMENT (9 Oct: one function for the live mode and --multiband-plan, which reads a
+// fixture - Sean's Pro-MB / Ozone 12 / DynOne3 - with nothing loaded): the band thresholds by name (never another stage's, never a
+// sidechain's), the crossovers (never a qualifier), per-band edges, floating bands, the global amount; the bands they give
+struct MbThr { int index; juce::String name, display0, display1, instantiate; double instNorm; };
+struct MbNomination
+{
+    std::vector<MbThr> thresholds; std::vector<juce::String> crossoverDisplays; juce::StringArray crossoverNames, stageSkipped, qualifierSkipped, sidechainSkipped, skipped;
+    int globalIdx = -1; juce::String globalName; std::vector<std::pair<juce::String, juce::String>> bandFreqs; std::map<int, std::map<juce::String, juce::String>> perBandEdges;
+    std::map<int, int> floatingBandOf, bandOfNumber; juce::Array<juce::var> floatingVar; bool explicitCrossovers = false; std::vector<multiband::Band> bands; juce::String topologyBy;
+};
+inline MbNomination nominateMultiband (const juce::var& base, const std::function<void (const juce::String&)>& say)
+{
+    using namespace multiband;
+    MbNomination N;
+    auto& thresholds = N.thresholds; auto& crossoverDisplays = N.crossoverDisplays; auto& crossoverNames = N.crossoverNames; auto& stageSkipped = N.stageSkipped; auto& qualifierSkipped = N.qualifierSkipped; auto& globalIdx = N.globalIdx; auto& globalName = N.globalName;
+    auto& bandFreqs = N.bandFreqs;   // "Band N Frequency" style: name, instantiate display
+    auto& perBandEdges = N.perBandEdges; auto& sidechainSkipped = N.sidechainSkipped;   // 9 Oct: Pro-MB's own edges; key filters
+    auto answers = [] (const juce::String& name, std::initializer_list<const char*> terms) { for (const char* t : terms) if (nametokens::controlAnswersTerm (name, t)) return true; return false; };
+    if (const auto* cs = base.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            const int idx = (int) c.getProperty ("index", -1); const auto n = c.getProperty ("name", "").toString();
+            if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (n)) continue;
+            const auto at = c.getProperty ("displayAt", {}); const auto inst = c.getProperty ("defaultOnInstantiate", {});
+            auto d0 = at.getProperty ("0.000", "").toString(), d1 = at.getProperty ("1.000", "").toString();
+            if (answers (n, { "threshold", "thresh", "thr" }) && ! answers (n, { "s", "sc", "sidechain", "key" }) && multiband::stageThreshold (n))
+                stageSkipped.add (n);   // Sean's ruling (8 Oct): a gate / processor stage's threshold is never a band threshold
+            else if (answers (n, { "threshold", "thresh", "thr" }) && ! answers (n, { "s", "sc", "sidechain", "key" }))
+                thresholds.push_back ({ idx, n, d0, d1, inst.getProperty ("display", "").toString(), (double) inst.getProperty ("normalised", 0.0) });
+            else if (multiband::sidechainNamed (n) && (answers (n, { "crossover", "xover", "cross", "x-over", "freq", "frequency", "hz" })))
+                sidechainSkipped.add (n);   // 9 Oct: a sidechain / key filter is never a band
+            else if (const auto pe = multiband::perBandEdge (n); pe.first >= 0 && ! multiband::crossoverQualifier (n))
+                perBandEdges[pe.first][pe.second] = inst.getProperty ("display", "").toString();   // 9 Oct: that band's own edge
+            else if (answers (n, { "crossover", "xover", "cross", "x-over" }))
+            { if (multiband::crossoverQualifier (n)) qualifierSkipped.add (n); else { crossoverDisplays.push_back (inst.getProperty ("display", "").toString()); crossoverNames.add (n); } }
+            else if (answers (n, { "freq", "frequency", "hz" }) && answers (n, { "low", "high", "mid", "band", "lo", "hi", "1", "2", "3", "4", "5" }))
+                bandFreqs.push_back ({ n, inst.getProperty ("display", "").toString() });   // an edge, or a floating band's centre when explicit crossovers exist (below)
+            else if (globalIdx < 0 && ! multiband::sidechainNamed (n) && (answers (n, { "amount", "depth" }) || (answers (n, { "compression" }) && answers (n, { "globals", "global" })))) { globalIdx = idx; globalName = n; }
+        }
+    // floating bands (Sean's ruling 8 Oct): with explicit crossovers, a "Band N Frequency" is a floating band's centre; without, an edge (as before)
+    auto& floatingBandOf = N.floatingBandOf; auto& bandOfNumber = N.bandOfNumber; auto& floatingVar = N.floatingVar; N.explicitCrossovers = ! crossoverNames.isEmpty() || ! perBandEdges.empty(); const bool explicitCrossovers = N.explicitCrossovers;
+    if (! explicitCrossovers) for (const auto& [fn, fd] : bandFreqs) { crossoverDisplays.push_back (fd); crossoverNames.add (fn); }
+    auto& skipped = N.skipped; auto& bands = N.bands; bands = crossoverDisplays.empty() ? std::vector<Band>() : bandsFromCrossovers (crossoverDisplays, skipped);
+    auto& topologyBy = N.topologyBy; topologyBy = bands.empty() ? juce::String() : juce::String ("crossovers");
+    if (! perBandEdges.empty())
+    {   // 9 Oct (Pro-MB): each band's own Low / High crossover is its range; its threshold (the same band number) is laddered there
+        bands.clear(); topologyBy = "per-band crossovers";
+        for (const auto& [bn, e] : perBandEdges)
+        {
+            const auto lo = e.count ("low") ? deesser::labelHz (e.at ("low")) : std::nullopt; const auto hi = e.count ("high") ? deesser::labelHz (e.at ("high")) : std::nullopt;
+            bands.push_back (measuredBand ((int) bands.size() + 1, lo ? *lo : 20.0, hi ? *hi : 20000.0)); bandOfNumber[bn] = (int) bands.size() - 1;
+        }
+    }
+    else if (explicitCrossovers)
+        for (const auto& [fn, fd] : bandFreqs)
+        {
+            const int bn = bandNumberOf (fn); const auto hz = deesser::labelHz (fd);
+            if (bn < 0 || ! hz || *hz <= 20.0 || *hz >= 20000.0) { skipped.add (fn + " '" + fd + "'"); continue; }
+            bands.push_back (floatingBand ((int) bands.size() + 1, *hz)); floatingBandOf[bn] = (int) bands.size() - 1;
+            auto* fv = new juce::DynamicObject(); fv->setProperty ("band", (int) bands.size()); fv->setProperty ("control", fn); fv->setProperty ("centre_hz", std::round (*hz)); fv->setProperty ("band_number", bn); floatingVar.add (juce::var (fv));
+        }
+    if (! qualifierSkipped.isEmpty()) say ("  not crossovers (a crossover's qualifier): " + qualifierSkipped.joinIntoString (", "));
+    if (! sidechainSkipped.isEmpty()) say ("  not bands (a sidechain / key filter): " + sidechainSkipped.joinIntoString (", "));
+    if (! perBandEdges.empty()) say ("  per-band crossovers: " + juce::String ((int) perBandEdges.size()) + " band(s), each its own range");
+    if (! floatingVar.isEmpty()) say ("  floating bands (a band's own frequency, explicit crossovers present): " + juce::String (floatingVar.size()));
+    return N;
+}
+
+// --multiband-plan <fixture.json> (9 Oct): what the multiband mode WOULD nominate and how it would band a unit, from a fixture, nothing
+// loaded - the thresholds, the topology (or "measured": the bands come from each threshold's cut region), each threshold's enable
+// candidates (its band's own depth / level / range at an off end). Rehearses the 9 Oct fixes on units this Mac does not have.
+inline int runMultibandPlan (const juce::File& fixture)
+{
+    auto say = [] (const juce::String& x) { std::cout << x << std::endl; };
+    const auto base = juce::JSON::parse (fixture.loadFileAsString()); if (! base.getProperty ("controls", {}).isArray()) { say ("MB PLAN: no controls in " + fixture.getFullPathName()); return 2; }
+    say ("MB PLAN: " + base.getProperty ("product", fixture.getFileName()).toString() + " (" + juce::String (base.getProperty ("controls", {}).size()) + " controls) - nothing loaded");
+    const auto N = nominateMultiband (base, say);
+    juce::StringArray tn; for (const auto& t : N.thresholds) tn.add ("[" + juce::String (t.index) + "] " + t.name + " @ '" + t.instantiate + "'");
+    say ("  band thresholds (" + juce::String ((int) N.thresholds.size()) + "): " + tn.joinIntoString (", "));
+    if (! N.stageSkipped.isEmpty()) say ("  not band thresholds (another stage's): " + juce::String (N.stageSkipped.size()) + " - " + N.stageSkipped.joinIntoString (", "));
+    if (N.bands.empty()) say ("  topology: no crossover control - MEASURED (each threshold's cut region becomes its band when the unit is run)");
+    else { say ("  topology: " + N.topologyBy + ", " + juce::String ((int) N.bands.size()) + " band(s)"); for (const auto& b : N.bands) say ("    band " + juce::String (b.index) + ": " + juce::String (b.loHz, 0) + "-" + juce::String (b.hiHz, 0) + " Hz, centre " + juce::String (b.centreHz, 0)); }
+    for (const auto& t : N.thresholds)
+    {
+        juce::StringArray cands;
+        if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) { const auto nn = multiband::depthTryNorms (t.name, c); if (nn.empty()) continue; juce::StringArray ns; for (double x : nn) ns.add (juce::String (x, 2)); cands.add (c.getProperty ("name", "").toString() + " (at '" + c.getProperty ("defaultOnInstantiate", {}).getProperty ("display", "").toString() + "', try norm " + ns.joinIntoString (" / ") + ")"); }
+        if (! cands.isEmpty()) say ("  enable candidates for " + t.name + ": " + cands.joinIntoString ("; "));
+    }
+    if (N.globalIdx >= 0) say ("  global amount: [" + juce::String (N.globalIdx) + "] " + N.globalName);
+    return 0;
+}
+
 inline int runMultiband (const SweepOptions& opt)
 {
     using namespace multiband;
@@ -5672,41 +5807,10 @@ inline int runMultiband (const SweepOptions& opt)
     const auto base = fx.base; say ("MB: " + fx.note);
     // THE CONTROLS: band thresholds (threshold / thresh with a band word or number; never a sidechain "S" one), crossovers
     // (crossover / cross / xover / freq with low / high / a number), a global amount (amount / compression / depth; mix is not)
-    struct Thr { int index; juce::String name, display0, display1, instantiate; double instNorm; };
-    std::vector<Thr> thresholds; std::vector<juce::String> crossoverDisplays; juce::StringArray crossoverNames, stageSkipped, qualifierSkipped; int globalIdx = -1; juce::String globalName;
-    std::vector<std::pair<juce::String, juce::String>> bandFreqs;   // "Band N Frequency" style: name, instantiate display
-    auto answers = [] (const juce::String& name, std::initializer_list<const char*> terms) { for (const char* t : terms) if (nametokens::controlAnswersTerm (name, t)) return true; return false; };
-    if (const auto* cs = base.getProperty ("controls", {}).getArray())
-        for (const auto& c : *cs)
-        {
-            const int idx = (int) c.getProperty ("index", -1); const auto n = c.getProperty ("name", "").toString();
-            if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (n)) continue;
-            const auto at = c.getProperty ("displayAt", {}); const auto inst = c.getProperty ("defaultOnInstantiate", {});
-            auto d0 = at.getProperty ("0.000", "").toString(), d1 = at.getProperty ("1.000", "").toString();
-            if (answers (n, { "threshold", "thresh", "thr" }) && ! answers (n, { "s", "sc", "sidechain", "key" }) && multiband::stageThreshold (n))
-                stageSkipped.add (n);   // Sean's ruling (8 Oct): a gate / processor stage's threshold is never a band threshold
-            else if (answers (n, { "threshold", "thresh", "thr" }) && ! answers (n, { "s", "sc", "sidechain", "key" }))
-                thresholds.push_back ({ idx, n, d0, d1, inst.getProperty ("display", "").toString(), (double) inst.getProperty ("normalised", 0.0) });
-            else if (answers (n, { "crossover", "xover", "cross", "x-over" }))
-            { if (multiband::crossoverQualifier (n)) qualifierSkipped.add (n); else { crossoverDisplays.push_back (inst.getProperty ("display", "").toString()); crossoverNames.add (n); } }
-            else if (answers (n, { "freq", "frequency", "hz" }) && answers (n, { "low", "high", "mid", "band", "lo", "hi", "1", "2", "3", "4", "5" }))
-                bandFreqs.push_back ({ n, inst.getProperty ("display", "").toString() });   // an edge, or a floating band's centre when explicit crossovers exist (below)
-            else if (globalIdx < 0 && (answers (n, { "amount", "depth" }) || (answers (n, { "compression" }) && answers (n, { "globals", "global" })))) { globalIdx = idx; globalName = n; }
-        }
-    // floating bands (Sean's ruling 8 Oct): with explicit crossovers, a "Band N Frequency" is a floating band's centre; without, an edge (as before)
-    std::map<int, int> floatingBandOf; juce::Array<juce::var> floatingVar; const bool explicitCrossovers = ! crossoverNames.isEmpty();
-    if (! explicitCrossovers) for (const auto& [fn, fd] : bandFreqs) { crossoverDisplays.push_back (fd); crossoverNames.add (fn); }
-    juce::StringArray skipped; auto bands = crossoverDisplays.empty() ? std::vector<Band>() : bandsFromCrossovers (crossoverDisplays, skipped);
-    if (explicitCrossovers)
-        for (const auto& [fn, fd] : bandFreqs)
-        {
-            const int bn = bandNumberOf (fn); const auto hz = deesser::labelHz (fd);
-            if (bn < 0 || ! hz || *hz <= 20.0 || *hz >= 20000.0) { skipped.add (fn + " '" + fd + "'"); continue; }
-            bands.push_back (floatingBand ((int) bands.size() + 1, *hz)); floatingBandOf[bn] = (int) bands.size() - 1;
-            auto* fv = new juce::DynamicObject(); fv->setProperty ("band", (int) bands.size()); fv->setProperty ("control", fn); fv->setProperty ("centre_hz", std::round (*hz)); fv->setProperty ("band_number", bn); floatingVar.add (juce::var (fv));
-        }
-    if (! qualifierSkipped.isEmpty()) say ("  not crossovers (a crossover's qualifier): " + qualifierSkipped.joinIntoString (", "));
-    if (! floatingVar.isEmpty()) say ("  floating bands (a band's own frequency, explicit crossovers present): " + juce::String (floatingVar.size()));
+    auto N = nominateMultiband (base, say);
+    auto& thresholds = N.thresholds; auto& crossoverNames = N.crossoverNames; auto& stageSkipped = N.stageSkipped; auto& qualifierSkipped = N.qualifierSkipped; auto& sidechainSkipped = N.sidechainSkipped;
+    auto& globalIdx = N.globalIdx; auto& globalName = N.globalName; auto& floatingBandOf = N.floatingBandOf; auto& bandOfNumber = N.bandOfNumber; auto& floatingVar = N.floatingVar;
+    auto& bands = N.bands; auto& topologyBy = N.topologyBy; auto& skipped = N.skipped; juce::ignoreUnused (skipped);
     say ("MB: " + opt.product + " " + desc.version + ": " + juce::String ((int) thresholds.size()) + " band threshold(s) [" + [&] { juce::StringArray a; for (const auto& t : thresholds) a.add (t.name + " @ '" + t.instantiate + "'"); return a.joinIntoString (", "); }() + "]; crossovers [" + crossoverNames.joinIntoString (", ") + "] -> " + juce::String ((int) bands.size()) + " band(s)" + (skipped.isEmpty() ? juce::String() : " (skipped: " + skipped.joinIntoString (", ") + ")") + "; global amount " + (globalIdx >= 0 ? "[" + juce::String (globalIdx) + "] " + globalName : juce::String ("none")));
     if (! stageSkipped.isEmpty()) say ("  not band thresholds (another stage's, Sean's ruling 8 Oct): " + stageSkipped.joinIntoString (", "));
     if (thresholds.empty()) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  no band thresholds by name; controls: " + names.joinIntoString (", ")); return 4; }
@@ -5716,6 +5820,7 @@ inline int runMultiband (const SweepOptions& opt)
     if (! stageSkipped.isEmpty()) { juce::Array<juce::var> sv; for (const auto& n : stageSkipped) sv.add (n); o->setProperty ("stage_thresholds_not_nominated", sv); }
     if (! floatingVar.isEmpty()) o->setProperty ("floating_bands", floatingVar);
     if (! qualifierSkipped.isEmpty()) { juce::Array<juce::var> qv; for (const auto& n : qualifierSkipped) qv.add (n); o->setProperty ("crossover_qualifiers_not_edges", qv); }
+    if (! sidechainSkipped.isEmpty()) { juce::Array<juce::var> sv; for (const auto& n : sidechainSkipped) sv.add (n); o->setProperty ("sidechain_controls_not_bands", sv); }
     { juce::Array<juce::var> bv; for (const auto& b : bands) { auto* x = new juce::DynamicObject(); x->setProperty ("band", b.index); for (const auto& [bn, ix] : floatingBandOf) if (ix == b.index - 1) { x->setProperty ("floating", true); x->setProperty ("band_number", bn); } x->setProperty ("lo_hz", std::round (b.loHz)); x->setProperty ("hi_hz", std::round (b.hiHz)); x->setProperty ("centre_hz", std::round (b.centreHz)); bv.add (juce::var (x)); } o->setProperty ("bands", bv); o->setProperty ("crossover_controls", crossoverNames.joinIntoString (", ")); }
     auto setOf = [] (int idx, double norm) { return juce::String (idx) + ":" + juce::String (norm, 6); };
     juce::StringArray norms; for (int k = 0; k <= 5; ++k) norms.add (juce::String (k / 5.0f, 6));
@@ -5724,7 +5829,7 @@ inline int runMultiband (const SweepOptions& opt)
     // PAIRING BY MEASUREMENT (5 Oct evening): each nominated threshold gets one flat multitone response at its two ends; the region the
     // hard end cuts by 3 dB or more names the band it owns (its centre picks the band by the edges); a threshold that cuts nothing is
     // dropped here (Melda's gate / processor thresholds, C6's thresholds on tones that are not theirs)
-    std::vector<int> pairedBand (thresholds.size(), -1); std::vector<juce::String> pairNote (thresholds.size());
+    std::vector<int> pairedBand (thresholds.size(), -1); std::vector<juce::String> pairNote (thresholds.size()); std::vector<std::pair<double, double>> cutRegion (thresholds.size(), { 0.0, 0.0 });
     auto floatingBandIdx = [&] (size_t k) { for (const auto& [bn, ix] : floatingBandOf) if ((size_t) ix == k) return true; return false; };
     // THE ENABLE STEP (Kathy, 7 Oct item 8 - as the EQ got): a band threshold that cuts nothing between its ends may sit in a band that is OFF
     // at instantiate (Pro-MB, Ozone 12 Dynamics, DynOne3, SSL G3): its own switches are tried, closest name first, at most four; one that makes
@@ -5753,7 +5858,30 @@ inline int runMultiband (const SweepOptions& opt)
                 if (w2) { say ("MB: a window appeared; stopping"); return 5; }
                 if (worstOf (r2) <= -deesser::kBandCutDb) { resp = r2; enableSets.add (juce::String (c.index) + ":" + juce::String (c.onNorm, 6)); auto* e = new juce::DynamicObject(); e->setProperty ("threshold", t.name); e->setProperty ("switch", c.name); e->setProperty ("set", c.onText); e->setProperty ("norm", c.onNorm); enabledBy.add (juce::var (e)); enabledHere = true; say ("  enable step: [" + juce::String (t.index) + "] " + t.name + " cut nothing; with [" + juce::String (c.index) + "] " + c.name + " = '" + c.onText + "' it cuts"); break; }
             }
-            if (! enabledHere) say ("  enable step: [" + juce::String (t.index) + "] " + t.name + " cut nothing; " + juce::String (juce::jmin (tried, 4)) + " switch(es) of its own tried, still nothing");
+            // 9 Oct: no switch did it - the band's own depth / level / range off its OFF end (DynOne3 Volume -Inf, Pro-MB Range 0 dB), the end that cuts kept
+            int depthTried = 0;
+            if (! enabledHere) if (const auto* cs = base.getProperty ("controls", {}).getArray())
+                for (const auto& c : *cs)
+                {
+                    if (enabledHere || depthTried >= 2) break;
+                    const auto norms2 = multiband::depthTryNorms (t.name, c); if (norms2.empty()) continue; ++depthTried;
+                    const int ci = (int) c.getProperty ("index", -1);
+                    for (double nn : norms2)
+                    {
+                        juce::StringArray sets = enableSets; sets.add (juce::String (ci) + ":" + juce::String (nn, 6));
+                        auto [r3, w3] = pairOnce ("pair" + juce::String (t.index) + ".d" + juce::String (ci) + "." + juce::String (nn, 2), t.index, sets);
+                        if (w3) { say ("MB: a window appeared; stopping"); return 5; }
+                        if (worstOf (r3) <= -deesser::kBandCutDb)
+                        {
+                            resp = r3; enableSets.add (juce::String (ci) + ":" + juce::String (nn, 6)); enabledHere = true;
+                            auto* e = new juce::DynamicObject(); e->setProperty ("threshold", t.name); e->setProperty ("control", c.getProperty ("name", "")); e->setProperty ("kind", "depth"); e->setProperty ("norm", nn);
+                            e->setProperty ("was", c.getProperty ("defaultOnInstantiate", {}).getProperty ("display", "")); e->setProperty ("set", displayNear (base, ci, nn)); enabledBy.add (juce::var (e));
+                            say ("  enable step: [" + juce::String (t.index) + "] " + t.name + " cuts once its band's " + c.getProperty ("name", "").toString() + " moves off '" + c.getProperty ("defaultOnInstantiate", {}).getProperty ("display", "").toString() + "' (norm " + juce::String (nn, 2) + ")");
+                            break;
+                        }
+                    }
+                }
+            if (! enabledHere) say ("  enable step: [" + juce::String (t.index) + "] " + t.name + " cut nothing; " + juce::String (juce::jmin (tried, 4)) + " switch(es) and " + juce::String (depthTried) + " depth / level control(s) of its own tried, still nothing");
         }
         if (! resp.ok || resp.positions.size() < 2) { pairNote[i] = "no response at both ends"; roles.push_back (roleevidence::nominee (t.index, t.name, "band_threshold", { false, pairNote[i] })); continue; }
         const auto d01 = eq::deviation (resp.positions[1], resp.positions[0]); double worst01 = 0.0; for (const auto& [f, d] : d01) worst01 = juce::jmin (worst01, d);
@@ -5764,10 +5892,20 @@ inline int runMultiband (const SweepOptions& opt)
         const double centre = std::pow (2.0, sumLog / juce::jmax (1, n));
         int best = -1; for (size_t k = 0; k < bands.size(); ++k) if (! floatingBandIdx (k) && centre >= bands[k].loHz && centre < bands[k].hiHz) best = (int) k;
         if (const int bn = bandNumberOf (t.name); floatingBandOf.count (bn)) best = floatingBandOf[bn];   // a floating band's own threshold: its own band, at its frequency
+        if (const int bn = bandNumberOf (t.name); bandOfNumber.count (bn)) best = bandOfNumber[bn];        // 9 Oct: a per-band crossover unit's own band
+        cutRegion[i] = { lo, hi };
         pairedBand[i] = best; pairNote[i] = "cuts " + juce::String (lo, 0) + "-" + juce::String (hi, 0) + " Hz (deepest " + juce::String (worst, 1) + " dB, centre " + juce::String (centre, 0) + ")" + (best >= 0 ? " -> band " + juce::String (bands[(size_t) best].index) : juce::String (" -> no band holds that centre"));
         say ("  pairing [" + juce::String (t.index) + "] " + t.name + ": " + pairNote[i]);
     }
     o->setProperty ("enabled_by", enabledBy);
+    // MEASURED TOPOLOGY (9 Oct: OTT, Ozone 12 Dynamics - no crossover control at all): each threshold that cut owns the region it cut
+    if (bands.empty())
+    {
+        for (size_t i = 0; i < thresholds.size(); ++i) if (cutRegion[i].first > 0.0) { bands.push_back (measuredBand ((int) bands.size() + 1, cutRegion[i].first, cutRegion[i].second)); pairedBand[i] = (int) bands.size() - 1; say ("  measured band " + juce::String ((int) bands.size()) + ": " + thresholds[i].name + " owns " + juce::String (cutRegion[i].first, 0) + "-" + juce::String (cutRegion[i].second, 0) + " Hz"); }
+        if (! bands.empty()) topologyBy = "measured (no crossover control: each threshold's cut region)";
+    }
+    o->setProperty ("topology_by", topologyBy.isNotEmpty() ? juce::var (topologyBy) : juce::var());
+    { juce::Array<juce::var> bv; for (const auto& b : bands) { auto* x = new juce::DynamicObject(); x->setProperty ("band", b.index); for (const auto& [bn, ix] : floatingBandOf) if (ix == b.index - 1) { x->setProperty ("floating", true); x->setProperty ("band_number", bn); } for (const auto& [bn, ix] : bandOfNumber) if (ix == b.index - 1) x->setProperty ("band_number", bn); x->setProperty ("lo_hz", std::round (b.loHz)); x->setProperty ("hi_hz", std::round (b.hiHz)); x->setProperty ("centre_hz", std::round (b.centreHz)); bv.add (juce::var (x)); } o->setProperty ("bands", bv); }
     // 1. PER-BAND LADDERS: each threshold against the tone at the centre of the band the MEASUREMENT paired it with
     {
         juce::Array<juce::var> lv;
@@ -6044,16 +6182,20 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             }
         }
         if (! onlyProducts.isEmpty()) { std::vector<PhaseBProduct> f; for (const auto& pp : list) if (onlyProducts.contains (pp.product)) f.push_back (pp); list = f; }
+        if (cat.optIn && onlyCategories.isEmpty() && ! redo.contains (cat.name) && phaseb::selectorReachesOptIn (redo))
+        { std::vector<PhaseBProduct> f; for (const auto& pp : list) if (isDone (phasebDir, cat.name, pp.stem)) f.push_back (pp); list = f; }   // 9 Oct: existing rows only
         std::sort (list.begin(), list.end(), [] (const PhaseBProduct& a, const PhaseBProduct& b) { return a.product.compareIgnoreCase (b.product) < 0; });
         if (cat.name == "samplerate" && onlyProducts.isEmpty()) { std::vector<PhaseBProduct> f; for (int i : samplerate::spreadOf ((int) list.size())) f.push_back (list[(size_t) i]); list = f; }   // A4: a spread of ten, evenly over the sorted list
         work[cat.name] = list;
     }
     // THE REDO (6 Oct): the rows named are deleted first, so the counts below see them as not done and the loop runs them again
-    int redone = 0;
+    int redone = 0; std::set<juce::String> resumeTraces;   // "<category>/<stem>": a timed-out row being re-run resumes from its complete traces (9 Oct)
     if (! redo.isEmpty())
         for (const auto& cat : categories()) if (work.count (cat.name))
             for (const auto& pp : work[cat.name])
-                if (isDone (phasebDir, cat.name, pp.stem) && rowToRedo (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()), cat.name, redo, redo.contains ("no_pool") ? phasebDir.getChildFile (cat.name).getChildFile ("logs").getChildFile (pp.stem + ".log.txt").loadFileAsString() : juce::String())) { rowFile (phasebDir, cat.name, pp.stem).deleteFile(); ++redone; }
+                if (isDone (phasebDir, cat.name, pp.stem) && rowToRedo (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()), cat.name, redo, redo.contains ("no_pool") ? phasebDir.getChildFile (cat.name).getChildFile ("logs").getChildFile (pp.stem + ".log.txt").loadFileAsString() : juce::String()))
+                { if (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()).getProperty ("outcome", "").toString() == "timed_out" && (cat.name == "gaincal" || cat.name == "gainall")) resumeTraces.insert (cat.name + "/" + pp.stem);
+                  rowFile (phasebDir, cat.name, pp.stem).deleteFile(); ++redone; }
     if (! redo.isEmpty()) say ("PHASEB: --redo " + redo.joinIntoString (",") + ": " + juce::String (redone) + " finished row(s) run again");
     // PROGRESS: resumed from the file (the elapsed and the measured seconds carry over); the totals are tonight's discovery
     Progress prog = progressFromVar (juce::JSON::parse (phasebDir.getChildFile ("progress.json").loadFileAsString()));
@@ -6114,6 +6256,20 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 if (cat.kindArg.isNotEmpty()) { args.add ("--kind"); args.add (cat.kindArg); }
                 if (cat.name == "combined" || cat.name == "material" || cat.name == "frequency" || cat.name == "samplerate" || cat.name == "saturation") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts; a saturator's gain draft) live in the real folder
                 args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName() });
+                int reused = 0;
+                if (resumeTraces.count (cat.name + "/" + pp.stem))
+                {
+                    const auto rawIn = tmp.getChildFile ("raw"); rawIn.createDirectory();
+                    for (const auto& gz : catDir.getChildFile ("raw").findChildFiles (juce::File::findFiles, false, pp.stem + ".gaincal.*.txt.gz"))
+                    {
+                        if (gz.getFileName().contains (".list-params.") || gz.getFileName().contains (".text-at")) continue;   // the fixture is read fresh
+                        juce::FileInputStream fin (gz); if (! fin.openedOk()) continue;
+                        juce::GZIPDecompressorInputStream gin (&fin, false, juce::GZIPDecompressorInputStream::gzipFormat); const auto text = gin.readEntireStreamAsString();
+                        if (! phaseb::traceComplete (text)) continue;
+                        rawIn.getChildFile (gz.getFileNameWithoutExtension()).replaceWithText (text, false, false, "\n"); ++reused;
+                    }
+                    args.add ("--resume-traces");
+                }
                 const auto t1 = juce::Time::getMillisecondCounterHiRes();
                 const auto r = runChild (args, (int) (cat.guardS * 1000.0));
                 seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0;
@@ -6125,6 +6281,8 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 else if (r.kind == ChildResult::Kind::exited && r.code == kToneLicenceKnownExit) { outcome = r.out.contains (uad::kNotConnected) ? "needs_device" : "needs_licence"; juce::String why; for (const auto& line : juce::StringArray::fromLines (r.out)) if (line.contains (" - ")) why = line.fromFirstOccurrenceOf (" - ", false, false); row->setProperty ("reason", why); }
                 else if (r.kind == ChildResult::Kind::exited && r.code == 5) { outcome = "window"; }   // the mode stopped on a window it saw mid-measurement (exit 5)
                 else outcome = "failed";
+                if (outcome == "failed") if (const auto why = phaseb::unhostableReason (r.out); why.isNotEmpty()) { outcome = "unhostable"; row->setProperty ("reason", "the AU refuses to initialise on this Mac: " + why + " - an answer, not re-run"); }
+                if (reused > 0) row->setProperty ("resumed_traces", reused);
                 if (r.out.contains (phaseb::kNoPoolText)) { row->setProperty ("no_pool", true); row->setProperty ("reason", "no control to sample: an empty parameter list (--redo no_pool re-runs it; the probe now re-reads the list after prepare and a first render)"); }
                 // THE WINDOW'S TEXT (Sean, 6 Oct): title, owner and static text of every window the watch caught; demo / expired /
                 // authorisation words file the row needs_licence by themselves
@@ -6147,7 +6305,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                     if (d.getFileName() == "fixtures" && cat.name != "tuners") continue;   // a timing fixture copied in; for tuners the mode's record IS the fixture: kept as phaseb/tuners/tuner/, the one store untouched
                     const auto dstName = cat.name == "tuners" && d.getFileName() == "fixtures" ? juce::String ("tuner") : d.getFileName();
                     const auto dst = catDir.getChildFile (dstName); dst.createDirectory();
-                    for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.json")) { const auto target = dst.getChildFile (f.getFileName()); target.deleteFile(); f.moveFileTo (target); records.add (dstName + "/" + f.getFileName());
+                    for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.json")) { const auto target = dst.getChildFile (f.getFileName()); target.deleteFile(); f.moveFileTo (target); records.addIfNotAlreadyThere (dstName + "/" + f.getFileName());
                         if (gate.demo) { auto rec = juce::JSON::parse (target.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { ro->setProperty ("licence", gate.stamp); target.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } } }
                 }
                 { const auto lg = catDir.getChildFile ("logs"); lg.createDirectory(); const auto target = lg.getChildFile (pp.stem + ".log.txt"); target.deleteFile(); tmp.getChildFile ("log.txt").moveFileTo (target); }
@@ -6162,7 +6320,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                         const auto D = draftFromRecord (cat.name, rec, pp.desc.manufacturerName, why);
                         if (D.isVoid()) continue;
                         const auto out = drafts::draftFile (catDir, stem, draftpass::specFor (cat.name)->kind);
-                        if (drafts::writeDraft (out, D).isEmpty()) records.add (juce::String (drafts::kFolder) + "/" + out.getFileName());
+                        if (drafts::writeDraft (out, D).isEmpty()) records.addIfNotAlreadyThere (juce::String (drafts::kFolder) + "/" + out.getFileName());   // 9 Oct: the mode's own draft is the same file
                     }
                 row->setProperty ("records", records); row->setProperty ("raw_files", rawN);
                 if (outcome == "timed_out") row->setProperty ("reason", "hang guard " + juce::String (cat.guardS / 60.0, 0) + " min reached: partial data kept (" + juce::String (rawN) + " trace(s)), the record " + (records.isEmpty() ? juce::String ("not written") : juce::String ("written")));
@@ -6170,7 +6328,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             row->setProperty ("outcome", outcome); row->setProperty ("seconds", std::round (seconds)); row->setProperty ("at", nowStamp()); row->setProperty ("probe", id.cdhash);
             writeAtomic (rowFile (phasebDir, cat.name, pp.stem), juce::JSON::toString (juce::var (row)));   // the DONE marker, whole or absent
             tmp.deleteRecursively();
-            ++c.done; if (outcome == "ok") c.ok++; else if (outcome == "timed_out") c.timedOut++; else if (outcome == "skipped" || outcome == "needs_licence" || outcome == "needs_device") c.skipped++; else c.failed++;   // a licence / device stop is not a failure
+            ++c.done; if (outcome == "ok") c.ok++; else if (outcome == "timed_out") c.timedOut++; else if (outcome == "skipped" || outcome == "needs_licence" || outcome == "needs_device" || outcome == "unhostable") c.skipped++; else c.failed++;   // a licence / device stop is not a failure
             if (outcome != "skipped") c.seconds.push_back (seconds);
             saveProgress ({});
             say (progressLine (prog, cat.name, pp.product, outcome, seconds));

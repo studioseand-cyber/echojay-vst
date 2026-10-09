@@ -798,7 +798,8 @@ namespace
             {
                 ejmap::cert::SweepOptions o; o.product = argAt (argc, argv, i + 1);
                 for (int j = i + 2; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
-                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--kind" && v == "all") o.gainAll = true; }   // --kind all: not a compressor, no amount to exclude (the gain-all rows)
+                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--kind" && v == "all") o.gainAll = true; }
+                for (int j = i + 2; j < argc; ++j) if (argAt (argc, argv, j) == "--resume-traces") o.resumeTraces = true;   // 9 Oct: a flag without a value   // --kind all: not a compressor, no amount to exclude (the gain-all rows)
                 if (o.out == juce::File()) o.out = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap/cert");
                 if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
                 return ejmap::cert::runGainCal (o);
@@ -849,12 +850,13 @@ namespace
                 // --redo gain-cal,timing names categories (their rows run again); --redo nothing_nominated re-runs the rows that finished with no record
                 for (auto& r : redo) { if (r == "gain-cal") r = "gaincal"; if (r == "gain-all") r = "gainall"; }
                 for (auto& c : cats) { if (c == "gain-cal") c = "gaincal"; if (c == "gain-all") c = "gainall"; }
-                for (const auto& r : redo) if (r != "nothing_nominated" && r != "uad" && r != "no_pool" && ejmap::phaseb::categoryNamed (r) == nullptr) { std::cerr << "--redo: '" << r << "' is not a Phase B category, nothing_nominated, uad or no_pool" << std::endl; return 2; }
+                for (const auto& r : redo) if (r != "nothing_nominated" && r != "uad" && r != "no_pool" && r != "unfinished" && ejmap::phaseb::categoryNamed (r) == nullptr) { std::cerr << "--redo: '" << r << "' is not a Phase B category, nothing_nominated, uad or no_pool" << std::endl; return 2; }
                 for (int j = 1; j < argc; ++j) if (argAt (argc, argv, j) == "--assume-uad-device") o.assumeUadDevice = true;
                 ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
                 return a == "--phaseb-status" ? ejmap::cert::runPhaseBStatus (o) : ejmap::cert::runPhaseBAll (o, cats, only, redo);
             }
             // --cert-multiband <product> [--out <cert dir>] [--probe <path>] [--ejmap-ledger <dir>]: the multiband proposal PROTOTYPE (R7), nothing exported
+            if (a == "--multiband-plan" && i + 1 < argc) return ejmap::cert::runMultibandPlan (cwdFile (argAt (argc, argv, i + 1)));   // 9 Oct: derive-only, a fixture
             if (a == "--cert-multiband" && i + 1 < argc)
             {
                 ejmap::cert::SweepOptions o; o.product = argAt (argc, argv, i + 1);

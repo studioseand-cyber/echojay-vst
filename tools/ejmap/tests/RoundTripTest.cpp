@@ -8766,6 +8766,62 @@ void testMultibandStageThresholds()
                && ns.joinIntoString ("|").contains ("not band thresholds (gate / processor stages, Sean's ruling 8 Oct): 2 control(s)"),
                "mb S3: the draft marks the floating band and counts the stage thresholds left out");
     }
+    // 9 Oct (Sean's cert 2): the multiband fixes, on the names and displays of his fixtures
+    {
+        using namespace ejmap::multiband;
+        auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, x] : kv) o->setProperty (k, x); return juce::var (o); };
+        check (stageThreshold ("DYN: Stereo/Main Band 1 Lim Threshold") && stageThreshold ("Band 2 Limiter Threshold") && ! stageThreshold ("DYN: Stereo/Main Band 1 Comp Threshold"),
+               "mb S4: Ozone 12 Dynamics' Lim Threshold is a limiter stage, its Comp Threshold the band's own");
+        const auto e1 = perBandEdge ("Band 1 Low Crossover"), e6 = perBandEdge ("Band 6 High Crossover"), eg = perBandEdge ("Low Crossover");
+        check (sidechainNamed ("Band 1 Side Chain Low Frequency") && sidechainNamed ("SC Freq") && ! sidechainNamed ("Band 1 Low Crossover") && ! sidechainNamed ("Band 1 Threshold")
+               && e1.first == 1 && e1.second == "low" && e6.first == 6 && e6.second == "high" && eg.first == -1,
+               "mb S5: Pro-MB's Side Chain frequencies are never bands; its Band N Low / High Crossover are that band's own edges, a plain Low Crossover is global");
+        const auto mbnd = measuredBand (2, 134.0, 2000.0);
+        auto ctl = [&] (const char* n, const char* inst, juce::var at) { return mk ({ { "name", n }, { "defaultOnInstantiate", mk ({ { "display", inst } }) }, { "displayAt", at } }); };
+        const auto dynAt = mk ({ { "0.000", "-Inf dB" }, { "0.500", "-6.0" }, { "0.830", "0.0" }, { "1.000", "12.0" } });
+        const auto vol = depthTryNorms ("C LF Threshold", ctl ("C LF Volume", "-Inf dB", dynAt));
+        const auto rng = depthTryNorms ("Band 1 Threshold", ctl ("Band 1 Range", "0.00 dB", mk ({ { "0.000", "-30.00 dB" }, { "1.000", "+30.00 dB" } })));
+        check (std::abs (mbnd.centreHz - std::sqrt (134.0 * 2000.0)) < 1e-9 && mbnd.loHz == 134.0
+               && vol.size() == 1 && std::abs (vol[0] - 0.83) < 1e-9 && rng.size() == 2 && rng[0] == 0.0 && rng[1] == 1.0
+               && depthTryNorms ("C LF Threshold", ctl ("LR LF Volume", "-Inf dB", dynAt)).empty()
+               && depthTryNorms ("Band 1 Threshold", ctl ("Band 1 Level", "0.00 dB", {})).empty()
+               && depthTryNorms ("Band 1 Threshold", ctl ("Band 1 Range", "-12.00 dB", {})).empty()
+               && depthTryNorms ("Band 1 Threshold", ctl ("Band 2 Range", "0.00 dB", {})).empty(),
+               "mb S6: a measured band is the cut region; the enable step's depth candidate is the SAME band's Volume at -Inf (to its 0 dB label) or Range at 0 dB (both ends) - not another band's, not a level at unity, not a range already set");
+    }
+    // mb S7 (9 Oct, Ozone 12 Dynamics' fixture): the nomination on a fixture - Lim thresholds refused, the sidechain's Tilt Amount is no global
+    // amount, no crossover control so the topology is measured
+    {
+        auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, x] : kv) o->setProperty (k, x); return juce::var (o); };
+        juce::Array<juce::var> cs; int i = 0;
+        for (const char* n : { "DYN: Stereo/Main Band 1 Comp Threshold", "DYN: Stereo/Main Band 1 Lim Threshold", "DYN: Stereo/Main Sidechain Tilt Amount", "DYN: Stereo/Main Band 1 Gain" })
+            cs.add (mk ({ { "index", i++ }, { "name", n }, { "numSteps", 2147483647 }, { "defaultOnInstantiate", mk ({ { "display", "-12" } }) } }));
+        const auto N = ejmap::cert::nominateMultiband (mk ({ { "controls", cs } }), [] (const juce::String&) {});
+        check (N.thresholds.size() == 1 && N.thresholds[0].index == 0 && N.stageSkipped.size() == 1 && N.globalIdx == -1 && N.bands.empty(),
+               "mb S7: Ozone's fixture - its Comp Threshold the band's, its Lim Threshold refused, its Sidechain Tilt Amount no global amount, the topology measured");
+    }
+    // 9 Oct: the gain-all fixes
+    {
+        using namespace ejmap::phaseb;
+        auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, x] : kv) o->setProperty (k, x); return juce::var (o); };
+        const auto g = declaredGuardS ("GAINCAL: plan\nGUARD\t1860\nmore\n");
+        check (g && *g == 1860.0 && effectiveGuardS (600.0, 1860.0) == 1860.0 && effectiveGuardS (600.0, 300.0) == 600.0 && effectiveGuardS (600.0, 1.0e9) == kMaxDeclaredGuardS
+               && effectiveGuardS (600.0, std::nullopt) == 600.0 && gainGuardS (28) == 180.0 + 60.0 * 28 && ! declaredGuardS ("no guard here\n")
+               && traceComplete ("sweep\nstage\tdone\n") && ! traceComplete ("sweep\npos\t3\n"),
+               "ga G1: a declared guard (PrimalTap's 28 processes -> 31 min) replaces the 10 min one, never shorter, never above 4 h; only a COMPLETE trace is reused");
+        const auto* ga = categoryNamed ("gainall");
+        check (rowIsUnfinished (mk ({ { "outcome", "timed_out" } })) && rowIsUnfinished (mk ({ { "outcome", "failed" } })) && ! rowIsUnfinished (mk ({ { "outcome", "needs_licence" } })) && ! rowIsUnfinished (mk ({ { "outcome", "unhostable" } }))
+               && rowToRedo (mk ({ { "outcome", "timed_out" } }), "gainall", { "unfinished" }) && ! rowToRedo (mk ({ { "outcome", "ok" } }), "gainall", { "unfinished" })
+               && ga != nullptr && categoryRuns (*ga, {}, { "no_pool" }) && categoryRuns (*ga, {}, { "unfinished" }) && ! categoryRuns (*ga, {}, { "uad" }),
+               "ga G2: --redo unfinished re-runs timed-out and failed rows only; no_pool and unfinished reach gain-all (its existing rows: the driver filters)");
+        check (unhostableReason ("probe: x\nrefused An OS error occurred during initialisation of the plug-in (4097)\n") == "An OS error occurred during initialisation of the plug-in (4097)"
+               && unhostableReason ("refused no main input or output bus\n").isEmpty(),
+               "ga G3: AVOX SYBIL's refusal to initialise is unhostable, with the OS's text; another refusal is not");
+        std::vector<int> idx; for (int i = 0; i < 49; ++i) idx.push_back (i);
+        const auto ch = ejmap::cert::textChunks (idx, ejmap::cert::kTextChunk); const auto ur = ejmap::cert::unlabelledRow (7, "Width");
+        check (ch.size() == 7 && ch.back().size() == 1 && ch.front().size() == 8 && ur.index == 7 && ur.name == "Width" && ur.at.empty(),
+               "ga G4: bx_rooMS's 49 labels in 7 chunks of up to 8; a chunk that fails leaves its controls present and unlabelled");
+    }
     check (ownOk == own.size() && stageOk == stage.size(), "mb S1: only a band's own compressor threshold is nominated: " + juce::String (ownOk) + "/" + juce::String (own.size()) + " own kept, " + juce::String (stageOk) + "/" + juce::String (stage.size()) + " gate / processor stages refused (MDynamicsMB's Processor 1 cut and paired before)");
 }
 

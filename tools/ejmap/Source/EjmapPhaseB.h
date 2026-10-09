@@ -20,6 +20,7 @@
 #include <juce_core/juce_core.h>
 #include <vector>
 #include <map>
+#include <optional>
 
 namespace ejmap::phaseb
 {
@@ -87,11 +88,14 @@ inline void gzipInto (const juce::File& src, const juce::File& dstDir)
 // THE REDO (Kathy, 6 Oct): --phaseb-all --redo a,b,... names categories whose rows are ALL run again, and/or "nothing_nominated",
 // which re-runs exactly the rows that finished ok with no record (the lexicon nominated nothing). Everything else is untouched.
 inline bool rowIsNothingNominated (const juce::var& row) { return row.getProperty ("outcome", "").toString() == "ok" && (row.getProperty ("records", {}).size() == 0 || (bool) row.getProperty ("nothing_measured", false) || (int) row.getProperty ("exit_code", 0) == 4); }   // exit 4 = the mode measured nothing: Sean's b0258a7b rows carry no flag, only the code
+// a selector reaches an OPT-IN category's EXISTING rows (9 Oct: --redo no_pool must reach gain-all's 2C rows) - never starts that
+// category's rows that were never run (a no_pool redo on a folder without gain-all must not begin the whole gain-all set)
+inline bool selectorReachesOptIn (const juce::StringArray& redo) { return redo.contains ("no_pool") || redo.contains ("unfinished"); }
 // an opt-in category runs only when named: by --category, or by --redo (its rows are then made and run)
 inline bool categoryRuns (const Category& c, const juce::StringArray& onlyCategories, const juce::StringArray& redo)
 {
     if (! onlyCategories.isEmpty()) return onlyCategories.contains (c.name);
-    return ! c.optIn || redo.contains (c.name);
+    return ! c.optIn || redo.contains (c.name) || selectorReachesOptIn (redo);   // an opt-in category reached by a selector: its EXISTING rows only (the driver filters)
 }
 // --redo uad (6 Oct): a UAD product's row that did not measure (window, failed, timed out, or filed needs_device because the
 // Satellite was not connected) runs again - never one the licence file or the window's own text filed needs_licence
@@ -108,9 +112,37 @@ inline bool rowIsNoPool (const juce::var& row, const juce::String& logText = {})
     if ((bool) row.getProperty ("no_pool", false)) return true;
     return row.getProperty ("outcome", "").toString() == "failed" && logText.contains (kNoPoolText);
 }
+// --redo unfinished (9 Oct, the fix-up night): a row that TIMED OUT or FAILED runs again - never one filed needs_licence / needs_device /
+// window / unhostable (those are answers), never one that finished ok
+inline bool rowIsUnfinished (const juce::var& row) { const auto oc = row.getProperty ("outcome", "").toString(); return oc == "timed_out" || oc == "failed"; }
+// THE DECLARED GUARD (9 Oct, gain-all's five timeouts: PrimalTap, LISA, Auto-Tune Vocal EQ, Vocal Reverb, EchoBoy were still measuring at
+// 10 min): a mode that knows its plan prints "GUARD<TAB><seconds>"; the parent's hang guard becomes the larger of the category's and the
+// declared one, never above kMaxDeclaredGuardS - a real hang is still caught, a long plan is not cut
+inline constexpr double kMaxDeclaredGuardS = 4.0 * 3600.0;
+inline std::optional<double> declaredGuardS (const juce::String& out)
+{
+    for (const auto& line : juce::StringArray::fromLines (out)) if (line.startsWith ("GUARD\t")) { const double v = line.fromFirstOccurrenceOf ("\t", false, false).getDoubleValue(); if (v > 0.0) return v; }
+    return std::nullopt;
+}
+inline double effectiveGuardS (double baseS, std::optional<double> declared) { return declared ? juce::jlimit (baseS, juce::jmax (baseS, kMaxDeclaredGuardS), *declared) : baseS; }
+// the gain mode's declaration: every planned probe process at kGuardPerProcessS (PrimalTap's 28 traces took ~20 s each, the plugin's
+// load dominating) plus the text pass
+inline constexpr double kGuardPerProcessS = 60.0, kGuardTextPassS = 180.0;
+inline double gainGuardS (int processes) { return kGuardTextPassS + kGuardPerProcessS * juce::jmax (0, processes); }
+// a probe trace is COMPLETE when it ends its stages ("stage<TAB>done"): only a complete trace is reused when a timed-out row resumes
+inline bool traceComplete (const juce::String& out) { return out.contains ("\nstage\tdone") || out.startsWith ("stage\tdone"); }
+// UNHOSTABLE (9 Oct, AVOX SYBIL: "refused An OS error occurred during initialisation of the plug-in (4097)" in every mode): the AU
+// refuses to initialise on this Mac - an answer, filed with the OS's text, never retried as a failure
+inline juce::String unhostableReason (const juce::String& out)
+{
+    for (const auto& line : juce::StringArray::fromLines (out))
+        if (line.containsIgnoreCase ("refused") && line.containsIgnoreCase ("during initialisation")) return line.fromFirstOccurrenceOf ("refused", false, false).trim();
+    return {};
+}
 inline bool rowToRedo (const juce::var& row, const juce::String& category, const juce::StringArray& redo, const juce::String& logText = {})
 {
     if (redo.contains (category)) return true;
+    if (redo.contains ("unfinished") && rowIsUnfinished (row)) return true;
     if (redo.contains ("uad") && rowIsUadRedo (row)) return true;
     if (redo.contains ("no_pool") && rowIsNoPool (row, logText)) return true;
     return redo.contains ("nothing_nominated") && rowIsNothingNominated (row);
