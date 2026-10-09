@@ -170,6 +170,7 @@ void EedLimiterProcessor::prepareToPlay (double sampleRate, int)
     echojay::limv2::Tuning t = echojay::limv2::transparent();
     t.maxLookaheadMs = t.lookaheadMs * kMaxLookaheadMs / 0.18;   // the window the knob's 5 ms label asks for (1.67 ms)
     engine_.prepare (sampleRate_, t);
+    meterTap_.prepare (sampleRate_); engine_.setMeterTap (&meterTap_);   // the panel's tap, sized here, never on the audio thread
     engine_.setFixedLatency (true);
     engine_.setCeilingDb (core_.getThresholdDb());
     engine_.setInputGainDb (inputDb_);

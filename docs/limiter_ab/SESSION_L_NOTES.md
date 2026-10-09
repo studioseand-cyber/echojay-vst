@@ -314,3 +314,26 @@ MIGRATION (setStateInformation override): state without attack_ms AND lookahead 
 new ids' defaults; any other saved value loads literally; ceiling untouched. Legs in limiter_wall_guard: (a) old-format
 state at the old defaults renders sample-identical to a fresh instance (worst diff 0); (b) old-format 1.0/200/-1/TP off
 keeps them, attack 275; (c) a v2 state with attack_ms present at 2.0/50 loads literally.
+
+### 8-9 Oct: the panel approved (revision 2 + five fixes) and WIRED (step C)
+Sean's six notes on revision 1 (display the centrepiece, IN under OUT both halves, scales, IN red only above 0,
+GR filling down with max-hold, LUFS column with RESET LUFS, nothing truncates, EchoJay palette) -> e0fa8aa. The
+under-drawn negative half was a bug: ampToY tested the SIGNED sample against +1e-6, so every negative value landed on
+the centre line. The tap delays IN by the engine's latency (setInputDelay from process(), a relaxed store per block)
+so IN sits under the OUT it became.
+Five fixes on revision 2 (9 Oct): (1) the removed part of the input (where it exceeds the output) in a dark red
+behind the cyan output - on the hot mix that is 1-column spikes at the kicks, on bass_sustain a band; (2) one faint
+amplitude scale (upper half, left), the gain scale on the right; (3) the 1s/3s/10s buttons moved under ADVANCED in the
+right column, out of the display; (4) the OUT number red only when the true peak is above the ceiling by more than
+0.05 dB; (5) one latency line "latency 24.4 ms (fixed)". A sixth advanced dial RLS LINK (release_link_pct) was added
+because the brief names that id among the ones the panel must drive; six dials share the row at both sizes.
+WIRING (limiter files only, no CMake change): EedLimiterPanelV2 became HEADER-ONLY so the plugin's source lists need
+no edit; EedLimiterEditor now derives from DeviceEditorBase (the shared shell: logo, title, hint, BYPASS) with the
+style box and TRUE PK in the header (as before) and the panel, headerless, as the content; the processor owns a
+limv2::MeterTap prepared in prepareToPlay and handed to the engine. Dials -> setParamValue (the assistant's funnel);
+"bypass" -> setBypassed; a 10 Hz timer reads the processor back into the panel only when a value changed.
+thresholdReadout kept (level_slot_guard uses it). EedDynamicsFaceEditor / TransferCurveView no longer used by the
+limiter. Legs in limiter_wall_guard: (d) an old-format chain at the old defaults opens with the dials at the MIGRATED
+values 0.18 / 400 / 275 / 75 / 100, gain kept, TRUE PK on; (e) moving each of the 8 dials (incl. attack_ms, link_pct,
+release_link_pct) sets that parameter on the processor; (f) a parameter set from outside shows on its dial after the
+sync; (g) the processor feeds the tap (columns and hops arrive while audio runs).

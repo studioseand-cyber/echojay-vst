@@ -12,6 +12,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "EedLimiterProcessor.h"
+#include "EedLimiterEditor.h"
 #include "../limiter_ab_guard/ejdsp.h"
 #include <cstdio>
 namespace {
@@ -117,6 +118,35 @@ int main()
         EedLimiterProcessor v2s; const juce::String v2State = stateOf ("{\"ceiling_db\":0.0,\"input_db\":0.0,\"release_ms\":50.0,\"lookahead_ms\":2.0,\"attack_ms\":100.0,\"mode\":0,\"true_peak\":1}");
         v2s.setStateInformation (v2State.toRawUTF8(), (int) v2State.getNumBytesAsUTF8());
         check (std::abs (v2s.getParamValue ("lookahead_ms") - 2.0) < 1e-9 && std::abs (v2s.getParamValue ("release_ms") - 50.0) < 1e-9 && std::abs (v2s.getParamValue ("attack_ms") - 100.0) < 1e-9, "a v2 state (attack_ms present) saying lookahead 2.0 / release 50 loads literally - the user set them", "la " + juce::String (v2s.getParamValue ("lookahead_ms")) + " rel " + juce::String (v2s.getParamValue ("release_ms")));
+    }
+    std::printf ("== the v2 PANEL (9 Oct 2026): the dials show the processor (the migration included) and drive its parameters ==\n");
+    {
+        auto stateOf2 = [] (const char* params) { return juce::String ("{\"params\":") + params + "}"; };
+        // (d) an old chain through the migration: what the DIALS show
+        EedLimiterProcessor old; const juce::String oldState = stateOf2 ("{\"ceiling_db\":0.0,\"input_db\":8.0,\"release_ms\":50.0,\"lookahead_ms\":2.0,\"mode\":0,\"true_peak\":1,\"sc_hpf_hz\":0.0}");
+        old.setStateInformation (oldState.toRawUTF8(), (int) oldState.getNumBytesAsUTF8());
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (old.createEditor()); auto* ed = dynamic_cast<EedLimiterEditor*> (edBase.get());
+        check (ed != nullptr, "the limiter's editor is the v2 panel's editor (EedLimiterEditor on DeviceEditorBase)", edBase != nullptr ? edBase->getName() : "null");
+        if (ed != nullptr)
+        {
+            const auto m = ed->currentModel();
+            check (std::abs (m.lookaheadMs - 0.18) < 1e-9 && std::abs (m.releaseMs - 400.0) < 1e-9 && std::abs (m.attackMs - 275.0) < 1e-9 && std::abs (m.linkPct - 75.0) < 1e-9 && std::abs (m.releaseLinkPct - 100.0) < 1e-9 && std::abs (m.gainDb - 8.0) < 1e-9 && m.truePeak,
+                   "an old-format chain at the old defaults opens with the dials at the MIGRATED values (0.18 / 400 / 275 / 75 / 100), gain 8 kept, TRUE PK on",
+                   "la " + juce::String (m.lookaheadMs) + " rel " + juce::String (m.releaseMs) + " atk " + juce::String (m.attackMs) + " link " + juce::String (m.linkPct) + "/" + juce::String (m.releaseLinkPct) + " gain " + juce::String (m.gainDb));
+            // (e) every dial drives its parameter through the same funnel as the assistant's moves
+            struct Move { const char* id; double v; }; const Move moves[] = { { "input_db", 6.0 }, { "ceiling_db", -1.0 }, { "lookahead_ms", 1.0 }, { "attack_ms", 500.0 }, { "release_ms", 200.0 }, { "link_pct", 50.0 }, { "release_link_pct", 80.0 }, { "sc_hpf_hz", 100.0 } };
+            juce::String bad;
+            for (const auto& mv : moves) { if (! ed->setDialForTest (mv.id, mv.v)) bad += juce::String (mv.id) + " (no dial) "; else if (std::abs (old.getParamValue (mv.id) - mv.v) > 1e-6) bad += juce::String (mv.id) + " = " + juce::String (old.getParamValue (mv.id)) + " not " + juce::String (mv.v) + "; "; }
+            check (bad.isEmpty(), "moving each of the 8 dials (incl. attack_ms, link_pct, release_link_pct) sets that parameter on the processor to the dialled value", bad.isEmpty() ? "all 8 agree" : bad);
+            // (f) a move from outside (the assistant, a restored chain) shows on the dials after the sync the timer runs
+            old.setParamValue ("attack_ms", 900.0); old.setParamValue ("release_link_pct", 30.0); ed->syncFromProcessor();
+            const auto m2 = ed->currentModel();
+            check (std::abs (m2.attackMs - 900.0) < 1e-9 && std::abs (m2.releaseLinkPct - 30.0) < 1e-9, "a parameter set from outside the panel shows on its dial after the editor's sync", "atk " + juce::String (m2.attackMs) + " rls link " + juce::String (m2.releaseLinkPct));
+            // (g) the panel's picture is fed: after a prepared processor runs audio, the tap has columns and hops
+            old.setPlayConfigDetails (2, 2, 48000.0, 512); old.prepareToPlay (48000.0, 512);
+            juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer mb; for (int blk = 0; blk < 200; ++blk) { for (int i = 0; i < 512; ++i) { const float v = 0.9f * std::sin (0.05f * (float) (blk * 512 + i)); b.setSample (0, i, v); b.setSample (1, i, v); } old.processBlock (b, mb); }
+            check (old.meterTap().columnHead() > 0 && old.meterTap().hopHead() >= 20, "the processor feeds the panel's meter tap (columns and 100 ms hops arrive while audio runs)", "columns " + juce::String (old.meterTap().columnHead()) + " hops " + juce::String (old.meterTap().hopHead()));
+        }
     }
     std::printf ("\n==== limiter_wall_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

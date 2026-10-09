@@ -1,0 +1,80 @@
+UpdateCTestConfiguration  from :/Users/SeanD/echojay-limiter/build-guards-lv2/DartConfiguration.tcl
+Parse Config file:/Users/SeanD/echojay-limiter/build-guards-lv2/DartConfiguration.tcl
+Test project /Users/SeanD/echojay-limiter/build-guards-lv2
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 3
+    Start 3: limiter_wall_guard
+
+3: Test command: /Users/SeanD/echojay-limiter/tools/tests/run_guard.sh "/Users/SeanD/echojay-limiter/build-guards-lv2/guards/limiter_wall_guard" "--scribble"
+3: Working Directory: /Users/SeanD/echojay-limiter
+3: Environment variables: 
+3:  EJ_GUARD_HOME_BASE=/Users/SeanD/echojay-limiter/build-guards-lv2/guard-homes
+3: Test timeout computed to be: 900
+3: limiter_wall_guard: EchoJay Limiter holds -0.1 dB on bursts (ARBITER), and reports the delay it applies
+3:   ok    lookahead 2 ms, burst 3 ms at +6 dBFS: output SAMPLE peak <= -0.1 dBFS  [peak -3.05 dBFS, GR max inf dB]
+3:   ok    lookahead 2 ms, burst 3 ms at +6 dBFS: output TRUE peak <= -0.1 dBTP + 0.02 by the ARBITER (exact reconstruction), zero overs  [-0.898 dBTP exact, 0 overs; 96-tap meter -0.807 dBTP (alongside, not the verdict)]
+3:   ok    lookahead 2 ms, burst 3 ms at +6 dBFS: the wall reduced about 6 dB  [inf dB]
+3:   ok    lookahead 2 ms, burst 3 ms at +6 dBFS: reported latency == the MEASURED delay of an impulse  [reported 1169, measured 1169]
+3:   ok    lookahead 2 ms, burst 50 ms at +6 dBFS: output SAMPLE peak <= -0.1 dBFS  [peak -2.20 dBFS, GR max inf dB]
+3:   ok    lookahead 2 ms, burst 50 ms at +6 dBFS: output TRUE peak <= -0.1 dBTP + 0.02 by the ARBITER (exact reconstruction), zero overs  [-0.820 dBTP exact, 0 overs; 96-tap meter -0.669 dBTP (alongside, not the verdict)]
+3:   ok    lookahead 2 ms, burst 50 ms at +6 dBFS: the wall reduced about 6 dB  [inf dB]
+3:   ok    lookahead 2 ms, burst 50 ms at +6 dBFS: reported latency == the MEASURED delay of an impulse  [reported 1169, measured 1169]
+3:   ok    lookahead 2 ms, burst 1000 ms at +6 dBFS: output SAMPLE peak <= -0.1 dBFS  [peak -1.74 dBFS, GR max inf dB]
+3:   ok    lookahead 2 ms, burst 1000 ms at +6 dBFS: output TRUE peak <= -0.1 dBTP + 0.02 by the ARBITER (exact reconstruction), zero overs  [-0.653 dBTP exact, 0 overs; 96-tap meter -0.459 dBTP (alongside, not the verdict)]
+3:   ok    lookahead 2 ms, burst 1000 ms at +6 dBFS: the wall reduced about 6 dB  [inf dB]
+3:   ok    lookahead 2 ms, burst 1000 ms at +6 dBFS: reported latency == the MEASURED delay of an impulse  [reported 1169, measured 1169]
+3:   ok    lookahead 10 ms, burst 3 ms at +6 dBFS: output SAMPLE peak <= -0.1 dBFS  [peak -3.56 dBFS, GR max inf dB]
+3:   ok    lookahead 10 ms, burst 3 ms at +6 dBFS: output TRUE peak <= -0.1 dBTP + 0.02 by the ARBITER (exact reconstruction), zero overs  [-0.898 dBTP exact, 0 overs; 96-tap meter -0.965 dBTP (alongside, not the verdict)]
+3:   ok    lookahead 10 ms, burst 3 ms at +6 dBFS: the wall reduced about 6 dB  [inf dB]
+3:   ok    lookahead 10 ms, burst 3 ms at +6 dBFS: reported latency == the MEASURED delay of an impulse  [reported 1169, measured 1169]
+3:   ok    lookahead 10 ms, burst 50 ms at +6 dBFS: output SAMPLE peak <= -0.1 dBFS  [peak -3.09 dBFS, GR max inf dB]
+3:   ok    lookahead 10 ms, burst 50 ms at +6 dBFS: output TRUE peak <= -0.1 dBTP + 0.02 by the ARBITER (exact reconstruction), zero overs  [-0.883 dBTP exact, 0 overs; 96-tap meter -0.817 dBTP (alongside, not the verdict)]
+3:   ok    lookahead 10 ms, burst 50 ms at +6 dBFS: the wall reduced about 6 dB  [inf dB]
+3:   ok    lookahead 10 ms, burst 50 ms at +6 dBFS: reported latency == the MEASURED delay of an impulse  [reported 1169, measured 1169]
+3:   ok    lookahead 10 ms, burst 1000 ms at +6 dBFS: output SAMPLE peak <= -0.1 dBFS  [peak -2.63 dBFS, GR max inf dB]
+3:   ok    lookahead 10 ms, burst 1000 ms at +6 dBFS: output TRUE peak <= -0.1 dBTP + 0.02 by the ARBITER (exact reconstruction), zero overs  [-0.691 dBTP exact, 0 overs; 96-tap meter -0.517 dBTP (alongside, not the verdict)]
+3:   ok    lookahead 10 ms, burst 1000 ms at +6 dBFS: the wall reduced about 6 dB  [inf dB]
+3:   ok    lookahead 10 ms, burst 1000 ms at +6 dBFS: reported latency == the MEASURED delay of an impulse  [reported 1169, measured 1169]
+3: == latency is one number per sample rate: every setting, reported == measured ==
+3:   ok    44100 Hz: TP on/off x lookahead 2/10 ms report ONE latency and it is the measured delay  [reported 1160/1160/1160/1160, measured 1160/1160/1160/1160]
+3:   ok    48000 Hz: TP on/off x lookahead 2/10 ms report ONE latency and it is the measured delay  [reported 1169/1169/1169/1169, measured 1169/1169/1169/1169]
+3:   ok    96000 Hz: TP on/off x lookahead 2/10 ms report ONE latency and it is the measured delay  [reported 1298/1298/1298/1298, measured 1298/1298/1298/1298]
+3: == transparency with the delay compensated ==
+3:   ok    a sub-ceiling signal comes out identical, delayed by exactly the reported latency  [worst delta 0.0000000 at latency 1169]
+3: == ZERO DIFFERENCE (8 Oct 2026, session G's test): the real processor at the schema defaults == limv2::transparent() ==
+3:   ok    the processor reports the core's fixed latency  [1169 vs 1169]
+3:   ok    EedLimiterProcessor at its defaults (ceiling 0.0, TRUE PK on, lookahead 0.18, attack 275, release 400, link 75/100) renders SAMPLE-IDENTICAL to limv2::transparent() over 2 s  [worst 0.000000000, differing samples 0]
+3: == state migration (8 Oct 2026): a pre-v2 state at the OLD defaults loads as the NEW defaults; anything else literally ==
+3:   ok    a pre-v2 state at the old defaults (lookahead 2.0, release 50, no attack_ms) loads lookahead 0.18, release 400, attack 275, link 75  [la 0.18 rel 400]
+3:   ok    ...and renders SAMPLE-IDENTICAL to a fresh instance at the new defaults (2 s of bursts)  [worst diff 0.000000000]
+3:   ok    a pre-v2 state with its own values (lookahead 1.0, release 200, ceiling -1, TP off) keeps every one; attack_ms at its default  [la 1 rel 200 ceil -1]
+3:   ok    a v2 state (attack_ms present) saying lookahead 2.0 / release 50 loads literally - the user set them  [la 2 rel 50]
+3: == the v2 PANEL (9 Oct 2026): the dials show the processor (the migration included) and drive its parameters ==
+3:   ok    the limiter's editor is the v2 panel's editor (EedLimiterEditor on DeviceEditorBase)
+3:   ok    an old-format chain at the old defaults opens with the dials at the MIGRATED values (0.18 / 400 / 275 / 75 / 100), gain 8 kept, TRUE PK on  [la 0.18 rel 400 atk 275 link 75/100 gain 8]
+3:   ok    moving each of the 8 dials (incl. attack_ms, link_pct, release_link_pct) sets that parameter on the processor to the dialled value  [all 8 agree]
+3:   ok    a parameter set from outside the panel shows on its dial after the editor's sync  [atk 900 rls link 30]
+3:   ok    the processor feeds the panel's meter tap (columns and 100 ms hops arrive while audio runs)  [columns 259 hops 21]
+3: 
+3: ==== limiter_wall_guard: GREEN (0 assertion(s) failed) ====
+3: exit code: 0  (0 == GREEN, nonzero == RED)
+3: SCRIBBLE LEG: running again with MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 ...
+3: scribble leg exit code: 0  (0 == GREEN, nonzero == RED)
+3: BOTH LEGS: GREEN
+1/1 Test #3: limiter_wall_guard ...............   Passed   28.36 sec
+
+The following tests passed:
+	limiter_wall_guard
+
+100% tests passed out of 1
+
+Label Time Summary:
+fast    =  28.36 sec*proc (1 test)
+
+Total Test time (real) =  28.36 sec
+wall exit 0

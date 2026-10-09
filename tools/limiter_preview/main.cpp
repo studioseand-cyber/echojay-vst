@@ -34,7 +34,7 @@ int main (int argc, char** argv)
             auto tuning = echojay::limv2::transparent(); tuning.maxLookaheadMs = tuning.lookaheadMs * 5.0 / 0.18;   // the plugin's: the knob's 5 ms label = 1.67 ms of window
             echojay::limv2::Core core; core.prepare (src.sampleRate, tuning); core.setFixedLatency (true); core.setInputGainDb (gain); core.setCeilingDb (0.0); core.setTruePeak (true); core.setMeterTap (&tap); core.reset();
             EedLimiterPanelV2 panel (tap); panel.setKnobFilmstrip (stripImg); panel.setSize (sizes[sz][0], sizes[sz][1]);
-            EedLimiterPanelV2::Model m; m.gainDb = gain; m.ceilingDb = 0.0; m.truePeak = true; m.latencySamples = core.latencySamples(); m.sampleRate = src.sampleRate; m.lookaheadMs = 0.18; m.attackMs = 275.0; m.releaseMs = 400.0; m.linkPct = 75.0; panel.setModel (m); panel.setSpeedIndex (1); panel.setAdvancedOpen (true);
+            EedLimiterPanelV2::Model m; m.gainDb = gain; m.ceilingDb = 0.0; m.truePeak = true; m.latencySamples = core.latencySamples(); m.sampleRate = src.sampleRate; m.lookaheadMs = 0.18; m.attackMs = 275.0; m.releaseMs = 400.0; m.linkPct = 75.0; m.releaseLinkPct = 100.0; panel.setModel (m); panel.setSpeedIndex (1); panel.setAdvancedOpen (true);
             const size_t N = src.frames(); std::vector<float> L (N), R (N); for (size_t n = 0; n < N; ++n) { L[n] = (float) src.ch[0][n]; R[n] = (float) src.ch[src.channels() > 1 ? 1 : 0][n]; }
             size_t pos = 0; size_t ti = 0;
             while (pos < N && ti < times.size())

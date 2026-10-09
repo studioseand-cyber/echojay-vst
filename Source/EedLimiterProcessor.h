@@ -79,6 +79,8 @@ public:
     // 18e (item 4): input (after input_db, before the wall) and output meters - short-term LUFS + true peak for the UI
     echojay::LevelTally::Snapshot inputLevels()  const { return inMeter_.snapshot(); }
     echojay::LevelTally::Snapshot outputLevels() const { return outMeter_.snapshot(); }
+    // 9 Oct 2026: the panel's data path - the engine feeds this tap per sample (lock-free); the editor reads it on its timer
+    echojay::limv2::MeterTap& meterTap() noexcept { return meterTap_; }
     float  outputPeakDbMax() const noexcept { const float p = outPeakMax_.load (std::memory_order_relaxed); return p > 0.0f ? 20.0f * std::log10 (p) : -120.0f; }
     void   resetOutputPeak() noexcept { outPeakMax_.store (0.0f, std::memory_order_relaxed); }
 
@@ -134,6 +136,7 @@ private:
 
     echojay::DynamicsCore    core_;     // the editor's dwell histogram and detector level only
     echojay::limv2::Core     engine_;   // the limiter
+    echojay::limv2::MeterTap meterTap_; // the panel's picture and loudness source (EedLimiterPanelV2)
 
     Mode   mode_        = Mode::Transparent;
     double lookaheadMs_ = 0.18;
