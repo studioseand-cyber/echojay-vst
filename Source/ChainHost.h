@@ -1511,6 +1511,16 @@ public:
     // The value is EchoJay's own gain, never a plugin parameter, and is a
     // user-owned control (range below). Persisted with the SESSION; a shared
     // chain does NOT carry it (it is source-specific and recomputed locally).
+    // 08c item E (9 Oct 2026 ruling): the ceiling a FINAL limiter is held at, whatever a chain block asks for.
+    // -0.1 dBTP is Sean's rule; 8 Oct shipped -1.2 because a block asked for -1 and the limiter obeyed, which
+    // cost 0.9 dB of loudness for nothing. The clamp lives in applyStructuredToBuiltinSlot, the one funnel every
+    // dialled built-in passes through, and it logs the figure that was asked for.
+    static constexpr float kFinalCeilingDb = -0.1f;
+    static bool isLimiterLikeName (const juce::String& name)
+    {
+        const auto l = name.toLowerCase();
+        return l.contains ("limit") || l.contains ("maxim") || l.contains ("clip") || l.contains ("ceiling");
+    }
     static constexpr float kPreGainTargetLufs = -18.0f;  // analogue reference (0 VU) in the level layer's unit
     static constexpr float kPreGainMinDb = -24.0f, kPreGainMaxDb = 24.0f;
     enum class PreGainState { Off, Auto, UserSet, NoLevel };

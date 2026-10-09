@@ -4884,7 +4884,45 @@ juce::String ChainHost::applyStructuredToBuiltinSlot(int slotIndex, const juce::
     // restore does NOT come through here, it goes to setStateInformation. If a
     // restore path is ever routed through this function, it must carry its own
     // source rather than inherit this one.
-    return device->applyStructured(structured, EedDeviceProcessor::ParamSource::Assistant,
+    // ---- 08c item E (9 Oct 2026 ruling): A FINAL LIMITER'S CEILING IS HELD AT -0.1 dBTP ----------------
+    // Sean's chain came out at -1.2 dBTP on 8 Oct because the server's block asked for ceiling_db -1 and the
+    // limiter did as it was told. The rule is -0.1, and the LAST slot is the one that decides what leaves the
+    // chain - so the value is held here, at the single funnel every dialled built-in passes through, rather than
+    // in one of the callers that could be bypassed later.
+    //
+    // IT IS LOGGED WITH THE FIGURE THAT WAS ASKED FOR, every time. A silent override of the server is the fault
+    // we closed for the eq_bands hoist on 8 Oct: the emitter would look correct here for ever while the audio
+    // said otherwise. Nothing is clamped when the block already agrees, and nothing is clamped on a limiter that
+    // is NOT last - a limiter mid-chain is a sound, not a ceiling.
+    juce::var toApply = structured;
+    if (slotIndex == (int) slots_.size() - 1 && isLimiterLikeName (slots_[(size_t) slotIndex].desc.name))
+    {
+        if (auto* root = toApply.getDynamicObject())
+            if (auto* params = root->getProperty("params").getDynamicObject())
+                if (params->hasProperty("ceiling_db"))
+                {
+                    const double asked = (double) params->getProperty("ceiling_db");
+                    if (asked < kFinalCeilingDb - 1.0e-6)
+                    {
+                        // A COPY, not a write through the caller's value: the structured var is shared with the
+                        // slot's stored settings and the dial ledger, and rewriting it in place would make the
+                        // record claim the server asked for what we chose.
+                        auto* newParams = new juce::DynamicObject (*params);
+                        newParams->setProperty("ceiling_db", kFinalCeilingDb);
+                        auto* newRoot = new juce::DynamicObject (*root);
+                        newRoot->setProperty("params", juce::var (newParams));
+                        toApply = juce::var (newRoot);
+                        EchoJay_NSLog(("EJDial: FINAL LIMITER CEILING HELD at "
+                                       + juce::String(kFinalCeilingDb, 1) + " dBTP on \""
+                                       + slots_[(size_t) slotIndex].desc.name + "\" (slot "
+                                       + juce::String(slotIndex + 1) + ", the last in the chain) - the block asked "
+                                       + "for " + juce::String(asked, 1)
+                                       + " dBTP. The ruling is -0.1; the asked-for figure is recorded here so the "
+                                         "emitter can be fixed rather than looking correct for ever.").toRawUTF8());
+                    }
+                }
+    }
+    return device->applyStructured(toApply, EedDeviceProcessor::ParamSource::Assistant,
                                    appliedOut, skippedOut);
 }
 
