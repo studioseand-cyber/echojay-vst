@@ -40,7 +40,7 @@ instance uid (the registry key, the same string the sidecar and the mixer strip 
 
 | command | fields | meaning |
 |---|---|---|
-| `set_param` | `slot`, `param` (schema id), `value` (double) | one parameter on one slot's device, in the device's own units |
+| `set_param` | `slot`, `param` (schema id), `value` (double) | one parameter on one slot's device, in the device's own units. **The HUMAN GESTURE path only** - a knob being dragged. An agent's considered change is `set` on the chain channel: see §8 |
 | `slot_in` | `slot`, `db` | the slot's pre-trim (`setSlotPreTrimDb`) — **MISSING as an op today**, §2 of the plan |
 | `slot_out` | `slot`, `db` | the slot's output gain (`setSlotOutGainDb`) — likewise missing |
 | `slot_wet` | `slot`, `pct` (0..100) | the slot's wet/dry |
@@ -223,7 +223,67 @@ plan says the same about the file channel. Both get measured in stage 1 and this
 
 ---
 
-## 8. Naming, for B
+## 8. Naming — RECONCILED WITH B, 9 October (evening)
+
+B's `docs/CONTRACT_AGENT_TOOLS.md` now exists and was revised against this file. **Sean's rule: where a name
+differs, B's is the wire and I rename.** B resolved it better than a rename: the **agent `do` op** is the wire name
+the model uses, and the ring / chain command it maps to **stays internal to the plugin**. So the names below are
+unchanged inside the plugin, and B's column is what the model and the server say.
+
+| agent `do` op (B's wire) | this file's command | note |
+|---|---|---|
+| `set` | `set` (chain, `settings_structured`) | device units; **several params in one `set` is still ONE command and one ack** |
+| `set_wet` | `slot_wet` (ring) | |
+| `set_io` | `slot_in` + `slot_out` (ring) | one op may carry **both** `inDb` and `outDb`; two ring frames, one ack |
+| `set_master_wet` | `master_wet` (ring) | |
+| `set_pre_gain` | `pre_gain` (ring) | |
+| `bypass` | `bypass` (chain) | |
+| `add` / `remove` / `replace` / `move` / `build` | the same (chain) | `build` = the chain block, one ack, one undo step |
+| `set_level` | `set` on the EchoJay Level slot | the level_params contract (08c item F2) |
+| `open_editor` | `open_editor` (chain, `where:"float"`) | free on the agent side; the ack is the result |
+| **not agent ops** | `link_gain`, `reset_levels`, `level_match`, `headroom`, `undo`, `close_editor` | the Level slot owns level; undo is the plugin's |
+
+**`set_param` is corrected.** §2.1 listed it on the ring as the general parameter path. It is not an agent op: an
+agent's considered change is `set` on the **chain** channel, with its ack and its staleness guard. The ring's
+`set_param` is the **human gesture** path — a knob the user is dragging — and that is the only thing it is for.
+One name for two jobs was the mistake; they are now two.
+
+**B adopted the ring's ack rule verbatim** (§4.3): no per-frame ack, the plugin answers the agent's call when the
+meter frame shows the settled `(gesture, seq)` applied, else `{ok:false, error:{code:"not_applied", message:
+<sentence>}}` after the 250 ms rule. A refusal's `reason` reaches the model as a sentence, unparaphrased.
+
+### My three open questions, answered by B
+1. **Batch or one command?** One `do` = one command = one ack = **one undo step**. A round may carry several; the
+   plugin runs them in order. That is what §5 and §6 already assume, so nothing changes here.
+2. **Device units or normalised?** **Device units only, never normalised** — `params` in the built-in's own units,
+   `controls` in the map's display units as the registry prints them. The plugin maps display to normalised itself.
+   This is what I assumed, and for the reason I gave: normalised values are what the fingerprint/map era got wrong.
+3. **Who waits for playback?** **The plugin owns the wait**, as `check(playback)`: answered when `min_seconds` of
+   gated audio has played, or after **60 s** with `{played:false, waited:60, sentence:"Nothing played in 60
+   seconds - play the loudest section and ask me again."}`. The server's `await` watchdog is 90 s so it outlives
+   ours. We do **not** wait twice. A2 has already built this client-side; the executor supplies the reading.
+
+### Two things B's contract settles that are mine to honour
+- **The agent card and the ask shelf are never shown together** (Sean). An ask on an agent turn is rendered as the
+  card's own buttons, and the server emits no `<<<ECHOJAY_ASK>>>` block on an agent session. That decides A2's
+  open question E3 the way A2 recommended, and it is the way I would argue for independently: the ask *is* the
+  card, so a shelf underneath is a second question for one decision.
+- **E's gap is closed on the server side.** B's validator `ceiling_fixed` refuses a final limiter's ceiling that is
+  not -0.1 dBTP before it is ever sent, with `resend: {ceiling_db:-0.1}` — so the third-party final limiter case
+  my 08c item E could not reach from the built-in dial funnel is covered where it belongs. Both halves now exist.
+
+### Still owed, for B
+- **`CONTRACT_LEVEL_PARAMS.md` is referenced twice and does not exist in the saas repo.** The plugin half is built
+  and gated (08c item F2): option `"match" | "pushed" | "dynamic" | "commercial" | "keep"`, `"match"` valid with
+  **no** `target_lufs`, stored as option 4 on the EchoJay Level device, GR cap 3 dB, and only FullMix and
+  MasterBus hit a target (Sean, 9 Oct) — every other channel and bus **volume-matches**. Targets are integrated
+  LUFS. That is what the file should say; I have not written it, because it is B's.
+
+---
+
+## 9. Naming, for B (the original offer, kept for the record)
+
+### What I proposed before B answered
 
 These are the strings I have chosen for the wire. B's `docs/CONTRACT_AGENT_TOOLS.md` does not exist in this tree
 yet, so **where we disagree, B's names win and I rename** — the plugin is the one that can change a private wire
