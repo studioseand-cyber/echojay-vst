@@ -1,3 +1,28 @@
+# TONIGHT, 9 Oct (Kathy's ruling) — 5ab8352b, the run that is still owed
+
+You are on **5ab8352b** (built from the commit on your Mac; your preflight passed). Your `cert/run_all.json` already has preflight,
+multiband, limiter, de-esser and gain-all done and EQ started; none of that is run again. What is still owed is everything the
+compressor follow-up and Night 1 below would have done, then the rest of the plan. In this order:
+
+```
+# 1. FIRST: the 7 Oct review picks (it adds bx_console N and bx_console SSL 4000 E, which the strips' compressor sections need)
+cp ~/Desktop/review_picks.json ~/Library/ejmap/cert/review_picks.json
+# 2. then ONE command, every night until it says the sequence is complete
+caffeinate -i "$BIN" --run-all --skip nothing_nominated --until 07:00
+```
+
+It runs, in this order: preflight, the licence check and stamp, the Satellite check, **the compressor follow-up** (the 69 exported
+profiles are re-checked and re-exported on it), gain / timing, the uad / no_pool / categorise / combined / material / frequency /
+samplerate / tuners sets, **EQ resumes** (the 126 finished EQs are kept), saturation, reverb / delay, transients / gates, the
+strips, the drafts. `nothing_nominated` is skipped on purpose: every row it would re-run is in a category this run re-runs whole.
+At your Mac's measured pace: tonight ~10.5 h (everything up to EQ's last 49, then saturation starts), night 2 saturation, reverb /
+delay, transients / gates and the strips start, nights 3 and 4 the strips, then the drafts - about four nights. 07:00 or Ctrl-C
+stops it; the same line carries on. The morning: `--zip ... --since marker`, then `--cert-review-zip` on that zip (below).
+
+Everything after this section is the earlier plan and its history; follow this section tonight.
+
+---
+
 # Running the 7 Oct build (dc77d0a5) — Sean's Mac, follow as written
 
 `ejmap.app` built from commit **dc77d0a5** (branch feat/ejmap-cert; packaged and signed at ~/Desktop/ejmap-dist-7oct-b per
