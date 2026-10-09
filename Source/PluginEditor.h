@@ -1361,6 +1361,10 @@ private:
     // model call. Returns true when it took the turn. It refuses unless the newest assistant turn
     // carries a usable proposal AND the message is a narrow affirmation (EJAffirmation.h) - anything
     // else goes to the server exactly as today, where B's wider rule resolves it.
+    // 08c item C (9 Oct 2026): the longest a message may be for a PHRASE match to count as a loudness verb.
+    // Five words keeps "push it a bit harder" and rejects "check the level of the mix bus", which was taken as
+    // the Check verb on 8 Oct and never reached the chat.
+    static constexpr int kMaxVerbWords = 5;
     bool handleProposalAffirmation(const juce::String& typed);
     void applyStagedProposal(int msgIdx, const juce::String& why);   // Apply button and the yes both land here
     bool handleLoudnessVerb(const juce::String& msg, bool forced = false);   // 18e: forced = the server answered loop_verb   // \"a bit louder\" / \"a bit softer\" / \"check the level again\" / \"undo\"

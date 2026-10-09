@@ -23351,11 +23351,26 @@ bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg, bool forced)
     auto& loop = processorRef.loudnessLoop();
     if (! loop.everArmed()) return false;
     const auto t = msg.trim().toLowerCase().trimCharactersAtEnd(".!");
+    // ---- 08c item C (9 Oct 2026 ruling): A VERB, NOT A SENTENCE THAT CONTAINS ONE ---------------------
+    // On 8 Oct Sean typed "check the level of the mix bus" and got no reply at all: `again` was
+    // t.contains("check the level"), so a chat question was taken as the Check verb, the turn never went to the
+    // server, and a second measuring window opened instead. The same trap sat in push, louder, softer and
+    // backoff - any of them would have eaten a sentence that happened to mention them.
+    //
+    // THE DISCIPLINE IS EJAffirmation.h's, and the asymmetry runs the same way: a MISS costs a round trip (the
+    // server's classifier answers loop_verb and `forced` brings it back here), while a FALSE POSITIVE eats the
+    // user's question. So a phrase match is accepted only on a message SHORT enough to be a verb - five words,
+    // which keeps "push it a bit harder" and rejects a seven-word question about the mix bus.
+    const int verbWords = juce::StringArray::fromTokens (t, " ", "").size();
+    const auto isBareVerb = [&t, verbWords] (const char* phrase)
+    {
+        return t == phrase || (verbWords <= kMaxVerbWords && t.contains (phrase));
+    };
     const bool go     = t == "go" || t == "apply" || t == "yes go" || t == "go ahead" || t == "do it" || t == "apply it" || t == "yes";
-    const bool push   = t.contains("push it") || t == "push" || t.contains("push harder");
-    const bool louder = t.contains("bit louder") || t == "louder" || t.contains("little louder") || t.contains("touch louder");
-    const bool softer = t.contains("bit softer") || t.contains("bit quieter") || t == "softer" || t == "quieter" || t.contains("little softer") || t.contains("little quieter");
-    const bool again  = t.contains("check the level") || t.contains("check level") || t.contains("measure again") || t.contains("check it again");
+    const bool push   = isBareVerb("push it") || t == "push" || isBareVerb("push harder");
+    const bool louder = isBareVerb("bit louder") || t == "louder" || isBareVerb("little louder") || isBareVerb("touch louder");
+    const bool softer = isBareVerb("bit softer") || isBareVerb("bit quieter") || t == "softer" || t == "quieter" || isBareVerb("little softer") || isBareVerb("little quieter");
+    const bool again  = isBareVerb("check the level") || isBareVerb("check level") || isBareVerb("measure again") || isBareVerb("check it again");
     const bool undo   = t == "undo" || t == "undo that" || t == "undo the level";
     const bool leave  = t == "leave it" || t == "leave it there" || t == "keep it" || t == "stop" || t == "that's fine" || t == "fine";
     const bool listenAgain = t == "listen again" || t == "try again";                                                         // 18f (the quiet-window pill)
@@ -23363,11 +23378,15 @@ bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg, bool forced)
     const bool checkV = t == "check" || t == "check now" || t == "check it";                                                   // 18g (item 1): after Go when the audio had stopped
     const bool doneV  = t == "done" || t == "i'm done" || t == "that's it" || t == "finished";                                  // 18g (item 3): ends the watch
     const bool loudest = t == "this is the loudest part" || t == "loudest part" || t == "this is the loudest" || t == "that's the loudest part" || t == "it is the loudest part";
-    const bool backoff = t == "back off" || t == "back it off" || t.startsWith("back off ");
+    const bool backoff = t == "back off" || t == "back it off" || (verbWords <= kMaxVerbWords && t.startsWith("back off "));
     if (! (go || push || louder || softer || again || undo || leave || listen || listenAgain || checkV || doneV || loudest || backoff || forced)) return false;
     chatInput.clear();   // 18f: a verb, typed or tapped, never leaves its words in the composer
     appendLocalUserBubble(msg);
     loop.note("verb \"" + t + "\"" + (forced ? juce::String(" (server loop_verb)") : juce::String()) + " state " + juce::String((int) loop.state()));   // 18f: one EJLoudness stream (the loop's logLine -> NSLog)
+    // 08c item C: A TAKEN VERB ALWAYS LEAVES AN ANSWER. Sean's message disappeared into the matcher and nothing
+    // came back, which is indistinguishable from a dropped send. The bubble count before and after is the test:
+    // if the verb produced no bubble of its own, this says what was taken and what it did.
+    const int bubblesBefore = loop.bubbleCount();
     if (listenAgain) { if (! loop.listenAgain()) appendLocalResultBubble("Nothing to re-listen for - tap Listen with the loudest part playing."); }
     else if (listen) { if (! loop.listen()) appendLocalResultBubble("Already listening - keep the loudest part playing."); }
     else if (checkV) { if (! loop.check()) appendLocalResultBubble("Nothing to check right now - tap Listen with the loudest part playing."); }
@@ -23386,6 +23405,11 @@ bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg, bool forced)
         if (! loop.backOffComplaint()) appendLocalResultBubble ("Nothing to back off - the level loop has no Level slot.");
     }
     else appendLocalResultBubble("Say listen, go, check, push it, a bit louder or softer, undo, leave it, or done.");
+    // 08c item C: the verb is answered, always. A loop call that changed nothing and said nothing leaves the user
+    // looking at their own message with no reply - which is what "no response" was on 8 Oct.
+    if (loop.bubbleCount() == bubblesBefore)
+        appendLocalResultBubble ("Took that as \"" + t + "\" - the level loop had nothing to do with it just now ("
+                                 + loop.aimWords() + ").");
     resized(); repaint();
     return true;
 }
