@@ -1326,6 +1326,22 @@ public:
 
     void setEndpoint(const juce::String& url) { apiEndpoint = url; }
     juce::String getEndpoint() const { return apiEndpoint; }
+
+    // ---- HOOK T1 (agent mode, Session A2): what EJAgentClient needs to open its own SSE POSTs -------------
+    // A2's open question 11 was transportEndpoint's exact signature, read from the call site and not the
+    // definition. Answered here from the definition: `forPath` is the PATH NAMED IN THE ONE-PER-PROCESS EJNet
+    // LINE, not a suffix - the function returns the BASE url whatever is passed, and the caller appends its own
+    // path. A2's client appends, so the shape it wrote is right; the name it passes is what the log will say
+    // first resolved the transport.
+    // Read at start() time, never cached, because the token changes on login.
+    struct AgentTransport { juce::String baseUrl, authToken, extraHeaders, appVersion; };
+    AgentTransport agentTransport() const
+    {
+        return { transportEndpoint (apiEndpoint, "/api/agent/start"),
+                 authToken,
+                 transportHeaders(),
+                 JucePlugin_VersionString };
+    }
     
     void loadSettings();
     void saveSettings() const;
@@ -1448,6 +1464,7 @@ private:
     static juce::String transportEndpoint(const juce::String& configured,
                                           const juce::String& forPath = juce::String());
     static juce::String transportHeaders();
+
 
     // Helper: PATCH with a JSON body. Same thread and teardown discipline as
     // postJSON; juce::URL sends POST by default, so the verb is set

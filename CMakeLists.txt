@@ -115,6 +115,17 @@ juce_add_plugin(EchoJay
 juce_generate_juce_header(EchoJay)
 
 target_sources(EchoJay PRIVATE
+    # --- agent mode, plugin side (Session A2, feat/agent-ui; docs/AGENT_UI_HOOKS.md section 1) ---
+    # Only the EchoJay target: the Link does not host the agent card. Every path behind EchoJayEditor's
+    # agentModeOn() dev flag, removed before beta.
+    Source/EJAgentFraming.h
+    Source/EJAgentProtocol.h
+    Source/EJAgentTools.h
+    Source/EJAgentClient.cpp
+    Source/EJAgentClient.h
+    Source/EJAgentPanelLayout.h
+    Source/EJAgentPanel.cpp
+    Source/EJAgentPanel.h
     Source/PluginProcessor.cpp
     Source/PluginProcessor.h
     Source/PluginEditor.cpp

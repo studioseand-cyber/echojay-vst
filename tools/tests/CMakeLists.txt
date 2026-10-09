@@ -290,6 +290,9 @@ ej_add_guard(borrowkept_harness       SOURCE tools/borrowkept_harness/borrowkept
 ej_add_guard(global_undo_guard        SOURCE tools/global_undo_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(groups_guard             SOURCE tools/groups_guard/harness.cpp                   LABEL fast SCRIBBLE)
 ej_add_guard(ui_guard                 SOURCE tools/ui_round_guard/ui_guard.cpp                LABEL fast SCRIBBLE)
+# Session A2's agent client + panel legs (docs/AGENT_UI_HOOKS.md section 5): a recorder transport and a fake
+# executor, so it meets no server. First compiled in the 9 Oct merge round.
+ej_add_guard(agent_client_guard       SOURCE tools/agent_client_guard/harness.cpp             LABEL fast)
 ej_add_guard(history_guard            SOURCE tools/ui_round_guard/history_guard.cpp           LABEL fast)
 ej_add_guard(classify_body_guard      SOURCE tools/classify_body_guard/harness.cpp            LABEL fast)
 ej_add_guard(shm_layout_guard         SOURCE tools/shm_layout_guard/harness.cpp               LABEL fast)

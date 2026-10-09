@@ -4,6 +4,8 @@
 #include <set>
 #include <map>
 #include "EJGainReadout.h"   // 06d item 5: the per-slot IN/OUT readout, shared with the Link editor
+#include "EJAgentClient.h"    // HOOK E1 (agent mode, Session A2)
+#include "EJAgentPanel.h"
 #include "PluginProcessor.h"
 #include "ChainHost.h"
 #include "ChainWetKnob.h"
@@ -1724,6 +1726,26 @@ private:
     // It used to be derived twice - `chatScrollBottom` in the layout, `chatScroll.getBottom()` in the painter -
     // and a disagreement between them dropped every row, which is the blank column Sean reported.
     int chainListBottom_ = 0;
+    /** HOOK E3: the shelf rect is held by the AGENT card, not the brief card. `askShelfIsCard_` already means
+        "a component owns this rect, not pills" and is reused as-is; this says WHICH component, so the
+        brief-card-only interactions do not poke a card that is not there. */
+    bool askShelfIsAgent_ = false;
+
+    // ---- HOOKS E1 / E5 (agent mode, Session A2 - docs/AGENT_UI_HOOKS.md section 2) ----------------------
+    // DECLARATION ORDER MATTERS, and A2 said so: the panel removes itself as a listener in its destructor, so
+    // it must be destroyed BEFORE the client. Members are destroyed in reverse declaration order, so the panel
+    // is declared AFTER the client. The executor outlives both (the client holds a reference).
+    std::unique_ptr<echojay::agent::ToolExecutor> agentExecutor_;   // StubExecutor until A's lands
+    std::unique_ptr<EJAgentClient>                agentClient_;
+    std::unique_ptr<EJAgentPanel>                 agentPanel_;
+    /** HOOK E5's switch. Off = byte-identical to today: nothing is constructed, nothing is sent, no path runs.
+        Dev-mode marker AND a named flag file, which is the discipline every new path in this round uses, and it
+        comes out before beta. */
+    static bool agentModeOn()
+    {
+        return ChainHost::devModeActive()
+            && echojay::userAppData().getChildFile ("EchoJay").getChildFile ("agent_mode").existsAsFile();
+    }
 
     struct ChainRow {
         juce::String id, name, updatedAt;

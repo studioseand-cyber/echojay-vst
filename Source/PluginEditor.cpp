@@ -2849,6 +2849,33 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // setting is process-global and idempotent; the logo shares the benefit.
     juce::ImageCache::setCacheTimeout(30 * 60 * 1000);
 
+    // ---- HOOK E2 (agent mode, Session A2): the client, the panel, and nothing when the flag is off --------
+    // CONSTRUCTED ONLY UNDER THE DEV FLAG. A2's section 2 builds them unconditionally; doing that would put a
+    // timer, a listener and a component into every release editor for a path that cannot run, and "off = byte
+    // identical to today" is the promise this round made about every new path. With the flag off these three
+    // unique_ptrs stay null and every hook below is a null check.
+    if (agentModeOn())
+    {
+        agentExecutor_ = std::make_unique<echojay::agent::StubExecutor>();   // -> A's executor (section 3)
+        agentClient_   = std::make_unique<EJAgentClient> (
+            [this] { const auto t = api.agentTransport();
+                     return EJAgentClient::Transport { t.baseUrl, t.authToken, t.extraHeaders, t.appVersion }; },
+            *agentExecutor_,
+            [] (const juce::String& line) { EchoJay_NSLog (line.toRawUTF8()); });
+        agentPanel_ = std::make_unique<EJAgentPanel> (*agentClient_);
+        addChildComponent (*agentPanel_);
+        agentPanel_->onLayoutNeeded = [this] { resized(); };
+        // HOOK E4: the transcript, through the SAME two helpers the loudness loop uses - which is what makes
+        // the record survive a reopen (A2's open question 12, and the 8 Oct Level-persistence bug was exactly
+        // a record that did not).
+        agentPanel_->onTranscript = [this] (const juce::String& role, const juce::String& text)
+        {
+            if (role == "user") appendLocalUserBubble (text);
+            else                appendLocalResultBubble (text);
+        };
+        EchoJay_NSLog ("EJAgent: agent mode ON (dev flag) - client and card constructed");
+    }
+
     startTimerHz(20);
 }
 
@@ -2875,6 +2902,10 @@ EchoJayEditor::~EchoJayEditor() {
     // die via the handle's cancel (the read unblocks and the loop abandons,
     // which closes the stream), and every queued delta callback no-ops via
     // the cancelled check on both sides of the callAsync hop.
+    // HOOK E6 (agent mode): the agent's socket dies with its UI, for the same reason and in the same place as
+    // the chat stream below. The panel is destroyed before the client by declaration order (see E1).
+    if (agentClient_ != nullptr) agentClient_->stop();
+
     if (activeChatStream_ != nullptr)
     {
         activeChatStream_->cancel();
@@ -19971,8 +20002,30 @@ void EchoJayEditor::resized()
     // is the reflow guarantee: appearing/disappearing resizes the message
     // viewport instead of covering the last message. Chip buttons are
     // positioned here (layout), painted background + hint in paint().
-    askShelfVisible_ = false;
-    askShelfIsCard_  = false;
+    askShelfVisible_  = false;
+    askShelfIsCard_   = false;
+    askShelfIsAgent_  = false;
+    // ---- HOOK E3 (agent mode, Session A2): THE AGENT CARD TAKES THIS SITE, AND EXCLUDES THE SHELF ---------
+    // Sean's ruling, through B's CONTRACT_AGENT_TOOLS section 0: the agent card and the ask shelf are NEVER
+    // shown together. An ask on an agent turn is rendered as the card's own buttons, so a shelf underneath
+    // would be a second question for one decision - and the server emits no ASK block on an agent session.
+    // A2 recommended exclude for the same reason and I agree; this is where it is enforced, once, so the two
+    // cannot both claim the rect. Everything the shelf does to chatScrollBottom below, the card does instead.
+    const bool agentCardShown = agentPanel_ != nullptr && agentPanel_->shouldShow() && ! chatCentredEmpty_;
+    if (agentCardShown)
+    {
+        const int maxH = juce::jmax (120, (int) (chatScroll.getHeight() * 0.6f));
+        const int h    = agentPanel_->preferredHeight (chatBoxRect_.getWidth(), maxH);
+        askShelfRect_    = askShelfBounds (chatBoxRect_, chatScroll.getBounds(), h);   // Round C: never past the column
+        askShelfVisible_ = true;    // the reflow chain below reads this: the viewport shrinks, nothing is covered
+        askShelfIsCard_  = true;    // a COMPONENT owns the rect, not pills - the shelf paints none of its own
+        askShelfIsAgent_ = true;    // ...and it is the agent's, so the brief card's handlers stay out
+        agentPanel_->setBounds (askShelfRect_);
+        agentPanel_->setVisible (true);
+        agentPanel_->toFront (false);
+    }
+    else if (agentPanel_ != nullptr) agentPanel_->setVisible (false);
+    if (! agentCardShown)
     {
         const int askIdxL = findNewestUnansweredAsk();
         if (askIdxL >= 0 && assistantInputContext() && !chatCentredEmpty_)
@@ -21388,7 +21441,7 @@ void EchoJayEditor::timerCallback()
     // Brief card: mirror the composer's real focus into the card so the
     // "Something else" state is drawn from fact (the escape row lights up,
     // the placeholder names the question) and cleared when focus leaves.
-    if (askShelfVisible_ && askShelfIsCard_)
+    if (askShelfVisible_ && askShelfIsCard_ && ! askShelfIsAgent_)
     {
         const bool f = chatInput.hasKeyboardFocus(true);
         if (f != briefCard_.composerFocused)
@@ -29568,6 +29621,17 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // B attaching the ops is that "yes" needs no second model call. Same rule as above: local
     // first, and it only takes the turn when there is something staged to take it with.
     if (handleProposalAffirmation(msg)) return;
+    // ---- HOOK E5 (agent mode, Session A2): the agent takes the turn ---------------------------------------
+    // Placed with the other LOCAL-FIRST handlers and after them: a loudness verb and a staged "yes" are both
+    // answers to something already on screen, and an agent goal is a new request. A pending ask inside the card
+    // takes the message; a RUNNING agent refuses it with a line, which is 08c item C's rule - a message that
+    // vanishes is indistinguishable from a dropped send.
+    if (agentClient_ != nullptr && agentClient_->interceptTyped (msg)) return;
+    if (agentModeOn() && agentClient_ != nullptr && ! agentClient_->isActive())
+    {
+        agentClient_->start (msg, currentChatId);   // the card appears through onLayoutNeeded
+        return;
+    }
     // ---- DEV ONLY: /eqtest {...} -----------------------------------------
     // Intercepted before the send-quota gate and before any network call, so
     // it costs nothing and never reaches the backend. Compiled in always but
