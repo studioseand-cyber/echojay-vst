@@ -8814,6 +8814,9 @@ void testMultibandStageThresholds()
                && rowToRedo (mk ({ { "outcome", "timed_out" } }), "gainall", { "unfinished" }) && ! rowToRedo (mk ({ { "outcome", "ok" } }), "gainall", { "unfinished" })
                && ga != nullptr && categoryRuns (*ga, {}, { "no_pool" }) && categoryRuns (*ga, {}, { "unfinished" }) && ! categoryRuns (*ga, {}, { "uad" }),
                "ga G2: --redo unfinished re-runs timed-out and failed rows only; no_pool and unfinished reach gain-all (its existing rows: the driver filters)");
+        check (ga != nullptr && existingRowsOnly (*ga, { "unfinished" }) && existingRowsOnly (*ga, { "multiband", "unfinished" }) && existingRowsOnly (*ga, { "no_pool" })
+               && ! existingRowsOnly (*ga, { "gainall" }) && ! existingRowsOnly (*ga, {}) && categoryNamed ("multiband") != nullptr && ! existingRowsOnly (*categoryNamed ("multiband"), { "multiband", "unfinished" }),
+               "ga G5: brought in by a selector (unfinished, no_pool), gain-all is its EXISTING rows even when --category names it; a redo of gain-all itself, or no redo, is the full list; multiband is not opt-in");
         check (unhostableReason ("probe: x\nrefused An OS error occurred during initialisation of the plug-in (4097)\n") == "An OS error occurred during initialisation of the plug-in (4097)"
                && unhostableReason ("refused no main input or output bus\n").isEmpty(),
                "ga G3: AVOX SYBIL's refusal to initialise is unhostable, with the OS's text; another refusal is not");

@@ -91,6 +91,11 @@ inline bool rowIsNothingNominated (const juce::var& row) { return row.getPropert
 // a selector reaches an OPT-IN category's EXISTING rows (9 Oct: --redo no_pool must reach gain-all's 2C rows) - never starts that
 // category's rows that were never run (a no_pool redo on a folder without gain-all must not begin the whole gain-all set)
 inline bool selectorReachesOptIn (const juce::StringArray& redo) { return redo.contains ("no_pool") || redo.contains ("unfinished"); }
+// ...and when a selector (not a redo of the category itself) is what brings an opt-in category in - with or without --category - the
+// category's list is its EXISTING rows (9 Oct, the fix-up night: --redo multiband,unfinished --category gainall must re-run gain-all's
+// eight unfinished rows and start none of the products that never had a gain-all row)
+struct Category;
+inline bool existingRowsOnly (const Category& c, const juce::StringArray& redo);
 // an opt-in category runs only when named: by --category, or by --redo (its rows are then made and run)
 inline bool categoryRuns (const Category& c, const juce::StringArray& onlyCategories, const juce::StringArray& redo)
 {
@@ -139,6 +144,7 @@ inline juce::String unhostableReason (const juce::String& out)
         if (line.containsIgnoreCase ("refused") && line.containsIgnoreCase ("during initialisation")) return line.fromFirstOccurrenceOf ("refused", false, false).trim();
     return {};
 }
+inline bool existingRowsOnly (const Category& c, const juce::StringArray& redo) { return c.optIn && ! redo.contains (c.name) && selectorReachesOptIn (redo); }
 inline bool rowToRedo (const juce::var& row, const juce::String& category, const juce::StringArray& redo, const juce::String& logText = {})
 {
     if (redo.contains (category)) return true;

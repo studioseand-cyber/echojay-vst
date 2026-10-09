@@ -6182,8 +6182,8 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             }
         }
         if (! onlyProducts.isEmpty()) { std::vector<PhaseBProduct> f; for (const auto& pp : list) if (onlyProducts.contains (pp.product)) f.push_back (pp); list = f; }
-        if (cat.optIn && onlyCategories.isEmpty() && ! redo.contains (cat.name) && phaseb::selectorReachesOptIn (redo))
-        { std::vector<PhaseBProduct> f; for (const auto& pp : list) if (isDone (phasebDir, cat.name, pp.stem)) f.push_back (pp); list = f; }   // 9 Oct: existing rows only
+        if (phaseb::existingRowsOnly (cat, redo))
+        { std::vector<PhaseBProduct> f; for (const auto& pp : list) if (isDone (phasebDir, cat.name, pp.stem)) f.push_back (pp); list = f; }   // 9 Oct: existing rows only (named by --category or not)
         std::sort (list.begin(), list.end(), [] (const PhaseBProduct& a, const PhaseBProduct& b) { return a.product.compareIgnoreCase (b.product) < 0; });
         if (cat.name == "samplerate" && onlyProducts.isEmpty()) { std::vector<PhaseBProduct> f; for (int i : samplerate::spreadOf ((int) list.size())) f.push_back (list[(size_t) i]); list = f; }   // A4: a spread of ten, evenly over the sorted list
         work[cat.name] = list;
