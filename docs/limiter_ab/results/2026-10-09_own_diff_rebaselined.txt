@@ -1,0 +1,43 @@
+UpdateCTestConfiguration  from :/Users/SeanD/echojay-limiter/build-guards-lv2/DartConfiguration.tcl
+Parse Config file:/Users/SeanD/echojay-limiter/build-guards-lv2/DartConfiguration.tcl
+Test project /Users/SeanD/echojay-limiter/build-guards-lv2
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 50
+    Start 50: own_diff
+
+50: Test command: /Users/SeanD/echojay-limiter/tools/tests/run_own_diff.sh "300ee864801cb8035e57b06958b971dfa29a58bb180c2113ee31b04b71b76aa7" "/Users/SeanD/echojay-limiter/build-guards-lv2/guards/own_diff"
+50: Working Directory: /Users/SeanD/echojay-limiter
+50: Environment variables: 
+50:  EJ_GUARD_HOME_BASE=/Users/SeanD/echojay-limiter/build-guards-lv2/guard-homes
+50: Test timeout computed to be: 900
+50: 2026-10-09 14:57:52.053 own_diff[2140:102060068] EJNet: base=https://www.echojay.ai source=built-in devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+50: 2026-10-09 14:57:52.055 own_diff[2140:102060066] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+50: 2026-10-09 14:57:52.168 own_diff[2140:102060066] EJOrbCard: 6 glyph clusters [2..147] [166..319] [339..484] [508..699] [721..829] [851..1149] ‚Äî using #4 x=[508..699] y=[43..232] (192x190, aspect 1.01) | mid-height notches: left=YES right=YES -> O confirmed
+50: 2026-10-09 14:57:52.168 own_diff[2140:102060066] EJOrbCard: 5176 particles (stride 2, edge 1)
+50: 2026-10-09 14:57:52.168 own_diff[2140:102060066] EJScan: press accepted, scan starting
+50: 2026-10-09 14:57:52.169 own_diff[2140:102060066] EJChat: chain injection attached -- 4 recommendable names in feed
+50: 2026-10-09 14:57:52.169 own_diff[2140:102060066] EJChat: CURRENT RACK EMPTY declaration attached (0 slots)
+50: 2026-10-09 14:57:52.169 own_diff[2140:102060066] EJChat: SAVED CHAINS not attached -- 0 names, dropped 0 over cap, source=none
+50: own-channel injection written to /tmp/own_out.txt (15028 bytes)
+50: 2026-10-09 14:57:52.306 own_diff[2140:102060068] EJNet: config fetch ok, prompt in force = REMOTE v21 (served version 21)
+50: 2026-10-09 14:57:52.461 own_diff[2140:102060089] EJScan: AU registry read, 1515 entr(ies), 1468 with plist version(s)
+50: exit code: 0  (0 == GREEN, nonzero == RED)
+50: OWN_DIFF_SHA 300ee864801cb8035e57b06958b971dfa29a58bb180c2113ee31b04b71b76aa7
+50: OWN_DIFF_BASELINE 300ee864801cb8035e57b06958b971dfa29a58bb180c2113ee31b04b71b76aa7
+50: own_diff: GREEN (sha matches the baseline)
+1/1 Test #50: own_diff .........................   Passed   24.41 sec
+
+The following tests passed:
+	own_diff
+
+100% tests passed out of 1
+
+Label Time Summary:
+fast    =  24.41 sec*proc (1 test)
+
+Total Test time (real) =  24.41 sec

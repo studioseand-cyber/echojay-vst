@@ -297,10 +297,16 @@ ej_add_guard(pregain_readback         SOURCE tools/pregain_readback/harness.cpp 
 # PREVIOUSLY: re-baselined 27 Sep 2026 by ruling, from 5f47897e..., for the ruled short90 token on the
 # [CHAIN LEVELS] header (OWN_CHANNEL_BASELINE_efdec55.txt).
 #
+# RE-BASELINED 9 Oct 2026 BY SEAN'S RULING (limiter v2 gate round c), after session G read and reported the diff:
+# 11 lines changed against c7b142a, every one the EchoJay Limiter's schema text (ceiling_db default 0, release_ms 400,
+# NEW attack_ms 275, lookahead_ms 0..5 default 0.18, NEW link_pct 75, NEW release_link_pct 100, true_peak on), zero
+# non-limiter lines; 14,469 -> 15,028 bytes. The text is OWN_CHANNEL_BASELINE_70f5407.txt (the gated commit).
+# "own_diff re-baselined by Sean's ruling, limiter schema only."
+#
 # THE STANDING RULE IS UNCHANGED for every future move: if this goes RED, STOP AND REPORT - never re-baseline.
 ej_add_guard(mapfps_sync_guard        SOURCE tools/mapfps_sync_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(own_diff                 SOURCE tools/own_diff/harness.cpp                       LABEL fast
-             WRAPPER run_own_diff.sh WRAPPER_ARG 46da20e4279c2f03ca9d0bd8d9b03fb976f7c59d8fb5d08c0b205e6a9b84800f)
+             WRAPPER run_own_diff.sh WRAPPER_ARG 300ee864801cb8035e57b06958b971dfa29a58bb180c2113ee31b04b71b76aa7)
 
 
 # 21t-m (29 Sep 2026): builtin_registry_test JOINS THE GATE. It is built by the ROOT CMakeLists as an
