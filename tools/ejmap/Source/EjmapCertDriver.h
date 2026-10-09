@@ -5856,7 +5856,7 @@ inline int runMultiband (const SweepOptions& opt)
                 juce::StringArray sets = enableSets; sets.add (juce::String (c.index) + ":" + juce::String (c.onNorm, 6));
                 auto [r2, w2] = pairOnce ("pair" + juce::String (t.index) + ".e" + juce::String (c.index), t.index, sets);
                 if (w2) { say ("MB: a window appeared; stopping"); return 5; }
-                if (worstOf (r2) <= -deesser::kBandCutDb) { resp = r2; enableSets.add (juce::String (c.index) + ":" + juce::String (c.onNorm, 6)); auto* e = new juce::DynamicObject(); e->setProperty ("threshold", t.name); e->setProperty ("switch", c.name); e->setProperty ("set", c.onText); e->setProperty ("norm", c.onNorm); enabledBy.add (juce::var (e)); enabledHere = true; say ("  enable step: [" + juce::String (t.index) + "] " + t.name + " cut nothing; with [" + juce::String (c.index) + "] " + c.name + " = '" + c.onText + "' it cuts"); break; }
+                if (worstOf (r2) <= -deesser::kBandCutDb) { resp = r2; enableSets.add (juce::String (c.index) + ":" + juce::String (c.onNorm, 6)); auto* e = new juce::DynamicObject(); e->setProperty ("threshold", t.name); e->setProperty ("switch", c.name); e->setProperty ("index", c.index); e->setProperty ("set", c.onText); e->setProperty ("norm", c.onNorm); enabledBy.add (juce::var (e)); enabledHere = true; say ("  enable step: [" + juce::String (t.index) + "] " + t.name + " cut nothing; with [" + juce::String (c.index) + "] " + c.name + " = '" + c.onText + "' it cuts"); break; }
             }
             // 9 Oct: no switch did it - the band's own depth / level / range off its OFF end (DynOne3 Volume -Inf, Pro-MB Range 0 dB), the end that cuts kept
             int depthTried = 0;
@@ -5874,7 +5874,7 @@ inline int runMultiband (const SweepOptions& opt)
                         if (worstOf (r3) <= -deesser::kBandCutDb)
                         {
                             resp = r3; enableSets.add (juce::String (ci) + ":" + juce::String (nn, 6)); enabledHere = true;
-                            auto* e = new juce::DynamicObject(); e->setProperty ("threshold", t.name); e->setProperty ("control", c.getProperty ("name", "")); e->setProperty ("kind", "depth"); e->setProperty ("norm", nn);
+                            auto* e = new juce::DynamicObject(); e->setProperty ("threshold", t.name); e->setProperty ("control", c.getProperty ("name", "")); e->setProperty ("kind", "depth"); e->setProperty ("norm", nn); e->setProperty ("index", ci);
                             e->setProperty ("was", c.getProperty ("defaultOnInstantiate", {}).getProperty ("display", "")); e->setProperty ("set", displayNear (base, ci, nn)); enabledBy.add (juce::var (e));
                             say ("  enable step: [" + juce::String (t.index) + "] " + t.name + " cuts once its band's " + c.getProperty ("name", "").toString() + " moves off '" + c.getProperty ("defaultOnInstantiate", {}).getProperty ("display", "").toString() + "' (norm " + juce::String (nn, 2) + ")");
                             break;
@@ -5898,6 +5898,7 @@ inline int runMultiband (const SweepOptions& opt)
         say ("  pairing [" + juce::String (t.index) + "] " + t.name + ": " + pairNote[i]);
     }
     o->setProperty ("enabled_by", enabledBy);
+    o->setProperty ("neutral", neutralFromEnables (enabledBy));   // 9 Oct (Kathy): the server writes them too, as the strips' neutral writes
     // MEASURED TOPOLOGY (9 Oct: OTT, Ozone 12 Dynamics - no crossover control at all): each threshold that cut owns the region it cut
     if (bands.empty())
     {

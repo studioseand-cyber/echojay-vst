@@ -96,6 +96,25 @@ inline Band measuredBand (int index, double loHz, double hiHz) { const double lo
 // level / range / volume / amount and which sits at its OFF end at instantiate (-Inf for a level or volume; 0 dB for a range, depth or
 // amount). Returns the norms to try, best first: a level / volume to the norm whose label is 0 dB (else its top); a range / depth both
 // ends (the one that makes the threshold cut is kept)
+// THE ENABLE WRITES ARE NEUTRAL WRITES (Kathy, 9 Oct): a band switched on by its own switch, or by its own depth / level / range moved off
+// its off end (C6's floating Range, DynOne3's Volume, Pro-MB's Range), was measured WITH that write - so the server writes it too, as
+// the strips' neutral writes: { control, index, set, norm, source } on the record's and the draft's `neutral`, one per control
+inline juce::var neutralFromEnables (const juce::Array<juce::var>& enabledBy)
+{
+    juce::Array<juce::var> out; juce::StringArray seen;
+    for (const auto& e : enabledBy)
+    {
+        const bool depth = e.getProperty ("kind", "").toString() == "depth";
+        const auto control = (depth ? e.getProperty ("control", "") : e.getProperty ("switch", "")).toString();
+        if (control.isEmpty() || seen.contains (control)) continue; seen.add (control);
+        auto* x = new juce::DynamicObject(); x->setProperty ("control", control); x->setProperty ("index", e.getProperty ("index", juce::var()));
+        x->setProperty ("set", e.getProperty ("set", "")); x->setProperty ("norm", e.getProperty ("norm", juce::var()));
+        x->setProperty ("source", depth ? "multiband enable step: the band's own " + control + " moved off its off end ('" + e.getProperty ("was", "").toString() + "') so its threshold acts - measured with it, the server writes it too"
+                                        : juce::String ("multiband enable step: the band's own switch, on - measured with it, the server writes it too"));
+        out.add (juce::var (x));
+    }
+    return juce::var (out);
+}
 inline std::optional<double> dbOfLabel (const juce::String& display)   // "0.00 dB", "-30.00 dB", "+30.00 dB", "12.0"; "-Inf dB" is no number
 {
     const auto d = display.trim(); if (d.isEmpty() || d.containsIgnoreCase ("inf") || ! d.containsAnyOf ("0123456789")) return std::nullopt;
@@ -232,6 +251,10 @@ inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, co
     P->setProperty ("instantiate_gain_db_by_level", rec.getProperty ("open_gain_db_by_level", juce::var()));
     // THE ENABLE STEP (8 Oct): the switches written on every process because a band cut nothing without them - the server writes them too
     P->setProperty ("enable_writes", rec.hasProperty ("enabled_by") ? rec.getProperty ("enabled_by", {}) : juce::var (juce::Array<juce::var>()));
+    // 9 Oct: the enable writes as the server's neutral writes (a record before 9 Oct has only enabled_by: derived from it)
+    if (rec.hasProperty ("neutral")) P->setProperty ("neutral", rec.getProperty ("neutral", {}));
+    else if (const auto* eb = rec.getProperty ("enabled_by", {}).getArray()) P->setProperty ("neutral", neutralFromEnables (*eb));
+    else P->setProperty ("neutral", juce::var (juce::Array<juce::var>()));
     if (! rec.hasProperty ("enabled_by")) notes.add ("enable step: not on this record (a run before 8 Oct): a band off at instantiate reads as cutting nothing");
     P->setProperty ("notes", notes);
     return juce::var (P);

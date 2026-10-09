@@ -8800,6 +8800,21 @@ void testMultibandStageThresholds()
         check (N.thresholds.size() == 1 && N.thresholds[0].index == 0 && N.stageSkipped.size() == 1 && N.globalIdx == -1 && N.bands.empty(),
                "mb S7: Ozone's fixture - its Comp Threshold the band's, its Lim Threshold refused, its Sidechain Tilt Amount no global amount, the topology measured");
     }
+    // mb S8 (Kathy, 9 Oct): the enable step's writes are NEUTRAL writes the server makes too - on the record and the draft
+    {
+        auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, x] : kv) o->setProperty (k, x); return juce::var (o); };
+        juce::Array<juce::var> eb { mk ({ { "threshold", "Band 1 Threshold" }, { "control", "Band 1 Range" }, { "kind", "depth" }, { "norm", 0.0 }, { "index", 11 }, { "was", "0.0" }, { "set", "-24.0" } }),
+                                    mk ({ { "threshold", "Band 1 Threshold" }, { "control", "Band 1 Range" }, { "kind", "depth" }, { "norm", 0.0 }, { "index", 11 }, { "was", "0.0" }, { "set", "-24.0" } }),
+                                    mk ({ { "threshold", "Band 3 Threshold" }, { "switch", "Band 3 Active" }, { "index", 30 }, { "set", "On" }, { "norm", 1.0 } }) };
+        const auto nv = ejmap::multiband::neutralFromEnables (eb); const auto* na = nv.getArray();
+        const auto dOld = ejmap::multiband::profileDraft (mk ({ { "enabled_by", eb } }), {}, {}, "DRAFT", "MULTIBAND v0.2 PROPOSAL");
+        juce::Array<juce::var> recNeutral { mk ({ { "control", "Band 6 Range" }, { "index", 48 }, { "set", "-24.0" }, { "norm", 0.0 } }) };
+        const auto dNew = ejmap::multiband::profileDraft (mk ({ { "enabled_by", eb }, { "neutral", recNeutral } }), {}, {}, "DRAFT", "MULTIBAND v0.2 PROPOSAL");
+        check (na != nullptr && na->size() == 2 && (*na)[0].getProperty ("control", "") == "Band 1 Range" && (int) (*na)[0].getProperty ("index", -1) == 11 && (*na)[0].getProperty ("set", "") == "-24.0"
+               && (double) (*na)[0].getProperty ("norm", -1.0) == 0.0 && (*na)[0].getProperty ("source", "").toString().contains ("server writes it too") && (*na)[1].getProperty ("control", "") == "Band 3 Active"
+               && dOld.getProperty ("neutral", {}).size() == 2 && dNew.getProperty ("neutral", {}).size() == 1 && dNew.getProperty ("neutral", {})[0].getProperty ("control", "") == "Band 6 Range",
+               "mb S8: the enable writes (a band's Range off 0, a band's switch on) are neutral writes - one per control, index / set / norm - on the record and the draft (derived from enabled_by on an older record)");
+    }
     // 9 Oct: the gain-all fixes
     {
         using namespace ejmap::phaseb;
