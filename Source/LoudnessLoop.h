@@ -67,8 +67,14 @@ public:
     // back bare, which is why the Listen button vanished on 21q. They are re-attached from the LIVE loop instead,
     // which is also the honest rule: a stale bubble from a previous build must never carry a live verb.
     static juce::String armBubbleText()      { return "Cue the loudest section, press play, then tap Listen."; }
+    /** 08c F2: THE ARM BUBBLE AS IT IS WRITTEN, aim included, with ONE author. The aim words went onto the emit
+        and not onto this, so liveBubbleText() returned a different string from the one in the chat - and
+        everything that finds the arm bubble by its text (the Listen reattachment, the one-bubble-per-build check)
+        found nothing. Two authors for one string, which is the fault I closed twice this morning on the chains
+        list's edge and the Link card's layout. */
+    juce::String armBubbleTextNow() const    { return armBubbleText() + " (" + aimWords() + ")"; }
     juce::StringArray livePills() const      { return state_ == State::armed ? armPills() : juce::StringArray(); }
-    juce::String      liveBubbleText() const { return state_ == State::armed ? armBubbleText() : juce::String(); }
+    juce::String      liveBubbleText() const { return state_ == State::armed ? armBubbleTextNow() : juce::String(); }
     /** 08c F2 (ruled): THE BUILD SAYS WHAT IT IS DOING, in words, on the arm bubble and on the Level card. A
         -12 "dynamic" build and a -8 "pushed" build behave completely differently - 3 dB of allowed GR against 12 -
         and on 8 Oct the only place that appeared was a log line, so "it is quieter than this morning" could not be
@@ -181,7 +187,10 @@ public:
         return (float) num.getDoubleValue();
     }
     // The target the chain carries: the Level slot's params first, then the limiter's params (18d), then the text.
-    struct ChainTarget { float lufs = std::numeric_limits<float>::quiet_NaN(); int levelSlot = -1; int limiterSlot = -1; juce::String source, option; float ceiling = -0.1f; };
+    struct ChainTarget { float lufs = std::numeric_limits<float>::quiet_NaN(); int levelSlot = -1; int limiterSlot = -1;
+                     juce::String source, option;
+                     juce::String optionSource;   // 9 Oct: WHICH field the option came from, or "absent"
+                     float ceiling = -0.1f; };
     ChainTarget findTarget() const
     {
         ChainTarget t;
@@ -202,8 +211,28 @@ public:
             {
                 const auto tv = readParams (t.levelSlot, "target_lufs");
                 if (tv.isDouble() || tv.isInt() || tv.isInt64()) { t.lufs = (float) (double) tv; t.source = "level_params"; }
-                else if (std::isfinite ((float) lv->targetLufs()) && lv->targetLufs() < -0.5) { t.lufs = (float) lv->targetLufs(); t.source = "level_device"; }
-                t.option = EedLevelProcessor::optionName (lv->loudnessOption());
+                // 9 Oct 2026 (CONTRACT_LEVEL_PARAMS, fix 3): only a target that was actually WRITTEN counts.
+                // targetLufs_ defaults to -9.0, so this branch used to hand back -9 for a slot that carried no
+                // target at all - which is precisely what B's `option: "match"` build sends. A volume-match
+                // build would have chased -9 LUFS and the card would have said so.
+                else if (lv->targetWasSet() && std::isfinite ((float) lv->targetLufs()) && lv->targetLufs() < -0.5)
+                { t.lufs = (float) lv->targetLufs(); t.source = "level_device"; }
+                // ---- 9 Oct 2026 (CONTRACT_LEVEL_PARAMS, fix 2): `option` IS THE FIELD, and we never read it --
+                // B writes `settings_structured.params.option` = "match" | "pushed" | "dynamic". The plugin read
+                // the Level device's NUMERIC `loudness_option` and nothing else, so `option` - not in the
+                // device's schema - was skipped by applyStructured and never seen. B's legacy `loudness_option`
+                // is a STRING ("commercial", "pushed", "explicit"...), which lround()s to 0 = commercial. So we
+                // wrote a field B does not read and read a field B does not write. Precedence now:
+                //   1. params.option          - the contract's field, the authority
+                //   2. params.loudness_option as a STRING - B's legacy word
+                //   3. the device's numeric option, ONLY if something actually set it
+                //   4. empty - nothing was asked, and armFromChain applies the contract's fallback
+                const auto ov = readParams (t.levelSlot, "option");
+                const auto lo = readParams (t.levelSlot, "loudness_option");
+                if (ov.isString() && ov.toString().isNotEmpty())       { t.option = ov.toString().toLowerCase(); t.optionSource = "params.option"; }
+                else if (lo.isString() && lo.toString().isNotEmpty())  { t.option = lo.toString().toLowerCase(); t.optionSource = "params.loudness_option (legacy word)"; }
+                else if (lv->optionWasSet())                           { t.option = EedLevelProcessor::optionName (lv->loudnessOption()); t.optionSource = "level_device"; }
+                else                                                   { t.option = {}; t.optionSource = "absent"; }
             }
         }
         if (! std::isfinite (t.lufs))
@@ -254,8 +283,19 @@ public:
         // 08c F2: "match" is option 4 on the Level device, so it has to be in this list or a match build would
         // be stored as "commercial" and the aim would be lost the moment the state round-tripped.
         const juce::StringArray opts { "commercial", "pushed", "dynamic", "keep", "match" };
-        if (! haveTarget) pp->setProperty ("loudness_option", (double) EedLevelProcessor::kOptionMatch);
-        else if (t.option.isNotEmpty()) pp->setProperty ("loudness_option", juce::jmax (0, opts.indexOf (t.option)));
+        // 9 Oct 2026 (fix 2): BOTH fields. `option` is CONTRACT_LEVEL_PARAMS' field and what findTarget now
+        // reads back; the numeric `loudness_option` is the device's own param and what an older build arms from.
+        // Writing only the number is how a match insert survived a reload as "commercial".
+        if (! haveTarget)
+        {
+            pp->setProperty ("option", "match");
+            pp->setProperty ("loudness_option", (double) EedLevelProcessor::kOptionMatch);
+        }
+        else if (t.option.isNotEmpty())
+        {
+            pp->setProperty ("option", t.option);
+            pp->setProperty ("loudness_option", juce::jmax (0, opts.indexOf (t.option)));
+        }
         auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
         host_.setSlotStructuredSettings (at, juce::var (w));
         host_.setSlotSettings (at, haveTarget
@@ -275,8 +315,35 @@ public:
         // build - it has no target to trigger the insertion.
         {
             const auto probe = findTarget();
-            aim_ = (probe.option.equalsIgnoreCase ("match") || ! (aimIsTarget ? aimIsTarget() : true))
-                       ? Aim::matchInput : Aim::hitTarget;
+            const bool byType = aimIsTarget ? aimIsTarget() : true;   // Sean: only FullMix and MasterBus hit a target
+            if (probe.option.isNotEmpty())
+            {
+                // THE SERVER SAID WHAT IT WANTED, so it decides - including "pushed" on a channel, which B's
+                // contract allows ("a channel build where the user asked for a level change").
+                aim_ = probe.option.equalsIgnoreCase ("match") || probe.option.equalsIgnoreCase ("keep")
+                           ? Aim::matchInput : Aim::hitTarget;
+                log ("aim from the chain: option \"" + probe.option + "\" via " + probe.optionSource
+                     + " -> " + juce::String (aim_ == Aim::matchInput ? "volume match" : "hit the target"));
+            }
+            else if (std::isfinite (probe.lufs))
+            {
+                // NO OPTION BUT A TARGET. B's contract says treat it as "pushed"; Sean's ruling says a channel or
+                // bus volume-matches. They only collide here, on a chain built before 9 Oct or by an older
+                // server. SEAN'S RULING WINS, because he is the one who decides, and the disagreement is LOGGED
+                // rather than settled silently - a rule that quietly loses is worse than one that is argued.
+                aim_ = byType ? Aim::hitTarget : Aim::matchInput;
+                log (juce::String ("aim: no option in the chain but a target of ") + fmt (probe.lufs)
+                     + " LUFS is present. CONTRACT_LEVEL_PARAMS would read that as \"pushed\"; Sean's 9 Oct rule "
+                       "is that only a mix bus or master hits a target. This channel "
+                     + (byType ? "IS one, so the target stands" : "is NOT one, so it volume-matches instead")
+                     + " - flagged, not settled.");
+            }
+            else
+            {
+                // NEITHER. The contract's fallback and Sean's rule agree: match.
+                aim_ = Aim::matchInput;
+                log ("aim: no option and no target in the chain -> volume match (CONTRACT_LEVEL_PARAMS fallback)");
+            }
             ensureLevelSlot (aim_ == Aim::matchInput);
         }
         auto t = findTarget();   // 18g: the safety net may move the limiter slot
@@ -286,8 +353,15 @@ public:
             t.lufs = 0.0f;   // a placeholder: in match mode the real target is re-read from the input each window
         if (! std::isfinite (t.lufs)) { log ("not armed: no target in the chain"); return false; }
         if (t.levelSlot < 0) { log ("not armed: no EchoJay Level slot could be placed (target " + fmt (t.lufs) + " from " + t.source + ")"); return false; }
-        armSource_ = t.source; loudnessOption_ = t.option; ceilingDb_ = t.ceiling;
+        armSource_ = t.source; ceilingDb_ = t.ceiling;
+        // 9 Oct 2026: the option the loop RUNS on is the aim it decided, not a word the chain may not carry. In
+        // match mode that word is "match" whatever the chain said, so grCapDb and aimWords agree with the aim.
+        loudnessOption_ = aim_ == Aim::matchInput ? juce::String ("match")
+                                                  : (t.option.isNotEmpty() ? t.option : juce::String ("pushed"));
         substituteLimiterIfNoCeilingReadback (t);   // 18g (item 5): the ceiling must be CONFIRMED before the loop drives into it
+        slot_ = t.levelSlot;   // recordAimOnSlot writes through slot_; arm() sets it again, harmlessly
+        if (t.optionSource == "absent" || t.optionSource == "level_device")
+            recordAimOnSlot (loudnessOption_);
         arm (t.lufs, t.levelSlot, t.limiterSlot);
         return true;
     }
@@ -378,7 +452,7 @@ public:
              + " gain " + fmtSigned ((float) lv->gainDb()) + " dB, limiter slot " + juce::String (limiterSlot_) + " (" + limiterName() + "), build-time input " + fmt (buildInputLufs_) + " LUFS");
         // 18g (item 1): NO window runs on the first audio. The user cues the loudest section and taps Listen (or types it).
         state_ = State::armed; proposals_ = 0; lastCommanded_ = 0.0f; prevMeasured_ = std::numeric_limits<float>::quiet_NaN();
-        emit (armBubbleText() + " (" + aimWords() + ")", -1.0f, false, false, Bubble::Kind::arm, armPills());
+        emit (armBubbleTextNow(), -1.0f, false, false, Bubble::Kind::arm, armPills());
         if (! juce::MessageManager::getInstanceWithoutCreating() || ! isTimerRunning()) startTimer (kTickMs);   // the tick feeds the Level card's GR while armed
     }
     // 18g (item 1): Listen starts the measuring window - from armed, from a Check prompt, from the quiet-window question, or
@@ -687,6 +761,34 @@ public:
                 return;
             }
         }
+        // ---- 08c F2: THE OWED OPENING, TAKEN BY THIS WINDOW -----------------------------------------------
+        // The opening normally lands from the tick while the loop is ARMED, on the audio the user plays while
+        // cueing. But a user can tap Listen the moment the build finishes, and then the arm's fresh window has no
+        // reading yet and the opening is still owed. It must not be skipped: the opening is the ONE uncapped
+        // write (7 Oct ruling - no peak-headroom cap), and a window's proposal is clamped per pass, so skipping
+        // it makes a first-pass landing fall short by exactly the clamp. That is the fault this item exists to
+        // close, arriving through a different door.
+        //
+        // So this window becomes the opening: one uncapped write from ITS measurement, and then the window
+        // RESTARTS so the refinement measures the chain as it now is. Two windows of playback instead of one,
+        // which is the honest cost of measuring rather than guessing - and in the ordinary path the opening has
+        // already landed while the user was cueing, so Listen is still a single window.
+        if (openingOwed_)
+        {
+            if (auto* lvNow = levelNow())
+            {
+                const float cur  = (float) lvNow->gainDb();
+                const float want = juce::jlimit (-kLevelMaxDb, kLevelMaxDb, cur + (target_ - measured));
+                log ("opening gain (this window, Listen came before any reading): " + fmt (measured)
+                     + " LUFS integrated at Level " + fmtSigned (cur) + " -> " + fmtSigned (want) + " dB for "
+                     + aimWords() + ". No peak-headroom cap (7 Oct ruling): the ceiling and the loud-window GR "
+                     "check are the safety. The window restarts to measure the chain as it now is."
+                     + busGainNote());
+                openingOwed_ = false;
+                if (std::abs (want - cur) >= 0.05f) { writeGainDb (want); startWindow(); return; }
+                noteLanded();
+            }
+        }
         // The loud window is kept as a SAFETY CHECK, as ruled - never as the target. It rides the log.
         if (std::isfinite (out.maxShortTermDb))
             log ("window: integrated " + fmt (measured) + " LUFS (the target), loudest 3 s "
@@ -896,6 +998,35 @@ private:
         return landedOnce_ && landedAtValueRev_ >= 0
             && host_.getChainValueRevision() != landedAtValueRev_;
     }
+    /** 9 Oct 2026: the Level slot's params as they stand, as a NEW object we may add to. Every write to this
+        slot goes through here so no writer can drop a field another writer owns. */
+    juce::DynamicObject* levelParamsCopy() const
+    {
+        if (slot_ >= 0)
+        {
+            const auto st = host_.getSlotStructured (slot_);
+            if (st.getDynamicObject() != nullptr)
+                if (auto* po = st.getProperty ("params", juce::var()).getDynamicObject())
+                    return new juce::DynamicObject (*po);
+        }
+        return new juce::DynamicObject();
+    }
+    /** 9 Oct 2026 (CONTRACT_LEVEL_PARAMS): RECORD THE AIM WE DECIDED, in the contract's own field, when the chain
+        did not carry one. Without this a match build whose option the plugin inferred (from the ChannelType)
+        looks identical on reload to a chain that was never asked anything, and the inference has to be made
+        again from whatever the ChannelType happens to be then. The decision is written down where B writes it. */
+    void recordAimOnSlot (const juce::String& optionWord)
+    {
+        if (slot_ < 0 || optionWord.isEmpty()) return;
+        const juce::StringArray opts { "commercial", "pushed", "dynamic", "keep", "match" };
+        auto* p = levelParamsCopy();
+        p->setProperty ("option", optionWord);
+        if (opts.contains (optionWord)) p->setProperty ("loudness_option", (double) opts.indexOf (optionWord));
+        auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (p));
+        host_.setSlotStructuredSettings (slot_, juce::var (w));
+        log ("recorded the aim on the Level slot as option \"" + optionWord + "\" - the chain carried none, so "
+             "the next arm reads the decision rather than inferring it again");
+    }
     /** 08c F2: THE OWED OPENING LANDING. Run from the tick while the loop is armed, so it fires as soon as this
         chain - the settled one - has been heard at both taps. Match mode sets the Level so out = in; target mode
         so out = the target. Either way it is one write, from one window, and `noteLanded` stamps the chain it was
@@ -1022,9 +1153,12 @@ private:
         // 08c F2: the loop's INPUT window is restarted with the output one, so a match compares the two over the
         // same span. The song's integrated reading (getChainInLevels) is untouched, as ruled.
         host_.resetChainInLoopLevels();
-        // 08c F2: a window supersedes an owed opening - it measures the same thing over a window the user chose,
-        // so the opening must not fire again behind it when the loop returns to `armed`.
-        openingOwed_ = false;
+        // 08c F2 (9 Oct, gate run 2): `openingOwed_` is DELIBERATELY NOT CLEARED HERE. It was, with the note "a
+        // window supersedes an owed opening" - and then the window handler that TAKES the owed opening was added
+        // below, needing the flag the moment the window completes. This cleared it first, so the opening never
+        // fired and legs K1, K2 and Z landed +6.00 against Sean's accepted +8: the per-pass clamp, which is
+        // exactly the shortfall this item exists to close. Two of my own edits disagreeing about one flag.
+        // A window does not supersede the opening, it PERFORMS it, and then restarts (see tickNow).
         host_.resetChainOutShortTermMax(); host_.resetChainInShortTermMax();
         if (auto* lim = echoJayLimiter()) lim->resetOutputPeak();
         if (auto* lv = levelNow()) lv->resetMeters();   // 18h: the Level's IN/OUT meters (and their peak holds) describe THIS window
@@ -1067,7 +1201,13 @@ public:
     {   // through the host so the card and the dial info follow
         const float before = currentGainDb();
         if (onGainWritten && std::abs (before - db) > 0.01f) onGainWritten (before, db);
-        auto* p = new juce::DynamicObject(); p->setProperty ("gain_db", (double) db);
+        // 9 Oct 2026 (CONTRACT_LEVEL_PARAMS): MERGE, NEVER REPLACE. This built a fresh params object holding
+        // gain_db alone, so the first landing DELETED `option` and `target_lufs` from the slot. The target
+        // survived only because the device remembers it; `option` is a server field with no device param behind
+        // it, so it was simply gone - and then every later findTarget read "absent" and the aim fell back to
+        // whatever the ChannelType said, whatever the server had asked for.
+        auto* p = levelParamsCopy();
+        p->setProperty ("gain_db", (double) db);
         auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (p));
         host_.setSlotStructuredSettings (slot_, juce::var (w));
         if (auto* lv = levelNow()) if (std::abs (lv->gainDb() - db) > 0.01) lv->setParamValue ("gain_db", db);

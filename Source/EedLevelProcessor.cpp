@@ -19,8 +19,10 @@ const echojay::ParamSchema& EedLevelProcessor::schema()
 bool EedLevelProcessor::setParamValue (const juce::String& id, double value)
 {
     if (id == kGainDb)     { gainDb_.store (juce::jlimit (kMinDb, kMaxDb, value), std::memory_order_relaxed); return true; }
-    if (id == kTargetLufs) { targetLufs_.store (juce::jlimit (-30.0, 0.0, value), std::memory_order_relaxed); return true; }
-    if (id == kLoudnessOption) { option_.store (juce::jlimit (0, kOptionMatch, (int) std::lround (value)), std::memory_order_relaxed); return true; }
+    if (id == kTargetLufs) { targetLufs_.store (juce::jlimit (-30.0, 0.0, value), std::memory_order_relaxed);
+                             targetSet_.store (true, std::memory_order_relaxed); return true; }
+    if (id == kLoudnessOption) { option_.store (juce::jlimit (0, kOptionMatch, (int) std::lround (value)), std::memory_order_relaxed);
+                                 optionSet_.store (true, std::memory_order_relaxed); return true; }
     return false;
 }
 double EedLevelProcessor::getParamValue (const juce::String& id) const

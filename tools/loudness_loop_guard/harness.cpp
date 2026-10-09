@@ -262,11 +262,14 @@ struct Rig
     double limiterInput() const { auto* l = dynamic_cast<EedLimiterProcessor*> (h.getSlotProcessor (limSlot)); return l ? l->inputDb() : 0.0; }
     juce::String last() const { return bubbles.isEmpty() ? juce::String() : bubbles[bubbles.size() - 1]; }
     // feed until the loop leaves waitAudio/measuring (a proposal, a hold or a rejection), bounded
+    // 08c F2: the bound is 40, not 16. When Listen arrives before anything has played, the first window TAKES
+    // the owed opening and restarts, so a complete pass legitimately needs two windows of counted audio. Sixteen
+    // iterations is one window's worth, and a leg that ran out would report the product as not proposing.
     void runWindow (float gainDb = 0.0f, IndependentMeter* ind = nullptr) {
 #ifdef EJ_LOUDNESSLOOP_MANNERS
         if (loop.state() == LoudnessLoop::State::armed) loop.listen();   // 18g: the window starts on Listen
 #endif
-        for (int k = 0; k < 16 && (loop.state() == LoudnessLoop::State::waitAudio || loop.state() == LoudnessLoop::State::measuring); ++k) feed (proc, prog, 100, false, &loop, ind, gainDb); }
+        for (int k = 0; k < 40 && (loop.state() == LoudnessLoop::State::waitAudio || loop.state() == LoudnessLoop::State::measuring); ++k) feed (proc, prog, 100, false, &loop, ind, gainDb); }
     // after applying the loop TRACKS: feed while it tracks (bounded), so a louder section can raise a back-off proposal
     void runTracking (float gainDb, int rounds = 16) { for (int k = 0; k < rounds && loop.state() == LoudnessLoop::State::tracking; ++k) feed (proc, prog, 100, false, &loop, nullptr, gainDb); }
 };
@@ -517,18 +520,41 @@ static int guardMain()
     {   // J1: no window before Listen
         Rig r (false); r.setTarget (-9.0f, 0.0); calibrate (r.proc, r.prog, -18.0f);
         r.armNoReading();
-        check (r.loop.state() == LoudnessLoop::State::armed && r.last() == "Cue the loudest section, press play, then tap Listen." && r.loop.lastPills().joinIntoString ("|") == "Listen", "J1. the arm bubble reads \"Cue the loudest section, press play, then tap Listen\" with [Listen]", r.last() + " [" + r.loop.lastPills().joinIntoString ("|") + "]");
+        // 08c F2: the arm bubble now NAMES THE AIM, and `armBubbleTextNow()` is its one author - which is what
+        // this reads, rather than a copy of the sentence that would go stale the next time the aim does.
+        check (r.loop.state() == LoudnessLoop::State::armed && r.last() == r.loop.armBubbleTextNow() && r.last().startsWith ("Cue the loudest section, press play, then tap Listen.") && r.last().contains ("-9.0 LUFS") && r.loop.lastPills().joinIntoString ("|") == "Listen", "J1. the arm bubble reads \"Cue the loudest section, press play, then tap Listen\" with [Listen], and names the aim", r.last() + " [" + r.loop.lastPills().joinIntoString ("|") + "]");
         for (int k = 0; k < 16; ++k) feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);   // 16 x ~1 s of the loudest part, ticking - no Listen
-        check (r.loop.state() == LoudnessLoop::State::armed && ! r.logs.joinIntoString ("\n").contains ("measured:") && std::abs (r.levelGain()) < 0.01f, "J1. NO window runs on the first audio: 16 s of audio without Listen measures nothing, proposes nothing", "state " + juce::String ((int) r.loop.state()));
+        // 08c F2 RE-AIMED. The subject is unchanged and is the 18g ruling: no WINDOW and no PROPOSAL before
+        // Listen. The third clause used to be "and the Level has not moved", which was true only because the
+        // opening wrote from a stale reading at the arm and armNoReading() denied it one. The 9 Oct ruling is
+        // that the opening lands FROM A MEASUREMENT of this chain, so on sixteen seconds of playback it lands -
+        // and that is now asserted here rather than forbidden.
+        check (r.loop.state() == LoudnessLoop::State::armed && ! r.logs.joinIntoString ("\n").contains ("measured:") && r.loop.bubbleCount() == 1, "J1. NO window runs on the first audio: 16 s of audio without Listen measures nothing and proposes nothing", "state " + juce::String ((int) r.loop.state()) + ", " + juce::String (r.loop.bubbleCount()) + " bubble(s)");
+        check (std::abs (r.levelGain() - 9.0f) <= 1.5f, "J1. ...and the OPENING landed from that audio, on this chain (08c F2)", "Level " + f1 (r.levelGain()) + " dB (want about +9.0: -18.0 in, target -9.0)");
         check (r.loop.listen() && r.loop.state() == LoudnessLoop::State::waitAudio, "J1. Listen starts the window");
         r.runWindow();
-        check (r.loop.state() == LoudnessLoop::State::proposed && r.loop.lastPills().joinIntoString ("|") == "Go|Leave it", "J1. ...which measures and proposes with [Go] [Leave it]", r.last() + " | pills " + r.loop.lastPills().joinIntoString ("|"));
+        // With the opening already landed the window has nothing left to propose, which is the right answer and
+        // is what leg I has always allowed for.
+        check ((r.loop.state() == LoudnessLoop::State::proposed && r.loop.lastPills().joinIntoString ("|") == "Go|Leave it")
+                   || r.loop.state() == LoudnessLoop::State::tracking, "J1. ...which measures, and either proposes with [Go] [Leave it] or reports it is on target", r.last() + " | pills " + r.loop.lastPills().joinIntoString ("|") + " | state " + juce::String ((int) r.loop.state()));
         // 21 Sep 2026 (loop manners): after Go the loop HOLDS - no automatic check while the audio continues (M1 in leg A) and no
         // "Tap Check" prompt when it stops: the after-Go bubble already carries [Check]
-        r.loop.go();
-        check (r.loop.state() == LoudnessLoop::State::hold && r.last().startsWith ("Applied "), "J2. after Go: hold with the after-verb bubble, no window runs", r.last());
-        { const int nb = r.loop.bubbleCount(); feed (r.proc, r.prog, 23 * 10, true, &r.loop, nullptr, 0.0f);   // 10 ticks of silence after Go
-          check (r.loop.state() == LoudnessLoop::State::hold && r.loop.bubbleCount() == nb && r.last().startsWith ("Applied "), "J2b. ...and 10 silent ticks change nothing (no \"Tap Check\" bubble, no measurement)", r.last()); }
+        // 08c F2: when the opening already landed the loop is TRACKING and there is nothing to Go to, so the
+        // Go half of this leg runs only in the state it is about. The subject - "after Go the loop holds, and
+        // silence afterwards changes nothing" - is asserted exactly as before when that state is reached.
+        if (r.loop.state() == LoudnessLoop::State::proposed)
+        {
+            r.loop.go();
+            check (r.loop.state() == LoudnessLoop::State::hold && r.last().startsWith ("Applied "), "J2. after Go: hold with the after-verb bubble, no window runs", r.last());
+            { const int nb = r.loop.bubbleCount(); feed (r.proc, r.prog, 23 * 10, true, &r.loop, nullptr, 0.0f);   // 10 ticks of silence after Go
+              check (r.loop.state() == LoudnessLoop::State::hold && r.loop.bubbleCount() == nb && r.last().startsWith ("Applied "), "J2b. ...and 10 silent ticks change nothing (no \"Tap Check\" bubble, no measurement)", r.last()); }
+        }
+        else
+        {
+            const int nb = r.loop.bubbleCount(); const auto was = r.last();
+            feed (r.proc, r.prog, 23 * 10, true, &r.loop, nullptr, 0.0f);
+            check (r.loop.bubbleCount() == nb && r.last() == was, "J2b. (on target, nothing to Go to) 10 silent ticks change nothing", r.last());
+        }
         check (r.loop.check() && r.loop.state() == LoudnessLoop::State::waitAudio, "J2b. Check starts the window");
         r.runWindow();
         check (r.loop.state() == LoudnessLoop::State::proposed || r.loop.state() == LoudnessLoop::State::tracking, "J2b. ...which measures", r.last());
@@ -1311,6 +1337,124 @@ static int guardMain()
                "E. the name test takes the built-in limiter and leaves the EQ and the Level alone");
         check (std::abs (ChainHost::kFinalCeilingDb + 0.1f) < 1.0e-6f,
                "E. and the figure is -0.1, named once", f1 (ChainHost::kFinalCeilingDb));
+    }
+    // ========== CONTRACT_LEVEL_PARAMS (B, 9 Oct 2026): THE FIELD IS `option`, AND WE WERE NOT READING IT =====
+    // B's contract writes settings_structured.params.option = "match" | "pushed" | "dynamic". The plugin read the
+    // Level device's NUMERIC loudness_option and nothing else, so `option` - absent from the device's schema -
+    // was skipped by applyStructured and never seen, and B's legacy STRING loudness_option lround()s to 0 =
+    // commercial. We wrote a field B does not read and read a field B does not write. These legs are B's own two
+    // JSON examples, verbatim from the contract.
+    std::printf ("== L. CONTRACT_LEVEL_PARAMS: params.option is the authority ==\n");
+    {   // L1: B's CHANNEL example - a rap vocal, nothing asked about level: {"params":{"option":"match"}}
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.proc.setChannelType (ChannelType::LeadVocal);
+        r.setGainDb (-6.0f);
+        { auto* pp = new juce::DynamicObject();
+          pp->setProperty ("option", "match");                       // and NOTHING else, exactly as B sends it
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        const auto t = r.loop.findTarget();
+        check (t.option == "match" && t.optionSource == "params.option",
+               "L1. `params.option` IS READ, and the log can say where it came from (RED as it stood: the field "
+               "was skipped by applyStructured and the loop read the device's numeric default = \"commercial\")",
+               "\"" + t.option + "\" via " + t.optionSource);
+        check (! std::isfinite (t.lufs),
+               "L1. ...and a build with NO target_lufs reports NO target (RED as it stood: targetLufs_ defaults to "
+               "-9.0 and the loop accepted it, so a volume-match build would have chased -9 LUFS)",
+               std::isfinite (t.lufs) ? f1 (t.lufs) + " LUFS from " + t.source : juce::String ("none"));
+        const float cal = calibrate (r.proc, r.prog, -18.0f);
+        check (std::abs (cal + 18.0f) < 0.8f, "L1. programme calibrated to -18 LUFS", f1 (cal));
+        check (r.loop.armFromChain(), "L1. it arms");
+        check (r.loop.aimWords() == "matched to input", "L1. ...as a volume match", r.loop.aimWords());
+        for (int k = 0; k < 14 && std::abs (r.levelGain()) < 0.05f; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+        check (std::abs (r.levelGain() - 6.0f) <= 1.5f,
+               "L1. ...and it makes up the chain's 6 dB loss instead of chasing a target nobody sent",
+               "Level " + f1 (r.levelGain()) + " dB");
+    }
+    {   // L2: B's MIX BUS example - Dynamic, hip-hop:
+        //     {"params":{"target_lufs":-12,"option":"dynamic","loudness_option":"dynamic"}}
+        // NOTE loudness_option is a STRING here. The device's schema takes a NUMBER, so lround() of a string var
+        // gives 0 = "commercial" - the legacy field cannot be trusted on its own, which is why `option` leads.
+        Rig r (false); r.proc.setChannelType (ChannelType::FullMix);
+        { auto* pp = new juce::DynamicObject();
+          pp->setProperty ("target_lufs", -12.0);
+          pp->setProperty ("option", "dynamic");
+          pp->setProperty ("loudness_option", "dynamic");
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        const auto t = r.loop.findTarget();
+        check (t.option == "dynamic" && t.optionSource == "params.option",
+               "L2. the mix-bus example reads \"dynamic\" from `params.option`",
+               "\"" + t.option + "\" via " + t.optionSource);
+        check (std::isfinite (t.lufs) && std::abs (t.lufs + 12.0f) < 0.01f && t.source == "level_params",
+               "L2. ...with the -12 INTEGRATED target from level_params",
+               (std::isfinite (t.lufs) ? f1 (t.lufs) : juce::String ("none")) + " via " + t.source);
+        calibrate (r.proc, r.prog, -18.0f);
+        check (r.loop.armFromChain(), "L2. it arms");
+        check (r.loop.loudnessOption() == "dynamic",
+               "L2. ...as dynamic, NOT as the \"commercial\" the string would have lround()ed to",
+               r.loop.loudnessOption());
+        check (r.loop.aimWords().contains ("-12.0 LUFS") && r.loop.aimWords().contains ("keeping dynamics"),
+               "L2. ...and the card says what it is aiming at", r.loop.aimWords());
+    }
+    {   // L3: the legacy WORD on its own, with no `option` - an older server's chain
+        Rig r (false); r.proc.setChannelType (ChannelType::FullMix);
+        { auto* pp = new juce::DynamicObject();
+          pp->setProperty ("target_lufs", -8.0);
+          pp->setProperty ("loudness_option", "pushed");
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        const auto t = r.loop.findTarget();
+        check (t.option == "pushed" && t.optionSource.contains ("legacy"),
+               "L3. the legacy STRING loudness_option is read as the word it is, and named as legacy",
+               "\"" + t.option + "\" via " + t.optionSource);
+    }
+    {   // L4: THE ONE PLACE B'S FALLBACK AND SEAN'S RULING COLLIDE - no option, a target present.
+        // B: treat as "pushed". Sean (9 Oct): only FullMix and MasterBus hit a target. Sean's ruling wins and the
+        // disagreement is LOGGED. Both directions here, because a rule that only ever wins is not tested.
+        for (int isMix = 0; isMix < 2; ++isMix)
+        {
+            Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+            r.proc.setChannelType (isMix ? ChannelType::FullMix : ChannelType::DrumBus);
+            r.setGainDb (-4.0f);
+            { auto* pp = new juce::DynamicObject();
+              pp->setProperty ("target_lufs", -8.0);                 // a target, and NO option at all
+              auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+              r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+            const auto t = r.loop.findTarget();
+            check (t.option.isEmpty() && t.optionSource == "absent",
+                   "L4. no option in the chain is reported as ABSENT, not as the device's default word",
+                   "\"" + t.option + "\" via " + t.optionSource);
+            calibrate (r.proc, r.prog, -18.0f);
+            check (r.loop.armFromChain(), "L4. it arms");
+            // isMix: the fallback option is "pushed" (the contract's word for a target), so the card reads
+            // "-8.0 LUFS, pushed". The aim, not the chain's silence, decides what the loop says it is doing.
+            check (r.loop.aimWords() == (isMix ? juce::String ("-8.0 LUFS, pushed") : juce::String ("matched to input")),
+                   juce::String ("L4. ") + (isMix ? "a MIX BUS with a target and no option hits it"
+                                                  : "a DRUM BUS with a target and no option VOLUME-MATCHES (Sean's "
+                                                    "ruling over the contract's \"pushed\" fallback)"),
+                   r.loop.aimWords());
+            check (r.logs.joinIntoString ("\n").contains ("flagged, not settled"),
+                   "L4. ...and the log says the two rules disagreed and which won, rather than settling it "
+                   "silently");
+        }
+    }
+    {   // L5: OUR OWN INSERT WRITES THE CONTRACT'S FIELD, so it survives a reload as what it is
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.proc.setChannelType (ChannelType::VocalBus);
+        const auto* lim = BuiltinDeviceRegistry::instance().findByName ("EJ Test Limiter");
+        juce::ignoreUnused (lim);
+        calibrate (r.proc, r.prog, -18.0f);
+        check (r.loop.armFromChain(), "L5. a bus build with nothing on the Level slot arms");
+        const auto t = r.loop.findTarget();
+        check (t.option == "match" && t.optionSource == "params.option",
+               "L5. the slot the plugin wrote reads back as `option: \"match\"` (RED as it stood: only the "
+               "numeric field was written, so a reload armed it as \"commercial\")",
+               "\"" + t.option + "\" via " + t.optionSource);
+        check (! std::isfinite (t.lufs),
+               "L5. ...and carries no target, as the contract requires of a match insert",
+               std::isfinite (t.lufs) ? f1 (t.lufs) : juce::String ("none"));
     }
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     // ---- 21t-d: the compressor calibration loop --------------------------------------------------------------

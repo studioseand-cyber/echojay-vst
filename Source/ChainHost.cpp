@@ -5725,6 +5725,10 @@ juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& m
     // (map exists, nothing written). ">=1 written" reported as success
     // would still overclaim (the spiff class of bug).
     s.dialAppliedCount = (int) appliedSummary.size();
+    // 08c item F2: the MAPPED path's half of the same rule - a dialled value is a value write, whoever wrote it.
+    // One rule for both paths, or the staleness check and the sidecar would see a third-party dial and a built-in
+    // dial differently for no reason anybody could state.
+    if (s.dialAppliedCount > 0) bumpChainValue();
     if (report.empty())
         s.dialStatus = DialStatus::mapNoCoverage; // structured present, nothing requested survived
     else if (s.dialManual.isEmpty())
@@ -5881,6 +5885,14 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             // device could not place (the EQ was full, an id was unknown) is
             // partial, not success.
             s.dialStatus = (skipped > 0) ? DialStatus::partial : DialStatus::applied;
+            // 08c item F2 (9 Oct 2026): A DIALLED VALUE IS A VALUE WRITE. bumpChainValue was wired to
+            // setSlotPreTrimDb, setSlotWet, setSlotOutGainDb, setSlotControlsToValue and the edit-op batch -
+            // but NOT to a dialled settings_structured, which is how a bell, a threshold or a ratio actually
+            // arrives. Two consumers were wrong because of it: the save/sidecar path ("is there something new to
+            // persist" - a dialled EQ plainly is), and the level loop's staleness check, which could not see
+            // Sean's two EQ bells at 20:05 on 8 Oct, the exact case it was written for. Structural revision
+            // untouched, as ruling 2 requires: dialling a slot is not editing the chain.
+            if (applied > 0) bumpChainValue();
         }
         else
         {
