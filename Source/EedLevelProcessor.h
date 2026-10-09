@@ -43,13 +43,6 @@ public:
 
     double gainDb() const noexcept { return gainDb_.load (std::memory_order_relaxed); }
     double targetLufs() const noexcept { return targetLufs_.load (std::memory_order_relaxed); }
-    /** 9 Oct 2026 (CONTRACT_LEVEL_PARAMS): WAS A TARGET ACTUALLY SENT, or is this the schema's default?
-        targetLufs_ defaults to -9.0 and the loop accepted any finite value below -0.5, so a Level slot carrying
-        NO target_lufs - which is exactly what B's `option: "match"` build sends - reported a -9.0 LUFS target
-        from "level_device". A volume-match build would have chased -9. A default that poses as a measurement is
-        the same fault as an integrated reading that predates its chain. */
-    bool   targetWasSet() const noexcept { return targetSet_.load (std::memory_order_relaxed); }
-    bool   optionWasSet() const noexcept { return optionSet_.load (std::memory_order_relaxed); }
     int    loudnessOption() const noexcept { return option_.load (std::memory_order_relaxed); }
     static const char* optionName (int i) noexcept { static const char* n[] = { "commercial", "pushed", "dynamic", "keep", "match" }; return n[juce::jlimit (0, 4, i)]; }
     static constexpr int kOptionMatch = 4;
@@ -66,7 +59,6 @@ public:
 private:
     std::atomic<double> gainDb_ { 0.0 }, targetLufs_ { -9.0 };
     std::atomic<int>    option_ { 0 };
-    std::atomic<bool>   targetSet_ { false }, optionSet_ { false };   // see targetWasSet()
     std::atomic<float>  downstreamGr_ { std::numeric_limits<float>::quiet_NaN() };
     std::atomic<bool>  downstreamGrEst_ { false };
     float  curLin_ = 1.0f;          // audio-thread smoothed linear gain

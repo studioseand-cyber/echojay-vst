@@ -209,14 +209,25 @@ public:
         {
             if (auto* lv = dynamic_cast<EedLevelProcessor*> (host_.getSlotProcessor (t.levelSlot)))
             {
+                // `lv` is now only the TYPE CHECK - this slot really is an EchoJay Level - because nothing below
+                // reads the device any more. Kept for that, and named so it does not look like an oversight.
+                juce::ignoreUnused (lv);
+                // 9 Oct 2026 (fix 3, SECOND ATTEMPT - the first was wrong). The device's own params cannot
+                // answer "did the server send a target": a READBACK path writes every param back through
+                // setParamValue, so any "was it set" flag on the device is true whatever arrived.
+                //   EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+                // ...on a build whose only param was option:"match". So the STRUCTURED PARAMS are the authority,
+                // because they are the only record of what the server actually wrote - and now that writeGainDb
+                // merges instead of replacing, they survive the first landing.
+                // AND THE DEVICE IS NOT CONSULTED AT ALL. I first kept it as a narrow fallback for a slot with
+                // no params object, then could not state what it would mean: the device's DEFAULTS are -9.0 and
+                // commercial, so "the server asked for -9 commercial" and "nobody asked for anything" are the
+                // same reading. A fallback that cannot distinguish its two cases is not a fallback. Every chain
+                // the product has ever built writes target_lufs into the params (18e's shape, and
+                // ensureLevelSlot's), so the device path covered nothing real - only the defaults, which is
+                // exactly how a volume-match build came to chase -9 LUFS.
                 const auto tv = readParams (t.levelSlot, "target_lufs");
                 if (tv.isDouble() || tv.isInt() || tv.isInt64()) { t.lufs = (float) (double) tv; t.source = "level_params"; }
-                // 9 Oct 2026 (CONTRACT_LEVEL_PARAMS, fix 3): only a target that was actually WRITTEN counts.
-                // targetLufs_ defaults to -9.0, so this branch used to hand back -9 for a slot that carried no
-                // target at all - which is precisely what B's `option: "match"` build sends. A volume-match
-                // build would have chased -9 LUFS and the card would have said so.
-                else if (lv->targetWasSet() && std::isfinite ((float) lv->targetLufs()) && lv->targetLufs() < -0.5)
-                { t.lufs = (float) lv->targetLufs(); t.source = "level_device"; }
                 // ---- 9 Oct 2026 (CONTRACT_LEVEL_PARAMS, fix 2): `option` IS THE FIELD, and we never read it --
                 // B writes `settings_structured.params.option` = "match" | "pushed" | "dynamic". The plugin read
                 // the Level device's NUMERIC `loudness_option` and nothing else, so `option` - not in the
@@ -231,7 +242,6 @@ public:
                 const auto lo = readParams (t.levelSlot, "loudness_option");
                 if (ov.isString() && ov.toString().isNotEmpty())       { t.option = ov.toString().toLowerCase(); t.optionSource = "params.option"; }
                 else if (lo.isString() && lo.toString().isNotEmpty())  { t.option = lo.toString().toLowerCase(); t.optionSource = "params.loudness_option (legacy word)"; }
-                else if (lv->optionWasSet())                           { t.option = EedLevelProcessor::optionName (lv->loudnessOption()); t.optionSource = "level_device"; }
                 else                                                   { t.option = {}; t.optionSource = "absent"; }
             }
         }
@@ -360,7 +370,9 @@ public:
                                                   : (t.option.isNotEmpty() ? t.option : juce::String ("pushed"));
         substituteLimiterIfNoCeilingReadback (t);   // 18g (item 5): the ceiling must be CONFIRMED before the loop drives into it
         slot_ = t.levelSlot;   // recordAimOnSlot writes through slot_; arm() sets it again, harmlessly
-        if (t.optionSource == "absent" || t.optionSource == "level_device")
+        // Record the decision whenever it did not come from the contract's own field, so the next arm reads it
+        // instead of inferring it again.
+        if (t.optionSource != "params.option")
             recordAimOnSlot (loudnessOption_);
         arm (t.lufs, t.levelSlot, t.limiterSlot);
         return true;
