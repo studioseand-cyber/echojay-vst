@@ -320,6 +320,12 @@ struct EchoJayTabStripTestAccess
     { std::vector<EchoJayEditor::SavedChainRef> v; const auto s = e.collectSavedChainRefs (v);
       if (srcOut != nullptr) *srcOut = s; return (int) v.size(); }
     static void setChainViewUid (EchoJayEditor& e, const juce::String& uid) { e.selectRackForView (uid); }
+    // ---- 08c item D: the chains list's ONE bottom edge, the rects the layout wrote, the model's row count ----
+    static int listBottom (EchoJayEditor& e) { return e.chainListBottom_; }
+    static int listStatusBottom (EchoJayEditor& e) { return e.chainListStatusRect_.getBottom(); }
+    static std::vector<juce::Rectangle<int>> rowRects (EchoJayEditor& e) { return e.chainRowRects_; }
+    static int displayRows (EchoJayEditor& e) { return (int) e.chainDisplayRows_.size(); }
+    static bool chainsModeOn (EchoJayEditor& e) { return e.processorRef.chainSidebarChainsMode; }
     static juce::StringArray chips (EchoJayEditor& e, const Msg& m) { juce::StringArray out; for (const auto& c : e.resultChipList (m)) out.add (c.label + "#" + juce::String (c.kind)); return out; }
     // 18h (1): the chip layout at a given width, the row count, the on-screen chip buttons
     static std::vector<juce::Rectangle<int>> layout (EchoJayEditor& e, const Msg& m, int w) { std::vector<juce::Rectangle<int>> r; e.layoutResultChips (m, { 0, 0, w, 26 }, r); return r; }
@@ -3729,6 +3735,132 @@ int main()
         A::mergeRow (*ed, juce::var (bad));
         check (A::savedChainCount (*ed) == 1, "(B) a row with no id is refused",
                juce::String (A::savedChainCount (*ed)));
+    }
+
+    // ---- 08c item C, 9 Oct 2026: A VERB, NOT A SENTENCE THAT CONTAINS ONE ------------------------------
+    // Sean typed "check the level of the mix bus" at 20:06:58 on 08b and got no reply at all. `again` was
+    // t.contains("check the level"), so a chat question was taken as the Check verb: the turn never went to the
+    // server AND a second measuring window opened. "No response" and "Go was never pressed" were both this.
+    std::printf ("== 08c item C: a bare verb is taken, a sentence that merely contains one is not ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (2000, 1100); A::toChat (*ed); pumpMs (60);
+        auto& loop = proc.loudnessLoop();
+        A::build (*ed, "{\"chain\":[{\"name\":\"EchoJay Level\",\"role\":\"level\",\"settings_structured\":{\"params\":{\"gain_db\":0,\"target_lufs\":-9,\"loudness_option\":0}}},{\"name\":\"EchoJay Limiter\",\"role\":\"limiter\",\"settings_structured\":{\"params\":{\"ceiling_db\":-0.1,\"true_peak\":1}}}]}");
+        pumpMs (2500);
+        check (loop.everArmed(), "(C) precondition: the loop is armed, so the matcher is live at all");
+
+        // HIS SENTENCE. It must NOT be taken - it is a question for the server.
+        const auto stateBefore = loop.state();
+        check (! A::verb (*ed, "check the level of the mix bus"),
+               "(C) HIS SENTENCE IS NOT A VERB, so it goes to the server (RED as it stood: t.contains(\"check "
+               "the level\") ate it, the turn never sent, and a second window opened instead)");
+        check (loop.state() == stateBefore,
+               "(C) ...and it did not open a window behind his back",
+               juce::String ((int) stateBefore) + " -> " + juce::String ((int) loop.state()));
+
+        // THE BARE VERBS STILL WORK - the whole point is to keep them, not to break the feature to fix the bug.
+        check (A::verb (*ed, "check the level"), "(C) \"check the level\" IS taken");
+        check (A::verb (*ed, "push it"), "(C) \"push it\" is taken");
+        check (A::verb (*ed, "a bit louder"), "(C) \"a bit louder\" is taken");
+        check (A::verb (*ed, "push it a bit harder"),
+               "(C) ...and a five-word phrasing of a verb is still taken, which is why the bound is words and "
+               "not an exact match");
+
+        // AND THE OTHER SENTENCES THAT WOULD HAVE BEEN EATEN. Every one of these is a question a user may type.
+        for (const char* q : { "why is the mix bus a bit louder than the vocal",
+                               "should i push it harder on the drum bus or leave it",
+                               "can you check the level on the master and tell me",
+                               "what would a bit softer do to the kick here" })
+            check (! A::verb (*ed, q), juce::String ("(C) not a verb: \"") + q + "\"");
+
+        // AND A TAKEN VERB ALWAYS LEAVES AN ANSWER. A message that vanishes into the matcher is
+        // indistinguishable from a dropped send, which is exactly how Sean's read.
+        auto& M = A::msgs (*ed);
+        const size_t before = M.size();
+        check (A::verb (*ed, "done"), "(C) \"done\" is taken");
+        bool answered = false;
+        for (size_t i = before; i < M.size(); ++i) if (M[i].role == "assistant" && M[i].content.isNotEmpty()) answered = true;
+        check (answered,
+               "(C) ...and the user gets a reply to it, always (RED as it stood: a verb the loop had nothing to "
+               "do with produced the user's own bubble and silence)",
+               juce::String ((int) (M.size() - before)) + " message(s) added");
+    }
+
+    // ---- 08c item D, 9 Oct 2026: THE CHAINS LIST RENDERS ROWS, AND ONE NUMBER BOUNDS THEM --------------
+    // Sean pressed CHAINS on 08b and got a column with nothing in it but the chat input, while the log said the
+    // panel opened, the fetch returned 200 with one chain, and RENDER had 1 row. Panel, fetch and model were all
+    // fine; the geometry had TWO authors for one edge - the layout bounded the rows with its own local
+    // `chatScrollBottom` and the painter bounded them with `chatScroll.getBottom()`, the live component. This leg
+    // asserts the thing the log could not: that the rows have somewhere to go, and that the edge the painter
+    // uses is the edge the layout wrote.
+    std::printf ("== 08c item D: the chains list renders rows ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (2000, 1100); A::toChat (*ed); pumpMs (60);
+
+        // Sean's state: the Chain tab current (the build takes it there, as leg (2) proves), one saved chain in
+        // the model, and CHAINS pressed.
+        A::build (*ed, "{\"chain\":[{\"name\":\"EchoJay EQ\",\"role\":\"eq\",\"settings\":\"\"}]}");
+        for (int k = 0; k < 20 && A::tab (*ed) != A::chainTab(); ++k) pumpMs (30);
+        auto* row = new juce::DynamicObject();
+        row->setProperty ("id", "ch_d_1");
+        row->setProperty ("name", "Aitch Vocal Chain");
+        row->setProperty ("slotCount", 5);
+        row->setProperty ("hasState", true);
+        row->setProperty ("source", "plugin");
+        A::mergeRow (*ed, juce::var (row));
+        A::setChainsMode (*ed, true);
+        pumpMs (120);
+
+        check (A::chainsModeOn (*ed), "(D) precondition: CHAINS mode is on");
+        check (A::displayRows (*ed) >= 1,
+               "(D) precondition: the model has a row to show - the same state the log reported as RENDER 1 row",
+               juce::String (A::displayRows (*ed)) + " display row(s)");
+        const int bottom = A::listBottom (*ed);
+        const int statusBottom = A::listStatusBottom (*ed);
+        check (bottom > statusBottom + 8,
+               "(D) THE LIST HAS A BOTTOM EDGE BELOW ITS OWN STATUS LINE - i.e. there is room for a row at all "
+               "(RED on a zero or inverted edge, which is a column with nothing in it)",
+               "bottom " + juce::String (bottom) + ", status bottom " + juce::String (statusBottom));
+        const auto rects = A::rowRects (*ed);
+        int placed = 0, pastEdge = 0;
+        for (const auto& r : rects)
+        {
+            if (r.isEmpty()) continue;
+            ++placed;
+            // THE PAINTER'S OWN PREDICATE, run here on the rects the LAYOUT wrote. Before item D these two
+            // compared against different numbers, so a rect could be laid out and then skipped - and that is
+            // invisible from either side on its own.
+            if (r.getBottom() > bottom) ++pastEdge;
+        }
+        check (placed >= 1,
+               "(D) AT LEAST ONE ROW GOT A RECT (RED as it stood: with the list bounded at its own top, every row "
+               "was pushed as an empty rect and the column showed nothing)",
+               juce::String (placed) + " of " + juce::String ((int) rects.size()) + " rect(s) non-empty");
+        check (pastEdge == 0,
+               "(D) ...and every rect the layout wrote PASSES THE PAINTER'S TEST against the same edge - one "
+               "author, so the two passes cannot disagree",
+               juce::String (pastEdge) + " rect(s) past the edge");
+        if (placed >= 1)
+        {
+            juce::Rectangle<int> first;
+            for (const auto& r : rects) if (! r.isEmpty()) { first = r; break; }
+            check (first.getWidth() > 40 && first.getHeight() >= 18,
+                   "(D) ...and the first row is a usable size, not a sliver", first.toString());
+        }
+
+        // AND THE EDGE IS THE LAYOUT'S TO WRITE: it is cleared when the panel opens, so a stale number from a
+        // previous mode cannot bound this list, and the layout that setChainSidebarMode runs refills it.
+        A::setChainsMode (*ed, false); pumpMs (60);
+        A::setChainsMode (*ed, true);  pumpMs (120);
+        check (A::listBottom (*ed) == bottom,
+               "(D) reopening CHAINS re-authors the same edge rather than leaving it at the cleared 0",
+               juce::String (A::listBottom (*ed)) + " vs " + juce::String (bottom));
     }
 
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);

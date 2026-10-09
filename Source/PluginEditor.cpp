@@ -23401,9 +23401,13 @@ bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg, bool forced)
     appendLocalUserBubble(msg);
     loop.note("verb \"" + t + "\"" + (forced ? juce::String(" (server loop_verb)") : juce::String()) + " state " + juce::String((int) loop.state()));   // 18f: one EJLoudness stream (the loop's logLine -> NSLog)
     // 08c item C: A TAKEN VERB ALWAYS LEAVES AN ANSWER. Sean's message disappeared into the matcher and nothing
-    // came back, which is indistinguishable from a dropped send. The bubble count before and after is the test:
-    // if the verb produced no bubble of its own, this says what was taken and what it did.
+    // came back, which is indistinguishable from a dropped send. "Was there an answer" is measured on BOTH
+    // counters, because either one can carry it: the loop's own bubbles (which may REPLACE rather than append, so
+    // the chat does not grow) and this function's local result bubbles (which never touch the loop's counter).
+    // Counting only one of them would re-answer a branch that already answered - the help line below is exactly
+    // that case.
     const int bubblesBefore = loop.bubbleCount();
+    const size_t chatBefore = chatMessages.size();
     if (listenAgain) { if (! loop.listenAgain()) appendLocalResultBubble("Nothing to re-listen for - tap Listen with the loudest part playing."); }
     else if (listen) { if (! loop.listen()) appendLocalResultBubble("Already listening - keep the loudest part playing."); }
     else if (checkV) { if (! loop.check()) appendLocalResultBubble("Nothing to check right now - tap Listen with the loudest part playing."); }
@@ -23424,7 +23428,7 @@ bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg, bool forced)
     else appendLocalResultBubble("Say listen, go, check, push it, a bit louder or softer, undo, leave it, or done.");
     // 08c item C: the verb is answered, always. A loop call that changed nothing and said nothing leaves the user
     // looking at their own message with no reply - which is what "no response" was on 8 Oct.
-    if (loop.bubbleCount() == bubblesBefore)
+    if (loop.bubbleCount() == bubblesBefore && chatMessages.size() == chatBefore)
         appendLocalResultBubble ("Took that as \"" + t + "\" - the level loop had nothing to do with it just now ("
                                  + loop.aimWords() + ").");
     resized(); repaint();

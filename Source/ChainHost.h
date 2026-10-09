@@ -1487,9 +1487,13 @@ public:
     echojay::LevelTally::Snapshot getChainOutLevels() const { return chainOutTally_.snapshot(); }
     // 18 Sep 2026 (loudness loop): reset ONLY the chain-output tally and set its counting floor.
     void resetChainOutLevels() { chainOutTally_.reset(); }
-    // 08c F2 (9 Oct 2026): the INPUT tally too, so a level landing can measure chain IN and OUT over the SAME
-    // window. Without this the two taps describe different spans of audio and "out = in" is not a measurement.
-    void resetChainInLevels()  { chainInTally_.reset(); }
+    // 08c F2 (9 Oct 2026): THE LOOP'S OWN INPUT WINDOW, from the same tap as chainInTally_. A volume match
+    // compares chain IN and OUT over the SAME span, so the loop must be able to reset its input measurement -
+    // and Sean's standing rule is that a loop reset NEVER clears the song's integrated reading. That reading is
+    // chainInTally_ / getChainInLevels(), cleared only by resetAllLevels() on a source change or a manual reset,
+    // and it is NOT what these two touch.
+    echojay::LevelTally::Snapshot getChainInLoopLevels() const { return chainInLoopTally_.snapshot(); }
+    void resetChainInLoopLevels() { chainInLoopTally_.reset(); }
     void setChainOutCountFloor (float lufs) { chainOutTally_.setCountFloor (lufs); }
     void resetChainOutShortTermMax() { chainOutTally_.resetShortTermMax(); }   // 18e: the loop's measurement window
     void resetChainInShortTermMax()  { chainInTally_.resetShortTermMax(); }
@@ -2690,6 +2694,8 @@ private:
     // Running level at the chain input and output (see getChainInLevels):
     // K-weighted (LUFS), the perceived level C7 matches
     echojay::LevelTally chainInTally_  { echojay::LevelTally::Weighting::K };
+    echojay::LevelTally chainInLoopTally_ { echojay::LevelTally::Weighting::K };   // 08c F2: the loop's input window
+
     echojay::LevelTally chainOutTally_ { echojay::LevelTally::Weighting::K };
     double              tallySr_ = 0.0;   // rate the tallies were prepared at
     juce::String hostTrackName_;

@@ -441,15 +441,17 @@ EchoJayProcessor::EchoJayProcessor()
     // applyBusGainSmoothed runs between chainHost.process and the meter tap. The loop does not correct for it -
     // its landing is a closed-loop measurement - but every figure it reports now NAMES the trim when there is one.
     loudnessLoop_.busGainDb = [this] { return getBusGainDb(); };
-    // 08c item F2 (9 Oct 2026 ruling): WHICH BUILDS HIT A TARGET. A CHANNEL or a BUS build volume-matches - the
-    // chain must not change the level - and only a MIX BUS or MASTER build chases a loudness target. The three
-    // whole-mix roles are the only ones that do: FullMix (the Full Mix choice), MasterBus and MusicBus. Every
-    // other ChannelType, including the per-instrument busses (VocalBus, DrumBus, GuitarBus, SynthBus,
-    // InstrumentBus), matches - a drum bus that quietly got 3 dB louder than it was fed is the fault this closes.
+    // 08c item F2 (9 Oct 2026 ruling): WHICH BUILDS HIT A TARGET. Sean's rule is "a CHANNEL or a BUS build
+    // VOLUME-MATCHES - the chain must not change the level - and a MIX BUS or MASTER build hits a loudness
+    // TARGET". Taken literally that is two ChannelTypes and no others: FullMix ("Mix Bus") and MasterBus.
+    // Every other type matches, including the per-instrument busses (VocalBus, DrumBus, GuitarBus, SynthBus,
+    // InstrumentBus) - a drum bus that quietly came out 3 dB louder than it was fed is the fault this closes.
+    // I have NOT included MusicBus, although it is a plausible whole-mix role: the ruling named two and
+    // widening it is Sean's call, not mine. Flagged for him rather than decided here.
     loudnessLoop_.aimIsTarget = [this]
     {
         const auto ct = getChannelType();
-        return ct == ChannelType::FullMix || ct == ChannelType::MasterBus || ct == ChannelType::MusicBus;
+        return ct == ChannelType::FullMix || ct == ChannelType::MasterBus;
     };
     startTimer(1000);
 }

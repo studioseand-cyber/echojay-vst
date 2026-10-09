@@ -31,13 +31,21 @@ public:
 
     static constexpr const char* kGainDb        = "gain_db";
     static constexpr const char* kTargetLufs    = "target_lufs";
-    static constexpr const char* kLoudnessOption = "loudness_option";   // 0 commercial, 1 pushed, 2 dynamic, 3 keep
+    // 0 commercial, 1 pushed, 2 dynamic, 3 keep, 4 MATCH.
+    // 08c item F2 (9 Oct 2026): "match" is the CHANNEL/BUS aim - the chain must not change the level, so the
+    // target is the chain's own INPUT, measured, rather than a figure the server chose. It is a loudness option
+    // and not a separate field because that is the contract agreed with B for level_params ("match" | "pushed" |
+    // "dynamic"), and because every mechanism in the loop then works unchanged: match is "hit the target" with
+    // the target measured. A build that carries option 4 and NO target_lufs is valid, and is the only option
+    // value for which that is true.
+    static constexpr const char* kLoudnessOption = "loudness_option";
     static constexpr double kMinDb = -24.0, kMaxDb = 24.0;
 
     double gainDb() const noexcept { return gainDb_.load (std::memory_order_relaxed); }
     double targetLufs() const noexcept { return targetLufs_.load (std::memory_order_relaxed); }
     int    loudnessOption() const noexcept { return option_.load (std::memory_order_relaxed); }
-    static const char* optionName (int i) noexcept { static const char* n[] = { "commercial", "pushed", "dynamic", "keep" }; return n[juce::jlimit (0, 3, i)]; }
+    static const char* optionName (int i) noexcept { static const char* n[] = { "commercial", "pushed", "dynamic", "keep", "match" }; return n[juce::jlimit (0, 4, i)]; }
+    static constexpr int kOptionMatch = 4;
 
     // The meters: input (before this gain) and output (after it). Read on the message thread.
     echojay::LevelTally::Snapshot inputLevels()  const { return in_.snapshot(); }

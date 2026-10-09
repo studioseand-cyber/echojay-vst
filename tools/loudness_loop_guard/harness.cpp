@@ -10,6 +10,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"   // 21t-l item 5: editCarriesAdd
 #include "EedLimiterProcessor.h"   // force-link the built-in's registrar
+#include "EedLevelProcessor.h"      // 08c F2: optionName / kOptionMatch, named rather than assumed
 #include "EedDeviceRegistry.h"
 #include "EchoJayFileLog.h"
 #include "EchoJayReadingGate.h"
@@ -971,9 +972,11 @@ static int guardMain()
         r.setTarget (-8.0f, 0.0);
         const float cal = calibrate (r.proc, r.prog, -14.5f);
         check (std::abs (cal + 14.5f) < 0.6f, "Z. programme calibrated at the chain input to -14.5 LUFS (his build-time figure)", f1 (cal));
-        // DELIBERATELY NOT armNoReading(): this leg is about the opening write itself, so arm() must see the
-        // reading the calibrate pass just produced - that is the whole subject.
-        check (r.loop.armFromChain(), "Z. armed from the Level slot's params, WITH a chain-output reading in hand");
+        // DELIBERATELY NOT armNoReading(): this leg is about the landing, and the calibrate pass leaves a
+        // reading in hand - which 08c F2 now deliberately THROWS AWAY at the arm (the opening is owed and
+        // measured on a fresh window, because an integrated figure that predates the chain's dials is not a
+        // measurement of that chain). The acceptance bounds below are unchanged and are the subject.
+        check (r.loop.armFromChain(), "Z. armed from the Level slot's params");
         r.runWindow();
         // The proposal is on the table; the figure it names must be the INTEGRATED one, not the loudest 3 s.
         const auto proposal = r.last();
@@ -1005,7 +1008,10 @@ static int guardMain()
         Rig r (false); r.setTarget (-8.0f, 0.0);
         r.h.setStateCacheEnabled (true);
         calibrate (r.proc, r.prog, -14.5f);
-        check (r.loop.armFromChain(), "Z3. armed with a reading, so the opening write lands");
+        check (r.loop.armFromChain(), "Z3. armed");
+        // 08c F2: the opening is OWED at the arm and lands from the tick on a fresh window, so the gain this leg
+        // needs has to be played for. Bounded, and the assertion below says if it never arrived.
+        for (int k = 0; k < 12 && std::abs (r.levelGain()) < 0.5f; ++k) feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
         const float landed = r.levelGain();
         check (std::abs (landed) > 0.5f, "Z3. the loop wrote a gain to land on (the precondition)", f1 (landed));
 
@@ -1058,6 +1064,253 @@ static int guardMain()
         check (said.contains ("reads"), "Z2. ...WITH the figure the meters show, not a bare \"no signal\"", said);
         check (r.loop.lastPills().joinIntoString ("|").contains ("Listen"),
                "Z2. ...and it offers Listen, so the user has a way forward", r.loop.lastPills().joinIntoString ("|"));
+    }
+    // ================= 08c ITEM F2 (9 Oct 2026): THE LANDING MEASURES ITS OWN CHAIN ======================
+    // Sean's mix bus on 08b: target -12 "dynamic", landed -14.8 integrated, 2.8 dB short, and his vocal build got
+    // no landing at all. The cause was not the arm's timing - armLoudnessLoopIfTargeted already runs from the
+    // dial-settled path - it was the READING: getChainOutLevels().levelDb integrates everything heard since the
+    // last reset, so the opening solved for -15.3 while the settled chain delivered -14.6 once the API-2500 took
+    // its 2.4 dB. These legs carry his two cases.
+    std::printf ("== F2-1. the dials land AFTER the arm, and the opening still lands on the settled chain ==\n");
+    {
+        // HIS SHAPE: input -14.5 integrated, a target, and a plugin that takes 2.4 dB - arriving AFTER the arm,
+        // which is what a build does (the dials land when the server's block is applied).
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.setTarget (-8.0f, 0.0);
+        const float cal = calibrate (r.proc, r.prog, -14.5f);
+        check (std::abs (cal + 14.5f) < 0.6f, "F2-1. programme calibrated to -14.5 LUFS at the chain input", f1 (cal));
+        // A long pre-dial stretch, integrated into the out tally: this is the figure that used to be believed.
+        r.setGainDb (0.0f);
+        feed (r.proc, r.prog, 400, false, nullptr, nullptr, 0.0f);
+        const float preDial = r.h.getChainOutLevels().levelDb;
+        check (std::isfinite (preDial) && std::abs (preDial + 14.5f) < 1.2f,
+               "F2-1. precondition: the out tally holds the PRE-DIAL chain's integrated figure", f1 (preDial));
+
+        check (r.loop.armFromChain(), "F2-1. armed");
+        // AND NOW THE DIAL LANDS - 2.4 dB of loss that did not exist when the arm ran.
+        r.setGainDb (-2.4f);
+        // The opening is owed; play for it. Bounded.
+        for (int k = 0; k < 14 && std::abs (r.levelGain()) < 0.05f; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+        const float opened = r.levelGain();
+        // The arithmetic: out = in + Level - 2.4, so Level = -8 - (-14.5) + 2.4 = +8.9. The OLD code solved for
+        // the pre-dial chain and wrote +6.5, which is Sean's 2.4 dB shortfall exactly.
+        check (opened > 8.0f,
+               "F2-1. THE OPENING ACCOUNTS FOR THE 2.4 dB THE DIAL TOOK (RED as it stood: it solved for the "
+               "pre-dial chain and wrote about +6.5 dB, which is the shortfall Sean measured)",
+               "Level " + f1 (opened) + " dB (the right answer is about +8.9; the old one was +6.5)");
+        const auto lg = r.logs.joinIntoString (" | ");
+        check (lg.contains ("opening gain OWED"),
+               "F2-1. ...and the arm says the opening is OWED rather than writing from a stale reading");
+        check (lg.contains ("tallies have cleared"),
+               "F2-1. ...and the deferred tally reset is OBSERVED before any reading is believed - LevelTally::"
+               "reset only raises a flag the audio thread clears, so assuming it is the same bug one layer down");
+        // AND THE OUTPUT ITSELF, by an independent meter: the loop's own tally is not the witness.
+        r.loop.check();
+        IndependentMeter ind; r.runWindow (0.0f, &ind);
+        if (r.last().contains ("is as loud as this goes")) r.loop.pushIt(); else r.loop.go();
+        check (std::abs (ind.lufs() + 8.0f) <= 1.5f,
+               "F2-1. ...and the OUTPUT lands within 1.5 LU of the -8 target on an independent meter",
+               f1 (ind.lufs()) + " LUFS");
+    }
+    std::printf ("== F2-2. a CHANNEL build volume-matches: out = in, with no target anywhere ==\n");
+    {
+        // Sean's vocal build: 7 ops into an empty rack, no EchoJay Level slot and no target, so the loop never
+        // armed and the chain's own gain structure decided the level. The ruling is that EVERY build gets a Level
+        // slot, and a channel or bus build MATCHES - the chain must not change the level.
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.proc.setChannelType (ChannelType::LeadVocal);       // a CHANNEL, through the processor's own wiring
+        r.setGainDb (-6.0f);                                   // the chain loses 6 dB, as a vocal chain can
+        // NO setTarget: nothing in the chain asks for a loudness.
+        const float cal = calibrate (r.proc, r.prog, -18.0f);
+        check (std::abs (cal + 18.0f) < 0.6f, "F2-2. programme calibrated to -18.0 LUFS at the chain input", f1 (cal));
+        check (r.loop.armFromChain(),
+               "F2-2. IT ARMS WITH NO TARGET AT ALL (RED as it stood: ensureLevelSlot returned early without a "
+               "target, so the builds that need matching were exactly the ones with nothing to match with)");
+        check (r.loop.aimWords() == "matched to input",
+               "F2-2. ...and it says what it is aiming at, in words", r.loop.aimWords());
+        for (int k = 0; k < 14 && std::abs (r.levelGain()) < 0.05f; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+        const float opened = r.levelGain();
+        check (std::abs (opened - 6.0f) <= 1.5f,
+               "F2-2. the Level makes up the chain's 6 dB loss, so the chain does not change the level",
+               "Level " + f1 (opened) + " dB (want about +6.0)");
+        // The witness is the pair of taps, over the same span, measured independently of the loop's decision.
+        r.h.resetChainOutLevels(); r.h.resetChainInLoopLevels();
+        feed (r.proc, r.prog, 1, true, nullptr, nullptr);     // make the deferred reset real
+        feed (r.proc, r.prog, 400, false, nullptr, nullptr, 0.0f);
+        const float inDb = r.h.getChainInLoopLevels().levelDb, outDb = r.h.getChainOutLevels().levelDb;
+        check (std::isfinite (inDb) && std::isfinite (outDb) && std::abs (outDb - inDb) <= 1.5f,
+               "F2-2. AND THE CHAIN IS VOLUME-MATCHED over one span: out - in within 1.5 LU",
+               "in " + f1 (inDb) + ", out " + f1 (outDb) + " LUFS");
+        const auto lg = r.logs.joinIntoString (" | ");
+        check (lg.contains ("VOLUME MATCH"), "F2-2. ...and the log says which aim it took");
+    }
+    std::printf ("== F2-3. the song's integrated reading is NEVER cleared by the loop ==\n");
+    {
+        // Sean's standing rule from 13:22 on 08a. A match needs the INPUT over the loop's window, which is why
+        // ChainHost now carries a second tally off the same tap - and this leg is the reason it is a second one.
+        Rig r (false); r.setTarget (-8.0f, 0.0);
+        calibrate (r.proc, r.prog, -14.5f);
+        feed (r.proc, r.prog, 400, false, nullptr, nullptr, 0.0f);
+        const auto song = r.h.getChainInLevels();
+        check (song.known && std::isfinite (song.levelDb), "F2-3. precondition: the song has an integrated reading",
+               f1 (song.levelDb) + " LUFS over " + f1 (song.heardSeconds) + " s");
+        check (r.loop.armFromChain(), "F2-3. armed (the arm resets the loop's windows)");
+        feed (r.proc, r.prog, 2, true, nullptr, nullptr);     // let every deferred reset land
+        const auto after = r.h.getChainInLevels();
+        check (after.heardSeconds >= song.heardSeconds - 0.01f,
+               "F2-3. THE ARM DID NOT CLEAR THE SONG'S READING (RED on the first version of this item, which "
+               "reset chainInTally_ and would have wiped the figure the Level card shows)",
+               f1 (song.heardSeconds) + " s before, " + f1 (after.heardSeconds) + " s after");
+        r.loop.listen();
+        feed (r.proc, r.prog, 2, true, nullptr, nullptr);
+        check (r.h.getChainInLevels().heardSeconds >= song.heardSeconds - 0.01f,
+               "F2-3. ...and neither did opening a window",
+               f1 (r.h.getChainInLevels().heardSeconds) + " s");
+    }
+    std::printf ("== F2-4. an edit AFTER a landing makes it stale, said once, with a way forward ==\n");
+    {
+        // Sean's two EQ bells at 20:05 on 08b: the figure on the card was true of the chain as it stood, and then
+        // the chain changed under it. Standing on that figure is the fault; saying so is the fix.
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.setTarget (-8.0f, 0.0);
+        calibrate (r.proc, r.prog, -14.5f);
+        check (r.loop.armFromChain(), "F2-4. armed");
+        for (int k = 0; k < 14 && std::abs (r.levelGain()) < 0.05f; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+        check (std::abs (r.levelGain()) > 0.05f, "F2-4. precondition: a landing was written", f1 (r.levelGain()));
+        const int bubblesBefore = r.bubbles.size();
+
+        // THE EDIT. A value write through the host, which is what an Apply, a trim or a dialled bell is.
+        r.setGainDb (-3.0f);
+        for (int k = 0; k < 8 && r.bubbles.size() == bubblesBefore; ++k) { r.loop.tickNow(); pumpMs (10); }
+        const auto said = r.last();
+        check (r.bubbles.size() > bubblesBefore && said.contains ("changed"),
+               "F2-4. THE LOOP SAYS THE CHAIN CHANGED AFTER IT SET THE LEVEL (RED as it stood: it stood on a "
+               "figure that described a chain that no longer existed, which is Sean's 2.8 dB)", said);
+        check (r.loop.lastPills().joinIntoString ("|").contains ("Listen"),
+               "F2-4. ...and offers a way forward rather than only reporting",
+               r.loop.lastPills().joinIntoString ("|"));
+        const int afterOne = r.bubbles.size();
+        for (int k = 0; k < 6; ++k) { r.loop.tickNow(); pumpMs (10); }
+        check (r.bubbles.size() == afterOne,
+               "F2-4. ...and says it ONCE per landing, not on every tick for ever",
+               juce::String (afterOne) + " -> " + juce::String (r.bubbles.size()) + " bubbles");
+        const auto lg = r.logs.joinIntoString (" | ");
+        check (lg.contains ("landing STALE"), "F2-4. ...and the log records it with the aim it was true of");
+    }
+    std::printf ("== F2-5. the loop's OWN writes are not mistaken for somebody else's edit ==\n");
+    {
+        // The counter-leg, and the reason the stamp has one author inside writeGainDb: stamping only at the
+        // opening would make the loop's next write look like an edit and fire the stale offer at the user the
+        // moment they pressed Go.
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.setTarget (-8.0f, 0.0);
+        calibrate (r.proc, r.prog, -14.5f);
+        check (r.loop.armFromChain(), "F2-5. armed");
+        for (int k = 0; k < 14 && std::abs (r.levelGain()) < 0.05f; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+        r.loop.writeGainDb (r.levelGain() + 1.0f);           // the loop's own write, the same call Go makes
+        const int before = r.bubbles.size();
+        for (int k = 0; k < 6; ++k) { r.loop.tickNow(); pumpMs (10); }
+        juce::String anyStale;
+        for (int i = before; i < r.bubbles.size(); ++i) if (r.bubbles[i].contains ("changed")) anyStale = r.bubbles[i];
+        check (anyStale.isEmpty(),
+               "F2-5. a gain the LOOP wrote does not raise the stale offer", anyStale);
+    }
+    std::printf ("== F2-6. \"match\" is a loudness option, valid with NO target, and it survives the slot ==\n");
+    {
+        // The contract agreed with B for level_params: option "match" | "pushed" | "dynamic", and "match" is
+        // accepted WITHOUT a target. It is option 4 on the Level device, so it has to round-trip through the
+        // slot - stored as "commercial" it would lose the aim on the first reload.
+        check (juce::String (EedLevelProcessor::optionName (EedLevelProcessor::kOptionMatch)) == "match",
+               "F2-6. the Level device names option 4 \"match\"",
+               EedLevelProcessor::optionName (EedLevelProcessor::kOptionMatch));
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.proc.setChannelType (ChannelType::DrumBus);
+        { auto* pp = new juce::DynamicObject();
+          pp->setProperty ("gain_db", 0.0);
+          pp->setProperty ("loudness_option", (double) EedLevelProcessor::kOptionMatch);   // and NO target_lufs
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        calibrate (r.proc, r.prog, -18.0f);
+        check (r.loop.armFromChain(),
+               "F2-6. a Level slot carrying option \"match\" and no target ARMS (RED as it stood: no target meant "
+               "\"not armed: no target in the chain\")");
+        check (r.loop.aimWords() == "matched to input", "F2-6. ...as a match", r.loop.aimWords());
+        auto* lv = dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (r.levelSlot));
+        check (lv != nullptr && lv->loudnessOption() == EedLevelProcessor::kOptionMatch,
+               "F2-6. ...and the slot still holds option 4 after the dial write, not clamped back to commercial",
+               lv != nullptr ? EedLevelProcessor::optionName (lv->loudnessOption()) : "no Level device");
+    }
+    // ================= 08c ITEM E (9 Oct 2026): THE FINAL CEILING IS -0.1 dBTP ==========================
+    // Sean's chain ended on -1.2 dBTP on 08b. The plugin did nothing wrong by its own lights: the server's block
+    // asked for ceiling_db -1 and the limiter obeyed. The rule is -0.1, and it is held on the LAST slot - the one
+    // that decides what leaves the chain. 0.9 dB of the 2.8 dB shortfall was this.
+    std::printf ("== E. a FINAL limiter's ceiling is held at -0.1 dBTP, with the asked-for figure logged ==\n");
+    {
+        Rig r (false);   // EchoJay Limiter last
+        const auto ceilingOf = [&r] (int slot) -> double
+        {
+            auto* d = dynamic_cast<EedDeviceProcessor*> (r.h.getSlotProcessor (slot));
+            return d != nullptr ? d->getParamValue ("ceiling_db") : -999.0;
+        };
+        // THE BLOCK AS IT ARRIVED, verbatim in shape: ceiling_db -1.
+        { auto* pp = new juce::DynamicObject();
+          pp->setProperty ("input_db", 0.0); pp->setProperty ("ceiling_db", -1.0); pp->setProperty ("true_peak", 1);
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          r.h.setSlotStructuredSettings (r.limSlot, juce::var (w)); }
+        EchoJayBorrowHostTestAccess::applyExact (r.h, r.limSlot);
+        check (std::abs (ceilingOf (r.limSlot) + 0.1) < 1.0e-4,
+               "E. THE LAST SLOT'S CEILING IS -0.1 dBTP THOUGH THE BLOCK ASKED FOR -1 (RED as it stood: the "
+               "limiter obeyed and Sean's master came out 0.9 dB quieter than it needed to be)",
+               f1 ((float) ceilingOf (r.limSlot)) + " dBTP");
+
+        // AND A BLOCK THAT ALREADY AGREES IS NOT TOUCHED - nothing to clamp, nothing to say.
+        Rig ok (false);
+        { auto* pp = new juce::DynamicObject();
+          pp->setProperty ("ceiling_db", -0.1); pp->setProperty ("true_peak", 1);
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          ok.h.setSlotStructuredSettings (ok.limSlot, juce::var (w)); }
+        EchoJayBorrowHostTestAccess::applyExact (ok.h, ok.limSlot);
+        auto* okd = dynamic_cast<EedDeviceProcessor*> (ok.h.getSlotProcessor (ok.limSlot));
+        check (okd != nullptr && std::abs (okd->getParamValue ("ceiling_db") + 0.1) < 1.0e-4,
+               "E. a block that already asks for -0.1 passes through unchanged");
+
+        // AND A LIMITER THAT IS NOT LAST KEEPS WHAT IT WAS ASKED FOR: mid-chain, a limiter is a SOUND and not a
+        // ceiling, so clamping it would be the same mistake in the other direction.
+        Rig mid (false);
+        const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        check (gn != nullptr, "E. precondition: EchoJay Gain is registered to sit after the limiter");
+        if (gn != nullptr)
+        {
+            EchoJayBorrowHostTestAccess::loadBuiltin (mid.h, BuiltinDeviceRegistry::descriptionFor (*gn));
+            check (mid.h.getNumSlots() == 3 && mid.limSlot == 1,
+                   "E. precondition: the limiter is slot 2 of 3, no longer last",
+                   juce::String (mid.h.getNumSlots()) + " slots, limiter at " + juce::String (mid.limSlot));
+            { auto* pp = new juce::DynamicObject();
+              pp->setProperty ("ceiling_db", -3.0); pp->setProperty ("true_peak", 1);
+              auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+              mid.h.setSlotStructuredSettings (mid.limSlot, juce::var (w)); }
+            EchoJayBorrowHostTestAccess::applyExact (mid.h, mid.limSlot);
+            auto* md = dynamic_cast<EedDeviceProcessor*> (mid.h.getSlotProcessor (mid.limSlot));
+            check (md != nullptr && std::abs (md->getParamValue ("ceiling_db") + 3.0) < 1.0e-4,
+                   "E. A LIMITER THAT IS NOT LAST KEEPS ITS -3 dB: the rule is about what leaves the chain",
+                   md != nullptr ? f1 ((float) md->getParamValue ("ceiling_db")) + " dBTP" : juce::String ("no device"));
+        }
+        // THE NAME TEST, ON THE NAMES THAT CAN ACTUALLY REACH THIS FUNNEL. applyStructuredToBuiltinSlot only
+        // ever sees BUILT-IN slot names, so "EchoJay Limiter" is the case that matters and a third-party final
+        // limiter is NOT covered by this clamp at all - said out loud here rather than implied by a leg that
+        // asserts names the funnel never sees. (Sean's 8 Oct chain DID end on the EchoJay Limiter, which is why
+        // this closes his case; a Pro-L 2 last would still take the server's figure, and that is for B.)
+        check (ChainHost::isLimiterLikeName ("EchoJay Limiter")
+                   && ChainHost::isLimiterLikeName ("EchoJay Maximizer")
+                   && ! ChainHost::isLimiterLikeName ("EchoJay EQ")
+                   && ! ChainHost::isLimiterLikeName ("EchoJay Level"),
+               "E. the name test takes the built-in limiter and leaves the EQ and the Level alone");
+        check (std::abs (ChainHost::kFinalCeilingDb + 0.1f) < 1.0e-6f,
+               "E. and the figure is -0.1, named once", f1 (ChainHost::kFinalCeilingDb));
     }
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     // ---- 21t-d: the compressor calibration loop --------------------------------------------------------------

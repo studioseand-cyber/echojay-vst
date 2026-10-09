@@ -111,6 +111,10 @@ public:
         if (option == "pushed")  return 12.0f;
         if (option == "dynamic") return 3.0f;    // unchanged: "dynamic" is a promise to keep the dynamics
         if (option == "keep")    return 1.0f;    // unchanged: "keep" is a promise to change nothing
+        // 08c F2: "match" asks for out = in, so the chain is not being pushed up to anything and the GR a
+        // correct match produces is whatever the chain's own plugins produce. 3 dB, as "dynamic": a match that
+        // needs more GR than that is not a match, it is a chain that squashes, and the cap says so.
+        if (option == "match")   return 3.0f;
         return 10.0f;  // commercial (and the default) - was 6.0
     }
     // THE THIRD-PARTY GR ESTIMATE (7 Oct 2026). Where the limiter's GR is readable - the EchoJay Limiter - it is
@@ -247,8 +251,11 @@ public:
         // make the next findTarget read a target nobody asked for. The key is simply absent, which is the same
         // rule the request body follows for anything unknown.
         if (haveTarget) pp->setProperty ("target_lufs", (double) t.lufs);
-        const juce::StringArray opts { "commercial", "pushed", "dynamic", "keep" };
-        if (t.option.isNotEmpty()) pp->setProperty ("loudness_option", juce::jmax (0, opts.indexOf (t.option)));
+        // 08c F2: "match" is option 4 on the Level device, so it has to be in this list or a match build would
+        // be stored as "commercial" and the aim would be lost the moment the state round-tripped.
+        const juce::StringArray opts { "commercial", "pushed", "dynamic", "keep", "match" };
+        if (! haveTarget) pp->setProperty ("loudness_option", (double) EedLevelProcessor::kOptionMatch);
+        else if (t.option.isNotEmpty()) pp->setProperty ("loudness_option", juce::jmax (0, opts.indexOf (t.option)));
         auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
         host_.setSlotStructuredSettings (at, juce::var (w));
         host_.setSlotSettings (at, haveTarget
@@ -357,10 +364,15 @@ public:
         // both the input and the output have a reading of THIS chain. That is also exactly Sean's rule - "once
         // dialStateSettled fires, measure chain IN and OUT integrated over the same window".
         host_.resetChainOutLevels();
-        host_.resetChainInLevels();
-        openingOwed_ = true;
+        // THE LOOP'S OWN INPUT WINDOW, never the song's. getChainInLevels() is the song's integrated reading and
+        // Sean's standing rule is that a loop reset does not clear it, so ChainHost carries a second tally off
+        // the same tap for this (08c F2). Resetting the song's reading here would have been a regression dressed
+        // up as a fix.
+        host_.resetChainInLoopLevels();
+        openingOwed_ = true; openingResetSeen_ = false;
         log (juce::String ("opening gain OWED: the chain tallies are reset, so the landing is measured on this ")
              + "chain rather than on an integrated figure that predates its dials. Aim: " + aimWords()
+             + ". No peak-headroom cap (7 Oct ruling): the ceiling and the loud-window GR check are the safety."
              + busGainNote());
         log ("armed: target " + fmt (target_) + " LUFS (" + armSource_ + (loudnessOption_.isNotEmpty() ? ", " + loudnessOption_ : juce::String()) + "), Level slot " + juce::String (slot_)
              + " gain " + fmtSigned ((float) lv->gainDb()) + " dB, limiter slot " + juce::String (limiterSlot_) + " (" + limiterName() + "), build-time input " + fmt (buildInputLufs_) + " LUFS");
@@ -570,9 +582,6 @@ public:
         // the Level card's GR row: the EchoJay Limiter's real GR, else the estimate (18g item 4)
         if (auto* lim = echoJayLimiter()) lv->setDownstreamGrDb (-lim->gainReductionDb(), false);
         else if (estN_ > 0) lv->setDownstreamGrDb (grEstimateDb(), true);
-        // 08c F2: the owed opening landing runs while ARMED - before the early return below, because `armed` is
-        // exactly the state it has to fire in. It is one write, the first time this chain has been heard.
-        if (state_ == State::armed) { tryOpeningLanding(); return; }
         // 08c F2: A LANDING IS ONLY TRUE OF THE CHAIN IT WAS MEASURED ON. If the chain's gain has moved since -
         // an edit, an Apply, a trim, Sean's two EQ bells on 8 Oct - the figure on the card describes a chain that
         // no longer exists, so say so once and offer to do it again rather than stand on it.
@@ -586,6 +595,11 @@ public:
                       : "The chain changed after I set the level. Tap Listen and I'll check it against " + aimWords() + ".",
                   -1.0f, false, false, Bubble::Kind::info, { "Listen" });
         }
+        // 08c F2: the owed opening landing runs while ARMED - `armed` is exactly the state it has to fire in,
+        // which is why it sits past the early return below. The stale check above it deliberately runs FIRST:
+        // after the opening landing the loop is STILL armed, waiting for Listen, so a staleness check that only
+        // ran in the measuring states could never see the case it exists for (Sean's two EQ bells at 20:05).
+        if (state_ == State::armed) { tryOpeningLanding(); return; }
         if (state_ != State::waitAudio && state_ != State::measuring && state_ != State::tracking) return;   // proposed / hold / quietAsked: nothing runs on its own
         const auto out = host_.getChainOutLevels();
         const float counted = out.heardAboveSeconds;
@@ -657,7 +671,7 @@ public:
         // had been computed - is matched against what the input actually is NOW. Everything below is unchanged.
         if (aim_ == Aim::matchInput)
         {
-            const auto inNow = host_.getChainInLevels();
+            const auto inNow = host_.getChainInLoopLevels();
             if (inNow.known && std::isfinite (inNow.levelDb))
             {
                 if (std::abs (inNow.levelDb - target_) > 0.05f)
@@ -891,8 +905,25 @@ private:
         if (! openingOwed_) return;
         auto* lv = levelNow(); if (lv == nullptr) return;
         const auto outNow = host_.getChainOutLevels();
-        const auto inNow  = host_.getChainInLevels();
+        const auto inNow  = host_.getChainInLoopLevels();   // the loop's window, not the song's reading
         const bool needIn = (aim_ == Aim::matchInput);
+        // THE RESET IS DEFERRED TO THE AUDIO THREAD (LevelTally::reset only raises a flag; the clear and the
+        // publish happen in push()). So `known` can still be TRUE on the OLD window for as long as no audio has
+        // arrived - and reading it then would land on exactly the stale integrated figure this whole item exists
+        // to stop. The reset is therefore OBSERVED rather than assumed: heardSeconds has to be seen near zero
+        // once before any reading is believed. With no audio playing that never happens, which is correct - there
+        // is nothing to measure, and the arm bubble is already asking for playback.
+        if (! openingResetSeen_)
+        {
+            const bool outCleared = outNow.heardSeconds < 1.0f;
+            const bool inCleared  = ! needIn || inNow.heardSeconds < 1.0f;
+            if (outCleared && inCleared)
+            {
+                openingResetSeen_ = true;
+                log ("opening gain: the chain tallies have cleared, so the next reading is of THIS chain");
+            }
+            return;
+        }
         if (! (outNow.known && std::isfinite (outNow.levelDb))) return;
         if (needIn && ! (inNow.known && std::isfinite (inNow.levelDb))) return;
 
@@ -910,7 +941,7 @@ private:
                  "check are the safety." + busGainNote());
         openingOwed_ = false;
         if (std::abs (want - cur) >= 0.05f) writeGainDb (want);
-        noteLanded();
+        else noteLanded();   // nothing to write, but this chain HAS now been landed on
     }
     bool pastResolveDeadline() const
     {
@@ -988,6 +1019,12 @@ private:
     {
         host_.setChainOutCountFloor (kCountFloorLufs);
         host_.resetChainOutLevels();
+        // 08c F2: the loop's INPUT window is restarted with the output one, so a match compares the two over the
+        // same span. The song's integrated reading (getChainInLevels) is untouched, as ruled.
+        host_.resetChainInLoopLevels();
+        // 08c F2: a window supersedes an owed opening - it measures the same thing over a window the user chose,
+        // so the opening must not fire again behind it when the loop returns to `armed`.
+        openingOwed_ = false;
         host_.resetChainOutShortTermMax(); host_.resetChainInShortTermMax();
         if (auto* lim = echoJayLimiter()) lim->resetOutputPeak();
         if (auto* lv = levelNow()) lv->resetMeters();   // 18h: the Level's IN/OUT meters (and their peak holds) describe THIS window
@@ -1040,6 +1077,11 @@ public:
         // at 0.0 after the host relaunched. The Level is a built-in: its capture is a small JSON, so every write
         // takes it rather than us deciding which writes "count".
         host_.captureSlotStateNow (slot_);
+        // 08c F2: ONE AUTHOR FOR THE STAMP. Every gain the loop writes - the opening, an applied proposal, a
+        // tracking nudge, an undo restore - re-records the chain it was true of. Stamping only at the opening
+        // would make the loop's OWN next write look like somebody else's edit and fire the stale offer at the
+        // user immediately after they pressed Go.
+        noteLanded();
     }
     void emit (const juce::String& text, float progress, bool replace, bool final, Bubble::Kind kind = Bubble::Kind::info, juce::StringArray pills = {})
     {
@@ -1080,6 +1122,7 @@ public:
     enum class Aim { matchInput, hitTarget };
     Aim    aim_ = Aim::hitTarget;
     bool   openingOwed_ = false;       // 08c F2: the opening landing is measured, not written at arm
+    bool   openingResetSeen_ = false;  // 08c F2: the deferred tally reset has been OBSERVED, not assumed
     bool   staleSaid_ = false;         // 08c F2: the stale-landing offer is made once per landing
     bool   landedOnce_ = false;        // a landing has been written: a later chain-gain change makes it stale
     int    landedAtValueRev_ = -1;     // the chain's VALUE revision when we landed

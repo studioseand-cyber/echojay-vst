@@ -10,8 +10,9 @@ const echojay::ParamSchema& EedLevelProcessor::schema()
           "clean gain before the final limiter; the level loop sets this to reach the LUFS target, never the limiter", false },
         { kTargetLufs, "LUFS", -30.0, 0.0, -9.0,
           "the integrated LUFS target the level loop drives toward (informational; set by the server's loudness pass)", false },
-        { kLoudnessOption, "", 0.0, 3.0, 0.0,
-          "which loudness the target came from", false, { "commercial", "pushed", "dynamic", "keep" } },
+        { kLoudnessOption, "", 0.0, 4.0, 0.0,
+          "which loudness the target came from; \"match\" means the aim is this chain's own input level",
+          false, { "commercial", "pushed", "dynamic", "keep", "match" } },
     });
     return s;
 }
@@ -19,7 +20,7 @@ bool EedLevelProcessor::setParamValue (const juce::String& id, double value)
 {
     if (id == kGainDb)     { gainDb_.store (juce::jlimit (kMinDb, kMaxDb, value), std::memory_order_relaxed); return true; }
     if (id == kTargetLufs) { targetLufs_.store (juce::jlimit (-30.0, 0.0, value), std::memory_order_relaxed); return true; }
-    if (id == kLoudnessOption) { option_.store (juce::jlimit (0, 3, (int) std::lround (value)), std::memory_order_relaxed); return true; }
+    if (id == kLoudnessOption) { option_.store (juce::jlimit (0, kOptionMatch, (int) std::lround (value)), std::memory_order_relaxed); return true; }
     return false;
 }
 double EedLevelProcessor::getParamValue (const juce::String& id) const

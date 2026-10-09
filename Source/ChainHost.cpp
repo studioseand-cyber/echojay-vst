@@ -1259,6 +1259,7 @@ void ChainHost::prepare(double sampleRate, int blockSize)
     {
         tallySr_ = sampleRate;
         chainInTally_.prepare(sampleRate);
+        chainInLoopTally_.prepare(sampleRate);   // 08c F2: the loop's own window at the input tap
         trackLevel_.prepare(sampleRate);   // spec section 5: the same tap, a different statistic
         chainOutTally_.prepare(sampleRate);
     }
@@ -1293,6 +1294,9 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
             chainInTally_.push(buffer.getReadPointer(0),
                                buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
                                buffer.getNumSamples());
+            chainInLoopTally_.push(buffer.getReadPointer(0),
+                                   buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
+                                   buffer.getNumSamples());
             trackLevel_.push(buffer.getReadPointer(0),
                              buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
                              buffer.getNumSamples());
@@ -1314,6 +1318,14 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
         chainInTally_.push(buffer.getReadPointer(0),
                            buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
                            buffer.getNumSamples());
+        // 08c item F2 (9 Oct 2026): THE SAME TAP, A SECOND TALLY, FOR THE LOOP'S WINDOW. A volume match compares
+        // the chain's input and output over the SAME span, so the loop has to be able to reset its input
+        // measurement - and Sean's standing rule is that a loop reset must NEVER clear the song's integrated
+        // reading, which is chainInTally_ above (cleared only by resetAllLevels, on a source change). Two tallies
+        // from one tap: the song's, which only the user clears, and the loop's window, which the loop owns.
+        chainInLoopTally_.push(buffer.getReadPointer(0),
+                               buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
+                               buffer.getNumSamples());
         // COMP_PROFILE_SPEC_v1 section 5: PRE-CHAIN, on the raw input, before the pre-chain gain - the level the
         // server subtracts from a profile's eff_threshold_dbfs has to be the level the compressor will actually
         // see at its input with the chain as built, and that is this tap.
@@ -3201,6 +3213,7 @@ ChainHost::SlotLevels ChainHost::getSlotLevels(int i) const
 void ChainHost::resetAllLevels()
 {
     chainInTally_.reset();
+    chainInLoopTally_.reset();   // 08c F2: a source change clears the loop's window too
     trackLevel_.reset();
     chainOutTally_.reset();
     for (auto& s : slots_)
