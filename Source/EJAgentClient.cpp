@@ -171,7 +171,8 @@ void EJAgentClient::start (const juce::String& goalIn, const juce::String& chatI
     playback_ = {}; playbackStepId_.clear();
     errorMessage_.clear(); doneSummary_.clear(); errorRetryable_ = false; costUsd_ = 0.0;
     refusedTypedLine_.clear();
-    sessionId_.clear(); round_ = 0;
+    sessionId_.clear(); round_ = 0; ofSoftCap_ = 0; awaitTimeoutMs_ = 0;
+    planHeading_.clear(); doneReason_.clear();
     goal_ = goal; chatId_ = chatId;
 
     checkpoint_ = executor_.captureCheckpoint ("agent: " + goal);
@@ -197,8 +198,9 @@ void EJAgentClient::stop()
     log ("STOP requested in state " + juce::String (stateName (state_)) + " round=" + juce::String (round_)
          + " unfinished=" + juce::String ((int) std::count_if (steps_.begin(), steps_.end(), [] (const Step& s) { return ! s.isFinal(); })));
     ++generation_;                               // every in-flight completion and frame is now stale
-    if (cancel_) cancel_->cancel();              // unblocks a read on a quiet socket; nothing is posted after this
-    markUnfinishedStopped();
+    if (cancel_) cancel_->cancel();              // unblocks a read on a quiet socket; no STEP is posted after this
+    markUnfinishedStopped();                     // every in-flight call reads stopped (contract 1: Stop)
+    postStop();                                  // POST /api/agent/stop {sessionId}; the server ends the session itself
     playback_.active = false; playbackStepId_.clear();
     pendingAsk_ = {}; pendingAskId_.clear();
     flushRoundTalk();
@@ -245,6 +247,13 @@ bool EJAgentClient::interceptTyped (const juce::String& typed)
 {
     if (askPending())
     {
+        if (! pendingAsk_.allowFreeText)
+        {
+            refusedTypedLine_ = "Tap one of the choices to answer.";   // contract 2.4: allowFreeText false
+            log ("typed answer refused (allowFreeText false): \"" + typed + "\"");
+            changed();
+            return true;
+        }
         answerAsk (typed.trim(), true);
         return true;
     }
@@ -341,7 +350,7 @@ void EJAgentClient::post (const juce::String& path, const juce::String& body)
             {
                 ++frames;
                 auto f = parseFrame (juce::String (ev.event), juce::String::fromUTF8 (ev.data.c_str(), (int) ev.data.size()));
-                const bool isTerminal = f.kind == FrameKind::Await || f.kind == FrameKind::Done || f.kind == FrameKind::Error;
+                const bool isTerminal = isTerminalFrame (f.kind);   // the server closes the response after one
                 dispatch ([this, gen, f] { onFrame (gen, f); });
                 if (isTerminal) { terminal = true; break; }
             }
@@ -349,6 +358,37 @@ void EJAgentClient::post (const juce::String& path, const juce::String& body)
         }
         cancel->detach();
         dispatch ([this, gen, terminal, frames] { onStreamEnded (gen, terminal, 200, frames == 0 ? juce::String ("The agent's stream ended before any frame arrived.") : juce::String()); });
+    });
+}
+
+void EJAgentClient::postStop()
+{
+    if (sessionId_.isEmpty()) return;
+    const auto body = buildStopBody (sessionId_);
+    log ("POST /api/agent/stop session=" + sessionId_);
+    if (postOverride_) { postOverride_ ("/api/agent/stop", body); return; }
+    const auto t = transport_();
+    juce::String base = t.baseUrl.trim();
+    while (base.endsWithChar ('/')) base = base.dropLastCharacters (1);
+    const juce::String url = base + "/api/agent/stop";
+    juce::String headers = "Content-Type: application/json\r\n";
+    if (t.authToken.isNotEmpty()) headers += "Authorization: Bearer " + t.authToken + "\r\n";
+    headers += t.extraHeaders;
+    auto logFn = log_;
+    juce::Thread::launch ([url, headers, body, logFn]
+    {
+        echojay::net::Worker netw ("agent /api/agent/stop");
+        juce::URL u (url);
+        u = u.withPOSTData (body);
+        juce::WebInputStream ws (u, true);
+        ws.withExtraHeaders (headers).withConnectionTimeout (10000);
+        netw.setStream (&ws);
+        const struct ClearSlot { echojay::net::Worker& w; ~ClearSlot() { w.setStream (nullptr); } } clearSlot { netw };
+        const bool connected = ws.connect (nullptr);
+        const int status = connected ? ws.getStatusCode() : 0;
+        juce::MemoryBlock mb;
+        if (connected) ws.readIntoMemoryBlock (mb);
+        if (logFn) logFn ("EJAgent: /api/agent/stop answered " + juce::String (status));   // a log line touches no plugin state
     });
 }
 
@@ -362,7 +402,9 @@ void EJAgentClient::onFrame (int generation, Frame f)
         {
             if (f.sessionId.isNotEmpty()) sessionId_ = f.sessionId;
             round_ = f.round;
+            if (f.ofSoftCap > 0) ofSoftCap_ = f.ofSoftCap;
             awaitIds_.clear(); awaitSeen_ = false; planSubmitted_ = false; roundDoFailed_ = false;
+            planHeading_.clear(); awaitTimeoutMs_ = 0;
             liveText_.clear(); roundTalk_.clear(); roundTalkFlushed_ = false;
             log ("frame round session=" + sessionId_ + " round=" + juce::String (round_));
             setState (State::Streaming);
@@ -394,9 +436,37 @@ void EJAgentClient::onFrame (int generation, Frame f)
             changed();
             break;
         }
+        case FrameKind::Plan:
+        {
+            // THE PLAN CARD IS THE SERVER'S (contract 3): one frame per round carrying the heading and the ask-first
+            // items in card order. The items' tool_call frames normally precede it; an item with no step yet gets
+            // one so the card is never short a line, and the card's summary wins over a derived label.
+            planHeading_ = f.planHeading.trim();
+            for (const auto& item : f.planItems)
+            {
+                auto* s = stepById (item.id);
+                if (s == nullptr)
+                {
+                    Step n;
+                    n.id = item.id; n.call.id = item.id; n.call.name = "do"; n.round = round_;
+                    steps_.push_back (std::move (n));
+                    s = &steps_.back();
+                }
+                if (item.summary.isNotEmpty()) s->label = item.summary;
+                if (item.why.isNotEmpty())     s->call.why = item.why;
+                s->call.approval = "ask_first";
+                if (s->status == Step::Status::Pending) s->status = Step::Status::AwaitingApproval;
+                s->approved = true;
+            }
+            log ("frame plan round=" + juce::String (f.planRound) + " items=" + juce::String ((int) f.planItems.size()) + " heading=\"" + planHeading_ + "\"");
+            if (state_ == State::Connecting) setState (State::Streaming);
+            changed();
+            break;
+        }
         case FrameKind::Await:
         {
             awaitIds_ = f.awaitIds;
+            awaitTimeoutMs_ = f.awaitTimeoutMs;
             if (awaitIds_.isEmpty())              // an await with no ids means "everything this round"
                 for (const auto& s : steps_) if (s.round == round_) awaitIds_.add (s.id);
             awaitSeen_ = true;
@@ -407,9 +477,10 @@ void EJAgentClient::onFrame (int generation, Frame f)
         case FrameKind::Done:
         {
             doneSummary_ = f.summary.trim();
+            doneReason_ = f.doneReason;
             costUsd_ = f.costUsd;
             if (f.rounds > 0) round_ = f.rounds;
-            log ("frame done rounds=" + juce::String (f.rounds) + " costUsd=" + juce::String (f.costUsd, 3)
+            log ("frame done reason=" + doneReason_ + " rounds=" + juce::String (f.rounds) + " costUsd=" + juce::String (f.costUsd, 3)
                  + " summary=\"" + doneSummary_ + "\"");
             flushRoundTalk();
             // The summary is a transcript line only when it says something the round's talk did not.
@@ -458,14 +529,18 @@ int EJAgentClient::nextRunnable (const std::vector<Step>& steps, int round, bool
 {
     for (const auto& s : steps)
         if (s.round == round && s.status == Step::Status::Running) return -1;
-    // STRICT WIRE ORDER. The model's order is the order (a look placed before a do is meant to be read first; the
-    // plan says a round's do calls run in order). An ask_first step that is next blocks on the plan card.
+    // CONTRACT 3: "free calls in the same round run before the card is shown". So every free (Pending) step runs
+    // first, in wire order; only then does an undecided ask_first step raise the card (-2); once the plan is
+    // submitted the approved lines run in wire order.
     for (int i = 0; i < (int) steps.size(); ++i)
     {
         const auto& s = steps[(size_t) i];
-        if (s.round != round) continue;
-        if (s.status == Step::Status::Pending) return i;
-        if (s.status == Step::Status::AwaitingApproval) return planSubmitted ? i : -2;
+        if (s.round == round && s.status == Step::Status::Pending) return i;
+    }
+    for (int i = 0; i < (int) steps.size(); ++i)
+    {
+        const auto& s = steps[(size_t) i];
+        if (s.round == round && s.status == Step::Status::AwaitingApproval) return planSubmitted ? i : -2;
     }
     return -1;
 }
@@ -630,6 +705,9 @@ void EJAgentClient::postStepIfComplete()
     }
     awaitSeen_ = false;                       // one step per await, never two
     flushRoundTalk();
+    for (const auto& r : results)             // contract 4: a result over 8 KB is rejected with result_too_large
+        if (r.ok && juce::JSON::toString (r.result, true).getNumBytesAsUTF8() > 8192)
+            log ("WARNING result " + r.id + " exceeds 8 KB - the server will reject it (the executor must send the summary shape)");
     log ("STEP round=" + juce::String (round_) + " results=" + juce::String ((int) results.size()));
     post ("/api/agent/step", buildStepBody (sessionId_, round_, results));
 }
@@ -705,15 +783,14 @@ void EJAgentClient::answerAsk (const juce::String& choiceIn, bool typed)
     const auto choice = choiceIn.trim();
     if (choice.isEmpty()) return;
     const auto id = pendingAskId_;
-    auto* o = new juce::DynamicObject();
-    o->setProperty ("choice", choice);
-    o->setProperty ("typed", typed);
-    log ("ask answered" + juce::String (typed ? " (typed)" : "") + ": \"" + choice + "\"");
+    if (! typed && ! pendingAsk_.labels.contains (choice)) return;   // a tap is one of the offered labels, nothing else
+    auto answer = askAnswerVar (choice, typed);                      // {tapped:"<label>"} or {typed:"<text>"}
+    log ("ask answered" + juce::String (typed ? " (typed)" : " (tapped)") + ": \"" + choice + "\"" + (id == "tc_keep_going" ? " [soft cap]" : ""));
     listeners_.call ([&] (Listener& l) { l.agentTranscript ("user", choice); });
     pendingAsk_ = {}; pendingAskId_.clear();
     setState (State::Executing);
     if (auto* s = stepById (id)) s->detail = choice;
-    completeStep (generation_, id, ToolOutcome::success (juce::var (o)));
+    completeStep (generation_, id, ToolOutcome::success (answer));
 }
 
 // =============================================================================
@@ -759,9 +836,7 @@ void EJAgentClient::tickPlayback()
     }
     if (elapsed >= (double) playback_.timeoutSeconds)
     {
-        playback_.line = heard >= 1.0
-            ? "Time's up at " + juce::String (heard, 1) + " s heard - using what was heard."
-            : "No playback heard in " + juce::String (playback_.timeoutSeconds) + " s - carrying on without a reading.";
+        playback_.line = playbackTimeoutResult (playback_.timeoutSeconds).getProperty ("sentence", {}).toString();
         endPlayback ("timeout");
         return;
     }
@@ -791,9 +866,16 @@ void EJAgentClient::endPlayback (const juce::String& reason)
     playback_.active = false;
     const auto r = executor_.readPlayback();
     const double heard = r.heardAboveSeconds;
-    const bool played = heard >= 1.0;
+    const bool played = reason != "timeout" && heard >= 1.0;
     auto* o = new juce::DynamicObject();
-    o->setProperty ("played", played);
+    if (reason == "timeout")
+    {   // contract 2.3 / 6: after the plugin's 60 s the answer is this shape and this sentence, verbatim
+        auto v = playbackTimeoutResult (playback_.timeoutSeconds);
+        o->setProperty ("played", false);
+        o->setProperty ("waited", v.getProperty ("waited", {}));
+        o->setProperty ("sentence", v.getProperty ("sentence", {}));
+    }
+    else o->setProperty ("played", played);
     if (played)
     {
         o->setProperty ("seconds", juce::String (heard, 1).getDoubleValue());
@@ -802,7 +884,7 @@ void EJAgentClient::endPlayback (const juce::String& reason)
         setIfFinite (o, "peakDbtp", r.truePeakDbtp);
         if (heard < playback_.minSeconds) o->setProperty ("short", true);   // less than asked for; the model can ask again
     }
-    else
+    else if (reason != "timeout")
         o->setProperty ("waited", juce::String ((double) (nowMs() - playback_.startedMs) / 1000.0, 1).getDoubleValue());
     o->setProperty ("endedBy", reason);
     log ("playback wait ends (" + reason + ") heard=" + juce::String (heard, 1) + "s played=" + juce::String (played ? 1 : 0)

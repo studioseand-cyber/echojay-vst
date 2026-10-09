@@ -4,24 +4,28 @@
 // A's; frames are fed as the wire would deliver them (EJAgentProtocol::parseFrame over the plan's 1.3 examples).
 // Every leg below is a sentence from AGENT_MODE_PLAN.md or from Sean's brief, and each one is RED without the
 // behaviour it names:
-//   P   the protocol: event-line and type-in-JSON frames parse alike; a do with no approval class asks; the step
-//       body is the plan's shape; wait_for_playback is recognised in both its shapes
-//   N   nextRunnable: strict wire order; an ask_first step blocks on the plan until it is submitted
-//   R1  one round: free calls run, the ask_first line waits on the plan card, Approve all runs it, ONE step is
+//   P   the protocol (CONTRACT_AGENT_TOOLS.md 2-4): frames are typed by the event line ONLY; a do with no approval
+//       class asks; the step / start / stop bodies; the plan frame; talk(ask) choices with detail + allowFreeText;
+//       the playback timeout answer verbatim; open_editor's line
+//   N   nextRunnable: free calls run before the card is shown; then the plan; approved lines in wire order
+//   R1  one round: free calls run, the plan frame raises the card with its heading, Apply all runs it, ONE step is
 //       posted with every awaited id answered in await order, the round's talk reaches the transcript ONCE
-//   R2  Decline: the declined call returns {ok:false, error:{code:"declined"}} and nothing ran
-//   R3  per-line taps: a skipped line is declined, the approved one runs, order preserved
+//   R2  Skip all: the skipped call returns {ok:false, error:{code:"approval_declined"}} and nothing ran
+//   R3  per-line taps: a skipped line is approval_declined, the applied one runs, order preserved
 //   R4  a failed do stops the rest of the round's do calls (not_run); a look after it still runs
-//   A   talk(ask): the ask card waits; a typed answer is taken as the choice and goes to the transcript
-//   W1  wait_for_playback with no audio TIMES OUT and returns played:false - it never hangs
+//   A   talk(ask): the ask card waits; a tap answers {tapped}, a typed answer {typed}; allowFreeText:false refuses
+//       typing WITH a line; the soft cap (tc_keep_going) is an ordinary ask
+//   W1  wait_for_playback with no audio TIMES OUT and returns {played:false, waited:60, sentence} - it never hangs
 //   W2  min_seconds of audio -> "Got it, you can stop." and the reading goes back
 //   W3  the user's early stop returns what was heard, marked short
 //   W4  a stopped transport after some audio ends the wait early
-//   S   Stop halts at once: the running step is marked Stopped, NO step is posted, a late completion and a stale
-//       frame are ignored, "Stopped." reaches the transcript, Undo is reachable afterwards
+//   S   Stop halts at once: POST /api/agent/stop {sessionId} goes out, the running step is marked Stopped, NO step
+//       is posted, a late completion and a stale frame are ignored, "Stopped." reaches the transcript, Undo is
+//       reachable afterwards
 //   U   Undo per step sends that step's token; Undo all sends the session's checkpoint; rows read "undone"
 //   E   an error frame -> Failed (retryable keeps the body for Retry, which re-posts it byte for byte); a stream that
-//       ends with no terminal frame -> Failed; no token -> "Sign in"; done -> Done, summary in the transcript; dismiss
+//       ends with no terminal frame -> Failed; no token -> "Sign in"; done -> Done with its reason, summary in the
+//       transcript; dismiss
 //   T   a typed message under a running agent is refused WITH a line
 //   L   the panel: at every editor width (380..1780) and height cap, no text row is shorter than its wrapped text,
 //       no button overlaps text or leaves the card, chips wrap, and a body taller than its room scrolls
@@ -117,6 +121,7 @@ struct Rig : EJAgentClient::Listener
     void round (int n) { EJAgentClientTestAccess::feed (client, "round", "{\"sessionId\":\"ag_1\",\"round\":" + juce::String (n) + "}"); }
     void delta (const juce::String& t) { EJAgentClientTestAccess::feed (client, "delta", "{\"text\":\"" + t + "\"}"); }
     void tool (const juce::String& json) { EJAgentClientTestAccess::feed (client, "tool_call", json); }
+    void plan (const juce::String& json) { EJAgentClientTestAccess::feed (client, "plan", json); }
     void await (const juce::StringArray& ids)
     {
         juce::String j = "{\"ids\":[";
@@ -147,8 +152,11 @@ int main()
     {
         const auto a = parseFrame ("tool_call", kDoSet);
         const auto b = parseFrame ({}, juce::String (R"({"type":"tool_call",)") + juce::String (kDoSet).substring (1));
-        check (a.kind == FrameKind::ToolCall && b.kind == FrameKind::ToolCall && a.call.id == b.call.id && a.call.summary == b.call.summary,
-               "P1 a frame typed by its event line and one typed inside the JSON parse alike");
+        check (a.kind == FrameKind::ToolCall && a.call.id == "tc_2" && a.call.summary == "EchoJay EQ: bell 300 Hz -2 dB Q 1.4" && b.kind == FrameKind::Unknown,
+               "P1 a frame is typed by its event line ONLY; a \"type\" field inside the JSON is not a type (contract 4)");
+        check (isTerminalFrame (FrameKind::Await) && isTerminalFrame (FrameKind::Done) && isTerminalFrame (FrameKind::Error)
+               && ! isTerminalFrame (FrameKind::Plan) && ! isTerminalFrame (FrameKind::ToolCall),
+               "P1b await, done and error are the terminal frames; plan and tool_call are not");
         const auto bare = parseToolCall (juce::JSON::parse (R"({"id":"x","name":"do","args":{"op":"add"}})"));
         const auto bareLook = parseToolCall (juce::JSON::parse (R"({"id":"y","name":"look","args":{}})"));
         check (bare.approval == "ask_first" && bareLook.approval == "free", "P2 a do with no approval class ASKS; a look is free (the safe default runs one way)");
@@ -164,16 +172,42 @@ int main()
         auto* arr = body.getProperty ("results", {}).getArray();
         check (body.getProperty ("sessionId", {}).toString() == "ag_1" && (int) body.getProperty ("round", {}) == 3 && arr != nullptr && arr->size() == 2
                && (bool) (*arr)[0].getProperty ("ok", {}) == true && (int) (*arr)[0].getProperty ("result", {}).getProperty ("slots", {}) == 3
-               && (bool) (*arr)[1].getProperty ("ok", {}) == false && (*arr)[1].getProperty ("error", {}).getProperty ("code", {}).toString() == "declined",
-               "P6 the step body is the plan's shape: sessionId, round, results[{id,ok,result}|{id,ok,error{code,message}}]");
+               && (bool) (*arr)[1].getProperty ("ok", {}) == false && (*arr)[1].getProperty ("error", {}).getProperty ("code", {}).toString() == "approval_declined",
+               "P6 the step body is the contract's shape: sessionId, round, results[{id,ok,result}|{id,ok,error{code,message}}]; Skip is approval_declined");
+        check (juce::JSON::parse (buildStopBody ("ag_1")).getProperty ("sessionId", {}).toString() == "ag_1", "P6b the stop body is {sessionId}");
         const auto start = juce::JSON::parse (buildStartBody ("make it louder", juce::var(), "1.2.3", "chat_9"));
         check (start.getProperty ("goal", {}).toString() == "make it louder" && (bool) start.getProperty ("agentMode", {}) == true
                && start.getProperty ("appVersion", {}).toString() == "1.2.3" && start.getProperty ("chatId", {}).toString() == "chat_9",
                "P7 the start body carries goal, agentMode:true (the phase-1 switch), appVersion and chatId");
         const auto err = parseFrame ("error", R"({"code":"model_unavailable","message":"busy","retryable":true})");
         check (err.kind == FrameKind::Error && err.errorCode == "model_unavailable" && err.retryable, "P8 an error frame carries code, message, retryable");
-        check (parseFrame ("delta", "not json").kind == FrameKind::Unknown && parseFrame ("", "{\"x\":1}").kind == FrameKind::Unknown,
-               "P9 a malformed or untyped frame is Unknown (skipped), never fatal");
+        check (parseFrame ("delta", "not json").kind == FrameKind::Unknown && parseFrame ("", "{\"x\":1}").kind == FrameKind::Unknown
+               && parseFrame ("whatever", "{}").kind == FrameKind::Unknown,
+               "P9 a malformed, unnamed or unknown-named frame is Unknown (skipped), never fatal");
+        const auto pl = parseFrame ("plan", R"({"round":3,"heading":"Here is the plan.","items":[{"id":"tc_9","summary":"add EchoJay Compressor after slot 2","why":"adding a plugin needs your ok","approval":"ask_first"},{"id":"tc_10","summary":"pre-gain -6 dB"}]})");
+        check (pl.kind == FrameKind::Plan && pl.planRound == 3 && pl.planHeading == "Here is the plan." && pl.planItems.size() == 2
+               && pl.planItems[0].id == "tc_9" && pl.planItems[0].why == "adding a plugin needs your ok" && pl.planItems[1].approval == "ask_first",
+               "P10 the plan frame: round, heading, items[{id, summary, why?, approval}] (approval defaults to ask_first)");
+        const auto rd = parseFrame ("round", R"({"sessionId":"ag_x","round":4,"ofSoftCap":20})");
+        const auto aw = parseFrame ("await", R"({"ids":["a","b"],"timeoutMs":120000})");
+        const auto dn = parseFrame ("done", R"({"reason":"hard_cap","summary":"s","rounds":40,"costUsd":1.5})");
+        check (rd.ofSoftCap == 20 && aw.awaitTimeoutMs == 120000 && aw.awaitIds.size() == 2 && dn.doneReason == "hard_cap" && dn.rounds == 40,
+               "P11 round.ofSoftCap, await.timeoutMs and done.reason are read");
+        const auto ask = talkAskOf (parseToolCall (juce::JSON::parse (R"({"id":"tc_keep_going","name":"talk","args":{"text":"Twenty rounds in.","ask":{"question":"Keep going?","choices":[{"label":"Yes","detail":"another 20 rounds","intent":"continue"},{"label":"Stop here"}],"allowFreeText":false}}})")));
+        check (ask.present && ask.question == "Keep going?" && ask.labels.size() == 2 && ask.details[0] == "another 20 rounds" && ask.intents[0] == "continue"
+               && ask.details[1].isEmpty() && ask.allowFreeText == false,
+               "P12 talk(ask): choices [{label, detail?, intent?}] and allowFreeText are read; the soft cap is an ordinary ask");
+        check (talkAskOf (parseToolCall (juce::JSON::parse (R"({"id":"t","name":"talk","args":{"ask":{"question":"Q","choices":["A"]}}})"))).allowFreeText == true,
+               "P12b allowFreeText absent -> typing allowed");
+        check (askAnswerVar ("Yes", false).getProperty ("tapped", {}).toString() == "Yes" && ! askAnswerVar ("Yes", false).hasProperty ("typed")
+               && askAnswerVar ("the museq", true).getProperty ("typed", {}).toString() == "the museq" && ! askAnswerVar ("x", true).hasProperty ("tapped"),
+               "P13 the answer is {tapped:\"<label>\"} or {typed:\"<text>\"}, never both");
+        const auto to = playbackTimeoutResult (60);
+        check ((bool) to.getProperty ("played", {}) == false && (int) to.getProperty ("waited", {}) == 60
+               && to.getProperty ("sentence", {}).toString() == "Nothing played in 60 seconds - play the loudest section and ask me again.",
+               "P14 the playback timeout answer is the contract's, verbatim");
+        check (describeCall (parseToolCall (juce::JSON::parse (R"({"id":"o","name":"do","args":{"op":"open_editor","slot":3},"approval":"free"})"))) == "Open the editor for slot 3",
+               "P15 open_editor {slot} is a free do with its own line");
     }
 
     // ---- N: nextRunnable ---------------------------------------------------------------------------------------
@@ -183,14 +217,16 @@ int main()
         st[0].call.name = "look"; st[0].status = S::Status::Pending; st[0].round = 1;
         st[1].call.name = "do"; st[1].call.approval = "ask_first"; st[1].status = S::Status::AwaitingApproval; st[1].round = 1;
         st[2].call.name = "check"; st[2].status = S::Status::Pending; st[2].round = 1;
-        check (EJAgentClient::nextRunnable (st, 1, false) == 0, "N1 the first pending step runs first");
+        check (EJAgentClient::nextRunnable (st, 1, false) == 0, "N1 the first free step runs first");
         st[0].status = S::Status::Done;
-        check (EJAgentClient::nextRunnable (st, 1, false) == -2, "N2 an ask_first step next in line asks for the plan decision (-2), the check behind it waits");
-        check (EJAgentClient::nextRunnable (st, 1, true) == 1, "N3 once the plan is submitted the same step runs");
+        check (EJAgentClient::nextRunnable (st, 1, false) == 2, "N2 the free check BEHIND the ask_first step runs before the card is shown (contract 3)");
+        st[2].status = S::Status::Done;
+        check (EJAgentClient::nextRunnable (st, 1, false) == -2, "N3 with every free call done, the undecided ask_first step asks for the plan decision (-2)");
+        check (EJAgentClient::nextRunnable (st, 1, true) == 1, "N4 once the plan is submitted the same step runs");
         st[1].status = S::Status::Running;
-        check (EJAgentClient::nextRunnable (st, 1, true) == -1, "N4 nothing runs while a step is running");
-        st[1].status = S::Status::Done; st[2].status = S::Status::Done;
-        check (EJAgentClient::nextRunnable (st, 1, true) == -1, "N5 all answered: nothing to run (the step is posted)");
+        check (EJAgentClient::nextRunnable (st, 1, true) == -1, "N5 nothing runs while a step is running");
+        st[1].status = S::Status::Done;
+        check (EJAgentClient::nextRunnable (st, 1, true) == -1, "N6 all answered: nothing to run (the step is posted)");
     }
 
     // ---- R1: one round with a plan ------------------------------------------------------------------------------
@@ -207,18 +243,20 @@ int main()
         r.round (1); r.delta ("Looking at the rack"); r.delta (" and the level...");
         check (r.client.liveText() == "Looking at the rack and the level...", "R1e deltas accumulate as the live text");
         r.tool (kLook); r.tool (kDoSet); r.tool (kCheck);
+        r.plan (R"({"round":1,"heading":"One change needs your ok.","items":[{"id":"tc_2","summary":"EchoJay EQ: bell 300 Hz -2 dB Q 1.4","why":"over the 3 dB line","approval":"ask_first"}]})");
         check (r.client.steps().size() == 3 && r.client.steps()[1].label == "EchoJay EQ: bell 300 Hz -2 dB Q 1.4"
-               && r.client.steps()[1].status == EJAgentClient::Step::Status::AwaitingApproval && r.client.steps()[0].status == EJAgentClient::Step::Status::Pending,
-               "R1f three tool_call frames are three checklist rows; the ask_first one awaits approval");
+               && r.client.steps()[1].status == EJAgentClient::Step::Status::AwaitingApproval && r.client.steps()[0].status == EJAgentClient::Step::Status::Pending
+               && r.client.planHeading() == "One change needs your ok.",
+               "R1f three tool_call frames are three checklist rows; the plan frame marks its item and carries the heading");
         r.await ({ "tc_1", "tc_2", "tc_3" });
         pumpMs (20);
-        check (r.ex.calls.size() == 1 && r.ex.calls[0].name == "look", "R1g on await the free look ran and the check behind the plan did NOT (strict wire order)",
-               juce::String ((int) r.ex.calls.size()));
+        check (r.ex.calls.size() == 2 && r.ex.calls[0].name == "look" && r.ex.calls[1].name == "check",
+               "R1g on await every FREE call ran (the look, and the check behind the plan line) before the card is shown", juce::String ((int) r.ex.calls.size()));
         check (r.client.state() == EJAgentClient::State::AwaitingApproval && r.client.planLines().size() == 1 && r.posts.size() == 1,
                "R1h the plan card is up with one line and nothing was posted");
         r.client.approveAll();
         pumpMs (20);
-        check (r.ex.calls.size() == 3 && r.ex.calls[1].name == "do" && r.ex.calls[2].name == "check", "R1i Approve all runs the do, then the check");
+        check (r.ex.calls.size() == 3 && r.ex.calls[2].name == "do" && r.ex.calls[2].id == "tc_2", "R1i Apply all runs the do");
         check (r.posts.size() == 2 && r.posts[1].first == "/api/agent/step", "R1j ONE step is posted", juce::String ((int) r.posts.size()));
         auto b = r.lastStepBody();
         auto* arr = b.getProperty ("results", {}).getArray();
@@ -244,8 +282,8 @@ int main()
         r.client.declineAll();
         pumpMs (10);
         auto res = r.result (0);
-        check (r.ex.calls.size() == before && (bool) res.getProperty ("ok", {}) == false && res.getProperty ("error", {}).getProperty ("code", {}).toString() == "declined",
-               "R2b Decline: nothing ran, the step says {ok:false, error.code:\"declined\"}");
+        check (r.ex.calls.size() == before && (bool) res.getProperty ("ok", {}) == false && res.getProperty ("error", {}).getProperty ("code", {}).toString() == "approval_declined",
+               "R2b Skip all: nothing ran, the step says {ok:false, error.code:\"approval_declined\"}");
         check (r.step ("tc_4")->status == EJAgentClient::Step::Status::Declined, "R2c the row reads declined");
     }
     // ---- R3: per-line taps ------------------------------------------------------------------------------------------
@@ -262,8 +300,8 @@ int main()
         r.client.submitPlan();
         pumpMs (10);
         check (r.ex.calls.size() == before + 1 && r.ex.calls.back().id == "tc_6", "R3c Apply runs only the approved line");
-        check (r.result (0).getProperty ("error", {}).getProperty ("code", {}).toString() == "declined" && (bool) r.result (1).getProperty ("ok", {}),
-               "R3d the step keeps the wire order: declined, then ok");
+        check (r.result (0).getProperty ("error", {}).getProperty ("code", {}).toString() == "approval_declined" && (bool) r.result (1).getProperty ("ok", {}),
+               "R3d the step keeps the wire order: approval_declined, then ok");
     }
     // ---- R4: a failed do stops the rest of the round's do calls ------------------------------------------------------
     {
@@ -287,30 +325,43 @@ int main()
     // ---- A: talk(ask) ------------------------------------------------------------------------------------------------
     {
         r.round (5);
-        r.tool (R"({"id":"tc_10","name":"talk","args":{"text":"Two EQs are on the rack.","ask":{"question":"Which one?","choices":["EchoJay EQ",{"label":"elysia museq"}]}},"approval":"free"})");
+        r.tool (R"({"id":"tc_10","name":"talk","args":{"text":"Two EQs are on the rack.","ask":{"question":"Which one?","choices":[{"label":"EchoJay EQ","detail":"slot 1"},{"label":"elysia museq","detail":"slot 4"}],"allowFreeText":true}},"approval":"free"})");
         r.await ({ "tc_10" });
         pumpMs (10);
         check (r.client.state() == EJAgentClient::State::AwaitingAsk && r.client.askPending() && r.client.pendingAsk().labels.size() == 2
-               && r.client.pendingAsk().labels[1] == "elysia museq" && r.client.pendingAsk().question.contains ("Which one?"),
-               "A1 the ask card waits with the question and both choices (string and object forms)");
+               && r.client.pendingAsk().labels[1] == "elysia museq" && r.client.pendingAsk().details[1] == "slot 4" && r.client.pendingAsk().question.contains ("Which one?"),
+               "A1 the ask card waits with the question and both choices with their detail");
         const auto postsBefore = r.posts.size();
-        check (r.client.interceptTyped ("the museq") && r.posts.size() == postsBefore + 1, "A2 a typed answer is TAKEN as the choice and the step goes out");
-        check (r.result (0).getProperty ("result", {}).getProperty ("choice", {}).toString() == "the museq" && (bool) r.result (0).getProperty ("result", {}).getProperty ("typed", {}),
-               "A3 ...as {choice, typed:true}");
+        check (r.client.interceptTyped ("the museq") && r.posts.size() == postsBefore + 1, "A2 a typed answer is TAKEN (allowFreeText) and the step goes out");
+        check (r.result (0).getProperty ("result", {}).getProperty ("typed", {}).toString() == "the museq" && ! r.result (0).getProperty ("result", {}).hasProperty ("tapped"),
+               "A3 ...as {typed:\"<text>\"}");
         check (r.transcript.back().first == "user" && r.transcript.back().second == "the museq", "A4 the answer is the user's turn in the transcript");
         r.round (6);
-        r.tool (R"({"id":"tc_11","name":"talk","args":{"ask":{"question":"Louder?","choices":["Yes","No"]}},"approval":"free"})");
+        r.tool (R"({"id":"tc_11","name":"talk","args":{"ask":{"question":"Louder?","choices":[{"label":"Yes"},{"label":"No"}],"allowFreeText":false}},"approval":"free"})");
         r.await ({ "tc_11" });
         pumpMs (10);
+        const auto p2 = r.posts.size();
+        check (r.client.interceptTyped ("maybe") && r.posts.size() == p2 && r.client.askPending() && r.client.notice().contains ("Tap one of the choices"),
+               "A5 allowFreeText:false refuses a typed answer WITH a line and keeps waiting");
+        r.client.answerAsk ("Perhaps");
+        check (r.client.askPending() && r.posts.size() == p2, "A5b a tap that is not one of the offered labels is ignored");
         r.client.answerAsk ("No");
-        check (r.result (0).getProperty ("result", {}).getProperty ("choice", {}).toString() == "No" && (bool) r.result (0).getProperty ("result", {}).getProperty ("typed", {}) == false,
-               "A5 a tapped choice goes back as {choice, typed:false}");
+        check (r.result (0).getProperty ("result", {}).getProperty ("tapped", {}).toString() == "No" && ! r.result (0).getProperty ("result", {}).hasProperty ("typed"),
+               "A6 a tapped choice goes back as {tapped:\"<label>\"}");
+        r.round (7);
+        r.tool (R"({"id":"tc_keep_going","name":"talk","args":{"text":"Twenty rounds in.","ask":{"question":"Keep going?","choices":[{"label":"Yes"},{"label":"Stop here"}],"allowFreeText":false}},"approval":"free"})");
+        r.await ({ "tc_keep_going" });
+        pumpMs (10);
+        r.client.answerAsk ("Yes");
+        check (r.result (0).getProperty ("id", {}).toString() == "tc_keep_going" && r.result (0).getProperty ("result", {}).getProperty ("tapped", {}).toString() == "Yes"
+               && r.logHas ("[soft cap]"),
+               "A7 the soft cap is an ordinary ask with id tc_keep_going; a tap answers it like any other");
     }
     // ---- W: wait_for_playback NEVER hangs ------------------------------------------------------------------------------
     {
         r.client.playbackTimeoutS = 1;
         r.ex.reading = {};
-        r.round (7);
+        r.round (8);
         r.tool (R"({"id":"tc_12","name":"check","args":{"what":"playback","min_seconds":2},"approval":"free"})");
         const auto postsBefore = r.posts.size();
         r.await ({ "tc_12" });
@@ -320,13 +371,14 @@ int main()
                "W1a the wait begins: Listening, the prompt line, a fresh window");
         pumpMs (1400);
         check (r.posts.size() == postsBefore + 1 && (bool) r.result (0).getProperty ("result", {}).getProperty ("played", {}) == false
-               && (double) r.result (0).getProperty ("result", {}).getProperty ("waited", {}) >= 1.0,
-               "W1b with no audio the wait TIMES OUT and returns {played:false, waited}");
-        check (r.step ("tc_12")->detail.contains ("No playback heard"), "W1c ...and says so on the row", r.step ("tc_12")->detail);
+               && (int) r.result (0).getProperty ("result", {}).getProperty ("waited", {}) == 1
+               && r.result (0).getProperty ("result", {}).getProperty ("sentence", {}).toString() == "Nothing played in 60 seconds - play the loudest section and ask me again.",
+               "W1b with no audio the wait TIMES OUT and returns {played:false, waited:<timeout>, sentence} - the contract's sentence verbatim");
+        check (r.step ("tc_12")->detail == "Nothing played in 60 seconds - play the loudest section and ask me again.", "W1c ...and the row says the same sentence", r.step ("tc_12")->detail);
         check (r.logHas ("playback wait ends (timeout)"), "W1d the log names the ending");
 
         r.client.playbackTimeoutS = 10;
-        r.round (8);
+        r.round (9);
         r.tool (R"({"id":"tc_13","name":"check","args":{"what":"playback","min_seconds":2},"approval":"free"})");
         r.await ({ "tc_13" });
         r.ex.reading.heardAboveSeconds = 0.6f;
@@ -341,7 +393,7 @@ int main()
                "W2b min_seconds heard: {played:true, seconds, integratedLufs, loudestLufs, peakDbtp}");
         check (r.step ("tc_13")->detail == "Got it, you can stop." && r.client.state() != EJAgentClient::State::Listening, "W2c the row reads \"Got it, you can stop.\" and the wait is over");
 
-        r.round (9);
+        r.round (10);
         r.tool (R"({"id":"tc_14","name":"check","args":{"what":"playback","min_seconds":8},"approval":"free"})");
         r.await ({ "tc_14" });
         r.ex.reading = {}; r.ex.reading.heardAboveSeconds = 1.5f;
@@ -352,7 +404,7 @@ int main()
                "W3 the user's early stop returns what was heard, marked short");
         check (r.step ("tc_14")->detail.startsWith ("Got it - using the 1.5 s heard"), "W3b ...and the row says how much", r.step ("tc_14")->detail);
 
-        r.round (10);
+        r.round (11);
         r.tool (R"({"id":"tc_15","name":"check","args":{"what":"playback","min_seconds":8},"approval":"free"})");
         r.await ({ "tc_15" });
         r.ex.reading = {}; r.ex.reading.transportKnown = true; r.ex.reading.playing = false; r.ex.reading.heardAboveSeconds = 1.2f;
@@ -365,7 +417,7 @@ int main()
     // ---- S: Stop halts at once -----------------------------------------------------------------------------------------
     {
         r.ex.deferDo = true;
-        r.round (11);
+        r.round (12);
         r.tool (R"({"id":"tc_16","name":"do","args":{"op":"set","slot":1},"approval":"free","summary":"a slow dial"})");
         r.tool (R"({"id":"tc_17","name":"look","args":{"what":"rack"},"approval":"free"})");
         r.await ({ "tc_16", "tc_17" });
@@ -375,6 +427,9 @@ int main()
         const auto transcriptBefore = r.transcript.size();
         r.client.stop();
         check (r.client.state() == EJAgentClient::State::Stopped && ! r.client.isActive() && r.client.hasSession(), "S2 Stop -> Stopped at once (the card stays)");
+        check (r.posts.size() == postsBefore + 1 && r.posts.back().first == "/api/agent/stop"
+               && juce::JSON::parse (r.posts.back().second).getProperty ("sessionId", {}).toString() == "ag_1",
+               "S2b ...and POST /api/agent/stop {sessionId} went out, and NO step");
         check (r.step ("tc_16")->status == EJAgentClient::Step::Status::Stopped && r.step ("tc_17")->status == EJAgentClient::Step::Status::Stopped,
                "S3 every unfinished step is marked Stopped");
         check (r.transcript.size() == transcriptBefore + 1 && r.transcript.back().second == "Stopped.", "S4 \"Stopped.\" reaches the transcript");
@@ -382,8 +437,8 @@ int main()
         held.second (ToolOutcome::success (juce::var (new juce::DynamicObject()), "u_late"));
         EJAgentClientTestAccess::feedStale (r.client, "round", "{\"sessionId\":\"ag_1\",\"round\":12}");
         pumpMs (30);
-        check (r.posts.size() == postsBefore && r.step ("tc_16")->status == EJAgentClient::Step::Status::Stopped && r.client.round() == 11,
-               "S5 a late completion and a stale frame change NOTHING: no step posted, the row stays Stopped");
+        check (r.posts.size() == postsBefore + 1 && r.step ("tc_16")->status == EJAgentClient::Step::Status::Stopped && r.client.round() == 12,
+               "S5 a late completion and a stale frame change NOTHING: no step posted after the stop, the row stays Stopped");
         check (r.logHas ("STOP requested"), "S6 the log records the stop with the state it interrupted");
         check (r.client.undoAllowedNow() && r.client.canUndoAll(), "S7 Undo is reachable after a stop");
         r.ex.deferDo = false;
@@ -412,8 +467,8 @@ int main()
         r.client.retry();
         check (r.posts.size() == n + 1 && r.posts.back().first == lastPath && r.posts.back().second == lastBody, "E3 Retry re-posts the SAME request, byte for byte");
         r.round (1); r.delta ("Done: the EQ took a 2 dB cut at 300 Hz.");
-        EJAgentClientTestAccess::feed (r.client, "done", R"({"summary":"Cut 2 dB at 300 Hz on the EchoJay EQ.","rounds":2,"costUsd":0.04})");
-        check (r.client.state() == EJAgentClient::State::Done && r.client.round() == 2 && std::abs (r.client.costUsd() - 0.04) < 1e-9
+        EJAgentClientTestAccess::feed (r.client, "done", R"({"reason":"complete","summary":"Cut 2 dB at 300 Hz on the EchoJay EQ.","rounds":2,"costUsd":0.04})");
+        check (r.client.state() == EJAgentClient::State::Done && r.client.doneReason() == "complete" && r.client.round() == 2 && std::abs (r.client.costUsd() - 0.04) < 1e-9
                && r.transcript.back().second == "Cut 2 dB at 300 Hz on the EchoJay EQ." && r.transcript[r.transcript.size() - 2].second == "Done: the EQ took a 2 dB cut at 300 Hz.",
                "E4 done -> Done; the round's talk and then the summary reach the transcript");
         check (r.client.statusLine().startsWith ("Done"), "E5 the status line reads Done", r.client.statusLine());
@@ -469,16 +524,18 @@ int main()
         r.tool (kLook);
         r.tool (R"({"id":"tc_2","name":"do","args":{"op":"build"},"approval":"ask_first","summary":"Build: EchoJay EQ (bell 300 Hz -2 dB Q 1.4, high shelf 10 kHz +1 dB), API-2500 (s) ratio 4:1 attack 10 ms release 300 ms, bx_saturator V2 drive 2 dB, EchoJay Level option dynamic target -12 LUFS, EchoJay Limiter ceiling -0.1 dBTP","why":"a build needs your ok"})");
         r.tool (R"({"id":"tc_3","name":"do","args":{"op":"set_pre_gain","db":-6},"approval":"ask_first","summary":"pre-gain -6 dB"})");
+        r.plan (R"({"round":1,"heading":"Here is the plan for the mix bus - two changes need your ok before anything is applied to the rack.","items":[{"id":"tc_2","summary":"Build: EchoJay EQ (bell 300 Hz -2 dB Q 1.4, high shelf 10 kHz +1 dB), API-2500 (s) ratio 4:1 attack 10 ms release 300 ms, bx_saturator V2 drive 2 dB, EchoJay Level option dynamic target -12 LUFS, EchoJay Limiter ceiling -0.1 dBTP","why":"a build needs your ok","approval":"ask_first"},{"id":"tc_3","summary":"pre-gain -6 dB","approval":"ask_first"}]})");
         r.await ({ "tc_1", "tc_2", "tc_3" });
         pumpMs (10);
         r.client.interceptTyped ("wait");
-        check (r.client.state() == EJAgentClient::State::AwaitingApproval, "L0 scene 1 is the plan card");
-        sweep ("plan card + long summary + notice");
+        check (r.client.state() == EJAgentClient::State::AwaitingApproval && r.client.planLines().size() == 2 && r.client.planHeading().startsWith ("Here is the plan"),
+               "L0 scene 1 is the plan card with its heading");
+        sweep ("plan card + heading + long summary + notice");
         check (layoutNeeded > 0, "L1 the panel asked the editor to re-dock when its height changed");
         // scene 2: the ask card with many chips
         r.client.approveAll(); pumpMs (10);
         r.round (2);
-        r.tool (R"({"id":"tc_4","name":"talk","args":{"ask":{"question":"How loud should the mix bus land?","choices":["Commercial (-8 LUFS)","Pushed (-7)","Leave dynamics, keep punch and breathing room (-12)","Match the input","Something else","Skip this"]}},"approval":"free"})");
+        r.tool (R"({"id":"tc_4","name":"talk","args":{"ask":{"question":"How loud should the mix bus land?","choices":[{"label":"Commercial (-8 LUFS)"},{"label":"Pushed (-7)"},{"label":"Leave dynamics, keep punch and breathing room (-12)","detail":"option dynamic"},{"label":"Match the input"},{"label":"Something else"},{"label":"Skip this"}],"allowFreeText":true}},"approval":"free"})");
         r.await ({ "tc_4" }); pumpMs (10);
         check (r.client.askPending(), "L2 scene 2 is the ask card");
         sweep ("ask card with six chips");

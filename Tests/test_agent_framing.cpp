@@ -3,8 +3,9 @@
 //
 // The property the agent transport depends on, and the one the chat-stream
 // splitter does NOT provide: the "event:" name of every frame survives, at
-// every chunk boundary, and a frame with no event line comes back with an
-// empty name (the type then rides inside the JSON - EJAgentProtocol.h reads both).
+// every chunk boundary. A frame with no event line comes back with an empty
+// name; EJAgentProtocol.h then classes it Unknown and the client skips it
+// (CONTRACT_AGENT_TOOLS.md 4: frames are typed by the event line only).
 
 #include "../Source/EJAgentFraming.h"
 #include <cstdio>

@@ -1,13 +1,12 @@
 # Agent mode, plugin side — Session A2 handoff (9 October 2026, branch `feat/agent-ui`, worktree `~/echojay-vst-a2`)
 
-**Status: WRITTEN, NOT COMPILED.** A2 never compiles, gates, installs or runs Logic (EJ Map was scanning; A owns
+**Status: WRITTEN, NOT COMPILED. Matched to B's `docs/CONTRACT_AGENT_TOOLS.md` (saas branch `hold/agent-contract`) in the second commit.** A2 never compiles, gates, installs or runs Logic (EJ Map was scanning; A owns
 every build on this Mac). Every file below was written against the headers it includes, read today, but the first
 compiler to see them is A's. Expect the usual first-compile fixes; the design will not change under them.
 
-Read alongside: `docs/LINK_REMOTE_CONTROL_PLAN.md`, `HANDOFF_COMP_PROFILES_PLUGIN.md` (08c), and
-`~/echojay-saas/docs/AGENT_MODE_PLAN.md`. The brief's `docs/CONTRACT_AGENT_TOOLS.md` **does not exist** in the saas
-repo (any branch, 9 Oct 15:00); the wire shapes here follow the plan's section 1.3 examples and are written to be
-corrected in ONE file (`EJAgentProtocol.h`) when B's contract lands.
+Read alongside: `docs/LINK_REMOTE_CONTROL_PLAN.md`, `HANDOFF_COMP_PROFILES_PLUGIN.md` (08c),
+`~/echojay-saas/docs/AGENT_MODE_PLAN.md` and **`~/echojay-saas/docs/CONTRACT_AGENT_TOOLS.md`** (B, branch
+`hold/agent-contract`), which is the source of truth for every wire shape in `EJAgentProtocol.h`.
 
 ---
 
@@ -15,12 +14,12 @@ corrected in ONE file (`EJAgentProtocol.h`) when B's contract lands.
 
 | file | what | depends on |
 |---|---|---|
-| `Source/EJAgentFraming.h` | SSE splitter that KEEPS `event:` names. `EJStreamFraming` drops them by contract (chat-stream never sends named events); the agent frames are typed by them. JUCE-free, standalone-testable. | nothing |
-| `Source/EJAgentProtocol.h` | the wire vocabulary as pure functions: `parseFrame(eventName, json)` (type from the event line FIRST, from a `"type"` property SECOND), `ToolCall`, `ToolResult`, `buildStepBody`, `buildStartBody`, `describeCall`, `isPlaybackWait`, `talkAskOf`. Header-only, `juce_core` only. Default approval when a frame carries none: `do` asks, everything else free (the safe direction). | juce_core |
+| `Source/EJAgentFraming.h` | SSE splitter that KEEPS `event:` names. `EJStreamFraming` drops them by contract (chat-stream never sends named events); the agent frames are typed by them and by nothing else (contract 4). JUCE-free, standalone-testable. | nothing |
+| `Source/EJAgentProtocol.h` | the wire vocabulary as pure functions: `parseFrame(eventName, json)` (type from the event line ONLY), the `plan` frame, `ToolCall`, `ToolResult` (Skip = `approval_declined`), `buildStepBody`, `buildStartBody`, `buildStopBody`, `describeCall` (incl. `open_editor`), `isPlaybackWait`, `playbackTimeoutResult` (the contract's sentence, verbatim), `talkAskOf` (choices `{label, detail?, intent?}`, `allowFreeText`), `askAnswerVar` (`{tapped}` / `{typed}`). Header-only, `juce_core` only. Default approval when a frame carries none: `do` asks, everything else free (the safe direction). | juce_core |
 | `Source/EJAgentTools.h` | **the executor interface A implements** (`echojay::agent::ToolExecutor`) + `StubExecutor` (answers `not_in_phase` to everything, counts no playback, has no checkpoint: honest, so the loop and cards are exercisable before A's lands). | EJAgentProtocol.h |
-| `Source/EJAgentClient.h/.cpp` | the loop driver: `/api/agent/start` + `/step` as SSE POSTs (one-byte reads, cancel handle, `net::Worker` census entry, callAsync behind alive + generation), rounds, strict wire-order execution, the plan decision, `talk(ask)`, `wait_for_playback` (client-run, never hangs), Stop, Undo per step / Undo all, Retry, a 90 s stall watchdog. Renders nothing. | EJAgentFraming, EJAgentProtocol, EJAgentTools, `EJNetCensus.h` |
+| `Source/EJAgentClient.h/.cpp` | the loop driver: `/api/agent/start` + `/step` as SSE POSTs (one-byte reads, cancel handle, `net::Worker` census entry, callAsync behind alive + generation), rounds, free calls first then the plan card then the approved lines in wire order, `talk(ask)`, `wait_for_playback` (client-run, 60 s, never hangs), Stop (`POST /api/agent/stop`, in-flight calls marked stopped, nothing else posted), Undo per step / Undo all, Retry, a 90 s stall watchdog. Renders nothing. | EJAgentFraming, EJAgentProtocol, EJAgentTools, `EJNetCensus.h` |
 | `Source/EJAgentPanelLayout.h` | the panel's geometry as pure functions (`wrappedTextHeight`, `layoutRows`, `layoutChips`, `checkRows`). One author for paint and buttons; what the guard asserts. | JuceHeader |
-| `Source/EJAgentPanel.h/.cpp` | the card: header (status dot, status line, **Stop**), scrolling body (goal, streamed talk, notice, **the checklist** with glyphs + the server's summary + landed line/error + per-row **Approved/Skipped** toggles while the plan waits and **Undo** once allowed, the **ask** question + choice pills, the **playback** ring + sentence), footer (**Approve all / Apply / Decline**, **Got it, you can stop**, **Undo all / Retry / Close**). EchoJay palette (`EchoJayLookAndFeel::Colours`), the chat's 26 px pills, `kFieldCorner`. | EJAgentClient, EJAgentPanelLayout, `EchoJayLookAndFeel.h` |
+| `Source/EJAgentPanel.h/.cpp` | the card: header (status dot, status line, **Stop**), scrolling body (goal, streamed talk, notice, the plan frame's **heading**, **the checklist** with glyphs + the server's summary + landed line/error + per-row **Apply/Skip** toggles while the plan waits and **Undo** once allowed, the **ask** question + choice pills, the **playback** ring + sentence), footer (**Apply all / Apply / Skip all**, **Got it, you can stop**, **Undo all / Retry / Close**). EchoJay palette (`EchoJayLookAndFeel::Colours`), the chat's 26 px pills, `kFieldCorner`. | EJAgentClient, EJAgentPanelLayout, `EchoJayLookAndFeel.h` |
 | `Tests/test_agent_framing.cpp` | standalone: `c++ -std=c++17 Tests/test_agent_framing.cpp -o /tmp/ej_agent_framing && /tmp/ej_agent_framing` | nothing |
 | `tools/agent_client_guard/harness.cpp` | the legs (section 5), in-process, no network: a recorder replaces the socket through the ONE named seam (`EJAgentClientTestAccess`, declared friend), a fake executor replaces A's. | the V2 archive |
 
@@ -167,21 +166,30 @@ class ToolExecutor {
 
 - **Start**: the typed goal becomes the user's turn (E4), the checkpoint is captured, `/start` goes out with the
   executor's context. No token -> "Sign in to use the agent." without a request.
-- **A round**: `round` resets the round's talk; `delta`s stream into the card's text; each `tool_call` is a row at
-  once (pending ring, or an amber ring + Approved toggle when `ask_first`); `await` starts execution in STRICT WIRE
-  ORDER. A free `look`/`check`/`talk` runs at once; an `ask_first` row blocks on the plan card; a failed `do` marks
-  the round's later `do`s `not_run` (looks still run). When every awaited id is answered, ONE `/step` is posted and
-  the round's talk goes to the transcript once.
-- **Plan card** = the checklist's ask_first rows with Approved/Skipped toggles + footer Approve all / Apply /
-  Decline. Declined lines return `{ok:false, error:{code:"declined"}}`.
-- **talk(ask)**: the question + choice pills in the card; a tap or a typed message answers `{choice, typed}`.
+- **A round**: `round` (with `ofSoftCap`) resets the round's talk; `delta`s stream into the card's text; each
+  `tool_call` is a row at once; the `plan` frame marks its items (the card's lines, in its order) and carries the
+  heading; `await` (terminal: the server closes the response) starts execution. EVERY FREE CALL RUNS FIRST, in wire
+  order (contract 3: "free calls in the same round run before the card is shown"); then the plan card; then the
+  applied lines in wire order. A failed `do` marks the round's later `do`s `not_run` (looks still run). When every
+  awaited id is answered, ONE `/step` is posted and the round's talk goes to the transcript once. A result over
+  8 KB is logged as a warning (the server rejects it with `result_too_large`).
+- **Plan card** = the plan heading + the checklist's plan rows with Apply/Skip toggles + footer Apply all / Apply /
+  Skip all. Skipped lines return `{ok:false, error:{code:"approval_declined"}}`. No Edit (per Sean's ruling).
+- **talk(ask)**: the question + choice pills (`{label, detail?, intent?}`); a tap answers `{tapped:"<label>"}`,
+  a typed message `{typed:"<text>"}` when `allowFreeText`, else the typed message is refused with "Tap one of the
+  choices to answer." The soft cap is an ordinary ask with id `tc_keep_going`.
 - **wait_for_playback**: "Play the chorus or the loudest section." + a ring that fills toward `min_seconds`;
-  "Listening... n of m s"; at `min_seconds`: "Got it, you can stop." and the reading goes back; the user's **Got it**
-  returns what was heard (`short:true` when under); a known-stopped transport after >= 1 s heard ends it early;
-  **60 s timeout** returns `{played:false, waited}` and says "No playback heard in 60 s - carrying on without a
-  reading." It cannot hang: every exit is on the client's own timer.
-- **Stop**: generation bump + socket cancel; every unfinished row reads stopped; nothing is posted; a late executor
-  completion or frame is ignored; "Stopped." in the transcript; the card stays so Undo is reachable.
+  "Listening... n of m s"; at `min_seconds`: "Got it, you can stop." and `{played:true, seconds, integratedLufs,
+  loudestLufs, peakDbtp}` goes back; the user's **Got it** returns what was heard (`short:true` when under); a
+  known-stopped transport after >= 1 s heard ends it early; the **60 s timeout** returns the contract's answer
+  verbatim: `{played:false, waited:60, sentence:"Nothing played in 60 seconds - play the loudest section and ask me
+  again."}`, and the row says the same sentence. It cannot hang: every exit is on the client's own timer.
+- **Stop**: generation bump + socket cancel; every in-flight row reads stopped; `POST /api/agent/stop {sessionId}`
+  goes out (fire and forget, logged); NO step is posted; a late executor completion or frame is ignored; "Stopped."
+  in the transcript; the card stays so Undo is reachable. `done.reason` ("complete" | "stopped" | "hard_cap" |
+  "error") is kept on the client.
+- **open_editor** `{slot}` is a free `do` the executor handles (the Link opens its floating window); its row reads
+  "Open the editor for slot n".
 - **Undo**: per row (its token) when the loop is not mid-round; Undo all -> the checkpoint; rows read "undone".
 - **done** -> Done + summary in the transcript; **error** -> Failed (+ Retry when retryable, re-posting the same
   body); EOF with no terminal frame -> Failed; 90 s without a frame on an open stream -> Failed, retryable.
@@ -196,58 +204,46 @@ class ToolExecutor {
 
 | leg | what is RED without the behaviour |
 |---|---|
-| P1-P9 | event-line and type-in-JSON frames parse alike; a bare `do` asks; the step body shape; both playback shapes; malformed frames skipped |
-| N1-N5 | `nextRunnable`: strict wire order, -2 on an undecided ask_first, nothing while a step runs |
-| R1a-n | start body; checkpoint; goal as the user's turn; deltas; rows; free look runs, check behind the plan waits; ONE step, every id, await order; talk once; undo token on the landed do; log lines |
-| R2 | Decline -> `declined`, nothing ran |
-| R3 | per-line skip -> declined; approved line runs; order kept |
+| P1-P15 | typed by the event line ONLY (a JSON `type` is not a type); terminal frames; a bare `do` asks; step/start/stop bodies; `approval_declined`; the plan frame; round/await/done extras; talk(ask) choices + allowFreeText; `{tapped}`/`{typed}`; the timeout answer verbatim; `open_editor`'s line |
+| N1-N6 | `nextRunnable`: every free call first (even behind a plan line), then -2 on an undecided plan, applied lines after submit, nothing while a step runs |
+| R1a-n | start body; checkpoint; goal as the user's turn; deltas; rows; the plan frame's heading; the look AND the check run before the card; ONE step, every id, await order; talk once; undo token on the landed do; log lines |
+| R2 | Skip all -> `approval_declined`, nothing ran |
+| R3 | per-line Skip -> `approval_declined`; applied line runs; order kept |
 | R4 | failed do -> later do `not_run`, look still runs; rows carry the reasons |
-| A1-A5 | ask card; typed answer taken; `{choice, typed}` both ways; transcript |
-| W1-W4 | timeout returns `played:false`; min reached returns the reading + "Got it, you can stop."; early stop `short`; stopped transport ends it |
-| S1-S7 | Stop at once; rows Stopped; no post; late completion + stale frame ignored; "Stopped."; Undo reachable |
+| A1-A7 | ask card with details; typed answer `{typed}`; `allowFreeText:false` refuses typing with a line and ignores a tap that is not a label; `{tapped}`; the soft cap `tc_keep_going` |
+| W1-W4 | timeout returns `{played:false, waited, sentence}` verbatim; min reached returns the reading + "Got it, you can stop."; early stop `short`; stopped transport ends it |
+| S1-S7 | Stop at once; `POST /api/agent/stop {sessionId}`; rows Stopped; no step; late completion + stale frame ignored; "Stopped."; Undo reachable |
 | U1-U3 | undo per step sends its token; undo all sends the checkpoint; notice |
-| E1-E8 | error frame; Retry byte-identical; done + summary; dismiss; EOF -> Failed; no token -> Sign in |
+| E1-E8 | error frame; Retry byte-identical; done + reason + summary; dismiss; EOF -> Failed; no token -> Sign in |
 | T1-T2 | typed under a running agent refused with a line; passes through otherwise |
-| L0-L8 | the panel at 6 widths x 4 height caps in 4 scenes passes `checkLayout`; chips wrap at 380; a short cap scrolls, never cuts; re-dock asked for; hidden after dismiss |
+| L0-L8 | the panel at 6 widths x 4 height caps in 4 scenes (plan card with heading, ask with six chips, listening, done) passes `checkLayout`; chips wrap at 380; a short cap scrolls, never cuts; re-dock asked for; hidden after dismiss |
 
 `Tests/test_agent_framing.cpp` covers the splitter at chunk sizes whole/7/3/1, CRLF, pings, event-without-data,
 multi-line data, mid-frame EOF.
 
 ---
 
-## 6. Open questions
+## 6. Open questions (after the contract)
 
-**For B (server)**
-1. **Frame typing.** Plan 1.3 shows `event: round` lines but says "same framing as /api/chat-stream", whose frames
-   are `data: {"type":...}` with no event lines. The client accepts both; please pick one and write it in the
-   contract. (If event lines: note `EJStreamFraming` would drop them, which is why `EJAgentFraming` exists.)
-2. **Does the response END after `await`?** The client treats `await`/`done`/`error` as the terminal frame of a
-   response and stops reading; if the server keeps the socket open after `await`, the client still works (it stops
-   reading), but please confirm so the stall watchdog is not misread.
-3. **`talk(ask)` shape.** I read `args.ask = {question, choices:[ "label" | {label, intent?} ]}` and answer
-   `{choice, typed}`. Confirm, and whether a typed free-text answer is acceptable as the choice.
-4. **No stop endpoint.** Stop is client-side only; the session TTLs out (1 h). If B wants `POST /api/agent/stop`,
-   it is one call in `EJAgentClient::stop()`.
-5. **"Edited" taps** (plan section 5: `edited` with the user's values). Not built: the plan card has approve/skip
-   per line only. Editing an op's values needs a field editor per op shape; proposing it as a phase-2 item.
-6. **Start body**: `{goal, context, agentMode:true, appVersion, chatId}`. `context` is the executor's; shape TBD
-   with A. Is `chatId` wanted for the transcript store?
-7. **Soft cap "keep going?"** - assumed to arrive as `talk(ask)`; nothing special built.
+**Answered by `CONTRACT_AGENT_TOOLS.md` and Sean's 9 Oct message, and built:** frame typing (event line only),
+terminal frames, `talk(ask)` shape and answers, Stop endpoint, start body, the soft cap, no Edit on the plan card,
+the playback timeout answer, `open_editor`.
 
-**For Sean**
-8. The **60 s playback timeout** and the **1 s "something was heard" floor** are my numbers (plan 1.4 suggests
-   60). Both are constants (`playbackTimeoutS`, the `>= 1.0` in `endPlayback`).
-9. **Stack or exclude** the ask shelf and the agent card (E3). I recommend exclude.
-10. **Where talk text lives**: streamed into the card while the round runs, then ONE assistant bubble per round in
-    the transcript when the step goes out. The card is the live view; the transcript is the record.
-
-**For A**
-11. `EchoJayAPI::transportEndpoint`'s exact signature (private static; I read the call, not the definition).
-12. Whether `appendLocalResultBubble`'s workspace append is wanted for agent lines (it persists them to the chat
-    store, like the loop's bubbles do). I think yes: the record should survive a reopen.
-13. The executor's `startContext()` shape — I suggest reusing `buildCurrentChainInjection`'s data, not its prose.
-
----
+**Still open**
+1. **Edit on the plan card.** The contract's section 3 names Apply / Edit / Skip and an `edited:true` result; Sean's
+   message says Apply / Skip and no "edited". Built as Sean said. If Edit comes back it is a field editor per op
+   shape plus one result flag - phase 2.
+2. **Resume** (contract 1: a reconnecting client POSTs `/step` with the last round and no results). Not built; the
+   client holds `sessionId` and `round`, so it is one call when wanted.
+3. **`context` on start.** The contract puts `agentMode: true` INSIDE `context`; Sean's message puts it at the top
+   level. Built at the top level; the executor's `startContext()` can carry it inside too at no cost (A's call).
+4. **Stop's step result.** The contract also allows answering pending calls with `{code:"stopped"}` in a step. Built
+   as Sean said: `/stop` is posted and nothing else goes out after it.
+5. **For Sean:** the 1 s "something was heard" floor on an early stop or a stopped transport is my number; the
+   60 s timeout is the contract's.
+6. **Stack or exclude** the ask shelf and the agent card (hook E3). I recommend exclude.
+7. **For A:** `EchoJayAPI::transportEndpoint`'s exact signature; whether agent lines persist to the chat store
+   (I think yes); `startContext()`'s shape (contract 1: `{channel:{uid,name,kind,links}, capabilities, appVersion}`).
 
 ## 7. What I did NOT establish
 - Anything about compilation. The JUCE calls are the ones the tree already uses (`FontOptions`, `TextLayout`,

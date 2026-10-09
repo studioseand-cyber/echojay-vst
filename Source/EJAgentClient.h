@@ -146,7 +146,10 @@ public:
     juce::String errorMessage() const { return errorMessage_; }
     bool errorRetryable() const noexcept { return errorRetryable_; }
     juce::String doneSummary() const { return doneSummary_; }
+    juce::String doneReason() const { return doneReason_; }          // complete | stopped | hard_cap | error
     double costUsd() const noexcept { return costUsd_; }
+    juce::String planHeading() const { return planHeading_; }        // the plan frame's heading for this round
+    int  ofSoftCap() const noexcept { return ofSoftCap_; }
     // One line the panel shows above the checklist until cleared: a refused send while active, an undo-all outcome.
     juce::String notice() const { return refusedTypedLine_; }
     void clearNotice() { if (refusedTypedLine_.isNotEmpty()) { refusedTypedLine_.clear(); changed(); } }
@@ -154,7 +157,7 @@ public:
     // Tunables (the guard shortens them)
     int stallTimeoutMs   = 90'000;   // no bytes on an open stream for this long -> stream_stalled
     int connectTimeoutMs = 60'000;
-    int playbackTimeoutS = 60;
+    int playbackTimeoutS = echojay::agent::kPlaybackTimeoutSeconds;   // the contract's 60 s
     int playbackTickMs   = 100;
 
     // ---- the pure decision the guard pins: which steps run, in what order, after a failure ----
@@ -181,6 +184,7 @@ private:
         juce::WebInputStream* active = nullptr;
     };
     void post (const juce::String& path, const juce::String& body);
+    void postStop();                              // POST /api/agent/stop {sessionId}: fire and forget, logged
     void onFrame (int generation, echojay::agent::Frame f);
     void onStreamEnded (int generation, bool sawTerminal, int statusCode, const juce::String& error);
     void onBytes (int generation);
@@ -221,6 +225,8 @@ private:
     std::vector<Step> steps_;
     juce::StringArray awaitIds_;
     bool awaitSeen_ = false;
+    int  awaitTimeoutMs_ = 0, ofSoftCap_ = 0;
+    juce::String planHeading_, doneReason_;
     bool planSubmitted_ = false;
     bool roundDoFailed_ = false;
     juce::String liveText_, roundTalk_;

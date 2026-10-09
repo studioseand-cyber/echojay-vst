@@ -86,7 +86,7 @@ EJAgentPanel::Layout EJAgentPanel::computeLayout (int width, int maxHeight) cons
     L.footerLabels.clear();
     switch (st)
     {
-        case State::AwaitingApproval: L.footerLabels = { "Approve all", "Apply", "Decline" }; break;
+        case State::AwaitingApproval: L.footerLabels = { "Apply all", "Apply", "Skip all" }; break;
         case State::Listening:        L.footerLabels = { "Got it, you can stop" }; break;
         case State::Done: case State::Stopped: case State::Failed:
             if (client_.canUndoAll()) L.footerLabels.add ("Undo all");
@@ -120,6 +120,11 @@ EJAgentPanel::Layout EJAgentPanel::computeLayout (int width, int maxHeight) cons
         const int noticeH = wrappedTextHeight (notice, detailFont(), contentWidth);
         out.notice = noticeH > 0 ? juce::Rectangle<int> (x0, y, contentWidth, noticeH) : juce::Rectangle<int>();
         if (noticeH > 0) y += noticeH + Metrics::rowGap;
+
+        const auto heading = st == State::AwaitingApproval ? client_.planHeading() : juce::String();
+        const int headingH = wrappedTextHeight (heading, bodyFont(), contentWidth);
+        out.planHeading = headingH > 0 ? juce::Rectangle<int> (x0, y, contentWidth, headingH) : juce::Rectangle<int>();
+        if (headingH > 0) y += headingH + Metrics::rowGap;
 
         const bool undoNow = client_.undoAllowedNow();
         for (const auto& s : client_.steps())
@@ -216,6 +221,7 @@ juce::String EJAgentPanel::checkLayout (const Layout& l)
     if (! within (l.goal))        return "goal leaves the column";
     if (! within (l.text))        return "text leaves the column";
     if (! within (l.notice))      return "notice leaves the column";
+    if (! within (l.planHeading)) return "plan heading leaves the column";
     if (! within (l.askQuestion)) return "ask question leaves the column";
     if (! within (l.playbackLine)) return "playback line leaves the column";
     const auto rows = checkRows (l.rows, l.rowRects, x0, w);
@@ -291,9 +297,9 @@ void EJAgentPanel::placeButtons()
     {
         const auto& lab = L.footerLabels[i];
         juce::TextButton* b = nullptr;
-        if      (lab == "Approve all")          b = &approveAllBtn_;
+        if      (lab == "Apply all")            b = &approveAllBtn_;
         else if (lab == "Apply")                b = &applyBtn_;
-        else if (lab == "Decline")              b = &declineBtn_;
+        else if (lab == "Skip all")             b = &declineBtn_;
         else if (lab == "Got it, you can stop") b = &gotItBtn_;
         else if (lab == "Undo all")             b = &undoAllBtn_;
         else if (lab == "Retry")                b = &retryBtn_;
@@ -327,8 +333,8 @@ void EJAgentPanel::placeButtons()
             for (const auto& s : client_.steps()) if (s.id == id) { approved = s.approved; break; }
             styleSecondary (b);
             b.setColour (juce::TextButton::textColourOffId, approved ? Colours::green : Colours::text3);
-            b.setButtonText (approved ? "Approved" : "Skipped");
-            b.setTooltip (approved ? "Tap to skip this line" : "Tap to approve this line");
+            b.setButtonText (approved ? "Apply" : "Skip");           // the line's decision, as the contract names it
+            b.setTooltip (approved ? "This line will be applied - tap to skip it" : "This line is skipped - tap to apply it");
             b.onClick = [this, id, approved] { client_.setLineApproved (id, ! approved); };
         }
         b.setVisible (true);
@@ -445,6 +451,7 @@ void EJAgentPanel::paintContent (juce::Graphics& g)
     if (! L.goal.isEmpty())   drawWrapped (g, "Goal: " + client_.goal(), detailFont(), Colours::text2, L.goal);
     if (! L.text.isEmpty())   drawWrapped (g, client_.liveText().trim(), bodyFont(), Colours::text, L.text);
     if (! L.notice.isEmpty()) drawWrapped (g, client_.notice(), detailFont(), Colours::amber, L.notice);
+    if (! L.planHeading.isEmpty()) drawWrapped (g, client_.planHeading(), bodyFont(), Colours::text, L.planHeading);
 
     const auto& steps = client_.steps();
     for (size_t i = 0; i < L.rowRects.size() && i < steps.size(); ++i)

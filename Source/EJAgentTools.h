@@ -72,7 +72,11 @@ public:
     virtual juce::var startContext() = 0;
 
     virtual void look  (const ToolCall& call, Done done) = 0;
-    virtual void doOp  (const ToolCall& call, Done done) = 0;   // "do": the only mutating tool
+    // "do", the only mutating tool. args.op (contract 2.2): build | add | remove | replace | move | set | set_wet |
+    // bypass | set_level | set_io | set_master_wet | set_pre_gain, plus open_editor {slot} (free: opens the Link's
+    // floating window for that slot, LINK_REMOTE_CONTROL_PLAN.md section 4). The result is the ack
+    // {status, slot?, applied, rack} - a "stale" ack goes back as ok:false error.code "stale".
+    virtual void doOp  (const ToolCall& call, Done done) = 0;
     virtual void check (const ToolCall& call, Done done) = 0;   // never called for what:"playback"
 
     // wait_for_playback support

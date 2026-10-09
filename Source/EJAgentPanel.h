@@ -11,12 +11,13 @@
 //             THE CHECKLIST - one row per tool call with a glyph (pending / running
 //             spinner / tick / cross / skipped / undone / stopped), the server's
 //             summary, the landed line or error underneath, and a right-hand
-//             button: "Approved"/"Skipped" toggles on the round's ask_first lines
-//             while the plan awaits a decision (the plan card IS the checklist),
-//             Undo on a landed change once undo is allowed;
+//             button: an Apply/Skip toggle on the round's plan lines while the
+//             plan awaits a decision (the plan frame's heading sits above them:
+//             the plan card IS the checklist), Undo on a landed change once undo
+//             is allowed;
 //             the ask (question + choice pills) when the model asked;
 //             the playback row (listening ring + the one sentence) while waiting
-//    footer   the context buttons: Approve all / Apply / Decline; Got it, you can
+//    footer   the context buttons: Apply all / Apply / Skip all; Got it, you can
 //             stop; Undo all / Retry / Close
 //
 //  Palette and components are EchoJay's own (EchoJayLookAndFeel::Colours, the
@@ -61,7 +62,7 @@ public:
         int width = 0, totalHeight = 0, contentWidth = 0, contentHeight = 0;
         bool scrolls = false;
         juce::Rectangle<int> header, stop, body, footer;
-        juce::Rectangle<int> goal, text, notice, askQuestion, playbackRing, playbackLine;
+        juce::Rectangle<int> goal, text, notice, planHeading, askQuestion, playbackRing, playbackLine;
         std::vector<echojay::agentui::RowSpec>  rows;
         std::vector<echojay::agentui::RowRects> rowRects;
         std::vector<juce::String> rowIds;
@@ -103,7 +104,7 @@ private:
     EJAgentClient& client_;
     juce::Viewport viewport_;
     Content content_ { *this };
-    juce::TextButton stopBtn_ { "Stop" }, approveAllBtn_ { "Approve all" }, applyBtn_ { "Apply" }, declineBtn_ { "Decline" },
+    juce::TextButton stopBtn_ { "Stop" }, approveAllBtn_ { "Apply all" }, applyBtn_ { "Apply" }, declineBtn_ { "Skip all" },
                      gotItBtn_ { "Got it, you can stop" }, undoAllBtn_ { "Undo all" }, retryBtn_ { "Retry" }, closeBtn_ { "Close" };
     std::vector<std::unique_ptr<juce::TextButton>> rowBtns_, chipBtns_;
     Layout layout_;
