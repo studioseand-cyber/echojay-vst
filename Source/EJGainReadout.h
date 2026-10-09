@@ -121,4 +121,33 @@ struct GainReadout : juce::Component, private juce::Timer
     }
 };
 
+/** 08c item B (9 Oct 2026): WHERE THE TWO READOUTS GO ON A CARD OF THIS WIDTH, decided once for both editors.
+    The V2 puts them top-right and reserves the column in its name box; the Link drew its name across the FULL
+    width and the readouts landed on top of it - Sean's Tube-Tech CL 1B, UAD UA 1176LN and NLS Buss were all
+    unreadable on 8 Oct. "Identical rects" was the invariant I gave the Link and it was the wrong one: the rects
+    already matched. What has to match is THE READING, and that is the name box as much as the readouts.
+
+    I tried giving a 118 px card its own row for the readouts, under a full-width name, and withdrew it: both
+    cards carry a wet/dry knob centred at y 17-42, so any extra row runs straight through it. The V2's geometry -
+    a 46 px column top-right, the name yielding it - is the one that has shipped and that Sean passed, so it is
+    now the only geometry, and the Link adopts the whole of it: reserved name box, and the pop-out glyph moved
+    to the top-left where the V2 moved it in Build 2 instead of sitting under the readouts.
+
+    `name`, `in` and `out` are the three rects: the name's text box and the two readouts. `nameLeftInset` is the
+    editor's own left margin (16 on the V2's left-aligned name, 6 on the Link's centred one). */
+struct CardReadoutLayout
+{
+    juce::Rectangle<int> name, in, out;
+};
+inline CardReadoutLayout layOutCardReadouts (int cardW, int nameLeftInset)
+{
+    constexpr int kReadoutW = 46, kReadoutH = 9, kGutter = 2;
+    CardReadoutLayout l;
+    const int colX = cardW - (kReadoutW + kGutter);
+    l.name = { nameLeftInset, 3, juce::jmax (8, colX - nameLeftInset), 18 };
+    l.in   = { colX, 2,  kReadoutW, kReadoutH };
+    l.out  = { colX, 11, kReadoutW, kReadoutH };
+    return l;
+}
+
 } // namespace echojay

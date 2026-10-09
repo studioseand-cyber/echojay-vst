@@ -2209,6 +2209,40 @@ opened the second window AND meant the turn never went to the server - that is t
 already uses for "yes"), and a taken verb must leave a visible line - a message that vanishes is indistinguishable
 from a dropped send.
 
+### 08c BUILT (9 Oct, on `feat/08c`, UNBUILT - EJ Map scanning until ~11:00)
+| # | item | commit | leg |
+|---|---|---|---|
+| 1 | F2 levelling | 732188a | `loudness_loop_guard` / `level_loop_guard` |
+| 2 | E ceiling held at -0.1 | 48ea1bb | chain-apply leg, logs the asked-for figure |
+| 3 | C bare-verb matcher | e07d773 | "check the level of the mix bus" reaches chat |
+| 4 | D one author for the list's bottom edge | 52f4c9b | `ui_guard` + a LAYOUT log line |
+| 5 | B the Link's IN/OUT layout | (this commit) | `ui_guard` item-5 leg, re-aimed |
+
+### B — I HAD THE WRONG INVARIANT TWICE, AND THE SECOND TIME WAS TODAY
+On 8 Oct I gave the Link the V2's readout rects **verbatim** so they "could not drift", and the guard asserted the
+two files held **identical coordinates**. That leg was GREEN while Sean's Link cards were unreadable, because the
+rects were never the problem: the Link drew its name at `6, 3, getWidth() - 12, 18`, the **full width**, straight
+over both readouts, while the V2 has always drawn at `getWidth() - 16 - 48`. **Identical rects is not the
+invariant; the reading is** - and the name box is half of the reading.
+
+Today I first built the other wrong answer: a 118 px card gets its own row for the readouts under a full-width
+name. I withdrew it before committing. **Both** cards centre a wet/dry knob at y 17-42, so that row runs straight
+through the knob - and the V2's existing leg (`! inReadout.intersects(wetKnob)`) says so out loud.
+
+**What is committed:** one function, `echojay::layOutCardReadouts (cardW, nameLeftInset)` in `EJGainReadout.h`,
+returning the **name box as well as** the two readout rects. The geometry is the V2's - the one that has shipped
+and that Sean passed - and the Link now adopts all of it: the reserved name box, and the pop-out glyph moved to
+the **top-left** where the V2 moved it in Build 2 (the Link drew it at `getWidth() - 15`, inside the readout
+column). Neither editor types a readout coordinate any more.
+
+**The leg, re-aimed:** it no longer compares coordinates between files. It asserts (a) both editors take the
+rects from the function and have no hand-typed rect left, (b) **both draw their name in the box the function
+reserved** - this is the check that is RED on 8 Oct's Link, (c) at the card width **read out of both files**
+(`kBlockW`, asserted equal and 118, as Sean asked) both readouts are inside the card, do not overlap each other,
+**do not touch the name box**, do not cross the knob's rows, and the name still gets >= 40 px, (d) the readout
+column is identical for both insets while each editor keeps its own left margin, and (e) the Link's glyph has
+left the column.
+
 ## (earlier fragments, kept for their evidence)
 
 ## ROUND 08c — THE LIST, FROM SEAN'S 08b TEST (diagnosed read-only 8 Oct ~20:15 from code + the 19:55-20:10 logs)

@@ -160,8 +160,12 @@ public:
                           : bypassed ? juce::Colour(0xff606078)
                                      : juce::Colour(0xfff0f0f5));
                 g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-                g.drawText(name, 6, 3, getWidth() - 12, 18,
-                           juce::Justification::centred, true);
+                {
+                    // 08c item B: the name's box comes from the same shared layout as the readouts, so it can
+                    // never be drawn over them again. It was getWidth() - 12, the full width, on 8 Oct.
+                    const auto lay = echojay::layOutCardReadouts (getWidth(), 6);
+                    g.drawText (name, lay.name, juce::Justification::centred, true);
+                }
                 if (missing || bypassed)
                 {
                     g.setColour(missing ? coral.withAlpha(0.8f)
@@ -174,10 +178,12 @@ public:
                 {
                     // Pop-out glyph — this plugin's editor opens in a
                     // floating window (out-of-process view, can't inline)
+                    // 08c item B: top-LEFT, where the V2 moved it in Build 2. It used to be drawn at
+                    // getWidth() - 15, which is inside the readout column.
                     g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.85f));
                     g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
                     g.drawText(juce::String::fromUTF8("\xe2\x86\x97"),
-                               getWidth() - 15, 2, 12, 11, juce::Justification::centred);
+                               2, 2, 12, 11, juce::Justification::centred);
                 }
             }
 
@@ -192,10 +198,11 @@ public:
                 // Wet/dry knob — centred between name row and button row
                 // (same geometry as the main plugin's Chain tab block)
                 wetKnob.setBounds((getWidth() - 22) / 2, 20, 22, 22);
-                // 06d item 5: the SAME rects the V2 uses (PluginEditor.h), so the two cards cannot drift apart
-                // by a pixel either.
-                inReadout .setBounds(getWidth() - 48, 2,  46, 9);
-                outReadout.setBounds(getWidth() - 48, 11, 46, 9);
+                // 08c item B: the shared layout decides where these go, and the same call decides the name box
+                // in paint() - which is the half that was missing on 8 Oct.
+                const auto lay = echojay::layOutCardReadouts (getWidth(), 6);
+                inReadout .setBounds (lay.in);
+                outReadout.setBounds (lay.out);
             }
         };
 

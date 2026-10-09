@@ -3544,8 +3544,8 @@ int main()
         check (ro.readoutText() == "IN -2.5" && ! ro.set,
                "a readout with no setter still READS, and cannot be written", ro.readoutText());
 
-        // (2) STRUCTURAL: both editors construct the shared struct, give it both tags, and lay it out at the
-        // SAME rects. A copy of the struct in one file, or a different rect, is the drift this is here to stop.
+        // (2) STRUCTURAL: both editors construct the shared struct and give it both tags. A copy of the struct
+        // in one file is the drift this is here to stop.
         const auto readFile = [] (const char* path)
         {
             std::ifstream f (path); std::stringstream ss; ss << f.rdbuf(); return juce::String (ss.str());
@@ -3558,12 +3558,20 @@ int main()
             const juce::String& f = *pair.second;
             check (f.contains ("GainReadout inReadout, outReadout"),
                    juce::String (pair.first) + " holds the shared readouts on its slot card");
-            check (f.contains ("inReadout .setBounds(getWidth() - 48, 2,  46, 9)")
-                   || f.contains ("inReadout .setBounds (getWidth() - 48, 2,  46, 9)"),
-                   juce::String (pair.first) + " lays IN out at the same rect as the other editor");
-            check (f.contains ("outReadout.setBounds(getWidth() - 48, 11, 46, 9)")
-                   || f.contains ("outReadout.setBounds (getWidth() - 48, 11, 46, 9)"),
-                   juce::String (pair.first) + " lays OUT out at the same rect");
+            // 08c item B (9 Oct): THIS USED TO ASSERT IDENTICAL RECTS and it passed on 8 Oct while the Link's
+            // cards were unreadable - the rects matched; the Link's NAME box did not yield the column, so the
+            // name was drawn over them. Identical coordinates was the wrong invariant. What is asserted now is
+            // that neither editor types coordinates at all: both ask the one function, for the readouts AND for
+            // the name box, so the yielding cannot be done in one file and forgotten in the other.
+            check (f.contains ("inReadout .setBounds (lay.in)") && f.contains ("outReadout.setBounds (lay.out)"),
+                   juce::String (pair.first) + " takes both readout rects from layOutCardReadouts(), not typed "
+                   "coordinates");
+            check (f.contains ("layOutCardReadouts") && ! f.contains ("getWidth() - 48, 2,"),
+                   juce::String (pair.first) + " ...and has no hand-typed readout rect left in it");
+            check (f.contains ("lay.name") || f.contains ("nameLay.name"),
+                   juce::String (pair.first) + " DRAWS ITS NAME IN THE BOX THAT FUNCTION RESERVED "
+                   "(RED as it stood for the Link: g.drawText(name, 6, 3, getWidth() - 12, ...), the full "
+                   "width, straight over both readouts)");
             check (f.contains ("inReadout.get") && f.contains ("outReadout.get")
                    && f.contains ("inReadout.set") && f.contains ("outReadout.set"),
                    juce::String (pair.first) + " wires both getters AND both setters (interactive, as ruled)");
@@ -3572,6 +3580,60 @@ int main()
                "the Link does NOT carry its own copy of the struct - one definition, or they drift");
         check (link.contains ("getSlotPreTrimDb") && link.contains ("getSlotOutGainDb"),
                "and it reads the SAME source of truth the V2 does (getSlotPreTrimDb / getSlotOutGainDb)");
+
+        // (3) 08c item B: THE GEOMETRY ITSELF, AT THE WIDTH THE CARDS ACTUALLY ARE. Sean asked for the card
+        // width to be in the leg, so it is read out of both files rather than typed here: if either editor
+        // changes kBlockW, this leg re-aims itself and the equality below is what catches a one-sided change.
+        const auto blockW = [&] (const juce::String& f) -> int
+        {
+            const int at = f.indexOf ("kBlockW");
+            if (at < 0) return -1;
+            const int eq = f.indexOf (at, "=");
+            if (eq < 0) return -1;
+            return f.substring (eq + 1, f.indexOf (eq, ";")).trim().getIntValue();
+        };
+        const int wV2 = blockW (v2), wLink = blockW (link);
+        check (wV2 == 118 && wLink == 118,
+               "the slot card is 118 px wide in BOTH editors - the width this geometry has to work at",
+               "V2 " + juce::String (wV2) + ", Link " + juce::String (wLink));
+        if (wLink > 0)
+        {
+            // The Link's own inset (6, centred name); the V2's is 16 (left-aligned, pop-out glyph at x 2).
+            const auto lay = echojay::layOutCardReadouts (wLink, 6);
+            const juce::Rectangle<int> card { 0, 0, wLink, 64 };
+            check (card.contains (lay.in) && card.contains (lay.out),
+                   "(B) at the Link's card width BOTH readouts are inside the card",
+                   lay.in.toString() + " / " + lay.out.toString() + " in " + card.toString());
+            check (! lay.in.intersects (lay.out),
+                   "(B) ...and they do not overlap each other");
+            check (! lay.name.intersects (lay.in) && ! lay.name.intersects (lay.out),
+                   "(B) ...AND THE NAME BOX DOES NOT TOUCH EITHER OF THEM, which is the 8 Oct bug: name "
+                   + lay.name.toString() + " vs " + lay.in.toString() + " / " + lay.out.toString());
+            check (lay.name.getWidth() >= 40,
+                   "(B) ...while the name still gets a usable box, not a sliver",
+                   juce::String (lay.name.getWidth()) + " px");
+            // The wet/dry knob is centred at y 17..42 on both cards, which is why the readouts stay in the
+            // top-right column and do not get a row of their own. Assert that, so a later "give them a row"
+            // cannot land silently on top of the knob.
+            const juce::Rectangle<int> knob { (wLink - 22) / 2, 17, 22, 25 };
+            check (! knob.intersects (lay.in) && ! knob.intersects (lay.out),
+                   "(B) ...and neither readout crosses the wet/dry knob's rows",
+                   knob.toString());
+            // Both editors ask with their own inset; the readout column must come out in the same place.
+            const auto layV2 = echojay::layOutCardReadouts (wLink, 16);
+            check (layV2.in == lay.in && layV2.out == lay.out,
+                   "(B) the readout column is the SAME for both editors - only the name box differs with the "
+                   "inset", layV2.in.toString() + " vs " + lay.in.toString());
+            check (layV2.name.getX() == 16 && lay.name.getX() == 6,
+                   "(B) ...and each editor's own left inset is honoured",
+                   layV2.name.toString() + " / " + lay.name.toString());
+        }
+
+        // (4) And the glyph that used to sit in that column on the Link has left it.
+        check (! link.contains ("getWidth() - 15, 2, 12, 11"),
+               "(B) the Link's pop-out glyph is no longer drawn inside the readout column");
+        check (link.contains ("\\xe2\\x86\\x97\")") && link.contains ("2, 2, 12, 11"),
+               "(B) ...it is top-left, where the V2 put it in Build 2");
     }
 
     // ---- 06d CHAINS (C), 8 Oct 2026: SAVE SERIALISES THE RACK THE USER IS LOOKING AT ------------------

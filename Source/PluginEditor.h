@@ -2014,8 +2014,11 @@ private:
                 g.setColour(bypassed ? Card::nameBypassed : Card::nameOn);
                 g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
                 // Build 2: the title line yields its right-hand 46px to the IN/OUT readouts, and 12px on the left
-                // to the pop-out glyph that used to sit where they now are.
-                g.drawText(name, 16, 3, getWidth() - 16 - 48, 18,
+                // to the pop-out glyph that used to sit where they now are. 08c item B: that yielding is now the
+                // shared function's job, because the Link had not done it.
+                const auto nameLay = echojay::layOutCardReadouts (getWidth(), 16);
+                g.drawText(name, nameLay.name.getX(), nameLay.name.getY(),
+                           nameLay.name.getWidth(), nameLay.name.getHeight(),
                            juce::Justification::centredLeft, true);
                 if (bypassed)
                 {
@@ -2052,8 +2055,11 @@ private:
             {
                 // Build 2: two 9px rows in the top-right corner, clear of the wet knob (y 17..39), the button row
                 // and the pop-out glyph (now top-left). 46px wide fits "OUT -24.0" at 7pt.
-                inReadout .setBounds (getWidth() - 48, 2,  46, 9);
-                outReadout.setBounds (getWidth() - 48, 11, 46, 9);
+                // 08c item B: the same rects as before, now returned by ONE function both editors call
+                // (Source/EJGainReadout.h) instead of being typed out twice.
+                const auto lay = echojay::layOutCardReadouts (getWidth(), 16);
+                inReadout .setBounds (lay.in);
+                outReadout.setBounds (lay.out);
                 int bw = 18, bh = 14, m = 3;   // 21m: one row shorter so the trim text fits between knob and buttons
                 int by = getHeight() - bh - m;
                 bypassBtn.setBounds(m, by, bw, bh);
