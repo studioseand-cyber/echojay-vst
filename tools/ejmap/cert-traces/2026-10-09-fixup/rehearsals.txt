@@ -1,0 +1,83 @@
+REHEARSALS, 9 Oct (this Mac; no licence-bound unit loaded)
+
+MULTIBAND (f1e8d848 binary, same multiband code as c7f762ed except the neutral writes)
+== OTT
+MB: OTT 1.3.7: 3 band threshold(s) [Thresh L @ '100', Thresh M @ '100', Thresh H @ '100']; crossovers [] -> 0 band(s); global amount [0] Depth
+  measured band 1: Thresh L owns 20-84 Hz
+  measured band 2: Thresh M owns 134-2000 Hz
+  measured band 3: Thresh H owns 2668-20000 Hz
+== MDynamicsMB
+MB: MDynamicsMB 14.16.0: 4 band threshold(s) [Band 1 -> Threshold @ '-20.0 dB', Band 2 -> Threshold @ '-20.0 dB', Band 3 -> Threshold @ '-20.0 dB', Band 4 -> Threshold @ '-20.0 dB']; crossovers [Cross
+  not band thresholds (another stage's, Sean's ruling 8 Oct): Band 1 - Gate - Threshold, Band 1 - Processor 1 - Threshold, Band 1 - Processor 2 - Threshold, Band 2 - Gate - Threshold, Band 2 - Process
+  pairing [16] Band 1 -> Threshold: cuts 20-120 Hz (deepest -34.2 dB, centre 51.2996) -> band 1
+  pairing [24] Band 2 -> Threshold: cuts 252-796 Hz (deepest -20.5 dB, centre 447.69) -> band 2
+  pairing [32] Band 3 -> Threshold: cuts 1262-3768 Hz (deepest -19.8 dB, centre 2180.32) -> band 3
+  pairing [40] Band 4 -> Threshold: cuts 7516-20000 Hz (deepest -33.7 dB, centre 12261.2) -> band 4
+== C6 (s)
+MB: C6 (s) 12.0.0: 6 band threshold(s) [Band 1 Threshold @ '0.0', Band 2 Threshold @ '0.0', Band 3 Threshold @ '0.0', Band 4 Threshold @ '0.0', Band 5 Threshold @ '0.0', Band 6 Threshold @ '0.0']; cro
+  enable step: [10] Band 1 Threshold cuts once its band's Band 1 Range moves off '0.0' (norm 0.00)
+  pairing [10] Band 1 Threshold: cuts 796-1262 Hz (deepest -23.7 dB, centre 1002.45) -> band 5
+  pairing [19] Band 2 Threshold: cuts 20-80 Hz (deepest -7.3 dB, centre 41.8461) -> band 1
+  pairing [26] Band 3 Threshold: cuts 112-3358 Hz (deepest -7.8 dB, centre 614.432) -> band 2
+  pairing [33] Band 4 Threshold: cuts 3768-11246 Hz (deepest -5.0 dB, centre 6509.13) -> band 3
+  pairing [40] Band 5 Threshold: cuts 12620-20000 Hz (deepest -7.9 dB, centre 15886.6) -> band 4
+  enable step: [47] Band 6 Threshold cuts once its band's Band 6 Range moves off '0.0' (norm 0.00)
+  pairing [47] Band 6 Threshold: cuts 3990-6324 Hz (deepest -23.6 dB, centre 5023.44) -> band 6
+== C4 (s)
+MB: C4 (s) 12.0.0: 4 band threshold(s) [Band 1 Thresh @ '-27.0', Band 2 Thresh @ '-19.2', Band 3 Thresh @ '-30.1', Band 4 Thresh @ '-35.3']; crossovers [Low Crossover, Mid Crossover, High Crossover] -
+  pairing [14] Band 1 Thresh: cuts 20-84 Hz (deepest -7.5 dB, centre 43.0789) -> band 1
+  pairing [21] Band 2 Thresh: cuts 106-3768 Hz (deepest -7.8 dB, centre 632.361) -> band 2
+  pairing [28] Band 3 Thresh: cuts 3768-12620 Hz (deepest -5.6 dB, centre 6894.87) -> band 3
+  pairing [35] Band 4 Thresh: cuts 11914-20000 Hz (deepest -7.9 dB, centre 15435.9) -> band 4
+
+C6 (s) through the batch on c7f762ed's code - record and draft neutral:
+ record neutral: [{"control": "Band 1 Range", "index": 12, "set": "-24.0", "norm": 0.0, "source": "multiband enable step: the band's own Band 1 Range moved off its off end ('0.0') so its threshold acts - measured with it, the server writes it too"}, {"control": "Band 6 Range", "index": 49, "set": "-24.0", "norm": 0.0, "source": "multiband enable step: the band's own Band 6 Range moved off its off end ('0.0') so its threshold acts - measured with it, the server writes it too"}]
+ draft neutral: [{"control": "Band 1 Range", "index": 12, "set": "-24.0", "norm": 0.0, "source": "multiband enable step: the band's own Band 1 Range moved off its off end ('0.0') so its threshold acts - measured with it, the server writes it too"}, {"control": "Band 6 Range", "index": 49, "set": "-24.0", "norm": 0.0, "source": "multiband enable step: the band's own Band 6 Range moved off its off end ('0.0') so its threshold acts - measured with it, the server writes it too"}]
+
+MULTIBAND PLAN on Sean's cert 2 fixtures (--multiband-plan, nothing loaded)
+MB PLAN: Pro-MB (151 controls) - nothing loaded
+  not bands (a sidechain / key filter): Band 1 Side Chain Low Frequency, Band 1 Side Chain High Frequency, Band 2 Side Chain Low Frequency, Band 2 Side Chain High Frequency, Band 3 Side Chain Low Freq
+  per-band crossovers: 6 band(s), each its own range
+  band thresholds (6): [6] Band 1 Threshold @ '-18.00 dB', [28] Band 2 Threshold @ '-18.00 dB', [50] Band 3 Threshold @ '-18.00 dB', [72] Band 4 Threshold @ '-18.00 dB', [94] Band 5 Threshold @ '-18.0
+  topology: per-band crossovers, 6 band(s)
+    band 1: 30-20000 Hz, centre 774.597
+    band 2: 30-20000 Hz, centre 774.597
+    band 3: 30-20000 Hz, centre 774.597
+    band 4: 30-20000 Hz, centre 774.597
+    band 5: 30-20000 Hz, centre 774.597
+    band 6: 30-20000 Hz, centre 774.597
+  enable candidates for Band 1 Threshold: Band 1 Range (at '0.00 dB', try norm 0.00 / 1.00)
+
+MB PLAN: Ozone 12 Dynamics (118 controls) - nothing loaded
+  band thresholds (8): [11] DYN: Stereo/Main Band 1 Comp Threshold @ '-12', [23] DYN: Stereo/Main Band 2 Comp Threshold @ '-12', [35] DYN: Stereo/Main Band 3 Comp Threshold @ '-12', [47] DYN: Stereo/M
+  not band thresholds (another stage's): 8 - DYN: Stereo/Main Band 1 Lim Threshold, DYN: Stereo/Main Band 2 Lim Threshold, DYN: Stereo/Main Band 3 Lim Threshold, DYN: Stereo/Main Band 4 Lim Threshold,
+  topology: no crossover control - MEASURED (each threshold's cut region becomes its band when the unit is run)
+
+MB PLAN: DynOne3 (113 controls) - nothing loaded
+  band thresholds (10): [0] C HMF Threshold @ '-40.0', [3] LR MF Threshold @ '-40.0', [21] C LF Threshold @ '-40.0', [26] C MF Threshold @ '-40.0', [55] C LMF Threshold @ '-40.0', [56] LR HMF Threshol
+  topology: no crossover control - MEASURED (each threshold's cut region becomes its band when the unit is run)
+  enable candidates for C HMF Threshold: C HMF Volume (at '-Inf dB', try norm 0.50)
+  enable candidates for LR MF Threshold: LR MF Volume (at '-Inf dB', try norm 0.50)
+  enable candidates for C LF Threshold: C LF Volume (at '-Inf dB', try norm 0.50)
+  enable candidates for C MF Threshold: C MF Volume (at '-Inf dB', try norm 0.50)
+  enable candidates for C LMF Threshold: C LMF Volume (at '-Inf dB', try norm 0.50)
+  enable candidates for LR HMF Threshold: LR HMF Volume (at '-Inf dB', try norm 0.50)
+  enable candidates for LR HF Threshold: LR HF Volume (at '-Inf dB', try norm 0.50)
+  enable candidates for C HF Threshold: C HF Volume (at '-Inf dB', try norm 0.50)
+  enable candidates for LR LMF Threshold: LR LMF Volume (at '-Inf dB', try norm 0.50)
+
+MB PLAN: OTT (19 controls) - nothing loaded
+  band thresholds (3): [5] Thresh L @ '100', [6] Thresh M @ '100', [7] Thresh H @ '100'
+  topology: no crossover control - MEASURED (each threshold's cut region becomes its band when the unit is run)
+  global amount: [0] Depth
+
+GAIN-ALL
+bx_rooMS:   text pass: --text-at over 49 controls killed by signal 11; again in chunks of 8 GAINCAL: text pass: 49 of 49 controls sampled in 10.6 s (timeout 120 s, scaled to the count) 
+MSaturator: complete 27 traces 26 s; fabricated timed-out with half the traces gone; --redo unfinished: resumed_traces 21, 13 s, record + draft written
+no_pool reach (plan only): cert 2 copy -> gainall 2 listed, 2 done; fresh folder -> gainall 0 listed
+
+THE FIX-UP LINE's plan on a copy of cert 2 (c7f762ed code, stopped after the plan):
+PHASEB: --redo multiband,unfinished: 12 finished row(s) run again
+  multiband   15 product(s), 0 already done; hang guard 25 min (a pairing response per threshold, a ladder per band, 25-30 vocal responses: 
+  gainall    185 product(s), 180 already done; hang guard 10 min (21 norms x 2-3 levels per gain control + the unnamed pool: ~1-4 min)
+Sean's own rows it selects: multiband 17 + gain-all 8 unfinished (2C-Aether, AVOX SYBIL, Auto-Tune Vocal EQ, EchoBoy, PrimalTap, TOMO Audiolabs LISA, Vocal Reverb, bx_rooMS); 592 other gain-all rows untouched

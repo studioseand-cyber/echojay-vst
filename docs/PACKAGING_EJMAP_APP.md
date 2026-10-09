@@ -58,6 +58,12 @@ REPO=~/src/echojay-vst            # wherever the checkout is
 #   drafts on every --run-all run. Derive-only EQUAL to dc77d0a5 on the four sets with 0 differences, build tree and packaged
 #   (tools/ejmap/cert-traces/2026-10-08-switch/); packaged at ~/Desktop/ejmap-dist-8oct-e. Sean runs a6c85e6f tonight WITHOUT multiband
 #   and switches to this one on a later night (runbook "Tonight and the switch-over"). a6c85e6f IS ITS FALLBACK.
+#   THE FIX-UP BUILD (9 Oct, Kathy's rulings on Sean's cert 2): c7f762ed - 5ab8352b + the multiband fixes (limiter stages, measured
+#   topology, depth / level / range enable written as neutral writes, sidechain controls never bands, per-band crossovers) + the
+#   gain-all fixes (declared guard with resume, labels in chunks, --redo unfinished, no_pool reaching gain-all's existing rows,
+#   unhostable) + --multiband-plan. Derive-only EQUAL to dc77d0a5 on the four sets, build tree and packaged
+#   (tools/ejmap/cert-traces/2026-10-09-fixup/); packaged at ~/Desktop/ejmap-dist-9oct-b. For the fix-up night after Sean's main
+#   5ab8352b run ends (runbook). 5ab8352b IS ITS FALLBACK. (f1e8d848 at ~/Desktop/ejmap-dist-9oct: superseded the same afternoon.)
 git -C "$REPO" fetch && git -C "$REPO" checkout dc77d0a5     # branch feat/ejmap-cert; the commit after it is this documentation (0f175c51: the fallback)
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
@@ -101,6 +107,11 @@ ledger, the iLok, the power. Exit 0 = the probe verifies. From here the mapper r
 nothing on this page is needed again until the code changes.
 
 ## What was tested where
+
+**9 Oct, the fix-up build (c7f762ed):** rebuilt from the clean checkout (stamp `c7f762ed`), packaged into `~/Desktop/ejmap-dist-9oct-b`,
+both signatures Developer ID / team 8BT5F9B887; preflight exit 0 (probe cdhash ee97dfc9...). Derive-only against dc77d0a5 on the four
+sets: 181/181, 181/181, 90/90, 87/87 rows, 0 state-or-reason differences, fixtures / profiles / controls identical - from the build tree
+and again from the packaged binary. Its fallback is 5ab8352b.
 
 **8 Oct, the switch-over build (5ab8352b):** rebuilt from the clean checkout (stamp `5ab8352b`), packaged into `~/Desktop/ejmap-dist-8oct-e`,
 both signatures Developer ID / team 8BT5F9B887; preflight exit 0 (probe cdhash ee97dfc9...). Derive-only against dc77d0a5 on the four

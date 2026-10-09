@@ -23,6 +23,37 @@ Everything after this section is the earlier plan and its history; follow this s
 
 ---
 
+## AFTER THE MAIN RUN ENDS: the fix-up night — c7f762ed (Kathy's ruling, 9 Oct)
+
+Only when tonight's `--run-all` line above says the sequence is complete. Install the fix-up build (c7f762ed, packaged and
+signed at ~/Desktop/ejmap-dist-9oct-b; derive-only EQUAL to dc77d0a5 on your current folder, your 4 Oct zip, cert_sc and cert_tc35; 5ab8352b is its
+fallback) the same way as before - same folder, nothing deleted - then ONE command:
+
+```
+caffeinate -i "$BIN" --phaseb-all --redo multiband,unfinished --category multiband --category gainall
+```
+
+It re-runs ONLY:
+- every multiband row (17 on your Mac): only each band's own compressor threshold (never a limiter, gate or processor stage's),
+  bands measured where a unit has no crossover control (OTT, Ozone 12 Dynamics, DynOne3), each Pro-MB band's own Low / High
+  crossover range, sidechain filters never bands, and a band that is off at instantiate switched on by its own depth / level /
+  range (DynOne3's Volume at -Inf, Pro-MB's Range at 0 dB, C6's floating bands' Range at 0) when no switch does it - and that
+  write is on the record and the draft as a neutral write the server makes too;
+- the gain-all rows that timed out or failed (8 on your Mac): PrimalTap, TOMO Audiolabs LISA, Auto-Tune Vocal EQ, Vocal Reverb
+  and EchoBoy resume from the traces they already have, with a guard sized to their plan; bx_rooMS reads its labels in chunks;
+  2C-Aether is read again; AVOX SYBIL is filed `unhostable` with the OS's error (it refuses to initialise) and not tried again.
+
+Nothing else is touched: every other gain-all row (507 ok, 81 needs_licence, 2 windows) stays as it is, and no product without a
+gain-all row is started. About 1.5-2 h (multiband ~1 h at your Mac's pace, the gain-all eight ~30-60 min). Then the drafts:
+
+```
+"$BIN" --phaseb-drafts
+```
+
+and the morning zip and review as usual.
+
+---
+
 # Running the 7 Oct build (dc77d0a5) — Sean's Mac, follow as written
 
 `ejmap.app` built from commit **dc77d0a5** (branch feat/ejmap-cert; packaged and signed at ~/Desktop/ejmap-dist-7oct-b per

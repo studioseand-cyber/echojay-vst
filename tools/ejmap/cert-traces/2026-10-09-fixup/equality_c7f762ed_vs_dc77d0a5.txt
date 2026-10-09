@@ -1,0 +1,43 @@
+derive-only equality: c7f762ed (build tree; packaged ~/Desktop/ejmap-dist-9oct-b) vs dc77d0a5 (~/Desktop/ejmap-dist-7oct-b), 9 Oct; recipe ../2026-10-07-equality/compare.py
+== current (head c7f762ed vs dc77d0a5)
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 82 old / 82 new, only-old [], only-new [], differ 0
+  controls: 45 old / 45 new, only-old [], only-new [], differ 0
+== seanzip (head c7f762ed vs dc77d0a5)
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 45 old / 45 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+== cert_sc (head c7f762ed vs dc77d0a5)
+  rows 90 90 state/reason diffs 0 []
+  fixtures: 19 old / 19 new, only-old [], only-new [], differ 0
+  profiles: 7 old / 7 new, only-old [], only-new [], differ 0
+  controls: 2 old / 2 new, only-old [], only-new [], differ 0
+== cert_tc35 (head c7f762ed vs dc77d0a5)
+  rows 87 87 state/reason diffs 0 []
+  fixtures: 14 old / 14 new, only-old [], only-new [], differ 0
+  profiles: 4 old / 4 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+
+the same with the PACKAGED c7f762ed
+== current (packaged c7f762ed vs dc77d0a5)
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 82 old / 82 new, only-old [], only-new [], differ 0
+  controls: 45 old / 45 new, only-old [], only-new [], differ 0
+== seanzip (packaged c7f762ed vs dc77d0a5)
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 45 old / 45 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+== cert_sc (packaged c7f762ed vs dc77d0a5)
+  rows 90 90 state/reason diffs 0 []
+  fixtures: 19 old / 19 new, only-old [], only-new [], differ 0
+  profiles: 7 old / 7 new, only-old [], only-new [], differ 0
+  controls: 2 old / 2 new, only-old [], only-new [], differ 0
+== cert_tc35 (packaged c7f762ed vs dc77d0a5)
+  rows 87 87 state/reason diffs 0 []
+  fixtures: 14 old / 14 new, only-old [], only-new [], differ 0
+  profiles: 4 old / 4 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
