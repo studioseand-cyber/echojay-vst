@@ -2218,6 +2218,44 @@ from a dropped send.
 | 4 | D one author for the list's bottom edge | 52f4c9b | `ui_guard` + a LAYOUT log line |
 | 5 | B the Link's IN/OUT layout | (this commit) | `ui_guard` item-5 leg, re-aimed |
 
+### 08c LEGS, AND THREE DEFECTS THE REVIEW FOUND BEFORE THE COMPILER COULD (00216fd)
+The four items I landed this morning carried **no legs** - only B did. Writing them found three real faults:
+
+1. **The deferred reset.** `LevelTally::reset()` only raises a flag the AUDIO THREAD clears, so arming and reading
+   in the same breath leaves the OLD snapshot in place - the same stale-integrated-figure bug F2 exists to stop,
+   one layer down. The reset is now OBSERVED (`heardSeconds` seen near zero) before a reading is believed.
+2. **The song's integrated reading.** My first version reset `chainInTally_` at the arm, which is the song's
+   reading, and Sean's rule from 13:22 is that a loop reset never clears it. ChainHost now carries a SECOND tally
+   off the same input tap - `chainInLoopTally_`, loop-owned, reset per window. Leg F2-3 is why it is a second one.
+3. **The stale offer could not fire, then fired wrongly.** It sat after the `armed` early return - the state the
+   new opening leaves the loop in - so its own case could never reach it. And stamping only at the opening made
+   the loop's own next write look like an edit: a stale offer thrown at the user the moment they pressed Go. One
+   author now, inside `writeGainDb`. F2-4 and F2-5 are the two directions.
+
+| leg | guard | what is RED without the fix |
+|---|---|---|
+| F2-1 | loudness_loop_guard | a dial taking 2.4 dB AFTER the arm: the old opening wrote +6.5 where +8.9 was right - Sean's shortfall exactly |
+| F2-2 | loudness_loop_guard | a channel build with no target anywhere arms, gets a Level slot, and lands out = in |
+| F2-3 | loudness_loop_guard | the arm and the window do not clear the song's integrated reading |
+| F2-4 | loudness_loop_guard | an edit after a landing is called stale, once, with a Listen pill |
+| F2-5 | loudness_loop_guard | a gain the LOOP wrote does not raise the stale offer |
+| F2-6 | loudness_loop_guard | option "match" with no target arms, and survives the slot as 4 rather than "commercial" |
+| E | loudness_loop_guard | a block asking -1 is held at -0.1 on the LAST slot; one that agrees is untouched; a limiter NOT last keeps its figure |
+| C | ui_guard | "check the level of the mix bus" is not a verb; the bare verbs still are; a taken verb always answers |
+| D | ui_guard | the list has an edge below its status line, a row gets a rect, every rect passes the painter's own test |
+| B | ui_guard | both editors take rects AND the name box from one function; re-aimed off "identical rects" |
+
+**Z and Z3 re-aimed:** the opening is owed now, so the gain has to be played for before it can be asserted.
+
+### THREE THINGS FOR SEAN AND B, FROM 08c
+1. **MusicBus.** The ruling named "MIX BUS or MASTER", so `aimIsTarget` is FullMix and MasterBus only. MusicBus
+   is a plausible whole-mix role and I have NOT included it - widening the ruling is Sean's call.
+2. **E's gap.** The ceiling clamp is on the BUILT-IN dial funnel, so a THIRD-PARTY final limiter (Pro-L 2, bx)
+   still takes the server's figure. Sean's 8 Oct chain ended on the EchoJay Limiter, which is why this closes his
+   case; the general one needs B to stop emitting `ceiling_db -1`.
+3. **`level_params` contract**, implemented as agreed: option `"match" | "pushed" | "dynamic"`, and `"match"` is
+   accepted with NO `target_lufs`. It is option 4 on the Level device, GR cap 3 dB.
+
 ### B — I HAD THE WRONG INVARIANT TWICE, AND THE SECOND TIME WAS TODAY
 On 8 Oct I gave the Link the V2's readout rects **verbatim** so they "could not drift", and the guard asserted the
 two files held **identical coordinates**. That leg was GREEN while Sean's Link cards were unreadable, because the
