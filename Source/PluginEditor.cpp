@@ -20234,7 +20234,15 @@ void EchoJayEditor::resized()
 
             int y = chainListStatusRect_.getBottom() + 8;
             const int rowH = 38, headH = 18, gap = 4;
+            // ---- 08c item D (9 Oct 2026): ONE AUTHOR FOR THIS EDGE -------------------------------------
+            // The list was laid out against `chatScrollBottom` (this local) and PAINTED against
+            // `chatScroll.getBottom()` (the live component). Two numbers for one edge, and they disagree the
+            // moment the component is laid out after this block or sized differently in chains mode - and then
+            // either the layout drops every row as "off the bottom" or the painter skips every row it was given.
+            // Sean's column showed nothing but the chat input, with 1 row in the model and the fetch logged
+            // "RENDER 1 row(s)". The predicate for WHICH MODE was already single-authored; the geometry was not.
             const int listBottom = chatStartX >= 0 ? chatScrollBottom : y;
+            chainListBottom_ = listBottom;
             for (int i = 0; i < (int)chainDisplayRows_.size(); ++i)
             {
                 const bool heading = chainRowIsHeading_[(size_t)i] != 0;
@@ -20255,6 +20263,15 @@ void EchoJayEditor::resized()
                                                                             18, 18));
                 y += h + (heading ? 2 : gap);
             }
+            // 08c item D: THE LINE THAT PROVES IT. Sean's log said the model had a row and the fetch rendered
+            // one; what it could not say was whether the rows had anywhere to go. Now it can: the edge, how many
+            // rows got a rect, and how many were dropped off the bottom.
+            int placed = 0;
+            for (const auto& rr : chainRowRects_) if (! rr.isEmpty()) ++placed;
+            EchoJay_NSLog (("EJChains: LAYOUT list bottom " + juce::String (chainListBottom_)
+                            + " (status rect bottom " + juce::String (chainListStatusRect_.getBottom())
+                            + "), " + juce::String (placed) + " of "
+                            + juce::String ((int) chainDisplayRows_.size()) + " row(s) placed").toRawUTF8());
         }
 
         // Chat components are hidden in Chains mode and restored in AI mode.
@@ -33841,6 +33858,11 @@ void EchoJayEditor::pollLinkCtrlAck(const juce::String& linkAddr, int seq, int a
 void EchoJayEditor::paintChainSidebar(juce::Graphics& g, int chatX, int chatW,
                                       int topH, int bottomY)
 {
+    // 08c item D: bottomY is DELIBERATELY UNUSED now. It was this painter's own reading of the column's bottom
+    // edge (`chatScroll.getBottom()` at the call site) and it disagreed with the one the layout used, which is
+    // what dropped every row. The edge is `chainListBottom_`, authored once by the layout. The parameter stays so
+    // the call site keeps saying which component bounds the column, and so this note has somewhere to live.
+    juce::ignoreUnused (bottomY);
     juce::ignoreUnused(topH);
 
     // Staleness line. Says WHEN, not just "cached": the user knows whether
@@ -33875,7 +33897,8 @@ void EchoJayEditor::paintChainSidebar(juce::Graphics& g, int chatX, int chatW,
     for (int i = 0; i < (int)chainRowRects_.size(); ++i)
     {
         auto r = chainRowRects_[(size_t)i];
-        if (r.isEmpty() || r.getBottom() > bottomY) continue;
+        // 08c item D: the edge the LAYOUT used, not a second reading of a component that may have moved since.
+        if (r.isEmpty() || r.getBottom() > chainListBottom_) continue;
 
         if (chainRowIsHeading_[(size_t)i] != 0)
         {
@@ -33961,6 +33984,7 @@ void EchoJayEditor::setChainSidebarMode(bool chainsMode)
         // 06d CHAINS (A, the logging half): Sean pressed CHAINS and the log carried NOTHING about chains, so
         // there was no way to tell a panel that failed before it asked from a fetch that answered empty. Four
         // lines now: open, fetch start, result count, render.
+        chainListBottom_ = 0;   // 08c D: cleared on open so the first layout after this is what sets it
         EchoJay_NSLog (("EJChains: CHAINS panel opened (tab=" + juce::String ((int) currentTab)
                         + " compact=" + juce::String ((int) compactMode)
                         + " collapsed=" + juce::String ((int) processorRef.chatSidebarCollapsed)

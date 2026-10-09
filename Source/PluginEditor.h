@@ -1720,6 +1720,10 @@ private:
     // paint() and mouseDown. paint() measures nothing.
     juce::Rectangle<int> chainModeAiRect_, chainModeChainsRect_;
     juce::Rectangle<int> chainListStatusRect_;
+    // 08c item D (9 Oct 2026): the chains list's bottom edge, authored ONCE by the layout and read by the paint.
+    // It used to be derived twice - `chatScrollBottom` in the layout, `chatScroll.getBottom()` in the painter -
+    // and a disagreement between them dropped every row, which is the blank column Sean reported.
+    int chainListBottom_ = 0;
 
     struct ChainRow {
         juce::String id, name, updatedAt;
