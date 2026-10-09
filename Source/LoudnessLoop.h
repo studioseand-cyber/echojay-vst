@@ -413,6 +413,24 @@ public:
                  "EchoJay Level - REFUSED: substituting there would delete the slot the loop drives");
             return false;
         }
+        // AND IT MUST PLAUSIBLY BE A LIMITER AT ALL (9 Oct 2026). I flagged this as "not mine to widen" an hour
+        // ago and the gate made the decision for me: a one-op EQ build came out as "EchoJay Limiter | EchoJay
+        // Level". The intent of the old rule - "any brand last: the last slot holds the ceiling" - is sound when
+        // the last slot IS a limiter of a brand we cannot read. It is nonsense when the chain has no limiter at
+        // all, and then this function deletes a plugin the user asked for and puts a limiter in its place.
+        // A chain with no limiter simply has no ceiling to confirm; the loop already copes (the GR estimate
+        // path), and the loud-window check is the safety either way.
+        // STILL FOR SEAN: whether a chain with no limiter should have one INSERTED before the loop drives level
+        // into it. That is a product question, it is not this function's to answer, and refusing is the
+        // conservative answer until he rules.
+        const auto nomName = host_.getSlotInfo (t.limiterSlot).name;
+        if (! ChainHost::isLimiterLikeName (nomName))
+        {
+            log ("no limiter in this chain - the last slot is \"" + nomName + "\", which is not limiter-like, so "
+                 "there is no ceiling to confirm and NOTHING is substituted. The loop runs on the GR estimate and "
+                 "the loud-window check.");
+            return false;
+        }
         const auto infos = host_.getDialInfos();
         bool ceilingReadBack = false;
         if (t.limiterSlot < (int) infos.size())

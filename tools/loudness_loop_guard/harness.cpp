@@ -1401,6 +1401,10 @@ static int guardMain()
                    names.joinIntoString (" | "));
             check (h.getSlotInfo (h.getNumSlots() - 1).name == "EchoJay Level",
                    "L7. ...and it is LAST, because no limiter ends this chain", names.joinIntoString (" | "));
+            check (names.contains ("EchoJay Gain") && ! names.contains ("EchoJay Limiter"),
+                   "L7. ...and THE USER'S OWN PLUGIN SURVIVES: a chain with no limiter has no ceiling to confirm, "
+                   "so nothing is substituted (RED as it stood: the one real plugin was replaced BY a limiter)",
+                   names.joinIntoString (" | "));
             check (loop.findTarget().limiterSlot != loop.levelSlot(),
                    "L7. ...and findTarget never nominates the Level slot as the limiter",
                    "limiterSlot " + juce::String (loop.findTarget().limiterSlot)
