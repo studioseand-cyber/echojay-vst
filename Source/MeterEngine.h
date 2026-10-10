@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "EJBandScheme.h"   // BandPowerRing, the band edges and the ballistics
 #include <array>
 #include <atomic>
 #include <vector>
@@ -131,6 +132,42 @@ struct MeterData {
     // is audible RIGHT NOW, which is also true of a track that played and
     // stopped, and that track's measurements are real.
     int heardFrames = 0;
+
+    /** THE INSTANTANEOUS STEREO PAIR: per block, ungated and unsmoothed, where
+        `width` and `correlation` are the 1.5 s EMA held through silence.
+
+        DISPLAY ONLY, AND THAT IS A RULE RATHER THAN A PREFERENCE. These two
+        must never reach a comparison, a capture, a stored measurement or the
+        model's JSON: they exist so the Match page's trail image has a genuinely
+        fast source to smoke from, and nothing else reads them. `width` and
+        `correlation` remain the only stereo figures anything compares, stores
+        or sends, so a figure that moves every block can never be set beside a
+        whole-file one as though the two were alike. `mr PIN31` holds that by
+        sweeping the paths they must not appear in.
+
+        AND THEY SIT HERE, AT THE END, RATHER THAN BESIDE width AND correlation
+        WHERE THEY BELONG BY SUBJECT. They were put there first and it cost a
+        red suite the same day.
+
+        THIS PROJECT'S SUITE LINKS A PRE-EXISTING ARCHIVE:
+        tools/mapfps_test/build_and_run.sh links
+        build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a, and
+        meterDataToJSON is compiled INTO that archive rather than being header
+        inline. So a field inserted in the MIDDLE of this struct moves every
+        later field, the test TU builds a MeterData at the new offsets, and the
+        archive's older meterDataToJSON reads them at the old ones. It does not
+        fail to link. It reads heardFrames from the wrong place, gets zero, and
+        the heard gate silently closes over psr, plr and oversCount.
+
+        ps PIN3 IS WHAT CAUGHT IT, and it was the only one of five that could:
+        the other four assert those keys are ABSENT, which an empty answer
+        satisfies. Open list 164 owns the stale archive in general and the row
+        beside it owns this shape.
+
+        SO: A NEW FIELD GOES AT THE END. Append only, for any struct the suite
+        links across. */
+    float instWidth = 0.0f;
+    float instCorr  = 0.0f;
 };
 
 class MeterEngine
@@ -217,6 +254,92 @@ public:
     };
     MacroWindow reduceMacroWindow(bool useMean) const;
 
+    // ===== THE WHOLE-RUN BAND ACCUMULATOR (Phase 1b commit 3) =====
+    // The ballistic macroBandDb answers "what is this band doing now". This
+    // answers "what is this band over the whole run", and it is taken from the
+    // SAME bandPower values the ballistic path uses, one line before the
+    // smoothing, so the two cannot describe different audio.
+    //
+    // ONE DEFINITION, BOTH SIDES. ReferenceAnalyser reads it after its file
+    // loop; stopCapture reads it off captureEngine. Having each of them sum
+    // their own would be two definitions of one quantity, which is the shape
+    // that let the spectrum and the macro bands drift apart in the first place.
+    //
+    // POWER, not dB: see echojay::bandMeanFromSum for why that is the whole
+    // point rather than an implementation detail.
+    //
+    // NO SILENCE GATE, deliberately, matching eqCurve rather than macroRing.
+    // The two existing accumulations disagree about this and the choice is
+    // recorded in RESULTS_PHASE1B.md; blocks is stored so it can be revisited
+    // without re-measuring.
+    struct BandAccum
+    {
+        std::array<double, 6> sumPower {};   // per-octave-normalised, linear
+        int    blocks  = 0;
+        double seconds = 0.0;                // audio actually summed
+    };
+    /** The accumulated whole-run bands, in dB, plus the window they cover.
+        valid is false when no block has been summed: a caller must render that
+        as unavailable, never as a level. */
+    struct BandAccumResult
+    {
+        bool  valid = false;
+        int   blocks = 0;
+        float seconds = 0.0f;
+        std::array<float, 6> db { -120, -120, -120, -120, -120, -120 };
+    };
+    BandAccumResult getAccumulatedBands() const;
+
+    // ===== THE BOUNDED BAND WINDOW (Phase 1c) =====
+    // The same statistic as getAccumulatedBands over a BOUNDED span, so a Live
+    // compare slot can put a power mean beside a reference's power mean and have
+    // the chart compare like with like.
+    //
+    // SIZED TO THE SPECTRUM'S WINDOW. kSpecHistFrames frames at 25 fps is 12.000
+    // seconds at any sample rate, and the live spectrum already reports that
+    // span, so the live side of the card has ONE window story. The capacity is
+    // in BLOCKS rather than 25 fps frames, so it is derived at prepare() from
+    // the host's buffer size.
+    //
+    // NO SILENCE GATE, DELIBERATELY, AND UNLIKE THE SPECTROGRAM RING. Silent
+    // blocks enter as zero power, the mean falls as they displace audio, and once
+    // the window is wholly silent every band floors and the consumer's
+    // six-or-nothing rule refuses. A stopped transport therefore stops producing
+    // a band figure instead of holding a stale one. The cost is that the window
+    // is WRONG rather than absent while it drains, for as long as the window is
+    // deep, and the spectrum beside it stays frozen because IT is gated. Both
+    // are labelled; the divergence is real and is recorded in
+    // tools/spectral_evidence_measure/RESULTS_PHASE1B.md.
+    struct BoundedBands
+    {
+        bool  valid = false;      // false = nothing in the window
+        int   blocks = 0;         // blocks ACCUMULATED, not capacity
+        float seconds = 0.0f;     // what it actually has, not what it will have
+        /** Seconds since the window last took a block. Zero while audio is
+            arriving; growing once the gate has closed.
+
+            WHY THE BANDS CARRY THIS AND THE BINS DO NOT, and the bins are
+            deliberately unchanged in this commit. The spectrum is consumed as a
+            CURVE: a frozen one still draws a truthful picture of the last
+            audible span, and a reader looking at a spectrum is reading shape,
+            which survives being stale. These six are consumed as NUMBERS in a
+            comparison against another source's six numbers, where nothing on
+            screen distinguishes a figure from now from one that stopped
+            measuring ten minutes ago. A number needs to say when it stopped. */
+        float ageSeconds = 0.0f;
+        std::array<float, 6> db { -120, -120, -120, -120, -120, -120 };
+    };
+    BoundedBands getBoundedBands() const;
+
+    /** THE ONE DEFINITION OF SILENT. The threshold was written out at two call
+        sites (the spectrogram ring's freeze and MeterData::isSilent) and the
+        bounded band ring would have made three. Three copies of a condition is
+        how two of them end up disagreeing, and the band ring must freeze on
+        exactly the sample the spectrum ring freezes on or the two windows
+        describe different audio. */
+    bool isSilentNow() const noexcept
+    { return silentSampleCount.load() > silenceTimeoutSamples; }
+
     // Copies up to maxFrames frames newer than sinceCounter into dest
     // (oldest→newest), returns the count and the new counter value. The
     // counter is monotonic so callers can fetch incrementally.
@@ -238,6 +361,18 @@ public:
     // width in Hz. Returns false until the first hop has been transformed
     // (dest is still valid: all floor).
     bool getVisualSpectrum(std::array<float, kVisBins>& dest, double& binHzOut) const;
+
+    /** HOW MANY VISUAL FFTs HAVE BEEN PUBLISHED, for a UI that wants to draw
+        once per NEW spectrum rather than once per timer tick. Incremented
+        where visMagDb is written, read relaxed: it is a change detector, not a
+        lock, and a reader that misses an increment simply draws next frame.
+
+        AT THE END OF THE PUBLIC SECTION ON PURPOSE, and the counter itself at
+        the end of the members: open list 207. A field inserted mid-struct
+        moves every later one, and this project's suite links a pre-existing
+        archive, so the older code reads them at the old offsets and gives
+        wrong answers rather than failing to link. Append only. */
+    uint32_t visHopCount() const noexcept { return visHopSeq_.load (std::memory_order_relaxed); }
 
 private:
     double currentSampleRate = 44100.0;
@@ -331,6 +466,26 @@ private:
     // between frames the same way, so both reductions describe one window.
     std::array<std::array<float, 6>, kSpecHistFrames> macroRing {};
     std::array<float, 6> macroAccum { -120.0f, -120.0f, -120.0f, -120.0f, -120.0f, -120.0f };
+    // Cleared in prepare() AND resetState(), so a re-prepare cannot carry a
+    // previous run's sum into a new one.
+    BandAccum bandAccum;
+
+    // The bounded window: six rings of raw per-block band power. Capacity is a
+    // compile-time maximum sized for the smallest plausible block at the highest
+    // plausible rate; boundedCapacity_ is the live figure derived in prepare()
+    // and is what the mean divides by. Fixed storage, no allocation ever.
+    // A COMPILE-TIME CEILING AND A RUNTIME WINDOW. 12 seconds of audio is a
+    // different number of blocks on every host, from about 130 at 4096 samples
+    // to over 8000 at 64, so the capacity cannot be exactly 12 s for everyone
+    // without allocating. It is a fixed ceiling, and prepare() sets the live
+    // capacity to whichever is smaller: 12 s, or the ceiling. A host with tiny
+    // buffers therefore gets a SHORTER window, which is why the window is
+    // reported as seconds ACCUMULATED and never as a nominal 12.
+    static constexpr int kBoundedMaxBlocks = 2048;
+    std::array<echojay::BandPowerRing<kBoundedMaxBlocks>, 6> boundedRings {};
+    int    boundedCapacity_ = kBoundedMaxBlocks;
+    double boundedBlockSeconds_ = 0.0;
+    int    samplesPerBlockHint_ = 0;   // prepare()'s hint, for the capacity only
     int specWritePos = 0;
     int specFrameCount = 0;
     int specFrameCounter = 0;   // monotonic; survives resets
@@ -460,5 +615,10 @@ private:
     std::atomic<int> silentSampleCount {0};
     int silenceTimeoutSamples = 24000; // overwritten in prepare()
     static constexpr float kSilenceThreshold = 0.0001f; // ~-80dBFS
+
+
+    /** Bumped once per published visual FFT. See visHopCount(). At the END of
+        the member list, append only, for open list 207's reason. */
+    std::atomic<uint32_t> visHopSeq_ { 0 };
 
 };

@@ -15,9 +15,25 @@ int main()
     std::printf ("stream_reroute_guard: a chat-resolved streamed turn renders; never 'please send it again'\n");
     const juce::String body403 = "{\"error\":\"Not a chain build. Send this turn to /api/chat.\",\"code\":\"chat_turn_not_streamed\",\"resolvedTurnType\":\"chat\",\"turnId\":\"e2e618d3\"}";
 #ifndef EJ_GUARD_TODAY
+    // 10 OCT 2026: THE 403 IS RETIRED SERVER-SIDE (Sean), so this fixture now pins a RETIRED shape. It stays,
+    // for two reasons worth stating rather than deleting:
+    //   (a) a plugin in the field still meets servers that have not rolled, and the reroute must keep working
+    //       for them - this is the downgrade direction of the same compatibility rule the state fields follow;
+    //   (b) the predicate is now UNREACHABLE on a current server, and a test is the only thing that can tell
+    //       "retired" from "quietly broken". If the server ever answers a chat-classified turn with anything
+    //       other than a 200 stream again, (1) is what proves the client still reroutes instead of showing
+    //       "Something went wrong. Please try again."
+    // WHAT IS NOT ASSERTED, said plainly: that a CURRENT server's shape is handled. That needs the shape, and
+    // docs/api-contract does not state it (see the FIXME below). Until it does, this guard covers the old
+    // server and the done-frame path, and nothing claims to cover the new refusal - because nobody has named it.
     const auto rj = EchoJayAPI::streamRejectionFor (403, body403);
-    check (rj.rerouteToChat && rj.code == "chat_turn_not_streamed" && rj.turnId == "e2e618d3", "(1) 403 chat_turn_not_streamed -> RE-SENT to /api/chat as a chat turn", rj.code + " reroute=" + (rj.rerouteToChat ? "y" : "n"));
+    check (rj.rerouteToChat && rj.code == "chat_turn_not_streamed" && rj.turnId == "e2e618d3", "(1) a 403 chat_turn_not_streamed from an OLDER server still re-sends to /api/chat (retired shape, kept for the field)", rj.code + " reroute=" + (rj.rerouteToChat ? "y" : "n"));
     check (! rj.message.containsIgnoreCase ("send it again"), "(1) no resend prompt", rj.message);
+    // AND THE GENERIC NON-2XX PATH IS NOT A REROUTE - the counter-direction, so "reroute" cannot quietly become
+    // "reroute on anything". A 500 is a failure and is reported as one.
+    const auto rj500 = EchoJayAPI::streamRejectionFor (500, "{\"error\":\"upstream timeout\"}");
+    check (! rj500.rerouteToChat && rj500.message.isNotEmpty(),
+           "(1b) a 500 is NOT rerouted - it is reported as the failure it is", rj500.message);
     const auto other = EchoJayAPI::streamRejectionFor (500, "{\"error\":\"boom\"}");
     check (! other.rerouteToChat && other.message.isNotEmpty(), "(1) control: a real failure still reports an error", other.message);
     juce::var done = juce::JSON::parse ("{\"resolvedTurnType\":\"general\",\"stopReason\":\"end_turn\"}");

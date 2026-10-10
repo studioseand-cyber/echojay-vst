@@ -6,6 +6,7 @@
 #include "ChainHost.h"    // buildCurrentChainInjection reads the live rack
 #include "LinkShm.h"      // RackSidecar — targeted [CURRENT CHAIN] (Phase R)
 #include "EJSettingsClip.h" // the model-side slot-settings cap, and its marker
+#include "EJUserDataWrite.h" // userDataWriteMayProceed: a failed read must not write
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics
 #include "EqPresets.h"    // the EQ teaching block lists presets from the table
 #include "EchoJayChannelLabel.h" // kChannelChooserCapability — the classify flag
@@ -1376,6 +1377,14 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // 21m item 2 / 21n: CONTRACT_GROUPS "Channel width" - the wire form is the STRING "mono" | "stereo" (a number was sent until 21n)
     if (channelWidth_ > 0) body += juce::String(",\"channelWidth\":\"") + (channelWidth_ == 1 ? "mono" : "stereo") + "\"";
     if (unityChain_) body += ",\"unityChain\":true";   // 21m ruling: present only while the rack carries active per-slot trims
+    // 10 Oct 2026 (Sean's ruling at the integration merge): ECHOJAY-ONLY REACHES THE SERVER AS A FIELD.
+    // The integration branch wired this setting to the INJECTION only - buildBuiltinOnlyChainInjection() swaps
+    // the plugin feed, so the model is never shown a third-party name. That changes what the model is TOLD and
+    // leaves the server unable to check it: a prompt can be ignored, and a server that cannot see the setting
+    // cannot refuse a third-party pick that came back anyway. So the state rides the body too, and the two
+    // halves say the same thing - the feed restricts, the field lets the server enforce.
+    // Present only when ON, by the same rule as unityChain above: absent means "not asked for", not "false".
+    if (echoJayOnly) body += ",\"echoJayOnly\":true";
     if (groupsVar_.isArray())   // 21n item 4: groups-aware body (omitted entirely when the user has no groups = today's behaviour)
     {
         body += ",\"groups\":" + juce::JSON::toString(groupsVar_, true);
@@ -3441,20 +3450,14 @@ juce::String EchoJayAPI::buildPluginInjection(const juce::String& fullList)
     return block;
 }
 
-juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availablePlugins)
+// The chain block rule, authored ONCE. Both feeds carry it verbatim: the
+// ordinary one with a third-party name list above it, and the built-ins-only
+// one with no list at all. It was copied into a second function first and
+// that is exactly how two prompt texts start to drift, so it is a function.
+static juce::String chainBlockRuleText()
 {
-    if (availablePlugins.isEmpty()) return {};
-
-    juce::String list;
-    for (int i = 0; i < availablePlugins.size(); ++i)
-    {
-        if (i > 0) list += ", ";
-        list += "\"" + availablePlugins[i] + "\"";
-    }
-
-    juce::String block;
-    block << "\n\n[AVAILABLE PLUGINS - the ONLY plugins that can be loaded into a chain "
-          << "on this machine right now: " << list << "]\n\n"
+    juce::String r;
+    r
           << "[CHAIN BLOCK RULE - read carefully and follow exactly]\n"
           << "WHENEVER your reply names two or more plugins to use in order "
           << "(i.e. you are recommending or describing a processing chain), "
@@ -3488,6 +3491,24 @@ juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availableP
           << "- Keep the ENTIRE block compact - short names, 2-4 word roles, 3-6 value settings. "
           << "  This is machine data written after the prose; it must fit in the remaining response budget.\n"
           << "- Write prose first (full technical detail), then append the compact block as the final output.";
+    return r;
+}
+
+juce::String EchoJayAPI::buildChainInjection(const juce::StringArray& availablePlugins)
+{
+    if (availablePlugins.isEmpty()) return {};
+
+    juce::String list;
+    for (int i = 0; i < availablePlugins.size(); ++i)
+    {
+        if (i > 0) list += ", ";
+        list += "\"" + availablePlugins[i] + "\"";
+    }
+
+    juce::String block;
+    block << "\n\n[AVAILABLE PLUGINS - the ONLY plugins that can be loaded into a chain "
+          << "on this machine right now: " << list << "]\n\n"
+          << chainBlockRuleText();
 
     // Built-ins ride the chain feed too - see echojayBuiltinsBlock().
     block << echojayBuiltinsBlock();
@@ -3520,6 +3541,40 @@ static juce::String formatSlotGrNote(const ChainHost& chainHost, int slotIndex)
         n << "last_gr_db " << juce::String(std::abs(last), 1);
     }
     return n;
+// ---------------------------------------------------------------------------
+// ONLY ECHOJAY PLUGINS: the feed with no third-party names in it at all.
+//
+// NOT buildChainInjection WITH A BUILT-IN LIST. That would print all 22 names
+// in [AVAILABLE PLUGINS] and then print them AGAIN, with their schemas, in
+// [AVAILABLE BUILTINS] two hundred lines later. One list, once, and the block
+// that already exists is the better of the two because it carries the dialing
+// contract with the name.
+//
+// THE MARKER IS STILL "[AVAILABLE PLUGINS". It is what historyStripMarkers
+// keys on, what the server cuts the feed at, and what tells the model a chain
+// is on the table. A new marker would have to join that list at three sites
+// and buys nothing: the sentence after it is what changed, not the kind of
+// thing it is.
+//
+// THE RULE TEXT IS THE SAME TEXT, from chainBlockRuleText(). It says "use only
+// exact names from the AVAILABLE PLUGINS list above", and above it now sits a
+// sentence pointing at the built-ins block, so the instruction still resolves
+// to exactly one set of legal names.
+juce::String EchoJayAPI::buildBuiltinOnlyChainInjection()
+{
+    juce::String block;
+    block << "\n\n[AVAILABLE PLUGINS - the user has switched Settings to EchoJay's "
+          << "own devices only, so the ONLY plugins that can be loaded into a chain "
+          << "on this machine right now are the EchoJay built-in devices listed under "
+          << "AVAILABLE BUILTINS below. There are no third-party plugins available on "
+          << "this turn. Do not name one, do not suggest installing one, and do not "
+          << "apologise for the absence: build the best chain you can from the devices "
+          << "that are here.]\n\n"
+          << chainBlockRuleText();
+
+    block << echojayBuiltinsBlock();
+
+    return block;
 }
 
 juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
@@ -3831,15 +3886,21 @@ juce::String EchoJayAPI::buildEchoJayFeaturesInjection()
          " controls in the Chain tab that they operate, not things you set.\n"
          "SETTINGS holds their name, DAW, experience level, chat language, monitors,"
          " headphones, genres, UI scale, a plugin scan with a View all list, a list of"
-         " plugins withheld from the chain list, and TWO toggles, both OFF by default"
-         " and both applying the moment they are ticked with nothing to save."
+         " plugins withheld from the chain list, and THREE toggles, all OFF by default"
+         " and all applying the moment they are ticked with nothing to save."
+         " \"Only use EchoJay's own devices (no third-party plugins)\" means the only"
+         " plugins you may offer are the EchoJay built-in devices: while it is on the"
+         " AVAILABLE PLUGINS list names none and says so, and you build the chain from"
+         " AVAILABLE BUILTINS alone."
          " \"Only suggest plugins EchoJay can auto-dial (fewer options)\" narrows which"
-         " plugins you may offer. \"Suggest settings but never dial them (you set the"
+         " plugins you may offer to the ones whose settings can be dialled for them."
+         " \"Suggest settings but never dial them (you set the"
          " values by hand)\" means you still put every value on the card and none of"
          " them is written: say so plainly if they ask why nothing moved, and never"
-         " claim to have applied anything while it is on. The two are independent and"
-         " easy to confuse: the first is about WHICH PLUGINS, the second about WHETHER"
-         " VALUES ARE WRITTEN.]";
+         " claim to have applied anything while it is on. The three are independent and"
+         " easy to confuse: the first is about WHICH PLUGINS ARE OFFERED, the second"
+         " about WHETHER THEY MUST BE DIALABLE, the third about WHETHER VALUES ARE"
+         " WRITTEN.]";
     return b;
 }
 
@@ -3994,8 +4055,12 @@ juce::String EchoJayAPI::buildMeterSnapshotInjection(const juce::String& meterJs
     // windows in one block: a 12 second spectrum beside a 150 ms macro band,
     // with only one of them saying so. It now comes from the macro ring, over
     // the same frames as the spectrum, and states its own window. The capture
-    // payload still carries the instantaneous one, which is correct there: a
-    // capture already has its own window and its own averaging.
+    // payload still carries the instantaneous one, and that is NOT because a
+    // capture has re-aggregated it: stopCapture rebuilds the spectrum, the
+    // peaks, the RMS and the crest over the whole capture and leaves
+    // macroBandDb as the meter's ballistic reading at the moment of stopping.
+    // So the capture path carries a tail wearing a whole-capture label. Phase
+    // 1b is where that is fixed; this comment used to assert the opposite.
     // v3 edge-encoded names, see HANDOVER/meter-snapshot-v3.md. The required
     // set moves with the writer in MeterEngine::meterDataToJSON; if the two
     // ever disagree the object is dropped, which is the safe direction.
@@ -4333,6 +4398,9 @@ void EchoJayAPI::loadSettings()
         // member false: dialling works as it always has until asked not to.
         dialWritesBlocked = (bool) obj->getProperty("dialWritesBlocked");
         echojay::setDialWritesBlocked(dialWritesBlocked);   // mirror at startup
+        // Absent -> false: a settings file written before this existed keeps
+        // offering third-party plugins, which is what it was already doing.
+        echoJayOnly = (bool) obj->getProperty("echoJayOnly");
         
         // Check if the saved usage is from this period — reset if we've
         // rolled into a new month. Period is monthly across all tiers in
@@ -4367,6 +4435,7 @@ void EchoJayAPI::saveSettings() const
     obj->setProperty("usageDate", juce::Time::getCurrentTime().formatted("%Y-%m-%d"));
     obj->setProperty("autoDialMode", autoDialMode);
     obj->setProperty("dialWritesBlocked", dialWritesBlocked);
+    obj->setProperty("echoJayOnly", echoJayOnly);
     
     file.replaceWithText(juce::JSON::toString(juce::var(obj)));
 }
@@ -4549,14 +4618,50 @@ void EchoJayAPI::saveUserSettings(const UserSettings& settings,
     // First GET the existing data so we don't overwrite chats/albums/reviews
     getJSON("/api/data", [this, settings, onComplete](const juce::var& json, int statusCode)
     {
+        // ---- A FAILED READ MUST NOT BECOME A WRITE (open list 225) --------
+        //
+        // This used to fall through to an else branch that wrote chats,
+        // albums, reviews and refTracks as EMPTY ARRAYS and POSTed them. A
+        // failed GET therefore submitted a record asserting the user has none
+        // of any of them. The plugin never originates content for those four
+        // keys, so it had nothing to restore them from.
+        //
+        // THE DECISION IS A PURE PREDICATE so the suite can EXECUTE it rather
+        // than grep for it: see echojay::userDataWriteMayProceed and open list
+        // 217 for why a text pin over this file is presence, not behaviour.
+        auto* root = json.isObject() ? json.getDynamicObject() : nullptr;
+        if (! echojay::userDataWriteMayProceed (statusCode, json.isObject(),
+                                                root != nullptr))
+        {
+            // A non-2xx is ALREADY logged by getJSON's own logNon2xx at the
+            // transport (EJStream: /api/data status=...). The case that was
+            // silent is a 2xx whose body is unusable, because logNon2xx
+            // returns early on 2xx, so that one is named here through the
+            // same EchoJay_NSLog mechanism rather than a new one.
+            if (statusCode >= 200 && statusCode < 300)
+                EchoJay_NSLog (("EJStream: /api/data read OK but body unusable "
+                                "(status=" + juce::String (statusCode)
+                                + " isObject=" + juce::String (json.isObject() ? 1 : 0)
+                                + " root=" + juce::String (root != nullptr ? 1 : 0)
+                                + "); settings write ABORTED").toRawUTF8());
+            if (onComplete) onComplete (false);
+            return;
+        }
+
         // Build the payload using DynamicObject for proper JSON
         auto payload = std::make_unique<juce::DynamicObject>();
-        
-        // Preserve existing data fields from the GET response
-        if (statusCode == 200 && json.isObject())
+
+        // Preserve existing data fields from the GET response.
+        //
+        // A KEY MISSING FROM AN OTHERWISE GOOD BODY IS STILL WRITTEN AS AN
+        // EMPTY ARRAY, AND THAT IS LEFT EXACTLY AS IT WAS. Omitting the key
+        // instead would be safe ONLY under MERGE semantics, and whether
+        // POST /api/data merges or replaces is UNANSWERED: see
+        // HANDOVER/ECHOJAY_API_CONTRACT.md section 6. It must be READ in
+        // echojay-saas-dash rather than guessed here, so this round changes
+        // only the case that is wrong under BOTH answers, which is writing
+        // after a read that failed.
         {
-            auto* root = json.getDynamicObject();
-            if (root)
             {
                 if (root->hasProperty("chats"))
                     payload->setProperty("chats", root->getProperty("chats"));
@@ -4578,13 +4683,6 @@ void EchoJayAPI::saveUserSettings(const UserSettings& settings,
                 else
                     payload->setProperty("refTracks", juce::var(juce::Array<juce::var>()));
             }
-        }
-        else
-        {
-            payload->setProperty("chats", juce::var(juce::Array<juce::var>()));
-            payload->setProperty("albums", juce::var(juce::Array<juce::var>()));
-            payload->setProperty("reviews", juce::var(juce::Array<juce::var>()));
-            payload->setProperty("refTracks", juce::var(juce::Array<juce::var>()));
         }
         
         // Build profile object

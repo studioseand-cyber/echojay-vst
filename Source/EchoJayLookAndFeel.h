@@ -3,6 +3,7 @@
 #include "EchoJayScrollbarStyle.h"
 #include "EchoJayLogo.h"
 #include "EchoJayFieldStyle.h"   // EchoJayChrome::kFieldCorner (shared field radius)
+#include "EJTooltipPlace.h"       // echojay::tooltipOrigin (the tip placement rule)
 
 namespace EchoJayChrome
 {
@@ -117,19 +118,24 @@ public:
         tl.createLayout(s, (float)kTooltipMaxWidth - 18.0f);
     }
 
+    // THE ARITHMETIC IS NOT HERE. echojay::tooltipOrigin owns the choice of
+    // side, so it can be pinned without a window; this function measures the
+    // text, asks for the origin, and clamps. The clamp is a final guarantee and
+    // NOT the decision: a slide cannot re-choose a side.
+    //
+    // mousePos, not screenPos. JUCE's parameter name is wrong for the parented
+    // case, which is the only case a plug-in has: TooltipWindow passes
+    // parent->getLocalPoint(...) and parent->getLocalBounds().
     juce::Rectangle<int> getTooltipBounds(const juce::String& tipText,
-                                          juce::Point<int> screenPos,
+                                          juce::Point<int> mousePos,
                                           juce::Rectangle<int> parentArea) override
     {
         juce::TextLayout tl;
         layoutTooltipText(tipText, tl);
-        int w = (int)std::ceil(tl.getWidth())  + 18;
-        int h = (int)std::ceil(tl.getHeight()) + 14;
-        return juce::Rectangle<int>(
-                   screenPos.x > parentArea.getCentreX() ? screenPos.x - (w + 10) : screenPos.x + 16,
-                   screenPos.y > parentArea.getCentreY() ? screenPos.y - (h + 4)  : screenPos.y + 20,
-                   w, h)
-               .constrainedWithin(parentArea);
+        const int w = (int)std::ceil(tl.getWidth())  + 18;
+        const int h = (int)std::ceil(tl.getHeight()) + 14;
+        const auto o = echojay::tooltipOrigin(mousePos, w, h, parentArea);
+        return juce::Rectangle<int>(o.x, o.y, w, h).constrainedWithin(parentArea);
     }
 
     void drawTooltip(juce::Graphics& g, const juce::String& text, int width, int height) override
@@ -205,7 +211,22 @@ public:
         g.setFont(font);
         auto textCol = button.findColour(isButtonDown ? juce::TextButton::textColourOnId 
                                                       : juce::TextButton::textColourOffId);
-        if (isMouseOver)
+
+        // A DISABLED BUTTON MUST LOOK DISABLED. This override replaces
+        // LookAndFeel_V2::drawButtonText, which multiplies the text colour's
+        // alpha by 0.5 when !isEnabled (juce_LookAndFeel_V2.cpp:278), and it
+        // dropped that without replacing it. Neither this nor
+        // drawButtonBackground consulted isEnabled() at all, so every disabled
+        // button in the plugin was PIXEL-IDENTICAL to an enabled one.
+        //
+        // Colours::text3 rather than an alpha multiply or a new hex: it is
+        // already this UI's inactive-text colour, used for the unselected
+        // meter-type buttons and the unselected REFERENCE sub-tab, so a
+        // disabled control now reads the same way as every other thing here
+        // that is present but not active.
+        if (! button.isEnabled())
+            textCol = Colours::text3;
+        else if (isMouseOver)
             textCol = textCol.brighter(0.15f);
         g.setColour(textCol);
         

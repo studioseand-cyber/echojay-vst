@@ -5,6 +5,13 @@
 #include <signal.h>
 #include <unistd.h>
 #include "EedLatencyLog.h"
+// THE READ PATH FOR THE REFERENCE LIBRARY (commit C1). This is the FIRST
+// shipping translation unit to include either header: until now both were
+// linked only by tools/mapfps_test, which is what open list 162 records as
+// "the header wired to nothing".
+#include "EJReferenceReconcile.h"   // refReconcile, and EJReferenceIndex.h through it
+#include "EJSpectralEvidence.h"   // spectral provenance + the moved band reduction
+#include "EJCompareFigures.h"     // CompareFig + computeCompareFig, moved out of this file
 #include "PluginEditor.h"
 #include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
 #include "NativeClip.h"   // EchoJay_NSLog (memdiag)
@@ -284,6 +291,13 @@ EchoJayProcessor::EchoJayProcessor()
     { echojay::UndoEntry e; e.kind = "loop"; e.label = "level loop " + juce::String(after - before >= 0 ? "+" : "") + juce::String(after - before, 1) + " dB"; e.before = (double) before; e.after = (double) after; undoHistory_.push(std::move(e)); };
     gestureTimer_ = std::make_unique<GestureTimer>(*this);
 
+    // THE ONE SUBSCRIBER. ReferenceAnalyser fires this on the message thread
+    // with refMutex released; commitReferenceLibrary takes it again through
+    // getReferences, which is why the notify is outside the lock.
+    refAnalyser.onLibraryChanged = [this] (const juce::String& path, bool removed)
+    {
+        commitReferenceLibrary (path, removed);
+    };
     // Session C: join the PROCESS-WIDE poller. Registered here rather than
     // from the editor, so the poll exists for the whole life of this instance
     // and does not depend on a window ever being opened, and so an editor
@@ -657,6 +671,12 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     hostSampleRate_      = sampleRate;
     hostSamplesPerBlock_ = samplesPerBlock;
     chainHost.setHostChannelWidth(getTotalNumInputChannels());   // 21m item 2: the rack's width, for the mono-variant rule
+    // The playback stage's voicing filters and its room: zeroed on EVERY
+    // prepare, the rule EqEngine::prepare and MeterEngine::prepare follow, not
+    // the tally rule that compares rates. PlaybackSimStage::prepare says why.
+    // It ALLOCATES (the room's delay lines, 320 KB at 48 kHz) and is not
+    // noexcept, so a failure behaves like the three allocations above.
+    playbackStage_.prepare (sampleRate);
     chainHost.prepare(sampleRate, samplesPerBlock);
     // Solo crossfades, BOTH a real 30ms ramp (the busGainSmoothed_ idiom
     // above). editSoloMix_ had never been given one — Stage 1's "~30ms"
@@ -794,11 +814,33 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             {
                 for (int sl = 0; sl < 2; ++sl)
                 {
-                    if (!cmpStream[sl].loaded.load()) continue;
+                    // STOPPING IS FREE, STARTING IS NOT (open list 215).
+                    // The loaded test moved INTO cmpSyncMayStart so the
+                    // start decision is in one place and the stop branch
+                    // keeps running for a slot that is not loaded, which is
+                    // a harmless store and one fewer condition to get wrong.
+                    //
+                    // A host that stops should stop the reference: that is
+                    // what the user just asked for, whatever they pressed
+                    // earlier, so the false branch consults nothing.
+                    //
+                    // A host that STARTS may only start a slot the user
+                    // actually wants rolling. Before this, a paused slot was
+                    // set playing again on the next transport start with no
+                    // gesture behind it, and because pause leaves cmpAudible
+                    // latched on the slot the ramp target passed and the
+                    // reference came back audible. That is the reported
+                    // "stuck hearing the reference".
                     if (playing)
-                        cmpStream[sl].playing.store(true);
+                    {
+                        if (echojay::cmpSyncMayStart (cmpSyncToTransport.load(),
+                                                      cmpBothCaptures.load(),
+                                                      cmpStream[sl].loaded.load(),
+                                                      cmpStream[sl].userWantsRolling.load()))
+                            cmpStream[sl].playing.store(true);
+                    }
                     else
-                        cmpStream[sl].playing.store(false);
+                        cmpStream[sl].playing.store(false);   // consults nothing: cg PIN7
                 }
             }
 
@@ -823,7 +865,24 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                         const double refSec = juce::jlimit(0.0, lenSec, *tSec + off);
                         st.playbackPos = juce::jmin((int)(refSec * st.sampleRate),
                                                     st.sampleCount - 1);
-                        if (!st.playing.load()) st.playing.store(true);
+                        // THE SECOND RESURRECTION, AND THE WORSE OF THE TWO.
+                        // This runs EVERY BLOCK while the host rolls, not
+                        // only on a transition, so a slot the user paused was
+                        // restarted within one buffer and would not stay
+                        // paused long enough to look like a bug in the
+                        // button. Same rule as the transition block above:
+                        // the sync may not start what a person stopped.
+                        //
+                        // THE POSITION ABOVE IS STILL FOLLOWED either way. A
+                        // paused reference that tracks the playhead silently
+                        // is correct: when the user presses play it is where
+                        // the host is, rather than where it was abandoned.
+                        if (! st.playing.load()
+                            && echojay::cmpSyncMayStart (cmpSyncToTransport.load(),
+                                                         cmpBothCaptures.load(),
+                                                         st.loaded.load(),
+                                                         st.userWantsRolling.load()))
+                            st.playing.store(true);
                     }
                 }
             }
@@ -911,7 +970,11 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             auto& s = cmpStream[sl];
             if (!s.loaded.load() || s.sampleCount <= 0) continue;
             const bool rolling = s.playing.load();
-            const float target = (rolling && sl == audible && !s.stopAtZero.load()) ? 1.0f : 0.0f;
+            // THE RULE IS A FUNCTION NOW, so the suite can pin it: the
+            // editor's A/B buttons are unreachable from the gate, and this is
+            // the line their regression showed up in. See cmpMixTargetGain.
+            const float target = echojay::cmpMixTargetGain (rolling, sl, audible,
+                                                            s.stopAtZero.load());
             if (!rolling && s.monGain <= 0.0001f) continue;   // fully idle
 
             double ratio = (s.sampleRate > 0 && dawRate > 0) ? s.sampleRate / dawRate : 1.0;
@@ -969,6 +1032,11 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             {
                 s.playing.store(false);
                 s.stopAtZero.store(false);
+                // AND THE INTENT GOES WITH IT. A fade-to-stop is a
+                // deliberate stop (codec disengage, editor close), so the
+                // slot must not keep permission for the transport sync to
+                // start it again on the next host roll.
+                s.userWantsRolling.store(false);
             }
         }
 
@@ -1608,6 +1676,68 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             editSoloMix_.skip(buffer.getNumSamples());
     }
 
+    // =====================================================================
+    // PLAYBACK SIMULATION: THE LAST THING THAT TOUCHES THE BUFFER, AND THE
+    // ONLY STAGE BELOW THE MEASUREMENT TAP.
+    // =====================================================================
+    //
+    // A NO-OP TODAY. Nothing simulates anything yet; the stage is here, empty,
+    // so that its PLACEMENT is decided once by someone holding the whole
+    // argument rather than by whoever adds the first curve.
+    //
+    // WHY IT IS BELOW THE TAP, AND WHY THE BUS TRIM IS NOT.
+    //
+    // applyBusGainSmoothed sits ABOVE the tap, deliberately, and the comment
+    // there says why: everything below the tap reads the trimmed signal ON
+    // PURPOSE, because the meters, the capture and the AI's level context are
+    // all meant to describe WHAT ACTUALLY LEAVES ECHOJAY. The trim is part of
+    // the product's output. A listener downstream hears it. It belongs in every
+    // measurement because it is in the audio the user ships.
+    //
+    // A SIMULATION IS NOT THAT. It is a MONITORING AID: a way to hear the mix
+    // as a phone or a car would render it, so the user can judge their own
+    // decisions. It is not part of what leaves EchoJay, nobody downstream hears
+    // it, and it must never appear in a figure. Placing it where the trim sits
+    // would put a modelled car speaker into the integrated LUFS, the spectrum,
+    // the macro bands, every capture and every number the model is told is
+    // fact. That is section 4.2's trap and section 1's defect in a new place: a
+    // figure that is real arithmetic over the wrong thing.
+    //
+    // BELOW THE TAP, THE PROBLEM DOES NOT EXIST RATHER THAN BEING GUARDED
+    // AGAINST. meterEngine, captureEngine, waveformRecorder, the spectrum
+    // accumulators and the whole-capture aggregation all read the `left` and
+    // `right` pointers taken at the tap above, and nothing re-samples the buffer
+    // for measurement afterwards. So every one of them describes the real mix
+    // while a simulation is audible, BY CONSTRUCTION. Decision 10 of
+    // COMPARE_REFERENCE_PLAN is satisfied here with no new OutputSubstitution
+    // value and no capture refusal, because there is nothing to refuse: the
+    // capture cannot see this stage.
+    //
+    // TO WHOEVER WANTS TO MOVE IT UP. You are proposing that a modelled device
+    // curve should appear in the user's measured loudness, their tonal balance,
+    // and the figures sent to the model as fact. Say that sentence out loud
+    // first. If a simulation must be measurable, the answer is a SECOND tap
+    // below this stage feeding its own clearly labelled figures, not this stage
+    // moving above the one that exists.
+    //
+    // REAL-TIME SAFE: early-out when nothing is selected and no room is
+    // fading, no allocation, no locks, no logging. See EJPlaybackSim.h.
+    //
+    // A MONO BUFFER ARRIVES AS THE SAME POINTER TWICE, below. Every consumer in
+    // the stage treats a right channel equal to the left as absent, the room's
+    // reverb included, which would otherwise write its right output over the
+    // left (pr PIN6).
+    //
+    // THE CLOCK is for the room's idle-gap rule: a host that stops calling
+    // this on an idle channel must not get a tail back minutes later.
+    {
+        float* chans[2] = { buffer.getWritePointer(0),
+                            buffer.getNumChannels() >= 2 ? buffer.getWritePointer(1)
+                                                         : buffer.getWritePointer(0) };
+        applyPlaybackSim (playbackStage_,
+                          chans, juce::jmin(2, buffer.getNumChannels()),
+                          buffer.getNumSamples(), playbackStage_.clockSeconds());
+    }
 }
 
 // ============ Channel Type Detection ============
@@ -3764,6 +3894,25 @@ void EchoJayProcessor::editEnd(bool keepState)
         });
 }
 
+// Fill the flat state EJCaptureGuard's predicate reads. Every field is an
+// atomic; nothing here touches the audio thread's own monGain (see the header
+// for the ~8ms fade window this deliberately does not cover).
+echojay::OutputSubstitution EchoJayProcessor::activeOutputSubstitution() const
+{
+    echojay::OutputSubstitutionState st;
+    st.abActive     = abActive.load();
+    st.abPlayingRef = abPlayingRef.load();
+    st.codecPreview = cmpCodecPreview.load();
+    st.cmpAudible   = cmpAudible.load();
+    for (int i = 0; i < 2; ++i)
+    {
+        st.cmpLoaded[(size_t) i]     = cmpStream[i].loaded.load();
+        st.cmpPlaying[(size_t) i]    = cmpStream[i].playing.load();
+        st.cmpStopAtZero[(size_t) i] = cmpStream[i].stopAtZero.load();
+    }
+    return echojay::activeOutputSubstitution(st);
+}
+
 void EchoJayProcessor::startCapture()
 {
     captureEngine.reset();
@@ -3799,6 +3948,24 @@ void EchoJayProcessor::startCapture()
         captureState.store(CaptureState::Idle);
         return;
     }
+
+    // CAPTURE EXCLUSION (stage 2, 10 Sep 2026): A/B playback, a compare stream
+    // and codec preview all replace the output buffer UPSTREAM of the meter and
+    // capture taps, so a capture taken through any of them measures a file and
+    // records it as the user's mix, indistinguishably. One condition covers all
+    // three; the editor names which one is running.
+    const auto sub = activeOutputSubstitution();
+    if (sub != echojay::OutputSubstitution::None)
+    {
+        captureState.store(CaptureState::Idle);
+        return;
+    }
+
+    // "" while the guard stands. Stamped here rather than at stopCapture
+    // because a substitution can end mid-capture, and what the capture BEGAN
+    // under is the honest answer. See CaptureSnapshot::outputSubstitution.
+    captureSubstitution_ = echojay::outputSubstitutionKey(sub);
+
     captureState.store(CaptureState::Capturing);
 
     // Snapshot active Link slots for multi-channel capture
@@ -3853,6 +4020,7 @@ void EchoJayProcessor::stopCapture()
     // diverge. computePassName() (captureVersion) is the fallback only.
     snap.name = nextCaptureName_.isNotEmpty() ? nextCaptureName_ : computePassName();
     snap.channelScopeUid = nextCaptureScopeUid_;   // item 1: robust scope stamp
+    snap.outputSubstitution = captureSubstitution_;   // "" unless a future relaxes the guard
     nextCaptureName_.clear(); nextCaptureScopeUid_.clear();
     if (projectName.trim().isEmpty())
         passCounter++;               // "Pass N" used → next will be "Pass N+1"
@@ -3867,6 +4035,29 @@ void EchoJayProcessor::stopCapture()
     // values (peak, RMS, crest, width, correlation) with our time-windowed
     // measurements computed across the whole capture.
     snap.averagedData = captureEngine.getMeterData();
+
+    // THE ACCUMULATED MACRO BANDS, over the same span the spectrum rebuild
+    // below uses: both cover exactly the blocks taken while Capturing.
+    // captureEngine was reset at capture start, so its accumulator starts where
+    // the capture does. Read here, immediately after the state moved to
+    // Complete, so the audio thread has stopped feeding it.
+    //
+    // averagedData.macroBandDb IS LEFT ALONE. It is the ballistic tail at the
+    // moment of stopping and every consumer still reads it; repointing them is
+    // a later commit. This field exists so there is something to repoint TO.
+    {
+        const auto acc = captureEngine.getAccumulatedBands();
+        if (acc.valid)
+        {
+            snap.macroBandAccum     = acc.db;
+            snap.hasMacroBandAccum  = true;
+            snap.macroAccumSeconds  = acc.seconds;
+            snap.macroAccumBlocks   = acc.blocks;
+            // A capture, not a file, so it is the capture's name for the same
+            // statistic. Both are arithmetic means of every block in their span.
+            snap.macroAccumReduction = echojay::SpectralReduction::WholeWindowAverage;
+        }
+    }
     
     {
         // ============ Finalize time-windowed measurements ============
@@ -4093,7 +4284,33 @@ void EchoJayProcessor::stopCapture()
                     // prologue and took Pro Tools down. Heap-allocated, scoped to run();
                     // the thread is non-realtime, the allocation is free. NOT a bigger
                     // stack: that is a number sized to today's object.
-                    auto eng = std::make_unique<echojay::KeyEngine>();
+                    // HEAP, NOT THE STACK. sizeof(echojay::KeyEngine) is
+                    // 2,097,784 bytes, dominated by a fixed 1 << 19 float ring
+                    // held as a direct member (EedKeyEngine.h:239/257). This
+                    // thread is created with juce::Thread's default stack size
+                    // of 0, which never calls pthread_attr_setstacksize, so it
+                    // gets the pthread default of 512 KiB. As a local this
+                    // faulted in ___chkstk_darwin against the guard page in the
+                    // prologue, and took the host down. The thread is not
+                    // realtime, so the allocation costs nothing that matters.
+                    // NOT a bigger stack: that is a number sized to today's
+                    // object and wrong the next time the object grows.
+                    // 10 Oct 2026 (Sean): THE ALLOCATION IS GUARDED. Moving the KeyEngine off the stack fixed a
+                    // crash by turning a guard-page fault into a heap request - but a 2 MB request can FAIL, and
+                    // an uncaught bad_alloc on a juce::Thread::run() is std::terminate, i.e. the same dead host
+                    // by a different route. The key reading is optional: a capture is still saved without it, so
+                    // the honest response to a failed allocation is to skip the analysis and SAY SO, never to
+                    // take the host down for a reading nobody asked for.
+                    std::unique_ptr<echojay::KeyEngine> eng;
+                    try { eng = std::make_unique<echojay::KeyEngine>(); }
+                    catch (const std::bad_alloc&)
+                    {
+                        EchoJay_NSLog("EJCapture: the key analysis was SKIPPED - 2 MB for the KeyEngine could not "
+                                      "be allocated on the save thread. The capture itself is unaffected and is "
+                                      "saved without a key reading.");
+                    }
+                    if (eng == nullptr) { /* no reading; the capture is still written below */ }
+                    else {
                     eng->prepare(srcRec->getRecordedSampleRate(), 512);
                     const auto kr = eng->analyseBufferOffline(
                         buf->getReadPointer(0),
@@ -4130,6 +4347,7 @@ void EchoJayProcessor::stopCapture()
                     }
                     else
                         EchoJay_NSLog("EJCapture: offline key pass found nothing tonal");
+                    }   // 10 Oct: closes the `else` of the bad_alloc guard above
                 }
             }
 
@@ -4297,154 +4515,26 @@ juce::String EchoJayProcessor::saveCaptureWAV()
 // ============ Compare Context Builders ============
 
 namespace {
-    // ONE derivation of the compare figures, shared by the model's text table
-    // (figBlock) and the client-rendered figure card (buildCompareFiguresJson),
-    // so a visual can never disagree with the numbers the model reasons from.
-    // Sentinels are preserved: an unavailable reading stays at its sentinel
-    // (int/tp -100, lra 0, psr/plr/bandRel -999, overs -1) and renders/serialises
-    // as N/A, never a fabricated zero.
-    struct CompareFig {
-        float integrated = -100.0f, lra = 0.0f, tp = -100.0f, psr = -999.0f,
-              plr = -999.0f, crest = 0.0f, width = 0.0f, corr = 0.0f;
-        int   overs = -1;
-        std::array<float, 6> bandRel = { -999, -999, -999, -999, -999, -999 };
-        bool  bandValid = false;
-    };
-    CompareFig computeCompareFig(const MeterData& m)
-    {
-        CompareFig f;
-        f.integrated = m.integrated;
-        f.lra        = m.loudnessRange;
-        f.tp = juce::jmax(m.truePeakMaxL, m.truePeakMaxR);
-        if (f.tp <= -99.0f) f.tp = juce::jmax(m.truePeakL, m.truePeakR);
-        f.psr = (m.psr > -99.0f) ? m.psr
-              : (m.shortTermTruePeak > -99.0f && m.shortTerm > -99.0f)
-                    ? (m.shortTermTruePeak - m.shortTerm) : -999.0f;
-        f.plr = (m.plr > -99.0f) ? m.plr
-              : (f.tp > -99.0f && m.integrated > -99.0f) ? (f.tp - m.integrated) : -999.0f;
-        f.crest = m.crestFactor;
-        f.width = m.width;
-        f.corr  = m.correlation;
-        f.overs = m.oversCount;
-        float sum = 0.0f; int n = 0;
-        for (float v : m.macroBandDb) if (v > -119.0f) { sum += v; ++n; }
-        if (n > 0)
-        {
-            const float mean = sum / (float)n;
-            f.bandValid = true;
-            for (int i = 0; i < 6; ++i)
-                f.bandRel[(size_t)i] = m.macroBandDb[(size_t)i] > -119.0f
-                    ? m.macroBandDb[(size_t)i] - mean : -999.0f;
-        }
-        return f;
-    }
-
-    // Aggregate 64 log-spaced spectrum bins (20Hz–20kHz) into 6 musical bands.
-    // Bins are already in dB. We average in the linear (power) domain to avoid
-    // log-domain skew, then convert back to dB.
-    // Band boundaries (bin indices, inclusive):
-    //   Sub      20–60 Hz   bins  0–9
-    //   Low      60–200 Hz  bins 10–20
-    //   Low-mid  200–600 Hz bins 21–30
-    //   Mid      600–2k Hz  bins 31–41
-    //   High-mid 2k–6k Hz   bins 42–52
-    //   High     6k–20k Hz  bins 53–63
-    struct BandLevels { float sub, low, lowMid, mid, highMid, high; };
-    
-    inline float avgDb(const std::array<float, 64>& s, int lo, int hi)
-    {
-        double sumLin = 0.0;
-        int n = 0;
-        for (int i = lo; i <= hi; ++i) {
-            double db = (double)s[(size_t)i];
-            if (db < -100.0) db = -100.0; // clamp floor
-            sumLin += std::pow(10.0, db / 10.0);
-            ++n;
-        }
-        if (n == 0 || sumLin <= 1e-20) return -100.0f;
-        return (float)(10.0 * std::log10(sumLin / (double)n));
-    }
-    
-    BandLevels computeBands(const std::array<float, 64>& s)
-    {
-        return {
-            avgDb(s,  0,  9),
-            avgDb(s, 10, 20),
-            avgDb(s, 21, 30),
-            avgDb(s, 31, 41),
-            avgDb(s, 42, 52),
-            avgDb(s, 53, 63)
-        };
-    }
-    
-    // Append plain-language tonal diff lines. Only flags bands where the
-    // difference exceeds 2 dB — below that is noise. "Your mix has more/less X"
-    // is phrased from the user's perspective relative to the reference.
-    void appendTonalDiff(juce::String& ctx,
-                         const std::array<float, 64>& mixSpec,
-                         const std::array<float, 64>& refSpec,
-                         const juce::String& mixLabel,
-                         const juce::String& refLabel)
-    {
-        auto mb = computeBands(mixSpec);
-        auto rb = computeBands(refSpec);
-        
-        struct BandDiff { const char* name; float mix; float ref; };
-        BandDiff diffs[6] = {
-            { "sub (below 60Hz)",         mb.sub,     rb.sub     },
-            { "lows (60-200Hz)",          mb.low,     rb.low     },
-            { "low-mids (200-600Hz)",     mb.lowMid,  rb.lowMid  },
-            { "mids (600Hz-2kHz)",        mb.mid,     rb.mid     },
-            { "high-mids (2-6kHz)",       mb.highMid, rb.highMid },
-            { "highs (above 6kHz)",       mb.high,    rb.high    }
-        };
-        
-        // Check if mix has any signal at all — if floor everywhere, skip
-        bool mixHasSignal = false, refHasSignal = false;
-        for (auto& d : diffs) {
-            if (d.mix > -80.0f) mixHasSignal = true;
-            if (d.ref > -80.0f) refHasSignal = true;
-        }
-        if (!mixHasSignal || !refHasSignal) {
-            ctx += "TONAL BALANCE: Not enough signal to compare frequency content.\n";
-            return;
-        }
-        
-        // Normalise both spectra by their loudest band so overall-level
-        // differences (already covered by LUFS) don't dominate the tonal diff.
-        float mixMax = -200.0f, refMax = -200.0f;
-        for (auto& d : diffs) {
-            if (d.mix > mixMax) mixMax = d.mix;
-            if (d.ref > refMax) refMax = d.ref;
-        }
-        
-        juce::String tonalLines;
-        int flagged = 0;
-        for (auto& d : diffs) {
-            float mixRel = d.mix - mixMax;
-            float refRel = d.ref - refMax;
-            float delta = mixRel - refRel; // positive = mix has more in this band
-            if (std::abs(delta) >= 2.0f) {
-                juce::String line = "- ";
-                if (delta > 0)
-                    line += mixLabel + " has more " + d.name + " than " + refLabel
-                          + " (+" + juce::String(delta, 1) + " dB relative)";
-                else
-                    line += mixLabel + " has less " + d.name + " than " + refLabel
-                          + " (" + juce::String(delta, 1) + " dB relative)";
-                line += "\n";
-                tonalLines += line;
-                ++flagged;
-            }
-        }
-        
-        if (flagged == 0) {
-            ctx += "TONAL BALANCE: Very similar across the frequency range - no notable band differences.\n";
-        } else {
-            ctx += "TONAL BALANCE DIFFERENCES (relative, already normalised for overall level):\n";
-            ctx += tonalLines;
-        }
-    }
+    // THE COMPARE FIGURES MOVED TO EJCompareFigures.h (20 Sep 2026), for the
+    // reason the band reduction moved to EJSpectralEvidence.h on 11 Sep: in
+    // this anonymous namespace nothing outside this file could call them, so
+    // the suite could only ever have pinned a re-implementation, and the Match
+    // screen could not reach them at all. The bodies were moved verbatim.
+    //
+    // These using-declarations keep every call site below unchanged.
+    using echojay::CompareFig;
+    using echojay::fillBandRel;
+    using echojay::computeCompareFig;
+    // THE BAND REDUCTION AND THE TONAL DIFF NOW LIVE IN EJSpectralEvidence.h
+    // (11 Sep 2026). They sat here, in an anonymous namespace, where neither
+    // tools/mapfps_test nor an offline measurement could link them, so the
+    // before/after numbers section 1.6 asks for could only ever have been a
+    // re-implementation of the thing being measured. One definition, three
+    // consumers. These using-declarations keep every call site below unchanged.
+    using echojay::BandLevels;
+    using echojay::avgDb;
+    using echojay::computeBands;
+    using echojay::appendTonalDiff;
 }
 
 juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& capture, const ReferenceResult& reference) const
@@ -4575,7 +4665,9 @@ juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& a, con
 
 juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const MeterData& db,
                                                    const juce::String& la, const juce::String& lb,
-                                                   float durA, float durB, bool numbersOnly) const
+                                                   float durA, float durB, bool numbersOnly,
+                                                   const echojay::SpectralEvidence& sa,
+                                                   const echojay::SpectralEvidence& sb) const
 {
     juce::String ctx;
     ctx += "[BEGIN COMPARE CONTEXT - this block is a one-off comparison, NOT an ongoing mix discussion]\n";
@@ -4588,9 +4680,10 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
     // meter convention; band crest / overs / PSR / PLR / macro bands carry
     // their own -1 / -999 / -120 sentinels.)
     auto na1 = [](float v) { return v > -99.0f ? juce::String(v, 1) : juce::String("N/A"); };
-    auto figBlock = [&](const juce::String& label, const MeterData& m)
+    auto figBlock = [&](const juce::String& label, const MeterData& m,
+                        const echojay::SpectralEvidence& ev)
     {
-        const CompareFig f = computeCompareFig(m);   // SAME values the card renders
+        const CompareFig f = computeCompareFig(m, ev);   // SAME values the card renders
         auto bc = [](float v) { return v >= 0.0f ? juce::String(v, 1) : juce::String("N/A"); };
         juce::String s;
         s += label + ":\n";
@@ -4616,17 +4709,25 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
             };
             s += "  Band relatives vs avg (sub/low/low-mid/mid/high-mid/air): "
                + rel(0) + " / " + rel(1) + " / " + rel(2) + " / " + rel(3) + " / "
-               + rel(4) + " / " + rel(5) + " dB\n";
+               + rel(4) + " / " + rel(5) + " dB";
+            // THE FIGURE SAYS WHAT IT DESCRIBES. A band relative from a whole
+            // file average and one from a 150 ms tail are different claims, and
+            // before this they arrived in the same sentence looking alike.
+            // Same composer the card label uses, so the model and the user read
+            // the same sentence with the same ordering rule applied to it.
+            s += " [" + echojay::bandProvenanceText (
+                            echojay::reductionName (ev.macroReduction),
+                            ev.macroWindowSeconds, ev.macroAgeSeconds) + "]\n";
         }
         else
-            s += "  Band relatives vs avg: N/A\n";
+            s += "  Band relatives vs avg: N/A (no six-band measurement for this side)\n";
         return s;
     };
 
     ctx += "METER FIGURES (these are ALREADY displayed to the user in a figure card - "
            "here for YOUR reference; do NOT restate them):\n";
-    ctx += figBlock(la, da);
-    ctx += figBlock(lb, db);
+    ctx += figBlock(la, da, sa);
+    ctx += figBlock(lb, db, sb);
 
     if (numbersOnly)
     {
@@ -4665,7 +4766,29 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
         ctx += "- Width: " + juce::String(widthDiff, 1) + "% difference\n";
 
     ctx += "\n";
-    appendTonalDiff(ctx, da.spectrum, db.spectrum, la, lb);
+    // SPECTRAL PROVENANCE, section 1.5 items 3 and 4. The tonal diff below used
+    // to subtract da.spectrum from db.spectrum, which for a reference slot was
+    // the meter's reading after the final block of the file: a 150 ms fade out
+    // against a whole capture. Each side now arrives as evidence that states
+    // what it is, so the diff compares like with like where it can and SAYS so
+    // where it cannot.
+    ctx += "SPECTRAL BASIS (what the tonal comparison below is made of):\n";
+    ctx += echojay::spectralProvenanceLine(la, sa);
+    ctx += echojay::spectralProvenanceLine(lb, sb);
+    {
+        const auto caveat = echojay::tonalDiffCaveat(sa, sb, la, lb);
+        if (caveat.isNotEmpty()) ctx += caveat;
+        // A live side's loudness and its spectrum cover different spans.
+        const auto span = echojay::mixedSpanNote(sa, sb, la, lb);
+        if (span.isNotEmpty()) ctx += span;
+    }
+    ctx += "\n";
+    // A side with no measurement contributes the unset sentinel, which
+    // appendTonalDiff reports as absent rather than averaging into agreement.
+    appendTonalDiff(ctx,
+                    sa.valid ? sa.bins : echojay::unsetSpectrum(),
+                    sb.valid ? sb.bins : echojay::unsetSpectrum(),
+                    la, lb);
 
     ctx += "\nINSTRUCTIONS: The figures above are ALREADY shown to the user in a figure card, "
            "so do NOT restate them - no tables, no lists of numbers. Interpret only: what the "
@@ -4691,7 +4814,9 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
 
 juce::String EchoJayProcessor::buildCompareFiguresJson(const MeterData& da, const MeterData& db,
                                                        const juce::String& la, const juce::String& lb,
-                                                       bool crossScope) const
+                                                       bool crossScope,
+                                                       const echojay::SpectralEvidence& sa,
+                                                       const echojay::SpectralEvidence& sb) const
 {
     // The figure CARD's data - built client-side at compose time from the two
     // MeterData structs, NOT from anything the model returns (a visual that
@@ -4700,7 +4825,8 @@ juce::String EchoJayProcessor::buildCompareFiguresJson(const MeterData& da, cons
     // written ONLY when present, so an unavailable reading is ABSENT in the JSON
     // and the card draws N/A - never a fabricated zero. cross:true marks a
     // cross-scope pairing (different sources) so the card draws no delta.
-    auto src = [](const juce::String& label, const CompareFig& f)
+    auto src = [](const juce::String& label, const CompareFig& f,
+                  const echojay::SpectralEvidence& ev)
     {
         auto* o = new juce::DynamicObject();
         o->setProperty("label", label);
@@ -4716,14 +4842,32 @@ juce::String EchoJayProcessor::buildCompareFiguresJson(const MeterData& da, cons
         if (f.bandValid)
         {
             juce::Array<juce::var> b;
-            for (int i = 0; i < 6; ++i) b.add(f.bandRel[(size_t)i]);   // -999 = that band N/A
+            for (int i = 0; i < 6; ++i) b.add(f.bandRel[(size_t)i]);
             o->setProperty("bands", b);
+            // THE CARD CARRIES THE WINDOW AND THE REDUCTION, so a reader can
+            // tell a whole-file average from a tail instead of inferring it.
+            // Written only when the bands are, so a side with no bands carries
+            // no orphan provenance either.
+            o->setProperty("bandsReduction", juce::String (echojay::reductionName (ev.macroReduction)));
+            if (ev.macroWindowSeconds > 0.0f)
+                o->setProperty("bandsWindowSeconds", ev.macroWindowSeconds);
+            // Only when it is actually stale. A zero age on every stored
+            // measurement would be noise in the JSON and on the card.
+            if (ev.macroAgeSeconds >= 1.0f)
+                o->setProperty("bandsAgeSeconds", ev.macroAgeSeconds);
+        }
+        else if (ev.macroMissingWhy.isNotEmpty())
+        {
+            // WHY THERE IS NO CURVE, carried to the card so it can say it. A
+            // chart that draws one curve and no explanation invites the reader
+            // to treat the lone curve as the comparison.
+            o->setProperty("bandsMissingWhy", ev.macroMissingWhy);
         }
         return juce::var(o);
     };
     auto* root = new juce::DynamicObject();
-    root->setProperty("a", src(la, computeCompareFig(da)));
-    root->setProperty("b", src(lb, computeCompareFig(db)));
+    root->setProperty("a", src(la, computeCompareFig(da, sa), sa));
+    root->setProperty("b", src(lb, computeCompareFig(db, sb), sb));
     if (crossScope) root->setProperty("cross", true);
     return juce::JSON::toString(juce::var(root), true);
 }
@@ -4928,6 +5072,8 @@ void EchoJayProcessor::loadCompareFile(int slot, const juce::String& wavPath)
     }
     cmpStream[slot].loaded.store(true);
     cmpStream[slot].playing.store(false);  // don't auto-play; wait for user or transport
+    // New content inherits no intent from whatever was in the slot before.
+    cmpStream[slot].userWantsRolling.store(false);
     cmpMeter[slot].reset();
     EchoJay_NSLog(("EJCmp: loaded slot=" + juce::String(slot)
                    + " samples=" + juce::String(cmpStream[slot].sampleCount)
@@ -4944,12 +5090,354 @@ void EchoJayProcessor::fadeOutCompareStreams()
     cmpStream[1].stopAtZero.store(true);
 }
 
+// ===========================================================================
+// THE INDEX IS WRITTEN WHEN THE LIBRARY CHANGES (commit C2)
+// ===========================================================================
+//
+// ON CHANGE, NOT ON A TIMER AND NOT PER BLOCK. ReferenceAnalyser fires
+// onLibraryChanged once per completed analysis and once per removal, on the
+// message thread with refMutex already released, which is the only moment the
+// library is both settled and safe to read.
+//
+// ADD AND REMOVE ARE NOT SYMMETRICAL, and mergeReferenceIndex's own comment is
+// why: "IT CANNOT EXPRESS A DELETION ... a removal merged against a peer's copy
+// would be resurrected." A union has no way to say "I deleted this". So an add
+// is an entry and a REMOVAL IS A TOMBSTONE, which the merge already honours and
+// ri PIN17 already pins: "the tombstoned entry is GONE from entries", "its id is
+// recorded at the document level", "the deletion SURVIVES a stale peer's commit,
+// no resurrection". Writing a removal WITHOUT one would be worse than not
+// writing at all: the entry would vanish for the session and come back on the
+// next launch, which is a defect that looks like the bug this work is fixing.
+void EchoJayProcessor::ensureReferenceLibraryLoaded()
+{
+    if (refLibraryLoaded_) return;
+    refLibraryLoaded_ = true;          // set FIRST: one attempt, even on failure
+
+    refLoaded_        = echojay::loadReferenceIndex (referenceIndexDir());
+    refLibrary_       = refLoaded_.index;
+    refIndexMayWrite_ = echojay::refMayCommit (refLoaded_);
+
+    // SEED FROM STORED MEASUREMENTS, WITHOUT DECODING. An entry with no
+    // measurements is left for reconciliation to queue; seeding it would put a
+    // row in the library carrying nothing.
+    std::vector<ReferenceResult> seeds;
+    for (const auto& e : refLibrary_.entries)
+    {
+        if (! e.measurements.valid) continue;
+        ReferenceResult r;
+        r.name            = e.name;
+        r.path            = e.path;
+        r.durationSeconds = e.source.durationSeconds;
+        r.eqCurve         = e.measurements.eqCurve;
+        r.waveformThumbnail.assign (e.waveform.points.begin(), e.waveform.points.end());
+        r.macroBandAccum    = e.measurements.macroBandDb;
+        r.hasMacroBandAccum = e.measurements.hasMacroBands;
+        r.macroAccumSeconds = e.measurements.windowSeconds;
+        // psr and plr are NOT in the index and stay at their sentinels: psr
+        // then reads unavailable, which open list 206 says it should, and plr
+        // is recomputed by computeCompareFig from tp and integrated.
+        r.data.integrated    = e.measurements.integrated;
+        r.data.loudnessRange = e.measurements.loudnessRange;
+        r.data.truePeakL     = e.measurements.truePeakL;
+        r.data.truePeakR     = e.measurements.truePeakR;
+        r.data.crestFactor   = e.measurements.crestFactor;
+        r.data.width         = e.measurements.width;
+        r.data.correlation   = e.measurements.correlation;
+        r.data.dcOffset      = e.measurements.dcOffset;
+        r.data.rmsL          = e.measurements.rmsL;
+        r.data.rmsR          = e.measurements.rmsR;
+        r.data.peakL         = e.measurements.peakL;
+        r.data.peakR         = e.measurements.peakR;
+        r.data.oversCount    = e.measurements.oversCount;
+        seeds.push_back (std::move (r));
+    }
+    refAnalyser.seedFromStored (seeds);
+    // AND THE FOLDER VIEW, or a fresh insert would list every reference with
+    // none of its folders: the index has them and referenceFolders is empty
+    // until something rebuilds it.
+    refreshFolderView();
+    EchoJay_NSLog (("EJRefIndex: library loaded, " + juce::String ((int) refLibrary_.entries.size())
+                    + " entr(ies), " + juce::String ((int) seeds.size()) + " seeded").toRawUTF8());
+}
+
+// ===========================================================================
+// FOLDERS: THE INDEX IS THE STORE OF RECORD (C3b, schema section 4A)
+// ===========================================================================
+
+void EchoJayProcessor::refreshFolderView()
+{
+    // THE VIEW THE EDITOR ALREADY READS, REBUILT FROM THE INDEX. Nothing in
+    // PluginEditor.cpp has to learn about ids: it keeps reading names and
+    // paths out of referenceFolders exactly as before.
+    referenceFolders.clear();
+    for (const auto& f : refLibrary_.folders)
+    {
+        echojay::RefFolder v;
+        v.name = f.name;
+        for (const auto& e : refLibrary_.entries)
+            if (e.folderId == f.id) v.paths.push_back (e.path);
+        referenceFolders.push_back (std::move (v));
+    }
+}
+
+void EchoJayProcessor::folderCreate (const juce::String& name)
+{
+    if (name.isEmpty()) return;
+    for (const auto& f : refLibrary_.folders) if (f.name == name) return;  // the editor already refused
+
+    echojay::RefFolderEntry f;
+    f.id    = echojay::newFolderId();
+    f.name  = name;
+    f.order = (int) refLibrary_.folders.size();
+    refLibrary_.folders.push_back (f);
+    commitReferenceLibrary ({}, false);
+    refreshFolderView();
+}
+
+void EchoJayProcessor::folderRename (const juce::String& oldName, const juce::String& newName)
+{
+    if (oldName.isEmpty() || newName.isEmpty()) return;
+    for (auto& f : refLibrary_.folders)
+        if (f.name == oldName)
+        {
+            // THE ID HOLDS STILL AND ONLY THE NAME MOVES. 4A.3: "a rename is
+            // one instance changing a folder's `name` while its `id` holds
+            // still, and every entry pointing at it follows without being
+            // touched." A delete-and-create would strand every member.
+            f.name = newName;
+            commitReferenceLibrary ({}, false);
+            refreshFolderView();
+            return;
+        }
+}
+
+void EchoJayProcessor::folderDelete (const juce::String& name)
+{
+    for (size_t i = 0; i < refLibrary_.folders.size(); ++i)
+    {
+        if (refLibrary_.folders[i].name != name) continue;
+
+        // A TOMBSTONE, FOR THE REASON A REMOVED REFERENCE NEEDS ONE.
+        // mergeReferenceIndex unions by id and cannot express a deletion, so
+        // without this "the instance that still holds the folder writes it
+        // back and the folder returns, named as it was, after the user deleted
+        // it" (4A.4).
+        echojay::RefTombstone t;
+        t.id = refLibrary_.folders[i].id;
+        t.at = juce::Time::getCurrentTime().toISO8601 (true);
+        refLibrary_.folderTombstones.push_back (t);
+        refLibrary_.folders.erase (refLibrary_.folders.begin() + (long) i);
+
+        // MEMBERS ARE NOT SWEPT AND NOT DELETED. Their folderId now names no
+        // live folder, which refEntryFolderId reads as unfiled: 4A.4, "The
+        // tombstone stops the FOLDER reappearing; the membership pointer heals
+        // itself." Clearing them would be a second write and would lose the
+        // grouping if the folder came back from a peer.
+        commitReferenceLibrary ({}, false);
+        refreshFolderView();
+        return;
+    }
+}
+
+void EchoJayProcessor::folderAssign (const juce::String& path, const juce::String& folderName)
+{
+    const int at = echojay::refFindByPath (refLibrary_, path);
+    if (at < 0) return;
+
+    juce::String id;                       // empty folderName means UNFILE
+    if (folderName.isNotEmpty())
+        for (const auto& f : refLibrary_.folders)
+            if (f.name == folderName) { id = f.id; break; }
+
+    refLibrary_.entries[(size_t) at].folderId = id;
+    commitReferenceLibrary ({}, false);
+    refreshFolderView();
+}
+
+void EchoJayProcessor::migrateBlobFoldersOnce()
+{
+    // ONCE, AND THE FLAG IS THE WHOLE GUARANTEE. This runs on real user data
+    // with no second chance: a second run against a library that already has
+    // the folders would mint a second id for every one of them, which is open
+    // list 204 self-inflicted.
+    if (refFoldersMigrated_) return;
+    refFoldersMigrated_ = true;
+
+    if (referenceFolders.empty()) return;            // nothing to carry over
+
+    bool changed = false;
+    for (size_t i = 0; i < referenceFolders.size(); ++i)
+    {
+        const auto& blobFolder = referenceFolders[i];
+        if (blobFolder.name.isEmpty()) continue;
+
+        // MATCHED BY NAME, NOT MINTED BLIND. Two projects each carrying a
+        // "Masters" folder must converge on ONE index folder; minting per
+        // project is exactly the duplicate open list 204 describes. Matching
+        // here cannot undo a deliberate rename, because at this point no
+        // rename has happened: the index has no folders until the first
+        // migration puts them there.
+        juce::String id;
+        for (const auto& f : refLibrary_.folders)
+            if (f.name == blobFolder.name) { id = f.id; break; }
+
+        if (id.isEmpty())
+        {
+            echojay::RefFolderEntry f;
+            f.id    = echojay::newFolderId();
+            f.name  = blobFolder.name;
+            f.order = (int) i;                       // 4A.5: order from position
+            id      = f.id;
+            refLibrary_.folders.push_back (f);
+            changed = true;
+        }
+
+        // FIRST MATCH WINS, which is what refFolderOf already does, so a path
+        // listed in two blob folders lands where the old code would have put
+        // it rather than somewhere new.
+        for (const auto& path : blobFolder.paths)
+        {
+            const int at = echojay::refFindByPath (refLibrary_, path);
+            if (at < 0) continue;                    // already dangling before today
+            auto& e = refLibrary_.entries[(size_t) at];
+            if (e.folderId.isNotEmpty()) continue;   // first match wins
+            e.folderId = id;
+            changed = true;
+        }
+    }
+
+    if (changed)
+    {
+        commitReferenceLibrary ({}, false);
+        EchoJay_NSLog (("EJRefIndex: migrated " + juce::String ((int) refLibrary_.folders.size())
+                        + " blob folder(s) into the index").toRawUTF8());
+    }
+    refreshFolderView();
+}
+
+void EchoJayProcessor::commitReferenceLibrary (const juce::String& path, bool removed)
+{
+    // THE UNREADABLE REFUSAL, carried from the load. refMayCommit gates the
+    // write inside commitReferenceIndex too, but this is the session-level
+    // decision: an index that could not be read is not written over by this
+    // instance at all, for the whole run.
+    if (! refIndexMayWrite_) return;
+
+    const auto nowIso = juce::Time::getCurrentTime().toISO8601 (true);
+
+    // AN EMPTY PATH IS A DOCUMENT-LEVEL CHANGE, not a missing argument. The
+    // folder operations change `folders`, `folderTombstones` or an entry's
+    // folderId and have no entry to rebuild from the analyser; without this
+    // they fell through to the lookup below, found nothing and returned
+    // WITHOUT WRITING, so every folder change was silently discarded.
+    if (path.isEmpty())
+    {
+        const auto folderRes = echojay::commitReferenceIndex (referenceIndexDir(), refLibrary_,
+                                                              nowIso, JucePlugin_VersionString);
+        if (! folderRes.ok)
+            EchoJay_NSLog (("EJRefIndex: commit refused: " + folderRes.message).toRawUTF8());
+        return;
+    }
+
+    if (removed)
+    {
+        const int at = echojay::refFindByPath (refLibrary_, path);
+        if (at < 0) return;                       // already gone: nothing to say
+        echojay::RefTombstone t;
+        t.id = refLibrary_.entries[(size_t) at].id;
+        t.at = nowIso;
+        if (t.id.isNotEmpty()) refLibrary_.tombstones.push_back (t);
+        refLibrary_.entries.erase (refLibrary_.entries.begin() + at);
+    }
+    else
+    {
+        // THE NUMBERS COME FROM THE ANALYSER, which has just finished measuring
+        // them; the id, addedAt and any unknown keys come from the entry we
+        // already hold, so a re-analysis updates measurements without minting a
+        // second identity for the same file.
+        const auto refs = refAnalyser.getReferences();
+        const ReferenceResult* src = nullptr;
+        for (const auto& r : refs)
+            if (echojay::refPathKey (r.path) == echojay::refPathKey (path)) { src = &r; break; }
+        if (src == nullptr) return;
+
+        int at = echojay::refFindByPath (refLibrary_, path);
+        if (at < 0)
+        {
+            echojay::RefEntry fresh;
+            fresh.id      = echojay::newReferenceId();
+            fresh.addedAt = nowIso;
+            refLibrary_.entries.push_back (fresh);
+            at = (int) refLibrary_.entries.size() - 1;
+        }
+
+        auto& e = refLibrary_.entries[(size_t) at];
+        e.name             = src->name;
+        e.path             = src->path;
+        e.analysedAt       = nowIso;
+        e.measurementEpoch = echojay::kRefMeasurementEpoch;
+        e.availability     = echojay::RefAvailability::Present;
+        e.checkedAt        = nowIso;
+        e.lastSeenAt       = nowIso;
+        e.source.durationSeconds = src->durationSeconds;
+
+        auto& m = e.measurements;
+        m.valid         = true;
+        m.reduction     = "wholeFileAverage";
+        m.windowSeconds = src->macroAccumSeconds;
+        m.integrated    = src->data.integrated;
+        m.loudnessRange = src->data.loudnessRange;
+        m.truePeakL     = src->data.truePeakL;
+        m.truePeakR     = src->data.truePeakR;
+        m.crestFactor   = src->data.crestFactor;
+        m.width         = src->data.width;
+        m.correlation   = src->data.correlation;
+        m.dcOffset      = src->data.dcOffset;
+        m.rmsL          = src->data.rmsL;
+        m.rmsR          = src->data.rmsR;
+        m.peakL         = src->data.peakL;
+        m.peakR         = src->data.peakR;
+        m.oversCount    = src->data.oversCount;
+        m.eqCurve       = src->eqCurve;
+        m.hasEqCurve    = true;
+        m.macroBandDb   = src->macroBandAccum;
+        m.hasMacroBands = src->hasMacroBandAccum;
+
+        e.waveform.points.assign (src->waveformThumbnail.begin(), src->waveformThumbnail.end());
+    }
+
+    // ONE WRITER, THE EXISTING ONE. commitReferenceIndex takes the process and
+    // file locks, RE-READS what is on disk, merges this instance's copy into it
+    // and writes atomically, so a peer's concurrent addition is not lost. No new
+    // serialisation is introduced here; this builds entries and hands them over.
+    const auto res = echojay::commitReferenceIndex (referenceIndexDir(), refLibrary_,
+                                                    nowIso, JucePlugin_VersionString);
+    if (! res.ok)
+        EchoJay_NSLog (("EJRefIndex: commit refused: " + res.message).toRawUTF8());
+}
+
 void EchoJayProcessor::stopCompareStream(int slot)
 {
     if (slot < 0 || slot > 1) return;
     cmpStream[slot].loaded.store(false);
     cmpStream[slot].playing.store(false);
+    // THE INTENT CLEARS WITH THE STREAM. Without this a stopped slot keeps
+    // permission and the transport sync starts it again on the next host
+    // roll, which is open list 215 reached by a different door.
+    cmpStream[slot].userWantsRolling.store(false);
     cmpStream[slot].playbackPos = 0;
+    if (cmpAudible.load() == slot)
+        cmpAudible.store(-1);
+}
+
+void EchoJayProcessor::silenceCompareStream(int slot)
+{
+    if (slot < 0 || slot > 1) return;
+    // STOP, AND WITHDRAW THE INTENT, so the transport sync cannot start it
+    // again behind a closed window (open list 215). Nothing else: `loaded`,
+    // the buffer, playbackPos and the slot's identity all survive.
+    cmpStream[slot].playing.store(false);
+    cmpStream[slot].userWantsRolling.store(false);
     if (cmpAudible.load() == slot)
         cmpAudible.store(-1);
 }
@@ -4960,6 +5448,7 @@ void EchoJayProcessor::stopAllCompare()
     {
         cmpStream[i].loaded.store(false);
         cmpStream[i].playing.store(false);
+        cmpStream[i].userWantsRolling.store(false);   // see stopCompareStream
         cmpStream[i].playbackPos = 0;
     }
     cmpAudible.store(-1);
@@ -5094,6 +5583,7 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
             obj->setProperty("timestamp", s.timestamp);
             obj->setProperty("durationSeconds", s.durationSeconds);
             obj->setProperty("wavFilePath", s.wavFilePath);
+            echojay::writeCaptureSubstitution(*obj, s.outputSubstitution);   // absent when none
             
             // Meter data
             auto m = std::make_unique<juce::DynamicObject>();
@@ -5111,6 +5601,14 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
             m->setProperty("correlation", s.averagedData.correlation);
             m->setProperty("momentary", s.averagedData.momentary);
             m->setProperty("shortTerm", s.averagedData.shortTerm);
+            // INTER-SAMPLE OVERS, WRITTEN SINCE 20 SEP 2026. It was measured and
+            // then dropped here, so a restored snapshot came back with
+            // MeterData's default of 0 and read as a measured "no clipping".
+            // Nothing consumed it as evidence until MatchSide, which treats
+            // overs < 0 as unavailable and a 0 as a measurement. The restore
+            // defaults to -1 when this key is absent, so an older save reads as
+            // unavailable, which is what it is.
+            m->setProperty("oversCount", s.averagedData.oversCount);
             obj->setProperty("meters", juce::var(m.release()));
             
             // Spectrum
@@ -5193,6 +5691,50 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     for (auto& ref : refs)
         refsArr.add(ref.path);
     state->setProperty("referencePaths", refsArr);
+
+    // THE COMPARE SLOTS, SO A PROJECT RELOAD RESTORES THEM. THIS LINE IS THE
+    // PROJECT HALF; the processor member itself is the WINDOW half and needs
+    // no blob at all, because the processor outlives the editor.
+    //
+    // ADDRESSED BY PATH, NOT BY POSITION. A slot saying "reference 3" is wrong
+    // the moment the library reorders; a path is what refIndexOfPath already
+    // resolves and what the index dedupes on.
+    {
+        juce::Array<juce::var> slotsArr;
+        for (int i = 0; i < 2; ++i)
+        {
+            const auto& sp = compareSlotPersist_[i];
+            juce::DynamicObject::Ptr d (new juce::DynamicObject());
+            d->setProperty("kind",  sp.kind);
+            d->setProperty("label", sp.label);
+            if (sp.refPath.isNotEmpty())    d->setProperty("refPath",    sp.refPath);
+            if (sp.wsReviewId.isNotEmpty()) d->setProperty("wsReviewId", sp.wsReviewId);
+            if (sp.codecPath.isNotEmpty())  d->setProperty("codecPath",  sp.codecPath);
+            if (sp.snapshotIndex >= 0)      d->setProperty("snapshotIndex", sp.snapshotIndex);
+            slotsArr.add(juce::var(d.get()));
+        }
+        state->setProperty("compareSlots", slotsArr);
+    }
+
+    // FOLDERS AND THE SELECTED SCOPE, beside the paths they key on. Written
+    // whether or not any exist, so a blob that has had folders and lost them
+    // says so rather than falling back to whatever was there before.
+    juce::Array<juce::var> foldersArr;
+    for (auto& f : referenceFolders)
+    {
+        auto* fo = new juce::DynamicObject();
+        fo->setProperty("name", f.name);
+        juce::Array<juce::var> ps;
+        for (auto& p : f.paths) ps.add(p);
+        fo->setProperty("paths", ps);
+        foldersArr.add(juce::var(fo));
+    }
+    state->setProperty("referenceFolders", foldersArr);
+    state->setProperty("referenceScopeKind",
+                       referenceScope.kind == echojay::RefScope::Kind::Folder  ? "folder"
+                     : referenceScope.kind == echojay::RefScope::Kind::Unfiled ? "unfiled"
+                                                                               : "all");
+    state->setProperty("referenceScopeFolder", referenceScope.folder);
     
     // Visual mode state
     state->setProperty("visualPreset", visualPreset);
@@ -5454,6 +5996,7 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                     s.timestamp = (juce::int64)(double)so->getProperty("timestamp");
                     s.durationSeconds = (float)(double)so->getProperty("durationSeconds");
                     s.wavFilePath = so->getProperty("wavFilePath").toString();
+                    s.outputSubstitution = echojay::readCaptureSubstitution(*so);
                     
                     // Meters
                     if (auto* mo = so->getProperty("meters").getDynamicObject())
@@ -5472,6 +6015,13 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                         s.averagedData.correlation = (float)(double)mo->getProperty("correlation");
                         s.averagedData.momentary = (float)(double)mo->getProperty("momentary");
                         s.averagedData.shortTerm = (float)(double)mo->getProperty("shortTerm");
+                        // ABSENT MEANS UNAVAILABLE, NOT ZERO (20 Sep 2026). Saves
+                        // written before the key existed carry no count, and
+                        // MeterData's default of 0 would present as a measured
+                        // "no overs" to MatchSide, which reads a negative as
+                        // unavailable. -1 says what is true: nobody recorded it.
+                        s.averagedData.oversCount = mo->hasProperty("oversCount")
+                                                  ? (int)mo->getProperty("oversCount") : -1;
                     }
                     
                     // Spectrum
@@ -5561,20 +6111,129 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                 chatContents.add(c.toString());
         }
         
-        // Restore reference tracks — re-analyse from saved file paths
-        if (auto* refsArr = obj->getProperty("referencePaths").getArray())
+        // ---- THE LIBRARY, RECONCILED (commit C1: the READ path only) -------
+        //
+        // C1 IS INERT BY CONSTRUCTION AND THAT IS THE POINT. Nothing in this
+        // build writes reference_index.json, so loadReferenceIndex returns
+        // Absent on every machine, refReconcile's Absent case puts every blob
+        // path into toAnalyse in blob order, and the two lines that matter
+        // below do exactly what the old block did. ri PIN24 is the assertion
+        // of that, not this comment.
+        //
+        // THE DIRECTORY IS PASSED IN, NEVER RESOLVED IN THE HEADER.
+        // EJReferenceIndex.h:644-652 states why: a function resolving its own
+        // path would make every behavioural pin write to the user's real
+        // library. When EJStateRoot lands on the merge, ONE line here changes
+        // and nothing in the header does.
         {
+            std::vector<juce::String> blobPaths;
+            if (auto* refsArr = obj->getProperty("referencePaths").getArray())
+                for (auto& rp : *refsArr)
+                    blobPaths.push_back (rp.toString());
+
+            // IT NO LONGER LOADS HERE, AND THAT WAS THE DEFECT.
+            //
+            // A host calls setStateInformation ONLY when restoring saved state.
+            // A freshly inserted plugin has no state, so loading here meant the
+            // library was never read on the one path that matters: insert the
+            // plugin, open the UI, see nothing. The load moved to
+            // ensureReferenceLibraryLoaded, which createEditor also calls.
+            //
+            // THIS NOW RECONCILES AGAINST A LIBRARY THAT IS ALREADY THERE. The
+            // call below is idempotent, so whichever of the two paths arrives
+            // first pays for the parse and the second finds it done.
+            ensureReferenceLibraryLoaded();
+            const auto rec    = echojay::refReconcile (
+                                    refLoaded_, blobPaths,
+                                    [] (const juce::String& p) { return juce::File(p).existsAsFile(); },
+                                    juce::Time::getCurrentTime().toISO8601 (true),
+                                    [] { return echojay::newReferenceId(); });
+
+            // NO SEEDING HERE. ensureReferenceLibraryLoaded already did it,
+            // exactly once, from the index's own entries. Seeding again from
+            // rec.library would append a second copy of every stored entry,
+            // because seedFromStored appends and does not dedupe.
+            //
+            // THE LIBRARY TAKES THE RECONCILED VERSION, which is the index's
+            // entries PLUS any blob path the index had never seen. The new ones
+            // carry no measurements and go to toAnalyse below; ri PIN22 pins
+            // that an entry the blob never knew survives beside the blob's own.
+            refLibrary_       = rec.library;
+            refIndexMayWrite_ = rec.mayWrite;
+
+            // QUEUE ONLY WHAT RECONCILIATION RETURNED. Queueing the blob's own
+            // paths, as this used to, would keep today's cost and add the
+            // index for nothing.
             std::vector<juce::File> refFiles;
-            for (auto& rp : *refsArr)
+            for (const auto& p : rec.toAnalyse)
             {
-                juce::File f(rp.toString());
+                juce::File f (p);
                 if (f.existsAsFile())
-                    refFiles.push_back(f);
+                    refFiles.push_back (f);
             }
             if (!refFiles.empty())
                 refAnalyser.analyseFiles(refFiles, [](bool, const juce::String&) {});
+
+            // THE WRITE HAPPENS ON CHANGE, NOT HERE. Loading must not write:
+            // committing what was just read would rewrite the file on every
+            // project open for no change, and on an unreadable index it would
+            // write an empty library over the user's real one.
+            // See commitReferenceLibrary.
         }
         
+        // Restore folders and the scope. ABSENT IS NOT EMPTY on the scope: a
+        // blob written before folders existed has no key, and that must read
+        // as ALL rather than as a folder named "".
+        referenceFolders.clear();
+        if (auto* fArr = obj->getProperty("referenceFolders").getArray())
+            for (auto& fv : *fArr)
+                if (auto* fo = fv.getDynamicObject())
+                {
+                    echojay::RefFolder f;
+                    f.name = fo->getProperty("name").toString();
+                    if (auto* ps = fo->getProperty("paths").getArray())
+                        for (auto& pv : *ps) f.paths.push_back(pv.toString());
+                    if (f.name.isNotEmpty()) referenceFolders.push_back(f);
+                }
+        {
+            const auto k = obj->getProperty("referenceScopeKind").toString();
+            referenceScope = {};
+            if (k == "folder")
+            {
+                referenceScope.kind   = echojay::RefScope::Kind::Folder;
+                referenceScope.folder = obj->getProperty("referenceScopeFolder").toString();
+            }
+            else if (k == "unfiled")
+                referenceScope.kind = echojay::RefScope::Kind::Unfiled;
+            // A scope naming a folder that is no longer there falls back to
+            // ALL, which is the same rule the rows function applies.
+            referenceScope = echojay::refScopeOrAll(referenceScope, referenceFolders);
+        }
+
+        // THE ONE TIME MIGRATION, HERE BECAUSE THIS IS WHERE THE BLOB'S
+        // FOLDERS EXIST. ensureReferenceLibraryLoaded ran earlier in this
+        // function and rebuilt referenceFolders from the index; the block
+        // above has just overwritten it with the blob's. Migration folds
+        // those into the index and ends by rebuilding the view again, so
+        // whichever had folders, the editor ends up reading the index.
+        migrateBlobFoldersOnce();
+
+        // THE COMPARE SLOTS BACK OUT OF THE BLOB. ABSENT IS EMPTY, not a
+        // fault: every project saved before today has no such key.
+        if (auto* slotsArr = obj->getProperty("compareSlots").getArray())
+            for (int i = 0; i < juce::jmin(2, slotsArr->size()); ++i)
+                if (auto* d = (*slotsArr)[i].getDynamicObject())
+                {
+                    auto& sp = compareSlotPersist_[i];
+                    sp.kind          = (int) d->getProperty("kind");
+                    sp.label         = d->getProperty("label").toString();
+                    sp.refPath       = d->getProperty("refPath").toString();
+                    sp.wsReviewId    = d->getProperty("wsReviewId").toString();
+                    sp.codecPath     = d->getProperty("codecPath").toString();
+                    sp.snapshotIndex = d->hasProperty("snapshotIndex")
+                                         ? (int) d->getProperty("snapshotIndex") : -1;
+                }
+
         // Restore visual mode state
         if (obj->hasProperty("visualPreset"))
             visualPreset = (int)obj->getProperty("visualPreset");
@@ -5703,7 +6362,14 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
     } catch (...) {}
 }
 
-juce::AudioProcessorEditor* EchoJayProcessor::createEditor() { return new EchoJayEditor(*this); }
+juce::AudioProcessorEditor* EchoJayProcessor::createEditor()
+{
+    // THE OTHER ARRIVAL. A freshly inserted plugin never gets
+    // setStateInformation, so without this the first time anyone opens the UI
+    // the library would be empty on a machine that has one on disk.
+    ensureReferenceLibraryLoaded();
+    return new EchoJayEditor(*this);
+}
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new EchoJayProcessor(); }
 
 // =============================================================================

@@ -7,7 +7,13 @@
 #include "EJAgentClient.h"    // HOOK E1 (agent mode, Session A2)
 #include "EJAgentPanel.h"
 #include "PluginProcessor.h"
+#include "EJReferenceRows.h"   // the browser's pane rule: header-inline, pinned
+#include "EJReferenceBar.h"    // the reference bar's geometry and stepping: pinned
+#include "EJCodecPage.h"       // the Playback page's geometry: pinned
+#include "EJMatchPage.h"       // the Match page's rows, its axes and their words: pinned
+#include "EJCompareFigures.h"  // CompareFig, computeCompareFig, matchSideFrom: the Match sides
 #include "ChainHost.h"
+#include "EJMisdialReport.h"
 #include "ChainWetKnob.h"
 #include "NativeClip.h"
 #include "EchoJayAPI.h"
@@ -43,6 +49,9 @@ public:
     ~EchoJayEditor() override;
 
     void paint(juce::Graphics&) override;
+    // The playback environment bar, painted ABOVE every child so no overlay,
+    // page or panel can hide it (see paintEnvBar).
+    void paintOverChildren(juce::Graphics&) override;
     void resized() override;
 
     // Test seam (11 Sep 2026): drive the REAL standardChainInjections from the
@@ -179,7 +188,78 @@ private:
     
     void showCompareView();
     void hideCompareView();
+
+    /** STOP BOTH COMPARE STREAMS ON THE WAY OUT OF ANY SURFACE THAT CAN PLAY
+        THEM. Editor side, and it calls the processor's existing
+        stopCompareStream rather than adding a second stop.
+
+        THIS IS A SYMPTOM FIX AND MUST NOT BE READ AS THE FIX. See open list
+        215: there is still no single source of truth for whether the USER
+        wants a stream playing, and the transport sync still drives `playing`
+        from the host without consulting anyone. This closes the "left audible
+        with no visible control" route only. Open list 214, the data race on
+        playbackPos, is untouched and unrelated to this. */
+    void silenceCompareStreams (const char* why);
+
+    /** MAKE A SLOT AUDIBLE, AS A GESTURE. The one path for "the user asked to
+        hear this slot": it grants intent, starts the stream and routes audio
+        to it. seekCompareStream and the A/B buttons both call it, so the two
+        cannot drift into meaning different things.
+
+        RETURNS FALSE AND GRANTS NOTHING for a slot with no stream behind it,
+        which is what an empty or Live slot is. */
+    bool makeCompareSlotAudible (int slotIdx);
+
+    /** WHICH SLOT YOU ARE ACTUALLY HEARING, or -1 for none.
+
+        NOT cmpAudible, WHICH IS ONLY WHAT IS SELECTED. The two diverge the
+        moment a selected slot is not rolling, and the display then claims B
+        while the live signal plays. This mirrors the audio block's own test,
+        including the loaded and sampleCount guards it skips a slot on, so the
+        button and the ramp cannot disagree. */
+    int audibleCompareSlot() const;
+
+    /** THE BAR RECOMPUTES, IT IS NOT NOTIFIED. What is audible changes on the
+        AUDIO THREAD in three places that can never call a UI function: the
+        transport sync stopping a stream when the host stops, the self-stop at
+        the end of a fade, and the sync's own start. An event-driven bar is
+        therefore structurally unable to stay correct, not merely missing a
+        call. -2 is "never computed", so the first tick always paints. */
+    int  lastAudibleSlot_  = -2;      // -2 = never computed, so tick one paints
+    bool lastASlotWasLive_ = false;
+    bool lastSlotPlaying_[2] = { false, false };
+
+    /** THE SLOT IDENTITY, ACROSS A WINDOW CLOSE. TWO CALL SITES ONLY, which
+        is why this shape was chosen over moving the members to the processor:
+        compareTop_ and compareBot_ are mentioned 63 times in this file with 25
+        writes, and this file is where the unmerged parallel work is heaviest.
+        Saving at teardown and restoring at construction touches two lines
+        instead of sixty-three. */
+    void saveCompareSlotsToProcessor();
+    void restoreCompareSlotsFromProcessor();
     void loadReferenceFile();
+
+    /** What a status line IS, so its colour follows its register rather than
+        its wording. PROBLEM is the default so that adding a call site cannot
+        silently downgrade a failure by forgetting the argument; every existing
+        site passes its kind explicitly regardless, because inferring register
+        from the text of a message is how "Analysing..." came to be the same
+        pink as "Error:". */
+    enum class RefStatusKind { Problem, Info };
+
+    /** Recomputes whether the reference bar's arrows can act, from the scope
+        count, and enables or disables them. Called from resized() and from
+        every site that can change the library or the scope. */
+    void refreshRefBarEnablement();
+
+    // The ONE writer of refStatusLabel. Text and visibility move together,
+    // because thirteen setText calls against a label that was neither a child
+    // component nor given bounds is how the Compare view came to report
+    // nothing at all. See the comment at the definition.
+    void setRefStatus(const juce::String& msg, RefStatusKind kind = RefStatusKind::Problem);
+    // Which Compare slot a raw click landed in. The bottom panel starts at the
+    // bottom slot button, so this is live geometry rather than a guess.
+    bool compareClickIsTopSlot(juce::Point<int> pos) const;
     void runAICompare();
     void paintCompareView(juce::Graphics& g, juce::Rectangle<int> area);
     // Spectrum panel for Compare tab: independent per-panel state (avoids
@@ -251,7 +331,13 @@ private:
     // 29 Jul 2026. Compact mode draws no strip at all, so there is no narrow
     // case to design for, and no icon-only or overflow mode is wanted.
     static constexpr const char* kTabNames[] = {
-        "DASHBOARD", "VISUALISATION", "METERS", "CHAT", "COMPARE", "LINK", "CHAIN", "SETTINGS"
+        // COMPARE became REFERENCE on 13 Sep 2026: the tab holds Compare,
+        // Match and Playback sub-tabs sharing one reference selection, so
+        // naming it after one of them was naming the section after a part.
+        // Free to rename today (two machines run v2, vst-config points the
+        // world at 1.6.3) and not free after beta. Shorter than
+        // VISUALISATION, so the 81px width measurement still governs.
+        "DASHBOARD", "VISUALISATION", "METERS", "CHAT", "REFERENCE", "LINK", "CHAIN", "SETTINGS"
     };
     static constexpr int kTabCount = (int) (sizeof (kTabNames) / sizeof (kTabNames[0]));
     // Ties the label array to the enum. Adding a tab to one and not the other
@@ -416,6 +502,26 @@ private:
     void applyVisualOnlyVisibility();
     bool abBarShowing = false;       // tracks whether AB transport bar is visible (window resized)
     static constexpr int kAbBarH = 32;
+
+    // THE PLAYBACK ENVIRONMENT BAR (18 Sep 2026): shown whenever a playback
+    // simulation is engaged, on every view, stacked ABOVE the A/B bar so both
+    // can show at once. It depends on the selection ONLY, never on the view,
+    // so the window resizes when the environment changes and never when the
+    // user navigates.
+    bool envBarShowing = false;
+    static constexpr int kEnvBarH = 32;
+    juce::Rectangle<int> envBarX_;   // its X, stored by paint, read by mouseDown
+
+    // THE TOTAL HEIGHT OF EVERY BOTTOM BAR, and the ONE place it is computed.
+    // Every layout and paint position that keeps clear of the bottom bars asks
+    // this; there were fourteen sites each reading "abBarShowing ? kAbBarH : 0",
+    // and a second bar added by hand to each would have been fourteen chances
+    // to miss one.
+    int bottomBarsH() const noexcept
+    {
+        return (abBarShowing ? kAbBarH : 0) + (envBarShowing ? kEnvBarH : 0);
+    }
+    void paintEnvBar (juce::Graphics& g);
     
     // Spectrum A/B overlay — holds the "other" spectrum when switching between ref and DAW
     std::array<float, 64> heldSpectrum{};
@@ -450,7 +556,32 @@ private:
         SpectrumCurveState* lerpState = nullptr;  // nullptr = static data, no frame lerp
         std::array<float, MeterEngine::kVisBins>* peakHold = nullptr;  // optional
         bool* peakHoldInit = nullptr;
+        // A CALLER-SUPPLIED dB RANGE (20 Sep 2026), for a surface that draws
+        // more than one curve in one rect. The range is otherwise computed
+        // inside the call from the bins handed in, so two curves would each
+        // scale to their own peak and disagree about what a decibel is.
+        // ABSENT BY DEFAULT: hasDbRange false leaves the auto-range exactly as
+        // it was, so the spectrum panel and both Compare panels are untouched.
+        bool  hasDbRange = false;
+        float dbMin = 0.0f, dbMax = 0.0f;
+        // A curve with no heat-map fill, for a surface drawing one curve
+        // behind another. Default false: nothing existing changes.
+        bool  lineOnly = false;
+        // How present the curve is, for the one BEHIND: the Match page's
+        // reference sits back at less than full alpha so the mix reads as the
+        // subject and the two do not compete. 1.0 is what every existing
+        // caller gets without asking.
+        float lineAlpha = 1.0f;
+        // One wider, fainter glow pass under the usual one. Off by default so
+        // no existing surface is restyled by a page that wanted more light.
+        bool  wideGlow = false;
     };
+
+    /** THE DISPLAY TILT paintSpectrumCurve applies, exposed so a surface that
+        must agree with the drawn curve reads the same expression instead of
+        keeping a second copy of 4.5 dB per octave. The Match page's blocks and
+        its shared dB range are both computed through this. */
+    static float spectrumTiltedDb (float db, double freqHz) noexcept;
     // binsIn are LINEAR-frequency dB magnitudes spaced visBinHz apart
     // (the visual-FFT shape). Stored 64-log-bin data enters through
     // expandLog64Spectrum below.
@@ -462,6 +593,12 @@ private:
 
     SpectrumCurveState spectrumCurveState_;                            // main panel
     SpectrumCurveState compareTopCurveState_, compareBotCurveState_;   // Compare live slots
+    // THE MATCH PAGE'S SMOOTHING IS NOT ONE OF THESE, and the reason is the
+    // size. SpectrumCurveState holds kVisBins (2048) because paintSpectrumCurve
+    // smooths the EXPANDED curve; the Match ribbons are built from the 64
+    // STORED bins, so their state is 64 wide and lives on MatchPanel as
+    // BinLerp. Same idea, same lerp constant, per surface for the same reason:
+    // a shared state would smooth two different curves into each other.
     std::array<float, MeterEngine::kVisBins> visPeakHold{};            // main panel only
     bool visPeakHoldInit = false;
 
@@ -879,17 +1016,16 @@ private:
     void saveCustomChannels();
 
     // Compare
-    juce::TextButton loadRefBtn { "+ Add Mix" };
+    juce::TextButton loadRefBtn { "+ Add reference" };
     juce::TextButton aiCompareBtn { "AI Compare" };
-    // VESTIGIAL — NOT the source of truth. These boxes are never made visible
-    // and never given bounds; they are still populated on rebuild only to keep
-    // legacy code compiling. The Compare source of truth is compareTop_ /
-    // compareBot_ (the slot buttons), read via getSlotMeterData(). Do NOT wire
-    // AI Compare, audition, or any new logic to their getSelectedId(): from
-    // v2.9.31 (2 Jul 2026) until it was repaired, runAICompare read exactly
-    // this hidden selection and analysed the wrong audio. Read the slots.
-    juce::ComboBox compareSlotABox;
-    juce::ComboBox compareSlotBBox;
+    // compareSlotABox/BBox ARE GONE (12 Sep 2026). They were never visible,
+    // never given bounds, and their only readers were their own rebuild and a
+    // right-click path that picked a slot by distance to two boxes both
+    // centred on the origin, so distA always equalled distB and A always won.
+    // Their last stated justification, at showCompareView, was that AI Compare
+    // needed them; runAICompare records the opposite in its own comment, and
+    // has read compareTop_/compareBot_ via getSlotMeterData since the v2.9.31
+    // repair. The source of truth is the slots, and now it is the ONLY truth.
     juce::Label refStatusLabel;
     // Stage 1: meter-type selector (Waveform / Spectrum / Levels / Stereo Image / Loudness)
     std::array<juce::TextButton, 5> compareMeterBtns;
@@ -925,6 +1061,14 @@ private:
     juce::String compareEntryDate(const juce::String& iso) const;
     void updateCompareSlotBtn(bool isTop);
     MeterData getSlotMeterData(const CompareSlotState& slot) const;
+    /** What that slot's spectrum IS and over what window (plan section 1.5).
+        Separate from getSlotMeterData because MeterData::spectrum is the
+        display selection, which for a reference is the ballistic tail. */
+    echojay::SpectralEvidence getSlotSpectralEvidence(const CompareSlotState& slot) const;
+    /** THE ONE WRITER of a slot's macro band evidence, for every slot kind
+        including the ones that have none. */
+    void fillSlotMacroEvidence (const CompareSlotState& slot,
+                                echojay::SpectralEvidence& ev) const;
     // Item 6: a slot's DATA scope. channelDataScoped only for a WsCapture
     // review carrying the marker; everything else (snapshot, reference, live,
     // pre-fix review) is full-scope. The cross-scope guard keys off THIS,
@@ -941,6 +1085,75 @@ private:
     // unknown (Live), which the length-mismatch caveat treats as "skip".
     juce::String slotDisplayName(const CompareSlotState& slot) const;
     float slotDurationSeconds(const CompareSlotState& slot) const;
+
+    /** THE ONE WAY A MatchSide IS BUILT FROM A COMPARE SLOT (20 Sep 2026).
+        It reads the members that already answer these questions
+        (getSlotMeterData, getSlotSpectralEvidence, slotDurationSeconds) and
+        hands them to echojay::matchSideFrom, which owns the Live rules and the
+        sentinels. Nothing here decides anything: a second builder would be a
+        second set of those rules.
+
+        NOTHING CALLS IT FROM THE EDITOR YET, and that is the commit's scope:
+        the Match screen draws nothing and computeMatchProposal is called only
+        from the suite (MATCH_SCREEN_CONTRACT section 10, step one). */
+    echojay::MatchSide buildMatchSide(const CompareSlotState& slot) const;
+
+    /** The two sides of the compare, named by role rather than by position.
+        WHICH SLOT IS THE REFERENCE IS DECIDED ON ENTRY AND HELD in
+        matchRefIsTop_, not derived per call. See setRefSubTab's Match branch. */
+    struct MatchSides { echojay::MatchSide mix, ref; };
+    MatchSides buildMatchSides() const;
+
+    /** Which slot is the reference side, decided by CONTENT when the Match page
+        is entered (echojay::matchRefSideOnEntry) and then held for as long as
+        the page is open.
+
+        IT USED TO BE refBarIsTop(), RECOMPUTED EVERY CALL, and that made the
+        roles a function of where a reference happened to sit: a pick landing in
+        the top slot flipped which side was the mix, swapping the two names, the
+        two waveforms and the direction of every move with no gesture that asked
+        for it. Held, and with the mix picker unable to place a reference, no
+        pick can move a role from one slot to the other. */
+    bool matchRefIsTop_ = false;
+
+    /** The Match page's own pickers. The left one offers Live, the session
+        snapshots and the chat captures and NEVER a reference, which is half of
+        why the roles cannot flip; the right one opens the existing browser
+        against whichever slot is the reference side. */
+    void openMatchMixPicker();
+    void matchApplyMixSlot (const CompareSlotState& next);
+
+    /** THE ONE SEEK, called by Compare's click-to-seek and by the Match page's
+        strips. Seek, play and make audible together, because that is what a
+        click on a waveform has meant on Compare since it shipped. The fraction
+        is of the FILE, not of a panel. */
+    void seekCompareStream (int slotIdx, float fraction);
+
+    /** A slot stream's position, 0 to 1, or -1 when it has none. The stream's
+        own playbackPos rather than a second count kept beside it. */
+    float compareStreamFrac (int slotIdx) const;
+
+    /** A side's FAST frame, for the trail image only: the main engine for a
+        Live slot, that slot's own cmpMeter when its stream is playing, and
+        nothing at all for a still side. False means no cloud. */
+    bool matchFastFrame (const CompareSlotState& slot, int slotIdx, MeterData& out) const;
+
+    /** The engine behind that frame, for the 2048-bin visual spectrum only the
+        engine can hand out. nullptr for a still side. */
+    MeterEngine* matchFastEngine (const CompareSlotState& slot, int slotIdx) const;
+
+    /** The points a side's waveform draws, as absolute peaks, with what span
+        they cover and whether that span is a rolling window rather than a whole
+        file. Returns false when there is nothing to draw. */
+    bool matchWavePoints (const CompareSlotState& slot, std::vector<float>& outAbs,
+                          bool& rolling, float& spanSeconds) const;
+
+    /** The two slots by ROLE, from matchRefIsTop_. The page needs the slots
+        themselves as well as their sides, because the curves come from each
+        slot's spectral evidence and MatchSide carries only the six bands. One
+        answer to "which one is the reference", read in both places. */
+    struct MatchSlotPair { const CompareSlotState* mix = nullptr; const CompareSlotState* ref = nullptr; };
+    MatchSlotPair matchSlots() const;
     // Step 2: cross-scope covers all three cases the send must ask about -
     // channel-vs-full, channel-vs-DIFFERENT-channel, and anything-vs-Live.
     // Keys off channelDataScoped (via slotChannelUid), never linkUid presence.
@@ -993,55 +1206,506 @@ private:
     struct CodecPanel : juce::Component
     {
         EchoJayEditor* owner = nullptr;
+        // PLAYBACK IS A PAGE, AND ONLY A PAGE (13 Sep 2026).
+        //
+        // It was a modal behind the CODECS launcher. When it became a sub-tab
+        // it kept every modal behaviour and trapped the UI: full-window bounds
+        // over the tab strip, an empty mouseDown swallowing every click, and a
+        // close X suppressed with no replacement. Escape was not an escape
+        // either, because the sub-tab path never grabbed keyboard focus.
+        //
+        // THE inlinePage FLAG IS GONE rather than being honoured properly.
+        // openCodecPanel had ZERO callers once the launcher was deleted, so the
+        // modal presentation was unreachable and a flag choosing between two
+        // presentations would have had one dead branch and a pin asserting a
+        // contract nothing could reach. One presentation, no flag.
+        //
+        // NO mouseDown OVERRIDE. The swallow existed to stop a modal leaking
+        // clicks to what it covered. A page covers nothing, and swallowing is
+        // exactly what made the sub-tab row unreachable.
+        //
+        // NO closeRect. A page is left by choosing another sub-tab. Escape is a
+        // shortcut to the same thing, not a second mechanism.
+        //
+        // TWO VIEWS, ONE PAGE (18 Sep 2026). The GRID is the page: six live
+        // tiles and the codec tile (EJPlaybackTiles.h). The codec tile opens
+        // the RENDER VIEW, which is the codec card exactly as it was: its
+        // presets, the normalise toggle, the notice and the status line. The
+        // card's geometry is still codecPageLayout(...).card, which cp PIN2 to
+        // cp PIN5 test.
         void paint(juce::Graphics& g) override;
         void mouseUp(const juce::MouseEvent& e) override;
         void mouseMove(const juce::MouseEvent& e) override;
-        void mouseDown(const juce::MouseEvent&) override {}   // swallow
+        // The grid scrolls; the render view does not, and passes the wheel on
+        // exactly as before. So does a grid with nothing to scroll.
+        void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
         bool keyPressed(const juce::KeyPress& k) override;
+        void paintGrid(juce::Graphics& g);
+        void paintRenderView(juce::Graphics& g);
+
+        // WHICH VIEW IS SHOWING. Navigation only: it never says what is
+        // PLAYING. The selected tile is read back from the processor, the rule
+        // the Mono card followed, so no editor flag can disagree with the audio.
+        bool renderView = false;
+
+        // THE GRID'S SCROLL, in pixels from the top: the one offset, applied
+        // only through echojay::playbackTilePlacedRect and clamped with
+        // echojay::playbackClampScroll. Reset to 0 whenever the page opens,
+        // beside renderView = false in setRefSubTab.
+        int gridScroll = 0;
+
+        // Render view: preset cards and the toggle, computed in paint.
         std::vector<juce::Rectangle<int>> cardRects;
-        juce::Rectangle<int> normRect, closeRect;
+        juce::Rectangle<int> normRect;
+        // Render view: the way back to the grid, in the card's title row.
+        juce::Rectangle<int> backRect;
+        // Grid: one rect per row of echojay::kPlaybackTiles, computed in paint.
+        std::vector<juce::Rectangle<int>> tileRects;
         int hoverIdx = -1;
     };
     CodecPanel codecPanel_;
-    // Feature-launcher button: right-aligned against the panel edge (NOT part
-    // of the centred transport cluster). Custom-painted: codec glyph
-    // (waveform between brackets) + label, subtle cyan 1px outline that
-    // brightens on hover and stays lit while codec mode is engaged. No solid
-    // fill — it must read as a doorway, not a toggle, and must not compete
-    // with Send/Upgrade.
-    struct CodecLaunchBtn : juce::Button
+
+    // ============================ MATCH PAGE =============================
+    // The Match sub-tab's page (19 Sep 2026). A child component over the
+    // content area, added and bounded exactly as codecPanel_ is.
+    //
+    // THE COVER IS ON PURPOSE. Open list items 183 and 188 record that this
+    // editor keeps being protected by whatever happens to cover what: the
+    // Playback page shields Compare's click handlers only because it is a child
+    // laid over them. The Match page is the first page where that cover is the
+    // design rather than the accident. It is a child so that a click on it goes
+    // to it and stops there, and Compare's rename, delete and seek code never
+    // sees it. The explicit guards in mouseDown and mouseDoubleClick stand as
+    // well; this is the second line, stated, not the only one.
+    //
+    // WHAT IT IS (restructured 20 Sep 2026, after Kathy saw the first one):
+    // the screen you set up and press.
+    //
+    //   YOUR CAPTURE ---- [ AI MATCH ] ---- THE REFERENCE
+    //   and under them the picture, which gets the room the text used to take.
+    //
+    // THE ANALYSIS IS NOT ON THE SCREEN. The moves list, the directional
+    // findings and the refusal list went to the chat, where every other piece
+    // of AI output in this product goes; they arrive there after the press,
+    // which is the next commit. ONE line stays above the button: whether a
+    // match is possible and, if not, the single most important reason, so
+    // nobody presses a button that does nothing for reasons no one gave them.
+    //
+    // THE BUTTON HAS A JOB TODAY: it plays the morph. Before the press, the two
+    // measured spectra and no blocks. On the press the blocks fade in, the
+    // mix's curve walks to the proposal, and the gap that remains settles and
+    // stays. Replayable. A refused proposal cannot animate, so the press says
+    // so instead of playing nothing.
+    //
+    // NOTHING SENDS AND NOTHING IS APPLIED: no axis control, no chat card, no
+    // turn type (MATCH_SCREEN_CONTRACT §10, no server edit until Sean's work is
+    // merged).
+    //
+    // ESCAPE RETURNS TO COMPARE, the Playback page's rule for its grid. Match
+    // has no inner view to step back through first.
+    struct MatchPanel : juce::Component, private juce::Timer
     {
-        CodecLaunchBtn() : juce::Button("CODECS") {}
-        bool active = false;   // codec mode engaged (written by updateTransportBar)
-        void paintButton(juce::Graphics& g, bool over, bool down) override;
+        EchoJayEditor* owner = nullptr;
+        void paint (juce::Graphics& g) override;
+        bool keyPressed (const juce::KeyPress& k) override;
+        void mouseUp (const juce::MouseEvent& e) override;
+        void mouseMove (const juce::MouseEvent& e) override;
+        /** The page fades in when it opens and the clock stops when it
+            closes: an invisible page must not be asking for 30 repaints a
+            second. */
+        void visibilityChanged() override;
+        void timerCallback() override;
+
+        /** THE PRESS. Starts the morph, or says why it cannot. Also reached
+            from the keyboard, because the button is painted rather than a
+            child and a painted control with no key is unreachable without a
+            mouse. */
+        void press();
+
+        // ---- the animation's state, all of it here ------------------------
+        // NOT A SMOOTHER: an explicit position the panel owns, so the morph
+        // can be played, replayed and stopped rather than drifting toward
+        // whatever arrived last.
+        float openFade   = 0.0f;   ///< 0 to 1, the page's own fade in
+        float morphPos   = 0.0f;   ///< 0 measured, 1 the proposal applied
+        bool  morphing   = false;  ///< true while it is walking to 1
+        bool  morphDone  = false;  ///< it has played: the blocks and gap stay
+        float linkPhase  = 0.0f;   ///< the link's travelling pulse, 0 to 1
+        float refusedFor = 0.0f;   ///< seconds left on the press-refused line
+        bool  buttonHot  = false;  ///< the pointer is over the button
+        /** Which painted region the pointer is over: 0 none, 1 the button,
+            2 the mix picker, 3 the reference picker, 4 the mix waveform,
+            5 the reference waveform. Painted controls carry no component of
+            their own, so the hover state has to live here. */
+        int   hotZone    = 0;
+        /** Which of the four axes the picture is drawing. SPECTRUM IS THE
+            DEFAULT and keeps exactly the picture that existed before the row
+            arrived. Selecting another changes the picture and nothing else. */
+        echojay::MatchAxis axis = echojay::MatchAxis::Spectrum;
+
+        /** THE TICK'S SIDES, BUILT ONCE AND READ TWICE. buildMatchSides walks
+            both slots, reads each one's meter data and spectral evidence and
+            runs the Live rules over them; doing that in the timer AND again in
+            paint was the same work twice every frame.
+
+            A REPAINT THAT ARRIVES BETWEEN TICKS DRAWS SIDES UP TO 33 ms OLD,
+            and that is stated here rather than left to be wondered about: 33 ms
+            is shorter than the frame it is being drawn into at 30 Hz, and these
+            are whole-file measurements or a rolling meter, neither of which
+            says anything different one frame apart.
+
+            `tickSidesValid` is false until the first tick has stored a pair,
+            and paint builds its own in that case rather than drawing a
+            default-constructed one, which would be a picture of -100 LUFS and
+            no bands. THE PATH THAT HITS IT is the first paint of every opening:
+            setRefSubTab makes the panel visible, visibilityChanged starts the
+            timer, and JUCE paints on becoming visible while the first tick is
+            at least 33 ms away. */
+        MatchSides tickSides;
+        bool       tickSidesValid = false;
+
+        // ---- the trail image ----------------------------------------------
+        //
+        // THE LOOK COMES FROM HISTORY: many past frames still on screen and
+        // fading, so the shape and HOW MUCH IT MOVES are visible at once. Two
+        // images ping-ponged, following the spectroImg precedent rather than
+        // inventing a second way to keep a picture between frames: each tick
+        // the old one is blitted into the new at reduced opacity and the
+        // CURRENT curve is stroked in once. One stroke per side per frame,
+        // never one per ghost.
+        juce::Image trailA, trailB;
+        bool trailUseA = true;
+        juce::Rectangle<int> trailPlot;              ///< what it was made for
+        echojay::MatchAxis   trailAxis = echojay::MatchAxis::Spectrum;
+
+        /** The tick this panel is on, and the tick the trail last advanced on.
+            A repaint that is not a tick (a hover, a resize) BLITS WITHOUT
+            ADVANCING: otherwise moving the mouse would run the history faster
+            than time. */
+        int tickSeq   = 0;
+        int trailTick = -1;
+
+        /** THE HOP THE TRAIL LAST ADVANCED ON. The trail is driven by NEW
+            SPECTRA, not by the timer: MeterEngine publishes one visual FFT per
+            kVisHopSamples (43.07 Hz at 44.1 kHz, 46.88 at 48), and the page
+            now advances exactly once per published hop. At 60 Hz against 43 Hz
+            there is at most one new hop per frame, so no hop is ever dropped
+            and no frame ever redraws identical data. */
+        uint32_t trailHop = 0;
+        bool     trailHopInit = false;
+
+        /** THE PAINT TIMER. 60 Hz halves the budget per frame from 33.3 ms to
+            16.7 ms and nobody has measured what a Match paint costs, so it
+            measures itself: every 100 paints one line to the console, then
+            reset. The work outside the measured region is one addition and one
+            comparison. */
+        double paintSumMs = 0.0, paintMaxMs = 0.0;
+        int    paintCount = 0;
+
+
+        /** FRAME TO FRAME SMOOTHING FOR THE MATCH CURVES, one per side, which
+            is what the other three spectrum surfaces already have and this page
+            did not: it read straight from the bins, so it moved without ever
+            being smooth. 64 wide because the ribbons are built from the stored
+            bins, not the expanded ones. */
+        struct BinLerp
+        {
+            std::array<float, 64> v {};
+            bool init = false;
+            void feed (const std::array<float, 64>& in, float k)
+            {
+                if (! init) { v = in; init = true; return; }
+                for (size_t i = 0; i < v.size(); ++i) v[i] += (in[i] - v[i]) * k;
+            }
+        };
+        BinLerp mixBinLerp, refBinLerp;
+
+        // ---- the traces -----------------------------------------------------
+        //
+        // SPECTRUM HAS A REAL SHAPE AND THE OTHER THREE DID NOT. 64 numbers
+        // moving independently make consecutive frames differ, so ghosts
+        // accumulate; a flat line, a sine and a lens draw the SAME shape every
+        // frame, every ghost lands on the last one and nothing builds.
+        //
+        // So the other three become THE FIGURE OVER TIME: the last six seconds
+        // of several fast figures, scrolling, one line each. They move at
+        // different rates, so they cross and separate instead of stacking.
+        //
+        // CAPTURE-ONLY AND BALLISTIC FIELDS ARE ALLOWED HERE, and this is the
+        // rule that permits them: THE CLOUD IS CONTEXT AND IS NEVER COMPARED.
+        // Band crests and banded correlations have no reference equivalent as a
+        // COMPARISON, which is why mr PIN24 keeps them off the tiles; as a live
+        // trace of whichever side is producing them they are a real measurement
+        // of that side. When only one side is playing, only that side has
+        // traces, exactly as the trails already behave.
+        // COUNTED IN HOPS, NOT TICKS, since the trail went on the hop counter:
+        // 280 hops is 6.5 s at 44.1 kHz and 6.0 s at 48 kHz.
+        static constexpr int kTraceLen   = 280;
+        static constexpr int kTraceLines = 5;     // the most any axis uses
+        struct Trace
+        {
+            std::array<std::array<float, (size_t) kTraceLen>, (size_t) kTraceLines> v {};
+            std::array<bool, (size_t) kTraceLines> have {};
+            int write = 0;
+            int filled = 0;
+        };
+        Trace mixTrace, refTrace;
+
+        /** The finest spectrum a live frame carries, 2048 bins from
+            getVisualSpectrum, one array per side. Members so no frame
+            allocates. */
+        std::array<float, MeterEngine::kVisBins> mixVis {}, refVis {};
+        bool mixVisOk = false, refVisOk = false;
+
+        /** THE REFERENCE'S STORED CURVE, EXPANDED ONTO THE LIVE GRID.
+
+            A reference knows its own spectrum without playing: eqCurve, the
+            arithmetic mean of every analysis block of the file, 64 log bins,
+            computed by ReferenceAnalyser and carried on SpectralEvidence as
+            `bins`. Before this the reference side of the picture existed only
+            while its stream rolled, because matchFastEngine and
+            matchFastFrame both require loaded && playing.
+
+            RESAMPLED BY THE SHIPPED CONVERTER, expandLog64Spectrum, which the
+            Compare page already uses for exactly this case (a static stored
+            capture drawn on the live grid). That is why there is no second
+            log-to-linear mapping here: the 64 bins are LOG spaced and the
+            trail's sampler reads a LINEAR grid, and writing that conversion
+            again is how two curves end up half an octave apart.
+
+            Rebuilt once per hop, never per frame, and only when the stream
+            is not rolling. */
+        std::array<float, MeterEngine::kVisBins> refStatic {};
+        bool refStaticOk = false;
+
+        /** THE SMOOTHED SPECTRUM ROW PER SIDE, one value per pixel column, in
+            dB relative to that frame's own mean.
+
+            THIS IS WHAT MAKES SPECTRUM BEHAVE LIKE DYNAMICS. Dynamics stacks
+            into a sheet because its five figures are one-poled, so consecutive
+            frames land close together. A raw FFT frame moves everywhere at
+            once, so the same trail stacked noise. These rows carry BOTH
+            smoothings: a sixth of an octave across frequency, then a one-pole
+            in time advanced once per hop.
+
+            THE TRAIL AND THE FILAMENT READ THE SAME ARRAY, not the same
+            function applied twice, so the thread cannot sit near the newest
+            stroke: it is drawn from the numbers that stroke was drawn from.
+
+            visRowHop holds THIS hop's reading before the one-pole folds it in,
+            and visRowScratch is the moving average's working space. They are
+            separate buffers on purpose: letting the persistent row double as
+            working space would overwrite the previous values the one-pole is
+            about to read, which is an aliasing bug that looks like a much
+            faster time constant. Both are kept here so that no frame
+            allocates, sized with the trail images and reset by the same
+            trigger. */
+        std::vector<float> visRowMix, visRowRef, visRowHop, visRowScratch;
+        int  visRowCols    = 0;
+        bool visRowMixInit = false, visRowRefInit = false;
+
+        /** One tick's figures into a side's ring. NOT in the three painters:
+            mr PIN24 pins that those read no capture-only field, and these read
+            the band crests on purpose. */
+        void pushTrace (Trace& t, echojay::MatchAxis a, const MeterData& md);
+
+        /** Fade the history, stroke this tick's FAST rows into it, and leave it
+            ready to blit. A null row is a side with no fast source, which gets
+            no ghost at all. */
+        void advanceTrail (juce::Rectangle<int> plot,
+                           const echojay::MatchRibbonRow* mixFast,
+                           const echojay::MatchRibbonRow* refFast,
+                           float lo, float hi);
+
+        juce::String refusedText;
+        /** The two or fewer words the BUTTON wears while refusedText is
+            showing, in place of "AI MATCH". Set at the same two sites that
+            set refusedText and cleared by the same countdown, so the badge
+            and the sentence can never describe different presses. */
+        juce::String refusedBadge;
     };
-    CodecLaunchBtn codecsBtn_;
+    MatchPanel matchPanel_;
+
+    // ======================= REFERENCE BROWSER ==========================
+    // Commit one of three: the shell and the track list. Folders are commit
+    // two, the transport is commit three.
+    //
+    // SHELL FROM CodecPanel: scrim, empty mouseDown to swallow, keyboard focus
+    // with Escape closing, and getLocalBounds() plus toFront in resized().
+    // INTERIOR FROM PluginReviewOverlay: a visibleState flag kept separate from
+    // setVisible so periodic passes test the flag, and REAL children inside the
+    // painted card, one Viewport per pane.
+    //
+    // NOT COPIED: applyReviewModalState. Compare has neither the GL particle
+    // visualiser (it needs currentView == View::Meters) nor a hosted native
+    // editor (those live on the Chain tab), so there is nothing here that
+    // composites over a lightweight component. Copying a defence for a problem
+    // that is not present is how cargo gets in.
+    //
+    // The children need no raising. Since compareClickCatcher went toBack, a
+    // real child is in front by default. The PANEL still calls toFront when it
+    // opens, because it must cover siblings that were added after it.
+
+    // One pane. Purpose built rather than PluginChecklistComponent, whose
+    // semantics are tick-many where this is select-one.
+    struct RefBrowserList : juce::Component
+    {
+        std::vector<echojay::RefBrowserRow> rows;
+        std::function<void(const echojay::RefBrowserRow&)> onRowClicked;
+        // Right-click is a SEPARATE signal, not a flag on the click: a menu
+        // and a selection are different actions and must not share a handler
+        // that has to remember which it is.
+        std::function<void(const echojay::RefBrowserRow&, juce::Point<int>)> onRowMenu;
+        static constexpr int kRowH = 22;
+
+        int rowAtY (int y) const
+        {
+            const int i = y / kRowH;
+            return (i >= 0 && i < (int) rows.size()) ? i : -1;
+        }
+        int preferredHeight() const { return (int) rows.size() * kRowH; }
+
+        void paint (juce::Graphics& g) override;
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            const int i = rowAtY (e.y);
+            if (i < 0) return;
+            const auto& row = rows[(size_t) i];
+            if (e.mods.isPopupMenu())
+            {
+                if (onRowMenu) onRowMenu (row, e.getScreenPosition());
+                return;
+            }
+            if (row.clickable && onRowClicked) onRowClicked (row);
+        }
+    };
+
+    struct RefBrowserPanel : juce::Component
+    {
+        EchoJayEditor* owner = nullptr;
+        // PluginReviewOverlay's flag. setVisible alone is not enough: a
+        // periodic pass asks "is the browser up" and must not be answered by
+        // a component that happens to be mid-layout.
+        bool visibleState = false;
+        // WHICH SLOT THIS WAS OPENED FOR. The slot menu already knows, so a
+        // selection lands without asking. This is the reason the menu is the
+        // opening route and a button in the drop-zone strip is not.
+        bool forTopSlot = true;
+
+        juce::Viewport leftView, rightView;
+        RefBrowserList leftList, rightList;
+
+        void paint (juce::Graphics& g) override;
+        void resized() override;
+        void mouseDown (const juce::MouseEvent&) override {}   // swallow
+        void mouseUp (const juce::MouseEvent& e) override;
+        bool keyPressed (const juce::KeyPress& k) override;
+
+        // EVERY RECT IN ONE PLACE. Today produced two defects from the same
+        // cause, a drop-zone height written three ways and a strip measured
+        // against a box it was not drawn in. paint(), resized() and mouseUp()
+        // all consume this and none of them computes a rectangle of its own.
+        struct Rects
+        {
+            juce::Rectangle<int> card, titleBar, closeX, title, leftPane, rightPane;
+        };
+        static Rects layoutFor (juce::Rectangle<int> panelBounds);
+    };
+    RefBrowserPanel refBrowser_;
+    int refBrowserSelected_ = -1;    // index into the live reference vector
+
+    // ---- The reference bar (replaces the preset row and the drop zone) ----
+    juce::TextButton refPrevBtn { "<" }, refNextBtn { ">" }, refPlayBtn;
+    juce::TextButton refBrowseBtn { "Browse" };
+    // refBarRects_ is authored by resized() from echojay::refBarLayout and
+    // CONSUMED by paint() and by nothing else. One author, one computation.
+    echojay::RefBarRects refBarRects_;
+    /** The slot the bar drives, from the live slot kinds. */
+    bool refBarIsTop() const;
+    /** Step the library and load the result into that slot. */
+    void refBarStepBy (int delta);
+    /** The index the bar is naming: the driven slot's reference, or -1. */
+    int  refBarCurrentIndex() const;
+
+    // ---- REFERENCE sub-tabs: Compare and Playback ----
+    echojay::RefSubTab refSubTab_ { echojay::RefSubTab::Compare };
+    echojay::RefSubTabRects refSubTabRects_;
+    void setRefSubTab (echojay::RefSubTab t);
+    // The ONE author of the Compare sub-tab's ten controls' visibility; see the
+    // definition for the three authors it replaced. Every caller passes
+    // compareFurnitureShouldShow(), never a literal (rs PIN7, a text pin).
+    void showCompareFurniture (bool visible);
+    // The decision, fed from the two fields it depends on. The rule itself is
+    // echojay::compareFurnitureVisible in EJReferenceBar.h, pinned by rs PIN4.
+    bool compareFurnitureShouldShow() const { return echojay::compareFurnitureVisible (compareVisible, refSubTab_); }
+
+    // ---- Folders (browser commit two) ----
+    /** Inline folder naming. A TextEditor over the left pane rather than a
+        dialog: the browser is already a modal and a modal over a modal is a
+        stack the Escape key cannot describe. */
+    std::unique_ptr<juce::TextEditor> folderNameEditor_;
+    void beginNewFolder();
+    void beginRenameFolder (const juce::String& folder);
+    void commitFolderName (const juce::String& oldName, const juce::String& typed);
+    void deleteFolder (const juce::String& folder);
+    void setReferenceScope (const echojay::RefScope& s);
+    void showFolderRowMenu (const echojay::RefBrowserRow& row, juce::Point<int> screenPos);
+    void showReferenceRowMenu (const echojay::RefBrowserRow& row, juce::Point<int> screenPos);
+    /** Move a path into a folder, or out of every folder when target is empty.
+        ONE FOLDER EACH: it is removed from every other folder first, so the
+        model cannot drift into a path claimed twice. */
+    void assignReferenceToFolder (const juce::String& path, const juce::String& folder);
+    /** Remove one reference from the library, BY PATH. The audio file on disk
+        is untouched: this erases the entry, clears its folder membership, and
+        repoints every held index through refIndexAfterRemoval. */
+    void removeReferenceFromLibrary (const juce::String& path);
+
+    void openReferenceBrowser (bool isTop);
+    void closeReferenceBrowser();
+    void refreshReferenceBrowser();
+    /** THE ONE WRITER of a reference into a compare slot. The slot menu's
+        300-band handler and the browser both call it, so the two routes cannot
+        drift in what selecting a reference means. */
+    void applyReferenceToSlot (bool isTop, int refIndex);
+    /** The library as the browser's rule wants it: name and path only. Keeps
+        RefBrowserEntry free of MeterData so the rule stays exercisable. */
+    std::vector<echojay::RefBrowserEntry> refBrowserEntries() const;
+    /** Title-bar text. Shares echojay::refBrowserTitle with nothing else, so
+        the bar cannot disagree with the list about what is selected. */
+    juce::String refBrowserTitleText() const;
+    // THE CODECS LAUNCHER IS DELETED (13 Sep 2026), button and LookAndFeel
+    // both. Playback Simulation is a sub-tab of REFERENCE. CodecLaunchBtn's
+    // custom paint went with it rather than being left as an unreferenced
+    // class: an unused widget that still compiles is how ChainPluginListModel
+    // survived for a month looking like a live list.
     bool codecNormalise_ = true;                 // panel toggle, default ON
     int  codecRendering_ = -1;                   // preset index while rendering
     juce::String codecStatus_;                   // error line on the card
+    // TRUE ONLY for the "finished while you were away" notice, so it survives
+    // the ONE page opening it was written for: opening the page clears the
+    // status, which would otherwise erase that notice before it was read.
+    bool codecStatusSurvivesOpen_ = false;
     juce::String codecSrcPath_, codecSrcLabel_;  // resolved on panel open
     bool codecSrcIsTopSlot_ = false;
     bool codecModeActive_ = false;
     CompareSlotState codecSavedTop_, codecSavedBot_;  // restored on chip X
     juce::String codecChipLabel_;
     juce::Rectangle<int> codecChipX_;            // painted chip close zone
-    void openCodecPanel();
+    // openCodecPanel DELETED (13 Sep 2026): zero callers once the CODECS
+    // launcher went. Playback is entered by selecting its sub-tab.
+    /** THE ONE ENFORCEMENT POINT for disengaging codec preview. Every route out
+        of Playback goes through here, which is what keeps the 25 Jul safety
+        comment true. */
     void closeCodecPanel();
     void resolveCodecSource();
     void startCodecRender(int presetIdx);
     void enterCodecMode(int presetIdx, bool normalised, const CodecRender::Result& res);
     void exitCodecMode();
 
-    // Reference Presets
-    juce::ComboBox presetBox;
-    juce::TextButton savePresetBtn { "Save Preset" };
-    juce::TextButton deletePresetBtn { "Delete" };
-    void loadPresetList();
-    void saveCurrentPreset(const juce::String& name);
-    void loadPreset(const juce::String& name);
-    void deletePreset(const juce::String& name);
-    juce::File getPresetsFolder();
-    juce::StringArray presetNames;
+    // THE REFERENCE PRESET SYSTEM IS GONE (15 Sep 2026), and so is the import
+    // that briefly carried it across. Folders replace it outright. Nothing on
+    // disk was deleted: ~/Documents/EchoJay/Presets/*.json is left where it is,
+    // now with no reader.
     
     // Loudness panel bounds for click-to-reset
     juce::Rectangle<int> loudnessPanelBounds;
@@ -1052,6 +1716,11 @@ private:
     // Compare static waveform seek areas — inner rect of each panel's waveform
     struct CmpWaveSeekArea { juce::Rectangle<int> inner; int slotIdx; };
     std::array<CmpWaveSeekArea, 2> cmpWaveSeekAreas_ = {};
+    // Every seek area ABSENT: no rectangle and no slot, which the click-to-seek
+    // loop reads as nothing to hit. Called at the top of every Compare paint,
+    // so an area is present only when the waveform that owns it drew on that
+    // paint, never left over from an earlier one (rs PIN12).
+    void clearCmpWaveSeekAreas() { for (auto& sa : cmpWaveSeekAreas_) { sa.inner = {}; sa.slotIdx = -1; } }
     
     // Chat wave card positions for direct mouseDown hit testing (Windows overlay workaround)
     std::vector<CompareWavePos> chatWavePositions;
@@ -1081,9 +1750,7 @@ private:
                 p->fileDragExit(files);
         }
     };
-    DragForwardingComponent compareClickCatcher;    static constexpr int kMaxRefRemoveBtns = 8;
-    std::array<juce::TextButton, kMaxRefRemoveBtns> refRemoveBtns;
-    int activeRefRemoveBtns = 0;
+    DragForwardingComponent compareClickCatcher;
     int lastRefCount = 0; // track ref changes for auto-refresh
     
     // Settings
@@ -1119,6 +1786,11 @@ private:
     // that one governs which plugins are offered, this one governs whether
     // values are written at all.
     juce::ToggleButton dialWritesToggle { "Suggest settings but never dial them (you set the values by hand)" };
+    // Stacked, not beside the other two. Three across leaves 227px per pill at
+    // a 1100px window (the account cards take a third of the width there), and
+    // the LookAndFeel centres the label with drawText, which TRUNCATES rather
+    // than shrinks. The label is worth more than the row.
+    juce::ToggleButton echoJayOnlyToggle { "Only use EchoJay's own devices (no third-party plugins)" };
     float uiScale_ = 1.0f;          // current scale factor
     void applyUIScale(float scale);
     void saveUIScale() const;
@@ -1769,6 +2441,15 @@ private:
     // chain to keep chain rows clear of it; if a row rect ever intersects
     // the shelf rect anyway, resized() logs it ONCE per editor instance.
     bool chainShelfOverlapLogged_ = false;
+    // DEVELOPMENT AID, NOT A GUARD. Same one-shot shape as
+    // chainShelfOverlapLogged_ above. The Compare controls are laid out to be
+    // disjoint, and since compareClickCatcher went to the back that
+    // disjointness is what keeps them all clickable. This reports ONCE per
+    // editor if two of them ever overlap. It goes to the system log, and open
+    // list item 138 records that nothing written there reaches a user, so it
+    // tells a developer running Console that a claim stopped holding; it
+    // protects nobody. See the commit message for the form that would.
+    bool compareOverlapLogged_ = false;
     std::vector<juce::Rectangle<int>>  chainRowStarRects_;
     // -1 = not a row (a group heading occupies the slot instead).
     std::vector<int>                   chainRowIsHeading_;
@@ -2301,6 +2982,31 @@ private:
         // tree both find the same TooltipClient under the mouse and both display it, each positioned against its own
         // owner - which is the two copies Sean sees, one over the tab row and one below it. The editor's window
         // already serves every child's Button tooltip, so this one is DELETED, not moved.
+        // MISDIAL REPORT v1. UNCONDITIONAL: always present whenever a slot is
+        // selected, never hidden by a judgement about whether there is anything
+        // worth reporting. Every condition that would hide it is the code
+        // deciding what is worth saying before the user has said it, and the
+        // cases it would hide are the ones nobody anticipated.
+        //
+        // Right aligned and INSET OUT OF settingsBoxRect(), so the TextEditor
+        // narrows rather than being overlaid: an overlay would sit on top of
+        // text still being laid out underneath and a long settings string would
+        // paint under it and read as corruption. kSettingsH is untouched, so
+        // the button costs no height and nothing above or below moves.
+        juce::TextButton reportBtn;
+        static constexpr int kReportBtnW = 92;
+        std::function<void(int)> onReport;   // slot index; the editor owns the popup
+        // NO TooltipWindow HERE. It was a second one in the same component tree
+        // and the same peer, and TooltipWindow::timerCallback gates on the PEER
+        // (newComp->getPeer() == getPeer()) with no containment test in
+        // getTipFor, so this window served every tip in the whole editor, not
+        // just the panel's. Two tips appeared for every hover: this one at
+        // 600ms, positioned against the PANEL's origin and clamped to the
+        // PANEL's bounds, then the editor's at 700ms in editor coordinates.
+        // JUCE's own jassert never caught it because it only fires when the two
+        // windows share a parent component (juce_TooltipWindow.cpp:145).
+        // The editor's tooltipWindow_ serves this panel; the only change a user
+        // can see is that tips now wait 700ms rather than 600ms.
 
         juce::String statusText;
 
@@ -2468,6 +3174,23 @@ private:
             addChildComponent(cardBypassBtn);
             addChildComponent(cardRemoveBtn);
 
+            reportBtn.setButtonText("Report");
+            // NO PERSON'S NAME IN A USER-FACING STRING. It read "Tell Kathy
+            // something here is wrong", which named someone the user has never
+            // heard of. "Tell EchoJay" was rejected too: that reads as talking
+            // TO the assistant, which is what the chat box is for, and this
+            // button files a record a person reads later.
+            reportBtn.setTooltip("Report a problem: a setting dialled to the "
+                                 "wrong place, or anything else");
+            // THE PANEL'S OWN STYLE, copied from popBtn above, so this sits
+            // with popBtn, cardBypassBtn and cardRemoveBtn as one family.
+            // Deliberately NOT AskChipLnF: that is the chat affordance pill,
+            // and a chat chip on the rack panel looks like it wandered in.
+            reportBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xcc0E1020));
+            reportBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
+            reportBtn.setVisible(false);
+            reportBtn.onClick = [this] { if (onReport && hasSelection()) onReport(selectedIdx); };
+            addChildComponent(reportBtn);
             settingsBox.setMultiLine(true, true);
             settingsBox.setReadOnly(true);
             settingsBox.setScrollbarsShown(true);
@@ -2813,6 +3536,10 @@ private:
             cardRemoveBtn.setVisible(sel);
             popBtn.setVisible(sel);
             settingsBox.setVisible(sel);
+            // Visible with the card, and that is the ONLY condition on it: a
+            // slot is selected. Not on having dialled, not on having a map, not
+            // on having an fp, not on being signed in.
+            reportBtn.setVisible(sel);
             if (sel)
             {
                 const auto& s = slotInfos[(size_t)selectedIdx];
@@ -3270,6 +3997,22 @@ private:
 
             // Settings text sits inside its card, below the tiny caps label
             auto sb = settingsBoxRect();
+            // The report button takes the right end of the settings card's
+            // LABEL ROW, beside the SUGGESTED SETTINGS caps label (drawn at
+            // sb.getX()+10, sb.getY()+5 in a 200-wide box, so they cannot
+            // collide: the narrowest panel still leaves several hundred px
+            // between them).
+            //
+            // y+3 TO y+17, WHICH CLEARS THE TEXT EDITOR AT y+18 ENTIRELY. It
+            // was y+2 height 18, so it ended at y+20 and crossed two pixels
+            // into the editor. Two pixels was enough to read as "the button is
+            // inside the box", which it then was.
+            //
+            // AND THE EDITOR GETS ITS FULL WIDTH BACK. It surrendered
+            // kReportBtnW + 4 to avoid being overlaid; with the button
+            // entirely above it there is nothing to avoid.
+            reportBtn.setBounds(sb.getRight() - kReportBtnW - 8, sb.getY() + 3,
+                                kReportBtnW, 14);
             settingsBox.setBounds(sb.getX() + 8, sb.getY() + 18,
                                   sb.getWidth() - 16, sb.getHeight() - 24);
 
@@ -3406,6 +4149,293 @@ private:
     // second guess (fixes the sidebar "can't scroll up to a long reply" bug).
     int  measureChatContentHeight();
     int  editCardHeight(const ChatMsg& msg) const;
+    // MISDIAL REPORT v1: the popup. A free text box ALWAYS, and a control
+    // picker only when rows survived the fp comparison. Picking a control files
+    // a misdial; typing without picking files a bug.
+    struct SlotReportWindow : juce::Component
+    {
+        SlotReportWindow(std::vector<echojay::MisdialRow> rowsIn,
+                         echojay::MisdialSlotFacts factsIn,
+                         bool signedInIn,
+                         int slotIndexIn,
+                         juce::Component::SafePointer<EchoJayEditor> ownerIn)
+            : rows(std::move(rowsIn)), facts(std::move(factsIn)),
+              signedIn(signedInIn), slotIndex(slotIndexIn), owner(ownerIn)
+        {
+            // ONE id for the life of this window, so a retry after a failure
+            // dedupes at the server instead of filing the same thing twice.
+            reportId = echojay::newMisdialReportId();
+
+            // THE CATEGORY LEADS, because it decides what the rest of the
+            // popup offers and which kind the report files.
+            //
+            // "A setting went to the wrong place" IS NOT OFFERED WHEN NO ROWS
+            // SURVIVED the press-time fp comparison, which is every built-in
+            // and any slot whose fingerprint has moved. It files a misdial and
+            // a misdial needs a picked control, so offering it there would let
+            // the user write a paragraph and then be refused by the server for
+            // a reason they could not have known. needsControl on the choice is
+            // what carries that, so the rule lives with the vocabulary rather
+            // than being retyped here.
+            catLabel.setText("What went wrong?", juce::dontSendNotification);
+            catLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
+            catLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9aa3b2));
+            addAndMakeVisible(catLabel);
+            {
+                int id = 1;
+                for (const auto& c : echojay::misdialCategories())
+                {
+                    if (c.needsControl && rows.empty()) { ++id; continue; }
+                    catBox.addItem(c.label, id);
+                    ++id;
+                }
+                // DEFAULT: the first offered option. With rows that is
+                // wrong_control; without them it is "A problem with this
+                // plugin". Never an empty selection: an unset dropdown makes
+                // the user answer a question before they can start typing.
+                catBox.setSelectedId(rows.empty() ? 2 : 1, juce::dontSendNotification);
+            }
+            catBox.onChange = [this] { syncToCategory(); };
+            addAndMakeVisible(catBox);
+
+            noteBox.setMultiLine(true, true);
+            noteBox.setReturnKeyStartsNewLine(true);
+            noteBox.setTextToShowWhenEmpty("What went wrong, in your words",
+                                           juce::Colour(0xff606078));
+            noteBox.setInputRestrictions(echojay::kMisdialNoteMax);
+            addAndMakeVisible(noteBox);
+
+            if (! rows.empty())
+            {
+                picker.addItem("Not sure which one", 1);
+                for (size_t i = 0; i < rows.size(); ++i)
+                {
+                    // A ROW ALREADY REPORTED IS SHOWN AND DISABLED, not hidden.
+                    // Hiding it would leave the user hunting for a control they
+                    // remember reporting and wondering whether it took. The
+                    // server dedupes on the reportId as a backstop; this is the
+                    // mechanism, and without it the flag written on success
+                    // would change nothing a user could see.
+                    const bool done = rows[i].reported;
+                    picker.addItem(echojay::misdialRowLabel(rows[i])
+                                       + (done ? juce::String("   (reported)") : juce::String()),
+                                   (int) i + 2);
+                    if (done) picker.setItemEnabled((int) i + 2, false);
+                }
+                picker.setSelectedId(1, juce::dontSendNotification);
+                addAndMakeVisible(picker);
+                addAndMakeVisible(pickerLabel);
+                pickerLabel.setText("Which setting went to the wrong place?",
+                                    juce::dontSendNotification);
+                pickerLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
+                pickerLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9aa3b2));
+            }
+
+            status.setFont(juce::Font(juce::FontOptions(11.0f)));
+            status.setColour(juce::Label::textColourId, juce::Colour(0xfff59e0b));
+            // Signed out is a real and long lived state. The button says so and
+            // fires nothing: the plugin omits the Authorization header entirely
+            // when the token is empty, so the POST would 401 every time.
+            if (! signedIn)
+                status.setText("Sign in to send this report.", juce::dontSendNotification);
+            addAndMakeVisible(status);
+
+            sendBtn.setButtonText("Send");
+            sendBtn.setEnabled(signedIn);
+            sendBtn.onClick = [this] { send(); };
+            addAndMakeVisible(sendBtn);
+            cancelBtn.setButtonText("Cancel");
+            // Stays live throughout, INCLUDING while sending: the request can
+            // take up to a minute on a dead network and trapping someone in
+            // front of it is worse than losing the result of a report they
+            // chose to abandon. Dismissing does not cancel the POST; it stops
+            // the user waiting on it, and the completion finds a null window.
+            cancelBtn.onClick = [this] { close(); };
+            addAndMakeVisible(cancelBtn);
+
+            setSize(420, rows.empty() ? 226 : 276);
+            syncToCategory();
+        }
+
+        /** The category decides what else is live. Only wrong_control uses the
+            control picker, so it is shown for that and hidden otherwise rather
+            than sitting there inert and inviting a pick that changes nothing. */
+        void syncToCategory()
+        {
+            const bool wc = selectedCategory() == echojay::kMisdialCatWrongControl();
+            picker.setVisible(wc && ! rows.empty());
+            pickerLabel.setVisible(wc && ! rows.empty());
+            status.setText(signedIn ? juce::String()
+                                    : juce::String("Sign in to send this report."),
+                           juce::dontSendNotification);
+            resized();
+        }
+
+        /** The wire value for the current selection. The dropdown is built by
+            skipping choices, so the id is an index into the FULL list and the
+            lookup has to go back through it rather than counting items. */
+        juce::String selectedCategory() const
+        {
+            const int id = catBox.getSelectedId();
+            const auto& all = echojay::misdialCategories();
+            if (id >= 1 && id <= (int) all.size()) return all[(size_t) id - 1].value;
+            return echojay::kMisdialCatOther();
+        }
+
+        void resized() override
+        {
+            auto b = getLocalBounds().reduced(12);
+            // The category first: it decides what the rest offers.
+            catLabel.setBounds(b.removeFromTop(16));
+            catBox.setBounds(b.removeFromTop(24));
+            b.removeFromTop(8);
+            if (picker.isVisible())
+            {
+                pickerLabel.setBounds(b.removeFromTop(16));
+                picker.setBounds(b.removeFromTop(24));
+                b.removeFromTop(8);
+            }
+            auto row = b.removeFromBottom(28);
+            cancelBtn.setBounds(row.removeFromRight(80));
+            row.removeFromRight(6);
+            sendBtn.setBounds(row.removeFromRight(80));
+            status.setBounds(row);
+            b.removeFromBottom(6);
+            noteBox.setBounds(b);
+        }
+
+        void send()
+        {
+            if (! signedIn) return;
+            const auto note = noteBox.getText().trim();
+            const auto cat  = selectedCategory();
+            // THE KIND FOLLOWS THE CATEGORY, never the other way round, and the
+            // builders refuse a pair that disagrees. Deriving it here means the
+            // popup cannot construct the clash the route would refuse.
+            const bool wantsMisdial =
+                echojay::misdialKindForCategory(cat) == echojay::kMisdialKindMisdial();
+            juce::String body;
+            if (wantsMisdial)
+            {
+                const int sel = picker.getSelectedId();
+                if (sel < 2 || (size_t)(sel - 2) >= rows.size())
+                {
+                    status.setText("Pick the setting that went wrong.",
+                                   juce::dontSendNotification);
+                    return;
+                }
+                body = echojay::buildMisdialBody(rows[(size_t)(sel - 2)], facts,
+                                                 "plugin-panel", note, cat);
+            }
+            else
+            {
+                // The bug kinds need the note and nothing else, and carry no fp.
+                if (note.isEmpty())
+                {
+                    status.setText("Type what went wrong first.", juce::dontSendNotification);
+                    return;
+                }
+                body = echojay::buildBugBody(note, facts, "plugin-panel", reportId, cat);
+            }
+            if (body.isEmpty())
+            {
+                status.setText("Could not assemble that report.", juce::dontSendNotification);
+                return;
+            }
+            // THE WINDOW STAYS OPEN. It used to close here, which made the
+            // whole status table inert: a 401, a 429, a 5xx and a 200 were
+            // indistinguishable to the user because there was nothing left to
+            // tell. The completion now reports back into this window.
+            //
+            // SENDING STATE. Send goes disabled so a slow POST cannot be
+            // pressed twice, and Cancel stays live so nobody is trapped
+            // watching a request that will not answer. That matters more than
+            // usual here: reportMisdial leaves postJSON's connect timeout at
+            // its 60 second default, so a dead network holds this dialog for a
+            // full minute before the completion arrives.
+            sentReportId = wantsMisdial ? rows[(size_t)(picker.getSelectedId() - 2)].reportId
+                                        : reportId;
+            sending = true;
+            sendBtn.setEnabled(false);
+            status.setColour(juce::Label::textColourId, juce::Colour(0xff9aa3b2));
+            status.setText("Sending...", juce::dontSendNotification);
+            if (auto* o = owner.getComponent())
+                o->sendSlotReport(body, sentReportId, slotIndex,
+                                  juce::Component::SafePointer<SlotReportWindow>(this));
+        }
+
+        /** The completion, delivered on the message thread by sendSlotReport.
+            Three outcomes, and which one a code falls into is the route's own
+            contract rather than a guess made here. */
+        void onSendResult (int statusCode, bool ok, bool duplicate)
+        {
+            sending = false;
+            if (ok)
+            {
+                // SETTLED. Send stays disabled and Cancel becomes Close: there
+                // is nothing left to do in this window and a live Send would
+                // invite a second identical report.
+                //
+                // A DUPLICATE SAYS SO IN ITS OWN WORDS. Claiming it was the
+                // first would be a small lie the user cannot check, and the
+                // honest version is also the more useful one: it tells them the
+                // earlier press worked.
+                status.setColour(juce::Label::textColourId, juce::Colour(0xff22c55e));
+                status.setText(duplicate ? "Already reported. Nothing sent twice."
+                                         : "Reported. Thank you.",
+                               juce::dontSendNotification);
+                sendBtn.setEnabled(false);
+                cancelBtn.setButtonText("Close");
+                return;
+            }
+
+            status.setColour(juce::Label::textColourId, juce::Colour(0xfff59e0b));
+            // A CLIENT FAULT REPEATS IDENTICALLY, so Send stays disabled: the
+            // same body will be refused the same way, and inviting a retry
+            // invites the same refusal. Everything else is transient or
+            // fixable, and the reportId makes retrying safe.
+            const bool clientFault = statusCode == 400 || statusCode == 405 || statusCode == 413;
+            status.setText (statusCode == 0   ? "No connection. Nothing was sent."
+                          : statusCode == 401 ? "Not signed in. Sign in and try again."
+                          : statusCode == 429 ? "Too many reports just now. Try again shortly."
+                          : statusCode == 400 ? "This report was refused as incomplete."
+                          : statusCode == 405 || statusCode == 413
+                                              ? "This report was refused by the server."
+                          : statusCode >= 500 ? "The server could not store it. Try again."
+                                              : "Could not send. Try again.",
+                            juce::dontSendNotification);
+            sendBtn.setEnabled(! clientFault && signedIn);
+        }
+
+        void close()
+        {
+            if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
+                dw->exitModalState(0);
+        }
+
+        std::vector<echojay::MisdialRow> rows;
+        echojay::MisdialSlotFacts        facts;
+        bool                             signedIn = false;
+        bool                             sending = false;
+        int                              slotIndex = -1;
+        juce::Component::SafePointer<EchoJayEditor> owner;
+        // The id actually put on the wire: the ROW's for a misdial, this
+        // window's own for a bug. The writer that marks the row reported is
+        // keyed on it, so it has to be the one that was sent.
+        juce::String                     sentReportId;
+        juce::String                     reportId;
+        juce::TextEditor                 noteBox;
+        juce::ComboBox                   picker, catBox;
+        juce::Label                      pickerLabel, catLabel, status;
+        juce::TextButton                 sendBtn, cancelBtn;
+    };
+
+    // MISDIAL REPORT v1: the panel's report affordance. openSlotReport builds
+    // the popup for ONE slot; sendSlotReport posts one assembled body.
+    void openSlotReport(int slotIndex);
+    void sendSlotReport(const juce::String& body, const juce::String& reportId,
+                        int slotIndex,
+                        juce::Component::SafePointer<SlotReportWindow> win);
     // Build card (1d follow-up): structured slot lines + Build button —
     // the ops card's visual language applied to CHAIN blocks
     // Caption line height under a slot row. ONE constant, consumed by the

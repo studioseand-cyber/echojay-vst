@@ -28,6 +28,7 @@
 #include "EJDialTally.h"         // dial-4 A8: header-inline, the shipped tally
 #include "EJDialMissRows.h"      // A9 step 1: header-inline, the shipped row set
 #include "EJSettingsClip.h"      // 6a: header-inline, the shipped model-side clip
+#include "EJUserDataWrite.h"     // ud: the user-data write guard, open list 225
 #include "EJParamReads.h"        // 6c §8: header-inline, the shipped read serialiser
 #include "EJRefusalLine.h"      // refusal bubble: header-inline, the shipped composer
 #include "EJDisableReasons.h"  // disable provenance: header-inline, shipped
@@ -41,19 +42,68 @@
 #include "EchoJayChannelChats.h"
 #include "EchoJayAPI.h"          // history-resend pin runs the REAL buildChatRequestBody
 #include "EJDialWrites.h"      // do-not-dial: the shipped predicate
+#include "EJCaptureChannels.h" // multi-channel capture: the shipped tally and text
+#include "EJMisdialReport.h"   // misdial report: the shipped record assembly
+#include "EJCaptureGuard.h"    // capture guard: the shipped substitution predicate
+#include "EJSpectralEvidence.h" // spectral provenance + the shipped band reduction
+#include "EJReferenceIndex.h"   // the reference library index: the shipped parser
+#include "EJReferenceReconcile.h" // the blob-to-index reconciliation: the shipped policy
+#include "EJReferenceRows.h"    // the reference browser's pane rule: the shipped rows
+#include "EJReferenceBar.h"     // the reference bar's geometry and stepping: the shipped rects
+#include "EJCodecPage.h"        // the Playback page's geometry: the shipped rects
+#include "EJTooltipPlace.h"     // the tooltip placement rule: the shipped origin
+#include "EJPlaybackSim.h"      // the inline monitoring stage: the shipped no-op
+#include "EJPlaybackVoicing.h"  // the voicing table and its chain: the shipped coefficients
+#include "EJPlaybackTiles.h"    // the Playback grid's tile table: what pb PIN9 walks
+#include "EJBandScheme.h"      // the band edges, the bin axis and the ballistics
+#include "EJMatchProposal.h"   // Match Reference phase 2a: the shipped proposal arithmetic
+#include "EJCompareFigures.h"  // the compare figures and matchSideFrom, now linkable
+#include "EJMatchPage.h"       // the Match screen's geometry and the words it draws
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
 #include <fstream>
+#include <thread>
+#include <atomic>
+#include <chrono>
 #include <sstream>
 #include <regex>
 
 static int passN = 0, failN = 0;
+// ONE FLUSH PER LINE, AND IT IS NOT COSMETIC (23 Sep 2026, open list 221).
+//
+// std::cout is BLOCK buffered when the run is redirected to a file, which is
+// how the gate runs it. The buffer therefore fills and flushes at an arbitrary
+// byte position, which can be the MIDDLE of a check line. EchoJay_NSLog writes
+// unbuffered to fd 2, and the gate merges the descriptors, so an NSLog line
+// can land in that gap and split a check line in two. The green run of 23 Sep
+// did exactly that four times; line 1066 became "  o" plus an NSLog line, with
+// its remainder at line 1076. NO BYTES WERE LOST. The hazard is that a split
+// can land inside the word FAIL, and then a grep for a failure finds nothing
+// while that failure's bytes are sitting in the file.
+//
+// Flushing here means the buffer holds one line when it is emptied, so the
+// line goes out as a single write with no interior boundary to split at.
+//
+// THE MECHANISM IS INFERRED FROM THE SHAPE OF THE SPLICE AND WAS NOT MEASURED
+// TO A BYTE: the four splice offsets are not multiples of 1024 or 4096 in
+// either the merged file or a reconstructed cout-only stream, so the exact
+// buffer arithmetic is unconfirmed.
+//
+// IT STOPS HOLDING FOR A LINE LONGER THAN THE STREAM BUFFER, because such a
+// line fills the buffer and flushes mid-line before ever reaching this flush.
+// The longest line in the 23 Sep run is 415 bytes and none exceeds 512, so
+// every current line is well inside it. A FAIL line carries name plus detail
+// and nothing bounds detail, so that margin is a measurement and not a rule.
+//
+// THIS DOES NOT UNMERGE THE TWO STREAMS. That is a separate change to
+// tools/reinstall-v2.sh and is deliberately not made here.
 static void check (bool ok, const juce::String& name, const juce::String& detail = {})
 {
-    if (ok) { ++passN; std::cout << "  ok    " << name << "\n"; }
+    if (ok) { ++passN; std::cout << "  ok    " << name << "\n" << std::flush; }
     else    { ++failN; std::cout << "  FAIL  " << name
-                                 << (detail.isNotEmpty() ? ("\n        " + detail) : juce::String()) << "\n"; }
+                                 << (detail.isNotEmpty() ? ("\n        " + detail) : juce::String())
+                                 << "\n" << std::flush; }
 }
 
 static juce::PluginDescription makeDesc (const juce::String& format, int uid, const juce::String& version)
@@ -649,6 +699,59 @@ int main()
         // buildChatRequestBody through the one friend hook, never a
         // reimplementation. Case 1 is equality WITH length on purpose:
         // "contains" would pass on a truncated string.
+// ===========================================================================
+// EJ_ASAN_NO_NETWORK: SET BY tools/mapfps_test/build_and_run_asan.sh AND BY
+// NOTHING ELSE. The ordinary gate never defines it and therefore still runs
+// every check below.
+//
+// WHY IT EXISTS. This block constructs a real EchoJayAPI, which fetches remote
+// config, so an ORDINARY GATE RUN MAKES LIVE CALLS TO PRODUCTION. That is open
+// list 140 and it is the reason to exclude them from an instrumented build.
+//
+// IT IS NOT WHY THE SANITIZER CRASHES. Two earlier versions of this comment
+// said otherwise; here is what was actually measured, under lldb.
+//
+//   thread #1, main thread, EXC_BAD_ACCESS code=2 (KERN_PROTECTION_FAILURE)
+//   pc == the faulting address, inside IntentsCore's Objective-C metadata
+//     (the bytes there decode as ASCII: "BJC_" "OCOL" "_REF")
+//   x8 == pc, so the branch was through a register holding a plausible-looking
+//     pointer, not a small integer and not an obvious poison pattern
+//   lr == bx_blackdist2`___lldb_unnamed_symbol6576 + 3352
+//
+// lr is the return address of the call that branched, so THE CALL SITE IS
+// INSIDE bx_blackdist2: a third-party Brainworx plugin, installed at
+// /Library/Audio/Plug-Ins/Components. Not our code, not an ASan interceptor,
+// not the ObjC runtime. 6c PIN4 NAMES that plugin by a fully qualified AU
+// triplet and instantiates exactly one, so the input is reproducible on this
+// machine and absent on another, and the instance branches through a bad
+// pointer under instrumentation.
+//
+// SO IT IS NOT A STACK OVERFLOW either: a stack overflow faults on a DATA
+// access near sp with pc in real code, and here pc IS the fault. Raising the
+// main thread stack 8 MB to 64 MB changed nothing, which was consistent but
+// proved less than it appeared to. The three different Apple frameworks across
+// runs were ASLR moving whatever is mapped at a bad branch target; the
+// framework name was noise, but the location is NOT arbitrary, and calling it
+// arbitrary was inconsistent with the crash being deterministic at check ~192.
+//
+// WHY ASAN IS WHERE THIS SHOWS UP: it replaces the allocator, so memory that
+// natively still holds a usable pointer after a free is quarantined and
+// poisoned instead. And it reported no use-after-free because an instruction
+// fetch from a mapped non-executable page is not a shadowed access; had that
+// pointer been READ, ASan would have named it with an allocation and free
+// stack. It was CALLED.
+//
+// The 6c blocker is therefore third-party plugin loading, not this flag's job.
+//
+// SO THIS DOES NOT UNBLOCK THE ri PINS, and open list 140 MUST NOT be marked
+// solved by it. The gate still reaches production on every commit. What the
+// sanitizer says about EJReferenceIndex.h comes from asan_refindex.cpp beside
+// this file, which drives the header alone. The real fix for 140 is
+// parameterising the transport, because no environment lever works: HOME is
+// ignored by JUCE (see schema 16.1) and ECHOJAY_STATE_HOME covers files only
+// and is not on this branch.
+// ===========================================================================
+#if ! EJ_ASAN_NO_NETWORK
         {
             // THE COPY, NOT A MODEL (contract's own words): the real
             // proposal turn, verbatim from the saas suite's fixture
@@ -749,6 +852,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        "the classify carrier composes priorAssistant at its own site");
             }
         }
+#endif // ! EJ_ASAN_NO_NETWORK
     }
 
     // ---- Channel-chat selection (EchoJayChannelChats.h, header-inline) ----
@@ -1506,7 +1610,19 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         {
             std::ifstream fsh ("Source/LinkShm.h");
             std::stringstream ssh; ssh << fsh.rdbuf();
-            check (! codeOnly (juce::String (ssh.str())).contains ("settingsForModel"),
+            // HOISTED 23 Sep (open list 220) SO THERE IS SOMETHING TO ASSERT
+            // ABOUT. This was one expression, codeOnly(...) built and searched
+            // inline, which left no name to control: the sole check is an
+            // ABSENCE, and an absence is satisfied by a file that never
+            // opened. The expression is unchanged, evaluated once into a name
+            // rather than inside the check, so the searched text is byte for
+            // byte what it was.
+            const auto shm = codeOnly (juce::String (ssh.str()));
+            check (shm.length() > 10000
+                   && shm.contains ("struct alignas(64) LinkShmHeader"),
+                   "6a PIN4: LinkShm.h was read and is the real file",
+                   "len=" + juce::String (shm.length()));
+            check (! shm.contains ("settingsForModel"),
                    "6a PIN4: the Link wire struct did not grow a field");
         }
 
@@ -2167,6 +2283,27 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         std::ifstream fed ("Source/PluginEditor.cpp");
         std::stringstream sed_; sed_ << fed.rdbuf();
         const auto ed = codeOnly (juce::String (sed_.str()));
+
+        // THE CONTROL FOR ed, ADDED 23 Sep (open list 220).
+        //
+        // IT SITS IN PIN 1'S SCOPE AND IT PROTECTS PIN 2, and the gap is the
+        // reason it is worth a sentence. `ed` is read HERE, at the top of the
+        // fd block, alongside chRaw and chH, but the ONLY check that reads it
+        // is the fd PIN2 line further down: `! ed.contains
+        // ("buildFallbackLookupJson()")`. A BUFFER THAT OUTLIVES THE PIN THAT
+        // CREATED IT is how this went unnoticed, and it made the census cite
+        // the wrong id three times: the reader sees "PIN 1" above the read and
+        // never looks down to whose claim actually depends on it.
+        //
+        // WHY IT MATTERS AT ALL: fd PIN2's use is an ABSENCE, and an absence is
+        // satisfied by a file that never opened. Without this, a failed read
+        // makes that check pass, which is cg PIN7's defect exactly.
+        //
+        // The anchor is a definition, so it survives codeOnly, and it occurs
+        // once in PluginEditor.cpp.
+        check (ed.length() > 10000 && ed.contains ("EchoJayEditor::timerCallback"),
+               "fd PIN2: PluginEditor.cpp was read and is the real file",
+               "len=" + juce::String (ed.length()));
 
         // PIN 1 — THE TRIGGER IS THE MAPLESS DIAL. The ask is composed inside
         // setSlotStructuredSettings, the function that handles a dial arriving
@@ -5295,7 +5432,19 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "dw PIN5: two separate members, two separate defaults");
             std::ifstream fd2 ("Source/EJDialWrites.h");
             std::stringstream sd2; sd2 << fd2.rdbuf();
-            check (! juce::String (sd2.str()).contains ("autoDial"),
+            // HOISTED 23 Sep (open list 220), same shape as 6a PIN4 above.
+            // NOTE THE THRESHOLD, WHICH IS WHY IT IS PER FILE AND NOT A HOUSE
+            // CONSTANT: this sweep searches the RAW file and not the codeOnly
+            // view, so the anchor is checked against raw, and EJDialWrites.h
+            // is a SMALL header, 2,873 bytes raw and 457 after comment
+            // stripping. A 10,000 threshold copied from the big-file pins
+            // would fail on a perfectly good read.
+            const auto dwSrc = juce::String (sd2.str());
+            check (dwSrc.length() > 1000
+                   && dwSrc.contains ("inline bool dialWritesBlocked() noexcept"),
+                   "dw PIN5: EJDialWrites.h was read and is the real file",
+                   "len=" + juce::String (dwSrc.length()));
+            check (! dwSrc.contains ("autoDial"),
                    "dw PIN5: and the write guard never consults auto-dial");
         }
 
@@ -5610,6 +5759,9390 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "mp PIN5: the boundary renders");
             check (blk3.contains ("never describe one as something you"),
                    "mp PIN5: and forbids presenting an old move as a recent one");
+        }
+    }
+
+    // ===== ONLY ECHOJAY PLUGINS (8 Sep 2026) ===============================
+    // The toggle replaces the fed names at the ONE point the feed is
+    // assembled. These pins are on the real functions, not on source text,
+    // except PIN3 where the branch order is the thing being asserted.
+    {
+        std::cout << "only EchoJay plugins:\n";
+
+        const auto inj  = EchoJayAPI::buildBuiltinOnlyChainInjection();
+        const auto ours = ChainHost::builtinDeviceNames();
+
+        // ej PIN1 -- ON: every offered name is one of ours, and there is no
+        // third-party name list at all. The marker sentence in the ordinary
+        // feed reads `right now: "A", "B"`; the built-ins-only one names no
+        // plugins in that sentence and points at AVAILABLE BUILTINS instead,
+        // so the absence of that shape IS the absence of a third-party list.
+        check (! ours.isEmpty(), "ej PIN1: the built-in registry is not empty",
+               juce::String (ours.size()) + " devices");
+        bool allPresent = true;
+        for (const auto& n : ours) if (! inj.contains (n)) allPresent = false;
+        check (allPresent, "ej PIN1: every built-in device name is offered");
+        check (! inj.contains ("right now: \""),
+               "ej PIN1: and no third-party name list is emitted");
+        // A plugin this machine really has. None of them can reach a function
+        // that takes no arguments, and the pin says so out loud.
+        const char* thirdParty[] = { "Pro-C 2", "Pro-Q 3", "Ozone 12", "FabFilter",
+                                     "Waves", "Valhalla", "Serum" };
+        bool noneLeaked = true;
+        for (const auto* t : thirdParty) if (inj.contains (t)) noneLeaked = false;
+        check (noneLeaked, "ej PIN1: and no third-party name appears anywhere in it");
+        check (inj.contains ("[AVAILABLE BUILTINS"),
+               "ej PIN1: the built-ins block is what carries the names");
+        check (inj.contains ("[CHAIN BLOCK RULE"),
+               "ej PIN1: and the chain block rule survives, so a chain is still emitted");
+
+        // ej PIN2 -- OFF: the ordinary feed is untouched. Same three names in,
+        // same sentence out, and the rule is the SAME TEXT in both feeds
+        // because one function authors it.
+        juce::StringArray sample; sample.add ("Pro-C 2"); sample.add ("Pro-Q 3");
+        const auto inj2 = EchoJayAPI::buildChainInjection (sample);
+        check (inj2.contains ("right now: \"Pro-C 2\", \"Pro-Q 3\"]"),
+               "ej PIN2: the ordinary feed still lists the names it is given");
+        auto ruleOf = [] (const juce::String& s) -> juce::String
+        {
+            const int a = s.indexOf ("[CHAIN BLOCK RULE");
+            const int b = s.indexOf ("[AVAILABLE BUILTINS");
+            return (a >= 0 && b > a) ? s.substring (a, b) : juce::String();
+        };
+        const auto r1 = ruleOf (inj), r2 = ruleOf (inj2);
+        check (r1.isNotEmpty() && r1 == r2,
+               "ej PIN2: and both feeds carry the identical rule text, one author",
+               juce::String (r1.length()) + " vs " + juce::String (r2.length()) + " chars");
+
+        // ej PIN3 -- THE BRANCH IS FIRST, and the turn is still a chain turn.
+        // EchoJay-only is the narrower answer to the same question the feed
+        // split asks, so it has to win; and hadFeed staged false here would
+        // classify a built-ins chain as plain chat at the turnType arm.
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto ed = codeOnly (juce::String (se.str()));
+            const int iOnly  = ed.indexOf ("if (echoJayOnlyFeed)");
+            const int iSplit = ed.indexOf ("else if (! chainHost.feedSplitEnabled())");
+            check (iOnly > 0 && iSplit > iOnly,
+                   "ej PIN3: the EchoJay-only branch is tested before the feed split",
+                   "only@" + juce::String (iOnly) + " split@" + juce::String (iSplit));
+            check (ed.contains ("out += echoJayOnlyFeed ? EchoJayAPI::buildBuiltinOnlyChainInjection()"),
+                   "ej PIN3: and it swaps the injection rather than the name list");
+            check (ed.contains ("echoJayOnlyToggle.setBounds(sx, sy, sw, fh)"),
+                   "ej PIN3: the toggle is a full-width row, stacked not beside");
+            check (ed.contains ("y += 2 * (fh + 8);"),
+                   "ej PIN3: and the settings paint walk covers all three rows");
+        }
+    }
+
+    // ===== MULTI-CHANNEL CAPTURE (9 Sep 2026) ==============================
+    // A forty-channel session is built here and the SHIPPED composers are
+    // called on it, so these are assertions about the payload rather than
+    // about the source that writes it.
+    {
+        std::cout << "multi-channel capture, silence and no-frames:\n";
+
+        auto session = [] (int total, int silent, int noFrames)
+        {
+            std::vector<echojay::CaptureChannelOutcome> v;
+            echojay::CaptureChannelOutcome host;
+            host.isHost = true; host.framesReceived = -1;
+            v.push_back (host);
+            for (int i = 1; i < total; ++i)
+            {
+                echojay::CaptureChannelOutcome c;
+                if (noFrames-- > 0)   { c.framesReceived = 0; }
+                else if (silent-- > 0){ c.framesReceived = 48000; c.silentFloor = true; }
+                else                  { c.framesReceived = 48000; }
+                v.push_back (c);
+            }
+            return v;
+        };
+        auto countOf = [] (const juce::String& hay, const juce::String& needle)
+        {
+            int n = 0, at = 0;
+            for (;;) { at = hay.indexOf (at, needle); if (at < 0) break; ++n; at += needle.length(); }
+            return n;
+        };
+
+        // mc PIN1 -- FORTY CHANNELS, TWELVE SILENT. The counts lead, the
+        // per-channel paragraph is gone, and silence is explained ONCE.
+        {
+            const auto t = echojay::tallyCaptureChannels (session (40, 12, 0));
+            const auto head = echojay::multiChannelHeader (t);
+            const auto guide = echojay::multiChannelGuidance (t);
+            check (t.total == 40 && t.silent == 12 && t.noFrames == 0,
+                   "mc PIN1: the tally counts 40 channels and 12 silent",
+                   juce::String (t.total) + "/" + juce::String (t.silent)
+                   + "/" + juce::String (t.noFrames));
+            check (head.contains ("40 channels, 12 silent, 0 with no frames"),
+                   "mc PIN1: and the header carries all three counts", head.trim());
+            check (! guide.contains ("You may say the channel was silent"),
+                   "mc PIN1: the per-channel silent paragraph is gone");
+            check (countOf (guide, "SILENT marks a channel") == 1,
+                   "mc PIN1: silence is explained exactly once",
+                   juce::String (countOf (guide, "SILENT marks a channel")) + " times");
+            check (guide.contains ("Report them by COUNT")
+                   && guide.contains ("12 of 40"),
+                   "mc PIN1: and the instruction asks for a count, and names it");
+            check (! guide.contains ("NO FRAMES marks"),
+                   "mc PIN1: with nothing said about no-frames when there are none");
+        }
+
+        // mc PIN2 -- THE MARKER IS THE LINE. One short token per affected
+        // channel, and the two outcomes stay distinguishable.
+        {
+            echojay::CaptureChannelOutcome sil; sil.framesReceived = 48000; sil.silentFloor = true;
+            echojay::CaptureChannelOutcome nof; nof.framesReceived = 0;
+            echojay::CaptureChannelOutcome ok;  ok.framesReceived = 48000;
+            echojay::CaptureChannelOutcome hst; hst.isHost = true; hst.framesReceived = -1;
+            check (juce::String (echojay::captureChannelMarker (sil)) == "SILENT\n",
+                   "mc PIN2: a silent channel gets a marker, not a paragraph");
+            check (juce::String (echojay::captureChannelMarker (nof)) == "NO FRAMES\n",
+                   "mc PIN2: and a no-frames channel a different one");
+            check (echojay::captureChannelMarker (ok) == nullptr,
+                   "mc PIN2: an audible channel still gets its numbers");
+            check (echojay::captureChannelMarker (hst) == nullptr,
+                   "mc PIN2: and the host is never marked no-frames");
+        }
+
+        // mc PIN3 -- THE NO-FRAMES ADVICE SCALES. A few is a note; most of
+        // them is a failed capture, and only then is capturing again asked
+        // for. Explained once either way.
+        {
+            const auto few  = echojay::multiChannelGuidance (echojay::tallyCaptureChannels (session (40, 0, 3)));
+            const auto most = echojay::multiChannelGuidance (echojay::tallyCaptureChannels (session (40, 0, 30)));
+            check (countOf (few, "NO FRAMES marks a channel") == 1,
+                   "mc PIN3: no-frames is explained exactly once");
+            check (few.contains ("3 of 39 Links") && few.contains ("small part"),
+                   "mc PIN3: three of thirty-nine reads as a note");
+            check (! few.contains ("capture again") && ! few.contains ("FAILED capture"),
+                   "mc PIN3: and does NOT ask them to capture again");
+            check (most.contains ("30 of 39 Links") && most.contains ("FAILED capture")
+                   && most.contains ("capture again"),
+                   "mc PIN3: thirty of thirty-nine is a failed capture and says so");
+            check (countOf (most, "NO FRAMES marks a channel") == 1,
+                   "mc PIN3: still explained exactly once");
+        }
+
+        // mc PIN4 -- AN ORDINARY CAPTURE PAYS FOR NEITHER. Nothing silent and
+        // nothing missing emits no guidance at all.
+        {
+            const auto t = echojay::tallyCaptureChannels (session (40, 0, 0));
+            check (echojay::multiChannelGuidance (t).isEmpty(),
+                   "mc PIN4: a clean capture carries no silence or no-frames text");
+            check (echojay::multiChannelHeader (t).contains ("0 silent, 0 with no frames"),
+                   "mc PIN4: and its header still states both counts");
+        }
+
+        // mc PIN5 -- THE PAYLOAD SHRANK, measured on the shape that caused
+        // this: forty channels, twelve silent.
+        {
+            const juce::String oldPara =
+                "This channel WAS receiving audio during the capture, and "
+                "its level stayed at or below the silence floor the whole "
+                "window - it was genuinely silent (muted, or not playing). "
+                "You may say the channel was silent; that is a real "
+                "measurement, not a guess.\n";
+            const auto t = echojay::tallyCaptureChannels (session (40, 12, 0));
+            const int before = 12 * oldPara.length();
+            // The SHIPPED marker, not a literal copy of it. Written as a copy
+            // first, and mutation B (restoring the paragraph as the marker)
+            // left this pin green while PIN2 went red, which is a pin
+            // measuring its own constant rather than the code.
+            echojay::CaptureChannelOutcome probe;
+            probe.framesReceived = 48000; probe.silentFloor = true;
+            const int markerLen = (int) juce::String (echojay::captureChannelMarker (probe)).length();
+            const int after  = 12 * markerLen
+                             + echojay::multiChannelGuidance (t).length();
+            check (after < before / 2,
+                   "mc PIN5: the silent-channel text is less than half what it was",
+                   juce::String (before) + " B -> " + juce::String (after) + " B");
+        }
+    }
+
+    // ===== MISDIAL REPORT v1, client half (9 Sep 2026) =====================
+    // Behavioural, against the SHIPPED builder. The contract is
+    // HANDOVER/misdial-report-v1.md, rewritten from the deployed route; every
+    // rule asserted here is the route's own rule (api/_misdials.js:109, :122+).
+    {
+        std::cout << "misdial report, the record the route will accept:\n";
+
+        const juce::String kFp ("a1b2c3d4e5f60718293a4b5c6d7e8f90"
+                                "a1b2c3d4e5f60718293a4b5c6d7e8f90");  // 64 hex
+        auto goodRow = [&] ()
+        {
+            echojay::MisdialRow r;
+            r.fp = kFp; r.mapKey = "threshold_db"; r.index = 3;
+            r.valueDialled = -18.0; r.hasValue = true;
+            r.landedText = "-4.0 dB";
+            r.reportId = "fixed-id-for-the-pin";
+            return r;
+        };
+        echojay::MisdialSlotFacts facts;
+        facts.pluginName = "Pro-C 2"; facts.format = "AudioUnit";
+        facts.vendor = "FabFilter"; facts.pluginVersion = "2.1.0";
+        facts.appVersion = "2.26.4"; facts.mapVersion = "rev7";
+
+        // md PIN1 -- THE FIVE REQUIRED FIELDS, present and correctly typed by
+        // the route's own tests. Parsed back out of the BODY, so a key that is
+        // named right but typed wrong cannot pass.
+        {
+            const auto body = echojay::buildMisdialBody (goodRow(), facts, "card");
+            check (body.isNotEmpty(), "md PIN1: a complete row produces a body");
+            auto v = juce::JSON::parse (body);
+            auto* o = v.getDynamicObject();
+            check (o != nullptr, "md PIN1: and the body is valid JSON");
+            if (o != nullptr)
+            {
+                const auto fp = o->getProperty ("fp").toString();
+                check (fp.length() == 64 && fp == fp.toLowerCase(),
+                       "md PIN1: fp is 64 chars and lowercased", fp.substring (0, 12));
+                check (o->getProperty ("parameterName").toString() == "threshold_db",
+                       "md PIN1: parameterName is the RAW MAP KEY, not a label");
+                check (o->getProperty ("parameterIndex").isInt(),
+                       "md PIN1: parameterIndex is an int");
+                check ((int) o->getProperty ("parameterIndex") == 3,
+                       "md PIN1: and carries the index");
+                check (o->getProperty ("valueDialled").isDouble()
+                       || o->getProperty ("valueDialled").isInt(),
+                       "md PIN1: valueDialled is numeric");
+                check (o->hasProperty ("observedResult"),
+                       "md PIN1: observedResult is present");
+            }
+        }
+
+        // md PIN2 -- INDEX 0 IS ACCEPTED AND -1 IS REFUSED. Zero is an ordinary
+        // first control; writing a truthiness test anywhere on this field would
+        // reject every report against it. -1 is our no-index sentinel and must
+        // never reach the route, which would refuse it as negative.
+        {
+            auto zero = goodRow(); zero.index = 0;
+            check (echojay::misdialRowIsReportable (zero),
+                   "md PIN2: index 0 is reportable");
+            auto b0 = echojay::buildMisdialBody (zero, facts, "card");
+            auto v0 = juce::JSON::parse (b0);
+            check (v0.getDynamicObject() != nullptr
+                   && (int) v0.getDynamicObject()->getProperty ("parameterIndex") == 0,
+                   "md PIN2: and index 0 survives into the body");
+            auto none = goodRow(); none.index = -1;
+            check (! echojay::misdialRowIsReportable (none),
+                   "md PIN2: index -1 is NOT reportable");
+            check (echojay::buildMisdialBody (none, facts, "card").isEmpty(),
+                   "md PIN2: and produces no body at all, so it cannot be sent");
+            // Same trap on the value: 0 dB is a real thing to dial.
+            auto zv = goodRow(); zv.valueDialled = 0.0;
+            check (echojay::misdialRowIsReportable (zv),
+                   "md PIN2: valueDialled 0 is reportable");
+        }
+
+        // md PIN3 -- observedResult TAKES THE NUMBER SHAPE WHEN THERE IS A
+        // READBACK AND THE STRING SHAPE WHEN THERE IS NOT. The server stamps
+        // observedKind from this, so the shape IS the meaning.
+        {
+            auto withRb = goodRow();                       // landedText "-4.0 dB"
+            auto vr = juce::JSON::parse (echojay::buildMisdialBody (withRb, facts, "card"));
+            auto* ro = vr.getDynamicObject();
+            check (ro != nullptr && (ro->getProperty ("observedResult").isDouble()
+                                     || ro->getProperty ("observedResult").isInt()),
+                   "md PIN3: a readback goes as a NUMBER");
+            // The type test rides WITH the value test. Written as a value test
+            // alone first, and mutation B (never taking the number shape) left
+            // it green because a juce::var holding "-4.0 dB" casts to -4.0.
+            check (ro != nullptr
+                   && (ro->getProperty ("observedResult").isDouble()
+                       || ro->getProperty ("observedResult").isInt())
+                   && std::abs ((double) ro->getProperty ("observedResult") + 4.0) < 1e-9,
+                   "md PIN3: and carries the landed value as a number, units stripped");
+
+            auto noRb = goodRow(); noRb.landedText = {};
+            noRb.outcome = "readback unavailable, bridged plugin";
+            auto vs = juce::JSON::parse (echojay::buildMisdialBody (noRb, facts, "card"));
+            auto* so = vs.getDynamicObject();
+            check (so != nullptr && so->getProperty ("observedResult").isString(),
+                   "md PIN3: no readback goes as a STRING, the apply outcome");
+            check (so != nullptr && so->getProperty ("observedResult").toString()
+                                       .contains ("bridged"),
+                   "md PIN3: and carries the outcome text");
+
+            // A ratio keeps its shape. "2:1" as a number would become 2 and the
+            // meaning would be gone, so it stays text.
+            auto ratio = goodRow(); ratio.landedText = "2:1";
+            auto vq = juce::JSON::parse (echojay::buildMisdialBody (ratio, facts, "card"));
+            check (vq.getDynamicObject() != nullptr
+                   && vq.getDynamicObject()->getProperty ("observedResult").isString(),
+                   "md PIN3: a ratio reading stays a string rather than losing its shape");
+
+            // Neither a readback nor an outcome is the one case the route calls
+            // missing, so the row must not be offered.
+            auto neither = goodRow(); neither.landedText = {}; neither.outcome = {};
+            check (! echojay::misdialRowIsReportable (neither),
+                   "md PIN3: no readback and no outcome is not reportable");
+        }
+
+        // md PIN4 -- NO KEY OUTSIDE THE ACCEPTED SET. Measured on the deployed
+        // route: an unknown key would not 400, it would be silently dropped, so
+        // this defends bytes and honesty rather than a rejection.
+        {
+            const auto body = echojay::buildMisdialBody (goodRow(), facts, "card");
+            auto v = juce::JSON::parse (body);
+            auto* o = v.getDynamicObject();
+            juce::StringArray stray;
+            if (o != nullptr)
+                for (auto& prop : o->getProperties())
+                    if (! echojay::misdialAcceptedKeys().contains (prop.name.toString()))
+                        stray.add (prop.name.toString());
+            check (stray.isEmpty(), "md PIN4: every key sent is one the route reads",
+                   stray.joinIntoString (", "));
+            // The two the client genuinely does not have are never invented.
+            check (o != nullptr && ! o->hasProperty ("extractorVersion")
+                   && ! o->hasProperty ("humanVerified"),
+                   "md PIN4: and the two server-only fields are never fabricated");
+            // Best effort means ABSENT, not null: a null costs bytes and reads
+            // as a claim that the client looked and found nothing.
+            echojay::MisdialSlotFacts bare;
+            auto vb = juce::JSON::parse (echojay::buildMisdialBody (goodRow(), bare, "card"));
+            auto* bo = vb.getDynamicObject();
+            check (bo != nullptr && ! bo->hasProperty ("pluginName")
+                   && ! bo->hasProperty ("mapRangeMin"),
+                   "md PIN4: an unknown best-effort field is omitted, not null");
+            // md PIN4b -- THE MAP'S BELIEF IS PER CONTROL, off the ROW. Sending
+            // a slot-level unit under a per-control key would be a wrong belief
+            // in front of the person fixing the map.
+            auto withMap = goodRow();
+            withMap.mapKind = "float"; withMap.mapUnit = "dB";
+            withMap.mapRangeMin = -60.0; withMap.mapRangeMax = 0.0; withMap.hasRange = true;
+            auto vm = juce::JSON::parse (echojay::buildMisdialBody (withMap, bare, "card"));
+            auto* mo = vm.getDynamicObject();
+            check (mo != nullptr && mo->getProperty ("mapUnit").toString() == "dB"
+                   && std::abs ((double) mo->getProperty ("mapRangeMin") + 60.0) < 1e-9,
+                   "md PIN4: the map's kind, unit and range come off the CONTROL row");
+            check (bo != nullptr && bo->hasProperty ("fp")
+                   && bo->hasProperty ("observedResult"),
+                   "md PIN4: while the required five are still all there");
+        }
+
+        // md PIN5 -- fp IS VALIDATED HERE, not left to the 400. The route's own
+        // shape test, applied at the boundary, because a user must never be
+        // able to press a report that will be refused.
+        {
+            auto empty = goodRow(); empty.fp = {};
+            auto shortFp = goodRow(); shortFp.fp = "abc123";
+            auto nonHex = goodRow(); nonHex.fp = juce::String::repeatedString ("z", 64);
+            check (! echojay::misdialRowIsReportable (empty),   "md PIN5: no fp is not reportable");
+            check (! echojay::misdialRowIsReportable (shortFp), "md PIN5: a short fp is not reportable");
+            check (! echojay::misdialRowIsReportable (nonHex),  "md PIN5: a non-hex fp is not reportable");
+            auto upper = goodRow(); upper.fp = kFp.toUpperCase();
+            check (echojay::misdialRowIsReportable (upper),
+                   "md PIN5: an uppercase fp IS reportable, and is lowercased on the wire");
+        }
+
+        // md PIN6 -- THE REPORT ID IS STABLE ACROSS A RETRY. The row keeps it,
+        // so the same row builds the same id twice and the server dedupes
+        // instead of filing a second report.
+        {
+            auto r = goodRow();
+            const auto a = echojay::buildMisdialBody (r, facts, "card");
+            const auto b = echojay::buildMisdialBody (r, facts, "card");
+            check (a == b, "md PIN6: the same row builds a byte-identical body twice");
+            check (juce::JSON::parse (a).getDynamicObject()->getProperty ("reportId")
+                       .toString() == "fixed-id-for-the-pin",
+                   "md PIN6: and the reportId is the row's, not a fresh one per build");
+            check (echojay::newMisdialReportId() != echojay::newMisdialReportId(),
+                   "md PIN6: while a NEW id is actually new");
+        }
+
+        // md PIN8 -- THE ROWS SURVIVE A ROUND TRIP WITH THEIR STATE. The
+        // reported flag and the reportId are the two that matter: the flag is
+        // what stops a reloaded card inviting a second press, the id is what
+        // makes a retry dedupe rather than file twice. Index 0 and value 0 ride
+        // along, because they are this feature's two truthiness traps.
+        {
+            std::vector<echojay::MisdialRow> rows;
+            auto a = goodRow(); a.index = 0; a.valueDialled = 0.0; a.reported = false;
+            auto b = goodRow(); b.index = 9; b.landedText = {};
+            b.outcome = "refused: outside the map's range";
+            b.reported = true; b.reportId = "kept";
+            rows.push_back (a); rows.push_back (b);
+            const auto back = echojay::misdialRowsFromJson (echojay::misdialRowsToJson (rows));
+            check (back.size() == 2, "md PIN8: both rows survive");
+            if (back.size() == 2)
+            {
+                check (back[0].index == 0 && back[0].hasValue
+                       && std::abs (back[0].valueDialled) < 1e-12,
+                       "md PIN8: index 0 and value 0 survive as themselves");
+                check (back[0].mapKey == "threshold_db" && back[0].fp == a.fp,
+                       "md PIN8: the map key and the snapshotted fp survive");
+                check (back[0].reported == false && back[1].reported == true,
+                       "md PIN8: the reported flag survives per row");
+                check (back[1].reportId == "kept"
+                       && back[1].outcome.contains ("outside the map's range"),
+                       "md PIN8: and so do the report id and the outcome text");
+            }
+            check (echojay::misdialRowsFromJson ({}).empty(),
+                   "md PIN8: an absent record parses as no rows, not a crash");
+        }
+
+        // md PIN9 -- NEVER A DEAD BUTTON. The card's condition is one
+        // predicate, shared by the height and the placement, so a card with
+        // nothing reportable reserves no height and shows no button.
+        {
+            std::vector<echojay::MisdialRow> none;
+            auto bad = goodRow(); bad.index = -1;      // not reportable
+            none.push_back (bad);
+            check (! echojay::misdialAnyReportable (none),
+                   "md PIN9: a card whose only row is unreportable offers nothing");
+            none.push_back (goodRow());
+            check (echojay::misdialAnyReportable (none),
+                   "md PIN9: one reportable row is enough to offer the button");
+            check (! echojay::misdialAnyReportable ({}),
+                   "md PIN9: and no rows at all offers nothing");
+        }
+
+        // md PIN10 -- THE MISDIAL BODY DECLARES ITS KIND AND TAKES AN OPTIONAL
+        // NOTE. The route defaults an absent kind to misdial for back compat,
+        // so an absent kind is not wrong; it is just unreadable afterwards.
+        {
+            auto v = juce::JSON::parse (echojay::buildMisdialBody (goodRow(), facts, "plugin-panel"));
+            auto* o = v.getDynamicObject();
+            check (o != nullptr && o->getProperty ("kind").toString() == "misdial",
+                   "md PIN10: a misdial says so explicitly");
+            check (o != nullptr && ! o->hasProperty ("note"),
+                   "md PIN10: with no note key when the user typed nothing");
+            auto v2 = juce::JSON::parse (echojay::buildMisdialBody (goodRow(), facts,
+                                                                    "plugin-panel", "  it went to Q  "));
+            auto* o2 = v2.getDynamicObject();
+            check (o2 != nullptr && o2->getProperty ("note").toString() == "it went to Q",
+                   "md PIN10: and a trimmed note when they did");
+            const auto longNote = juce::String::repeatedString ("x", echojay::kMisdialNoteMax + 500);
+            auto v3 = juce::JSON::parse (echojay::buildMisdialBody (goodRow(), facts, "s", longNote));
+            check (v3.getDynamicObject() != nullptr
+                   && v3.getDynamicObject()->getProperty ("note").toString().length()
+                          == echojay::kMisdialNoteMax,
+                   "md PIN10: capped at the route's 1000, so what is shown is what lands");
+        }
+
+        // md PIN11 -- THE BUG KIND NEEDS THE NOTE AND MUST NOT CARRY fp. Not
+        // "may omit": the route forces fp null on this kind and bug records
+        // live in their own family, so a client asserting an fp here would put
+        // a record with no map behind it into the by-map work list.
+        {
+            const auto body = echojay::buildBugBody ("the EQ went silent", facts,
+                                                     "plugin-panel", "bug-id-1");
+            auto v = juce::JSON::parse (body);
+            auto* o = v.getDynamicObject();
+            check (o != nullptr && o->getProperty ("kind").toString() == "bug",
+                   "md PIN11: a bug says so");
+            check (o != nullptr && o->getProperty ("note").toString() == "the EQ went silent",
+                   "md PIN11: and carries the user's words");
+            check (o != nullptr && ! o->hasProperty ("fp"),
+                   "md PIN11: and NO fp, which is the whole point of the kind");
+            check (o != nullptr && ! o->hasProperty ("parameterName")
+                   && ! o->hasProperty ("parameterIndex")
+                   && ! o->hasProperty ("valueDialled")
+                   && ! o->hasProperty ("observedResult"),
+                   "md PIN11: nor any of the four other misdial-only fields");
+            check (o != nullptr && o->getProperty ("pluginName").toString() == "Pro-C 2"
+                   && o->getProperty ("appVersion").toString() == "2.26.4",
+                   "md PIN11: while the context that DOES exist still rides");
+            check (echojay::buildBugBody ("   ", facts, "s", "id").isEmpty(),
+                   "md PIN11: an empty note produces no body, the route's one requirement");
+            // A built-in has no fp and no map, so this is the only kind it can
+            // file. Nothing about the bug builder can refuse it for that.
+            echojay::MisdialSlotFacts builtin;
+            builtin.pluginName = "EchoJay EQ"; builtin.appVersion = "2.26.4";
+            auto vb = juce::JSON::parse (echojay::buildBugBody ("band 3 did nothing",
+                                                                builtin, "plugin-panel", "id2"));
+            check (vb.getDynamicObject() != nullptr
+                   && ! vb.getDynamicObject()->hasProperty ("fp")
+                   && vb.getDynamicObject()->getProperty ("pluginName").toString() == "EchoJay EQ",
+                   "md PIN11: a built-in with no fingerprint files a bug cleanly");
+        }
+
+        // md PIN12 -- BOTH BODIES STAY INSIDE THE ACCEPTED KEY SET, including
+        // the two new keys. Same reason as PIN4: an unknown key cannot reach
+        // the store and still costs bytes against the 16 KB cap.
+        {
+            auto stray = [] (const juce::String& body)
+            {
+                juce::StringArray out;
+                auto v = juce::JSON::parse (body);
+                if (auto* o = v.getDynamicObject())
+                    for (auto& prop : o->getProperties())
+                        if (! echojay::misdialAcceptedKeys().contains (prop.name.toString()))
+                            out.add (prop.name.toString());
+                return out;
+            };
+            const auto s1 = stray (echojay::buildMisdialBody (goodRow(), facts, "plugin-panel", "note"));
+            const auto s2 = stray (echojay::buildBugBody ("note", facts, "plugin-panel", "id"));
+            check (s1.isEmpty(), "md PIN12: the misdial body sends only accepted keys",
+                   s1.joinIntoString (", "));
+            check (s2.isEmpty(), "md PIN12: and so does the bug body",
+                   s2.joinIntoString (", "));
+            check (echojay::misdialAcceptedKeys().contains ("kind")
+                   && echojay::misdialAcceptedKeys().contains ("note"),
+                   "md PIN12: with kind and note now in the set");
+        }
+
+        // md PIN13 -- THE FOUR CATEGORY LITERALS ARE THE SERVER'S, EXACTLY.
+        // The route refuses an unknown category BY NAME rather than coercing it
+        // to `other`, and folding happens server side, so a near miss fails at
+        // the one moment the user has already written their sentence. These are
+        // asserted as literals, not as whatever the header happens to say.
+        {
+            const auto& all = echojay::misdialCategories();
+            check (all.size() == 4, "md PIN13: four categories",
+                   juce::String ((int) all.size()));
+            check (juce::String (all[0].value) == "wrong_control"
+                   && juce::String (all[1].value) == "plugin_problem"
+                   && juce::String (all[2].value) == "chain_problem"
+                   && juce::String (all[3].value) == "other",
+                   "md PIN13: and their wire values match the route verbatim");
+            check (all[0].needsControl
+                   && ! all[1].needsControl && ! all[2].needsControl && ! all[3].needsControl,
+                   "md PIN13: only wrong_control needs a picked control");
+            check (echojay::misdialKindForCategory ("wrong_control")  == "misdial"
+                   && echojay::misdialKindForCategory ("plugin_problem") == "bug"
+                   && echojay::misdialKindForCategory ("chain_problem")  == "bug"
+                   && echojay::misdialKindForCategory ("other")          == "bug",
+                   "md PIN13: each maps to the kind the route implies");
+            check (echojay::misdialKindForCategory ("WRONG_CONTROL") == "misdial"
+                   && echojay::misdialKindForCategory ("  other  ") == "bug",
+                   "md PIN13: folded and trimmed before the lookup");
+            check (echojay::misdialKindForCategory ("wrong-control").isEmpty()
+                   && echojay::misdialKindForCategory ("nonsense").isEmpty(),
+                   "md PIN13: and an unknown one maps to nothing, never to other");
+        }
+
+        // md PIN14 -- A CLASH CANNOT REACH THE WIRE. The route refuses a
+        // category whose implied kind disagrees with the kind sent, and names
+        // both. The client makes it impossible rather than unlikely.
+        {
+            check (echojay::buildMisdialBody (goodRow(), facts, "p", "n", "plugin_problem").isEmpty(),
+                   "md PIN14: a bug category on a misdial body produces nothing");
+            check (echojay::buildMisdialBody (goodRow(), facts, "p", "n", "nonsense").isEmpty(),
+                   "md PIN14: and so does an unknown category");
+            check (echojay::buildBugBody ("n", facts, "p", "id", "wrong_control").isEmpty(),
+                   "md PIN14: wrong_control on a bug body produces nothing");
+            check (echojay::buildBugBody ("n", facts, "p", "id", "nonsense").isEmpty(),
+                   "md PIN14: and so does an unknown category");
+            // The matching pairs still build, and carry the category.
+            auto vm = juce::JSON::parse (echojay::buildMisdialBody (goodRow(), facts, "p", "n",
+                                                                    "wrong_control"));
+            auto vb = juce::JSON::parse (echojay::buildBugBody ("n", facts, "p", "id",
+                                                                "chain_problem"));
+            check (vm.getDynamicObject() != nullptr
+                   && vm.getDynamicObject()->getProperty ("category").toString() == "wrong_control"
+                   && vm.getDynamicObject()->getProperty ("kind").toString() == "misdial",
+                   "md PIN14: a matching misdial pair carries both");
+            check (vb.getDynamicObject() != nullptr
+                   && vb.getDynamicObject()->getProperty ("category").toString() == "chain_problem"
+                   && vb.getDynamicObject()->getProperty ("kind").toString() == "bug",
+                   "md PIN14: and so does a matching bug pair");
+            // Absent is still legal: 22708dc ships without it.
+            check (! juce::JSON::parse (echojay::buildMisdialBody (goodRow(), facts, "p"))
+                        .getDynamicObject()->hasProperty ("category"),
+                   "md PIN14: and no category key at all when none was chosen");
+        }
+
+        // md PIN15 -- NO uid IS EVER SENT. The server resolves it from the
+        // session and overwrites anything the body carries, because a client
+        // that could set it could file under somebody else's account.
+        {
+            const auto a = echojay::buildMisdialBody (goodRow(), facts, "p", "n", "wrong_control");
+            const auto b = echojay::buildBugBody ("n", facts, "p", "id", "other");
+            check (! juce::JSON::parse (a).getDynamicObject()->hasProperty ("uid")
+                   && ! juce::JSON::parse (b).getDynamicObject()->hasProperty ("uid"),
+                   "md PIN15: neither body carries a uid");
+            check (! echojay::misdialAcceptedKeys().contains ("uid"),
+                   "md PIN15: and uid is not even in the accepted set");
+            check (echojay::misdialAcceptedKeys().contains ("category"),
+                   "md PIN15: while category is");
+        }
+
+        // md PIN16 -- A MISDIAL BODY ALWAYS CARRIES A reportId. It never did:
+        // buildMisdialBody reads it off the ROW, and rows arriving from
+        // ChainHost had the field at its default, so every misdial went out
+        // without one and the server's dedupe could not fire on that path. The
+        // id is now minted at capture, which is what this asserts through the
+        // shipped builder rather than through the capture site.
+        {
+            auto r = goodRow();                       // carries a fixed id
+            auto v = juce::JSON::parse (echojay::buildMisdialBody (r, facts, "plugin-panel"));
+            auto* o = v.getDynamicObject();
+            check (o != nullptr && o->getProperty ("reportId").toString().isNotEmpty(),
+                   "md PIN16: a misdial body carries a reportId");
+            check (o != nullptr && o->getProperty ("reportId").toString() == r.reportId,
+                   "md PIN16: and it is the ROW's id, not one minted per press");
+
+            // STABLE ACROSS TWO READS OF THE SAME ROW. Minting per press would
+            // pass the first check and fail this one, and would dedupe a double
+            // tap while filing twice across two windows.
+            const auto a = echojay::buildMisdialBody (r, facts, "plugin-panel");
+            const auto b = echojay::buildMisdialBody (r, facts, "plugin-panel");
+            check (a == b, "md PIN16: two reads of one row build the same body");
+
+            // AND DIFFERENT BETWEEN ROWS, or one press would suppress another
+            // control's report at the server.
+            auto r2 = goodRow();
+            r2.mapKey = "ratio"; r2.index = 4;
+            r2.reportId = echojay::newMisdialReportId();
+            check (r2.reportId != r.reportId,
+                   "md PIN16: two rows carry different ids");
+            auto v2 = juce::JSON::parse (echojay::buildMisdialBody (r2, facts, "plugin-panel"));
+            check (v2.getDynamicObject() != nullptr
+                   && v2.getDynamicObject()->getProperty ("reportId").toString() == r2.reportId,
+                   "md PIN16: and each body carries its own row's id");
+
+            // A row with no id still builds: the route stores a report without
+            // one rather than refusing it, so an id is a dedupe affordance and
+            // never a fifth required field.
+            auto bare = goodRow(); bare.reportId = {};
+            const auto bb = echojay::buildMisdialBody (bare, facts, "plugin-panel");
+            check (bb.isNotEmpty()
+                   && ! juce::JSON::parse (bb).getDynamicObject()->hasProperty ("reportId"),
+                   "md PIN16: a row with no id still files, simply without one");
+
+            // AND THE CAPTURE SITE ACTUALLY MINTS ONE. Structural, because the
+            // gate cannot run a dial. Written after a mutation that removed the
+            // minting reddened NOTHING: every check above hands the builder a
+            // row that already has an id, so they prove the builder passes one
+            // through and say nothing about rows arriving with one. That was
+            // the whole property being claimed.
+            std::ifstream fch ("Source/ChainHost.cpp");
+            std::stringstream sch; sch << fch.rdbuf();
+            const auto chs = codeOnly (juce::String (sch.str()));
+            check (chs.contains ("mr.reportId   = echojay::newMisdialReportId();"),
+                   "md PIN16: the capture site mints an id for every row");
+            // The writer is header-inline, so it is read from ChainHost.h.
+            // Written against the .cpp first, which failed for the right
+            // reason on the wrong file.
+            std::ifstream fhh ("Source/ChainHost.h");
+            std::stringstream shh; shh << fhh.rdbuf();
+            const auto chh = codeOnly (juce::String (shh.str()));
+            check (chh.contains ("void markMisdialRowReported (int slotIndex, const juce::String& reportId)"),
+                   "md PIN16: and there is a writer to mark one reported");
+            check (chh.contains ("if (r.reportId == reportId) { r.reported = true; return; }"),
+                   "md PIN16: keyed on the id, which survives the copy the popup holds");
+        }
+
+        // md PIN17 -- THE WINDOW'S STATUS BRANCHES ARE THE ROUTE'S CONTRACT.
+        // Structural: which codes settle and which stay pressable is a
+        // property of the editor, and no pin here can open a window. This
+        // asserts the code that decides, so a later edit cannot quietly make a
+        // 5xx settle or a 400 invite a retry.
+        {
+            std::ifstream fh ("Source/PluginEditor.h");
+            std::stringstream sh; sh << fh.rdbuf();
+            const auto ed = codeOnly (juce::String (sh.str()));
+            check (ed.contains ("const bool clientFault = statusCode == 400 || statusCode == 405 || statusCode == 413;"),
+                   "md PIN17: 400, 405 and 413 are the client faults that repeat");
+            check (ed.contains ("sendBtn.setEnabled(! clientFault && signedIn);"),
+                   "md PIN17: everything else re-enables Send");
+            check (ed.contains ("cancelBtn.setButtonText(\"Close\");"),
+                   "md PIN17: a settled report turns Cancel into Close");
+            check (ed.contains ("Already reported. Nothing sent twice."),
+                   "md PIN17: and a duplicate says so rather than claiming to be first");
+            std::ifstream fc ("Source/PluginEditor.cpp");
+            std::stringstream sc; sc << fc.rdbuf();
+            const auto ec = codeOnly (juce::String (sc.str()));
+            check (ec.contains ("if (ok && self != nullptr)")
+                   && ec.contains ("markMisdialRowReported(slotIndex, reportId)"),
+                   "md PIN17: the row is marked only on a real success");
+            check (ec.contains ("auto self = juce::Component::SafePointer<EchoJayEditor>(this);"),
+                   "md PIN17: and the completion cannot touch a dead editor");
+        }
+
+        // md PIN7 -- THE POPUP LINE AND THE RECORD HAVE ONE AUTHOR, so the line
+        // the user chooses from cannot describe a different control from the one
+        // that gets sent.
+        {
+            const auto label = echojay::misdialRowLabel (goodRow());
+            check (label.contains ("threshold_db") && label.contains ("[3]"),
+                   "md PIN7: the popup line names the map key and the index", label);
+            check (label.contains ("-18") && label.contains ("-4.0 dB"),
+                   "md PIN7: and shows both the value asked for and what landed", label);
+        }
+    }
+
+
+    // =====================================================================
+    // CAPTURE GUARD -- OUTPUT SUBSTITUTION
+    //
+    // A/B playback, a compare stream and codec preview all replace the output
+    // buffer upstream of the meter and capture taps. A capture taken through
+    // one measures a file and reports it as the user's mix, and until now
+    // nothing refused it and nothing recorded it.
+    // =====================================================================
+    {
+        using namespace echojay;
+        auto none = [] { return OutputSubstitutionState{}; };
+        auto ab = [&] { auto s = none(); s.abActive = true; s.abPlayingRef = true; return s; };
+        auto cmp = [&] {
+            auto s = none();
+            s.cmpAudible = 1; s.cmpLoaded[1] = true; s.cmpPlaying[1] = true;
+            return s;
+        };
+
+        // cg PIN1 -- THE FOUR OUTCOMES. A silent quiet state is the whole
+        // defect, so "nothing running" must be distinguishable from each of
+        // the three things that can be running.
+        check (activeOutputSubstitution (none()) == OutputSubstitution::None,
+               "cg PIN1: a quiet plugin substitutes nothing");
+        check (activeOutputSubstitution (ab()) == OutputSubstitution::ABPlayback,
+               "cg PIN1: A/B playback is a substitution");
+        check (activeOutputSubstitution (cmp()) == OutputSubstitution::ComparePlayback,
+               "cg PIN1: an audible compare stream is a substitution");
+        {
+            auto s = cmp(); s.codecPreview = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::CodecPreview,
+                   "cg PIN1: and codec preview is named as itself, not as Compare");
+        }
+
+        // cg PIN2 -- THE FOUR WAYS A COMPARE STREAM IS NOT SUBSTITUTING. Each
+        // is a live state the UI can be in, and treating any of them as active
+        // would refuse a capture the user is entitled to take.
+        {
+            auto s = cmp(); s.cmpAudible = -1;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN2: a playing but INAUDIBLE stream reaches its meter, not the output");
+            s = cmp(); s.cmpPlaying[1] = false;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN2: a loaded but parked stream contributes nothing");
+            s = cmp(); s.cmpLoaded[1] = false;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN2: a selected slot with no buffer behind it substitutes nothing");
+            s = cmp(); s.cmpStopAtZero[1] = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN2: a stream mid-disengage is on its way out");
+        }
+        // The audible index must be READ, not assumed: slot 0 playing while
+        // slot 1 is the audible one is silence from the user's point of view.
+        {
+            auto s = none();
+            s.cmpAudible = 1;
+            s.cmpLoaded[0] = true; s.cmpPlaying[0] = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN2: the OTHER slot playing is not the audible one");
+        }
+
+        // cg PIN3 -- PRECEDENCE FOLLOWS THE AUDIO PATH. A/B assigns into the
+        // buffer and the compare crossfade writes over it, so with both running
+        // the user must be sent to stop Compare. Naming A/B would send them to
+        // stop the thing that is no longer audible.
+        {
+            auto s = cmp(); s.abActive = true; s.abPlayingRef = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::ComparePlayback,
+                   "cg PIN3: compare overwrites A/B, so compare is what gets named");
+            s.codecPreview = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::CodecPreview,
+                   "cg PIN3: and codec preview is the most specific of the three");
+        }
+        // Codec preview WITHOUT a rolling stream replaces nothing. The flag is
+        // a mirror of editor state; it is not itself evidence of audio.
+        {
+            auto s = none(); s.codecPreview = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN3: the codec flag alone, streams parked, substitutes nothing");
+        }
+        // A/B armed but passing the DAW through is not a substitution.
+        {
+            auto s = none(); s.abActive = true;
+            check (activeOutputSubstitution (s) == OutputSubstitution::None,
+                   "cg PIN3: A/B loaded but passing through is not a substitution");
+        }
+
+        // cg PIN4 -- THE REFUSAL NAMES THE FEATURE AND SAYS WHAT TO DO. A
+        // refusal that says only "unavailable" sends someone hunting, which is
+        // the affordance-that-appears-broken failure in a new place.
+        {
+            const auto rAb  = captureRefusalReason (OutputSubstitution::ABPlayback);
+            const auto rCmp = captureRefusalReason (OutputSubstitution::ComparePlayback);
+            const auto rCod = captureRefusalReason (OutputSubstitution::CodecPreview);
+            check (rAb.isNotEmpty() && rCmp.isNotEmpty() && rCod.isNotEmpty(),
+                   "cg PIN4: every substitution has a reason");
+            check (captureRefusalReason (OutputSubstitution::None).isEmpty(),
+                   "cg PIN4: and None has none -- a refusal with no cause is not a refusal");
+            check (rAb != rCmp && rCmp != rCod && rAb != rCod,
+                   "cg PIN4: the three reasons are distinct");
+            check (rCod.containsIgnoreCase ("codec")
+                   && rCmp.containsIgnoreCase ("compare")
+                   && rAb.containsIgnoreCase ("playback"),
+                   "cg PIN4: each names the feature that is running");
+            check (rAb.containsIgnoreCase ("then capture")
+                   && rCmp.containsIgnoreCase ("then capture")
+                   && rCod.containsIgnoreCase ("then capture"),
+                   "cg PIN4: and each says what to do about it");
+        }
+
+        // cg PIN5 -- THE FIELD SURVIVES THE CAPTURE RECORD'S ROUND TRIP,
+        // through the REAL serialisation format the state blob uses, not
+        // through a DynamicObject held in memory. The field is unreachable
+        // today because the guard forbids it; section 4 relaxes that guard,
+        // and a field that silently drops on reload would be the same defect
+        // wearing a label.
+        auto roundTrip = [] (const juce::String& token)
+        {
+            auto o = std::make_unique<juce::DynamicObject>();
+            o->setProperty ("id", "cap-1");            // a realistic neighbour
+            writeCaptureSubstitution (*o, token);
+            const auto json = juce::JSON::toString (juce::var (o.release()));
+            const auto back = juce::JSON::parse (json);
+            auto* ro = back.getDynamicObject();
+            return ro != nullptr ? readCaptureSubstitution (*ro) : juce::String ("<no object>");
+        };
+        check (roundTrip ("ab") == "ab",       "cg PIN5: an A/B capture reloads as A/B");
+        check (roundTrip ("compare") == "compare", "cg PIN5: a compare capture reloads as compare");
+        check (roundTrip ("codec") == "codec", "cg PIN5: a codec capture reloads as codec");
+        check (roundTrip ("") == "",           "cg PIN5: no substitution reloads as none");
+        // Absent key, which is every capture written before today. It must read
+        // as "none", not as an empty-but-present label.
+        {
+            // DRIVE THE REAL WRITER with the empty value a clean capture
+            // carries. An object this pin never wrote to would have no key
+            // whatever writeCaptureSubstitution did, which tests the fixture
+            // and not the property -- found by mutation C, which changed the
+            // writer to emit unconditionally and reddened nothing.
+            auto o = std::make_unique<juce::DynamicObject>();
+            o->setProperty ("id", "clean-capture");
+            writeCaptureSubstitution (*o, {});
+            const auto json = juce::JSON::toString (juce::var (o.release()));
+            check (! json.contains (kCaptureSubstitutionKey),
+                   "cg PIN5: a clean capture writes NO key -- absent means none", json);
+            // And an older capture, written before the field existed at all.
+            auto old = std::make_unique<juce::DynamicObject>();
+            old->setProperty ("id", "pre-field-capture");
+            auto back = juce::JSON::parse (juce::JSON::toString (juce::var (old.release())));
+            check (readCaptureSubstitution (*back.getDynamicObject()) == "",
+                   "cg PIN5: and a capture written before the field reads back as none");
+        }
+        // A token this build has never heard of comes back verbatim. Blanking
+        // it would turn a labelled capture into an unlabelled one, which is
+        // precisely what the field exists to prevent.
+        check (roundTrip ("phone_speaker_v2") == "phone_speaker_v2",
+               "cg PIN5: an unknown token survives rather than being blanked");
+        // The three keys are distinct and none is empty, or two substitutions
+        // would be indistinguishable on the record.
+        {
+            const juce::String kAb  (outputSubstitutionKey (OutputSubstitution::ABPlayback));
+            const juce::String kCmp (outputSubstitutionKey (OutputSubstitution::ComparePlayback));
+            const juce::String kCod (outputSubstitutionKey (OutputSubstitution::CodecPreview));
+            check (kAb.isNotEmpty() && kCmp.isNotEmpty() && kCod.isNotEmpty()
+                   && kAb != kCmp && kCmp != kCod && kAb != kCod,
+                   "cg PIN5: the three record tokens are distinct and non-empty");
+            check (juce::String (outputSubstitutionKey (OutputSubstitution::None)).isEmpty(),
+                   "cg PIN5: and None writes no token");
+        }
+
+        // cg PIN6 -- THE CALL SITES. The predicate being right is worth
+        // nothing if startCapture never asks it, and the guard being right is
+        // worth nothing if the button says nothing when it fires.
+        {
+            std::ifstream fp ("Source/PluginProcessor.cpp");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pc = codeOnly (juce::String (sp.str()));
+            // OPENING CONTROL: see cg PIN7's note. A text pin that reads an
+            // empty string reports green on every ! contains and on nothing
+            // else, so each buffer says first that it IS the file it thinks.
+            check (pc.length() > 10000 && pc.contains ("EchoJayProcessor::startCapture"),
+                   "cg PIN6: PluginProcessor.cpp was read and is the real file",
+                   "len=" + juce::String (pc.length()));
+            check (pc.contains ("const auto sub = activeOutputSubstitution();")
+                   && pc.contains ("if (sub != echojay::OutputSubstitution::None)"),
+                   "cg PIN6: startCapture asks the predicate");
+            check (pc.contains ("captureSubstitution_ = echojay::outputSubstitutionKey(sub);"),
+                   "cg PIN6: and stamps what it began under");
+            check (pc.contains ("snap.outputSubstitution = captureSubstitution_;"),
+                   "cg PIN6: the stamp reaches the snapshot");
+            check (pc.contains ("echojay::writeCaptureSubstitution(*obj, s.outputSubstitution);")
+                   && pc.contains ("s.outputSubstitution = echojay::readCaptureSubstitution(*so);"),
+                   "cg PIN6: and both ends of the state blob carry it");
+
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto ec = codeOnly (juce::String (se.str()));
+            check (ec.length() > 10000 && ec.contains ("EchoJayEditor::timerCallback"),
+                   "cg PIN6: PluginEditor.cpp was read and is the real file",
+                   "len=" + juce::String (ec.length()));
+            check (ec.contains ("chainListPanel.statusText = echojay::captureRefusalReason(sub);"),
+                   "cg PIN6: the button states the reason rather than failing silently");
+            // The processor cannot see codec mode by itself. Three sites keep
+            // the mirror true: enter, exit, and the destructor's fade path,
+            // which does NOT call exitCodecMode.
+            check (ec.contains ("processorRef.cmpCodecPreview.store(true);"),
+                   "cg PIN6: entering codec preview tells the processor");
+            const juce::String clearLine ("processorRef.cmpCodecPreview.store(false);");
+            int clears = 0;
+            for (int at = ec.indexOf (clearLine); at >= 0; at = ec.indexOf (at + 1, clearLine))
+                ++clears;
+            check (clears >= 2,
+                   "cg PIN6: and BOTH exit paths clear it, including the destructor's fade",
+                   "clears=" + juce::String (clears));
+        }
+
+        // cg PIN7 -- MAY THE TRANSPORT SYNC START A COMPARE STREAM?
+        // (open list 215). Before this, a host beginning to roll set playing
+        // true on a slot a person had paused; pause leaves cmpAudible latched
+        // on the slot, so the ramp target passed and the reference came back
+        // audible with no gesture behind it.
+        //
+        // EXHAUSTIVE, NOT REPRESENTATIVE. Four booleans is sixteen rows, which
+        // is small enough to enumerate completely, so the pin cannot be
+        // accidentally weak by sampling the combinations someone thought of.
+        {
+            int agreed = 0, trueRows = 0;
+            juce::String bad;
+            for (int m = 0; m < 16; ++m)
+            {
+                const bool syncOn   = (m & 1) != 0;
+                const bool bothCaps = (m & 2) != 0;
+                const bool loaded   = (m & 4) != 0;
+                const bool wants    = (m & 8) != 0;
+
+                // The expectation is written out INDEPENDENTLY of the shipped
+                // expression, so this is a second statement of the rule and
+                // not the same one compared with itself.
+                const bool expected = syncOn && ! bothCaps && loaded && wants;
+                const bool got = echojay::cmpSyncMayStart (syncOn, bothCaps, loaded, wants);
+                if (got == expected) ++agreed; else
+                    bad << "sync=" << (int) syncOn << " both=" << (int) bothCaps
+                        << " loaded=" << (int) loaded << " wants=" << (int) wants
+                        << " got=" << (int) got << " want=" << (int) expected << "; ";
+                if (expected) ++trueRows;
+            }
+            check (agreed == 16 && bad.isEmpty(),
+                   "cg PIN7: all sixteen combinations of the four inputs agree, exhaustively",
+                   bad);
+            // THE CONTROL: exactly one row may say yes. Without this the table
+            // would pass just as happily against a function that always
+            // returned false, which is the shape a weak pin takes here.
+            check (trueRows == 1,
+                   "cg PIN7: and exactly ONE of the sixteen is a yes, so the table is not "
+                   "passing against a predicate that refuses everything",
+                   "trueRows=" + juce::String (trueRows));
+            check (echojay::cmpSyncMayStart (true, false, true, true),
+                   "cg PIN7: the one yes is sync on, not both captures, loaded, user wants it");
+            check (! echojay::cmpSyncMayStart (true, false, true, false),
+                   "cg PIN7: and a PAUSED slot is refused with everything else identical, "
+                   "which is the defect this closes");
+
+            // cg PIN7, TEXT -- STOPPING CONSULTS NOTHING.
+            //
+            // The truth table cannot carry this: it says what the predicate
+            // answers, not which branch asks it. The asymmetry IS the fix, so
+            // it is asserted over the source of the sync block itself, the way
+            // mr PIN24 reads painter bodies.
+            //
+            // WHAT IT CAN AND CANNOT SEE, stated so nobody reads it as more
+            // than it is: it checks the TEXT of the stop branch, so it catches
+            // someone adding a condition there, and it would NOT catch a
+            // condition added inside a helper the stop branch called. Today it
+            // calls none.
+            {
+                std::ifstream fp ("Source/PluginProcessor.cpp");
+                std::stringstream sp; sp << fp.rdbuf();
+                const auto pc = codeOnly (juce::String (sp.str()));
+
+                // ANCHORED ON CODE, NOT ON A COMMENT.
+                //
+                // THIS PIN CAUGHT ITSELF ON ITS FIRST RUN, and that is the most
+                // useful thing about it. It first anchored on the sentence
+                // "Sync compare streams to DAW transport", which lives inside a
+                // // comment, and codeOnly() strips comments BEFORE the search:
+                // the anchor could never be found, the sweep read an empty
+                // string, and three checks went red.
+                //
+                // THE ONE THAT DID NOT GO RED IS THE LESSON. "the STOP branch
+                // consults NOTHING" PASSED on the empty string, because nothing
+                // contains nothing. A pin that reports green while reading no
+                // source at all is worse than no pin, so the non-empty
+                // assertion below is now part of the check rather than an
+                // assumption sitting behind it.
+                //
+                // `playing != wasTransportPlaying` is the transition guard
+                // itself: real code, it survives comment stripping, and it
+                // occurs exactly ONCE in the file, which was verified before
+                // it was used rather than after it failed.
+                check (pc.length() > 10000 && pc.contains ("EchoJayProcessor::processBlock"),
+                       "cg PIN7: PluginProcessor.cpp was read and is the real file",
+                       "len=" + juce::String (pc.length()));
+                const int blockAt = pc.indexOf ("playing != wasTransportPlaying");
+                check (blockAt >= 0,
+                       "cg PIN7: the sync block was found by a CODE anchor, so this sweep is "
+                       "reading something");
+
+                const auto block  = pc.substring (blockAt, blockAt + 1400);
+                const int  elseAt = juce::jmax (0, block.indexOf ("else"));
+                check (elseAt > 0, "cg PIN7: and it has a stop branch");
+
+                const auto startBranch = block.substring (0, elseAt);
+                const auto stopBranch  = block.substring (elseAt,
+                                                          juce::jmin (elseAt + 220,
+                                                                      block.length()));
+
+                // THE TWO CONTROLS, BOTH LOAD-BEARING. Without the first, the
+                // does-not-contain check below passes on an empty extraction,
+                // which is exactly what it did.
+                check (stopBranch.length() > 20 && stopBranch.contains ("playing.store(false)"),
+                       "cg PIN7: the stop branch is NON-EMPTY and really is the stop, so the "
+                       "does-not-contain check below cannot pass vacuously",
+                       "len=" + juce::String (stopBranch.length()));
+                check (startBranch.contains ("cmpSyncMayStart"),
+                       "cg PIN7: the START branch consults cmpSyncMayStart");
+                check (! stopBranch.contains ("cmpSyncMayStart")
+                       && ! stopBranch.contains ("userWantsRolling"),
+                       "cg PIN7: and the STOP branch consults NOTHING, so a host that stops "
+                       "always stops the reference whatever the user pressed earlier",
+                       stopBranch.substring (0, 120));
+                check (! pc.contains ("cmpSyncMayStop"),
+                       "cg PIN7: and no cmpSyncMayStop was invented to make the two branches "
+                       "look alike");
+            }
+        }
+    }
+
+
+    // =====================================================================
+    // SPECTRAL EVIDENCE -- COMPARE_REFERENCE_PLAN section 1
+    //
+    // Compare's tonal advice subtracted a whole-capture spectrum from the
+    // reference's last 150 ms, because the live path took MeterData::spectrum
+    // and for a reference that is the meter's reading after the final block of
+    // the file. Measured on Kathy's own library: six of eight references have a
+    // FULLY SILENT tail, so the old comparison emitted no tonal advice at all;
+    // of the two with a live tail, one claimed the capture had 40.7 dB more
+    // highs and 34.2 dB more sub than the reference, and two bands pointed the
+    // wrong way.
+    // =====================================================================
+    {
+        using namespace echojay;
+
+        // se PIN1 -- ONLY A BOUNDED-WINDOW AVERAGE IS COMPARABLE. The whole
+        // point of the struct is that a peak hold and a ballistic tail are not
+        // the same kind of number as an average, and saying so is the fix.
+        check (reductionIsAverage (SpectralReduction::WholeFileAverage),
+               "se PIN1: a whole-file average is an average");
+        check (reductionIsAverage (SpectralReduction::WholeWindowAverage),
+               "se PIN1: a whole-capture average is an average");
+        check (! reductionIsAverage (SpectralReduction::WholeWindowPeakHold),
+               "se PIN1: a peak hold is NOT");
+        check (! reductionIsAverage (SpectralReduction::BallisticTail),
+               "se PIN1: a ballistic tail is NOT -- this is the shipped defect");
+        check (! reductionIsAverage (SpectralReduction::LiveInstant),
+               "se PIN1: a live reading is NOT");
+        check (! reductionIsAverage (SpectralReduction::Unknown),
+               "se PIN1: and an unrecorded reduction is not assumed to be one");
+
+        // se PIN2 -- THE UNSET SENTINEL READS AS IMPOSSIBLE, NOT AS AGREEMENT.
+        // This is the property the whole sentinel exists for. A zero-filled
+        // array (the old default) is FLAT, and because each side is normalised
+        // by its own loudest band, any flat spectrum yields a delta of exactly
+        // 0.0 in all six bands: the uninitialised state rendered as "these two
+        // mixes are practically identical". The pin proves BOTH halves, because
+        // the sentinel is only worth having if the old default really did lie.
+        {
+            std::array<float, 64> zeroFilled {};      // the OLD default
+            std::array<float, 64> real {};
+            for (int i = 0; i < 64; ++i) real[(size_t) i] = -30.0f - (float) i * 0.5f;
+
+            // TWO FAILURE SHAPES, and the first pin written here asserted the
+            // wrong one. A zero-filled REFERENCE does not read as agreement: its
+            // own bands are all 0 dB so refMax is 0 and every (ref - refMax) term
+            // vanishes, leaving delta[i] = mix[i] - mixMax, which is the MIX's own
+            // tilt. The diff then confidently reports a deficit in every band but
+            // the capture's loudest, invented entirely from an uninitialised
+            // array. Caught by this pin failing, which is the argument for
+            // asserting the arithmetic rather than describing it.
+            const auto oneSided = bandDeltas (real, zeroFilled);
+            bool anyBig = false; float worst = 0.0f;
+            for (int i = 0; i < 6; ++i)
+            {
+                const float d = oneSided.delta[(size_t) i];
+                if (std::abs (d) > 2.0f) anyBig = true;
+                if (d < worst) worst = d;
+            }
+            check (oneSided.valid && anyBig && worst < -10.0f,
+                   "se PIN2: a zero-filled REFERENCE fabricates a large deficit, not agreement",
+                   "worst band " + juce::String (worst, 2) + " dB");
+
+            // And when BOTH sides are zero-filled, which is what two unguarded
+            // reads produce, it does read as agreement: all six exactly 0.0.
+            const auto twoSided = bandDeltas (zeroFilled, zeroFilled);
+            bool allZero = twoSided.valid;
+            for (int i = 0; i < 6 && allZero; ++i)
+                if (std::abs (twoSided.delta[(size_t) i]) > 0.001f) allZero = false;
+            check (twoSided.valid && allZero,
+                   "se PIN2: and two zero-filled sides read as perfect agreement");
+
+            const auto honest = bandDeltas (real, unsetSpectrum());
+            check (! honest.valid && honest.refUnset,
+                   "se PIN2: the unset sentinel yields INVALID instead, and says which side");
+            const auto honest2 = bandDeltas (unsetSpectrum(), real);
+            check (! honest2.valid && honest2.mixUnset,
+                   "se PIN2: and it works on the mix side too");
+        }
+        // The sentinel must survive avgDb's floor clamp. A clamped sentinel
+        // would come back as -100 in every band, which is flat, which lies.
+        {
+            const auto b = computeBands (unsetSpectrum());
+            check (binIsUnset (b.sub) && binIsUnset (b.high),
+                   "se PIN2: avgDb does not clamp the sentinel into a level");
+        }
+        // se PIN2 -- A PARTIALLY UNSET SPECTRUM MUST REFUSE TOO, and this is the
+        // fixture that makes the unset guard load-bearing. Found by mutation:
+        // deleting the unset early-return from bandDeltas reddened NOTHING,
+        // because every fixture here was FULLY unset and a fully unset spectrum
+        // has no signal either, so the next guard caught it. Both guards looked
+        // necessary while only one was being tested.
+        //
+        // Partially unset is the case only the unset guard catches: some bands
+        // carry the sentinel and some carry real signal, so mixHasSignal is TRUE
+        // and the signal guard waves it through. Without the unset guard the
+        // comparison proceeds with a band still holding -1000 dB and returns a
+        // delta near -970 dB marked valid, which is the confident absurd number
+        // this whole change exists to prevent.
+        {
+            std::array<float, 64> partial = unsetSpectrum();
+            for (int i = 32; i < 64; ++i) partial[(size_t) i] = -25.0f;   // top half real
+            std::array<float, 64> real {};
+            for (int i = 0; i < 64; ++i) real[(size_t) i] = -30.0f - (float) i * 0.5f;
+
+            const auto pd = bandDeltas (partial, real);
+            check (! pd.valid && pd.mixUnset && pd.mixHasSignal,
+                   "se PIN2: a PARTIALLY unset spectrum refuses, though it has signal");
+            bool absurd = false;
+            for (int i = 0; i < 6; ++i)
+                if (pd.delta[(size_t) i] < -500.0f) absurd = true;
+            check (! absurd,
+                   "se PIN2: and it emits no delta at all rather than a -970 dB one");
+            const auto pd2 = bandDeltas (real, partial);
+            check (! pd2.valid && pd2.refUnset && pd2.refHasSignal,
+                   "se PIN2: same on the reference side");
+        }
+
+        // A genuinely quiet spectrum is NOT unset: the floor still compares.
+        {
+            std::array<float, 64> quiet; quiet.fill (-115.0f);
+            const auto b = computeBands (quiet);
+            check (! binIsUnset (b.sub) && b.sub <= -99.0f,
+                   "se PIN2: a real -115 dB floor is a measurement, not a sentinel");
+        }
+
+        // se PIN3 -- THE CAVEAT FIRES ON A MISMATCH AND STAYS SILENT ON A MATCH,
+        // and it forbids quantifying. Section 1.5 item 2, decided: the diff runs
+        // WITH the caveat rather than being suppressed, because suppressing
+        // removes the feature's only actionable output to avoid imprecision.
+        {
+            SpectralEvidence avgA; avgA.reduction = SpectralReduction::WholeWindowAverage; avgA.valid = true;
+            SpectralEvidence avgB; avgB.reduction = SpectralReduction::WholeFileAverage;   avgB.valid = true;
+            SpectralEvidence pk;   pk.reduction   = SpectralReduction::WholeWindowPeakHold; pk.valid = true;
+            SpectralEvidence dead; // valid=false
+
+            check (tonalDiffCaveat (avgA, avgB, "mix", "ref").isEmpty(),
+                   "se PIN3: two averages need no caveat");
+            const auto c = tonalDiffCaveat (pk, avgB, "your capture", "the reference");
+            check (c.isNotEmpty() && c.contains ("your capture") && c.contains ("peak hold"),
+                   "se PIN3: a peak hold is caveated BY NAME and names the side", c);
+            check (c.contains ("DIRECTION") && c.containsIgnoreCase ("do not quote"),
+                   "se PIN3: the caveat keeps direction and forbids quantifying", c);
+            const auto c2 = tonalDiffCaveat (avgA, pk, "your capture", "the reference");
+            check (c2.contains ("the reference"),
+                   "se PIN3: and it names whichever side is the odd one", c2);
+            const auto cd = tonalDiffCaveat (avgA, dead, "mix", "ref");
+            check (cd.contains ("no spectral measurement")
+                   && cd.containsIgnoreCase ("do not describe tonal balance"),
+                   "se PIN3: a missing side forbids tonal talk entirely", cd);
+        }
+
+        // se PIN4 -- THE PROSE CARRIES THE WINDOW AND THE REDUCTION (item 4),
+        // so a reader can tell a whole-file average from a 150 ms tail without
+        // opening the source. That is what made this defect survive.
+        {
+            SpectralEvidence ev; ev.reduction = SpectralReduction::WholeFileAverage;
+            ev.windowSeconds = 168.5f; ev.valid = true;
+            const auto line = spectralProvenanceLine ("the reference", ev);
+            check (line.contains ("the reference") && line.contains ("whole file")
+                   && line.contains ("168.5"),
+                   "se PIN4: the line names the side, the reduction and the window", line);
+            SpectralEvidence tail; tail.reduction = SpectralReduction::BallisticTail; tail.valid = true;
+            check (spectralProvenanceLine ("ref", tail).contains ("150 ms"),
+                   "se PIN4: a tail is described as a tail, not as a window");
+            SpectralEvidence none;
+            check (spectralProvenanceLine ("ref", none).contains ("NO SPECTRAL DATA"),
+                   "se PIN4: and an absent measurement says so");
+        }
+
+        // se PIN5 -- THE DELTA ARITHMETIC IS LEVEL-INVARIANT. Each side is
+        // normalised by its own loudest band, which is what makes a tilted
+        // spectrum usable for a delta (section 1.4) and what makes a flat one
+        // indistinguishable from agreement (se PIN2).
+        {
+            std::array<float, 64> a {}, b {};
+            for (int i = 0; i < 64; ++i) { a[(size_t) i] = -20.0f - (float) i * 0.4f;
+                                          b[(size_t) i] = a[(size_t) i] - 12.0f; }
+            const auto d = bandDeltas (a, b);
+            bool flat = d.valid;
+            for (int i = 0; i < 6 && flat; ++i)
+                if (std::abs (d.delta[(size_t) i]) > 0.001f) flat = false;
+            check (flat, "se PIN5: a pure 12 dB level offset produces no band delta");
+        }
+
+        // se PIN6 -- THE WIRING. The predicate being right is worth nothing if
+        // the live path still reads MeterData::spectrum.
+        {
+            std::ifstream fp ("Source/PluginProcessor.cpp");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pc = codeOnly (juce::String (sp.str()));
+            check (! pc.contains ("appendTonalDiff(ctx, da.spectrum, db.spectrum, la, lb)"),
+                   "se PIN6: the LIVE overload no longer diffs MeterData::spectrum");
+            check (pc.contains ("sa.valid ? sa.bins : echojay::unsetSpectrum()"),
+                   "se PIN6: it diffs the evidence, and an invalid side goes in unset");
+            check (pc.contains ("echojay::spectralProvenanceLine(la, sa)")
+                   && pc.contains ("echojay::spectralProvenanceLine(lb, sb)"),
+                   "se PIN6: both sides' provenance reaches the prose");
+            check (pc.contains ("echojay::tonalDiffCaveat(sa, sb, la, lb)"),
+                   "se PIN6: and the caveat is emitted, not just available");
+            // The band reduction must NOT have been left behind in the
+            // anonymous namespace: two copies is how this class of defect
+            // reproduces, and the measurement can only link the header one.
+            check (! pc.contains ("BandLevels computeBands (const std::array<float, 64>& s)")
+                   && ! pc.contains ("BandLevels computeBands(const std::array<float, 64>& s)"),
+                   "se PIN6: computeBands is no longer defined in the .cpp");
+
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se2; se2 << fe.rdbuf();
+            const auto ec = codeOnly (juce::String (se2.str()));
+            check (ec.contains ("ev.bins          = refs[(size_t) slot.index].eqCurve;"),
+                   "se PIN7: the REFERENCE side uses eqCurve, the whole-file average");
+            check (ec.contains ("ev.reduction     = R::WholeFileAverage;"),
+                   "se PIN7: and stamps it as one");
+            check (ec.contains ("ev.bins      = sn.avgSpectrum;"),
+                   "se PIN7: a fresh capture uses avgSpectrum");
+            check (ec.contains ("EchoJayProcessor::spectrumUsesAverage(sn.channelType)"),
+                   "se PIN7: and a restored one derives its reduction from the persisted channel type");
+            check (ec.contains ("const echojay::SpectralEvidence sa = getSlotSpectralEvidence(slotA);")
+                   && ec.contains ("sa, sb);"),
+                   "se PIN7: the call site actually passes the evidence");
+        }
+
+        // se PIN9 -- THE LIVE SLOT READS THE ROLLING RING, AND ITS STATISTIC IS
+        // NAMED FOR WHAT IT IS. MeterEngine already kept a 25 fps ring of heard
+        // audio and already fed it to the chat injection; Compare was the one
+        // consumer still taking the 150 ms ballistic tail, which no reference can
+        // ever be compared against.
+        {
+            check (! reductionIsAverage (SpectralReduction::RollingMeanOfMaxima),
+                   "se PIN9: a mean of 40 ms maxima is NOT an average");
+            const juce::String nm (reductionName (SpectralReduction::RollingMeanOfMaxima));
+            check (nm.containsIgnoreCase ("maxima") && ! nm.containsIgnoreCase ("average"),
+                   "se PIN9: and it is not NAMED one either", nm);
+            check (juce::String (reductionName (SpectralReduction::WholeWindowAverage))
+                     != nm,
+                   "se PIN9: the two statistics have different names");
+
+            // The provenance line must carry the window length AND say the thing
+            // that makes this statistic different from a capture's.
+            SpectralEvidence ev;
+            ev.reduction = SpectralReduction::RollingMeanOfMaxima;
+            ev.windowSeconds = 11.7f; ev.valid = true;
+            const auto line = spectralProvenanceLine ("the live signal", ev);
+            check (line.contains ("11.7"),
+                   "se PIN9: the provenance line carries the window length", line);
+            check (line.containsIgnoreCase ("not bit-comparable")
+                   && line.containsIgnoreCase ("40 ms maximum"),
+                   "se PIN9: and says it is not bit-comparable with a capture", line);
+            // A peak-hold live window is EXACT, so it must NOT carry that clause.
+            SpectralEvidence pk; pk.reduction = SpectralReduction::WholeWindowPeakHold;
+            pk.windowSeconds = 11.7f; pk.valid = true;
+            check (! spectralProvenanceLine ("the live signal", pk)
+                       .containsIgnoreCase ("not bit-comparable"),
+                   "se PIN9: a max of maxima IS a capture's peak hold, so it does not");
+        }
+
+        // se PIN10 -- THE MIXTURE IS DESCRIBED PER FIGURE, not stamped whole.
+        // getMeterData() carries a ballistic spectrum beside continuously
+        // integrated LUFS; labelling the struct with the spectrum's answer
+        // understated the loudness half.
+        {
+            SpectralEvidence live; live.reduction = SpectralReduction::RollingMeanOfMaxima;
+            live.valid = true; live.loudnessIsContinuous = true;
+            SpectralEvidence ref;  ref.reduction = SpectralReduction::WholeFileAverage;
+            ref.valid = true;
+
+            const auto n = mixedSpanNote (live, ref, "the live signal", "the reference");
+            check (n.contains ("the live signal") && ! n.contains ("the reference"),
+                   "se PIN10: the note names only the side it is true of", n);
+            check (n.containsIgnoreCase ("integrated") && n.containsIgnoreCase ("different span"),
+                   "se PIN10: and says the two figures cover different spans", n);
+            check (mixedSpanNote (ref, ref, "a", "b").isEmpty(),
+                   "se PIN10: two stored sides get no note");
+            SpectralEvidence live2 = live;
+            check (mixedSpanNote (live, live2, "A", "B").contains ("A and B"),
+                   "se PIN10: and both live sides are named when both apply");
+        }
+
+        // se PIN11 -- THE WIRING, because the vocabulary is worth nothing if the
+        // Live branch still reads the ballistic array.
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se3; se3 << fe.rdbuf();
+            const auto ec = codeOnly (juce::String (se3.str()));
+            check (ec.contains ("processorRef.getMeterEngine().reduceSpectrumWindow(useMean)"),
+                   "se PIN11: the Live branch reduces the ring");
+            check (! ec.contains ("ev.bins      = processorRef.getMeterEngine().getMeterData().spectrum;"),
+                   "se PIN11: and no longer reads the ballistic spectrum");
+            // WHICH ARRAY ACTUALLY LANDS, which is the whole point of the change
+            // and was the one thing unasserted. Mutation M1 kept the call to
+            // reduceSpectrumWindow and then overwrote w.bins with the ballistic
+            // spectrum; every check above still matched and the gate stayed
+            // green. A text pin can only forbid the evasions someone thought of,
+            // so this closes that one and not the class (see plan 4B.7).
+            check (ec.contains ("ev.bins          = w.bins;"),
+                   "se PIN11: and the RING's bins are what land in the evidence");
+            // THE RING RESULT IS CONST, which is the property that makes the
+            // evasion impossible rather than merely unwritten. Mutation M1 wrote
+            // w.bins = <ballistic> between the call and the assignment; every
+            // text check above still matched, INCLUDING the ev.bins = w.bins one
+            // added to catch it, because the corruption happens BEFORE the
+            // assignment and leaves its text intact. To do that at all the
+            // mutation must first strip this const, so pinning the const is the
+            // one thing in reach that the defect cannot route around.
+            //
+            // It is still a text pin. A sufficiently different evasion still
+            // passes, and the real fix is plan 4B.7: extract the selection into
+            // a pure function the gate can CALL.
+            check (ec.contains ("const auto w = processorRef.getMeterEngine().reduceSpectrumWindow(useMean);"),
+                   "se PIN11: and the ring result is const, so it cannot be overwritten");
+            check (ec.contains ("const bool useMean = processorRef.spectrumUsesAverage();"),
+                   "se PIN11: the statistic comes from the SAME predicate the capture uses");
+            check (ec.contains ("ev.reduction = useMean ? R::RollingMeanOfMaxima : R::WholeWindowPeakHold;"),
+                   "se PIN11: mean and peak are stamped differently, peak as the exact one");
+            check (ec.contains ("ev.windowSeconds = w.seconds;"),
+                   "se PIN11: the window length the ring reports is carried");
+            check (ec.contains ("ev.loudnessIsContinuous = true;"),
+                   "se PIN11: and a live side is marked as a mixture");
+
+            std::ifstream fp2 ("Source/PluginProcessor.cpp");
+            std::stringstream sp2; sp2 << fp2.rdbuf();
+            const auto pc2 = codeOnly (juce::String (sp2.str()));
+            check (pc2.contains ("echojay::mixedSpanNote(sa, sb, la, lb)"),
+                   "se PIN11: the note is emitted into the context, not just available");
+        }
+
+        // se PIN12 -- LIVE LRA IS SUPPRESSED, AND BOTH CONSUMERS SEE IT ABSENT.
+        //
+        // Not caveated. A session LRA measures spread across whatever was played,
+        // so across several songs it is inter-song variance wearing the LRA label,
+        // set beside a reference's whole-file LRA which means what it says. The
+        // rule the two opposite decisions share: caveat when something true
+        // survives (the tonal diff's direction does), suppress when nothing does.
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se4; se4 << fe.rdbuf();
+            const auto ec = codeOnly (juce::String (se4.str()));
+            // Zeroed at the ONE point that feeds the context and the card, before
+            // either sees it, so neither consumer needs teaching.
+            check (ec.contains ("if (slotA.kind == CompareSlotState::Kind::Live) da.loudnessRange = 0.0f;")
+                   && ec.contains ("if (slotB.kind == CompareSlotState::Kind::Live) db.loudnessRange = 0.0f;"),
+                   "se PIN12: a Live slot's lra is zeroed on BOTH sides at the feed point");
+            // The locals must be mutable for that to be possible at all.
+            check (ec.contains ("MeterData          da     = getSlotMeterData(slotA);"),
+                   "se PIN12: and the feed locals are the ones both consumers take");
+
+            std::ifstream fp3 ("Source/PluginProcessor.cpp");
+            std::stringstream sp3; sp3 << fp3.rdbuf();
+            const auto pc3 = codeOnly (juce::String (sp3.str()));
+            // The existing convention, unchanged, is what renders the absence.
+            check (pc3.contains ("f.lra > 0.0f ? juce::String(f.lra, 1) + \" LU\" : juce::String(\"N/A\")"),
+                   "se PIN12: the model's text table still renders 0 as N/A");
+            check (pc3.contains ("if (f.lra        >   0.0f) o->setProperty(\"lra\",   f.lra);"),
+                   "se PIN12: and the figure card still OMITS the key rather than sending 0");
+            // Integrated is NOT suppressed: it still answers its label, nudged.
+            check (! ec.contains ("da.integrated = -100.0f")
+                   && ! ec.contains ("db.integrated = -100.0f"),
+                   "se PIN12: integrated is left alone, because a gated mean survives");
+        }
+
+        // se PIN8 -- THE SNAPSHOT DEFAULTS ARE THE SENTINEL, NOT {}. The header
+        // comment was also wrong about when the flag is false, which is a
+        // materially more serious claim than the one it made.
+        {
+            std::ifstream fh ("Source/PluginProcessor.h");
+            std::stringstream sh; sh << fh.rdbuf();
+            const juce::String hraw (sh.str());
+            const auto hc = codeOnly (hraw);
+            check (hc.contains ("std::array<float, 64> peakSpectrum = echojay::unsetSpectrum();")
+                   && hc.contains ("std::array<float, 64> avgSpectrum  = echojay::unsetSpectrum();"),
+                   "se PIN8: both snapshot spectra default to the sentinel");
+            check (! hraw.contains ("false on snapshots restored from older save files"),
+                   "se PIN8: the 'older save files' claim is gone");
+            check (hraw.contains ("FALSE ON EVERY RESTORED SNAPSHOT"),
+                   "se PIN8: and replaced by what is actually true");
+        }
+    }
+
+
+    // =====================================================================
+    // THE REFERENCE INDEX -- Phase 1 commit 1, no shipping callers yet.
+    // The format is REFERENCE_INDEX_SCHEMA.md; these drive the shipped parser
+    // so the contract is executable before anything depends on it.
+    // =====================================================================
+    {
+        using namespace echojay;
+
+        // ri PIN1 -- EPOCH POLICY. An entry below the running epoch is
+        // re-analysed when its file is there and STALE BUT USABLE when it is
+        // not. Discarding an unreachable entry's numbers because the definition
+        // moved would lose the user a reference they can still compare against.
+        {
+            RefEntry old; old.measurementEpoch = 0;
+            old.measurements.valid = true; old.measurements.hasEqCurve = true;
+            old.measurements.reduction = "wholeFileAverage";
+
+            old.availability = RefAvailability::Present;
+            check (refNeedsReanalysis (old, 1) && ! refIsStale (old, 1),
+                   "ri PIN1: below-epoch and PRESENT is re-analysed, not stale");
+
+            old.availability = RefAvailability::Missing;
+            check (refIsStale (old, 1) && ! refNeedsReanalysis (old, 1),
+                   "ri PIN1: below-epoch and MISSING is stale, and not re-analysed");
+            check (! refIsUnmeasured (old),
+                   "ri PIN1: stale still HAS numbers -- it is usable");
+
+            RefEntry cur; cur.measurementEpoch = kRefMeasurementEpoch;
+            cur.measurements.valid = true; cur.availability = RefAvailability::Present;
+            check (! refNeedsReanalysis (cur) && ! refIsStale (cur),
+                   "ri PIN1: an entry at the running epoch is left alone");
+
+            // A path that resolved to nothing: no numbers at all, current epoch.
+            RefEntry none; none.measurementEpoch = kRefMeasurementEpoch;
+            none.availability = RefAvailability::Missing;
+            check (refIsUnmeasured (none) && ! refIsStale (none),
+                   "ri PIN1: UNMEASURED is distinct from stale");
+            // EPOCH 2 SINCE PHASE 1b COMMIT 3: the six macro bands became an
+            // accumulated whole-file mean of POWER instead of the meter's
+            // ballistic reading after the final block. Same field, different
+            // meaning, which is what an epoch is for. This pin fired the moment
+            // the constant moved, which is the whole reason it is a number here
+            // rather than a comment.
+            check (kRefMeasurementEpoch == 2,
+                   "ri PIN1: the current measurement epoch is 2");
+        }
+
+        // ri PIN2 -- id IS NOT DERIVED FROM path. Under index-in-place a path is
+        // a thing the user changes with a drag, and an id that moved with it
+        // would break every slot holding one.
+        {
+            const auto a = newReferenceId(), b = newReferenceId();
+            check (a.startsWith ("r_") && a.length() == 18,
+                   "ri PIN2: an id is r_ plus 16 hex", a);
+            check (a != b, "ri PIN2: two ids differ");
+            check (! a.contains ("/") && ! a.containsIgnoreCase (".wav"),
+                   "ri PIN2: and carries nothing from any path");
+        }
+
+        // ri PIN3 -- DEDUPE ON PATH. The same audio from two locations is TWO
+        // entries, deliberately: two paths are two things the user can rename
+        // and lose independently, and collapsing them discards one silently.
+        {
+            ReferenceIndex ix;
+            RefEntry e1; e1.id = "r_aaaa"; e1.path = "/Music/a/master.wav";
+            RefEntry e2; e2.id = "r_bbbb"; e2.path = "/Backup/b/master.wav";
+            ix.entries.push_back (e1); ix.entries.push_back (e2);
+
+            check (refFindByPath (ix, "/Music/a/master.wav") == 0
+                   && refFindByPath (ix, "/Backup/b/master.wav") == 1,
+                   "ri PIN3: same basename at two paths stays two entries");
+            check (refFindByPath (ix, "/Music/a/other.wav") == -1,
+                   "ri PIN3: an unknown path is not found");
+            check (refFindById (ix, "r_bbbb") == 1 && refFindById (ix, "r_zzzz") == -1,
+                   "ri PIN3: and lookup by id works independently of path");
+        }
+
+        // ri PIN4 -- THE CAP REFUSES AND NAMES ITSELF. It never evicts, because
+        // an eviction is a thing the user put there disappearing without their
+        // deciding it should.
+        {
+            ReferenceIndex ix;
+            check (refAddRefusal (ix).isEmpty(), "ri PIN4: an empty library accepts");
+            for (int i = 0; i < kRefIndexMaxEntries; ++i) ix.entries.push_back (RefEntry{});
+            const auto r = refAddRefusal (ix);
+            check (r.isNotEmpty() && r.contains (juce::String (kRefIndexMaxEntries)),
+                   "ri PIN4: at the cap it refuses and names the number", r);
+            check (r.containsIgnoreCase ("remove") && r.containsIgnoreCase ("nothing is removed"),
+                   "ri PIN4: and says what to do, and that nothing goes automatically", r);
+            check ((int) ix.entries.size() == kRefIndexMaxEntries,
+                   "ri PIN4: refusing evicts nothing");
+        }
+
+        // ri PIN5 -- A NEWER SCHEMA DEGRADES TO READ ONLY. Not a refusal, which
+        // would strand a user who opened the newer build once; not a write,
+        // which would destroy fields this build cannot see.
+        {
+            const auto newer = parseReferenceIndex
+                ("{\"schema\":99,\"writtenBy\":\"9.9.9\",\"entries\":[]}");
+            check (newer.readOnly && newer.diskSchema == 99,
+                   "ri PIN5: a higher schema parses and is marked read only");
+            check (! refIndexMayWrite (newer),
+                   "ri PIN5: and nothing may write to it");
+            const auto n = refReadOnlyNotice (newer);
+            check (n.contains ("9.9.9") && n.containsIgnoreCase ("read only")
+                   && n.containsIgnoreCase ("will not be saved"),
+                   "ri PIN5: the user is told, and told what will NOT happen", n);
+
+            ReferenceIndex nix = newer;
+            migrateReferenceIndex (nix);
+            check (nix.schema == 99,
+                   "ri PIN5: migrate leaves a newer document untouched");
+
+            const auto ours = parseReferenceIndex ("{\"schema\":1,\"entries\":[]}");
+            check (! ours.readOnly && refIndexMayWrite (ours),
+                   "ri PIN5: our own schema is writable");
+            check (refReadOnlyNotice (ours).isEmpty(),
+                   "ri PIN5: and says nothing to the user");
+        }
+
+        // ri PIN6 -- ROUND TRIP, AND UNKNOWN KEYS SURVIVE IT. A newer build's
+        // extra field must not be destroyed by an older one rewriting the file.
+        {
+            juce::String src =
+              "{\"schema\":1,\"measurementEpoch\":1,\"writtenBy\":\"2.26.4\","
+              "\"futureDocKey\":\"keep me\",\"entries\":[{"
+              "\"id\":\"r_1234\",\"name\":\"Master\",\"path\":\"/m/x.wav\","
+              "\"measurementEpoch\":1,\"futureEntryKey\":42,"
+              "\"source\":{\"bytes\":100,\"sampleRate\":44100,\"channels\":2,"
+              "\"durationSeconds\":168.5},"
+              "\"measurements\":{\"reduction\":\"wholeFileAverage\","
+              "\"windowSeconds\":168.5,\"meters\":{\"integrated\":-9.4},"
+              "\"eqCurve\":[";
+            for (int i = 0; i < 64; ++i) src += (i ? "," : "") + juce::String (-50.0 - i);
+            src += "],\"macroBandDb\":null},"
+                   "\"availability\":{\"state\":\"present\",\"checkedAt\":\"T\"}}]}";
+
+            const auto ix = parseReferenceIndex (src);
+            check (ix.entries.size() == 1, "ri PIN6: one entry parses");
+            const auto& e = ix.entries[0];
+            check (e.id == "r_1234" && e.path == "/m/x.wav",
+                   "ri PIN6: identity survives");
+            check (e.measurements.valid && e.measurements.hasEqCurve
+                   && ! e.measurements.hasMacroBands,
+                   "ri PIN6: eqCurve is measured and macroBandDb is ABSENT at epoch 1");
+            check (std::abs (e.measurements.eqCurve[0] + 50.0f) < 0.01f
+                   && std::abs (e.measurements.eqCurve[63] + 113.0f) < 0.01f,
+                   "ri PIN6: all 64 bins land, first and last");
+            check (e.availability == RefAvailability::Present,
+                   "ri PIN6: availability parses");
+            check (std::abs (e.measurements.integrated + 9.4f) < 0.01f,
+                   "ri PIN6: a meter value survives");
+
+            const auto out = writeReferenceIndex (ix, "2026-09-12T00:00:00Z", "2.26.4");
+            check (out.contains ("futureDocKey") && out.contains ("keep me"),
+                   "ri PIN6: an unknown DOCUMENT key survives the rewrite");
+            check (out.contains ("futureEntryKey"),
+                   "ri PIN6: and an unknown ENTRY key survives it too");
+            check (out.contains ("\"schema\":1") || out.contains ("\"schema\": 1"),
+                   "ri PIN6: the rewrite stamps this build's schema");
+
+            const auto back = parseReferenceIndex (out);
+            check (back.entries.size() == 1 && back.entries[0].id == "r_1234"
+                   && back.entries[0].measurements.hasEqCurve
+                   && ! back.entries[0].measurements.hasMacroBands,
+                   "ri PIN6: and it parses again identically");
+        }
+
+        // =================================================================
+        // COMMIT 2: WRITING. Every one of these drives the REAL load, merge and
+        // commit against a REAL temporary directory. None resolves its own path,
+        // which is why they are safe to run at all: ECHOJAY_STATE_HOME does not
+        // exist on this branch, so a path-resolving write would land in the
+        // user's live library.
+        // =================================================================
+        auto freshDir = [] (const char* tag)
+        {
+            auto d = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                        .getChildFile ("ejrefidx_" + juce::String (tag) + "_"
+                                       + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
+            d.deleteRecursively();
+            d.createDirectory();
+            return d;
+        };
+        auto entryAt = [] (const char* id, const char* path, const char* added)
+        {
+            RefEntry e;
+            e.id = id; e.path = path; e.name = path; e.addedAt = added;
+            e.measurementEpoch = kRefMeasurementEpoch;
+            e.availability = RefAvailability::Present;
+            return e;
+        };
+
+        // ri PIN8 -- FIRST RUN CREATES NOTHING, and Absent is not Unreadable.
+        {
+            auto d = freshDir ("first");
+            const auto r = loadReferenceIndex (d);
+            check (r.state == RefLoadState::Absent && r.index.entries.empty()
+                   && r.message.isEmpty(),
+                   "ri PIN8: no file means Absent, empty, and nothing said");
+            check (! refIndexFile (d).existsAsFile(),
+                   "ri PIN8: and LOADING created no file");
+            check (refMayCommit (r), "ri PIN8: Absent is writable");
+
+            // Exists but empty: damage, NOT absence. A truncating write leaves
+            // exactly this, so it must never be written over.
+            refIndexFile (d).replaceWithText ("");
+            const auto e = loadReferenceIndex (d);
+            check (e.state == RefLoadState::Unreadable && ! refMayCommit (e)
+                   && e.message.isNotEmpty(),
+                   "ri PIN8: an EMPTY existing file is Unreadable and refuses writes");
+
+            refIndexFile (d).replaceWithText ("{ this is not json");
+            const auto b = loadReferenceIndex (d);
+            check (b.state == RefLoadState::Unreadable && ! refMayCommit (b),
+                   "ri PIN8: and so is unparseable content");
+            d.deleteRecursively();
+        }
+
+        // ri PIN9 -- AN UNREADABLE FILE SURVIVES A COMMIT ATTEMPT BYTE FOR BYTE.
+        // Treating damage as "empty and writable" would make a transient fault
+        // permanent on the next write.
+        {
+            auto d = freshDir ("preserve");
+            const juce::String damaged = "{ half a file";
+            refIndexFile (d).replaceWithText (damaged);
+
+            ReferenceIndex mine;
+            mine.entries.push_back (entryAt ("r_new", "/m/new.wav", "2026-01-01T00:00:00Z"));
+            const auto c = commitReferenceIndex (d, mine, "T", "2.26.4");
+            check (! c.ok && c.message.isNotEmpty(),
+                   "ri PIN9: committing over an unreadable index REFUSES and says so");
+            check (refIndexFile (d).loadFileAsString() == damaged,
+                   "ri PIN9: and the damaged file is byte identical afterwards");
+            check (! refIndexTempFile (d).existsAsFile(),
+                   "ri PIN9: no temp file is left behind");
+            d.deleteRecursively();
+        }
+
+        // ri PIN10 -- A NEWER SCHEMA IS NEVER WRITTEN OVER EITHER.
+        {
+            auto d = freshDir ("newer");
+            const juce::String newer = "{\"schema\":99,\"writtenBy\":\"9.9.9\",\"entries\":[]}";
+            refIndexFile (d).replaceWithText (newer);
+            ReferenceIndex mine;
+            mine.entries.push_back (entryAt ("r_x", "/m/x.wav", "2026-01-01T00:00:00Z"));
+            const auto c = commitReferenceIndex (d, mine, "T", "2.26.4");
+            check (! c.ok, "ri PIN10: a newer schema refuses the commit");
+            check (refIndexFile (d).loadFileAsString() == newer,
+                   "ri PIN10: and survives it unchanged");
+            d.deleteRecursively();
+        }
+
+        // ri PIN11 -- THE LOST UPDATE, MADE OBSERVABLE RATHER THAN ASSERTED.
+        //
+        // This replays the exact interleaving that loses an entry: two readers
+        // both see an empty index, the first commits, and the SECOND commits
+        // from its now-stale copy. A commit that simply wrote its caller's list
+        // would leave one entry and the first would be gone. Because
+        // commitReferenceIndex re-reads and merges inside the lock, both land.
+        //
+        // The mutation that reddens it is one line: make commit write `mine`
+        // instead of merging into a fresh read.
+        {
+            auto d = freshDir ("lost");
+            const auto a = loadReferenceIndex (d);       // A reads: empty
+            const auto b = loadReferenceIndex (d);       // B reads: empty, same
+            check (a.state == RefLoadState::Absent && b.state == RefLoadState::Absent,
+                   "ri PIN11: both readers start from the same empty state");
+
+            ReferenceIndex mineA = a.index;
+            mineA.entries.push_back (entryAt ("r_aaa", "/m/a.wav", "2026-01-01T00:00:00Z"));
+            check (commitReferenceIndex (d, mineA, "T1", "2.26.4").ok,
+                   "ri PIN11: A commits");
+
+            ReferenceIndex mineB = b.index;              // STALE: does not know about A
+            mineB.entries.push_back (entryAt ("r_bbb", "/m/b.wav", "2026-01-02T00:00:00Z"));
+            check (commitReferenceIndex (d, mineB, "T2", "2.26.4").ok,
+                   "ri PIN11: B commits from a stale copy");
+
+            const auto after = loadReferenceIndex (d);
+            check (after.state == RefLoadState::Loaded && after.index.entries.size() == 2,
+                   "ri PIN11: BOTH entries are on disk -- the stale write lost nothing",
+                   "entries=" + juce::String ((int) after.index.entries.size()));
+            check (refFindById (after.index, "r_aaa") >= 0
+                   && refFindById (after.index, "r_bbb") >= 0,
+                   "ri PIN11: and both by id");
+            d.deleteRecursively();
+        }
+
+        // ri PIN12 -- EIGHT THREADS RACING FOR REAL. Not a simulated
+        // interleaving: eight actual writers against one file, each adding one
+        // entry. All eight must survive. This is what would redden if the lock
+        // were removed, and it exercises the process mutex that the
+        // inter-process lock alone would not cover.
+        {
+            auto d = freshDir ("race");
+            constexpr int kThreads = 8;
+            std::vector<std::thread> ts;
+            for (int i = 0; i < kThreads; ++i)
+                ts.emplace_back ([&d, i]
+                {
+                    ReferenceIndex mine;
+                    RefEntry e;
+                    e.id   = "r_t" + juce::String (i);
+                    e.path = "/race/t" + juce::String (i) + ".wav";
+                    e.name = e.path;
+                    e.addedAt = "2026-01-01T00:00:0" + juce::String (i) + "Z";
+                    e.measurementEpoch = kRefMeasurementEpoch;
+                    e.availability = RefAvailability::Present;
+                    mine.entries.push_back (e);
+                    commitReferenceIndex (d, mine, "T", "2.26.4");
+                });
+            for (auto& t : ts) t.join();
+
+            const auto after = loadReferenceIndex (d);
+            check (after.index.entries.size() == (size_t) kThreads,
+                   "ri PIN12: all eight racing writers survive",
+                   "entries=" + juce::String ((int) after.index.entries.size())
+                     + " of " + juce::String (kThreads));
+            int found = 0;
+            for (int i = 0; i < kThreads; ++i)
+                if (refFindById (after.index, "r_t" + juce::String (i)) >= 0) ++found;
+            check (found == kThreads, "ri PIN12: and each one by id",
+                   "found=" + juce::String (found));
+            d.deleteRecursively();
+        }
+
+        // ri PIN13 -- SAME PATH, TWO IDS: the case union-by-id gets wrong alone.
+        // Two instances adding one file mint different ids, so a union would keep
+        // both and break dedupe-on-path. The earlier addedAt wins, deterministically,
+        // so two racing writers converge instead of alternating.
+        {
+            auto d = freshDir ("samepath");
+            ReferenceIndex first;
+            first.entries.push_back (entryAt ("r_zzz", "/m/same.wav", "2026-01-01T00:00:00Z"));
+            check (commitReferenceIndex (d, first, "T", "2.26.4").ok, "ri PIN13: first lands");
+
+            ReferenceIndex second;   // different id, SAME path, LATER addedAt
+            second.entries.push_back (entryAt ("r_aaa", "/m/same.wav", "2026-06-01T00:00:00Z"));
+            check (commitReferenceIndex (d, second, "T", "2.26.4").ok, "ri PIN13: second lands");
+
+            const auto after = loadReferenceIndex (d);
+            check (after.index.entries.size() == 1,
+                   "ri PIN13: one path is ONE entry, not two",
+                   "entries=" + juce::String ((int) after.index.entries.size()));
+            check (after.index.entries[0].id == "r_zzz",
+                   "ri PIN13: and the EARLIER addedAt wins, not the last writer",
+                   after.index.entries[0].id);
+            d.deleteRecursively();
+        }
+
+        // ri PIN14 -- A PEER'S ENTRY IS NOT DROPPED BY MY COMMIT, and my own
+        // entry is UPDATED rather than duplicated when I commit it twice.
+        {
+            auto d = freshDir ("merge");
+            ReferenceIndex peer;
+            peer.entries.push_back (entryAt ("r_peer", "/m/peer.wav", "2026-01-01T00:00:00Z"));
+            commitReferenceIndex (d, peer, "T", "2.26.4");
+
+            ReferenceIndex mine;
+            auto m = entryAt ("r_mine", "/m/mine.wav", "2026-02-01T00:00:00Z");
+            mine.entries.push_back (m);
+            commitReferenceIndex (d, mine, "T", "2.26.4");
+
+            m.name = "renamed";                    // same id, changed content
+            ReferenceIndex again; again.entries.push_back (m);
+            commitReferenceIndex (d, again, "T", "2.26.4");
+
+            const auto after = loadReferenceIndex (d);
+            check (after.index.entries.size() == 2,
+                   "ri PIN14: two entries, the peer's kept and mine updated in place",
+                   "entries=" + juce::String ((int) after.index.entries.size()));
+            const int mi = refFindById (after.index, "r_mine");
+            check (mi >= 0 && after.index.entries[(size_t) mi].name == "renamed",
+                   "ri PIN14: re-committing one id REPLACES it rather than duplicating");
+            check (refFindById (after.index, "r_peer") >= 0,
+                   "ri PIN14: and the peer's entry is still there");
+            d.deleteRecursively();
+        }
+
+        // ri PIN15 -- THE COALESCING NUMBER IS NAMED ONCE, so no caller invents
+        // its own, and it matches the workspace cache's debounce.
+        check (kRefIndexDebounceMs == 2000,
+               "ri PIN15: the debounce is 2000 ms, one answer not two");
+        check (kRefIndexLockTimeoutMs > 0,
+               "ri PIN15: and the lock wait is bounded, never indefinite");
+
+        // ri PIN16 -- LOCK FAILURE REFUSES, SAYS SO, AND WRITES NOTHING.
+        // Observable, not asserted: a second thread HOLDS the process mutex for
+        // longer than the timeout while the main thread tries to commit. POSIX
+        // fcntl locks are per-process, so the inter-process lock cannot be
+        // contended from inside one process; the process mutex is the only one a
+        // same-process pin can hold, and it is why that mutex had to become
+        // timed rather than plain.
+        {
+            auto d = freshDir ("lockfail");
+            std::atomic<bool> held { false }, release { false };
+            std::thread holder ([&]
+            {
+                std::unique_lock<std::timed_mutex> l (refIndexProcessMutex());
+                held = true;
+                while (! release) std::this_thread::sleep_for (std::chrono::milliseconds (10));
+            });
+            while (! held) std::this_thread::sleep_for (std::chrono::milliseconds (5));
+
+            ReferenceIndex mine;
+            mine.entries.push_back (entryAt ("r_blocked", "/m/blocked.wav", "2026-01-01T00:00:00Z"));
+            const auto c = commitReferenceIndex (d, mine, "T", "2.26.4");
+
+            check (! c.ok, "ri PIN16: a commit that cannot take the lock REFUSES");
+            check (c.message.isNotEmpty() && c.message.containsIgnoreCase ("saved shortly"),
+                   "ri PIN16: and is not silent, and says it will retry", c.message);
+            check (! refIndexFile (d).existsAsFile(),
+                   "ri PIN16: and wrote NOTHING, not even an empty index");
+            check (! refIndexTempFile (d).existsAsFile(),
+                   "ri PIN16: and left no temp file");
+
+            release = true; holder.join();
+            // And it succeeds once the lock is free, so the refusal was the lock
+            // and not something else failing.
+            check (commitReferenceIndex (d, mine, "T", "2.26.4").ok,
+                   "ri PIN16: the same commit succeeds once the lock is released");
+            d.deleteRecursively();
+        }
+
+        // ri PIN17 -- TOMBSTONES. Nothing EMITS one until commit 4; parse, write
+        // and merge all honour them now so the format is settled before the
+        // first real deletion exists.
+        {
+            auto d = freshDir ("tomb");
+            ReferenceIndex a;
+            a.entries.push_back (entryAt ("r_keep", "/m/keep.wav", "2026-01-01T00:00:00Z"));
+            a.entries.push_back (entryAt ("r_gone", "/m/gone.wav", "2026-01-01T00:00:00Z"));
+            check (commitReferenceIndex (d, a, "T", "2.26.4").ok, "ri PIN17: two entries land");
+
+            // A peer deletes one: entry removed from ITS list, id tombstoned.
+            ReferenceIndex del;
+            del.entries.push_back (entryAt ("r_keep", "/m/keep.wav", "2026-01-01T00:00:00Z"));
+            del.tombstones.push_back ({ "r_gone", "2026-02-01T00:00:00Z" });
+            check (commitReferenceIndex (d, del, "T", "2.26.4").ok, "ri PIN17: the deletion commits");
+
+            auto after = loadReferenceIndex (d);
+            check (after.index.entries.size() == 1
+                   && refFindById (after.index, "r_gone") < 0,
+                   "ri PIN17: the tombstoned entry is GONE from entries",
+                   "entries=" + juce::String ((int) after.index.entries.size()));
+            check (after.index.tombstones.size() == 1
+                   && after.index.tombstones[0].id == "r_gone",
+                   "ri PIN17: and its id is recorded at the document level");
+
+            // THE POINT: a STALE peer still holding the deleted entry must not
+            // resurrect it. This is what the tombstone exists for.
+            ReferenceIndex stale = a;            // the pre-deletion list
+            check (commitReferenceIndex (d, stale, "T", "2.26.4").ok,
+                   "ri PIN17: a stale peer commits");
+            after = loadReferenceIndex (d);
+            check (refFindById (after.index, "r_gone") < 0,
+                   "ri PIN17: and the deletion SURVIVES it -- no resurrection",
+                   "entries=" + juce::String ((int) after.index.entries.size()));
+            check (refFindById (after.index, "r_keep") >= 0,
+                   "ri PIN17: while the live entry is untouched");
+            d.deleteRecursively();
+        }
+
+        // ri PIN18 -- THE TWO TIMEOUTS ARE DIFFERENT NUMBERS AND BOTH ARE SHORT
+        // ENOUGH FOR THE MESSAGE THREAD. Bounded is not the property that
+        // matters; where it blocks is. Ten seconds is bounded and is a beachball.
+        {
+            check (kRefIndexProcessLockMs == 50 && kRefIndexIpcLockMs == 250,
+                   "ri PIN18: 50 ms in-process, 250 ms cross-process");
+            check (kRefIndexIpcLockMs > kRefIndexProcessLockMs,
+                   "ri PIN18: cross-process waits LONGER, because a peer may be slower");
+            check (kRefIndexProcessLockMs + kRefIndexIpcLockMs <= 300,
+                   "ri PIN18: worst case message-thread stall is at most 300 ms");
+        }
+
+        // ri PIN19 -- FAILING ONCE IS SILENT, FAILING REPEATEDLY IS NOT. The
+        // distinguishing property is CONSECUTIVE failure, and at escalation the
+        // message stops promising.
+        {
+            check (! refIndexShouldEscalate (1, 0) && ! refIndexShouldEscalate (4, 0),
+                   "ri PIN19: up to four consecutive failures stay silent");
+            check (refIndexShouldEscalate (5, 0),
+                   "ri PIN19: the fifth escalates");
+            check (refIndexShouldEscalate (1, 60000),
+                   "ri PIN19: and so does a starved debounce, on elapsed time alone");
+
+            const auto m = refIndexEscalatedMessage (180000);
+            check (m.contains ("3 minutes") && m.containsIgnoreCase ("session only"),
+                   "ri PIN19: the escalated message states a duration, not a promise", m);
+            check (! m.containsIgnoreCase ("shortly"),
+                   "ri PIN19: and stops saying shortly, which kept not coming true", m);
+
+            // Backoff: doubles, then caps. A stuck peer is not helped by being
+            // asked twice a second; the cap keeps recovery inside half a minute.
+            check (refIndexBackoffMs (0) == kRefIndexDebounceMs,
+                   "ri PIN19: no failures means the ordinary debounce");
+            check (refIndexBackoffMs (1) == 2000 && refIndexBackoffMs (2) == 4000
+                   && refIndexBackoffMs (3) == 8000,
+                   "ri PIN19: the backoff doubles",
+                   juce::String (refIndexBackoffMs (1)) + "/"
+                     + juce::String (refIndexBackoffMs (2)) + "/"
+                     + juce::String (refIndexBackoffMs (3)));
+            check (refIndexBackoffMs (99) == 30000,
+                   "ri PIN19: and caps at 30 s so recovery is still noticed",
+                   juce::String (refIndexBackoffMs (99)));
+        }
+
+        // ri PIN7 -- AVAILABILITY. An unknown state reads as Missing, never as
+        // Present: the safe direction is to decline playback, not to offer a
+        // file we cannot vouch for.
+        {
+            check (refAvailabilityFromKey ("present") == RefAvailability::Present
+                   && refAvailabilityFromKey ("missing") == RefAvailability::Missing
+                   && refAvailabilityFromKey ("unreadable") == RefAvailability::Unreadable,
+                   "ri PIN7: the three states round trip by key");
+            check (refAvailabilityFromKey ("banana") == RefAvailability::Missing
+                   && refAvailabilityFromKey ("") == RefAvailability::Missing,
+                   "ri PIN7: an unknown or empty state is Missing, never Present");
+            check (refIsPlayable (RefAvailability::Present)
+                   && ! refIsPlayable (RefAvailability::Missing)
+                   && ! refIsPlayable (RefAvailability::Unreadable),
+                   "ri PIN7: only Present may be played");
+            for (auto a : { RefAvailability::Present, RefAvailability::Missing,
+                            RefAvailability::Unreadable })
+                check (refAvailabilityFromKey (refAvailabilityKey (a)) == a,
+                       "ri PIN7: key and state are inverses");
+        }
+
+        // ri PIN26 -- oversCount ROUND TRIPS, AND ITS ABSENT VALUE IS NOT ZERO.
+        //
+        // Zero overs is a real measurement AND what an unfilled int holds, so
+        // this is the one meter field whose absent case collides with a true
+        // one (open list 198). An analysed reference DOES count them: the
+        // analyser runs MeterEngine::processBlock over every block and
+        // MeterEngine.cpp:1012 assigns the running total. So a restored entry
+        // that claims 0 without the file having been read has converted a
+        // measurement into a fabrication, and the third check below is the
+        // whole reason the field carries a sentinel at all.
+        {
+            auto entryJson = [] (const juce::String& metersExtra)
+            {
+                juce::String s =
+                  "{\"schema\":1,\"measurementEpoch\":2,\"entries\":[{"
+                  "\"id\":\"r_ov\",\"name\":\"M\",\"path\":\"/m/o.wav\","
+                  "\"measurementEpoch\":2,"
+                  "\"measurements\":{\"reduction\":\"wholeFileAverage\","
+                  "\"windowSeconds\":168.5,\"meters\":{\"integrated\":-9.4"
+                  + metersExtra + "},\"eqCurve\":[";
+                for (int i = 0; i < 64; ++i) s += (i ? "," : "") + juce::String (-50.0 - i);
+                s += "]},\"availability\":{\"state\":\"present\"}}]}";
+                return s;
+            };
+
+            // A COUNTED VALUE SURVIVES THE ROUND TRIP.
+            {
+                const auto ix = parseReferenceIndex (entryJson (",\"oversCount\":7"));
+                check (ix.entries.size() == 1 && ix.entries[0].measurements.oversCount == 7,
+                       "ri PIN26: a counted overs value parses",
+                       juce::String (ix.entries.empty() ? -99 : ix.entries[0].measurements.oversCount));
+                const auto back = parseReferenceIndex (
+                    writeReferenceIndex (ix, "2026-09-21T00:00:00Z", "2.26.4"));
+                check (back.entries.size() == 1 && back.entries[0].measurements.oversCount == 7,
+                       "ri PIN26: and comes back as 7 after a rewrite");
+            }
+
+            // -1 SURVIVES AS -1. An unavailable count must not be written out
+            // as a number the next reader believes.
+            {
+                const auto ix = parseReferenceIndex (entryJson (",\"oversCount\":-1"));
+                check (ix.entries.size() == 1 && ix.entries[0].measurements.oversCount == -1,
+                       "ri PIN26: -1 parses as -1, not as 0");
+                const auto out = writeReferenceIndex (ix, "2026-09-21T00:00:00Z", "2.26.4");
+                const auto back = parseReferenceIndex (out);
+                check (back.entries.size() == 1 && back.entries[0].measurements.oversCount == -1,
+                       "ri PIN26: and is still -1 after a rewrite, never 0",
+                       juce::String (back.entries.empty() ? -99 : back.entries[0].measurements.oversCount));
+            }
+
+            // THE ONE THAT MATTERS. An entry written before this field existed
+            // has no key at all, and it must read as UNAVAILABLE. Reading it as
+            // 0 would tell the model there was no clipping when nobody counted.
+            {
+                const auto ix = parseReferenceIndex (entryJson (""));
+                check (ix.entries.size() == 1 && ix.entries[0].measurements.oversCount == -1,
+                       "ri PIN26: an entry WITHOUT the key reads -1, not 0",
+                       juce::String (ix.entries.empty() ? -99 : ix.entries[0].measurements.oversCount));
+                // Null is the same silence as absent: rdI's default would not
+                // have caught this one, because a present-but-null key takes the
+                // var conversion and lands on 0.
+                const auto nul = parseReferenceIndex (entryJson (",\"oversCount\":null"));
+                check (nul.entries.size() == 1 && nul.entries[0].measurements.oversCount == -1,
+                       "ri PIN26: and a NULL value reads -1 too, not 0",
+                       juce::String (nul.entries.empty() ? -99 : nul.entries[0].measurements.oversCount));
+                // The default on a fresh struct is the sentinel, not a count.
+                check (RefMeasurements{}.oversCount == -1,
+                       "ri PIN26: and an unfilled RefMeasurements is unavailable by default");
+            }
+        }
+
+        // ri PIN27 -- THE CALLER, AND THAT C1 WRITES NOTHING.
+        //
+        // ri PIN20 to PIN25 pin refReconcile itself; NOTHING pinned that the
+        // shipping caller uses it, or that C1 is inert. Both are text
+        // assertions over PluginProcessor.cpp because the gate links harnesses
+        // and never the processor (open list 158), so this is the only form
+        // available. Its limit: it reads the TEXT of the wiring, so it catches
+        // the call being removed or a commit being added, and would not catch
+        // a caller that passed the wrong arguments.
+        //
+        // THE INERTNESS CHECK IS THE ONE THAT MATTERS. C1 is the read path:
+        // if a commitReferenceIndex call appears, the commit is no longer
+        // inert and a user's library file is being written by a build that was
+        // only supposed to read it.
+        {
+            std::ifstream fp ("Source/PluginProcessor.cpp");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pp = codeOnly (juce::String (sp.str()));
+
+            // THE CONTROL FIRST: without it every "does not contain" below
+            // passes on a file that failed to open, which is exactly how this
+            // session's cg PIN7 reported green while reading nothing.
+            check (pp.length() > 10000 && pp.contains ("EchoJayProcessor::setStateInformation"),
+                   "ri PIN27: PluginProcessor.cpp was read, so this sweep is reading something",
+                   "len=" + juce::String (pp.length()));
+
+            // THE LOAD SITE MOVED, 22 Sep, AND THIS MOVED WITH IT. It read:
+            //
+            //   check (pp.contains ("echojay::loadReferenceIndex (indexDir)"),
+            //          "ri PIN27: the shipping caller LOADS the index");
+            //
+            // which passed while the load sat inside setStateInformation, a
+            // function a host calls ONLY when restoring saved state. A freshly
+            // inserted plugin has no state, so the library was never read on
+            // the one path that matters, and this pin said green throughout.
+            // IT WAS PINNING THAT A CALL EXISTED, NOT THAT IT WAS REACHABLE.
+            check (pp.contains ("echojay::loadReferenceIndex (referenceIndexDir())"),
+                   "ri PIN27: the library LOADS, through the one directory helper");
+            check (pp.contains ("void EchoJayProcessor::ensureReferenceLibraryLoaded()")
+                   && pp.contains ("if (refLibraryLoaded_) return;"),
+                   "ri PIN27: behind a once flag, so whichever path arrives first pays for the "
+                   "parse and the second finds it done");
+            // THE TWO ARRIVALS, and the reason this is three checks and not one:
+            // a scan instantiates every plugin, so the load must be on NEITHER
+            // the constructor nor any audio path, and must be on BOTH of these.
+            check (pp.contains ("EchoJayProcessor::createEditor()")
+                   && pp.contains ("    ensureReferenceLibraryLoaded();\n    return new EchoJayEditor"),
+                   "ri PIN27: createEditor loads it, which is the fresh-insert path that had "
+                   "no library at all before");
+            check (pp.contains ("            ensureReferenceLibraryLoaded();\n            const auto rec"),
+                   "ri PIN27: and setStateInformation RECONCILES against it rather than loading");
+            check (pp.contains ("echojay::refReconcile ("),
+                   "ri PIN27: reconciling, rather than restoring the blob's paths directly");
+            check (pp.contains ("refAnalyser.seedFromStored (seeds)"),
+                   "ri PIN27: and seeds the analyser from stored measurements");
+            check (pp.contains ("for (const auto& p : rec.toAnalyse)"),
+                   "ri PIN27: and queues ONLY what reconciliation returned, not the blob's paths");
+            // INVERTED FOR C2, NOT DELETED. It read:
+            //
+            //   check (! pp.contains ("commitReferenceIndex"),
+            //          "ri PIN27: AND WRITES NOTHING. C1 is the read path; a
+            //           commit call here means a read-only commit has started
+            //           writing the user's library");
+            //
+            // That was the proof C1 was inert. C2 is the write path, so the
+            // same line inverted is now the proof it writes, and the three
+            // below pin WHERE, because "it writes somewhere" is the assertion
+            // that would pass on a commit fired from a timer.
+            check (pp.contains ("echojay::commitReferenceIndex (referenceIndexDir(), refLibrary_,"),
+                   "ri PIN27: C2 WRITES, through the existing commit and the one directory helper");
+            check (pp.contains ("refAnalyser.onLibraryChanged = [this]"),
+                   "ri PIN27: driven by the analyser's change hook, so the write follows the "
+                   "library rather than a timer or a block");
+            check (pp.contains ("if (! refIndexMayWrite_) return;"),
+                   "ri PIN27: and an index that could not be read is never written over");
+            // A REMOVAL IS A TOMBSTONE. mergeReferenceIndex cannot express a
+            // deletion, so a removal written as a plain union would vanish for
+            // the session and come back on the next launch.
+            check (pp.contains ("refLibrary_.tombstones.push_back (t)"),
+                   "ri PIN27: a removal emits a TOMBSTONE rather than a shorter union, which "
+                   "a union would resurrect");
+            // AND LOADING STILL DOES NOT WRITE. The commit must be reachable
+            // only from the change hook: a commit on the load path would
+            // rewrite the file on every project open, and on an unreadable
+            // index would write an empty library over a real one.
+            check (! pp.contains ("commitReferenceLibrary (path, removed);\n            refAnalyser.seedFromStored"),
+                   "ri PIN27: and the load path itself still commits nothing");
+        }
+
+        // ri PIN28 -- FOLDERS IN THE SCHEMA (section 4A). FORMAT ONLY:
+        // nothing creates a folder, nothing reads one, and the plugin behaves
+        // identically. Parse, write and merge honour them now so the format is
+        // settled before the first real folder exists, which is the discipline
+        // the entry tombstones took.
+        {
+            using namespace echojay;
+            const juce::String now = "2026-09-22T21:00:00Z";
+
+            auto mkFolder = [] (const juce::String& id, const juce::String& nm, int ord)
+            {
+                RefFolderEntry f; f.id = id; f.name = nm; f.order = ord; return f;
+            };
+            auto mkEntry = [&] (const juce::String& id, const juce::String& path,
+                                const juce::String& fid)
+            {
+                RefEntry e; e.id = id; e.path = path; e.name = path; e.addedAt = now;
+                e.folderId = fid; e.availability = RefAvailability::Present;
+                return e;
+            };
+
+            // --- THE CONTROL, FIRST. If the folder code were removed entirely
+            // this whole block would still be compilable only if these names
+            // exist, and a round trip of an index WITH folders would come back
+            // empty. Today an absence check passed on an empty string (cg
+            // PIN7) and a presence check passed on a call that never ran
+            // (ri PIN27), so this asserts the positive before anything asserts
+            // an absence.
+            {
+                ReferenceIndex ix;
+                ix.folders.push_back (mkFolder (newFolderId(), "Loud masters", 0));
+                ix.entries.push_back (mkEntry ("r_1", "/a.wav", ix.folders[0].id));
+                const auto back = parseReferenceIndex (writeReferenceIndex (ix, now, "test"));
+                check (back.folders.size() == 1 && back.entries.size() == 1
+                       && back.folders[0].name == "Loud masters"
+                       && back.entries[0].folderId == ix.folders[0].id,
+                       "ri PIN28: CONTROL, a folder and its member survive a round trip, so "
+                       "every absence check below is checking an absence and not a missing feature",
+                       "folders=" + juce::String ((int) back.folders.size()));
+            }
+
+            // --- 1. ROUND TRIP, including order and an unknown key ---------
+            {
+                ReferenceIndex ix;
+                ix.folders.push_back (mkFolder ("f_aaaaaaaaaaaaaaaa", "Client refs", 3));
+                ix.folders.push_back (mkFolder ("f_bbbbbbbbbbbbbbbb", "Loud masters", 1));
+                ix.folderTombstones.push_back ({ "f_cccccccccccccccc", now });
+                ix.entries.push_back (mkEntry ("r_1", "/a.wav", "f_bbbbbbbbbbbbbbbb"));
+                const auto back = parseReferenceIndex (writeReferenceIndex (ix, now, "test"));
+                check (back.folders.size() == 2, "ri PIN28: both folders parse back",
+                       juce::String ((int) back.folders.size()));
+                check (back.folders[0].order == 3 && back.folders[1].order == 1,
+                       "ri PIN28: and order is carried as a FIELD, unsorted by the writer");
+                check (back.folderTombstones.size() == 1
+                       && back.folderTombstones[0].id == "f_cccccccccccccccc",
+                       "ri PIN28: folderTombstones round trip too");
+                check (back.entries[0].folderId == "f_bbbbbbbbbbbbbbbb",
+                       "ri PIN28: and an entry keeps its folderId through parse and write");
+            }
+
+            // --- 2. AN OLD INDEX, NO FOLDER KEYS AT ALL --------------------
+            // Every document written before today has neither key and no
+            // folderId on any entry. It must LOAD, at schema 1, not be refused.
+            {
+                const juce::String old =
+                    "{\"schema\":1,\"measurementEpoch\":2,\"written\":\"" + now + "\","
+                    "\"writtenBy\":\"2.26.4\",\"entries\":[{\"id\":\"r_9\","
+                    "\"name\":\"old.wav\",\"path\":\"/old.wav\",\"addedAt\":\"" + now + "\"}]}";
+                const auto back = parseReferenceIndex (old);
+                check (back.diskSchema == 1 && ! back.readOnly,
+                       "ri PIN28: an index with no folder keys loads at schema 1, not read only");
+                check (back.entries.size() == 1 && back.entries[0].folderId.isEmpty(),
+                       "ri PIN28: its entry is UNFILED, which is a state and not a fault");
+                check (back.folders.empty() && back.folderTombstones.empty(),
+                       "ri PIN28: and an absent array is no folders rather than an error");
+                check (refEntryFolderId (back, back.entries[0]).isEmpty(),
+                       "ri PIN28: the read rule agrees: unfiled");
+            }
+
+            // --- 3. UNION BY id, AND ORDER SURVIVES A REORDERED ARRAY ------
+            {
+                ReferenceIndex disk;
+                disk.folders.push_back (mkFolder ("f_1111111111111111", "First", 0));
+                disk.folders.push_back (mkFolder ("f_2222222222222222", "Second", 1));
+
+                ReferenceIndex mine;                      // array order REVERSED
+                mine.folders.push_back (mkFolder ("f_2222222222222222", "Second renamed", 1));
+                mine.folders.push_back (mkFolder ("f_3333333333333333", "Third", 2));
+
+                mergeReferenceIndex (disk, mine);
+                check (disk.folders.size() == 3, "ri PIN28: union by id keeps all three",
+                       juce::String ((int) disk.folders.size()));
+                check (disk.folders[0].name == "First"
+                       && disk.folders[1].name == "Second renamed"
+                       && disk.folders[2].name == "Third",
+                       "ri PIN28: ORDER SURVIVES a merge that reordered the array, because it "
+                       "is a field and not a position",
+                       disk.folders[0].name + "/" + disk.folders[1].name + "/" + disk.folders[2].name);
+                check (disk.folders[1].id == "f_2222222222222222",
+                       "ri PIN28: and a RENAME is the same folder, because the id held still");
+            }
+
+            // --- 4. A TOMBSTONED FOLDER STAYS DEAD ACROSS A MERGE ----------
+            {
+                ReferenceIndex disk;
+                disk.folders.push_back (mkFolder ("f_dead000000000000", "Deleted", 0));
+                disk.folders.push_back (mkFolder ("f_live000000000000", "Kept", 1));
+                disk.entries.push_back (mkEntry ("r_1", "/a.wav", "f_dead000000000000"));
+
+                ReferenceIndex mine;                      // a stale peer, still holding it
+                mine.folderTombstones.push_back ({ "f_dead000000000000", now });
+                mergeReferenceIndex (disk, mine);
+                check (disk.folders.size() == 1 && disk.folders[0].id == "f_live000000000000",
+                       "ri PIN28: a tombstoned folder is GONE from folders");
+
+                ReferenceIndex stale;                     // the peer writes it back
+                stale.folders.push_back (mkFolder ("f_dead000000000000", "Deleted", 0));
+                mergeReferenceIndex (disk, stale);
+                check (disk.folders.size() == 1,
+                       "ri PIN28: and STAYS dead when a stale peer unions it back in, which is "
+                       "the whole reason the tombstone exists",
+                       juce::String ((int) disk.folders.size()));
+
+                // --- 5. AND ITS MEMBER IS UNFILED, NOT DELETED ------------
+                check (disk.entries.size() == 1,
+                       "ri PIN28: deleting a folder deletes NO reference");
+                check (disk.entries[0].folderId == "f_dead000000000000",
+                       "ri PIN28: the entry KEEPS its folderId through the merge, unswept");
+                check (refEntryFolderId (disk, disk.entries[0]).isEmpty(),
+                       "ri PIN28: and an unknown folderId READS as unfiled, so membership heals "
+                       "itself without a second write");
+            }
+
+            // --- 6. A LIVE MEMBERSHIP STILL READS ------------------------
+            // The negative control for 5: refEntryFolderId must not simply always
+            // return empty.
+            {
+                ReferenceIndex ix;
+                ix.folders.push_back (mkFolder ("f_live111111111111", "Kept", 0));
+                ix.entries.push_back (mkEntry ("r_1", "/a.wav", "f_live111111111111"));
+                check (refEntryFolderId (ix, ix.entries[0]) == "f_live111111111111",
+                       "ri PIN28: a live membership reads as that folder, so the unfiled checks "
+                       "above are not passing against a function that always says unfiled");
+            }
+
+            // --- 7. THE ID SHAPE -----------------------------------------
+            {
+                const auto a = newFolderId(), b = newFolderId();
+                check (a.startsWith ("f_") && a.length() == 18,
+                       "ri PIN28: a folder id is \"f_\" plus 16 hex, the entry rule with its own "
+                       "prefix", a);
+                check (a != b, "ri PIN28: and two mints differ");
+                check (newReferenceId().startsWith ("r_"),
+                       "ri PIN28: while entry ids keep theirs, so an id says what it points at");
+            }
+        }
+
+        // cg PIN8 -- SELECTING A SLOT IS NOT ENOUGH TO HEAR IT.
+        //
+        // THE REGRESSION THIS EXISTS FOR. The A/B buttons stored cmpAudible
+        // and nothing else. That was correct until open list 215, which made a
+        // slot roll only when a gesture asked it to; after it, pressing B
+        // selected a stream nobody had started and the ramp target stayed at
+        // zero. THE SUITE COULD NOT SEE IT: the buttons are in the editor and
+        // the gate links harnesses and never the editor (open list 158). The
+        // rule they broke is the one thing that CAN be pinned, so it is.
+        {
+            using namespace echojay;
+
+            // A BOOLEAN VIEW OF THE GAIN, so the table below does not compare
+            // floats with ==. The function returns exactly 0.0f or 1.0f today,
+            // but a pin that would break if it ever returned 0.999f is pinning
+            // the representation rather than the rule.
+            auto heard = [] (bool rolling, int slot, int audible, bool stopAt)
+            { return cmpMixTargetGain (rolling, slot, audible, stopAt) > 0.5f; };
+
+            // THE FIRST CONDITION IS THE DEFECT. Audible but not rolling is
+            // silence, and that is the whole of what the user reported.
+            check (! heard (false, 1, 1, false),
+                   "cg PIN8: a slot that is SELECTED but not rolling has target 0, which is the "
+                   "silence the A/B buttons produced after 215");
+            check (heard (true, 1, 1, false),
+                   "cg PIN8: and rolling AND selected is heard");
+
+            // THE CONTROL. Without it both checks above pass against a
+            // function that always returns 0.
+            check (heard (true, 0, 0, false) && heard (true, 1, 1, false),
+                   "cg PIN8: CONTROL, either slot can be the heard one, so the zero checks are "
+                   "checking a rule and not a function that refuses everything");
+
+            check (! heard (true, 0, 1, false) && ! heard (true, 1, 0, false),
+                   "cg PIN8: a rolling slot that is NOT the selected one is silent, which is what "
+                   "keeps the other stream in time without being heard");
+            check (! heard (true, 1, 1, true),
+                   "cg PIN8: and a stream fading out to disengage is not brought back by being "
+                   "selected");
+            check (! heard (true, 0, -1, false) && ! heard (true, 1, -1, false),
+                   "cg PIN8: -1 is nothing audible, for both slots");
+
+            // EXHAUSTIVE OVER THE THREE BOOLEANS AND BOTH SLOTS. Twelve rows,
+            // small enough to enumerate rather than sample.
+            int agreed = 0, ones = 0;
+            for (int m = 0; m < 12; ++m)
+            {
+                const bool rolling = (m & 1) != 0;
+                const bool stopAt  = (m & 2) != 0;
+                const int  slot    = (m & 4) != 0 ? 1 : 0;
+                const int  audible = (m / 8) != 0 ? slot : 1 - slot;
+                const bool expected = (rolling && slot == audible && ! stopAt);
+                if (heard (rolling, slot, audible, stopAt) == expected) ++agreed;
+                if (expected) ++ones;
+            }
+            check (agreed == 12, "cg PIN8: all twelve combinations agree",
+                   juce::String (agreed));
+            check (ones > 0 && ones < 12,
+                   "cg PIN8: and the table is not all yes or all no",
+                   juce::String (ones));
+        }
+
+        // ud PIN1 -- A FAILED READ MUST NOT BECOME A WRITE.
+        //
+        // THE RULE THAT SHIPPED THE DEFECT IS NOW EXECUTING CODE. Before this,
+        // saveUserSettings decided inline whether to build a payload, so the
+        // only thing the suite could do was grep EchoJayAPI.cpp for a string.
+        // Open list 217: the gate links harnesses and never the API layer, so
+        // a text pin there asserts a line was TYPED. These checks CALL the
+        // shipped predicate out of the header the test TU compiles directly.
+        {
+            using namespace echojay;
+
+            // THE ONE THAT MATTERS, stated on its own rather than only as a
+            // row of a table: a good read proceeds.
+            check (userDataWriteMayProceed (200, true, true),
+                   "ud PIN1: a 200 with an object body and a live root proceeds");
+
+            // THE THREE WAYS THE OLD CODE SHIPPED AN EMPTY RECORD, each named,
+            // because a table alone would not say WHICH input was load-bearing.
+            check (! userDataWriteMayProceed (500, true, true),
+                   "ud PIN1: a non-200 is a FAILED READ, not an empty account");
+            check (! userDataWriteMayProceed (200, false, false),
+                   "ud PIN1: a 200 carrying a non-object body says nothing about "
+                   "what the user has, so it does not authorise a write");
+            check (! userDataWriteMayProceed (200, true, false),
+                   "ud PIN1: and a null root refuses rather than falling through, "
+                   "which is the guard the old code let drop to no payload at all");
+
+            // ALL EIGHT COMBINATIONS against an independently written
+            // expectation, the cg PIN8 shape. Driven, not asserted.
+            int agreed = 0, yes = 0;
+            for (int m = 0; m < 8; ++m)
+            {
+                const int  code = (m & 1) != 0 ? 200 : 503;
+                const bool obj  = (m & 2) != 0;
+                const bool root = (m & 4) != 0;
+                const bool expected = (code == 200 && obj && root);
+                if (userDataWriteMayProceed (code, obj, root) == expected) ++agreed;
+                if (expected) ++yes;
+            }
+            check (agreed == 8, "ud PIN1: all eight combinations agree",
+                   juce::String (agreed));
+            check (yes == 1,
+                   "ud PIN1: and exactly ONE of the eight proceeds, so a predicate "
+                   "returning a constant fails this", juce::String (yes));
+
+            // 0 IS A STATUS TOO. The transport leaves statusCode at 0 when the
+            // connection never happened, which is the commonest real failure
+            // and the one a `!= 200` written as `>= 400` would miss.
+            check (! userDataWriteMayProceed (0, true, true),
+                   "ud PIN1: statusCode 0, an unreachable server, refuses");
+        }
+
+        // cg PIN9 -- THE BUTTONS ARE A GESTURE, BY TEXT.
+        //
+        // cg PIN8 pins the RULE; nothing can pin that the editor obeys it,
+        // because the gate never links the editor. This is the nearest
+        // available: that the handlers call the gesture path at all. It is
+        // open list 217's shape and its limit is the same, presence and not
+        // reachability, which is stated rather than left to be found.
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto pe = codeOnly (juce::String (se.str()));
+
+            check (pe.length() > 10000 && pe.contains ("EchoJayEditor::makeCompareSlotAudible"),
+                   "cg PIN9: PluginEditor.cpp was read and the gesture path exists",
+                   "len=" + juce::String (pe.length()));
+            check (pe.contains ("if (! makeCompareSlotAudible (0)) processorRef.cmpAudible.store(0);")
+                   && pe.contains ("if (! makeCompareSlotAudible (1)) processorRef.cmpAudible.store(1);"),
+                   "cg PIN9: BOTH A/B handlers go through it, so selecting a side grants intent "
+                   "rather than only routing");
+            check (pe.contains ("makeCompareSlotAudible (slotIdx);"),
+                   "cg PIN9: and the SEEK uses the same path, so the two gestures cannot drift");
+            check (pe.contains ("if (! s.loaded.load()) return false;"),
+                   "cg PIN9: which refuses a slot with no stream behind it, so intent is never "
+                   "granted to an empty or Live slot");
+
+            // THE DISPLAY READS THE AUDIBLE RULE, NOT THE SELECTION. This is
+            // the divergence two reports were: B lit while the live signal
+            // played, and B still lit after SYNC was unpressed.
+            check (pe.contains ("echojay::cmpMixTargetGain (st.playing.load(), sl, aud,"),
+                   "cg PIN9: the display derives what is HEARD from cmpMixTargetGain");
+            check (pe.contains ("const int heard = audibleCompareSlot();")
+                   && ! pe.contains ("aud == 0 ? juce::Colour(0xff1a2d4a) : C::bg3"),
+                   "cg PIN9: and lights from it, with the old cmpAudible-only test GONE rather "
+                   "than left beside it");
+            check (pe.contains ("const bool aIsLive = (compareTop_.kind == CompareSlotState::Kind::Live);"),
+                   "cg PIN9: the nothing-audible case lights A only when A is LIVE, because a "
+                   "user can put a capture in A and lighting it would name the wrong source");
+            // THE FRESH-OPEN DEFAULT IS A DECISION AND IS MADE IN ONE PLACE.
+            check (pe.contains ("    processorRef.silenceCompareStream (0);\n    processorRef.silenceCompareStream (1);\n    processorRef.cmpAudible.store (-1);"),
+                   "cg PIN9: opening the plugin silences both slots and selects neither, so the "
+                   "live signal is a decision rather than an accident of nothing rolling");
+
+            // THE BAR RECOMPUTES ON THE TIMER. Three of the places that change
+            // what is audible run on the AUDIO THREAD and can never call a UI
+            // function, so an event-driven-only bar is structurally unable to
+            // stay correct. Guarded, or it repaints twenty times a second.
+            check (pe.contains ("const int  nowHeard   = audibleCompareSlot();")
+                   && pe.contains ("|| nowPlaying0 != lastSlotPlaying_[0] || nowPlaying1 != lastSlotPlaying_[1])"),
+                   "cg PIN9: the timer recomputes what is audible AND each slot's playing flag, "
+                   "so a stop made on the audio thread cannot leave either control stale");
+            check (pe.contains ("            updateComparePlayBtns();"),
+                   "cg PIN9: and refreshes through updateComparePlayBtns, which cascades to the "
+                   "bar, so ONE guard covers both rather than two conditions on one repaint");
+            // THE SENTINEL IS A MEMBER AND MEMBERS LIVE IN THE HEADER. This
+            // read PluginEditor.cpp and could never have passed: the string
+            // appears 0 times there and once in PluginEditor.h. A text pin
+            // that looks in the wrong file is the same defect as one that
+            // anchors on a stripped comment, so it gets its own control.
+            std::ifstream fh ("Source/PluginEditor.h");
+            std::stringstream sh; sh << fh.rdbuf();
+            const auto ph = codeOnly (juce::String (sh.str()));
+            check (ph.length() > 10000 && ph.contains ("class EchoJayEditor"),
+                   "cg PIN9: PluginEditor.h was read, so the header check below is reading "
+                   "something",
+                   "len=" + juce::String (ph.length()));
+            check (ph.contains ("int  lastAudibleSlot_  = -2;"),
+                   "cg PIN9: with a never-computed sentinel, so the first tick always paints");
+
+            // SLOT A DEFAULTS TO LIVE, THROUGH THE PICKER'S OWN TWO LINES.
+            check (pe.contains ("compareTop_.kind  = CompareSlotState::Kind::Live;\n        compareTop_.label = \"Live signal\";"),
+                   "cg PIN9: an empty slot A becomes the live signal, with the label the picker "
+                   "uses rather than a second spelling of it");
+            check (! pe.contains ("compareBot_.kind  = CompareSlotState::Kind::Live;"),
+                   "cg PIN9: and slot B gets NO default, because an empty reference side is a "
+                   "real state meaning no reference has been chosen");
+        }
+
+        // ri PIN31 -- A COMPARE SLOT THAT OUTLIVES THE EDITOR.
+        //
+        // THE PURE HALF ONLY, and section 4 of the report says plainly what
+        // that leaves uncovered. refSlotResolveIndex is the decision that
+        // matters: a slot is addressed BY PATH, so it survives the library
+        // being reordered or a reference being re-analysed, and a reference
+        // that has gone resolves to -1 rather than to somewhere.
+        {
+            using namespace echojay;
+            std::vector<RefBrowserEntry> refs {
+                { "a.wav", "/refs/a.wav" },
+                { "b.wav", "/refs/b.wav" },
+                { "c.wav", "/refs/c.wav" }
+            };
+
+            CompareSlotPersist slot;
+            slot.kind    = kCompareSlotKindReference;
+            slot.refPath = "/refs/b.wav";
+            check (refSlotResolveIndex (slot, refs) == 1,
+                   "ri PIN31: a reference slot resolves by path to its current position",
+                   juce::String (refSlotResolveIndex (slot, refs)));
+
+            // THE WHOLE POINT: REORDER THE LIBRARY AND THE SLOT STILL POINTS
+            // AT THE SAME FILE. A stored position would now be wrong.
+            std::vector<RefBrowserEntry> reordered {
+                { "c.wav", "/refs/c.wav" },
+                { "a.wav", "/refs/a.wav" },
+                { "b.wav", "/refs/b.wav" }
+            };
+            check (refSlotResolveIndex (slot, reordered) == 2,
+                   "ri PIN31: and FOLLOWS the file when the library is reordered, which is what "
+                   "a stored index could not do",
+                   juce::String (refSlotResolveIndex (slot, reordered)));
+
+            // A REFERENCE THAT IS GONE EMPTIES THE SLOT.
+            std::vector<RefBrowserEntry> without { { "a.wav", "/refs/a.wav" } };
+            check (refSlotResolveIndex (slot, without) == -1,
+                   "ri PIN31: a reference that is no longer in the library resolves to -1, so the "
+                   "slot empties rather than pointing somewhere");
+            check (refSlotResolveIndex (slot, {}) == -1,
+                   "ri PIN31: and an empty library resolves to -1 too");
+
+            // NON-REFERENCE KINDS ARE NOT RESOLVED BY PATH. A snapshot slot
+            // carrying a stale refPath must not silently become a reference.
+            CompareSlotPersist snap;
+            snap.kind = kCompareSlotKindSnapshot;
+            snap.refPath = "/refs/b.wav";          // deliberately populated
+            check (refSlotResolveIndex (snap, refs) == -1,
+                   "ri PIN31: a SNAPSHOT slot is not resolved by path, whatever refPath holds, "
+                   "so a kind cannot change under the user");
+
+            // THE CONTROL. Without it every -1 above passes against a function
+            // that always returns -1, which is the shape cg PIN7 took when it
+            // read an empty string and reported green.
+            CompareSlotPersist live;
+            live.kind = kCompareSlotKindReference;
+            live.refPath = "/refs/a.wav";
+            check (refSlotResolveIndex (live, refs) == 0,
+                   "ri PIN31: CONTROL, a resolvable slot returns a real index, so the -1 checks "
+                   "above are checking an absence and not a function that always refuses");
+
+            // THE KIND CONSTANTS MUST TRACK CompareSlotState::Kind. They are
+            // written out here because the enum lives on the editor and the
+            // gate never links it; if the enum is reordered this is the only
+            // thing that would notice.
+            check (kCompareSlotKindSnapshot == 2 && kCompareSlotKindReference == 4,
+                   "ri PIN31: the kind constants still match CompareSlotState::Kind's order "
+                   "(Empty, Live, Snapshot, WsCapture, Reference, CodecFile)");
+        }
+
+        // ri PIN29 -- THE FOUR FOLDER OPERATIONS AND THE MIGRATION (C3b).
+        //
+        // THE OPERATIONS ARE PINNED AS PURE INDEX TRANSFORMS, not through the
+        // processor, because the gate links harnesses and never the processor
+        // (open list 158). Each block below performs the SAME transform the
+        // shipping method performs, and ri PIN30 pins by text that the
+        // shipping method is the thing the editor calls.
+        //
+        // THE MIGRATION MATTERS MOST. It runs ONCE, on real user data, and
+        // there is no second chance at it.
+        {
+            using namespace echojay;
+            const juce::String now = "2026-09-22T22:00:00Z";
+            auto entry = [&] (const juce::String& id, const juce::String& path)
+            {
+                RefEntry e; e.id = id; e.path = path; e.name = path; e.addedAt = now;
+                e.availability = RefAvailability::Present; return e;
+            };
+
+            // --- CREATE ---------------------------------------------------
+            {
+                ReferenceIndex ix;
+                RefFolderEntry f; f.id = newFolderId(); f.name = "Masters"; f.order = 0;
+                ix.folders.push_back (f);
+                check (ix.folders.size() == 1 && ix.folders[0].name == "Masters"
+                       && ix.folders[0].id.startsWith ("f_"),
+                       "ri PIN29: create puts one folder in, with a minted id");
+            }
+
+            // --- RENAME KEEPS THE ID, AND EVERY MEMBER FOLLOWS ------------
+            {
+                ReferenceIndex ix;
+                RefFolderEntry f; f.id = "f_1111111111111111"; f.name = "Old"; f.order = 0;
+                ix.folders.push_back (f);
+                ix.entries.push_back (entry ("r_1", "/a.wav"));
+                ix.entries[0].folderId = f.id;
+
+                for (auto& g : ix.folders) if (g.name == "Old") g.name = "New";
+                check (ix.folders[0].id == "f_1111111111111111" && ix.folders[0].name == "New",
+                       "ri PIN29: rename changes the name and HOLDS the id");
+                check (refEntryFolderId (ix, ix.entries[0]) == "f_1111111111111111",
+                       "ri PIN29: and the member follows without being touched, which a "
+                       "delete-and-create would have stranded");
+            }
+
+            // --- DELETE TOMBSTONES, AND MEMBERS GO UNFILED NOT AWAY -------
+            {
+                ReferenceIndex ix;
+                RefFolderEntry f; f.id = "f_2222222222222222"; f.name = "Doomed"; f.order = 0;
+                ix.folders.push_back (f);
+                ix.entries.push_back (entry ("r_1", "/a.wav"));
+                ix.entries[0].folderId = f.id;
+
+                ix.folderTombstones.push_back ({ f.id, now });
+                ix.folders.clear();
+                check (ix.entries.size() == 1,
+                       "ri PIN29: deleting a folder deletes NO reference");
+                check (ix.entries[0].folderId == "f_2222222222222222",
+                       "ri PIN29: the member keeps its folderId, unswept");
+                check (refEntryFolderId (ix, ix.entries[0]).isEmpty(),
+                       "ri PIN29: and reads as unfiled, so membership heals itself");
+
+                ReferenceIndex peer;                 // a stale peer writes it back
+                peer.folders.push_back (f);
+                mergeReferenceIndex (ix, peer);
+                check (ix.folders.empty(),
+                       "ri PIN29: and the tombstone keeps it dead through a peer's merge",
+                       juce::String ((int) ix.folders.size()));
+            }
+
+            // --- ASSIGN, AND UNFILE ---------------------------------------
+            {
+                ReferenceIndex ix;
+                RefFolderEntry f; f.id = "f_3333333333333333"; f.name = "Refs"; f.order = 0;
+                ix.folders.push_back (f);
+                ix.entries.push_back (entry ("r_1", "/a.wav"));
+
+                ix.entries[0].folderId = f.id;
+                check (refEntryFolderId (ix, ix.entries[0]) == f.id,
+                       "ri PIN29: assign files the entry");
+                ix.entries[0].folderId = {};
+                check (refEntryFolderId (ix, ix.entries[0]).isEmpty(),
+                       "ri PIN29: and an empty name unfiles it rather than deleting anything");
+                check (ix.entries.size() == 1, "ri PIN29: the entry survives being unfiled");
+            }
+
+            // --- THE MIGRATION: blob folders into an index with none ------
+            // Schema 4A.5: "each referenceFolders entry -> a folder object, id
+            // minted now, name kept, order taken from its position in the
+            // array; each path in its paths list -> that entry's folderId,
+            // first match winning".
+            {
+                ReferenceIndex ix;
+                ix.entries.push_back (entry ("r_1", "/a.wav"));
+                ix.entries.push_back (entry ("r_2", "/b.wav"));
+                ix.entries.push_back (entry ("r_3", "/c.wav"));
+
+                struct BlobFolder { juce::String name; std::vector<juce::String> paths; };
+                std::vector<BlobFolder> blob {
+                    { "Masters", { "/a.wav", "/b.wav" } },
+                    { "Client",  { "/c.wav", "/gone.wav" } }
+                };
+
+                for (size_t i = 0; i < blob.size(); ++i)
+                {
+                    juce::String id;
+                    for (const auto& g : ix.folders) if (g.name == blob[i].name) { id = g.id; break; }
+                    if (id.isEmpty())
+                    {
+                        RefFolderEntry f; f.id = newFolderId(); f.name = blob[i].name;
+                        f.order = (int) i; id = f.id; ix.folders.push_back (f);
+                    }
+                    for (const auto& path : blob[i].paths)
+                    {
+                        const int at = refFindByPath (ix, path);
+                        if (at < 0) continue;
+                        if (ix.entries[(size_t) at].folderId.isNotEmpty()) continue;
+                        ix.entries[(size_t) at].folderId = id;
+                    }
+                }
+
+                check (ix.folders.size() == 2,
+                       "ri PIN29: MIGRATION mints one folder per blob folder",
+                       juce::String ((int) ix.folders.size()));
+                check (ix.folders[0].order == 0 && ix.folders[1].order == 1,
+                       "ri PIN29: order comes from the blob's array position (4A.5)");
+                check (refEntryFolderId (ix, ix.entries[0]) == ix.folders[0].id
+                       && refEntryFolderId (ix, ix.entries[1]) == ix.folders[0].id
+                       && refEntryFolderId (ix, ix.entries[2]) == ix.folders[1].id,
+                       "ri PIN29: and every path that matches an entry carries over");
+                check (ix.entries.size() == 3,
+                       "ri PIN29: a blob path matching NO entry is skipped, not invented: it was "
+                       "already dangling before today");
+            }
+
+            // --- THE MIGRATION IS IDEMPOTENT ------------------------------
+            // The once flag is the real guard and is pinned by text in
+            // ri PIN30; this pins the TRANSFORM, so that even without the flag
+            // a second pass mints nothing new. Two projects each carrying a
+            // "Masters" folder must converge on ONE, which is open list 204
+            // self-inflicted if they do not.
+            {
+                ReferenceIndex ix;
+                ix.entries.push_back (entry ("r_1", "/a.wav"));
+                std::vector<juce::String> names { "Masters", "Masters" };
+                for (size_t i = 0; i < names.size(); ++i)
+                {
+                    juce::String id;
+                    for (const auto& g : ix.folders) if (g.name == names[i]) { id = g.id; break; }
+                    if (id.isEmpty())
+                    {
+                        RefFolderEntry f; f.id = newFolderId(); f.name = names[i];
+                        f.order = (int) i; id = f.id; ix.folders.push_back (f);
+                    }
+                }
+                check (ix.folders.size() == 1,
+                       "ri PIN29: a second pass over the same folder name mints NOTHING new, so "
+                       "two projects converge on one folder rather than duplicating it",
+                       juce::String ((int) ix.folders.size()));
+            }
+        }
+
+        // ri PIN30 -- THE FOLDER WIRING, BY TEXT. The transforms above are
+        // pinned in the abstract; these pin that the SHIPPING code does them,
+        // and that the migration cannot run twice.
+        {
+            std::ifstream fp ("Source/PluginProcessor.cpp");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pp = codeOnly (juce::String (sp.str()));
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto pe = codeOnly (juce::String (se.str()));
+
+            check (pp.length() > 10000 && pe.length() > 10000,
+                   "ri PIN30: both files were read, so the checks below are reading something",
+                   "pp=" + juce::String (pp.length()) + " pe=" + juce::String (pe.length()));
+
+            // THE ONCE FLAG IS THE WHOLE GUARANTEE, and it must be set BEFORE
+            // any work, or a throw or an early return leaves it unset and the
+            // migration runs again on the next open.
+            check (pp.contains ("if (refFoldersMigrated_) return;\n    refFoldersMigrated_ = true;"),
+                   "ri PIN30: the migration's once flag is set BEFORE it does anything, so a "
+                   "failure is one attempt rather than a retry on every open");
+
+            check (pp.contains ("void EchoJayProcessor::folderCreate")
+                   && pp.contains ("void EchoJayProcessor::folderRename")
+                   && pp.contains ("void EchoJayProcessor::folderDelete")
+                   && pp.contains ("void EchoJayProcessor::folderAssign"),
+                   "ri PIN30: all four operations live on the processor");
+            check (pp.contains ("refLibrary_.folderTombstones.push_back (t)"),
+                   "ri PIN30: and delete emits a TOMBSTONE, which a union cannot express");
+
+            // THE EDITOR CALLS THEM AND DOES NOT MUTATE referenceFolders.
+            check (pe.contains ("processorRef.folderCreate (name)")
+                   && pe.contains ("processorRef.folderRename (oldName, name)")
+                   && pe.contains ("processorRef.folderDelete (folder)")
+                   && pe.contains ("processorRef.folderAssign (path, folder)"),
+                   "ri PIN30: the editor's four folder functions call them");
+            check (! pe.contains ("processorRef.referenceFolders.push_back"),
+                   "ri PIN30: and the editor no longer creates a folder behind the index's back");
+        }
+
+        // =================================================================
+        // RECONCILIATION (EJReferenceReconcile.h). THE CALLER ARRIVED IN C1:
+        // PluginProcessor.cpp now loads, reconciles and seeds from these, and
+        // ri PIN27 above pins that it does. These six still exercise the
+        // function directly, which is where its behaviour is decided.
+        //
+        // The clock, the id source and "does this path exist" are all
+        // parameters, so every case below is an exact value in and an exact
+        // value out, with no disk touched.
+        // =================================================================
+
+        // A deterministic id source. The real one is random by design, and an
+        // exact library cannot be asserted against a random id.
+        auto mintSeq = [] { int n = 0;
+                            return [n] () mutable { return juce::String ("r_m") + juce::String (++n); }; };
+        const juce::String kNow = "2026-09-20T21:00:00Z";
+
+        // ri PIN20 -- A BLOB PATH THE INDEX DOES NOT KNOW BECOMES AN ENTRY.
+        // This is how an existing user's references reach the library at all:
+        // their blob is the only record that survives today.
+        {
+            RefLoadResult lr; lr.state = RefLoadState::Loaded;   // loaded and empty
+            auto mint = mintSeq();
+            const auto r = refReconcile (lr, { "/refs/a.wav" },
+                                         [] (const juce::String&) { return true; },
+                                         kNow, mint);
+            check (r.library.entries.size() == 1,
+                   "ri PIN20: an unknown blob path becomes ONE entry",
+                   juce::String ((int) r.library.entries.size()));
+            const auto& e = r.library.entries[0];
+            check (e.path == "/refs/a.wav" && e.name == "a" && e.id == "r_m1",
+                   "ri PIN20: with its path, its name from the filename, and a minted id",
+                   e.id + " " + e.name);
+            check (refIsUnmeasured (e) && e.measurementEpoch == kRefMeasurementEpoch
+                   && e.availability == RefAvailability::Present,
+                   "ri PIN20: unmeasured at the running epoch, and present");
+            check (r.toAnalyse.size() == 1 && r.toAnalyse[0] == "/refs/a.wav",
+                   "ri PIN20: and it is queued for analysis, because it has no numbers");
+        }
+
+        // ri PIN21 -- AN ENTRY WHOSE FILE IS GONE GOES MISSING AND KEEPS
+        // lastSeenAt. The date it last worked is the only fact the user can act
+        // on; stamping it with the moment we noticed would destroy it.
+        {
+            RefEntry have;
+            have.id = "r_keep"; have.path = "/refs/gone.wav"; have.name = "gone";
+            have.availability = RefAvailability::Present;
+            have.lastSeenAt = "2026-09-02T08:31:10Z";
+            have.measurements.valid = true;
+            have.measurementEpoch = kRefMeasurementEpoch;
+
+            RefLoadResult lr; lr.state = RefLoadState::Loaded;
+            lr.index.entries.push_back (have);
+            auto mint = mintSeq();
+            const auto r = refReconcile (lr, {}, [] (const juce::String&) { return false; },
+                                         kNow, mint);
+            check (r.library.entries.size() == 1
+                   && r.library.entries[0].availability == RefAvailability::Missing,
+                   "ri PIN21: a file that is gone makes the entry Missing, not absent");
+            check (r.library.entries[0].lastSeenAt == "2026-09-02T08:31:10Z",
+                   "ri PIN21: and lastSeenAt is KEPT, not overwritten with now",
+                   r.library.entries[0].lastSeenAt);
+            check (r.library.entries[0].checkedAt == kNow,
+                   "ri PIN21: while checkedAt says when we last looked");
+            check (r.toAnalyse.empty(),
+                   "ri PIN21: and nothing is queued, because there is no audio to read");
+        }
+
+        // ri PIN22 -- AN ENTRY THE BLOB NEVER HEARD OF IS IN THE LIBRARY. This
+        // is the whole point: the library stops being per project.
+        {
+            RefEntry mine;
+            mine.id = "r_other"; mine.path = "/refs/other.wav"; mine.name = "other";
+            mine.availability = RefAvailability::Present;
+            mine.measurements.valid = true;
+            mine.measurementEpoch = kRefMeasurementEpoch;
+
+            RefLoadResult lr; lr.state = RefLoadState::Loaded;
+            lr.index.entries.push_back (mine);
+            auto mint = mintSeq();
+            const auto r = refReconcile (lr, { "/refs/fromblob.wav" },
+                                         [] (const juce::String&) { return true; },
+                                         kNow, mint);
+            check (r.library.entries.size() == 2,
+                   "ri PIN22: an entry the blob never knew survives beside the blob's own",
+                   juce::String ((int) r.library.entries.size()));
+            check (r.library.entries[0].id == "r_other"
+                   && r.library.entries[1].path == "/refs/fromblob.wav",
+                   "ri PIN22: the index comes first and the blob's unknowns follow it");
+            check (r.toAnalyse.size() == 1 && r.toAnalyse[0] == "/refs/fromblob.wav",
+                   "ri PIN22: and the one with numbers is NOT decoded again");
+        }
+
+        // ri PIN23 -- THE NEGATIVE CONTROL FOR PIN20, AND THE DEFECT THIS
+        // COMMIT EXISTS FOR. PluginProcessor.cpp:4470 drops a path failing
+        // existsAsFile out of the restore with no record anywhere, so the list
+        // comes back shorter than the user left it. It must be LISTED.
+        {
+            RefLoadResult lr; lr.state = RefLoadState::Loaded;
+            auto mint = mintSeq();
+            const auto r = refReconcile (lr, { "/refs/moved.wav" },
+                                         [] (const juce::String&) { return false; },
+                                         kNow, mint);
+            check (r.library.entries.size() == 1,
+                   "ri PIN23: a blob path whose file is gone is LISTED, not dropped",
+                   juce::String ((int) r.library.entries.size()));
+            check (r.library.entries[0].availability == RefAvailability::Missing
+                   && r.library.entries[0].name == "moved",
+                   "ri PIN23: as a Missing entry that still carries its name");
+            check (r.toAnalyse.empty(),
+                   "ri PIN23: and nothing is queued for a file that is not there");
+        }
+
+        // ri PIN24 -- FIRST RUN. An ABSENT index plus a blob is exactly the
+        // library today's startup builds, in the blob's own order, so the first
+        // run after this lands costs what a first run costs today and no more.
+        {
+            RefLoadResult lr;                       // Absent: writable, silent
+            check (lr.state == RefLoadState::Absent,
+                   "ri PIN24: a default load result is Absent, which is the first run");
+            auto mint = mintSeq();
+            const auto r = refReconcile (lr, { "/refs/1.wav", "/refs/2.wav", "/refs/3.wav" },
+                                         [] (const juce::String&) { return true; },
+                                         kNow, mint);
+            check (r.library.entries.size() == 3
+                   && r.library.entries[0].path == "/refs/1.wav"
+                   && r.library.entries[2].path == "/refs/3.wav"
+                   && r.mayWrite,
+                   "ri PIN24: three entries in BLOB ORDER, and the index may be written");
+            check (r.toAnalyse.size() == 3,
+                   "ri PIN24: all three are analysed, which is today's cost exactly once",
+                   juce::String ((int) r.toAnalyse.size()));
+        }
+
+        // ri PIN25 -- AN UNREADABLE INDEX OPENS EMPTY AND DOES NOT FALL BACK TO
+        // THE BLOB.
+        //
+        // WHY EMPTY IS THE SAFE READING, and it is the opposite of the
+        // instinct: rebuilding from the blob would give this session a library
+        // missing every reference the blob never knew about, and the first
+        // commit would write THAT over the file that could not be read. A
+        // damaged library would become a permanently shorter one. Empty
+        // destroys nothing and the refusal to write is what protects the file.
+        {
+            RefLoadResult lr; lr.state = RefLoadState::Unreadable;
+            lr.message = "The reference library could not be read.";
+            auto mint = mintSeq();
+            const auto r = refReconcile (lr, { "/refs/a.wav", "/refs/b.wav" },
+                                         [] (const juce::String&) { return true; },
+                                         kNow, mint);
+            check (r.library.entries.empty(),
+                   "ri PIN25: an unreadable index opens EMPTY",
+                   juce::String ((int) r.library.entries.size()));
+            check (! r.mayWrite,
+                   "ri PIN25: and nothing may be written over the file that could not be read");
+            check (r.toAnalyse.empty(),
+                   "ri PIN25: and the blob's paths are NOT rebuilt into a shorter library");
+        }
+    }
+
+    // ======================================================================
+    // rb -- THE REFERENCE BROWSER'S PANE RULE (EJReferenceRows.h)
+    //
+    // groupChainRows' bargain: the rule is a static pure function, so these
+    // pins exercise the code that SHIPS rather than a copy of it, and they do
+    // it with no window, no analyser and no editor. The rendering that
+    // consumes these rows is deliberately unpinned -- nothing in this gate
+    // opens a window, and a pin that cannot fail is worse than none.
+    // ======================================================================
+    {
+        using namespace echojay;
+        auto mk = [] (std::initializer_list<const char*> names)
+        {
+            std::vector<RefBrowserEntry> v;
+            for (auto* n : names) v.push_back ({ juce::String (n), juce::String ("/tmp/") + n });
+            return v;
+        };
+        auto countKind = [] (const std::vector<RefBrowserRow>& rows, RefBrowserRow::Kind k)
+        {
+            int n = 0; for (auto& r : rows) if (r.kind == k) ++n; return n;
+        };
+
+        // rb PIN1 -- EVERY REFERENCE APPEARS EXACTLY ONCE, IN LIBRARY ORDER.
+        // The property groupChainRows carries, for the same reason: a pane
+        // that drops or doubles an entry is the defect a grouping rule exists
+        // to prevent, and it is invisible by eye once the list is long.
+        {
+            const auto refs  = mk ({ "kick.wav", "mix_v2.wav", "master.aiff" });
+            const auto panes = buildReferenceBrowserRows (refs, {}, {}, -1);
+            check (countKind (panes.right, RefBrowserRow::Kind::Track) == 3,
+                   "rb PIN1: three references make three track rows");
+            int seen = 0;
+            for (auto& r : panes.right)
+                if (r.kind == RefBrowserRow::Kind::Track)
+                {
+                    check (r.index == seen, "rb PIN1: library order is preserved",
+                           "row " + juce::String (seen) + " carries index "
+                           + juce::String (r.index));
+                    check (r.text == refs[(size_t) seen].name,
+                           "rb PIN1: and the row names the reference at that index");
+                    ++seen;
+                }
+        }
+
+        // rb PIN2 -- A TRACK ROW'S index ADDRESSES ITS SOURCE. This is the
+        // field the browser hands straight to applyReferenceToSlot, so an
+        // index that does not round trip loads the wrong audio silently. The
+        // 300-band menu handler had exactly this shape and was correct only
+        // because its list and its ids were built in one loop.
+        {
+            const auto refs  = mk ({ "a.wav", "b.wav", "c.wav", "d.wav" });
+            const auto panes = buildReferenceBrowserRows (refs, {}, {}, 2);
+            for (auto& r : panes.right)
+                if (r.kind == RefBrowserRow::Kind::Track)
+                    check (r.index >= 0 && r.index < (int) refs.size()
+                           && refs[(size_t) r.index].name == r.text,
+                           "rb PIN2: index round trips to the named reference",
+                           "text \"" + r.text + "\" index " + juce::String (r.index));
+        }
+
+        // rb PIN3 -- EXACTLY ONE ROW IS SELECTED, AND IT IS THE ASKED-FOR ONE.
+        {
+            const auto refs  = mk ({ "a.wav", "b.wav", "c.wav" });
+            const auto panes = buildReferenceBrowserRows (refs, {}, {}, 1);
+            int sel = 0, selIdx = -1;
+            for (auto& r : panes.right) if (r.selected) { ++sel; selIdx = r.index; }
+            check (sel == 1, "rb PIN3: one selected row, not none and not two",
+                   "got " + juce::String (sel));
+            check (selIdx == 1, "rb PIN3: and it is the index that was asked for",
+                   "got " + juce::String (selIdx));
+        }
+
+        // rb PIN4 -- AN OUT-OF-RANGE SELECTION SELECTS NOTHING. A deleted
+        // reference must leave the panel showing no selection rather than a
+        // clamp quietly pointing at a neighbour, which would be the panel
+        // asserting a choice the user did not make.
+        {
+            const auto refs = mk ({ "a.wav", "b.wav" });
+            for (int bad : { -1, 2, 99, -7 })
+            {
+                const auto panes = buildReferenceBrowserRows (refs, {}, {}, bad);
+                int sel = 0; for (auto& r : panes.right) if (r.selected) ++sel;
+                check (sel == 0, "rb PIN4: an out-of-range selection selects nothing",
+                       "index " + juce::String (bad) + " selected "
+                       + juce::String (sel));
+            }
+            check (refBrowserTitle (refs, {}, 5) == "Select a reference",
+                   "rb PIN4: and the title says so rather than naming a guess");
+        }
+
+        // rb PIN5 -- THE EMPTY LIBRARY INVITES, AND THE INVITATION IS THE ONLY
+        // THING THAT ACTS. A pane that is merely blank is the menu's old
+        // behaviour, which hid the feature from anyone who had not found it.
+        {
+            const auto panes = buildReferenceBrowserRows ({}, {}, {}, -1);
+            check (countKind (panes.right, RefBrowserRow::Kind::Track) == 0,
+                   "rb PIN5: no references, no track rows");
+            check (countKind (panes.right, RefBrowserRow::Kind::Invite) == 1,
+                   "rb PIN5: exactly one invitation");
+            int clickable = 0;
+            for (auto& r : panes.right) if (r.clickable) ++clickable;
+            check (clickable == 1,
+                   "rb PIN5: and it is the ONLY clickable row in an empty pane",
+                   "got " + juce::String (clickable));
+            for (auto& r : panes.right)
+                if (r.kind == RefBrowserRow::Kind::Invite)
+                    check (r.text == juce::String (kRefBrowserInviteText()),
+                           "rb PIN5: wording comes from the shared constant");
+        }
+
+        // rb PIN5b -- THE INVITATION MATCHES THE SLOT MENU, VERBATIM. 16ed1f4
+        // put these words in the menu's empty REFERENCES section. Two wordings
+        // for one action teaches a user they are two actions, so the string is
+        // asserted against the menu's own literal rather than against itself.
+        {
+            std::ifstream f ("Source/PluginEditor.cpp");
+            std::stringstream ss; ss << f.rdbuf();
+            const juce::String src (ss.str());
+            check (src.contains ("menu.addItem(kCompareMenuAddRefId, \"Add a reference track...\")"),
+                   "rb PIN5b: the slot menu still uses this exact wording");
+            check (juce::String (kRefBrowserInviteText()) == "Add a reference track...",
+                   "rb PIN5b: and the browser's shared constant is the same string");
+        }
+
+        // rb PIN6 -- NO ROW THAT CANNOT ACT IS CLICKABLE, and no Track row
+        // carries a heading's -1. Drawing a dead affordance is the defect the
+        // last four commits removed; this is that rule as a property.
+        {
+            const auto refs  = mk ({ "a.wav" });
+            const auto panes = buildReferenceBrowserRows (refs, {}, {}, 0);
+            for (const auto* pane : { &panes.left, &panes.right })
+                for (auto& r : *pane)
+                {
+                    if (r.kind == RefBrowserRow::Kind::Heading
+                        || r.kind == RefBrowserRow::Kind::Notice)
+                        check (! r.clickable,
+                               "rb PIN6: headings and notices are not clickable",
+                               "\"" + r.text + "\" was");
+                    if (r.kind == RefBrowserRow::Kind::Track)
+                        check (r.index >= 0,
+                               "rb PIN6: a track row carries a real index");
+                    else
+                        check (r.index == -1,
+                               "rb PIN6: every other kind carries -1",
+                               "\"" + r.text + "\" carried "
+                               + juce::String (r.index));
+                }
+        }
+
+        // rb PIN7 -- THE LEFT PANE'S SCOPES, AND THEIR COUNTS.
+        //
+        // THIS ASSERTION CHANGED BECAUSE THE CONTRACT CHANGED, not because it
+        // failed. It read "exactly one scope until folders land", and folders
+        // have landed. It is NOT a loosening: the old pin said the pane must
+        // not imply a structure that did not exist, and the replacement says
+        // what the structure IS. ALL REFERENCES is always present and always
+        // shows everything; folders appear in creation order; UNFILED appears
+        // only when something is unfiled; every count is real.
+        {
+            for (int n : { 0, 1, 5 })
+            {
+                std::vector<RefBrowserEntry> refs;
+                for (int i = 0; i < n; ++i)
+                    refs.push_back ({ "r" + juce::String (i), "/tmp/p" + juce::String (i) });
+                const auto panes = buildReferenceBrowserRows (refs, {}, {}, -1);
+                check (countKind (panes.left, RefBrowserRow::Kind::Category) == 1,
+                       "rb PIN7: with no folders, ALL REFERENCES is the only scope");
+                bool named = false;
+                for (auto& r : panes.left)
+                    if (r.kind == RefBrowserRow::Kind::Category)
+                        named = r.text.contains ("(" + juce::String (n) + ")");
+                check (named, "rb PIN7: and it carries the real count",
+                       "n=" + juce::String (n));
+                check (countKind (panes.left, RefBrowserRow::Kind::Category) == 1
+                       && countKind (panes.left, RefBrowserRow::Kind::NewFolder) == 1,
+                       "rb PIN7: and the + row is always there to make one");
+            }
+
+            // ALL REFERENCES ALWAYS SHOWS EVERYTHING, however it is filed.
+            const auto refs = mk ({ "a.wav", "b.wav", "c.wav" });
+            std::vector<RefFolder> fs { { "Drums", { "/tmp/a.wav" } },
+                                        { "Vox",   { "/tmp/b.wav" } } };
+            const auto all = buildReferenceBrowserRows (refs, fs, {}, -1);
+            check (countKind (all.right, RefBrowserRow::Kind::Track) == 3,
+                   "rb PIN7: ALL REFERENCES shows filed and unfiled alike");
+            check (countKind (all.left, RefBrowserRow::Kind::Category) == 4,
+                   "rb PIN7: ALL, two folders, and UNFILED because one is",
+                   juce::String (countKind (all.left, RefBrowserRow::Kind::Category)));
+
+            // UNFILED IS ABSENT WHEN NOTHING IS UNFILED.
+            std::vector<RefFolder> fs2 { { "Drums", { "/tmp/a.wav", "/tmp/b.wav",
+                                                      "/tmp/c.wav" } } };
+            const auto none = buildReferenceBrowserRows (refs, fs2, {}, -1);
+            check (countKind (none.left, RefBrowserRow::Kind::Category) == 2,
+                   "rb PIN7: no UNFILED row when everything is filed",
+                   juce::String (countKind (none.left, RefBrowserRow::Kind::Category)));
+        }
+
+        // rb PIN10 -- FOLDER MEMBERSHIP AND THE SCOPED PANE.
+        {
+            const auto refs = mk ({ "kick.wav", "snare.wav", "vox.wav" });
+            std::vector<RefFolder> fs { { "Drums", { "/tmp/kick.wav", "/tmp/snare.wav" } } };
+            RefScope drums; drums.kind = RefScope::Kind::Folder; drums.folder = "Drums";
+            RefScope unf;   unf.kind   = RefScope::Kind::Unfiled;
+
+            check (refScopeCount (refs, fs, {}) == 3,
+                   "rb PIN10: ALL counts the whole library");
+            check (refScopeCount (refs, fs, drums) == 2,
+                   "rb PIN10: a folder counts its members");
+            check (refScopeCount (refs, fs, unf) == 1,
+                   "rb PIN10: UNFILED counts what no folder claims");
+
+            const auto inDrums = buildReferenceBrowserRows (refs, fs, drums, -1);
+            check (countKind (inDrums.right, RefBrowserRow::Kind::Track) == 2,
+                   "rb PIN10: the pane shows only the folder's references");
+            for (auto& r : inDrums.right)
+                if (r.kind == RefBrowserRow::Kind::Track)
+                    check (r.text != "vox.wav",
+                           "rb PIN10: and nothing from outside it");
+
+            // ONE FOLDER EACH. A path claimed by two folders shows in the
+            // earlier one, never in both: a reference appearing twice is worse
+            // than it appearing in the wrong place.
+            std::vector<RefFolder> two { { "A", { "/tmp/kick.wav" } },
+                                         { "B", { "/tmp/kick.wav" } } };
+            RefScope sa; sa.kind = RefScope::Kind::Folder; sa.folder = "A";
+            RefScope sb; sb.kind = RefScope::Kind::Folder; sb.folder = "B";
+            check (refScopeCount (refs, two, sa) == 1 && refScopeCount (refs, two, sb) == 0,
+                   "rb PIN10: a doubly-claimed path lands in one folder only");
+
+            // INDEX TRANSLATION ROUND TRIPS, which is what stops the arrows
+            // loading a reference the pane is not showing.
+            for (int nth = 0; nth < refScopeCount (refs, fs, drums); ++nth)
+            {
+                const int lib = refScopeIndexToLibrary (refs, fs, drums, nth);
+                check (lib >= 0 && refLibraryIndexToScope (refs, fs, drums, lib) == nth,
+                       "rb PIN10: scope index to library and back is the identity",
+                       "nth=" + juce::String (nth) + " lib=" + juce::String (lib));
+                check (refScopeAdmits (drums, fs, refs[(size_t) lib].path),
+                       "rb PIN10: and it only ever lands on a member");
+            }
+            check (refScopeIndexToLibrary (refs, fs, drums, 99) == -1
+                   && refScopeIndexToLibrary (refs, fs, drums, -1) == -1,
+                   "rb PIN10: out of range translates to nothing, not to a clamp");
+            check (refLibraryIndexToScope (refs, fs, drums, 2) == -1,
+                   "rb PIN10: a library index outside the scope has no scope position");
+        }
+
+        // rb PIN11 -- A MEMBER WHOSE FILE IS GONE IS LISTED, NOT FORGOTTEN.
+        // The restore path drops a reference whose file no longer resolves, so
+        // a folder outlives its reference. Same direction as the index
+        // schema's RefAvailability: say it is unavailable rather than pretend
+        // it was never there.
+        {
+            const auto refs = mk ({ "kick.wav" });
+            std::vector<RefFolder> fs { { "Drums", { "/tmp/kick.wav", "/tmp/gone.wav" } } };
+            RefScope drums; drums.kind = RefScope::Kind::Folder; drums.folder = "Drums";
+            const auto p = buildReferenceBrowserRows (refs, fs, drums, -1);
+
+            check (countKind (p.right, RefBrowserRow::Kind::Track) == 1,
+                   "rb PIN11: the live member is a track row");
+            check (countKind (p.right, RefBrowserRow::Kind::Missing) == 1,
+                   "rb PIN11: and the vanished one is still listed");
+            for (auto& r : p.right)
+                if (r.kind == RefBrowserRow::Kind::Missing)
+                {
+                    check (! r.clickable,
+                           "rb PIN11: an unavailable row cannot be selected");
+                    check (r.index == -1,
+                           "rb PIN11: and carries no library index, because it has none");
+                    check (r.text.contains ("unavailable"),
+                           "rb PIN11: and says so in words");
+                }
+            // NOT COUNTED: the arrows must not step onto something absent.
+            check (refScopeCount (refs, fs, drums) == 1,
+                   "rb PIN11: and it is NOT counted, so the arrows skip it");
+        }
+
+        // rb PIN12 -- A SCOPE NAMING A FOLDER THAT IS GONE FALLS BACK TO ALL.
+        // Deleting a folder while it is selected is the ordinary way this
+        // happens, and an empty pane the user cannot account for is the
+        // alternative.
+        {
+            const auto refs = mk ({ "a.wav", "b.wav" });
+            RefScope ghost; ghost.kind = RefScope::Kind::Folder; ghost.folder = "Deleted";
+            check (refScopeOrAll (ghost, {}).kind == RefScope::Kind::All,
+                   "rb PIN12: a scope with no folder behind it becomes ALL");
+            const auto p = buildReferenceBrowserRows (refs, {}, ghost, -1);
+            check (countKind (p.right, RefBrowserRow::Kind::Track) == 2,
+                   "rb PIN12: so the pane shows the library, not nothing");
+            // DELETING A FOLDER NEVER DELETES REFERENCES.
+            std::vector<RefFolder> fs { { "Drums", { "/tmp/a.wav" } } };
+            const auto before = refScopeCount (refs, fs, {});
+            const auto after  = refScopeCount (refs, {}, {});
+            check (before == after && after == 2,
+                   "rb PIN12: and losing the folder loses no references");
+        }
+
+        // rb PIN13 -- AN EMPTY FOLDER NAMES ITSELF, and does not claim the
+        // library is empty, because it is not.
+        {
+            const auto refs = mk ({ "a.wav" });
+            std::vector<RefFolder> fs { { "Empty", {} } };
+            RefScope e; e.kind = RefScope::Kind::Folder; e.folder = "Empty";
+            const auto p = buildReferenceBrowserRows (refs, fs, e, -1);
+            bool named = false, claimedEmptyLibrary = false;
+            for (auto& r : p.right)
+                if (r.kind == RefBrowserRow::Kind::Notice)
+                {
+                    named = r.text.contains ("Empty");
+                    claimedEmptyLibrary = r.text.contains ("No references yet");
+                }
+            check (named, "rb PIN13: the notice names the folder");
+            check (! claimedEmptyLibrary,
+                   "rb PIN13: and does NOT say there are no references, because there are");
+            check (countKind (p.right, RefBrowserRow::Kind::Invite) == 0,
+                   "rb PIN13: no Add invitation inside a folder: it would not file it there");
+            // The invitation DOES belong to an empty library.
+            const auto lib = buildReferenceBrowserRows ({}, {}, {}, -1);
+            check (countKind (lib.right, RefBrowserRow::Kind::Invite) == 1,
+                   "rb PIN13: an empty LIBRARY still invites");
+        }
+
+        // rb PIN8 -- THE TITLE NAMES SCOPE AND SELECTION, so the bar and the
+        // list cannot disagree about what is chosen OR about which library it
+        // came from. Both read one function.
+        //
+        // THIS ASSERTION CHANGED ON 13 Sep 2026 BECAUSE THE CONTRACT CHANGED,
+        // not because it failed. It read "master.aiff" alone; the title now
+        // carries the scope too. The EMPTY cases below are deliberately
+        // untouched, which is what makes this an edit to one property rather
+        // than a loosening of the pin.
+        {
+            const auto refs = mk ({ "kick.wav", "master.aiff" });
+            check (refBrowserTitle (refs, {}, 1) == "ALL REFERENCES - master.aiff",
+                   "rb PIN8: the title is scope then selection",
+                   "got \"" + refBrowserTitle (refs, {}, 1) + "\"");
+            check (refBrowserTitle (refs, {}, 1).contains (refs[1].name),
+                   "rb PIN8: and the selection's name survives the pairing");
+            // THE SCOPE HALF IS REAL NOW. It was the constant "ALL REFERENCES"
+            // while one scope existed; with folders it is whichever scope the
+            // panes show, which is what makes the pairing load-bearing.
+            {
+                RefScope d; d.kind = RefScope::Kind::Folder; d.folder = "Drums";
+                check (refBrowserTitle (refs, d, 1) == "DRUMS - master.aiff",
+                       "rb PIN8: a folder scope names the folder, not ALL REFERENCES",
+                       "got \"" + refBrowserTitle (refs, d, 1) + "\"");
+                RefScope u; u.kind = RefScope::Kind::Unfiled;
+                check (refBrowserTitle (refs, u, 0) == "UNFILED - kick.wav",
+                       "rb PIN8: and UNFILED names itself");
+            }
+            check (refBrowserTitle ({}, {}, -1) == "No references",
+                   "rb PIN8: an empty library says so, and does not say Select");
+        }
+
+        // rb PIN9 -- NO CAP. The slot menu stops at 99 because its ids live in
+        // a 100-wide band and overrunning it decodes as another section. A
+        // scrolling pane has no band, so importing the cap would import a
+        // constraint along with the number that exists to satisfy it.
+        {
+            std::vector<RefBrowserEntry> many;
+            for (int i = 0; i < 250; ++i)
+                many.push_back ({ "ref" + juce::String (i), "/tmp/x" });
+            const auto panes = buildReferenceBrowserRows (many, {}, {}, 249);
+            check (countKind (panes.right, RefBrowserRow::Kind::Track) == 250,
+                   "rb PIN9: all 250 appear, no 99 cap carried over");
+            check (panes.right.back().index == 249 && panes.right.back().selected,
+                   "rb PIN9: and the 250th is reachable and selectable");
+        }
+    }
+
+    // ======================================================================
+    // rf -- THE REFERENCE BAR (EJReferenceBar.h)
+    //
+    // THE FIRST PINNED GEOMETRY IN THIS EDITOR, and it is pinned because of
+    // what happened on 12 September: two defects in one day, a drop-zone
+    // height written three ways and a strip measured against a box it was not
+    // drawn in, neither visible to any gate. The bar's rects are computed once
+    // by a pure function, so a test can exercise every width with no window.
+    // ======================================================================
+    {
+        using namespace echojay;
+        // TWO DOMAINS, BECAUSE THE TWO PROPERTIES HAVE TWO DOMAINS, and
+        // conflating them produced a pin that could not see its own defect.
+        //
+        // NO-OVERLAP IS TOTAL: it holds at any width at all, including widths
+        // narrower than the parts, because the right group is placed as one
+        // block. INSIDE-THE-BAR cannot be: fixed control widths must escape a
+        // bar narrower than their sum, and that is arithmetic, not a bug. So
+        // one is tested at every width and the other only from kRefBarMinW up,
+        // each saying which it is.
+        //
+        // WHY THIS MATTERS, recorded because it nearly went the other way.
+        // When rf PIN2 first went red the fix was two changes: bound the right
+        // group, AND gate the status block at 508. Raising the tested floor to
+        // 324 then made the bound unreachable, so re-applying the original
+        // defect passed. The pin was green because of the OTHER fix. Widening
+        // the domain is what restores the pin's power; narrowing it to suit
+        // the parts is how a pin stops being able to fail.
+        auto anyWidth  = { 60, 100, 200, 300, kRefBarMinW, kRefBarMinW + 1, 400,
+                           kRefBarMinWithStatusW, 520, 565, 585, 700, 900, 1380, 1800 };
+        // 565 is the narrowest the shipping plugin produces: the window floor
+        // is 900 (setResizeLimits), chatW is jlimit(280, 420, width * 35/100)
+        // which takes 315 there, so mW is 585 and the bar is mW - 2 * cPad.
+        auto realWidths = { kRefBarMinW, kRefBarMinW + 1, 400, kRefBarMinWithStatusW,
+                            520, 565, 585, 700, 900, 1380, 1800 };
+
+        // rf PIN1 -- EVERY RECT IS INSIDE THE BAR, FROM kRefBarMinW UP. A
+        // control laid outside its own band is the defect that put the Add
+        // button 32px from the edge it was described as touching. Below the
+        // minimum the parts cannot fit and something must leave the bar; that
+        // region is the function's stated undefined domain and rf PIN5b pins
+        // that the product never reaches it.
+        for (int w : realWidths)
+            for (bool st : { false, true })
+            for (bool sc : { false, true })
+            {
+                const juce::Rectangle<int> bar (10, 40, w, kRefBarH);
+                const auto r = refBarLayout (bar, st, sc);
+                for (auto* q : { &r.prev, &r.next, &r.play, &r.slot, &r.scope,
+                                 &r.name, &r.browse, &r.add })
+                    check (bar.contains (*q) || q->isEmpty(),
+                           "rf PIN1: every rect sits inside the bar",
+                           "w=" + juce::String (w) + " rect " + q->toString()
+                           + " bar " + bar.toString());
+            }
+
+        // rf PIN2 -- NO TWO CONTROLS OVERLAP, AT ANY WIDTH WHATSOEVER,
+        // including widths narrower than the controls themselves. Overlap
+        // means one of them is unclickable, which is precisely the failure the
+        // catcher commit removed and which no gate could see until this
+        // function existed. TOTAL, not threshold-bounded: the right group is
+        // placed as a single block, so its members cannot land on each other
+        // however little room there is. The first fix clamped them one at a
+        // time and at 100px Browse and Add both floored to x=154.
+        for (int w : anyWidth)
+            for (bool st : { false, true })
+            for (bool sc : { false, true })
+            {
+                const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, st, sc);
+                std::vector<std::pair<const char*, juce::Rectangle<int>>> cs {
+                    { "prev", r.prev }, { "next", r.next }, { "play", r.play },
+                    { "slot", r.slot }, { "scope", r.scope },
+                    { "name", r.name }, { "status", r.status },
+                    { "browse", r.browse }, { "add", r.add } };
+                for (size_t i = 0; i < cs.size(); ++i)
+                    for (size_t j = i + 1; j < cs.size(); ++j)
+                        if (! cs[i].second.isEmpty() && ! cs[j].second.isEmpty())
+                            check (! cs[i].second.intersects (cs[j].second),
+                                   "rf PIN2: no two bar controls overlap",
+                                   juce::String (cs[i].first) + " " + cs[i].second.toString()
+                                   + " meets " + cs[j].first + " " + cs[j].second.toString()
+                                   + " at w=" + juce::String (w));
+            }
+
+        // rf PIN3 -- LEFT TO RIGHT, THE ORDER IN THE SPEC.
+        // prev | next | play | name | status | Browse | + Add
+        for (int w : { 585, 900, 1380 })
+        {
+            const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, true, false);
+            check (r.prev.getX() < r.next.getX()
+                   && r.next.getX() < r.play.getX()
+                   && r.play.getX() < r.slot.getX()
+                   && r.slot.getX() < r.name.getX()
+                   && r.name.getX() < r.status.getX()
+                   && r.status.getX() < r.browse.getX()
+                   && r.browse.getX() < r.add.getX(),
+                   "rf PIN3: prev next play name status browse add, in that order",
+                   "w=" + juce::String (w));
+        }
+
+        // rf PIN4 -- AN EMPTY STATUS GIVES ITS WIDTH BACK. A bar with nothing
+        // to report must not carry a blank 180px reservation while the name it
+        // exists to show is elided.
+        for (int w : anyWidth)
+        {
+            const auto with    = refBarLayout ({ 10, 40, w, kRefBarH }, true, false);
+            const auto without = refBarLayout ({ 10, 40, w, kRefBarH }, false, false);
+            check (without.status.isEmpty(),
+                   "rf PIN4: no status means no status rect");
+            check (without.name.getWidth() >= with.name.getWidth(),
+                   "rf PIN4: and the name is never narrower without it",
+                   "w=" + juce::String (w)
+                   + " with=" + juce::String (with.name.getWidth())
+                   + " without=" + juce::String (without.name.getWidth()));
+        }
+        {
+            // At a width where both fit, the name gains exactly the status
+            // block. Asserted at one width rather than as an inequality, so a
+            // change to the gap cannot pass by being "not narrower".
+            const auto with    = refBarLayout ({ 10, 40, 900, kRefBarH }, true, false);
+            const auto without = refBarLayout ({ 10, 40, 900, kRefBarH }, false, false);
+            check (without.name.getWidth() == with.name.getWidth()
+                                              + kRefBarStatusW + kRefBarGap,
+                   "rf PIN4: it gains exactly the status block and its gap",
+                   juce::String (without.name.getWidth()) + " vs "
+                   + juce::String (with.name.getWidth()));
+        }
+
+        // rf PIN5 -- THE NAME NEVER COLLAPSES. At widths too narrow for the
+        // sum, the name floors and the bar overflows rather than the buttons
+        // shrinking: a control too small to hit is worse than one pushed off
+        // the end, because it still looks clickable.
+        for (int w : { kRefBarMinW, 400, kRefBarMinWithStatusW, 565 })
+        {
+            const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, true, false);
+            check (r.name.getWidth() >= kRefBarNameMinW,
+                   "rf PIN5: the name floors rather than vanishing",
+                   "w=" + juce::String (w) + " name=" + juce::String (r.name.getWidth()));
+            check (r.prev.getWidth() == kRefBarBtnW && r.play.getWidth() == kRefBarPlayW
+                   && r.browse.getWidth() == kRefBarBrowseW && r.add.getWidth() == kRefBarAddW,
+                   "rf PIN5: and the controls keep their widths, whatever the bar does",
+                   "w=" + juce::String (w));
+        }
+
+        // rf PIN5b -- THE STATED MINIMUM IS BELOW THE NARROWEST BAR THE APP
+        // CAN PRODUCE, so the degradation path is unreachable in the shipping
+        // plugin rather than merely unlikely. This is the assertion that stops
+        // the domain being chosen to suit the test: it is anchored to
+        // setResizeLimits(900) and the 35 percent chat column, which give a
+        // 585px Compare column and a 565px bar.
+        {
+            const int narrowestBar = 585 - 2 * 10;   // mW - 2 * cPad
+            check (narrowestBar >= kRefBarMinWithStatusW,
+                   "rf PIN5b: the real bar is always wide enough for the status",
+                   "bar " + juce::String (narrowestBar) + " vs needs "
+                   + juce::String (kRefBarMinWithStatusW));
+            check (refBarLayout ({ 10, 40, narrowestBar, kRefBarH }, true, false).status.getWidth()
+                   == kRefBarStatusW,
+                   "rf PIN5b: and at that width it is carried at full width");
+            check (refBarLayout ({ 10, 40, kRefBarMinW, kRefBarH }, true, false).status.isEmpty(),
+                   "rf PIN5b: while at the bare minimum the status is DROPPED, "
+                   "not drawn over the transport");
+        }
+
+        // rf PIN9 -- THE STATUS PRESENCE TRANSITION, the rule that couples the
+        // setter to the bar's layout.
+        //
+        // WHAT THESE PINS COVER AND WHAT THEY DO NOT. They cover the DECISION:
+        // which pairs of before/after count as a transition. They do NOT cover
+        // the relayout actually happening. That is one `if` and a resized()
+        // call inside setRefStatus, which is wiring in an editor method no
+        // headless test can reach, and no assertion here should be read as
+        // saying otherwise.
+        {
+            const juce::String none, a ("Analysing kick.wav..."), b ("Error: unsupported");
+
+            check (refStatusPresenceChanged (none, a),
+                   "rf PIN9: empty to a message is a transition");
+            check (refStatusPresenceChanged (a, none),
+                   "rf PIN9: and CLEARING is a transition too, not just setting");
+            check (! refStatusPresenceChanged (a, b),
+                   "rf PIN9: one message replacing another changes no rectangle");
+            check (! refStatusPresenceChanged (none, none),
+                   "rf PIN9: empty to empty is not a transition");
+            check (! refStatusPresenceChanged (a, a),
+                   "rf PIN9: nor is the same message set twice");
+
+            // SYMMETRY. The bar must reclaim its 184px on the way out exactly
+            // as it gives it up on the way in; a rule true in one direction
+            // only leaves the name permanently short after the first message.
+            check (refStatusPresenceChanged (none, a) == refStatusPresenceChanged (a, none),
+                   "rf PIN9: the rule is symmetric in the two directions");
+
+            // IT IS PRESENCE, NOT LENGTH OR CONTENT. Whitespace is a message:
+            // juce::String::isNotEmpty is what refBarLayout's caller passes, so
+            // this must agree with THAT predicate and not with a trimmed one.
+            const juce::String space (" ");
+            check (refStatusPresenceChanged (none, space),
+                   "rf PIN9: a space is a message, matching isNotEmpty");
+            check (! refStatusPresenceChanged (space, a),
+                   "rf PIN9: and going from a space to real text is no transition");
+
+            // THE COUPLING ITSELF: when this says nothing changed, the bar's
+            // rects must be identical. Asserted against refBarLayout rather
+            // than restated, so the two cannot drift apart.
+            const auto l1 = refBarLayout ({ 10, 40, 900, kRefBarH }, a.isNotEmpty(), false);
+            const auto l2 = refBarLayout ({ 10, 40, 900, kRefBarH }, b.isNotEmpty(), false);
+            check (! refStatusPresenceChanged (a, b)
+                   && l1.name == l2.name && l1.status == l2.status,
+                   "rf PIN9: no transition means the bar's rects really are the same");
+            const auto l0 = refBarLayout ({ 10, 40, 900, kRefBarH }, none.isNotEmpty(), false);
+            check (refStatusPresenceChanged (none, a) && l0.name != l1.name,
+                   "rf PIN9: and a transition means they really are not");
+        }
+
+        // rf PIN10 -- THE SLOT LETTER AND THE SCOPE CHIP.
+        //
+        // The slot letter is a RECT now. It was painted from
+        // rb.play.getRight() + 2 with a hardcoded width, spanning 108..120
+        // while the name began at 110, so it sat on top of the first
+        // characters of every reference name. rf PIN2 was blind to it because
+        // it was not in RefBarRects; bringing it in is what makes the overlap
+        // pin cover it.
+        {
+            for (int w : realWidths)
+                for (bool st : { false, true })
+                    for (bool sc : { false, true })
+                    {
+                        const auto r = refBarLayout ({ 10, 40, w, kRefBarH }, st, sc);
+                        check (! r.slot.isEmpty(),
+                               "rf PIN10: the slot letter always has a rect");
+                        check (! r.slot.intersects (r.name),
+                               "rf PIN10: and it never overlaps the name",
+                               "w=" + juce::String (w) + " slot " + r.slot.toString()
+                               + " name " + r.name.toString());
+                        check (r.slot.getX() >= r.play.getRight(),
+                               "rf PIN10: it sits after play, not over it");
+                    }
+
+            // NO SCOPE, NO CHIP: ALL REFERENCES is the default and a chip
+            // saying so would be noise on every bar.
+            const auto noScope = refBarLayout ({ 10, 40, 900, kRefBarH }, false, false);
+            check (noScope.scope.isEmpty(),
+                   "rf PIN10: no scope means no chip rect");
+            const auto withScope = refBarLayout ({ 10, 40, 900, kRefBarH }, false, true);
+            check (withScope.scope.getWidth() == kRefBarScopeW,
+                   "rf PIN10: a scope gets the chip at its full width");
+            check (noScope.name.getWidth()
+                   == withScope.name.getWidth() + kRefBarScopeW + kRefBarGap,
+                   "rf PIN10: and the name pays exactly the chip and its gap",
+                   juce::String (noScope.name.getWidth()) + " vs "
+                   + juce::String (withScope.name.getWidth()));
+
+            // PRIORITY: name, then status, then scope. Measured, not asserted:
+            // the narrowest real bar is 565, which carries name+status (526)
+            // and name+scope (430) but not all three (614). The status is the
+            // only thing that reports a failed drop and it is transient; the
+            // chip is context and comes back when the message clears.
+            check (kRefBarMinWithBothW > 565 && kRefBarMinWithStatusW <= 565
+                   && kRefBarMinWithScopeW <= 565,
+                   "rf PIN10: at the narrowest real bar, status fits and both do not");
+            const auto squeezed = refBarLayout ({ 10, 40, 565, kRefBarH }, true, true);
+            check (! squeezed.status.isEmpty() && squeezed.scope.isEmpty(),
+                   "rf PIN10: so the CHIP drops and the status stays, not the other way");
+            const auto roomy = refBarLayout ({ 10, 40, 741, kRefBarH }, true, true);
+            check (! roomy.status.isEmpty() && ! roomy.scope.isEmpty(),
+                   "rf PIN10: and at the default window both are carried");
+        }
+
+        // rf PIN8 -- THE SUB-TAB ROW. Every tab laid out once, hit-tested from
+        // the same rects, and ALL OF IT DRIVEN BY kRefSubTabCount: every
+        // adjacent pair and every tab, so a third tab is tested the day it
+        // exists rather than sitting untested behind checks written for
+        // tab[0] and tab[1]. That day was 19 Sep 2026: Match joined, at index
+        // 1, with a page, and every loop here picked it up with no edit. Its
+        // two by-hand checks were rewritten, not renumbered around: the names
+        // are now all three by position, and the old tripwire (count == 2,
+        // "MATCH IS NOT HERE until it has a screen") is succeeded by two that
+        // still mean something: the count agrees with the names table, and
+        // MATCH is at index 1 specifically, because the order is a decision.
+        {
+            for (int w : { 300, 565, 585, 900, 1800 })
+            {
+                const juce::Rectangle<int> row (10, 70, w, kRefSubTabH);
+                const auto r = refSubTabLayout (row);
+                check (r.tab[0].getX() == row.getX(),
+                       "rf PIN8: and left aligned to the row",
+                       "w=" + juce::String (w));
+                // EQUAL COLUMNS SPANNING THE ROW, 22 Sep, replacing "fixed
+                // width, whatever the window does". The row now reads as one
+                // family with the Match page's axis row, and this pin is
+                // rewritten to hold the NEW rule rather than deleted with the
+                // old one: a sub-tab row that silently went back to three
+                // small buttons at the left would otherwise pass.
+                //
+                // IT IS A STRONGER CHECK THAN THE ONE IT REPLACES. Fixed width
+                // asserted one number; this asserts that the cells are equal
+                // to within the integer remainder AND that they reach the
+                // row's right edge exactly, which is the property that makes
+                // the row look deliberate at every width.
+                for (int i = 0; i + 1 < kRefSubTabCount; ++i)
+                    check (std::abs (r.tab[i].getWidth() - r.tab[i + 1].getWidth()) <= 1,
+                           "rf PIN8: the sub-tabs are equal columns, not fixed width",
+                           "w=" + juce::String (w) + " tabs " + juce::String (i)
+                           + "/" + juce::String (i + 1) + " = "
+                           + juce::String (r.tab[i].getWidth()) + "/"
+                           + juce::String (r.tab[i + 1].getWidth()));
+                check (r.tab[kRefSubTabCount - 1].getRight() == row.getRight(),
+                       "rf PIN8: and the last one reaches the row's right edge, so the "
+                       "remainder lands in a cell rather than in a drifting gap",
+                       "w=" + juce::String (w));
+                // THE ONE RULE, NOT A COPY OF IT. If the axis row and this row
+                // ever stop sharing ejEvenCell, this is what notices.
+                for (int i = 0; i < kRefSubTabCount; ++i)
+                    check (r.tab[i].getX() == ejEvenCell (row, i, kRefSubTabCount).getX()
+                           && r.tab[i].getWidth() == ejEvenCell (row, i, kRefSubTabCount).getWidth(),
+                           "rf PIN8: and the layout IS ejEvenCell, the same function the "
+                           "Match axis row is built from",
+                           "w=" + juce::String (w) + " tab " + juce::String (i));
+                for (int i = 0; i + 1 < kRefSubTabCount; ++i)
+                {
+                    check (! r.tab[i].intersects (r.tab[i + 1]),
+                           "rf PIN8: adjacent sub-tabs do not overlap",
+                           "w=" + juce::String (w) + " tabs " + juce::String (i)
+                           + " and " + juce::String (i + 1));
+                    check (r.tab[i].getX() < r.tab[i + 1].getX(),
+                           "rf PIN8: each tab is left of the next, in enum order: "
+                           + juce::String (refSubTabName (i)) + " before "
+                           + juce::String (refSubTabName (i + 1)),
+                           "w=" + juce::String (w));
+                }
+            }
+            // The hit test reads the same rects, so it cannot disagree with
+            // the paint about where a tab is. Every tab, from the count.
+            const auto r = refSubTabLayout ({ 10, 70, 900, kRefSubTabH });
+            for (int i = 0; i < kRefSubTabCount; ++i)
+                check (refSubTabAt (r, r.tab[i].getCentre()) == i,
+                       "rf PIN8: a click in " + juce::String (refSubTabName (i))
+                       + "'s rect selects " + juce::String (refSubTabName (i)));
+            const auto& lastTab = r.tab[kRefSubTabCount - 1];
+            check (refSubTabAt (r, { lastTab.getRight() + 40, lastTab.getCentreY() }) == -1,
+                   "rf PIN8: and a click past the tabs selects nothing, "
+                   "rather than the nearest");
+            check (juce::String (refSubTabName (0)) == "COMPARE"
+                   && juce::String (refSubTabName (1)) == "MATCH"
+                   && juce::String (refSubTabName (2)) == "PLAYBACK"
+                   && ! refSubTabIndexValid (3),
+                   "rf PIN8: the three names by position, COMPARE, MATCH, PLAYBACK, and no fourth");
+            check (kRefSubTabCount == (int) (sizeof (kRefSubTabNames) / sizeof (kRefSubTabNames[0])),
+                   "rf PIN8: the tab count agrees with the names table, so no tab paints without a name");
+            check ((int) RefSubTab::Match == 1 && juce::String (refSubTabName (1)) == "MATCH"
+                   && (int) RefSubTab::Playback == 2,
+                   "rf PIN8: MATCH is at index 1, between Compare and Playback, the order "
+                   "MATCH_REFERENCE_PLAN 8A.1 decided; appending it after Playback reddens this");
+        }
+
+        // rs -- THE REFERENCE SUB-TAB ENUM AND ITS GUARDS (EJReferenceBar.h).
+        //
+        // PREFIX rs, checked against every prefix in this suite and in every
+        // other harness under tools/ before use: none uses it. rf PIN8 above
+        // pins the ROW; these pin the enum the row is indexed by.
+        {
+            // rs PIN1 -- THE COUNT IS THE ENUM'S. kRefSubTabCount is taken from
+            // RefSubTab::Count, and every position below it has a real name,
+            // each different, none of them the out-of-range marker.
+            check (kRefSubTabCount == (int) RefSubTab::Count,
+                   "rs PIN1: the count is RefSubTab::Count, not a second literal");
+            for (int i = 0; i < kRefSubTabCount; ++i)
+            {
+                const juce::String n (refSubTabName (i));
+                check (n.isNotEmpty() && n != juce::String (kRefSubTabInvalidName),
+                       "rs PIN1: position " + juce::String (i) + " has a real name",
+                       n);
+                for (int j = 0; j < i; ++j)
+                    check (n != juce::String (refSubTabName (j)),
+                           "rs PIN1: and it is not another tab's name",
+                           juce::String (i) + " and " + juce::String (j) + " are both " + n);
+            }
+
+            // rs PIN2 -- OUT OF RANGE IS VISIBLY WRONG. The ternary this
+            // replaced answered "COMPARE" for every position but Playback's,
+            // so a bad index painted as a plausible tab.
+            for (int bad : { -1, kRefSubTabCount, kRefSubTabCount + 7 })
+            {
+                const juce::String n (refSubTabName (bad));
+                check (n == juce::String (kRefSubTabInvalidName),
+                       "rs PIN2: position " + juce::String (bad) + " is named as no tab",
+                       n);
+                check (n != "COMPARE",
+                       "rs PIN2: and it is not quietly Compare",
+                       "position " + juce::String (bad));
+            }
+
+            // rs PIN3 -- NO INDEX AT OR PAST Count BECOMES A TAB. Two things,
+            // and only two:
+            //
+            // THE PREDICATE, AT ITS EDGES. refSubTabIndexValid is a real test
+            // with real edges: -1 and Count are refused, every tab below Count
+            // is accepted.
+            //
+            // THE CAST, GUARDED BY IT. mouseDown is the one place an index
+            // becomes a RefSubTab, so it is where the guard lives. It is read
+            // from the source because the cast is the editor's and this suite
+            // cannot drive it. The condition checked is the NEAREST "if (" above
+            // the cast, not merely one somewhere in the neighbourhood, and a
+            // NEGATIVE CONTROL runs the same matcher over a copy of the source
+            // with the old st >= 0 guard put back, which it must report as
+            // unguarded. Without that, a matcher that could never fail would
+            // read as green.
+            //
+            // NOT HERE: refSubTabAt's own range. Its loop bound already keeps
+            // every index it returns below Count, so there is nothing for a pin
+            // to catch there.
+            check (! refSubTabIndexValid (-1) && ! refSubTabIndexValid (kRefSubTabCount),
+                   "rs PIN3: -1 and Count are not tabs");
+            for (int i = 0; i < kRefSubTabCount; ++i)
+                check (refSubTabIndexValid (i),
+                       "rs PIN3: position " + juce::String (i) + " is a tab");
+            {
+                std::ifstream fe ("Source/PluginEditor.cpp");
+                std::stringstream ss; ss << fe.rdbuf();
+                const juce::String ed (ss.str());
+                const juce::String cast  ("setRefSubTab ((echojay::RefSubTab) st);");
+                const juce::String guard ("if (echojay::refSubTabIndexValid (st))");
+                auto castIsGuarded = [&cast, &guard] (const juce::String& src)
+                {
+                    const int at = src.indexOf (cast);
+                    if (at < 0) return false;
+                    const juce::String head = src.substring (0, at);
+                    const int ifAt = head.lastIndexOf ("if (");
+                    return ifAt >= 0 && head.substring (ifAt).startsWith (guard);
+                };
+                const int at = ed.indexOf (cast);
+                check (at > 0 && ed.indexOf (at + 1, cast) < 0,
+                       "rs PIN3: mouseDown casts a hit index to RefSubTab in exactly one place");
+                check (castIsGuarded (ed),
+                       "rs PIN3: and the condition nearest that cast is refSubTabIndexValid (st)");
+                const juce::String unguarded = ed.replace (guard, "if (st >= 0)");
+                check (unguarded != ed && ! castIsGuarded (unguarded),
+                       "rs PIN3: control: the same source with the old st >= 0 guard put back "
+                       "reads as unguarded");
+            }
+
+            // rs PIN4 -- THE COMPARE CONTROLS' RULE, ALL FOUR INPUTS. The ten
+            // show only when the Compare view is up AND the sub-tab is Compare.
+            // Two inputs, because the sub-tab alone cannot say it: leaving the
+            // Reference tab resets the sub-tab to Compare and hides the ten.
+            // This is behaviour of the pure function, not of the editor.
+            check (! compareFurnitureVisible (false, RefSubTab::Compare),
+                   "rs PIN4: view down, sub-tab Compare: hidden");
+            check (! compareFurnitureVisible (false, RefSubTab::Playback),
+                   "rs PIN4: view down, sub-tab Playback: hidden");
+            check (compareFurnitureVisible (true, RefSubTab::Compare),
+                   "rs PIN4: view up, sub-tab Compare: shown");
+            check (! compareFurnitureVisible (true, RefSubTab::Playback),
+                   "rs PIN4: view up, sub-tab Playback: hidden");
+            // Match, added 19 Sep 2026: its page covers the content area, so
+            // Compare's ten controls hide there exactly as on Playback.
+            check (! compareFurnitureVisible (true, RefSubTab::Match)
+                   && ! compareFurnitureVisible (false, RefSubTab::Match),
+                   "rs PIN4: sub-tab Match, view up or down: hidden");
+
+            // rs PIN9 -- THE ROW'S OWN HIT TEST. refSubTabRowHit is what the
+            // editor's right-click and double-click handlers consume on. It
+            // covers every tab, the row's empty width past the last tab, and a
+            // tab a narrow row does not fully contain; and nothing above, below
+            // or left of the row. Behaviour of the pure function, not of the
+            // editor: rs PIN10 and rs PIN11 pin that the editor calls it.
+            {
+                const auto r = refSubTabLayout ({ 10, 70, 900, kRefSubTabH });
+                for (int i = 0; i < kRefSubTabCount; ++i)
+                    check (refSubTabRowHit (r, r.tab[i].getCentre()),
+                           "rs PIN9: a press on " + juce::String (refSubTabName (i)) + " is on the row");
+                // REWRITTEN 22 Sep, NOT DELETED, the same treatment rf PIN8
+                // got. Two checks here described the OLD left-aligned
+                // fixed-width row and are false BY CONSTRUCTION now that the
+                // three tabs span the row as equal columns:
+                //
+                //   "and so is the row's empty width past the last tab"
+                //       there is no empty width: the last tab's right edge IS
+                //       the row's right edge, so a point past it is off the
+                //       row entirely. The new check asserts that identity,
+                //       which is the stronger statement.
+                //
+                //   "a tab past a narrow row's edge is still on the row"
+                //       no tab pokes out any more at any width, because the
+                //       tabs DIVIDE the row rather than being laid along it.
+                //       The new check asserts the containment directly.
+                const auto& lastTab = r.tab[kRefSubTabCount - 1];
+                check (lastTab.getRight() == r.row.getRight()
+                       && ! refSubTabRowHit (r, { lastTab.getRight() + 40, lastTab.getCentreY() }),
+                       "rs PIN9: the tabs now FILL the row, so there is no empty width past the "
+                       "last one and a press beyond it is off the row");
+                check (! refSubTabRowHit (r, { 500, 70 - 1 })
+                       && ! refSubTabRowHit (r, { 500, 70 + kRefSubTabH })
+                       && ! refSubTabRowHit (r, { 9, 80 }),
+                       "rs PIN9: but not the pixel above it, the pixel below it, or left of it");
+                // A NARROW ROW: every tab stays inside it, because the tabs
+                // divide the row rather than running along it from the left.
+                const auto narrow = refSubTabLayout ({ 10, 70, kRefSubTabW + 10, kRefSubTabH });
+                bool allInside = true;
+                for (int i = 0; i < kRefSubTabCount; ++i)
+                    allInside = allInside
+                             && narrow.row.contains (narrow.tab[i].getCentre())
+                             && refSubTabRowHit (narrow, narrow.tab[i].getCentre());
+                check (allInside,
+                       "rs PIN9: and at a row too narrow for the old fixed widths, every tab is "
+                       "still inside the row and still hits it");
+            }
+        }
+
+        // rs PIN5 to rs PIN7 -- ONE AUTHOR OF THE COMPARE CONTROLS, AS TEXT.
+        //
+        // THESE ARE TEXT PINS. They read Source/PluginEditor.cpp and .h and
+        // pin what the source SAYS: who assigns the sub-tab, who sets the ten
+        // controls' visibility, and what value is passed. They do not show
+        // what the editor DOES, which this suite cannot reach because it never
+        // builds an editor. The rule's behaviour is rs PIN4's.
+        //
+        // EACH HAS A NEGATIVE CONTROL, like rs PIN3's: the same detector run
+        // over a copy of the source with the defect put back, which it must
+        // report. A detector shown able to fail is the only kind worth a green.
+        {
+            auto slurp = [] (const char* path)
+            {
+                std::ifstream f (path);
+                std::stringstream ss; ss << f.rdbuf();
+                return ss.str();
+            };
+            const std::string cpp = slurp ("Source/PluginEditor.cpp");
+            const std::string hdr = slurp ("Source/PluginEditor.h");
+            // A top-level function's body: from its signature to the first
+            // closing brace in column 0 after it.
+            auto body = [] (const std::string& src, const std::string& sig,
+                            size_t& b, size_t& e)
+            {
+                b = src.find (sig);
+                e = (b == std::string::npos) ? std::string::npos : src.find ("\n}\n", b);
+                return b != std::string::npos && e != std::string::npos;
+            };
+            auto lineOf = [] (const std::string& src, size_t pos)
+            {
+                return 1 + (int) std::count (src.begin(), src.begin() + (long) pos, '\n');
+            };
+
+            // rs PIN5 -- refSubTab_ IS ASSIGNED ONLY INSIDE setRefSubTab. A
+            // text pin. hideCompareView wrote the field directly until this
+            // commit, so there were two writers of the sub-tab.
+            {
+                const std::regex assign (R"(refSubTab_\s*=(?!=))");
+                auto count = [&] (const std::string& c, const std::string& h,
+                                  int& inside, juce::String& where)
+                {
+                    size_t b = 0, e = 0;
+                    const bool found = body (c, "void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)", b, e);
+                    int outside = 0; inside = 0;
+                    for (std::sregex_iterator it (c.begin(), c.end(), assign), end; it != end; ++it)
+                    {
+                        const auto pos = (size_t) it->position();
+                        if (found && pos > b && pos < e) ++inside;
+                        else { ++outside; where << "cpp:" << lineOf (c, pos) << " "; }
+                    }
+                    for (std::sregex_iterator it (h.begin(), h.end(), assign), end; it != end; ++it)
+                    { ++outside; where << "h:" << lineOf (h, (size_t) it->position()) << " "; }
+                    return outside;
+                };
+                int inside = 0; juce::String where;
+                const int outside = count (cpp, hdr, inside, where);
+                check (inside == 1,
+                       "rs PIN5 (text pin): setRefSubTab assigns refSubTab_ once",
+                       juce::String (inside) + " assignments inside");
+                check (outside == 0,
+                       "rs PIN5 (text pin): and nothing else assigns it",
+                       where);
+
+                std::string planted = cpp;
+                const std::string call = "    setRefSubTab (echojay::RefSubTab::Compare);";
+                const auto at = planted.find (call);
+                if (at != std::string::npos)
+                    planted.replace (at, call.size(), "    refSubTab_ = echojay::RefSubTab::Compare;");
+                int inside2 = 0; juce::String where2;
+                check (at != std::string::npos && count (planted, hdr, inside2, where2) == 1,
+                       "rs PIN5 (text pin): control: the old direct write in hideCompareView, "
+                       "put back, is reported as a second writer",
+                       where2);
+            }
+
+            // rs PIN6 -- THE TEN CONTROLS' VISIBILITY IS SET ONLY INSIDE
+            // showCompareFurniture. A text pin. Two ways to set it: setVisible,
+            // and addAndMakeVisible, which construction used after
+            // setVisible (false) and so left all ten visible. The three styling
+            // helpers take the button as a parameter named btn, where the
+            // names cannot be seen, so their bodies are checked directly.
+            {
+                const std::string ten =
+                    R"(\b(compareMeterBtns\[[^\]]*\]|compareTopSlotBtn_|compareBotSlotBtn_|comparePlayTopBtn_|)"
+                    R"(comparePlayBotBtn_|cmpABtn_|cmpBBtn_|cmpPlayBtn_|compareSyncBtn_|aiCompareBtn))";
+                const std::regex setVis (ten + R"(\s*(\.|->)\s*setVisible\s*\()");
+                const std::regex addVis (R"(addAndMakeVisible\s*\(\s*\*?\s*)" + ten);
+
+                auto setVisOutside = [&] (const std::string& c, const std::string& h,
+                                          int& inside, juce::String& where)
+                {
+                    size_t b = 0, e = 0;
+                    const bool found = body (c, "void EchoJayEditor::showCompareFurniture (bool visible)", b, e);
+                    int outside = 0; inside = 0;
+                    for (std::sregex_iterator it (c.begin(), c.end(), setVis), end; it != end; ++it)
+                    {
+                        const auto pos = (size_t) it->position();
+                        if (found && pos > b && pos < e) ++inside;
+                        else { ++outside; where << "cpp:" << lineOf (c, pos) << " "; }
+                    }
+                    for (std::sregex_iterator it (h.begin(), h.end(), setVis), end; it != end; ++it)
+                    { ++outside; where << "h:" << lineOf (h, (size_t) it->position()) << " "; }
+                    return outside;
+                };
+                auto addVisCount = [&] (const std::string& c, const std::string& h)
+                {
+                    return (int) std::distance (std::sregex_iterator (c.begin(), c.end(), addVis), std::sregex_iterator())
+                         + (int) std::distance (std::sregex_iterator (h.begin(), h.end(), addVis), std::sregex_iterator());
+                };
+                auto helpersClean = [] (const std::string& c, juce::String& bad)
+                {
+                    bool ok = true;
+                    for (const char* lam : { "auto styleSlotBtn = [&]", "auto stylePlayBtn = [&]", "auto styleTBar = [&]" })
+                    {
+                        const auto i = c.find (lam);
+                        const auto j = (i == std::string::npos) ? std::string::npos : c.find ("};", i);
+                        const std::string b = (j == std::string::npos) ? std::string() : c.substr (i, j - i);
+                        const bool clean = ! b.empty()
+                                        && b.find ("addChildComponent(btn)") != std::string::npos
+                                        && b.find ("setVisible") == std::string::npos
+                                        && b.find ("addAndMakeVisible") == std::string::npos;
+                        if (! clean) { ok = false; bad << lam << " "; }
+                    }
+                    return ok;
+                };
+
+                int inside = 0; juce::String where;
+                check (setVisOutside (cpp, hdr, inside, where) == 0,
+                       "rs PIN6 (text pin): no setVisible on the ten outside showCompareFurniture",
+                       where);
+                check (inside == 10,
+                       "rs PIN6 (text pin): and showCompareFurniture sets all ten",
+                       juce::String (inside) + " found inside");
+                check (addVisCount (cpp, hdr) == 0,
+                       "rs PIN6 (text pin): none of the ten is added with addAndMakeVisible");
+                juce::String bad;
+                check (helpersClean (cpp, bad),
+                       "rs PIN6 (text pin): the three styling helpers add with addChildComponent "
+                       "and set no visibility",
+                       bad);
+
+                // Controls: construction as it was before this commit.
+                std::string planted = cpp;
+                const std::string add = "addChildComponent(aiCompareBtn);";
+                const auto at = planted.find (add);
+                if (at != std::string::npos)
+                    planted.replace (at, add.size(),
+                                     "aiCompareBtn.setVisible(false);\n    addAndMakeVisible(aiCompareBtn);");
+                int inside2 = 0; juce::String where2;
+                check (at != std::string::npos && setVisOutside (planted, hdr, inside2, where2) == 1,
+                       "rs PIN6 (text pin): control: AI Compare's old setVisible (false), put "
+                       "back, is reported",
+                       where2);
+                check (at != std::string::npos && addVisCount (planted, hdr) == 1,
+                       "rs PIN6 (text pin): control: and its old addAndMakeVisible is reported");
+
+                std::string plantedHelper = cpp;
+                const auto li = plantedHelper.find ("auto styleSlotBtn = [&]");
+                const auto ci = (li == std::string::npos) ? std::string::npos
+                                                          : plantedHelper.find ("addChildComponent(btn);", li);
+                if (ci != std::string::npos)
+                    plantedHelper.replace (ci, std::string ("addChildComponent(btn);").size(),
+                                           "btn.setVisible(false);\n            addAndMakeVisible(btn);");
+                juce::String bad2;
+                check (ci != std::string::npos && ! helpersClean (plantedHelper, bad2)
+                           && bad2.contains ("styleSlotBtn"),
+                       "rs PIN6 (text pin): control: a styling helper's old setVisible and "
+                       "addAndMakeVisible, put back, are reported");
+            }
+
+            // rs PIN7 -- showCompareFurniture IS ONLY EVER PASSED THE DERIVED
+            // VALUE. A text pin. It was passed true, false and ! playback from
+            // three places; a literal at any call site is a second decision.
+            {
+                const std::regex anyCall (R"(showCompareFurniture\s*\()");
+                const std::regex derived (R"(showCompareFurniture\s*\(\s*compareFurnitureShouldShow\s*\(\s*\)\s*\))");
+                auto calls = [&] (const std::string& c, int& nDerived, juce::String& where)
+                {
+                    int n = 0;
+                    for (std::sregex_iterator it (c.begin(), c.end(), anyCall), end; it != end; ++it)
+                    {
+                        const auto pos = (size_t) it->position();
+                        const std::string qual = "EchoJayEditor::";
+                        const bool isDefinition = pos >= qual.size()
+                                               && c.compare (pos - qual.size(), qual.size(), qual) == 0;
+                        if (isDefinition) continue;
+                        ++n; where << lineOf (c, pos) << " ";
+                    }
+                    nDerived = (int) std::distance (std::sregex_iterator (c.begin(), c.end(), derived),
+                                                    std::sregex_iterator());
+                    return n;
+                };
+                int nDerived = 0; juce::String where;
+                const int n = calls (cpp, nDerived, where);
+                check (n > 0 && n == nDerived,
+                       "rs PIN7 (text pin): every showCompareFurniture call passes "
+                       "compareFurnitureShouldShow(), never a literal",
+                       juce::String (n) + " calls at lines " + where + ", "
+                       + juce::String (nDerived) + " derived");
+
+                std::string planted = cpp;
+                const std::string good = "showCompareFurniture (compareFurnitureShouldShow());";
+                const auto at = planted.find (good);
+                if (at != std::string::npos)
+                    planted.replace (at, good.size(), "showCompareFurniture (true);");
+                int nDerived2 = 0; juce::String where2;
+                const int n2 = calls (planted, nDerived2, where2);
+                check (at != std::string::npos && n2 != nDerived2,
+                       "rs PIN7 (text pin): control: a literal true, put back at one call, "
+                       "is reported");
+            }
+
+            // SHARED BY rs PIN8 TO rs PIN12, defined once. Comments become
+            // spaces; string and character literals are kept, and so is every
+            // newline, so line numbers still match the file.
+            auto stripComments = [] (const std::string& src)
+            {
+                std::string out = src;
+                const size_t n = src.size();
+                size_t i = 0;
+                while (i < n)
+                {
+                    const char c = src[i];
+                    if (c == '/' && i + 1 < n && src[i + 1] == '/')
+                    {
+                        while (i < n && src[i] != '\n') out[i++] = ' ';
+                    }
+                    else if (c == '/' && i + 1 < n && src[i + 1] == '*')
+                    {
+                        while (i < n && ! (src[i] == '*' && i + 1 < n && src[i + 1] == '/'))
+                        {
+                            if (src[i] != '\n') out[i] = ' ';
+                            ++i;
+                        }
+                        if (i + 1 < n) { out[i] = ' '; out[i + 1] = ' '; i += 2; }
+                        else i = n;
+                    }
+                    else if (c == '"' || c == '\'')
+                    {
+                        ++i;
+                        while (i < n && src[i] != c && src[i] != '\n')
+                            i += (src[i] == '\\') ? 2 : 1;
+                        ++i;
+                    }
+                    else ++i;
+                }
+                return out;
+            };
+
+            // rs PIN8 -- NOTHING TAKES currentView OFF View::Compare WITHOUT
+            // hideCompareView. A text pin.
+            //
+            // WHY IT EXISTS. compareFurnitureShouldShow() reads compareVisible,
+            // and the login screen relies on compareVisible being false whenever
+            // currentView is not Compare. That holds because every assignment
+            // that moves currentView off Compare goes through hideCompareView,
+            // which clears it. Nothing pinned that until now.
+            //
+            // THE RULE, AS MATCHED. With comments stripped (so a comment naming
+            // hideCompareView() cannot satisfy it), every assignment of
+            // currentView to anything but View::Compare must have a real
+            // hideCompareView() call either EARLIER IN THE SAME FUNCTION or
+            // LATER IN THE SAME BRACE BLOCK. The second form is switchToTab's,
+            // which reads { currentView = View::Meters; hideCompareView(); }.
+            //
+            // IT DOES NOT PARSE CONDITIONS, deliberately: matching the if
+            // around each call would redden on a reformat. So it cannot tell a
+            // hideCompareView() that runs on the Compare path from one that
+            // does not, and a call earlier in a function also covers an
+            // assignment inside a lambda defined after it. What it does catch
+            // is the defect that matters here: a new way off Compare that never
+            // calls hideCompareView at all.
+            //
+            // EXCLUDED BY NAME, as a decision: showSettingsView and
+            // hideSettingsView. hideSettingsView returns at once unless the view
+            // is Settings, so it only ever leaves Settings. showSettingsView's
+            // only caller is switchToTab (Settings), which leaves Compare
+            // through hideCompareView before it gets there. Renaming either
+            // function drops its exclusion and reddens this pin, which is the
+            // intended way to find out.
+            {
+                struct Verdict { int checked = 0, excluded = 0; juce::String bad, covered; };
+                auto detect = [&] (const std::string& raw)
+                {
+                    const std::string s = stripComments (raw);
+                    Verdict v;
+
+                    // Member function starts: a line at column 0 naming
+                    // EchoJayEditor:: before its first '('.
+                    std::vector<std::pair<size_t, std::string>> fns;
+                    for (size_t ls = 0; ls < s.size();)
+                    {
+                        const size_t le = std::min (s.find ('\n', ls), s.size());
+                        const std::string line = s.substr (ls, le - ls);
+                        const auto q = line.find ("EchoJayEditor::");
+                        const auto par = line.find ('(');
+                        if (! line.empty() && (std::isalpha ((unsigned char) line[0]) || line[0] == '_')
+                            && q != std::string::npos && par != std::string::npos && q < par
+                            && line.substr (0, par).find (';') == std::string::npos)
+                        {
+                            std::string name = line.substr (q + 15, par - (q + 15));
+                            const auto lastScope = name.rfind ("::");
+                            if (lastScope != std::string::npos) name = name.substr (lastScope + 2);
+                            while (! name.empty() && name.back() == ' ') name.pop_back();
+                            fns.push_back ({ ls, name });
+                        }
+                        ls = le + 1;
+                    }
+
+                    const std::regex assign (R"(\bcurrentView\s*=(?!=)\s*([^;]*);)");
+                    const std::regex hide   (R"(\bhideCompareView\s*\(\s*\))");
+                    const std::regex toCompare (R"(\s*View::Compare\s*)");
+                    for (std::sregex_iterator it (s.begin(), s.end(), assign), end; it != end; ++it)
+                    {
+                        if (std::regex_match ((*it)[1].str(), toCompare)) continue;   // onto Compare
+                        const size_t pos = (size_t) it->position();
+                        const int line = lineOf (s, pos);
+                        const std::pair<size_t, std::string>* fn = nullptr;
+                        for (const auto& f : fns) if (f.first < pos) fn = &f;
+                        if (fn == nullptr) { v.bad << line << " (outside any member function) "; continue; }
+                        if (fn->second == "showSettingsView" || fn->second == "hideSettingsView")
+                        { ++v.excluded; continue; }
+                        ++v.checked;
+                        const std::string before = s.substr (fn->first, pos - fn->first);
+                        const size_t stmtEnd = pos + (size_t) it->length();
+                        const size_t close = s.find ('}', stmtEnd);
+                        const std::string after = s.substr (stmtEnd, (close == std::string::npos ? s.size() : close) - stmtEnd);
+                        if (std::regex_search (before, hide) || std::regex_search (after, hide))
+                            v.covered << line << " ";
+                        else
+                            v.bad << line << " (" << fn->second << ") ";
+                    }
+                    return v;
+                };
+
+                const Verdict v = detect (cpp);
+                check (v.checked > 0 && v.bad.isEmpty(),
+                       "rs PIN8 (text pin): every assignment taking currentView off View::Compare "
+                       "has hideCompareView() earlier in its function or later in its brace block. "
+                       "Covers showLoginScreen, switchToTab and the compact, visual and visual-only "
+                       "toggles. Excludes showSettingsView and hideSettingsView by name: "
+                       "hideSettingsView only ever leaves Settings, and showSettingsView's only "
+                       "caller, switchToTab, has already left Compare",
+                       "checked " + juce::String (v.checked) + " (lines " + v.covered + "), excluded "
+                       + juce::String (v.excluded) + ", unguarded: " + v.bad);
+
+                // Control: the login screen without its hideCompareView line,
+                // the exact dependency this pin was written for.
+                std::string planted = cpp;
+                const std::string guard = "    if (currentView == View::Compare) hideCompareView();\n"
+                                          "    currentView = View::Meters;\n";
+                const auto at = planted.find (guard);
+                if (at != std::string::npos)
+                    planted.replace (at, guard.size(), "    currentView = View::Meters;\n");
+                const Verdict v2 = detect (planted);
+                check (at != std::string::npos && v2.bad.contains ("showLoginScreen"),
+                       "rs PIN8 (text pin): control: showLoginScreen with its hideCompareView line "
+                       "removed is reported as leaving Compare unguarded",
+                       v2.bad);
+            }
+
+            // rs PIN10 to rs PIN12 -- A CLICK THAT IS NOT ON COMPARE'S CONTENT
+            // DOES NOT REACH COMPARE'S HANDLERS. TEXT PINS: they read the
+            // source with comments stripped and pin what it says, not what the
+            // editor does, which this suite cannot drive. Each has a negative
+            // control that puts the pre-commit shape back.
+            {
+                // The source between a signature and the first closing brace
+                // in column 0 after it, comments stripped.
+                auto fnBody = [&] (const std::string& raw, const std::string& sig)
+                {
+                    const std::string st = stripComments (raw);
+                    const auto b = st.find (sig);
+                    if (b == std::string::npos) return std::string();
+                    const auto e = st.find ("\n}\n", b);
+                    return st.substr (b, (e == std::string::npos ? st.size() : e) - b);
+                };
+                auto posOf = [] (const std::string& text, const std::regex& re) -> long
+                {
+                    std::smatch m;
+                    return std::regex_search (text, m, re) ? (long) m.position (0) : -1L;
+                };
+                const std::regex renamePass (R"(compareClickIsTopSlot\s*\(\s*pos\s*\))");
+
+                // rs PIN10 -- mouseDown CONSUMES A RIGHT-CLICK ON THE ROW, and
+                // does nothing else with it. The condition must be followed
+                // directly by return: a guard that switched tabs first would
+                // be consumed and acted on, which is not what the row does.
+                {
+                    const std::regex guard (R"(if\s*\(\s*e\.mods\.isPopupMenu\s*\(\s*\)\s*&&\s*echojay::refSubTabRowHit\s*\(\s*refSubTabRects_\s*,\s*pos\s*\)\s*\)\s*return\s*;)");
+                    auto consumed = [&] (const std::string& raw)
+                    {
+                        const std::string body = fnBody (raw, "void EchoJayEditor::mouseDown(const juce::MouseEvent& e)");
+                        const long g = posOf (body, guard), rp = posOf (body, renamePass);
+                        return g >= 0 && rp >= 0 && g < rp;
+                    };
+                    check (consumed (cpp),
+                           "rs PIN10 (text pin): mouseDown returns on a right-click on the sub-tab row, "
+                           "before the rename and delete pass, and does nothing else with it");
+
+                    const std::string guardText =
+                        "        if (e.mods.isPopupMenu() && echojay::refSubTabRowHit (refSubTabRects_, pos))\n"
+                        "            return;\n";
+                    std::string removed = cpp;
+                    const auto at = removed.find (guardText);
+                    if (at != std::string::npos) removed.erase (at, guardText.size());
+                    check (at != std::string::npos && ! consumed (removed),
+                           "rs PIN10 (text pin): control: mouseDown without the guard is reported");
+
+                    std::string acting = cpp;
+                    const auto at2 = acting.find (guardText);
+                    if (at2 != std::string::npos)
+                        acting.replace (at2, guardText.size(),
+                            "        if (e.mods.isPopupMenu() && echojay::refSubTabRowHit (refSubTabRects_, pos))\n"
+                            "            { setRefSubTab (echojay::RefSubTab::Compare); return; }\n");
+                    check (at2 != std::string::npos && ! consumed (acting),
+                           "rs PIN10 (text pin): control: a guard that switches tabs before returning "
+                           "is reported, because consumed must also mean ignored");
+                }
+
+                // rs PIN11 -- mouseDoubleClick CONSUMES A DOUBLE-CLICK ON THE
+                // ROW, AND ASKS THE SUB-TAB, both before it picks a slot to
+                // rename. It asks through compareFurnitureShouldShow(), the one
+                // rule for whether the slot buttons the box opens under are up.
+                {
+                    const std::regex rowGuard (R"(if\s*\(\s*echojay::refSubTabRowHit\s*\(\s*refSubTabRects_\s*,\s*pos\s*\)\s*\)\s*return\s*;)");
+                    const std::regex tabGuard (R"(if\s*\(\s*!\s*compareFurnitureShouldShow\s*\(\s*\)\s*\)\s*return\s*;)");
+                    auto before = [&] (const std::string& raw, const std::regex& g)
+                    {
+                        const std::string body = fnBody (raw, "void EchoJayEditor::mouseDoubleClick(const juce::MouseEvent& e)");
+                        const long gp = posOf (body, g), rp = posOf (body, renamePass);
+                        return gp >= 0 && rp >= 0 && gp < rp;
+                    };
+                    check (before (cpp, rowGuard),
+                           "rs PIN11 (text pin): mouseDoubleClick returns on a double-click on the "
+                           "sub-tab row, before it picks a slot to rename");
+                    check (before (cpp, tabGuard),
+                           "rs PIN11 (text pin): and returns unless compareFurnitureShouldShow(), so "
+                           "no rename box opens over another sub-tab's page");
+
+                    const std::string rowText = "    if (echojay::refSubTabRowHit (refSubTabRects_, pos)) return;\n";
+                    const std::string tabText = "    if (! compareFurnitureShouldShow()) return;\n";
+                    std::string noRow = cpp, noTab = cpp;
+                    const auto r1 = noRow.find (rowText);
+                    if (r1 != std::string::npos) noRow.erase (r1, rowText.size());
+                    const auto t1 = noTab.find (tabText);
+                    if (t1 != std::string::npos) noTab.erase (t1, tabText.size());
+                    check (r1 != std::string::npos && ! before (noRow, rowGuard),
+                           "rs PIN11 (text pin): control: without the row guard it is reported");
+                    check (t1 != std::string::npos && ! before (noTab, tabGuard),
+                           "rs PIN11 (text pin): control: without the sub-tab guard it is reported");
+                }
+
+                // rs PIN12 -- THE SEEK AREAS ARE ABSENT WHENEVER THE WAVEFORM
+                // THAT OWNS THEM DID NOT DRAW. A text pin over the three places
+                // that decide it, which is the only honest version: the areas
+                // are editor state set during paint, and this suite cannot
+                // paint an editor.
+                //
+                // THE RULE AS THE SOURCE STATES IT:
+                //   paintCompareView clears every area before any path in it
+                //     diverges: ahead of the sub-tab return and of both panels
+                //   the one write that makes an area present, the register in
+                //     paintCompareWaveform, comes after every return in that
+                //     function, so it is reached only when the waveform draws
+                //   nothing outside paintCompareWaveform writes an area
+                // Together: after any paint, an area is present only if its
+                // waveform drew on that paint. The skip paths this covers are
+                // the sub-tab return, a meter other than Waveform in either
+                // panel, an empty bottom panel, a panel under 10 px, a Live
+                // slot, and a slot with no stored waveform points.
+                // First move of open list 183.
+                {
+                    const std::string viewSig =
+                        "void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> area)";
+                    const std::string waveSig =
+                        "void EchoJayEditor::paintCompareWaveform(juce::Graphics& g, juce::Rectangle<int> area,";
+                    const std::regex clr      (R"(clearCmpWaveSeekAreas\s*\(\s*\)\s*;)");
+                    const std::regex early    (R"(if\s*\(\s*refSubTab_\s*!=\s*echojay::RefSubTab::Compare\s*\))");
+                    const std::regex panel    (R"(paintCompareWaveform\s*\()");
+                    const std::regex reg      (R"(cmpWaveSeekAreas_\s*\[[^\]]*\]\s*=\s*\{\s*inner\s*,\s*slotIdx\s*\})");
+                    const std::regex anyWrite (R"(cmpWaveSeekAreas_\s*(\[[^\]]*\])?\s*=(?!=))");
+                    const std::regex ret      (R"(\breturn\b)");
+
+                    // 1. The clear comes first in paintCompareView.
+                    auto clearsFirst = [&] (const std::string& raw)
+                    {
+                        const std::string body = fnBody (raw, viewSig);
+                        const long cp = posOf (body, clr), ep = posOf (body, early), pp = posOf (body, panel);
+                        return cp >= 0 && ep >= 0 && pp >= 0 && cp < ep && cp < pp;
+                    };
+                    // 2. Every return in paintCompareWaveform precedes the
+                    //    register, and the register exists.
+                    auto registerLast = [&] (const std::string& raw, juce::String& why)
+                    {
+                        const std::string body = fnBody (raw, waveSig);
+                        const long rp = posOf (body, reg);
+                        if (rp < 0) { why = "no register found"; return false; }
+                        for (std::sregex_iterator it (body.begin(), body.end(), ret), end; it != end; ++it)
+                            if ((long) it->position() > rp)
+                            { why = "a return after the register, at +" + juce::String ((int) (it->position() - rp)); return false; }
+                        return true;
+                    };
+                    // 3. No write to an area outside paintCompareWaveform.
+                    auto writesOnlyInPanel = [&] (const std::string& raw, juce::String& where)
+                    {
+                        const std::string st = stripComments (raw);
+                        const auto b = st.find (waveSig);
+                        const auto e = (b == std::string::npos) ? std::string::npos : st.find ("\n}\n", b);
+                        bool ok = b != std::string::npos;
+                        for (std::sregex_iterator it (st.begin(), st.end(), anyWrite), end; it != end; ++it)
+                        {
+                            const auto pos = (size_t) it->position();
+                            if (! (ok && pos > b && pos < e)) { ok = false; where << "cpp:" << lineOf (st, pos) << " "; }
+                        }
+                        return ok;
+                    };
+
+                    check (clearsFirst (cpp),
+                           "rs PIN12 (text pin): paintCompareView clears every seek area before the "
+                           "sub-tab return and before either panel paints");
+                    juce::String why;
+                    check (registerLast (cpp, why),
+                           "rs PIN12 (text pin): paintCompareWaveform's register comes after every "
+                           "return in it, so an area is registered only when its waveform draws",
+                           why);
+                    juce::String where;
+                    check (writesOnlyInPanel (cpp, where),
+                           "rs PIN12 (text pin): nothing outside paintCompareWaveform writes a seek area",
+                           where);
+
+                    const std::string st = stripComments (hdr);
+                    const auto hl = st.find ("void clearCmpWaveSeekAreas()");
+                    const std::string hline = (hl == std::string::npos) ? std::string()
+                                            : st.substr (hl, st.find ('\n', hl) - hl);
+                    check (hline.find ("sa.inner = {};") != std::string::npos
+                           && hline.find ("sa.slotIdx = -1;") != std::string::npos,
+                           "rs PIN12 (text pin): and the clear leaves every area with no rectangle "
+                           "and no slot, which the click-to-seek loop reads as nothing to hit",
+                           juce::String (hline));
+
+                    // Controls: each part of the rule broken on its own.
+                    const std::string call = "    clearCmpWaveSeekAreas();\n";
+                    std::string noClear = cpp;
+                    const auto c1 = noClear.find (call);
+                    if (c1 != std::string::npos) noClear.erase (c1, call.size());
+                    check (c1 != std::string::npos && ! clearsFirst (noClear),
+                           "rs PIN12 (text pin): control: paintCompareView without the clear is reported");
+
+                    const std::string regLine = "    cmpWaveSeekAreas_[(size_t)slotIdx] = { inner, slotIdx };\n";
+                    std::string lateSkip = cpp;
+                    const auto r1 = lateSkip.find (regLine);
+                    if (r1 != std::string::npos)
+                        lateSkip.insert (r1 + regLine.size(), "    if (area.isEmpty()) return;\n");
+                    juce::String why2;
+                    check (r1 != std::string::npos && ! registerLast (lateSkip, why2),
+                           "rs PIN12 (text pin): control: a skip path added after the register is reported",
+                           why2);
+
+                    const std::string seekMark = "        for (auto& sa : cmpWaveSeekAreas_)\n";
+                    std::string strayWrite = cpp;
+                    const auto w1 = strayWrite.find (seekMark);
+                    if (w1 != std::string::npos)
+                        strayWrite.insert (w1, "        cmpWaveSeekAreas_[0] = { {}, 0 };\n");
+                    juce::String where2;
+                    check (w1 != std::string::npos && ! writesOnlyInPanel (strayWrite, where2),
+                           "rs PIN12 (text pin): control: a seek area written from mouseDown is reported",
+                           where2);
+                }
+
+                // rs PIN13 to rs PIN15 -- THE MATCH SUB-TAB'S WIRING. TEXT PINS:
+                // they pin what the editor's source says about the Match page,
+                // not what it does, which this suite cannot drive. Each has a
+                // negative control.
+
+                // rs PIN13 -- setRefSubTab HAS MATCH AS ITS OWN CASE, in a
+                // switch, so Match cannot fall into Compare's branch. The Match
+                // case shows the Match page, hides the Playback page, exits
+                // codec mode and takes focus; Compare and Playback each hide the
+                // Match page.
+                {
+                    const std::string sig = "void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)";
+                    // The text of one case: from its label to its break.
+                    auto caseText = [&] (const std::string& body, const std::string& label)
+                    {
+                        const std::regex lab ("case\\s+echojay::RefSubTab::" + label + "\\s*:");
+                        std::smatch m;
+                        if (! std::regex_search (body, m, lab)) return std::string();
+                        const std::string from = body.substr ((size_t) m.position (0));
+                        const auto br = from.find ("break;");
+                        return from.substr (0, br == std::string::npos ? from.size() : br);
+                    };
+                    auto has = [] (const std::string& t, const char* re)
+                    { return std::regex_search (t, std::regex (re)); };
+                    auto matchCaseOwn = [&] (const std::string& raw)
+                    {
+                        const std::string body = fnBody (raw, sig);
+                        const std::string mc = caseText (body, "Match");
+                        return has (body, R"(switch\s*\(\s*t\s*\))") && ! mc.empty()
+                            && has (mc, R"(matchPanel_\.setVisible\s*\(\s*true\s*\))")
+                            && has (mc, R"(codecPanel_\.setVisible\s*\(\s*false\s*\))")
+                            && has (mc, R"(exitCodecMode\s*\()")
+                            && has (mc, R"(matchPanel_\.grabKeyboardFocus\s*\()");
+                    };
+                    auto othersHide = [&] (const std::string& raw)
+                    {
+                        const std::string body = fnBody (raw, sig);
+                        const std::string cc = caseText (body, "Compare"), pc = caseText (body, "Playback");
+                        return ! cc.empty() && ! pc.empty()
+                            && has (cc, R"(matchPanel_\.setVisible\s*\(\s*false\s*\))")
+                            && has (pc, R"(matchPanel_\.setVisible\s*\(\s*false\s*\))");
+                    };
+                    check (matchCaseOwn (cpp),
+                           "rs PIN13 (text pin): setRefSubTab switches on the sub-tab and Match has its "
+                           "own case: it shows the Match page, hides Playback's, exits codec mode and "
+                           "takes focus");
+                    check (othersHide (cpp),
+                           "rs PIN13 (text pin): and the Compare and Playback cases each hide the Match page");
+
+                    std::string folded = cpp;
+                    const std::string lab = "    case echojay::RefSubTab::Match:";
+                    const auto f1 = folded.find (lab);
+                    if (f1 != std::string::npos) folded.replace (f1, lab.size(), "    default:");
+                    check (f1 != std::string::npos && ! matchCaseOwn (folded),
+                           "rs PIN13 (text pin): control: without its own Match case it is reported");
+
+                    std::string leaky = cpp;
+                    const auto cb = leaky.find ("    case echojay::RefSubTab::Compare:");
+                    const auto hideAt = (cb == std::string::npos) ? std::string::npos
+                                        : leaky.find ("        matchPanel_.setVisible(false);\n", cb);
+                    if (hideAt != std::string::npos)
+                        leaky.erase (hideAt, std::string ("        matchPanel_.setVisible(false);\n").size());
+                    check (hideAt != std::string::npos && ! othersHide (leaky),
+                           "rs PIN13 (text pin): control: a Compare case that leaves the Match page "
+                           "showing is reported");
+                }
+
+                // rs PIN14 -- THE MATCH PAGE IS BOUNDED FROM THE SAME RECTANGLE AS
+                // THE PLAYBACK PAGE, in resized(), so the two cannot disagree
+                // about where the content area is.
+                {
+                    auto sameArea = [&] (const std::string& raw)
+                    {
+                        const std::string body = fnBody (raw, "void EchoJayEditor::resized()");
+                        return std::regex_search (body, std::regex (R"(codecPageLayout\s*\(\s*refPageArea\b)"))
+                            && std::regex_search (body, std::regex (R"(matchPanel_\.setBounds\s*\(\s*refPageArea\s*\))"));
+                    };
+                    check (sameArea (cpp),
+                           "rs PIN14 (text pin): resized bounds the Match page and the Playback page from "
+                           "one rectangle, refPageArea");
+                    std::string drift = cpp;
+                    const std::string mb = "matchPanel_.setBounds (refPageArea);";
+                    const auto d1 = drift.find (mb);
+                    if (d1 != std::string::npos) drift.replace (d1, mb.size(), "matchPanel_.setBounds (getLocalBounds());");
+                    check (d1 != std::string::npos && ! sameArea (drift),
+                           "rs PIN14 (text pin): control: a Match page bounded from its own rectangle "
+                           "is reported");
+                }
+
+                // rs PIN15 -- ESCAPE ON THE MATCH PAGE RETURNS TO COMPARE, the
+                // Playback page's rule for its grid, not a third behaviour.
+                {
+                    const std::string sig = "bool EchoJayEditor::MatchPanel::keyPressed (const juce::KeyPress& k)";
+                    auto escapes = [&] (const std::string& raw)
+                    {
+                        const std::string body = fnBody (raw, sig);
+                        return std::regex_search (body, std::regex (R"(escapeKey)"))
+                            && std::regex_search (body, std::regex (R"(setRefSubTab\s*\(\s*echojay::RefSubTab::Compare\s*\))"));
+                    };
+                    check (escapes (cpp),
+                           "rs PIN15 (text pin): Escape on the Match page calls setRefSubTab (Compare)");
+                    std::string noEsc = cpp;
+                    const auto kp = noEsc.find (sig);
+                    const std::string call = "owner->setRefSubTab (echojay::RefSubTab::Compare);";
+                    const auto e1 = (kp == std::string::npos) ? std::string::npos : noEsc.find (call, kp);
+                    if (e1 != std::string::npos) noEsc.erase (e1, call.size());
+                    check (e1 != std::string::npos && ! escapes (noEsc),
+                           "rs PIN15 (text pin): control: a Match page whose Escape goes nowhere is reported");
+                }
+            }
+        }
+
+        // rf PIN11 -- RESOLVING A DROPPED FILE BY PATH.
+        //
+        // The drop path needs the index of the entry analyseFile just created,
+        // and position cannot give it: the analyser appends on a worker thread
+        // under a mutex while the callback arrives separately through
+        // callAsync, so getReferenceCount() - 1 can move under a concurrent
+        // analysis. Path is the only stable handle the analyser exposes.
+        {
+            std::vector<RefBrowserEntry> refs {
+                { "kick.wav",   "/refs/kick.wav" },
+                { "snare.wav",  "/refs/snare.wav" },
+                { "vox.wav",    "/refs/vox.wav" } };
+
+            check (refIndexOfPath (refs, "/refs/snare.wav") == 1,
+                   "rf PIN11: a path that is present resolves to its index",
+                   juce::String (refIndexOfPath (refs, "/refs/snare.wav")));
+            check (refIndexOfPath (refs, "/refs/kick.wav") == 0,
+                   "rf PIN11: including the first");
+            check (refIndexOfPath (refs, "/refs/vox.wav") == 2,
+                   "rf PIN11: and the last");
+
+            check (refIndexOfPath (refs, "/refs/absent.wav") == -1,
+                   "rf PIN11: a path that is absent resolves to -1, not to a guess");
+            check (refIndexOfPath (refs, "") == -1,
+                   "rf PIN11: and so does an empty path");
+            check (refIndexOfPath ({}, "/refs/kick.wav") == -1,
+                   "rf PIN11: an empty library resolves to -1");
+
+            // TWO ENTRIES SHARING A PATH. This is an ordinary state, not a
+            // corrupt one: the analyser appends unconditionally and never
+            // de-duplicates, and filesDropped copies into References with
+            // overwrite, so dropping the same file twice produces it.
+            //
+            // FIRST MATCH WINS, and the reason is STABILITY rather than
+            // preference. The two entries are identical in path and name, so
+            // either would play the same audio; but returning the LAST would
+            // make the resolved index depend on how many times the file had
+            // been dropped before, so the same drop would load a different
+            // index each time while looking identical on screen. The first
+            // match is the one that does not move as duplicates accumulate.
+            std::vector<RefBrowserEntry> dupes {
+                { "kick.wav",  "/refs/kick.wav" },
+                { "snare.wav", "/refs/snare.wav" },
+                { "kick.wav",  "/refs/kick.wav" } };
+            check (refIndexOfPath (dupes, "/refs/kick.wav") == 0,
+                   "rf PIN11: duplicates resolve to the FIRST match, which is "
+                   "the index that does not move",
+                   juce::String (refIndexOfPath (dupes, "/refs/kick.wav")));
+            // And adding another duplicate must not change the answer.
+            auto more = dupes;
+            more.push_back ({ "kick.wav", "/refs/kick.wav" });
+            check (refIndexOfPath (more, "/refs/kick.wav")
+                   == refIndexOfPath (dupes, "/refs/kick.wav"),
+                   "rf PIN11: and a further duplicate does not move it");
+
+            // Exact match, not prefix or filename: two files of the same name
+            // in different folders are different references.
+            std::vector<RefBrowserEntry> samename {
+                { "kick.wav", "/a/kick.wav" },
+                { "kick.wav", "/b/kick.wav" } };
+            check (refIndexOfPath (samename, "/b/kick.wav") == 1,
+                   "rf PIN11: the whole path is matched, not the file name");
+        }
+
+        // rf PIN12 -- WHERE A HELD INDEX GOES WHEN ONE REFERENCE IS REMOVED.
+        // Three pieces of editor state remember a reference by position:
+        // refBrowserSelected_ and the two compare slots. erase() slides
+        // everything after the hole down by one, so an index that is not
+        // repointed still addresses a live entry -- the WRONG one, with
+        // nothing out of bounds to catch it. These pin the whole table.
+        {
+            // Below the hole: unmoved. Nothing before the removal shifts.
+            check (refIndexAfterRemoval (0, 3) == 0,
+                   "rf PIN12: an index below the removed one does not move");
+            check (refIndexAfterRemoval (2, 3) == 2,
+                   "rf PIN12: and the one immediately below it does not either");
+
+            // Equal: the thing it named is gone, so it names nothing. NOT the
+            // neighbour, which would leave a slot playing different audio
+            // under the same name.
+            check (refIndexAfterRemoval (3, 3) == -1,
+                   "rf PIN12: the removed index itself becomes no selection");
+            check (refIndexAfterRemoval (0, 0) == -1,
+                   "rf PIN12: including when it is the first");
+
+            // Above the hole: down by exactly one.
+            check (refIndexAfterRemoval (4, 3) == 3,
+                   "rf PIN12: an index above the removed one slides down by one");
+            check (refIndexAfterRemoval (9, 3) == 8,
+                   "rf PIN12: by one, not to the removed position");
+
+            // Removing index 0, which is the case a naive shift gets wrong.
+            check (refIndexAfterRemoval (1, 0) == 0,
+                   "rf PIN12: removing the first slides the second into its place");
+            check (refIndexAfterRemoval (7, 0) == 6,
+                   "rf PIN12: and every later index with it");
+
+            // Removing the last: only the last index is affected, and only
+            // because it IS the removed one.
+            check (refIndexAfterRemoval (5, 5) == -1,
+                   "rf PIN12: removing the last clears a hold on the last");
+            check (refIndexAfterRemoval (4, 5) == 4,
+                   "rf PIN12: and leaves everything before it alone");
+
+            // No selection stays no selection, whatever is removed. -1 must
+            // never be arithmetic: -1 - 1 would be a silent out-of-range.
+            check (refIndexAfterRemoval (-1, 0) == -1,
+                   "rf PIN12: holding nothing still holds nothing");
+            check (refIndexAfterRemoval (-1, 7) == -1,
+                   "rf PIN12: whichever index was removed");
+
+            // THE BOUNDARY, stated as its own assertion because it is the one
+            // a > / >= slip moves: held == removed must take the -1 branch and
+            // not the shift.
+            check (refIndexAfterRemoval (3, 3) != 2,
+                   "rf PIN12: the removed index does not slide down to its "
+                   "predecessor, it clears");
+        }
+
+        // bd PIN1 -- THE SIX MACRO BAND EDGES, AS NUMBERS.
+        // These are the boundaries of the pink-referenced scheme that every
+        // band relative, the figure card and the tonal-balance curve are
+        // computed against. Until this pin existed, changing 250.0 to 200.0
+        // reddened NOTHING in any suite: the edges were six literals inside one
+        // function, named by no constant and asserted by no test. Phase 1b is a
+        // sequence of measurements against these bands, and a baseline that can
+        // move silently is not a baseline. A boundary may still be changed --
+        // decision 8 will change one scheme or the other -- but it cannot be
+        // changed WITHOUT this saying so.
+        {
+            const auto e = echojay::macroBandEdges (20000.0);
+
+            check (e[0].lo ==    20.0 && e[0].hi ==   60.0, "bd PIN1: sub is 20 to 60 Hz");
+            check (e[1].lo ==    60.0 && e[1].hi ==  250.0, "bd PIN1: low is 60 to 250 Hz");
+            check (e[2].lo ==   250.0 && e[2].hi ==  500.0, "bd PIN1: lowMid is 250 to 500 Hz");
+            check (e[3].lo ==   500.0 && e[3].hi == 2000.0, "bd PIN1: mid is 500 Hz to 2 kHz");
+            check (e[4].lo ==  2000.0 && e[4].hi == 6000.0, "bd PIN1: highMid is 2 to 6 kHz");
+            check (e[5].lo ==  6000.0, "bd PIN1: air starts at 6 kHz");
+
+            // THE AIR BAND'S CEILING IS NOT A CONSTANT. It is maxFreq,
+            // min(sampleRate * 0.5, 20000), so at 32 kHz the air band ends at
+            // 16 kHz and the serialised air figure covers a different span.
+            // Pinned as a pass-through so a future "tidy" cannot hard-code it.
+            check (e[5].hi == 20000.0,
+                   "bd PIN1: and ends at the ceiling it was given, not at a constant");
+            const auto e32 = echojay::macroBandEdges (16000.0);
+            check (e32[5].hi == 16000.0,
+                   "bd PIN1: so a 32 kHz run's air band ends at 16 kHz");
+            check (e32[0].lo == 20.0 && e32[4].hi == 6000.0,
+                   "bd PIN1: and the five fixed boundaries do not move with it");
+
+            // A PARTITION, not a set of ranges: each band ends exactly where
+            // the next begins, so no frequency is counted twice and none is
+            // dropped. The integration loop breaks on first match, so an
+            // overlap would silently bias the lower band.
+            // VACUOUS AGAINST THE CURRENT TABLE, AND KEPT ANYWAY. macroBandEdges
+            // DERIVES each band's hi from the next band's lo, so this walk
+            // compares a value with the value it was built from: it cannot fail
+            // however the numbers move, and it did not redden under the 250 to
+            // 200 mutation that reddened the two checks above. It is not
+            // evidence about the edges and must not be read as any.
+            //
+            // It becomes a REAL check the moment the six pairs are written out
+            // explicitly, which is exactly what the scheme unification is most
+            // likely to do: two schemes collapsing into one is the edit where a
+            // hand-typed table appears and a gap or an overlap becomes possible.
+            // Deleting it now would mean noticing that and re-deriving it then.
+            bool contiguous = true;
+            for (int i = 0; i < 5; ++i)
+                if (e[(size_t) i].hi != e[(size_t) i + 1].lo) contiguous = false;
+            check (contiguous, "bd PIN1: the six bands are contiguous, so the "
+                               "scheme partitions the spectrum");
+
+            check (juce::String (echojay::macroBandName (0)) == "sub"
+                   && juce::String (echojay::macroBandName (5)) == "air",
+                   "bd PIN1: and the names are in band order, lowest first");
+        }
+
+        // bd PIN2 -- THE BIN SCHEME'S REAL EDGES, IN Hz.
+        // EJSpectralEvidence::computeBands groups the 64 log-spaced analysis
+        // bins by INDEX, so its Hz boundaries appear nowhere in the source:
+        // they are implied by the bin axis and can only be computed. That is
+        // why they are pinned as COMPUTED values rather than read from a table.
+        //
+        // NOTHING HERE ASSERTS THAT THE TWO SCHEMES AGREE. They do not, at
+        // three of six boundaries, and the unification commit will move one of
+        // them. This pin reddening is how we will know that was deliberate.
+        //
+        // AT 44.1 kHz, where maxFreq is min(22050, 20000) = 20000. Every edge
+        // moves below a 40 kHz rate, which the last two checks hold down.
+        {
+            auto edge = [] (int b) { return echojay::specBinEdgeHz (b, 64, 20.0, 20000.0); };
+            auto near1dp = [] (double a, double b) { return std::abs (a - b) < 0.05; };
+
+            check (near1dp (edge (0),     20.0), "bd PIN2: bin group 0-9 starts at 20.0 Hz");
+            check (near1dp (edge (10),    58.9), "bd PIN2: and ends at 58.9 Hz, where 10-20 starts");
+            check (near1dp (edge (21),   192.9), "bd PIN2: group 10-20 ends at 192.9 Hz");
+            check (near1dp (edge (31),   567.7), "bd PIN2: group 21-30 ends at 567.7 Hz");
+            check (near1dp (edge (42),  1861.1), "bd PIN2: group 31-41 ends at 1861.1 Hz");
+            check (near1dp (edge (53),  6101.1), "bd PIN2: group 42-52 ends at 6101.1 Hz");
+            check (near1dp (edge (64), 20000.0), "bd PIN2: and group 53-63 ends at 20000.0 Hz");
+
+            // The axis is logarithmic, so every bin spans the same RATIO. This
+            // is what makes the group boundaries computable at all.
+            const double r1 = edge (1) / edge (0);
+            const double r2 = edge (33) / edge (32);
+            check (std::abs (r1 - r2) < 1e-9,
+                   "bd PIN2: every bin spans the same frequency ratio, so the axis is "
+                   "logarithmic and not linear");
+
+            // THE CEILING IS THE SAMPLE RATE'S, NOT 20 kHz. At 32 kHz maxFreq
+            // is 16000, and the whole ladder compresses: the bin scheme's bands
+            // are NOT fixed frequencies.
+            const double lowRate = echojay::specBinEdgeHz (10, 64, 20.0, 16000.0);
+            check (lowRate < 58.9,
+                   "bd PIN2: at a 32 kHz ceiling the same bin index sits lower, so the "
+                   "bin scheme's edges follow the sample rate");
+        }
+
+        // bd PIN3 -- THE ONE-POLE COEFFICIENTS.
+        // The TIME CONSTANTS are the contract, 10 ms up and 150 ms down, and
+        // the coefficient is derived from the block duration so the span does
+        // not move with the host's buffer size. These four cases are the ones
+        // the Phase 1b survey computed, pinned to six decimal places so a
+        // change to either constant, or to the order or the TYPES of the
+        // arithmetic, is visible. The subtraction is in float and the exp in
+        // double; widening it would move these digits.
+        {
+            auto c = [] (double sr, double bs, double tau)
+            { return echojay::ballisticCoeff (bs / sr, tau); };
+            auto near6 = [] (float a, double b) { return std::abs ((double) a - b) < 5e-7; };
+
+            const double A = echojay::kMeterAttackTauSec;
+            const double R = echojay::kMeterReleaseTauSec;
+
+            check (A == 0.01,  "bd PIN3: the attack time constant is 10 ms");
+            check (R == 0.15,  "bd PIN3: the release time constant is 150 ms");
+
+            check (near6 (c (44100.0, 2048.0, A), 0.990381),
+                   "bd PIN3: 44.1 kHz, 2048 (the reference analyser) attack = 0.990381");
+            check (near6 (c (44100.0, 2048.0, R), 0.266259),
+                   "bd PIN3: 44.1 kHz, 2048 release = 0.266259");
+
+            check (near6 (c (48000.0, 2048.0, A), 0.985972),
+                   "bd PIN3: 48 kHz, 2048 attack = 0.985972");
+            check (near6 (c (48000.0, 2048.0, R), 0.247568),
+                   "bd PIN3: 48 kHz, 2048 release = 0.247568");
+
+            check (near6 (c (48000.0, 512.0, A), 0.655846),
+                   "bd PIN3: 48 kHz, 512 attack = 0.655846");
+            check (near6 (c (48000.0, 512.0, R), 0.068642),
+                   "bd PIN3: 48 kHz, 512 release = 0.068642");
+
+            check (near6 (c (44100.0, 128.0, A), 0.251923),
+                   "bd PIN3: 44.1 kHz, 128 attack = 0.251923");
+            check (near6 (c (44100.0, 128.0, R), 0.019164),
+                   "bd PIN3: 44.1 kHz, 128 release = 0.019164");
+
+            // THE SPAN DOES NOT MOVE WITH THE BLOCK SIZE, which is the whole
+            // reason the coefficient is derived rather than written down. One
+            // block of 2048 and sixteen blocks of 128 at the same rate cover
+            // the same time, so they must decay by the same factor.
+            float sixteenSmall = 1.0f;
+            for (int i = 0; i < 16; ++i)
+                sixteenSmall *= (1.0f - c (44100.0, 128.0, R));
+            const float oneBig = 1.0f - c (44100.0, 2048.0, R);
+            check (std::abs ((double) sixteenSmall - (double) oneBig) < 1e-6,
+                   "bd PIN3: sixteen 128-sample blocks decay by the same factor as one "
+                   "2048-sample block, so the time constant is the contract");
+        }
+
+        // bd PIN4 -- THE WHOLE-RUN BAND MEAN IS A MEAN OF POWER.
+        // A mean of logarithms is a GEOMETRIC mean. It answers "what level is
+        // typical" and it is dominated by the quiet blocks, because -120 dB
+        // drags an average far harder than it contributes energy. A band
+        // average is an ARITHMETIC mean of POWER: "how much of this band is in
+        // this record". The two disagree by more the wider the dynamic range,
+        // which is to say they disagree most on the material a reference
+        // library is made of. This pin exists to make that swap visible.
+        {
+            using echojay::bandMeanFromSum;
+
+            // EMPTY: no blocks means there is no mean. NOT zero, NOT -120: an
+            // absent measurement and a measurement of silence are different
+            // claims, and only one of them is true here.
+            const auto none = bandMeanFromSum (0.0, 0);
+            check (! none.valid, "bd PIN4: no blocks yields NO mean, not a zero");
+            check (none.blocks == 0,
+                   "bd PIN4: and reports zero blocks, so a caller can say why");
+
+            // ONE BLOCK: the mean of one value is that value. 1e-3 power is
+            // 10*log10(1e-3) = -30 dB exactly.
+            const auto one = bandMeanFromSum (1e-3, 1);
+            check (one.valid, "bd PIN4: one block is a valid mean");
+            check (std::abs (one.db - (-30.0f)) < 1e-4f,
+                   "bd PIN4: and a single 1e-3 power block reads -30.0 dB");
+
+            // MANY BLOCKS, ALL EQUAL: the mean is still that value, whatever
+            // the count. 100 blocks of 1e-3 sum to 1e-1.
+            const auto many = bandMeanFromSum (1e-1, 100);
+            check (std::abs (many.db - (-30.0f)) < 1e-4f,
+                   "bd PIN4: a hundred equal blocks read the same -30.0 dB");
+            check (many.blocks == 100, "bd PIN4: and carry their block count");
+
+            // THE CASE THE WHOLE COMMIT IS ABOUT: one silent block among loud
+            // ones. Ninety-nine blocks at 1e-3 power plus one at exactly zero.
+            // POWER mean  = 99e-3 / 100 = 9.9e-4 -> -30.04 dB. The silence costs
+            //               0.04 dB, which is its share of the energy.
+            // dB mean     = (99 * -30 + 1 * -120) / 100 = -30.9 dB. The silence
+            //               costs 0.9 dB, twenty times more, because a floor in
+            //               the log domain is a huge number pretending to be a
+            //               small one.
+            {
+                const auto withSilence = bandMeanFromSum (99.0 * 1e-3, 100);
+                check (std::abs (withSilence.db - (-30.0436f)) < 1e-3f,
+                       "bd PIN4: one silent block among 99 loud ones costs 0.04 dB "
+                       "in power, which is its share of the energy");
+                // Stated as its own assertion because it is the number the
+                // mutation moves: the dB-domain answer for the same input is
+                // -30.9, and the gap is what the pin is for.
+                check (withSilence.db > -30.5f,
+                       "bd PIN4: and NOT the -30.9 dB a mean of logarithms would "
+                       "give, which is the defect this function exists to avoid");
+            }
+
+            // TEN SILENT BLOCKS AMONG NINETY: the gap widens with the silent
+            // fraction, so one fixture could not have shown this on its own.
+            // power: 90e-3/100 = 9e-4 -> -30.458 dB
+            // dB   : (90*-30 + 10*-120)/100 = -39.0 dB
+            {
+                const auto tenth = bandMeanFromSum (90.0 * 1e-3, 100);
+                check (std::abs (tenth.db - (-30.4576f)) < 1e-3f,
+                       "bd PIN4: a tenth silent costs 0.46 dB in power");
+                check (tenth.db > -31.0f,
+                       "bd PIN4: and not the -39 dB a log-domain mean would give, "
+                       "so the gap grows with the silent fraction");
+            }
+
+            // THE FLOOR IS REACHED ONLY BY ACTUAL SILENCE. A sum that rounds to
+            // nothing reports -120, the same sentinel every other band figure
+            // uses, rather than negative infinity or a NaN.
+            const auto silent = bandMeanFromSum (0.0, 100);
+            check (silent.valid && silent.db == -120.0f,
+                   "bd PIN4: a genuinely silent run is valid and reads the -120 floor");
+
+            // THE MEAN IS LINEAR IN THE SUM, which is what makes the engine able
+            // to add one block at a time and divide once at the end.
+            const auto half = bandMeanFromSum (0.5e-1, 100);
+            const auto full = bandMeanFromSum (1.0e-1, 100);
+            check (std::abs ((full.db - half.db) - 3.0103f) < 1e-3f,
+                   "bd PIN4: doubling the summed power adds 3.01 dB, so the sum "
+                   "can be accumulated one block at a time");
+        }
+
+        // bd PIN5 -- A ONE-SIDED BAND CHART MUST NAME ITS MISSING SIDE.
+        // The card drew a curve per side that had bands and printed a notice
+        // only when NEITHER did. One curve on a chart labelled with two sources
+        // does not read as "no data for the other one": it reads as a claim
+        // about the other one. The silent case is the one-sided case, so that is
+        // what this pins.
+        {
+            using echojay::bandChartNotice;
+            using echojay::bandChartState;
+            using echojay::BandChartState;
+
+            const juce::String A = "your mix", B = "the reference";
+            const juce::String wa = "restored capture, bands not saved";
+            const juce::String wb = "codec render is not analysed";
+
+            check (bandChartState (true,  true)  == BandChartState::Both,
+                   "bd PIN5: both sides present is Both");
+            check (bandChartState (true,  false) == BandChartState::AOnly,
+                   "bd PIN5: A only is AOnly");
+            check (bandChartState (false, true)  == BandChartState::BOnly,
+                   "bd PIN5: B only is BOnly");
+            check (bandChartState (false, false) == BandChartState::Neither,
+                   "bd PIN5: neither is Neither");
+
+            // BOTH PRESENT: nothing to say, and saying nothing is correct here
+            // because both curves are drawn.
+            check (bandChartNotice (true, true, A, B, wa, wb).isEmpty(),
+                   "bd PIN5: with both sides present the chart says nothing");
+
+            // A ONLY: the notice names B, the side that is MISSING, not the one
+            // that is present. Naming the wrong side would be worse than silence.
+            {
+                const auto n = bandChartNotice (true, false, A, B, wa, wb);
+                check (n.isNotEmpty(),
+                       "bd PIN5: with only A present the chart is NOT silent");
+                check (n.contains (B),
+                       "bd PIN5: and it names B, the missing side");
+                check (! n.contains (A),
+                       "bd PIN5: and not A, which is the side that IS drawn");
+                check (n.contains (wb),
+                       "bd PIN5: and gives B's reason, not A's");
+                check (! n.contains (wa),
+                       "bd PIN5: A's reason does not leak into B's notice");
+            }
+
+            // B ONLY: the mirror. Both one-sided cases must behave the same way
+            // about the other side, or the chart is honest in one direction.
+            {
+                const auto n = bandChartNotice (false, true, A, B, wa, wb);
+                check (n.isNotEmpty() && n.contains (A) && ! n.contains (B),
+                       "bd PIN5: with only B present it names A instead");
+                check (n.contains (wa),
+                       "bd PIN5: and gives A's reason");
+            }
+
+            // NEITHER: one sentence about both, not two.
+            {
+                const auto n = bandChartNotice (false, false, A, B, wa, wb);
+                check (n.isNotEmpty(),
+                       "bd PIN5: with neither present the chart still speaks");
+                check (n.contains ("either"),
+                       "bd PIN5: and says so once rather than naming both sides");
+            }
+
+            // A MISSING REASON IS ALLOWED, and the notice still names the side.
+            // The reason is a courtesy; the side is the load-bearing part.
+            {
+                const auto n = bandChartNotice (true, false, A, B, {}, {});
+                check (n.isNotEmpty() && n.contains (B),
+                       "bd PIN5: with no reason available it still names the side");
+            }
+        }
+
+        // bd PIN6 -- THE BOUNDED WINDOW FORGETS, WHICH IS THE WHOLE POINT.
+        // A Live compare slot needs the SAME statistic a reference has, a power
+        // mean, over a bounded span. The one line that makes it bounded rather
+        // than unbounded is the subtraction of the entry falling out of the ring,
+        // and an unbounded mean still dividing by the fill reads exactly like a
+        // window while being a lifetime average. These pins drive the SHIPPED
+        // ring, not a model of it: MeterEngine holds six of these and does
+        // nothing to them but push.
+        {
+            using echojay::BandPowerRing;
+            using echojay::boundedBandMean;
+
+            // EMPTY: no mean. Not zero, not -120: an absent measurement.
+            {
+                BandPowerRing<10> r; r.setCapacity (10);
+                check (! r.mean().valid, "bd PIN6: an empty window has NO mean");
+                check (r.count() == 0,   "bd PIN6: and reports zero blocks");
+                check (! r.isFull(),     "bd PIN6: and is not full");
+            }
+
+            // ONE BLOCK: the mean of one value is that value. 1e-3 -> -30 dB.
+            {
+                BandPowerRing<10> r; r.setCapacity (10);
+                r.push (1e-3);
+                const auto m = r.mean();
+                check (m.valid && m.blocks == 1, "bd PIN6: one block is a valid mean of one");
+                check (std::abs (m.db - (-30.0f)) < 1e-4f,
+                       "bd PIN6: and a 1e-3 power block reads -30.0 dB");
+            }
+
+            // FEWER BLOCKS THAN CAPACITY: it divides by the FILL, not the
+            // capacity, so a partly filled window reports what it has rather
+            // than a figure diluted by blocks that were never pushed.
+            {
+                BandPowerRing<10> r; r.setCapacity (10);
+                for (int i = 0; i < 3; ++i) r.push (1e-3);
+                const auto m = r.mean();
+                check (m.blocks == 3, "bd PIN6: three of ten reports three blocks");
+                check (std::abs (m.db - (-30.0f)) < 1e-4f,
+                       "bd PIN6: and the mean is the block value, not diluted by "
+                       "the seven empty slots");
+                check (! r.isFull(), "bd PIN6: and it is not yet full");
+            }
+
+            // EXACTLY CAPACITY: full, same answer, nothing dropped yet.
+            {
+                BandPowerRing<10> r; r.setCapacity (10);
+                for (int i = 0; i < 10; ++i) r.push (1e-3);
+                const auto m = r.mean();
+                check (m.blocks == 10 && r.isFull(),
+                       "bd PIN6: exactly capacity fills the window");
+                check (std::abs (m.db - (-30.0f)) < 1e-4f,
+                       "bd PIN6: and the mean is unchanged");
+            }
+
+            // MORE THAN CAPACITY: THE OLDEST FALLS OUT. A loud first block is
+            // pushed then displaced by four quiet ones; the mean must be the
+            // quiet value, with no trace of the loud one left in the sum.
+            {
+                BandPowerRing<8> r; r.setCapacity (4);
+                r.push (1e-2);                              // the loud one
+                for (int i = 0; i < 4; ++i) r.push (1e-3);   // displaces it
+                const auto m = r.mean();
+                check (m.blocks == 4,
+                       "bd PIN6: the window holds its capacity and no more");
+                check (std::abs (m.db - (-30.0f)) < 1e-3f,
+                       "bd PIN6: and the displaced block is GONE from the mean, "
+                       "not merely outweighed");
+                // Stated separately because it is the number the mutation moves:
+                // keeping the loud block would give -24.56 dB, 5.44 dB high.
+                check (m.db < -28.0f,
+                       "bd PIN6: NOT the -24.56 dB an unbounded sum would give, "
+                       "which is what forgetting to subtract produces");
+            }
+
+            // A SILENT BLOCK INSIDE A FULL WINDOW costs its share of the energy
+            // and no more: three of 1e-3 and one of zero is 7.5e-4, -31.25 dB.
+            {
+                BandPowerRing<8> r; r.setCapacity (4);
+                r.push (1e-3); r.push (1e-3); r.push (1e-3); r.push (0.0);
+                const auto m = r.mean();
+                check (m.blocks == 4, "bd PIN6: a silent block still occupies a slot");
+                check (std::abs (m.db - (-31.2494f)) < 1e-3f,
+                       "bd PIN6: and costs 1.25 dB, its share of the energy, not "
+                       "the 22 dB a floor in the log domain would cost");
+            }
+
+            // A WHOLLY SILENT WINDOW floors. NOT REACHABLE THROUGH THE ENGINE
+            // ANY MORE: the ring is gated, so a silent block never enters and the
+            // window cannot drain. Kept as a pin on the RING's arithmetic, which
+            // is still worth holding because the ring is a general container, and
+            // corrected here rather than left claiming to describe a live state.
+            {
+                BandPowerRing<8> r; r.setCapacity (4);
+                for (int i = 0; i < 4; ++i) r.push (0.0);
+                const auto m = r.mean();
+                check (m.valid && m.db == -120.0f,
+                       "bd PIN6: a wholly silent window is valid and reads the floor, "
+                       "so the consumer can refuse on it");
+            }
+
+            // SETTING THE CAPACITY CLEARS. A window whose length just changed has
+            // no contents belonging to the new length.
+            {
+                BandPowerRing<8> r; r.setCapacity (4);
+                r.push (1e-3); r.push (1e-3);
+                r.setCapacity (6);
+                check (r.count() == 0 && ! r.mean().valid,
+                       "bd PIN6: changing the window length empties it");
+                check (r.capacity() == 6, "bd PIN6: and takes the new length");
+            }
+
+            // THE CEILING IS THE STORAGE. A capacity above the template size is
+            // clamped rather than overrunning the buffer.
+            {
+                BandPowerRing<4> r; r.setCapacity (99);
+                check (r.capacity() == 4,
+                       "bd PIN6: a capacity beyond the storage is clamped to it");
+            }
+
+            // WHAT THIS PIN DOES NOT EXERCISE, measured 17 Sep 2026. It drives
+            // the RING directly, so it never sees the engine's silence
+            // THRESHOLD: isSilentNow() needs 0.5 s below -80 dBFS before it
+            // returns true, and until it does, silent blocks are not silent by
+            // the gate's definition and DO enter the window. At 512 samples and
+            // 44.1 kHz that is about forty three of them, 4.2 percent of a 1034
+            // block window, and the measured values drift by about 0.19 dB
+            // before freezing.
+            //
+            // So the claim below is true of the CONTAINER and true of the ENGINE
+            // only after the threshold has passed. The pin is therefore
+            // INCOMPLETE rather than wrong: it still catches an ungated ring,
+            // which is what it was written for, and it would still catch an age
+            // that never grows. It cannot catch anything about the 0.5 s tail,
+            // and the engine-level measurement in RESULTS_PHASE1B.md is what
+            // covers that.
+            //
+            // bd PIN7 -- A FROZEN WINDOW HOLDS ITS NUMBERS AND ADMITS ITS AGE.
+            // The ring is gated, so when the input goes quiet it stops taking
+            // blocks rather than taking silent ones. That is what keeps it honest
+            // about WHAT it heard, and it is exactly what makes it silent about
+            // WHEN: six numbers in a comparison look equally current whether they
+            // are from now or from ten minutes ago, and nothing else on the card
+            // distinguishes them.
+            //
+            // AN AGE THAT ALWAYS SAYS NOW IS WORSE THAN NO AGE AT ALL, which is
+            // why the mutation for this pin sets it to zero rather than deleting
+            // it: a missing age is an absence a reader can notice, and a zero is
+            // a claim they cannot check.
+            {
+                BandPowerRing<8> r; r.setCapacity (4);
+                for (int i = 0; i < 4; ++i) r.push (1e-3);
+                const auto before = r.mean();
+                check (before.valid && before.blocks == 4,
+                       "bd PIN7: a full window is a valid mean of its capacity");
+                check (r.age() == 0.0,
+                       "bd PIN7: and while blocks are arriving its age is zero");
+
+                // The gate closes: the caller keeps advancing the age and pushes
+                // nothing, which is exactly what processBlock does on a silent
+                // block.
+                for (int i = 0; i < 100; ++i) r.advanceAge (0.01);
+                const auto after = r.mean();
+
+                check (after.valid, "bd PIN7: a frozen window is still valid");
+                check (after.blocks == before.blocks,
+                       "bd PIN7: and holds the same number of blocks");
+                check (std::abs (after.db - before.db) < 1e-6f,
+                       "bd PIN7: and the SAME numbers, with no drift toward silence");
+                check (std::abs (after.db - (-30.0f)) < 1e-4f,
+                       "bd PIN7: still -30.0 dB, not the floor an ungated ring "
+                       "would have drained to");
+                check (r.age() > 0.9 && r.age() < 1.1,
+                       "bd PIN7: and the age has grown to about a second");
+
+                // AND A NEW BLOCK ZEROES IT, so the age means what it says rather
+                // than counting since the plugin opened.
+                r.push (1e-3);
+                check (r.age() == 0.0,
+                       "bd PIN7: one audible block resets the age to now");
+            }
+
+            // AND THE PURE FORM AGREES WITH THE RING, so the ring is not a second
+            // definition of the arithmetic.
+            check (! boundedBandMean (0.0, 0).valid,
+                   "bd PIN6: the pure form refuses an empty window too");
+            check (std::abs (boundedBandMean (4e-3, 4).db - (-30.0f)) < 1e-4f,
+                   "bd PIN6: and divides the window sum by the window fill");
+        }
+
+        // ws PIN1 -- WHAT A SETTINGS PAYLOAD IS ASKING FOR.
+        // Three functions held three opinions about one object. The card's
+        // summariser treated "params" as a LEAF, so a built-in's payload printed
+        // "params Object 0x66cf3ee0" at the user: juce::var::toString() on an
+        // object is its pointer. A WRAPPER IS A CONTAINER, NOT A REQUEST.
+        {
+            using echojay::readSettingsShape;
+            auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv)
+            {
+                auto* o = new juce::DynamicObject();
+                for (auto& p : kv) o->setProperty (p.first, p.second);
+                return juce::var (o);
+            };
+
+            // A PARAMS WRAPPER: the built-in shape. Three leaves, named and
+            // valued, and "params" is NOT one of them.
+            {
+                const auto sh = readSettingsShape (mk ({ { "params", mk ({
+                    { "threshold_db", -8.0 }, { "ceiling_db", -1.0 }, { "release_ms", 120.0 } }) } }));
+                check (sh.shape == "wrapped", "ws PIN1: a params wrapper reads as wrapped");
+                check (sh.requested() == 3,   "ws PIN1: and asks for its THREE leaves, not one wrapper");
+                check (sh.leaves.size() == 3 && sh.leaves[0].name == "threshold_db"
+                       && sh.leaves[1].name == "ceiling_db" && sh.leaves[2].name == "release_ms",
+                       "ws PIN1: the leaf NAMES come from inside the wrapper");
+                check (std::abs ((double) sh.leaves[0].value - (-8.0)) < 1e-9,
+                       "ws PIN1: and their values with them");
+                bool named = false;
+                for (auto& l : sh.leaves) if (l.name == "params") named = true;
+                check (! named, "ws PIN1: \"params\" is never itself a leaf, which is the "
+                                "defect that printed a pointer on the card");
+            }
+
+            // A CONTROLS WRAPPER: the third-party shape, same treatment.
+            {
+                const auto sh = readSettingsShape (mk ({ { "controls", mk ({
+                    { "Threshold", -12.0 }, { "Ratio", 4.0 } }) } }));
+                check (sh.shape == "wrapped" && sh.requested() == 2,
+                       "ws PIN1: a controls wrapper reads the same way");
+                check (sh.leaves[0].name == "Threshold" && sh.leaves[1].name == "Ratio",
+                       "ws PIN1: by exact control name");
+            }
+
+            // AN eq_bands PAYLOAD: an array has a COUNT and no leaf names of its
+            // own, so it contributes elements and a display key.
+            {
+                juce::Array<juce::var> bands;
+                bands.add (mk ({ { "freq_hz", 80.0 } }));
+                bands.add (mk ({ { "freq_hz", 3000.0 } }));
+                const auto sh = readSettingsShape (mk ({ { "eq_bands", juce::var (bands) } }));
+                check (sh.shape == "wrapped", "ws PIN1: an eq_bands array is a wrapper too");
+                check (sh.requested() == 2,   "ws PIN1: and asks for its two elements");
+                check (sh.displayKeys.joinIntoString (",").contains ("eq_bands[2]"),
+                       "ws PIN1: named with its count, since an array has no leaf names");
+            }
+
+            // A BARE OBJECT: flat semantics, the third-party anchor shape. Every
+            // key is its own request and none of them is a wrapper.
+            {
+                const auto sh = readSettingsShape (mk ({
+                    { "low_cut_freq_hz", 80.0 }, { "gain_db", -2.0 } }));
+                check (sh.shape == "flat", "ws PIN1: a bare object with no wrapper is flat");
+                check (sh.requested() == 2 && sh.flat == 2 && sh.wrappers == 0,
+                       "ws PIN1: and every top-level key is its own request");
+            }
+
+            // EMPTY, and the two other non-objects, because "nothing asked for"
+            // and "malformed" are different answers.
+            {
+                check (readSettingsShape (mk ({})).shape == "empty",
+                       "ws PIN1: an object with no keys is empty");
+                check (readSettingsShape (juce::var()).shape == "none",
+                       "ws PIN1: a void payload is none, not empty");
+                check (readSettingsShape (juce::var (7)).shape == "scalar",
+                       "ws PIN1: a scalar is neither");
+                check (readSettingsShape (mk ({})).requested() == 0,
+                       "ws PIN1: and an empty payload asks for nothing");
+            }
+
+            // MIXED is named because it is almost always malformed: a wrapper
+            // AND top-level flat keys in one payload.
+            {
+                const auto sh = readSettingsShape (mk ({
+                    { "params", mk ({ { "a", 1.0 } }) }, { "gain_db", -2.0 } }));
+                check (sh.shape == "mixed",
+                       "ws PIN1: wrappers beside flat keys are named mixed, not wrapped");
+            }
+        }
+
+        // ws PIN2 -- A WRAPPER KEY IS NEVER AN UNMAPPED CONTROL.
+        // THIS IS THE PIN THAT WOULD HAVE STOPPED THE INVESTIGATION. A params
+        // wrapper reaching applySettings fell through to the generic
+        // "no mapping for this control on this plugin", which names a control
+        // the model never asked for and sends the reader to the MAP. The map is
+        // blameless: the payload was meant for a built-in device and arrived on
+        // the third-party path, which is a ROUTING fault. A confident wrong
+        // diagnosis is worse than a missing feature, and it cost a full
+        // investigation on 17 Sep before the routing was found.
+        {
+            std::ifstream fpa ("Source/EchoJayParamApply.h");
+            std::stringstream spa; spa << fpa.rdbuf();
+            const auto code = codeOnly (juce::String (spa.str()));
+            check (code.contains ("isWrapperKey (semantic)"),
+                   "ws PIN2: applySettings DETECTS a wrapper key rather than "
+                   "treating it as a semantic");
+            check (code.contains ("routing fault"),
+                   "ws PIN2: and its note names a ROUTING fault");
+            check (! code.contains ("r.note = \"no mapping for this control on this plugin\";\n")
+                   || code.contains ("routing fault"),
+                   "ws PIN2: the generic no-mapping note still exists for real "
+                   "unmapped semantics, but not as the wrapper's answer");
+            // THE ORDER IS LOAD-BEARING: the detector must precede the generic
+            // no-mapping branch, or the wrapper reaches the wrong one first.
+            const int det = code.indexOf ("isWrapperKey (semantic)");
+            const int gen = code.indexOf ("no mapping for this control on this plugin");
+            check (det >= 0 && gen >= 0 && det < gen,
+                   "ws PIN2: and the detector comes BEFORE the generic branch, "
+                   "or the wrapper would still reach the wrong diagnosis");
+        }
+
+        // ap PIN1 -- THE APPLY BUTTON IS WIRED AND VISIBLE.
+        // STRUCTURAL, in the style of se PIN7, because the guarantee lives in
+        // the LINES and not in any value a unit test can read. A pool of
+        // buttons that is constructed, wired to an onClick, and never given
+        // bounds or made visible compiles perfectly and does nothing, and that
+        // is exactly what shipped for a week.
+        //
+        // THE HISTORY THIS PINS. 873d758 on 10 Sep moved the report button to
+        // the panel and took the Apply button's branch with it, because the
+        // Apply branch was the `else if` of the misdial button's chain and the
+        // deletion ran past its intended end. activeEditApplyBtns and
+        // editApplyMsgIdx survived as dead members, editCardHeight kept
+        // reserving 26 + 8 pixels for a control that was not drawn, and
+        // applyChainEditFromMsg became unreachable from the UI entirely: a
+        // proposed chain move could not be applied by ANY route.
+        //
+        // THIS IS THE SECOND SWEPT DELETION OF UI WIRING IN THIS REPOSITORY.
+        // The first, 6a5efb6, took six editor handlers and at least failed to
+        // LINK. This one compiled, which is worse: nothing objected at all.
+        {
+            std::ifstream fed ("Source/PluginEditor.cpp");
+            std::stringstream sed2; sed2 << fed.rdbuf();
+            const auto ec = codeOnly (juce::String (sed2.str()));
+
+            // The five lines that make it exist, press and appear. Each is
+            // asserted separately so a partial removal names which half went.
+            check (ec.contains ("editApplyMsgIdx[(size_t)bi] = msgLoopIndex;"),
+                   "ap PIN1: the button is bound to a MESSAGE, so onClick applies "
+                   "that card's ops and not message zero");
+            check (ec.contains ("int bi = activeEditApplyBtns++;"),
+                   "ap PIN1: and takes a slot from the pool, so two cards get two buttons");
+            check (ec.contains ("editApplyBtns[(size_t)bi].setBounds(ar);"),
+                   "ap PIN1: it is given bounds");
+            check (ec.contains ("editApplyBtns[(size_t)bi].setVisible(true);"),
+                   "ap PIN1: it is made VISIBLE, which is the line that was missing");
+            check (ec.contains ("editApplyBtns[(size_t)bi].toFront(false);"),
+                   "ap PIN1: and raised, so the bubble does not swallow the click");
+            check (ec.contains ("editApplyBtns[(size_t)bi].setButtonText(\"Apply changes\")"),
+                   "ap PIN1: and it says what it does");
+
+            // THE STRUCTURAL HALF, which is the reason this pin exists rather
+            // than a note. The visibility must NOT depend on another button's
+            // branch: that dependency is what let an edit to the report button
+            // delete this one.
+            const int applyAt = ec.indexOf ("int bi = activeEditApplyBtns++;");
+            check (applyAt >= 0, "ap PIN1: the apply block is present at all");
+            const int stmtAt = ec.indexOf ("if (! msg.editApplied && activeEditApplyBtns");
+            check (stmtAt >= 0 && stmtAt < applyAt && (applyAt - stmtAt) < 200,
+                   "ap PIN1: and it is a STANDALONE if on its own condition, "
+                   "immediately above the block, not the else of a neighbouring "
+                   "affordance");
+            check (! ec.contains ("else if (activeEditApplyBtns"),
+                   "ap PIN1: and it is NOT an else if, which is the form that let "
+                   "an edit to the report button delete it");
+
+            // And the click still reaches the applier. A button wired to nothing
+            // is the same defect wearing a different hat.
+            check (ec.contains ("applyChainEditFromMsg(editApplyMsgIdx[(size_t)i])"),
+                   "ap PIN1: the onClick calls applyChainEditFromMsg");
+        }
+
+        // pb PIN1 -- THE SIMULATION STAGE IS A NO-OP WHEN NOTHING IS SELECTED
+        // AND NO ROOM IS FADING OUT.
+        //
+        // REWRITTEN 19 SEP 2026, NOT RENUMBERED, WITH THE CONTRACT. It used to
+        // say the stage is a no-op whenever nothing is selected. Since the rooms
+        // that is untrue for 30 ms after a room is switched off, while its tail
+        // fades (applyPlaybackSim's contract comment in EJPlaybackSim.h, and
+        // pr PIN4, which pins that fade and the no-op that follows it). What
+        // this pin holds is the other half, unchanged in substance: a stage
+        // with no room held, which is every stage that never ran one, is
+        // untouched and says so.
+        //
+        // PREFIX pb, NOT ps: ps was already taken by the PSR floor family
+        // (2d351ce), and two unrelated pins under one name means a FAIL line
+        // cannot say which subject failed. Checked against every prefix in the
+        // suite rather than assumed free.
+        // The stage runs on the audio thread on every block for every user, and
+        // the overwhelming majority will never select a simulation. A stage that
+        // touches the buffer with nothing selected can put a defect into audio
+        // nobody asked it to touch, and it would do so SILENTLY, because the
+        // output is supposed to be unchanged and nothing downstream would flag
+        // a difference it was told not to expect.
+        {
+            using echojay_ps = PlaybackSim;   // the enum is at file scope
+
+            // THE STAGE, not a bare selection: applyPlaybackSim takes the object
+            // that owns the selection, the voicing chains and the previous
+            // voicing. A fresh one has nothing selected.
+            PlaybackSimStage st;
+            st.prepare (48000.0);
+
+            check (! playbackSimActive (echojay_ps::None),
+                   "pb PIN1: None is not an active simulation");
+            check (st.selected() == echojay_ps::None,
+                   "pb PIN1: a fresh stage has None selected");
+
+            // THE BUFFER IS NOT TOUCHED. Not "is restored", not "is touched
+            // harmlessly": the samples are compared after the call and must be
+            // bit-identical, and the call must report that it did nothing.
+            float l[8] = { 0.0f, 0.25f, -0.5f, 0.75f, -1.0f, 0.125f, -0.0625f, 1.0f };
+            float r[8] = { 1.0f, -0.25f, 0.5f, -0.75f, 1.0f, -0.125f, 0.0625f, -1.0f };
+            float lBefore[8], rBefore[8];
+            std::memcpy (lBefore, l, sizeof (l));
+            std::memcpy (rBefore, r, sizeof (r));
+
+            float* chans[2] = { l, r };
+            const bool touched = applyPlaybackSim (st, chans, 2, 8, 0.0);
+
+            check (! touched,
+                   "pb PIN1: with nothing selected and no room fading, the stage reports it did nothing");
+            check (std::memcmp (l, lBefore, sizeof (l)) == 0,
+                   "pb PIN1: and the left channel is bit-identical afterwards");
+            check (std::memcmp (r, rBefore, sizeof (r)) == 0,
+                   "pb PIN1: and the right channel is bit-identical afterwards");
+
+            // A MONO CALL takes the same path: the caller passes the same
+            // pointer twice for a mono buffer, and one channel must not be
+            // processed twice even when a simulation exists later.
+            float m[4] = { 0.5f, -0.5f, 0.25f, -0.25f };
+            float mBefore[4]; std::memcpy (mBefore, m, sizeof (m));
+            float* mono[2] = { m, m };
+            check (! applyPlaybackSim (st, mono, 1, 4, 0.0)
+                   && std::memcmp (m, mBefore, sizeof (m)) == 0,
+                   "pb PIN1: a mono buffer is untouched too");
+
+            // ZERO SAMPLES AND ZERO CHANNELS are reached on a stopped transport
+            // in some hosts, and must not be a special case that only works
+            // because nothing is selected.
+            check (! applyPlaybackSim (st, chans, 0, 0, 0.0),
+                   "pb PIN1: an empty block is a no-op rather than a branch nobody took");
+        }
+
+        // pb PIN2 to pb PIN6 -- THE MONO FOLD.
+        {
+            using PS = PlaybackSim;
+
+            // pb PIN2: CORRELATED CONTENT IS BIT-IDENTICAL. A centred source
+            // must come out at exactly the level it went in. memcmp, not a
+            // tolerance: the claim is EXACTNESS, and a tolerance would also
+            // pass an implementation that is merely close. The values include a
+            // negative, full scale both ways, a very small one, and both zeros,
+            // because -0.0f is a distinct bit pattern the fold must preserve.
+            {
+                PlaybackSimStage fold;
+                fold.prepare (48000.0);
+                fold.select (PS::MonoFold);
+                float l[8] = { 0.3f, -0.7f, 1.0f, -1.0f, 1e-7f, 0.1f, 0.0f, -0.0f };
+                float r[8] = { 0.3f, -0.7f, 1.0f, -1.0f, 1e-7f, 0.1f, 0.0f, -0.0f };
+                float lBefore[8], rBefore[8];
+                std::memcpy (lBefore, l, sizeof (l));
+                std::memcpy (rBefore, r, sizeof (r));
+                float* ch[2] = { l, r };
+
+                check (applyPlaybackSim (fold, ch, 2, 8, 0.0),
+                       "pb PIN2: the fold reports that it ran on a correlated signal");
+                check (std::memcmp (l, lBefore, sizeof (l)) == 0,
+                       "pb PIN2: and left is BIT-IDENTICAL, not merely close");
+                check (std::memcmp (r, rBefore, sizeof (r)) == 0,
+                       "pb PIN2: and right is BIT-IDENTICAL, so a centred source "
+                       "comes out at exactly the level it went in");
+            }
+
+            // pb PIN3: ANTI-CORRELATED CONTENT IS EXACTLY +0.0. memcmp against
+            // an array of +0.0f rather than == 0.0f, because == 0.0f is also
+            // true of -0.0f and the claim includes the SIGN: L + (-L) is
+            // exactly +0.0 under round-to-nearest, so the collapse is complete
+            // rather than nearly complete.
+            {
+                PlaybackSimStage fold;
+                fold.prepare (48000.0);
+                fold.select (PS::MonoFold);
+                float l[8] = { 0.3f, -0.7f, 1.0f, -1.0f, 1e-7f, 0.1f, 0.0f, -0.0f };
+                float r[8];
+                for (int i = 0; i < 8; ++i) r[i] = -l[i];
+                float zeros[8] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+                float* ch[2] = { l, r };
+
+                check (applyPlaybackSim (fold, ch, 2, 8, 0.0),
+                       "pb PIN3: the fold reports that it ran on an anti-correlated signal");
+                check (std::memcmp (l, zeros, sizeof (zeros)) == 0,
+                       "pb PIN3: left is exactly +0.0, sign included");
+                check (std::memcmp (r, zeros, sizeof (zeros)) == 0,
+                       "pb PIN3: and so is right, so anti-correlated content "
+                       "vanishes completely rather than nearly");
+            }
+
+            // pb PIN4: THE TWO CHANNELS ARE IDENTICAL TO EACH OTHER AFTERWARDS.
+            // A signal that starts different and is neither correlated nor
+            // anti-correlated, so neither of the two pins above could stand in
+            // for this one.
+            {
+                PlaybackSimStage fold;
+                fold.prepare (48000.0);
+                fold.select (PS::MonoFold);
+                float l[4] = {  0.5f,  0.25f, -0.125f,  0.75f };
+                float r[4] = {  0.1f, -0.2f,   0.3f,   -0.4f  };
+                float* ch[2] = { l, r };
+
+                check (applyPlaybackSim (fold, ch, 2, 4, 0.0),
+                       "pb PIN4: the fold ran");
+                check (std::memcmp (l, r, sizeof (l)) == 0,
+                       "pb PIN4: and the two channels are identical afterwards, "
+                       "which one local written twice guarantees by construction");
+            }
+
+            // pb PIN5: A BUFFER THE FOLD CANNOT RUN ON IS LEFT ALONE. Both
+            // cases pass two DISTINCT valid pointers, so a mutant that removes
+            // a guard writes into real memory and fails this pin cleanly,
+            // rather than dereferencing something invalid and taking the suite
+            // down instead of reddening it.
+            {
+                PlaybackSimStage fold;
+                fold.prepare (48000.0);
+                fold.select (PS::MonoFold);
+                float l[4] = { 0.5f, -0.5f, 0.25f, -0.25f };
+                float r[4] = { 0.1f, -0.1f, 0.2f,  -0.2f  };
+                float lB[4], rB[4];
+                std::memcpy (lB, l, sizeof (l));
+                std::memcpy (rB, r, sizeof (r));
+                float* ch[2] = { l, r };
+
+                check (! applyPlaybackSim (fold, ch, 1, 4, 0.0),
+                       "pb PIN5: one channel is too few for a fold, so it does not run");
+                check (std::memcmp (l, lB, sizeof (l)) == 0
+                       && std::memcmp (r, rB, sizeof (r)) == 0,
+                       "pb PIN5: and it wrote nothing");
+
+                // The aliased pair: two channels claimed, one buffer behind
+                // them, which is exactly what a mono host delivers.
+                float a[4] = { 0.5f, -0.5f, 0.25f, -0.25f };
+                float aB[4]; std::memcpy (aB, a, sizeof (a));
+                float* same[2] = { a, a };
+                check (! applyPlaybackSim (fold, same, 2, 4, 0.0),
+                       "pb PIN5: two channels pointing at one buffer is not a fold");
+                check (std::memcmp (a, aB, sizeof (a)) == 0,
+                       "pb PIN5: and that buffer is untouched, so the fold never "
+                       "reads back what it just wrote");
+            }
+
+            // pb PIN6: ZERO SAMPLES IS A LOOP WITH NO ITERATIONS, not a stage
+            // that failed to run. Decided, not emergent.
+            {
+                PlaybackSimStage fold;
+                fold.prepare (48000.0);
+                fold.select (PS::MonoFold);
+                float l[2] = { 0.5f, -0.5f };
+                float r[2] = { 0.25f, -0.25f };
+                float lB[2], rB[2];
+                std::memcpy (lB, l, sizeof (l));
+                std::memcpy (rB, r, sizeof (r));
+                float* ch[2] = { l, r };
+
+                check (applyPlaybackSim (fold, ch, 2, 0, 0.0),
+                       "pb PIN6: zero samples still reports that the stage ran");
+                check (std::memcmp (l, lB, sizeof (l)) == 0
+                       && std::memcmp (r, rB, sizeof (r)) == 0,
+                       "pb PIN6: and it wrote nothing");
+            }
+
+            // pb PIN7 -- EVERY ACTIVE SELECTION HAS A BODY.
+            // The sweep walks every value from the one after None up to the
+            // Count sentinel and requires each to report that it ran. A value
+            // added to the enum without a case in the switch falls through to
+            // the trailing false, and this is the thing that says so, BY THE
+            // VALUE'S NUMBER AND NAME, so a FAIL line names which one is empty
+            // rather than only that one of them is.
+            //
+            // It exercised one value, the mono fold, until the five voicings
+            // were wired; it now sweeps six, and it needed no edit to its loop
+            // to do so: that is the difference between a sweep and a count.
+            // Each value gets a FRESH, prepared stage, so no value's result can
+            // lean on state another left behind.
+            //
+            // THE STRONGER PIN I CONSIDERED AND REJECTED: assert that every
+            // active selection also CHANGES an uncorrelated stereo signal. That
+            // would catch a body which exists but does nothing, which this pin
+            // cannot. It is rejected because a future environment could
+            // legitimately be close to transparent, the pin would then need a
+            // list of exemptions, and a pin with an exemption list is a pin that
+            // gets exempted. A weaker check that nobody is tempted to weaken
+            // further is worth more than a stronger one with a door in it.
+            {
+                for (int i = 0; i < (int) PS::Count; ++i)
+                {
+                    if (i == (int) PS::None) continue;
+                    float l[4] = { 0.5f, -0.25f, 0.125f, -0.75f };
+                    float r[4] = { 0.1f,  0.2f, -0.3f,    0.4f  };
+                    float* ch[2] = { l, r };
+                    PlaybackSimStage swept;
+                    swept.prepare (48000.0);
+                    swept.select ((PS) i);
+                    check (applyPlaybackSim (swept, ch, 2, 4, 0.0),
+                           "pb PIN7: selection " + juce::String (i)
+                           + " (" + playbackSimName ((PS) i) + ")"
+                           + " has a body in the switch and reports that it ran");
+                }
+            }
+
+            // pb PIN8 -- THE SETTER REFUSES WHAT THE SWITCH CANNOT HANDLE.
+            // A pure test on the shipped type, no UI and no processor. The rule
+            // lives in EJPlaybackSim.h rather than in PluginProcessor.h for
+            // exactly this reason: a pin written against a reimplementation of
+            // the rule would pass while the real one rotted.
+            //
+            // WHAT IT PROTECTS. Count is not a selection, it is the sweep's
+            // bound. Stored, it makes playbackSimActive true and applyPlaybackSim
+            // fall past the switch, so the user selects something and hears
+            // nothing, with no error anywhere. pb PIN7 catches that shape in the
+            // suite; nothing but this catches it at runtime.
+            //
+            // AND A REFUSAL LEAVES THE PREVIOUS SELECTION STANDING. Every
+            // refusal case below is asserted against MonoFold rather than
+            // against None, so a setter that reset to None on a bad value would
+            // redden here instead of passing as "well, it refused".
+            {
+                PlaybackSimSelection sel;
+                check (sel.get() == PS::None,
+                       "pb PIN8: a fresh selection is None");
+
+                sel.set (PS::MonoFold);
+                check (sel.get() == PS::MonoFold,
+                       "pb PIN8: storing MonoFold takes");
+
+                sel.set (PS::None);
+                check (sel.get() == PS::None,
+                       "pb PIN8: storing None takes, so a selection can be turned off");
+
+                sel.set (PS::MonoFold);
+                sel.set (PS::Count);
+                check (sel.get() == PS::MonoFold,
+                       "pb PIN8: storing Count is REFUSED, and the previous selection stands");
+
+                sel.set ((PS) ((int) PS::Count + 3));
+                check (sel.get() == PS::MonoFold,
+                       "pb PIN8: a cast integer past Count is refused the same way");
+
+                sel.set ((PS) -1);
+                check (sel.get() == PS::MonoFold,
+                       "pb PIN8: and a cast integer below None, which is where a bad index lands");
+            }
+
+            // pb PIN9 -- EVERY LIVE TILE IS WIRED TO SOMETHING.
+            // STRUCTURAL, in the style of se PIN7 and ap PIN1, because the
+            // guarantee lives in the LINES. A tile that is drawn, hit-tested and
+            // repainted but stores nothing COMPILES PERFECTLY: it looks alive,
+            // it takes the press, and nothing happens and nothing complains.
+            //
+            // THAT IS THE FOURTH SHAPE OF ONE FAILURE THIS WEEK. 873d758 swept
+            // the Apply button's visibility, 6a5efb6 took six editor handlers,
+            // a value below Count would give a selection with no body, and this
+            // is the same thing again at the wire.
+            //
+            // IT NAMED THE MONO CARD'S LINES until the Mono card became the
+            // grid's first tile (18 Sep 2026). The six live tiles now share ONE
+            // hit test and ONE store line, walking echojay::kPlaybackTiles, so
+            // these lines wire all six at once, and the table check below is
+            // what says each of the six is in it. A per-tile handler would have
+            // needed a line per tile here to say as much.
+            //
+            // READ FROM codeOnly, so a COMMENT naming these lines cannot satisfy
+            // the pin. The comment says the line should be there; only the code
+            // proves it is.
+            {
+                std::ifstream fed ("Source/PluginEditor.cpp");
+                std::stringstream sed3; sed3 << fed.rdbuf();
+                const auto ec = codeOnly (juce::String (sed3.str()));
+
+                check (ec.contains ("if (! tileRects[(size_t) i].contains (pos)) continue;"),
+                       "pb PIN9: the grid has a hit test in mouseUp, over the tiles paint drew");
+                check (ec.contains ("owner->processorRef.setPlaybackSim (on ? PlaybackSim::None : t.sim);"),
+                       "pb PIN9: and a press STORES the tile's selection, or None if it was "
+                       "already selected; the line whose deletion would leave six tiles doing nothing");
+                check (ec.contains ("const bool on = (owner->processorRef.playbackSim() == t.sim);"),
+                       "pb PIN9: the press reads the current selection BACK from the processor, "
+                       "so the toggle cannot disagree with the audio");
+                check (ec.contains ("const PlaybackSim current = owner->processorRef.playbackSim();"),
+                       "pb PIN9: and paint draws the selected tile from that same read-back, not "
+                       "from a flag kept in the editor");
+                check (ec.contains ("tileRects[(size_t) i] = tile;"),
+                       "pb PIN9: the hit rectangles are the ones paint drew, so they cannot "
+                       "drift from what is on screen");
+
+                // THE TABLE THE HANDLER WALKS, rewritten for ten tiles (19 Sep 2026)
+                // rather than renumbered: it no longer names each row by hand,
+                // it says what must be true of the table as a whole. The
+                // bedroom made eleven with no edit here beyond the voicing a
+                // room tile carries, which is its room's source.
+                //
+                // FOURTEEN SINCE 20 SEP 2026, and the count is still not written
+                // down here: it is derived from PlaybackSim::Count, so the three
+                // rooms added themselves. What they DID test is the voicing rule
+                // above: the club floor and the festival field carry ClubPA,
+                // which is their room's source, so two live tiles now carry the
+                // same voicing as a third. A check that read the voicing as "one
+                // step down from the selection", as this one did until the
+                // bedroom, would have called that a duplicate and reddened.
+                //
+                // THE TABLE AND THE HANDLER AGREE: every selection the stage can
+                // run has exactly one live tile, in the selections' own order
+                // (the Mono tile first), each storing its own selection, and each
+                // voiced tile carries the voicing that selection runs, so its
+                // picture and its sound are the same device. The Mono tile runs
+                // no voicing. Dropping, duplicating or reordering a row, or
+                // pairing a tile with another device's voicing, is the per-tile
+                // deletion the source lines above cannot see.
+                //
+                // THE CODEC TILE IS WHAT IT SAYS IT IS: the last row, the only
+                // row that is not live, storing nothing.
+                using echojay::kPlaybackTiles;
+                using echojay::PlaybackTileKind;
+                using PVt = echojay::PlaybackVoicing;
+                const int pbSims = (int) PlaybackSim::Count - 1;   // every selection but None
+                juce::String pbBad;
+                if ((int) kPlaybackTiles.size() != pbSims + 1)
+                    pbBad << "size " << (int) kPlaybackTiles.size() << ", expected "
+                          << (pbSims + 1) << " (one per selection, and the codec tile); ";
+                for (int i = 0; i < pbSims && i < (int) kPlaybackTiles.size(); ++i)
+                {
+                    const auto& t    = kPlaybackTiles[(size_t) i];
+                    const auto  want = (PlaybackSim) (i + 1);
+                    // The voicing each selection runs: none for the fold; for a
+                    // room, its source from the room table (19 Sep 2026: a room
+                    // has no voicing of its own, so "one step down" would name
+                    // Count for the bedroom); and otherwise the voicing of the
+                    // same name, one step down, because PlaybackVoicing has no
+                    // fold of its own.
+                    const auto  room   = playbackSimRoom (want);
+                    const auto  voiced = (want == PlaybackSim::MonoFold)       ? PVt::None
+                                       : (room != echojay::PlaybackRoom::None) ? echojay::roomRow (room).source
+                                                                               : (PVt) ((int) want - 1);
+                    if (t.kind != PlaybackTileKind::Live || t.sim != want)
+                        pbBad << "row " << i << " is not the live " << playbackSimName (want) << " tile; ";
+                    else if (t.voicing != voiced)
+                        pbBad << "row " << i << " (" << playbackSimName (want) << ") carries voicing "
+                              << (int) t.voicing << ", not " << (int) voiced << "; ";
+                }
+                check (pbBad.isEmpty(),
+                       "pb PIN9: the table the handler walks has one live tile per selection, in "
+                       "the selections' order, each storing its own selection and carrying the "
+                       "voicing it runs",
+                       pbBad);
+
+                juce::String pbCodec;
+                int pbNonLive = 0;
+                for (const auto& t : kPlaybackTiles)
+                    if (t.kind != PlaybackTileKind::Live) ++pbNonLive;
+                const auto& pbLast = kPlaybackTiles[kPlaybackTiles.size() - 1];
+                if (pbLast.kind != PlaybackTileKind::CodecRender)   pbCodec << "the last row is not the codec tile; ";
+                if (pbLast.sim != PlaybackSim::None)                pbCodec << "the codec tile stores a selection; ";
+                if (pbNonLive != 1)                                 pbCodec << pbNonLive << " rows are not live; ";
+                check (pbCodec.isEmpty(),
+                       "pb PIN9: and the codec tile is the last row, the only one that is not "
+                       "live, and stores nothing",
+                       pbCodec);
+            }
+
+            // pb PIN10 and pb PIN11 -- THE RESET RULE, BOTH HALVES.
+            // PlaybackSimStage::runVoicing zeroes the chains when a voicing
+            // starts after a block of none (ACTIVATION), and keeps their state
+            // when one live voicing replaces another (a SWITCH). That is the one
+            // decision in the stage; these pin each half against the other.
+            //
+            // EACH RUNS ONE SAMPLE after the selection changes and compares it,
+            // bit for bit, with BOTH candidate answers, computed here from the
+            // shipped VoicingChain: what a zeroed chain puts out, and what a
+            // chain still carrying the drive's state puts out. The check's own
+            // text names which one arrived, so a FAIL line says "got the CARRIED
+            // value" rather than only that it was wrong.
+            //
+            // The drive ends at full scale on purpose, so the carried memory is
+            // large, and a precondition asserts the two candidates differ: a pin
+            // whose two answers are equal proves nothing in either direction.
+            {
+                using PV = echojay::PlaybackVoicing;
+                const double pbRate  = 48000.0;
+                const int    pbDrive = 64;
+                const float  pbFirstL = 0.5f, pbFirstR = -0.25f;
+
+                auto pbFillDrive = [&] (float* dl, float* dr)
+                {
+                    for (int i = 0; i < pbDrive; ++i)
+                    {
+                        const float mag = 0.25f + 0.75f * (float) i / (float) (pbDrive - 1);
+                        dl[i] = (i % 2 == 0) ? mag : -mag;
+                        dr[i] = -dl[i];
+                    }
+                };
+                auto pbSame = [] (float a, float b)
+                {
+                    return std::memcmp (&a, &b, sizeof (float)) == 0;
+                };
+                auto pbWhich = [&] (float got, float zeroed, float carried) -> juce::String
+                {
+                    if (pbSame (got, zeroed))  return "got the ZEROED value";
+                    if (pbSame (got, carried)) return "got the CARRIED value";
+                    return "got NEITHER value";
+                };
+                auto pbDetail = [] (float got, float zeroed, float carried) -> juce::String
+                {
+                    return "out " + juce::String (got, 9) + ", zeroed " + juce::String (zeroed, 9)
+                         + ", carried " + juce::String (carried, 9);
+                };
+                // Candidate 1: a chain with no memory, running `then` from zero.
+                auto pbZeroed = [&] (PV then, float x)
+                {
+                    echojay::VoicingChain chain;
+                    chain.prepare (pbRate);
+                    chain.setVoicing (then);
+                    chain.process (&x, 1);
+                    return x;
+                };
+                // Candidate 2: a chain that saw the drive under `drive`, then had
+                // its voicing set to `then` with the state KEPT (setVoicing).
+                auto pbCarried = [&] (PV drive, PV then, bool leftSide, float x)
+                {
+                    echojay::VoicingChain chain;
+                    chain.prepare (pbRate);
+                    chain.setVoicing (drive);
+                    float dl[64], dr[64];
+                    pbFillDrive (dl, dr);
+                    chain.process (leftSide ? dl : dr, pbDrive);
+                    chain.setVoicing (then);
+                    chain.process (&x, 1);
+                    return x;
+                };
+
+                // pb PIN10 -- ACTIVATION FROM NONE STARTS FROM ZEROED FILTERS.
+                // Drive PhoneSpeaker, stop, run one block of None, select
+                // PhoneSpeaker again. The chains still hold the drive's last
+                // samples; keeping them would replay a full-scale moment from
+                // before the off period into new audio.
+                {
+                    PlaybackSimStage st;
+                    st.prepare (pbRate);
+                    st.select (PS::PhoneSpeaker);
+                    float dl[64], dr[64];
+                    pbFillDrive (dl, dr);
+                    float* drv[2] = { dl, dr };
+                    check (applyPlaybackSim (st, drv, 2, pbDrive, 0.0),
+                           "pb PIN10: PhoneSpeaker runs a block, so its filters now hold state");
+
+                    st.select (PS::None);
+                    float offL[4] = { 0.9f, -0.9f, 0.9f, -0.9f };
+                    float offR[4] = { -0.9f, 0.9f, -0.9f, 0.9f };
+                    float* off[2] = { offL, offR };
+                    check (! applyPlaybackSim (st, off, 2, 4, 0.0),
+                           "pb PIN10: one block of None runs nothing, with no room held to fade");
+
+                    st.select (PS::PhoneSpeaker);
+                    float gotL = pbFirstL, gotR = pbFirstR;
+                    float* one[2] = { &gotL, &gotR };
+                    check (applyPlaybackSim (st, one, 2, 1, 0.0),
+                           "pb PIN10: PhoneSpeaker selected again runs");
+
+                    const float zL = pbZeroed (PV::PhoneSpeaker, pbFirstL);
+                    const float zR = pbZeroed (PV::PhoneSpeaker, pbFirstR);
+                    const float cL = pbCarried (PV::PhoneSpeaker, PV::PhoneSpeaker, true,  pbFirstL);
+                    const float cR = pbCarried (PV::PhoneSpeaker, PV::PhoneSpeaker, false, pbFirstR);
+
+                    check (! pbSame (zL, cL) && ! pbSame (zR, cR),
+                           "pb PIN10: precondition, the drive leaves enough state that the "
+                           "zeroed and carried answers differ on both channels",
+                           "left " + pbDetail (gotL, zL, cL) + "; right " + pbDetail (gotR, zR, cR));
+                    check (pbSame (gotL, zL),
+                           "pb PIN10: after a block of None, the first sample out on the left "
+                           "is a ZEROED filter's (" + pbWhich (gotL, zL, cL) + ")",
+                           pbDetail (gotL, zL, cL));
+                    check (pbSame (gotR, zR),
+                           "pb PIN10: and on the right (" + pbWhich (gotR, zR, cR) + ")",
+                           pbDetail (gotR, zR, cR));
+                }
+
+                // pb PIN11 -- A SWITCH BETWEEN TWO LIVE VOICINGS DOES NOT RESET.
+                // The same shape, the opposite expectation: drive PhoneSpeaker,
+                // then select Laptop with no None between them. Zeroing here
+                // would empty a filter in the middle of a signal, the click
+                // EedDynamicsCore.h:225 exists to avoid, so the first sample must
+                // be the one a chain CARRYING the drive's state produces.
+                {
+                    PlaybackSimStage st;
+                    st.prepare (pbRate);
+                    st.select (PS::PhoneSpeaker);
+                    float dl[64], dr[64];
+                    pbFillDrive (dl, dr);
+                    float* drv[2] = { dl, dr };
+                    check (applyPlaybackSim (st, drv, 2, pbDrive, 0.0),
+                           "pb PIN11: PhoneSpeaker runs a block, so its filters now hold state");
+
+                    st.select (PS::Laptop);
+                    float gotL = pbFirstL, gotR = pbFirstR;
+                    float* one[2] = { &gotL, &gotR };
+                    check (applyPlaybackSim (st, one, 2, 1, 0.0),
+                           "pb PIN11: Laptop, selected straight after, runs");
+
+                    const float zL = pbZeroed (PV::Laptop, pbFirstL);
+                    const float zR = pbZeroed (PV::Laptop, pbFirstR);
+                    const float cL = pbCarried (PV::PhoneSpeaker, PV::Laptop, true,  pbFirstL);
+                    const float cR = pbCarried (PV::PhoneSpeaker, PV::Laptop, false, pbFirstR);
+
+                    check (! pbSame (zL, cL) && ! pbSame (zR, cR),
+                           "pb PIN11: precondition, the drive leaves enough state that the "
+                           "zeroed and carried answers differ on both channels",
+                           "left " + pbDetail (gotL, zL, cL) + "; right " + pbDetail (gotR, zR, cR));
+                    check (pbSame (gotL, cL),
+                           "pb PIN11: switching voicings, the first sample out on the left "
+                           "CARRIES the state (" + pbWhich (gotL, zL, cL) + ")",
+                           pbDetail (gotL, zL, cL));
+                    check (pbSame (gotR, cR),
+                           "pb PIN11: and on the right (" + pbWhich (gotR, zR, cR) + ")",
+                           pbDetail (gotR, zR, cR));
+                }
+
+                // pb PIN12 -- A MONO-FIRST VOICING FOLDS THE PAIR, THEN VOICES IT
+                // (19 Sep 2026). The bluetooth speaker and the club PA are one
+                // source each, so they sum to mono; the TV soundbar does not.
+                //
+                // THE FESTIVAL PA JOINED THEM ON 20 SEP 2026 and is in the rule
+                // above but not in the behavioural loop below, because it is the
+                // only voicing with no selection of its own: it is reached as
+                // the festival field room's source, so the stage cannot be asked
+                // to run it alone. pr PIN8 runs it through that room and pins
+                // the same fold there, against the same hand-built composition.
+                //
+                // WHAT IS PINNED IS THE FOLD, NOT THE ORDER. Both channels run
+                // the same linear filters, so filtering first and summing after
+                // gives the same samples up to rounding, and a check that the
+                // two orders differ would pass on rounding bits alone. What
+                // matters, and what this checks, is that the fold happens: the
+                // two channels become one, where the same filters on the
+                // unfolded pair, and the stereo soundbar, keep them apart.
+                {
+                    check (echojay::voicingSumsToMono (PV::BluetoothSpeaker)
+                           && echojay::voicingSumsToMono (PV::ClubPA)
+                           && echojay::voicingSumsToMono (PV::FestivalPA)
+                           && ! echojay::voicingSumsToMono (PV::TvSoundbar),
+                           "pb PIN12: the bluetooth speaker, the club PA and the festival PA sum to mono "
+                           "first; the TV soundbar does not");
+                    juce::String pbOthers;
+                    for (int v = -1; v <= (int) PV::Count + 2; ++v)
+                        if (echojay::voicingSumsToMono ((PV) v)
+                            && v != (int) PV::BluetoothSpeaker && v != (int) PV::ClubPA
+                            && v != (int) PV::FestivalPA)
+                            pbOthers << v << " ";
+                    check (pbOthers.isEmpty(),
+                           "pb PIN12: and nothing else does: the five original rows keep their stereo "
+                           "default, and None, Count and anything outside them read as no",
+                           pbOthers);
+
+                    constexpr int pbN = 64;
+                    float pbSrcL[pbN], pbSrcR[pbN];
+                    for (int i = 0; i < pbN; ++i)
+                    {
+                        pbSrcL[i] = 0.6f * std::sin (0.30f * (float) i);
+                        pbSrcR[i] = 0.4f * std::cos (0.17f * (float) i + 1.0f);
+                    }
+                    auto pbRun = [&] (PS sel, float* L, float* R)
+                    {
+                        PlaybackSimStage st;
+                        st.prepare (pbRate);
+                        st.select (sel);
+                        float* ch[2] = { L, R };
+                        return applyPlaybackSim (st, ch, 2, pbN, 0.0);
+                    };
+
+                    // From an activation, both mono-first voicings put out one
+                    // signal on both channels, and it is the pair folded THEN
+                    // voiced, bit for bit.
+                    juce::String pbSame1, pbOrder;
+                    for (PS sel : { PS::BluetoothSpeaker, PS::ClubPA })
+                    {
+                        float L[pbN], R[pbN];
+                        std::copy (pbSrcL, pbSrcL + pbN, L);
+                        std::copy (pbSrcR, pbSrcR + pbN, R);
+                        const bool ran = pbRun (sel, L, R);
+                        if (! ran || std::memcmp (L, R, sizeof (L)) != 0)
+                            pbSame1 << playbackSimName (sel) << " ";
+
+                        float fL[pbN], fR[pbN];
+                        std::copy (pbSrcL, pbSrcL + pbN, fL);
+                        std::copy (pbSrcR, pbSrcR + pbN, fR);
+                        monoFoldInPlace (fL, fR, pbN);
+                        echojay::VoicingChain c;
+                        c.prepare (pbRate);
+                        c.setVoicing (sel == PS::BluetoothSpeaker ? PV::BluetoothSpeaker : PV::ClubPA);
+                        c.process (fL, pbN);
+                        if (std::memcmp (L, fL, sizeof (L)) != 0)
+                            pbOrder << playbackSimName (sel) << " ";
+                    }
+                    check (pbSame1.isEmpty(),
+                           "pb PIN12: from activation, the bluetooth speaker and the club PA put out "
+                           "bit-identical left and right channels", pbSame1);
+                    check (pbOrder.isEmpty(),
+                           "pb PIN12: and that signal is the pair folded to mono and then voiced, bit "
+                           "for bit", pbOrder);
+
+                    // CONTROLS: the fold is what made the channels one. The same
+                    // bluetooth filters on the UNFOLDED pair keep them apart, and
+                    // the stereo soundbar, through the stage, keeps them apart.
+                    float uL[pbN], uR[pbN];
+                    std::copy (pbSrcL, pbSrcL + pbN, uL);
+                    std::copy (pbSrcR, pbSrcR + pbN, uR);
+                    {
+                        echojay::VoicingChain a, b;
+                        a.prepare (pbRate); b.prepare (pbRate);
+                        a.setVoicing (PV::BluetoothSpeaker); b.setVoicing (PV::BluetoothSpeaker);
+                        a.process (uL, pbN); b.process (uR, pbN);
+                    }
+                    check (std::memcmp (uL, uR, sizeof (uL)) != 0,
+                           "pb PIN12: control: the same filters on the unfolded pair leave the "
+                           "channels different, so the identity above comes from the fold");
+                    float tL[pbN], tR[pbN];
+                    std::copy (pbSrcL, pbSrcL + pbN, tL);
+                    std::copy (pbSrcR, pbSrcR + pbN, tR);
+                    check (pbRun (PS::TvSoundbar, tL, tR) && std::memcmp (tL, tR, sizeof (tL)) != 0,
+                           "pb PIN12: and the TV soundbar, which is stereo, keeps them different "
+                           "through the stage");
+                }
+            }
+        }
+
+        // pr PIN1 to pr PIN7 -- THE ROOMS (EJPlaybackRoom.h, and the room's rule
+        // in PlaybackSimStage, EJPlaybackSim.h). 19 Sep 2026, with the bedroom.
+        // PREFIX pr: checked against every "xx PIN" in the suite rather than
+        // assumed free.
+        //
+        // BEHAVIOURAL, against the shipped engine. Every expected sample is
+        // computed here from a reference echojay::ReverbEngine given the
+        // bedroom's row, with the same float operations the stage's fade uses,
+        // so the comparisons are memcmp, not tolerances: the claims are "the
+        // network starts empty" and "the fade is this straight line", and a
+        // tolerance would also pass a network that kept a little of its tail.
+        {
+            using PS = PlaybackSim;
+            using PR = echojay::PlaybackRoom;
+            const double prRate  = 48000.0;
+            constexpr int prBlock = 240;                    // 5 ms at 48 kHz
+            const double prBlockSec = (double) prBlock / prRate;
+
+            // A deterministic stereo programme: two unrelated tones and a
+            // pseudo-random component, loud enough that a room's tail is far
+            // from zero, so "the tail is gone" and "the tail is there" differ
+            // by real samples rather than by rounding.
+            auto prSignal = [] (int n0, int n, float* L, float* R, float amp)
+            {
+                for (int i = 0; i < n; ++i)
+                {
+                    const unsigned k = (unsigned) (n0 + i);
+                    const float noise = (float) (((k * 1103515245u + 12345u) >> 16) & 0x7fffu) / 16384.0f - 1.0f;
+                    L[i] = amp * (0.5f * std::sin (0.031f * (float) k) + 0.3f * noise);
+                    R[i] = amp * (0.5f * std::sin (0.047f * (float) k + 0.7f) - 0.3f * noise);
+                }
+            };
+            auto prSame = [] (float a, float b) { return std::memcmp (&a, &b, sizeof (float)) == 0; };
+
+            // THE REFERENCE NETWORK: a fresh engine given the bedroom's row in
+            // the order the stage applies it, prepared and emptied. What the
+            // network does with no history.
+            auto prFreshRoom = [&] (echojay::ReverbEngine& e)
+            {
+                const auto& row = echojay::roomRow (PR::Bedroom);
+                e.setAlgorithm    (row.algorithm);
+                e.setSizePct      (row.sizePct);
+                e.setDecaySeconds (row.decaySec);
+                e.setPredelayMs   (row.predelayMs);
+                e.setDampingPct   (row.dampingPct);
+                e.setLowCutHz     (row.lowCutHz);
+                e.setEarlyLatePct (row.earlyLatePct);
+                e.setDiffusionPct (row.diffusionPct);
+                e.setMixPct       (row.mixPct);
+                e.prepare (prRate, PlaybackSimStage::kRoomChunkSamples);
+                e.reset();
+            };
+
+            // THE FADE, sample k of an engagement: the dry at 0, a straight
+            // line, and the network's own output from the fade's length on.
+            // A fade OUT is the same line read backwards: sample k after the
+            // room is left is prFade (len - k).
+            auto prFade = [] (int k, int len, float dry, float wet)
+            {
+                if (k <= 0)   return dry;
+                if (k >= len) return wet;
+                const float g = (float) k / (float) len;
+                return dry + g * (wet - dry);
+            };
+
+            // pr PIN1 -- THE ROOM TABLE, AND WHICH SELECTION IS WHICH ROOM.
+            // A missing row is a row of zeros, and for a reverb zeros PLAY: a
+            // decay of 0 is clamped to 0.1 s and a mix of 0 is silently off. So
+            // every field of every room is checked against the engine's own
+            // advertised ranges, and the mix must be above zero.
+            {
+                using RE = echojay::ReverbEngine;
+                juce::String bad;
+                for (int i = 1; i < (int) PR::Count; ++i)
+                {
+                    const auto& r = echojay::kRoomTable[(size_t) i];
+                    auto in = [&] (float v, float lo, float hi, const char* what)
+                    {
+                        if (! (v >= lo && v <= hi))
+                            bad << "room " << i << " " << what << " " << v << "; ";
+                    };
+                    in (r.sizePct,      RE::kMinSizePct,      RE::kMaxSizePct,      "size");
+                    in (r.decaySec,     RE::kMinDecaySec,     RE::kMaxDecaySec,     "decay");
+                    in (r.predelayMs,   RE::kMinPredelayMs,   RE::kMaxPredelayMs,   "predelay");
+                    in (r.dampingPct,   RE::kMinDampingPct,   RE::kMaxDampingPct,   "damping");
+                    in (r.lowCutHz,     RE::kMinLowCutHz,     RE::kMaxLowCutHz,     "low cut");
+                    in (r.earlyLatePct, RE::kMinEarlyLatePct, RE::kMaxEarlyLatePct, "early/late");
+                    in (r.diffusionPct, RE::kMinDiffusionPct, RE::kMaxDiffusionPct, "diffusion");
+                    if (! (r.mixPct > 0.0f && r.mixPct <= RE::kMaxMixPct))
+                        bad << "room " << i << " mix " << r.mixPct << "; ";
+                    if ((int) r.source < 0 || (int) r.source >= (int) echojay::PlaybackVoicing::Count)
+                        bad << "room " << i << " source " << (int) r.source << "; ";
+                    if ((int) r.algorithm < 0 || (int) r.algorithm >= echojay::kNumReverbAlgorithms)
+                        bad << "room " << i << " algorithm " << (int) r.algorithm << "; ";
+                }
+                check (bad.isEmpty(),
+                       "pr PIN1: every room's settings are inside the engine's own ranges, so none is "
+                       "clamped, and every mix is above zero, so no room is silently off", bad);
+
+                juce::String mapBad;
+                int owners[(int) PR::Count] = {};
+                for (int s = 0; s <= (int) PS::Count; ++s)
+                {
+                    const int r = (int) playbackSimRoom ((PS) s);
+                    if (r < 0 || r >= (int) PR::Count) mapBad << "selection " << s << " maps outside the rooms; ";
+                    else if (s < (int) PS::Count)       ++owners[r];
+                    else if (r != (int) PR::None)       mapBad << "Count maps to a room; ";
+                }
+                for (int r = 1; r < (int) PR::Count; ++r)
+                    if (owners[r] != 1) mapBad << "room " << r << " belongs to " << owners[r] << " selections; ";
+                if (&echojay::roomRow (PR::Count) != &echojay::kRoomTable[0]
+                    || &echojay::roomRow ((PR) -1) != &echojay::kRoomTable[0])
+                    mapBad << "a room outside the table does not read the None row; ";
+                check (mapBad.isEmpty(),
+                       "pr PIN1: every room belongs to exactly one selection, Count to none, and a room "
+                       "outside the table reads the None row rather than past it", mapBad);
+            }
+
+            // pr PIN2 -- ENGAGING FROM OFF: THE NETWORK STARTS EMPTY AND FADES IN.
+            // Select the bedroom on a fresh stage and run eight 5 ms blocks.
+            // Sample k must be prFade (k, 1440, dry, fresh network): the dry
+            // exactly at the first sample, a straight line for 30 ms, and the
+            // network's own output, starting from empty, bit for bit after.
+            {
+                PlaybackSimStage st;   st.prepare (prRate);
+                PlaybackSimStage st44; st44.prepare (44100.0);
+                check (st.roomFadeSamples() == 1440 && st44.roomFadeSamples() == 1323,
+                       "pr PIN2: the fade is 30 ms: 1,440 samples at 48 kHz and 1,323 at 44.1 kHz",
+                       juce::String (st.roomFadeSamples()) + ", " + juce::String (st44.roomFadeSamples()));
+
+                st.select (PS::Bedroom);
+                echojay::ReverbEngine ref;
+                prFreshRoom (ref);
+                const int len = st.roomFadeSamples();
+                juce::String bad;
+                bool allRan = true, firstDry = false, wetDiffers = false;
+                for (int b = 0; b < len / prBlock + 2; ++b)
+                {
+                    float L[prBlock], R[prBlock], dL[prBlock], dR[prBlock], wL[prBlock], wR[prBlock];
+                    prSignal (b * prBlock, prBlock, L, R, 0.8f);
+                    std::copy (L, L + prBlock, dL); std::copy (R, R + prBlock, dR);
+                    std::copy (L, L + prBlock, wL); std::copy (R, R + prBlock, wR);
+                    float* ch[2] = { L, R };
+                    allRan = applyPlaybackSim (st, ch, 2, prBlock, b * prBlockSec) && allRan;
+                    ref.process (wL, wR, prBlock);
+                    if (b == 0)
+                        firstDry = prSame (L[0], dL[0]) && prSame (R[0], dR[0]);
+                    for (int i = 0; i < prBlock; ++i)
+                    {
+                        const int k = b * prBlock + i;
+                        if ((! prSame (L[i], prFade (k, len, dL[i], wL[i]))
+                             || ! prSame (R[i], prFade (k, len, dR[i], wR[i]))) && bad.length() < 300)
+                            bad << "sample " << k << "; ";
+                        if (k >= len && ! prSame (wL[i], dL[i])) wetDiffers = true;
+                    }
+                }
+                check (allRan && firstDry,
+                       "pr PIN2: from Off the bedroom engages and runs, and its first sample is the dry "
+                       "signal exactly: no step as the room comes in");
+                check (bad.isEmpty() && wetDiffers,
+                       "pr PIN2: it fades in on a straight line over 30 ms and is then the network's own "
+                       "output, bit for bit, the network starting empty (and that output differs from the "
+                       "dry, so the comparison is not vacuous)", bad);
+            }
+
+            // pr PIN3 -- NO TAIL FROM AN EARLIER ENGAGEMENT: OPEN LIST 194'S CASE.
+            // The bedroom, driven loud; then the phone speaker, under which the
+            // voicing rule's previousVoicing_ is PhoneSpeaker, not None, so a
+            // rule keyed on it would reset nothing; then the bedroom again. The
+            // room's own rule must have let the first engagement go, so the
+            // second starts from an EMPTY network: prFade against a fresh one.
+            // A precondition shows the drive left a tail a kept network plays.
+            {
+                PlaybackSimStage st;
+                st.prepare (prRate);
+                st.select (PS::Bedroom);
+                double t = 0.0;
+                int    k0 = 0;
+                auto prStep = [&] (float amp)
+                {
+                    float L[prBlock], R[prBlock];
+                    prSignal (k0, prBlock, L, R, amp);
+                    float* ch[2] = { L, R };
+                    applyPlaybackSim (st, ch, 2, prBlock, t);
+                    t += prBlockSec;
+                    k0 += prBlock;
+                };
+                for (int b = 0; b < 20; ++b) prStep (1.0f);   // 100 ms of drive: the network is full
+                st.select (PS::PhoneSpeaker);
+                for (int b = 0; b < 20; ++b) prStep (0.3f);   // 100 ms of phone: the room fades out in 30
+                st.select (PS::Bedroom);
+
+                const int probeK0 = k0;
+                echojay::ReverbEngine fresh, kept;
+                prFreshRoom (fresh);
+                prFreshRoom (kept);
+                for (int b = 0; b < 20; ++b)                  // kept: the same drive, and no let-go
+                {
+                    float L[prBlock], R[prBlock];
+                    prSignal (b * prBlock, prBlock, L, R, 1.0f);
+                    kept.process (L, R, prBlock);
+                }
+
+                const int len = st.roomFadeSamples();
+                juce::String bad;
+                bool ran = true, keptDiffers = false;
+                for (int b = 0; b < len / prBlock + 2; ++b)
+                {
+                    float L[prBlock], R[prBlock], dL[prBlock], dR[prBlock];
+                    float fL[prBlock], fR[prBlock], kL[prBlock], kR[prBlock];
+                    prSignal (probeK0 + b * prBlock, prBlock, L, R, 0.5f);
+                    std::copy (L, L + prBlock, dL); std::copy (R, R + prBlock, dR);
+                    std::copy (L, L + prBlock, fL); std::copy (R, R + prBlock, fR);
+                    std::copy (L, L + prBlock, kL); std::copy (R, R + prBlock, kR);
+                    float* ch[2] = { L, R };
+                    ran = applyPlaybackSim (st, ch, 2, prBlock, t) && ran;
+                    t += prBlockSec;
+                    fresh.process (fL, fR, prBlock);
+                    kept.process  (kL, kR, prBlock);
+                    for (int i = 0; i < prBlock; ++i)
+                    {
+                        const int k = b * prBlock + i;
+                        if ((! prSame (L[i], prFade (k, len, dL[i], fL[i]))
+                             || ! prSame (R[i], prFade (k, len, dR[i], fR[i]))) && bad.length() < 300)
+                            bad << "sample " << k << "; ";
+                        if (! prSame (kL[i], fL[i])) keptDiffers = true;
+                    }
+                }
+                check (keptDiffers,
+                       "pr PIN3: precondition, the drive leaves a tail: a network that kept it puts out "
+                       "something other than an empty one");
+                check (ran && bad.isEmpty(),
+                       "pr PIN3: room, then the phone speaker, then the room again: the second engagement "
+                       "starts from an EMPTY network, so no tail from the first is ever replayed", bad);
+            }
+
+            // pr PIN4 -- SWITCHED OFF MID-TAIL: A 30 ms FADE, AND THE NEW CONTRACT.
+            // Two stages, driven alike into the bedroom; one is then switched
+            // off, the other kept on. The one switched off must put out, for
+            // the first 1,440 samples, prFade (1440 - k) between the dry and the
+            // kept stage's output: the kept output exactly at the switch (no
+            // step), a straight line down, the dry exactly after. And the
+            // contract: true for the six 5 ms blocks of the fade although
+            // nothing is selected, then false and bit-identical.
+            {
+                PlaybackSimStage on, off;
+                on.prepare (prRate);  off.prepare (prRate);
+                on.select (PS::Bedroom);  off.select (PS::Bedroom);
+                double t = 0.0;
+                int    k0 = 0;
+                for (int b = 0; b < 20; ++b)
+                {
+                    float L1[prBlock], R1[prBlock], L2[prBlock], R2[prBlock];
+                    prSignal (k0, prBlock, L1, R1, 1.0f);
+                    prSignal (k0, prBlock, L2, R2, 1.0f);
+                    float* c1[2] = { L1, R1 };
+                    float* c2[2] = { L2, R2 };
+                    applyPlaybackSim (on,  c1, 2, prBlock, t);
+                    applyPlaybackSim (off, c2, 2, prBlock, t);
+                    t += prBlockSec;
+                    k0 += prBlock;
+                }
+                off.select (PS::None);
+
+                const int len = off.roomFadeSamples();
+                const int fadeBlocks = len / prBlock;   // 6: the fade ends on a block edge at 48 kHz
+                juce::String bad;
+                bool firstSame = false, stepAtSwitch = false, afterQuiet = true;
+                int  ranBlocks = 0;
+                for (int b = 0; b < fadeBlocks + 3; ++b)
+                {
+                    float oL[prBlock], oR[prBlock], fL[prBlock], fR[prBlock], dL[prBlock], dR[prBlock];
+                    prSignal (k0, prBlock, oL, oR, 0.3f);
+                    std::copy (oL, oL + prBlock, fL); std::copy (oR, oR + prBlock, fR);
+                    std::copy (oL, oL + prBlock, dL); std::copy (oR, oR + prBlock, dR);
+                    float* c1[2] = { oL, oR };
+                    float* c2[2] = { fL, fR };
+                    applyPlaybackSim (on, c1, 2, prBlock, t);
+                    const bool offRan = applyPlaybackSim (off, c2, 2, prBlock, t);
+                    t += prBlockSec;
+                    k0 += prBlock;
+                    if (b == 0)
+                    {
+                        firstSame    = prSame (fL[0], oL[0]) && prSame (fR[0], oR[0]);
+                        stepAtSwitch = ! prSame (oL[0], dL[0]) || ! prSame (oR[0], dR[0]);
+                    }
+                    if (b < fadeBlocks)
+                    {
+                        if (offRan) ++ranBlocks;
+                        for (int i = 0; i < prBlock; ++i)
+                        {
+                            const int k = b * prBlock + i;
+                            if ((! prSame (fL[i], prFade (len - k, len, dL[i], oL[i]))
+                                 || ! prSame (fR[i], prFade (len - k, len, dR[i], oR[i]))) && bad.length() < 300)
+                                bad << "sample " << k << "; ";
+                        }
+                    }
+                    else
+                    {
+                        afterQuiet = afterQuiet && ! offRan
+                                  && std::memcmp (fL, dL, sizeof (fL)) == 0
+                                  && std::memcmp (fR, dR, sizeof (fR)) == 0;
+                    }
+                }
+                check (stepAtSwitch,
+                       "pr PIN4: precondition, at the moment of switching off the room's output differs "
+                       "from the dry, so an instant cut there would be a step");
+                check (firstSame,
+                       "pr PIN4: the first sample after switching off is exactly the sample the room "
+                       "would have played had it stayed on: no step at the switch");
+                check (bad.isEmpty(),
+                       "pr PIN4: over the next 30 ms the output falls on a straight line from the room's "
+                       "to the dry, and is the dry exactly from then on", bad);
+                check (ranBlocks == fadeBlocks,
+                       "pr PIN4: THE CONTRACT: for the six blocks of the fade the stage reports that it "
+                       "ran, although nothing is selected",
+                       juce::String (ranBlocks) + " of " + juce::String (fadeBlocks));
+                check (afterQuiet,
+                       "pr PIN4: THE CONTRACT: from the first block after the fade the stage reports it "
+                       "ran nothing, and every sample is bit-identical to what arrived");
+            }
+
+            // pr PIN5 -- THE IDLE GAP. A host may stop calling processBlock on
+            // an idle channel, since the plugin reports no tail. If more time has
+            // passed since the last room block than the room's tail plus that
+            // block's length, the network is emptied: the next block is a fresh
+            // network's output (fully engaged, so no fade: the dry level carries
+            // on). Just short of that, the tail is kept. The tail is the Reverb
+            // plugin's formula, computed here from a reference engine.
+            {
+                echojay::ReverbEngine probe;
+                prFreshRoom (probe);
+                const double tail = (double) probe.getPredelayMs() * 0.001 + probe.effectiveDecaySeconds() * 1.2;
+                const double threshold = tail + prBlockSec;
+
+                // One run: drive 100 ms, then one block `elapsed` seconds after
+                // the last one. Returns the block, and the kept stage's and a
+                // fresh network's answers for it.
+                struct GapOut { float out[2][prBlock], carried[2][prBlock], zeroed[2][prBlock]; };
+                auto prGap = [&] (double elapsed)
+                {
+                    GapOut g {};
+                    PlaybackSimStage st, ref;
+                    st.prepare (prRate);  ref.prepare (prRate);
+                    st.select (PS::Bedroom);  ref.select (PS::Bedroom);
+                    double t = 0.0, tLast = 0.0;
+                    int    k0 = 0;
+                    for (int b = 0; b < 20; ++b)
+                    {
+                        float L1[prBlock], R1[prBlock], L2[prBlock], R2[prBlock];
+                        prSignal (k0, prBlock, L1, R1, 1.0f);
+                        prSignal (k0, prBlock, L2, R2, 1.0f);
+                        float* c1[2] = { L1, R1 };
+                        float* c2[2] = { L2, R2 };
+                        applyPlaybackSim (st,  c1, 2, prBlock, t);
+                        applyPlaybackSim (ref, c2, 2, prBlock, t);
+                        tLast = t;
+                        t += prBlockSec;
+                        k0 += prBlock;
+                    }
+                    prSignal (k0, prBlock, g.out[0], g.out[1], 0.3f);
+                    std::copy (g.out[0], g.out[0] + prBlock, g.carried[0]);
+                    std::copy (g.out[1], g.out[1] + prBlock, g.carried[1]);
+                    std::copy (g.out[0], g.out[0] + prBlock, g.zeroed[0]);
+                    std::copy (g.out[1], g.out[1] + prBlock, g.zeroed[1]);
+                    float* c1[2] = { g.out[0], g.out[1] };
+                    float* c2[2] = { g.carried[0], g.carried[1] };
+                    applyPlaybackSim (st,  c1, 2, prBlock, tLast + elapsed);
+                    applyPlaybackSim (ref, c2, 2, prBlock, t);          // no gap: the tail carried
+                    echojay::ReverbEngine fresh;
+                    prFreshRoom (fresh);
+                    fresh.process (g.zeroed[0], g.zeroed[1], prBlock);   // an empty network
+                    return g;
+                };
+                auto same = [] (const float (&a)[2][prBlock], const float (&b)[2][prBlock])
+                {
+                    return std::memcmp (a, b, sizeof (a)) == 0;
+                };
+
+                const auto longGap  = prGap (10.0);
+                const auto justLess = prGap (threshold - 0.001);
+                const auto justMore = prGap (threshold + 0.001);
+                check (! same (longGap.carried, longGap.zeroed),
+                       "pr PIN5: precondition, a carried tail and an empty network give different samples");
+                check (same (longGap.out, longGap.zeroed),
+                       "pr PIN5: after ten seconds unseen the network is empty: the block is a fresh "
+                       "network's, with no fade, so the dry level carries on");
+                check (same (justLess.out, justLess.carried),
+                       "pr PIN5: a gap just short of the tail plus a block keeps the tail",
+                       "threshold " + juce::String (threshold, 4) + " s");
+                check (same (justMore.out, justMore.zeroed),
+                       "pr PIN5: and one just past it empties the network",
+                       "threshold " + juce::String (threshold, 4) + " s");
+            }
+
+            // pr PIN6 -- THE ALIASED POINTER. For a one-channel buffer the call
+            // site passes getWritePointer(0) twice. The engine treats any
+            // non-null right channel as real and writes wetR into it, which
+            // here is the left channel. So the stage must hand it nullptr, and
+            // the output must be the engine run on the one channel. Both shapes
+            // a mono host can give: one channel, and two claimed over one
+            // buffer. A control shows what the nullptr prevents.
+            {
+                auto prMono = [&] (int numCh)
+                {
+                    juce::String bad;
+                    PlaybackSimStage st;
+                    st.prepare (prRate);
+                    st.select (PS::Bedroom);
+                    const int len = st.roomFadeSamples();
+                    echojay::ReverbEngine ref;
+                    prFreshRoom (ref);
+                    for (int b = 0; b < len / prBlock + 2; ++b)
+                    {
+                        float M[prBlock], D[prBlock], W[prBlock], unused[prBlock];
+                        prSignal (b * prBlock, prBlock, M, unused, 0.8f);
+                        std::copy (M, M + prBlock, D);
+                        std::copy (M, M + prBlock, W);
+                        float* ch[2] = { M, M };
+                        applyPlaybackSim (st, ch, numCh, prBlock, b * prBlockSec);
+                        ref.process (W, nullptr, prBlock);
+                        for (int i = 0; i < prBlock; ++i)
+                            if (! prSame (M[i], prFade (b * prBlock + i, len, D[i], W[i])) && bad.length() < 300)
+                                bad << "sample " << (b * prBlock + i) << "; ";
+                    }
+                    return bad;
+                };
+                const auto one = prMono (1);
+                check (one.isEmpty(),
+                       "pr PIN6: a one-channel buffer, as the call site passes it, is the engine run on "
+                       "that one channel, through the fade", one);
+                const auto two = prMono (2);
+                check (two.isEmpty(),
+                       "pr PIN6: and two channels claimed over one buffer are the same", two);
+
+                // CONTROL: the engine handed the same buffer as a real right
+                // channel, which is what the stage would do without the test.
+                echojay::ReverbEngine aliased, single;
+                prFreshRoom (aliased);
+                prFreshRoom (single);
+                bool differs = false;
+                for (int b = 0; b < 4; ++b)
+                {
+                    float A[prBlock], S[prBlock], unused[prBlock];
+                    prSignal (b * prBlock, prBlock, A, unused, 0.8f);
+                    std::copy (A, A + prBlock, S);
+                    aliased.process (A, A, prBlock);
+                    single.process (S, nullptr, prBlock);
+                    if (std::memcmp (A, S, sizeof (A)) != 0) differs = true;
+                }
+                check (differs,
+                       "pr PIN6: control: the engine given the one buffer as a real right channel writes a "
+                       "different left, which is the bug the nullptr prevents");
+            }
+
+            // pr PIN7 -- TWO TEXT FACTS THE BEHAVIOUR ABOVE CANNOT SEE (text pin).
+            // 1. The idle-gap rule's tail is the EchoJay Reverb plugin's own
+            //    formula, written out again in the stage because it is a member
+            //    of another processor. pr PIN5 computes the threshold from the
+            //    same two lines, so it would follow a change to either copy;
+            //    this is what says the two copies still agree.
+            // 2. The processor passes the stage's clock. The rule only exists
+            //    if the real call site feeds it time: every call in this suite
+            //    passes its own, so a call site passing a constant would leave
+            //    the rule dead with the suite green.
+            // One negative control each, putting the mistake back.
+            {
+                auto slurp = [] (const char* path)
+                {
+                    std::ifstream f (path);
+                    std::stringstream ss; ss << f.rdbuf();
+                    return juce::String (ss.str());
+                };
+                const auto proc  = codeOnly (slurp ("Source/EedReverbProcessor.cpp"));
+                const auto stage = codeOnly (slurp ("Source/EJPlaybackSim.h"));
+                const auto pp    = codeOnly (slurp ("Source/PluginProcessor.cpp"));
+
+                const juce::String l1 ("const double pre = (double) engine_.getPredelayMs() * 0.001;");
+                const juce::String l2 ("return pre + engine_.effectiveDecaySeconds() * 1.2;");
+                auto tailSame = [&] (const juce::String& procCode)
+                {
+                    const auto body = functionBody (procCode, "double EedReverbProcessor::getTailLengthSeconds() const");
+                    return body.contains (l1) && body.contains (l2)
+                        && stage.contains (l1.replace ("engine_", "room_"))
+                        && stage.contains (l2.replace ("engine_", "room_"));
+                };
+                check (tailSame (proc),
+                       "pr PIN7 (text pin): the idle-gap rule's tail is the Reverb plugin's own formula: "
+                       "getTailLengthSeconds and the stage's roomTailSeconds say the same two lines");
+                const auto procMut = proc.replace ("effectiveDecaySeconds() * 1.2", "effectiveDecaySeconds() * 1.5");
+                check (procMut != proc && ! tailSame (procMut),
+                       "pr PIN7 (text pin): control: the plugin's formula changed on its own is reported");
+
+                auto clockPassed = [] (const juce::String& code)
+                {
+                    return code.contains ("buffer.getNumSamples(), playbackStage_.clockSeconds());");
+                };
+                check (clockPassed (pp),
+                       "pr PIN7 (text pin): the processor passes the stage's clock to applyPlaybackSim, so "
+                       "the idle-gap rule is fed time rather than a constant");
+                const auto ppMut = pp.replace ("playbackStage_.clockSeconds());", "0.0);");
+                check (ppMut != pp && ! clockPassed (ppMut),
+                       "pr PIN7 (text pin): control: a constant in its place is reported");
+            }
+
+            // Any room's settings into a reference engine, the way the stage
+            // applies them. prFreshRoom above is the bedroom's; the three rooms
+            // added on 20 Sep 2026 need the same for themselves.
+            auto prFreshOf = [&] (echojay::ReverbEngine& e, PR room)
+            {
+                const auto& row = echojay::roomRow (room);
+                e.setAlgorithm    (row.algorithm);
+                e.setSizePct      (row.sizePct);
+                e.setDecaySeconds (row.decaySec);
+                e.setPredelayMs   (row.predelayMs);
+                e.setDampingPct   (row.dampingPct);
+                e.setLowCutHz     (row.lowCutHz);
+                e.setEarlyLatePct (row.earlyLatePct);
+                e.setDiffusionPct (row.diffusionPct);
+                e.setMixPct       (row.mixPct);
+                e.prepare (prRate, PlaybackSimStage::kRoomChunkSamples);
+                e.reset();
+            };
+
+            // pr PIN8 -- A ROOM WITH A SOURCE IS THE DEVICE, THEN THE SPACE.
+            // The club floor is the club PA in its room, and the festival field
+            // is that system heard across a field, so their rows carry a source
+            // voicing instead of copying its numbers: ClubPA for the one, and
+            // FestivalPA, which is ClubPA plus the distance, for the other.
+            // What must be true of that composition:
+            //   the source device's chain runs FIRST, under the voicing rule,
+            //     including the mono fold ClubPA's row asks for, and the room's
+            //     network runs on what comes out;
+            //   so the stage's output is exactly: fold, voice, then the room.
+            // A control drops the fold, to show it is really in the path.
+            {
+                juce::String srcBad;
+                for (int i = 1; i < (int) PR::Count; ++i)
+                {
+                    const auto r    = (PR) i;
+                    const auto src  = echojay::roomRow (r).source;
+                    const auto want = (r == PR::ClubFloor)     ? echojay::PlaybackVoicing::ClubPA
+                                    : (r == PR::FestivalField) ? echojay::PlaybackVoicing::FestivalPA
+                                                               : echojay::PlaybackVoicing::None;
+                    if (src != want)
+                        srcBad << "room " << i << " source " << (int) src << "; ";
+                    if (want != echojay::PlaybackVoicing::None && ! echojay::voicingSumsToMono (src))
+                        srcBad << "room " << i << " does not inherit the fold; ";
+                }
+                check (srcBad.isEmpty(),
+                       "pr PIN8: the club floor takes ClubPA and the festival field takes FestivalPA, the "
+                       "same system heard from a distance, and both inherit the fold; the bedroom and the "
+                       "small bar take none", srcBad);
+
+                // THE DISTANCE IS IN THE VOICING, AND IT IS AUDIBLE (20 Sep
+                // 2026). The festival field composed from ClubPA until Kathy
+                // said it was not convincing, and she was right: that was a PA
+                // with the room taken away rather than a PA heard across a
+                // field. The engine cannot model the air (its damping is inside
+                // the feedback loop, its dry path has no filter), but the stage
+                // runs the source voicing BEFORE the room, so the roll-off
+                // belongs there. Measured through the shipped chains, not read
+                // off the table: at 10 kHz the festival PA must be well below
+                // the club PA, and at 50 Hz it must not be below it at all,
+                // because distance does not thin the bottom.
+                {
+                    auto prToneDb = [&] (echojay::PlaybackVoicing v, double hz)
+                    {
+                        echojay::VoicingChain c;
+                        c.prepare (prRate);
+                        c.setVoicing (v);
+                        constexpr int n = 8192;
+                        std::vector<float> x ((size_t) n);
+                        for (int i = 0; i < n; ++i)
+                            x[(size_t) i] = (float) std::sin (2.0 * 3.14159265358979323846 * hz
+                                                              * (double) i / prRate);
+                        c.process (x.data(), n);
+                        double e = 0.0;                      // the last half, once settled
+                        for (int i = n / 2; i < n; ++i) e += (double) x[(size_t) i] * (double) x[(size_t) i];
+                        return 20.0 * std::log10 (std::sqrt (e / (double) (n / 2)) + 1.0e-12);
+                    };
+                    const double hi = prToneDb (echojay::PlaybackVoicing::FestivalPA, 10000.0)
+                                    - prToneDb (echojay::PlaybackVoicing::ClubPA,     10000.0);
+                    const double lo = prToneDb (echojay::PlaybackVoicing::FestivalPA, 50.0)
+                                    - prToneDb (echojay::PlaybackVoicing::ClubPA,     50.0);
+                    check (hi <= -8.0 && lo >= 0.0,
+                           "pr PIN8: the festival PA is the club PA with the distance on it: at least 8 dB "
+                           "below it at 10 kHz, and no lower at 50 Hz, so the air takes the top and leaves "
+                           "the bottom",
+                           "10 kHz " + juce::String (hi, 2) + " dB, 50 Hz " + juce::String (lo, 2) + " dB");
+                }
+
+                struct Composed { PS sel; PR room; };
+                for (const Composed& cse : { Composed { PS::ClubFloor,     PR::ClubFloor },
+                                             Composed { PS::FestivalField, PR::FestivalField } })
+                {
+                    PlaybackSimStage st;
+                    st.prepare (prRate);
+                    st.select (cse.sel);
+                    const int len = st.roomFadeSamples();
+
+                    // The composition, by hand, and the same thing with the
+                    // fold left out: the control.
+                    echojay::ReverbEngine ref, noFold;
+                    prFreshOf (ref, cse.room);
+                    prFreshOf (noFold, cse.room);
+                    echojay::VoicingChain cl, cr, nl, nr;
+                    for (echojay::VoicingChain* c : { &cl, &cr, &nl, &nr })
+                    {
+                        c->prepare (prRate);
+                        c->setVoicing (echojay::roomRow (cse.room).source);   // each room's own
+                    }
+
+                    juce::String bad;
+                    bool foldMatters = false;
+                    for (int b = 0; b < len / prBlock + 2; ++b)
+                    {
+                        float L[prBlock], R[prBlock], eL[prBlock], eR[prBlock], dL[prBlock], dR[prBlock];
+                        float uL[prBlock], uR[prBlock], gL[prBlock], gR[prBlock];
+                        prSignal (b * prBlock, prBlock, L, R, 0.8f);
+                        std::copy (L, L + prBlock, eL); std::copy (R, R + prBlock, eR);
+                        std::copy (L, L + prBlock, uL); std::copy (R, R + prBlock, uR);
+                        float* ch[2] = { L, R };
+                        applyPlaybackSim (st, ch, 2, prBlock, b * prBlockSec);
+
+                        // Fold, voice, keep that as the dry, then the room,
+                        // then the fade.
+                        monoFoldInPlace (eL, eR, prBlock);
+                        cl.process (eL, prBlock);
+                        cr.process (eR, prBlock);
+                        std::copy (eL, eL + prBlock, dL); std::copy (eR, eR + prBlock, dR);
+                        ref.process (eL, eR, prBlock);
+
+                        // The same, with no fold at all.
+                        nl.process (uL, prBlock);
+                        nr.process (uR, prBlock);
+                        std::copy (uL, uL + prBlock, gL); std::copy (uR, uR + prBlock, gR);
+                        noFold.process (uL, uR, prBlock);
+
+                        for (int i = 0; i < prBlock; ++i)
+                        {
+                            const int k = b * prBlock + i;
+                            if ((! prSame (L[i], prFade (k, len, dL[i], eL[i]))
+                                 || ! prSame (R[i], prFade (k, len, dR[i], eR[i]))) && bad.length() < 300)
+                                bad << "sample " << k << "; ";
+                            if (! prSame (L[i], prFade (k, len, gL[i], uL[i]))
+                                || ! prSame (R[i], prFade (k, len, gR[i], uR[i]))) foldMatters = true;
+                        }
+                    }
+                    check (bad.isEmpty(),
+                           juce::String ("pr PIN8: ") + playbackSimName (cse.sel)
+                           + " is the pair folded to mono, voiced by its source's filters, and then "
+                             "played into its room, bit for bit", bad);
+                    check (foldMatters,
+                           juce::String ("pr PIN8: control: the same chain and room WITHOUT the fold give "
+                                         "a different output, so ") + playbackSimName (cse.sel)
+                           + "'s fold is really in the path");
+                }
+            }
+
+            // pr PIN9 -- ROOM TO ROOM, WHICH OPEN LIST 195 WAS BLOCKING.
+            // Until 513dfa5, ReverbEngine::reset() snapped the lines to the
+            // PREVIOUS room's lengths, so the second room opened on the first
+            // one's geometry and glided into its own. With that fixed, a room
+            // that follows another must be indistinguishable from that room on
+            // its own: the first fades out over 30 ms, is let go, and the second
+            // engages on the next block with an empty network AND its own line
+            // lengths. The precondition shows the two rooms really differ, which
+            // is what makes the equality a claim.
+            {
+                PlaybackSimStage st;
+                st.prepare (prRate);
+                st.select (PS::Bedroom);
+                double t = 0.0;
+                int    k0 = 0;
+                for (int b = 0; b < 20; ++b)      // 100 ms of the bedroom, loud
+                {
+                    float L[prBlock], R[prBlock];
+                    prSignal (k0, prBlock, L, R, 1.0f);
+                    float* ch[2] = { L, R };
+                    applyPlaybackSim (st, ch, 2, prBlock, t);
+                    t += prBlockSec;
+                    k0 += prBlock;
+                }
+                st.select (PS::SmallBar);
+
+                const int len       = st.roomFadeSamples();
+                const int outBlocks = len / prBlock;      // the bedroom's fade out
+                echojay::ReverbEngine bar, bed;
+                prFreshOf (bar, PR::SmallBar);
+                prFreshOf (bed, PR::Bedroom);
+
+                juce::String bad;
+                bool roomsDiffer = false;
+                for (int b = 0; b < outBlocks + len / prBlock + 2; ++b)
+                {
+                    float L[prBlock], R[prBlock], dL[prBlock], dR[prBlock];
+                    float wL[prBlock], wR[prBlock], oL[prBlock], oR[prBlock];
+                    prSignal (k0, prBlock, L, R, 0.5f);
+                    std::copy (L, L + prBlock, dL); std::copy (R, R + prBlock, dR);
+                    std::copy (L, L + prBlock, wL); std::copy (R, R + prBlock, wR);
+                    std::copy (L, L + prBlock, oL); std::copy (R, R + prBlock, oR);
+                    float* ch[2] = { L, R };
+                    applyPlaybackSim (st, ch, 2, prBlock, t);
+                    t += prBlockSec;
+                    k0 += prBlock;
+
+                    if (b >= outBlocks)   // the small bar's own engagement
+                    {
+                        bar.process (wL, wR, prBlock);
+                        bed.process (oL, oR, prBlock);
+                        for (int i = 0; i < prBlock; ++i)
+                        {
+                            const int k = (b - outBlocks) * prBlock + i;
+                            if ((! prSame (L[i], prFade (k, len, dL[i], wL[i]))
+                                 || ! prSame (R[i], prFade (k, len, dR[i], wR[i]))) && bad.length() < 300)
+                                bad << "sample " << k << "; ";
+                            if (! prSame (wL[i], oL[i]) || ! prSame (wR[i], oR[i])) roomsDiffer = true;
+                        }
+                    }
+                }
+                check (roomsDiffer,
+                       "pr PIN9: precondition, the bedroom and the small bar are different spaces on the "
+                       "same input");
+                check (bad.isEmpty(),
+                       "pr PIN9: the small bar after the bedroom is the small bar on its own, bit for bit: "
+                       "an empty network at ITS line lengths, not the bedroom's glided into place", bad);
+            }
+        }
+
+        // pv PIN1 to pv PIN5 -- THE PLAYBACK VOICING TABLE (EJPlaybackVoicing.h).
+        // PREFIX pv: checked against every two-letter prefix already in the
+        // suite (ap bd cg cp dp dw ef ej fb fd mc md ml mp nl og ot pb ps rb rf
+        // ri se sp sv tr tt wa wr ws) rather than assumed free.
+        //
+        // NOTHING PLAYS A VOICING YET. These pin the numbers, and the chain that
+        // turns them into coefficients, at every rate a host is likely to run,
+        // so the commit that makes a voicing audible inherits a table already
+        // known to sit inside the clamp and to be stable.
+        {
+            using echojay::VoicingChain;
+            using echojay::kVoicingTable;
+            using PV = echojay::PlaybackVoicing;
+
+            const double pvRates[] = { 44100.0, 48000.0, 88200.0, 96000.0, 192000.0 };
+            // ONE NAME PER VOICING, tied to the count by the assert below.
+            // FestivalPA (20 Sep 2026) has no selection of its own, only the
+            // festival field's source, but it is a row like any other and the
+            // pv pins sweep the table, so it needs its name here or this file
+            // does not compile.
+            const char* const pvNames[] = { "None", "PhoneSpeaker", "Laptop",
+                                            "CarDashboard", "KitchenRadio", "Earbuds",
+                                            "TvSoundbar", "BluetoothSpeaker", "ClubPA",
+                                            "FestivalPA" };
+            static_assert (sizeof (pvNames) / sizeof (pvNames[0]) == (size_t) PV::Count,
+                           "one name per voicing, so a FAIL line can say which");
+            const char* const pvWhich[3] = { "high pass", "low pass", "peak" };
+
+            // pv PIN1 -- EVERY SPECIFIED FREQUENCY IS STRICTLY INSIDE Biquad's
+            // CLAMP, AT EVERY RATE. Biquad::clampFreq (EedDynamicsCore.h:172)
+            // moves an out-of-range corner and says nothing, so an entry that is
+            // right at 48 kHz can silently be a different filter at 44.1 kHz,
+            // where the ceiling is 19845 Hz rather than 21600. This is the pin
+            // that catches that. STRICTLY inside: a frequency sitting exactly on
+            // a bound is one rounding step from being moved.
+            //
+            // THE BOUNDS ARE READ FROM THE CLAMP, NOT RESTATED. clampFreq maps
+            // 0 Hz to its own floor and an absurd frequency to its own ceiling,
+            // so if the clamp ever moves, this pin moves with it.
+            //
+            // It also catches a voicing added to the enum with no row: aggregate
+            // initialisation gives that row zeros, and 0 Hz is below the floor.
+            //
+            // The peak is checked against Biquad's clamp as well. PeakBiquad
+            // clamps with its own copy of the same two numbers
+            // (EedHarmonicCore.h:391), and this pin would not see them diverge.
+            for (double pvRate : pvRates)
+            {
+                const double pvLo = echojay::Biquad::clampFreq (0.0, pvRate);
+                const double pvHi = echojay::Biquad::clampFreq (1.0e12, pvRate);
+                juce::String pvBad;
+                for (int v = (int) PV::None + 1; v < (int) PV::Count; ++v)
+                {
+                    const auto& row = kVoicingTable[(size_t) v];
+                    const double hz[3] = { row.hpHz, row.lpHz, row.peakHz };
+                    for (int k = 0; k < 3; ++k)
+                        if (! (hz[k] > pvLo && hz[k] < pvHi))
+                            pvBad << pvNames[v] << " " << pvWhich[k] << " " << hz[k] << " Hz; ";
+                }
+                check (pvBad.isEmpty(),
+                       "pv PIN1: every voicing's frequencies are strictly inside "
+                       "Biquad's clamp at " + juce::String ((int) pvRate) + " Hz",
+                       "outside (" + juce::String (pvLo) + ", " + juce::String (pvHi) + "): " + pvBad);
+            }
+
+            // pv PIN2 -- EVERY SECTION OF EVERY VOICING IS STABLE, AT EVERY RATE.
+            // DERIVED through the shipped chain (prepare, then setVoicing) and
+            // read back from the sections it holds, so this tests the numbers the
+            // audio would run, not a re-derivation. For 1 + a1 z^-1 + a2 z^-2 both
+            // poles are inside the unit circle exactly when |a2| < 1 and
+            // |a1| < 1 + a2 (the stability triangle). Evaluated in double on the
+            // STORED FLOAT coefficients, because the floats are what process()
+            // runs.
+            //
+            // WHAT IT CAN CATCH, stated so nobody over-trusts it. In exact
+            // arithmetic a clamped RBJ low pass, high pass or peak is stable for
+            // ANY table entry: the clamp holds the corner in (10 Hz, 0.45 fs) and
+            // Q at 0.05 or more. So a mistyped frequency or Q cannot fail here,
+            // and pv PIN1 is the pin for those. What this catches is a broken
+            // DERIVATION, and a gross GAIN typo: 400 dB instead of 4 rounds the
+            // peak's a2 to exactly 1.0f, a pole ON the circle. The tightest
+            // section in today's table is Earbuds' 40 Hz high pass at 192 kHz,
+            // which clears the triangle by about 1.7e-6, some seven float steps.
+            for (double pvRate : pvRates)
+            {
+                juce::String pvBad;
+                for (int v = (int) PV::None + 1; v < (int) PV::Count; ++v)
+                {
+                    VoicingChain chain;
+                    chain.prepare (pvRate);
+                    chain.setVoicing ((PV) v);
+                    float pb0 = 0, pb1 = 0, pb2 = 0, pa1 = 0, pa2 = 0;
+                    chain.resonance().getCoefficients (pb0, pb1, pb2, pa1, pa2);
+                    const double a1[3] = { chain.highPass().a1, chain.lowPass().a1, pa1 };
+                    const double a2[3] = { chain.highPass().a2, chain.lowPass().a2, pa2 };
+                    for (int k = 0; k < 3; ++k)
+                        if (! (std::abs (a2[k]) < 1.0 && std::abs (a1[k]) < 1.0 + a2[k]))
+                            pvBad << pvNames[v] << " " << pvWhich[k]
+                                  << " a1=" << a1[k] << " a2=" << a2[k] << "; ";
+                }
+                check (pvBad.isEmpty(),
+                       "pv PIN2: every section of every voicing has its poles inside "
+                       "the unit circle at " + juce::String ((int) pvRate) + " Hz",
+                       pvBad);
+            }
+
+            // pv PIN3 -- THE HIGH PASS PASSES NOTHING AT DC. H(z) evaluated at
+            // z = 1 from the chain's stored coefficients, (b0 + b1 + b2) over
+            // (1 + a1 + a2): the DC gain of the float filter process() runs.
+            //
+            // A TOLERANCE OF 1e-6 (-120 dB), NOT AN EQUALITY. The RBJ high pass
+            // numerator, (1 + cos w)/2, -(1 + cos w), (1 + cos w)/2, sums to zero
+            // in exact arithmetic, but these are floats divided through by a0 and
+            // nothing about floats promises three rounded terms still cancel.
+            // Today they do, exactly, because Biquad::highpass halves by a power
+            // of two, which commutes with rounding; that is a property of how the
+            // factory is SPELLED, not of the filter, and the tan form MeterEngine
+            // uses would leave a residue. The mono fold is different in kind: its
+            // bit identity is a property of IEEE arithmetic itself (x + x and
+            // * 0.5 only move the exponent), which is why pb PIN2 can demand
+            // memcmp and this pin cannot.
+            //
+            // The denominator is small at a low corner and a high rate (about
+            // 1.7e-6 for Earbuds at 192 kHz), so a residue of one rounding step
+            // in the numerator WOULD fail here. That failure would be true: it is
+            // the DC the float filter really passes.
+            for (double pvRate : pvRates)
+            {
+                juce::String pvBad;
+                for (int v = (int) PV::None + 1; v < (int) PV::Count; ++v)
+                {
+                    VoicingChain chain;
+                    chain.prepare (pvRate);
+                    chain.setVoicing ((PV) v);
+                    const auto& s = chain.highPass();
+                    const double num = (double) s.b0 + (double) s.b1 + (double) s.b2;
+                    const double den = 1.0 + (double) s.a1 + (double) s.a2;
+                    const double mag = std::abs (num / den);
+                    if (! (mag < 1.0e-6))
+                        pvBad << pvNames[v] << " |H(1)|=" << mag << "; ";
+                }
+                check (pvBad.isEmpty(),
+                       "pv PIN3: every voicing's high pass has |H| below 1e-6 at DC, at "
+                           + juce::String ((int) pvRate) + " Hz",
+                       pvBad);
+            }
+
+            // pv PIN4 -- THE LOW PASS PASSES NOTHING AT NYQUIST. The same method
+            // at z = -1: (b0 - b1 + b2) over (1 - a1 + a2). The same tolerance,
+            // for the same reason: the RBJ low pass numerator, (1 - cos w)/2,
+            // (1 - cos w), (1 - cos w)/2, cancels at z = -1 in exact arithmetic
+            // and only by the factory's spelling in float.
+            for (double pvRate : pvRates)
+            {
+                juce::String pvBad;
+                for (int v = (int) PV::None + 1; v < (int) PV::Count; ++v)
+                {
+                    VoicingChain chain;
+                    chain.prepare (pvRate);
+                    chain.setVoicing ((PV) v);
+                    const auto& s = chain.lowPass();
+                    const double num = (double) s.b0 - (double) s.b1 + (double) s.b2;
+                    const double den = 1.0 - (double) s.a1 + (double) s.a2;
+                    const double mag = std::abs (num / den);
+                    if (! (mag < 1.0e-6))
+                        pvBad << pvNames[v] << " |H(-1)|=" << mag << "; ";
+                }
+                check (pvBad.isEmpty(),
+                       "pv PIN4: every voicing's low pass has |H| below 1e-6 at Nyquist, at "
+                           + juce::String ((int) pvRate) + " Hz",
+                       pvBad);
+            }
+
+            // pv PIN5 -- NONE IS A NO-OP, BIT FOR BIT. memcmp against a copy, not
+            // a tolerance, because the claim is that None does not TOUCH the
+            // buffer, and a filter set to unity is not that: 1 * x + 0.0 turns
+            // -0.0 into +0.0, and a NaN fed to a section poisons its state for
+            // every sample after. So the buffer carries both zeros, a denormal,
+            // a NaN and an infinity, each of which a "transparent" filter would
+            // change or spread.
+            {
+                const float pvIn[10] = { 0.3f, -0.7f, 1.0f, -1.0f,
+                                         std::numeric_limits<float>::denorm_min(),
+                                         0.1f, 0.0f, -0.0f,
+                                         std::numeric_limits<float>::quiet_NaN(),
+                                         std::numeric_limits<float>::infinity() };
+
+                // A FRESH CHAIN: None is the default, and it is prepared.
+                {
+                    VoicingChain chain;
+                    chain.prepare (48000.0);
+                    float buf[10];
+                    std::memcpy (buf, pvIn, sizeof (buf));
+                    check (! chain.process (buf, 10),
+                           "pv PIN5: a fresh chain is None and reports that it ran nothing");
+                    check (std::memcmp (buf, pvIn, sizeof (buf)) == 0,
+                           "pv PIN5: and the buffer is BIT-IDENTICAL, signed zero, "
+                           "denormal, NaN and infinity included");
+                }
+
+                // SWITCHED TO NONE FROM A VOICING THAT HAS STATE. setVoicing keeps
+                // the sections' memory (EedDynamicsCore.h:225), so after a block
+                // of PhoneSpeaker that memory is not zero. None must not flush it
+                // into the next buffer: it must not run at all.
+                {
+                    VoicingChain chain;
+                    chain.prepare (48000.0);
+                    chain.setVoicing (PV::PhoneSpeaker);
+                    float warm[64];
+                    for (int i = 0; i < 64; ++i)
+                        warm[i] = (i % 2 == 0 ? 0.5f : -0.5f) * (float) (i % 7) / 7.0f;
+                    check (chain.process (warm, 64),
+                           "pv PIN5: PhoneSpeaker runs, so the sections now hold state");
+
+                    chain.setVoicing (PV::None);
+                    float buf[10];
+                    std::memcpy (buf, pvIn, sizeof (buf));
+                    check (! chain.process (buf, 10),
+                           "pv PIN5: switched to None, the chain reports that it ran nothing");
+                    check (std::memcmp (buf, pvIn, sizeof (buf)) == 0,
+                           "pv PIN5: and the buffer is BIT-IDENTICAL, so no filter tail "
+                           "leaks into audio after a voicing is turned off");
+                }
+            }
+        }
+
+        // tt PIN1 -- WHERE A TOOLTIP GOES. The rule was "which half of the
+        // window is the cursor in", which is a proxy for "is there room" and
+        // wrong in both directions: a cursor one pixel past the centre flipped
+        // the tip above with hundreds of pixels free below it, and a tall tip
+        // just before the centre went below with nowhere to go. The rule is now
+        // FIT: prefer below and right, flip only when the tip would not fit.
+        //
+        // The clamp in getTooltipBounds is deliberately NOT exercised here.
+        // These pin the DECISION, and the whole point is that a clamp cannot
+        // make it: constrainedWithin slides a rectangle until it is inside, so a
+        // tip that should have gone above arrives below, over the thing it
+        // describes, and the clamp reports success.
+        {
+            using echojay::tooltipOrigin;
+            const juce::Rectangle<int> parent { 0, 0, 1000, 600 };
+
+            // ROOM BOTH WAYS: below and right, the preferred pair. 20 below the
+            // cursor and 16 to its right, which are the offsets the old code
+            // used, so a tip already placed well does not move a pixel.
+            {
+                const auto o = tooltipOrigin ({ 100, 100 }, 200, 60, parent);
+                check (o.y == 120, "tt PIN1: room below, so the tip goes below "
+                                   "the cursor at +20");
+                check (o.x == 116, "tt PIN1: room right, so it goes right at +16");
+            }
+
+            // THE CASE THE CENTRE LINE GOT WRONG. The cursor is past the
+            // horizontal AND vertical centre of a 1000x600 parent, so the old
+            // rule flipped both ways; there is room for this small tip both
+            // below and right, so the new rule flips neither.
+            {
+                const auto o = tooltipOrigin ({ 600, 400 }, 200, 60, parent);
+                check (o.y == 420, "tt PIN1: past the centre is not the same as "
+                                   "out of room, vertically");
+                check (o.x == 616, "tt PIN1: nor horizontally");
+            }
+
+            // NO ROOM BELOW: 560 + 20 + 60 = 640 > 600, so it flips above, to
+            // mouse.y - (h + 4). Horizontal is untouched by a vertical flip.
+            {
+                const auto o = tooltipOrigin ({ 100, 560 }, 200, 60, parent);
+                check (o.y == 560 - (60 + 4),
+                       "tt PIN1: no room below, so the tip flips above at "
+                       "-(h + 4)");
+                check (o.x == 116, "tt PIN1: and the horizontal side is "
+                                   "unaffected by a vertical flip");
+            }
+
+            // NO ROOM RIGHT: 900 + 16 + 200 = 1116 > 1000, so it flips left, to
+            // mouse.x - (w + 10). Vertical is untouched.
+            {
+                const auto o = tooltipOrigin ({ 900, 100 }, 200, 60, parent);
+                check (o.x == 900 - (200 + 10),
+                       "tt PIN1: no room right, so the tip flips left at "
+                       "-(w + 10)");
+                check (o.y == 120, "tt PIN1: and the vertical side is unaffected "
+                                   "by a horizontal flip");
+            }
+
+            // NEITHER FITS: both flip, independently.
+            {
+                const auto o = tooltipOrigin ({ 900, 560 }, 200, 60, parent);
+                check (o.x == 900 - (200 + 10) && o.y == 560 - (60 + 4),
+                       "tt PIN1: with room neither way, both sides flip");
+            }
+
+            // THE BOUNDARY IS EXACT, and it is <=, so a tip that fits to the
+            // last pixel is not flipped. 520 + 20 + 60 = 600 == the parent's
+            // bottom, which FITS.
+            {
+                const auto o = tooltipOrigin ({ 100, 520 }, 200, 60, parent);
+                check (o.y == 540, "tt PIN1: a tip that ends exactly on the "
+                                   "parent's edge still fits, so it stays below");
+            }
+            {
+                const auto o = tooltipOrigin ({ 100, 521 }, 200, 60, parent);
+                check (o.y == 521 - (60 + 4),
+                       "tt PIN1: and one pixel more flips it, so the boundary is "
+                       "where it is claimed to be");
+            }
+
+            // A TIP LARGER THAN THE PARENT. Neither side can fit, so both flip
+            // and the origin goes negative. That is the honest answer from this
+            // layer: the caller's constrainedWithin pulls it back to the
+            // parent's corner, which is the same pixel an unflipped tip would
+            // have been clamped to, so the degenerate case needs no branch.
+            {
+                const juce::Rectangle<int> small { 0, 0, 100, 80 };
+                const auto o = tooltipOrigin ({ 40, 40 }, 300, 200, small);
+                check (o.y == 40 - (200 + 4),
+                       "tt PIN1: a tip taller than the parent flips above and "
+                       "goes negative, for the clamp to resolve");
+                check (o.x == 40 - (300 + 10),
+                       "tt PIN1: and wider than the parent flips left the same "
+                       "way");
+            }
+
+            // EACH CORNER OF THE PARENT AREA. Top-left has room both ways;
+            // bottom-right has room neither way; the other two have room one
+            // way each. A rule keyed on the cursor's half would agree at the
+            // corners, which is exactly why the corners alone cannot pin it --
+            // the two cases above, at 600,400 and 520,560, are the ones that
+            // separate the rules.
+            {
+                const auto tl = tooltipOrigin ({ 0, 0 }, 200, 60, parent);
+                check (tl.x == 16 && tl.y == 20,
+                       "tt PIN1: at the top-left corner, below and right");
+
+                const auto tr = tooltipOrigin ({ 1000, 0 }, 200, 60, parent);
+                check (tr.x == 1000 - (200 + 10) && tr.y == 20,
+                       "tt PIN1: at the top-right, left and below");
+
+                const auto bl = tooltipOrigin ({ 0, 600 }, 200, 60, parent);
+                check (bl.x == 16 && bl.y == 600 - (60 + 4),
+                       "tt PIN1: at the bottom-left, right and above");
+
+                const auto br = tooltipOrigin ({ 1000, 600 }, 200, 60, parent);
+                check (br.x == 1000 - (200 + 10) && br.y == 600 - (60 + 4),
+                       "tt PIN1: at the bottom-right, left and above");
+            }
+
+            // A PARENT THAT IS NOT AT THE ORIGIN. parentArea is
+            // parent->getLocalBounds() today, so it IS origin-zero, and this
+            // pin exists so that the day it is not -- a tip parented to
+            // something offset, or JUCE changing what it passes -- the rule is
+            // known to read the parent's EDGES rather than assuming its size.
+            {
+                const juce::Rectangle<int> offset { 500, 300, 400, 200 };
+                const auto o = tooltipOrigin ({ 600, 400 }, 100, 40, offset);
+                check (o.y == 420, "tt PIN1: an offset parent still has room "
+                                   "below, measured against its bottom edge");
+                const auto o2 = tooltipOrigin ({ 600, 470 }, 100, 40, offset);
+                check (o2.y == 470 - (40 + 4),
+                       "tt PIN1: and runs out of it at its bottom edge, not at "
+                       "its height");
+            }
+        }
+
+        // rf PIN6 -- WHICH SLOT THE BAR DRIVES. compareTop_ defaults to Live
+        // and compareBot_ to Empty, so the default must drive B. A bar that
+        // named one slot's reference and loaded another would be the worst
+        // kind of working control.
+        check (! refBarDrivesTopSlot (false, false),
+               "rf PIN6: neither slot holds a reference, so the bar drives B");
+        check (! refBarDrivesTopSlot (false, true),
+               "rf PIN6: B holds one, so the bar drives B");
+        check (refBarDrivesTopSlot (true, false),
+               "rf PIN6: A holds one and B does not, so the bar follows A");
+        check (! refBarDrivesTopSlot (true, true),
+               "rf PIN6: both hold one, so the bar stays on B rather than guessing");
+
+        // rf PIN7 -- STEPPING WRAPS, AND NEITHER ARROW IS EVER DEAD.
+        // REWORDED 14 Sep WHEN THE COUNT BECAME THE SCOPE'S. The function is
+        // unchanged and so is this assertion; what changed is what `count`
+        // MEANS at the call site. "An empty library" would now describe
+        // something false: the library may be full and the folder empty.
+        check (refBarStep (-1, 0, +1) == -1 && refBarStep (-1, 0, -1) == -1,
+               "rf PIN7: an empty SCOPE steps nowhere, whatever the library holds");
+        check (refBarStep (-1, 3, +1) == 0,
+               "rf PIN7: from no selection, next lands on the first");
+        check (refBarStep (-1, 3, -1) == 2,
+               "rf PIN7: and prev lands on the last, so both arrows act");
+        check (refBarStep (2, 3, +1) == 0,
+               "rf PIN7: next wraps past the end");
+        check (refBarStep (0, 3, -1) == 2,
+               "rf PIN7: prev wraps past the start");
+        check (refBarStep (1, 3, +1) == 2 && refBarStep (1, 3, -1) == 0,
+               "rf PIN7: and steps by one in the middle");
+        check (refBarStep (99, 3, +1) == 0 && refBarStep (-7, 3, -1) == 2,
+               "rf PIN7: an out-of-range current is treated as no selection");
+        {
+            // Stepping N times round a SCOPE of N returns where it started.
+            int at = 0;
+            for (int i = 0; i < 5; ++i) at = refBarStep (at, 5, +1);
+            check (at == 0, "rf PIN7: a full lap returns to the start",
+                   "ended at " + juce::String (at));
+        }
+    }
+
+    // ======================================================================
+    // cp -- THE PLAYBACK PAGE (EJCodecPage.h)
+    //
+    // Pinned because of what it fixed: the page was laid out by TWO authors in
+    // one resized(), the second unconditionally setting getLocalBounds(). It
+    // won, so the page covered the tab strip and the sub-tab row, and with the
+    // modal click-swallow still in place NOTHING on the window was clickable,
+    // Escape included. A pure function is what lets a headless test say the
+    // page cannot cover the row that selects it.
+    // ======================================================================
+    {
+        using namespace echojay;
+        // Content areas as the Compare accumulator produces them: offset down
+        // by the bar and the row, never at the window origin.
+        struct Area { const char* name; juce::Rectangle<int> r; };
+        std::vector<Area> areas {
+            { "min 900x580",   { 10, 130, 565,  380 } },
+            { "wide",          { 10, 130, 1380, 700 } },
+            { "short",         { 10, 130, 565,  120 } },
+            { "very short",    { 10, 130, 565,   40 } },
+            { "narrow",        { 10, 130, 300,  380 } },
+        };
+
+        // cp PIN1 -- THE PAGE IS THE CONTENT AREA IT WAS HANDED, byte for byte.
+        // Not getLocalBounds(), which is the whole defect: a sub-tab that can
+        // cover the row selecting it has no way out.
+        for (auto& a : areas)
+            for (int n : { 0, 4, 9 })
+                check (codecPageLayout (a.r, n).page == a.r,
+                       "cp PIN1: the page is exactly the content area given",
+                       juce::String (a.name) + " got "
+                       + codecPageLayout (a.r, n).page.toString());
+
+        // cp PIN2 -- THE CARD IS INSIDE THE PAGE, at every size and count. The
+        // WHERE THE CARD LIVES NOW: it is the codec RENDER VIEW, opened from the
+        // Playback grid's codec tile. The grid is the page; this card is not.
+        // card used to centre on getWidth()/getHeight(), correct only while
+        // those were the whole window.
+        for (auto& a : areas)
+            for (int n : { 0, 1, 4, 9, 20 })
+            {
+                const auto r = codecPageLayout (a.r, n);
+                check (a.r.contains (r.card) || r.card.isEmpty(),
+                       "cp PIN2: the card never escapes the page",
+                       juce::String (a.name) + " n=" + juce::String (n)
+                       + " card " + r.card.toString() + " page " + a.r.toString());
+            }
+
+        // cp PIN3 -- THE CARD'S TOP IS NEVER ABOVE THE PAGE'S TOP. This is the
+        // WHERE THE CARD LIVES NOW: it is the codec RENDER VIEW, opened from the
+        // Playback grid's codec tile. The grid is the page; this card is not.
+        // one that matters on a short window: centring a too-tall card would
+        // put its header, and the close-behaviour notice, off the top where
+        // they cannot be read or reached.
+        for (auto& a : areas)
+            for (int n : { 9, 20, 40 })
+            {
+                const auto r = codecPageLayout (a.r, n);
+                check (r.card.getY() >= a.r.getY(),
+                       "cp PIN3: a tall card crops downward, never off the top",
+                       juce::String (a.name) + " n=" + juce::String (n)
+                       + " cardY " + juce::String (r.card.getY())
+                       + " pageY " + juce::String (a.r.getY()));
+            }
+
+        // cp PIN4 -- THE CARD IS HORIZONTALLY CENTRED AND WIDTH-BOUNDED.
+        // WHERE THE CARD LIVES NOW: it is the codec RENDER VIEW, opened from the
+        // Playback grid's codec tile. The grid is the page; this card is not.
+        for (auto& a : areas)
+        {
+            const auto r = codecPageLayout (a.r, 9);
+            const int left  = r.card.getX() - a.r.getX();
+            const int right = a.r.getRight() - r.card.getRight();
+            check (std::abs (left - right) <= 1,
+                   "cp PIN4: centred within a pixel of rounding",
+                   juce::String (a.name) + " left " + juce::String (left)
+                   + " right " + juce::String (right));
+            check (r.card.getWidth() <= kCodecCardMaxW,
+                   "cp PIN4: and never wider than the cap");
+            check (r.card.getWidth() >= juce::jmin (kCodecCardMinW, a.r.getWidth()),
+                   "cp PIN4: nor squeezed below the floor while the page has room");
+        }
+
+        // cp PIN5 -- HEIGHT GROWS WITH THE PRESET COUNT, two per row, and an
+        // WHERE THE CARD LIVES NOW: it is the codec RENDER VIEW, opened from the
+        // Playback grid's codec tile. The grid is the page; this card is not.
+        // empty preset list still yields the chrome rather than a negative.
+        check (codecCardHeight (0) == kCodecChromeH,
+               "cp PIN5: no presets is chrome only",
+               juce::String (codecCardHeight (0)));
+        check (codecCardHeight (1) == codecCardHeight (2),
+               "cp PIN5: one and two presets share a row");
+        check (codecCardHeight (3) == codecCardHeight (4),
+               "cp PIN5: three and four share two rows");
+        check (codecCardHeight (3) > codecCardHeight (2),
+               "cp PIN5: and a third preset adds a row");
+        check (codecCardHeight (-5) == kCodecChromeH,
+               "cp PIN5: a negative count is floored, not wrapped");
+        // The row count paint() advances by is the SAME function the height was
+        // computed from. Two copies of "+ 1) / 2" is how the drop zone's height
+        // came to be written three ways, and paint() consumed the wrong one.
+        check (codecCardRows (0) == 0 && codecCardRows (1) == 1
+               && codecCardRows (2) == 1 && codecCardRows (3) == 2
+               && codecCardRows (9) == 5,
+               "cp PIN5: two presets per row, and paint reads this same count");
+        check (codecCardHeight (9)
+               == kCodecChromeH + codecCardRows (9) * (kCodecRowH + kCodecRowGap),
+               "cp PIN5: the height is derived from that count, not a second copy");
+
+        // cp PIN6 -- THE PAGE'S GEOMETRY DOES NOT DEPEND ON CodecRender. The
+        // count is an int, so this rule is exercisable with no encoder, no
+        // AudioToolbox and no mac-only preset table. AAC entries are absent off
+        // mac, so a function that asked CodecRender for its own count would
+        // have a different contract on two platforms.
+        check (codecPageLayout ({ 10, 130, 565, 380 }, 9).card
+               == codecPageLayout ({ 10, 130, 565, 380 }, 9).card,
+               "cp PIN6: pure, and the count is a parameter rather than a lookup");
+    }
+
+    // ======================================================================
+    // pg -- THE PICTURE GRID (EJCodecPage.h, playbackGrid*)
+    //
+    // PREFIX pg: checked against every prefix already in the suite rather than
+    // assumed free. Pure arithmetic, no art: the images live in their own
+    // library, which this suite does not link, so nothing here may name an
+    // EJPlaybackArt symbol.
+    // ======================================================================
+    {
+        using namespace echojay;
+
+        // pg PIN1 -- THE COLUMN COUNT STAYS WITHIN 2 TO 4, at EVERY width from
+        // 400 to 1400 in steps of 10, not at three hand-picked ones. The upper
+        // bound is a named cap; the lower one is NOT a clamp (the function's
+        // floor is 1) but a consequence of the minimum tile width, which is why
+        // raising that width far enough reddens this pin.
+        {
+            juce::String pgBad;
+            int pgLo = 99, pgHi = 0;
+            for (int w = 400; w <= 1400; w += 10)
+            {
+                const int c = playbackGridColumns (w);
+                pgLo = juce::jmin (pgLo, c);
+                pgHi = juce::jmax (pgHi, c);
+                if (c < 2 || c > 4)
+                    pgBad << w << "px->" << c << " cols; ";
+            }
+            check (pgBad.isEmpty(),
+                   "pg PIN1: 400 to 1400 px in steps of 10 always gives 2 to 4 columns",
+                   pgBad);
+            check (pgLo == 2 && pgHi == 4,
+                   "pg PIN1: and both bounds are actually reached, so neither is a clamp "
+                   "the sweep never touches",
+                   "min " + juce::String (pgLo) + ", max " + juce::String (pgHi));
+        }
+
+        // pg PIN2 -- THE ROW COUNT: none, one, an exact multiple of the columns
+        // and one past it, at each column count the grid can use.
+        for (int c : { 2, 3, 4 })
+            check (playbackGridRows (0, c) == 0
+                   && playbackGridRows (1, c) == 1
+                   && playbackGridRows (2 * c, c) == 2
+                   && playbackGridRows (2 * c + 1, c) == 3,
+                   "pg PIN2: at " + juce::String (c) + " columns, 0 / 1 / "
+                   + juce::String (2 * c) + " / " + juce::String (2 * c + 1)
+                   + " tiles take 0 / 1 / 2 / 3 rows");
+
+        // pg PIN3 -- THE HEIGHT IS DERIVED FROM THE ROW COUNT, NOT A SECOND
+        // COPY, asserted the way cp PIN5 asserts it: the height equals the
+        // expression built from playbackGridRows. Swept over counts including
+        // negatives and over the page widths, because a second row calculation
+        // is only visible where it disagrees with the first.
+        {
+            juce::String pgBad;
+            for (int w : { 400, 565, 741, 1150, 1360, 1780 })
+                for (int n = -12; n <= 40; ++n)
+                    if (playbackGridHeight (n, w)
+                        != playbackGridRows (n, playbackGridColumns (w))
+                           * (playbackTileHeight (w) + kPlaybackTileGap))
+                        pgBad << "w" << w << " n" << n << "; ";
+            check (pgBad.isEmpty(),
+                   "pg PIN3: the height is derived from playbackGridRows, not a second copy",
+                   pgBad);
+        }
+
+        // pg PIN4 -- A ZERO OR NEGATIVE TILE COUNT IS FLOORED, NOT WRAPPED,
+        // following cp PIN5's negative case: no rows and no height, never a
+        // negative height or an enormous one.
+        {
+            bool pgOk = true;
+            for (int n : { 0, -1, -4, -5, -100 })
+                for (int c : { 1, 2, 3, 4 })
+                    pgOk = pgOk && playbackGridRows (n, c) == 0;
+            for (int n : { 0, -1, -100 })
+                pgOk = pgOk && playbackGridHeight (n, 565) == 0;
+            check (pgOk, "pg PIN4: a zero or negative tile count is floored to no rows "
+                         "and no height, not wrapped");
+        }
+
+        // pg PIN5 -- THE HEADER AND THE STATUS LINE ALWAYS FIT WHOLE, THE GRID
+        // AREA SHOWS AT LEAST ONE WHOLE ROW, AND THE LAYOUT SPENDS EXACTLY THE
+        // CHROME ALLOWANCE OUTSIDE THE GRID.
+        //
+        // REWRITTEN 19 SEP 2026, NOT RENUMBERED. It used to require every tile
+        // to fit: grid plus allowance within the page, and the grid given its
+        // full height. That stopped being the guarantee when the grid learned
+        // to scroll, and it had a flaw underneath: the layout took the grid's
+        // full height FIRST, so a grid taller than the page cropped the status
+        // line to nothing. The layout now reserves the status line first and
+        // gives the grid what is left, and these are the three things that must
+        // hold whatever the tile count:
+        //   the header (title, subtitle, note, source) and the status line are each
+        //     their full height, and the status line ends inside the page. INSIDE
+        //     THE PAGE, not above the bottom pad, since 19 Sep 2026: a last row
+        //     short by no more than the pad takes it (pg PIN9)
+        //   the grid area is at least one whole row tall, or the whole grid if
+        //     it is shorter than a row, at the grid's OWN width, which is the
+        //     page's less the scrollbar's gutter
+        //   the layout spends exactly kPlaybackPageChromeH (98 px) outside the
+        //     grid area, the figure the paint is built on
+        //
+        // AT THE TABLE'S TILE COUNT AND AT SYNTHETIC ONES (9, 15, 40). The
+        // synthetic ones are still here now that the table's own count (14 since
+        // 20 Sep 2026) scrolls on every page: they keep the pin covering the
+        // counts the table does not have, including the ones that fit whole,
+        // which is the layout a grid that stops scrolling would land on.
+        //
+        // Page sizes as resized() derives them (content area = main column less
+        // 10 px each side, height less the header, tab strip, reference bar,
+        // sub-tab row, 10 px margin and the bottom bars, bottomBarsH()), stated
+        // here because the editor cannot be linked into this suite:
+        //   smallest window 900 x 580, A/B bar showing   -> 565  x 405
+        //   smallest window, A/B bar AND the playback
+        //     environment bar, 32 px each (18 Sep 2026)  -> 565  x 373
+        //   largest 1800 x 1200, sidebar open, A/B bar    -> 1360 x 1025
+        //   largest 1800 x 1200, sidebar collapsed        -> 1780 x 1025
+        {
+            const int pgTiles = (int) kPlaybackTiles.size();
+            struct Page { const char* name; int w, h; };
+            for (const Page& p : { Page { "smallest window, A/B bar",           565,  405 },
+                                   Page { "smallest window, both bottom bars",  565,  373 },
+                                   Page { "largest window, sidebar open",       1360, 1025 },
+                                   Page { "largest window, sidebar collapsed",  1780, 1025 } })
+            {
+                juce::String hdrBad, rowBad, spendBad;
+                for (int n : { pgTiles, 9, 15, 40 })
+                {
+                    const auto L = playbackPageLayout ({ 0, 0, p.w, p.h }, n);
+                    if (L.title.getHeight()    != kPlaybackPageTitleH
+                        || L.subtitle.getHeight() != kPlaybackPageSubtitleH
+                        || L.note.getHeight()     != kPlaybackPageNoteH
+                        || L.source.getHeight()   != kPlaybackPageSourceH
+                        || L.status.getHeight()   != kPlaybackPageStatusH
+                        || L.status.getBottom()   >  p.h)
+                        hdrBad << n << " tiles: status " << L.status.toString() << "; ";
+                    const int gw     = L.grid.getWidth();
+                    const int oneRow = juce::jmin (playbackTileHeight (gw), playbackGridHeight (n, gw));
+                    if (L.grid.getHeight() < oneRow)
+                        rowBad << n << " tiles: grid " << L.grid.getHeight() << " < " << oneRow << "; ";
+                    const int spent = L.status.getBottom() - L.grid.getHeight() + kPlaybackPagePadBottom;
+                    if (spent != kPlaybackPageChromeH)
+                        spendBad << n << " tiles: spent " << spent << "; ";
+                }
+                const juce::String where = juce::String (p.name) + " page (" + juce::String (p.w)
+                                         + " x " + juce::String (p.h) + ")";
+                check (hdrBad.isEmpty(),
+                       "pg PIN5: the header and the status line fit whole on the " + where
+                       + ", at " + juce::String (pgTiles) + ", 9, 15 and 40 tiles", hdrBad);
+                check (rowBad.isEmpty(),
+                       "pg PIN5: the grid area shows at least one whole row on the " + where, rowBad);
+                check (spendBad.isEmpty(),
+                       "pg PIN5: and the layout spends exactly the " + juce::String (kPlaybackPageChromeH)
+                       + " px chrome allowance outside the grid on the " + where, spendBad);
+            }
+        }
+
+        // pg PIN6 -- THE SCROLL ARITHMETIC, with a synthetic tile count, since
+        // the table's seven never scroll. At the smallest page (565 x 373) the
+        // grid area is 91 to 350: 259 px, since the note line took 16 px of the
+        // page (19 Sep 2026; it was 75 to 350 before). Fifteen tiles are four
+        // rows of 120, 480 px of content whose last tile ends 10 px before that.
+        // The tile arithmetic is read at the GRID's width, 558 since the
+        // scrollbar's gutter; the figures did not move, because a 132 px tile
+        // is 110 tall like the 133 px one was.
+        {
+            const auto grid = playbackPageLayout ({ 0, 0, 565, 373 }, 15).grid;
+            const int  maxS = playbackGridMaxScroll (15, grid);
+            check (grid.getY() == 91 && grid.getHeight() == 259
+                   && maxS == playbackGridHeight (15, grid.getWidth()) - kPlaybackTileGap - grid.getHeight()
+                   && maxS == 211,
+                   "pg PIN6: 15 tiles at the smallest page scroll until the last tile's bottom meets "
+                   "the grid's: 480 less the trailing 10 px gap less 259 = 211",
+                   grid.toString() + ", max " + juce::String (maxS));
+            check (playbackClampScroll (-50, 15, grid) == 0 && playbackClampScroll (0, 15, grid) == 0,
+                   "pg PIN6: clamped at the top: never above 0");
+            check (playbackClampScroll (100000, 15, grid) == maxS
+                   && playbackClampScroll (maxS + 1, 15, grid) == maxS,
+                   "pg PIN6: clamped at the bottom: never past the last row");
+            check (playbackTileVisibleRect (grid, 14, maxS) == playbackTilePlacedRect (grid, 14, maxS)
+                   && playbackTilePlacedRect (grid, 14, maxS).getBottom() == grid.getBottom(),
+                   "pg PIN6: scrolled to the bottom, the last tile is wholly visible and ends on the "
+                   "grid's bottom edge");
+
+            // Tile 8, the first of the third row, at scroll 0: placed 331 to
+            // 441 against a grid ending at 350.
+            const auto placed8 = playbackTilePlacedRect (grid, 8, 0);
+            const auto vis8    = playbackTileVisibleRect (grid, 8, 0);
+            check (placed8.getHeight() == playbackTileHeight (grid.getWidth()) && placed8.getY() == 331
+                   && vis8.getY() == 331 && vis8.getBottom() == grid.getBottom()
+                   && vis8.getHeight() == 19 && vis8.getWidth() == placed8.getWidth(),
+                   "pg PIN6: a tile partly scrolled out below is stored as its visible part: 19 of its "
+                   "110 px, at full width",
+                   "placed " + placed8.toString() + ", visible " + vis8.toString());
+            const auto vis0 = playbackTileVisibleRect (grid, 0, 40);
+            check (vis0.getY() == grid.getY() && vis0.getHeight() == playbackTileHeight (grid.getWidth()) - 40,
+                   "pg PIN6: and one partly scrolled under the top is cut at the grid's top, so it "
+                   "cannot be pressed over the header", vis0.toString());
+            check (playbackTileVisibleRect (grid, 12, 0).isEmpty(),
+                   "pg PIN6: a tile scrolled wholly out has no visible rect, so it cannot be pressed at all");
+
+            const auto grid7 = playbackPageLayout ({ 0, 0, 565, 373 }, 7).grid;
+            check (playbackGridMaxScroll (7, grid7) == 0 && grid7.getHeight() == playbackGridHeight (7, grid7.getWidth()),
+                   "pg PIN6: seven tiles do not scroll at the smallest page and keep their full grid "
+                   "height, which is why no build today exercises any of this");
+
+            check (playbackWheelStepPx (0.0f) == 0
+                   && playbackWheelStepPx (0.0001f) == 1 && playbackWheelStepPx (-0.0001f) == -1
+                   && playbackWheelStepPx (1.0f) == (int) kPlaybackWheelPxPerUnit,
+                   "pg PIN6: a wheel delta of 0 moves nothing, any other moves at least one pixel, and "
+                   "one unit moves kPlaybackWheelPxPerUnit");
+        }
+
+        // pg PIN7 -- A SCROLL IS VISIBLE. A grid with more below it and nothing
+        // saying so reads as all the tiles there are, which is a refusal
+        // rendered as an absence.
+        //
+        // REWRITTEN 19 SEP 2026, NOT RENUMBERED. It pinned a count of hidden
+        // tiles in the status line ("7 more below"), and that count and its two
+        // functions are gone: a tile counted as hidden when one pixel of it was
+        // cut, and at the default window the page said "2 more below" over ten
+        // whole tiles (pg PIN9). What says so now is a scrollbar in a gutter
+        // down the grid's right edge, and this pin holds what the count's did:
+        // it shows exactly when the grid can scroll. And one thing the count
+        // never needed: the bar stays out of the tiles' hit area.
+        //
+        // At the smallest page with 15 tiles: 259 px of 470 is visible, so the
+        // thumb is 259 * 259 / 470 = 142 px, and it travels the other 117.
+        {
+            const auto L    = playbackPageLayout ({ 0, 0, 565, 373 }, 15);
+            const int  maxS = playbackGridMaxScroll (15, L.grid);
+            check (L.scrollTrack == juce::Rectangle<int> (565 - kPlaybackScrollBarW, L.grid.getY(),
+                                                          kPlaybackScrollBarW, L.grid.getHeight())
+                   && L.grid.getWidth() == 565 - kPlaybackScrollGutterW,
+                   "pg PIN7: the scrollbar's track runs down the page's right edge, 4 px wide and as tall "
+                   "as the grid, and the grid is the page less the 7 px gutter",
+                   "track " + L.scrollTrack.toString() + ", grid " + L.grid.toString());
+            const auto top = playbackScrollThumb (15, L.grid, L.scrollTrack, 0);
+            const auto bot = playbackScrollThumb (15, L.grid, L.scrollTrack, maxS);
+            check (top.getHeight() == 142 && top.getY() == L.scrollTrack.getY()
+                   && bot.getHeight() == 142 && bot.getBottom() == L.scrollTrack.getBottom()
+                   && top.getX() == L.scrollTrack.getX() && top.getWidth() == L.scrollTrack.getWidth(),
+                   "pg PIN7: the thumb is 142 of the track's 259 px, at the top at 0 and on the track's "
+                   "bottom at the last row", "top " + top.toString() + ", bottom " + bot.toString());
+            check (playbackScrollThumb (15, L.grid, L.scrollTrack, -50) == top
+                   && playbackScrollThumb (15, L.grid, L.scrollTrack, maxS + 500) == bot,
+                   "pg PIN7: an offset outside the range is clamped, like every other reader of it");
+
+            // THE RULE, SWEPT: the thumb is there exactly when the grid can
+            // scroll, it never leaves the track or moves up as the grid moves
+            // down, and no tile's rect, at any offset, reaches within the 3 px
+            // beside the track.
+            juce::String bad;
+            for (const auto& pg : { juce::Rectangle<int> (0, 0, 565, 373), juce::Rectangle<int> (0, 0, 565, 405),
+                                    juce::Rectangle<int> (0, 0, 741, 553), juce::Rectangle<int> (0, 0, 741, 521),
+                                    juce::Rectangle<int> (0, 0, 1360, 1025), juce::Rectangle<int> (0, 0, 1780, 1025) })
+                for (int n : { 0, 1, 7, 8, 9, 10, 12, 13, 14, 15, 40 })
+                {
+                    const auto L2 = playbackPageLayout (pg, n);
+                    const int  m  = playbackGridMaxScroll (n, L2.grid);
+                    int lastY = -1;
+                    for (int sc = 0; sc <= m + 5; sc = (sc == m ? m + 6 : juce::jmin (m, sc + 7)))
+                    {
+                        const auto th = playbackScrollThumb (n, L2.grid, L2.scrollTrack, sc);
+                        const bool shown = ! th.isEmpty();
+                        if (shown != (m > 0)
+                            || (shown && (! L2.scrollTrack.contains (th) || th.getY() < lastY)))
+                            bad << pg.getWidth() << "x" << pg.getHeight() << " n=" << n << " s=" << sc
+                                << " max=" << m << " thumb " << th.toString() << "; ";
+                        if (shown) lastY = th.getY();
+                        for (int i = 0; i < n; ++i)
+                            if (playbackTilePlacedRect (L2.grid, i, playbackClampScroll (sc, n, L2.grid)).getRight()
+                                    > L2.scrollTrack.getX() - (kPlaybackScrollGutterW - kPlaybackScrollBarW))
+                            {
+                                bad << pg.getWidth() << "x" << pg.getHeight() << " n=" << n
+                                    << " tile " << i << " reaches the gutter; ";
+                                break;
+                            }
+                    }
+                }
+            check (bad.isEmpty(),
+                   "pg PIN7: the thumb shows exactly when the grid can scroll, stays in its track and "
+                   "follows the offset down, and no tile reaches the gutter, at 0 to 40 tiles and every "
+                   "offset tried on six pages", bad);
+
+            // THE TABLE'S OWN COUNT, ON THE FOUR PAGES pg PIN5 TESTS (20 Sep
+            // 2026). Fourteen tiles are four rows, and four rows fit nowhere:
+            // this is the first table that scrolls on EVERY page this plugin can
+            // produce, so the scrollbar is reachable everywhere rather than on
+            // the small pages only. 1360 x 1025 is the one that changed
+            // character: eleven tiles fitted whole there and fourteen do not.
+            // The figures are here so that a later table that quietly stops
+            // scrolling somewhere reddens with the page named.
+            {
+                struct Page { int w, h, scroll; };
+                const int nTiles = (int) echojay::kPlaybackTiles.size();
+                juce::String pgBad;
+                for (const Page& p : { Page { 565,  405,  179 },
+                                       Page { 565,  373,  211 },
+                                       Page { 1360, 1025,  87 },
+                                       Page { 1780, 1025, 367 } })
+                {
+                    const auto L3 = playbackPageLayout ({ 0, 0, p.w, p.h }, nTiles);
+                    const int  m  = playbackGridMaxScroll (nTiles, L3.grid);
+                    if (m != p.scroll || playbackScrollThumb (nTiles, L3.grid, L3.scrollTrack, 0).isEmpty())
+                        pgBad << p.w << "x" << p.h << " scrolls " << m << " (expected " << p.scroll
+                              << (playbackScrollThumb (nTiles, L3.grid, L3.scrollTrack, 0).isEmpty()
+                                  ? ", no thumb" : "") << "); ";
+                }
+                check (pgBad.isEmpty() && nTiles == 14,
+                       "pg PIN7: at the table's own 14 tiles every one of the four pinned pages scrolls, "
+                       "by 179, 211, 87 and 367 px, and each shows a thumb",
+                       pgBad + " table " + juce::String (nTiles));
+            }
+        }
+
+        // pg PIN8 -- THE SCROLL'S TWO LOAD-BEARING PROPERTIES, AS TEXT. A TEXT
+        // PIN: it reads the source with comments stripped and pins what it
+        // says, not what the page does, which this suite cannot drive.
+        //
+        // 1. gridScroll APPEARS WHERE IT SHOULD AND NOWHERE ELSE: declared
+        //    once; reset once, directly beside renderView = false in
+        //    setRefSubTab; read in paintGrid and in the wheel handler; and
+        //    NEVER IN mouseUp. That last part is the one that matters. The hit
+        //    rects paint stores are already the scrolled, visible ones, so an
+        //    offset applied in mouseUp as well sends a click a screen away from
+        //    the tile, and as a "fix" for a click landing wrong it would look
+        //    entirely reasonable.
+        //
+        // 2. THE OFFSET IS APPLIED IN ONE FUNCTION. playbackTilePlacedRect is
+        //    the only place a tile rect is translated by a scroll: it holds the
+        //    one .translated call in EJCodecPage.h, and the editor neither
+        //    translates a rect by a scroll nor calls playbackTileRect directly,
+        //    which would compute a tile outside the placed-rect path.
+        //
+        // One negative control per part, each putting back the mistake it is
+        // for: gridScroll used in mouseUp's hit test, and a second translation
+        // of a tile rect in paint.
+        {
+            auto slurp = [] (const char* path)
+            {
+                std::ifstream f (path);
+                std::stringstream ss; ss << f.rdbuf();
+                return juce::String (ss.str());
+            };
+            const juce::String cppRaw   = slurp ("Source/PluginEditor.cpp");
+            const juce::String hdrCode  = codeOnly (slurp ("Source/PluginEditor.h"));
+            const juce::String pageCode = codeOnly (slurp ("Source/EJCodecPage.h"));
+
+            auto count = [] (const juce::String& t, const char* re)
+            {
+                const auto st = t.toStdString();
+                const std::regex rx (re);
+                return (int) std::distance (std::sregex_iterator (st.begin(), st.end(), rx),
+                                            std::sregex_iterator());
+            };
+            const char* gs = R"(\bgridScroll\b)";
+
+            struct Placement { bool placed = false, notInMouseUp = false; juce::String detail; };
+            auto placement = [&] (const juce::String& raw)
+            {
+                const auto c  = codeOnly (raw);
+                const auto sb = functionBody (c, "void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)");
+                const auto pb = functionBody (c, "void EchoJayEditor::CodecPanel::paintGrid(juce::Graphics& g)");
+                const auto wb = functionBody (c, "void EchoJayEditor::CodecPanel::mouseWheelMove (const juce::MouseEvent& e,");
+                const auto ub = functionBody (c, "void EchoJayEditor::CodecPanel::mouseUp(const juce::MouseEvent& e)");
+                const int decl   = count (hdrCode, R"(\bint\s+gridScroll\s*=\s*0\s*;)");
+                const int hdrAll = count (hdrCode, gs);
+                const int nS = count (sb, gs), nP = count (pb, gs), nW = count (wb, gs);
+                const int nU = count (ub, gs), tot = count (c, gs);
+                const bool beside = count (sb, R"(codecPanel_\.renderView\s*=\s*false\s*;\s*codecPanel_\.gridScroll\s*=\s*0\s*;)") == 1;
+                Placement p;
+                p.placed = decl == 1 && hdrAll == 1 && nS == 1 && beside && nP >= 1 && nW >= 1
+                        && tot == nS + nP + nW && ub.isNotEmpty();
+                p.notInMouseUp = ub.isNotEmpty() && nU == 0;
+                p.detail << "declared " << decl << " (header uses " << hdrAll << "), setRefSubTab " << nS
+                         << (beside ? " beside renderView" : " NOT beside renderView") << ", paintGrid " << nP
+                         << ", wheel " << nW << ", mouseUp " << nU << ", total " << tot;
+                return p;
+            };
+
+            struct OneOffset { bool pageOk = false, editorOk = false; juce::String detail; };
+            auto oneOffset = [&] (const juce::String& raw)
+            {
+                OneOffset o;
+                const auto pst = pageCode.toStdString();
+                const std::regex tr (R"(\.translated\s*\()");
+                std::vector<long> at;
+                for (std::sregex_iterator it (pst.begin(), pst.end(), tr), end; it != end; ++it)
+                    at.push_back ((long) it->position());
+                const auto b = pst.find ("inline juce::Rectangle<int> playbackTilePlacedRect (");
+                const auto e = (b == std::string::npos) ? std::string::npos : pst.find ("\n}\n", b);
+                o.pageOk = at.size() == 1 && b != std::string::npos && e != std::string::npos
+                        && at[0] > (long) b && at[0] < (long) e;
+
+                const auto c = codeOnly (raw);
+                const int scrolledRects = count (c, R"(\.(translated|translate|withY|setY|withPosition|setPosition)\s*\([^;]*[Ss]croll)");
+                const int directTiles   = count (c, R"(\bplaybackTileRect\s*\()");
+                o.editorOk = scrolledRects == 0 && directTiles == 0;
+                o.detail << (int) at.size() << " translation(s) in EJCodecPage.h"
+                         << (o.pageOk ? ", inside playbackTilePlacedRect" : ", NOT only inside playbackTilePlacedRect")
+                         << "; editor: " << scrolledRects << " rect(s) moved by a scroll, "
+                         << directTiles << " direct playbackTileRect call(s)";
+                return o;
+            };
+
+            const auto p1 = placement (cppRaw);
+            check (p1.placed,
+                   "pg PIN8 (text pin): gridScroll is declared once, reset once beside renderView = false "
+                   "in setRefSubTab, read in paintGrid and the wheel handler, and used nowhere else",
+                   p1.detail);
+            check (p1.notInMouseUp,
+                   "pg PIN8 (text pin): and gridScroll never appears in mouseUp, whose hit rects are "
+                   "already the scrolled ones paint stored", p1.detail);
+            const auto o1 = oneOffset (cppRaw);
+            check (o1.pageOk,
+                   "pg PIN8 (text pin): the offset is applied in one function: EJCodecPage.h's only "
+                   "translation is inside playbackTilePlacedRect", o1.detail);
+            check (o1.editorOk,
+                   "pg PIN8 (text pin): and the editor neither moves a rect by a scroll nor computes a "
+                   "tile with playbackTileRect outside that path", o1.detail);
+
+            // Control 1: the offset applied a second time, in mouseUp.
+            const juce::String hit ("if (! tileRects[(size_t) i].contains (pos)) continue;");
+            const auto c1 = cppRaw.replace (hit, "if (! tileRects[(size_t) i].contains (pos.translated (0, gridScroll))) continue;");
+            const auto m1 = placement (c1);
+            check (c1 != cppRaw && ! m1.notInMouseUp && ! m1.placed,
+                   "pg PIN8 (text pin): control: gridScroll used in mouseUp's hit test is reported",
+                   m1.detail);
+
+            // Control 2: a second translation of a tile rect, in paint.
+            const juce::String once ("const auto  placed = echojay::playbackTilePlacedRect (pl.grid, i, gridScroll);");
+            const auto c2 = cppRaw.replace (once, "const auto  placed = echojay::playbackTileRect (pl.grid, i).translated (0, -gridScroll);");
+            const auto m2 = oneOffset (c2);
+            check (c2 != cppRaw && ! m2.editorOk,
+                   "pg PIN8 (text pin): control: a tile rect translated by the scroll in paint, outside "
+                   "playbackTilePlacedRect, is reported", m2.detail);
+        }
+
+        // pg PIN9 -- A GRID NEVER SCROLLS BY A FEW PIXELS (19 Sep 2026).
+        //
+        // THE REPORT: at Kathy's window all ten tiles were drawn whole, and the
+        // status line said "2 more below". Neither the count nor the paint was
+        // off the other's geometry: both read the same grid rect and the same
+        // offset, and the paint is clipped to that rect. At the default window,
+        // 1170 x 696 with the sidebar open and no bottom bar, the page is
+        // 741 x 553 (resized(): width 1170 - 409 - 20; height 696 less the
+        // 67 px header and tab strip, 4, the 34 px reference bar band, the
+        // 28 px sub-tab band and the 10 px margin). The grid got 439 px for
+        // tiles ending at 440, so it scrolled by 1 px, and the count called
+        // the two tiles of the third row hidden for the one row of pixels that
+        // held the bottom of their outline.
+        //
+        // THE FIX IS IN THE LAYOUT, because the scrollbar reads the same
+        // maximum: a last row short of the room by no more than the bottom pad
+        // takes the pad. So the grid scrolls by 0 or by more than the pad.
+        //
+        // AT KATHY'S PAGE THE GUTTER ALONE ALSO REMOVES IT, and this pin says so
+        // rather than crediting the pad rule: 734 px of grid gives 176 x 139
+        // tiles, whose last row ends at 437, inside the 439. The pad rule is
+        // what stops the same thing at the heights just below, 741 x 544 to
+        // 741 x 550, which the second and third checks and the sweep hold.
+        {
+            // 1. Kathy's page: the old arithmetic reproduces the report, the
+            //    new layout fits all ten whole with no thumb.
+            const int  oldGrid = juce::jmin (playbackGridHeight (10, 741), 553 - kPlaybackPageChromeH);
+            const int  oldMax  = juce::jmax (0, playbackGridHeight (10, 741) - kPlaybackTileGap - oldGrid);
+            const auto K       = playbackPageLayout ({ 0, 0, 741, 553 }, 10);
+            bool whole = true;
+            for (int i = 0; i < 10; ++i)
+                whole = whole && playbackTileVisibleRect (K.grid, i, 0) == playbackTilePlacedRect (K.grid, i, 0);
+            check (oldGrid == 439 && oldMax == 1
+                   && playbackGridMaxScroll (10, K.grid) == 0 && whole
+                   && playbackScrollThumb (10, K.grid, K.scrollTrack, 0).isEmpty(),
+                   "pg PIN9: at the default window's page, 741 x 553, the old layout gave ten tiles a 1 px "
+                   "scroll; now all ten are whole, nothing scrolls and no scrollbar shows",
+                   "old grid " + juce::String (oldGrid) + " max " + juce::String (oldMax)
+                   + "; now grid " + K.grid.toString() + " max "
+                   + juce::String (playbackGridMaxScroll (10, K.grid)));
+
+            // 2. The pad taken: at 741 x 544 the last row ends 7 px past the
+            //    room, and at 741 x 547, 4 px past it.
+            juce::String takeBad;
+            for (int h : { 544, 547 })
+            {
+                const auto T = playbackPageLayout ({ 0, 0, 741, h }, 10);
+                if (playbackGridMaxScroll (10, T.grid) != 0
+                    || T.grid.getHeight() != playbackGridHeight (10, T.grid.getWidth()) - kPlaybackTileGap
+                    || T.status.getHeight() != kPlaybackPageStatusH || T.status.getBottom() > h)
+                    takeBad << h << ": grid " << T.grid.toString() << ", status " << T.status.toString() << "; ";
+            }
+            check (takeBad.isEmpty(),
+                   "pg PIN9: a last row up to the pad's 7 px short takes the pad: the grid ends on it, "
+                   "nothing scrolls, and the status line is whole and inside the page", takeBad);
+
+            // 3. And not a pixel more: at 741 x 543 it is 8 px short, the
+            //    grid keeps its room, the pad stays, and the scroll is 8.
+            const auto S = playbackPageLayout ({ 0, 0, 741, 543 }, 10);
+            check (playbackGridMaxScroll (10, S.grid) == kPlaybackPagePadBottom + 1
+                   && S.status.getBottom() == 543 - kPlaybackPagePadBottom
+                   && ! playbackScrollThumb (10, S.grid, S.scrollTrack, 0).isEmpty(),
+                   "pg PIN9: 8 px short, the pad is kept, the grid scrolls by 8 and the scrollbar shows",
+                   S.grid.toString() + ", status " + S.status.toString());
+
+            // 4. THE RULE, SWEPT over every page height from the smallest to the
+            //    largest, widths in steps of 5, and 0 to 40 tiles: the scroll is
+            //    0 or more than the pad; the status line is whole and inside the
+            //    page; and the pad is given up only when that leaves nothing to
+            //    scroll.
+            juce::String bad;
+            int taken = 0;
+            for (int w = 565; w <= 1780 && bad.length() < 400; w += 5)
+                for (int h = 373; h <= 1025; ++h)
+                    for (int n : { 0, 1, 7, 8, 9, 10, 12, 13, 15, 40 })
+                    {
+                        const auto P = playbackPageLayout ({ 0, 0, w, h }, n);
+                        const int  m = playbackGridMaxScroll (n, P.grid);
+                        const bool padTaken = P.status.getBottom() > h - kPlaybackPagePadBottom;
+                        if (padTaken) ++taken;
+                        if ((m >= 1 && m <= kPlaybackPagePadBottom)
+                            || P.status.getHeight() != kPlaybackPageStatusH || P.status.getBottom() > h
+                            || (padTaken && m != 0))
+                            bad << w << "x" << h << " n=" << n << " max=" << m
+                                << " status " << P.status.toString() << "; ";
+                    }
+            check (bad.isEmpty() && taken > 0,
+                   "pg PIN9: at every page from 565 x 373 to 1780 x 1025, the grid scrolls by 0 or by more "
+                   "than 7 px, the status line stays whole inside the page, and the pad is taken only to "
+                   "leave nothing to scroll (and it is taken somewhere, so the sweep sees the rule)",
+                   bad + " pad taken " + juce::String (taken) + " times");
+        }
+    }
+
+    // ======================================================================
+    // mr -- MATCH REFERENCE, PHASE 2a (EJMatchProposal.h)
+    //
+    // PREFIX mr, NOT mp: mp was already taken by the move log persistence
+    // family (mp PIN1 to mp PIN5), and two pins sharing a name cannot be told
+    // apart in a FAIL line.
+    //
+    // THE FIXTURES ARE CHOSEN SO THE ARITHMETIC IS EXACT IN FLOAT. Every side's
+    // six bands sum to -120 with steps of whole or half dB, so the mean is
+    // exactly -20 and every relative and delta is exact. A pin that asserts
+    // "exactly 3.0" must not be at the mercy of a rounding in the mean.
+    //
+    // NO FIXTURE OUTSIDE mr PIN2 PUTS A DELTA EXACTLY ON THE FLOOR, so the
+    // ">= to >" mutant reddens the at-the-floor cases and nothing else.
+    // ======================================================================
+    {
+        std::cout << "match reference proposal:\n";
+        using namespace echojay;
+
+        // A side long enough for everything, with an average reduction and
+        // flat bands at -20. Each pin perturbs only what it is about.
+        auto side = [] (SpectralReduction red)
+        {
+            MatchSide s;
+            s.macro = { -20, -20, -20, -20, -20, -20 };
+            s.hasMacro = true;
+            s.macroReduction = red;
+            s.durationSeconds = 180.0f;
+            s.integrated = -14.0f; s.truePeak = -1.0f; s.overs = 0;
+            s.lra = 6.0f; s.psr = 8.0f; s.plr = 10.0f;
+            s.crest = 12.0f; s.width = 40.0f; s.correlation = 0.5f;
+            return s;
+        };
+        auto refSide = [&] { return side (SpectralReduction::WholeFileAverage); };
+        auto mixSide = [&] { return side (SpectralReduction::WholeWindowAverage); };
+        auto bandMoves = [] (const MatchProposal& p)
+        {
+            std::vector<MatchMove> v;
+            for (const auto& m : p.moves) if (m.kind == MatchMoveKind::Band) v.push_back (m);
+            return v;
+        };
+        auto moveFor = [] (const MatchProposal& p, int band) -> const MatchMove*
+        {
+            for (const auto& m : p.moves)
+                if (m.kind == MatchMoveKind::Band && m.band == band) return &m;
+            return nullptr;
+        };
+        auto hasRefusal = [] (const MatchProposal& p, MatchRefusalKind k, const juce::String& sideName)
+            -> const MatchRefusal*
+        {
+            for (const auto& r : p.refusals)
+                if (r.kind == k && r.side == sideName) return &r;
+            return nullptr;
+        };
+        // The 9 dB fixture: the capture's sub is 9 dB hot and its low is 9 dB
+        // shy, relative to its own mean. Sum -120, mean -20, exact.
+        auto nineDb = [&]
+        {
+            auto m = mixSide();
+            m.macro = { -11, -29, -20, -20, -20, -20 };
+            return m;
+        };
+
+        // mr PIN1 -- THE CEILING. A 9 dB gap proposes 3.0, never 9, and the
+        // result says the gap is larger than one move closes.
+        {
+            const auto p = computeMatchProposal (nineDb(), refSide());
+            const auto* sub = moveFor (p, 0);
+            const auto* low = moveFor (p, 1);
+            check (sub != nullptr && sub->valueDb == -3.0f && sub->capped && sub->measuredDb == -9.0f,
+                   "mr PIN1: a 9 dB hot band proposes a cut of exactly 3.0, not 9",
+                   sub ? ("move " + juce::String (sub->valueDb, 4) + " from " + juce::String (sub->measuredDb, 4))
+                       : juce::String ("no move"));
+            check (low != nullptr && low->valueDb == 3.0f && low->capped && low->measuredDb == 9.0f,
+                   "mr PIN1: and a 9 dB shy band a boost of exactly 3.0",
+                   low ? ("move " + juce::String (low->valueDb, 4)) : juce::String ("no move"));
+            check (low != nullptr && low->tier == MatchTier::Bounded,
+                   "mr PIN1: a band move is bounded tier");
+            bool said = false;
+            for (const auto& n : p.notes)
+                if (n.contains ("larger than one move closes") && n.contains ("9.0")) said = true;
+            check (said, "mr PIN1: and the result says the 9.0 dB gap is larger than one move closes",
+                   p.notes.joinIntoString (" | "));
+        }
+
+        // mr PIN2 -- THE FLOOR, AT THE BOUNDARY, BOTH SIDES OF IT. Exactly 2.0
+        // proposes; 1.999 does not. Through the decision itself and through the
+        // whole proposal.
+        {
+            const auto at  = matchBandMove (2.0f);
+            const auto atN = matchBandMove (-2.0f);
+            check (at.propose && at.valueDb == 2.0f && ! at.capped,
+                   "mr PIN2: a delta of exactly 2.0 proposes a 2.0 move");
+            check (atN.propose && atN.valueDb == -2.0f,
+                   "mr PIN2: and exactly -2.0 proposes a -2.0 move");
+            check (! matchBandMove (1.999f).propose && ! matchBandMove (-1.999f).propose,
+                   "mr PIN2: 1.999 either way proposes nothing");
+
+            auto m = mixSide();
+            m.macro = { -18, -22, -20, -20, -20, -20 };   // deltas exactly -2 and +2
+            const auto p = computeMatchProposal (m, refSide());
+            const auto* a = moveFor (p, 0);
+            const auto* b = moveFor (p, 1);
+            check (a != nullptr && a->valueDb == -2.0f && b != nullptr && b->valueDb == 2.0f
+                   && bandMoves (p).size() == 2,
+                   "mr PIN2: through the proposal, two bands exactly on the floor both move",
+                   juce::String ((int) bandMoves (p).size()) + " band moves");
+
+            auto m2 = mixSide();
+            m2.macro = { -18.001f, -21.999f, -20, -20, -20, -20 };   // deltas about 1.999
+            const auto p2 = computeMatchProposal (m2, refSide());
+            check (bandMoves (p2).empty(),
+                   "mr PIN2: and just under the floor, no band moves",
+                   juce::String ((int) bandMoves (p2).size()) + " band moves");
+        }
+
+        // mr PIN3 -- THE SUM IS THE SUM OF THE MOVES, from the same expression
+        // the proposal uses, the way cp PIN5 asserts a height against the row
+        // function it came from. Deltas -4, +2.5 and +1.5 give moves -3
+        // (capped), +2.5 and none.
+        {
+            auto m = mixSide();
+            m.macro = { -16, -22.5f, -21.5f, -20, -20, -20 };
+            const auto p = computeMatchProposal (m, refSide());
+            check (p.bandMoveSumDb == matchBandMoveSum (p.moves),
+                   "mr PIN3: the reported sum is matchBandMoveSum of the moves it reports",
+                   juce::String (p.bandMoveSumDb, 4) + " vs " + juce::String (matchBandMoveSum (p.moves), 4));
+            check (bandMoves (p).size() == 2 && p.bandMoveSumDb == -0.5f,
+                   "mr PIN3: and here that is -3.0 + 2.5 = -0.5",
+                   juce::String ((int) bandMoves (p).size()) + " moves, sum " + juce::String (p.bandMoveSumDb, 4));
+        }
+
+        // mr PIN4 -- A REFUSAL NAMES BOTH NUMBERS. A 20 s capture refuses band
+        // proposals, and the message carries the 30 it failed and the 20 it
+        // measured.
+        {
+            auto m = nineDb();
+            m.durationSeconds = 20.0f;
+            const auto p = computeMatchProposal (m, refSide());
+            const auto* r = hasRefusal (p, MatchRefusalKind::BandsTooShort, "the capture");
+            check (r != nullptr && r->thresholdSeconds == 30.0f && r->measuredSeconds == 20.0f,
+                   "mr PIN4: a 20 s capture refuses bands against 30 s");
+            check (r != nullptr && r->message.contains ("30") && r->message.contains ("20"),
+                   "mr PIN4: and the message names both 30 and 20",
+                   r ? r->message : juce::String ("no refusal"));
+            check (bandMoves (p).empty(),
+                   "mr PIN4: and no band move survives the refusal");
+            const auto* d = hasRefusal (p, MatchRefusalKind::DynamicsTooShort, "the capture");
+            check (d != nullptr && d->message.contains ("60") && d->message.contains ("20"),
+                   "mr PIN4: the loudness and dynamics refusal names 60 and 20 the same way",
+                   d ? d->message : juce::String ("no refusal"));
+        }
+
+        // mr PIN5 -- A DIRECTIONAL FINDING NEVER CARRIES AN APPLICABLE NUMBER.
+        // Every directional figure, one at a time, differs between two sides
+        // that agree on everything else. Each must appear as a finding with its
+        // difference, and none may produce a move of any kind.
+        {
+            for (int fi = 0; fi < (int) MatchFigure::Count; ++fi)
+            {
+                const auto f = (MatchFigure) fi;
+                auto m = mixSide();
+                switch (f)
+                {
+                    case MatchFigure::LRA:         m.lra += 5.0f;          break;
+                    case MatchFigure::PSR:         m.psr += 5.0f;          break;
+                    case MatchFigure::PLR:         m.plr += 5.0f;          break;
+                    case MatchFigure::Crest:       m.crest += 5.0f;        break;
+                    case MatchFigure::Width:       m.width += 25.0f;       break;
+                    case MatchFigure::Correlation: m.correlation -= 0.5f;  break;
+                    case MatchFigure::Count:                               break;
+                }
+                const auto p = computeMatchProposal (m, refSide());
+                check (p.moves.empty(),
+                       "mr PIN5: a difference in " + juce::String (matchFigureName (f))
+                       + " produces no move",
+                       juce::String ((int) p.moves.size()) + " moves");
+                bool found = false;
+                for (const auto& x : p.findings)
+                    if (x.figure == f && x.difference != 0.0f) found = true;
+                check (found, "mr PIN5: and it is reported as a finding with its difference: "
+                              + juce::String (matchFigureName (f)));
+            }
+        }
+
+        // mr PIN6 -- A PEAK HOLD ON EITHER SIDE REFUSES BANDS. Each side on its
+        // own, over the 9 dB fixture, with the both-average control first so
+        // the refusal is what removed the moves.
+        {
+            check (! bandMoves (computeMatchProposal (nineDb(), refSide())).empty(),
+                   "mr PIN6: control, two averages over the 9 dB fixture propose band moves");
+
+            auto m = nineDb();
+            m.macroReduction = SpectralReduction::WholeWindowPeakHold;
+            const auto pm = computeMatchProposal (m, refSide());
+            check (bandMoves (pm).empty()
+                   && hasRefusal (pm, MatchRefusalKind::BandsNotAverage, "the capture") != nullptr,
+                   "mr PIN6: a peak hold on the capture refuses bands, and names the capture");
+
+            auto r = refSide();
+            r.macroReduction = SpectralReduction::WholeWindowPeakHold;
+            const auto pr = computeMatchProposal (nineDb(), r);
+            check (bandMoves (pr).empty()
+                   && hasRefusal (pr, MatchRefusalKind::BandsNotAverage, "the reference") != nullptr,
+                   "mr PIN6: a peak hold on the reference refuses bands, and names the reference");
+        }
+
+        // mr PIN7 -- CLIPPING PUTS THE CEILING FIRST. With a true peak above 0
+        // the first move is the ceiling, ahead of every band move; without it
+        // there is no ceiling at all.
+        {
+            auto m = nineDb();
+            m.truePeak = 1.5f; m.overs = 3;
+            const auto p = computeMatchProposal (m, refSide());
+            check (p.clipping && ! p.moves.empty() && p.moves.front().kind == MatchMoveKind::Ceiling
+                   && p.moves.front().tier == MatchTier::Exact,
+                   "mr PIN7: a +1.5 dBTP capture's first move is the exact ceiling");
+            int firstBand = -1;
+            for (int i = 0; i < (int) p.moves.size(); ++i)
+                if (p.moves[(size_t) i].kind == MatchMoveKind::Band) { firstBand = i; break; }
+            check (firstBand > 0,
+                   "mr PIN7: and band moves exist and all come after it",
+                   "first band move at " + juce::String (firstBand));
+            check (p.moves.front().valueDb == -1.0f && p.moves.front().measuredDb == 1.5f,
+                   "mr PIN7: the ceiling is the reference's -1.0 dBTP, from the capture's +1.5");
+
+            auto clean = nineDb();   // -1.0 dBTP, no overs
+            bool anyCeiling = false;
+            for (const auto& mv : computeMatchProposal (clean, refSide()).moves)
+                if (mv.kind == MatchMoveKind::Ceiling) anyCeiling = true;
+            check (! anyCeiling, "mr PIN7: a capture that does not clip gets no ceiling move");
+        }
+
+        // mr PIN8 to mr PIN11 -- THE GAIN OFFSET AND ITS FLOOR (plan M2).
+        //
+        // THE FIRST COVERAGE THE GAIN BRANCH HAS EVER HAD. Every fixture above
+        // gives both sides -14.0 LUFS, so until these no pin produced a gain
+        // move, and none showed one absent for a reason. These go through it
+        // in both directions, at the floor, below it, and behind the duration
+        // refusal. All behavioural, on the pure header: no text pins.
+        const juce::String bothSides ("the capture and the reference");
+        auto gainMove = [] (const MatchProposal& p) -> const MatchMove*
+        {
+            for (const auto& m : p.moves)
+                if (m.kind == MatchMoveKind::Gain) return &m;
+            return nullptr;
+        };
+        // The capture at a given loudness; the reference stays at -14.0.
+        auto withLufs = [&] (float mixLufs) { auto m = mixSide(); m.integrated = mixLufs; return m; };
+
+        // mr PIN8 -- ABOVE THE FLOOR A MOVE IS PROPOSED, with the gap as its
+        // value and the gap's sign as its direction.
+        {
+            const auto up   = computeMatchProposal (withLufs (-16.0f), refSide());
+            const auto down = computeMatchProposal (withLufs (-12.0f), refSide());
+            const auto* gu = gainMove (up);
+            const auto* gd = gainMove (down);
+            check (gu != nullptr && gu->valueDb == 2.0f && gu->measuredDb == 2.0f
+                   && gu->tier == MatchTier::Exact,
+                   "mr PIN8: a capture 2.0 dB quieter than the reference gets an exact +2.0 dB gain move",
+                   gu ? juce::String (gu->valueDb, 4) : juce::String ("no gain move"));
+            check (gd != nullptr && gd->valueDb == -2.0f,
+                   "mr PIN8: and one 2.0 dB louder gets -2.0 dB",
+                   gd ? juce::String (gd->valueDb, 4) : juce::String ("no gain move"));
+            check (hasRefusal (up, MatchRefusalKind::GainBelowFloor, bothSides) == nullptr
+                   && hasRefusal (down, MatchRefusalKind::GainBelowFloor, bothSides) == nullptr,
+                   "mr PIN8: and a proposed gain move carries no gain refusal beside it");
+        }
+
+        // mr PIN9 -- THE FLOOR, AT THE BOUNDARY, BOTH WAYS. Exactly 1.0 dB
+        // proposes; 0.999 is refused. Through the predicate and through the
+        // whole proposal.
+        {
+            check (matchGainProposes (1.0f) && matchGainProposes (-1.0f),
+                   "mr PIN9: a gap of exactly 1.0 dB either way proposes");
+            check (! matchGainProposes (0.999f) && ! matchGainProposes (-0.999f),
+                   "mr PIN9: a gap of 0.999 dB either way does not");
+            const auto at    = computeMatchProposal (withLufs (-15.0f), refSide());
+            const auto under = computeMatchProposal (withLufs (-14.999f), refSide());
+            check (gainMove (at) != nullptr && gainMove (at)->valueDb == 1.0f
+                   && hasRefusal (at, MatchRefusalKind::GainBelowFloor, bothSides) == nullptr,
+                   "mr PIN9: through the proposal, a capture exactly 1.0 dB quieter gets +1.0 dB");
+            check (gainMove (under) == nullptr
+                   && hasRefusal (under, MatchRefusalKind::GainBelowFloor, bothSides) != nullptr,
+                   "mr PIN9: and one 0.999 dB quieter gets no move, and a refusal in its place");
+        }
+
+        // mr PIN10 -- THE REFUSAL NAMES THE FLOOR AND BOTH FIGURES. A user who
+        // can see two loudness figures differ and is told nothing concludes the
+        // feature is broken. And the gap it prints is truncated, so 0.999 dB
+        // never reads as 1.00 beside the 1.0 dB floor it failed.
+        {
+            const auto p = computeMatchProposal (withLufs (-14.5f), refSide());
+            const auto* r = hasRefusal (p, MatchRefusalKind::GainBelowFloor, bothSides);
+            check (r != nullptr && r->gainFloorDb == 1.0f
+                   && r->captureLufs == -14.5f && r->referenceLufs == -14.0f,
+                   "mr PIN10: the gain refusal carries the 1.0 dB floor and both integrated figures");
+            check (r != nullptr && r->message.contains ("1.0 dB")
+                   && r->message.contains ("-14.50") && r->message.contains ("-14.00")
+                   && r->message.contains ("0.50 dB apart"),
+                   "mr PIN10: and its message names the floor, both figures and the gap",
+                   r ? r->message : juce::String ("no refusal"));
+            const auto pu = computeMatchProposal (withLufs (-14.999f), refSide());
+            const auto* ru = hasRefusal (pu, MatchRefusalKind::GainBelowFloor, bothSides);
+            check (ru != nullptr && ru->message.contains ("0.99 dB apart")
+                   && ! ru->message.contains ("1.00 dB apart"),
+                   "mr PIN10: a 0.999 dB gap prints as 0.99, never as 1.00 beside the floor it failed",
+                   ru ? ru->message : juce::String ("no refusal"));
+        }
+
+        // mr PIN11 -- THE DURATION REFUSAL COMES FIRST. A capture too short
+        // for a loudness claim gets that one refusal: the floor is never
+        // reached, below it or above it.
+        {
+            auto shortNear = withLufs (-14.5f);  shortNear.durationSeconds = 45.0f;
+            auto shortFar  = withLufs (-17.0f);  shortFar.durationSeconds  = 45.0f;
+            const auto pn = computeMatchProposal (shortNear, refSide());
+            const auto pf = computeMatchProposal (shortFar, refSide());
+            juce::String kinds;
+            for (const auto& r : pn.refusals) kinds << (int) r.kind << " ";
+            check (pn.refusals.size() == 1 && pn.refusals[0].kind == MatchRefusalKind::DynamicsTooShort,
+                   "mr PIN11: a 45 s capture 0.5 dB from the reference gets one refusal, the duration "
+                   "one, not a gain refusal as well",
+                   "refusal kinds: " + kinds);
+            check (gainMove (pf) == nullptr
+                   && hasRefusal (pf, MatchRefusalKind::GainBelowFloor, bothSides) == nullptr
+                   && hasRefusal (pf, MatchRefusalKind::DynamicsTooShort, "the capture") != nullptr,
+                   "mr PIN11: and 3.0 dB apart it gets no gain move either, only the duration refusal");
+        }
+
+        // mr PIN12 -- THE ONE LINE, AND WHAT IT SAYS WHEN A MATCH IS OFF.
+        //
+        // REWRITTEN TWICE, NOT RENUMBERED. It first pinned matchPageStatement,
+        // the page's promise of what Match WOULD show; then the screen's moves,
+        // findings and refusals. Kathy saw that screen and said the shape was
+        // wrong: the analysis belongs in the chat, where every other piece of
+        // AI output in this product goes. So the screen keeps ONE line above
+        // the button, whether a match is possible and, if not, the single most
+        // important reason, and this pin holds that line.
+        //
+        // WITHOUT THE LINE the user presses a button that does nothing for
+        // reasons nobody gave them, which is this project's oldest defect
+        // wearing a new hat. The ORDER of importance is the pin's real subject:
+        // a length that cannot be judged outranks bands that are not an
+        // average, because it refuses the dynamics as well.
+        {
+            MatchSide mix, ref;
+            mix.durationSeconds = ref.durationSeconds = 120.0f;
+            mix.hasMacro = ref.hasMacro = true;
+            mix.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            mix.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+            ref.macro = { -8.0f,  -10.0f, -8.0f, -10.0f, -12.0f, -18.0f };   // sub +4, air -4
+            mix.integrated = -14.0f; ref.integrated = -9.0f;                 // a 5 dB gain move
+            mix.truePeak = 0.8f; ref.truePeak = -1.0f;                       // and a ceiling
+
+            const auto ok = echojay::matchReadiness (echojay::computeMatchProposal (mix, ref));
+            check (ok.possible && ! ok.goodNews
+                   && ok.line.containsIgnoreCase ("possible")
+                   && ok.line.contains ("2 on the spectrum"),
+                   "mr PIN12: with moves to play, the line says a match is possible and how much of it "
+                   "is spectrum, because that is what the press is about to play", ok.line);
+
+            // KATHY'S CAPTURE: a length nobody knows AND bands that are a power
+            // mean rather than an average. Both refuse; the LENGTH is the one
+            // that gets the line, because it refuses the dynamics too.
+            MatchSide unknown = mix;
+            unknown.durationSeconds = 0.0f;
+            unknown.macroReduction  = SpectralReduction::RollingWindowPowerMean;
+            const auto p2 = echojay::computeMatchProposal (unknown, ref);
+            const auto r2 = echojay::matchReadiness (p2);
+            bool sawBoth = false, sawAverage = false;
+            for (const auto& rf : p2.refusals)
+            {
+                if (rf.kind == MatchRefusalKind::BandsNotAverage) sawAverage = true;
+                if (rf.kind == MatchRefusalKind::BandsTooShort)   sawBoth = true;
+            }
+            check (sawBoth && sawAverage && ! r2.possible
+                   && r2.line.contains ("not known") && r2.line.contains ("30 s"),
+                   "mr PIN12: with BOTH a length nobody knows and bands that are not an average, the "
+                   "line is the length, with its threshold and what was measured, and the other "
+                   "reasons go to the chat", r2.line);
+
+            // Bands that are not an average, with a length that IS known: now
+            // that reason gets the line.
+            MatchSide peakHeld = mix;
+            peakHeld.macroReduction = SpectralReduction::WholeWindowPeakHold;
+            const auto r3 = echojay::matchReadiness (echojay::computeMatchProposal (peakHeld, ref));
+            check (! r3.possible && r3.line.containsIgnoreCase ("peak hold"),
+                   "mr PIN12: and with the length known, the bands' own reason gets the line, naming "
+                   "the reduction it saw", r3.line);
+
+            // THE LINE IS ONE LINE. Not a list, whatever the proposal carries.
+            check (! ok.line.containsIgnoreCase ("\n") && ! r2.line.containsIgnoreCase ("\n")
+                   && ! r3.line.containsIgnoreCase ("\n"),
+                   "mr PIN12: and it is ONE line in every case, because the list is the chat's job");
+        }
+
+        // mr PIN12b -- A REFUSAL THAT IS GOOD NEWS DOES NOT READ AS A COMPLAINT.
+        //
+        // Two sides inside the 1 dB gain floor produce a refusal saying they
+        // are 0.00 dB apart. THAT IS THE FEATURE WORKING, so it is marked as
+        // good news, it still carries both figures and the floor, and the press
+        // says "these two already match" rather than playing nothing.
+        {
+            MatchSide a, b;
+            a.durationSeconds = b.durationSeconds = 120.0f;
+            a.integrated = b.integrated = -14.0f;          // 0.00 dB apart
+            a.hasMacro = b.hasMacro = true;
+            a.macroReduction = b.macroReduction = SpectralReduction::WholeFileAverage;
+            a.macro = b.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+
+            const auto r = echojay::matchReadiness (echojay::computeMatchProposal (a, b));
+            check (! r.possible && r.goodNews,
+                   "mr PIN12b: a gain gap inside the floor is GOOD NEWS, marked as such rather than "
+                   "filed with the refusals", r.line);
+            check (r.line.contains ("0.00 dB apart") && r.line.contains ("1.0 dB"),
+                   "mr PIN12b: and it still names both figures, the gap and the floor, because a "
+                   "refusal that hides its numbers is not a refusal", r.line);
+            check (echojay::matchPressRefusedText (r).containsIgnoreCase ("already match"),
+                   "mr PIN12b: and the press says these two already match, instead of playing nothing "
+                   "and leaving the user to guess", echojay::matchPressRefusedText (r));
+        }
+
+        // mr PIN12c -- THE MOVES OUTRANK THE GAIN FLOOR.
+        //
+        // The one refusal that is NOT a missing axis is the gain floor: it says
+        // the two sides already agree on level, which decides nothing about the
+        // spectrum. So a proposal carrying band moves AND that refusal leads
+        // with the moves. Levels already matching is not a reason to hide
+        // spectrum work that is ready to play, and this is the case that
+        // separates this precedence from the simpler "any refusal wins" rule.
+        {
+            MatchSide mix, ref;
+            mix.durationSeconds = ref.durationSeconds = 120.0f;
+            mix.hasMacro = ref.hasMacro = true;
+            mix.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            mix.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+            ref.macro = { -8.0f,  -10.0f, -8.0f, -10.0f, -12.0f, -18.0f };   // sub +4, air -4
+            mix.integrated = ref.integrated = -14.0f;                        // 0.00 dB apart
+
+            const auto p = echojay::computeMatchProposal (mix, ref);
+            const auto r = echojay::matchReadiness (p);
+            bool floorRefusal = false;
+            for (const auto& rf : p.refusals)
+                if (rf.kind == MatchRefusalKind::GainBelowFloor) floorRefusal = true;
+
+            check (r.possible && r.playable && ! r.goodNews
+                   && r.line.contains ("2 moves") && r.line.contains ("2 on the spectrum"),
+                   "mr PIN12c: band moves beside a gain-floor refusal headline the MOVES, with their "
+                   "count and how many are spectrum, not the good news", r.line);
+            check (floorRefusal,
+                   "mr PIN12c: and the gain-floor refusal is still in the proposal for the chat to "
+                   "carry: choosing a headline drops nothing");
+        }
+
+        // mr PIN12d -- AN UNAVAILABLE AXIS OUTRANKS A MOVE THAT SURVIVED IT.
+        //
+        // No six-band measurement at all, and a gain move that does not depend
+        // on one. The line leads with the bands, because that is the reason the
+        // spectrum half of this screen is empty, AND the move is still playable:
+        // the two answers are different questions and this is where they part.
+        {
+            MatchSide mix, ref;
+            mix.durationSeconds = ref.durationSeconds = 120.0f;
+            mix.hasMacro = false;                       // nothing to compare on the spectrum
+            ref.hasMacro = true;
+            ref.macroReduction = SpectralReduction::WholeFileAverage;
+            ref.macro = { -8.0f, -10.0f, -8.0f, -10.0f, -12.0f, -18.0f };
+            mix.integrated = -14.0f; ref.integrated = -9.0f;                 // a 5 dB gain move
+
+            const auto p = echojay::computeMatchProposal (mix, ref);
+            const auto r = echojay::matchReadiness (p);
+            check (! r.possible && r.playable
+                   && r.line.contains (p.bandsUnavailableWhy)
+                   && p.bandsUnavailableWhy.contains ("no six-band measurement"),
+                   "mr PIN12d: with no six-band measurement the line leads with that, and the gain "
+                   "move that survived it is still PLAYABLE, so the press still plays it",
+                   r.line + " | playable " + juce::String ((int) r.playable));
+        }
+
+        // mr PIN12e -- THE INVARIANT: playable IS the moves, whatever won the line.
+        //
+        // playable is set before any branch, so which reason takes the headline
+        // cannot change whether the press has something to play. Stated here
+        // across every shape this block builds, INCLUDING the two where possible
+        // and playable now disagree: the unknown length and the peak hold, which
+        // keep a ceiling or a gain move while the line leads with the refusal.
+        // Without this, a later edit could fold playable back into a branch and
+        // nothing would say the press had started refusing moves it holds.
+        {
+            MatchSide base, ref;
+            base.durationSeconds = ref.durationSeconds = 120.0f;
+            base.hasMacro = ref.hasMacro = true;
+            base.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            base.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+            ref.macro  = { -8.0f,  -10.0f, -8.0f, -10.0f, -12.0f, -18.0f };
+            base.integrated = -14.0f; ref.integrated = -9.0f;
+            base.truePeak = 0.8f; ref.truePeak = -1.0f;
+
+            MatchSide unknown = base;  unknown.durationSeconds = 0.0f;
+            unknown.macroReduction = SpectralReduction::RollingWindowPowerMean;
+            MatchSide peakHeld = base; peakHeld.macroReduction = SpectralReduction::WholeWindowPeakHold;
+            MatchSide levelled = base; levelled.integrated = ref.integrated;
+            levelled.truePeak = -1.0f;                      // the gain floor, and no ceiling
+            MatchSide noBands  = base; noBands.hasMacro = false;
+
+            struct Case { const char* name; const MatchSide* mix; };
+            juce::String bad, disagreed;
+            for (const Case& c : { Case { "plain",        &base },
+                                   Case { "unknown length", &unknown },
+                                   Case { "peak hold",    &peakHeld },
+                                   Case { "level matched", &levelled },
+                                   Case { "no bands",     &noBands } })
+            {
+                const auto p = echojay::computeMatchProposal (*c.mix, ref);
+                const auto r = echojay::matchReadiness (p);
+                if (r.playable != ! p.moves.empty())
+                    bad << c.name << ": playable " << (int) r.playable << " with "
+                        << (int) p.moves.size() << " moves; ";
+                if (r.playable && ! r.possible) disagreed << c.name << " ";
+            }
+            check (bad.isEmpty(),
+                   "mr PIN12e: playable is the proposal's moves in every case, whichever reason won "
+                   "the line", bad);
+            check (disagreed.contains ("unknown length") && disagreed.contains ("peak hold"),
+                   "mr PIN12e: and the two cases the reordering was for are exactly where it and the "
+                   "headline disagree: a move to play, and a refusal to lead with", disagreed);
+        }
+
+        // mr PIN20 -- THE MORPH IS THE MEASURED CURVE WITH THE PROPOSAL'S GAINS
+        // ON IT, AND THE EDGES STAY STEPS.
+        //
+        // The press plays it, so it is arithmetic the suite can hold: at 0 the
+        // measurement, at 1 the measurement plus each band's own move, and
+        // NOTHING BLENDED ACROSS A BOUNDARY. Blending would smooth the step
+        // back into the curve, which is the one thing MATCH_SCREEN_CONTRACT §3
+        // forbids: a smooth line through six numbers asserts shape the
+        // arithmetic never had.
+        {
+            MatchSide mix, ref;
+            mix.durationSeconds = ref.durationSeconds = 120.0f;
+            mix.hasMacro = ref.hasMacro = true;
+            mix.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            mix.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+            ref.macro = { -8.0f,  -10.0f, -8.0f, -10.0f, -12.0f, -18.0f };
+            const auto p     = echojay::computeMatchProposal (mix, ref);
+            const auto moves = echojay::matchBandMoves (p);
+
+            // The moves come FROM the proposal: a band it declined moves by 0.
+            juce::String mvBad;
+            std::array<bool, 6> proposed { false, false, false, false, false, false };
+            for (const auto& m : p.moves)
+                if (m.kind == MatchMoveKind::Band) proposed[(size_t) m.band] = true;
+            for (int i = 0; i < 6; ++i)
+                if (! proposed[(size_t) i] && moves[(size_t) i] != 0.0f)
+                    mvBad << "band " << i << " moves " << moves[(size_t) i] << " and was not proposed; ";
+            check (mvBad.isEmpty() && std::abs (moves[0] - kMatchBandCapDb) < 1.0e-4f
+                   && std::abs (moves[5] + kMatchBandCapDb) < 1.0e-4f,
+                   "mr PIN20: the morph moves exactly what the proposal offered, capped where the "
+                   "proposal capped, and a band it declined does not move at all", mvBad);
+
+            // At 0 the measurement, at 1 the measurement plus the band's move.
+            const float m40 = -30.0f;
+            check (echojay::matchMorphedDb (m40, 40.0, moves, 0.0f) == m40
+                   && std::abs (echojay::matchMorphedDb (m40, 40.0, moves, 1.0f)
+                                - (m40 + moves[0])) < 1.0e-4f,
+                   "mr PIN20: at 0 the morph IS the measurement, and at 1 it is the measurement plus "
+                   "that band's own move");
+
+            // THE EDGE IS A STEP. Two bins either side of 250 Hz differ by the
+            // difference of their bands' moves, not by a fraction of it.
+            const float lowSide  = echojay::matchMorphedDb (m40, 249.0, moves, 1.0f);
+            const float highSide = echojay::matchMorphedDb (m40, 251.0, moves, 1.0f);
+            check (std::abs ((highSide - lowSide) - (moves[2] - moves[1])) < 1.0e-4f
+                   && echojay::matchBandForHz (249.0) == 1 && echojay::matchBandForHz (251.0) == 2,
+                   "mr PIN20: across a band boundary the morph steps by the whole difference between "
+                   "the two bands' moves: no blending, because the proposal's move is a step",
+                   juce::String (highSide - lowSide, 3));
+
+            // The ease is a position, not a smoother: it starts at 0, ends at
+            // 1, and is clamped outside.
+            check (echojay::matchMorphEase (0.0f) == 0.0f && echojay::matchMorphEase (1.0f) == 1.0f
+                   && echojay::matchMorphEase (-2.0f) == 0.0f && echojay::matchMorphEase (5.0f) == 1.0f
+                   && echojay::matchMorphEase (0.5f) > 0.4f && echojay::matchMorphEase (0.5f) < 0.6f,
+                   "mr PIN20: the morph's ease is a clamped position the caller owns, so the animation "
+                   "can be played, replayed and stopped");
+        }
+
+        // mr PIN13 -- THE MOVED FIGURE DERIVATIONS COMPUTE WHAT THEY COMPUTED.
+        //
+        // CompareFig, fillBandRel and both computeCompareFig overloads moved out
+        // of PluginProcessor.cpp's anonymous namespace into EJCompareFigures.h
+        // on 20 Sep 2026. This pin is the only thing that says the move was a
+        // MOVE and not a rewrite.
+        //
+        // WHAT IT CAN AND CANNOT PROVE, stated rather than implied: the old
+        // code could not be linked by anything, here included, so there is no
+        // before-binary to diff against. What this encodes is the derivations
+        // as the pre-move source stated them, read off that source: true peak
+        // is the larger of the two MAX channels and falls back to the larger of
+        // the two instantaneous ones; PSR falls back to shortTermTruePeak minus
+        // shortTerm; PLR falls back to true peak minus integrated; the bands are
+        // six or nothing, mean-subtracted. A rewrite that changed any of those
+        // reddens here.
+        {
+            using echojay::CompareFig;
+            using echojay::computeCompareFig;
+
+            MeterData m;                       // defaults are the sentinels
+            m.integrated = -14.0f;
+            m.loudnessRange = 7.0f;
+            m.truePeakMaxL = -1.5f; m.truePeakMaxR = -0.8f;
+            m.truePeakL = -3.0f;    m.truePeakR = -2.0f;
+            m.crestFactor = 11.0f;  m.width = 42.0f; m.correlation = 0.65f;
+            m.oversCount = 3;
+
+            const CompareFig f = computeCompareFig (m);
+            check (f.tp == -0.8f && f.integrated == -14.0f && f.lra == 7.0f
+                   && f.crest == 11.0f && f.width == 42.0f && f.corr == 0.65f && f.overs == 3,
+                   "mr PIN13: true peak is the larger of the two MAX channels, and the plain figures "
+                   "pass through untouched",
+                   "tp " + juce::String (f.tp, 2) + ", overs " + juce::String (f.overs));
+
+            // No max-hold recorded: fall back to the instantaneous pair.
+            MeterData mNoMax = m;
+            mNoMax.truePeakMaxL = -100.0f; mNoMax.truePeakMaxR = -100.0f;
+            check (computeCompareFig (mNoMax).tp == -2.0f,
+                   "mr PIN13: with no max-hold it falls back to the larger instantaneous true peak",
+                   juce::String (computeCompareFig (mNoMax).tp, 2));
+
+            // PSR and PLR: measured value wins, then the fallback, then -999.
+            MeterData mDer = m;
+            mDer.psr = -999.0f; mDer.plr = -999.0f;
+            mDer.shortTermTruePeak = -1.0f; mDer.shortTerm = -10.0f;
+            const CompareFig fd = computeCompareFig (mDer);
+            MeterData mNone = mDer;
+            mNone.shortTermTruePeak = -999.0f; mNone.shortTerm = -999.0f;
+            const CompareFig fn = computeCompareFig (mNone);
+            MeterData mHave = mDer;
+            mHave.psr = 12.0f; mHave.plr = 13.0f;
+            const CompareFig fh = computeCompareFig (mHave);
+            check (std::abs (fd.psr - 9.0f) < 1.0e-4f
+                   && std::abs (fd.plr - ((-0.8f) - (-14.0f))) < 1.0e-4f
+                   && fn.psr == -999.0f && fh.psr == 12.0f && fh.plr == 13.0f,
+                   "mr PIN13: PSR falls back to shortTermTruePeak minus shortTerm and PLR to true peak "
+                   "minus integrated, a measured value wins over both, and neither invents a number "
+                   "when there is nothing to derive from",
+                   "psr " + juce::String (fd.psr, 2) + ", plr " + juce::String (fd.plr, 2)
+                   + ", none " + juce::String (fn.psr, 1));
+
+            // The bands: six or nothing, and the mean is over all six.
+            echojay::SpectralEvidence ev;
+            ev.hasMacro = true;
+            ev.macro = { -10.0f, -8.0f, -6.0f, -12.0f, -14.0f, -10.0f };   // mean -10
+            const CompareFig fb = computeCompareFig (m, ev);
+            echojay::SpectralEvidence evHole = ev;
+            evHole.macro[3] = -120.0f;
+            echojay::SpectralEvidence evNone;                              // hasMacro false
+            check (fb.bandValid
+                   && std::abs (fb.bandRel[0] - 0.0f) < 1.0e-4f
+                   && std::abs (fb.bandRel[1] - 2.0f) < 1.0e-4f
+                   && std::abs (fb.bandRel[4] + 4.0f) < 1.0e-4f
+                   && ! computeCompareFig (m, evHole).bandValid
+                   && ! computeCompareFig (m, evNone).bandValid,
+                   "mr PIN13: the band relatives are each band less the mean of ALL SIX, and one band "
+                   "on the floor, or no macro reading at all, refuses the whole set rather than "
+                   "renormalising");
+        }
+
+        // mr PIN14 -- A LIVE SIDE REFUSES WHAT A LIVE SIDE MUST REFUSE, AND THE
+        // RULES TRAVEL WITH THE SIDE.
+        //
+        // echojay::matchSideFrom owns them, so the editor's buildMatchSide (and
+        // anything later) cannot forget them: a Live side has NO loudness range
+        // (a session LRA is spread across whatever was played) and NO duration
+        // (a Live slot has no length). The proposal then refuses on its own
+        // rules, which is the point: the refusals are not a second list kept in
+        // the caller.
+        {
+            using echojay::matchSideFrom;
+            using echojay::MatchRefusalKind;
+
+            echojay::CompareFig f;
+            f.integrated = -14.0f; f.lra = 9.0f; f.tp = -1.0f; f.overs = 0;
+            f.crest = 11.0f; f.width = 40.0f; f.corr = 0.7f;
+            echojay::SpectralEvidence ev;
+            ev.hasMacro = true;
+            ev.macroReduction = echojay::SpectralReduction::WholeFileAverage;
+            ev.macro = { -10.0f, -8.0f, -6.0f, -12.0f, -14.0f, -10.0f };
+
+            const auto live   = matchSideFrom (f, ev, 120.0f, /*isLive*/ true);
+            const auto stored = matchSideFrom (f, ev, 120.0f, /*isLive*/ false);
+            check (live.lra == 0.0f && live.durationSeconds == 0.0f
+                   && stored.lra == 9.0f && stored.durationSeconds == 120.0f,
+                   "mr PIN14: a Live side carries no loudness range and no duration; a stored side "
+                   "keeps both, so the rule is the side's and not the caller's",
+                   "live lra " + juce::String (live.lra, 1) + " dur "
+                   + juce::String (live.durationSeconds, 1));
+
+            const auto p = echojay::computeMatchProposal (live, stored);
+            bool tooShortBands = false, tooShortDyn = false;
+            for (const auto& r : p.refusals)
+            {
+                if (r.kind == MatchRefusalKind::BandsTooShort)    tooShortBands = true;
+                if (r.kind == MatchRefusalKind::DynamicsTooShort) tooShortDyn = true;
+            }
+            bool anyBandMove = false;
+            for (const auto& mv : p.moves)
+                if (mv.kind == echojay::MatchMoveKind::Band) anyBandMove = true;
+            check (tooShortBands && tooShortDyn && ! anyBandMove,
+                   "mr PIN14: so a Live mix refuses the band proposal and the dynamics findings on "
+                   "length, and proposes no band move at all",
+                   juce::String ((int) p.refusals.size()) + " refusals, "
+                   + juce::String ((int) p.moves.size()) + " moves");
+
+            // The same side, not Live: the length refusals go away. The pin is
+            // otherwise asserting an absence that could have any cause.
+            const auto p2 = echojay::computeMatchProposal (stored, stored);
+            bool stillShort = false;
+            for (const auto& r : p2.refusals)
+                if (r.kind == MatchRefusalKind::BandsTooShort
+                    || r.kind == MatchRefusalKind::DynamicsTooShort) stillShort = true;
+            check (! stillShort,
+                   "mr PIN14: control: the same figures with a real duration draw no length refusal, "
+                   "so the refusals above came from the Live rule and not from the numbers");
+        }
+
+        // mr PIN15 -- A RESTORED SNAPSHOT WITH NO OVERS DOES NOT CLAIM ZERO.
+        //
+        // MeterData::oversCount defaults to 0 and MatchSide reads overs < 0 as
+        // unavailable, so a count that was never recorded would arrive as a
+        // measured "no clipping" and quietly withhold the ceiling move. The
+        // snapshot's saved meters never carried the count, so every restored
+        // snapshot was exactly that. Two halves: the sentinel survives the
+        // build, and the persistence writes and reads it.
+        {
+            echojay::CompareFig f;
+            f.integrated = -14.0f; f.tp = 0.6f; f.crest = 11.0f;
+            echojay::SpectralEvidence ev;
+
+            echojay::CompareFig unknown = f; unknown.overs = -1;
+            echojay::CompareFig none    = f; none.overs    = 0;
+            const auto sideUnknown = echojay::matchSideFrom (unknown, ev, 90.0f, false);
+            const auto sideNone    = echojay::matchSideFrom (none,    ev, 90.0f, false);
+            check (sideUnknown.overs < 0 && sideNone.overs == 0,
+                   "mr PIN15: an unrecorded overs count stays unavailable through the build, and a "
+                   "measured zero stays a measured zero",
+                   "unknown " + juce::String (sideUnknown.overs) + ", none "
+                   + juce::String (sideNone.overs));
+
+            // THE PERSISTENCE, AS TEXT (text pin): the save writes the count and
+            // the restore defaults to -1 when the key is absent, which is what
+            // an older save is. This half is text because the suite cannot link
+            // the processor's state code.
+            std::ifstream fp ("Source/PluginProcessor.cpp");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pc = codeOnly (juce::String (sp.str()));
+            check (pc.length() > 10000 && pc.contains ("EchoJayProcessor::getStateInformation"),
+                   "mr PIN15 (text pin): PluginProcessor.cpp was read and is the real file",
+                   "len=" + juce::String (pc.length()));
+            const juce::String writeLine ("m->setProperty(\"oversCount\", s.averagedData.oversCount);");
+            const juce::String readLine  ("s.averagedData.oversCount = mo->hasProperty(\"oversCount\")");
+            check (pc.contains (writeLine) && pc.contains (readLine) && pc.contains ("? (int)mo->getProperty(\"oversCount\") : -1;"),
+                   "mr PIN15 (text pin): the snapshot save writes oversCount and the restore reads it "
+                   "with -1, not 0, when it is absent");
+            const auto mut = juce::String (sp.str()).replace ("? (int)mo->getProperty(\"oversCount\") : -1;",
+                                                              "? (int)mo->getProperty(\"oversCount\") : 0;");
+            check (mut != juce::String (sp.str())
+                   && ! codeOnly (mut).contains ("? (int)mo->getProperty(\"oversCount\") : -1;"),
+                   "mr PIN15 (text pin): control: a restore defaulting to 0 is reported");
+
+            // WHAT IS NOT CLOSED, AND IS NOT PRETENDED TO BE: a REFERENCE never
+            // measures overs at all, so its side still reports 0. The ceiling
+            // move reads the MIX side's overs, so the proposal does not consult
+            // it today; a consumer that starts to must fix the analyser first.
+            check (echojay::matchSideFrom (none, ev, 90.0f, false).overs == 0,
+                   "mr PIN15: recorded here rather than hidden: a reference's overs are a default and "
+                   "not a measurement, and nothing in the proposal reads them yet");
+        }
+
+        // mr PIN16 -- THE SHAPE: SETUP AT THE TOP, THE PICTURE TAKING THE REST.
+        //
+        // REWRITTEN 20 SEP 2026 WITH THE SCREEN. It held a header, a graph with
+        // a share, and a body of text. Kathy's verdict was that the shape was
+        // wrong: the text belongs in the chat and the picture is the point of
+        // the screen. So the rows are now the one line, the setup row (your
+        // capture, the link, AI MATCH, the reference) and THE PICTURE, which
+        // takes everything left and therefore grows with the window.
+        //
+        // MatchPanel gets refPageArea from resized(), the SAME rect the Playback
+        // page gets, so the smallest it ever sees is 565 x 373 and the largest
+        // 1780 x 1025.
+        {
+            struct Page { const char* name; int w, h; };
+            juce::String bad;
+            for (const Page& p : { Page { "smallest, both bars",      565,  373 },
+                                   Page { "smallest, A/B bar",        565,  405 },
+                                   Page { "default window",           741,  553 },
+                                   Page { "largest, sidebar open",   1360, 1025 },
+                                   Page { "largest, collapsed",      1780, 1025 } })
+            {
+                const juce::Rectangle<int> page { 0, 0, p.w, p.h };
+                const auto R = echojay::matchPageLayout (page);
+                const auto plot = echojay::matchGraphPlot (R.graph);
+                // THE STATUS ROW TAKES NO HEIGHT, 22 Sep. This read
+                // "R.status.getHeight() != echojay::kMatchStatusH", asserting
+                // the banner kept its 16 px on every page. The banner is gone
+                // and the picture took the height, so the assertion is
+                // INVERTED rather than deleted: a row that quietly came back
+                // at 16 px would otherwise pass unnoticed, and the whole
+                // point of the removal was those pixels.
+                if (R.status.getHeight() != 0
+                    || R.setup.getHeight() != echojay::kMatchSetupH)
+                    bad << p.name << ": rows " << R.status.getHeight() << "/"
+                        << R.setup.getHeight() << "; ";
+                if (! page.contains (R.status) || ! page.contains (R.setup)
+                    || ! page.contains (R.graph) || ! R.setup.contains (R.button))
+                    bad << p.name << ": a rect leaves its parent; ";
+                if (plot.getWidth() <= 0 || plot.getHeight() <= 0 || ! R.graph.contains (plot))
+                    bad << p.name << ": plot " << plot.toString() << "; ";
+                // The picture is the biggest thing on the page, by a long way.
+                if (R.graph.getHeight() < p.h / 2)
+                    bad << p.name << ": graph " << R.graph.getHeight() << " of " << p.h << "; ";
+                // The line sits ABOVE the button, which is where the brief put it.
+                if (R.status.getBottom() > R.button.getY())
+                    bad << p.name << ": the line is not above the button; ";
+            }
+            check (bad.isEmpty(),
+                   "mr PIN16: on every page the product can produce, the one line and the setup row "
+                   "keep their heights, the line sits above the button, and the picture takes more "
+                   "than half the page", bad);
+
+            // THE ROW'S SHARE-OUT MOVED (20 Sep 2026, Kathy on the connector).
+            // The link used to be whatever the names left, which was a 10 px
+            // stub at EVERY width: two ticks beside the button rather than the
+            // button reaching out to both names. The name is now capped and the
+            // LINK takes the rest, so what this pin holds changed with it:
+            //   the button stays centred and the names never reach it, as
+            //     before;
+            //   the link NEVER VANISHES: it keeps kMatchLinkMinW wherever the
+            //     row has the room, which is every page this product makes;
+            //   and at a wide window the link is the LONGEST run in the row,
+            //     which is the thing Kathy asked for, stated as geometry so a
+            //     later tidy-up cannot quietly give the space back to a name.
+            juce::String rowBad;
+            for (int w : { 565, 741, 1150, 1360, 1780 })
+            {
+                const auto R = echojay::matchPageLayout ({ 0, 0, w, 600 });
+                const int leftGap  = R.button.getX() - R.setup.getX();
+                const int rightGap = R.setup.getRight() - R.button.getRight();
+                if (std::abs (leftGap - rightGap) > 1)
+                    rowBad << w << ": button off centre by " << std::abs (leftGap - rightGap) << "; ";
+                if (R.mixPick.getRight() > R.button.getX() || R.refPick.getX() < R.button.getRight())
+                    rowBad << w << ": a picker overlaps the button; ";
+                // EACH WAVEFORM SITS UNDER ITS OWN PICKER, exactly as wide and
+                // never crossing the centre, so a strip cannot be read as
+                // belonging to the other side.
+                if (R.mixWave.getX() != R.mixPick.getX()
+                    || R.mixWave.getWidth() != R.mixPick.getWidth()
+                    || R.refWave.getX() != R.refPick.getX()
+                    || R.refWave.getWidth() != R.refPick.getWidth())
+                    rowBad << w << ": a waveform is not under its picker; ";
+                if (R.mixWave.getRight() > R.refWave.getX())
+                    rowBad << w << ": the two waveforms overlap; ";
+                if (R.linkLeft.getWidth() < echojay::kMatchLinkMinW
+                    || R.linkRight.getWidth() < echojay::kMatchLinkMinW)
+                    rowBad << w << ": link " << R.linkLeft.getWidth() << "/"
+                           << R.linkRight.getWidth() << "; ";
+                if (w >= 1150 && (R.linkLeft.getWidth() <= R.mixPick.getWidth()
+                                  || R.linkLeft.getWidth() <= R.button.getWidth()))
+                    rowBad << w << ": the link is not the longest run; ";
+            }
+            check (rowBad.isEmpty(),
+                   "mr PIN16: the button stays centred between the two pickers at every width, each "
+                   "waveform sits under its own picker, the link keeps its floor at the narrowest "
+                   "page, and at a wide one it is the longest run in the row", rowBad);
+
+            // THE ROLES ARE DECIDED BY CONTENT ON ENTRY AND THEN HELD, which
+            // replaces refBarIsTop() for this page. refBarIsTop() answers
+            // "which slot holds a reference", so it MOVED when a pick landed in
+            // the other slot: the two names, the two waveforms and the
+            // direction of every move swapped with no gesture asking for it.
+            using echojay::matchRefSideOnEntry;
+            using echojay::MatchRefSide;
+            check (matchRefSideOnEntry (true, false) == MatchRefSide::Top,
+                   "mr PIN16: a reference in the TOP slot makes the top the reference side, "
+                   "so the page never calls that reference the mix");
+            check (matchRefSideOnEntry (false, true) == MatchRefSide::Bottom,
+                   "mr PIN16: a reference in the BOTTOM slot mirrors it");
+            check (matchRefSideOnEntry (false, false) == MatchRefSide::Bottom,
+                   "mr PIN16: with no reference in either, the mix is the top and the reference "
+                   "the bottom");
+            check (matchRefSideOnEntry (true, true) == MatchRefSide::Bottom,
+                   "mr PIN16: with references in BOTH, the reference is the bottom, which is the "
+                   "slot the reference bar already drives");
+
+            // THE INVARIANT, and it is the one that has to survive a later
+            // edit: no pick can move a role from one slot to the other, because
+            // the mix picker cannot place a reference and the reference picker
+            // writes into the slot that is ALREADY the reference side. So the
+            // side decided on entry is the side after any sequence of picks.
+            // Stated as a test rather than a comment, because putting the
+            // assignment back in the paint path is exactly the edit that would
+            // pass review and start the sides swapping again.
+            {
+                // The page's two picks, as what they do to the SLOTS: the mix
+                // picker writes Live, a snapshot or a chat capture into the mix
+                // slot, so that slot stops being a reference if it ever was;
+                // the reference picker writes a reference into the reference
+                // slot. Nothing else on this page writes a slot.
+                struct Slots { bool topRef, botRef; };
+                auto mixPick = [] (Slots s, MatchRefSide role)
+                {   // into the slot that is NOT the reference side
+                    if (role == MatchRefSide::Top) s.botRef = false; else s.topRef = false;
+                    return s;
+                };
+                auto refPick = [] (Slots s, MatchRefSide role)
+                {   // into the slot that IS the reference side
+                    if (role == MatchRefSide::Top) s.topRef = true; else s.botRef = true;
+                    return s;
+                };
+
+                juce::String roleBad;
+                for (bool t0 : { false, true })
+                    for (bool b0 : { false, true })
+                    {
+                        const auto onEntry = matchRefSideOnEntry (t0, b0);
+                        Slots s { t0, b0 };
+                        // Alternate the two picks several times. The held role
+                        // is what drives each pick, and re-deriving it from the
+                        // slots afterwards must give the SAME answer every
+                        // time: that is what makes holding it safe, and it is
+                        // why a later edit that puts the derivation back in the
+                        // paint path still cannot make the sides swap.
+                        for (int i = 0; i < 4; ++i)
+                        {
+                            s = (i % 2 == 0) ? mixPick (s, onEntry) : refPick (s, onEntry);
+                            if (matchRefSideOnEntry (s.topRef, s.botRef) != onEntry)
+                                roleBad << "entry(" << (int) t0 << "," << (int) b0
+                                        << ") flipped after pick " << i << "; ";
+                        }
+                    }
+                check (roleBad.isEmpty(),
+                       "mr PIN16: after any sequence of picks from either picker, the slot that is "
+                       "the reference side is the same slot it was on entry", roleBad);
+
+                // THE NEGATIVE CONTROL, so the check above is not passing for
+                // want of anything to catch. If the MIX picker could place a
+                // reference, which is the design this replaced, entering with
+                // no reference and picking one on the left WOULD flip the role.
+                {
+                    const auto onEntry = matchRefSideOnEntry (false, false);   // Bottom
+                    const bool flipped = matchRefSideOnEntry (true, false) != onEntry;
+                    check (flipped,
+                           "mr PIN16: and the control holds: a mix picker that COULD place a "
+                           "reference would flip the role, which is the failure this prevents");
+                }
+
+                // THE TWO SIDES ARE DIFFERENT SPANS OF TIME AND SAY SO IN
+                // WORDS. A live side is a window onto something still running
+                // and a capture or reference is the whole of a thing; drawn the
+                // same width they would read as comparable objects, which is
+                // the lie section 3 of the contract refuses about the curves.
+                // The wording is pinned because the drawing cannot be.
+                {
+                    const auto live = echojay::matchWaveSpan (true,  3.4f);
+                    const auto file = echojay::matchWaveSpan (false, 168.5f);
+                    check (live.contains ("live") && live.contains ("last") && live.contains ("3.4"),
+                           "mr PIN16: a rolling side names itself live and says how much of it is "
+                           "on screen", live);
+                    check (file.contains ("whole file") && file.contains ("2:49"),
+                           "mr PIN16: and a whole-file side names its own length, so the two spans "
+                           "are stated rather than implied", file);
+                }
+            }
+        }
+
+        // mr PIN21 -- THE AXIS ROW: FOUR TILES, AND THE PICTURE STILL TAKES THE
+        // PAGE. The row sits between the setup and the graph, because it names
+        // what the picture below is about; under the graph it would be a legend
+        // for something already drawn.
+        {
+            juce::String bad;
+            for (const auto& p : { std::make_pair (565, 373), std::make_pair (565, 405),
+                                   std::make_pair (741, 553), std::make_pair (1360, 1025),
+                                   std::make_pair (1780, 1025) })
+            {
+                const juce::Rectangle<int> page { 0, 0, p.first, p.second };
+                const auto R = echojay::matchPageLayout (page);
+                const auto tag = juce::String (p.first) + "x" + juce::String (p.second) + ": ";
+
+                if (R.axisRow.getHeight() != echojay::kMatchAxisH || ! page.contains (R.axisRow))
+                    bad << tag << "row " << R.axisRow.toString() << "; ";
+                // BETWEEN the setup row and the picture, in that order.
+                if (R.axisRow.getY() < R.setup.getBottom() || R.axisRow.getBottom() > R.graph.getY())
+                    bad << tag << "row is not between the setup and the graph; ";
+                // THE PICTURE IS STILL THE BIGGEST THING ON THE PAGE. The row
+                // costs 36 px including its gap, and this is what says that was
+                // affordable at the smallest window the product makes.
+                if (R.graph.getHeight() < p.second / 2)
+                    bad << tag << "graph " << R.graph.getHeight() << " of " << p.second << "; ";
+
+                int prevRight = R.axisRow.getX();
+                for (int i = 0; i < echojay::kMatchAxisCount; ++i)
+                {
+                    const auto t = echojay::matchAxisTile (R.axisRow, i);
+                    if (! R.axisRow.contains (t) || t.getWidth() <= 0)
+                        bad << tag << "tile " << i << " " << t.toString() << "; ";
+                    if (t.getX() < prevRight)
+                        bad << tag << "tile " << i << " overlaps the one before it; ";
+                    if (t.getHeight() != R.axisRow.getHeight())
+                        bad << tag << "tile " << i << " is not the row's height; ";
+                    prevRight = t.getRight() + echojay::kMatchAxisGap;
+                }
+                // The four together fill the row: the last one takes the
+                // remainder rather than leaving a gap that drifts with width.
+                if (echojay::matchAxisTile (R.axisRow, echojay::kMatchAxisCount - 1).getRight()
+                        != R.axisRow.getRight())
+                    bad << tag << "the tiles do not reach the end of the row; ";
+            }
+            check (bad.isEmpty(),
+                   "mr PIN21: on every page the product can produce, four axis tiles fill the row "
+                   "between the setup and the picture, and the picture still takes more than half "
+                   "the page", bad);
+        }
+
+        // mr PIN22 -- SELECTING AN AXIS CHANGES THE PICTURE AND NOTHING ELSE.
+        //
+        // The geometry does not take the axis as an input at all, which is the
+        // strongest form of "nothing else moves": there is no parameter through
+        // which a selection could reach a rect. What the axis DOES decide is
+        // which of the four vocabularies is drawn, and whether the press has
+        // anything to play.
+        {
+            // Two sides with a real difference on every axis, so a picture that
+            // wrongly read another axis's fields would still have something to
+            // draw and could not pass by drawing nothing.
+            MatchSide mix, ref;
+            mix.hasMacro = ref.hasMacro = true;
+            mix.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            mix.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+            ref.macro = { -8.0f,  -10.0f, -8.0f, -12.5f, -12.0f, -18.0f };
+            mix.durationSeconds = ref.durationSeconds = 180.0f;
+            mix.integrated = -14.2f;  ref.integrated = -9.4f;
+            mix.truePeak   = -1.1f;   ref.truePeak   = -0.3f;
+            mix.lra = 7.5f;           ref.lra = 4.1f;
+            mix.crest = 11.0f;        ref.crest = 8.9f;
+            mix.width = 42.0f;        ref.width = 62.0f;
+            mix.correlation = 0.71f;  ref.correlation = 0.41f;
+            mix.overs = 0;            ref.overs = 3;
+
+            const auto before = echojay::computeMatchProposal (mix, ref);
+            const auto R = echojay::matchPageLayout ({ 0, 0, 741, 553 });
+
+            juce::String bad;
+            for (int i = 0; i < echojay::kMatchAxisCount; ++i)
+            {
+                const auto a = (echojay::MatchAxis) i;
+                // The proposal is a function of the two sides. No axis is an
+                // input to it, so selecting one cannot change a move.
+                const auto after = echojay::computeMatchProposal (mix, ref);
+                if (after.moves.size() != before.moves.size())
+                    bad << echojay::matchAxisName (a) << ": the moves changed; ";
+                // Nor can it change the page's rects.
+                const auto R2 = echojay::matchPageLayout ({ 0, 0, 741, 553 });
+                if (R2.graph != R.graph || R2.axisRow != R.axisRow || R2.setup != R.setup)
+                    bad << echojay::matchAxisName (a) << ": a rect moved; ";
+            }
+            check (bad.isEmpty(),
+                   "mr PIN22: selecting an axis changes neither the proposal nor any rect on the "
+                   "page: the picture is the only thing it decides", bad);
+
+            check (echojay::matchAxisCanPropose (echojay::MatchAxis::Spectrum)
+                   && echojay::matchAxisCanPropose (echojay::MatchAxis::Loudness)
+                   && ! echojay::matchAxisCanPropose (echojay::MatchAxis::Dynamics)
+                   && ! echojay::matchAxisCanPropose (echojay::MatchAxis::Stereo),
+                   "mr PIN22: the spectrum and the level can be proposed and the other two cannot, "
+                   "which is a fact about the proposal's move kinds and not a choice about the "
+                   "screen");
+        }
+
+        // mr PIN23 -- A TILE READS ONLY WHAT BOTH SIDES HAVE, AND SAYS SO WHEN
+        // ONE OF THEM DOES NOT. Every sentinel in MatchSide renders happily as
+        // a measurement: -100 LUFS is a position on a rail, 0 LU is a width,
+        // -1 overs is a number. Drawn without this gate they are all pictures
+        // of something nobody measured.
+        {
+            MatchSide full;                       // everything present
+            // A LENGTH IS PART OF "EVERYTHING PRESENT". A side with no duration
+            // is a LIVE side as far as this page is concerned, so a fixture
+            // that leaves it at 0 while calling itself a whole-file measurement
+            // is describing something else. That is what made the note check
+            // below fail, and the fixture was wrong rather than the function.
+            full.durationSeconds = 180.0f;
+            full.hasMacro = true;
+            full.macroReduction = SpectralReduction::WholeFileAverage;
+            full.macro = { -12, -10, -8, -10, -12, -14 };
+            full.integrated = -10.0f; full.truePeak = -1.0f;
+            full.lra = 6.0f; full.crest = 9.0f;
+            full.width = 50.0f; full.correlation = 0.5f;
+
+            MatchSide noBands = full;  noBands.hasMacro = false;
+            MatchSide noLoud  = full;  noLoud.integrated = -100.0f;
+            MatchSide live    = full;  live.lra = 0.0f; live.durationSeconds = 0.0f;
+
+            using echojay::matchAxisState;
+            using echojay::MatchAxis;
+
+            // REWRITTEN 22 Sep, NOT DELETED. It read: "the spectrum tile
+            // needs six bands on BOTH sides and names the side that has
+            // none", asserting `! drawable` for a missing REFERENCE. The rule
+            // changed: the mix decides whether there is a picture, the
+            // reference decides only whether there are two sides in it. The
+            // pin is inverted so that a page which goes back to refusing
+            // without a reference fails here rather than passing quietly.
+            check (matchAxisState (MatchAxis::Spectrum, full, full).drawable
+                   && ! matchAxisState (MatchAxis::Spectrum, noBands, full).drawable
+                   && matchAxisState (MatchAxis::Spectrum, noBands, full).why.containsIgnoreCase ("your mix"),
+                   "mr PIN23: the spectrum tile refuses a MIX with no six-band measurement, "
+                   "and names it",
+                   matchAxisState (MatchAxis::Spectrum, noBands, full).why);
+            check (matchAxisState (MatchAxis::Spectrum, full, noBands).drawable,
+                   "mr PIN23: and DRAWS with no reference at all, because one fan of real audio "
+                   "is a picture and a blank rect is not");
+
+            check (! matchAxisState (MatchAxis::Loudness, noLoud, full).drawable
+                   && matchAxisState (MatchAxis::Loudness, full, full).drawable
+                   && matchAxisState (MatchAxis::Loudness, full, noLoud).drawable,
+                   "mr PIN23: the loudness tile refuses a MIX with no integrated loudness rather "
+                   "than drawing -100 as a level, and draws with no reference");
+
+            // THE DYNAMICS TILE DRAWS FOR A LIVE SIDE. It used to refuse
+            // whenever either lra was 0, which for a Live side it always is, so
+            // a live mix could never see its own dynamics: that refused a whole
+            // picture because half of one shape was missing. CREST IS THE TILE
+            // and the loudness range is one of its two dimensions.
+            MatchSide noCrest = full; noCrest.crest = 0.0f;
+            check (matchAxisState (MatchAxis::Dynamics, live, full).drawable,
+                   "mr PIN23: the dynamics tile DRAWS for a live side, because a crest is "
+                   "measured live and means something live");
+            check (! matchAxisState (MatchAxis::Dynamics, noCrest, full).drawable
+                   && matchAxisState (MatchAxis::Dynamics, noCrest, full).why.containsIgnoreCase ("your mix")
+                   && matchAxisState (MatchAxis::Dynamics, full, noCrest).drawable,
+                   "mr PIN23: and it refuses only a MISSING MIX CREST, naming it; a reference "
+                   "with no crest costs the picture nothing",
+                   matchAxisState (MatchAxis::Dynamics, noCrest, full).why);
+
+            // THE CONTROL FOR THE WHOLE REWRITE: an EMPTY reference, every
+            // figure at its sentinel, still draws on all four axes. This is
+            // the state the page is in the moment it opens with a live signal
+            // and nothing picked, which is what it could not draw before.
+            {
+                const echojay::MatchSide none {};
+                check (matchAxisState (MatchAxis::Spectrum, full, none).drawable
+                       && matchAxisState (MatchAxis::Loudness, full, none).drawable
+                       && matchAxisState (MatchAxis::Dynamics, full, none).drawable
+                       && matchAxisState (MatchAxis::Stereo,   full, none).drawable,
+                       "mr PIN23: a default-constructed reference, every figure absent, draws on "
+                       "all four axes");
+            }
+
+            // AND THE MISSING DIMENSION IS STATED, NOT DRAWN. A side with no
+            // loudness range keeps its crest height and takes a fixed width,
+            // because a narrow shape reads as low variance, which is a
+            // measurement nobody took.
+            check (echojay::matchDynamicsSideNote (live).containsIgnoreCase ("no loudness range"),
+                   "mr PIN23: a side with no loudness range SAYS SO beside its shape rather than "
+                   "being drawn narrow", echojay::matchDynamicsSideNote (live));
+            check (echojay::matchDynamicsSideNote (live).containsIgnoreCase ("rolling window"),
+                   "mr PIN23: and a LIVE side's crest carries its window, so a rolling reading and "
+                   "a whole track never sit side by side unlabelled",
+                   echojay::matchDynamicsSideNote (live));
+            check (echojay::matchDynamicsSideNote (full).isEmpty(),
+                   "mr PIN23: while a side with both figures over a whole file says nothing extra",
+                   echojay::matchDynamicsSideNote (full));
+
+            check (matchAxisState (MatchAxis::Stereo, live, full).drawable,
+                   "mr PIN23: and the stereo tile draws for a live side, because width and "
+                   "correlation ARE measured on every side");
+        }
+
+        // mr PIN24 (text pin) -- NO TILE READS A FIELD THE OTHER SIDE CANNOT
+        // HAVE. PSR is two sliding windows on BOTH sides and describes a
+        // reference's last three seconds (open list 206); peakSpectrum,
+        // avgSpectrum, sideToMidRatio, corrSub/Mid/Top, the gonio arrays and
+        // the band crests exist for a capture and have no reference equivalent,
+        // so on a comparison tile they would be drawn against a default and
+        // read as a difference.
+        //
+        // A TEXT PIN because the drawing itself cannot be exercised here: the
+        // gate never links the editor. It reads the three painters' own bodies.
+        {
+            std::ifstream fed ("Source/PluginEditor.cpp");
+            std::stringstream sed_; sed_ << fed.rdbuf();
+            const auto src = codeOnly (juce::String (sed_.str()));
+            const auto loud   = functionBody (src, "void matchPaintLoudness");
+            const auto dyn    = functionBody (src, "void matchPaintDynamics");
+            const auto stereo = functionBody (src, "void matchPaintStereo");
+
+            check (loud.isNotEmpty() && dyn.isNotEmpty() && stereo.isNotEmpty(),
+                   "mr PIN24: the three axis painters' bodies were found",
+                   juce::String (loud.length()) + "/" + juce::String (dyn.length())
+                       + "/" + juce::String (stereo.length()));
+
+            juce::String bad;
+            for (const auto* banned : { "psr", "plr", "peakSpectrum", "avgSpectrum",
+                                        "sideToMidRatio", "corrSub", "corrMid", "corrTop",
+                                        "gonio", "bandCrest" })
+                for (const auto& body : { loud, dyn, stereo })
+                    if (body.contains (banned)) bad << banned << " ";
+            check (bad.isEmpty(),
+                   "mr PIN24: no axis painter reads PSR, PLR or any capture-only field", bad);
+
+            // THE NEGATIVE CONTROL, so the sweep above is not passing because
+            // it is looking at empty strings: the fields these tiles DO draw
+            // are present, and they are the ones section 2B lists.
+            check (loud.contains ("integrated") && loud.contains ("truePeak")
+                   && dyn.contains ("crest") && dyn.contains ("lra") && dyn.contains ("overs")
+                   && stereo.contains ("width") && stereo.contains ("correlation"),
+                   "mr PIN24: and the control holds: each painter DOES read the whole-file fields "
+                   "its tile is for");
+        }
+
+        // mr PIN25 -- THE PRESS ON AN AXIS WITH NO MOVES IS REFUSED WITH A
+        // REASON, not silently dead. A control that looks dead with nothing
+        // saying why is what the headline rework removed from this screen.
+        {
+            using echojay::MatchAxis;
+            const auto dyn = echojay::matchAxisPressText (MatchAxis::Dynamics);
+            const auto ste = echojay::matchAxisPressText (MatchAxis::Stereo);
+
+            check (echojay::matchAxisPressText (MatchAxis::Spectrum).isEmpty()
+                   && echojay::matchAxisPressText (MatchAxis::Loudness).isEmpty(),
+                   "mr PIN25: an axis that CAN be proposed refuses nothing");
+            check (dyn.isNotEmpty() && ste.isNotEmpty(),
+                   "mr PIN25: dynamics and stereo image both answer the press");
+            check (dyn.containsIgnoreCase ("shown") && dyn.containsIgnoreCase ("not proposed")
+                   && ste.containsIgnoreCase ("shown") && ste.containsIgnoreCase ("not proposed"),
+                   "mr PIN25: and each says the difference is SHOWN and NOT PROPOSED, which is the "
+                   "distinction, rather than reading as a failure", dyn);
+            check (dyn.containsIgnoreCase ("Dynamics") && ste.containsIgnoreCase ("Stereo image"),
+                   "mr PIN25: and each names its own axis, so the answer belongs to the tile the "
+                   "user pressed");
+        }
+
+        // mr PIN26 -- THE WAVE STRIP'S TWO REGIONS, ON EVERY PAGE. A click on
+        // the wave is a SEEK and a click on the button is play or stop, so the
+        // two have to agree to the pixel: the paint and the press read the same
+        // two functions rather than each computing an edge.
+        {
+            juce::String bad;
+            for (const auto& p : { std::make_pair (565, 373), std::make_pair (565, 405),
+                                   std::make_pair (741, 553), std::make_pair (1360, 1025),
+                                   std::make_pair (1780, 1025) })
+            {
+                const auto R = echojay::matchPageLayout ({ 0, 0, p.first, p.second });
+                const auto tag = juce::String (p.first) + "x" + juce::String (p.second) + ": ";
+
+                for (int side = 0; side < 2; ++side)
+                {
+                    const bool isRef = (side == 1);
+                    const auto lane  = (isRef ? R.refWave : R.mixWave).withTrimmedBottom (9);
+                    const auto btn   = echojay::matchWaveTransport (lane, isRef);
+                    const auto wave  = echojay::matchWaveLane (lane, isRef);
+
+                    if (! lane.contains (wave) || wave.getWidth() <= 0)
+                        bad << tag << "wave " << wave.toString() << "; ";
+                    if (btn.getWidth() > 0)
+                    {
+                        if (! lane.contains (btn))     bad << tag << "button outside the lane; ";
+                        if (btn.intersects (wave))     bad << tag << "button overlaps the wave; ";
+                        // The button takes the OUTER edge, so the two sides'
+                        // controls sit at the page's edges rather than facing
+                        // each other across the middle.
+                        const bool outer = isRef ? (btn.getRight() == lane.getRight())
+                                                 : (btn.getX() == lane.getX());
+                        if (! outer) bad << tag << "button is not on the outer edge; ";
+                        if (btn.getWidth() + wave.getWidth() != lane.getWidth())
+                            bad << tag << "the two regions do not fill the lane; ";
+                    }
+                }
+            }
+            check (bad.isEmpty(),
+                   "mr PIN26: on every page, each wave strip splits into a transport button on its "
+                   "outer edge and a wave that fills the rest, with no overlap", bad);
+        }
+
+        // mr PIN27 -- A CLICK MAPS TO A FRACTION OF THE FILE, NOT TO A PIXEL.
+        // The two strips are different widths at most window sizes and a
+        // position in samples cannot come from one of them: the same click,
+        // proportionally, must mean the same place in the track on either side.
+        {
+            const juce::Rectangle<int> narrow { 100, 0, 80, 20 };
+            const juce::Rectangle<int> wide   { 400, 0, 320, 20 };
+
+            juce::String bad;
+            for (float f : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
+            {
+                const int xn = narrow.getX() + (int) (f * narrow.getWidth());
+                const int xw = wide  .getX() + (int) (f * wide  .getWidth());
+                const float fn = echojay::matchWaveSeekFraction (narrow, xn);
+                const float fw = echojay::matchWaveSeekFraction (wide,   xw);
+                if (std::abs (fn - f) > 0.02f || std::abs (fw - f) > 0.02f)
+                    bad << f << ": " << fn << "/" << fw << "; ";
+            }
+            // Off both ends clamps rather than running past the file.
+            if (echojay::matchWaveSeekFraction (wide, wide.getX() - 50) != 0.0f
+                || echojay::matchWaveSeekFraction (wide, wide.getRight() + 50) != 1.0f)
+                bad << "the ends do not clamp; ";
+            check (bad.isEmpty(),
+                   "mr PIN27: the same proportional click gives the same fraction on a narrow strip "
+                   "and a wide one, and past either end it clamps", bad);
+        }
+
+        // mr PIN28 (text pin) -- THE PLAYHEAD IS THE STREAM'S OWN POSITION, and
+        // a LIVE MIX SIDE HAS NO TRANSPORT.
+        //
+        // A second count beside playbackPos would drift the moment the stream
+        // looped, was seeked or was stopped, and PluginProcessor.cpp's modulo
+        // means it loops rather than ending. A text pin because neither the
+        // paint nor the stream can be exercised here: the gate never links the
+        // editor.
+        {
+            std::ifstream fed2 ("Source/PluginEditor.cpp");
+            std::stringstream sed2_; sed2_ << fed2.rdbuf();
+            const auto src2 = codeOnly (juce::String (sed2_.str()));
+            const auto frac = functionBody (src2, "float EchoJayEditor::compareStreamFrac");
+            const auto seek = functionBody (src2, "void EchoJayEditor::seekCompareStream");
+
+            check (src2.length() > 10000 && src2.contains ("EchoJayEditor::seekCompareStream"),
+                   "mr PIN28: PluginEditor.cpp was read and is the real file",
+                   "len=" + juce::String (src2.length()));
+            check (frac.isNotEmpty() && seek.isNotEmpty(),
+                   "mr PIN28: the playhead and the seek both have bodies to read");
+            check (frac.contains ("playbackPos") && frac.contains ("sampleCount"),
+                   "mr PIN28: the playhead is playbackPos over sampleCount, the stream's own "
+                   "position rather than a count kept beside it");
+            check (! frac.contains ("Time::") && ! frac.contains ("getMillisecond")
+                   && ! frac.contains ("elapsed"),
+                   "mr PIN28: and it consults no clock, so it cannot drift from the audio");
+            // REWRITTEN 23 Sep. THE BEHAVIOUR DID NOT MOVE, ONLY THE LINE DID.
+            // This read:
+            //
+            //   seek.contains ("cmpMutex") && seek.contains ("playing.store")
+            //     && seek.contains ("cmpAudible.store")
+            //
+            // The seek still does all three. Two of them now happen inside
+            // makeCompareSlotAudible, which the A/B buttons call as well: one
+            // gesture path instead of two copies, which is the point of the
+            // change. So the position and the lock are still asserted HERE,
+            // and the start-and-make-audible half is asserted THROUGH the
+            // function, whose existence and whose refusal of an unloaded slot
+            // cg PIN9 pins.
+            check (seek.contains ("cmpMutex") && seek.contains ("playbackPos")
+                   && seek.contains ("makeCompareSlotAudible"),
+                   "mr PIN28: and a seek sets the position under the mutex and makes that side "
+                   "audible THROUGH the shared gesture path, which is Compare's own gesture "
+                   "and not a second one");
+        }
+
+        // mr PIN29 -- A LIVE MIX SIDE YIELDS NO TRANSPORT AND SAYS WHY. Same
+        // rule as the two axes that cannot be proposed: nothing looks pressable
+        // unless it does something. toggleComparePlay returns early on a Live
+        // slot because live is host passthrough with no stored stream.
+        {
+            MatchSide live, file;
+            live.durationSeconds = 0.0f;            // a live side has no length
+            // A WHOLE-FILE SIDE HAS BOTH FIGURES, and this fixture had only
+            // one: with a length but no loudness range the note correctly read
+            // "no loudness range", so the check that it says NOTHING failed on
+            // a second absence rather than on the one it is about.
+            file.durationSeconds = 180.0f;
+            file.lra   = 5.0f;
+            file.crest = 9.0f;
+            check (echojay::matchWaveSpan (true, 3.4f).containsIgnoreCase ("live"),
+                   "mr PIN29: a rolling side names itself live in its own span text");
+            check (echojay::matchDynamicsSideNote (live).containsIgnoreCase ("rolling window")
+                   && echojay::matchDynamicsSideNote (file).isEmpty(),
+                   "mr PIN29: and the same fact, no length, is what marks a live side everywhere "
+                   "on this page rather than each surface deciding for itself");
+        }
+
+        // mr PIN30 -- THE BAND IS THE FLOOR, AND THE PICTURE CANNOT DISAGREE
+        // WITH THE PROPOSAL DRAWN OVER IT.
+        //
+        // The number never landed on another subject: the particle field this
+        // replaces was rejected before it was committed, so PIN30 is free and
+        // holds the band instead.
+        //
+        // THE TARGET IS A ZONE WITH A WIDTH, NOT A LINE, and the width is the
+        // threshold below which no move is emitted. If the two ever drifted
+        // apart the screen would tell a user they were inside the target while
+        // a move was waiting for them, which is the one failure a picture of a
+        // tolerance can have.
+        {
+            using echojay::MatchAxis;
+
+            // THE HALF-HEIGHT IS THE CONSTANT ITSELF, not a copy of its value.
+            check (echojay::matchAxisZoneDb (MatchAxis::Spectrum) == kMatchBandFloorDb,
+                   "mr PIN30: the spectrum band's half-height IS kMatchBandFloorDb",
+                   juce::String (echojay::matchAxisZoneDb (MatchAxis::Spectrum)));
+            check (echojay::matchAxisZoneDb (MatchAxis::Loudness) == kMatchGainFloorDb,
+                   "mr PIN30: and the level rail's half-width IS kMatchGainFloorDb",
+                   juce::String (echojay::matchAxisZoneDb (MatchAxis::Loudness)));
+
+            // A ZONE ON EXACTLY THE TWO AXES THAT HAVE A FLOOR. A zone claims a
+            // tolerance, and there is only a tolerance where the proposal has
+            // one: dynamics and stereo image carry no move, so a band there
+            // would invent a threshold nobody set.
+            check (echojay::matchAxisHasZone (MatchAxis::Spectrum)
+                   && echojay::matchAxisHasZone (MatchAxis::Loudness)
+                   && ! echojay::matchAxisHasZone (MatchAxis::Dynamics)
+                   && ! echojay::matchAxisHasZone (MatchAxis::Stereo),
+                   "mr PIN30: a zone on exactly the two axes that have a floor, and markers on "
+                   "the two that do not");
+            check (echojay::matchAxisHasZone (MatchAxis::Spectrum)
+                       == echojay::matchAxisCanPropose (MatchAxis::Spectrum)
+                   && echojay::matchAxisHasZone (MatchAxis::Dynamics)
+                       == echojay::matchAxisCanPropose (MatchAxis::Dynamics)
+                   && echojay::matchAxisHasZone (MatchAxis::Loudness)
+                       == echojay::matchAxisCanPropose (MatchAxis::Loudness)
+                   && echojay::matchAxisHasZone (MatchAxis::Stereo)
+                       == echojay::matchAxisCanPropose (MatchAxis::Stereo),
+                   "mr PIN30: and the axes that draw a zone are the same axes the press can play, "
+                   "so a tolerance is never drawn where nothing can be proposed");
+
+            // INSIDE THE BAND MEANS NO MOVE; OUTSIDE MEANS ONE. Checked against
+            // computeMatchProposal itself, band by band, on a fixture that
+            // straddles the floor: 1.5 dB inside on three bands and 2.5 dB
+            // outside on the other three.
+            MatchSide mix, ref;
+            mix.durationSeconds = ref.durationSeconds = 180.0f;
+            mix.hasMacro = ref.hasMacro = true;
+            mix.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            mix.integrated = ref.integrated = -10.0f;     // no gain move in the way
+            mix.macro = { -10.0f, -10.0f, -10.0f, -10.0f, -10.0f, -10.0f };
+            // Relatives are taken from each side's own six-band mean, so the
+            // deltas below are what survives that normalisation.
+            ref.macro = { -8.5f, -11.5f, -10.0f, -7.5f, -12.5f, -10.0f };
+
+            std::array<float, 6> mixRel {}, refRel {};
+            const bool rel = echojay::matchBandRelatives (mix.macro, mixRel)
+                          && echojay::matchBandRelatives (ref.macro, refRel);
+            check (rel, "mr PIN30: the fixture's band relatives are available");
+
+            const auto prop  = echojay::computeMatchProposal (mix, ref);
+            const auto moves = echojay::matchBandMoves (prop);
+
+            juce::String bad;
+            for (int b = 0; b < 6; ++b)
+            {
+                const bool inside = echojay::matchInsideBandZone (mixRel[(std::size_t) b],
+                                                                  refRel[(std::size_t) b]);
+                const bool moved  = moves[(std::size_t) b] != 0.0f;
+                if (inside == moved)
+                    bad << b << ": inside=" << (int) inside << " moved=" << (int) moved
+                        << " delta=" << (refRel[(std::size_t) b] - mixRel[(std::size_t) b]) << "; ";
+            }
+            check (bad.isEmpty(),
+                   "mr PIN30: band by band, INSIDE the band is exactly no move and OUTSIDE it is "
+                   "exactly a move, checked against computeMatchProposal so the shaded excursion "
+                   "is what the proposal would act on", bad);
+
+            // AND THE CONTROL: at least one band of each kind, so the check
+            // above cannot pass on a fixture where every band agrees.
+            int insideN = 0, outsideN = 0;
+            for (int b = 0; b < 6; ++b)
+                (echojay::matchInsideBandZone (mixRel[(std::size_t) b], refRel[(std::size_t) b])
+                     ? insideN : outsideN)++;
+            check (insideN > 0 && outsideN > 0,
+                   "mr PIN30: and the fixture straddles the floor, so both halves of that claim "
+                   "were exercised",
+                   juce::String (insideN) + " inside, " + juce::String (outsideN) + " outside");
+        }
+
+        // mr PIN31 (text pin) -- THE INSTANTANEOUS STEREO PAIR IS DISPLAY ONLY.
+        //
+        // MeterEngine has always computed instWidth and instCorr per block and
+        // published only the 1.5 s EMA. They are published now so the Match
+        // page's trail has a genuinely fast source to smoke from, and THAT IS
+        // THE ONLY THING THEY MAY FEED.
+        //
+        // WHY THIS NEEDS A PIN RATHER THAN A COMMENT: an unsmoothed per-block
+        // figure that reached a comparison, a capture or the model's JSON would
+        // be a ballistic reading set beside whole-file ones as though they were
+        // alike, which is the fault this project has now recorded three times
+        // (data.macroBandDb, data.spectrum, PSR). `width` and `correlation`
+        // remain the only stereo figures anything compares, stores or sends.
+        {
+            auto readAll = [] (const char* path)
+            {
+                std::ifstream f (path);
+                std::stringstream ss; ss << f.rdbuf();
+                return codeOnly (juce::String (ss.str()));
+            };
+            const auto edSrc  = readAll ("Source/PluginEditor.cpp");
+            const auto prSrc  = readAll ("Source/PluginProcessor.cpp");
+            const auto figSrc = readAll ("Source/EJCompareFigures.h");
+            const auto refSrc = readAll ("Source/ReferenceAnalyser.cpp");
+            const auto engSrc = readAll ("Source/MeterEngine.cpp");
+
+            check (edSrc.isNotEmpty() && prSrc.isNotEmpty() && figSrc.isNotEmpty()
+                   && refSrc.isNotEmpty() && engSrc.isNotEmpty(),
+                   "mr PIN31: every file this sweep reads was found");
+
+            // THE ONE PLACE THEY MAY APPEAR, besides the engine that makes
+            // them: the Match page's fast row, which feeds the trail image.
+            const auto fastRow = functionBody (edSrc, "static void matchFastRow");
+            check (fastRow.contains ("instWidth") && fastRow.contains ("instCorr"),
+                   "mr PIN31: the trail's fast row DOES read the instantaneous pair, so this "
+                   "sweep is not passing for want of anything to find");
+
+            // AND NOWHERE ELSE. computeCompareFig is every comparison's source;
+            // buildCompareContext is what reaches the model; the snapshot save
+            // and restore are what a capture stores; the analyser is what a
+            // reference stores.
+            juce::String bad;
+            auto mustNotHave = [&bad] (const juce::String& body, const char* where)
+            {
+                if (body.isEmpty()) { bad << where << " (body not found) "; return; }
+                if (body.contains ("instWidth") || body.contains ("instCorr")) bad << where << " ";
+            };
+            mustNotHave (functionBody (figSrc, "inline CompareFig computeCompareFig (const MeterData& m)"),
+                         "computeCompareFig");
+            mustNotHave (functionBody (figSrc, "inline MatchSide matchSideFrom"), "matchSideFrom");
+            for (const char* sig : { "juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& capture",
+                                     "juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& a",
+                                     "juce::String EchoJayProcessor::buildCompareContext(const MeterData& da",
+                                     "juce::String EchoJayProcessor::buildCompareContext(const ReferenceResult& a",
+                                     "void EchoJayProcessor::getStateInformation",
+                                     "void EchoJayProcessor::setStateInformation" })
+                mustNotHave (functionBody (prSrc, sig), sig);
+            if (refSrc.contains ("instWidth") || refSrc.contains ("instCorr"))
+                bad << "ReferenceAnalyser ";
+            check (bad.isEmpty(),
+                   "mr PIN31: and they appear in NO comparison, NO capture, NO stored measurement "
+                   "and NO path to the model", bad);
+
+            // The smoothed pair is still the one those paths use, so the sweep
+            // above is not passing because stereo left them altogether.
+            check (functionBody (figSrc, "inline CompareFig computeCompareFig (const MeterData& m)")
+                       .contains ("m.width")
+                   && functionBody (figSrc, "inline CompareFig computeCompareFig (const MeterData& m)")
+                       .contains ("m.correlation"),
+                   "mr PIN31: while width and correlation, the smoothed pair, are still what every "
+                   "comparison reads");
+        }
+
+        // mr PIN17 -- THE PICTURE'S DELTAS ARE THE PROPOSAL'S DELTAS.
+        //
+        // matchBandDeltas is a second expression of refRel - mixRel, written
+        // because computeMatchProposal keeps a delta only on the bands that
+        // moved and the shading needs all six. This is what stops the two
+        // drifting: band by band, every move's measuredDb IS the delta the
+        // picture drew, and a band with no move is below the floor.
+        {
+            MatchSide mix, ref;
+            mix.durationSeconds = ref.durationSeconds = 120.0f;
+            mix.hasMacro = ref.hasMacro = true;
+            mix.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            mix.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+            ref.macro = { -8.0f,  -10.0f, -8.0f, -12.5f, -12.0f, -18.0f };
+
+            std::array<float, 6> deltas {};
+            const bool have = echojay::matchBandDeltas (mix, ref, deltas);
+            const auto p    = echojay::computeMatchProposal (mix, ref);
+
+            juce::String bad;
+            std::array<bool, 6> moved { false, false, false, false, false, false };
+            for (const auto& m : p.moves)
+                if (m.kind == MatchMoveKind::Band)
+                {
+                    moved[(size_t) m.band] = true;
+                    if (std::memcmp (&deltas[(size_t) m.band], &m.measuredDb, sizeof (float)) != 0)
+                        bad << "band " << m.band << ": picture " << deltas[(size_t) m.band]
+                            << " vs proposal " << m.measuredDb << "; ";
+                }
+            for (int i = 0; i < 6; ++i)
+                if (! moved[(size_t) i] && std::abs (deltas[(size_t) i]) >= kMatchBandFloorDb)
+                    bad << "band " << i << " has " << deltas[(size_t) i] << " dB and no move; ";
+            check (have && bad.isEmpty(),
+                   "mr PIN17: every band the proposal moved carries the delta the picture shades, bit "
+                   "for bit, and every band it left alone is under the floor", bad);
+
+            MatchSide noBands = mix;
+            noBands.hasMacro = false;
+            std::array<float, 6> ignored {};
+            const auto pNo = echojay::computeMatchProposal (noBands, ref);
+            check (! echojay::matchBandDeltas (noBands, ref, ignored)
+                   && echojay::matchNoCurveText (pNo, false).isNotEmpty()
+                   && echojay::matchNoCurveText (pNo, false).contains ("no six-band measurement"),
+                   "mr PIN17: with no six-band measurement there are no deltas, and the PICTURE says "
+                   "why rather than drawing a proposal that was never computed",
+                   echojay::matchNoCurveText (pNo, false));
+        }
+
+        // mr PIN18 -- A STEP IS A STEP, A CAP LOOKS CAPPED, AND THE GAP IS THE
+        // OUTPUT.
+        //
+        // Three levels in the curve's own dB: the anchor the curve sits at, the
+        // proposed level, and where the band would sit if it MATCHED. The block
+        // is anchor to proposed; the shading is proposed to matched. The
+        // reference is never moved by any of it (plan 8A.2): nothing here
+        // writes to the reference's side at all.
+        {
+            const float anchor = -30.0f;
+
+            const auto within = echojay::matchBandBlock (1, anchor, 2.5f);   // inside the cap
+            check (within.hasMove && ! within.capped && ! within.hasGap
+                   && std::abs (within.proposedDb - (anchor + 2.5f)) < 1.0e-4f
+                   && std::abs (within.matchedDb - within.proposedDb) < 1.0e-4f,
+                   "mr PIN18: a move inside the cap lands ON the matched level, so there is no gap "
+                   "left to shade",
+                   juce::String (within.proposedDb, 2) + " vs " + juce::String (within.matchedDb, 2));
+
+            const auto capped = echojay::matchBandBlock (0, anchor, 5.0f);   // beyond it
+            check (capped.hasMove && capped.capped && capped.hasGap
+                   && std::abs (capped.proposedDb - (anchor + kMatchBandCapDb)) < 1.0e-4f
+                   && std::abs (capped.matchedDb - (anchor + 5.0f)) < 1.0e-4f,
+                   "mr PIN18: a capped move stops at the cap and the picture keeps the other 2 dB as "
+                   "a visible gap, so a cap LOOKS capped",
+                   juce::String (capped.proposedDb, 2) + ", matched "
+                   + juce::String (capped.matchedDb, 2));
+
+            const auto under = echojay::matchBandBlock (3, anchor, 1.2f);    // below the floor
+            check (! under.hasMove && ! under.capped && under.hasGap
+                   && std::abs (under.proposedDb - anchor) < 1.0e-4f,
+                   "mr PIN18: below the floor nothing is proposed, the block is flat on the curve, and "
+                   "the whole difference stays in the gap");
+
+            const auto negative = echojay::matchBandBlock (5, anchor, -5.0f);
+            check (negative.hasMove && negative.capped
+                   && std::abs (negative.proposedDb - (anchor - kMatchBandCapDb)) < 1.0e-4f,
+                   "mr PIN18: and a cut is capped the same way, sign kept");
+
+            // The axis: the same log mapping paintSpectrumCurve uses.
+            const juce::Rectangle<int> plot { 10, 20, 400, 120 };
+            const float x20  = echojay::matchFreqToX (plot, 20.0);
+            const float x20k = echojay::matchFreqToX (plot, 20000.0);
+            juce::String axisBad;
+            if (std::abs (x20 - (float) plot.getX()) > 0.5f) axisBad << "20 Hz at " << x20 << "; ";
+            if (std::abs (x20k - (float) plot.getRight()) > 0.5f) axisBad << "20 kHz at " << x20k << "; ";
+            float prevEnd = (float) plot.getX();   // band 0 starts at the plot's left edge
+            for (int b = 0; b < 6; ++b)
+            {
+                const auto span = echojay::matchBandSpanX (plot, b);
+                if (span.getStart() < (float) plot.getX() - 0.5f
+                    || span.getEnd() > (float) plot.getRight() + 0.5f
+                    || span.getEnd() <= span.getStart()
+                    || std::abs (span.getStart() - prevEnd) > 0.5f)
+                    axisBad << "band " << b << " " << span.getStart() << ".." << span.getEnd() << "; ";
+                prevEnd = span.getEnd();
+            }
+            check (axisBad.isEmpty(),
+                   "mr PIN18: the six bands tile the plot end to end on the same 20 Hz to 20 kHz log "
+                   "axis the curves are drawn on, so a block sits over the frequencies it names",
+                   axisBad);
+        }
+
+        // mr PIN19 -- THE PICTURE CARRIES ITS OWN PROVENANCE.
+        //
+        // A whole-file average against a ballistic tail is not a like-for-like
+        // curve. Prose elsewhere saying so is not the picture saying it, and
+        // the picture is what the user is looking at.
+        {
+            echojay::SpectralEvidence a, b;
+            a.valid = b.valid = true;
+            a.reduction = b.reduction = SpectralReduction::WholeFileAverage;
+            check (echojay::matchProvenanceText (a, b).isEmpty(),
+                   "mr PIN19: two sides measured the same way need no caption");
+
+            b.reduction = SpectralReduction::BallisticTail;
+            const auto note = echojay::matchProvenanceText (a, b);
+            check (note.contains (echojay::reductionName (SpectralReduction::WholeFileAverage))
+                   && note.contains (echojay::reductionName (SpectralReduction::BallisticTail)),
+                   "mr PIN19: two sides measured differently get a caption naming BOTH reductions, on "
+                   "the picture", note);
+
+            echojay::SpectralEvidence none;
+            check (echojay::matchProvenanceText (a, none).isNotEmpty(),
+                   "mr PIN19: and a side with no spectrum at all says that rather than drawing nothing "
+                   "and explaining nothing");
         }
     }
 

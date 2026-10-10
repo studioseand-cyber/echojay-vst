@@ -1110,6 +1110,7 @@ bool EchoJayWorkspace::runRoundTripSelfTest()
                            && ser(rtf) == sf;
     const bool figNoKey = !s1.contains("_figures");   // plain pre-C chat carries none
 
+
     lastResult = preStable && preNoKeys && chanStable && chanFields
               && revMainStable && revMainNoKey && revChanStable && revChanField && revMainNoSnap
               && updNoKey && updPreserved && updFormat

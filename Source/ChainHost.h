@@ -10,6 +10,7 @@
 #include "EJTrackLevel.h"   // COMP_PROFILE_SPEC_v1 section 5: the level a build sends
 #include <limits>   // 21t-k item 4: the headroom op's absent-not-zero figures
 #include "EchoJayParamMaps.h"   // echojay::IdentityRef for recommendableIdentityRefs
+#include "EJMisdialReport.h"    // echojay::MisdialRow, retained per slot after a dial
 #include <atomic>
 #include <map>
 #include <deque>
@@ -104,6 +105,18 @@ public:
         // empty?". A slot with a reading composes from the tiers alone; a slot
         // without one still falls back, because there the card is all we have.
         bool hasLiveReads = false;
+        // MISDIAL REPORT v1. The panel is the button's home and it holds only
+        // what is in this struct, so both of these had to come across: it could
+        // not make the fp comparison from name, format and prose.
+        //
+        // fp IS THE LIVE SLOT'S fingerprint, and misdialRows carry the fp they
+        // were CAPTURED under. Comparing the two at press time is what stops a
+        // stale row being filed: a slot can be replaced and ChainSlot reused
+        // with a new desc and a new fp, leaving the previous occupant's rows in
+        // place with nothing to expire them. EMPTY for a built-in, which never
+        // gets a fingerprint, and that is why a built-in can only file a bug.
+        juce::String fp;
+        std::vector<echojay::MisdialRow> misdialRows;
     };
 
     // ---- Mode (RACK_BORROW_IMPLEMENTATION_SPEC §2, 21 Aug 2026) -----------
@@ -719,6 +732,12 @@ public:
         juce::String      notDialableReason;   // "no map for fp, no near map" / "..., near map rejected: ..."
         juce::String      substitutedFrom;     // amendment 3: the third-party name this built-in replaced ("" = none)
         juce::String      substitutedWhy;      // "" (no map) | "hangs on load" (pre-flight timeout)
+        // MISDIAL REPORT v1: this slot's per-control rows from the last dial,
+        // unstripped and with fp already copied in. Carried on the dial info
+        // because that is what the editor already reads per slot after a
+        // settle; the alternative was handing the editor a slot index, which
+        // goes stale the moment the rack changes.
+        std::vector<echojay::MisdialRow> misdialRows;
     };
     std::vector<SlotDialInfo> getDialInfos() const;
     // Hurdle 1 item 3: the summary row for one slot, as logDialSummary prints
@@ -925,6 +944,36 @@ public:
     // feed-split branch and the settle walker. The dark "(dial)" markers and
     // dialFlags were the third and were deleted on 25 Aug 2026.
     juce::StringArray getDialableRecommendableNames() const;
+    /** Mark one captured row as reported, keyed by its reportId.
+
+        KEYED ON THE ID AND NOT THE MAP KEY because the popup holds a COPY:
+        getSlotInfo returns by value and the popup filters that into its own
+        vector, so a row's position there says nothing about its position here.
+        The id is unique where a map key is not (two slots can dial the same
+        control) and it is minted at capture, so it survives the copy.
+
+        THE SCOPE OF THIS FLAG IS ONE SESSION, ONE SLOT, UNTIL THE NEXT DIAL.
+        misdialRows is cleared at the top of every apply (ChainHost.cpp, the
+        clear beside dialOutOfRange) and dies when the slot is replaced. So it
+        stops a SECOND PRESS on a row the user just reported, and it is NOT
+        persistence: nothing writes it to disk and a reload forgets it. Do not
+        read it as a durable record that a defect was filed. The durable record
+        is on the server. */
+    void markMisdialRowReported (int slotIndex, const juce::String& reportId)
+    {
+        if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return;
+        if (reportId.isEmpty()) return;
+        for (auto& r : slots_[(size_t) slotIndex].misdialRows)
+            if (r.reportId == reportId) { r.reported = true; return; }
+    }
+
+    /** The last dial's per-control rows for a slot, for the misdial report.
+        Empty for an out-of-range index or a slot that never dialled. */
+    std::vector<echojay::MisdialRow> getMisdialRows (int slotIndex) const
+    {
+        if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return {};
+        return slots_[(size_t) slotIndex].misdialRows;
+    }
     // Feed split (P16). The model's list becomes the DIALABLE subset, but a
     // fresh machine has no local fp, so dialability also consults the server's
     // existence index (version-insensitive, one call per scan, cached here).
@@ -2356,6 +2405,16 @@ private:
         juce::String                         nearMapNote;      // hurdle 1 item 2: the near-map verdict for this slot ("" = none offered yet)
         juce::String                         substitutedFrom;  // item 3: the third-party name this built-in replaced ("" = not a substitution)
         juce::String                         substitutedWhy;   // "" = no map; "hangs on load" = the pre-flight timed out
+        // MISDIAL REPORT v1: the per-control rows of the LAST dial on this
+        // slot, captured unstripped. The five StringArrays above hold
+        // semanticLabel()-stripped labels, and that transform is lossy
+        // ("threshold_db" -> "threshold"), so they cannot be turned back into a
+        // map key and cannot serve a report. fp is copied INTO each row so the
+        // harvested record stays truthful after the slot is replaced.
+        //
+        // These are the SOURCE. The durable copy lives on the chat message; the
+        // editor harvests from here once the dial settles.
+        std::vector<echojay::MisdialRow>     misdialRows;
         // Hosted settings cache (see setStateCacheEnabled). The blob and its
         // bookkeeping are read under stateCacheMutex_; everything else on
         // this struct follows the existing message-thread-only rule.

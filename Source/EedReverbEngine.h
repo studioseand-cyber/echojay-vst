@@ -276,8 +276,30 @@ public:
     // Empty the network and snap every smoother. A restored session then starts
     // AT its settings instead of sweeping into them, and a transport stop does
     // not leave the previous take's tail sitting in the lines.
+    //
+    // IT DERIVES FIRST IF ANYTHING IS PENDING (20 Sep 2026, open list 195).
+    // The snap below puts the lines at targetLineSamples_, and only recompute()
+    // writes those. recompute() is private and otherwise runs in prepare() or
+    // at the top of process() on the dirty flag, so a caller that CHANGED
+    // SETTINGS AND THEN RESET, with no prepare between, emptied the network but
+    // snapped its lines to the PREVIOUS settings' lengths; the next process()
+    // then glided them to the new ones over the 100 ms smoother, opening the new
+    // space on the old space's geometry. Taking the flag the way process() does
+    // means the snap is to the lengths this engine was just told about, and the
+    // block that follows has nothing left to recompute.
+    //
+    // NOTHING ELSE CHANGES. recompute() is pure derived state: it reads the
+    // parameter atomics and writes the target lengths, decay gains, filter and
+    // allpass coefficients and the algorithm's three scalars. It allocates
+    // nothing, touches no filter memory and has no other effect, so running it
+    // here costs an idempotent recalculation and changes no existing path:
+    // prepare() already calls recompute() immediately before reset(), so its
+    // reset now recomputes identical values.
     void reset() noexcept
     {
+        if (dirty_.exchange (false, std::memory_order_relaxed))
+            recompute();
+
         predelayL_.reset();
         predelayR_.reset();
 

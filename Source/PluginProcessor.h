@@ -7,6 +7,7 @@
 #include "EedLatencyLog.h"
 #include "PluginScanner.h"
 #include "ReferenceAnalyser.h"
+#include "EJReferenceRows.h"   // reference folders and the selected scope
 #include "WaveformRecorder.h"
 #include "ChainHost.h"
 #include "EJCalibLoop.h"   // 21t-d: the calibration loop (shared with the Link)
@@ -19,6 +20,10 @@
 #include "EJChainRole.h"    // 21t-m item 5: the chain's role, from its three sources
 #include "EedKeyWorker.h"
 #include "LoudnessLoop.h"
+#include "EJReferenceReconcile.h"  // ReferenceIndex, held as refLibrary_
+#include "EJCaptureGuard.h"  // output substitution: the shipped predicate + record field
+#include "EJSpectralEvidence.h" // spectral provenance: reduction, window, the band reduction
+#include "EJPlaybackSim.h"    // the inline monitoring stage, below the meter tap
 
 // Temporary diagnostic: append a timestamped line to the EchoJay teardown log
 // file (Release-safe; DBG is compiled out of Release). Used to trace the
@@ -97,6 +102,22 @@ struct CaptureSnapshot {
     ChannelType channelType;
     juce::String customChannelName;
     MeterData averagedData;
+    // ===== THE ACCUMULATED MACRO BANDS (Phase 1b commit 3) =====
+    // The whole-capture mean of the six pink-referenced bands, in POWER, read
+    // off captureEngine at stopCapture. It sits BESIDE averagedData rather than
+    // inside it, because averagedData.macroBandDb is the ballistic tail at the
+    // moment of stopping and this commit changes no consumer of that field.
+    //
+    // WHY captureEngine AND NOT meterEngine: captureEngine is reset at capture
+    // start, so its accumulator covers the capture and nothing before it. The
+    // spectrum rebuild beside this one sums meterEngine's ballistic spectrum,
+    // which carries up to ~450 ms of pre-capture history into its first frames.
+    // Same blocks, cleaner span.
+    std::array<float, 6> macroBandAccum { -120, -120, -120, -120, -120, -120 };
+    bool                 hasMacroBandAccum = false;   // false = not measured
+    float                macroAccumSeconds = 0.0f;
+    int                  macroAccumBlocks  = 0;
+    echojay::SpectralReduction macroAccumReduction = echojay::SpectralReduction::Unknown;
     juce::int64 timestamp;
     float durationSeconds;
     std::vector<float> waveformThumbnail;
@@ -111,9 +132,39 @@ struct CaptureSnapshot {
     // Per-band crest = peak - avg, used to distinguish transient vs sustained content.
     // Note: existing eqCurve / averagedData.spectrum may be either peak or avg
     // depending on channel type — those are kept for display/compatibility.
-    std::array<float, 64> peakSpectrum = {};
-    std::array<float, 64> avgSpectrum  = {};
-    bool hasDualSpectrum = false; // false on snapshots restored from older save files
+    //
+    // DEFAULTED TO THE UNSET SENTINEL, NOT TO {} (11 Sep 2026). Zero-filled,
+    // these read as 0 dB in every bin: not a quiet spectrum but an impossibly
+    // loud flat one. Read without the gate they produce a confident wrong
+    // answer in two shapes. With ONE side zero-filled, that side's own maximum
+    // is 0 so its contribution cancels and the delta becomes the OTHER side's
+    // tilt, reported as a large deficit in every band but its loudest. With
+    // both zero-filled it reads as perfect agreement. Neither is
+    // distinguishable from a measurement. hasDualSpectrum is still the gate and
+    // all three readers honour it; the sentinel catches the day one does not.
+    std::array<float, 64> peakSpectrum = echojay::unsetSpectrum();
+    std::array<float, 64> avgSpectrum  = echojay::unsetSpectrum();
+
+    // FALSE ON EVERY RESTORED SNAPSHOT, not merely on old save files. Neither
+    // spectrum is persisted (getStateInformation writes eqCurve only) and the
+    // restore path never sets this flag, so a capture reloaded with the session
+    // has lost both reductions permanently and can only be compared with the
+    // reduction caveat. Persisting the pair is a state-blob change and is filed
+    // on COMPARE_REFERENCE_PLAN's open items rather than done here.
+    bool hasDualSpectrum = false;
+
+    // WHAT WAS REPLACING THE OUTPUT WHEN THIS WAS CAPTURED. "" = nothing, and
+    // that is every capture today: startCapture REFUSES while A/B playback, a
+    // compare stream or codec preview is running, because such a capture
+    // measures a file and reports it as the mix.
+    //
+    // WRITTEN FOR A FUTURE THE GUARD CURRENTLY FORBIDS. Section 4 of the
+    // compare plan wants captures taken THROUGH a playback simulation on
+    // purpose; when that relaxes the guard, this field is what keeps the
+    // result honest, and every figure derived from the capture can carry it.
+    // Adding it then instead of now is how the same defect arrives twice.
+    // Tokens are echojay::outputSubstitutionKey (see EJCaptureGuard.h).
+    juce::String outputSubstitution;
 
     // Detected key (KEY_PRECONDITION_SPEC.md §5.2): an OFFLINE pass run by the
     // save thread when the capture is made — longer window, HPSS + Viterbi
@@ -429,14 +480,18 @@ public:
     // choice - meter figures only, DIFFERENT-SOURCES statement, no chain.
     juce::String buildCompareContext(const MeterData& a, const MeterData& b,
                                      const juce::String& labelA, const juce::String& labelB,
-                                     float durA, float durB, bool numbersOnly) const;
+                                     float durA, float durB, bool numbersOnly,
+                                     const echojay::SpectralEvidence& sa,
+                                     const echojay::SpectralEvidence& sb) const;
     // Figure-CARD data (client-rendered at compose time): both sources' figures
     // + labels + a cross-scope flag, enough to redraw the card identically on
     // reload. Only-present keys; absent = N/A. Shares computeCompareFig with the
     // text table so the card can never disagree with the model's numbers.
-    juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
-                                         const juce::String& labelA, const juce::String& labelB,
-                                         bool crossScope) const;
+juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
+                                         const juce::String& la, const juce::String& lb,
+                                         bool crossScope,
+                                         const echojay::SpectralEvidence& sa,
+                                         const echojay::SpectralEvidence& sb) const;
 
     // Tell the host non-parameter state changed so it re-snapshots our state
     // (plain updateHostDisplay() does NOT signal this — Logic could restore a
@@ -483,6 +538,9 @@ public:
     juce::String computePassName() const;
 
     CaptureState getCaptureState() const { return captureState.load(); }
+    // Which feature, if any, is replacing the output buffer right now.
+    // startCapture refuses on it; the editor uses it to state the reason.
+    echojay::OutputSubstitution activeOutputSubstitution() const;
 
     // =====================================================================
     // Stage 1 remote editing: the SOLO session.
@@ -1192,6 +1250,18 @@ public:
         me back where I was in this session", and a fresh instance starting at
         0 is what makes Dashboard the default on first launch after update. */
     int lastTabIndex = 0;
+    // REFERENCE FOLDERS, and the scope the ARROWS step within.
+    //
+    // On the processor rather than the editor because the scope is not browser
+    // state: the reference bar's prev and next use it with the panel closed,
+    // and an editor recreate (every Logic Link window switch) must not silently
+    // widen it back to the whole library.
+    //
+    // MEMBERSHIP KEYS ON PATH because references have no ids yet. Item 137 owns
+    // the migration when they do, and this is one of the places it has to
+    // touch: a folder full of paths outlives a blob that has moved to ids.
+    std::vector<echojay::RefFolder> referenceFolders;
+    echojay::RefScope               referenceScope;
 
     // ===== Session C: the community poll ==================================
     //
@@ -1399,6 +1469,37 @@ public:
         int sampleCount = 0;
         double sampleRate = 44100.0;
         juce::String filePath;
+
+        /** DOES THE USER WANT THIS SLOT ROLLING? Open list 215's missing
+            piece: one source of truth, so "should this be playing" stops
+            being answered independently by the button, the host transport
+            and the sync toggle with the loudest writer winning.
+
+            WRITTEN BY toggleComparePlay AND BY NOTHING ELSE: true on play,
+            false on pause. `playing` remains what the audio thread reads to
+            advance; this is what the transport sync must consult BEFORE it
+            may set `playing` true.
+
+            THE ASYMMETRY IS THE POINT. The sync may stop a stream freely,
+            because a host stopping should stop the reference. It may START
+            one only where this is true, so a host rolling cannot resurrect
+            something a person paused.
+
+            APPENDED AT THE END OF THE STRUCT, NOT INSERTED. Open list 207 is
+            what that rule is for: the gate links the PREVIOUS build's
+            archive, so a field added mid-struct gives compiled code one
+            offset table and the test TU another, silently, with plausible
+            wrong answers. Every later field keeps its offset this way.
+
+            THIS CLOSES 215 AND NOT 214. playbackPos, sampleCount and monGain
+            above are still plain non-atomic members written from both
+            threads. That race is still live, still intermittent, and still
+            invisible to reading the code. It is deliberately NOT touched
+            here: the parallel branch is already solving the same class of
+            defect on the A/B path with an atomic load bound, and that shape
+            should be copied after the merge rather than a second one
+            invented now. */
+        std::atomic<bool> userWantsRolling { false };
     };
     CmpStream cmpStream[2];
     std::atomic<uint32_t> audioBlocksProcessed_ { 0 };
@@ -1413,6 +1514,11 @@ public:
     std::atomic<int> cmpAudible { -1 };      // which stream is audible (-1 = none)
     std::atomic<bool> cmpSyncToTransport { true }; // sync capture playback to DAW transport
     std::atomic<bool> cmpBothCaptures { false };   // true when both slots are captures (set by editor)
+    // Codec preview mirror (set by the editor's enterCodecMode/exitCodecMode).
+    // The processor cannot otherwise tell a codec render from any other file
+    // in a compare slot, and the capture refusal has to NAME which feature is
+    // running or it sends the user to stop the wrong thing.
+    std::atomic<bool> cmpCodecPreview { false };
     // Temp buffers for muted-stream analysis (pre-allocated, avoids alloc on audio thread)
     juce::AudioBuffer<float> cmpTmpBuf;
     juce::AudioBuffer<float> cmpMixBuf;        // crossfade accumulation
@@ -1421,6 +1527,105 @@ public:
     void loadCompareFile(int slot, const juce::String& wavPath);
     void fadeOutCompareStreams();   // ramp monitor gain to 0, streams self-stop (click-free)
     void stopCompareStream(int slot);
+
+    /** SILENCE A SLOT WITHOUT UNLOADING IT.
+
+        A CLOSED WINDOW IS NOT A REMOVED REFERENCE. Teardown wants the audio to
+        stop; it does not want the buffer freed, the position reset or the slot
+        emptied. stopCompareStream does all of that, because it is the REMOVAL
+        path and should keep doing it.
+
+        WHAT IT DOES NOT TOUCH, and each one is a way to lose something the
+        user still has: `loaded`, the sample buffer, `playbackPos`, `filePath`
+        and `sampleCount`. Reopening the window finds the stream exactly where
+        it was.
+
+        A FUNCTION RATHER THAN A FLAG ON stopCompareStream, so that neither
+        caller can be read as the other by mistake: the two are opposite
+        intentions that happen to share four lines. */
+    void silenceCompareStream(int slot);
+
+    /** WHAT THE TWO COMPARE SLOTS HELD, OUTLIVING THE EDITOR.
+
+        TWO LIFETIMES, TWO MECHANISMS, and they are separate on purpose:
+          the PROCESSOR copy survives a WINDOW close, because the processor is
+            not destroyed when the editor is;
+          the BLOB copy survives a PROJECT reload, because the processor is.
+
+        [0] is the top slot and [1] the bottom, matching cmpStream. */
+    echojay::CompareSlotPersist compareSlotPersist_[2];
+
+    /** THE REFERENCE LIBRARY AS THIS INSTANCE HOLDS IT (commit C2).
+
+        KEPT RATHER THAN REBUILT FROM THE ANALYSER, because ReferenceResult has
+        no id and no addedAt. Rebuilding would mint a fresh id on every commit;
+        mergeReferenceIndex would then dedupe by path and keep the earlier
+        addedAt, so nothing would break, but every write would churn ids for no
+        reason. Holding the reconciled index preserves them, and is what makes
+        a tombstone possible at all.
+
+        refIndexMayWrite_ is rec.mayWrite from the load. FALSE ONLY when the
+        file existed and could not be read, in which case this session writes
+        nothing: the file that could not be read is the user's library. */
+    echojay::ReferenceIndex refLibrary_;
+    bool                    refIndexMayWrite_ = true;
+
+    /** The load result itself, kept because refReconcile takes one and because
+        Absent, Loaded and Unreadable are three different things that must not
+        collapse into a bool. */
+    echojay::RefLoadResult  refLoaded_;
+    bool                    refLibraryLoaded_ = false;
+
+    /** LOAD AND SEED ONCE, ON WHICHEVER PATH ARRIVES FIRST.
+
+        NOT IN THE CONSTRUCTOR, and that is the whole point of this being a
+        function. A host SCAN instantiates every plugin it finds, so a parse in
+        the constructor is a 473 KB JSON read on every scan of every plugin,
+        for a scan that never looks at a reference. setStateInformation and
+        createEditor are the two paths that actually need the library, and a
+        scan calls neither.
+
+        IT USED TO LIVE INSIDE setStateInformation, which a host calls ONLY
+        when restoring saved state. A freshly inserted plugin has no state, so
+        the load never ran and the library was never there: the exact case the
+        work exists to fix. */
+    void ensureReferenceLibraryLoaded();
+
+    /** Where the index lives. ONE definition, because EJReferenceIndex.h
+        forbids the header resolving it and two call sites computing it
+        separately is how they drift. */
+    static juce::File referenceIndexDir()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                   .getChildFile ("EchoJay");
+    }
+
+    /** Write the library, merged, after a change. Message thread, no lock. */
+    void commitReferenceLibrary (const juce::String& path, bool removed);
+
+    // ---- FOLDERS (C3b). THE INDEX IS THE STORE OF RECORD -----------------
+    //
+    // referenceFolders BECOMES A DERIVED VIEW. The browser, the scope and the
+    // menus all read it by NAME and there are dozens of those reads in
+    // PluginEditor.cpp, which is where the unmerged parallel work is heaviest.
+    // Rebuilding it from the index after every change means none of them move:
+    // the editor's four folder functions each gain ONE line and nothing else
+    // in that file changes.
+    void refreshFolderView();
+
+    /** THE FOUR OPERATIONS, each addressed the way the editor already has it
+        (by name) and translated to ids here, because 4A.3 requires the index to
+        key on id and the editor does not have one. */
+    void folderCreate (const juce::String& name);
+    void folderRename (const juce::String& oldName, const juce::String& newName);
+    void folderDelete (const juce::String& name);
+    void folderAssign (const juce::String& path, const juce::String& folderName);
+
+    /** THE ONE TIME MIGRATION (schema 4A.5). Blob folders become index folders,
+        ids minted now, order from array position, each path becoming that
+        entry's folderId with the first match winning. */
+    void migrateBlobFoldersOnce();
+    bool refFoldersMigrated_ = false;
     void stopAllCompare();
 
 private:
@@ -1443,6 +1648,7 @@ private:
     MeterEngine cmpMeter[2];       // Compare stream meters (one per slot)
     PluginScanner pluginScanner;
     ReferenceAnalyser refAnalyser;
+
     WaveformRecorder waveformRecorder; // Audio recording + waveform thumbnail
     ChainHost chainHost;           // Plugin chain hosting (CHAIN tab)
     echojay::UndoHistory undoHistory_;   // 21n item 3
@@ -1519,6 +1725,37 @@ private:
     int captureVersion = 1;      // incremented after each capture when project is set; resets when name changes
     juce::String nextCaptureName_;      // item 1: press-time override (single source)
     juce::String nextCaptureScopeUid_;  // item 1: press-time channel scope
+    // Stamped at startCapture (after the guard, so "" today) and copied onto
+    // the snapshot at stopCapture, because a substitution can stop mid-capture
+    // and what matters is what the capture BEGAN under.
+    juce::String captureSubstitution_;
+
+    // PLAYBACK SIMULATION, the whole stage: the selection (the same atomic and
+    // refusal rule as before), one voicing chain per channel, the voicing the
+    // previous block ran, and the room's reverb network with its own state and
+    // rule (about 320 KB of delay lines at 48 kHz, allocated in prepare).
+    // EJPlaybackSim.h is where the memory order and both reset rules are stated
+    // and argued once. It lives there rather than here so
+    // mapfps_test can exercise the shipped stage instead of a copy of it.
+    // Prepared in prepareToPlay; run at the end of processBlock.
+    PlaybackSimStage playbackStage_;
+
+public:
+    /** Select a playback simulation, OR REFUSE THE VALUE.
+
+        A PAIR RATHER THAN A PUBLIC MEMBER, against this file's own convention
+        of public atomics reached directly, for one reason: a setter can refuse
+        a value the enum permits but the switch cannot handle. WHICH VALUES ARE
+        REFUSED, AND WHY, IS ARGUED ONCE at PlaybackSimSelection in
+        EJPlaybackSim.h, not restated here. Pinned by pb PIN8. */
+    void setPlaybackSim (PlaybackSim s) noexcept  { playbackStage_.select (s); }
+
+    /** The current selection. The editor draws its card state from THIS rather
+        than from a bool of its own, so the button cannot show one thing while
+        the audio does another. */
+    PlaybackSim playbackSim() const noexcept      { return playbackStage_.selected(); }
+
+private:
 
     // Auto-feedback
     mutable std::atomic<bool> autoFeedbackReady { false };

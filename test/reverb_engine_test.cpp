@@ -972,6 +972,69 @@ int main()
         e.setMixPct (-1.0f);         check (e.getMixPct() == ReverbEngine::kMinMixPct, "mix clamps");
     }
 
+    // ---- reset() snaps to the settings it was just given --------------------
+    //
+    // THE DEFECT (open list 195, 19 Sep 2026): reset() snapped the line
+    // delays to targetLineSamples_, and only recompute() writes those. As
+    // recompute() is private and ran solely in prepare() or at the top of
+    // process() on the dirty flag, a caller that CHANGED SETTINGS AND THEN
+    // RESET, with no prepare between, emptied the network but snapped its
+    // lines to the PREVIOUS settings' lengths. The next process() then glided
+    // them over the 100 ms smoother, so the new space opened on the old
+    // space's geometry and slid into its own: an audible pitch smear across
+    // the first tail.
+    //
+    // WHAT IT COMPARES: an engine given new settings and reset, against one
+    // prepared from scratch with those settings. Those are the same state by
+    // definition, so the two must agree SAMPLE FOR SAMPLE. Before the fix the
+    // first engine glides and they do not.
+    //
+    // This test never called reset() before this check, which is why the
+    // defect was not found here. The playback rooms call it on every
+    // engagement, which is what found it.
+    std::printf ("\n== reset() snaps to the settings it was just told about (open list 195) ==\n");
+    {
+        constexpr int kN = 24000;   // half a second
+
+        // A: prepared as a big hall, then given a small room and RESET, the
+        // way a caller empties the network between two spaces.
+        ReverbEngine a;
+        configure (a, 90.0f, 3.0f, 100.0f);
+        a.setSizePct (10.0f);
+        a.setDecaySeconds (0.4f);
+        a.setAlgorithm (ReverbAlgorithm::Room);
+        a.reset();
+
+        // B: the same small room, prepared from scratch. What A must equal.
+        ReverbEngine b;
+        b.setAlgorithm (ReverbAlgorithm::Room);
+        configure (b, 10.0f, 0.4f, 100.0f);
+
+        // C: the big hall it was prepared as, kept. The control: the two
+        // spaces must really differ, or A matching B would prove nothing.
+        ReverbEngine c;
+        configure (c, 90.0f, 3.0f, 100.0f);
+
+        const Run ra = impulseRun (a, kN);
+        const Run rb = impulseRun (b, kN);
+        const Run rc = impulseRun (c, kN);
+
+        double worstAB = 0.0, worstCB = 0.0;
+        for (int i = 0; i < kN; ++i)
+        {
+            worstAB = std::max (worstAB, std::fabs ((double) ra.l[(size_t) i] - (double) rb.l[(size_t) i]));
+            worstAB = std::max (worstAB, std::fabs ((double) ra.r[(size_t) i] - (double) rb.r[(size_t) i]));
+            worstCB = std::max (worstCB, std::fabs ((double) rc.l[(size_t) i] - (double) rb.l[(size_t) i]));
+        }
+
+        check (worstCB > 1.0e-3,
+               "control: the two spaces really differ, so matching them is a claim (worst |hall - room| "
+               + std::to_string (worstCB) + ")");
+        check (worstAB == 0.0,
+               "reset() after a settings change leaves the network where a fresh prepare would: the "
+               "tail is identical sample for sample (worst |diff| " + std::to_string (worstAB) + ")");
+    }
+
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",
                  g_fail, g_fail == 1 ? "" : "s");
     return g_fail == 0 ? 0 : 1;

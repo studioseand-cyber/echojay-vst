@@ -42,6 +42,10 @@ for a in args[1:]:
 cmd = (['clang++'] + out + ['-I', os.path.abspath('Source'),
         'tools/borrowhost_test/borrowhost_test.cpp',
         'build-release/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a',   # round 53: the object code that SHIPS
+        # The Playback grid's pictures (juce_add_binary_data, EchoJayPlaybackArt). This harness drives the real
+        # editor, whose grid references them. 10 Oct: integration named build/; this tree links build-release,
+        # which is the one the gate builds and the one round 53 pinned as "the object code that SHIPS".
+        'build-release/libEchoJayPlaybackArt.a',
         '-framework','Cocoa','-framework','CoreAudio','-framework','CoreMIDI',
         '-framework','AudioToolbox','-framework','Accelerate','-framework','QuartzCore',
         '-framework','IOKit','-framework','Security','-framework','WebKit',

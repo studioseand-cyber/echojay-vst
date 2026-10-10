@@ -3,6 +3,11 @@
 #include "PluginEditor.h"
 #include "EJAffirmation.h"   // 06d test 5: the narrow client-side yes to a staged proposal
 #include "EJNetCensus.h"   // 7 Oct 2026 (06d item 1): the editor's fetches are in the census too
+#include "EJCaptureChannels.h"
+#include "PluginEditor.h"
+#include <algorithm>   // std::remove / std::remove_if, folder membership
+#include <chrono>      // the Match paint timer's clock
+#include <iostream>   // [MATCHPAINT] goes to the console
 #include "DashboardWeb.h"        // stage 2: the lazy webview Dashboard surface
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
@@ -24,6 +29,10 @@
 #include "EchoJayChannelChats.h" // latestChatForLink — the many-chats-per-channel
                                  // selection, header-inline for the unit test
 #include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
+#include "EJPlaybackArtMap.h"       // the Playback grid's pictures; .cpp-only, because
+                                    // its generated header reaches EchoJay's TUs only
+#include "EJMatchProposal.h"        // the proposal the Match screen draws
+#include "EJMatchPage.h"            // that screen's geometry and its sentences
 #include "EedDeviceRegistry.h"   // built-in editing copies (fix 2)
 #include "EedKeyDetectorProcessor.h"
 #include "EedKeyFeed.h"   // COMMIT 4: KeyDisplayPrefs (keyShowRelative)
@@ -39,7 +48,21 @@
 // the reference ids; a selection restored by raw id after a capture then
 // pointed at nothing and the AI Compare button hit its empty-selection guard
 // silently. Captures can never reach this base within a session.
-static constexpr int kCompareRefIdBase = 1000;
+// THE MENU'S ID BANDS, AND WHY THE CAPS ARE LOAD-BEARING. openCompareSlotMenu
+// hands PopupMenu ids in 100-wide bands and the handler decodes by range:
+// 1 Live, 100..199 session captures, 200..299 chat captures, 300..399
+// references, 9000+ actions. A section that overruns its band does not fail
+// loudly; its items decode as the NEXT section's, so a click selects the wrong
+// thing. The 99 caps are what hold the bands apart.
+static constexpr int kCompareMenuBandSize   = 100;
+static constexpr int kCompareMenuRefCap     = kCompareMenuBandSize - 1;   // 300..398
+static constexpr int kCompareMenuRefNameLen = 44;
+static constexpr int kCompareMenuAddRefId    = 9200;
+static constexpr int kCompareMenuBrowseRefId = 9300;
+
+// The drop zone's three height constants are GONE with the zone itself. They
+// are not replaced here: the bar's geometry lives in EJReferenceBar.h, where a
+// pin can exercise it, which is the whole reason that header exists.
 
 // The fader filmstrip, decoded ONCE per process and shared by every editor
 // instance. juce::ImageCache, the drawLogo mechanism, and deliberately NOT
@@ -952,6 +975,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 chainListPanel.repaint();
                 return;
             }
+            // Output substitution, editor side: the processor refuses too
+            // (startCapture returns to Idle), but the reason has to NAME the
+            // feature that is running or the user cannot act on it.
+            if (auto sub = processorRef.activeOutputSubstitution();
+                sub != echojay::OutputSubstitution::None)
+            {
+                chainListPanel.statusText = echojay::captureRefusalReason(sub);
+                chainListPanel.repaint();
+                return;
+            }
             processorRef.setNextCapture(computeNextCaptureName(), effectiveChannelUid());
             processorRef.startCapture();
         }
@@ -1281,44 +1314,112 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     dialWritesToggle.onClick = [this] { api.setDialWritesBlocked(dialWritesToggle.getToggleState()); };
     addAndMakeVisible(dialWritesToggle);
 
+    echoJayOnlyToggle.setColour(juce::ToggleButton::textColourId, C::text2);
+    echoJayOnlyToggle.setColour(juce::ToggleButton::tickColourId, C::blue);
+    echoJayOnlyToggle.setVisible(false);
+    echoJayOnlyToggle.onClick = [this] { api.setEchoJayOnly(echoJayOnlyToggle.getToggleState()); };
+    addAndMakeVisible(echoJayOnlyToggle);
+
     // Load and apply persisted scale before first paint
     loadUIScale();
     applyUIScale(uiScale_);
 
-    loadRefBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
+    // Styled as settingsScanBtn, the Settings primary action, rather than as a
+    // new look: bg4 ground with purple text. loadReferenceFile() has been
+    // complete and unreachable since the addAndMakeVisible below was commented
+    // out, which made this an affordance that did not exist rather than one
+    // that did nothing.
+    loadRefBtn.setColour(juce::TextButton::buttonColourId, C::bg4);
     loadRefBtn.setColour(juce::TextButton::textColourOnId, C::purple);
     loadRefBtn.setColour(juce::TextButton::textColourOffId, C::purple);
+    loadRefBtn.setTooltip("Add a reference track to compare against");
     loadRefBtn.onClick = [this] { loadReferenceFile(); };
-    loadRefBtn.setVisible(false); // removed from UI
-    // addAndMakeVisible(loadRefBtn);
+    addChildComponent(loadRefBtn);   // a child now; shown only in Compare
+
+    // THE REFERENCE BAR'S CONTROLS. Styled as the meter row directly below
+    // them, bg3 with text3, so the bar reads as part of Compare rather than as
+    // a visitor. Every one of them acts; none is drawn ahead of its function.
+    {
+        auto styleBar = [this](juce::TextButton& b, const juce::String& tip)
+        {
+            b.setColour(juce::TextButton::buttonColourId, C::bg3);
+            b.setColour(juce::TextButton::textColourOffId, C::text2);
+            b.setColour(juce::TextButton::textColourOnId,  C::blue);
+            b.setTooltip(tip);
+            addChildComponent(b);
+        };
+        styleBar(refPrevBtn,   "Previous reference");
+        styleBar(refNextBtn,   "Next reference");
+        styleBar(refPlayBtn,   "Audition this reference");
+        styleBar(refBrowseBtn, "Browse the reference library");
+        refPlayBtn.setButtonText(juce::String::fromUTF8("\xe2\x96\xb6"));
+        refPrevBtn  .onClick = [this] { refBarStepBy(-1); };
+        refNextBtn  .onClick = [this] { refBarStepBy(+1); };
+        refPlayBtn  .onClick = [this] { toggleComparePlay(refBarIsTop()); };
+        refBrowseBtn.onClick = [this] { openReferenceBrowser(refBarIsTop()); };
+    }
 
     aiCompareBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff06b6d4));
     aiCompareBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
     aiCompareBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
     aiCompareBtn.onClick = [this] { runAICompare(); };
-    aiCompareBtn.setVisible(false);
-    addAndMakeVisible(aiCompareBtn);
+    // addChildComponent, NOT setVisible (false) then addAndMakeVisible, which
+    // made it visible again. Its visibility is showCompareFurniture's, applied
+    // once all ten exist (end of Stage 3 below).
+    addChildComponent(aiCompareBtn);
 
-    // Codec Player: feature-launcher button (custom paint, see CodecLaunchBtn)
     // + modal panel
-    codecsBtn_.onClick = [this] { openCodecPanel(); };
-    codecsBtn_.setVisible(false);
-    addAndMakeVisible(codecsBtn_);
+    // codecsBtn_ IS GONE (13 Sep 2026). Playback Simulation is a sub-tab of
+    // REFERENCE, not a launcher on the Compare page: it is a peer of Compare,
+    // and a button made it read as an accessory to it. The panel it opened is
+    // the same panel, now drawn as a page. See MATCH_REFERENCE_PLAN.md 8A.1.
     codecPanel_.owner = this;
     codecPanel_.setWantsKeyboardFocus(true);
     codecPanel_.setVisible(false);
     addChildComponent(codecPanel_);
 
-    compareSlotABox.setColour(juce::ComboBox::backgroundColourId, C::bg3);
-    compareSlotABox.setColour(juce::ComboBox::textColourId, C::text);
-    compareSlotABox.setColour(juce::ComboBox::outlineColourId, C::border2);
-    compareSlotABox.setVisible(false);
-    addAndMakeVisible(compareSlotABox);
-    compareSlotBBox.setColour(juce::ComboBox::backgroundColourId, C::bg3);
-    compareSlotBBox.setColour(juce::ComboBox::textColourId, C::text);
-    compareSlotBBox.setColour(juce::ComboBox::outlineColourId, C::border2);
-    compareSlotBBox.setVisible(false);
-    addAndMakeVisible(compareSlotBBox);
+    // The Match page, added the same way and right after it: hidden, and made
+    // visible only by setRefSubTab (Match). See MatchPanel in the header.
+    matchPanel_.owner = this;
+    matchPanel_.setWantsKeyboardFocus(true);
+    addChildComponent(matchPanel_);
+
+    // Reference browser, CodecPanel's shell with real children inside it.
+    refBrowser_.owner = this;
+    refBrowser_.setWantsKeyboardFocus(true);
+    refBrowser_.setVisible(false);
+    addChildComponent(refBrowser_);
+    refBrowser_.leftView .setViewedComponent(&refBrowser_.leftList,  false);
+    refBrowser_.rightView.setViewedComponent(&refBrowser_.rightList, false);
+    refBrowser_.leftView .setScrollBarsShown(true, false);
+    refBrowser_.rightView.setScrollBarsShown(true, false);
+    refBrowser_.addAndMakeVisible(refBrowser_.leftView);
+    refBrowser_.addAndMakeVisible(refBrowser_.rightView);
+    refBrowser_.leftList.onRowClicked = [this](const echojay::RefBrowserRow& row)
+    {
+        if (row.kind == echojay::RefBrowserRow::Kind::NewFolder) { beginNewFolder(); return; }
+        if (row.kind == echojay::RefBrowserRow::Kind::Category)  setReferenceScope (row.scope);
+    };
+    refBrowser_.leftList.onRowMenu = [this](const echojay::RefBrowserRow& row,
+                                            juce::Point<int> p)
+    { showFolderRowMenu (row, p); };
+    refBrowser_.rightList.onRowMenu = [this](const echojay::RefBrowserRow& row,
+                                             juce::Point<int> p)
+    { showReferenceRowMenu (row, p); };
+    refBrowser_.rightList.onRowClicked = [this](const echojay::RefBrowserRow& row)
+    {
+        if (row.kind == echojay::RefBrowserRow::Kind::Invite)
+        {
+            // THE SAME FUNCTION THE MENU INVITATION CALLS, and the same words.
+            loadReferenceFile();
+            return;
+        }
+        if (row.kind != echojay::RefBrowserRow::Kind::Track) return;
+        refBrowserSelected_ = row.index;
+        applyReferenceToSlot(refBrowser_.forTopSlot, row.index);
+        refreshReferenceBrowser();
+    };
+
 
     // Meter-type selector buttons for Compare tab (stage 1)
     {
@@ -1326,7 +1427,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         for (int i = 0; i < 5; ++i)
         {
             compareMeterBtns[(size_t)i].setButtonText(kMeterLabels[i]);
-            compareMeterBtns[(size_t)i].setVisible(false);
             compareMeterBtns[(size_t)i].setColour(juce::TextButton::buttonColourId,
                 i == 0 ? juce::Colour(0xff1a2d4a) : C::bg3);
             compareMeterBtns[(size_t)i].setColour(juce::TextButton::textColourOffId,
@@ -1344,7 +1444,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 }
                 repaint();
             };
-            addAndMakeVisible(compareMeterBtns[(size_t)i]);
+            addChildComponent(compareMeterBtns[(size_t)i]);   // hidden; see aiCompareBtn
         }
     }
 
@@ -1354,8 +1454,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             btn.setColour(juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
             btn.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff1a2030));
             btn.setColour(juce::TextButton::textColourOffId,  C::text2);
-            btn.setVisible(false);
-            addAndMakeVisible(btn);
+            addChildComponent(btn);   // hidden; see aiCompareBtn
         };
         styleSlotBtn(compareTopSlotBtn_);
         styleSlotBtn(compareBotSlotBtn_);
@@ -1376,8 +1475,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             btn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
             btn.setColour(juce::TextButton::textColourOffId, C::text3);
             btn.setEnabled(false);
-            btn.setVisible(false);
-            addAndMakeVisible(btn);
+            addChildComponent(btn);   // hidden; see aiCompareBtn
         };
         stylePlayBtn(comparePlayTopBtn_, juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6")));
         stylePlayBtn(comparePlayBotBtn_, juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6")));
@@ -1388,21 +1486,39 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         auto styleTBar = [&](juce::TextButton& btn) {
             btn.setColour(juce::TextButton::buttonColourId, C::bg3);
             btn.setColour(juce::TextButton::textColourOffId, C::text3);
-            btn.setVisible(false);
-            addAndMakeVisible(btn);
+            addChildComponent(btn);   // hidden; see aiCompareBtn
         };
 
         cmpABtn_.setButtonText("A");
         styleTBar(cmpABtn_);
+        // SELECTING A SIDE IS A GESTURE, NOT A ROUTING SWITCH.
+        //
+        // These used to store cmpAudible and nothing else, which was correct
+        // until open list 215: before it, the transport sync started EVERY
+        // loaded slot when the host rolled, so both were already rolling and
+        // A/B only chose which was heard. After 215 a slot rolls only if the
+        // user asked it to, so pressing B selected a stream nobody had
+        // started and the ramp target (rolling && sl == audible) stayed at
+        // zero. The button switched; the audio did not.
+        //
+        // THE OTHER SLOT KEEPS ROLLING, DELIBERATELY. Both streams advance and
+        // analyse every block and only the audible one is mixed, so leaving
+        // the silent one running is what keeps the two IN TIME: switching back
+        // to A must land where A would have been by now, not where it was left.
+        // Stopping it looks like an obvious tidy-up and would make every
+        // switch a comparison between two different points in the two files.
         cmpABtn_.onClick = [this] {
-            processorRef.cmpAudible.store(0);
+            if (! makeCompareSlotAudible (0)) processorRef.cmpAudible.store(0);
             updateTransportBar(); updateComparePlayBtns(); repaint();
         };
 
         cmpBBtn_.setButtonText("B");
         styleTBar(cmpBBtn_);
         cmpBBtn_.onClick = [this] {
-            processorRef.cmpAudible.store(1);
+            // The fallback store keeps the SELECTION honest for a slot with no
+            // stream, such as Live: the side is still selected and the meters
+            // still follow it, there is simply nothing to start.
+            if (! makeCompareSlotAudible (1)) processorRef.cmpAudible.store(1);
             updateTransportBar(); updateComparePlayBtns(); repaint();
         };
 
@@ -1417,7 +1533,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         compareSyncBtn_.setButtonText("SYNC");
         compareSyncBtn_.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1a2d4a));
         compareSyncBtn_.setColour(juce::TextButton::textColourOffId, C::blue);
-        compareSyncBtn_.setVisible(false);
         compareSyncBtn_.onClick = [this]
         {
             bool cur = processorRef.cmpSyncToTransport.load();
@@ -1432,7 +1547,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 // Disengaging freezes the reference where it is
                 for (int sl = 0; sl < 2; ++sl)
                     if (processorRef.cmpSlotIsRef[sl].load())
+                    {
+                        // Disengaging SYNC freezes the reference, and the
+                        // intent freezes with it: otherwise the slot keeps
+                        // permission and the next host roll restarts what
+                        // this button just froze.
+                        processorRef.cmpStream[sl].userWantsRolling.store(false);
                         processorRef.cmpStream[sl].playing.store(false);
+                    }
             }
             EchoJay_NSLog(("EJCmp: sync " + juce::String(!cur ? "ON (offset reset)"
                                                               : "OFF (reference frozen)")).toRawUTF8());
@@ -1442,91 +1564,25 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 !cur ? C::blue : C::text3);
             repaint();
         };
-        addAndMakeVisible(compareSyncBtn_);
+        addChildComponent(compareSyncBtn_);   // hidden; see aiCompareBtn
     }
+
+    // ALL TEN NOW EXIST, so they come under their one author here, from the
+    // first frame. compareVisible is false at construction, so this applies
+    // hidden, which is what addChildComponent already left them. The call is
+    // here so construction goes through the same decision as every later
+    // change, rather than being a fourth place that sets them itself.
+    showCompareFurniture (compareFurnitureShouldShow());
 
     refStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffFF6B9D));
     refStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
     refStatusLabel.setJustificationType(juce::Justification::centredLeft);
+    // A CHILD COMPONENT AT LAST. It had neither addAndMakeVisible nor
+    // addChildComponent, so it was not in the tree at all and setVisible(true)
+    // on it would have painted nothing. Starts hidden: setRefStatus shows it
+    // when there is something to say.
+    addChildComponent(refStatusLabel);
     refStatusLabel.setVisible(false);
-    // Removed from UI — no longer shown
-
-    // Preset controls
-    presetBox.setColour(juce::ComboBox::backgroundColourId, C::bg3);
-    presetBox.setColour(juce::ComboBox::textColourId, C::text);
-    presetBox.setColour(juce::ComboBox::outlineColourId, C::border2);
-    presetBox.setTextWhenNothingSelected("Reference Presets...");
-    presetBox.onChange = [this] {
-        int sel = presetBox.getSelectedId();
-        if (sel == 1) {
-            // "Clear All" selected
-            processorRef.getReferenceAnalyser().clearAll();
-            presetBox.setSelectedId(0, juce::dontSendNotification);
-            refStatusLabel.setText("References cleared", juce::dontSendNotification);
-            if (currentView == View::Compare)
-                showCompareView();
-            repaint();
-        } else if (sel > 1 && (sel - 2) < presetNames.size()) {
-            loadPreset(presetNames[sel - 2]);
-        }
-    };
-    presetBox.setVisible(false);
-    addAndMakeVisible(presetBox);
-    
-    savePresetBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    savePresetBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
-    savePresetBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
-    savePresetBtn.onClick = [this] {
-        auto refs = processorRef.getReferenceAnalyser().getReferences();
-        if (refs.empty()) { refStatusLabel.setText("No references to save", juce::dontSendNotification); return; }
-        
-        // Simple name dialog using AlertWindow
-        auto* aw = new juce::AlertWindow("Save Preset", "Name this reference preset:", juce::MessageBoxIconType::NoIcon);
-        aw->addTextEditor("name", "", "Preset name:");
-        aw->addButton("Save", 1);
-        aw->addButton("Cancel", 0);
-        aw->setLookAndFeel(&lnf);
-        aw->enterModalState(true, juce::ModalCallbackFunction::create([this, aw](int result) {
-            if (result == 1) {
-                auto name = aw->getTextEditorContents("name").trim();
-                if (name.isNotEmpty()) {
-                    saveCurrentPreset(name);
-                    loadPresetList();
-                    refStatusLabel.setText("Preset saved: " + name, juce::dontSendNotification);
-                }
-            }
-            delete aw;
-        }));
-    };
-    savePresetBtn.setVisible(false);
-    addAndMakeVisible(savePresetBtn);
-    
-    deletePresetBtn.setColour(juce::TextButton::buttonColourId, C::bg3);
-    deletePresetBtn.setColour(juce::TextButton::textColourOnId, C::red);
-    deletePresetBtn.setColour(juce::TextButton::textColourOffId, C::red);
-    deletePresetBtn.onClick = [this] {
-        int sel = presetBox.getSelectedId();
-        if (sel > 1 && (sel - 2) < presetNames.size()) {
-            juce::String filePath = presetNames[sel - 2];
-            juce::String displayName = juce::File(filePath).getFileNameWithoutExtension();
-            auto* aw = new juce::AlertWindow("Delete Preset", 
-                "Are you sure you want to delete \"" + displayName + "\"?", 
-                juce::MessageBoxIconType::WarningIcon);
-            aw->addButton("Delete", 1);
-            aw->addButton("Cancel", 0);
-            aw->setLookAndFeel(&lnf);
-            aw->enterModalState(true, juce::ModalCallbackFunction::create([this, aw, filePath, displayName](int result) {
-                if (result == 1) {
-                    deletePreset(filePath);
-                    loadPresetList();
-                    refStatusLabel.setText("Deleted: " + displayName, juce::dontSendNotification);
-                }
-                delete aw;
-            }));
-        }
-    };
-    deletePresetBtn.setVisible(false);
-    addAndMakeVisible(deletePresetBtn);
 
     // Compare click catcher — transparent component that catches clicks on waveform bars
     compareClickCatcher.setInterceptsMouseClicks(true, false);
@@ -1534,20 +1590,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     compareClickCatcher.setVisible(false);
     addAndMakeVisible(compareClickCatcher);
 
-    // Reference remove buttons (X on each tag in the drop zone)
-    for (int i = 0; i < kMaxRefRemoveBtns; ++i)
-    {
-        refRemoveBtns[(size_t)i].setButtonText("x");
-        refRemoveBtns[(size_t)i].setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-        refRemoveBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, C::text3);
-        refRemoveBtns[(size_t)i].setVisible(false);
-        refRemoveBtns[(size_t)i].onClick = [this, i]() {
-            processorRef.getReferenceAnalyser().removeReference(i);
-            if (currentView == View::Compare) showCompareView();
-            repaint();
-        };
-        addAndMakeVisible(refRemoveBtns[(size_t)i]);
-    }
 
     // --- Login screen components ---
     // The "EchoJay" wordmark used to live here as a 32pt label. It's now
@@ -1936,6 +1978,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         return processorRef.createSlotEditorForView(chainViewUid(), i);
     };
     chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };
+    // MISDIAL REPORT v1: the panel owns the button, the editor owns the popup.
+    // The panel holds no API and no knowledge of the record; it reports which
+    // slot was asked about and nothing more.
+    chainListPanel.onReport = [this](int i) { openSlotReport(i); };
     chainListPanel.onRemoveSlot = [this](int i) {
         if (chainEditGateRefuses()) return;   // COMMIT 2: not held yet
         // Same fork, same reason. The local body keeps its 80ms deferred
@@ -2800,6 +2846,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             &settingsExpLevel, &settingsLanguage, &uiScaleCombo, &autoDialToggle,
                                      &dialWritesToggle,
             &settingsScanBtn, &viewAllPluginsBtn,
+            &echoJayOnlyToggle, &dialWritesToggle,
+            &settingsScanBtn, &viewAllPluginsBtn, &settingsWithheldToggleBtn_,
             &saveSettingsBtn, &settingsManualBtn, &settingsSavedLabel,
             &settingsHelpBtn, &dumpMetersBtn, &logoutBtn, &settingsOrbCard_ };
         for (auto* m : settingsMovers) settingsContent_.addChildComponent(*m);
@@ -2832,6 +2880,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // processor's chainHost and kept processing. The fix is THE SAME
     // function a tab click runs, forced once here: one population path, no
     // second "initial draw" routine to drift.
+    // THE SLOTS COME BACK BEFORE ANYTHING DRAWS THEM. Restored here rather
+    // than earlier because refBrowserEntries() needs the analyser seeded, and
+    // ensureReferenceLibraryLoaded runs in createEditor before this
+    // constructor body. THE WINDOW HALF: the processor kept these across the
+    // close. The project half arrived in setStateInformation.
+    restoreCompareSlotsFromProcessor();
+
     if (currentScreen == Screen::Main)
         switchToTab(currentTab, /*force*/ true);
 
@@ -2916,10 +2971,37 @@ EchoJayEditor::~EchoJayEditor() {
     // closes while codec mode is engaged, the processor would keep replacing
     // the plugin output with the lossy render, invisibly, forever. Fade the
     // monitor streams out; they self-stop on the audio thread.
+    // AND THE STREAMS STOP WHATEVER MODE WE ARE IN, not only codec mode.
+    //
+    // The block below fades ONLY when codecModeActive_, which left the other
+    // case open: a reference playing through the ordinary Compare transport
+    // survived the editor closing, with the window gone and no control
+    // anywhere. It is the same defect as the codec one this guards against,
+    // reached by a different door.
+    //
+    // BEFORE the codec branch, so the fade still owns the codec case: that
+    // path wants a click-free ramp and a self-stop on the audio thread, which
+    // is a better teardown than a hard stop and is kept exactly as it was.
+    // stopCompareStream on an already-stopped slot is a no-op.
+    if (! codecModeActive_)
+        silenceCompareStreams ("the editor closing");
+
+    // AND THE SLOT IDENTITY, WHICHEVER MODE WE ARE IN. Unconditional: the
+    // codec branch above fades rather than silencing, but both destroy this
+    // editor and both must leave the slots behind. This is the WINDOW half;
+    // getStateInformation carries the same data into the blob for the PROJECT
+    // half.
+    saveCompareSlotsToProcessor();
+
     if (codecModeActive_)
     {
         processorRef.cmpAudible.store(-1);
         processorRef.fadeOutCompareStreams();
+        // This path fades the streams WITHOUT calling exitCodecMode (the editor
+        // is going away, there is nothing to restore into), so the mirror has
+        // to be cleared here or it outlives the preview it describes and
+        // refuses every later capture naming a panel that no longer exists.
+        processorRef.cmpCodecPreview.store(false);
     }
 
     ejTeardownLog("~EchoJayEditor enter");
@@ -3071,13 +3153,18 @@ void EchoJayEditor::showLoginScreen()
     settingsManualBtn.setVisible(false);
     dumpMetersBtn.setVisible(false);
 
-    // Also hide compare fields
-    aiCompareBtn.setVisible(false);
-    codecsBtn_.setVisible(false);
+    // Also hide compare fields. The ten Compare controls through their one
+    // author: compareVisible is false here (hideCompareView above cleared it,
+    // or the view was never up), so this applies hidden to all ten, where it
+    // used to hide only AI Compare.
+    showCompareFurniture (compareFurnitureShouldShow());
     closeCodecPanel();   // also disengages codec preview if it was active
-    compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
     refStatusLabel.setVisible(false);
-    presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false); for (auto& b : refRemoveBtns) b.setVisible(false); compareClickCatcher.setVisible(false);
+    loadRefBtn.setVisible(false);
+    for (auto* b : { &refPrevBtn, &refNextBtn, &refPlayBtn, &refBrowseBtn })
+        b->setVisible(false);
+    refBrowser_.visibleState = false; refBrowser_.setVisible(false);
+    compareClickCatcher.setVisible(false);
 
     // Login screen: one shared pass (currentScreen != Main ⇒ all pages off,
     // overlay hidden). No direct flag writes — updateOnboardingPrompts is
@@ -4991,13 +5078,31 @@ void EchoJayEditor::fileDragExit(const juce::StringArray&) { dragHovering = fals
 void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
 {
     dragHovering = false;
+
+    // EXACTLY ONE ACCEPTED FILE AUTO LOADS. Two or more add and load none.
+    //
+    // The OS hands the dropped paths in an arbitrary order, so first and last
+    // are equally arbitrary and picking either would be inventing an intent
+    // the user did not express. A SINGLE drop is an unambiguous choice; a
+    // multi drop is an import. Counted over the ACCEPTED files, not the
+    // dropped ones, so dragging one wav and two PDFs still auto loads the wav.
+    int accepted = 0;
+    for (auto& f : files)
+    {
+        const auto e = juce::File(f).getFileExtension().toLowerCase();
+        if (e == ".wav" || e == ".mp3" || e == ".flac" || e == ".aiff" ||
+            e == ".aif" || e == ".ogg" || e == ".m4a")
+            ++accepted;
+    }
+    const bool autoLoad = (accepted == 1);
+
     for (auto& f : files) {
         juce::File file(f);
         auto ext = file.getFileExtension().toLowerCase();
         if (ext == ".wav" || ext == ".mp3" || ext == ".flac" || ext == ".aiff" ||
             ext == ".aif" || ext == ".ogg" || ext == ".m4a")
         {
-            refStatusLabel.setText("Analysing " + file.getFileName() + "...", juce::dontSendNotification);
+            setRefStatus("Analysing " + file.getFileName() + "...", RefStatusKind::Info);
             
             // Copy file to EchoJay folder to avoid sandbox/permission issues.
             // Always overwrite — the source file may have changed.
@@ -5013,9 +5118,53 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
             auto& analyser = processorRef.getReferenceAnalyser();
             analyser.forceResetIfStuck();
             
-            analyser.analyseFile(fileToAnalyse, [this, file](bool success, const juce::String& error) {
-                if (success) refStatusLabel.setText(juce::String(processorRef.getReferenceAnalyser().getReferenceCount()) + " reference(s) loaded", juce::dontSendNotification);
-                else refStatusLabel.setText("Error: " + error, juce::dontSendNotification);
+            // The RESOLVED path is what the entry will carry, not the dropped
+            // one: filesDropped analyses the copy in References when the copy
+            // succeeded, so resolving by the original path would miss.
+            const auto analysedPath = fileToAnalyse.getFullPathName();
+            analyser.analyseFile(fileToAnalyse, [this, file, analysedPath, autoLoad, accepted]
+                                                (bool success, const juce::String& error) {
+                if (! success)
+                {
+                    setRefStatus("Error: " + error, RefStatusKind::Problem);
+                    refreshRefBarEnablement();
+                    if (currentView == View::Compare) showCompareView();
+                    repaint();
+                    return;
+                }
+
+                if (autoLoad)
+                {
+                    // BY PATH, NEVER BY POSITION. See refIndexOfPath.
+                    const int idx = echojay::refIndexOfPath (refBrowserEntries(), analysedPath);
+                    if (idx >= 0)
+                    {
+                        // refBarIsTop(), NOT a fresh decision, so the drop and
+                        // the arrows always agree about which slot they drive.
+                        const bool isTop = refBarIsTop();
+                        applyReferenceToSlot (isTop, idx);
+                        refBrowserSelected_ = idx;
+                        if (refBrowser_.visibleState) refreshReferenceBrowser();
+                    }
+
+                    // THE SUCCESS IS THE BAR, NOT A SENTENCE. The bar already
+                    // carries the file name and the slot letter, so a status
+                    // line saying both put the name on screen twice and told
+                    // the user nothing the thing in front of them did not.
+                    // The EMPTY STRING IS LOAD-BEARING: it clears "Analysing
+                    // <file>...", which would otherwise stand for the rest of
+                    // the session as a claim about work that had finished.
+                    setRefStatus ({}, RefStatusKind::Info);
+                }
+                else
+                {
+                    // NO CLAIM THAT ANYTHING LOADED, and the count is of what
+                    // this drop added, not of the library.
+                    setRefStatus (juce::String (accepted) + " references added",
+                                  RefStatusKind::Info);
+                }
+
+                refreshRefBarEnablement();   // the library just changed
                 if (currentView == View::Compare) showCompareView();
                 repaint();
             });
@@ -5028,6 +5177,70 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
 // Reference Loading
 // ============================================================================
 
+// THE ONE WRITER OF refStatusLabel. Before this, thirteen call sites set text
+// on a label that was never added to the component tree and never given
+// bounds, so every message the Compare view could produce, including
+// "Error: " + error from a failed analysis, was written and discarded. Text
+// and visibility move together here so that cannot come apart again.
+void EchoJayEditor::setRefStatus(const juce::String& msg, RefStatusKind kind)
+{
+    // THE COLOUR FOLLOWS THE REGISTER, and it is set HERE rather than once at
+    // construction. It used to be one pink for everything, so "Analysing
+    // kick.wav..." and "3 reference(s) loaded" arrived in the same colour as
+    // "Error: unsupported sample rate". Four of the six strings this function
+    // could carry were not failures and one was a success.
+    //
+    // INFO IS C::text2, WHICH IS THE BAR'S OWN SECONDARY TEXT: every control on
+    // the reference bar sets textColourOffId to it (the styleBar helper), so an
+    // informational line reads as part of the bar rather than as an event. Not
+    // a new hex.
+    refStatusLabel.setColour (juce::Label::textColourId,
+                              kind == RefStatusKind::Problem
+                                  ? juce::Colour (0xffFF6B9D)   // unchanged
+                                  : C::text2);
+
+    // Read BEFORE the write: the layout decision below compares presence
+    // across this call, and setText is what changes it.
+    const juce::String before = refStatusLabel.getText();
+
+    refStatusLabel.setText(msg, juce::dontSendNotification);
+    // Compare is the only view that lays this label out, so it is the only
+    // view that may show it. Leaving the text set means re-entering Compare
+    // brings a standing message back rather than losing it.
+    refStatusLabel.setVisible(msg.isNotEmpty() && currentView == View::Compare);
+    refStatusLabel.toFront(false);
+
+    // THE BAR'S GEOMETRY DEPENDS ON WHETHER A STATUS IS PRESENT, and on
+    // nothing else about it: refBarLayout hands the name region 184px more
+    // when there is none. So the name must give up or reclaim that space AT
+    // THE MOMENT the message appears or disappears, not on the next unrelated
+    // layout, which until now was whenever the window happened to move.
+    //
+    // ONLY ON A TRANSITION. A message replaced by another message changes no
+    // rectangle, so sixteen call sites do not each pay for a layout pass.
+    //
+    // THIS IS A SETTER DRIVING LAYOUT, WHICH IS NORMALLY WRONG, and it is done
+    // here deliberately rather than in the callers. The alternative was a
+    // resized() call at each site that can change presence, which is an audit
+    // sixteen sites wide where getting it wrong is silent. What makes it safe
+    // is not a guard: resized() is reached from nowhere that writes this label
+    // (checked across its whole body against all eight entry points), so there
+    // is no cycle to re-enter. A re-entrancy guard would have stopped a crash
+    // and left the cycle; there is no cycle.
+    if (echojay::refStatusPresenceChanged (before, msg))
+        resized();
+
+    repaint();
+}
+
+// Which Compare panel a raw click landed in. The bottom panel begins at the
+// bottom slot button, which resized() positions from the live panel geometry,
+// so this answers from what is on screen rather than from a stored guess.
+bool EchoJayEditor::compareClickIsTopSlot(juce::Point<int> pos) const
+{
+    return pos.y < compareBotSlotBtn_.getY();
+}
+
 void EchoJayEditor::loadReferenceFile()
 {
     auto chooser = std::make_shared<juce::FileChooser>(
@@ -5036,10 +5249,35 @@ void EchoJayEditor::loadReferenceFile()
         [this, chooser](const juce::FileChooser& fc) {
             auto file = fc.getResult();
             if (file.existsAsFile()) {
-                refStatusLabel.setText("Analysing " + file.getFileName() + "...", juce::dontSendNotification);
-                processorRef.getReferenceAnalyser().analyseFile(file, [this](bool success, const juce::String& error) {
-                    if (success) refStatusLabel.setText(juce::String(processorRef.getReferenceAnalyser().getReferenceCount()) + " reference(s) loaded", juce::dontSendNotification);
-                    else refStatusLabel.setText("Error: " + error, juce::dontSendNotification);
+                setRefStatus("Analysing " + file.getFileName() + "...", RefStatusKind::Info);
+                // THE CHOOSER IS SINGLE SELECT, so this is always the one-file
+                // case and needs no count: launchAsync passes openMode |
+                // canSelectFiles with no canSelectMultipleItems, and the
+                // callback reads getResult(), not getResults().
+                const auto analysedPath = file.getFullPathName();
+                processorRef.getReferenceAnalyser().analyseFile(file, [this, file, analysedPath]
+                                                                     (bool success, const juce::String& error) {
+                    if (! success)
+                    {
+                        setRefStatus("Error: " + error, RefStatusKind::Problem);
+                        refreshRefBarEnablement();
+                        repaint();
+                        return;
+                    }
+
+                    const int idx = echojay::refIndexOfPath (refBrowserEntries(), analysedPath);
+                    if (idx >= 0)
+                    {
+                        const bool isTop = refBarIsTop();
+                        applyReferenceToSlot (isTop, idx);
+                        refBrowserSelected_ = idx;
+                        if (refBrowser_.visibleState) refreshReferenceBrowser();
+                    }
+                    // Silent on success, and clearing the Analysing line as it
+                    // goes. Same rule as the drop path, written the same way.
+                    setRefStatus ({}, RefStatusKind::Info);
+
+                    refreshRefBarEnablement();   // the library just changed
                     repaint();
                 });
             }
@@ -5055,50 +5293,202 @@ void EchoJayEditor::showCompareView()
     compareVisible = true;
     compareBtn.setButtonText("Back");
     compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    aiCompareBtn.setVisible(true);
-    codecsBtn_.setVisible(true);
-    // Stage 1: slot boxes hidden — populated silently so AI Compare still works
-    compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
-    refStatusLabel.setVisible(false);
-    presetBox.setVisible(true); savePresetBtn.setVisible(true); deletePresetBtn.setVisible(true);
-    loadPresetList();
+    // A STANDING MESSAGE SURVIVES RE-ENTRY. This used to hide the label
+    // unconditionally, which is why a failed drop or a failed analysis wrote
+    // "Error: ..." and showed nothing: the drop callback sets the text and
+    // then calls showCompareView, which hid it again on the same pass. The
+    // label now follows its text, so the one view with a layout for it is the
+    // one view that can report.
+    refStatusLabel.setVisible(refStatusLabel.getText().isNotEmpty());
+    loadRefBtn.setVisible(true);
+    for (auto* b : { &refPrevBtn, &refNextBtn, &refPlayBtn, &refBrowseBtn })
+        b->setVisible(true);
+    refreshRefBarEnablement();
+    // The reference-preset controls that used to be rebuilt here are gone with
+    // the feature.
 
-    compareSlotABox.clear(); compareSlotBBox.clear();
-    auto snaps = processorRef.getSnapshots();
-    for (int i = 0; i < (int)snaps.size(); ++i) {
-        compareSlotABox.addItem(snaps[i].name.substring(0, 30), i + 1);
-        compareSlotBBox.addItem(snaps[i].name.substring(0, 30), i + 1);
-    }
-    auto refs = processorRef.getReferenceAnalyser().getReferences();
-    int refOffset = kCompareRefIdBase;
-    for (int i = 0; i < (int)refs.size(); ++i) {
-        juce::String label = refs[i].name.substring(0, 25) + " (Ref)";
-        compareSlotABox.addItem(label, refOffset + i);
-        compareSlotBBox.addItem(label, refOffset + i);
-    }
-    if (snaps.size() > 0) compareSlotABox.setSelectedId(1);
-    if (snaps.size() > 1) compareSlotBBox.setSelectedId(2);
-    else if (refs.size() > 0) compareSlotBBox.setSelectedId(refOffset);
-
-    // Show meter-type selector buttons, slot buttons, and play buttons
-    for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(true);
-    compareTopSlotBtn_.setVisible(true);
-    compareBotSlotBtn_.setVisible(true);
+    // The sub-tab's ten controls, through their ONE author, with the DERIVED
+    // value. This used to pass true, on the grounds that hideCompareView
+    // always leaves the sub-tab on Compare. That holds on ENTRY, but this
+    // function is also a refresh, called while the view is already up: after a
+    // file drop, removing a reference, and renaming or deleting a pass. From
+    // the Playback sub-tab those put the Compare controls over the page.
+    showCompareFurniture (compareFurnitureShouldShow());
     updateCompareSlotBtn(true);
     updateCompareSlotBtn(false);
-    comparePlayTopBtn_.setVisible(true);
-    comparePlayBotBtn_.setVisible(true);
 
     // Pre-load WAV data (no auto-play) so static waveform is visible
     startCompareStream(0);
     startCompareStream(1);
-    compareSyncBtn_.setVisible(true);
-    cmpABtn_.setVisible(true);
-    cmpBBtn_.setVisible(true);
-    cmpPlayBtn_.setVisible(true);
     updateComparePlayBtns();
 
     resized(); repaint();
+}
+
+void EchoJayEditor::saveCompareSlotsToProcessor()
+{
+    for (int i = 0; i < 2; ++i)
+    {
+        const auto& src = (i == 0) ? compareTop_ : compareBot_;
+        auto& d = processorRef.compareSlotPersist_[i];
+        d = {};
+        d.kind  = (int) src.kind;
+        d.label = src.label;
+        switch (src.kind)
+        {
+            case CompareSlotState::Kind::Reference:
+            {
+                // BY PATH, NEVER BY POSITION. The index the editor holds is a
+                // position in the browser list and is wrong the moment the
+                // library reorders or a reference is re-analysed.
+                const auto entries = refBrowserEntries();
+                if (src.index >= 0 && src.index < (int) entries.size())
+                    d.refPath = entries[(size_t) src.index].path;
+                break;
+            }
+            case CompareSlotState::Kind::Snapshot:
+                // THE ONE CASE WITH NOTHING STABLE TO STORE. See
+                // EJReferenceRows.h: snapshots are addressed by position
+                // everywhere and there is no id to use instead.
+                d.snapshotIndex = src.index;
+                break;
+            case CompareSlotState::Kind::WsCapture: d.wsReviewId = src.wsReviewId; break;
+            case CompareSlotState::Kind::CodecFile: d.codecPath  = src.codecPath;  break;
+            case CompareSlotState::Kind::Live:
+            case CompareSlotState::Kind::Empty:
+            default: break;
+        }
+    }
+}
+
+void EchoJayEditor::restoreCompareSlotsFromProcessor()
+{
+    // ---- OPENING THE PLUGIN LEAVES YOU ON YOUR OWN MIX -------------------
+    //
+    // A DECISION, MADE HERE, RATHER THAN AN ACCIDENT OF NOTHING ROLLING.
+    // Until now the live signal was what you heard on a fresh open only
+    // because no stream happened to have been started, which is not the same
+    // as having decided it: cmpAudible is a processor member and SURVIVES a
+    // window close, so reopening could come back selecting a slot nobody had
+    // chosen this session.
+    //
+    // THE RESTORED SLOT STAYS RESTORED. silenceCompareStream stops playback
+    // and withdraws intent and touches neither `loaded` nor the buffer nor
+    // the position, so a reference in B is still there, still loaded, silent,
+    // and one press away. What must not happen is it being audible, or
+    // APPEARING to be, before the user asks for it.
+    //
+    // IT OVERRIDES THE PROJECT RESTORE DELIBERATELY. A project saved with B
+    // audible reopens with B loaded and silent, not playing. Forgetting which
+    // side you were on costs one press; reopening a project playing a
+    // reference over the mix is audio the user did not ask for, in a session
+    // they have just opened and are not yet looking at. cmpAudible is not in
+    // the blob and must not be added to it for the same reason.
+    processorRef.silenceCompareStream (0);
+    processorRef.silenceCompareStream (1);
+    processorRef.cmpAudible.store (-1);
+
+    const auto entries = refBrowserEntries();
+    for (int i = 0; i < 2; ++i)
+    {
+        const auto& d = processorRef.compareSlotPersist_[i];
+        auto& dst = (i == 0) ? compareTop_ : compareBot_;
+        dst = {};
+        if (d.kind == (int) CompareSlotState::Kind::Empty) continue;
+
+        dst.kind  = (CompareSlotState::Kind) d.kind;
+        dst.label = d.label;
+        switch (dst.kind)
+        {
+            case CompareSlotState::Kind::Reference:
+            {
+                // A REFERENCE THAT IS NO LONGER THERE EMPTIES THE SLOT rather
+                // than pointing somewhere. refSlotResolveIndex returns -1 and
+                // that is the answer, not a fallback to position 0.
+                const int at = echojay::refSlotResolveIndex (d, entries);
+                if (at < 0) { dst = {}; continue; }
+                dst.index = at;
+                break;
+            }
+            case CompareSlotState::Kind::Snapshot:
+            {
+                const int n = (int) processorRef.getSnapshots().size();
+                if (d.snapshotIndex < 0 || d.snapshotIndex >= n) { dst = {}; continue; }
+                dst.index = d.snapshotIndex;
+                break;
+            }
+            case CompareSlotState::Kind::WsCapture: dst.wsReviewId = d.wsReviewId; break;
+            case CompareSlotState::Kind::CodecFile:
+                // A CODEC RENDER IS A TEMP FILE AND MAY BE GONE. No file, no
+                // slot, rather than a slot naming a path nothing can play.
+                if (! juce::File (d.codecPath).existsAsFile()) { dst = {}; continue; }
+                dst.codecPath = d.codecPath;
+                break;
+            case CompareSlotState::Kind::Live:
+            case CompareSlotState::Kind::Empty:
+            default: break;
+        }
+    }
+
+    // ---- EMPTY IN SLOT A MEANS THE LIVE SIGNAL ---------------------------
+    //
+    // WITHOUT THIS THERE IS NOTHING TO MONITOR AND NOTHING TO SWITCH BACK TO.
+    // CompareSlotState defaults to Kind::Empty and nothing has ever set slot A
+    // to Live on open, so a fresh plugin came up with an empty monitoring side
+    // and the A button naming nothing.
+    //
+    // IT CANNOT OVERRIDE A DELIBERATE CHOICE, because emptying the monitoring
+    // slot is not a state a user can express as distinct from the live signal:
+    // both are the host's audio, unaltered. openCompareSlotMenu offers Live,
+    // captures and references and has NO "Empty" item, so Empty in A only ever
+    // arises from a fresh open or a restore that had nothing in it.
+    //
+    // THE SAME TWO LINES THE PICKER SETS (openCompareSlotMenu, result == 1),
+    // so the slot reads "Live signal" exactly as it does when chosen from the
+    // menu rather than being a second spelling of the same state.
+    if (compareTop_.kind == CompareSlotState::Kind::Empty)
+    {
+        compareTop_.kind  = CompareSlotState::Kind::Live;
+        compareTop_.label = "Live signal";
+    }
+
+    // SLOT B GETS NO DEFAULT, DELIBERATELY. An empty reference side is a REAL
+    // state: it means the user has not chosen a reference yet, and the bar's
+    // own "No references yet" invitation is the right thing to show.
+    // Defaulting it would invent a comparison nobody asked for.
+}
+
+void EchoJayEditor::silenceCompareStreams (const char* why)
+{
+    // BOTH SLOTS, THROUGH silenceCompareStream. It clears playing and the
+    // user's intent and leaves cmpAudible at -1 for whichever side was
+    // audible, and it does NOT touch `loaded`, the buffer or the position.
+    // -1 is already this codebase's "nothing audible"
+    // (PluginProcessor.h, EJCaptureGuard.h:50); nothing new is invented here.
+    //
+    // WHAT THIS DOES NOT FIX, and nobody should read it as fixing:
+    //
+    //   OPEN LIST 215. There is still no single source of truth for whether
+    //   the USER wants a stream playing. The transport-sync block drives
+    //   `playing` from the host every block and asks nobody, so a stream can
+    //   still start itself while the page IS open and visible. All this closes
+    //   is the route where one is left audible with no control on screen.
+    //
+    //   OPEN LIST 214. playbackPos, sampleCount and monGain are still plain
+    //   non-atomic members written from both threads. Nothing here touches
+    //   that, and no amount of stopping changes it.
+    //
+    // THE PROCESSOR IS NOT TOUCHED. The transport sync is inside unmerged work
+    // and is off limits; this is editor side only, which is why it can land
+    // now rather than after the merge.
+    // SILENCE, NOT STOP. This called stopCompareStream, which CLEARS `loaded`
+    // and zeroes playbackPos: a window close freed the buffer and emptied the
+    // slot, so reopening found nothing loaded. A closed window is not a
+    // removed reference. Removal still goes through stopCompareStream, which
+    // is unchanged.
+    processorRef.silenceCompareStream (0);
+    processorRef.silenceCompareStream (1);
+    EchoJay_NSLog ((juce::String ("EJCmp: streams stopped on ") + why).toRawUTF8());
 }
 
 void EchoJayEditor::hideCompareView()
@@ -5106,25 +5496,44 @@ void EchoJayEditor::hideCompareView()
     compareVisible = false;
     compareBtn.setButtonText("Compare");
     compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    aiCompareBtn.setVisible(false);
-    codecsBtn_.setVisible(false);
     closeCodecPanel();   // also disengages codec preview if it was active
-    // Don't stop AB playback — let ref keep playing through plugin when switching views
-    compareSlotABox.setVisible(false); compareSlotBBox.setVisible(false);
+    // THIS REVERSES A DELIBERATE DECISION AND THE OLD LINE IS KEPT SO THE
+    // REVERSAL IS VISIBLE. It read: "Don't stop AB playback, let ref keep
+    // playing through plugin when switching views."
+    //
+    // That was a choice to let a reference keep sounding while you worked in
+    // another tab. What it did not account for is that NO CONTROL FOR IT
+    // EXISTS ANYWHERE ELSE: the transport lives on Compare and on Match, so
+    // once you leave, the only way to stop it is to come back. That is the
+    // reported symptom, "stuck hearing the reference", described from the
+    // way out rather than from the pause.
+    //
+    // If continuing playback across tabs is wanted again, it needs a control
+    // that travels with it, not a comment saying it is allowed.
+    silenceCompareStreams ("leaving the Compare view");
+    // The browser is a Compare surface and closes with the view. Closing
+    // rather than hiding, so visibleState and the component agree.
+    if (refBrowser_.visibleState) closeReferenceBrowser();
+    // Back to the Compare sub-tab on the way out, so re-entering never lands
+    // on Playback. THROUGH setRefSubTab, the one writer of refSubTab_. This
+    // used to write the field directly, because setRefSubTab re-showed the
+    // Compare controls. It no longer takes that from the sub-tab alone: it
+    // applies compareFurnitureShouldShow(), and compareVisible was cleared at
+    // the top of this function, so the value it applies here is hidden. No
+    // show-then-hide. The codec disengage is already done, by closeCodecPanel
+    // above, and the Compare branch of setRefSubTab starts nothing.
+    setRefSubTab (echojay::RefSubTab::Compare);
+    // The text is KEPT, only the label is hidden: re-entering Compare brings
+    // a standing message back rather than losing what the last drop said.
     refStatusLabel.setVisible(false);
-    presetBox.setVisible(false); savePresetBtn.setVisible(false); deletePresetBtn.setVisible(false);
-    for (auto& b : refRemoveBtns) b.setVisible(false);
+    loadRefBtn.setVisible(false);
+    for (auto* b : { &refPrevBtn, &refNextBtn, &refPlayBtn, &refBrowseBtn })
+        b->setVisible(false);
     compareClickCatcher.setVisible(false);
-    for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(false);
-    compareTopSlotBtn_.setVisible(false);
-    compareBotSlotBtn_.setVisible(false);
+    // The sub-tab's ten controls are already hidden: setRefSubTab above
+    // applied the derived value, with compareVisible false. A second call
+    // here would be a second author passing a literal.
     processorRef.stopAllCompare();
-    comparePlayTopBtn_.setVisible(false);
-    comparePlayBotBtn_.setVisible(false);
-    compareSyncBtn_.setVisible(false);
-    cmpABtn_.setVisible(false);
-    cmpBBtn_.setVisible(false);
-    cmpPlayBtn_.setVisible(false);
     resized(); repaint();
 }
 
@@ -5203,6 +5612,48 @@ float EchoJayEditor::slotDurationSeconds(const CompareSlotState& slot) const
         default: break;   // Live: unknown length -> 0 (caveat skips)
     }
     return 0.0f;
+}
+
+// THE MATCH SIDES (20 Sep 2026). The Match screen is not drawn yet and nothing
+// in this file calls either of these; they exist so that the proposal is
+// REACHABLE, which is this commit's whole scope (MATCH_SCREEN_CONTRACT §10).
+//
+// EVERY ANSWER COMES FROM A MEMBER THAT ALREADY ANSWERS IT: getSlotMeterData
+// for the figures, getSlotSpectralEvidence for the macro bands and their stamp
+// (which for a reference is the whole-file average and not the ballistic tail),
+// slotDurationSeconds for the length, and refBarIsTop for which slot the
+// reference bar drives. Nothing is re-derived here, and the Live rules are not
+// here either: they belong to echojay::matchSideFrom, so a second caller cannot
+// get them wrong.
+echojay::MatchSide EchoJayEditor::buildMatchSide(const CompareSlotState& slot) const
+{
+    const MeterData               md = getSlotMeterData(slot);
+    const echojay::SpectralEvidence ev = getSlotSpectralEvidence(slot);
+    return echojay::matchSideFrom(echojay::computeCompareFig(md, ev), ev,
+                                  slotDurationSeconds(slot),
+                                  slot.kind == CompareSlotState::Kind::Live);
+}
+
+EchoJayEditor::MatchSlotPair EchoJayEditor::matchSlots() const
+{
+    // THE ROLE WAS DECIDED ON ENTRY AND IS HELD, not derived here. This used to
+    // read refBarIsTop(), which answers "which slot holds a reference" and
+    // therefore MOVED when a pick landed in the other slot, flipping which side
+    // was the mix under the user.
+    const bool refIsTop = matchRefIsTop_;
+    MatchSlotPair p;
+    p.ref = refIsTop ? &compareTop_ : &compareBot_;
+    p.mix = refIsTop ? &compareBot_ : &compareTop_;
+    return p;
+}
+
+EchoJayEditor::MatchSides EchoJayEditor::buildMatchSides() const
+{
+    const auto slots = matchSlots();
+    MatchSides s;
+    s.ref = buildMatchSide(*slots.ref);
+    s.mix = buildMatchSide(*slots.mix);
+    return s;
 }
 
 bool EchoJayEditor::crossScope(const CompareSlotState& a, const CompareSlotState& b) const
@@ -5461,12 +5912,29 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
                      + (evictedCount == 1 ? "" : "s") + " no longer stored",
                      false, false);
 
-    if (!refs.empty())
+    // THE SECTION IS ALWAYS HERE, EVEN EMPTY. It used to be omitted entirely
+    // when there were no references, so a user who had never added one saw no
+    // REFERENCES header, no invitation, and no indication the feature existed.
+    // A feature discoverable only by already knowing about it is not
+    // discoverable. The empty state carries the invitation, and the
+    // invitation opens the same chooser as the Add button.
     {
         menu.addSeparator();
         menu.addSectionHeader("REFERENCES");
-        for (int i = 0; i < (int)refs.size() && i < 99; ++i)
-            menu.addItem(300 + i, refs[i].name.substring(0, 44));
+        // BROWSE LEADS. The browser is the roomier version of this section,
+        // and opening it from here is what tells it which slot it was opened
+        // for: a route from the drop-zone strip would have to invent that.
+        menu.addItem(kCompareMenuBrowseRefId, "Browse all references...");
+        if (refs.empty())
+        {
+            menu.addItem(kCompareMenuAddRefId, "Add a reference track...");
+        }
+        else
+        {
+            for (int i = 0; i < (int)refs.size() && i < kCompareMenuRefCap; ++i)
+                menu.addItem(300 + i, refs[i].name.substring(0, kCompareMenuRefNameLen));
+            menu.addItem(kCompareMenuAddRefId, "Add another reference...");
+        }
     }
 
     auto& btn = isTop ? compareTopSlotBtn_ : compareBotSlotBtn_;
@@ -5480,6 +5948,18 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
             if (safeThis == nullptr || result == 0) return;
 
             if (result == 9000) return;   // evicted-history row: disabled, no-op
+            if (result == kCompareMenuBrowseRefId)
+            {
+                safeThis->openReferenceBrowser(isTop);
+                return;
+            }
+            if (result == kCompareMenuAddRefId)
+            {
+                // The same chooser the Add button opens. One function, so the
+                // two entry points cannot drift apart.
+                safeThis->loadReferenceFile();
+                return;
+            }
             if (result == 9100)
             {
                 // Item 4: purge orphaned reviews. PERMANENT (whole-blob
@@ -5536,14 +6016,12 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
             }
             else if (result >= 300 && result < 400)
             {
-                int idx = result - 300;
-                auto refs2 = safeThis->processorRef.getReferenceAnalyser().getReferences();
-                if (idx < (int)refs2.size())
-                {
-                    slot.kind  = CompareSlotState::Kind::Reference;
-                    slot.index = idx;
-                    slot.label = refs2[idx].name;
-                }
+                // THROUGH THE ONE WRITER, which the browser also calls, so the
+                // two routes cannot drift in what choosing a reference means.
+                // It does the stream restart and the button refresh itself, so
+                // this returns rather than falling into the tail below.
+                safeThis->applyReferenceToSlot(isTop, result - 300);
+                return;
             }
 
             // Manually choosing a slot leaves codec mode (chosen content wins;
@@ -5559,6 +6037,304 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
             safeThis->updateComparePlayBtns();
             safeThis->repaint();
         });
+}
+
+// WHAT EACH COMPARE SLOT'S SPECTRUM ACTUALLY IS (11 Sep 2026, plan section 1.5).
+//
+// getSlotMeterData returns a MeterData, and MeterData::spectrum is whatever the
+// source last selected for DISPLAY. For a reference that is data.spectrum, the
+// meter's reading after the final block of the file: a fade out. Feeding that to
+// the tonal diff compared 150 ms of one thing against a whole performance of
+// another. This resolves the RIGHT array per slot kind and stamps what it is, so
+// the context can say so and a mismatch is qualified rather than averaged over.
+//
+// Four sources, three answers. Only a bounded-window average is a fair subject
+// for a band delta; the rest are named and caveated.
+// THE ONE WRITER OF A SLOT'S MACRO EVIDENCE. Extracted so the auditioning
+// early return and the switch below cannot disagree about what a slot's bands
+// are: they were two code paths answering one question, and one of them
+// answered it by saying nothing.
+//
+// EVERY KIND ANSWERS, INCLUDING THE ONES WITH NOTHING. A kind that has no
+// whole-run measurement sets hasMacro false AND a reason, so the card can state
+// which side is missing and why rather than drawing a lone curve that reads as
+// a comparison.
+void EchoJayEditor::fillSlotMacroEvidence (const CompareSlotState& slot,
+                                           echojay::SpectralEvidence& ev) const
+{
+    using R = echojay::SpectralReduction;
+    switch (slot.kind)
+    {
+        case CompareSlotState::Kind::Reference:
+        {
+            auto refs = processorRef.getReferenceAnalyser().getReferences();
+            if (slot.index >= 0 && slot.index < (int) refs.size()
+                && refs[(size_t) slot.index].hasMacroBandAccum)
+            {
+                ev.macro              = refs[(size_t) slot.index].macroBandAccum;
+                ev.hasMacro           = true;
+                ev.macroReduction     = refs[(size_t) slot.index].macroAccumReduction;
+                ev.macroWindowSeconds = refs[(size_t) slot.index].macroAccumSeconds;
+            }
+            else
+                ev.macroMissingWhy = "not analysed by this build";
+            break;
+        }
+
+        case CompareSlotState::Kind::Snapshot:
+        {
+            auto snaps = processorRef.getSnapshots();
+            if (slot.index >= 0 && slot.index < (int) snaps.size()
+                && snaps[(size_t) slot.index].hasMacroBandAccum)
+            {
+                ev.macro              = snaps[(size_t) slot.index].macroBandAccum;
+                ev.hasMacro           = true;
+                ev.macroReduction     = snaps[(size_t) slot.index].macroAccumReduction;
+                ev.macroWindowSeconds = snaps[(size_t) slot.index].macroAccumSeconds;
+            }
+            else
+                // The accumulation is not persisted, so a capture restored from
+                // the session blob has none. Say that rather than falling back
+                // to averagedData's tail, which would look like a measurement.
+                ev.macroMissingWhy = "restored capture, bands not saved";
+            break;
+        }
+
+        case CompareSlotState::Kind::Live:
+        {
+            // PHASE 1c: A BOUNDED POWER MEAN, NOT THE BALLISTIC READING. The
+            // card's chart compares A's bands to B's bands, and B is a power
+            // mean over a whole file. A 150 ms tail beside that is not a
+            // comparison whatever it is labelled, so the live side now carries
+            // the same statistic over a bounded span.
+            //
+            // IT REFUSES WHEN THE WINDOW IS EMPTY OR SILENT, rather than
+            // reporting a floor. Nothing audible yet means no measurement, and a
+            // window that has drained to silence means the same thing.
+            const auto b = processorRef.getMeterEngine().getBoundedBands();
+            if (b.valid)
+            {
+                ev.macro              = b.db;
+                ev.hasMacro           = true;
+                ev.macroReduction     = R::RollingWindowPowerMean;
+                ev.macroWindowSeconds = b.seconds;
+                ev.macroAgeSeconds    = b.ageSeconds;
+            }
+            else
+                // The ring is GATED, so it cannot drain to silence: the only way
+                // to get here is a window that has never taken a block.
+                ev.macroMissingWhy = "nothing audible heard yet on the live input";
+            break;
+        }
+
+        case CompareSlotState::Kind::WsCapture:
+        {
+            // WsReview::macroBandDb is the capture engine's SMOOTHED reading
+            // (PluginEditor.cpp, where the review is built), not an
+            // accumulation. It is the same quality of number a Live slot has,
+            // so it is carried and stamped the same way rather than withheld:
+            // a labelled tail is more use than a blank, and the label is what
+            // stops it being read as a window.
+            for (auto& r : workspace.getReviews())
+                if (r.id == slot.wsReviewId)
+                {
+                    if (r.hasMacroBands)
+                    {
+                        ev.macro              = r.macroBandDb;
+                        ev.hasMacro           = true;
+                        ev.macroReduction     = R::BallisticTail;
+                        ev.macroWindowSeconds = 0.0f;
+                    }
+                    else
+                        ev.macroMissingWhy = "review from an earlier session";
+                    return;
+                }
+            ev.macroMissingWhy = "review not found";
+            break;
+        }
+
+        case CompareSlotState::Kind::CodecFile:
+            // A parked codec render is never analysed: no accumulation, no
+            // stored spectrum, and its meter only reads while the stream rolls.
+            ev.macroMissingWhy = "codec render is not analysed";
+            break;
+
+        default:
+            ev.macroMissingWhy = "no source in this slot";
+            break;
+    }
+}
+
+echojay::SpectralEvidence EchoJayEditor::getSlotSpectralEvidence(const CompareSlotState& slot) const
+{
+    using R = echojay::SpectralReduction;
+    echojay::SpectralEvidence ev;   // unset sentinel + valid=false by default
+
+    // A live slot, and any slot whose compare stream is rolling, is the meter's
+    // own ballistic reading. Honest and unbounded; named, never silently used as
+    // if it were a window.
+    if (slot.kind == CompareSlotState::Kind::Live)
+    {
+        // THE ROLLING WINDOW, NOT THE BALLISTIC READING (11 Sep 2026). The meter
+        // engine already keeps a 25 fps ring of HEARD audio and reduces it with
+        // the SAME predicate the capture path uses to pick its statistic, and it
+        // already feeds the chat injection. Compare was the one consumer still
+        // taking getMeterData().spectrum, which is a 150 ms tail and therefore
+        // permanently incomparable with a reference's whole-file average.
+        //
+        // The ring bounds itself by AUDIBILITY, not by transport: frames are
+        // written only while the input is audible, so a session that played 4 s
+        // and paused reports 4 s. No playhead is consulted, which is deliberate.
+        const bool useMean = processorRef.spectrumUsesAverage();
+        const auto w = processorRef.getMeterEngine().reduceSpectrumWindow(useMean);
+        if (w.valid)
+        {
+            ev.bins          = w.bins;
+            ev.windowSeconds = w.seconds;
+            // THE TWO STATISTICS ARE NOT EQUALLY HONEST, so they are not stamped
+            // alike. A max of per-frame maxima IS exactly a capture's peak hold.
+            // A mean of per-frame maxima is NOT a capture's average: each frame
+            // is already a 40 ms maximum, so it sits above a true per-block mean
+            // on transient material. It gets its own name.
+            ev.reduction = useMean ? R::RollingMeanOfMaxima : R::WholeWindowPeakHold;
+            ev.valid     = true;
+        }
+        else
+        {
+            // No frames yet: nothing audible has been heard. Absent, not floored.
+            ev.reduction = R::LiveInstant;
+        }
+        // THE MACRO BANDS DO NOT FOLLOW THE BINS HERE, and the stamp says so
+        // rather than letting one label cover both. A reference has a whole-file
+        // power accumulation and a capture has a whole-capture one; a Live slot
+        // has neither. reduceMacroWindow exists and reduces the same 12 s ring,
+        // but it is a mean of per-frame MAXIMA of the SMOOTHED bands, which is
+        // neither the power mean the accumulator computes nor bounded by the
+        // same span. Routing Live through it would put a third statistic in a
+        // field the other two sides fill with one, so Live keeps the ballistic
+        // reading and is labelled BallisticTail until that is decided.
+        fillSlotMacroEvidence (slot, ev);
+        // Either way the LUFS figures beside it are continuously integrated.
+        ev.loudnessIsContinuous = true;
+        return ev;
+    }
+    const int slotIdx = (&slot == &compareTop_) ? 0 : 1;
+    if (processorRef.cmpStream[slotIdx].playing.load())
+    {
+        ev.bins      = processorRef.getCompareMeter(slotIdx).getMeterData().spectrum;
+        ev.reduction = R::LiveInstant;
+        ev.valid     = true;
+        ev.loudnessIsContinuous = true;   // same mixture, same note
+        // THE BINS FOLLOW THE AUDITION, THE BANDS DO NOT. The spectrum here is
+        // a display choice: the user is hearing this stream and LiveInstant
+        // says what that reading is. The macro bands are not the same kind of
+        // thing. They are a stamped whole-run measurement OF THE UNDERLYING
+        // SOURCE, and a reference's whole file does not change because someone
+        // pressed play. This return used to discard them and substitute
+        // nothing, so auditioning a reference silently emptied half the chart.
+        fillSlotMacroEvidence (slot, ev);
+        return ev;
+    }
+
+    switch (slot.kind)
+    {
+        case CompareSlotState::Kind::Reference:
+        {
+            // THE FIX. eqCurve is the arithmetic mean of every analysis block of
+            // the file (ReferenceAnalyser), computed on every reference since the
+            // feature shipped and read by nothing that runs. data.spectrum, which
+            // the live path used, is the ballistic tail.
+            auto refs = processorRef.getReferenceAnalyser().getReferences();
+            if (slot.index >= 0 && slot.index < (int) refs.size())
+            {
+                // The line below is PINNED BY TEXT (se PIN7). It is written out
+                // rather than through a local because a structural pin guards
+                // that the reference side reads eqCurve and not the ballistic
+                // spectrum, and a cosmetic rename would silence it.
+                ev.bins          = refs[(size_t) slot.index].eqCurve;
+                ev.reduction     = R::WholeFileAverage;
+                ev.windowSeconds = refs[(size_t) slot.index].durationSeconds;
+                ev.valid         = true;
+                // PHASE 1b: the ACCUMULATED macro bands, not data.macroBandDb.
+                // The latter is the meter's reading after the final block, which
+                // on 14 of a 45 file library is entirely the floor. hasMacro
+                // stays false when the accumulation never ran, so the consumer
+                // refuses rather than rendering a floor as a level.
+            }
+            break;
+        }
+
+        case CompareSlotState::Kind::Snapshot:
+        {
+            auto snaps = processorRef.getSnapshots();
+            if (slot.index >= 0 && slot.index < (int) snaps.size())
+            {
+                const auto& sn   = snaps[(size_t) slot.index];
+                ev.windowSeconds = sn.durationSeconds;
+                ev.valid         = true;
+                // PHASE 1b: a capture taken by THIS build carries the whole
+                // capture power accumulation. One restored from the session blob
+                // does not, because the accumulation is not persisted, and it
+                // reports unavailable rather than falling back to the tail that
+                // averagedData still holds.
+                if (sn.hasDualSpectrum)
+                {
+                    // A capture made THIS SESSION holds both whole-window
+                    // reductions. Take the average: it is the one comparable to
+                    // a reference's whole-file average, and no caveat is needed.
+                    ev.bins      = sn.avgSpectrum;
+                    ev.reduction = R::WholeWindowAverage;
+                }
+                else
+                {
+                    // Restored from the session blob: only the SELECTED
+                    // reduction survives (averagedData.spectrum is persisted,
+                    // avgSpectrum and peakSpectrum are not). channelType is
+                    // persisted too, so which reduction it was is derivable
+                    // rather than guessed.
+                    ev.bins      = sn.averagedData.spectrum;
+                    ev.reduction = EchoJayProcessor::spectrumUsesAverage(sn.channelType)
+                                     ? R::WholeWindowAverage : R::WholeWindowPeakHold;
+                }
+            }
+            break;
+        }
+
+        case CompareSlotState::Kind::WsCapture:
+        {
+            for (auto& r : workspace.getReviews())
+                if (r.id == slot.wsReviewId)
+                {
+                    // spectrumBands is populated from the source capture's
+                    // avgSpectrum, so when it is present it IS a whole-window
+                    // average. It is in-memory only, hence the flag: a review
+                    // from a previous session has none, and that reads as
+                    // absent rather than as a floor.
+                    if (r.hasSpectrum)
+                    {
+                        ev.bins      = r.spectrumBands;
+                        ev.reduction = R::WholeWindowAverage;
+                        ev.valid     = true;
+                    }
+                    break;
+                }
+            break;
+        }
+
+        case CompareSlotState::Kind::CodecFile:
+        {
+            // A parked codec render has no stored spectrum of its own; its
+            // meter only reads while the stream rolls, which the branch above
+            // already handles. Absent, not floored.
+            break;
+        }
+
+        default: break;
+    }
+    // EVERY KIND, ONE WRITER. The bins are chosen per kind above; the bands
+    // come from here for all of them, including the kinds that have none.
+    fillSlotMacroEvidence (slot, ev);
+    return ev;
 }
 
 MeterData EchoJayEditor::getSlotMeterData(const CompareSlotState& slot) const
@@ -5744,7 +6520,24 @@ void EchoJayEditor::toggleComparePlay(bool isTop)
     // audition-follows-selected-slot rule; the LIVE slot is where the
     // transport hint lives now.)
 
-    // Toggle play/pause
+    // Toggle play/pause.
+    //
+    // THIS IS THE ONE WRITER OF userWantsRolling, and the reason open list
+    // 215 stayed open until now: "should this be playing" was answered
+    // independently by this button, by the host transport and by the sync
+    // toggle, and the loudest writer won. Now the button is the one that
+    // says what the USER wants, and the transport sync may only start a
+    // slot this flag is true for.
+    //
+    // SET BEFORE playing, so a block that lands between the two stores sees
+    // the intent already true and never the other way round: the sync's
+    // test is (!playing && userWantsRolling), and the reverse order would
+    // leave a one-block window where it refuses to start what we are about
+    // to start ourselves.
+    //
+    // THIS CLOSES 215 AND NOT 214. playbackPos read two lines below is still
+    // a plain int written from the audio thread, and that race is untouched.
+    s.userWantsRolling.store(!wasPlaying);
     s.playing.store(!wasPlaying);
     EchoJay_NSLog(("EJCmp: slot=" + juce::String(slotIdx)
                    + (wasPlaying ? " pause" : " play")
@@ -5768,6 +6561,12 @@ void EchoJayEditor::toggleComparePlay(bool isTop)
         }
         if (other.loaded.load())
         {
+            // THE MIRRORED SLOT GETS THE INTENT TOO. Two captures in sync
+            // are one transport as far as the user is concerned: pressing
+            // play is a statement about both, so the flag follows the same
+            // press rather than leaving the mirrored side unable to be
+            // resumed by the host.
+            other.userWantsRolling.store(!wasPlaying);
             other.playing.store(!wasPlaying);
             // When starting synced playback, reset both to same position
             if (!wasPlaying)
@@ -5866,18 +6665,1100 @@ void EchoJayEditor::resolveCodecSource()
     }
 }
 
-void EchoJayEditor::openCodecPanel()
+// ============================================================================
+// Reference browser (commit one of three: shell + track list)
+// ============================================================================
+
+// EVERY RECT THE PANEL USES, COMPUTED ONCE. Both of today's layout defects had
+// the same cause: a number written in more than one place, and the copies
+// disagreeing. paint(), resized() and mouseUp() all read this and none of them
+// derives a rectangle of its own. It is a pure function of the bounds, which
+// also means it is in the shape a pin could exercise later; it is not pinned
+// here, because it is rendering and the gate opens no window.
+EchoJayEditor::RefBrowserPanel::Rects
+EchoJayEditor::RefBrowserPanel::layoutFor (juce::Rectangle<int> b)
 {
-    resolveCodecSource();
-    codecStatus_ = {};
-    codecPanel_.hoverIdx = -1;
-    codecPanel_.setBounds(getLocalBounds());
-    codecPanel_.setVisible(true);
-    codecPanel_.toFront(true);
-    codecPanel_.grabKeyboardFocus();
-    codecPanel_.repaint();
-    EchoJay_NSLog(("EJCodec: panel open src=" + (codecSrcPath_.isEmpty()
-                    ? juce::String("NONE") : codecSrcLabel_)).toRawUTF8());
+    Rects r;
+    const int kTitleH = 34, kPad = 12, kLeftW = 190, kGap = 10, kCloseW = 34;
+
+    const int w = juce::jlimit (420, 760, b.getWidth()  - 80);
+    const int h = juce::jlimit (300, 560, b.getHeight() - 90);
+    r.card = { (b.getWidth() - w) / 2, (b.getHeight() - h) / 2, w, h };
+
+    r.titleBar = r.card.withHeight (kTitleH);
+    r.closeX   = { r.titleBar.getRight() - kCloseW, r.titleBar.getY(), kCloseW, kTitleH };
+    // The name sits between the two edges rather than centred on the card, so
+    // a long name cannot run under the X.
+    r.title    = { r.titleBar.getX() + kCloseW, r.titleBar.getY(),
+                   r.titleBar.getWidth() - kCloseW * 2, kTitleH };
+
+    auto body = r.card.withTrimmedTop (kTitleH).reduced (kPad);
+
+    // The strip comes off the bottom FIRST, so the panes take what is left
+    // rather than the strip being laid over them. Same discipline as the
+    // Compare accumulator: one pass, no rect computed twice.
+    r.leftPane  = body.withWidth (kLeftW);
+    r.rightPane = body.withTrimmedLeft (kLeftW + kGap);
+    return r;
+}
+
+void EchoJayEditor::RefBrowserList::paint (juce::Graphics& g)
+{
+    using C = EchoJayLookAndFeel::Colours;
+    for (int i = 0; i < (int) rows.size(); ++i)
+    {
+        const auto& row = rows[(size_t) i];
+        juce::Rectangle<int> rr (0, i * kRowH, getWidth(), kRowH);
+
+        if (row.kind == echojay::RefBrowserRow::Kind::Heading)
+        {
+            g.setColour (C::text3);
+            g.setFont (juce::Font (juce::FontOptions (8.5f, juce::Font::bold)));
+            g.drawText (row.text, rr.reduced (6, 0), juce::Justification::centredLeft);
+            continue;
+        }
+
+        // ONE ACCENT, BOTH PANES, AND IT IS COMPARE'S OWN. This was the
+        // REFERENCE badge's pink, outlined, which reads as a warning: pink on
+        // a dark panel is what this editor uses for something needing
+        // attention, not for something chosen. The meter-type row one band
+        // below marks its selection with a 0xff1a2d4a fill and C::blue text,
+        // so a selected row here now reads as the same KIND of thing as a
+        // selected meter. Filled rather than outlined, for the same reason.
+        if (row.selected)
+        {
+            g.setColour (juce::Colour (0xff1a2d4a));
+            g.fillRoundedRectangle (rr.reduced (2, 1).toFloat(), 4.0f);
+        }
+
+        const bool invite = (row.kind == echojay::RefBrowserRow::Kind::Invite);
+        g.setColour (row.selected ? C::blue
+                   : invite       ? C::purple
+                   : row.clickable ? C::text
+                                   : C::text3);
+        g.setFont (juce::Font (juce::FontOptions (11.0f)));
+        // drawText elides on overflow, which is why the rule does not truncate:
+        // a cut applied in the data would also cut what a later search sees.
+        g.drawText (row.text, rr.reduced (8, 0), juce::Justification::centredLeft, true);
+    }
+}
+
+void EchoJayEditor::RefBrowserPanel::resized()
+{
+    const auto r = layoutFor (getLocalBounds());
+    leftView .setBounds (r.leftPane);
+    rightView.setBounds (r.rightPane);
+    leftList .setSize (r.leftPane .getWidth(), juce::jmax (r.leftPane .getHeight(),
+                                                           leftList .preferredHeight()));
+    rightList.setSize (r.rightPane.getWidth(), juce::jmax (r.rightPane.getHeight(),
+                                                           rightList.preferredHeight()));
+}
+
+void EchoJayEditor::RefBrowserPanel::paint (juce::Graphics& g)
+{
+    using C = EchoJayLookAndFeel::Colours;
+    if (owner == nullptr) return;
+    const auto r = layoutFor (getLocalBounds());
+
+    g.fillAll (juce::Colour (0xcc000000));                     // scrim, CodecPanel's
+
+    g.setColour (C::bg2);
+    g.fillRoundedRectangle (r.card.toFloat(), 10.0f);
+    g.setColour (C::border);
+    g.drawRoundedRectangle (r.card.toFloat(), 10.0f, 1.0f);
+
+    // Title bar: the current selection NAMED, and a close X. No prev, next or
+    // play: those are commit three, and drawing them dead would be exactly the
+    // affordance-that-does-nothing the last three commits removed.
+    g.setColour (C::bg3);
+    g.fillRect (r.titleBar.withTrimmedTop (1).withTrimmedLeft (1).withTrimmedRight (1));
+    g.setColour (C::border2);
+    g.fillRect (r.titleBar.getX(), r.titleBar.getBottom() - 1, r.titleBar.getWidth(), 1);
+
+    g.setColour (C::text);
+    g.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));
+    g.drawText (owner->refBrowserTitleText(), r.title, juce::Justification::centred, true);
+
+    g.setColour (C::text3);
+    g.setFont (juce::Font (juce::FontOptions (15.0f)));
+    g.drawText ("X", r.closeX, juce::Justification::centred);
+
+    // bg, the darkest ground, so the panes read as wells inside the bg2 card.
+    // bg, the darkest ground, so the panes read as wells inside the bg2 card.
+    g.setColour (C::bg);
+    g.fillRoundedRectangle (r.leftPane .toFloat(), 6.0f);
+    g.fillRoundedRectangle (r.rightPane.toFloat(), 6.0f);
+
+}
+
+void EchoJayEditor::RefBrowserPanel::mouseUp (const juce::MouseEvent& e)
+{
+    if (owner == nullptr) return;
+    const auto r = layoutFor (getLocalBounds());
+    if (r.closeX.contains (e.getPosition()))       { owner->closeReferenceBrowser(); return; }
+    // A click on the scrim, outside the card, closes. The card itself swallows,
+    // so a miss inside it does nothing rather than dismissing work.
+    if (! r.card.contains (e.getPosition()))       { owner->closeReferenceBrowser(); return; }
+}
+
+bool EchoJayEditor::RefBrowserPanel::keyPressed (const juce::KeyPress& k)
+{
+    if (k == juce::KeyPress::escapeKey && owner != nullptr)
+    {
+        owner->closeReferenceBrowser();
+        return true;
+    }
+    return false;
+}
+
+// WHICH SLOT THE BAR DRIVES. The rule is in EJReferenceBar.h and pinned; this
+// only supplies it with the live kinds. compareTop_ defaults to Live signal
+// and compareBot_ to Empty, so B is where a reference belongs and the bar
+// drives it unless the user deliberately put one in A.
+bool EchoJayEditor::refBarIsTop() const
+{
+    return echojay::refBarDrivesTopSlot (
+        compareTop_.kind == CompareSlotState::Kind::Reference,
+        compareBot_.kind == CompareSlotState::Kind::Reference);
+}
+
+int EchoJayEditor::refBarCurrentIndex() const
+{
+    const auto& slot = refBarIsTop() ? compareTop_ : compareBot_;
+    return slot.kind == CompareSlotState::Kind::Reference ? slot.index : -1;
+}
+
+// THE ARROWS SAY IT INSTEAD OF THE STATUS LINE.
+//
+// Computes the scope count THE SAME WAY refBarStepBy does, through
+// echojay::refScopeCount with the same three arguments, rather than caching a
+// number or counting inline. Two ways of counting the same thing is how a
+// control comes to disagree with the pane beside it.
+void EchoJayEditor::refreshRefBarEnablement()
+{
+    const auto entries  = refBrowserEntries();
+    const auto& folders = processorRef.referenceFolders;
+    const auto  scope   = echojay::refScopeOrAll (processorRef.referenceScope, folders);
+    const int   count   = echojay::refScopeCount (entries, folders, scope);
+
+    const bool on = echojay::refBarArrowsEnabled (count);
+    refPrevBtn.setEnabled (on);
+    refNextBtn.setEnabled (on);
+}
+
+void EchoJayEditor::refBarStepBy (int delta)
+{
+    const auto entries = refBrowserEntries();
+    const auto& folders = processorRef.referenceFolders;
+    const auto  scope   = echojay::refScopeOrAll (processorRef.referenceScope, folders);
+
+    // THE COUNT IS THE SCOPE'S, NOT THE LIBRARY'S. refBarStep already took a
+    // count, so stepping within a folder needed no change to the rule, only a
+    // different number handed to it.
+    const int count = echojay::refScopeCount (entries, folders, scope);
+    // SAYS NOTHING. An arrow pressed with nothing to step through is not an
+    // error, and this used to report one in the same pink as a failed
+    // analysis. The arrows are disabled in that state by
+    // refreshRefBarEnablement, so reaching here means the enablement is stale,
+    // not that the user did something wrong. Defence, not a message.
+    if (count <= 0) return;
+
+    // Current position is translated INTO the scope and the answer back OUT of
+    // it, so a library index never leaks into the stepping arithmetic.
+    const int here = echojay::refLibraryIndexToScope (entries, folders, scope,
+                                                      refBarCurrentIndex());
+    const int nth  = echojay::refBarStep (here, count, delta);
+    const int next = echojay::refScopeIndexToLibrary (entries, folders, scope, nth);
+    if (next < 0) return;
+
+    // THROUGH THE ONE WRITER, the same call the slot menu and the browser make.
+    applyReferenceToSlot (refBarIsTop(), next);
+    refBrowserSelected_ = next;
+    if (refBrowser_.visibleState) refreshReferenceBrowser();
+}
+
+juce::String EchoJayEditor::refBrowserTitleText() const
+{
+    return echojay::refBrowserTitle (refBrowserEntries(),
+                                     processorRef.referenceScope,
+                                     refBrowserSelected_);
+}
+
+std::vector<echojay::RefBrowserEntry> EchoJayEditor::refBrowserEntries() const
+{
+    std::vector<echojay::RefBrowserEntry> out;
+    for (auto& r : processorRef.getReferenceAnalyser().getReferences())
+        out.push_back ({ r.name, r.path });
+    return out;
+}
+
+void EchoJayEditor::refreshReferenceBrowser()
+{
+    const auto entries = refBrowserEntries();
+    const auto panes   = echojay::buildReferenceBrowserRows (
+                             entries, processorRef.referenceFolders,
+                             processorRef.referenceScope, refBrowserSelected_);
+    refBrowser_.leftList .rows = panes.left;
+    refBrowser_.rightList.rows = panes.right;
+    refBrowser_.resized();
+    refBrowser_.leftList .repaint();
+    refBrowser_.rightList.repaint();
+    refBrowser_.repaint();
+}
+
+// ============================================================================
+// Reference folders (browser commit two)
+// ============================================================================
+//
+// ONE FOLDER EACH. Every one of these goes through the same rule: a path is
+// removed from every folder before it is added to one, so the model cannot
+// drift into a path claimed twice. The rows function tolerates it (the earlier
+// folder wins, pinned) but tolerating is not the same as allowing.
+
+void EchoJayEditor::setReferenceScope (const echojay::RefScope& s)
+{
+    processorRef.referenceScope = echojay::refScopeOrAll (s, processorRef.referenceFolders);
+    // A different scope is a different count, so the arrows may go live or
+    // dead. Before resized(), which also calls it, because this function is
+    // reached from paths that do not all end in a layout.
+    refreshRefBarEnablement();
+    // The bar's chip appears or disappears with this, and the chip changes the
+    // bar's geometry, so the layout has to run.
+    resized();
+    refreshReferenceBrowser();
+    repaint();
+}
+
+void EchoJayEditor::assignReferenceToFolder (const juce::String& path,
+                                             const juce::String& folder)
+{
+    // THE INDEX IS THE STORE OF RECORD (C3b). This writes folderId on the
+    // entry and rebuilds referenceFolders from the index, so every read below
+    // and everywhere else in this file is unchanged.
+    processorRef.folderAssign (path, folder);
+    // MEMBERSHIP IS THE SCOPE'S COUNT. Moving the last reference out of the
+    // folder you are looking at empties it, and this is the one mutator that
+    // does NOT route through setReferenceScope, so it needs its own call.
+    refreshRefBarEnablement();
+    refreshReferenceBrowser();
+    repaint();
+}
+
+void EchoJayEditor::deleteFolder (const juce::String& folder)
+{
+    // DELETING A FOLDER NEVER DELETES REFERENCES. Its members become unfiled,
+    // which is what dropping the folder record does by itself: membership
+    // lives here, not on the reference.
+    processorRef.folderDelete (folder);   // tombstoned in the index, members unfiled
+    // If it was the selected scope, refScopeOrAll drops us back to ALL rather
+    // than leaving an empty pane nobody can account for.
+    setReferenceScope (processorRef.referenceScope);
+}
+
+void EchoJayEditor::commitFolderName (const juce::String& oldName, const juce::String& typed)
+{
+    const auto name = typed.trim();
+    if (folderNameEditor_ != nullptr)
+    {
+        auto* te = folderNameEditor_.release();
+        juce::MessageManager::callAsync ([te] { delete te; });
+    }
+    if (name.isEmpty()) { refreshReferenceBrowser(); repaint(); return; }
+
+    // A NAME ALREADY IN USE IS REFUSED, and says so, rather than silently
+    // merging two folders or making two rows that look identical.
+    for (auto& f : processorRef.referenceFolders)
+        if (f.name == name && f.name != oldName)
+        {
+            setRefStatus ("There is already a folder called " + name,
+                          RefStatusKind::Problem);
+            refreshReferenceBrowser(); repaint();
+            return;
+        }
+
+    if (oldName.isEmpty())
+    {
+        processorRef.folderCreate (name);
+    }
+    else
+    {
+        // RENAMED BY ID IN THE INDEX, so every member follows without being
+        // touched (schema 4A.3). A delete-and-create would strand them.
+        processorRef.folderRename (oldName, name);
+        // The selected scope names a folder by name, so a rename has to carry
+        // it or the scope falls back to ALL the moment the user renames the
+        // folder they are looking at.
+        if (processorRef.referenceScope.kind == echojay::RefScope::Kind::Folder
+            && processorRef.referenceScope.folder == oldName)
+            processorRef.referenceScope.folder = name;
+    }
+    setReferenceScope (processorRef.referenceScope);
+}
+
+void EchoJayEditor::beginNewFolder()      { beginRenameFolder ({}); }
+
+void EchoJayEditor::beginRenameFolder (const juce::String& folder)
+{
+    if (folderNameEditor_ != nullptr) return;   // one at a time
+
+    // Positioned over the left pane, which is where the row is. The browser is
+    // already a modal; a dialog on top of it would be a second modal whose
+    // relationship to Escape nobody could state.
+    const auto r = RefBrowserPanel::layoutFor (refBrowser_.getLocalBounds());
+    folderNameEditor_ = std::make_unique<juce::TextEditor>();
+    auto* te = folderNameEditor_.get();
+    te->setFont (juce::Font (juce::FontOptions (11.0f)));
+    te->setText (folder, juce::dontSendNotification);
+    te->selectAll();
+    te->setBounds (r.leftPane.getX() + 4, r.leftPane.getY() + 4,
+                   r.leftPane.getWidth() - 8, 22);
+    te->setColour (juce::TextEditor::backgroundColourId, C::bg3);
+    te->setColour (juce::TextEditor::textColourId, C::text);
+    te->setColour (juce::TextEditor::outlineColourId, C::blue);
+    te->setColour (juce::TextEditor::focusedOutlineColourId, C::blue);
+    refBrowser_.addAndMakeVisible (te);
+    te->grabKeyboardFocus();
+
+    auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
+    te->onReturnKey  = [safe, folder] { if (safe) safe->commitFolderName (folder, safe->folderNameEditor_ != nullptr ? safe->folderNameEditor_->getText() : juce::String()); };
+    te->onEscapeKey  = [safe, folder] { if (safe) safe->commitFolderName (folder, {}); };
+    te->onFocusLost  = [safe, folder] { if (safe) safe->commitFolderName (folder, safe->folderNameEditor_ != nullptr ? safe->folderNameEditor_->getText() : juce::String()); };
+}
+
+void EchoJayEditor::showFolderRowMenu (const echojay::RefBrowserRow& row, juce::Point<int> screenPos)
+{
+    if (row.scope.kind != echojay::RefScope::Kind::Folder) return;   // ALL and UNFILED are not editable
+    const auto folder = row.scope.folder;
+    juce::PopupMenu m;
+    m.setLookAndFeel (&lnf);
+    m.addItem (1, "Rename \"" + folder + "\"");
+    m.addItem (2, "Delete \"" + folder + "\"");
+    auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
+    m.showMenuAsync (juce::PopupMenu::Options()
+                       .withTargetScreenArea ({ screenPos.x, screenPos.y, 1, 1 }),
+        [safe, folder] (int r)
+        {
+            if (safe == nullptr) return;
+            if (r == 1) safe->beginRenameFolder (folder);
+            else if (r == 2)
+            {
+                // PERMANENT for the folder, and harmless for the references.
+                // Said in the confirmation because "delete" on a container is
+                // the word people expect to take the contents with it.
+                juce::AlertWindow::showOkCancelBox (
+                    juce::MessageBoxIconType::QuestionIcon,
+                    "Delete folder",
+                    "Delete the folder \"" + folder + "\"?\n\n"
+                    "The references in it are NOT deleted. They become unfiled.",
+                    "Delete", "Cancel", nullptr,
+                    juce::ModalCallbackFunction::create ([safe, folder] (int ok)
+                    {
+                        if (safe != nullptr && ok == 1) safe->deleteFolder (folder);
+                    }));
+            }
+        });
+}
+
+void EchoJayEditor::showReferenceRowMenu (const echojay::RefBrowserRow& row, juce::Point<int> screenPos)
+{
+    if (row.path.isEmpty()) return;
+    const auto path = row.path;
+    const auto here = echojay::refFolderOf (processorRef.referenceFolders, path);
+
+    juce::PopupMenu moveTo;
+    int id = 100;
+    std::vector<juce::String> targets;
+    for (auto& f : processorRef.referenceFolders)
+    {
+        // The folder it is already in is ticked rather than hidden, so the
+        // menu says where the reference IS as well as where it can go.
+        moveTo.addItem (id++, f.name, true, f.name == here);
+        targets.push_back (f.name);
+    }
+    if (targets.empty())
+        moveTo.addItem (99, "No folders yet", false, false);
+    else
+        moveTo.addItem (98, juce::String (echojay::kRefBrowserUnfiledName()),
+                        here.isNotEmpty(), here.isEmpty());
+
+    juce::PopupMenu m;
+    m.setLookAndFeel (&lnf);
+    m.addSubMenu ("Move to", moveTo);
+    m.addSeparator();
+    // "REMOVE FROM LIBRARY", NOT "DELETE". The entry goes and the audio file
+    // stays where it is: removeReference erases from the vector and touches no
+    // File at all, and the library is rebuilt from the saved paths rather than
+    // by scanning the folder, so this is exactly and only a forgetting.
+    // "Delete" on a row whose file survives would be the more alarming word
+    // for the smaller act.
+    m.addItem (1, "Remove from library");
+    const auto name = row.text;
+    auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
+    m.showMenuAsync (juce::PopupMenu::Options()
+                       .withTargetScreenArea ({ screenPos.x, screenPos.y, 1, 1 }),
+        [safe, path, name, targets] (int r)
+        {
+            if (safe == nullptr || r == 0 || r == 99) return;
+            if (r == 1)
+            {
+                // CONFIRMED like the folder delete, and for the same reason:
+                // it is the one item here that loses something. It says where
+                // the file stays, because the row is the only trace of it the
+                // user has seen and removing it looks like removing the track.
+                juce::AlertWindow::showOkCancelBox (
+                    juce::MessageBoxIconType::QuestionIcon,
+                    "Remove from library",
+                    "Remove \"" + name + "\" from the reference library?\n\n"
+                    "The audio file is NOT deleted. It stays where it is.",
+                    "Remove", "Cancel", nullptr,
+                    juce::ModalCallbackFunction::create ([safe, path] (int ok)
+                    {
+                        if (safe != nullptr && ok == 1) safe->removeReferenceFromLibrary (path);
+                    }));
+                return;
+            }
+            if (r == 98) { safe->assignReferenceToFolder (path, {}); return; }
+            const int idx = r - 100;
+            if (idx >= 0 && idx < (int) targets.size())
+                safe->assignReferenceToFolder (path, targets[(size_t) idx]);
+        });
+}
+
+
+// THE ONE WRITER of a removal from the library, addressed BY PATH because the
+// menu was built from a row and the vector can have moved under it since.
+void EchoJayEditor::removeReferenceFromLibrary (const juce::String& path)
+{
+    const int removed = echojay::refIndexOfPath (refBrowserEntries(), path);
+    if (removed < 0) return;          // already gone: nothing to say, nothing to do
+
+    processorRef.getReferenceAnalyser().removeReference (removed);
+
+    // MEMBERSHIP IS BY PATH AND LIVES ON THE FOLDER, so dropping the entry
+    // leaves a dangling path in referenceFolders unless it is cleared here.
+    // It would be invisible until the same file was added again, and then it
+    // would reappear inside a folder the user never put it in.
+    for (auto& f : processorRef.referenceFolders)
+        f.paths.erase (std::remove (f.paths.begin(), f.paths.end(), path), f.paths.end());
+
+    // EVERY HOLDER OF A POSITION GOES THROUGH THE ONE RULE. erase() slides
+    // everything after the hole down by one, so a held index that is not
+    // updated keeps naming a valid entry: the wrong one, silently, with
+    // nothing out of bounds to catch it.
+    refBrowserSelected_ = echojay::refIndexAfterRemoval (refBrowserSelected_, removed);
+
+    for (const bool isTop : { true, false })
+    {
+        auto& slot = isTop ? compareTop_ : compareBot_;
+        // KIND-GUARDED: CompareSlotState::index is the Snapshot index too, and
+        // shifting a snapshot slot because a reference was removed would be a
+        // defect of exactly the kind this function exists to prevent.
+        if (slot.kind != CompareSlotState::Kind::Reference) continue;
+
+        const int next = echojay::refIndexAfterRemoval (slot.index, removed);
+        if (next >= 0) { slot.index = next; continue; }
+
+        // The slot was holding the reference that just left. It is emptied
+        // rather than repointed: inheriting the neighbour would leave the slot
+        // playing different audio with no visible change.
+        processorRef.stopCompareStream (isTop ? 0 : 1);
+        slot.kind  = CompareSlotState::Kind::Empty;
+        slot.index = -1;
+        slot.label = "Select slot...";
+        updateCompareSlotBtn (isTop);
+    }
+    processorRef.cmpBothCaptures.store (bothSlotsAreCaptures());
+    updateComparePlayBtns();
+
+    refreshRefBarEnablement();   // the library just changed
+    refreshReferenceBrowser();
+    if (currentView == View::Compare) showCompareView();
+    repaint();
+}
+
+void EchoJayEditor::openReferenceBrowser (bool isTop)
+{
+    refBrowser_.forTopSlot  = isTop;
+    refBrowser_.visibleState = true;
+    // The slot already showing a reference is the selection the panel opens on,
+    // so the title bar names what the user is listening to rather than nothing.
+    const auto& slot = isTop ? compareTop_ : compareBot_;
+    refBrowserSelected_ = (slot.kind == CompareSlotState::Kind::Reference) ? slot.index : -1;
+
+    refreshReferenceBrowser();
+    refBrowser_.setBounds (getLocalBounds());
+    refBrowser_.setVisible (true);
+    // STILL NEEDED WITH THE CATCHER AT THE BACK. toBack fixed the CHILDREN of
+    // Compare; this panel must cover every sibling, including ones added after
+    // it, so it raises itself exactly as CodecPanel does.
+    refBrowser_.toFront (true);
+    refBrowser_.grabKeyboardFocus();
+    refBrowser_.repaint();
+}
+
+void EchoJayEditor::closeReferenceBrowser()
+{
+    refBrowser_.visibleState = false;
+    refBrowser_.setVisible (false);
+    repaint();
+}
+
+// THE ONE WRITER of a reference into a compare slot. Extracted from the slot
+// menu's 300-band handler so the menu and the browser cannot drift in what
+// choosing a reference means; the menu now calls this too.
+void EchoJayEditor::applyReferenceToSlot (bool isTop, int refIndex)
+{
+    auto refs = processorRef.getReferenceAnalyser().getReferences();
+    if (refIndex < 0 || refIndex >= (int) refs.size()) return;
+
+    auto& slot = isTop ? compareTop_ : compareBot_;
+    slot.kind  = CompareSlotState::Kind::Reference;
+    slot.index = refIndex;
+    slot.label = refs[(size_t) refIndex].name;
+
+    // Choosing content leaves codec mode, as the menu path does: the saved
+    // pre-codec slots are no longer what the user wants back.
+    codecModeActive_ = false;
+
+    const int slotIdx = isTop ? 0 : 1;
+    processorRef.stopCompareStream (slotIdx);
+    updateCompareSlotBtn (isTop);
+    startCompareStream (slotIdx);
+    processorRef.cmpBothCaptures.store (bothSlotsAreCaptures());
+    updateComparePlayBtns();
+    repaint();
+}
+
+// ---------------------------------------------------------------------------
+// THE MATCH PAGE'S MIX PICKER
+// ---------------------------------------------------------------------------
+//
+// ITS OWN MENU RATHER THAN openCompareSlotMenu, for two reasons that are both
+// structural. That menu's REFERENCES section is unconditional, and this picker
+// must never offer a reference: "cannot place a reference" is half of why the
+// two roles cannot swap. And it anchors on compareTopSlotBtn_/compareBotSlotBtn_,
+// which are not on screen here, so the popup would be positioned against a
+// hidden component.
+//
+// The id bands are the slot menu's own, so the two cannot drift about what an
+// id means: 1 Live, 100..199 session snapshots, 200..299 chat captures.
+void EchoJayEditor::openMatchMixPicker()
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("YOUR MIX");
+    menu.addItem (1, "Live signal", true,
+                  matchSlots().mix->kind == CompareSlotState::Kind::Live);
+
+    const auto snaps = processorRef.getSnapshots();
+    if (! snaps.empty())
+    {
+        menu.addSeparator();
+        menu.addSectionHeader ("CAPTURES");
+        for (int i = 0; i < (int) snaps.size() && i < kCompareMenuBandSize - 1; ++i)
+            menu.addItem (100 + i, snaps[(size_t) i].name.substring (0, kCompareMenuRefNameLen));
+    }
+
+    // The chat captures, through the SAME ordered id list the slot menu builds,
+    // so the label the user picked and the review the slot binds cannot drift.
+    compareMenuReviewIds_.clear();
+    {
+        juce::PopupMenu chat;
+        for (auto& r : workspace.getReviews())
+        {
+            if ((int) compareMenuReviewIds_.size() >= kCompareMenuBandSize - 1) break;
+            chat.addItem (200 + (int) compareMenuReviewIds_.size(),
+                          compareReviewLabel (r).substring (0, kCompareMenuRefNameLen));
+            compareMenuReviewIds_.push_back (r.id);
+        }
+        if (compareMenuReviewIds_.size() > 0)
+        {
+            menu.addSeparator();
+            menu.addSubMenu ("Chat captures", chat);
+        }
+    }
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor> (this);
+    menu.showMenuAsync (juce::PopupMenu::Options()
+                            .withTargetComponent (&matchPanel_)
+                            .withParentComponent (this),
+                        [safeThis] (int result)
+    {
+        if (safeThis == nullptr || result == 0) return;
+        CompareSlotState next;
+        if (result == 1)
+        {
+            next.kind = CompareSlotState::Kind::Live;
+            next.label = "Live signal";
+        }
+        else if (result >= 100 && result < 200)
+        {
+            const auto snaps = safeThis->processorRef.getSnapshots();
+            const int idx = result - 100;
+            if (idx < 0 || idx >= (int) snaps.size()) return;
+            next.kind = CompareSlotState::Kind::Snapshot;
+            next.index = idx;
+            next.label = snaps[(size_t) idx].name;
+        }
+        else if (result >= 200 && result < 300)
+        {
+            const int nth = result - 200;
+            if (nth < 0 || nth >= (int) safeThis->compareMenuReviewIds_.size()) return;
+            next.kind = CompareSlotState::Kind::WsCapture;
+            next.wsReviewId = safeThis->compareMenuReviewIds_[(size_t) nth];
+            for (auto& r : safeThis->workspace.getReviews())
+                if (r.id == next.wsReviewId) next.label = safeThis->compareReviewLabel (r);
+        }
+        else return;
+
+        safeThis->matchApplyMixSlot (next);
+    });
+}
+
+// THE ONE WRITER for the Match page's mix side. It writes into whichever slot
+// is NOT the reference side, so the roles decided on entry survive every pick.
+//
+// A DISPLACEMENT IS ANNOUNCED, not performed silently. Taking a slot ends codec
+// mode and restarts a stream, and both of those are visible on a page the user
+// is not looking at. setRefStatus is the surface that already exists for this,
+// and its text survives until Compare is next entered, so the message is
+// waiting there rather than having flashed past here.
+void EchoJayEditor::matchApplyMixSlot (const CompareSlotState& next)
+{
+    auto& slot = matchRefIsTop_ ? compareBot_ : compareTop_;
+    const int  slotIdx      = matchRefIsTop_ ? 1 : 0;
+    const bool endedCodec   = codecModeActive_;
+    const bool wasStreaming = (processorRef.cmpAudible.load() == slotIdx);
+
+    slot = next;
+    codecModeActive_ = false;
+
+    processorRef.stopCompareStream (slotIdx);
+    updateCompareSlotBtn (! matchRefIsTop_);
+    startCompareStream (slotIdx);
+    processorRef.cmpBothCaptures.store (bothSlotsAreCaptures());
+    updateComparePlayBtns();
+
+    if (endedCodec)
+        setRefStatus ("Match took the " + juce::String (matchRefIsTop_ ? "B" : "A")
+                          + " slot, so the codec A/B ended.", RefStatusKind::Info);
+    else if (wasStreaming)
+        setRefStatus ("Match changed the " + juce::String (matchRefIsTop_ ? "B" : "A")
+                          + " slot, so Compare's playback restarted.", RefStatusKind::Info);
+
+    matchPanel_.repaint();
+    repaint();
+}
+
+// ONE SEEK, TWO PAGES. Extracted from mouseDown's click-to-seek so the Match
+// page's strips perform the SAME GESTURE rather than a second implementation of
+// it: seek, play and make audible, together, because that is what a click on a
+// waveform has meant on Compare since it shipped.
+//
+// The caller decides WHERE the click landed; this decides what a seek is. Note
+// the fraction is a fraction OF THE FILE, not a pixel: the two panels are
+// different widths and a position in samples cannot come from one of them.
+void EchoJayEditor::seekCompareStream (int slotIdx, float fraction)
+{
+    if (slotIdx < 0 || slotIdx > 1) return;
+    fraction = juce::jlimit (0.0f, 1.0f, fraction);
+
+    auto& s = processorRef.cmpStream[slotIdx];
+    if (! s.loaded.load())
+        startCompareStream (slotIdx);
+    if (s.loaded.load() && s.sampleCount > 0)
+    {
+        std::lock_guard<std::mutex> lock (processorRef.cmpMutex);
+        s.playbackPos = (int) (fraction * s.sampleCount);
+        // Click-seek on a reference during SYNC: capture the host->reference
+        // offset at this moment and keep it (lining a drop up against a
+        // different arrangement)
+        if (processorRef.cmpSyncToTransport.load()
+            && processorRef.cmpSlotIsRef[slotIdx].load()
+            && s.sampleRate > 0)
+        {
+            const double host = processorRef.cmpLastHostTimeSec.load();
+            if (host >= 0.0)
+            {
+                const double refSec = (double) s.playbackPos / s.sampleRate;
+                processorRef.cmpSyncOffsetSec.store (refSec - host);
+                EchoJay_NSLog (("EJCmp: sync offset captured "
+                                + juce::String (refSec - host, 2) + "s"
+                                + " (host " + juce::String (host, 1)
+                                + "s -> ref " + juce::String (refSec, 1) + "s)").toRawUTF8());
+            }
+        }
+        // Start playing + make audible on seek
+        // A GESTURE SETS INTENT; A HOST TRANSPORT DOES NOT. This is the whole
+        // of open list 215 and the next person WILL be tempted to tidy one of
+        // these into the other, so the distinction is written here rather
+        // than inferred:
+        //
+        //   A PERSON CLICKING is a statement about what they want to hear.
+        //   Clicking the waveform to seek is "play from here", so it says
+        //   the same thing the play button says and must set the same flag.
+        //
+        //   A HOST ROLLING is not. The DAW starting says nothing about the
+        //   reference: it is the same event whether the user paused the
+        //   reference a second ago or never touched it. Letting it set intent
+        //   would restore exactly the bug, because every host start would
+        //   re-grant permission that a pause had just withdrawn.
+        //
+        // So the sync may STOP freely and may START only what a gesture
+        // already asked for. See echojay::cmpSyncMayStart.
+        makeCompareSlotAudible (slotIdx);
+        // SYNC: mirror seek position to the other capture slot
+        if (processorRef.cmpSyncToTransport.load() && bothSlotsAreCaptures())
+        {
+            int otherIdx = 1 - slotIdx;
+            auto& other = processorRef.cmpStream[otherIdx];
+            if (! other.loaded.load())
+                startCompareStream (otherIdx);
+            if (other.loaded.load() && other.sampleCount > 0)
+            {
+                other.playbackPos = (int) (fraction * other.sampleCount);
+                // The mirrored slot is part of the same gesture.
+                other.userWantsRolling.store (true);
+                other.playing.store (true);
+            }
+        }
+        updateComparePlayBtns();
+    }
+}
+
+/** Where a slot's stream has got to, 0 to 1, or -1 when it has no position.
+
+    THE STREAM'S OWN POSITION AND NOT A SECOND COUNT. playbackPos is advanced on
+    the audio thread and is the only place that knows where playback is; a timer
+    counting elapsed seconds beside it would drift the moment the stream looped,
+    was seeked or was stopped, and would then be a confident wrong playhead. */
+float EchoJayEditor::compareStreamFrac (int slotIdx) const
+{
+    if (slotIdx < 0 || slotIdx > 1) return -1.0f;
+    const auto& s = processorRef.cmpStream[slotIdx];
+    if (! s.loaded.load() || s.sampleCount <= 0) return -1.0f;
+    return juce::jlimit (0.0f, 1.0f, (float) s.playbackPos / (float) s.sampleCount);
+}
+
+
+// ---------------------------------------------------------------------------
+// THE CLOUD IS THE FAST READING. THE FILAMENT IS THE FIGURE BEING COMPARED.
+// ---------------------------------------------------------------------------
+//
+// WHY THAT IS NOT THE FAULT IT LOOKS LIKE. Drawing a momentary reading against
+// a whole-file average is the ballistic-versus-accumulated mistake this
+// contract keeps naming: data.macroBandDb against an accumulation, a 3 s PSR
+// against a whole track. It is avoided here because THE TWO ARE DRAWN AS
+// DIFFERENT THINGS AND ONE OF THEM IS NEVER COMPARED.
+//
+//   THE CLOUD is context: where this side has been over the last few seconds,
+//   smoked into the trail image, fading. No number is read off it, no ribbon
+//   thickness applies to it, and nothing in the proposal touches it.
+//
+//   THE FILAMENT is the measurement: the slow figure the reference is compared
+//   against and the one every move is computed from. Every number in the text,
+//   every gap, every band move comes from there.
+//
+// A READER MUST NOT BE ABLE TO MISTAKE THE CLOUD FOR THE MEASUREMENT, which is
+// why the cloud is dim, wide and edgeless and the filament is thin, bright and
+// in front, and why a side with NO FAST SOURCE gets no cloud at all rather
+// than a trail faked from one stored number.
+//
+// DYNAMICS IS THE AXIS WHERE THE TWO SIT CLOSEST TOGETHER, and that is said
+// plainly rather than hidden: MeterEngine has no whole-file crest to hold a
+// filament at, only peak-over-RMS of a 0.5 s RMS and a 3 s peak decay. So a
+// CAPTURE or a REFERENCE holds its stored whole-file crest, which is genuinely
+// accumulated, while a LIVE side's filament is its own rolling crest and the
+// picture says "rolling" beside it. On that axis the filament is a slower
+// reading of the same thing rather than a different kind of figure.
+
+/** Where a side's fast frames come from, if it has any.
+
+      A LIVE MIX SIDE     the main meter engine, as the waveform strip reads it.
+      A PLAYING STREAM    that slot's own cmpMeter, which the dual stream fills
+                          every block for BOTH slots, so a reference that is
+                          PLAYING has a live spectrum and smokes too.
+      A STILL SIDE        nothing. Its stored whole-file curve is drawn as one
+                          quiet line and left still, because nothing is
+                          happening to it.
+
+    Returns false for a still side. EVERY GHOST IS A REAL FRAME FROM A REAL
+    MOMENT. */
+/** The ENGINE behind a side's fast frame, for the 2048-bin visual spectrum
+    that only the engine can hand out. Same rule as matchFastFrame: the main
+    engine for Live, that slot's own cmpMeter when its stream is playing, and
+    nullptr for a still side. */
+MeterEngine* EchoJayEditor::matchFastEngine (const CompareSlotState& slot, int slotIdx) const
+{
+    if (slot.kind == CompareSlotState::Kind::Live)
+        return &processorRef.getMeterEngine();
+    if (slotIdx >= 0 && slotIdx <= 1
+        && processorRef.cmpStream[slotIdx].loaded.load()
+        && processorRef.cmpStream[slotIdx].playing.load())
+        return &processorRef.getCompareMeter (slotIdx);
+    return nullptr;
+}
+
+int EchoJayEditor::audibleCompareSlot() const
+{
+    const int aud = processorRef.cmpAudible.load();
+    for (int sl = 0; sl < 2; ++sl)
+    {
+        const auto& st = processorRef.cmpStream[sl];
+        // THE SAME SKIP THE AUDIO BLOCK MAKES, and it is not decoration: a
+        // slot with no buffer or no samples is never mixed, so a display that
+        // ignored these would light a button for audio that cannot be heard.
+        if (! st.loaded.load() || st.sampleCount <= 0) continue;
+        if (echojay::cmpMixTargetGain (st.playing.load(), sl, aud,
+                                       st.stopAtZero.load()) > 0.5f)
+            return sl;
+    }
+    return -1;
+}
+
+bool EchoJayEditor::makeCompareSlotAudible (int slotIdx)
+{
+    if (slotIdx < 0 || slotIdx > 1) return false;
+    auto& s = processorRef.cmpStream[slotIdx];
+
+    // AN EMPTY SLOT GETS NOTHING. Intent on a slot with no buffer behind it
+    // would be a standing permission for the transport sync to "start" a
+    // stream that does not exist, and cmpAudible would point at silence while
+    // the button claimed otherwise. A Live slot is the same case: it is host
+    // passthrough with no cmpStream, which is why toggleComparePlay returns
+    // early for one.
+    if (! s.loaded.load()) return false;
+
+    // A GESTURE GRANTS INTENT. This is the same three lines seekCompareStream
+    // used inline, lifted here so the seek and the A/B buttons cannot drift
+    // into meaning different things.
+    //
+    // A PAUSE DOES NOT BLOCK IT, and the distinction is the whole of open list
+    // 215. What 215 closed was the HOST TRANSPORT starting audio with no
+    // gesture behind it: the DAW rolling says nothing about this reference,
+    // and letting it grant permission re-granted what a pause had just
+    // withdrawn. A PERSON PRESSING B IS A GESTURE ON THAT SLOT, exactly as
+    // clicking its waveform to seek is. Selecting a side to hear and being
+    // given silence because of an earlier pause is a control that lies about
+    // what it does.
+    s.userWantsRolling.store (true);
+    if (! s.playing.load()) s.playing.store (true);
+    processorRef.cmpAudible.store (slotIdx);
+    return true;
+}
+
+bool EchoJayEditor::matchFastFrame (const CompareSlotState& slot, int slotIdx,
+                                    MeterData& out) const
+{
+    if (slot.kind == CompareSlotState::Kind::Live)
+    {
+        out = processorRef.getMeterEngine().getMeterData();
+        return true;
+    }
+    if (slotIdx >= 0 && slotIdx <= 1
+        && processorRef.cmpStream[slotIdx].loaded.load()
+        && processorRef.cmpStream[slotIdx].playing.load())
+    {
+        out = processorRef.getCompareMeter (slotIdx).getMeterData();
+        return true;
+    }
+    return false;
+}
+
+// The points a side's waveform draws. LIVE IS A ROLLING WINDOW and everything
+// else is a whole file, which is the difference the page must not hide.
+bool EchoJayEditor::matchWavePoints (const CompareSlotState& slot, std::vector<float>& outAbs,
+                                     bool& rolling, float& spanSeconds) const
+{
+    outAbs.clear();
+    rolling = false;
+    spanSeconds = 0.0f;
+
+    switch (slot.kind)
+    {
+        case CompareSlotState::Kind::Live:
+        {
+            rolling = true;
+            const MeterData md = processorRef.getMeterEngine().getMeterData();
+            if (md.waveformCount <= 0) return false;
+            const int n = md.waveformCount;
+            const int start = (md.waveformWritePos - n + MeterData::waveformSize)
+                                  % MeterData::waveformSize;
+            for (int i = 0; i < n; ++i)
+            {
+                const auto& wp = md.waveform[(size_t) ((start + i) % MeterData::waveformSize)];
+                outAbs.push_back (juce::jmax (std::abs (wp.minVal), std::abs (wp.maxVal)));
+            }
+            // One point per kWaveDownsample samples: the span is what the ring
+            // actually holds, not the ring's capacity.
+            const double sr = processorRef.getSampleRate() > 0 ? processorRef.getSampleRate() : 44100.0;
+            spanSeconds = (float) (n * 512 / sr);
+            return ! outAbs.empty();
+        }
+        case CompareSlotState::Kind::Snapshot:
+        {
+            const auto snaps = processorRef.getSnapshots();
+            if (slot.index < 0 || slot.index >= (int) snaps.size()) return false;
+            for (auto v : snaps[(size_t) slot.index].waveformThumbnail) outAbs.push_back (std::abs (v));
+            spanSeconds = snaps[(size_t) slot.index].durationSeconds;
+            return ! outAbs.empty();
+        }
+        case CompareSlotState::Kind::Reference:
+        {
+            const auto refs = processorRef.getReferenceAnalyser().getReferences();
+            if (slot.index < 0 || slot.index >= (int) refs.size()) return false;
+            for (auto v : refs[(size_t) slot.index].waveformThumbnail) outAbs.push_back (std::abs (v));
+            spanSeconds = refs[(size_t) slot.index].durationSeconds;
+            return ! outAbs.empty();
+        }
+        case CompareSlotState::Kind::WsCapture:
+        {
+            for (auto& r : workspace.getReviews())
+                if (r.id == slot.wsReviewId && r.waveform.isArray())
+                {
+                    for (auto& v : *r.waveform.getArray()) outAbs.push_back (std::abs ((float) (double) v));
+                    spanSeconds = slotDurationSeconds (slot);
+                    return ! outAbs.empty();
+                }
+            return false;
+        }
+        case CompareSlotState::Kind::CodecFile:
+        {
+            for (auto v : slot.codecThumb) outAbs.push_back (std::abs (v));
+            spanSeconds = slotDurationSeconds (slot);
+            return ! outAbs.empty();
+        }
+        case CompareSlotState::Kind::Empty:
+        default:
+            return false;
+    }
+}
+
+// THE SUB-TAB SWITCH. One writer for refSubTab_, so the panel's visibility and
+// the row's highlight cannot disagree about which page is showing.
+void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
+{
+    refSubTab_ = t;
+    // EACH PAGE IS ITS OWN CASE. A switch, not "Playback or not", because with
+    // Match added "not Playback" would have sent Match down Compare's branch:
+    // Compare's ten controls shown over an empty page and codec mode left
+    // running. A sub-tab added to the enum without a case here is now a
+    // compiler warning rather than a quiet fall into a neighbour's branch.
+    switch (t)
+    {
+    case echojay::RefSubTab::Playback:
+    {
+        // LEAVING THE CODEC A/B FOR THE GRID EXITS CODEC MODE. Codec mode lives
+        // on the Compare sub-tab, where its chip is drawn; the grid draws no
+        // chip, so staying engaged here would keep the lossy render playing
+        // with nothing on screen saying so, which the 25 Jul rule at
+        // closeCodecPanel forbids by any route.
+        if (codecModeActive_) exitCodecMode();
+        // AND THE COMPARE STREAMS STOP HERE, because this is the one sub-tab
+        // that draws no transport for them. Compare and Match both show play
+        // and stop, so moving between those two leaves a visible control and
+        // nothing is stopped; arriving at the grid does not, and a stream
+        // still rolling behind it is audio with no way to reach it.
+        silenceCompareStreams ("opening the Playback grid");
+
+        // ONE resolve, and the label and the path come out of it TOGETHER:
+        // resolveCodecSource sets codecSrcPath_ and codecSrcLabel_ in the same
+        // branch on every return path, so the page cannot name one capture
+        // while rendering another.
+        resolveCodecSource();
+        // The status is cleared on opening, EXCEPT the one notice written for
+        // this opening: a render that finished after the user left Reference.
+        if (! codecStatusSurvivesOpen_) codecStatus_ = {};
+        codecStatusSurvivesOpen_ = false;
+        codecPanel_.hoverIdx = -1;
+        codecPanel_.renderView = false; // the page opens on the grid, every time
+        codecPanel_.gridScroll = 0;     // and at its top, every time
+        // Hidden BEFORE the Playback page takes focus below, so hiding a
+        // focused Match page cannot move focus off the page just opened.
+        matchPanel_.setVisible(false);
+        codecPanel_.setVisible(true);
+        EchoJay_NSLog(("EJCodec: playback page src=" + (codecSrcPath_.isEmpty()
+                        ? juce::String("NONE") : codecSrcLabel_)).toRawUTF8());
+        // WITHOUT THIS, ESCAPE WAS NOT AN ESCAPE. setWantsKeyboardFocus only
+        // makes focus possible; nothing was giving it, so CodecPanel::keyPressed
+        // never ran and the page had no exit at all.
+        codecPanel_.grabKeyboardFocus();
+        break;
+    }
+    case echojay::RefSubTab::Match:
+    {
+        // THE MATCH PAGE EXITS CODEC MODE, for the Playback branch's reason:
+        // codec mode's chip is drawn only on Compare, so staying engaged here
+        // would keep the lossy render playing with nothing on screen saying
+        // so, which the 25 Jul rule forbids by any route.
+        if (codecModeActive_) exitCodecMode();
+        codecPanel_.setVisible(false);
+        // THE ROLES ARE DECIDED HERE, ONCE, FROM WHAT THE SLOTS HOLD, and then
+        // held for as long as the page is open. Deciding it per paint is what
+        // let a pick flip which side was the mix.
+        matchRefIsTop_ = (echojay::matchRefSideOnEntry (
+                              compareTop_.kind == CompareSlotState::Kind::Reference,
+                              compareBot_.kind == CompareSlotState::Kind::Reference)
+                          == echojay::MatchRefSide::Top);
+        matchPanel_.setVisible(true);
+        // Focus for the same reason as the Playback page: so Escape reaches
+        // MatchPanel::keyPressed at all.
+        matchPanel_.grabKeyboardFocus();
+        break;
+    }
+    case echojay::RefSubTab::Compare:
+    case echojay::RefSubTab::Count:   // never passed: the one cast is guarded (rs PIN3)
+    {
+        // CHOOSING COMPARE HIDES THE PANEL AND TEARS NOTHING DOWN. Codec mode
+        // lives here now, with its chip, so arriving here is arriving at it,
+        // not leaving it. This used to go through closeCodecPanel, whose
+        // teardown ended the comparison on the way IN, and because the
+        // sub-tab row calls this for the tab already selected, clicking
+        // "Compare" while on the codec A/B ended the comparison too. The
+        // teardown now sits on the ways OUT: the Playback and Match branches
+        // above, the chip's X, and hideCompareView leaving the Reference tab.
+        codecPanel_.setVisible(false);
+        matchPanel_.setVisible(false);
+        break;
+    }
+    }
+    // THE DERIVED VALUE. compareFurnitureVisible is true only for the Compare
+    // sub-tab with the view up, so Compare's ten controls hide on Match exactly
+    // as they do on Playback. When the view is down, which is hideCompareView's
+    // call, this applies hidden rather than showing them mid-teardown.
+    showCompareFurniture (compareFurnitureShouldShow());
+    resized();
+    repaint();
+}
+
+// THE ONE AUTHOR of the Compare sub-tab's ten controls' visibility: the meter
+// row, the two slot buttons, the two play buttons, A, B, the shared play, sync
+// and AI Compare. Nothing else calls setVisible on them, and every caller
+// passes compareFurnitureShouldShow(), the two-input rule in EJReferenceBar.h.
+// The callers are the constructor, the login screen, showCompareView and
+// setRefSubTab; hideCompareView and enterCodecMode reach it through
+// setRefSubTab.
+//
+// THERE WERE THREE AUTHORS BEFORE 18 Sep 2026: showCompareView,
+// hideCompareView and setRefSubTab each set all ten. That commit gave them one
+// function, but still passed it three different values: true, false and
+// ! playback. The true was wrong whenever showCompareView ran as a refresh
+// from the Playback sub-tab. Construction and the login screen set their own
+// state outside it, and construction's was wrong: each control was
+// setVisible (false) and then addAndMakeVisible, which made it visible again,
+// with empty bounds, until the first Compare layout. Now the value is derived
+// in one place and applied in one place.
+void EchoJayEditor::showCompareFurniture (bool visible)
+{
+    for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(visible);
+    compareTopSlotBtn_.setVisible(visible);
+    compareBotSlotBtn_.setVisible(visible);
+    comparePlayTopBtn_.setVisible(visible);
+    comparePlayBotBtn_.setVisible(visible);
+    cmpABtn_.setVisible(visible);
+    cmpBBtn_.setVisible(visible);
+    cmpPlayBtn_.setVisible(visible);
+    compareSyncBtn_.setVisible(visible);
+    aiCompareBtn.setVisible(visible);
 }
 
 void EchoJayEditor::closeCodecPanel()
@@ -5897,6 +7778,7 @@ void EchoJayEditor::startCodecRender(int presetIdx)
 
     codecRendering_ = presetIdx;
     codecStatus_ = {};
+    codecStatusSurvivesOpen_ = false;
     codecPanel_.repaint();
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -5914,6 +7796,22 @@ void EchoJayEditor::startCodecRender(int presetIdx)
                 safeThis->codecStatus_ = res.error;
                 safeThis->codecPanel_.repaint();
                 EchoJay_NSLog(("EJCodec: render FAILED " + res.error).toRawUTF8());
+                return;
+            }
+            // A RENDER THAT FINISHES AFTER THE USER LEFT REFERENCE IS NOT OPENED
+            // (decided 18 Sep 2026). Anywhere on the Reference tab, the Playback
+            // grid included, it engages and lands on Compare; outside it, it
+            // would engage codec mode behind whatever they went to, so it does
+            // not, and the Playback page says so when they come back. The notice
+            // is measured to fit the render view's 464 px status line with the
+            // longest preset name (357.4 px).
+            if (! safeThis->compareVisible)
+            {
+                safeThis->codecStatus_ = juce::String (CodecRender::presets()[(size_t) presetIdx].name)
+                                       + " finished after you left Reference, so it was not opened.";
+                safeThis->codecStatusSurvivesOpen_ = true;
+                safeThis->codecPanel_.repaint();
+                EchoJay_NSLog("EJCodec: render finished after navigation away; not opened");
                 return;
             }
             safeThis->enterCodecMode(presetIdx, norm, res);
@@ -5934,6 +7832,9 @@ void EchoJayEditor::enterCodecMode(int presetIdx, bool normalised,
         codecSavedBot_ = compareBot_;
         codecModeActive_ = true;
     }
+    // Mirror to the processor: it cannot tell a codec render from any other
+    // file in a compare slot, and the capture refusal must name this one.
+    processorRef.cmpCodecPreview.store(true);
 
     processorRef.stopCompareStream(0);
     processorRef.stopCompareStream(1);
@@ -5972,12 +7873,32 @@ void EchoJayEditor::enterCodecMode(int presetIdx, bool normalised,
         for (int sl = 0; sl < 2; ++sl)
         {
             auto& s = processorRef.cmpStream[sl];
-            if (s.loaded.load()) { s.playbackPos = 0; s.playing.store(true); }
+            // ENTERING CODEC A/B IS A GESTURE TOO: the user asked to hear
+            // the render against the original, so both sides carry intent
+            // and the host can resume them. See seekCompareStream for why a
+            // gesture sets this and a transport transition does not.
+            if (s.loaded.load())
+            {
+                s.playbackPos = 0;
+                s.userWantsRolling.store(true);
+                s.playing.store(true);
+            }
         }
     }
     processorRef.cmpAudible.store(0);
 
-    codecPanel_.setVisible(false);   // hide only: codec mode is ENGAGING here
+    // LAND ON COMPARE, WHERE CODEC MODE LIVES, and tear nothing down: this is
+    // arriving at codec mode, not leaving it.
+    //
+    // WHY THIS WAS A BLANK SCREEN. On 25 Jul this line only hid the panel,
+    // correctly: the panel was a modal over a visible Compare view, and hiding
+    // it revealed the loaded A/B. Since 26986ea (13 Sep) the Compare view is
+    // drawn only on the Compare sub-tab, so hiding the panel left the sub-tab
+    // on Playback with nothing drawn, and the codec A/B was unreachable from
+    // 13 Sep until this change. Choosing Compare no longer tears codec mode
+    // down, so setRefSubTab is now exactly the landing wanted here, and going
+    // through it keeps one author of the sub-tab's state.
+    setRefSubTab (echojay::RefSubTab::Compare);
     updateComparePlayBtns();
     repaint();
     EchoJay_NSLog(("EJCodec: codec mode ON " + rendLabel
@@ -5988,6 +7909,7 @@ void EchoJayEditor::exitCodecMode()
 {
     if (!codecModeActive_) return;
     codecModeActive_ = false;
+    processorRef.cmpCodecPreview.store(false);
 
     // Fade the lossy monitor out FIRST (8ms crossfade back to the clean DAW
     // signal in processBlock), then restore the saved slots once the ramp is
@@ -6018,74 +7940,29 @@ void EchoJayEditor::exitCodecMode()
     EchoJay_NSLog("EJCodec: codec mode OFF (fading out, slots restore after ramp)");
 }
 
-// ---- CodecLaunchBtn: feature-launcher (outline doorway, not a toggle) ------
-
-void EchoJayEditor::CodecLaunchBtn::paintButton(juce::Graphics& g, bool over, bool)
-{
-    const auto cyan = juce::Colour(0xff22d3ee);
-    auto b = getLocalBounds().toFloat().reduced(0.5f);
-
-    // No solid fill; codec mode adds only a faint interior wash
-    if (active)
-    {
-        g.setColour(cyan.withAlpha(0.08f));
-        g.fillRoundedRectangle(b, 6.0f);
-    }
-    g.setColour(cyan.withAlpha(active ? 0.9f : (over ? 0.75f : 0.4f)));
-    g.drawRoundedRectangle(b, 6.0f, 1.0f);
-
-    juce::Font f(juce::FontOptions(11.0f, juce::Font::bold));
-    const int textW = juce::GlyphArrangement::getStringWidthInt(f, "CODECS");
-    const int iconW = 13, gap = 5;
-    const int x0 = (getWidth() - (iconW + gap + textW)) / 2;
-    // Optical centre of the ALL-CAPS label sits ~0.5px above the geometric
-    // centre (caps leave the descent unused); ride the glyph on that line
-    const float cy = (float) getHeight() * 0.5f - 0.5f;
-
-    // Codec glyph: ONE unit built from a shared centreline — every element
-    // is a mirrored offset from cx, so left/right bracket-to-bar gaps are
-    // identical by construction (the old version placed arc CENTRES
-    // symmetrically, but an arc's ink is offset from its centre, which left
-    // a visibly larger gap after the opening bracket)
-    g.setColour(cyan.withAlpha((over || active) ? 1.0f : 0.85f));
-    const float cx = (float) x0 + (float) iconW * 0.5f;
-    // Bars: centres at cx and cx ± 2.6, width 1.4
-    const float barH[3] = { 4.5f, 8.0f, 4.5f };
-    for (int i = 0; i < 3; ++i)
-    {
-        const float bcx = cx + ((float) i - 1.0f) * 2.6f;
-        g.fillRoundedRectangle(bcx - 0.7f, cy - barH[i] * 0.5f, 1.4f, barH[i], 0.7f);
-    }
-    // Brackets: arc centres at cx ± 4.0, rx 2.2 — nearest ink (the arc
-    // endpoints) lands at cx ± 5.0, a 1.7px gap off each outer bar edge
-    juce::Path p;
-    p.addCentredArc(cx - 4.0f, cy, 2.2f, 5.5f, 0.0f,
-                    juce::MathConstants<float>::pi * 1.15f,
-                    juce::MathConstants<float>::pi * 1.85f, true);
-    p.addCentredArc(cx + 4.0f, cy, 2.2f, 5.5f, 0.0f,
-                    juce::MathConstants<float>::pi * 0.15f,
-                    juce::MathConstants<float>::pi * 0.85f, true);
-    g.strokePath(p, juce::PathStrokeType(1.2f));
-
-    g.setFont(f);
-    g.drawText("CODECS", x0 + iconW + gap, 0, textW + 2, getHeight(),
-               juce::Justification::centredLeft);
-}
-
-// ---- CodecPanel: modal card (scrim + card painted by THIS component) -------
-
 void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
 {
     if (owner == nullptr) return;
+    if (renderView) paintRenderView (g);
+    else            paintGrid (g);
+}
 
-    g.fillAll(juce::Colour(0xcc000000));   // scrim
-
+// THE RENDER VIEW: the codec card, reached from the grid's codec tile. Its
+// presets, the normalise toggle, the notice and the status line are exactly
+// as they were when the card was the whole page; what is new is the way back
+// to the grid in its title row. Its rectangle is still codecPageLayout's card,
+// which cp PIN2 to cp PIN5 test.
+void EchoJayEditor::CodecPanel::paintRenderView(juce::Graphics& g)
+{
+    // NO SCRIM. This is the page, not something laid over it, and a scrim over
+    // the page you are on dims nothing.
     const auto& ps = CodecRender::presets();
-    const int nRows = ((int) ps.size() + 1) / 2;
     const int cardH = 58, cardGap = 8;
-    const int w = juce::jmin(500, getWidth() - 60);
-    const int h = 96 + nRows * (cardH + cardGap) + 108;   // +20: close-behaviour notice
-    juce::Rectangle<int> card((getWidth() - w) / 2, (getHeight() - h) / 2, w, h);
+    // THE CARD COMES FROM echojay::codecPageLayout, the one author. It used to
+    // be centred here from getWidth()/getHeight(), which was only correct while
+    // those were the whole window.
+    const juce::Rectangle<int> card =
+        echojay::codecPageLayout (getLocalBounds(), (int) ps.size()).card;
 
     g.setColour(C::bg2);
     g.fillRoundedRectangle(card.toFloat(), 10.0f);
@@ -6094,16 +7971,18 @@ void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
 
     auto r = card.reduced(18, 14);
 
-    // Header + close X
+    // Header, and the way back to the grid at the right of the same row. The
+    // row's height is unchanged, so the card's geometry is too. Escape does
+    // the same thing (keyPressed).
     auto head = r.removeFromTop(22);
-    closeRect = { card.getRight() - 34, card.getY() + 10, 24, 24 };
+    backRect = head.removeFromRight(64);
+    g.setColour(C::text2);
+    g.setFont(juce::Font(juce::FontOptions(11.5f)));
+    g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x80\xb9 Back")),
+               backRect, juce::Justification::centredRight);
     g.setColour(C::text);
     g.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
     g.drawText("CODEC PLAYER", head, juce::Justification::centredLeft);
-    g.setColour(C::text3);
-    g.setFont(juce::Font(juce::FontOptions(14.0f)));
-    g.drawText("x", closeRect, juce::Justification::centred);
-
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(11.5f)));
     g.drawText("Hear this material the way streaming platforms deliver it.",
@@ -6157,7 +8036,14 @@ void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
                                + ps[(size_t) i].sub,
                    inner, juce::Justification::centredLeft, true);
     }
-    r.removeFromTop(nRows * (cardH + cardGap) + 6);
+    // Same row count the card height was computed from, read from the one
+    // place that expresses it rather than recomputed here.
+    r.removeFromTop(echojay::codecCardRows ((int) ps.size()) * (cardH + cardGap) + 6);
+
+    // The Mono card that was parked here until the grid existed is the grid's
+    // first tile now (paintGrid). This card is the render view and plays
+    // nothing, so it no longer carries a live control.
+
 
     // Normalise toggle
     auto tRow = r.removeFromTop(20);
@@ -6200,34 +8086,260 @@ void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
     }
 }
 
+// THE TILE STROKE, and the reason is MEASURED, not aesthetic. A tile's body is
+// C::bg3 (0E1020) on the page's C::bg2 (0A0C18), and the pictures average about
+// 31 against a panel of about 15: without a stroke a dark picture runs straight
+// into the background and the tile has no edge at all. C::border, white at 5%
+// alpha, is too faint to supply one, so the stroke is a solid colour a clear
+// step above the tile body.
+static const juce::Colour kPlaybackTileStroke { 0xff2c3150 };
+
+// THE GRID: the Playback page. Thirteen live tiles change what is playing now;
+// the fourteenth opens the codec card as the render view. Every rect comes from
+// echojay::playbackPageLayout and the scroll functions beside it in
+// EJCodecPage.h, and the paint computes none of its own, so the allowance
+// pg PIN5 checks is the one this paint spends.
+void EchoJayEditor::CodecPanel::paintGrid(juce::Graphics& g)
+{
+    const auto& tiles  = echojay::kPlaybackTiles;
+    const auto  pl     = echojay::playbackPageLayout (getLocalBounds(), (int) tiles.size());
+    const auto  accent = juce::Colour (0xff22d3ee);
+
+    // Header, in the render view's styles.
+    g.setColour (C::text);
+    g.setFont (juce::Font (juce::FontOptions (14.0f, juce::Font::bold)));
+    g.drawText ("PLAYBACK", pl.title, juce::Justification::centredLeft);
+    g.setColour (C::text3);
+    g.setFont (juce::Font (juce::FontOptions (11.5f)));
+    g.drawText ("Hear this mix on other speakers, or render it through a codec.",
+                pl.subtitle, juce::Justification::centredLeft, true);
+
+    // THE NOTE: what the environments are. Eight of them are chosen numbers, and
+    // the page now says so in one line under the subtitle (open list 171).
+    // Smaller than the subtitle, so it reads as a qualifier on it.
+    g.setFont (juce::Font (juce::FontOptions (11.0f)));
+    g.drawText (echojay::kPlaybackPageNote, pl.note, juce::Justification::centredLeft, true);
+
+    // THE SOURCE LINE, KEPT. startCodecRender returns silently when there is no
+    // capture, so without this line the codec tile leads to presets that do
+    // nothing and say nothing. The live tiles need no capture and ignore it.
+    g.setFont (juce::Font (juce::FontOptions (11.0f)));
+    if (owner->codecSrcPath_.isNotEmpty())
+    {
+        g.setColour (C::text2);
+        g.drawText ("Using capture: " + owner->codecSrcLabel_,
+                    pl.source, juce::Justification::centredLeft, true);
+    }
+    else
+    {
+        g.setColour (juce::Colour (0xfff59e0b));
+        g.drawText ("No capture available. Capture your mix first to render a codec.",
+                    pl.source, juce::Justification::centredLeft, true);
+    }
+
+    // THE SELECTION IS READ BACK from the processor, once per paint, and never
+    // kept in the editor: the tile cannot show one thing while the audio does
+    // another. pb PIN9 asserts this line.
+    const PlaybackSim current = owner->processorRef.playbackSim();
+
+    // THE SCROLL, clamped against the grid as it is laid out on THIS paint, so
+    // a window made taller cannot leave the grid scrolled past its last row.
+    gridScroll = echojay::playbackClampScroll (gridScroll, (int) tiles.size(), pl.grid);
+
+    tileRects.assign (tiles.size(), {});
+    {
+    // THE GRID IS CLIPPED TO ITS AREA, so a tile scrolled under the header or
+    // the status line paints nothing over either. Scoped to the tile loop, so
+    // the status line below is drawn outside the clip.
+    juce::Graphics::ScopedSaveState gridClip (g);
+    g.reduceClipRegion (pl.grid);
+
+    for (int i = 0; i < (int) tiles.size(); ++i)
+    {
+        const auto& t    = tiles[(size_t) i];
+        // THE OFFSET, APPLIED ONCE, inside playbackTilePlacedRect: where the
+        // tile sits after scrolling, at full size. It is drawn there, clipped.
+        const auto  placed = echojay::playbackTilePlacedRect (pl.grid, i, gridScroll);
+        // What is STORED for the hit test is what is VISIBLE of it, so a tile
+        // cannot be pressed where it cannot be seen and mouseUp needs no
+        // offset of its own.
+        const auto  tile = echojay::playbackTileVisibleRect (pl.grid, i, gridScroll);
+        tileRects[(size_t) i] = tile;
+        if (tile.isEmpty())
+            continue;   // scrolled wholly out: nothing to draw, nothing to press
+
+        const bool live     = (t.kind == echojay::PlaybackTileKind::Live);
+        const bool selected = live && current == t.sim;
+
+        auto art = placed;
+        const auto band = art.removeFromBottom (echojay::kPlaybackTileLabelH);
+
+        g.setColour (C::bg3);
+        g.fillRoundedRectangle (placed.toFloat(), 6.0f);
+
+        // EVERY TILE HAS A PICTURE, Mono included (mono_fold.jpg), all through
+        // the ONE loader, which decodes via ImageCache and never through a
+        // static Image (EJPlaybackArtMap.h says why).
+        {
+            const auto img = echojay::loadPlaybackArt (echojay::playbackArtForTile (t));
+            if (img.isValid())
+            {
+                juce::Graphics::ScopedSaveState keep (g);
+                juce::Path clip;
+                clip.addRoundedRectangle ((float) art.getX(), (float) art.getY(),
+                                          (float) art.getWidth(), (float) art.getHeight(),
+                                          6.0f, 6.0f, true, true, false, false);
+                g.reduceClipRegion (clip);
+                g.drawImage (img, art.toFloat(), juce::RectanglePlacement::fillDestination);
+            }
+        }
+
+        g.setColour (selected ? accent : C::text2);
+        g.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));
+        g.drawText (t.label, band.reduced (8, 0), juce::Justification::centredLeft, true);
+
+        g.setColour (selected ? accent : kPlaybackTileStroke);
+        g.drawRoundedRectangle (placed.toFloat().reduced (0.5f), 6.0f, selected ? 1.4f : 1.0f);
+    }
+    }   // the grid clip ends here; the scrollbar and the status line are outside it
+
+    // THE SCROLL SAYS SO: a scrollbar in the gutter down the grid's right edge,
+    // drawn ONLY when the grid can scroll, which is exactly when the thumb is
+    // not empty. It replaced a count of hidden tiles in the status line, which
+    // called a tile hidden when one pixel of it was cut.
+    //
+    // AN INDICATOR, NOT A CONTROL: it is not draggable. The wheel and the
+    // trackpad scroll the grid; a press on the bar lands in the gutter, which is
+    // in no tile's stored rect, so it does nothing. The track is the tiles'
+    // outline colour and the thumb the page's muted text colour, so it reads as
+    // part of the page rather than as a selection.
+    const auto thumb = echojay::playbackScrollThumb ((int) tiles.size(), pl.grid,
+                                                     pl.scrollTrack, gridScroll);
+    if (! thumb.isEmpty())
+    {
+        g.setColour (kPlaybackTileStroke);
+        g.fillRoundedRectangle (pl.scrollTrack.toFloat(), 2.0f);
+        g.setColour (C::text3);
+        g.fillRoundedRectangle (thumb.toFloat(), 2.0f);
+    }
+
+    // THE STATUS LINE. Its height is reserved before the grid's, so it is
+    // always whole. It carries the codec status, only when it has text: a codec
+    // error can be standing when the user comes back to the grid.
+    if (owner->codecStatus_.isNotEmpty())
+    {
+        g.setColour (juce::Colour (0xfff87171));   // coral
+        g.setFont (juce::Font (juce::FontOptions (10.5f)));
+        g.drawText (owner->codecStatus_, pl.status, juce::Justification::centredLeft, true);
+    }
+}
+
+// THE GRID SCROLLS; THE RENDER VIEW DOES NOT. A wheel or trackpad over the grid
+// moves the one offset by echojay::playbackWheelStepPx, clamped, and repaints.
+// In the render view, or on a grid with nothing to scroll, the event goes on to
+// the base class exactly as it did before this handler existed. Since the
+// fourteenth tile (20 Sep 2026) no page fits the table, so on the grid this
+// handler now always takes the event; the render view's behaviour is unchanged.
+void EchoJayEditor::CodecPanel::mouseWheelMove (const juce::MouseEvent& e,
+                                                const juce::MouseWheelDetails& w)
+{
+    const int n = (int) echojay::kPlaybackTiles.size();
+    const auto grid = echojay::playbackPageLayout (getLocalBounds(), n).grid;
+    if (renderView || echojay::playbackGridMaxScroll (n, grid) == 0)
+    {
+        juce::Component::mouseWheelMove (e, w);
+        return;
+    }
+    const int next = echojay::playbackClampScroll (gridScroll - echojay::playbackWheelStepPx (w.deltaY),
+                                                   n, grid);
+    if (next != gridScroll)
+    {
+        gridScroll = next;
+        repaint();
+    }
+}
+
 void EchoJayEditor::CodecPanel::mouseUp(const juce::MouseEvent& e)
 {
     if (owner == nullptr) return;
     const auto pos = e.getPosition();
 
-    if (closeRect.contains(pos)) { owner->closeCodecPanel(); return; }
+    // No close X: leaving is selecting another sub-tab, and Escape below is a
+    // shortcut to that rather than a second way out.
 
-    if (owner->codecRendering_ >= 0) return;   // one render at a time
-
-    if (normRect.contains(pos))
+    if (renderView)
     {
-        owner->codecNormalise_ = !owner->codecNormalise_;
+        // BACK TO THE GRID, ABOVE THE RENDER GUARD. Navigating is not a render,
+        // and a way back that went dead while an encode ran would trap this
+        // view for the seconds a codec takes, with no reason on screen.
+        if (backRect.contains(pos))
+        {
+            renderView = false;
+            hoverIdx = -1;
+            repaint();
+            return;
+        }
+
+        if (owner->codecRendering_ >= 0) return;   // one render at a time
+
+        if (normRect.contains(pos))
+        {
+            owner->codecNormalise_ = !owner->codecNormalise_;
+            repaint();
+            return;
+        }
+        for (int i = 0; i < (int) cardRects.size(); ++i)
+            if (cardRects[(size_t) i].contains(pos))
+            {
+                owner->startCodecRender(i);
+                return;
+            }
+        return;
+    }
+
+    // THE GRID. ONE HANDLER FOR EVERY TILE, walking the table the paint drew
+    // (echojay::kPlaybackTiles), so the six live tiles share the ONE store line
+    // below. pb PIN9 asserts this hit test, that store line, the read-back in
+    // paint and the table's order, because UI wiring compiles perfectly when it
+    // is deleted: a tile would still draw and still take the press, and nothing
+    // would happen and nothing would complain.
+    //
+    // NO RENDER GUARD HERE. A fold or a voicing is not a render: it allocates
+    // nothing, queues nothing and cannot collide with an encode in flight, so
+    // the live tiles stay live while a codec renders.
+    for (int i = 0; i < (int) tileRects.size(); ++i)
+    {
+        if (! tileRects[(size_t) i].contains (pos)) continue;
+        const auto& t = echojay::kPlaybackTiles[(size_t) i];
+
+        // The codec tile renders nothing and chooses no preset: it opens the
+        // card, whose preset cards start a render exactly as they always did.
+        if (t.kind == echojay::PlaybackTileKind::CodecRender)
+        {
+            renderView = true;
+            hoverIdx = -1;
+            repaint();
+            return;
+        }
+
+        // THE STORE, for all six live tiles. THE CURRENT VALUE IS READ BACK,
+        // not tracked here, and pressing the selected tile again stores None,
+        // so there is always a way back to unprocessed audio.
+        const bool on = (owner->processorRef.playbackSim() == t.sim);
+        owner->processorRef.setPlaybackSim (on ? PlaybackSim::None : t.sim);
         repaint();
         return;
     }
-    for (int i = 0; i < (int) cardRects.size(); ++i)
-        if (cardRects[(size_t) i].contains(pos))
-        {
-            owner->startCodecRender(i);
-            return;
-        }
 }
 
 void EchoJayEditor::CodecPanel::mouseMove(const juce::MouseEvent& e)
 {
+    // Hover belongs to the render view's preset cards. On the grid, cardRects
+    // are the rects of a view that is not on screen.
     int idx = -1;
-    for (int i = 0; i < (int) cardRects.size(); ++i)
-        if (cardRects[(size_t) i].contains(e.getPosition())) { idx = i; break; }
+    if (renderView)
+        for (int i = 0; i < (int) cardRects.size(); ++i)
+            if (cardRects[(size_t) i].contains(e.getPosition())) { idx = i; break; }
     if (idx != hoverIdx) { hoverIdx = idx; repaint(); }
 }
 
@@ -6235,7 +8347,2434 @@ bool EchoJayEditor::CodecPanel::keyPressed(const juce::KeyPress& k)
 {
     if (k == juce::KeyPress::escapeKey && owner != nullptr)
     {
-        owner->closeCodecPanel();
+        // IN THE RENDER VIEW, ESCAPE GOES BACK TO THE GRID, the same as the
+        // title row's Back. Only from the grid does it leave the page.
+        if (renderView)
+        {
+            renderView = false;
+            hoverIdx = -1;
+            repaint();
+            return true;
+        }
+
+        // BACK TO COMPARE, not a bare hide. closeCodecPanel alone would leave
+        // refSubTab_ saying PLAYBACK with the page gone and the Compare
+        // furniture still hidden: an empty screen under a lying tab row.
+        owner->setRefSubTab (echojay::RefSubTab::Compare);
+        return true;
+    }
+    return false;
+}
+
+// IT FITS AT THE SMALLEST PAGE. The smallest this product produces is 565 x 373
+// (pg PIN5), which is the rect resized() hands this panel. The graph takes a
+// share with a floor, and the words below are laid out at 12 pt and, only if
+// they would not fit, smaller, down to 9 pt: a narrow window loses type size
+// before it loses a refusal, because the refusals ARE the feature.
+//
+// THE MATCH SCREEN, STANDING STILL (20 Sep 2026). MATCH_SCREEN_CONTRACT §3 is
+// what it draws and §10 is what it must not: NOTHING SENDS, nothing is written,
+// nothing animates, and there is no axis control, because a control that cannot
+// send is a dead control. The morph is the next commit.
+//
+// TWO LAYERS FROM DIFFERENT DATA, and the whole point is that they are not
+// styled alike: the CURVES are each side's measured 64 log bins, and the BLOCKS
+// are the six macro band moves drawn as STEPS. A smooth line through six
+// numbers would assert shape between band centres that the arithmetic never
+// had, which is the failure MATCH_REFERENCE_PLAN §2 exists to prevent.
+//
+// EVERY RECT AND EVERY SENTENCE COMES FROM EJMatchPage.h, so the suite pins the
+// same geometry and the same words the user reads; this paint computes none of
+// its own beyond the anchors, which come from the bins it is about to draw.
+
+// ===========================================================================
+// THE MATCH PAGE'S FILE-SCOPE DRAWING CODE
+// ===========================================================================
+//
+// THESE FUNCTIONS ARE OUTSIDE THE EDITOR CLASS, so nothing the class brought
+// into scope is in scope here: not its C alias, and not echojay. Two names are
+// used often enough in the ribbon code that qualifying every occurrence would
+// bury the arithmetic, so they are named ONCE here as using-declarations.
+// Everything else in this block stays explicitly echojay:: qualified, because a
+// reader has to be able to tell at a glance which names come from the pinned
+// header and which are local to this file.
+//
+// THIS IS NOT A STYLE NOTE. It is where eight compile errors came from: the
+// using-declarations sat BELOW the first function that used them, so
+// matchFastRow saw neither. Declared here, above everything that needs them.
+using echojay::kMatchRibbonCols;
+using echojay::MatchRibbonRow;
+
+/** The Match curves' frame lerp, the same rate paintSpectrumCurve uses for the
+    other three surfaces (kSpectrumVisLerp). Named here because this page smooths
+    the 64 STORED bins rather than the expanded curve.
+
+    FED ONCE PER HOP, NOT ONCE PER TICK, since the trail moved onto the hop
+    counter. 0.5 per hop at 43 Hz is a 16 ms time constant against 0.5 per tick
+    at 30 Hz's 23 ms: slightly quicker, which is right for a filament whose job
+    is to be current, and it is the constant the other three surfaces use
+    unchanged rather than a number invented for this page. */
+static constexpr float kMatchBinLerp = 0.5f;
+
+// DEFINED HERE RATHER THAN FORWARD DECLARED, and the reason is a pin. A text
+// pin finds a body with functionBody, which takes the FIRST match of a
+// signature and reads to the next brace in column one; with a declaration
+// above the definition it would read the span between them and report on a
+// function it never saw. Caught by dry-running mr PIN31 before claiming it.
+
+
+/** THE SCALE BOTH LAYERS SHARE. The trail and the ribbons must be mapped
+    through the SAME range or the cloud would sit beside the filament rather
+    than around it, and a picture whose two layers disagree about what a decibel
+    is would be the fault this page's shared dB range exists to prevent. */
+static std::pair<float, float> matchAxisRange (echojay::MatchAxis a,
+                                               const echojay::MatchSide& mix,
+                                               const echojay::MatchSide& ref,
+                                               const std::array<float, 64>& mixBins,
+                                               const std::array<float, 64>& refBins,
+                                               bool haveBins)
+{
+    switch (a)
+    {
+        case echojay::MatchAxis::Spectrum:
+        {
+            if (! haveBins) return { -18.0f, 18.0f };
+            auto meanOf = [] (const std::array<float, 64>& b)
+            {
+                double s = 0.0; int n = 0;
+                for (float v : b) if (v > -120.0f) { s += v; ++n; }
+                return n > 0 ? (float) (s / n) : 0.0f;
+            };
+            const float mM = meanOf (mixBins), rM = meanOf (refBins);
+            float lo = -18.0f, hi = 18.0f;
+            for (int i = 0; i < 64; ++i)
+            {
+                lo = juce::jmin (lo, juce::jmin (mixBins[(size_t) i] - mM,
+                                                 refBins[(size_t) i] - rM) - 3.0f);
+                hi = juce::jmax (hi, juce::jmax (mixBins[(size_t) i] - mM,
+                                                 refBins[(size_t) i] - rM) + 3.0f);
+            }
+            return { lo, hi };
+        }
+        case echojay::MatchAxis::Loudness:
+            return { juce::jmin (mix.integrated, ref.integrated) - 7.0f,
+                     juce::jmax (mix.integrated, ref.integrated) + 7.0f };
+        case echojay::MatchAxis::Dynamics: return { -22.0f, 22.0f };
+        case echojay::MatchAxis::Stereo:   return { -20.0f, 20.0f };
+    }
+    return { -20.0f, 20.0f };
+}
+
+
+/** THE FAST ROW: the same shape as the axis's filament, built from a LIVE
+    FRAME instead of the slow figure. This is what is smoked into the trail.
+
+    Each axis reads the fastest honest source MeterData carries:
+      SPECTRUM   the frame's own 64 bins, level-normalised like the filament.
+      LOUDNESS   momentary, a 400 ms window with a 20 dB/s release.
+      DYNAMICS   crestFactor, peak over RMS of a 0.5 s RMS and a 3 s peak
+                 decay, which is the fastest crest the engine has.
+      STEREO     instWidth and instCorr, the PER BLOCK pair, published for this
+                 and nothing else. DISPLAY ONLY: see mr PIN31. */
+static void matchFastRow (echojay::MatchAxis a, const MeterData& md,
+                          const echojay::MatchSide& slow, float sign,
+                          MatchRibbonRow& out)
+{
+    switch (a)
+    {
+        case echojay::MatchAxis::Spectrum:
+        {
+            double sum = 0.0; int n = 0;
+            for (float v : md.spectrum) if (v > -120.0f) { sum += v; ++n; }
+            const float mean = n > 0 ? (float) (sum / n) : 0.0f;
+            for (int i = 0; i < kMatchRibbonCols; ++i)
+            {
+                const float u  = (float) i / (float) (kMatchRibbonCols - 1);
+                const float fb = u * 63.0f;
+                const int   b0 = juce::jlimit (0, 63, (int) fb);
+                const int   b1 = juce::jlimit (0, 63, b0 + 1);
+                out[(size_t) i] = juce::jmap (fb - (float) b0,
+                                              md.spectrum[(size_t) b0],
+                                              md.spectrum[(size_t) b1]) - mean;
+            }
+            break;
+        }
+        case echojay::MatchAxis::Loudness:
+            for (int i = 0; i < kMatchRibbonCols; ++i)
+                out[(size_t) i] = md.momentary;
+            break;
+
+        case echojay::MatchAxis::Dynamics:
+        {
+            const float amp = juce::jlimit (0.5f, 9.0f, md.crestFactor * 0.55f);
+            for (int i = 0; i < kMatchRibbonCols; ++i)
+            {
+                const float u = (float) i / (float) (kMatchRibbonCols - 1);
+                out[(size_t) i] = sign * 6.0f
+                                + std::sin (u * juce::MathConstants<float>::twoPi * 2.2f + sign * 6.0f) * amp;
+            }
+            break;
+        }
+        case echojay::MatchAxis::Stereo:
+        {
+            const float wNorm = juce::jlimit (0.0f, 1.0f, md.instWidth / 100.0f);
+            const float tight = 1.0f - 0.45f * juce::jlimit (0.0f, 1.0f, md.instCorr);
+            const float bow   = wNorm * 16.0f * tight;
+            for (int i = 0; i < kMatchRibbonCols; ++i)
+            {
+                const float u = (float) i / (float) (kMatchRibbonCols - 1);
+                out[(size_t) i] = sign * bow * std::sin (u * juce::MathConstants<float>::pi);
+            }
+            break;
+        }
+    }
+    juce::ignoreUnused (slow);
+}
+
+/** THE PICTURE, ALL FOUR AXES. Defined further down this file, beside the
+    ribbon renderer they all share, because they are one family and read as one. */
+void matchPaintAxis (juce::Graphics& g, juce::Rectangle<int> plot,
+                     juce::Rectangle<int> readout, echojay::MatchAxis a,
+                     const echojay::MatchSide& mix, const echojay::MatchSide& ref,
+                     const std::array<float, 64>& mixBins, const std::array<float, 64>& refBins,
+                     bool anyBins, const std::array<float, 6>& moves, float morph, float phase,
+                     const juce::String& mixName, const juce::String& refName);
+
+/** THE GUIDES, BEHIND EVERYTHING. Defined beside matchTraceRange because the
+    one line the stereo axis gets is placed through that range, and a guide
+    that placed itself would be free to drift from the trace it marks. */
+void matchPaintGuides (juce::Graphics& g, juce::Rectangle<int> plot, echojay::MatchAxis a);
+
+/** THE FILAMENT, OVER THE TRAIL, FROM THE SAME PER COLUMN READING. */
+void matchPaintVisFilament (juce::Graphics& g, juce::Rectangle<int> plot,
+                            const std::vector<float>& row, juce::Colour c);
+
+/** THE THREE-PASS GLOW, AND THE ONE PLACE IT LIVES.
+
+    EVERY BRIGHT LINE ON THIS PAGE GOES THROUGH HERE: the spectrum's filament
+    and, since 22 Sep, each trace line on loudness, dynamics and stereo image.
+    Wide and faint under narrow and bright, so a line reads as lit through the
+    cloud rather than drawn over it.
+
+    alphaScale EXISTS FOR ONE REASON AND IT IS WORTH READING BEFORE TURNING IT.
+    Spectrum draws ONE line per side. The other three draw up to FIVE, so the
+    same glow lands five times over and may read as busy where Spectrum reads
+    as one thread. If it does, kMatchTraceGlow is the number to turn, and it is
+    a separate constant precisely so those three can be calmed WITHOUT
+    touching the spectrum picture Kathy has already approved.
+
+    SETCOLOUR FIRST, SETOPACITY SECOND, three times. setColour replaces the
+    whole FillType including the alpha, so the other order discards each pass's
+    alpha and all three land at full strength: one fat opaque line and no glow
+    at all. That is the defect that cost four rounds; open list 210. */
+void matchStrokeGlow (juce::Graphics& g, const juce::Path& p, juce::Colour c,
+                      float alphaScale);
+
+/** The glow's two scales, HERE rather than beside matchStrokeGlow because
+    MatchPanel::paint reads kMatchTraceGlow and is defined above it, and a free
+    constant must be DECLARED BEFORE USE. (Append-only is the rule for struct
+    fields; this is the other one.) */
+inline constexpr float kMatchSpectrumGlow = 1.0f;
+inline constexpr float kMatchTraceGlow    = 1.0f;
+
+/** The dB/correlation range each traced axis is drawn against. Declared here
+    for the same reason: the trace glow in paint places its lines through it. */
+static std::pair<float, float> matchTraceRange (echojay::MatchAxis a);
+
+void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
+{
+    // THE INSTRUMENT. Started before anything is drawn, stopped at every
+    // return, so a short-circuited paint is measured as the short paint it is
+    // rather than being left out of the mean.
+    const auto paintT0 = std::chrono::high_resolution_clock::now();
+    struct PaintTimer
+    {
+        MatchPanel& p;
+        std::chrono::high_resolution_clock::time_point t0;
+        ~PaintTimer()
+        {
+            const double ms = std::chrono::duration<double, std::milli> (
+                                  std::chrono::high_resolution_clock::now() - t0).count();
+            p.paintSumMs += ms;                                  // the addition
+            if (ms > p.paintMaxMs) p.paintMaxMs = ms;            // the comparison
+            if (++p.paintCount >= 100)
+            {
+                std::cout << "[MATCHPAINT] n=" << p.paintCount
+                          << " mean=" << juce::String (p.paintSumMs / p.paintCount, 1)
+                          << "ms max=" << juce::String (p.paintMaxMs, 1)
+                          << "ms interval=" << juce::String (1000.0 / 60.0, 1) << "ms"
+                          << std::endl;
+                p.paintSumMs = 0.0; p.paintMaxMs = 0.0; p.paintCount = 0;
+            }
+        }
+    } paintTimer { *this, paintT0 };
+
+    if (owner == nullptr) return;
+    const auto area = getLocalBounds();
+
+
+    // THE PAGE FADES IN rather than cutting. 250 ms, through one transparency
+    // layer so the whole screen arrives together instead of in pieces.
+    const float fade = juce::jlimit (0.0f, 1.0f, openFade);
+    if (fade < 0.999f) g.beginTransparencyLayer (fade);
+
+    g.setColour (C::bg2);
+    g.fillRoundedRectangle (area.toFloat(), 10.0f);
+    g.setColour (C::border);
+    g.drawRoundedRectangle (area.toFloat().reduced (0.5f), 10.0f, 1.0f);
+
+    const auto R = echojay::matchPageLayout (area);
+
+    // ---- the data ----------------------------------------------------------
+    const auto slots = owner->matchSlots();
+    // ONE BUILD PER TICK, read here rather than repeated. Between ticks this is
+    // up to 33 ms old, which is shorter than the frame it is being drawn into;
+    // the first paint of an opening has no tick behind it yet and builds its
+    // own, because a default-constructed pair would draw -100 LUFS and no bands
+    // as though they were measurements.
+    const auto sides = tickSidesValid ? tickSides : owner->buildMatchSides();
+    const auto evMix = owner->getSlotSpectralEvidence (*slots.mix);
+    const auto evRef = owner->getSlotSpectralEvidence (*slots.ref);
+    const auto prop  = echojay::computeMatchProposal (sides.mix, sides.ref);
+    const auto ready = echojay::matchReadiness (prop);
+    const auto moves = echojay::matchBandMoves (prop);
+
+    std::array<float, 6> deltas {};
+    const bool haveDeltas = echojay::matchBandDeltas (sides.mix, sides.ref, deltas);
+
+    // ---- THE BANNER IS GONE, AND THE PRESS STILL ANSWERS --------------------
+    //
+    // It drew ready.line permanently above the button and flashed refusedText
+    // over it for 2.5 s. The PERMANENT half is what was wrong with it: a line
+    // that is always there is furniture, and this page has none. The picture
+    // took its 16 px.
+    //
+    // WHAT REPLACED IT IS THE SAME TWO FACTS IN TWO PLACES, both only while a
+    // refusal is live, drawn further down this function:
+    //   the BUTTON wears refusedBadge in place of "AI MATCH", so the control
+    //     you pressed is the thing that changed;
+    //   the SENTENCE draws over the plot, which is where there is room for it.
+    //
+    // NOTHING IS DRAWN HERE and R.status is an empty rect. ready.line is still
+    // computed, and matchPressRefusedText now RETURNS it, so the reason the
+    // banner used to state permanently is the reason the press states on
+    // demand. It is not lost, it is no longer shouted.
+
+    // ---- the setup row: your capture, the link, the button, the reference ---
+    {
+        // THE TWO PICKERS. Each says what its side is set to and opens on a
+        // press, so the row is the controls rather than two labels beside one
+        // control. Painted, like the button, and hit-tested in mouseUp.
+        auto picker = [&] (juce::Rectangle<int> r, const juce::String& text,
+                           bool isMix, bool hotHere)
+        {
+            if (r.getWidth() <= 0) return;
+            g.setColour (hotHere ? C::bg3 : C::bg2);
+            g.fillRoundedRectangle (r.toFloat(), 6.0f);
+            g.setColour (hotHere ? C::blue.withAlpha (0.55f) : C::border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 6.0f, 1.0f);
+
+            // The chevron sits on the OUTER edge of each picker, so the two
+            // read as opening outward from the button rather than mirroring.
+            auto body = r.reduced (7, 0);
+            auto chev = isMix ? body.removeFromRight (10) : body.removeFromLeft (10);
+            g.setColour (C::text3);
+            {
+                const float cx = (float) chev.getCentreX(), cy = (float) chev.getCentreY();
+                juce::Path p;
+                p.startNewSubPath (cx - 3.0f, cy - 1.5f);
+                p.lineTo (cx,        cy + 2.0f);
+                p.lineTo (cx + 3.0f, cy - 1.5f);
+                g.strokePath (p, juce::PathStrokeType (1.2f));
+            }
+            g.setFont (juce::Font (juce::FontOptions (11.5f, juce::Font::bold)));
+            g.setColour (isMix ? C::text : C::text2);
+            g.drawFittedText (text, body,
+                              isMix ? juce::Justification::centredLeft
+                                    : juce::Justification::centredRight, 2);
+        };
+
+        picker (R.mixPick, owner->slotDisplayName (*slots.mix), true,  hotZone == 2);
+        picker (R.refPick, owner->slotDisplayName (*slots.ref), false, hotZone == 3);
+
+        // THE CONNECTOR IS THE STRONGEST THING IN THIS ROW (20 Sep 2026): the
+        // button REACHING OUT to both names, rather than two stubs beside it.
+        //
+        // TAPERED, NOT JUST FADED. It is a filled quad, 3.2 px at the button
+        // end and 0.6 px at the name end, under a gradient that falls to fully
+        // transparent. A line of one thickness that only loses alpha reads as a
+        // dimmer line; losing weight as well reads as reaching away and letting
+        // go, which is the thing being drawn. Nothing hard-stops at either end.
+        //
+        // AND IT STILL MOVES: a lit head travels from your capture toward the
+        // reference, because that is the direction the match runs, and its
+        // brightness follows the taper so it does not glow where the rail has
+        // already faded out. It is the only thing on the page that moves before
+        // the press, so the screen reads as ready rather than as a still.
+        auto rail = [&] (juce::Rectangle<int> r, bool buttonOnRight, float phase)
+        {
+            if (r.getWidth() < 2) return;
+            const float x0 = (float) r.getX(), x1 = (float) r.getRight();
+            const float w  = juce::jmax (1.0f, x1 - x0);
+            const float y  = (float) r.getCentreY();
+            const float bEnd = buttonOnRight ? x1 : x0;   // heavy, at the button
+            const float fEnd = buttonOnRight ? x0 : x1;   // thin, into the name
+            constexpr float thick = 3.2f, thin = 0.6f;
+
+            juce::Path p;
+            p.startNewSubPath (bEnd, y - thick * 0.5f);
+            p.lineTo (fEnd, y - thin * 0.5f);
+            p.lineTo (fEnd, y + thin * 0.5f);
+            p.lineTo (bEnd, y + thick * 0.5f);
+            p.closeSubPath();
+
+            juce::ColourGradient grad (C::blue.withAlpha (0.80f), bEnd, y,
+                                       C::blue.withAlpha (0.0f),  fEnd, y, false);
+            grad.addColour (0.45, C::blue.withAlpha (0.22f));
+            g.setGradientFill (grad);
+            g.fillPath (p);
+
+            const float px   = x0 + juce::jlimit (0.0f, 1.0f, phase) * w;
+            const float near = buttonOnRight ? (px - x0) / w : (x1 - px) / w;   // 1 at the button
+            const float a    = 0.55f * juce::jlimit (0.0f, 1.0f, near);
+            juce::ColourGradient head (C::blue2.withAlpha (0.0f), px - 24.0f, y,
+                                       C::blue2.withAlpha (a),    px,         y, false);
+            g.setGradientFill (head);
+            g.fillRect (juce::Rectangle<float> (px - 24.0f, y - 1.8f, 24.0f, 3.6f)
+                            .getIntersection (r.toFloat()));
+        };
+        rail (R.linkLeft,  true,  linkPhase);    // reaches left, toward your capture
+        rail (R.linkRight, false, linkPhase);    // reaches right, toward the reference
+
+        // THE BUTTON. Painted, not a child: the page has no other control and
+        // a child would need the overlay pool the wave cards fill.
+        //
+        // LIVE MEANS PLAYABLE, NOT OPTIMISTIC. The button is lit when there is
+        // something for the press to play, which is not the same question as
+        // whether the line above it is the cheerful one: a capture with no
+        // known length keeps its ceiling move and keeps its lit button, while
+        // the line leads with the length.
+        // ALSO FALSE ON AN AXIS THAT CANNOT BE PROPOSED, so the button does not
+        // read as ready to play something the proposal never carried. It stays
+        // PRESSABLE: the press then says why, rather than the control being
+        // dead with no reason on screen.
+        const bool live = ready.playable && echojay::matchAxisCanPropose (axis);
+        const auto bg   = buttonHot && live ? C::bg3.brighter (0.25f) : C::bg3;
+        g.setColour (bg);
+        g.fillRoundedRectangle (R.button.toFloat(), 8.0f);
+        g.setColour (live ? C::blue : C::border);
+        g.drawRoundedRectangle (R.button.toFloat().reduced (0.5f), 8.0f, live ? 1.4f : 1.0f);
+        if (live && (morphing || buttonHot))
+        {
+            g.setColour (C::blue.withAlpha (morphing ? 0.22f : 0.10f));
+            g.drawRoundedRectangle (R.button.toFloat().expanded (2.5f), 10.0f, 2.0f);
+        }
+        // ONE LABEL, ALMOST ALWAYS. The button keeps its name after a play
+        // rather than turning into "again": a control that renames itself is a
+        // second control as far as the eye is concerned, and it is the same
+        // press.
+        //
+        // THE ONE EXCEPTION IS A LIVE REFUSAL, and it earns itself. With the
+        // status banner gone, a press that cannot do anything would otherwise
+        // leave the button looking exactly as it did before it was pressed,
+        // which is indistinguishable from the press not registering. For the
+        // 2.5 s countdown it wears refusedBadge instead, in amber, and the
+        // sentence draws over the plot.
+        //
+        // TWO WORDS AT MOST, so it fits kMatchButtonW's 132 px at the smallest
+        // window WITHOUT shrinking the type: the 12 pt bold below is the same
+        // size the label always uses. See echojay::matchRefusedBadge.
+        const bool refusing = refusedFor > 0.0f && refusedBadge.isNotEmpty();
+        g.setColour (refusing ? C::amber : (live ? C::text : C::text3));
+        g.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));
+        g.drawText (refusing ? refusedBadge : juce::String ("AI MATCH"),
+                    R.button, juce::Justification::centred);
+    }
+
+    // ---- a waveform under each picker, and the two are NOT the same span ----
+    //
+    // A LIVE SIDE IS A WINDOW ONTO SOMETHING STILL RUNNING; a capture or a
+    // reference is the WHOLE of a thing. Drawn identically they would say the
+    // two are comparable objects, which is the same lie section 3 refuses about
+    // the curves. Two things say otherwise, and neither is decoration:
+    //
+    //   THE SPAN IS WRITTEN UNDER EACH STRIP in words, "live, last 3.4 s"
+    //   against "whole file, 2:48", so the difference is stated in the units
+    //   the user thinks in rather than implied by a shape.
+    //
+    //   A ROLLING SIDE FADES OUT AT ITS LEFT EDGE, because the audio continues
+    //   before the window and the strip is a view onto it. A whole-file side
+    //   gets a hairline at both ends instead: it begins where it begins and
+    //   ends where it ends.
+    {
+        auto strip = [&] (juce::Rectangle<int> r, const CompareSlotState& slot,
+                          bool isRef, bool hotHere, bool audibleHere)
+        {
+            if (r.getWidth() <= 4 || r.getHeight() <= 6) return;
+
+            std::vector<float> pts;
+            bool  rolling = false;
+            float span    = 0.0f;
+            const bool have = owner->matchWavePoints (slot, pts, rolling, span);
+
+            auto lane = r.withTrimmedBottom (9);       // the caption takes the rest
+            // THE TRANSPORT GUTTER, on the outer edge so the two sides' controls
+            // sit either side of the page rather than facing each other across
+            // the middle. echojay::matchWaveLane is the shared answer, so the
+            // press and the paint cannot disagree about where the wave is.
+            const auto slotIdxHere = isRef ? (owner->matchRefIsTop_ ? 0 : 1)
+                                           : (owner->matchRefIsTop_ ? 1 : 0);
+            const bool liveHere    = (slot.kind == CompareSlotState::Kind::Live);
+            const auto tBtn = echojay::matchWaveTransport (lane, isRef);
+            lane = echojay::matchWaveLane (lane, isRef);
+
+            g.setColour (audibleHere ? C::bg3 : C::bg2.withAlpha (0.7f));
+            g.fillRoundedRectangle (lane.toFloat(), 4.0f);
+            if (audibleHere || hotHere)
+            {
+                g.setColour ((audibleHere ? C::blue : C::border2).withAlpha (audibleHere ? 0.6f : 0.4f));
+                g.drawRoundedRectangle (lane.toFloat().reduced (0.5f), 4.0f, 1.0f);
+            }
+
+            if (have && lane.getWidth() > 2)
+            {
+                const float midY  = (float) lane.getCentreY();
+                const float halfH = (float) lane.getHeight() * 0.5f - 1.0f;
+                const int   cols  = lane.getWidth();
+                const auto  base  = isRef ? C::text2 : C::blue;
+                for (int x = 0; x < cols; ++x)
+                {
+                    // The whole of what we have, squeezed to the strip: a
+                    // capture is its own length whatever the panel is wide.
+                    const size_t i0 = (size_t) ((double) x       / cols * (double) pts.size());
+                    const size_t i1 = (size_t) ((double) (x + 1) / cols * (double) pts.size());
+                    float peak = 0.0f;
+                    for (size_t i = i0; i < juce::jmax (i0 + 1, juce::jmin (i1, pts.size())); ++i)
+                        peak = juce::jmax (peak, pts[i]);
+                    peak = juce::jlimit (0.0f, 1.0f, peak);
+
+                    // THE ROLLING FADE: oldest sample faintest, so the strip
+                    // reads as a window rather than a complete object.
+                    const float a = rolling ? juce::jmap ((float) x, 0.0f, (float) cols, 0.25f, 0.95f)
+                                            : 0.9f;
+                    g.setColour (base.withAlpha (a));
+                    const float h = juce::jmax (1.0f, peak * halfH);
+                    g.fillRect ((float) lane.getX() + (float) x, midY - h, 1.0f, h * 2.0f);
+                }
+                if (! rolling)
+                {
+                    // A whole file BEGINS and ENDS. Two hairlines say so.
+                    g.setColour (C::border2.withAlpha (0.8f));
+                    g.fillRect ((float) lane.getX(), (float) lane.getY() + 2.0f, 1.0f,
+                                (float) lane.getHeight() - 4.0f);
+                    g.fillRect ((float) lane.getRight() - 1.0f, (float) lane.getY() + 2.0f, 1.0f,
+                                (float) lane.getHeight() - 4.0f);
+                }
+            }
+            else
+            {
+                g.setColour (C::text3.withAlpha (0.6f));
+                g.setFont (juce::Font (juce::FontOptions (9.0f)));
+                g.drawText (rolling ? "waiting for signal" : "no waveform",
+                            lane, juce::Justification::centred, true);
+            }
+
+            // THE PLAYHEAD, from the STREAM'S OWN POSITION. A timer counting
+            // seconds beside it would drift the moment the stream looped, was
+            // seeked or was stopped, and would then be a confident wrong line.
+            const float frac = owner->compareStreamFrac (slotIdxHere);
+            if (frac >= 0.0f && lane.getWidth() > 2)
+            {
+                const float x = (float) lane.getX() + frac * (float) lane.getWidth();
+                g.setColour (C::blue2.withAlpha (0.9f));
+                g.fillRect (x - 0.5f, (float) lane.getY(), 1.5f, (float) lane.getHeight());
+            }
+
+            // A PLAY AND STOP PER SIDE, showing which state it is in rather
+            // than being a control whose effect you learn by pressing it.
+            //
+            // A LIVE MIX SIDE HAS NO TRANSPORT AT ALL, and says so instead of
+            // showing a dead button: toggleComparePlay excludes a Live slot for
+            // the reason in its own comment, that live is host passthrough with
+            // no stored stream to toggle. Same rule as the two axes that cannot
+            // be proposed: nothing looks pressable unless it does something.
+            if (tBtn.getWidth() >= 8 && tBtn.getHeight() >= 8)
+            {
+                if (liveHere)
+                {
+                    g.setColour (C::text3.withAlpha (0.8f));
+                    g.setFont (juce::Font (juce::FontOptions (8.0f)));
+                    g.drawFittedText ("host", tBtn, juce::Justification::centred, 1);
+                }
+                else
+                {
+                    const bool rollingNow = owner->processorRef.cmpStream[slotIdxHere].playing.load();
+                    g.setColour ((hotHere ? C::blue : C::text2).withAlpha (0.9f));
+                    const auto b = tBtn.toFloat().reduced (3.0f);
+                    if (rollingNow)
+                    {
+                        // STOP: a square, which is what it will do next.
+                        g.fillRect (b.reduced (b.getWidth() * 0.18f, b.getHeight() * 0.18f));
+                    }
+                    else
+                    {
+                        juce::Path p;
+                        p.addTriangle (b.getX(), b.getY(), b.getX(), b.getBottom(),
+                                       b.getRight(), b.getCentreY());
+                        g.fillPath (p);
+                    }
+                }
+            }
+
+            g.setColour (C::text3);
+            g.setFont (juce::Font (juce::FontOptions (9.0f)));
+            g.drawText (echojay::matchWaveSpan (rolling, span),
+                        r.removeFromBottom (9),
+                        isRef ? juce::Justification::centredRight : juce::Justification::centredLeft,
+                        true);
+        };
+
+        const int audible = owner->processorRef.cmpAudible.load();
+        const bool refIsTop = owner->matchRefIsTop_;
+        strip (R.mixWave, *slots.mix, false, hotZone == 4, audible == (refIsTop ? 1 : 0));
+        strip (R.refWave, *slots.ref, true,  hotZone == 5, audible == (refIsTop ? 0 : 1));
+    }
+
+    // ---- the axis row: four tiles, one selected ----------------------------
+    //
+    // SELECTING A TILE CHANGES THE PICTURE BELOW AND NOTHING ELSE. Nothing is
+    // sent, applied or written by a press here, which is why these controls are
+    // in step one although section 10 excluded the ask.
+    {
+        g.setFont (juce::Font (juce::FontOptions (9.5f, juce::Font::bold)));
+        for (int i = 0; i < echojay::kMatchAxisCount; ++i)
+        {
+            const auto a    = (echojay::MatchAxis) i;
+            const auto tile = echojay::matchAxisTile (R.axisRow, i);
+            if (tile.getWidth() <= 0) continue;
+
+            const bool sel = (a == axis);
+            const bool hot = (hotZone == 10 + i);
+            g.setColour (sel ? C::blue.withAlpha (0.16f) : (hot ? C::bg3 : C::bg2.withAlpha (0.6f)));
+            g.fillRoundedRectangle (tile.toFloat(), echojay::kEjCellRadius);
+            g.setColour (sel ? C::blue.withAlpha (0.7f) : C::border);
+            g.drawRoundedRectangle (tile.toFloat().reduced (0.5f), echojay::kEjCellRadius,
+                                    sel ? 1.4f : 1.0f);
+
+            // AN AXIS THAT CANNOT BE PROPOSED SAYS SO ON ITS OWN TILE, quietly,
+            // so the press is not the first place the user learns it.
+            const bool proposable = echojay::matchAxisCanPropose (a);
+            g.setColour (sel ? C::text : (proposable ? C::text2 : C::text3));
+            g.drawFittedText (echojay::matchAxisName (a), tile.reduced (4, 0),
+                              juce::Justification::centred, 1);
+        }
+    }
+
+    // ---- the picture -------------------------------------------------------
+    //
+    // THE GROUND IS NEAR BLACK. The reference image is strands on black and
+    // that contrast is most of the effect: on C::bg3's navy the same ink read
+    // as a smear because the strands had nothing to be bright against. The
+    // card keeps its thin border, which is chrome around the picture rather
+    // than anything inside it.
+    g.setColour (juce::Colour (0xff02040a));
+    g.fillRoundedRectangle (R.graph.toFloat(), 10.0f);
+    {
+        // SCOPED, BECAUSE C::border IS WHITE AT FIVE PERCENT ALPHA.
+        //
+        // Graphics::setColour replaces the whole FillType, so the fill's
+        // opacity becomes THE NEW COLOUR'S OWN ALPHA: it does not reset to 1.
+        // A translucent token therefore leaves the context at 0.05 for every
+        // later call that takes its opacity from the fill rather than setting
+        // its own colour, and drawImageAt is exactly that. THE TRAIL WAS BEING
+        // COMPOSITED AT FIVE PERCENT because of this one outline.
+        //
+        // ScopedSaveState rather than a setOpacity afterwards: the next person
+        // to add a translucent colour here should not have to know this.
+        juce::Graphics::ScopedSaveState ss (g);
+        g.setColour (C::border);
+        g.drawRoundedRectangle (R.graph.toFloat().reduced (0.5f), 10.0f, 1.0f);
+    }
+
+    const auto plot = echojay::matchGraphPlot (R.graph);
+    // NO BIN WIDTH IS NEEDED HERE ANY MORE. It used to be computed for the
+    // filament, from a hardcoded 44100 before that. The filament now reads the
+    // SAME STORED ROW the trail was stroked from, so there is no second place
+    // where a frequency axis could be got wrong: advanceTrail owns the bin
+    // width, and it takes it from the session's real sample rate.
+
+    // A TILE WITH A FIELD MISSING ON ONE SIDE SAYS SO RATHER THAN DRAWING A
+    // DEFAULT. Every sentinel in MatchSide renders happily as a measurement:
+    // -100 LUFS is a position, 0 LU is a width, -1 overs is a number.
+    const auto axisState = echojay::matchAxisState (axis, sides.mix, sides.ref);
+    if (! axisState.drawable)
+    {
+        g.setColour (C::text3);
+        g.setFont (juce::Font (juce::FontOptions (11.0f)));
+        g.drawFittedText (axisState.why, plot, juce::Justification::centred, 2);
+    }
+    else
+    {
+        // ONE CALL FOR ALL FOUR AXES. The picture is the same structure
+        // everywhere, two ribbons and the light between them, so the branch
+        // that used to choose between a spectrum block and three painters is
+        // now a dispatch inside matchPaintAxis.
+        //
+        // THE BINS ARE THE SPECTRUM'S OWN DATA: 64 measurements per side, not
+        // the six bands, which is why a smooth curve is honest there. THE SIX
+        // BANDS ARE STILL WHAT THE PROPOSAL MOVES, passed here as the morph's
+        // moves and stepped at the band edges by matchMorphedDb.
+        const bool haveBins = evMix.valid && evRef.valid;
+
+        // ---- THE GUIDES, FIRST, SO THE GHOSTS SIT ON TOP OF THEM ----------
+        //
+        // Before the trail's blit and before the filament, which is the whole
+        // point: a guide the picture covers is a guide, and a guide over the
+        // picture is furniture.
+        matchPaintGuides (g, plot, axis);
+
+        // ONCE PER NEW FFT, NOT ONCE PER FRAME.
+        //
+        // WHICH ENGINE DRIVES IT, because the two sides are NOT in step: each
+        // side reads its own MeterEngine (the main one for Live, that slot's
+        // cmpMeter when its stream is playing), and those publish hops on
+        // their own audio blocks. THE MIX SIDE'S ENGINE DRIVES THE ADVANCE
+        // when it has one, the reference's otherwise. A side whose engine
+        // happens to publish between advances simply has its newest spectrum
+        // read on the next one; nothing is dropped, because at 60 Hz against
+        // 43 Hz there is at most one new hop per frame.
+        auto* hopEngine = owner->matchFastEngine (*slots.mix, owner->matchRefIsTop_ ? 1 : 0);
+        if (hopEngine == nullptr)
+            hopEngine = owner->matchFastEngine (*slots.ref, owner->matchRefIsTop_ ? 0 : 1);
+        const uint32_t hopNow = hopEngine != nullptr ? hopEngine->visHopCount() : 0;
+        const bool newHop = hopEngine != nullptr && (! trailHopInit || hopNow != trailHop);
+
+        // Guarded on the HOP for the reason it used to be guarded on the tick:
+        // an extra repaint, a hover or a resize, must not advance history.
+        // THE CURVES SMOOTH FRAME TO FRAME, one state per side, the way the
+        // other three spectrum surfaces already do. Fed once per TICK for the
+        // trail's reason: a repaint is not a frame of data.
+        if (haveBins && newHop)
+        {
+            mixBinLerp.feed (evMix.bins, kMatchBinLerp);
+            refBinLerp.feed (evRef.bins, kMatchBinLerp);
+        }
+        const auto& mixSmooth = mixBinLerp.init ? mixBinLerp.v : evMix.bins;
+        const auto& refSmooth = refBinLerp.init ? refBinLerp.v : evRef.bins;
+
+        // ---- THE CLOUD: this tick's FAST frame, smoked into the trail ------
+        //
+        // The cloud is CONTEXT and is never compared; the filament below is the
+        // measurement. A side with no fast source gets no cloud at all.
+        MeterData mixMd, refMd;
+        const bool mixFastOk = owner->matchFastFrame (*slots.mix, owner->matchRefIsTop_ ? 1 : 0, mixMd);
+        const bool refFastOk = owner->matchFastFrame (*slots.ref, owner->matchRefIsTop_ ? 0 : 1, refMd);
+
+        echojay::MatchRibbonRow mixFast {}, refFast {};
+        if (mixFastOk) matchFastRow (axis, mixMd, sides.mix, -1.0f, mixFast);
+        if (refFastOk) matchFastRow (axis, refMd, sides.ref,  1.0f, refFast);
+
+        if (newHop)
+        {
+            trailHop = hopNow;
+            trailHopInit = true;
+            mixVisOk = refVisOk = false;
+            if (mixFastOk)
+            {
+                pushTrace (mixTrace, axis, mixMd);
+                double hz = 0.0;
+                if (auto* e = owner->matchFastEngine (*slots.mix, owner->matchRefIsTop_ ? 1 : 0))
+                    mixVisOk = e->getVisualSpectrum (mixVis, hz);
+            }
+            if (refFastOk)
+            {
+                pushTrace (refTrace, axis, refMd);
+                double hz = 0.0;
+                if (auto* e = owner->matchFastEngine (*slots.ref, owner->matchRefIsTop_ ? 0 : 1))
+                    refVisOk = e->getVisualSpectrum (refVis, hz);
+            }
+
+            // ---- AND THE REFERENCE'S STORED CURVE WHEN IT IS NOT ROLLING ----
+            //
+            // LIVE IS PREFERRED WHILE THE STREAM ROLLS, and the reason is that
+            // the two are different measurements of different things: the live
+            // analysis is what you are HEARING right now, the stored eqCurve is
+            // the whole file's average. While audio is playing, the thing on
+            // screen should be the thing in your ears; the moment it stops,
+            // the whole-file average is strictly better than nothing and is
+            // what the reference actually knows about itself.
+            //
+            // evRef.bins IS the eqCurve for a Reference slot, already fetched
+            // by getSlotSpectralEvidence and stamped WholeFileAverage, so this
+            // reads no analyser and re-derives nothing.
+            refStaticOk = false;
+            if (! refVisOk && evRef.valid)
+            {
+                const double sr = owner->processorRef.getSampleRate() > 0.0
+                                    ? owner->processorRef.getSampleRate() : 44100.0;
+                refStatic   = EchoJayEditor::expandLog64Spectrum (
+                                  evRef.bins, sr / (double) MeterEngine::kVisFftSize);
+                refStaticOk = true;
+            }
+        }
+
+        const auto range = matchAxisRange (axis, sides.mix, sides.ref,
+                                           mixSmooth, refSmooth, haveBins);
+        advanceTrail (plot, mixFastOk ? &mixFast : nullptr, refFastOk ? &refFast : nullptr,
+                      range.first, range.second);
+        // THE IMAGE JUST COMPOSED, NOT THE ONE BEFORE IT. advanceTrail picks
+        // dst as (trailUseA ? trailB : trailA) and then FLIPS trailUseA, so
+        // after it returns the flag selects the OTHER image. Reading it the
+        // same way here showed the previous frame, one hop stale, every frame.
+        const bool  blitGuard = (trailPlot == plot);
+        const auto& shownImg  = trailUseA ? trailA : trailB;
+
+        if (blitGuard && ! shownImg.isNull())
+            g.drawImageAt (shownImg, plot.getX(), plot.getY());
+
+        // ---- THE FILAMENT, OVER THE TRAIL --------------------------------
+        //
+        // SPECTRUM ONLY, AND FROM THE VIS BINS RATHER THAN THE RIBBON ROWS.
+        // The trail is stroked from mixVis/refVis, 2048 bins through
+        // matchVisColumnYOffset; the ribbon rows are 96 columns off the 64 bin
+        // curve on a different range. Drawing the thread from the rows would
+        // put it NEAR the newest ghost instead of on it, which is the one
+        // thing this line must not do. The other three axes keep their traces
+        // as the only lines: those are figures over TIME, so a per column
+        // frequency reading has nothing to say about them.
+        //
+        // REFERENCE FIRST, MIX OVER IT, the same order as the trail, so the
+        // two threads overlap the way their clouds do.
+        if (axis == echojay::MatchAxis::Spectrum)
+        {
+            // The filament follows the same source choice as the trail,
+            // because it is drawn from the row the trail was stroked from.
+            if ((refVisOk || refStaticOk) && visRowRefInit)
+                matchPaintVisFilament (g, plot, visRowRef, C::text2);
+            if (mixVisOk && visRowMixInit)
+                matchPaintVisFilament (g, plot, visRowMix, C::blue);
+        }
+        else
+        {
+            // ---- THE SAME TREATMENT ON THE OTHER THREE AXES --------------
+            //
+            // Each trace line's CURRENT path, over the trail, through the
+            // same matchStrokeGlow the spectrum filament uses. Not a second
+            // glow: one function, two callers, so the two halves of the page
+            // cannot drift apart in width or alpha.
+            //
+            // THE PATH IS BUILT THE WAY traceOf BUILDS IT, deliberately to
+            // the same arithmetic: oldest at the left, newest at the right,
+            // x by k/(n-1), y through matchTraceRange with the same half
+            // stroke inset, so the bright line lands exactly on the newest
+            // ghost rather than near it. If traceOf's mapping is ever
+            // changed, this must change with it.
+            //
+            // UP TO FIVE LINES PER SIDE HERE AGAINST SPECTRUM'S ONE. See
+            // kMatchTraceGlow: that is the knob if this reads as busy.
+            const auto tr = matchTraceRange (axis);
+            auto glowTrace = [&] (const Trace& t, juce::Colour c)
+            {
+                if (t.filled < 2) return;
+                const int n = t.filled;
+                for (int line = 0; line < kTraceLines; ++line)
+                {
+                    if (! t.have[(size_t) line]) continue;
+                    juce::Path p;
+                    for (int k = 0; k < n; ++k)
+                    {
+                        const int idx = (t.write - n + k + kTraceLen * 2) % kTraceLen;
+                        const float x = (float) plot.getX()
+                                      + (float) plot.getWidth() * (float) k / (float) (n - 1);
+                        const float inset = 0.9f;
+                        const float t01 = juce::jlimit (0.0f, 1.0f,
+                                            (tr.second - t.v[(size_t) line][(size_t) idx])
+                                                / juce::jmax (0.0001f, tr.second - tr.first));
+                        const float y = (float) plot.getY() + inset
+                                      + t01 * juce::jmax (1.0f, (float) plot.getHeight()
+                                                                    - 2.0f * inset);
+                        if (k == 0) p.startNewSubPath (x, y);
+                        else        p.lineTo (x, y);
+                    }
+                    matchStrokeGlow (g, p, c, kMatchTraceGlow);
+                }
+            };
+            // ---- A STOPPED REFERENCE DRAWS ITS STORED FIGURES FLAT -----
+            //
+            // SAME RULE AS SPECTRUM: live while rolling, stored otherwise. A
+            // reference that is loaded but not playing has no live trace at
+            // all (matchFastEngine and matchFastFrame both require
+            // loaded && playing), so before this the whole reference side of
+            // these three pictures simply was not there.
+            //
+            // A LINE ONLY WHERE A REAL STORED FIGURE EXISTS, and nothing
+            // where there is none. The gate is echojay::matchHas*, the SAME
+            // predicates the readout row reads, so the picture and the row
+            // cannot disagree: a dash in the row means no line in the plot,
+            // always. NOTHING IS INVENTED HERE: no sentinel is drawn, no zero
+            // is substituted, and in particular a crest pinned at the 40 dB
+            // clamp draws NO LINE rather than a confident flat one, which
+            // would trade an absence for a plausible lie.
+            //
+            // THE BANDED SUB-LINES GET NOTHING, because MatchSide carries no
+            // whole-file equivalent of bandCrestSub/Mid/Top or of
+            // corrSub/Mid/Top. Their absence from a stopped reference is
+            // correct rather than missing.
+            auto flatLine = [&] (bool have, float value)
+            {
+                if (! have) return;
+                const float inset = 0.9f;
+                const float t01 = juce::jlimit (0.0f, 1.0f,
+                                    (tr.second - value)
+                                        / juce::jmax (0.0001f, tr.second - tr.first));
+                const float y = (float) plot.getY() + inset
+                              + t01 * juce::jmax (1.0f, (float) plot.getHeight() - 2.0f * inset);
+                juce::Path p;
+                p.startNewSubPath ((float) plot.getX(), y);
+                p.lineTo ((float) plot.getRight(), y);
+                matchStrokeGlow (g, p, C::text2, kMatchTraceGlow);
+            };
+
+            if (! refFastOk)
+            {
+                const auto& r = sides.ref;
+                switch (axis)
+                {
+                    case echojay::MatchAxis::Loudness:
+                        flatLine (echojay::matchHasIntegrated (r), r.integrated);
+                        flatLine (echojay::matchHasTruePeak   (r), r.truePeak);
+                        break;
+                    case echojay::MatchAxis::Dynamics:
+                        flatLine (echojay::matchHasCrest (r), r.crest);
+                        break;
+                    case echojay::MatchAxis::Stereo:
+                        flatLine (echojay::matchHasCorrelation (r), r.correlation);
+                        // Width rides the correlation scale the same way
+                        // pushTrace maps it, so the flat line lands where the
+                        // live trace would have put it.
+                        flatLine (echojay::matchHasWidth (r),
+                                  r.width / 100.0f * 2.0f - 1.0f);
+                        break;
+                    case echojay::MatchAxis::Spectrum: break;   // not a traced axis
+                }
+            }
+
+            // Reference first, mix over it: the same order as the trail.
+            glowTrace (refTrace, C::text2);
+            glowTrace (mixTrace, C::blue);
+        }
+
+        matchPaintAxis (g, plot, R.readout, axis, sides.mix, sides.ref,
+                        mixSmooth, refSmooth,
+                        // EITHER side, not both: the message this feeds is
+                        // now "is there nothing at all", and the picture was
+                        // drawn above from whichever sides had data.
+                        evMix.valid || evRef.valid,
+                        echojay::matchBandMoves (prop),
+                        juce::jlimit (0.0f, 1.0f, morphPos), linkPhase,
+                        owner->slotDisplayName (*slots.mix),
+                        owner->slotDisplayName (*slots.ref));
+
+        // ---- THE REFUSAL, OVER THE PICTURE -------------------------------
+        //
+        // DRAWN OVER, NOT INSERTED INTO. It takes no height from the layout
+        // and moves nothing: `plot` is the rect the picture was just drawn
+        // in, and this composes on top of it for the countdown only. That is
+        // the whole reason it can live here at all, because the page has no
+        // spare row any more.
+        //
+        // LAST, so nothing paints over it: the trail blit, the filament and
+        // the axis painter have all already run.
+        //
+        // AT THE BANNER'S OWN SIZE, 11 pt, which is what it was drawn at
+        // above the button. A refusal that shrank on its way to a bigger
+        // space would read as less important than the one it replaced.
+        //
+        // A SCRIM UNDER IT, because the sentence lands on a lit trail and
+        // amber text over moving ghosts is the one thing on this page that
+        // must be readable on the first glance. Scoped, because the fill is
+        // translucent and drawImageAt is one call away: open list 210.
+        if (refusedFor > 0.0f && refusedText.isNotEmpty())
+        {
+            juce::Graphics::ScopedSaveState ss (g);
+            auto band = plot.withSizeKeepingCentre (plot.getWidth() - 24,
+                                                    juce::jmin (plot.getHeight(), 52));
+            g.setColour (juce::Colour (0xff02040a).withAlpha (0.82f));
+            g.fillRoundedRectangle (band.toFloat(), 8.0f);
+            g.setColour (C::amber);
+            g.setFont (juce::Font (juce::FontOptions (11.0f)));
+            g.drawFittedText (refusedText, band.reduced (10, 6),
+                              juce::Justification::centred, 3);
+        }
+    }
+
+    // THE PROVENANCE, ON THE PICTURE (contract §3): a whole-file average
+    // against a ballistic tail is not a like-for-like curve, and prose
+    // elsewhere is not the picture saying so.
+    //
+    // SPECTRUM ONLY. It describes the two SPECTRA's reductions, so under the
+    // loudness, dynamics or stereo picture it would be a caption about
+    // something not on screen.
+    if (axis == echojay::MatchAxis::Spectrum)
+    {
+        // THE TILT LINE IS GONE, 22 Sep. It said "Tilted for display; the
+        // figures below are not", and it came out because it describes a
+        // DISPLAY CHOICE rather than a measurement: the readout row underneath
+        // is untilted and is where every figure is read, so nothing measured
+        // is lost with the sentence.
+        //
+        // THE PROVENANCE LINE STAYS, and that is a deliberate refusal rather
+        // than an oversight. It was asked for too, but it is the only place
+        // ANYTHING tells the reader that the two curves were reduced
+        // differently: matchProvenanceText returns "" whenever both sides
+        // match, so when it speaks the comparison is not like for like. The
+        // model never receives it, because nothing on this page sends and the
+        // 64 bin curves reach no payload; the COMPARE path carries
+        // ev.macroReduction, which is the BANDS' provenance and a different
+        // field by design (see EJSpectralEvidence.h: the two can legitimately
+        // differ). So deleting this deletes the only statement of it.
+        // THE PROVENANCE LINE IS GONE FROM THE DRAWING TOO, 22 Sep, for the
+        // same reason as the dynamics notes: the two row table names the
+        // sides in its left column, so a rolling live side sits against a
+        // file name with the figures between them and the reader can see
+        // which is which without a sentence about it.
+        //
+        // WHAT THIS GIVES UP, so nobody restores it blind. matchProvenanceText
+        // speaks ONLY when the two sides were reduced DIFFERENTLY, which is
+        // exactly the case where the curves are not like for like. The names
+        // in the left column tell you the sides are of different KINDS; they
+        // do not tell you the two spectra were REDUCED differently, and two
+        // captures can be reduced differently while looking like the same kind
+        // of thing. That residue is uncovered today.
+        //
+        // IT IS NOT DELETED. echojay::matchProvenanceText is still the single
+        // source of this wording and is still pinned by mr PIN19, for whatever
+        // carries it after the merge. Nothing drawn today calls it.
+        juce::ignoreUnused (evMix, evRef);
+    }
+
+    if (fade < 0.999f) g.endTransparencyLayer();
+}
+
+// THE PRESS. It plays the morph, or says why it cannot; it sends nothing and
+// writes nothing (MATCH_SCREEN_CONTRACT §10). Replayable by design: a second
+// press starts from the measured curve again rather than doing nothing because
+// the first one finished.
+void EchoJayEditor::MatchPanel::press()
+{
+    if (owner == nullptr) return;
+    // ONE read of the sides, not two: they are read from live slots, and two
+    // reads could disagree about what the press was for.
+    const auto sides = owner->buildMatchSides();
+    const auto ready = echojay::matchReadiness (echojay::computeMatchProposal (sides.mix, sides.ref));
+
+    // TWO OF THE FOUR AXES CANNOT BE MATCHED, AND THE PRESS SAYS SO. The
+    // proposal emits Gain, Ceiling and Band moves and nothing else, so dynamics
+    // and stereo image have no move to play whatever the two sides hold.
+    //
+    // NOT A DISABLED BUTTON. A control that looks dead with no reason given is
+    // what the headline rework removed, so this answers in the same words and
+    // through the same refused-for-a-moment machinery the gain floor uses.
+    if (! echojay::matchAxisCanPropose (axis))
+    {
+        refusedText  = echojay::matchAxisPressText (axis);
+        refusedBadge = echojay::matchRefusedBadge (true, false);
+        refusedFor   = 2.5f;
+        morphing = false; morphDone = false; morphPos = 0.0f;
+        startTimerHz (60);
+        repaint();
+        return;
+    }
+
+    // PLAYABLE, NOT POSSIBLE. The press asks whether the proposal carries a
+    // move, which is what this test has always meant; `possible` now answers
+    // the narrower question of whether the LINE is the optimistic one, and
+    // gating the press on that would refuse a move the proposal is holding.
+    if (! ready.playable)
+    {
+        // A REFUSED PROPOSAL CANNOT ANIMATE, so the press SAYS so rather than
+        // playing nothing and leaving the user to guess whether it worked.
+        refusedText  = echojay::matchPressRefusedText (ready);
+        refusedBadge = echojay::matchRefusedBadge (false, ready.goodNews);
+        refusedFor   = 2.5f;
+        morphing = false; morphDone = false; morphPos = 0.0f;
+        startTimerHz (60);
+        repaint();
+        return;
+    }
+
+    morphPos  = 0.0f;
+    morphing  = true;
+    morphDone = false;
+    refusedFor = 0.0f;
+    startTimerHz (60);
+    repaint();
+}
+
+// ===========================================================================
+// THE THREE PICTURES THAT ARE NOT THE SPECTRUM
+// ===========================================================================
+//
+// ONE GRAMMAR, FOUR VOCABULARIES. Every one of these shows your mix, the
+// reference, and THE GAP BETWEEN THEM with the gap the brightest thing in the
+// rect. What differs is the terms, because a level, a dynamic range and a
+// stereo image are not the same kind of quantity and drawing them alike would
+// say they were.
+//
+// ONLY FIELDS THAT ARE WHOLE FILE ON BOTH SIDES (contract §2B). No PSR, which
+// is two sliding windows on both sides and describes a reference's last three
+// seconds; and no capture-only field, because a figure one side cannot have
+// would be drawn against the other side's default and read as a difference.
+//
+// EVERY NUMBER HERE COMES OFF MatchSide, which is the one place the Live rules
+// have already been applied.
+// The same colour tokens the rest of this page uses. These painters are
+// file-local functions rather than members, so the editor's own alias is not in
+// scope and is named once here.
+//
+// AT FILE SCOPE AND NOT IN AN ANONYMOUS NAMESPACE, deliberately: mr PIN24 reads
+// these bodies with functionBody, which ends a body at the first brace in
+// column one. Indented inside a namespace, each "body" would run to the end of
+// the block and the pin would be reading three painters while claiming to read
+// one.
+using MatchC = EchoJayLookAndFeel::Colours;
+
+// ===========================================================================
+// TWO LUMINOUS RIBBONS AND THE LIGHT BETWEEN THEM
+// ===========================================================================
+//
+// ONE STRUCTURE ON ALL FOUR AXES, and only the ribbons' SHAPE differs. The
+// reference is a soft ribbon, your mix a brighter filament in front, and the
+// gap is the light between them: invisible where they touch and brightest
+// where they are furthest apart.
+//
+// THICKNESS MEANS TOLERANCE AND NOTHING ELSE. The reference ribbon's
+// half-thickness IS the proposal's floor, echojay::matchAxisZoneDb, so inside
+// the ribbon means no move would be proposed. ON THE TWO AXES WITH NO FLOOR IT
+// IS A FILAMENT, not a thin ribbon: a glow with any thickness at all would
+// claim a tolerance that does not exist for dynamics or stereo image.
+//
+// NO FURNITURE. No rectangle, no rail, no divider, no gridline, no band label,
+// no box outline and no step block: frequency and level are read from the
+// numbers in the text line. Nothing here has an edge.
+
+/** THE READOUT ROW, DRAWN IN THE MAIN METER STRIP'S LANGUAGE: cells separated
+    by thin vertical dividers, label above in small muted uppercase, value
+    below. No rounded boxes, no card.
+
+    THE COLOURS ARE READ FROM THE SAME TWO CONSTANTS THE TRAILS ARE STROKED
+    WITH, MatchC::blue and MatchC::text2, not copies of their values. If the
+    trail's colours are ever changed this row follows them, because a key that
+    can drift from the picture it explains is worse than no key. */
+static void matchPaintReadout (juce::Graphics& g, juce::Rectangle<int> row,
+                               const std::vector<echojay::MatchReadoutCell>& cells,
+                               const juce::String& note,
+                               const juce::String& mixName, const juce::String& refName)
+{
+    if (row.getHeight() < 16 || cells.empty()) return;
+
+    // 2d: the axis's sentence, if it has one, on ONE muted line directly above
+    // the table. An axis with none leaves no gap behind.
+    if (note.isNotEmpty())
+    {
+        auto noteRow = row.removeFromTop (10);
+        g.setColour (MatchC::text3);
+        g.setFont (juce::Font (juce::FontOptions (8.5f)));
+        g.drawText (note, noteRow, juce::Justification::centred, true);
+    }
+
+    // THE THREE HEIGHTS PREFER THE CONSTANTS AND GIVE WAY TO THE ROW. With a
+    // note above it there are 24 px left rather than 34, and a table that kept
+    // its preferred heights would simply draw its second side off the bottom.
+    int headerH = echojay::kMatchReadoutHeaderH;
+    int rowH    = echojay::kMatchReadoutRowH;
+    if (row.getHeight() < headerH + 2 * rowH)
+    {
+        headerH = juce::jmax (7, row.getHeight() / 4);
+        rowH    = juce::jmax (7, (row.getHeight() - headerH) / 2);
+    }
+
+    const int n = (int) cells.size();
+
+    // ---- THE HEADER: short column labels, over the columns they name -------
+    {
+        auto header = row.removeFromTop (headerH);
+        g.setColour (MatchC::text3);
+        g.setFont (juce::Font (juce::FontOptions (8.0f, juce::Font::bold)));
+        for (int i = 0; i < n; ++i)
+        {
+            auto col = echojay::matchReadoutColRect (header, i, n);
+            if (col.getWidth() <= 0) continue;
+            g.drawText (cells[(size_t) i].label.toUpperCase(), col,
+                        juce::Justification::centred, true);
+        }
+    }
+
+    // ---- THE TWO SIDES, ONE PER LINE ---------------------------------------
+    //
+    // THE NAME IS THE KEY AND IT IS DRAWN IN THE TRAIL'S OWN COLOUR, read from
+    // MatchC::blue and MatchC::text2, the same two constants advanceTrail
+    // strokes with. A key that can drift from the picture it explains is worse
+    // than no key.
+    //
+    // TRUNCATED, NOT WRAPPED. drawText is a single line and the last argument
+    // is useEllipsis, so a long reference name ends in an ellipsis inside its
+    // gutter rather than pushing the figures out of line.
+    auto paintSide = [&] (juce::Rectangle<int> line, const juce::String& name,
+                          juce::Colour colour, bool wantMix)
+    {
+        auto gutter = echojay::matchReadoutNameRect (line);
+        g.setColour (colour);
+        g.setFont (juce::Font (juce::FontOptions (9.5f, juce::Font::bold)));
+        g.drawText (name, gutter.reduced (2, 0), juce::Justification::centredLeft, true);
+
+        g.setFont (juce::Font (juce::FontOptions (10.5f, juce::Font::bold)));
+        for (int i = 0; i < n; ++i)
+        {
+            auto col = echojay::matchReadoutColRect (line, i, n);
+            if (col.getWidth() <= 0) continue;
+            g.drawText (wantMix ? cells[(size_t) i].mixText : cells[(size_t) i].refText,
+                        col, juce::Justification::centred, true);
+        }
+    };
+
+    paintSide (row.removeFromTop (rowH), mixName, MatchC::blue,  true);
+    paintSide (row.removeFromTop (rowH), refName, MatchC::text2, false);
+}
+
+
+/** The whole picture, once the two rows of values exist. */
+static void matchPaintRibbonPair (juce::Graphics& g, juce::Rectangle<int> plot,
+                                  const MatchRibbonRow& mixV, const MatchRibbonRow& refV,
+                                  float lo, float hi, float zoneUnits, float phase)
+{
+    // ONE THIN BRIGHT FILAMENT PER SIDE, AND NOTHING ELSE IN THE PLOT.
+    //
+    // WHAT THIS GIVES UP, RECORDED HERE RATHER THAN LOST QUIETLY:
+    //
+    //   THE REFERENCE'S RIBBON THICKNESS WAS THE PROPOSAL'S FLOOR. A band of
+    //   exactly kMatchBandFloorDb said "inside here, nothing would be moved",
+    //   which is the most honest thing this picture has ever drawn.
+    //
+    //   THE GAP LIGHT WAS THE THING BEING COMPARED, drawn as the brightest
+    //   object on the page, which is what the contract asks a match screen to
+    //   put first.
+    //
+    // BOTH WERE HONEST AND BOTH ARE REMOVED BECAUSE THEY BURY THE TRAIL. The
+    // comparison still reads, from the two filaments and the distance between
+    // them, and every number, move and refusal is unchanged. THIS IS A DEBT
+    // AND NOT AN OVERSIGHT: the floor and the gap want to come back in some
+    // quieter form once the look is settled, and matchAxisZoneDb and
+    // matchInsideBandZone are left in place for when they do.
+    //
+    // zoneUnits and phase are kept in the signature for the same reason: the
+    // thickness and the breath are what comes back first.
+    juce::ignoreUnused (zoneUnits, phase);
+
+    // CURVED, NOT CORNERED. 96 points across a thousand-odd pixels is one
+    // point every dozen, and straight lineTo segments make every one of them a
+    // visible corner: that is the jaggedness, and it is SPATIAL rather than
+    // temporal. Averaging across frames would have fixed the look by
+    // destroying the strands, which is exactly what the trail must not have.
+    //
+    // THE SAME CATMULL-ROM paintSpectrumCurve uses: endpoints duplicated so
+    // the end tangents stay flat and never overshoot, control points at a
+    // sixth of the span between the neighbours, and CONTROL-POINT Y CLAMPED
+    // INTO THE PLOT so a single outlying bin cannot overshoot into a needle.
+    auto filament = [&] (const MatchRibbonRow& row, juce::Colour c, float alpha)
+    {
+        const float dx = (float) plot.getWidth() / (float) (kMatchRibbonCols - 1);
+        auto clampY = [&] (float v)
+        { return juce::jlimit ((float) plot.getY(), (float) plot.getBottom(), v); };
+        auto ptAt = [&] (int i)
+        {
+            const int j = juce::jlimit (0, kMatchRibbonCols - 1, i);
+            const float y = (float) plot.getY()
+                          + juce::jlimit (0.0f, 1.0f, (hi - row[(size_t) j])
+                                                          / juce::jmax (0.0001f, hi - lo))
+                                * (float) plot.getHeight();
+            return juce::Point<float> ((float) plot.getX() + dx * (float) j, y);
+        };
+
+        juce::Path p;
+        p.startNewSubPath (ptAt (0));
+        for (int i = 0; i < kMatchRibbonCols - 1; ++i)
+        {
+            const auto p0 = ptAt (i - 1), p1 = ptAt (i), p2 = ptAt (i + 1), p3 = ptAt (i + 2);
+            const juce::Point<float> c1 (p1.x + (p2.x - p0.x) / 6.0f,
+                                         clampY (p1.y + (p2.y - p0.y) / 6.0f));
+            const juce::Point<float> c2 (p2.x - (p3.x - p1.x) / 6.0f,
+                                         clampY (p2.y - (p3.y - p1.y) / 6.0f));
+            p.cubicTo (c1, c2, p2);
+        }
+        // ONE PASS, 1.0 px, at a twentieth of the alpha it carried. A FAINT
+        // THREAD LAID OVER THE TRAILS, not the main line: the trail is the
+        // picture and this is the mark that says where the measurement is.
+        g.setColour (c.withAlpha (alpha));
+        g.strokePath (p, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
+    };
+
+    // THE EMPHASIS IS INVERTED: THE TRAIL IS THE PICTURE and the filament is a
+    // quiet reference mark through it, almost dissolved into the cloud. It is
+    // still the thing being compared and still the only thing any number is
+    // read from; it simply stops shouting over the history behind it.
+    // THE FILAMENT IS NO LONGER DRAWN. The ghost trail is the whole picture,
+    // and a thread laid over it competed for the same attention without adding
+    // a reading: every number is in the row along the bottom now.
+    //
+    // THE LAMBDA IS LEFT DEFINED AND UNCALLED, the same treatment as
+    // matchInsideBandZone, matchAxisHasZone, matchBandBlock, kMatchPlotSpanDb,
+    // matchAxisZoneDb and tickSeq. What it draws may come back, and deleting
+    // it is a decision for whoever decides that, not a side effect of a look.
+    juce::ignoreUnused (filament);
+}
+
+// ---------------------------------------------------------------------------
+// WHAT DIFFERS PER AXIS IS ONLY THE RIBBONS' SHAPE
+// ---------------------------------------------------------------------------
+
+/** SPECTRUM: FROM THE 64 BIN CURVE, NOT THE SIX BANDS.
+
+    §3 FORBIDS A SMOOTH LINE THROUGH SIX NUMBERS AND THIS DOES NOT BREAK IT.
+    The rule exists because six band figures assert nothing between their
+    centres, so a curve drawn through them invents shape the arithmetic never
+    had. These bins are SIXTY FOUR MEASUREMENTS, a real continuous reading on
+    both sides that the page already holds through getSlotSpectralEvidence, so
+    a smooth curve is what they are. THE SIX BANDS REMAIN WHAT THE PROPOSAL
+    MOVES and what the morph steps; they are simply no longer drawn as blocks.
+
+    BOTH CURVES ARE LEVEL-NORMALISED, each by its own mean, and that is what
+    makes the ribbon's thickness meaningful: the floor is a threshold on band
+    RELATIVES, so a ribbon of +/- 2 dB around an absolute curve would claim a
+    tolerance in the wrong units and would move with the gain difference the
+    level axis handles on its own. */
+static void matchSpectrumRows (const std::array<float, 64>& mixBins,
+                               const std::array<float, 64>& refBins,
+                               const std::array<float, 6>& moves, float morph,
+                               MatchRibbonRow& mixV, MatchRibbonRow& refV)
+{
+    auto meanOf = [] (const std::array<float, 64>& b)
+    {
+        double s = 0.0; int n = 0;
+        for (float v : b) if (v > -120.0f) { s += v; ++n; }
+        return n > 0 ? (float) (s / n) : 0.0f;
+    };
+    const float mMean = meanOf (mixBins), rMean = meanOf (refBins);
+
+    for (int i = 0; i < kMatchRibbonCols; ++i)
+    {
+        const float u = (float) i / (float) (kMatchRibbonCols - 1);
+        const float fb = u * 63.0f;
+        const int   b0 = juce::jlimit (0, 63, (int) fb);
+        const int   b1 = juce::jlimit (0, 63, b0 + 1);
+        const float fr = fb - (float) b0;
+
+        const float m = juce::jmap (fr, mixBins[(size_t) b0], mixBins[(size_t) b1]) - mMean;
+        const float r = juce::jmap (fr, refBins[(size_t) b0], refBins[(size_t) b1]) - rMean;
+
+        // The morph walks the mix curve by ITS OWN BAND'S move, stepped at the
+        // band edges exactly as the proposal steps: matchMorphedDb is the same
+        // arithmetic the blocks used.
+        const double lof = std::log2 (echojay::kMatchPlotLoHz), hif = std::log2 (echojay::kMatchPlotHiHz);
+        const double hz  = std::pow (2.0, lof + (double) u * (hif - lof));
+        mixV[(size_t) i] = echojay::matchMorphedDb (m, hz, moves, morph);
+        refV[(size_t) i] = r;
+    }
+
+}
+
+static void matchPaintLoudness (juce::Graphics& g, juce::Rectangle<int> plot,
+                         juce::Rectangle<int> readout,
+                         const echojay::MatchSide& mix, const echojay::MatchSide& ref,
+                         float phase,
+                         const juce::String& mixName, const juce::String& refName)
+{
+    // NEAR FLAT RIBBONS at each side's integrated level. A whisper of drift
+    // along the length, so they are alive rather than ruled.
+    MatchRibbonRow mixV {}, refV {};
+    for (int i = 0; i < kMatchRibbonCols; ++i)
+    {
+        const float u = (float) i / (float) (kMatchRibbonCols - 1);
+        const float w = std::sin (u * juce::MathConstants<float>::twoPi * 0.6f) * 0.18f;
+        mixV[(size_t) i] = mix.integrated + w;
+        refV[(size_t) i] = ref.integrated - w * 0.6f;
+    }
+    // THE SHARED SCALE, so the cloud sits AROUND the filament rather than
+    // beside it: one range for both layers on every axis.
+    const std::array<float, 64> noBins {};
+    const auto range = matchAxisRange (echojay::MatchAxis::Loudness, mix, ref, noBins, noBins, false);
+    matchPaintRibbonPair (g, plot, mixV, refV, range.first, range.second,
+                          echojay::matchAxisZoneDb (echojay::MatchAxis::Loudness), phase);
+
+    // THE NUMBERS GO IN THE READOUT ROW, in the order they appeared in the
+    // sentence this replaces. Built HERE, from this axis's own fields, rather
+    // than in a shared table: the values must come from the same reads the
+    // shape came from, and mr PIN24 pins that this painter is the thing that
+    // touches them.
+    std::vector<echojay::MatchReadoutCell> cells;
+    cells.push_back ({ "INT",
+                       echojay::matchReadoutValue (echojay::matchHasIntegrated (mix), mix.integrated, 1, "LUFS"),
+                       echojay::matchReadoutValue (echojay::matchHasIntegrated (ref), ref.integrated, 1, "LUFS") });
+    cells.push_back ({ "TRUE PEAK",
+                       echojay::matchReadoutValue (echojay::matchHasTruePeak (mix), mix.truePeak, 1, "dBTP"),
+                       echojay::matchReadoutValue (echojay::matchHasTruePeak (ref), ref.truePeak, 1, "dBTP") });
+    matchPaintReadout (g, readout, cells, {}, mixName, refName);
+}
+
+static void matchPaintDynamics (juce::Graphics& g, juce::Rectangle<int> plot,
+                         juce::Rectangle<int> readout,
+                         const echojay::MatchSide& mix, const echojay::MatchSide& ref,
+                         float phase,
+                         const juce::String& mixName, const juce::String& refName)
+{
+    // RIBBONS THAT RIPPLE, AMPLITUDE FROM CREST, so a more dynamic track
+    // visibly ripples more. THE LOUDNESS RANGE VARIES THE RIPPLE ALONG THE
+    // LENGTH: a wide range swells and settles, a narrow one is even.
+    // THE FILAMENT IS THE SLOW FIGURE WHERE THERE IS ONE. A capture or a
+    // reference holds its STORED whole-file crest, which is genuinely
+    // accumulated. A LIVE side has no whole-file crest to hold: MeterEngine
+    // computes crest as peak over RMS of a 0.5 s RMS and a 3 s peak decay, so
+    // its filament IS a rolling figure and the line below says "rolling".
+    // DYNAMICS IS THEREFORE THE AXIS WHERE THE CLOUD AND THE FILAMENT SIT
+    // CLOSEST TOGETHER: a slower reading of the same thing rather than a
+    // different kind of figure. Said, not hidden.
+    auto row = [] (const echojay::MatchSide& s, MatchRibbonRow& out, float bias)
+    {
+        const float amp = juce::jlimit (0.5f, 9.0f, s.crest * 0.55f);
+        const bool  even = s.lra <= 0.0f;
+        for (int i = 0; i < kMatchRibbonCols; ++i)
+        {
+            const float u = (float) i / (float) (kMatchRibbonCols - 1);
+            // A side with no range RIPPLES EVENLY, and says so in words below:
+            // varying it with a zero would draw an absent figure as a flat one.
+            const float env = even ? 1.0f
+                                   : 0.55f + 0.45f * std::sin (u * juce::MathConstants<float>::twoPi
+                                                               * juce::jlimit (0.6f, 3.0f, s.lra * 0.25f));
+            out[(size_t) i] = bias + std::sin (u * juce::MathConstants<float>::twoPi * 2.2f
+                                               + bias) * amp * env;
+        }
+    };
+    MatchRibbonRow mixV {}, refV {};
+    row (mix, mixV, -6.0f);
+    row (ref, refV,  6.0f);
+    const std::array<float, 64> noBins {};
+    const auto range = matchAxisRange (echojay::MatchAxis::Dynamics, mix, ref, noBins, noBins, false);
+    matchPaintRibbonPair (g, plot, mixV, refV, range.first, range.second, 0.0f, phase);
+
+    // CELLS FOR THE NUMBERS, in the order the old sentence carried them, and
+    // the SENTENCES on one muted line above the row (2d). The overs count
+    // keeps its own rule: -1 is a dash, not a zero.
+    std::vector<echojay::MatchReadoutCell> cells;
+    cells.push_back ({ "CREST",
+                       // THE CLAMP IS NOT A MEASUREMENT: matchHasCrest rejects 40.0 dB,
+                       // so the row prints a dash where it used to print the
+                       // ceiling as though it were a reading.
+                       echojay::matchReadoutValue (echojay::matchHasCrest (mix), mix.crest, 1, "dB"),
+                       echojay::matchReadoutValue (echojay::matchHasCrest (ref), ref.crest, 1, "dB") });
+    cells.push_back ({ "RANGE",
+                       echojay::matchReadoutValue (mix.lra > 0.0f, mix.lra, 1, "LU"),
+                       echojay::matchReadoutValue (ref.lra > 0.0f, ref.lra, 1, "LU") });
+    cells.push_back ({ "OVERS",
+                       echojay::matchReadoutCount (mix.overs),
+                       echojay::matchReadoutCount (ref.overs) });
+
+    // BOTH SIDE NOTES ARE GONE FROM THE DRAWING, 22 Sep, AND THE REASON IS
+    // THE READOUT TABLE RATHER THAN A DECISION THAT THEY DID NOT MATTER.
+    //
+    // They said two things: that a side's crest is a rolling figure rather
+    // than a whole track, and that a side has no loudness range. THE TWO ROW
+    // TABLE NOW NAMES THE SIDES IN ITS LEFT COLUMN, so "Live signal" sits
+    // directly against a file name with the numbers between them. A reader
+    // sees which side is live at the same glance as the figure, which is what
+    // the first note was for; and the RANGE column prints a DASH for a side
+    // with no loudness range, in that side's own colour, which is what the
+    // second was for. The notes were saying in a sentence what the row now
+    // says by its shape.
+    //
+    // DO NOT RESTORE THEM WITHOUT CHECKING THAT FIRST. If the left column
+    // ever stops naming the sides, or the dash ever becomes a zero, both
+    // facts go silent and these lines are what has to come back.
+    //
+    // echojay::matchDynamicsSideNote IS DELIBERATELY STILL THERE and still
+    // pinned by mr PIN23 and mr PIN29. It is the single source of this
+    // wording for whatever carries it after the merge, and nothing that is
+    // drawn today calls it.
+    matchPaintReadout (g, readout, cells, {}, mixName, refName);
+}
+
+static void matchPaintStereo (juce::Graphics& g, juce::Rectangle<int> plot,
+                       juce::Rectangle<int> readout,
+                       const echojay::MatchSide& mix, const echojay::MatchSide& ref,
+                         float phase,
+                         const juce::String& mixName, const juce::String& refName)
+{
+    // RIBBONS THAT BOW OUTWARD WITH WIDTH: a wide image is a fat lens and a
+    // mono one is nearly straight. CORRELATION TIGHTENS OR LOOSENS THE BOW,
+    // so two images that measure alike close into one shape.
+    auto row = [] (const echojay::MatchSide& s, MatchRibbonRow& out, float sign)
+    {
+        const float wNorm = juce::jlimit (0.0f, 1.0f, s.width / 100.0f);
+        const float tight = 1.0f - 0.45f * juce::jlimit (0.0f, 1.0f, s.correlation);
+        const float bow   = wNorm * 16.0f * tight;
+        for (int i = 0; i < kMatchRibbonCols; ++i)
+        {
+            const float u = (float) i / (float) (kMatchRibbonCols - 1);
+            out[(size_t) i] = sign * bow * std::sin (u * juce::MathConstants<float>::pi);
+        }
+    };
+    MatchRibbonRow mixV {}, refV {};
+    row (mix, mixV, -1.0f);
+    row (ref, refV,  1.0f);
+    const std::array<float, 64> noBins {};
+    const auto range = matchAxisRange (echojay::MatchAxis::Stereo, mix, ref, noBins, noBins, false);
+    matchPaintRibbonPair (g, plot, mixV, refV, range.first, range.second, 0.0f, phase);
+
+    // WIDTH TO ONE DECIMAL, NOT ZERO, and correlation to two: 2b's rule, and
+    // it corrects the old row, which printed width with no decimals at all.
+    std::vector<echojay::MatchReadoutCell> cells;
+    // `true` WAS WRONG FOR AN EMPTY SIDE. Width and correlation have no
+    // sentinel of their own, so this printed 0.0 % and 0.00 for a slot with
+    // nothing in it, which reads as a measured mono, perfectly correlated
+    // source. matchHasWidth/matchHasCorrelation ask whether the SIDE has any
+    // real figure at all, which is the question that can actually be
+    // answered, and the picture reads the same two predicates.
+    cells.push_back ({ "WIDTH",
+                       echojay::matchReadoutValue (echojay::matchHasWidth (mix), mix.width, 1, "%"),
+                       echojay::matchReadoutValue (echojay::matchHasWidth (ref), ref.width, 1, "%") });
+    cells.push_back ({ "CORR",
+                       echojay::matchReadoutValue (echojay::matchHasCorrelation (mix), mix.correlation, 2, {}),
+                       echojay::matchReadoutValue (echojay::matchHasCorrelation (ref), ref.correlation, 2, {}) });
+    matchPaintReadout (g, readout, cells, {}, mixName, refName);
+}
+
+void matchPaintAxis (juce::Graphics& g, juce::Rectangle<int> plot,
+                     juce::Rectangle<int> readout,
+                     echojay::MatchAxis a,
+                     const echojay::MatchSide& mix, const echojay::MatchSide& ref,
+                     const std::array<float, 64>& mixBins, const std::array<float, 64>& refBins,
+                     bool anyBins, const std::array<float, 6>& moves, float morph, float phase,
+                     const juce::String& mixName, const juce::String& refName)
+{
+    if (plot.getWidth() <= 8 || plot.getHeight() <= 8) return;
+    switch (a)
+    {
+        case echojay::MatchAxis::Spectrum:
+        {
+            // THE MESSAGE APPEARS ONLY WHEN NOTHING DRAWS (22 Sep).
+            //
+            // It used to be gated on haveBins, which was evMix.valid AND
+            // evRef.valid, and it read "No spectrum to draw for one of the two
+            // sides." So with a live mix and no reference it printed itself
+            // ACROSS A PICTURE THAT WAS ALREADY DRAWN: the trail and the
+            // filament are stroked in MatchPanel::paint before this runs, and
+            // they only ever needed one side.
+            //
+            // ONE SIDE IS A PICTURE. The readout row's dashes already say
+            // which side is missing, in that side's own colour, so a sentence
+            // over the top is a second statement of the same fact obscuring
+            // the first. NEITHER side is the only case with nothing to look
+            // at, and then the sentence is the whole of the screen and stays.
+            if (! anyBins)
+            {
+                g.setColour (MatchC::text3);
+                g.setFont (juce::Font (juce::FontOptions (11.0f)));
+                g.drawFittedText ("Neither side has a spectrum to draw yet.",
+                                  plot, juce::Justification::centred, 2);
+                return;
+            }
+            MatchRibbonRow mixV {}, refV {};
+            matchSpectrumRows (mixBins, refBins, moves, morph, mixV, refV);
+            const auto range = matchAxisRange (echojay::MatchAxis::Spectrum, mix, ref,
+                                               mixBins, refBins, true);
+            matchPaintRibbonPair (g, plot, mixV, refV, range.first, range.second,
+                                  echojay::matchAxisZoneDb (echojay::MatchAxis::Spectrum), phase);
+
+            // THE SPECTRUM'S OWN NUMBERS: the six band relatives are the thing
+            // the proposal moves, so the row carries the two that a reader
+            // most needs, the overall tilt and the largest single gap, taken
+            // from the SAME relatives the ribbons were built from.
+            // ALL SIX BANDS, ONE PER COLUMN, because the figures exist on both
+            // sides and the table now has room for them. The old row could
+            // only afford two cells, so it carried the worst gap and the tilt:
+            // a summary of the bands, chosen for it. Six columns say the same
+            // thing without choosing, and the reader picks the worst gap out
+            // by eye because the two rows line up.
+            //
+            // THEY DO NOT NEED A PROPOSAL AND THEY DO NOT NEED THIRTY SECONDS.
+            // matchSideFrom copies macro and hasMacro straight off the
+            // evidence with no duration gate, and a Live side gets them from
+            // getBoundedBands as soon as ONE audible block has arrived. The
+            // 30 s rule is kMatchBandMinSeconds and it gates the band PROPOSAL
+            // only, which is a different question from whether the figures are
+            // measured.
+            //
+            // EACH SIDE IS TESTED ON ITS OWN. A reference this build never
+            // analysed sits under a live mix that has bands, and the table
+            // prints that side's dashes rather than refusing both: six dashes
+            // in the reference's colour say which side is missing, where one
+            // "BANDS -/-" cell said only that something was.
+            {
+                std::array<float, 6> mRel {}, rRel {};
+                const bool mOk = mix.hasMacro && echojay::matchBandRelatives (mix.macro, mRel);
+                const bool rOk = ref.hasMacro && echojay::matchBandRelatives (ref.macro, rRel);
+
+                std::vector<echojay::MatchReadoutCell> cells;
+                for (int b = 0; b < 6; ++b)
+                    cells.push_back ({ juce::String (echojay::macroBandName (b)),
+                                       echojay::matchReadoutValue (mOk, mRel[(size_t) b], 1, {}),
+                                       echojay::matchReadoutValue (rOk, rRel[(size_t) b], 1, {}) });
+
+                // NO NOTE LINE. It read "band level relative to each side's
+                // own mean, dB" and came out 22 Sep.
+                //
+                // THE ROW GETS THE TEN PIXELS BACK. matchPaintReadout takes 10
+                // px off the top for a note and then compresses the header and
+                // the two side lines into what is left; with no note the table
+                // draws at its preferred 10 + 12 + 12.
+                //
+                // WHAT WENT WITH IT, recorded rather than discovered later: the
+                // six band columns now carry NO UNIT anywhere on the page. The
+                // header names the band and the cells hold a number. They are
+                // dB relative to that side's own six-band mean, which is a
+                // thing a reader now has to know rather than read.
+                matchPaintReadout (g, readout, cells, {}, mixName, refName);
+            }
+            break;
+        }
+        case echojay::MatchAxis::Loudness: matchPaintLoudness (g, plot, readout, mix, ref, phase, mixName, refName); break;
+        case echojay::MatchAxis::Dynamics: matchPaintDynamics (g, plot, readout, mix, ref, phase, mixName, refName); break;
+        case echojay::MatchAxis::Stereo:   matchPaintStereo   (g, plot, readout, mix, ref, phase, mixName, refName); break;
+    }
+}
+
+/** ONE TICK'S FIGURES INTO A SIDE'S RING. What each axis traces:
+
+      LOUDNESS   momentary (400 ms), short term (3 s), and peak. Three
+                 different time constants, so three different speeds, which is
+                 what makes the lines cross instead of stacking.
+      DYNAMICS   crest, plus the three BAND crests.
+      STEREO     correlation, the three BANDED correlations, and width.
+
+    THE BAND CRESTS AND BANDED CORRELATIONS ARE CAPTURE-ONLY AS COMPARISONS and
+    are read here anyway, deliberately. The rule this page holds is that THE
+    CLOUD IS CONTEXT AND IS NEVER COMPARED: they have no reference equivalent to
+    be compared against, which is why mr PIN24 keeps them off the tiles, but as
+    a live trace of the side producing them they are a real measurement of that
+    side. NOT IN THE THREE PAINTERS, for exactly that reason.
+
+    A figure that is unavailable sets have[] false for its line rather than
+    writing a sentinel into the ring: -1 band crest is "not measured", and a
+    line drawn at -1 would be a measurement of something. */
+void EchoJayEditor::MatchPanel::pushTrace (Trace& t, echojay::MatchAxis a, const MeterData& md)
+{
+    std::array<float, (size_t) kTraceLines> v {};
+    std::array<bool,  (size_t) kTraceLines> ok {};
+
+    switch (a)
+    {
+        case echojay::MatchAxis::Loudness:
+            v[0] = md.momentary;  ok[0] = md.momentary > -99.0f;
+            v[1] = md.shortTerm;  ok[1] = md.shortTerm > -99.0f;
+            v[2] = juce::jmax (md.peakL, md.peakR);
+            ok[2] = v[2] > -99.0f;
+            break;
+
+        case echojay::MatchAxis::Dynamics:
+            v[0] = md.crestFactor;  ok[0] = md.crestFactor > 0.0f;
+            v[1] = md.bandCrestSub; ok[1] = md.bandCrestSub >= 0.0f;
+            v[2] = md.bandCrestMid; ok[2] = md.bandCrestMid >= 0.0f;
+            v[3] = md.bandCrestTop; ok[3] = md.bandCrestTop >= 0.0f;
+            break;
+
+        case echojay::MatchAxis::Stereo:
+            v[0] = md.correlation; ok[0] = true;
+            v[1] = md.corrSub;     ok[1] = true;
+            v[2] = md.corrMid;     ok[2] = true;
+            v[3] = md.corrTop;     ok[3] = true;
+            v[4] = md.width / 100.0f * 2.0f - 1.0f;   // onto the correlation scale
+            ok[4] = true;
+            break;
+
+        case echojay::MatchAxis::Spectrum:
+            return;                                   // the spectrum has its own shape
+    }
+
+    // THE TERRACING, AND IT IS FIXED HERE RATHER THAN WHERE THE TRACE IS DRAWN.
+    //
+    // THE CAUSE, from the engine and not from the look: several of these
+    // figures only CHANGE every 100 ms, because they are derived from
+    // 100 ms LUFS blocks. MeterEngine accumulates samplesPerBlock100ms, pushes
+    // one LufsBlock, and shortTerm is then the mean over the last 30 of them
+    // (MeterEngine.cpp:705-731). integrated and loudnessRange move on the same
+    // boundary. THIS RING SAMPLES AT THE PAGE'S 30 Hz, so a figure that
+    // changes at 10 Hz writes THE SAME VALUE THREE TIMES and draws a stair:
+    // three samples flat, then a vertical, then three flat again.
+    //
+    // A ONE-POLE AS IT IS WRITTEN turns that step into a ramp. RECOUNTED FOR
+    // THE HOP RATE: this ring is now written once per FFT hop, so the 100 ms
+    // stair repeats over 4.3 hops rather than 3 ticks. k = 0.35 is 35 percent
+    // closed after one hop, 73 after three and 82 after four, so the stair
+    // still becomes a continuous rise over exactly the interval it repeats on,
+    // and anything genuinely fast still lands within a hop or two. It smooths
+    // ALONG THE LINE'S OWN HISTORY, which is a different thing from averaging
+    // the spectrum across frames: no strand is destroyed because each line is
+    // one figure, not a shape.
+    constexpr float kTraceSmooth = 0.35f;
+    const int prev = (t.write - 1 + kTraceLen) % kTraceLen;
+
+    for (int i = 0; i < kTraceLines; ++i)
+    {
+        const float target = v[(size_t) i];
+        const float last   = t.filled > 0 ? t.v[(size_t) i][(size_t) prev] : target;
+        t.v[(size_t) i][(size_t) t.write] = last + (target - last) * kTraceSmooth;
+        if (ok[(size_t) i]) t.have[(size_t) i] = true;
+    }
+    t.write  = (t.write + 1) % kTraceLen;
+    t.filled = juce::jmin (kTraceLen, t.filled + 1);
+}
+
+/** The scale a traced axis is drawn on. Fixed per axis rather than fitted to
+    the data: a scale that rescaled itself would turn every change in the
+    figures into a change in the picture's own geometry, and the eye would
+    read the axis moving as the signal moving. */
+static std::pair<float, float> matchTraceRange (echojay::MatchAxis a)
+{
+    switch (a)
+    {
+        // LOUDNESS: -33 TO +3, NOT -60 TO 0, AND THE THREE IS NOT A TYPO.
+        //
+        // WHAT WAS WRONG, as arithmetic rather than as taste. This axis draws
+        // momentary LUFS, short term LUFS and sample peak in dBFS. A master
+        // sits between about -24 and -6 LUFS and its peak sits within a
+        // decibel of 0. On a -60 to 0 range, position from the top is
+        // (0 - v) / 60, so -6 landed 10% down, -24 landed 40% down and the
+        // PEAK LINE LANDED AT 0.5%, pinned to the ceiling. Typical material
+        // therefore lived in the top 40% of the plot with the bottom 36 dB
+        // holding nothing but the occasional fade, which is what "it is all in
+        // the top quarter" is describing.
+        //
+        // WHERE -33 AND +3 COME FROM. Put -6 a quarter of the way down and -24
+        // three quarters of the way down, so typical material fills the MIDDLE
+        // HALF:
+        //     (hi + 6) / (hi - lo) = 0.25     (hi + 24) / (hi - lo) = 0.75
+        // Subtracting gives 18 / (hi - lo) = 0.5, so the span is 36 dB, and
+        // then hi = +3 and lo = -33.
+        //
+        // THE POSITIVE TOP IS DELIBERATE. Peak is in dBFS and a master's sits
+        // just under 0, so a ceiling AT 0 puts that line on the frame where it
+        // cannot be read and cannot be seen to move. Three decibels of sky
+        // gives it somewhere to be, and leaves an over-range peak somewhere to
+        // go before it clamps.
+        case echojay::MatchAxis::Loudness: return { -33.0f,  3.0f };   // dB
+        case echojay::MatchAxis::Dynamics: return {   0.0f, 30.0f };   // dB crest
+        case echojay::MatchAxis::Stereo:   return {  -1.0f,  1.0f };   // correlation
+        case echojay::MatchAxis::Spectrum: break;
+    }
+    return { -1.0f, 1.0f };
+}
+
+// ---------------------------------------------------------------------------
+// THE GUIDES
+// ---------------------------------------------------------------------------
+//
+// SPECTRUM GETS THREE VERTICALS AND NOTHING ELSE. No horizontals and no box:
+// a dB gridline would have to claim a scale, and the trail's scale is each
+// frame's OWN MEAN plus or minus kMatchTrailSpanDb, which is not a scale
+// anybody reads a number off. The three decade marks are placed through
+// echojay::matchFreqToX, the same mapping the curve is drawn with, so they
+// cannot drift from it.
+//
+// THE OTHER THREE AXES GET AT MOST ONE LINE, AND ONLY WHERE A VALUE MEANS
+// SOMETHING. Time along the bottom tells you nothing, so there are no
+// verticals anywhere but the spectrum.
+//
+//   STEREO     ONE line at correlation zero, the boundary between a coherent
+//              image and a phasey one, placed through matchTraceRange so it
+//              lands exactly where the traces read zero.
+//   LOUDNESS   NONE. Its range is -60 to 0 dB and neither end is a value you
+//              aim at; 0 dBFS is the top edge of the plot, not a target.
+//   DYNAMICS   NONE. Its range is 0 to 30 dB of crest and no crest figure is
+//              a reference point.
+//
+// WIDTH'S HUNDRED PERCENT IS DELIBERATELY NOT DRAWN. It is a real reference
+// value, but the stereo plot's vertical axis is CORRELATION, -1 to +1, and
+// width is a percentage that does not live on it. A line at "100%" would have
+// to invent a position on a scale that is not measuring it, which is the
+// horizontal version of the mistake the readout row exists to prevent.
+//
+// EVERY COLOUR HERE IS TRANSLUCENT AND THE WHOLE FUNCTION IS SCOPED. The blit
+// is the next thing that happens after this returns, and drawImageAt takes its
+// opacity from the fill: that is exactly what composited the trail at five
+// percent, and open list 210 is the record of it.
+void matchPaintGuides (juce::Graphics& g, juce::Rectangle<int> plot, echojay::MatchAxis a)
+{
+    if (plot.getWidth() <= 8 || plot.getHeight() <= 8) return;
+
+    juce::Graphics::ScopedSaveState ss (g);
+    g.setFont (juce::Font (juce::FontOptions (8.0f)));
+
+    if (a == echojay::MatchAxis::Spectrum)
+    {
+        for (int i = 0; i < (int) echojay::kMatchGuideHz.size(); ++i)
+        {
+            const float x = echojay::matchFreqToX (plot, echojay::kMatchGuideHz[(size_t) i]);
+            // LOW ENOUGH THAT YOU FIND IT ONLY BY LOOKING. The trail's faintest
+            // ghosts are the picture; a guide that competes with them is
+            // furniture, which this page does not have.
+            g.setColour (MatchC::text3.withAlpha (0.20f));
+            g.fillRect (x, (float) plot.getY(), 1.0f, (float) plot.getHeight());
+            g.setColour (MatchC::text3.withAlpha (0.40f));
+            g.drawText (echojay::matchGuideLabel (i),
+                        juce::Rectangle<float> (x + 3.0f, (float) plot.getY() + 2.0f, 24.0f, 10.0f),
+                        juce::Justification::centredLeft, false);
+        }
+        return;
+    }
+
+    if (a == echojay::MatchAxis::Stereo)
+    {
+        const auto  tr = matchTraceRange (a);
+        const float y  = (float) plot.getY()
+                       + (tr.second - 0.0f) / juce::jmax (0.0001f, tr.second - tr.first)
+                             * (float) plot.getHeight();
+        g.setColour (MatchC::text3.withAlpha (0.20f));
+        g.fillRect ((float) plot.getX(), y, (float) plot.getWidth(), 1.0f);
+        g.setColour (MatchC::text3.withAlpha (0.40f));
+        g.drawText ("0",
+                    juce::Rectangle<float> ((float) plot.getX() + 3.0f, y - 11.0f, 20.0f, 10.0f),
+                    juce::Justification::centredLeft, false);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// THE FILAMENT
+// ---------------------------------------------------------------------------
+//
+// IT IS BACK, AND IT IS BUILT FROM THE TRAIL'S OWN COLUMN READING. The reason
+// it went was that a second line competed with the trail without adding a
+// reading. What brings it back is the glow: three passes of ONE path, wide and
+// faint under narrow and bright, so it reads as a lit thread through the cloud
+// rather than a drawn line over it.
+//
+// IT SITS EXACTLY ON THE NEWEST GHOST, not near it, because it calls
+// matchVisColumnYOffset with the same bins, the same bin width, the same mean
+// and the same span the trail's stroke just used. Two copies of that
+// arithmetic is how a picture starts lying about which stroke is the
+// measurement.
+//
+// SETCOLOUR FIRST, SETOPACITY SECOND, three times. setColour replaces the
+// whole FillType including the alpha, so the other order discards the pass's
+// alpha and all three passes land at full strength, which is one fat opaque
+// line and no glow at all. That is the defect that cost four rounds.
+// THE ONE GLOW. See the declaration above for why alphaScale exists.
+//
+// THE THREE AXES THAT ARE NOT SPECTRUM CARRY UP TO FIVE LINES PER SIDE, where
+// spectrum carries one. Thirty stroked paths a frame on stereo image against
+// spectrum's six is the same glow doing five times the work, and it may read
+// as busy rather than as lit. WRITTEN HERE RATHER THAN DISCOVERED: if Kathy
+// says it is noisy, lower kMatchTraceGlow and leave kMatchSpectrumGlow alone.
+// The two are separate so that calming one cannot disturb the other.
+void matchStrokeGlow (juce::Graphics& g, const juce::Path& p, juce::Colour c,
+                      float alphaScale)
+{
+    // THE SAME LIFT TOWARD WHITE THE TRAIL USES, from the same constant, so a
+    // thread is the same hue as the ghosts under it.
+    const juce::Colour lit = c.interpolatedWith (juce::Colours::white, echojay::kMatchTrailWhite);
+
+    struct GlowPass { float width, alpha; };
+    static constexpr GlowPass kPasses[3] { { 6.0f, 0.10f }, { 3.0f, 0.20f }, { 1.2f, 0.95f } };
+
+    juce::Graphics::ScopedSaveState ss (g);
+    for (const auto& pass : kPasses)
+    {
+        g.setColour (lit);
+        g.setOpacity (juce::jlimit (0.0f, 1.0f, pass.alpha * alphaScale));
+        g.strokePath (p, juce::PathStrokeType (pass.width, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
+    }
+}
+
+void matchPaintVisFilament (juce::Graphics& g, juce::Rectangle<int> plot,
+                            const std::vector<float>& row, juce::Colour c)
+{
+    if (plot.getWidth() <= 8 || plot.getHeight() <= 8) return;
+
+    const int cols = juce::jmax (2, plot.getWidth());
+    if ((int) row.size() < cols) return;
+
+    juce::Path p;
+    for (int x = 0; x < cols; ++x)
+    {
+        const float y = (float) plot.getY()
+                      + echojay::matchVisYOffset (row[(size_t) x],
+                                                  echojay::kMatchTrailSpanDb,
+                                                  plot.getHeight());
+        if (x == 0) p.startNewSubPath ((float) plot.getX(), y);
+        else        p.lineTo ((float) plot.getX() + (float) x, y);
+    }
+
+    matchStrokeGlow (g, p, c, kMatchSpectrumGlow);
+}
+
+/** THE TRAIL IMAGE: many past frames still on screen and fading, so the shape
+    AND HOW MUCH IT MOVES are visible at once.
+
+    ONE STROKE PER SIDE PER FRAME, NEVER ONE PER GHOST. Two images ping-ponged,
+    following the spectroImg precedent rather than inventing a second way to
+    keep a picture between frames: the old one is blitted into the new at
+    reduced opacity, then the CURRENT curve is stroked in once. The fade is
+    that opacity and nothing else.
+
+    RESIZE AND FIRST FRAME ARE EXPLICIT: a plot of a different size, or a
+    different axis, starts a new pair rather than stretching a history that was
+    drawn to another shape. */
+void EchoJayEditor::MatchPanel::advanceTrail (juce::Rectangle<int> plot,
+                                              const MatchRibbonRow* mixFast,
+                                              const MatchRibbonRow* refFast,
+                                              float lo, float hi)
+{
+    // THE TWO CONSTANTS, AND THEY ARE NOT INDEPENDENT. Read this before
+    // changing either.
+    //
+    // THE ADVANCE RATE IS THE FFT HOP RATE, not the timer's. MeterEngine
+    // publishes one visual spectrum per kVisHopSamples (1024), so 43.07 Hz at
+    // 44.1 kHz and 46.88 Hz at 48 kHz, and this advances exactly once per
+    // published hop. The timer runs at 60 Hz so that no hop is ever missed;
+    // frames with no new hop blit the image again and change nothing.
+    //
+    // THE FADE IS THREE SECONDS TO FIVE PERCENT AT WHATEVER THE HOP RATE IS,
+    // computed below rather than written down, so a 48 kHz session and a
+    // 44.1 kHz session show the same three seconds of history.
+    //
+    // THE INK, which is why a slower fade alone would have smeared. Each
+    // frame's curve used to be stroked at FULL strength onto a barely faded
+    // image, so with a slow fade everything the curve had ever touched went
+    // white and the ghosts merged into a cloud. Stroked faint instead, so a
+    // single frame is just visible and BRIGHTNESS ACCUMULATES ONLY WHERE MANY
+    // FRAMES AGREE, which is what makes the lines distinct rather than a haze.
+    //
+    // THE SATURATION ARITHMETIC, which ties the two together: a pixel the
+    // curve sits on EVERY frame settles at
+    //     alpha / (1 - fade)
+    // because it gains alpha per tick and loses (1 - fade) of what it holds.
+    // AND THE MODEL EVERY EARLIER VERSION OF THIS COMMENT USED WAS WRONG.
+    // alpha / (1 - fade) is the ADDITIVE steady state. JUCE composites
+    // SOURCE-OVER, so a stroke does not add its alpha, it covers what is
+    // there:
+    //     a_next = ink + (a_prev * fade) * (1 - ink)
+    // whose fixed point is
+    //     a = ink / (1 - fade * (1 - ink))
+    // At the old 0.090 that is 0.75 for the mix and 0.70 for the reference,
+    // NOT the 2.73 the additive model predicted, and NOTHING EVER CLIPPED:
+    // source-over approaches 1 asymptotically and only reaches it at ink 1.
+    // That is why raising the ink did brighten the trail when the arithmetic
+    // said it could not.
+    //
+    // THE NUMBER THAT MATTERS IS THE SINGLE STROKE, NOT THE STEADY STATE. A
+    // ghost is made of pixels the curve visited ONCE and then left; the steady
+    // state only describes the few it never leaves. So the ink is set by what
+    // one visit is worth:
+    //     one stroke, mix, weight 1.00:  0.380 = 97 of 255
+    //     one stroke, ref, weight 0.80:  0.304 = 78 of 255
+    // THE DWELLING CORE WILL SATURATE, and that is intended: the envelope a
+    // signal holds goes white while everything it merely passed through stays
+    // a clear, separately visible ghost.
+    // RAISE THE FADE WITHOUT LOWERING THE INK AND EVERYTHING SATURATES TO
+    // WHITE; lower the fade without raising the ink and the trail vanishes.
+    // THE FADE IS DERIVED FROM THE HOP RATE, not from a fixed number, because
+    // the trail now advances once per published FFT and that rate follows the
+    // sample rate:
+    //     hopRate = sampleRate / kVisHopSamples      43.07 Hz at 44.1k
+    //                                                46.88 Hz at 48k
+    //     fade    = exp (-ln (20) / (3 * hopRate))   three seconds to 5%
+    //             = 0.9772 at 44.1 kHz, 0.9790 at 48 kHz
+    const double sr      = owner != nullptr && owner->processorRef.getSampleRate() > 0.0
+                             ? owner->processorRef.getSampleRate() : 44100.0;
+    const double hopRate = sr / (double) MeterEngine::kVisHopSamples;
+    const float  kTrailFade = (float) std::exp (-std::log (20.0) / (3.0 * hopRate));
+    // BOTH 1.0 BECAUSE THE APPROVED PICTURE IS THE OPAQUE ONE. Until now the
+    // ordering below discarded these values and every stroke landed at alpha
+    // 1.0 regardless; that is what is on screen and what was approved. The
+    // ordering is fixed, so THE KNOBS NOW WORK: lower kTrailRefW to pull the
+    // reference back behind the mix, lower kTrailInk for a fainter cloud.
+    constexpr float kTrailInk  = 1.0f;
+    // THE TRACE AXES GET THEIR OWN INK, AND SPECTRUM'S 1.0 DOES NOT MOVE.
+    //
+    // A SLOW LINE SATURATES ITS OWN TRAIL AND LEAVES THE FILAMENT NOWHERE TO
+    // SHOW. At ink 1.0 the source-over fixed point for a pixel the line sits
+    // on every hop is ink / (1 - fade*(1-ink)) = 1.0 / 1.0 = 1.0, reached on
+    // the FIRST stroke: the fade does nothing where the line does not move.
+    // Spectrum gets away with it because its curve moves several pixels a hop,
+    // so the opaque pixels are spread over a wide fan with decaying ghosts
+    // between them. Loudness, dynamics and stereo image are one-poled figures
+    // that move well under the 1.8 px stroke width per hop (measured: 1.0 px
+    // for 0.1 dB of loudness, 1.2 px for 0.1 dB of crest), so every stroke
+    // lands on the last one and the band goes solid immediately. A filament
+    // drawn in the SAME colour over a band already at alpha 1.0 of that colour
+    // is not dim, it is invisible: it changes no pixel.
+    //
+    // 0.25 gives a stationary fixed point of 0.936 instead of 1.000, so the
+    // ghosts build over about a second rather than instantly and the filament
+    // has something to sit on top of.
+    //
+    // KATHY APPROVED THE SPECTRUM PICTURE AND IT MUST NOT MOVE, which is the
+    // whole reason this is a second constant rather than a lower kTrailInk.
+    constexpr float kTraceTrailInk = 0.25f;
+
+    // THE TRACE TRAIL KEEPS ITS OWN HUE; ONLY THE FILAMENT IS LIFTED.
+    //
+    // THIS, NOT THE INK, IS WHAT MAKES THE FILAMENT VISIBLE HERE. Read that
+    // before touching kTraceTrailInk above: it was lowered from 1.0 to 0.25 on
+    // the hypothesis that a fainter stroke would let the line show, and the
+    // arithmetic says it cannot. A line that sits in the same pixels for 129
+    // hops (three seconds at 43.07 Hz) saturates its trail at ANY ink: the
+    // fixed point ink / (1 - fade*(1-ink)) is 1.000 at ink 1.0 and still 0.936
+    // at 0.25. Lowering it again chases the same symptom and will not work.
+    //
+    // THE ACTUAL DEFECT WAS THAT BOTH LAYERS WERE THE SAME COLOUR. The trail
+    // and the filament both stroked c.interpolatedWith(white, kMatchTrailWhite),
+    // so a bright line drawn over a saturated band of ITSELF changed no pixel.
+    // Now the trace trail strokes the axis colour NEAT and the filament keeps
+    // its lift, so the picture is a light line over a coloured band:
+    //
+    //     trail    mix #06B6D4 (luma 147)   ref #A0A0B8 (luma 162)
+    //     filament mix #5DD0E3 (luma 185)   ref #C1C1D1 (luma 194)
+    //     the filament is 26% brighter on the mix, 20% on the reference
+    //
+    // SPECTRUM IS NOT TOUCHED and must not be: kMatchTrailWhite still lifts
+    // both of its layers, because its curve moves enough that its ghosts are a
+    // fan of partial alphas rather than a solid band, and Kathy approved that
+    // picture. That is the whole reason this is a separate constant.
+    constexpr float kTraceTrailWhite = 0.0f;
+    constexpr float kTrailRefW = 1.0f;
+    // HOW FAR TOWARD WHITE, AND WHY IT CAME BACK DOWN. At 0.78 the two clouds
+    // were nearly the same near-white, which was fine while the filament
+    // carried the colour key. THE FILAMENT IS GONE, so the clouds are the ONLY
+    // thing saying which fan is which, and ON EVERY AXIS THE TWO SIDES OCCUPY
+    // THE SAME REGION OF THE PLOT: strokeVis maps both through one tLo/tHi
+    // over the whole rect, traceOf maps both rings through one
+    // matchTraceRange over the whole rect. Nothing separates them by position.
+    // At 0.35 each keeps its own hue while still reading as light:
+    //     mix  #5dd0e3   (C::blue  toward white)
+    //     ref  #c1c1d1   (C::text2 toward white)
+    // SHARED WITH THE FILAMENT, which lifts its colours the same way so the
+    // bright line is the same hue as the ghosts it sits on.
+    constexpr float kTrailWhite = echojay::kMatchTrailWhite;
+
+    if (plot.getWidth() <= 8 || plot.getHeight() <= 8) return;
+    if (trailPlot != plot || trailAxis != axis || trailA.isNull() || trailB.isNull())
+    {
+        trailA = juce::Image (juce::Image::ARGB, plot.getWidth(), plot.getHeight(), true);
+        trailB = juce::Image (juce::Image::ARGB, plot.getWidth(), plot.getHeight(), true);
+        trailPlot = plot;
+        trailAxis = axis;
+        trailUseA = true;
+        trailTick = -1;
+
+        // THE ONE-POLE STATE DIES WITH THE IMAGES, on the same trigger and in
+        // the same place, because it describes the same columns: a row smoothed
+        // for 667 columns says nothing about 800, and an axis change means the
+        // numbers are no longer even the same quantity. Reset means UNSEEDED,
+        // not zeroed: the next hop seeds each side with that hop's own value.
+        visRowCols = plot.getWidth();
+        visRowMix.assign ((size_t) visRowCols, 0.0f);
+        visRowRef.assign ((size_t) visRowCols, 0.0f);
+        visRowHop.assign ((size_t) visRowCols, 0.0f);
+        visRowScratch.assign ((size_t) visRowCols, 0.0f);
+        visRowMixInit = visRowRefInit = false;
+    }
+    // The caller has already established that this is a NEW HOP; this guard
+    // keeps advanceTrail honest if it is ever called twice for one.
+    if (trailTick == (int) trailHop) return;
+    trailTick = (int) trailHop;
+
+    auto& src = trailUseA ? trailA : trailB;
+    auto& dst = trailUseA ? trailB : trailA;
+    trailUseA = ! trailUseA;
+
+    dst.clear (dst.getBounds());
+    juce::Graphics ig (dst);
+    ig.setOpacity (kTrailFade);
+    ig.drawImageAt (src, 0, 0);
+
+
+    // THE TRAIL GETS A WIDER SPAN THAN THE FILAMENT, and this is the third
+    // reason it read as a smear. The filament's range is fitted to the two
+    // stored curves, which is right for a comparison and squeezes the live
+    // variation into a band a few pixels tall. THE TRAIL IS NOT A COMPARISON,
+    // so it gets a fixed +/- 36 dB around each frame's own mean: the same
+    // fan the reference image has at the low end, with somewhere for the
+    // variation to go. THE FILAMENT'S OWN SCALE IS UNTOUCHED: this lo/hi is
+    // local to the image and nothing read off the picture uses it.
+    constexpr float kTrailSpanDb = echojay::kMatchTrailSpanDb;
+
+    // THE BIN WIDTH IS THE ENGINE'S OWN, NOT A HARDCODED NYQUIST. This read
+    // 24000.0 / kVisBins, which is 11.71875 Hz. The real width is
+    // sampleRate / kVisFftSize, 10.76660 Hz at 44.1 kHz, so every bin index
+    // was 8.8% too low and the whole picture sat 0.12 octaves below the axis
+    // it was drawn against. getVisualSpectrum already returns this number in
+    // its binHzOut parameter and both call sites were discarding it.
+    const double visBinHz = sr / (double) MeterEngine::kVisFftSize;
+
+    // AND FROM THE FINEST SPECTRUM A LIVE FRAME CARRIES. getVisualSpectrum
+    // hands back kVisBins = 2048 magnitudes against MeterData::spectrum's 64:
+    // thirty-two times the detail, so every frame wiggles in thirty-two times
+    // as many places, which is thirty-two times as many strands.
+    // ---- THE TIME CONSTANT, DERIVED RATHER THAN WRITTEN DOWN --------------
+    //
+    // A ONE-POLE PER COLUMN, advanced once per published hop, which is what
+    // Dynamics already does to its five figures and the reason its trail
+    // stacks into a sheet instead of a haze.
+    //
+    //     a = 1 - exp (-1 / (tau * hopRate))
+    //
+    // At tau = 0.30 s and 43.07 Hz that is 1 - exp (-1 / 12.92) = 0.0745, and
+    // at 48 kHz's 46.88 Hz it is 0.0686. THE COEFFICIENT IS NOT HARDCODED for
+    // the same reason the fade is not: a session at another sample rate must
+    // see the same THIRD OF A SECOND, not the same number of frames.
+    constexpr float kTrailTauSeconds = 0.30f;
+    const float kTrailPole = (float) (1.0 - std::exp (-1.0 / (kTrailTauSeconds * hopRate)));
+
+    /** One side's row: build this hop's smoothed reading, advance the one-pole
+        into the stored row, and stroke THE STORED ROW. */
+    auto strokeVis = [&] (const std::array<float, MeterEngine::kVisBins>& bins,
+                          std::vector<float>& row, bool& seeded,
+                          juce::Colour c, float weight)
+    {
+        const int cols = juce::jmax (2, plot.getWidth());
+        if ((int) row.size() < cols || (int) visRowHop.size() < cols
+            || (int) visRowScratch.size() < cols) return;
+
+        // A SPAN PER COLUMN, NOT A POINT, then a sixth of an octave across
+        // frequency. See matchVisRelRow: the point sample repeated one bin
+        // across 39 columns at the bottom and threw away eighteen bins in
+        // nineteen at the top.
+        //
+        // INTO visRowHop, NOT INTO row. The persistent row is what the one-pole
+        // is about to read; handing it in as working space would overwrite the
+        // previous values first, which silently turns the filter into a
+        // pass-through.
+        echojay::matchVisRelRow (bins.data(), MeterEngine::kVisBins, visBinHz,
+                                 cols, visRowHop.data(), visRowScratch.data());
+
+        if (! seeded)
+        {
+            // SEEDED WITH THIS HOP'S OWN VALUE, never with zero or with
+            // silence. Seeding at the floor makes the whole picture sweep up
+            // from the bottom of the plot every time the page is opened, which
+            // looks like a measurement settling and is nothing of the kind.
+            for (int x = 0; x < cols; ++x) row[(size_t) x] = visRowHop[(size_t) x];
+            seeded = true;
+        }
+        else
+        {
+            for (int x = 0; x < cols; ++x)
+                row[(size_t) x] += kTrailPole * (visRowHop[(size_t) x] - row[(size_t) x]);
+        }
+
+        juce::Path p;
+        for (int x = 0; x < cols; ++x)
+        {
+            const float y = echojay::matchVisYOffset (row[(size_t) x], kTrailSpanDb,
+                                                      plot.getHeight());
+            if (x == 0) p.startNewSubPath (0.0f, y);
+            else        p.lineTo ((float) x, y);
+        }
+        // SETCOLOUR FIRST, SETOPACITY SECOND. The other order discarded the
+        // ink: setColour replaces the whole fill, including the alpha the
+        // line before had just set, so every stroke landed at 1.0.
+        ig.setColour (c.interpolatedWith (juce::Colours::white, kTrailWhite));
+        ig.setOpacity (kTrailInk * weight);
+        // 1.8 px, NOT 1.0. At 1.0 or less a sloped path spreads one stroke
+        // across two pixel rows at about half coverage each, which is half the
+        // brightness the ink above is asking for.
+        ig.strokePath (p, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved,
+                                                juce::PathStrokeType::rounded));
+    };
+
+    auto stroke = [&] (const MatchRibbonRow& row, juce::Colour c, float weight)
+    {
+        juce::Path p;
+        const float dx = (float) plot.getWidth() / (float) (kMatchRibbonCols - 1);
+        for (int i = 0; i < kMatchRibbonCols; ++i)
+        {
+            const float y = juce::jlimit (0.0f, 1.0f, (hi - row[(size_t) i])
+                                                          / juce::jmax (0.0001f, hi - lo))
+                          * (float) plot.getHeight();
+            if (i == 0) p.startNewSubPath (0.0f, y);
+            else        p.lineTo (dx * (float) i, y);
+        }
+        // FAINT AND THIN: 1 px, at the ink, so one frame is a trace and only
+        // agreement between frames builds a line.
+        // SETCOLOUR FIRST, SETOPACITY SECOND. The other order discarded the
+        // ink: setColour replaces the whole fill, including the alpha the
+        // line before had just set, so every stroke landed at 1.0.
+        ig.setColour (c.interpolatedWith (juce::Colours::white, kTrailWhite));
+        ig.setOpacity (kTrailInk * weight);
+        // 1.8 px, NOT 1.0. At 1.0 or less a sloped path spreads one stroke
+        // across two pixel rows at about half coverage each, which is half the
+        // brightness the ink above is asking for.
+        ig.strokePath (p, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved,
+                                                juce::PathStrokeType::rounded));
+    };
+
+    // ---- THE TRACED AXES: THE FIGURE OVER TIME --------------------------
+    //
+    // The last six seconds of several figures, scrolling right to left, one
+    // line each. They run at different time constants, so they cross and
+    // separate where a single invented shape stacked on itself.
+    if (axis != echojay::MatchAxis::Spectrum)
+    {
+        const auto tr = matchTraceRange (axis);
+        auto traceOf = [&] (const Trace& t, juce::Colour c, float weight)
+        {
+            if (t.filled < 2) return;
+            const int n = t.filled;
+            for (int line = 0; line < kTraceLines; ++line)
+            {
+                if (! t.have[(size_t) line]) continue;
+                juce::Path p;
+                for (int k = 0; k < n; ++k)
+                {
+                    // Oldest at the left, newest at the right.
+                    const int idx = (t.write - n + k + kTraceLen * 2) % kTraceLen;
+                    const float x = (float) plot.getWidth() * (float) k / (float) (n - 1);
+                    // CLAMPED, AND THE CLAMP IS MEANT TO SHOW. A value past
+                    // either end draws a FLAT LINE ALONG THAT EDGE: it is
+                    // neither folded back nor dropped, because a figure pinned
+                    // at the top and a figure off the scale are different
+                    // things and the picture must not make them look alike.
+                    //
+                    // INSET BY HALF THE STROKE so a pinned line is drawn at
+                    // full brightness. At exactly 0 or exactly the height,
+                    // half of a 1.8 px stroke falls outside the image and the
+                    // clamped line comes out at half ink, which reads as a
+                    // line FADING rather than a line STOPPED.
+                    const float inset = 0.9f;
+                    const float t01 = juce::jlimit (0.0f, 1.0f,
+                                        (tr.second - t.v[(size_t) line][(size_t) idx])
+                                            / juce::jmax (0.0001f, tr.second - tr.first));
+                    const float y = inset + t01 * juce::jmax (1.0f, (float) plot.getHeight()
+                                                                        - 2.0f * inset);
+                    if (k == 0) p.startNewSubPath (x, y);
+                    else        p.lineTo (x, y);
+                }
+                // setColour FIRST: see strokeVis.
+                // kTraceTrailWhite, NOT kTrailWhite: the trace trail is the
+                // axis colour NEAT so the filament's lifted version reads as a
+                // light line over it. See the constants above.
+                ig.setColour (c.interpolatedWith (juce::Colours::white, kTraceTrailWhite));
+                ig.setOpacity (kTraceTrailInk * weight);
+                ig.strokePath (p, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved,
+                                                        juce::PathStrokeType::rounded));
+            }
+        };
+        traceOf (refTrace, C::text2, kTrailRefW);
+        traceOf (mixTrace, C::blue,  1.0f);
+        return;                      // the ribbon rows are the spectrum's alone
+    }
+
+    // A SIDE WITH NO FAST SOURCE GETS NO GHOST. Not a faked trail from one
+    // stored number: nothing is happening to a still capture.
+    //
+    // The two sides differ by WEIGHT rather than by a second alpha on the
+    // colour: one place decides how dark a frame is, so the saturation
+    // arithmetic above holds for both.
+    // THE REFERENCE FROM WHICHEVER SOURCE IT HAS. Rolling: the live
+    // analysis. Stopped: its own stored whole-file curve, expanded onto this
+    // same grid, so the picture keeps both sides instead of losing one.
+    //
+    // A STATIC CURVE SATURATES INTO A STEADY BAND, AND THAT IS CORRECT. It
+    // strokes the SAME path every hop, so the trail stacks in exactly one
+    // place and settles at ink / (1 - fade * (1 - ink)) rather than fanning
+    // out. It will look like a bug to whoever reads it next: it is not. A
+    // whole-file average does not move, and a fan would be drawing variation
+    // that the measurement does not have. The mix's fan beside it is what
+    // carries the movement.
+    if      (refVisOk)          strokeVis (refVis, visRowRef, visRowRefInit, C::text2, kTrailRefW);
+    else if (refStaticOk)       strokeVis (refStatic, visRowRef, visRowRefInit, C::text2, kTrailRefW);
+    else if (refFast != nullptr) stroke (*refFast, C::text2, kTrailRefW);
+    if      (mixVisOk)          strokeVis (mixVis, visRowMix, visRowMixInit, C::blue,  1.0f);
+    else if (mixFast != nullptr) stroke (*mixFast, C::blue,  1.0f);
+}
+
+// WHICH PAINTED REGION A POINT IS IN. One function, so the press and the hover
+// can never disagree about where a control is: they are the same rects from the
+// same pure layout.
+static int matchZoneAt (juce::Rectangle<int> bounds, juce::Point<int> p)
+{
+    const auto R = echojay::matchPageLayout (bounds);
+    if (R.button .contains (p)) return 1;
+    if (R.mixPick.contains (p)) return 2;
+    if (R.refPick.contains (p)) return 3;
+    if (R.mixWave.contains (p)) return 4;
+    if (R.refWave.contains (p)) return 5;
+    // 10..13 are the four axis tiles, in the enum's own order.
+    for (int i = 0; i < echojay::kMatchAxisCount; ++i)
+        if (echojay::matchAxisTile (R.axisRow, i).contains (p)) return 10 + i;
+    return 0;
+}
+
+void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
+{
+    if (owner == nullptr) return;
+    const int z = matchZoneAt (getLocalBounds(), e.getPosition());
+    switch (z)
+    {
+        case 1: press(); break;
+        // THE MIX PICKER CANNOT PLACE A REFERENCE and the reference picker
+        // writes into the slot that is already the reference side, which is why
+        // no pick can swap the two roles.
+        case 2: owner->openMatchMixPicker(); break;
+        case 3: owner->openReferenceBrowser (owner->matchRefIsTop_); break;
+        // PLAYBACK IS THE COMPARE DUAL-STREAM, not the A/B path: both streams
+        // are already rolling and analysed, so swapping is click-free and
+        // sample-aligned.
+        //
+        // A CLICK ON THE WAVE IS A SEEK, THE SAME GESTURE COMPARE HAS. It seeks,
+        // plays and makes that side audible in one move, through the one
+        // seekCompareStream both pages call. THIS REPLACES the plain
+        // toggle-audible this strip had: the Compare gesture does both at once
+        // and a click that only changed which side you heard, while the other
+        // page's identical click also moved the playhead, would be two meanings
+        // for one action.
+        case 4:
+        case 5:
+        {
+            const bool isRef   = (z == 5);
+            const int  slotIdx = isRef ? (owner->matchRefIsTop_ ? 0 : 1)
+                                       : (owner->matchRefIsTop_ ? 1 : 0);
+            const auto R    = echojay::matchPageLayout (getLocalBounds());
+            auto       lane = (isRef ? R.refWave : R.mixWave).withTrimmedBottom (9);
+            const auto btn  = echojay::matchWaveTransport (lane, isRef);
+            const auto wave = echojay::matchWaveLane (lane, isRef);
+            const auto& s   = isRef ? *owner->matchSlots().ref : *owner->matchSlots().mix;
+
+            // A LIVE SIDE HAS NO STORED STREAM, so neither gesture means
+            // anything on it: toggleComparePlay says so in its own comment and
+            // the strip draws "host" rather than a dead button.
+            if (s.kind == CompareSlotState::Kind::Live) break;
+
+            if (btn.contains (e.getPosition()))
+                owner->toggleComparePlay (slotIdx == 0);
+            else if (wave.contains (e.getPosition()))
+                owner->seekCompareStream (slotIdx,
+                                          echojay::matchWaveSeekFraction (wave, e.getPosition().x));
+            repaint();
+            break;
+        }
+        default:
+            // THE AXIS TILES. Selecting one changes the picture below and
+            // NOTHING else: nothing is sent, applied or written. A morph in
+            // flight is dropped rather than carried onto a picture it was not
+            // computed for.
+            if (z >= 10 && z < 10 + echojay::kMatchAxisCount)
+            {
+                const auto next = (echojay::MatchAxis) (z - 10);
+                if (next != axis)
+                {
+                    axis = next;
+                    morphing = false;
+                    morphPos = 0.0f;
+                    morphDone = false;
+                    refusedFor = 0.0f;
+                    repaint();
+                }
+            }
+            break;
+    }
+}
+
+void EchoJayEditor::MatchPanel::mouseMove (const juce::MouseEvent& e)
+{
+    const int z = matchZoneAt (getLocalBounds(), e.getPosition());
+    if (z != hotZone) { hotZone = z; buttonHot = (z == 1); repaint(); }
+}
+
+// THE CLOCK RUNS ONLY WHILE THE PAGE IS ON SCREEN. An invisible page asking for
+// 30 repaints a second is the shape that makes a plugin feel heavy for no
+// reason anyone can see.
+void EchoJayEditor::MatchPanel::visibilityChanged()
+{
+    if (isVisible())
+    {
+        openFade = 0.0f;       // the page fades in every time it opens
+        morphPos = 0.0f; morphing = false; morphDone = false;
+        refusedFor = 0.0f; buttonHot = false;
+        // The slots may have changed while this page was away, so the pair
+        // stored by the last opening is not this opening's: the first paint
+        // builds its own again rather than drawing what was true before.
+        tickSidesValid = false;
+        startTimerHz (60);
+    }
+    else
+    {
+        stopTimer();
+    }
+}
+
+void EchoJayEditor::MatchPanel::timerCallback()
+{
+    // 60 Hz SINCE THE TRAIL WENT ON THE HOP COUNTER. This dt drives the page
+    // fade, the link pulse, the morph and the refusal countdown, so leaving it
+    // at 1/30 with a 60 Hz timer would have played all four at DOUBLE speed.
+    constexpr float dt = 1.0f / 60.0f;
+    bool busy = false;
+
+    // THE CLOUDS STEP EVERY TICK, which is what makes a LIVE side come alive
+    // for free: its measurements change, so its targets move, so its points
+    // chase them. Nothing here smooths that into stillness.
+    if (owner != nullptr && isVisible())
+    {
+        // THE ONE BUILD OF THE TICK. paint reads what this stores.
+        tickSides      = owner->buildMatchSides();
+        tickSidesValid = true;
+        // The trail advances once per TICK, never once per repaint: a hover
+        // must not run the history faster than time.
+        ++tickSeq;
+    }
+
+    if (openFade < 1.0f) { openFade = juce::jmin (1.0f, openFade + dt * 4.0f); busy = true; }
+
+    // The link's pulse runs while the page is open: it is the one thing that
+    // moves before the press, and it says the screen is ready rather than
+    // stalled. 0.22 of the run per second, so it reads as a drift and not a
+    // scan line.
+    linkPhase += dt * 0.22f;
+    if (linkPhase > 1.0f) linkPhase -= 1.0f;
+    busy = true;
+
+    if (morphing)
+    {
+        morphPos += dt / 0.9f;                   // 900 ms end to end
+        if (morphPos >= 1.0f) { morphPos = 1.0f; morphing = false; morphDone = true; }
+        busy = true;
+    }
+
+    if (refusedFor > 0.0f)
+    {
+        refusedFor = juce::jmax (0.0f, refusedFor - dt);
+        busy = true;
+    }
+
+    if (! busy) stopTimer();
+    repaint();
+}
+
+bool EchoJayEditor::MatchPanel::keyPressed (const juce::KeyPress& k)
+{
+    if (k == juce::KeyPress::escapeKey && owner != nullptr)
+    {
+        owner->setRefSubTab (echojay::RefSubTab::Compare);
+        return true;
+    }
+    // RETURN AND SPACE PRESS THE BUTTON. It is painted rather than a child, so
+    // without this the page's one control is reachable by mouse only, and the
+    // panel already takes keyboard focus when it opens.
+    if (k == juce::KeyPress::returnKey || k == juce::KeyPress::spaceKey)
+    {
+        press();
         return true;
     }
     return false;
@@ -6270,15 +10809,36 @@ void EchoJayEditor::updateTransportBar()
 {
     int aud = processorRef.cmpAudible.load();
 
-    // A/B selector — lit up when that side is audible
+    // ---- THE BUTTON SHOWS WHAT YOU HEAR, NOT WHAT IS SELECTED ------------
+    //
+    // These used to light from cmpAudible alone. cmpAudible is the SELECTION;
+    // what reaches your ears is cmpMixTargetGain(rolling, slot, audible,
+    // stopAtZero), and the two diverge the moment the selected slot is not
+    // rolling. Two reports were exactly that: B lit while the live signal
+    // played on a fresh open, and B still lit after unpressing SYNC stopped
+    // the stream. The button was telling the truth about a variable and
+    // lying about the audio.
+    const int heard = audibleCompareSlot();
+
+    // WHEN NOTHING IS AUDIBLE YOU ARE HEARING THE HOST, AND THAT IS ONLY
+    // SLOT A WHEN SLOT A IS LIVE. openCompareSlotMenu offers the same menu
+    // for both slots, so a user CAN put a capture or a reference in A;
+    // lighting A then would claim you are hearing that capture when you are
+    // hearing your mix. So this is a THIRD STATE, not a fallback to A:
+    // neither button lights, which is the honest answer for "you are
+    // monitoring the host through a slot that is not playing".
+    const bool aIsLive = (compareTop_.kind == CompareSlotState::Kind::Live);
+    const bool litA = (heard == 0) || (heard < 0 && aIsLive);
+    const bool litB = (heard == 1);
+
     cmpABtn_.setColour(juce::TextButton::buttonColourId,
-                       aud == 0 ? juce::Colour(0xff1a2d4a) : C::bg3);
+                       litA ? juce::Colour(0xff1a2d4a) : C::bg3);
     cmpABtn_.setColour(juce::TextButton::textColourOffId,
-                       aud == 0 ? C::blue : C::text3);
+                       litA ? C::blue : C::text3);
     cmpBBtn_.setColour(juce::TextButton::buttonColourId,
-                       aud == 1 ? juce::Colour(0xff1a2d4a) : C::bg3);
+                       litB ? juce::Colour(0xff1a2d4a) : C::bg3);
     cmpBBtn_.setColour(juce::TextButton::textColourOffId,
-                       aud == 1 ? C::blue : C::text3);
+                       litB ? C::blue : C::text3);
 
     // Play button reflects the audible side's play state
     bool anyPlaying = false;
@@ -6290,13 +10850,9 @@ void EchoJayEditor::updateTransportBar()
     cmpPlayBtn_.setColour(juce::TextButton::textColourOffId,
                           anyPlaying ? C::green : C::text2);
 
-    // CODECS launcher stays outline-lit while codec mode is engaged (every
-    // enter/exit/slot-change path funnels through updateComparePlayBtns)
-    if (codecsBtn_.active != codecModeActive_)
-    {
-        codecsBtn_.active = codecModeActive_;
-        codecsBtn_.repaint();
-    }
+    // The CODECS launcher's lit-while-engaged state died with the launcher.
+    // Codec mode still announces itself: the chip at the right edge of the
+    // transport, and the PLAYBACK sub-tab it was entered from.
 }
 
 void EchoJayEditor::runAICompare()
@@ -6311,8 +10867,9 @@ void EchoJayEditor::runAICompare()
     }
     // STEP 1: the compare context reads the VISIBLE slots (compareTop_/
     // compareBot_) via getSlotMeterData — the ONE source the buttons, audition,
-    // gate and labels already share — not the hidden compareSlotABox/B dropdown
-    // that no button ever synced. Unasked so a cross-scope pair triggers the
+    // gate and labels already share. The hidden compareSlotABox/B dropdowns
+    // this used to warn against are deleted (12 Sep 2026); the slots are now
+    // the only selection that exists. Unasked so a cross-scope pair triggers the
     // ASK (STEP 3); the chip re-enters with Anyway / NumbersOnly.
     runAICompareWith(compareTop_, compareBot_, CompareScope::Unasked);
 }
@@ -6346,11 +10903,45 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
 
     const juce::String labelA = slotDisplayName(slotA);
     const juce::String labelB = slotDisplayName(slotB);
-    const MeterData    da     = getSlotMeterData(slotA);
-    const MeterData    db     = getSlotMeterData(slotB);
+    MeterData          da     = getSlotMeterData(slotA);
+    MeterData          db     = getSlotMeterData(slotB);
+
+    // LIVE LRA IS SUPPRESSED FOR COMPARISON (11 Sep 2026).
+    //
+    // The meter engine's LUFS integrators are reset ONLY by releaseResources
+    // (PluginProcessor.cpp:589); resetHolds explicitly leaves them running
+    // (MeterEngine.cpp:994-997), and nothing user-facing resets them. So a Live
+    // loudness range spans everything audible since the plugin was activated.
+    //
+    // Integrated survives that and keeps its caveat: gated at -70 LUFS and -10 LU,
+    // it is still a loudness-weighted mean, nudged by whatever else was played.
+    // LOUDNESS RANGE DOES NOT. It measures SPREAD, so across several songs the
+    // spread is the difference BETWEEN songs, not the dynamics within this mix.
+    // It is a figure meaning something other than its label, set beside a
+    // reference's whole-file LRA which means exactly its label.
+    //
+    // THE RULE (plan section 1.5 item 2 and 4B.5d): caveat when something true
+    // survives, suppress when nothing does. The tonal diff keeps its caveat
+    // because the DIRECTION of a normalised band delta survives a reduction
+    // mismatch. A session LRA has no surviving component, in magnitude or in
+    // direction, so there is nothing for a caveat to preserve.
+    //
+    // Zeroed HERE, at the one point that feeds both consumers, using the
+    // existing "LRA 0 = unavailable" convention (PluginProcessor.cpp:3302-3307):
+    // the model's text table renders N/A and the figure card omits the key. No
+    // consumer learns anything new. Lifted by phase 4B, when one audibility
+    // window bounds every Live figure and LRA means its label again.
+    if (slotA.kind == CompareSlotState::Kind::Live) da.loudnessRange = 0.0f;
+    if (slotB.kind == CompareSlotState::Kind::Live) db.loudnessRange = 0.0f;
+    // The spectra travel separately from the MeterData, because MeterData
+    // carries whichever spectrum the source selected for display and that is
+    // the wrong array for a reference. See getSlotSpectralEvidence.
+    const echojay::SpectralEvidence sa = getSlotSpectralEvidence(slotA);
+    const echojay::SpectralEvidence sb = getSlotSpectralEvidence(slotB);
     juce::String compareCtx = processorRef.buildCompareContext(
         da, db, labelA, labelB,
-        slotDurationSeconds(slotA), slotDurationSeconds(slotB), numbersOnly);
+        slotDurationSeconds(slotA), slotDurationSeconds(slotB), numbersOnly,
+        sa, sb);
 
     // The figure CARD is built here, client-side, from the SAME two MeterData
     // structs the context was built from - never from the model's reply. A
@@ -6360,7 +10951,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     // matters because the prose no longer restates the numbers.
     const bool isCross = crossScope(slotA, slotB);
     const juce::String figuresJson =
-        processorRef.buildCompareFiguresJson(da, db, labelA, labelB, isCross);
+        processorRef.buildCompareFiguresJson(da, db, labelA, labelB, isCross, sa, sb);
 
     if (compareCtx.isEmpty()) {
         chatMessages.push_back({"assistant", "Select two different items to compare."});
@@ -6960,7 +11551,7 @@ void EchoJayEditor::measureLinkStrips()
     const int bandL = kLinkPad;
     const int bandR = shape.mW - kLinkPad;
     const int bandW = juce::jmax(0, bandR - bandL);
-    const int abOff = abBarShowing ? kAbBarH : 0;
+    const int abOff = bottomBarsH();
 
     int y = topH + kLinkTopPad;
     linkTitleRect_ = { bandL, y, bandW, 18 };
@@ -11551,66 +16142,121 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
     int aX = area.getX(), aY = area.getY(), aW = area.getWidth();
     int cy = aY;
 
-    // --- Preset row (controls positioned by resized()) ---
-    cy += 26;
-
-    // --- Reference drop zone ---
-    const int dropH = 82;
-    g.setColour(C::bg3);
-    g.fillRoundedRectangle((float)aX, (float)cy, (float)aW, (float)dropH, 8.0f);
-    g.setColour(C::purple.withAlpha(0.3f));
-    g.drawRoundedRectangle((float)aX + 0.5f, (float)cy + 0.5f, (float)aW - 1.0f, (float)dropH - 1.0f, 8.0f, 1.0f);
-
-    activeRefRemoveBtns = 0;
-
-    if (refs.empty())
+    // --- THE REFERENCE BAR ---
+    // resized() authored refBarRects_ from echojay::refBarLayout; this paints
+    // it and computes NOTHING. The preset row and the 106px drop zone that
+    // used to be here are gone: the browser does what they were pretending to
+    // do, and the 164 pixels go to the waveforms.
+    //
+    // THE ZONE WAS NEVER THE DROP TARGET. EchoJayEditor is itself the
+    // FileDragAndDropTarget and its filesDropped discards both coordinates, so
+    // a drop anywhere on this window has always worked and still does. The big
+    // rectangle was a sign pointing at a target, not a target. The bar is the
+    // sign now, and it lights on hover so the sign is still true.
     {
-        g.setColour(juce::Colour(0xffFF6B9D));
-        g.fillRoundedRectangle((float)aX + 10, (float)cy + (float)(dropH - 18) / 2, 64.0f, 18.0f, 4.0f);
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
-        g.drawText("REFERENCE", aX + 10, cy + (dropH - 18) / 2, 64, 18, juce::Justification::centred);
-        g.setColour(C::text3);
-        g.setFont(juce::Font(juce::FontOptions(10.0f)));
-        g.drawText("Drop a reference track to compare", aX + 82, cy, aW - 90, dropH, juce::Justification::centredLeft);
-    }
-    else
-    {
-        const int tagPad = 6, tagGap = 4, tagsPerRow = 4;
-        int tagW = (aW - tagPad * 2 - tagGap * (tagsPerRow - 1)) / tagsPerRow;
-        const int tagH = 20, tagRowGap = 4;
+        const auto& rb = refBarRects_;
+        const bool hot = dragHovering;
 
-        for (int i = 0; i < (int)refs.size() && i < 12; ++i)
+        g.setColour (hot ? juce::Colour (0xff1a2d4a) : C::bg3);
+        g.fillRoundedRectangle (rb.bar.toFloat(), 8.0f);
+        g.setColour (hot ? C::blue : C::border2);
+        g.drawRoundedRectangle (rb.bar.toFloat().reduced (0.5f), 8.0f, 1.0f);
+
+        // The name of the reference the bar drives, or the invitation. One
+        // string, so an empty library is told what to do in the place it would
+        // otherwise be told nothing.
+        const auto refsNow = processorRef.getReferenceAnalyser().getReferences();
+        const int  cur     = refBarCurrentIndex();
+        juce::String barName;
+        if (hot)                                   barName = "Drop to add a reference";
+        else if (refsNow.empty())                  barName = "No references yet. Drop a track here, or use Add.";
+        else if (cur >= 0 && cur < (int) refsNow.size()) barName = refsNow[(size_t) cur].name;
+        else                                       barName = "No reference in " + juce::String (refBarIsTop() ? "A" : "B");
+
+        g.setColour (hot ? C::blue : (cur >= 0 ? C::text : C::text3));
+        g.setFont (juce::Font (juce::FontOptions (12.0f,
+                    cur >= 0 && ! hot ? juce::Font::bold : juce::Font::plain)));
+        g.drawText (barName, rb.name, juce::Justification::centredLeft, true);
+
+        // Which slot the bar is driving, stated rather than assumed. Without
+        // it the arrows change something the user cannot see they aimed at.
+        //
+        // FROM ITS OWN RECT NOW. This used to be drawn at rb.play.getRight()+2
+        // with a hardcoded 12px width, spanning 108..120 while the name began
+        // at 110, so the letter was painted ON TOP of the first characters of
+        // every reference name. A rect computed in paint, invisible to rf PIN2
+        // because it was not in RefBarRects. Open list 152's family, inside the
+        // bar that pin exists to guard.
+        g.setColour (C::text3);
+        g.setFont (juce::Font (juce::FontOptions (8.5f, juce::Font::bold)));
+        g.drawText (refBarIsTop() ? "A" : "B", rb.slot, juce::Justification::centred);
+
+        // THE SCOPE CHIP: what the arrows step through, beside the arrows.
+        // Empty rect when the scope is ALL REFERENCES or when the bar is too
+        // narrow to carry it alongside a message.
+        if (! rb.scope.isEmpty())
         {
-            int col = i % tagsPerRow, row = i / tagsPerRow;
-            int tagX = aX + tagPad + col * (tagW + tagGap);
-            int tagY2 = cy + tagPad + row * (tagH + tagRowGap);
-
-            g.setColour(juce::Colour(0xffFF6B9D).withAlpha(0.15f));
-            g.fillRoundedRectangle((float)tagX, (float)tagY2, (float)tagW, (float)tagH, 6.0f);
-            g.setColour(juce::Colour(0xffFF6B9D).withAlpha(0.4f));
-            g.drawRoundedRectangle((float)tagX + 0.5f, (float)tagY2 + 0.5f, (float)tagW - 1.0f, (float)tagH - 1.0f, 6.0f, 1.0f);
-            g.setColour(juce::Colour(0xffFF8FAB));
-            g.setFont(juce::Font(juce::FontOptions(8.0f)));
-            g.drawText(refs[(size_t)i].name, tagX + 4, tagY2, tagW - 18, tagH, juce::Justification::centredLeft);
-            g.setColour(C::text3);
-            g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
-            g.drawText("x", tagX + tagW - 14, tagY2, 12, tagH, juce::Justification::centred);
-
-            if (activeRefRemoveBtns < kMaxRefRemoveBtns)
-            {
-                int idx = activeRefRemoveBtns++;
-                refRemoveBtns[(size_t)idx].setBounds(tagX + tagW - 16, tagY2, 16, tagH);
-                refRemoveBtns[(size_t)idx].setVisible(true);
-                refRemoveBtns[(size_t)idx].toFront(false);
-            }
+            const auto chip = echojay::refScopeChipText (processorRef.referenceScope);
+            g.setColour (C::blue.withAlpha (0.18f));
+            g.fillRoundedRectangle (rb.scope.toFloat().reduced (0.0f, 3.0f), 4.0f);
+            g.setColour (C::blue);
+            g.setFont (juce::Font (juce::FontOptions (8.5f, juce::Font::bold)));
+            g.drawText (chip, rb.scope.reduced (4, 0), juce::Justification::centred, true);
         }
     }
 
-    for (int i = activeRefRemoveBtns; i < kMaxRefRemoveBtns; ++i)
-        refRemoveBtns[(size_t)i].setVisible(false);
+    // refRemoveBtns went with the tag grid, and now they are gone entirely:
+    // "Remove from library" on the browser row is the one way to remove a
+    // reference, so eight hidden buttons whose bounds were authored by paint()
+    // had nothing left to become. Nothing here hides them any more because
+    // there is nothing to hide.
 
-    cy += dropH + 4;
+    cy += echojay::kRefBarBandH;
+
+    // --- THE SUB-TAB ROW ---
+    // Compare, Match and Playback, in that order (MATCH_REFERENCE_PLAN 8A.1).
+    // Drawn from the names table by position, so the row is whatever the enum
+    // says and never a list written out here.
+    {
+        const auto& sr = refSubTabRects_;
+        for (int i = 0; i < echojay::kRefSubTabCount; ++i)
+        {
+            const bool on = (i == (int) refSubTab_);
+            auto tr = sr.tab[i];
+            // Compare's own selection idiom, the meter row's: filled
+            // 0xff1a2d4a with C::blue, not a new colour for a new control.
+            g.setColour (on ? juce::Colour (0xff1a2d4a) : C::bg3);
+            // THE AXIS ROW'S CORNER, read from the shared constant rather than
+            // the 5.0f that used to be here: same family, same radius.
+            g.fillRoundedRectangle (tr.toFloat(), echojay::kEjCellRadius);
+            g.setColour (on ? C::blue : C::text3);
+            g.setFont (juce::Font (juce::FontOptions (9.5f, juce::Font::bold)));
+            g.drawText (echojay::refSubTabName (i), tr, juce::Justification::centred);
+        }
+    }
+    cy += echojay::kRefSubTabBandH;
+
+    // THE SEEK AREAS ARE ABSENT WHENEVER THE WAVEFORM THAT OWNS THEM DID NOT
+    // DRAW. Cleared here, on every paint, before any path below diverges; the
+    // only thing that makes one present again is paintCompareWaveform's
+    // register, which comes after every early return in that function, so it
+    // is reached only when the static waveform actually draws.
+    //
+    // Before this, an area stayed live from whatever paint last drew a waveform
+    // there, and mouseDown's click-to-seek reads them whenever the Compare view
+    // is up. The paths that drew no waveform and left the old rectangle were:
+    // the sub-tab return just below; a meter other than Waveform, in either
+    // panel; an empty bottom panel; and, inside paintCompareWaveform, a panel
+    // under 10 px, a Live slot, and a slot with no stored waveform points.
+    // Clearing once here covers all of them, and any skip path added later.
+    //
+    // Nothing that draws reads these areas, so clearing them changes no pixel.
+    clearCmpWaveSeekAreas();
+
+    // EVERYTHING BELOW BELONGS TO THE COMPARE SUB-TAB. Playback draws itself,
+    // as codecPanel_, which resized() has given the rest of the area.
+    if (refSubTab_ != echojay::RefSubTab::Compare)
+        return;
 
     // --- Meter-type selector row (buttons positioned by resized()) ---
     cy += 28; // 24px button height + 4px gap
@@ -12027,6 +16673,8 @@ void EchoJayEditor::showSettingsView()
     autoDialToggle.setVisible(true);
     dialWritesToggle.setToggleState(api.getDialWritesBlocked(), juce::dontSendNotification);
     dialWritesToggle.setVisible(true);
+    echoJayOnlyToggle.setToggleState(api.getEchoJayOnly(), juce::dontSendNotification);
+    echoJayOnlyToggle.setVisible(true);
 
     // Plugins row: scan button + View all + Help & Support. No inline list.
     settingsScanBtn.setVisible(true);
@@ -12128,6 +16776,7 @@ void EchoJayEditor::hideSettingsView()
     uiScaleCombo.setVisible(false);
     autoDialToggle.setVisible(false);
     dialWritesToggle.setVisible(false);
+    echoJayOnlyToggle.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
@@ -15116,12 +19765,16 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     label("HEADPHONES");
     label("GENRES YOU WORK WITH");
     label("UI SCALE");
+    // CHAIN SUGGESTIONS IS THREE ROWS AND label() ADVANCES PAST ONE.
+    // resized() places auto-dial, do-not-dial and EchoJay-only in this
+    // section; this walk has to cover the same distance or every label below
+    // drifts upward. It already did: aa455ff added the do-not-dial row to
+    // resized() and not here, so "YOUR PLUGINS" and the whole withheld
+    // section have been painting one row (38px) above their own controls in
+    // the shipped build. Adding a third row without this line would have
+    // doubled it rather than introduced it.
     label("CHAIN SUGGESTIONS");
-    // The do-not-dial toggle sits directly beneath the auto-dial toggle
-    // (resized() places it, same height, no label of its own), so the paint
-    // cursor must step past it too or the next heading paints under it.
-    // (6 Sep 2026, merge gate V3: the render showed YOUR PLUGINS hidden.)
-    y += fh + 8;
+    y += 2 * (fh + 8);   // the two rows beyond the one label() already covered
 
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
@@ -16584,6 +21237,14 @@ void EchoJayEditor::paintSpectrogramContent(juce::Graphics& g, int x, int y, int
 // curve lands gracefully at 20k instead of nose-diving. Applied at draw
 // time only, referenced to 1 kHz.
 static constexpr float kSpectrumTiltDbPerOct = 4.5f;
+
+// THE ONE EXPRESSION OF THE TILT. paintSpectrumCurve applies it to every bin it
+// draws, and the Match page has to agree with the curve it draws over, so the
+// expression is a member rather than a lambda private to one function.
+float EchoJayEditor::spectrumTiltedDb (float db, double freqHz) noexcept
+{
+    return db + kSpectrumTiltDbPerOct * (float) std::log2 (freqHz / 1000.0);
+}
 // Frame-to-frame lerp for the visual-FFT bins — higher = snappier, keeps
 // Pro-Q-style peaks from being rounded off.
 static constexpr float kSpectrumVisLerp = 0.5f;
@@ -16686,10 +21347,10 @@ void EchoJayEditor::paintSpectrumCurve(juce::Graphics& g, int x, int y, int w, i
         }
     }
 
-    // Display tilt (dB at this frequency, re 1 kHz) — display-only
-    auto tilted = [](float db, double freq) {
-        return db + kSpectrumTiltDbPerOct * (float)std::log2(freq / 1000.0);
-    };
+    // Display tilt (dB at this frequency, re 1 kHz), display-only, and now
+    // through the one exposed expression so the Match page's blocks sit where
+    // this curve draws rather than 4.5 dB per octave away from it.
+    auto tilted = [](float db, double freq) { return spectrumTiltedDb (db, freq); };
 
     // Auto-range over TILTED values; 20 Hz .. 20 kHz bins only
     const int binLoLimit = juce::jmax(1, (int)(20.0 / visBinHz));
@@ -16701,8 +21362,10 @@ void EchoJayEditor::paintSpectrumCurve(juce::Graphics& g, int x, int y, int w, i
         if (hasPeak)
             vPeak = juce::jmax(vPeak, tilted((*style.peakHold)[(size_t)k], f));
     }
-    const float vDbMax = std::max(-20.0f, vPeak + 3.0f);
-    const float vDbMin = vDbMax - 66.0f;
+    // The caller's range when it supplied one (a surface drawing more than one
+    // curve in one rect), otherwise the auto-range this has always used.
+    const float vDbMax = style.hasDbRange ? style.dbMax : std::max(-20.0f, vPeak + 3.0f);
+    const float vDbMin = style.hasDbRange ? style.dbMin : vDbMax - 66.0f;
 
     // Region-aware knot sampling + clamped Catmull-Rom spline emit
     auto buildVisPath = [&](const std::array<float, MeterEngine::kVisBins>& bins,
@@ -16832,6 +21495,12 @@ void EchoJayEditor::paintSpectrumCurve(juce::Graphics& g, int x, int y, int w, i
     // Heat-map fill — a TINT, not a solid: bright band concentrated at the
     // top, alpha falling away fast so the glow hugs the curve edge and the
     // lower area stays near-background navy.
+    //
+    // SKIPPED FOR A LINE-ONLY CURVE (20 Sep 2026). Two filled curves in one
+    // rect hide each other: the Match page draws the reference as an outline
+    // behind the mix's fill so both stay readable. Default false, so the
+    // spectrum panel and both Compare panels are untouched.
+    if (! style.lineOnly)
     {
         g.saveState();
         g.reduceClipRegion(activePath);
@@ -16847,15 +21516,31 @@ void EchoJayEditor::paintSpectrumCurve(juce::Graphics& g, int x, int y, int w, i
         g.restoreState();
     }
 
-    // Single subtle glow under a crisp level-coloured line
+    // Single subtle glow under a crisp level-coloured line.
+    //
+    // A WIDER, FAINTER PASS UNDER THE USUAL ONE when the caller asks for it
+    // (20 Sep 2026), so the light reads as coming OFF the curve rather than as
+    // a band beside it. OFF BY DEFAULT: the spectrum panel and both Compare
+    // panels are not asking, and this must not restyle them.
+    //
+    // style.lineAlpha scales the whole set: the Match page's reference sits
+    // back at less than one so the two curves stop competing. Every existing
+    // caller gets 1.0 and the picture it had.
     auto activeLine = buildVisPath(visDisplay, false);
-    g.setColour(glowCol.withAlpha(0.15f));
+    const float la = juce::jlimit (0.0f, 1.0f, style.lineAlpha);
+    if (style.wideGlow)
+    {
+        g.setColour(glowCol.withAlpha(0.05f * la));
+        g.strokePath(activeLine, juce::PathStrokeType(9.0f,
+                     juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    g.setColour(glowCol.withAlpha(0.15f * la));
     g.strokePath(activeLine, juce::PathStrokeType(5.0f,
                  juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     {
         juce::ColourGradient lineGrad(
-            heatTop, (float)x, (float)y,
-            lineBot, (float)x, (float)(y + barMaxH), false);
+            heatTop.withMultipliedAlpha (la), (float)x, (float)y,
+            lineBot.withMultipliedAlpha (la), (float)x, (float)(y + barMaxH), false);
         g.setGradientFill(lineGrad);
         g.strokePath(activeLine, juce::PathStrokeType(1.2f,
                      juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
@@ -17811,14 +22496,19 @@ void EchoJayEditor::paint(juce::Graphics& g)
                    juce::Justification::centredLeft);
     }
 
-    // Codec-mode chip: status lives BESIDE the CODECS launcher at the right
-    // edge (chip grows leftward from the button, clamped so it never touches
-    // the centred transport cluster; label ellipsises when clamped)
-    if (currentView == View::Compare && codecModeActive_ && codecsBtn_.isVisible())
+    // Codec-mode chip: it grew leftward from the CODECS launcher at the right
+    // edge. The launcher is gone, so the chip anchors to the right edge
+    // ITSELF, which is where the launcher stood. Same geometry, one fewer
+    // dependency, and it no longer disappears when a button it does not belong
+    // to is hidden.
+    if (currentView == View::Compare && codecModeActive_
+        && refSubTab_ == echojay::RefSubTab::Compare)
     {
         juce::Font chipFont(juce::FontOptions(11.0f));
         int natural = juce::GlyphArrangement::getStringWidthInt(chipFont, codecChipLabel_) + 36;
-        auto cb = codecsBtn_.getBounds();
+        const juce::Rectangle<int> cb (mW - 88 - 10,
+                                       getHeight() - 36 - bottomBarsH(),
+                                       88, 26);
         int minX = aiCompareBtn.isVisible() ? aiCompareBtn.getRight() + 8 : 8;
         int w = juce::jmin(natural, cb.getX() - 8 - minX);
         if (w > 44)
@@ -17928,7 +22618,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // Percentage only, no counts, no "credits". Derives from the server pool.
     if (currentTab == Tab::Chat && chatSidebar.isVisible() && api.isLoggedIn())
     {
-        int abOffFtr = abBarShowing ? kAbBarH : 0;
+        int abOffFtr = bottomBarsH();
         int fy = getHeight() - 20 - abOffFtr;
         const auto& up = api.getUserInfo().usagePool;
         juce::String label;
@@ -17948,7 +22638,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     int pad = 10;
     int contentY = topH + 6;
     int contentW = mW - pad * 2;
-    int abBarOffset = abBarShowing ? kAbBarH : 0; // shrink content when AB bar showing
+    int abBarOffset = bottomBarsH(); // shrink content when AB bar showing
 
     if (currentView == View::Compare && currentTab == Tab::Compare) {
         auto cArea = juce::Rectangle<int>(pad, topH + 4, contentW, bounds.getHeight() - topH - 16 - abBarOffset);
@@ -19219,6 +23909,49 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                    juce::Justification::centredLeft, true);
                         ey += 16;
                     }
+                    // ---- THE APPLY BUTTON ----------------------------------
+                    // ITS OWN STATEMENT, NOT ANOTHER BUTTON'S else. It used to
+                    // live as the `else if` of the misdial button's chain, and
+                    // on 10 Sep 873d758 moved the report button to the panel and
+                    // took this branch out with it: a contiguous deletion whose
+                    // end anchor ran past the misdial block into this one. It
+                    // compiled, because a branch that only writes to members
+                    // leaves nothing undefined, and the Apply affordance was
+                    // gone for a week with the card still reserving its height.
+                    //
+                    // Restoring it as an `else if` would restore the risk with
+                    // it. This is a standalone `if` on its own condition, so a
+                    // future edit to any neighbouring affordance has to delete
+                    // THIS statement deliberately to remove it.
+                    //
+                    // ap PIN1 asserts these five lines by text, because a swept
+                    // deletion of UI wiring compiles cleanly and no unit test
+                    // can see it. This is the second one.
+                    if (! msg.editApplied && activeEditApplyBtns < kMaxChainBuildBtns)
+                    {
+                        int bi = activeEditApplyBtns++;
+                        editApplyMsgIdx[(size_t)bi] = msgLoopIndex;
+                        editApplyBtns[(size_t)bi].setButtonText("Apply changes");
+                        juce::Rectangle<int> ar(ex, ey + 2,
+                                                juce::jmin(160, bubbleW - 20), kChainBtnH);
+                        auto sb3 = chatScroll.getBounds();
+                        const bool inV = ar.getY() >= sb3.getY()
+                                      && ar.getBottom() <= sb3.getBottom();
+                        if (inV)
+                        {
+                            editApplyBtns[(size_t)bi].setBounds(ar);
+                            editApplyBtns[(size_t)bi].setVisible(true);
+                            editApplyBtns[(size_t)bi].toFront(false);
+                        }
+                        else
+                        {
+                            // Scrolled out of the viewport: parked off-screen
+                            // rather than left where it was, so a stale button
+                            // cannot be pressed over unrelated content.
+                            editApplyBtns[(size_t)bi].setBounds(-100, -100, 1, 1);
+                            editApplyBtns[(size_t)bi].setVisible(false);
+                        }
+                    }
                     if (msg.editApplied)
                     {
                         // Green only for a FULL apply; see
@@ -19253,28 +23986,6 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                 editAltBtns[(size_t)abi].setBounds(-100, -100, 1, 1);
                                 editAltBtns[(size_t)abi].setVisible(false);
                             }
-                        }
-                    }
-                    else if (activeEditApplyBtns < kMaxChainBuildBtns)
-                    {
-                        int bi = activeEditApplyBtns++;
-                        editApplyMsgIdx[(size_t)bi] = msgLoopIndex;
-                        editApplyBtns[(size_t)bi].setButtonText("Apply changes");
-                        juce::Rectangle<int> ar(ex, ey + 2,
-                                                juce::jmin(160, bubbleW - 20), kChainBtnH);
-                        auto sb3 = chatScroll.getBounds();
-                        bool inV = ar.getY() >= sb3.getY()
-                                && ar.getBottom() <= sb3.getBottom();
-                        if (inV)
-                        {
-                            editApplyBtns[(size_t)bi].setBounds(ar);
-                            editApplyBtns[(size_t)bi].setVisible(true);
-                            editApplyBtns[(size_t)bi].toFront(false);
-                        }
-                        else
-                        {
-                            editApplyBtns[(size_t)bi].setBounds(-100, -100, 1, 1);
-                            editApplyBtns[(size_t)bi].setVisible(false);
                         }
                     }
                 }
@@ -19468,6 +24179,83 @@ int EchoJayEditor::tabIndexAt (juce::Point<int> p) const
     return tabIndexIn (tabRects_, p);
 }
 
+// THE PLAYBACK ENVIRONMENT BAR (18 Sep 2026).
+//
+// WHAT IT PREVENTS: a playback environment stays engaged when the user leaves
+// the Playback page, and nothing else on screen said so. Somebody would leave
+// Phone speaker on and mix through it for an hour, judging every decision
+// against a filter they had forgotten. This bar is on whenever an environment
+// is, on every view, and says in words that the audio is being altered.
+//
+// PAINTED OVER THE CHILDREN, so no page, panel or full-window overlay can hide
+// it. The layouts all keep clear of it through bottomBarsH(); the two
+// full-window overlays (the reference browser and the review overlay) do not,
+// and while one of them is open the bar still shows but its X is under the
+// overlay, which takes the click.
+void EchoJayEditor::paintOverChildren (juce::Graphics& g)
+{
+    paintEnvBar (g);
+}
+
+void EchoJayEditor::paintEnvBar (juce::Graphics& g)
+{
+    envBarX_ = {};
+    if (! envBarShowing)
+        return;
+
+    // STACKED ABOVE THE A/B BAR, which keeps the very bottom it has always
+    // had (its paint and its clicks both use the window's last 32 px), so
+    // both can show at once and the A/B bar's code is untouched.
+    const int barY = getHeight() - (abBarShowing ? kAbBarH : 0) - kEnvBarH;
+    const juce::Rectangle<int> bar (0, barY, getWidth(), kEnvBarH);
+
+    // AMBER, from the interface's own palette: the house colour for "look at
+    // this" (it is the no-capture warning's), and distinct from the codec
+    // chip's teal, because an environment and a codec preview are different
+    // states and must not be read as each other.
+    g.setColour (C::bg);
+    g.fillRect (bar);
+    g.setColour (C::amber.withAlpha (0.14f));
+    g.fillRect (bar);
+    g.setColour (C::amber.withAlpha (0.55f));
+    g.drawHorizontalLine (barY, 0.0f, (float) getWidth());
+
+    // The X at the right, in the same 24 px zone the A/B bar's X uses.
+    envBarX_ = bar.withLeft (bar.getRight() - 28);
+    g.setColour (C::text2);
+    g.setFont (juce::Font (juce::FontOptions (12.0f)));
+    g.drawText ("x", envBarX_, juce::Justification::centred);
+
+    // The selection flips before the timer's next tick removes the bar; in
+    // that tick there is nothing to name, so no sentence rather than "None".
+    const PlaybackSim sim = processorRef.playbackSim();
+    if (sim == PlaybackSim::None)
+        return;
+
+    // NAMED FROM THE GRID'S OWN TABLE, so the bar and the tile that set it
+    // cannot call the environment two different things.
+    juce::String name;
+    for (const auto& t : echojay::kPlaybackTiles)
+        if (t.kind == echojay::PlaybackTileKind::Live && t.sim == sim) { name = t.label; break; }
+    if (name.isEmpty())
+        name = playbackSimName (sim);
+
+    auto text = bar.withTrimmedLeft (12).withTrimmedRight (32);
+    const auto dot = text.removeFromLeft (10).withSizeKeepingCentre (6, 6);
+    g.setColour (C::amber);
+    g.fillEllipse (dot.toFloat());
+
+    // SAYS THE AUDIO IS BEING ALTERED, not just what is on, so a glance
+    // explains why the mix sounds wrong. Measured with CoreText at 11.5 pt:
+    // 350.9 px for the longest name, "Bluetooth speaker" (19 Sep 2026; it was
+    // "Phone speaker" at 332.5), inside the ~366 px the narrowest window
+    // (compact mode, 420 px) leaves after the dot and the X. 15 px to spare.
+    g.setColour (C::text);
+    g.setFont (juce::Font (juce::FontOptions (11.5f)));
+    g.drawText (name + " is altering what you hear. This is not your mix.",
+                text, juce::Justification::centredLeft, true);
+}
+
 void EchoJayEditor::resized()
 {
     // F1 (21s-a): the reply layer covers the editor and passes the mouse through, so every reply control keeps the
@@ -19581,7 +24369,7 @@ void EchoJayEditor::resized()
         // the Dashboard surface, destroy on leaving) BEFORE laying it out.
         reconcileDashboardWeb();
 
-        const int abOffD = abBarShowing ? kAbBarH : 0;
+        const int abOffD = bottomBarsH();
         const auto dashRect = juce::Rectangle<int> (0, topH, mW,
                                   juce::jmax (50, b.getHeight() - topH - abOffD));
 
@@ -19717,7 +24505,7 @@ void EchoJayEditor::resized()
     // CHAIN tab layout — plugin view + strip fill the left area, chat on right
     if (comingSoonTab)
     {
-        int abOff3  = abBarShowing ? kAbBarH : 0;
+        int abOff3  = bottomBarsH();
         int contentH = b.getHeight() - topH - abOff3;
         // Panel fills from below the header strip to the bottom
         chainListPanel.setBounds(0, topH + 32, mW, contentH - 32);
@@ -19808,7 +24596,7 @@ void EchoJayEditor::resized()
     // one width and became WRONG the moment it could collapse to zero (the
     // visual would sit 280 to 420px short of the right edge with nothing
     // beside it).
-    int abOff = abBarShowing ? kAbBarH : 0;
+    int abOff = bottomBarsH();
     int paintMW = computeColumns(b.getWidth()).mW;
     // particleVisualHolder may only be shown on Visualisation or Meters tabs.
     const bool isVisualTab = (currentTab == Tab::Visualisation || currentTab == Tab::Meters);
@@ -19933,7 +24721,7 @@ void EchoJayEditor::resized()
         sidebarNewAlbumBtn.setVisible(true);
         // ListBox fills the rest, minus a compact usage-% footer at the very
         // bottom (shorten further when the AB bar is visible to avoid overlap)
-        int sbAbOff = abBarShowing ? kAbBarH : 0;
+        int sbAbOff = bottomBarsH();
         const int footerH = api.isLoggedIn() ? 20 : 0;
         chatSidebar.setBounds(sbX, topH + kSidebarToolbarH,
                               kSidebarW,
@@ -19954,7 +24742,7 @@ void EchoJayEditor::resized()
     // invisible on the old tabs' dead space, obvious against CHAIN's card.)
     int chatPadL = 8;
     int chatStartX = (compactMode ? 0 : mW) + sidebarOffsetX;
-    int abOff4 = abBarShowing ? kAbBarH : 0;
+    int abOff4 = bottomBarsH();
     int inputPad = compactMode ? 16 : 10;
     // Disclaimer footer strip under the input; the input row moves up to make
     // room. Bounds/text/visibility are set after the hide blocks below.
@@ -20452,13 +25240,54 @@ void EchoJayEditor::resized()
         int cW = mW - cPad * 2 - 24; // 24px less on right
         int cy2 = topH + 4;
 
-        // Preset row
-        presetBox.setBounds(cPad, cy2, cW - 180, 22);
-        savePresetBtn.setBounds(cPad + cW - 174, cy2, 84, 22);
-        deletePresetBtn.setBounds(cPad + cW - 84, cy2, 80, 22);
-        cy2 += 26;
+        // THE REFERENCE BAR, replacing the preset row and the 106px drop
+        // zone: 164 pixels of chrome returned to the waveforms. Every rect on
+        // it comes from ONE pure function, which paint() then consumes without
+        // computing anything. The drop zone's height was written three ways
+        // and its strip measured against a box it was not drawn in; both were
+        // defects and both came from a second computation.
+        //
+        // SPANS THE PAINTED WIDTH (cPad to mW - cPad), not cW, which is 24px
+        // narrower for the old preset row's right inset.
+        refBarRects_ = echojay::refBarLayout (
+            { cPad, cy2, mW - cPad * 2, echojay::kRefBarH },
+            refStatusLabel.getText().isNotEmpty(),
+            processorRef.referenceScope.kind != echojay::RefScope::Kind::All);
+        refPrevBtn  .setBounds (refBarRects_.prev);
+        refNextBtn  .setBounds (refBarRects_.next);
+        refPlayBtn  .setBounds (refBarRects_.play);
+        refBrowseBtn.setBounds (refBarRects_.browse);
+        loadRefBtn  .setBounds (refBarRects_.add);
+        refStatusLabel.setBounds (refBarRects_.status);
+        cy2 += echojay::kRefBarBandH;
 
-        cy2 += 82 + 4; // reference drop zone
+        // THE SUB-TAB ROW, below the shared bar. Its rects come from the same
+        // kind of pure function as the bar's, and it is the ONE author of
+        // them; paint() and mouseDown() read refSubTabRects_ and compute
+        // nothing.
+        refSubTabRects_ = echojay::refSubTabLayout (
+            { cPad, cy2, mW - cPad * 2, echojay::kRefSubTabH });
+        cy2 += echojay::kRefSubTabBandH;
+
+        // PLAYBACK OWNS THE CONTENT AREA BELOW THE ROW, AND NOTHING ABOVE IT.
+        // THE ONLY AUTHOR of this component's bounds. There used to be a second
+        // one 151 lines below setting getLocalBounds() unconditionally, which
+        // won and put the page over the tab strip and over the row that selects
+        // it. Deleted, not guarded: a flag choosing between two authors is two
+        // authors with extra steps.
+        //
+        // THE MATCH PAGE TAKES THE SAME AREA, from the same rectangle, computed
+        // once here, so the two pages cannot disagree about where the content
+        // area is. Only the visible page is bounded, as before.
+        const juce::Rectangle<int> refPageArea { cPad, cy2, mW - cPad * 2,
+                                                 getHeight() - cy2 - 10 - bottomBarsH() };
+        if (refSubTab_ == echojay::RefSubTab::Playback)
+        {
+            codecPanel_.setBounds (echojay::codecPageLayout (
+                refPageArea, (int) CodecRender::presets().size()).page);
+        }
+        if (refSubTab_ == echojay::RefSubTab::Match)
+            matchPanel_.setBounds (refPageArea);
 
         // rowW: content width from computeColumns, the single width source.
         // The comment that used to live here said "paint() and resized() use
@@ -20477,17 +25306,24 @@ void EchoJayEditor::resized()
         }
         cy2 += 28;
 
-        // Stage 2: slot dropdowns hidden — populated silently for AI Compare
-        compareSlotABox.setVisible(false);
-        compareSlotBBox.setVisible(false);
-
         // Position slot buttons in their panel header strips (same geometry as paintCompareView)
         {
             const int kHdrH = 20, kGap = 6, kBtnAreaH = 36;
             int aY2 = topH + 4;
-            int aH2 = getHeight() - topH - 16 - (abBarShowing ? kAbBarH : 0);
-            // Accumulate to panels start (preset 26 + dropzone 86 + selector 28 = 140)
-            int panelsCy = aY2 + 140;
+            int aH2 = getHeight() - topH - 16 - bottomBarsH();
+            // Accumulate to panels start: reference bar + SUB-TAB ROW +
+            // selector. All THREE bands, in the order paintCompareView walks
+            // them. DERIVED, not restated: this line once read "aY2 + 140" with
+            // a comment spelling out 26 + 86 + 28, a fourth copy of a number
+            // changed in three other places.
+            //
+            // THE SUB-TAB ROW WAS MISSING HERE FOR A DAY, and the comment said
+            // "reference bar + selector", so the comment and the code agreed
+            // with each other and were both wrong. The slot buttons carry their
+            // own text, so "Live signal" painted 28px high, inside the
+            // meter-type row, while its header strip sat one band below.
+            int panelsCy = aY2 + echojay::kRefBarBandH
+                               + echojay::kRefSubTabBandH + 28;
             int panelsH = aY2 + aH2 - panelsCy - kBtnAreaH;
             int panelH = (panelsH - kHdrH * 2 - kGap) / 2;
             if (panelH < 40) panelH = 40;
@@ -20502,38 +25338,31 @@ void EchoJayEditor::resized()
             comparePlayBotBtn_.setBounds(cPad + rowW - kPlayBtnW, botHdrY, kPlayBtnW, kHdrH);
         }
 
-        // Click catcher covers the ENTIRE compare area for reliable drag-and-drop
+        // THE CATCHER GOES TO THE BACK, and the list of exceptions that used
+        // to dig twenty children back out of it is gone with it. Its job is
+        // to receive clicks on the PAINTED areas of Compare and forward them
+        // to the editor through addMouseListener; it does that from the back
+        // exactly as well as from the front, because z-order only decides
+        // who wins where components OVERLAP, and a painted area has no child
+        // over it by definition.
+        //
+        // WHY THE LIST HAD TO GO RATHER THAN GAIN A LINE. It was a register
+        // that someone had to remember to append to, and forgetting was
+        // silent: the control appeared, hovered, and never received a press.
+        // loadRefBtn was added one commit ago and forgotten, which is how a
+        // button written to fix an affordance-that-does-nothing became one.
+        // Real children now hit-test first because they are in front of the
+        // catcher by default, so the defect cannot be reintroduced by
+        // omission. Anything added to Compare from here needs no ceremony.
         int catcherTop = topH + 4;
         int catcherH = getHeight() - catcherTop - 10;
         compareClickCatcher.setBounds(0, catcherTop, mW, catcherH);
         compareClickCatcher.setVisible(true);
-        compareClickCatcher.toFront(false);
-
-        // Bring interactive elements in front of the catcher
-        for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].toFront(false);
-        cmpABtn_.toFront(false);
-        cmpBBtn_.toFront(false);
-        cmpPlayBtn_.toFront(false);
-        compareSyncBtn_.toFront(false);
-        compareTopSlotBtn_.toFront(false);
-        compareBotSlotBtn_.toFront(false);
-        comparePlayTopBtn_.toFront(false);
-        comparePlayBotBtn_.toFront(false);
-        aiCompareBtn.toFront(false);
-        codecsBtn_.toFront(false);
-        presetBox.toFront(false);
-        savePresetBtn.toFront(false);
-        deletePresetBtn.toFront(false);
-        refStatusLabel.toFront(false);
-        for (auto& b : refRemoveBtns) b.toFront(false);
-        // Chat input overlaps the divider by 20px — keep it above the catcher
-        chatInput.toFront(false);
-        chatSendBtn.toFront(false);
-        chatScroll.toFront(false);
+        compareClickCatcher.toBack();
 
         // Transport bar at bottom: [A] [B] [▶] [SYNC] ... [AI Compare]
         {
-            int abOff2 = abBarShowing ? kAbBarH : 0;
+            int abOff2 = bottomBarsH();
             int btnY = getHeight() - 36 - abOff2;
             const int kTGap = 4;
             const int kAbW = 28;   // A/B buttons
@@ -20545,8 +25374,8 @@ void EchoJayEditor::resized()
             aiCompareBtn.setButtonText(tightBar ? "AI" : "AI Compare");
             aiCompareBtn.setTooltip(tightBar ? "AI Compare" : juce::String());
             const int kAiW = tightBar ? 36 : 100;
-            const int kCodecW = 88;
-            // Centre the transport cluster (CODECS is NOT part of it)
+            // Centre the transport cluster. CODECS sat right-aligned beside it
+            // and is gone: Playback is a sub-tab now.
             int totalW = kAbW + kTGap + kAbW + kTGap + kPlayW + kTGap + kSyncW + kTGap + kAiW;
             int tx = (mW - totalW) / 2;
             cmpABtn_.setBounds(tx, btnY, kAbW, 26);              tx += kAbW + kTGap;
@@ -20554,12 +25383,74 @@ void EchoJayEditor::resized()
             cmpPlayBtn_.setBounds(tx, btnY, kPlayW, 26);         tx += kPlayW + kTGap;
             compareSyncBtn_.setBounds(tx, btnY, kSyncW, 26);     tx += kSyncW + kTGap;
             aiCompareBtn.setBounds(tx, btnY, kAiW, 26);
-            // Feature-launcher: right-aligned against the panel edge
-            codecsBtn_.setBounds(mW - kCodecW - 10, btnY, kCodecW, 26);
         }
-        // Codec panel is a full-bounds modal; keep it sized and on top
-        codecPanel_.setBounds(getLocalBounds());
-        if (codecPanel_.isVisible()) codecPanel_.toFront(false);
+        // ONE-SHOT OVERLAP REPORT. A DEVELOPMENT AID, NOT A GUARD.
+        //
+        // With the catcher at the back, every one of these is clickable
+        // BECAUSE they do not overlap each other. That was measured, not
+        // assumed: the two pairs that looked closest were checked and both
+        // clear comfortably. aiCompareBtn's right edge is (mW + totalW) / 2
+        // and the right edge, which met only below mW 376,
+        // while the Compare column is never narrower than 585 (the 900px
+        // window minimum with chatW capped at 35 percent). And the chat trio
+        // begins at mW + sidebarOffsetX + 14, to the RIGHT of a catcher that
+        // spans [0, mW), so the comment claiming the input overlapped the
+        // divider by 20px and needed raising was simply wrong.
+        //
+        // Measurements go stale. This says so once per editor if they do.
+        // It writes to the system log, and open list item 138 records that
+        // nothing written there reaches a user, so it tells a developer with
+        // Console open that a claim stopped holding. It prevents nothing.
+        if (! compareOverlapLogged_)
+        {
+            struct Named { const char* name; juce::Rectangle<int> r; };
+            std::vector<Named> cs {
+                { "meter0", compareMeterBtns[0].getBounds() },
+                { "meter1", compareMeterBtns[1].getBounds() },
+                { "meter2", compareMeterBtns[2].getBounds() },
+                { "meter3", compareMeterBtns[3].getBounds() },
+                { "meter4", compareMeterBtns[4].getBounds() },
+                { "cmpA", cmpABtn_.getBounds() },
+                { "cmpB", cmpBBtn_.getBounds() },
+                { "cmpPlay", cmpPlayBtn_.getBounds() },
+                { "sync", compareSyncBtn_.getBounds() },
+                { "topSlot", compareTopSlotBtn_.getBounds() },
+                { "botSlot", compareBotSlotBtn_.getBounds() },
+                { "playTop", comparePlayTopBtn_.getBounds() },
+                { "playBot", comparePlayBotBtn_.getBounds() },
+                { "aiCompare", aiCompareBtn.getBounds() },
+                { "refStatus", refStatusLabel.getBounds() },
+                { "loadRef", loadRefBtn.getBounds() },
+            };
+            for (size_t i = 0; i < cs.size() && ! compareOverlapLogged_; ++i)
+                for (size_t j = i + 1; j < cs.size(); ++j)
+                    if (! cs[i].r.isEmpty() && ! cs[j].r.isEmpty()
+                        && cs[i].r.intersects(cs[j].r))
+                    {
+                        EchoJay_NSLog(("EJCmp: compare controls OVERLAP -- "
+                            + juce::String(cs[i].name) + " " + cs[i].r.toString()
+                            + " and " + juce::String(cs[j].name) + " " + cs[j].r.toString()
+                            + " at mW " + juce::String(mW)
+                            + ". One of them is now unclickable and the layout "
+                              "claim in resized() has stopped holding.").toRawUTF8());
+                        compareOverlapLogged_ = true;
+                        break;
+                    }
+        }
+
+        // The codec panel's full-bounds setBounds and its unconditional
+        // toFront lived here and are DELETED. It is a page: its bounds come
+        // from the Playback branch above, and it needs no raising because
+        // compareClickCatcher is at the back, so any real child is already in
+        // front of it.
+        // Reference browser, the same treatment. visibleState rather than
+        // isVisible() is the flag a periodic pass should ask, per
+        // PluginReviewOverlay.
+        refBrowser_.setBounds(getLocalBounds());
+        if (refBrowser_.visibleState) refBrowser_.toFront(false);
+        // The arrows' enablement is bar state like their bounds are, so it is
+        // refreshed by the same pass that positions them.
+        refreshRefBarEnablement();
     }
 
     // Settings layout — consistent Y tracking matching paintSettingsView.
@@ -20571,7 +25462,7 @@ void EchoJayEditor::resized()
     // controls. At normal heights the content matches the viewport and the
     // Save row sits at the window bottom exactly as before.
     if (currentView == View::Settings) {
-        const int abOff3 = abBarShowing ? kAbBarH : 0;
+        const int abOff3 = bottomBarsH();
         settingsViewport_.setBounds(0, topH, b.getWidth(),
                                     juce::jmax(50, b.getHeight() - topH - abOff3));
         settingsViewport_.setVisible(true);
@@ -20640,6 +25531,11 @@ void EchoJayEditor::resized()
             // ... and do-not-dial directly beneath it, same width, no gap of
             // its own: they are two halves of one question about suggestions.
             dialWritesToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
+            // ... and EchoJay-only beneath both, same width. It belongs with
+            // auto-dial (both govern WHICH PLUGINS are offered) rather than
+            // with do-not-dial, but a stacked column does not have to assert
+            // that and a three-across row would have asserted the opposite.
+            echoJayOnlyToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
 
             // PLUGINS: scan button + "View all" beside it
             sy += labelGap;
@@ -21008,6 +25904,50 @@ void EchoJayEditor::timerCallback()
         const auto leased = processorRef.borrowUid();
         if (leased.isNotEmpty()) calibTickAndPost (leased);          // the rack this instance is holding
     }
+    // ---- THE COMPARE CONTROLS, RECOMPUTED RATHER THAN NOTIFIED -----------
+    //
+    // WHY A TIMER AND NOT MORE HANDLER CALLS. Three of the places that change
+    // what is audible run on the AUDIO THREAD and can never call a UI
+    // function: the transport sync stopping a stream when the host stops, its
+    // start, and the self-stop at the end of a fade. An event-driven bar is
+    // not missing a call, it is STRUCTURALLY UNABLE to stay correct, and no
+    // number of added calls fixes that.
+    //
+    // ONE GUARD, NOT TWO, BECAUSE THE TWO UPDATES ARE ALREADY ONE.
+    // updateComparePlayBtns ends by calling updateTransportBar, so a second
+    // guard around the bar would be a second condition on the same repaint.
+    // The four values below are the union of what both read: the audible slot
+    // and whether A is Live (the bar), and each slot's playing flag (the
+    // per-slot buttons). Any change repaints both, which they already do.
+    //
+    // GUARDED, NOT UNCONDITIONAL. Repainting four buttons twenty times a
+    // second for no reason is its own defect, so this compares the answer
+    // with the last tick's and does nothing when it has not moved. The same
+    // shape the target pill below already uses.
+    //
+    // THE EVENT-DRIVEN CALLS STAY. They make a press instant rather than up
+    // to 50 ms late, which is the difference between a button that responds
+    // and one that lags; this is the BACKSTOP for the changes no handler can
+    // see.
+    {
+        const int  nowHeard   = audibleCompareSlot();
+        const bool nowALive   = (compareTop_.kind == CompareSlotState::Kind::Live);
+        const bool nowPlaying0 = processorRef.cmpStream[0].playing.load();
+        const bool nowPlaying1 = processorRef.cmpStream[1].playing.load();
+
+        if (nowHeard != lastAudibleSlot_ || nowALive != lastASlotWasLive_
+            || nowPlaying0 != lastSlotPlaying_[0] || nowPlaying1 != lastSlotPlaying_[1])
+        {
+            lastAudibleSlot_   = nowHeard;
+            lastASlotWasLive_  = nowALive;
+            lastSlotPlaying_[0] = nowPlaying0;
+            lastSlotPlaying_[1] = nowPlaying1;
+            // This cascades to updateTransportBar, so both the play glyphs and
+            // the A/B lighting come back true in one pass.
+            updateComparePlayBtns();
+        }
+    }
+
     // Target pill appears/disappears with Link connectivity — relayout on
     // change (no height change; the composer row is fixed). The ACTIVE
     // chat's target flipping live<->offline is ALSO a relayout, not a
@@ -21261,6 +26201,20 @@ void EchoJayEditor::timerCallback()
     } else if (!shouldShowAbBar && abBarShowing) {
         abBarShowing = false;
         setSize(getWidth(), getHeight() - kAbBarH);
+    }
+    // THE PLAYBACK ENVIRONMENT BAR: on whenever a simulation is engaged, in
+    // every view and mode. It reads the SELECTION ONLY, never the view, unlike
+    // the A/B bar above (which hides on Compare and so resizes the window as
+    // the user navigates): this one changes the window height when the
+    // environment changes and at no other time. The flag is set before setSize
+    // so the resized() that follows lays everything out above it.
+    {
+        const bool shouldShowEnvBar = (processorRef.playbackSim() != PlaybackSim::None);
+        if (shouldShowEnvBar != envBarShowing)
+        {
+            envBarShowing = shouldShowEnvBar;
+            setSize(getWidth(), getHeight() + (envBarShowing ? kEnvBarH : -kEnvBarH));
+        }
     }
     
     // ALWAYS bring header buttons to front so overlays can't block them
@@ -21739,38 +26693,16 @@ void EchoJayEditor::timerCallback()
             requestAIFeedback(snap, currentChatId, reviewId, passName, version, prevReview,
                               activeChatLinkUid());
         
-            // Refresh compare dropdowns if we're on the compare view
+            // A new capture changes what the slot menus offer. The menus are
+            // built on demand in openCompareSlotMenu, so there is nothing to
+            // rebuild here; a repaint is enough to refresh what is drawn.
+            // WHAT THIS REPLACED, AND WHY NOTHING IS LOST: forty lines
+            // rebuilding two ComboBoxes that were never visible, then
+            // restoring a selection nothing read, then an "auto-select for
+            // one-click compare" fallback whose selection no button, meter,
+            // audition or AI Compare path ever consulted.
             if (currentView == View::Compare)
-            {
-                int prevSelA = compareSlotABox.getSelectedId();
-                int prevSelB = compareSlotBBox.getSelectedId();
-                compareSlotABox.clear(juce::dontSendNotification);
-                compareSlotBBox.clear(juce::dontSendNotification);
-                auto snaps2 = processorRef.getSnapshots();
-                for (int i = 0; i < (int)snaps2.size(); ++i) {
-                    compareSlotABox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
-                    compareSlotBBox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
-                }
-                auto refs2 = processorRef.getReferenceAnalyser().getReferences();
-                int refOff = kCompareRefIdBase;
-                for (int i = 0; i < (int)refs2.size(); ++i) {
-                    compareSlotABox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
-                    compareSlotBBox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
-                }
-                if (prevSelA > 0) compareSlotABox.setSelectedId(prevSelA, juce::dontSendNotification);
-                else if (snaps2.size() > 0) compareSlotABox.setSelectedId((int)snaps2.size(), juce::dontSendNotification);
-                if (prevSelB > 0) compareSlotBBox.setSelectedId(prevSelB, juce::dontSendNotification);
-                // B fallback (A had one, B didn't): previous capture if there
-                // is one, else the first reference — so compare is one click
-                // away right after a capture
-                if (compareSlotBBox.getSelectedId() == 0)
-                {
-                    if (snaps2.size() > 1)
-                        compareSlotBBox.setSelectedId((int)snaps2.size() - 1, juce::dontSendNotification);
-                    else if (refs2.size() > 0)
-                        compareSlotBBox.setSelectedId(kCompareRefIdBase, juce::dontSendNotification);
-                }
-            }
+                repaint();
         }
     }
 
@@ -21961,27 +26893,12 @@ void EchoJayEditor::timerCallback()
         if (curRefCount != lastRefCount)
         {
             lastRefCount = curRefCount;
-            // Refresh dropdowns
-            int prevA = compareSlotABox.getSelectedId();
-            int prevB = compareSlotBBox.getSelectedId();
-            compareSlotABox.clear(juce::dontSendNotification);
-            compareSlotBBox.clear(juce::dontSendNotification);
-            auto snaps2 = processorRef.getSnapshots();
-            for (int i = 0; i < (int)snaps2.size(); ++i) {
-                compareSlotABox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
-                compareSlotBBox.addItem(snaps2[(size_t)i].name.substring(0, 30), i + 1);
-            }
-            auto refs2 = processorRef.getReferenceAnalyser().getReferences();
-            int refOff = kCompareRefIdBase;
-            for (int i = 0; i < (int)refs2.size(); ++i) {
-                compareSlotABox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
-                compareSlotBBox.addItem(refs2[(size_t)i].name.substring(0, 25) + " (Ref)", refOff + i);
-            }
-            if (prevA > 0) compareSlotABox.setSelectedId(prevA, juce::dontSendNotification);
-            if (prevB > 0) compareSlotBBox.setSelectedId(prevB, juce::dontSendNotification);
-            // Auto-select new reference in slot B if nothing was selected
-            if (compareSlotBBox.getSelectedId() == 0 && refs2.size() > 0)
-                compareSlotBBox.setSelectedId(refOff + (int)refs2.size() - 1, juce::dontSendNotification);
+            // References changed: the drop zone draws its tags from the live
+            // list and the status strip may need re-laying out, so both a
+            // layout pass and a repaint. The dropdown rebuild that used to
+            // live here is gone with the dropdowns.
+            resized();
+            repaint();
         }
     }
 
@@ -24667,7 +29584,34 @@ void EchoJayEditor::drawCompareFigureCard(juce::Graphics& g, juce::Rectangle<int
     }
 
     // ---- (b) BAND RELATIVES: two overlaid 6-point profiles ----
-    secLabel(L.tonalTop, "TONAL - band relatives (dB vs each source's own average)");
+    {
+        // ITEM 4 FINISHED. bandsReduction and bandsWindowSeconds were written
+        // into the JSON by the previous commit and read by nothing, so the chart
+        // still claimed only "band relatives" whatever it was drawing. A whole
+        // file average and a 150 ms ballistic tail are different claims and the
+        // label now carries which one each side is.
+        juce::String tl = "TONAL - band relatives (dB vs each source's own average)";
+        auto prov = [&](juce::DynamicObject* o)
+        {
+            if (o == nullptr || ! o->hasProperty("bandsReduction")) return juce::String();
+            // ONE COMPOSER, shared with the compare prose: the ordering rule
+            // (the age leads once it exceeds the window) lives in
+            // echojay::bandProvenanceText and not in two call sites.
+            return echojay::bandProvenanceText (
+                o->getProperty("bandsReduction").toString(),
+                (float) (double) o->getProperty("bandsWindowSeconds"),
+                (float) (double) o->getProperty("bandsAgeSeconds"));
+        };
+        const juce::String pa = prov(A), pb = prov(B);
+        if (pa.isNotEmpty() || pb.isNotEmpty())
+        {
+            if (pa == pb)            tl += "  [" + pa + "]";
+            else if (pa.isEmpty())   tl += "  [B: " + pb + "]";
+            else if (pb.isEmpty())   tl += "  [A: " + pa + "]";
+            else                     tl += "  [A: " + pa + " | B: " + pb + "]";
+        }
+        secLabel(L.tonalTop, tl);
+    }
     {
         const int chTop = rowY(L.tonalTop) + 16;
         const int chH   = FigLayout::kTonalH - 4;
@@ -24707,12 +29651,25 @@ void EchoJayEditor::drawCompareFigureCard(juce::Graphics& g, juce::Rectangle<int
         const bool bHasBands = B->hasProperty("bands");
         if (aHasBands) plot(A->getProperty("bands"), cA);
         if (bHasBands) plot(B->getProperty("bands"), cB);
-        if (!aHasBands && !bHasBands)
+
+        // A ONE-SIDED CHART STATES ITS MISSING SIDE. Before this it drew the one
+        // curve it had and said nothing, which on a two-source chart reads as a
+        // claim about the other source rather than as an absence.
+        auto vs = [] (const juce::var& v) { return v.isVoid() ? juce::String() : v.toString(); };
+        const juce::String notice = echojay::bandChartNotice (
+            aHasBands, bHasBands,
+            vs (A->getProperty("label")), vs (B->getProperty("label")),
+            vs (A->getProperty("bandsMissingWhy")), vs (B->getProperty("bandsMissingWhy")));
+        if (notice.isNotEmpty())
         {
             g.setColour(C::text3);
-            g.setFont(juce::Font(juce::FontOptions(10.0f)));
-            g.drawText("Band relatives N/A for both sources",
-                       plotL, chTop, plotR - plotL, chH, juce::Justification::centred);
+            g.setFont(juce::Font(juce::FontOptions(9.5f)));
+            // Bottom of the plot when one curve is present, so it does not sit
+            // across the curve that IS there; centred when neither is.
+            const bool none = (! aHasBands && ! bHasBands);
+            g.drawText(notice, plotL, none ? chTop : chBot - 12,
+                       plotR - plotL, none ? chH : 12,
+                       none ? juce::Justification::centred : juce::Justification::centredLeft);
         }
     }
 
@@ -24731,12 +29688,20 @@ void EchoJayEditor::drawCompareFigureCard(juce::Graphics& g, juce::Rectangle<int
             auto one = [&](FigVal fig, juce::Colour c2) {
                 if (!fig.present) return juce::String("N/A");
                 juce::ignoreUnused(c2);
-                return decimals >= 0 ? juce::String(fig.v, decimals) : juce::String((int)fig.v);
+                // JUCE TREATS 0 AS UNSPECIFIED, NOT AS ZERO PLACES. String(double,
+                // int) only sets fixed precision when the count is > 0, so a 0
+                // here fell through to the stream default of six significant
+                // digits and printed 30.7137 for a percentage. Both 0 and -1 now
+                // mean integer, and it rounds rather than truncating.
+                return decimals > 0 ? juce::String(fig.v, decimals)
+                                    : juce::String(juce::roundToInt(fig.v));
             };
             auto fv = figRead(A, key); auto gv = figRead(B, key);
             g.setColour(cA); g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
             const int vx = rx + 62;
-            g.drawText(one(fv, cA), vx, ry, 40, FigLayout::kStereoRowH, juce::Justification::centredLeft);
+            // THE UNIT ON BOTH SIDES. It was concatenated onto B only, so a row
+            // read "30.7137 / 32.2999%" with the symbol on one number.
+            g.drawText(one(fv, cA) + unit, vx, ry, 40, FigLayout::kStereoRowH, juce::Justification::centredLeft);
             g.setColour(C::text3);
             g.drawText("/", vx + 40, ry, 8, FigLayout::kStereoRowH, juce::Justification::centred);
             g.setColour(cB);
@@ -25586,6 +30551,108 @@ bool EchoJayEditor::handleProposalAffirmation(const juce::String& typed)
                     + juce::String (idx) + " - applying locally, no model call").toRawUTF8());
     applyStagedProposal (idx, "affirmed: \"" + typed + "\"");
     return true;
+// ============================================================================
+// MISDIAL REPORT v1: the popup and the send, from the SUGGESTED SETTINGS panel.
+//
+// TWO KINDS THROUGH ONE BUTTON, and the user never picks a mode. Picking a
+// control files a misdial (the five required fields, the record that lets Kathy
+// open one map and fix one control). Typing without picking files a bug (the
+// note and whatever context is true). The route decides nothing for us here: it
+// validates each kind on its own terms and defaults an absent kind to misdial
+// for back compat, so both are sent explicitly.
+//
+// THE fp COMPARISON IS MADE AT PRESS TIME, and it is the only thing standing
+// between a stale row and a wrong map edit. A slot can be replaced and
+// ChainSlot reused with a new desc and a new fp, leaving the previous
+// occupant's rows in place; nothing expires them and the gap between a dial and
+// a press is however long the user takes. On mismatch, or when either fp is
+// empty, the popup offers TEXT ONLY.
+// ============================================================================
+void EchoJayEditor::openSlotReport(int slotIndex)
+{
+    auto& ch = processorRef.getChainHost();
+    if (slotIndex < 0 || slotIndex >= ch.getNumSlots()) return;
+    const auto info = ch.getSlotInfo(slotIndex);
+
+    // The rows are offered ONLY when their captured fp still matches the live
+    // slot's fp. Both empty (a built-in) fails this too, which is correct: a
+    // built-in has no map and can only file a bug.
+    std::vector<echojay::MisdialRow> rows;
+    if (info.fp.isNotEmpty())
+        for (const auto& r : info.misdialRows)
+            if (r.fp == info.fp && echojay::misdialRowIsReportable(r))
+                rows.push_back(r);
+
+    echojay::MisdialSlotFacts facts;
+    facts.appVersion    = JucePlugin_VersionString;
+    facts.pluginName    = info.name;
+    facts.format        = info.format;
+    facts.vendor        = info.manufacturer;
+    {
+        const auto d = ch.getSlotDescription(slotIndex);
+        facts.pluginVersion = d.version;
+    }
+
+    const bool signedIn = api.isLoggedIn();
+
+    // ONE window, built here rather than a menu, because the free text box is
+    // always present and a PopupMenu cannot hold one.
+    auto* content = new SlotReportWindow(rows, facts, signedIn, slotIndex,
+                                         juce::Component::SafePointer<EchoJayEditor>(this));
+    juce::DialogWindow::LaunchOptions o;
+    o.content.setOwned(content);
+    o.dialogTitle = "Report a problem with " + info.name;
+    o.dialogBackgroundColour = juce::Colour(0xff11131a);
+    o.escapeKeyTriggersCloseButton = true;
+    o.useNativeTitleBar = false;
+    o.resizable = false;
+    o.launchAsync();
+}
+
+void EchoJayEditor::sendSlotReport(const juce::String& body, const juce::String& reportId,
+                                   int slotIndex,
+                                   juce::Component::SafePointer<SlotReportWindow> win)
+{
+    if (body.isEmpty()) return;
+    // TWO SAFE POINTERS, AND BOTH ARE LOAD-BEARING.
+    //
+    // `win` because the user may dismiss the dialog while the POST is in
+    // flight, and on a dead network that flight is up to sixty seconds.
+    //
+    // `self` because this completion now TOUCHES THE EDITOR: it marks the row
+    // reported through the ChainHost the processor owns but reaches through
+    // this editor, and the editor can be destroyed with the plugin window at
+    // any point in those sixty seconds. Every other async completion in this
+    // file carries one; this was the only one that did not, and it got away
+    // with it purely because it did nothing but log.
+    auto self = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.reportMisdial(body, [self, win, reportId, slotIndex](const juce::var& json, int statusCode)
+    {
+        // ONLY 200 ok:true SETTLES IT. 0 for offline, 401, 429 and every 5xx
+        // leave it pressable, which is what makes the row-minted reportId worth
+        // having. A 200 with duplicate:true settles too: the report IS filed,
+        // once, and the window says so in those words rather than claiming to
+        // have been the first.
+        const bool ok = statusCode == 200
+                     && json.isObject()
+                     && (bool) json.getProperty("ok", false);
+        const bool duplicate = ok && (bool) json.getProperty("duplicate", false);
+
+        EchoJay_NSLog(("EJMisdial: status " + juce::String(statusCode)
+                       + (ok ? (duplicate ? " SETTLED (duplicate)" : " SETTLED")
+                             : " NOT settled, still reportable")
+                       + " id=" + reportId).toRawUTF8());
+
+        // Mark the row BEFORE telling the window, so a user who reopens the
+        // popup immediately after seeing "Reported" finds it already marked.
+        // Only on a real success: a refused report has not been filed and the
+        // row must stay offerable.
+        if (ok && self != nullptr)
+            self->processorRef.getChainHost().markMisdialRowReported(slotIndex, reportId);
+
+        if (auto* w = win.getComponent())
+            w->onSendResult(statusCode, ok, duplicate);
+    });
 }
 
 void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
@@ -27953,7 +33020,17 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
     // once per scan (async, signature-gated, never blocking this turn) and
     // build the feed from the DIALABLE subset once the index has answered.
     juce::StringArray recommendable;
-    if (! chainHost.feedSplitEnabled())
+    // ONLY ECHOJAY PLUGINS (8 Sep 2026). FIRST, and deliberately ahead of the
+    // feed split: it is the narrower answer to the same question, so a machine
+    // with the split on must still get built-ins only rather than the
+    // intersection of two filters. It needs no scan, no map, no network and no
+    // session, which is the whole reason it can be trusted on a stage.
+    const bool echoJayOnlyFeed = api.getEchoJayOnly();
+    if (echoJayOnlyFeed)
+    {
+        recommendable = ChainHost::builtinDeviceNames();
+    }
+    else if (! chainHost.feedSplitEnabled())
     {
         recommendable = chainHost.getRecommendableNames();
     }
@@ -28009,7 +33086,14 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         // category tag, which discriminates where the dial signal did not:
         // 467 of 859 feed names against 1,183 of 1,185 products. See the note
         // where the constant was, in EchoJayParamApply.h.
-        out += EchoJayAPI::buildChainInjection(recommendable);
+        // The built-ins-only feed authors its own block: no third-party name
+        // list, the same chain block rule, and [AVAILABLE BUILTINS] carrying
+        // the names once with their dialing contracts. hadFeed is set on BOTH
+        // arms because it is what stages turnType chain_generate further down
+        // (see the send path); a built-ins chain is still a chain turn, and
+        // leaving it false would classify the video's whole demo as plain chat.
+        out += echoJayOnlyFeed ? EchoJayAPI::buildBuiltinOnlyChainInjection()
+                               : EchoJayAPI::buildChainInjection(recommendable);
         hadFeed = true;
         EchoJay_NSLog(("EJChat: chain injection attached -- "
                        + juce::String(recommendable.size())
@@ -36116,14 +41200,14 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     if (!channelScoped && !snap.channels.empty())
     {
         auto ff2 = [](float v) -> juce::String { return v > -99 ? juce::String(v, 1) : "N/A"; };
-        juce::String mcCtx = "\n\n[MULTI-CHANNEL CAPTURE - " + juce::String((int)snap.channels.size()) + " channels]\n";
-        mcCtx += "Channels captured: ";
-        for (size_t ci = 0; ci < snap.channels.size(); ++ci)
-        {
-            if (ci > 0) mcCtx += ", ";
-            mcCtx += snap.channels[ci].name;
-        }
-        mcCtx += "\n\n";
+        // THE BODY IS BUILT FIRST AND THE HEADER COMPOSED AFTER IT, so the
+        // counts can lead the block. The outcome for each channel is decided
+        // ONCE, into outcomes[], and both the tally and the per-channel marker
+        // read that same value: computing the predicates twice is how a header
+        // that says nine comes to sit above ten markers.
+        std::vector<echojay::CaptureChannelOutcome> outcomes;
+        outcomes.reserve (snap.channels.size());
+        juce::String chNamesLine, chBody;
         for (size_t ci = 0; ci < snap.channels.size(); ++ci)
         {
             auto& sch = snap.channels[ci];
@@ -36139,48 +41223,39 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                 auto live = processorRef.resolveLinkDisplayName(sch.uid);
                 if (live.isNotEmpty()) chName = live;
             }
-            juce::String header = (ci == 0)
-                ? ("[HOST - " + chName + "]\n")
-                : ("[LINK - " + chName + "]\n");
-            mcCtx += header;
+            if (ci > 0) chNamesLine += ", ";
+            chNamesLine += chName;
+            chBody += (ci == 0) ? ("[HOST - " + chName + "]\n")
+                                : ("[LINK - " + chName + "]\n");
             // Capture honesty via the FRAMES SENTINEL (framesReceived): the
             // two facts the injection could not tell apart are now
             // distinct. 0 = no frames arrived (cause unknown, NEVER a claim
             // about sound); >0 with all values at/below the silence floor =
             // the channel was genuinely silent (a statable fact). Host
             // channels carry -1 (n/a) and fall through to the numbers.
-            const bool noFrames    = ci > 0 && sch.framesReceived == 0;
-            const bool gotFrames   = sch.framesReceived > 0;
-            const bool silentFloor = md.integrated <= -99.0f
-                                  && md.peakMaxL   <= -99.0f
-                                  && md.peakMaxR   <= -99.0f;
-            if (noFrames)
+            echojay::CaptureChannelOutcome oc;
+            oc.isHost         = (ci == 0);
+            oc.framesReceived = sch.framesReceived;
+            oc.silentFloor    = md.integrated <= -99.0f
+                             && md.peakMaxL   <= -99.0f
+                             && md.peakMaxR   <= -99.0f;
+            outcomes.push_back (oc);
+
+            // A MARKER, NOT A PARAGRAPH. What SILENT and NO FRAMES mean is
+            // said once, above the list, by multiChannelGuidance. Saying it
+            // per channel is what produced a dozen separate notices about
+            // ordinary material.
+            if (const char* marker = echojay::captureChannelMarker (oc))
             {
-                mcCtx += "NO CAPTURE FRAMES were received from this Link during "
-                         "the capture window - the reason is UNKNOWN. Do NOT state "
-                         "or imply that this channel was silent or not outputting "
-                         "signal; you have no data either way. Possible causes "
-                         "include the Link having just been enabled (its audio "
-                         "feed warms up a moment after activation) or a transient "
-                         "capture-timing gap. Tell the user plainly that no data "
-                         "came through for this channel and to try the capture "
-                         "again; say nothing about how it sounds.\n";
-            }
-            else if (gotFrames && silentFloor)
-            {
-                mcCtx += "This channel WAS receiving audio during the capture, and "
-                         "its level stayed at or below the silence floor the whole "
-                         "window - it was genuinely silent (muted, or not playing). "
-                         "You may say the channel was silent; that is a real "
-                         "measurement, not a guess.\n";
+                chBody += marker;
             }
             else
             {
-            mcCtx += "(Internal - do not show raw numbers) ";
-            mcCtx += "Integrated: " + ff2(md.integrated) + " LUFS | LRA: " + ff2(md.loudnessRange) + " LU\n";
-            mcCtx += "Peak: L " + ff2(md.peakMaxL) + " / R " + ff2(md.peakMaxR) + " dBFS\n";
-            mcCtx += "RMS: L " + ff2(md.rmsL) + " / R " + ff2(md.rmsR) + " dB\n";
-            mcCtx += "Crest: " + ff2(md.crestFactor) + " dB | Width: " + ff2(md.width) + "% | Corr: " + ff2(md.correlation) + "\n";
+            chBody += "(Internal - do not show raw numbers) ";
+            chBody += "Integrated: " + ff2(md.integrated) + " LUFS | LRA: " + ff2(md.loudnessRange) + " LU\n";
+            chBody += "Peak: L " + ff2(md.peakMaxL) + " / R " + ff2(md.peakMaxR) + " dBFS\n";
+            chBody += "RMS: L " + ff2(md.rmsL) + " / R " + ff2(md.rmsR) + " dB\n";
+            chBody += "Crest: " + ff2(md.crestFactor) + " dB | Width: " + ff2(md.width) + "% | Corr: " + ff2(md.correlation) + "\n";
             }
             // Link gain stage (AI hook): current built-in gain for this Link,
             // looked up by name from the registry. The integrated above is
@@ -36198,15 +41273,26 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                         const char* pl = li.placement == 1 ? "Bus"
                                        : li.placement == 2 ? "Channel"
                                        : li.placement == 3 ? "Send" : "unset";
-                        mcCtx += juce::String("Placement: ") + pl + "\n";
-                        mcCtx += "Link gain: " + (li.gainDb >= 0 ? juce::String("+") : juce::String())
+                        chBody += juce::String("Placement: ") + pl + "\n";
+                        chBody += "Link gain: " + (li.gainDb >= 0 ? juce::String("+") : juce::String())
                                + ff2(li.gainDb) + " dB (built-in; user can level-match via the "
                                  "LINK monitor's gain control)\n";
                         break;
                     }
             }
-            mcCtx += "\n";
+            chBody += "\n";
         }
+
+        // COMPOSE. Counts in the header, the meaning of the markers once
+        // beneath it, then the channels. multiChannelGuidance emits a half
+        // only when that outcome actually occurred, so an ordinary capture
+        // with nothing silent and nothing missing pays for neither.
+        const auto tally = echojay::tallyCaptureChannels (outcomes);
+        juce::String mcCtx = echojay::multiChannelHeader (tally);
+        mcCtx += "Channels captured: " + chNamesLine + "\n\n";
+        mcCtx += echojay::multiChannelGuidance (tally);
+        if (tally.silent > 0 || tally.noFrames > 0) mcCtx += "\n";
+        mcCtx += chBody;
         mcCtx += "[Read the whole session: note any per-channel issues and how they relate. "
                  "If the host mix looks fine, check whether the individual channels suggest a balance or "
                  "dynamics issue that might not be obvious from the full mix alone. "
@@ -36890,7 +41976,6 @@ void EchoJayEditor::saveChatTextScale()
 }
 
 // ============================================================================
-// Reference Presets
 // ============================================================================
 
 juce::File EchoJayEditor::getPresetsFolder()
@@ -37192,6 +42277,18 @@ void EchoJayEditor::mouseWheelMove(const juce::MouseEvent& e,
 void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 {
     auto pos = e.getEventRelativeTo(this).getPosition();
+
+    // THE PLAYBACK ENVIRONMENT BAR'S X, before anything else, in every view,
+    // mode and screen, because the bar is painted over all of them. It switches
+    // the environment off and LEAVES THE USER WHERE THEY ARE: no navigation.
+    // Ahead of the project-prompt check because the bar is painted above that
+    // scrim too, and turning an environment off interrupts nothing.
+    if (envBarShowing && envBarX_.contains (pos))
+    {
+        processorRef.setPlaybackSim (PlaybackSim::None);
+        repaint();
+        return;
+    }
 
     // Project prompt scrim blocks everything painted beneath it. This
     // handler only fires for clicks NOT on child components, so the
@@ -37524,7 +42621,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         int mW2 = computeColumns(getWidth()).mW;
         int numStripH = 28;
         int stripH = 30;
-        int abOff5 = abBarShowing ? kAbBarH : 0;
+        int abOff5 = bottomBarsH();
         int stripY = getHeight() - numStripH - stripH - abOff5;
 
         if (pos.x < mW2 && pos.y >= stripY && pos.y < stripY + stripH)
@@ -37605,48 +42702,72 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 
     if (currentView == View::Compare)
     {
-        
+        // THE SUB-TAB ROW, hit-tested from the rects resized() authored via
+        // echojay::refSubTabAt. Before the rename/delete pass, because a click
+        // on the row is a navigation and must not also be read as a click on
+        // whatever the row happens to sit above.
+        //
+        // A RIGHT-CLICK ON THE ROW IS CONSUMED AND IGNORED. The tab hit test
+        // below skips popup clicks, so a right-click on COMPARE or PLAYBACK
+        // used to fall past it into the rename and delete pass further down,
+        // which picks a slot by height and offered to rename or delete a pass
+        // from the tab row, on either sub-tab. It does not switch tabs either:
+        // a right-click is not a choice of tab.
+        if (e.mods.isPopupMenu() && echojay::refSubTabRowHit (refSubTabRects_, pos))
+            return;
+
+        if (! e.mods.isPopupMenu())
+        {
+            const int st = echojay::refSubTabAt (refSubTabRects_, pos);
+            // THE CAST IS GUARDED BY THE ENUM'S OWN RANGE, not by st >= 0: a
+            // position at or past RefSubTab::Count names no tab and must not
+            // become one.
+            //
+            // THE FALSE ARM CANNOT FIRE, AT ANY COUNT, while st comes from
+            // refSubTabAt: that function's loop bound keeps every index it
+            // returns below Count, and the loop bound is the guarantee. It
+            // stays because this call site cannot see that loop. The bound
+            // lives in another function, and nothing but this comment ties
+            // the two together. The guard goes live the day the index comes
+            // from anywhere other than refSubTabAt.
+            if (echojay::refSubTabIndexValid (st))
+            {
+                setRefSubTab ((echojay::RefSubTab) st);
+                return;
+            }
+        }
+
         // Right-click on card area — rename/delete pass
         if (e.mods.isPopupMenu())
         {
             auto snaps = processorRef.getSnapshots();
-            int refOffset = kCompareRefIdBase;
-            
-            // Determine which card (A or B) was clicked based on mouse position
-            struct SlotInfo { juce::ComboBox* box; int id; };
-            std::vector<SlotInfo> slotsToCheck;
-            
-            // Use card positions: nearer to slot A or slot B
-            // VESTIGIAL SELECTION — compareSlotABox/BBox have no bounds (both
-            // centre on the origin, so distA==distB and A always wins) and their
-            // getSelectedId() reflects a rebuild default nothing user-facing
-            // sets. This right-click rename/delete therefore acts on a stale
-            // selection, not the visible slots. Do NOT trust it; the source of
-            // truth is compareTop_/compareBot_ via getSlotMeterData (see the
-            // box declaration in PluginEditor.h). Left as-is only to avoid a
-            // wide removal in a shared tree; retarget to the slots when touched.
-            int distA = std::abs(pos.x - compareSlotABox.getBounds().getCentreX());
-            int distB = std::abs(pos.x - compareSlotBBox.getBounds().getCentreX());
-            if (distA <= distB)
-                slotsToCheck.push_back({ &compareSlotABox, compareSlotABox.getSelectedId() });
-            else
-                slotsToCheck.push_back({ &compareSlotBBox, compareSlotBBox.getSelectedId() });
-            
-            for (auto& slot : slotsToCheck)
+
+            // THE SLOT ACTUALLY CLICKED. This used to pick by distance to
+            // compareSlotABox and compareSlotBBox, two boxes that had no
+            // bounds, so both centred on the origin, distA always equalled
+            // distB, and slot A always won whichever panel was clicked. It
+            // then read a getSelectedId() that only its own rebuild ever set.
+            // Both boxes are gone; the panel under the pointer decides, and
+            // the capture it is showing is the one renamed or deleted.
+            const bool isTop = compareClickIsTopSlot(pos);
+            const auto& cslot = isTop ? compareTop_ : compareBot_;
+            auto* targetBtn = isTop ? &compareTopSlotBtn_ : &compareBotSlotBtn_;
+
+            // Only a session capture can be renamed or deleted here. Live
+            // signal, references and chat captures are not this menu's to
+            // edit, and saying nothing is better than offering an action that
+            // would land on the wrong object.
+            if (cslot.kind == CompareSlotState::Kind::Snapshot
+                && cslot.index >= 0 && cslot.index < (int)snaps.size())
             {
-                int sel = slot.id;
-                if (sel <= 0 || sel >= refOffset) continue;
-                if ((sel - 1) >= (int)snaps.size()) continue;
-                
-                int idx = sel - 1;
+                const int idx = cslot.index;
                 juce::PopupMenu menu;
                 menu.setLookAndFeel(&lnf);
                 menu.addItem(1, "Rename \"" + snaps[(size_t)idx].name + "\"");
                 menu.addItem(2, "Delete Pass");
-                auto* targetBox = slot.box;
-                menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(*targetBox)
+                menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(*targetBtn)
                                        .withParentComponent(this),
-                    [this, idx, targetBox](int result) {
+                    [this, idx, targetBtn](int result) {
                         if (result == 1) {
                             auto snaps2 = processorRef.getSnapshots();
                             if (idx < (int)snaps2.size()) {
@@ -37654,7 +42775,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
                                 te->setFont(juce::Font(juce::FontOptions(12.0f)));
                                 te->setText(snaps2[(size_t)idx].name);
                                 te->selectAll();
-                                te->setBounds(targetBox->getX(), targetBox->getBottom() + 4, targetBox->getWidth(), 24);
+                                te->setBounds(targetBtn->getX(), targetBtn->getBottom() + 4, targetBtn->getWidth(), 24);
                                 te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
                                 te->setColour(juce::TextEditor::textColourId, C::text);
                                 te->setColour(juce::TextEditor::outlineColourId, C::purple);
@@ -37686,63 +42807,30 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
             return;
         }
         
-        // Codec-mode chip X: exit codec mode and restore the prior slots
+        // Codec-mode chip X: exit codec mode and restore the prior slots, then go
+        // BACK TO THE RENDER VIEW (decided 18 Sep 2026): the user came from the
+        // presets, and the next thing they are likely to want is another one.
+        // setRefSubTab opens the page on the grid, so the view is set after it.
         if (codecModeActive_ && !codecChipX_.isEmpty() && codecChipX_.contains(pos))
         {
             exitCodecMode();
+            setRefSubTab (echojay::RefSubTab::Playback);
+            codecPanel_.renderView = true;
+            codecPanel_.repaint();
             return;
         }
 
-        // Click-to-seek on static compare waveform panels
+        // Click-to-seek on static compare waveform panels. THE BODY MOVED to
+        // seekCompareStream so the Match page's strips can perform the same
+        // gesture rather than a copy of it; this site decides WHERE the click
+        // landed and that one decides what a seek is.
         for (auto& sa : cmpWaveSeekAreas_)
         {
             if (sa.slotIdx >= 0 && sa.inner.contains(pos))
             {
-                float fraction = juce::jlimit(0.0f, 1.0f,
+                const float fraction = juce::jlimit(0.0f, 1.0f,
                     (float)(pos.x - sa.inner.getX()) / (float)sa.inner.getWidth());
-                auto& s = processorRef.cmpStream[sa.slotIdx];
-                if (!s.loaded.load())
-                    startCompareStream(sa.slotIdx);
-                if (s.loaded.load() && s.sampleCount > 0)
-                {
-                    std::lock_guard<std::mutex> lock(processorRef.cmpMutex);
-                    s.playbackPos = (int)(fraction * s.sampleCount);
-                    // Click-seek on a reference during SYNC: capture the
-                    // host->reference offset at this moment and keep it
-                    // (lining a drop up against a different arrangement)
-                    if (processorRef.cmpSyncToTransport.load()
-                        && processorRef.cmpSlotIsRef[sa.slotIdx].load()
-                        && s.sampleRate > 0)
-                    {
-                        const double host = processorRef.cmpLastHostTimeSec.load();
-                        if (host >= 0.0)
-                        {
-                            const double refSec = (double) s.playbackPos / s.sampleRate;
-                            processorRef.cmpSyncOffsetSec.store(refSec - host);
-                            EchoJay_NSLog(("EJCmp: sync offset captured "
-                                           + juce::String(refSec - host, 2) + "s"
-                                           + " (host " + juce::String(host, 1)
-                                           + "s -> ref " + juce::String(refSec, 1) + "s)").toRawUTF8());
-                        }
-                    }
-                    // Start playing + make audible on seek
-                    s.playing.store(true);
-                    processorRef.cmpAudible.store(sa.slotIdx);
-                    // SYNC: mirror seek position to the other capture slot
-                    if (processorRef.cmpSyncToTransport.load() && bothSlotsAreCaptures())
-                    {
-                        int otherIdx = 1 - sa.slotIdx;
-                        auto& other = processorRef.cmpStream[otherIdx];
-                        if (!other.loaded.load())
-                            startCompareStream(otherIdx);
-                        if (other.loaded.load() && other.sampleCount > 0)
-                        {
-                            other.playbackPos = (int)(fraction * other.sampleCount);
-                            other.playing.store(true);
-                        }
-                    }
-                    updateComparePlayBtns();
-                }
+                seekCompareStream (sa.slotIdx, fraction);
                 repaint();
                 return;
             }
@@ -37754,33 +42842,41 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 void EchoJayEditor::mouseDoubleClick(const juce::MouseEvent& e)
 {
     auto pos = e.getEventRelativeTo(this).getPosition();
-    
+
     if (currentView != View::Compare) return;
-    
+
+    // A DOUBLE-CLICK ON THE SUB-TAB ROW IS CONSUMED. Its first click already
+    // did the row's work in mouseDown (it chose a tab); the double-click is not
+    // a second command. Without this, double-clicking PLAYBACK switched on the
+    // first click and then opened a rename box over the Playback page.
+    if (echojay::refSubTabRowHit (refSubTabRects_, pos)) return;
+
+    // AND ONLY WHILE COMPARE'S CONTROLS ARE UP. The rename box opens under a
+    // slot button; on any other sub-tab those buttons are hidden and the box
+    // would open over that page. compareFurnitureShouldShow() is the one rule
+    // for whether they are up, so this asks it rather than restating the
+    // sub-tab test in a sixth place.
+    if (! compareFurnitureShouldShow()) return;
+
     auto snaps = processorRef.getSnapshots();
-    int refOffset = kCompareRefIdBase;
-    
-    // Determine which card by checking if click is nearer to slot A or slot B
-    // VESTIGIAL SELECTION — see the compareSlotABox/BBox declaration in
-    // PluginEditor.h: these boxes have no bounds and their getSelectedId() is a
-    // rebuild default nothing user-facing sets, so this picks a stale entry, not
-    // the visible slot. Source of truth is compareTop_/compareBot_ via
-    // getSlotMeterData(). Do NOT wire new logic here; retarget to the slots.
-    int distA = std::abs(pos.x - compareSlotABox.getBounds().getCentreX());
-    int distB = std::abs(pos.x - compareSlotBBox.getBounds().getCentreX());
-    auto& box = (distA <= distB) ? compareSlotABox : compareSlotBBox;
-    int sel = box.getSelectedId();
-    
-    if (sel <= 0 || sel >= refOffset) return;
-    if ((sel - 1) >= (int)snaps.size()) return;
-    
-    int idx = sel - 1;
+
+    // THE SLOT ACTUALLY DOUBLE-CLICKED, for the same reason as the right-click
+    // path above: the two boxes this used to measure against had no bounds, so
+    // the nearer-of-the-two test always answered A.
+    const bool isTop = compareClickIsTopSlot(pos);
+    const auto& cslot = isTop ? compareTop_ : compareBot_;
+    auto* targetBtn = isTop ? &compareTopSlotBtn_ : &compareBotSlotBtn_;
+
+    if (cslot.kind != CompareSlotState::Kind::Snapshot) return;
+    if (cslot.index < 0 || cslot.index >= (int)snaps.size()) return;
+
+    const int idx = cslot.index;
     auto* te = new juce::TextEditor();
     te->setFont(juce::Font(juce::FontOptions(12.0f)));
     te->setText(snaps[(size_t)idx].name);
     te->selectAll();
-    // Position rename field directly below the clicked card's dropdown
-    te->setBounds(box.getX(), box.getBottom() + 4, box.getWidth(), 24);
+    // Rename field directly below the clicked panel's slot button
+    te->setBounds(targetBtn->getX(), targetBtn->getBottom() + 4, targetBtn->getWidth(), 24);
     te->setColour(juce::TextEditor::backgroundColourId, C::bg3);
     te->setColour(juce::TextEditor::textColourId, C::text);
     te->setColour(juce::TextEditor::outlineColourId, C::purple);

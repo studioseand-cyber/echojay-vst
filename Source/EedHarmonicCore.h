@@ -413,6 +413,16 @@ public:
         return y;
     }
 
+    // Read-only view of the derived coefficients, normalised by a0. The filter
+    // never calls it. It exists so pv PIN2 (tools/mapfps_test) can test the
+    // poles of the numbers process() actually runs, instead of re-deriving
+    // them in the test, which would pin a copy of setPeak rather than setPeak.
+    void getCoefficients (float& b0, float& b1, float& b2,
+                          float& a1, float& a2) const noexcept
+    {
+        b0 = b0_; b1 = b1_; b2 = b2_; a1 = a1_; a2 = a2_;
+    }
+
 private:
     double sr_ = 44100.0;
     float  freq_ = 1000.0f, q_ = 0.7f, gainDb_ = 0.0f;

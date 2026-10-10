@@ -1,4 +1,5 @@
 #include "MeterEngine.h"
+#include "EJBandScheme.h"   // the band edges, the bin axis and the ballistics
 #include <cmath>
 #include <algorithm>
 #include <numeric>
@@ -71,8 +72,13 @@ double MeterEngine::applyBiquad(double input, const BiquadCoeffs& c,
     return output;
 }
 
-void MeterEngine::prepare(double sampleRate, int /*samplesPerBlock*/)
+void MeterEngine::prepare(double sampleRate, int samplesPerBlock)
 {
+    // The hint was ignored until Phase 1c. It is used ONLY to size the bounded
+    // band window's capacity, which must be fixed at prepare() because the ring
+    // never allocates. The window's reported LENGTH comes from the block
+    // durations actually seen, not from this.
+    samplesPerBlockHint_ = samplesPerBlock;
     // 500ms of silence at the host sample rate flips isSilent to true.
     // Long enough to ride out short gaps between phrases, short enough
     // that a stopped transport reads as silent before the user sends
@@ -81,6 +87,27 @@ void MeterEngine::prepare(double sampleRate, int /*samplesPerBlock*/)
     silentSampleCount.store(silenceTimeoutSamples + 1); // start as silent
 
     currentSampleRate = sampleRate;
+    // A re-prepare is a new run, so the whole-run sum starts again. prepare()
+    // does not otherwise clear state, which is why this is stated here as well
+    // as in resetState().
+    bandAccum = BandAccum();
+    // THE BOUNDED WINDOW, SIZED TO THE SPECTRUM'S. kSpecHistFrames frames at
+    // 25 fps is 12.000 s at any sample rate, and the live spectrum reports that
+    // span, so the live side of a comparison has one window story. Expressed in
+    // BLOCKS here because that is what this ring holds, and capped by the
+    // compile-time ceiling: a host with very small buffers gets a shorter
+    // window, stated as seconds accumulated.
+    {
+        const double windowSeconds = (double) kSpecHistFrames / 25.0;   // 12.0
+        boundedBlockSeconds_ = (sampleRate > 0.0 && samplesPerBlockHint_ > 0)
+                                   ? (double) samplesPerBlockHint_ / sampleRate : 0.0;
+        const int want = (boundedBlockSeconds_ > 0.0)
+                             ? (int) std::ceil (windowSeconds / boundedBlockSeconds_)
+                             : kBoundedMaxBlocks;
+        boundedCapacity_ = juce::jlimit (1, kBoundedMaxBlocks, want);
+        // setCapacity clears, so this both sizes and empties the window.
+        for (auto& r : boundedRings) r.setCapacity (boundedCapacity_);
+    }
     samplesPerBlock100ms = static_cast<int>(sampleRate * 0.1);
     samplesPerSpecFrame  = std::max(1, (int)(sampleRate / 25.0)); // ~25 fps frames
     computeKWeightingCoeffs(sampleRate);
@@ -190,6 +217,8 @@ void MeterEngine::resetState()
     specFrameCount = 0;
     specAccumSamples = 0;
     specAccum.fill(-120.0f);
+    bandAccum = BandAccum();          // the whole-run band sum starts again
+    for (auto& r : boundedRings) r.clear();   // and so does the bounded window
     // specFrameCounter stays monotonic across resets so UI fetches stay valid
     wfMinAccum = wfMaxAccum = 0.0f;
     wfAccumCount = 0;
@@ -270,8 +299,8 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
     
     for (int b = 0; b < N; ++b)
     {
-        double fLo = std::pow(2.0, logMin + (logMax - logMin) * (double)b / (double)N);
-        double fHi = std::pow(2.0, logMin + (logMax - logMin) * (double)(b + 1) / (double)N);
+        double fLo = echojay::specBinEdgeHzFromLogs(b,     N, logMin, logMax);
+        double fHi = echojay::specBinEdgeHzFromLogs(b + 1, N, logMin, logMax);
         double fCentre = (fLo + fHi) * 0.5;
         double exactBin = fCentre / binHz;
         int binLo2 = std::max(1, std::min((int)std::floor(exactBin), usableBins - 1));
@@ -310,8 +339,8 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
     }
     // Time-based smoothing — consistent across buffer sizes and platforms
     double bufDur = (currentSampleRate > 0) ? (double)numSamples / currentSampleRate : 0.01;
-    float attackCoeff = 1.0f - (float)std::exp(-bufDur / 0.01);  // ~10ms attack
-    float releaseCoeff = 1.0f - (float)std::exp(-bufDur / 0.15); // ~150ms release
+    float attackCoeff  = echojay::ballisticCoeff(bufDur, echojay::kMeterAttackTauSec);
+    float releaseCoeff = echojay::ballisticCoeff(bufDur, echojay::kMeterReleaseTauSec);
     for (int b = 0; b < N; ++b)
     {
         float coeff = (rawBins[(size_t)b] > smoothedSpectrum[(size_t)b]) ? attackCoeff : releaseCoeff;
@@ -325,15 +354,17 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
     // above, which carry visual shaping (low-end attenuation, span-peak
     // sampling) that must NOT leak into the serialised macroBands data.
     {
-        struct BandEdge { double lo, hi; };
-        const BandEdge edges[6] = {
-            {   20.0,    60.0 },   // sub
-            {   60.0,   250.0 },   // low
-            {  250.0,   500.0 },   // lowMid
-            {  500.0,  2000.0 },   // mid
-            { 2000.0,  6000.0 },   // highMid
-            { 6000.0, maxFreq },   // air
-        };
+        // ONE DEFINITION, in EJBandScheme.h, so a boundary cannot move without
+        // a pin objecting. The values are unchanged and the air band still ends
+        // at maxFreq, which is sample-rate dependent and therefore an argument
+        // rather than a constant.
+        const auto edges = echojay::macroBandEdges(maxFreq);
+        // Read ONCE per block, not once per band: six calls would be six chances
+        // for the gate to change mid-loop and leave the rings holding different
+        // numbers of blocks.
+        const bool   silentBlock  = isSilentNow();
+        const double blkSecForAge = (currentSampleRate > 0.0)
+                                        ? (double) numSamples / currentSampleRate : 0.0;
         double bandPower[6] = {};
         for (int k = 1; k < usableBins; ++k)
         {
@@ -341,24 +372,51 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
             if (f < 20.0 || f >= maxFreq) continue;
             double m = (double)fftData[(size_t)k] * normFactor;
             for (int bi = 0; bi < 6; ++bi)
-                if (f >= edges[bi].lo && f < edges[bi].hi)
+                if (f >= edges[(size_t)bi].lo && f < edges[(size_t)bi].hi)
                 { bandPower[bi] += m * m; break; }
         }
         for (int bi = 0; bi < 6; ++bi)
         {
-            double octaves = std::log2(std::max(1.01, edges[bi].hi / edges[bi].lo));
+            double octaves = std::log2(std::max(1.01, edges[(size_t)bi].hi / edges[(size_t)bi].lo));
             double perOct  = bandPower[bi] / octaves;
+            // THE WHOLE-RUN ACCUMULATOR, fed from the SAME perOct the ballistic
+            // line below consumes. Power, summed; the mean and its dB are taken
+            // at read-out by echojay::bandMeanFromSum. Nothing below this line
+            // changes: the ballistic field is untouched by this commit.
+            bandAccum.sumPower[(size_t)bi] += perOct;
+            // THE BOUNDED WINDOW, from the same perOct. Three consumers of one
+            // value: the ballistic field below, the whole-run sum above, and
+            // this ring. One definition, three spans.
+            //
+            // GATED BY THE SAME PREDICATE THE SPECTROGRAM RING USES, so the two
+            // windows freeze on the same sample and describe the same audio. An
+            // ungated ring would drain toward the floor over a window's length
+            // after a stop, which reports figures that are WRONG rather than
+            // stale for as long as the window is deep. Frozen and aged beats
+            // draining and silent.
+            if (! silentBlock) boundedRings[(size_t)bi].push (perOct);
             float dbv = perOct > 1e-12 ? (float)(10.0 * std::log10(perOct)) : -120.0f;
             float coeff = (dbv > smoothedMacroBands[(size_t)bi]) ? attackCoeff : releaseCoeff;
             smoothedMacroBands[(size_t)bi] += coeff * (dbv - smoothedMacroBands[(size_t)bi]);
         }
+        ++bandAccum.blocks;
+        // THE AGE ADVANCES ON EVERY BLOCK, gated or not: that is the whole point
+        // of it. push() zeroes it, so it reads zero while audio arrives and grows
+        // from the moment the gate closes.
+        for (auto& r : boundedRings) r.advanceAge (blkSecForAge);
+        const double blkSec = (currentSampleRate > 0.0)
+                                  ? (double) numSamples / currentSampleRate : 0.0;
+        bandAccum.seconds += blkSec;
+        // What the bounded window's length is measured in, refreshed from the
+        // blocks actually arriving rather than from the prepare() hint.
+        if (blkSec > 0.0) boundedBlockSeconds_ = blkSec;
     }
 
     // ===== Spectrogram history =====
     // Max-aggregate the display bins between ~25fps frames so short
     // transients survive decimation. Frozen while silent — constant floor
     // frames add nothing and pausing keeps recent history on screen.
-    if (silentSampleCount.load() > silenceTimeoutSamples)
+    if (isSilentNow())
     {
         specAccumSamples = 0;
         specAccum.fill(-120.0f);
@@ -433,6 +491,10 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
         std::lock_guard<std::mutex> lock(dataMutex);
         visMagDb = mags;
         visReady = true;
+        // ONE PER PUBLISHED FFT. A UI that wants to draw once per NEW spectrum
+        // watches this instead of its own timer. Relaxed: it is a change
+        // detector, and a reader that misses an increment draws next frame.
+        visHopSeq_.fetch_add (1, std::memory_order_relaxed);
     }
    #else
     juce::ignoreUnused(kVisHopSamples);
@@ -954,6 +1016,10 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         data.oversCount = oversEvents;
         data.width = width;
         data.correlation = corr;
+        // The unsmoothed pair, beside the smoothed one. Display only: see
+        // MeterData's own note and mr PIN31.
+        data.instWidth = instWidth;
+        data.instCorr  = instCorr;
         data.sideToMidRatio = displaySideToMid;
         data.corrSub = displayCorrSub;
         data.corrMid = displayCorrMid;
@@ -977,7 +1043,7 @@ MeterData MeterEngine::getMeterData() const
     // 'data' directly. Copying is cheap and avoids needing to make
     // isSilent mutable.
     MeterData result = data;
-    result.isSilent = silentSampleCount.load() > silenceTimeoutSamples;
+    result.isSilent = isSilentNow();
     return result;
 }
 
@@ -1045,6 +1111,59 @@ MeterEngine::SpectrumWindow MeterEngine::reduceSpectrumWindow(bool useMean) cons
 
     w.valid = true;
     return w;
+}
+
+MeterEngine::BandAccumResult MeterEngine::getAccumulatedBands() const
+{
+    // NOT under dataMutex: bandAccum is audio-thread-owned like
+    // smoothedMacroBands, and this is called from the message thread only at
+    // points where the audio thread is known to be done with the run
+    // (ReferenceAnalyser after its loop, stopCapture after the state has moved
+    // to Complete). A torn double here would be a wrong number rather than a
+    // crash, and the call sites are the guarantee.
+    BandAccumResult r;
+    if (bandAccum.blocks <= 0) return r;          // no blocks: unavailable, not zero
+    r.valid   = true;
+    r.blocks  = bandAccum.blocks;
+    r.seconds = (float) bandAccum.seconds;
+    for (int i = 0; i < 6; ++i)
+        r.db[(size_t) i] = echojay::bandMeanFromSum (bandAccum.sumPower[(size_t) i],
+                                                     bandAccum.blocks).db;
+    return r;
+}
+
+MeterEngine::BoundedBands MeterEngine::getBoundedBands() const
+{
+    // Same threading argument as getAccumulatedBands: the rings are
+    // audio-thread-owned and read from the message thread at points where a torn
+    // double would be a wrong number rather than a crash. Unlike the whole-run
+    // accumulator this one is read while audio is RUNNING, so that argument is
+    // weaker here and is stated rather than glossed: the worst case is one band
+    // of one card reading a half-updated sum, which the next compare corrects.
+    BoundedBands r;
+    const int n = boundedRings[0].count();
+    // THE ONLY REFUSAL LEFT. With the ring gated, a silent block never enters,
+    // so the window cannot drain toward the floor and count() can only be zero
+    // when nothing audible has EVER arrived: a plugin that just opened with
+    // nothing played. Everything else reports what it heard, with an age saying
+    // how long ago it heard it.
+    if (n <= 0) return r;
+    r.valid   = true;
+    r.blocks  = n;
+    // SECONDS ACCUMULATED, NOT NOMINAL. A ring one second into a twelve second
+    // window says one second, so a figure cannot claim a span it does not have.
+    //
+    // boundedBlockSeconds_ is the duration of the blocks actually being
+    // delivered, refreshed every block, so this is exact while the host's buffer
+    // size is constant and it is constant in every host that matters. If a host
+    // changed buffer size mid-run the figure would be off by the ratio for one
+    // window's worth of blocks, which is a smaller error than the one the old
+    // ballistic reading carried permanently.
+    r.seconds = (float) ((double) n * boundedBlockSeconds_);
+    r.ageSeconds = (float) boundedRings[0].age();
+    for (int i = 0; i < 6; ++i)
+        r.db[(size_t) i] = boundedRings[(size_t) i].mean().db;
+    return r;
 }
 
 MeterEngine::MacroWindow MeterEngine::reduceMacroWindow(bool useMean) const

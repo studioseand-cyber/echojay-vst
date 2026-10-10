@@ -9,10 +9,10 @@
 #
 # Its SECOND job is to run the repo's self-tests. This is a C++ repo, so the
 # suite is the workspace round-trip test (real objects, EJ_SELFTEST body).
-# It links the release SharedCode lib, so it can only run once the tree has
-# been built; on an unbuilt tree the gate SKIPS the test with a clear notice
-# rather than blocking (a gate that fails when you simply haven't built yet
-# gets bypassed habitually, which defeats the point).
+# It links the release SharedCode lib. If that lib is missing the gate BUILDS
+# it at -j 4 when build/ is configured, and FAILS when it is not; it no longer
+# skips, because the skip printed green having tested nothing. Either way it
+# prints the path it took (see "A MISSING ARCHIVE IS NEVER SILENT" below).
 #
 # Enable once per clone:   git config core.hooksPath .githooks
 # Bypass (emergencies only): git commit --no-verify
@@ -78,19 +78,96 @@ for T in reinstall_v2_test; do
   RUNNER="$REPO/tools/$T/build_and_run.sh"
   [ -x "$RUNNER" ] || { echo "  SKIP  $T (not in this worktree)"; continue; }
   echo "  running $T..."
-  out=$("$RUNNER" 2>&1)
+  # THE RUNNER'S STDERR GOES TO ITS OWN FILE (23 Sep 2026, open list 221).
+  #
+  # This used to be out=$("$RUNNER" 2>&1), which merged the suite's stdout with
+  # EchoJay_NSLog output from the scanner and the chat harness. THE WINDOW
+  # BELOW IS 12 LINES AND THE NOISE IS NOT EVENLY SPREAD: on the last green
+  # mapfps run, 667 of 4,530 lines were NSLog and they CLUSTER AT THE END,
+  # which is exactly where a failure is most likely to be pushed out. A failed
+  # suite could report twelve lines of scanner chatter and nothing about what
+  # broke, which is open list 199's defect made worse by unrelated output.
+  #
+  # ORDER MATTERS ON THE NEXT THREE LINES. Both assignments go BEFORE the
+  # runner call, because the verdict below reads $?, and any command between
+  # the call and the test would overwrite it.
+  #
+  # SAME PATH AND SAME NAMING AS tools/reinstall-v2.sh, deliberately, so there
+  # is ONE convention rather than two. Both callers therefore write the SAME
+  # file for a given suite: it reflects the most recent run by EITHER caller,
+  # LAST WRITER WINS. That is accepted rather than overlooked; the file is a
+  # convenience for reading the run you just did, not a history.
+  GATE_ERR="$REPO/HANDOVER/gate-stderr-$T.log"
+  mkdir -p "$REPO/HANDOVER"
+  out=$("$RUNNER" 2>"$GATE_ERR")
   if [ $? -ne 0 ]; then
     echo "GATE FAIL: $T"
     echo "$out" | tail -12
+    echo "  stderr from this run (scanner and chat logging): $GATE_ERR"
     exit 1
   fi
-  echo "  ok  $T: $(echo "$out" | tail -1)"
+  # THE SUMMARY MAY BE ON STDERR (23 Sep 2026, open list 223). Splitting the
+  # streams blanked this line for workspace_roundtrip_test, whose ENTIRE
+  # output is one fprintf(stderr) in EchoJayWorkspace.cpp:1096, so $out held
+  # nothing and tail -1 of nothing is nothing. LABELLED, NOT SILENT: a
+  # fallback that prints the line without saying where it came from just
+  # moves the blank somewhere nobody looks, and a blank where a result
+  # belongs is open list 199's whole subject. NEVER PRINT AN EMPTY RESULT.
+  #
+  # WRITTEN TO SURVIVE set -e, WHICH NEITHER FILE SETS TODAY. Plain `if`
+  # blocks and a readability guard, so no line here can exit the shell if
+  # anyone adds errexit later. The first version used
+  # `SUMMARY=$(tail -1 "$GATE_ERR" 2>/dev/null)`, and MEASURED under set -e
+  # in both /bin/sh and /bin/zsh that exits when the file is absent: an
+  # assignment takes the substitution's status, so the gate would have died
+  # SILENTLY, with no output at all, AFTER the suite had already passed.
+  #
+  # && AND || ARE NOT MIRROR IMAGES HERE, and the asymmetry is not the
+  # obvious one. `[ ... ] || X` is safe because the list returns 0 when its
+  # test succeeds. `[ ... ] && X` was ALSO safe, but for an unrelated
+  # reason: errexit does not fire on a non-final command of an AND-OR list,
+  # measured in both shells. Two different reasons for two lines that look
+  # symmetrical is exactly the kind of thing to stop relying on, so neither
+  # form is used below.
+  SUMMARY=$(echo "$out" | tail -1)
+  if [ -z "$SUMMARY" ] && [ -r "$GATE_ERR" ]; then
+    SUMMARY=$(tail -1 "$GATE_ERR")
+    if [ -n "$SUMMARY" ]; then SUMMARY="(stderr) $SUMMARY"; fi
+  fi
+  if [ -z "$SUMMARY" ]; then SUMMARY="(NO SUMMARY on stdout or stderr; see $GATE_ERR)"; fi
+  echo "  ok  $T: $SUMMARY"
 done
 
-if [ ! -f "$LIB" ] || [ ! -f "$REPO/build/compile_commands.json" ]; then
-  echo "  SKIP  workspace round-trip test (tree not built; run reinstall-v2.sh first)"
-  echo "pre-commit gate: shell suites green, build-dependent tests skipped (unbuilt tree)"
-  exit 0
+# A MISSING ARCHIVE IS NEVER SILENT (18 Sep 2026). This block used to print a
+# SKIP and exit 0 when the archive was absent, so the gate reported success
+# having tested nothing. On 17 Sep a clean removed the archive, and every
+# commit after it would have passed green on the shell suite alone. There are
+# now three paths, and the gate prints which one it took, so a green gate that
+# skipped cannot be read again:
+#   archive-present  the archive is there; the suites run against it
+#   built            it is missing but build/ is configured: build it, at -j 4,
+#                    announced before it starts, and fail if that fails
+#   refused          it is missing and build/ is not configured: nothing can be
+#                    built, so the commit FAILS rather than passing untested
+# -j 4 for the reason given at tools/mapfps_test/build_and_run.sh step 1: at
+# -j 4 this archive peaked at 5.70 GiB on a 16 GiB machine.
+if [ -f "$LIB" ] && [ -f "$REPO/build/compile_commands.json" ]; then
+  echo "  gate path: archive-present (suites run against the existing SharedCode archive)"
+elif [ -f "$REPO/build/CMakeCache.txt" ]; then
+  echo "  gate path: built (SharedCode archive missing; building target EchoJay at -j 4 now, before the suites)"
+  out=$(cmake --build "$REPO/build" --target EchoJay -j 4 2>&1)
+  if [ $? -ne 0 ] || [ ! -f "$LIB" ] || [ ! -f "$REPO/build/compile_commands.json" ]; then
+    echo "GATE FAIL: the SharedCode archive could not be built"
+    echo "$out" | grep -iE 'error' | head -12
+    exit 1
+  fi
+  echo "  ok  SharedCode archive built"
+else
+  echo "  gate path: refused (SharedCode archive missing and build/ is not configured, so nothing can be built or tested)"
+  echo "GATE FAIL: no SharedCode archive, and no configured build/ to make one"
+  echo "  configure it (cmake -S . -B build -DCMAKE_BUILD_TYPE=Release) and commit again;"
+  echo "  the gate then builds the archive itself, at -j 4"
+  exit 1
 fi
 
 # BUILD-DEPENDENT SUITES (12 Aug 2026: mapfps_test joins the roundtrip
@@ -101,12 +178,105 @@ for T in workspace_roundtrip_test mapfps_test; do
   RUNNER="$REPO/tools/$T/build_and_run.sh"
   [ -x "$RUNNER" ] || { echo "  SKIP  $T (not in this worktree)"; continue; }
   echo "  running $T..."
-  out=$("$RUNNER" 2>&1)
+  # THE RUNNER'S STDERR GOES TO ITS OWN FILE (23 Sep 2026, open list 221).
+  #
+  # This used to be out=$("$RUNNER" 2>&1), which merged the suite's stdout with
+  # EchoJay_NSLog output from the scanner and the chat harness. THE WINDOW
+  # BELOW IS 12 LINES AND THE NOISE IS NOT EVENLY SPREAD: on the last green
+  # mapfps run, 667 of 4,530 lines were NSLog and they CLUSTER AT THE END,
+  # which is exactly where a failure is most likely to be pushed out. A failed
+  # suite could report twelve lines of scanner chatter and nothing about what
+  # broke, which is open list 199's defect made worse by unrelated output.
+  #
+  # ORDER MATTERS ON THE NEXT THREE LINES. Both assignments go BEFORE the
+  # runner call, because the verdict below reads $?, and any command between
+  # the call and the test would overwrite it.
+  #
+  # SAME PATH AND SAME NAMING AS tools/reinstall-v2.sh, deliberately, so there
+  # is ONE convention rather than two. Both callers therefore write the SAME
+  # file for a given suite: it reflects the most recent run by EITHER caller,
+  # LAST WRITER WINS. That is accepted rather than overlooked; the file is a
+  # convenience for reading the run you just did, not a history.
+  GATE_ERR="$REPO/HANDOVER/gate-stderr-$T.log"
+  mkdir -p "$REPO/HANDOVER"
+  out=$("$RUNNER" 2>"$GATE_ERR")
   if [ $? -ne 0 ]; then
     echo "GATE FAIL: $T"
     echo "$out" | tail -12
+    echo "  stderr from this run (scanner and chat logging): $GATE_ERR"
     exit 1
   fi
-  echo "  ok  $T: $(echo "$out" | tail -1)"
+  # THE SUMMARY MAY BE ON STDERR (23 Sep 2026, open list 223). Splitting the
+  # streams blanked this line for workspace_roundtrip_test, whose ENTIRE
+  # output is one fprintf(stderr) in EchoJayWorkspace.cpp:1096, so $out held
+  # nothing and tail -1 of nothing is nothing. LABELLED, NOT SILENT: a
+  # fallback that prints the line without saying where it came from just
+  # moves the blank somewhere nobody looks, and a blank where a result
+  # belongs is open list 199's whole subject. NEVER PRINT AN EMPTY RESULT.
+  #
+  # WRITTEN TO SURVIVE set -e, WHICH NEITHER FILE SETS TODAY. Plain `if`
+  # blocks and a readability guard, so no line here can exit the shell if
+  # anyone adds errexit later. The first version used
+  # `SUMMARY=$(tail -1 "$GATE_ERR" 2>/dev/null)`, and MEASURED under set -e
+  # in both /bin/sh and /bin/zsh that exits when the file is absent: an
+  # assignment takes the substitution's status, so the gate would have died
+  # SILENTLY, with no output at all, AFTER the suite had already passed.
+  #
+  # && AND || ARE NOT MIRROR IMAGES HERE, and the asymmetry is not the
+  # obvious one. `[ ... ] || X` is safe because the list returns 0 when its
+  # test succeeds. `[ ... ] && X` was ALSO safe, but for an unrelated
+  # reason: errexit does not fire on a non-final command of an AND-OR list,
+  # measured in both shells. Two different reasons for two lines that look
+  # symmetrical is exactly the kind of thing to stop relying on, so neither
+  # form is used below.
+  SUMMARY=$(echo "$out" | tail -1)
+  if [ -z "$SUMMARY" ] && [ -r "$GATE_ERR" ]; then
+    SUMMARY=$(tail -1 "$GATE_ERR")
+    if [ -n "$SUMMARY" ]; then SUMMARY="(stderr) $SUMMARY"; fi
+  fi
+  if [ -z "$SUMMARY" ]; then SUMMARY="(NO SUMMARY on stdout or stderr; see $GATE_ERR)"; fi
+  echo "  ok  $T: $SUMMARY"
 done
-echo "pre-commit gate: all suites green"
+# ---------------------------------------------------------------------------
+# THE FORMAT LINK. The only step here that proves a plugin can be built.
+#
+# 6a5efb6 IS THE INSTANCE: committed, pushed, three suites green, and no plugin
+# could be built from it. A swept deletion took six editor handlers (keyPressed,
+# mouseDrag, mouseUp, mouseWheelMove, mouseDown, mouseDoubleClick) and every
+# step above passed, because the gate compiles translation units and links TEST
+# HARNESSES. The AU and VST3 targets are the only things that link
+# EchoJayEditor, and until now they were not in it.
+#
+# WHY A CHEAPER HARNESS WAS REJECTED, ON EVIDENCE RATHER THAN ARGUMENT.
+# tabstrip_test calls EchoJayEditor::computeTabRects, so it genuinely does pull
+# PluginEditor.cpp.o out of the archive. It LINKS CLEAN ANYWAY, measured at 56s
+# on the broken tree, because nothing makes the vtable live and the linker
+# dead-strips it. The undefined symbols are referenced FROM the vtable. So a
+# harness that merely references the class is NOT SUFFICIENT: the gate has to
+# link something that forces the vtable, and the format target is the thing
+# that already does.
+#
+# MEASURED COST: EchoJay_VST3 is 63s against a current archive, against
+# tabstrip_test's 56s in the same state. The marginal cost is comparable to a
+# suite this gate already runs.
+#
+# VST3 ONLY, NOT BOTH. The undefined-symbol class this exists to catch is
+# format-independent: it is the editor's vtable, shared by both wrappers, and
+# VST3 failed on exactly the same six symbols AU did. Adding AU would double
+# the cost to catch the same thing twice. A format-SPECIFIC break would still
+# escape, and that is a real gap, stated here rather than left implied.
+if [ -f "$REPO/build/compile_commands.json" ]; then
+  echo "  linking EchoJay_VST3 (the only step that proves a plugin builds)..."
+  out=$(cmake --build "$REPO/build" --target EchoJay_VST3 -j 4 2>&1)
+  if [ $? -ne 0 ]; then
+    echo "GATE FAIL: EchoJay_VST3 did not link"
+    echo "$out" | grep -E 'Undefined symbols|referenced from|^  \"' | head -12
+    echo "  (the suites above can be green while this fails: see open list 158)"
+    exit 1
+  fi
+  echo "  ok  EchoJay_VST3 links"
+else
+  echo "  SKIP  EchoJay_VST3 (tree not configured)"
+fi
+
+echo "pre-commit gate: all suites green and the plugin links"
