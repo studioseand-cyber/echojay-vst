@@ -3162,6 +3162,45 @@ inline int runCategorisePropose (const SweepOptions& opt, const juce::StringArra
     return 0;
 }
 
+// A LIMITER THROUGH THE COMPRESSOR CERTIFICATION (Kathy's ruling, 10 Oct: "limiters through compressor certification: YES ... so their
+// drafts become compressor profile + ceiling block"): the sweep (candidates, Rule 1, the detector), finishRecord (the rules, the
+// outcome, the profile written INTO THIS FOLDER), then the tone check - the strip section's path for a whole unit. The folder is the
+// Phase B row's (phaseb/limitercomp/), never the cert store: nothing reaches cert/profiles, every profile is not_for_publication;
+// the limiter's draft (compProfileFor) composes with it.
+inline int runLimiterCompressor (const SweepOptions& opt0)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt0.product) hits.push_back (r);
+    if (hits.size() != 1) { say ("LIMITER-COMP: '" + opt0.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
+    SweepOptions opt = opt0; opt.fixtures = opt.out.getChildFile ("fixtures"); opt.fixtures.createDirectory(); opt.profile = true;
+    auto sub = std::make_shared<Subject>(); sub->desc = hits[0].desc; sub->product = opt0.product; sub->uid = juce::String::toHexString (hits[0].desc.uniqueId).toLowerCase(); sub->version = hits[0].desc.version;
+    sub->reach = Subject::Reach::unfixtured; sub->installedUnique = true; sub->category = "compressor";
+    sub->detail = "a limiter through the compressor certification (v0.2: its profile = the compressor profile + the ceiling block)";
+    { auto* o = new juce::DynamicObject(); o->setProperty ("product", sub->product); o->setProperty ("uid", sub->uid); o->setProperty ("version", sub->version); o->setProperty ("format", "AudioUnit"); o->setProperty ("category", "compressor"); sub->pushed = juce::var (o); }
+    opt.sectionSubject = sub;
+    const int rc = runCertSweep (opt);
+    say ("LIMITER-COMP: sweep exit " + juce::String (rc));
+    if (rc == kToneLicenceKnownExit) return rc;   // a licence / device stop: the row says so
+    const auto rec = latestRecordFor (opt.fixtures, opt.product);
+    if (! rec.existsAsFile()) { say ("LIMITER-COMP: no record written (nothing to sweep)"); return 4; }
+    auto mark = [&] (const juce::File& f) { auto p = juce::JSON::parse (f.loadFileAsString()); if (auto* o = p.getDynamicObject()) { o->setProperty ("limiter_compressor", true); o->setProperty ("not_for_publication", true); f.replaceWithText (juce::JSON::toString (p) + "\n", false, false, "\n"); } };
+    mark (rec);
+    auto outcomes = juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()); if (! outcomes.isArray()) outcomes = juce::Array<juce::var>();
+    auto row = finishRecord (opt, rec, "compressor");
+    if (auto* o = row.getDynamicObject()) { o->setProperty ("limiter_compressor", true); o->setProperty ("not_for_publication", true); }
+    outcomes = loop::mergeRow (outcomes, row); opt.out.getChildFile ("outcomes.json").replaceWithText (juce::JSON::toString (outcomes) + "\n", false, false, "\n");
+    say ("LIMITER-COMP: " + row.getProperty ("state", "").toString() + ": " + row.getProperty ("reason", "").toString());
+    if (row.getProperty ("state", "").toString() == "exported" || row.getProperty ("reason", "").toString().startsWith ("export pending"))
+    { SweepOptions t = opt; t.product = {}; say ("LIMITER-COMP: tone check pass exit " + juce::String (runToneCheckAll (t))); }
+    for (const auto& f : opt.out.getChildFile ("profiles").findChildFiles (juce::File::findFiles, false, "*.json")) mark (f);
+    // kept beside the row: the record (Phase B skips a mode's fixtures/) and the outcome
+    { const auto d = opt.out.getChildFile ("record"); d.createDirectory(); rec.copyFileTo (d.getChildFile (rec.getFileName())); }
+    { const auto d = opt.out.getChildFile ("outcome"); d.createDirectory(); opt.out.getChildFile ("outcomes.json").copyFileTo (d.getChildFile ("AudioUnit_" + sub->uid + "_" + sub->version + ".outcomes.json")); }
+    // a licence the certification suspected (MLimiterX here: dropouts) files the Phase B row needs_licence, as every other mode's does
+    if (row.getProperty ("state", "").toString() == "needs_licence") { say ("LIMITER-COMP: " + opt.product + " - " + row.getProperty ("reason", "").toString()); return kToneLicenceKnownExit; }
+    return 0;
+}
+
 // A STRIP'S COMPRESSOR SECTION THROUGH THE FULL COMPRESSOR PATH (Kathy, 7 Oct): the sweep (its candidates, Rule 1's pick with the
 // section's engage as the probe's preset, the detector), finishRecord (the rules, the record's outcome, the profile written INTO
 // THE SECTION FOLDER so the tone check can rehearse the writes), then the tone check. The section folder is never the cert
@@ -4012,12 +4051,14 @@ inline int runTiming (const SweepOptions& opt)
 inline juce::var compProfileFor (const juce::File& certDir, const juce::String& identity, juce::String& source)
 {
     if (certDir == juce::File() || identity.isEmpty()) return {};
-    for (const auto& f : certDir.getChildFile ("profiles").findChildFiles (juce::File::findFiles, false, "*.json"))
-    {
-        if (f.getFileName().endsWith (".tonecheck.json")) continue;
-        const auto p = juce::JSON::parse (f.loadFileAsString());
-        if (p.getProperty ("plugin", {}).getProperty ("plugin_id", "").toString() == identity) { source = "profiles/" + f.getFileName(); return p; }
-    }
+    // the cert store first, then the limiter step's own folder (10 Oct: limiters through the compressor certification)
+    for (const char* rel : { "profiles", "phaseb/limitercomp/profiles" })
+        for (const auto& f : certDir.getChildFile (rel).findChildFiles (juce::File::findFiles, false, "*.json"))
+        {
+            if (f.getFileName().endsWith (".tonecheck.json")) continue;
+            const auto p = juce::JSON::parse (f.loadFileAsString());
+            if (p.getProperty ("plugin", {}).getProperty ("plugin_id", "").toString().equalsIgnoreCase (identity)) { source = juce::String (rel) + "/" + f.getFileName(); return p; }
+        }
     return {};
 }
 // LIMITER CEILING ACCURACY (roadmap 2.4; PROTOTYPE, 5 Oct overnight B3; derivation in EjmapLimiter.h). The ceiling control by

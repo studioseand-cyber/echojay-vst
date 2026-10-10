@@ -58,6 +58,8 @@ inline const std::vector<Category>& categories()
         { "samplerate",  "--cert-samplerate",    "",          {},                              600.0,  "three tone-check processes: ~30 s", true },
         // strips (item E, 7 Oct; opt-in: --redo strips): the ledger's channel strips, each section through its category's mode
         { "strips",      "--cert-strip",         "",          { "channel_strip" },             2400.0, "a section per mode (eq ~6-12 min, gate ~5, saturation ~4): ~15-25 min", true },
+        // limiters through the compressor certification (Kathy's ruling, 10 Oct; opt-in: the run-all step limiter_comp / --redo limitercomp)
+        { "limitercomp", "--cert-limiter-comp",  "",          { "limiter" },                   1800.0, "the compressor certification on a limiter: the profile sweep (31 levels x up to 16 positions), the detector, the tone check", true },
         { "gainall",     "--cert-gain-cal",      "all",       { "eq", "limiter", "de-esser", "saturation", "amp_sim", "reverb", "delay", "transient_shaper", "gate" }, 600.0, "21 norms x 2-3 levels per gain control + the unnamed pool: ~1-4 min", true } };
     return k;
 }

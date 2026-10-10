@@ -308,7 +308,7 @@ inline juce::var oneProfile (const juce::var& ceilingDraft, const juce::var& com
     if (auto* o = D.getDynamicObject())
     {
         juce::Array<juce::var> notes; if (const auto* n = o->getProperty ("notes").getArray()) notes = *n;
-        notes.add ("v0.2: a limiter profile is the compressor profile plus this block; no compressor profile exported for " + identity + " (limiters are not run through the compressor certification): the ceiling block alone, no GR prediction");
+        notes.add ("v0.2: a limiter profile is the compressor profile plus this block; no compressor profile exported for " + identity + " (the limiter_comp step has not run on it, or its certification did not export - phaseb/limitercomp/outcome/ says which): the ceiling block alone, no GR prediction");
         o->setProperty ("compressor_profile", juce::var()); o->setProperty ("notes", notes);
     }
     return D;

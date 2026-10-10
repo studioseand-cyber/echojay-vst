@@ -65,6 +65,8 @@ inline const std::vector<Step>& steps()
         { "saturation",       "redo",     { "saturation" },                                         7200.0,  "saturation + amp sims" },
         { "reverb_delay",     "redo",     { "reverb,delay" },                                       11500.0, "reverb and delay (role tests twice: x1.5-1.65 rehearsed, 8 Oct)" },
         { "transient_gate",   "redo",     { "transient,gate" },                                     1900.0,  "transient shapers and gates (role tests twice: x1.3-1.65 rehearsed, 8 Oct)" },
+        // 10 Oct (Kathy's ruling): limiters through the compressor certification - after transient_gate, before no_pool in the night lines
+        { "limiter_comp",     "redo",     { "limitercomp" },                                        20100.0, "limiters through the compressor certification (their drafts: compressor profile + ceiling block)" },
         { "nothing_nominated","selector", { "nothing_nominated" },                                  16200.0, "rows the lexicon nominated nothing for" },
         { "strips",           "redo",     { "strips" },                                             50400.0, "channel strips, every section drafted" },
         { "drafts",           "plain",    { "--phaseb-drafts" },                                    5.0,     "every draft from the records on disk", false, true } };

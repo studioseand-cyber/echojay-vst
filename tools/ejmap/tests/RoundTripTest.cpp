@@ -8658,6 +8658,13 @@ void testDraftsPass()
             tmp.getChildFile ("profiles").createDirectory();
             const auto comp = mk ({ { "schema", "ej_comp_profile/1" }, { "plugin", mk ({ { "name", "X" }, { "plugin_id", "AudioUnit|417f6e6e|1.2.1" } }) }, { "amount", mk ({ { "control", "Input" } }) } });
             const auto pf = tmp.getChildFile ("profiles/X_1.2.1.json"); pf.replaceWithText (juce::JSON::toString (comp));
+            {   // 10 Oct: a limiter's compressor profile from the limiter step's own folder (never the cert store) composes the same way
+                const auto lcDir = tmp.getChildFile ("phaseb/limitercomp/profiles"); lcDir.createDirectory();
+                const auto comp2 = mk ({ { "schema", "ej_comp_profile/1" }, { "plugin", mk ({ { "name", "Z" }, { "plugin_id", "AudioUnit|22222222|2.0" } }) }, { "not_for_publication", true } });
+                lcDir.getChildFile ("Z_2.0.json").replaceWithText (juce::JSON::toString (comp2));
+                juce::String src; const auto got = ejmap::cert::compProfileFor (tmp, "AudioUnit|22222222|2.0", src);
+                check (got.isObject() && src == "phaseb/limitercomp/profiles/Z_2.0.json", "drafts LIM-ONE b: the limiter step's compressor profile (phaseb/limitercomp/profiles) is found for the limiter's draft (" + src + ")");
+            }
             tmp.getChildFile ("profiles/X_1.2.1.tonecheck.json").replaceWithText (juce::JSON::toString (mk ({ { "plugin", mk ({ { "plugin_id", "AudioUnit|417f6e6e|1.2.1" } }) } })));
             const auto before = pf.loadFileAsString();
             const auto recL = mk ({ { "product", "X" }, { "identity", "AudioUnit|417f6e6e|1.2.1" }, { "measuredAt", "20261005T010203" }, { "ceiling_control", "Ceiling" }, { "nominated_by", "names" }, { "ceiling", limRows } });
@@ -9152,7 +9159,17 @@ void testTextPassTimeout()
 void testPhaseB()
 {
     using namespace ejmap::phaseb;
-    check (categories().size() == 18 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories()[14].name == "frequency" && categories()[15].name == "samplerate" && categories()[16].name == "strips" && categories().back().name == "gainall", "phaseb P1: eighteen categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, frequency, samplerate, strips, gain-all)");
+    check (categories().size() == 19 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories()[14].name == "frequency" && categories()[15].name == "samplerate" && categories()[16].name == "strips" && categories()[17].name == "limitercomp" && categories().back().name == "gainall", "phaseb P1: nineteen categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, frequency, samplerate, strips, limitercomp, gain-all)");
+    // LIM-COMP (Kathy's ruling, 10 Oct): limiters through the compressor certification - an opt-in category over the ledger's limiters,
+    // its run-all step after transient_gate (a redo step: its resume never re-deletes); a bare --phaseb-all never runs it
+    {
+        const auto* lc = categoryNamed ("limitercomp"); const auto* st = ejmap::runall::stepNamed ("limiter_comp");
+        juce::StringArray order; for (const auto& x : ejmap::runall::steps()) order.add (x.name);
+        check (lc != nullptr && lc->optIn && lc->mode == "--cert-limiter-comp" && lc->ledgerCategories.contains ("limiter") && lc->ledgerCategories.size() == 1
+               && st != nullptr && st->kind == "redo" && order.indexOf ("limiter_comp") == order.indexOf ("transient_gate") + 1 && order.indexOf ("limiter_comp") < order.indexOf ("drafts")
+               && ejmap::runall::argsFor (*st, false, "/c", {}).joinIntoString (" ") == "--phaseb-all --redo limitercomp --out /c" && ejmap::runall::argsFor (*st, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --category limitercomp --out /c",
+               "phaseb LIM-COMP: limiters through the compressor certification - opt-in over limiters, the run-all step straight after transient_gate, its resume --category");
+    }
     for (const auto& c : categories()) check (c.guardS >= 600.0 && c.guardWhy.isNotEmpty(), "phaseb P2: " + c.name + " has a stated hang guard of at least 10 min (" + juce::String (c.guardS / 60.0, 0) + ")");
     check (categoryNamed ("saturation")->ledgerCategories.contains ("amp_sim") && modeWord ("--cert-reverb-delay") == "reverbdelay" && modeWord ("--cert-gain-cal") == "gaincal", "phaseb P3: amp sims ride with saturation; the mode word is the record folder");
     // the done marker: a row file, whole or absent
