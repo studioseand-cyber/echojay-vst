@@ -326,6 +326,10 @@ struct EchoJayTabStripTestAccess
     static std::vector<juce::Rectangle<int>> rowRects (EchoJayEditor& e) { return e.chainRowRects_; }
     static int displayRows (EchoJayEditor& e) { return (int) e.chainDisplayRows_.size(); }
     static bool chainsModeOn (EchoJayEditor& e) { return e.processorRef.chainSidebarChainsMode; }
+    // test 6: the ONE predicate and the one it must agree with
+    static bool chainsShowing (EchoJayEditor& e) { return e.chainsSidebarShowing(); }
+    static bool replyAllowed  (EchoJayEditor& e) { return e.chatReplyControlsAllowed(); }
+    static void setCollapsed  (EchoJayEditor& e, bool on) { e.processorRef.chatSidebarCollapsed = on; e.resized(); }
     static juce::StringArray chips (EchoJayEditor& e, const Msg& m) { juce::StringArray out; for (const auto& c : e.resultChipList (m)) out.add (c.label + "#" + juce::String (c.kind)); return out; }
     // 18h (1): the chip layout at a given width, the row count, the on-screen chip buttons
     static std::vector<juce::Rectangle<int>> layout (EchoJayEditor& e, const Msg& m, int w) { std::vector<juce::Rectangle<int>> r; e.layoutResultChips (m, { 0, 0, w, 26 }, r); return r; }
@@ -3799,6 +3803,49 @@ int main()
                "(C) ...and the user gets a reply to it, always (RED as it stood: a verb the loop had nothing to "
                "do with produced the user's own bubble and silence)",
                juce::String ((int) (M.size() - before)) + " message(s) added");
+    }
+
+    // ---- TEST 6, 10 Oct 2026: THE CHAINS COLUMN IS DRAWN AT ALL ---------------------------------------
+    // Sean: in CHAINS mode the whole AI ASSISTANT column goes blank INCLUDING the header, the invisible AI button
+    // still takes clicks where it should be, and Aa stays visible. His reading was an opaque overpainter. It is
+    // the opposite: nothing paints it. assistantVisible gates the entire column paint, and
+    // chatReplyControlsAllowed() returned false on `chainSidebarChainsMode` ALONE while the layout required the
+    // full conjunction - so when chains mode was requested but the sidebar was not eligible, the paint said "no
+    // assistant" and the layout said "not chains", and neither drew anything. The switch stayed clickable
+    // because it is parent-painted and hit-tested by rect; Aa stayed visible because the branch that hides it
+    // never ran. ONE predicate now answers it.
+    std::printf ("== test 6: the CHAINS column is drawn, header and rows ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (2000, 1100); A::toChat (*ed); pumpMs (60);
+        A::build (*ed, "{\"chain\":[{\"name\":\"EchoJay EQ\",\"role\":\"eq\",\"settings\":\"\"}]}");
+        for (int k = 0; k < 40 && A::tab (*ed) != A::chainTab(); ++k) pumpMs (30);
+
+        // (a) THE TWO PREDICATES AGREE, which is the whole fix. Asserted in both modes.
+        A::setChainsMode (*ed, true);  pumpMs (120);
+        check (A::chainsShowing (*ed) && ! A::replyAllowed (*ed),
+               "(6) in CHAINS mode: the chains sidebar IS showing and the assistant yields to it",
+               juce::String ((int) A::chainsShowing (*ed)) + "/" + juce::String ((int) A::replyAllowed (*ed)));
+        A::setChainsMode (*ed, false); pumpMs (120);
+        check (! A::chainsShowing (*ed) && A::replyAllowed (*ed),
+               "(6) in AI mode: the assistant is allowed again",
+               juce::String ((int) A::chainsShowing (*ed)) + "/" + juce::String ((int) A::replyAllowed (*ed)));
+
+        // (b) THE CASE SEAN HIT: chains mode REQUESTED while the sidebar cannot show it. The old code made
+        // chatReplyControlsAllowed() false here on the flag alone, so assistantVisible went false and the column
+        // was drawn by nobody. Now the flag alone is not enough, so the assistant keeps the column.
+        A::setCollapsed (*ed, true);   // the sidebar is collapsed...
+        A::setChainsMode (*ed, true);  // ...and CHAINS is pressed anyway
+        pumpMs (120);
+        check (! A::chainsShowing (*ed),
+               "(6) chains mode REQUESTED but the sidebar is not eligible -> it is NOT showing");
+        check (! A::replyAllowed (*ed),
+               "(6) ...and with the sidebar collapsed the assistant is not allowed either - by the COLLAPSE, "
+               "which is the honest reason, not by a chains flag nobody is honouring");
+        A::setCollapsed (*ed, false); A::setChainsMode (*ed, false); pumpMs (120);
+        check (A::replyAllowed (*ed), "(6) ...and un-collapsing restores the assistant");
     }
 
     // ---- 08c item D, 9 Oct 2026: THE CHAINS LIST RENDERS ROWS, AND ONE NUMBER BOUNDS THEM --------------

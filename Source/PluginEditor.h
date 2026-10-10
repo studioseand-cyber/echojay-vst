@@ -859,6 +859,18 @@ private:
         rule out. */
     bool chatCollapseControlVisible() const;
 
+    /** 10 Oct 2026 (test 6): ONE AUTHORITY FOR "IS THE CHAINS SIDEBAR SHOWING".
+        The blank CHAINS column was two authorities for this one question. The layout asked the conjunction
+        (Chain tab, not compact, not visual-only, no review overlay, sidebar not collapsed, AND the mode flag);
+        chatReplyControlsAllowed() asked `processorRef.chainSidebarChainsMode` ALONE. When they disagreed - chains
+        mode REQUESTED while the sidebar was not eligible - the paint concluded "no assistant" and skipped the
+        whole column (header fill, the CHAINS label, the AI|CHAINS switch, the rows), while the layout concluded
+        "not chains either" and placed no list and hid nothing. Result: a column drawn by nobody, with the
+        switch's rect still live because it is parent-painted and hit-tested by rect, and Aa still visible
+        because the chains branch that hides it never ran. Not an overpainter - an unpainter.
+        Same fault as 08c item D's two bottom edges and item B's two card layouts: one question, two authorities. */
+    bool chainsSidebarShowing() const;
+
     // CHAT tab empty-state centred layout (Claude/ChatGPT pattern): when the
     // ACTIVE chat has no messages, the input renders centred in the message
     // area with a greeting above it; one or more messages = the docked

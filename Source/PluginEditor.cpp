@@ -13492,9 +13492,22 @@ int EchoJayEditor::buildChainOnTargets(const juce::StringArray& uids, const juce
 // AI|CHAINS switch call it. The loop's pill row (Go / Check / Undo / Done / Listen) is PAINTED inside the chat
 // bubble with hit zones rather than being a child component, so it cannot outlive the block that draws it - its
 // zones are cleared by the same reset (gainCardZones_ / chatWavePositions), so it disappears with the block.
+bool EchoJayEditor::chainsSidebarShowing() const
+{
+    // THE one answer. Mirrors resized()'s conjunction exactly; resized() now consults this instead of rebuilding
+    // it, so the two cannot drift. reviewOverlay is read through its visibleState as the layout does.
+    return (currentTab == Tab::Chain) && ! compactMode && ! visualOnlyMode
+        && ! reviewOverlay.visibleState && ! processorRef.chatSidebarCollapsed
+        && processorRef.chainSidebarChainsMode;
+}
+
 bool EchoJayEditor::chatReplyControlsAllowed() const
 {
-    if (processorRef.chainSidebarChainsMode) return false;   // the panel is showing CHAINS, not the AI sub-view
+    // 10 Oct 2026 (test 6): the CONJUNCTION, not the flag alone. Asking the flag by itself said "no assistant"
+    // whenever chains mode was REQUESTED, including when the sidebar could not show it - and then nothing drew
+    // the column at all. The assistant yields to a chains list that is actually on screen; it does not yield to
+    // a flag nobody is honouring.
+    if (chainsSidebarShowing()) return false;   // the panel is showing CHAINS, not the AI sub-view
     // F1 REVISED (21s-b): the Settings VIEW is full width and covers the column, so it still says no. The Compare
     // VIEW does not - the Compare TAB has a panel column like every other tab - and excluding it here was a second
     // list of surfaces beside the layout's. The layout is the one answer.
@@ -25055,7 +25068,8 @@ void EchoJayEditor::resized()
         const bool chainSidebar = (currentTab == Tab::Chain) && !compactMode
                                && !visualOnlyMode && !reviewOverlay.visibleState
                                && !processorRef.chatSidebarCollapsed;
-        const bool chainsMode   = chainSidebar && processorRef.chainSidebarChainsMode;
+        const bool chainsMode   = chainsSidebarShowing();   // 10 Oct: ONE author (see the header)
+        jassert (chainsMode == (chainSidebar && processorRef.chainSidebarChainsMode));   // they must agree, by construction
 
         // The AI | CHAINS rects are NOT authored here. They are placed by the
         // chat header strip authority further down, which reserves the strip
