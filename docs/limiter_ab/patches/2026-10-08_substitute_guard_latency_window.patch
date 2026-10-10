@@ -1,0 +1,20 @@
+diff --git a/tools/substitute_guard/harness.cpp b/tools/substitute_guard/harness.cpp
+index 2b165ce..59d7281 100644
+--- a/tools/substitute_guard/harness.cpp
++++ b/tools/substitute_guard/harness.cpp
+@@ -107,8 +107,14 @@ int main()
+         check (ap == 2 && sk == 0 && std::abs (lim.getParamValue ("input_db") - 7.5) < 1e-6 && std::abs (lim.getParamValue ("ceiling_db") + 0.1) < 1e-6, "EchoJay Limiter dials input_db +7.5 and ceiling_db -0.1 (2/2 applied)", "applied=" + juce::String (ap) + " skipped=" + juce::String (sk));
+         juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+         for (int k = 0; k < 6; ++k) { b.clear(); lim.processBlock (b, m); }   // the push EASES over 50 ms (ruling G): let it land first
++        // Limiter v2 (8 Oct 2026) reports a fixed latency (1160 samples at 48 k), so the impulse leaves in a LATER block:
++        // drain silent blocks until the reported latency has passed and take the peak over all of them. The claim under
++        // test - the gain is applied before the ceiling - is unchanged; only the window the old (108-sample) limiter let
++        // the guard get away with is widened to the delay the device reports.
+         b.clear(); b.setSample (0, 100, 0.1f); b.setSample (1, 100, 0.1f); lim.processBlock (b, m);
+-        check (b.getMagnitude (0, 0, 512) > 0.2f, "+7.5 dB of input gain is heard before the ceiling (a 0.1 impulse leaves above 0.2, after the 50 ms ease)", juce::String (b.getMagnitude (0, 0, 512), 3));
++        float heard = b.getMagnitude (0, 0, 512);
++        for (int done = 512; done < lim.getLatencySamples() + 512; done += 512) { b.clear(); lim.processBlock (b, m); heard = juce::jmax (heard, b.getMagnitude (0, 0, 512)); }
++        check (heard > 0.2f, "+7.5 dB of input gain is heard before the ceiling (a 0.1 impulse leaves above 0.2 within the reported latency, after the 50 ms ease)", juce::String (heard, 3) + " (latency " + juce::String (lim.getLatencySamples()) + ")");
+     }
+ #else
+     check (false, "APPLIED n/n: Ratio 2:1 / Threshold -18 dB / Attack 30 ms / Release auto translated and dialled (was 0/3)", "TODAY: the controls payload is dropped");

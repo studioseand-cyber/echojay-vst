@@ -1,0 +1,10 @@
+ship_2026-10-03c  placed 2026-10-03 15:09:02  from build-release (four plugin targets, -j 4)
+newest Source: Oct  3 14:40:12 2026 Source/EJCalibLoop.h
+== EchoJay V2 ==
+  arm64  E20761E5-18EF-3DAB-BFF5-331350525D77
+  x86_64 F0D2F05B-B9C0-3582-AF55-14D213AD0085
+  size   67M
+== EchoJay Link ==
+  arm64  2D4426C9-EEA3-3697-BFC7-9B85758A5DEA
+  x86_64 023A851B-E53B-3B33-B77F-B6FEFB9D5355
+  size   49M

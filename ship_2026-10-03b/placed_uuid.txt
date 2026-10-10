@@ -1,0 +1,10 @@
+ship_2026-10-03b  placed 2026-10-03 12:01:09  from build-release (EchoJay EchoJayLink EchoJay_AU EchoJayLink_AU, -j 4)
+Source as built: newest file Source/EJCalibLoop.h at Oct  3 11:36:02 2026
+== EchoJay V2 ==
+  arm64  B3561412-2B73-3E5C-B706-C0085A6BD34C
+  x86_64 0408CD4B-FA55-3E50-97B9-89D2F0999C76
+  size   67M
+== EchoJay Link ==
+  arm64  7217FFE4-29B0-35F8-845C-7BD80691EDDD
+  x86_64 0B89F663-E55D-3590-A267-4C2B29D7F873
+  size   49M

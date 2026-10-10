@@ -1,0 +1,4 @@
+44c44
+<     mode (transparent|punchy|clip, default transparent) - how it holds the ceiling: transparent is the clean lookahead limiter (use it on a master), punchy is faster with a touch of drive so a loud mix feels dense rather than just loud, clip is a hard ceiling - the loudest and most aggressive, and it ignores release and lookahead
+---
+>     mode (transparent|punchy|clip|modern|allround, default transparent) - how it holds the ceiling, each a tuning of the same true-peak engine: transparent is the clean one (use it on a master); punchy holds a hit's body down a little longer so a loud mix feels dense rather than just loud; modern keeps the gain steady on sustained material (no ride on bass or tones, the smoothest); allround sits between transparent and punchy; clip is reserved (runs transparent)

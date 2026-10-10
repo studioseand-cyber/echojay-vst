@@ -1,64 +1,53 @@
 /*
-    EedLimiterEditor.h  —  the editor for "EchoJay Limiter".
+    EedLimiterEditor.h  -  the editor for "EchoJay Limiter" (v2 panel, wired 9 Oct 2026 after Sean's approval).
 
-    Three dials, a gain-reduction meter, a transfer curve, and one line of text
-    the other faces do not need: the latency the lookahead is currently costing.
-    A device that silently delays the track is a device people distrust; showing
-    the number turns it into an informed choice.
+    The shared device shell (DeviceEditorBase: logo, title, hint, BYPASS hard right) carries the header; the style
+    box and the TRUE PK switch sit in it, inboard of BYPASS, as before. Everything under the header is
+    EedLimiterPanelV2 - the scrolling display, the IN/OUT/GR bars, GAIN and CEILING, the LUFS column, the ADVANCED
+    row (LOOKAHEAD, ATTACK, RELEASE, LINK, RLS LINK, SC HPF). The panel runs headerless here (its own header row is
+    for the offline preview).
 
-    THE CEILING IS DRAWN AS A HARD LINE, over the curve rather than under it.
-    The curve flattening at the ceiling is a CONSEQUENCE of the infinite ratio;
-    the line is the PROMISE — nothing gets above this — and the promise is what
-    the device is selling. Everything above it is shaded out, because an empty
-    plot above a flat curve reads as headroom that is still available, which is
-    the exact opposite of what a brick wall means.
-
-    The curve is drawn in Limit mode with a HARD knee, matching the DSP:
-    EedLimiterProcessor sets knee 0 deliberately, because a soft knee would
-    start reducing below the ceiling, and that is a compressor.
-
-    THE MODE SELECTOR HIDES WHAT IT DISABLES. `clip` runs an instantaneous gain
-    and no delay, so RELEASE and LOOKAHEAD are both doing nothing — and a dial
-    that turns, reads back and changes nothing is worse than a dial that is not
-    there. Both come back the moment the mode does. They remain schema params
-    throughout, so an AI move can set them while clip is selected and they will
-    be waiting when it is not.
+    DATA PATH. The processor's limv2::MeterTap feeds the panel (lock-free, per sample from the engine). The dials go
+    the other way through one callback: every id the panel names is a schema id, set with setParamValue - the same
+    funnel the assistant's moves use - and "bypass" goes to setBypassed. A 10 Hz timer reads the processor back into
+    the panel's Model (so an assistant move, a restored chain, or the migration shows on the dials), only when a
+    value changed, so a dial under the mouse is never fought.
 */
 
 #pragma once
 
-#include "EedDynamicsFaceEditor.h"
+#include "DeviceEditorBase.h"
 #include "EedLimiterProcessor.h"
-#include "viz/TransferCurveView.h"
+#include "EedLimiterPanelV2.h"
+#include "EedDynamicsEditorSupport.h"
 
-class EedLimiterEditor : public EedDynamicsFaceEditor
+class EedLimiterEditor : public DeviceEditorBase, private juce::Timer
 {
 public:
     // 21m (22 Sep 2026): Threshold READOUT = ceiling - input gain (display only; the DSP clamps at the ceiling, the input gain pushes into it)
     static juce::String thresholdReadout (double ceilingDb, double inputDb) { return "threshold " + juce::String (ceilingDb - inputDb, 1) + " dB"; }
     explicit EedLimiterEditor (EedLimiterProcessor& p);
+    ~EedLimiterEditor() override;
+
+    // What the dials show right now - the processor read back into the panel's Model (tests: the migration shows)
+    EedLimiterPanelV2::Model currentModel() const { return panel_.model(); }
+    // Move a dial as a user would (tests: a dial drives its parameter); false if no dial has that id
+    bool setDialForTest (const juce::String& id, double value) { return panel_.setDialValue (id, value); }
+    // Read the processor into the Model now (what the timer does), callable by a test without a message loop
+    void syncFromProcessor();
 
 protected:
     void layoutHeaderLeading (juce::Rectangle<int>& bar) override;
-
-    int  topContentHeight() const override;
-    void layoutTopContent (juce::Rectangle<int> area) override;
-
-    int  extraContentHeight() const override { return 30; }   // 18e: two rows (latency, in/out readouts)
-    void layoutExtraContent (juce::Rectangle<int> area) override;
-
-    bool knobVisible (int index) const override;
-    void refreshExtras() override;
+    void layoutContent (juce::Rectangle<int> content) override;
 
 private:
-    EedLimiterProcessor&            limiter_;
-    echojay::viz::TransferCurveView curve_;
-    juce::Label                     latencyLabel_;
-    juce::Label                     inOutLabel_;      // 18e (item 4): input / output LUFS-S + true peak beside GR
+    void timerCallback() override { syncFromProcessor(); }
+    EedLimiterPanelV2::Model readModel() const;
 
-    juce::ComboBox   modeBox_;
-    juce::TextButton truePeakBtn_;
-
+    EedLimiterProcessor& limiter_;
+    EedLimiterPanelV2    panel_;
+    juce::ComboBox       modeBox_;
+    juce::TextButton     truePeakBtn_;
     bool suppressCallbacks_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedLimiterEditor)

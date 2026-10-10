@@ -1,0 +1,1040 @@
+UpdateCTestConfiguration  from :/Users/SeanD/echojay-limiter/build-guards-lv2/DartConfiguration.tcl
+Parse Config file:/Users/SeanD/echojay-limiter/build-guards-lv2/DartConfiguration.tcl
+Test project /Users/SeanD/echojay-limiter/build-guards-lv2
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 4
+    Start 4: loudness_loop_guard
+
+4: Test command: /Users/SeanD/echojay-limiter/tools/tests/run_guard.sh "/Users/SeanD/echojay-limiter/build-guards-lv2/guards/loudness_loop_guard" "--scribble"
+4: Working Directory: /Users/SeanD/echojay-limiter
+4: Environment variables: 
+4:  EJ_GUARD_HOME_BASE=/Users/SeanD/echojay-limiter/build-guards-lv2/guard-homes
+4: Test timeout computed to be: 900
+4: loudness_loop_guard v2 (18e): the Level slot, max short-term, ask-before-apply, the verbs, tracking
+4:   ok    precondition: EchoJay Limiter is registered
+4: == A. ask before applying: -18 programme, target -9, Level 0 dB ==
+4: 2026-10-09 10:54:57.175 loudness_loop_guard[15876:99463507] EJNet: base=https://www.echojay.ai source=built-in devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+4: 2026-10-09 10:54:57.177 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:54:57.177 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:54:57.177 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:54:57.177 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:54:57.178 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:54:57.178 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:54:57.178 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:54:57.178 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:54:57.178 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:54:57.178 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:54:57.178 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:54:57.178 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:54:57.178 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:54:57.374 loudness_loop_guard[15876:99463507] EJNet: config fetch ok, prompt in force = REMOTE v21 (served version 21)
+4: 2026-10-09 10:54:57.679 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    programme calibrated at the chain input to -18 LUFS  [-17.99]
+4:   ok    armed from the Level slot's params  [EJLoudness: armed: target -9.0 LUFS (level_params, commercial), Level slot 0 gain +0.0 dB, limiter slot 1 (EchoJay Limiter), build-time input -18.0 LUFS | EJLoudness: bubble: Cue the loudest section, ]
+4:   ok    arm source level_params, Level slot 0, limiter slot 1  [level_params]
+4:   ok    after the window the loop PROPOSES (state proposed)  [3]
+4:   ok    A. ask before applying: nothing moves until go  [Level gain 0.00 dB]
+4:   ok    the proposal reads "Measured -x LUFS (loudest 3 s). Push +y dB to reach -9.0?"  [Measured -18.0 LUFS (loudest 3 s). Push +6.0 dB to reach -9.0? limiter working 0.1 dB on the hits (worst peak 0.6).]
+4:   ok    A. the proposal bubble carries [Go] [Leave it]  [Go|Leave it]
+4:   ok    the proposed trim is the pass clamp (+6 of the ~+9 needed)  [6.00]
+4: 2026-10-09 10:54:59.021 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:54:59.021 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 6 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    go applies
+4:   ok    A. the loop drives the Level slot, the limiter's input_db is untouched  [Level 6.00 dB, limiter input_db 0.00]
+4:   ok    limiter input_db still 0.0  [0.00]
+4:   ok    M2. after Go the bubble reads "Applied +X dB (Level now +Y). How's it sounding?" with [Check] [A bit louder] [A bit softer] [Undo] [Done] in that order  [Applied +6.0 dB (Level now +6.0). How's it sounding? | Check|A bit louder|A bit softer|Undo|Done]
+4:   ok    M1. 20 s of counted audio after Go: zero measurement lines, no new proposal bubble (the loop holds)  [state 4 measured +0 bubbles +0]
+4:   ok    M1. Check starts one window
+4:   ok    M1. ...then exactly one measurement and one proposal bubble  [measured +1 bubbles +1 | Measured -12.0 LUFS (loudest 3 s). Push +3.0 dB to reach -9.0? limiter working 0.0 dB on the hits (worst peak 0.7).]
+4:   ok    M3. the second proposal (it follows an apply) carries [Go] [Leave it] [Undo]  [Go|Leave it|Undo]
+4: 2026-10-09 10:55:01.452 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:01.452 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 8.99 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    A. after go + Check the second window lands within +-1 dB and the loop tracks  [Hitting -9.0 LUFS (loudest 3 s), target -9.0 - on target. Peaks -5.0 dBTP, limiter working 0.1 dB on the hits (worst peak 0.6). I'll keep watching for a louder section. | Level 8.99]
+4:   ok    item 5: EJLoudness lines for arm, measurement and apply  [EJLoudness: armed: target -9.0 LUFS (level_params, commercial), Level slot 0 gain +0.0 dB, limiter slot 1 (EchoJay Limiter), build-time input -18.0 LUFS | EJLoudness: bubble: Cue the loudest section, press play, then tap Listen. [Listen] | EJLoudness: bubble: Listening... | EJLoudness: bubble: Liste]
+4: == B. quiet section: build-time input -18, the window plays at -24 ==
+4: 2026-10-09 10:55:02.418 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:02.418 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:02.418 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:02.418 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:02.419 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:02.419 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:02.419 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:02.419 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:02.419 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:02.419 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:02.419 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:02.419 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:02.420 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:02.920 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    the build-time integrated input is captured at arm (-18)  [-17.99]
+4:   ok    B. quiet section: the loop ASKS (state quietAsked), nothing applied until a pill  [Level 0.00 state 6]
+4:   ok    B. the quiet bubble names both numbers and carries [Listen again] [This is the loudest part]  [This is quieter than the section the chain was built on (-24.0 now vs -18.0 at build). Is this the loudest part of the song? Listen again|This is the loudest part]
+4:   ok    B. [Listen again] re-arms the window with one bubble (18g: the Listening... progress bubble)  [Listening...]
+4:   ok    B. a quiet window asks again
+4:   ok    B. [This is the loudest part] proceeds to the normal proposal (Go / Leave it) from the held measurement  [Measured -24.0 LUFS (loudest 3 s). Push +6.0 dB to reach -9.0? limiter working 0.0 dB on the hits (worst peak 0.8). | pills Go|Leave it]
+4:   ok    B. ...and still nothing applied until Go  [0.00]
+4:   ok    B. logged: window quiet, then accepted
+4: == C. chorus after verse: applied on a -18 window, then a +3 dB section ==
+4: 2026-10-09 10:55:05.232 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:05.232 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:05.233 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:05.233 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:05.233 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:05.233 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:05.234 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:05.234 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:05.234 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:05.234 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:05.234 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:05.234 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:05.234 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:05.737 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:07.080 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:07.080 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 2.99 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    on target and tracking  [Hitting -9.0 LUFS (loudest 3 s), target -9.0 - on target. Peaks -4.8 dBTP, limiter working 0.2 dB on the hits (worst peak 0.8). I'll keep watching for a louder section.]
+4:   ok    C. chorus after verse: a back-off is PROPOSED, never applied  [That section is louder than the one I levelled on (-6.0 LUFS, 3.0 dB over the target) - back off -3.0 dB?]
+4:   ok    the Level gain did not move on its own  [2.99 vs 2.99]
+4:   ok    C. the back-off bubble carries [Back off] [Leave it]  [Back off|Leave it]
+4: 2026-10-09 10:55:08.680 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:08.681 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db -0.01 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    C. [Back off] applies the back-off  [-0.01]
+4: == D. a THIRD-PARTY limiter last (EJ Test Limiter, a clipper): the Level slot reaches the target ==
+4: 2026-10-09 10:55:08.807 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:08.807 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:08.808 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:08.808 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:08.808 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:08.808 loudness_loop_guard[15876:99463495] ChainHost: "EJ Test Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:08.808 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EJ Test Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:08.809 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:08.809 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:08.809 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:08.809 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:08.969 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    armed with a non-EchoJay limiter last  [EJLoudness: armed: target -9.0 LUFS (level_params, commercial), Level slot 0 gain +0.0 dB, limiter slot 1 (EJ Test Limiter), build-time input -14.0 LUFS | EJLou]
+4: 2026-10-09 10:55:09.401 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:09.401 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 4.99 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    D. third-party limiter last: the target is reached through the Level slot  [Hitting -9.0 LUFS (loudest 3 s), target -9.0 - on target. Peaks -4.8 dBTP, limiter working ~0.0 dB on the hits (worst peak 0.0). I'll keep watching for a louder section. | Level 4.99]
+4:   ok    18g (4) third-party limiter: the GR reads "limiter working ~X dB on the hits (worst peak Y)" (21m: typical + worst, no average), never "not an EchoJay device"  [Hitting -9.0 LUFS (loudest 3 s), target -9.0 - on target. Peaks -4.8 dBTP, limiter working ~0.0 dB on the hits (worst peak 0.0). I'll keep watching for a louder section.]
+4: == E. the verbs ==
+4: 2026-10-09 10:55:09.798 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:09.798 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:09.798 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:09.799 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:09.799 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:09.799 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:09.799 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:09.799 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:09.799 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:09.799 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:09.800 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:09.800 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:09.800 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:10.300 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:11.642 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:11.643 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 2.99 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    E. the result bubble (on target) carries [Undo] [A bit louder] [A bit softer] [Done] - no Push it on target (18h item 3)  [Undo|A bit louder|A bit softer|Done]
+4: 2026-10-09 10:55:12.485 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:12.485 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 3.99 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    E. a verb after the result bubble produces exactly ONE reply bubble (a bit louder)  [1]
+4: 2026-10-09 10:55:12.485 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:12.485 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 2.99 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    E. leave it (on target): one bubble, the result pills without Push it (18h)  [Leaving it at -9.0 LUFS, Level +3.0 dB. [Undo|A bit louder|A bit softer|Done]]
+4:   ok    E. check the level again: one bubble
+4: 2026-10-09 10:55:13.329 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:13.329 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 3.99 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    K1. a bit louder: Level +1 now, target -8, ONE bubble "Applied +1.0 dB (Level now +Y). How's it sounding?" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window  [Applied +1.0 dB (Level now +4.0). How's it sounding? [Check|A bit louder|A bit softer|Undo|Done] state 4]
+4:   ok    K1. ...and NO automatic check follows a verb (16 s of audio: nothing measured, nothing logged)  [state 4]
+4:   ok    K1. Check starts one window
+4:   ok    K1. ...which REPORTS on target with the result pills (no Push it, no proposal)  [Hitting -8.0 LUFS (loudest 3 s), target -8.0 - on target. Peaks -4.0 dBTP, limiter working 0.0 dB on the hits (worst peak 0.4). [Undo|A bit louder|A bit softer|Done]]
+4: 2026-10-09 10:55:15.529 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:15.529 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 2.99 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    K1. a bit softer: Level -1 now, target back to -9, the same bubble and pills  [Applied -1.0 dB (Level now +3.0). How's it sounding?]
+4:   ok    K1. Check after it: on target (-9)  [Hitting -9.0 LUFS (loudest 3 s), target -9.0 - on target. Peaks -5.2 dBTP, limiter working 0.0 dB on the hits (worst peak 0.4).]
+4:   ok    leave it: holds, says where  [Leaving it at -9.0 LUFS, Level +3.0 dB.]
+4: 2026-10-09 10:55:16.380 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:16.380 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 2.98 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    push it applies immediately
+4:   ok    K1. push it: moved the Level by the shortfall, the after-verb bubble, no window  [2.99 -> 2.98 (shortfall -0.00) Applied 0.0 dB (Level now +3.0). How's it sounding?]
+4: 2026-10-09 10:55:16.380 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:16.380 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    E. verbs: push it / a bit louder / a bit softer / check the level again / undo / leave it  [Applied -3.0 dB (Level now +0.0). How's it sounding? | Level 0.00 (g0 2.99)]
+4: == F. GR text on a PEAKY programme + H. true peak by the independent meter ==
+4: 2026-10-09 10:55:16.504 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:16.504 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:16.505 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:16.505 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:16.505 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:16.505 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:16.506 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:16.506 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:16.506 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:16.506 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:16.506 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:16.506 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:16.506 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:17.010 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:18.340 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:18.341 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 6 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    F. GR text (21m): "limiter working X dB on the hits (worst peak Y)" - typical + worst, no average  [Measured -10.2 LUFS (loudest 3 s). -10.2 is as loud as this goes with the limiter working <=6 dB. Push to -9.0 anyway? limiter working 6.6 dB on the hits (worst peak 14.9).]
+4:   ok    ...the worst-peak figure carries the EchoJay Limiter's own max GR (> 0.5 dB)  [14.90 vs grMax 9.18]
+4:   ok    H. peaky programme: output true peak <= -0.1 dBTP by the independent meter  [-0.28 dBTP]
+4: == G. 18d: arm AFTER the exact built-in apply (the live order) - on the Level slot ==
+4: 2026-10-09 10:55:19.316 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:19.316 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:19.317 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:19.317 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:19.317 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:19.318 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:19.318 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:19.318 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:19.318 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:19.318 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:19.318 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:19.318 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 8.8 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4:   ok    the exact apply replaced the Level slot's text  [Applied automatically
+4: gain_db 0 dB, target_lufs -9 LUFS, lou]
+4:   ok    G. arm after the exact built-in apply (18d) stays GREEN  [level_params]
+4: == I. COMPATIBILITY: a LIVE-shaped chain (88x7asebn: target_lufs on the EchoJay Limiter with input_db +8.8, NO Level slot) ==
+4: 2026-10-09 10:55:19.451 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4: 2026-10-09 10:55:19.451 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay EQ" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:19.451 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay EQ") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:19.451 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:19.452 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay EQ" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:19.452 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:19.453 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:19.453 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:19.453 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 2 skipped
+4: 2026-10-09 10:55:19.453 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 8.8 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:19.453 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:19.918 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:20.380 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay EQ" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:20.380 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:20.381 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:20.381 loudness_loop_guard[15876:99463495] EJDial: slot 3 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:20.381 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 2
+4: 2026-10-09 10:55:20.382 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay EQ" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:20.382 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:20.382 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:20.382 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:20.382 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    I. the live-shaped chain ARMS (the loop inserts the Level slot it needs; RED as it stood: not armed, the insertion lived in the editor)  [EJLoudness: inserted EchoJay Level at slot 1 (target -9.0 from limiter_params; the chain had none) | EJLoudness: armed: target -9.0 LUFS (level_params, commercial), Level slot 1 gain +0.0 dB, limiter ]
+4:   ok    I. EchoJay Level was inserted immediately before the limiter  [EchoJay EQ | EchoJay Level | EchoJay Limiter]
+4:   ok    I. armed from the inserted Level slot's params, target -9 (copied from the limiter), limiter slot = the last  [level_params 1/2]
+4:   ok    I. the server's input_db +8.8 stays on the limiter; the Level starts at 0  [8.80]
+4:   ok    I. a window measured -> a proposal (or on target)  [Measured -6.2 LUFS (loudest 3 s). Push -2.8 dB to reach -9.0? limiter working 0.0 dB on the hits (worst peak 0.4).]
+4: 2026-10-09 10:55:21.271 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:21.271 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> gain_db -2.81 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    I. after go the loop DROVE THE LEVEL SLOT and the limiter's input_db is still +8.8  [Level -2.81 dB, limiter input_db 8.80]
+4:   ok    I. the insertion is logged as EJLoudness  [EJLoudness: inserted EchoJay Level at slot 1 (target -9.0 from limiter_params; the chain had none) | EJLoudness: armed: target -9.0 LUFS (level_params, commerci]
+4: == J. 18g loop manners: explicit Listen / Check, +-1 dB with step scaling and 3 proposals, Done, the GR estimate, the ceiling safety net ==
+4: 2026-10-09 10:55:21.398 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:21.398 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:21.398 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:21.398 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:21.399 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:21.399 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:21.399 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:21.399 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:21.399 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:21.399 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:21.399 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:21.399 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:21.399 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:21.928 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    J1. the arm bubble reads "Cue the loudest section, press play, then tap Listen" with [Listen]  [Cue the loudest section, press play, then tap Listen. [Listen]]
+4:   ok    J1. NO window runs on the first audio: 16 s of audio without Listen measures nothing, proposes nothing  [state 7]
+4:   ok    J1. Listen starts the window
+4:   ok    J1. ...which measures and proposes with [Go] [Leave it]  [Measured -18.0 LUFS (loudest 3 s). Push +6.0 dB to reach -9.0? limiter working 0.0 dB on the hits (worst peak 0.4). | pills Go|Leave it]
+4: 2026-10-09 10:55:24.624 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:24.624 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 6 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    J2. after Go: hold with the after-verb bubble, no window runs  [Applied +6.0 dB (Level now +6.0). How's it sounding?]
+4:   ok    J2b. ...and 10 silent ticks change nothing (no "Tap Check" bubble, no measurement)  [Applied +6.0 dB (Level now +6.0). How's it sounding?]
+4:   ok    J2b. Check starts the window
+4:   ok    J2b. ...which measures  [Measured -12.0 LUFS (loudest 3 s). Push +3.0 dB to reach -9.0? limiter working 0.0 dB on the hits (worst peak 0.7).]
+4: 2026-10-09 10:55:25.777 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:25.778 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:25.778 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:25.778 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:25.778 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:25.779 loudness_loop_guard[15876:99463495] ChainHost: "EJ Test Soft Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:25.779 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EJ Test Soft Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:25.779 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:25.779 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:25.779 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:25.779 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:25.943 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:26.381 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:26.381 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 4.41 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:26.658 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:26.658 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 7.34 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    J3. the 0.6x fixture lands within +-1.0 dB of the target  [needed 0.01 state 5]
+4:   ok    J3. ...in at most 2 proposals (step scaled by achieved/commanded; RED as it stood: 3 shrinking passes)  [2 proposal(s)]
+4:   ok    J3. the scaling is logged (ratio 0.6x)  [step scaling: commanded +2.9 dB, achieved +1.7 dB -> ratio 0.60 (clamped 0.5-2.0) | EJLoudness: measured: max short-term]
+4:   ok    J3. the GR line on this third-party fixture is the estimate (the ~ mark)  [Hitting -9.0 LUFS (loudest 3 s), target -9.0 - on target. Peaks -6.1 dBTP, limiter working ~0.0 dB on the hits (worst peak 0.0). I'll keep watching for a louder section.]
+4:   ok    J4. Done: one bubble, the loop holds  [Done - Level +7.3 dB, last measured -9.0 LUFS. Say listen to measure again.]
+4:   ok    J4. after Done a louder section is neither measured nor proposed on (the watch is over)  [state 4]
+4: 2026-10-09 10:55:27.505 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:27.505 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:27.505 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:27.505 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:27.506 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:27.506 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:27.506 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:27.506 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:27.506 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:27.506 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:27.506 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:27.506 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:27.506 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:28.009 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:28.541 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:28.541 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db -2.95 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    J5. the estimate lands within 1 dB of the EchoJay Limiter's real GR  [estimate 2.84 vs real 2.88 dB]
+4: 2026-10-09 10:55:29.533 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:29.533 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:29.533 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:29.533 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:29.534 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:29.534 loudness_loop_guard[15876:99463495] ChainHost: "EJ Test Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:29.534 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EJ Test Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:29.534 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:29.534 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:29.534 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs 0 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:29.534 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:29.699 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:29.875 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:29.875 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:29.875 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:29.875 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:29.875 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:29.876 loudness_loop_guard[15876:99463495] ChainHost: "EJ Test Bypass" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:29.876 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EJ Test Bypass") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:29.876 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:29.876 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:29.876 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs 0 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:29.876 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:30.039 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:30.203 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:30.203 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db -3.95 dB, target_lufs 0 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:30.476 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:30.476 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 2.05 dB, target_lufs 0 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:30.777 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:30.777 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db -3.95 dB, target_lufs 0 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:31.048 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:31.048 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 2.05 dB, target_lufs 0 LUFS, loudness_option commercial
+4:   K5 inputs: amp 1.212 / 1.212, gain +2.05 / +2.05 dB | chain in maxST 3.02, chain out maxST 3.31 | Level OUT TP 9.23, chain OUT TP 5.83 (tallies) | independent TP clipper 5.97, bypass 9.23
+4:   ok    K5. the two rigs ran the same programme at the same gain (the bypass rig is the pre-limiter truth)  [1.2119 / 1.2119]
+4:   ok    K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (chain in + gain - chain out), and the clipper is working  [estimate 1.74 vs truth 1.74 dB]
+4:   ok    K5. ...and the PEAK GR estimate (Level OUT true peak - chain OUT true peak) is within 1 dB of the independent pre/post true-peak difference  [estimate 3.41 vs truth 3.27 dB]
+4:   ok    K5. the bubble reads "limiter working ~X dB on the hits (worst peak Y)" (21m)  [Hitting 3.3 LUFS (loudest 3 s), target 6.0 - 2.7 dB under. Peaks 6.0 dBTP, limiter working ~3.0 dB on the hits (worst peak 3.2).]
+4:   ok    K5. the EJLoudness log carries the true-peak VALUES (Level OUT TP, chain OUT TP), not only their difference  [true peak: Level OUT TP 9.2 dBTP, chain OUT TP 6.0 dBTP, hits 3.3 dB (third-party limiter: the hits figure is the report]
+4: 2026-10-09 10:55:31.797 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:31.797 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:31.797 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:31.797 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:31.798 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:31.798 loudness_loop_guard[15876:99463495] ChainHost: "EJ Test Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:31.798 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EJ Test Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:31.798 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:31.798 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:31.798 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:31.798 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:31.958 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:32.117 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:32.118 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:32.118 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:32.118 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:32.118 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:32.118 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 2 band(s), 0 skipped
+4: 2026-10-09 10:55:32.118 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4:   ok    J6. ceiling readback absent -> EchoJay Limiter substituted at the last slot, the Level slot untouched  [EchoJay Level | EchoJay Limiter]
+4:   ok    J6. ...said in one line before the arm bubble  [EJ Test Limiter's ceiling could not be confirmed, so EchoJay Limiter holds the ceiling instead (-0.1 dBTP).]
+4:   ok    J6. ...and logged
+4:   ok    J6. the loop then runs against the substituted limiter (real GR)  [Measured -14.0 LUFS (loudest 3 s). Push +5.0 dB to reach -9.0? limiter working 0.1 dB on the hits (worst peak 0.6).]
+4: 2026-10-09 10:55:33.098 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:33.098 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:33.098 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:33.098 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:33.099 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:33.099 loudness_loop_guard[15876:99463495] ChainHost: "EJ Test Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:33.099 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EJ Test Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:33.099 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:33.099 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:33.099 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:33.099 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:33.259 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    J6. a third-party limiter whose ceiling READ BACK is kept  [EJ Test Limiter]
+4: == K. 22 Sep 2026 (item 5): the GR cap per loudness option, the capped proposal, the opening-gain clamp, the estimated-GR line ==
+4: 2026-10-09 10:55:33.547 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:33.547 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:33.547 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:33.548 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:33.548 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:33.548 loudness_loop_guard[15876:99463495] ChainHost: "EJ Test Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:33.548 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EJ Test Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:33.548 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:33.548 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:33.548 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -8 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:33.549 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:33.709 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    K. peaky programme calibrated to -18 LUFS  [-18.01]
+4:   ok    K. armed (third-party limiter last, Commercial)  [EJLoudness: armed: target -8.0 LUFS (level_params, commercial), Level slot 0 gain +0.0 dB, limiter slot 1 (EJ Test Limiter), build-time input -18.0 LUFS | EJLoudness: bubble: Cue the loudest section, ]
+4:   ok    K1. the proposal is CAPPED by limiter GR on the hits (Commercial <= 6 dB, 21m): "<level> is as loud as this goes with the limiter working <=6 dB. Push to -8.0 anyway?"  [Measured -17.8 LUFS (loudest 3 s). -12.4 is as loud as this goes with the limiter working <=6 dB. Push to -8.0 anyway? limiter working ~0.0 dB on the hits (worst peak 0.0).]
+4:   ok    K2. the capped proposal carries [Push it anyway] [Leave it]  [Push it anyway|Leave it]
+4:   ok    K1. the cap arithmetic is logged (typical hit true peak + trim - ceiling > cap -> trim; 21m: the top-20 % block measure)  [: typical hit true peak 0.4 dBTP (top 20 % of 30 blocks; worst peak 1.5 dBTP, worst reduction 0.0 dB) + trim +6.0 - ceiling -0.1 = 6.5 dB typical on the hits > ]
+4:   ok    K4 (ruling 4): with a third-party limiter the measured line is followed by the true-peak line (Level OUT TP, chain OUT TP, hits) and the hits figure is the report  [true peak: Level OUT TP 1.5 dBTP, chain OUT TP 1.5 dBTP, hits 0.0 dB (third-party limiter: the hits figure is the report)
+4: EJLoudness: bubble]
+4:   ok    K1. the capped trim is positive and under the cap (the limiter would work <= 6 dB)  [5.44]
+4: 2026-10-09 10:55:34.133 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:34.133 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 6 dB, target_lufs -8 LUFS, loudness_option commercial
+4:   ok    K2. Push it anyway applies the UNCAPPED step (the pass clamp, +6)  [6.00]
+4: 2026-10-09 10:55:34.259 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:34.259 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:34.260 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:34.260 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:34.260 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:34.261 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:34.261 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:34.261 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:34.261 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:34.261 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -8 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:34.261 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:34.261 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:34.261 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:34.261 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 12 dB, target_lufs -8 LUFS, loudness_option commercial
+4:   ok    K3. the build opened the Level at +12 dB (the server's estimate)  [12.00]
+4: 2026-10-09 10:55:34.261 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    K3. the chain-in tally carries the build-time true peak  [-1.62 dBTP known=1]
+4: 2026-10-09 10:55:35.006 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:35.006 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 4.52 dB, target_lufs -8 LUFS, loudness_option commercial
+4:   ok    K3. armed
+4:   ok    K3. opening gain at build = min (estimate, ceiling + 3 dB - build-time true peak): +12 is clamped so peaks never open more than 3 dB over the ceiling  [Level 4.52 dB, allowed 4.52 (ceiling -0.1 + 3 - TP -1.62)]
+4: == L. 22 Sep 2026 rulings 5b + 2: the opening-gain FLOOR (-6.0) with the card's reason, and the complaint verb (softer x2) ==
+4: 2026-10-09 10:55:35.131 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:35.131 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:35.131 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:35.131 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:35.132 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:35.132 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:35.132 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:35.132 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:35.132 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:35.132 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -8 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:35.133 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:35.133 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:35.133 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:35.133 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 6 dB, target_lufs -8 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:35.133 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    L1. precondition: ceiling + 3 - build-time true peak is below the floor  [-13.54 (TP 16.44)]
+4: 2026-10-09 10:55:35.877 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:35.877 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db -6 dB, target_lufs -8 LUFS, loudness_option commercial
+4:   ok    L1. armed
+4:   ok    L1 (5b). the opening gain is FLOORED at -6.0 dB  [Level -6.00]
+4:   ok    L1 (5b). the chain card's Level line reads "Level -6.0 dB: the mix already peaks above the ceiling"  [Level -6.0 dB: the mix already peaks above the ceiling]
+4: 2026-10-09 10:55:36.005 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:36.005 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:36.006 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:36.006 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:36.006 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:36.007 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:36.007 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:36.007 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:36.007 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:36.007 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:36.007 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:36.007 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:36.007 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:36.502 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:37.850 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:37.850 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 6 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:37.850 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:37.850 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 4 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    L2 (item 2, client half). a complaint after the apply = the softer step twice: Level -2, target -2, ONE bubble "Applied -2.0 dB (Level now ...)"  [Applied -2.0 dB (Level now +4.0). How's it sounding? | Level 6.00 -> 4.00]
+4: == N. 22 Sep 2026 (21m item 1): the loop tracks its Level slot by IDENTITY - an insert before it keeps the loop armed on the same Level; removing the Level stops it ==
+4: 2026-10-09 10:55:37.977 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:37.978 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:37.978 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:37.978 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:37.979 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:37.979 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:37.979 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:37.979 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:37.979 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:37.979 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:37.979 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:37.979 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:37.979 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:38.484 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    N0. armed on the Level at slot 0  [0]
+4: 2026-10-09 10:55:38.990 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:38.990 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:38.990 loudness_loop_guard[15876:99463495] ChainHost: "EJ Test Bypass" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:38.991 loudness_loop_guard[15876:99463495] EJDial: slot 3 ("EJ Test Bypass") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:38.991 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 2
+4: 2026-10-09 10:55:38.991 loudness_loop_guard[15876:99463495] ChainHost: "EJ Test Bypass" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:38.991 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:38.992 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4:   ok    N1. a slot inserted BEFORE the Level moves it to index 1  [EJ Test Bypass | EchoJay Level]
+4:   ok    N1. the loop stays ARMED on the SAME Level instance (now slot 1), no "no longer in the chain" (RED today: index 0 is the inserted slot, the loop stops)  [state 7 slot 1 | Cue the loudest section, press play, then tap Listen.]
+4: 2026-10-09 10:55:39.972 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Level") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:39.972 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> gain_db 6 dB, target_lufs -9 LUFS, loudness_option commercial
+4:   ok    N1. ...and Go drives that same Level (slot 1 gained +6)  [6.00]
+4: 2026-10-09 10:55:39.973 loudness_loop_guard[15876:99463495] ChainHost: "EJ Test Bypass" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:39.973 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4:   ok    N2. removing the Level itself stops the loop with the message  [The Level slot is no longer in the chain - level loop stopped.]
+4: == O. 22 Sep 2026 (21m item 3): the cap is on the TYPICAL reduction (top 20 % of 100 ms blocks), the worst peak is shown beside it ==
+4: 2026-10-09 10:55:40.090 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:40.091 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:40.091 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:40.091 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:40.091 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:40.091 loudness_loop_guard[15876:99463495] ChainHost: "EJ Test Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:40.091 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EJ Test Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:40.091 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:40.091 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:40.092 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -10.5 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:40.092 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:40.251 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   O1 measure: typical 2.8 dB, worst 9.0 dB over 30 blocks | Measured -12.0 LUFS (loudest 3 s). Push +1.5 dB to reach -10.5? limiter working ~2.8 dB on the hits (worst peak 9.0).
+4:   ok    O1. the measure separates the single transient (worst) from the typical hits (worst >= typical + 3 dB)  [2.83 / 8.96]
+4:   ok    O1. the bubble reads "limiter working ~X dB on the hits (worst peak Y)"  [Measured -12.0 LUFS (loudest 3 s). Push +1.5 dB to reach -10.5? limiter working ~2.8 dB on the hits (worst peak 9.0).]
+4:   ok    O1. with the hits typically under the Commercial cap the proposal is NOT capped (the single 9 dB transient no longer caps it)  [Measured -12.0 LUFS (loudest 3 s). Push +1.5 dB to reach -10.5? limiter working ~2.8 dB on the hits (worst peak 9.0).]
+4:   ok    O1. the EJLoudness log carries both figures (for the re-calibration)  [hits: typical 2.8 dB over the top 20 % of 30 blocks, worst 9.0 dB | EJLoudness: true peak:]
+4: 2026-10-09 10:55:40.803 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:40.804 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:40.804 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:40.804 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:40.804 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:40.804 loudness_loop_guard[15876:99463495] ChainHost: "EJ Test Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:40.805 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EJ Test Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:40.805 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:40.805 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:40.805 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -8 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:40.805 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:40.966 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   O2 measure: typical 6.6 dB, worst 7.9 dB over 30 blocks | Measured -11.2 LUFS (loudest 3 s). -11.2 is as loud as this goes with the limiter working <=6 dB. Push to -8.0 anyway? limiter working ~6.7 dB on the hits (worst peak 7.9).
+4:   ok    O2. hits typically above the cap -> capped with the capped-proposal wording  [Measured -11.2 LUFS (loudest 3 s). -11.2 is as loud as this goes with the limiter working <=6 dB. Push to -8.0 anyway? limiter working ~6.7 dB on the hits (worst peak 7.9).]
+4: == 21t-k item 3: the level sensor measures the PLUGIN ==
+4: 2026-10-09 10:55:41.526 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:41.526 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:41.526 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:41.526 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4:   ok    precondition: EchoJay Gain is registered
+4: 2026-10-09 10:55:41.527 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:41.527 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:41.527 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:41.527 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:41.528 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:41.528 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:41.528 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:41.528 loudness_loop_guard[15876:99463495] EJDial: slot 3 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:41.528 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 2
+4: 2026-10-09 10:55:41.528 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:41.528 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:41.528 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:41.529 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:41.529 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Gain") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:41.529 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> level_db 0 dB, pan 0, mode stereo, mid_db 0 dB, side_db 0 dB, mono off, phase_left off, phase_right off
+4: 2026-10-09 10:55:41.529 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:42.062 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    21t-k 3. a UNITY slot with no staging reads a level change of 0  [-0.00 dB]
+4: 2026-10-09 10:55:42.953 loudness_loop_guard[15876:99463495] EJThreshold: slot 2 output gain set to 12.00 dB (EchoJay's own, the plugin named no output control)
+4: 2026-10-09 10:55:42.954 loudness_loop_guard[15876:99463495] EJThreshold: slot 2 both legs reset - SHORTMAX and SHORT90 start again on each (the leg set the staging); no window from before this can enter a sample
+4:   ok    21t-k 3. ...and the SAME unity slot with pre -15 / output +15 still reads 0  (RED as it stood: "the slot was 15.0 dB quieter out than in", which is EchoJay's own staging, not the plugin)  [0.00 dB]
+4: 2026-10-09 10:55:43.491 loudness_loop_guard[15876:99463495] EJThreshold: slot 2 output gain set to 0.00 dB (EchoJay's own, the plugin named no output control)
+4: == P (reduced). keep-level survives the deletion of the compare trim ==
+4: 2026-10-09 10:55:43.615 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:43.616 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:43.616 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:43.616 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4:   ok    precondition: EchoJay Gain is registered
+4: 2026-10-09 10:55:43.616 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:43.617 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:43.617 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:43.617 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:43.617 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:43.618 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:43.618 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:43.618 loudness_loop_guard[15876:99463495] EJDial: slot 3 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:43.618 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 2
+4: 2026-10-09 10:55:43.618 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:43.618 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:43.618 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:43.618 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:43.618 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Gain") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:43.618 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> level_db 4 dB, pan 0, mode stereo, mid_db 0 dB, side_db 0 dB, mono off, phase_left off, phase_right off
+4: 2026-10-09 10:55:43.618 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:44.151 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    P3. the keep flag holds  [kept]
+4:   ok    P3. ...and the slot still adds its +4 dB  [4.00]
+4: 2026-10-09 10:55:45.949 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4: 2026-10-09 10:55:45.949 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:45.949 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:45.950 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4: 2026-10-09 10:55:45.950 loudness_loop_guard[15876:99463495] EJThreshold: slot 1 output gain set to 0.00 dB (EchoJay's own, the plugin named no output control)
+4: 2026-10-09 10:55:45.950 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:45.950 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:45.951 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:45.951 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:45.951 loudness_loop_guard[15876:99463495] EJThreshold: slot 2 output gain set to 0.00 dB (EchoJay's own, the plugin named no output control)
+4: 2026-10-09 10:55:45.952 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:45.952 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:45.952 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:45.952 loudness_loop_guard[15876:99463495] EJDial: slot 3 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:45.952 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 2
+4: 2026-10-09 10:55:45.952 loudness_loop_guard[15876:99463495] EJThreshold: slot 3 output gain set to 0.00 dB (EchoJay's own, the plugin named no output control)
+4: 2026-10-09 10:55:45.953 loudness_loop_guard[15876:99463495] EJPrompt: host identity resolved: "Terminal" pid=496 start=1788433286.527607 via responsible-pid
+4:   ok    P4. the keep flag persists across save/reopen  [3 slots]
+4: == Q (reduced). unityChain is absent, because there are no match trims to carry ==
+4: 2026-10-09 10:55:46.352 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:46.352 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:46.353 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:46.354 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4:   ok    precondition: EchoJay Gain is registered
+4: 2026-10-09 10:55:46.354 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:46.355 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:46.355 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:46.358 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:46.359 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:46.361 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:46.361 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:46.367 loudness_loop_guard[15876:99463495] EJDial: slot 3 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:46.367 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 2
+4: 2026-10-09 10:55:46.367 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:46.367 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:46.367 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:46.367 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:46.367 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Gain") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:46.367 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> level_db 4 dB, pan 0, mode stereo, mid_db 0 dB, side_db 0 dB, mono off, phase_left off, phase_right off
+4: 2026-10-09 10:55:46.367 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:46.898 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:47.434 loudness_loop_guard[15876:99463495] EJChat: history trim -- kept 0/0 history msgs (dropped: countCap 0, byteBudget 0, roleAlign 0 -- nothing dropped)
+4: 2026-10-09 10:55:47.434 loudness_loop_guard[15876:99463495] EJChat: body breakdown -- system=0b history=0b(-1 msgs) newest=0b messagesTotal=32b
+4: 2026-10-09 10:55:47.435 loudness_loop_guard[15876:99463495] EJChat: send turnType=chat autoDial=off dialWrites=on payload=NO msg=0b
+4: 2026-10-09 10:55:47.435 loudness_loop_guard[15876:99463495] EJChat: dev_mode body dump -> /Users/SeanD/echojay-limiter/build-guards-lv2/guard-homes/ejguard-loudness_loop_guard.KveEPY/Documents/EchoJay/chat-body-debug.json (103b total) source=live-send turnType=chat classifyIntent=none
+4:   ok    Q2. a populated rack BEFORE Listen carries no unityChain
+4: 2026-10-09 10:55:48.330 loudness_loop_guard[15876:99463495] EJChat: history trim -- kept 0/0 history msgs (dropped: countCap 0, byteBudget 0, roleAlign 0 -- nothing dropped)
+4: 2026-10-09 10:55:48.330 loudness_loop_guard[15876:99463495] EJChat: body breakdown -- system=0b history=0b(-1 msgs) newest=0b messagesTotal=32b
+4: 2026-10-09 10:55:48.331 loudness_loop_guard[15876:99463495] EJChat: send turnType=chat autoDial=off dialWrites=on payload=NO msg=0b
+4: 2026-10-09 10:55:48.331 loudness_loop_guard[15876:99463495] EJChat: dev_mode body dump -> /Users/SeanD/echojay-limiter/build-guards-lv2/guard-homes/ejguard-loudness_loop_guard.KveEPY/Documents/EchoJay/chat-body-debug.json (103b total) source=live-send turnType=chat classifyIntent=none
+4:   ok    Q3. ...and AFTER Listen it still carries none, because Listen no longer writes a trim  (RED as it stood: "unityChain":true, from the match trims Listen wrote)
+4: == V21P. 23 Sep 2026 (21p items 1-4): the validity gate, the per-slot picture, the pre-trim, and the plugin's own log ==
+4: 2026-10-09 10:55:48.453 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:48.453 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:48.454 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:48.454 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4:   ok    precondition: EchoJay Gain is registered
+4: 2026-10-09 10:55:48.454 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:48.454 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:48.454 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:48.455 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:48.455 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:48.455 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:48.456 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:48.456 loudness_loop_guard[15876:99463495] EJDial: slot 3 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:48.456 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 2
+4: 2026-10-09 10:55:48.456 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:48.456 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:48.456 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:48.456 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:48.456 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Gain") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:48.456 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> level_db 4 dB, pan 0, mode stereo, mid_db 0 dB, side_db 0 dB, mono off, phase_left off, phase_right off
+4: 2026-10-09 10:55:48.456 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:48.991 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    V1. a host that SAYS stopped is not rolling
+4:   SKIP  SUPERSEDED  V1. the slot's picture is "no reading", never a floor number
+4: 2026-10-09 10:55:49.650 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:49.650 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:49.650 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:49.651 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4:   ok    precondition: EchoJay Gain is registered
+4: 2026-10-09 10:55:49.651 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:49.651 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:49.651 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:49.651 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:49.652 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:49.652 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:49.652 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:49.652 loudness_loop_guard[15876:99463495] EJDial: slot 3 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:49.652 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 2
+4: 2026-10-09 10:55:49.652 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:49.652 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:49.653 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:49.653 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:49.653 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Gain") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:49.653 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> level_db 4 dB, pan 0, mode stereo, mid_db 0 dB, side_db 0 dB, mono off, phase_left off, phase_right off
+4: 2026-10-09 10:55:49.653 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    V1b. silence with the transport rolling is not a reading: no picture  (RED as it stood: the floor was taken as a measurement)
+4:   ok    V1b. the floors are -60 LUFS-S and -60 dBTP
+4:   ok    V1c. a host that never publishes a transport is UNKNOWN, not stopped: it does not block the loop
+4:   ok    V1c. ...and a host that SAYS stopped does
+4: 2026-10-09 10:55:50.116 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:50.116 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:50.116 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:50.117 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4:   ok    precondition: EchoJay Gain is registered
+4: 2026-10-09 10:55:50.117 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:50.117 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:50.117 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:50.117 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:50.118 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:50.118 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:50.118 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:50.118 loudness_loop_guard[15876:99463495] EJDial: slot 3 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:50.118 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 2
+4: 2026-10-09 10:55:50.119 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:50.119 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:50.119 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:50.119 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:50.119 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Gain") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:50.119 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> level_db 4 dB, pan 0, mode stereo, mid_db 0 dB, side_db 0 dB, mono off, phase_left off, phase_right off
+4: 2026-10-09 10:55:50.119 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:50.674 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   SKIP  SUPERSEDED  V2. after Listen the slot carries a picture: input peak, output peak  [was: in -200.00 out -200.00 dBTP]
+4:   SKIP  SUPERSEDED  V2. ...and the strip line reads it
+4:   ok    V2. the Listen card carries one line per slot, by name  (RED as it stood: no per-slot numbers existed)  [EchoJay Level: no reading | EchoJay Gain: no reading | EchoJay Limiter: no reading]
+4:   V2 card: EchoJay Level: no reading | EchoJay Gain: no reading | EchoJay Limiter: no reading
+4:   SKIP  SUPERSEDED  V3. the fixture drove slot 1 over -3 dBTP  [was: input was -200.00 dBTP - fixture too quiet]
+4: 
+4: == R1 (21s-b): the Level and Limiter slots carry no trim, ever ==
+4: 2026-10-09 10:55:52.285 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:52.285 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:52.285 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:52.285 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4:   ok    precondition: EchoJay Gain is registered
+4: 2026-10-09 10:55:52.285 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:52.286 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:52.286 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:52.286 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:52.286 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:52.287 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:52.287 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:52.287 loudness_loop_guard[15876:99463495] EJDial: slot 3 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:52.287 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 2
+4: 2026-10-09 10:55:52.287 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:52.287 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:52.287 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:52.287 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:52.287 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Gain") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:52.287 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> level_db 4 dB, pan 0, mode stereo, mid_db 0 dB, side_db 0 dB, mono off, phase_left off, phase_right off
+4: 2026-10-09 10:55:52.287 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:52.854 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    R1. fixture: a stale -2.9 dB pre-trim sits on the Level slot
+4: 2026-10-09 10:55:53.445 loudness_loop_guard[15876:99463495] EJLoudness: exempt trim cleared: EchoJay Level pre -2.9
+4:   ok    R1. the Level slot's pre-trim is CLEARED  (RED as it stood: it survived every Listen, unseen)  [0.00]
+4:   ok    R1. ...and the value found is LOGGED before it is zeroed  [exempt trim cleared: EchoJay Level pre -2.9]
+4:   SKIP  SUPERSEDED  R1. ...the limiter's post trim too
+4:   SKIP  SUPERSEDED  R1. ...and an exempt slot's line now SHOWS its pair instead of saying nothing
+4: 2026-10-09 10:55:53.445 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    R1. Level OUT TP = its input + its own gain, within 0.2 dB - nothing hidden in front of it (the 2.9 dB that went missing)  [in -14.22 + gain 0.00 = -14.22, read -14.22]
+4: 
+4: == R2 (21s-b): the proposal and Done agree on one figure ==
+4: 2026-10-09 10:55:54.474 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:54.474 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:54.475 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:54.475 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4:   ok    precondition: EchoJay Gain is registered
+4: 2026-10-09 10:55:54.475 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:54.475 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:54.475 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:54.475 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:54.476 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:54.476 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:54.477 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:54.477 loudness_loop_guard[15876:99463495] EJDial: slot 3 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:54.477 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 2
+4: 2026-10-09 10:55:54.477 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:54.477 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:54.477 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:54.477 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:54.477 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Gain") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:54.477 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> level_db 4 dB, pan 0, mode stereo, mid_db 0 dB, side_db 0 dB, mono off, phase_left off, phase_right off
+4: 2026-10-09 10:55:54.477 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:55.012 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   ok    R2. Done reports a figure  [done ok, 2 line(s): EJLoudness: done: Level +0.0 dB, last measured -10.0 LUFS - the loop is finished | EJLoudness: bubble: Done - Level +0.0]
+4:   ok    R2. ...and it is the SAME figure the proposal used  (RED as it stood: -11.3 at the proposal, -14.9 at Done)  [proposal -9.99 / EJLoudness: done: Level +0.0 dB, last measured -10.0 LUFS - the loop is finished]
+4: 
+4: == R3 (21s-b): per-slot loudness in and out, and 'working X dB' ==
+4: 2026-10-09 10:55:56.568 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:56.568 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:56.568 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:56.568 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4:   ok    precondition: EchoJay Gain is registered
+4: 2026-10-09 10:55:56.569 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:56.569 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:56.569 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:56.569 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:56.570 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:56.570 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:56.570 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:56.570 loudness_loop_guard[15876:99463495] EJDial: slot 3 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:56.570 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 2
+4: 2026-10-09 10:55:56.570 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 ("EchoJay Level") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:56.570 loudness_loop_guard[15876:99463495] EJParamApply: slot 0 readback -> gain_db 0 dB, target_lufs -9 LUFS, loudness_option commercial
+4: 2026-10-09 10:55:56.570 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 ("EchoJay Limiter") EXACT built-in apply, 3 band(s), 0 skipped
+4: 2026-10-09 10:55:56.570 loudness_loop_guard[15876:99463495] EJParamApply: slot 2 readback -> ceiling_db -0.1 dB, input_db 0 dB, release_ms 400 ms, attack_ms 275 ms, lookahead_ms 0.18 ms, link_pct 75 %, release_link_pct 100 %, mode transparent, true_peak on, sc_hpf_hz 0 Hz
+4: 2026-10-09 10:55:56.570 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 ("EchoJay Gain") EXACT built-in apply, 1 band(s), 0 skipped
+4: 2026-10-09 10:55:56.570 loudness_loop_guard[15876:99463495] EJParamApply: slot 1 readback -> level_db 4 dB, pan 0, mode stereo, mid_db 0 dB, side_db 0 dB, mono off, phase_left off, phase_right off
+4: 2026-10-09 10:55:56.571 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4: 2026-10-09 10:55:57.102 loudness_loop_guard[15876:99463495] EJLevels: all level tallies reset
+4:   SKIP  SUPERSEDED  R3. the strip line carries the loudness pair as well as the peaks  (RED as it stood: dBTP only)
+4:   SKIP  SUPERSEDED  R3. ...and so does the Listen card  [was: EchoJay Level: no reading | EchoJay Gain: no reading | EchoJay Limiter: no reading]
+4:   ok    R3. a dynamics-role slot reports how hard it is working (in - out, in LUFS)  [EchoJay Level: no reading | EchoJay Gain: no reading | EchoJay Limiter: no reading]
+4: 2026-10-09 10:55:58.663 loudness_loop_guard[15876:99463495] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+4:   ok    precondition: EchoJay Level and the limiter are registered
+4: 2026-10-09 10:55:58.663 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:58.664 loudness_loop_guard[15876:99463495] EJDial: slot 1 ("EchoJay Level") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:58.664 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 0
+4:   ok    precondition: EchoJay Gain is registered
+4: 2026-10-09 10:55:58.664 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:58.664 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:58.664 loudness_loop_guard[15876:99463495] EJDial: slot 2 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:58.665 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 1
+4: 2026-10-09 10:55:58.665 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Level" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:58.665 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:58.666 loudness_loop_guard[15876:99463495] ChainHost: "EchoJay Limiter" input buses=1 totalInCh=2 non-main buses fed=0
+4: 2026-10-09 10:55:58.666 loudness_loop_guard[15876:99463495] EJDial: slot 3 ("EchoJay Limiter") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+4: 2026-10-09 10:55:58.666 loudness_loop_guard[15876:99463495] ChainHost: built-in "" added as slot 2
+4: 2026-10-09 10:55:58.666 loudness_loop_guard[15876:99463495] EJGuard: 21p item 4 marker
+4:   ok    V4. the plugin writes its own log at /Users/SeanD/echojay-limiter/build-guards-lv2/guard-homes/ejguard-loudness_loop_guard.KveEPY/Library/EchoJay/logs  (RED as it stood: no such file)  [/Users/SeanD/echojay-limiter/build-guards-lv2/guard-homes/ejguard-loudness_loop_guard.KveEPY/Library/EchoJay/logs/echojay-0.log]
+4:   ok    V4. ...and every EchoJay_NSLog line lands in it
+4: 2026-10-09 10:55:58.666 loudness_loop_guard[15876:99463495] EJLoudness: slot picture: guard route check
+4:   ok    V4. ...and a loop line routed the way the editor routes it lands in the file  [slot 2 | 2026-10-09 10:55:58  EJGuard: 21p item 4 marker | 2026-10-09 10:55:58  EJLoudness: slot picture: guard route check | ]
+4:   ok    V4. ...the file is the plugin's own log, not an empty file  [68146 bytes]
+4:   ok    V4. five files of 2 MB  [5]
+4: 
+4: ==== loudness_loop_guard: GREEN (0 assertion(s) failed) ====
+4: 
+4: == 21t-d: the calibration loop drives to the band, and says what it did ==
+4:   ok    21t-d. fixture: the synthetic compressor's GR RISES with drive  [0.11 dB at 0, 6.99 dB at +12]
+4:   ok    21t-d (1). it opens on "Listening... play the loudest part"  [Listening... play the loudest part]
+4:   ok    21t-d (1). the post-trim mirrors the drive  [1.0 / -1.0]
+4:   ok    21t-d (1). the post-trim mirrors the drive  [2.0 / -2.0]
+4:   ok    21t-d (1). the post-trim mirrors the drive  [3.0 / -3.0]
+4:   ok    21t-d (1). the post-trim mirrors the drive  [4.0 / -4.0]
+4:   ok    21t-d (1). the post-trim mirrors the drive  [5.0 / -5.0]
+4:   ok    21t-d (1). the loop ENDS  [12 window(s)]
+4:   ok    21t-d (1). ...by moving the drive, 1 dB at a time  (RED as it stood: nothing moved it)  [5.0 dB]
+4:   ok    21t-d (1). ...and it ends ADJUSTED, in the band  [0]
+4:   ok    21t-d (1). ...with the last measured GR inside 2-3 dB  [2.36]
+4:   SKIP  SUPERSEDED  21t-d (1). ...and the card left "Listening" for a live figure
+4:   ok    21t-d (1). the closing names what was adjusted in ONE clause, then asks about the chain  [Adjusted the EJ Test Compressor to +5.0 dB - it is working 2.4 dB. How does the chain sound now?]
+4:   ok    21t-d (1). ...and offers no pills - the user answers in words
+4:   ok    21t-d (1). every window logs gr, pre, post and state  [EJThreshold: "EJ Test Compressor" window 1 gr=0.1 sinceWrite=unknown pre=+1.0 post=-1.0 mode=listen settle=2/3 grCrest=0.0 grLevel=n/a grVia= settleHeard=0.0s slotHeard=0.0s state=listening]
+4:   ok    21t-d (1). ...and the question is never the same one twice running  [Anything else on this chain you want changed? | How is it sounding to you?]
+4: 
+4: == 21t-d (2): silence pauses the loop at 30 s, and it resumes ==
+4:   ok    21t-d (2). 27 s of silence is not yet a pause  [1]
+4:   ok    21t-d (2). at 30 s the card says "Waiting for playback - play the loudest part of this channel"  [Waiting for playback - play the loudest part of this channel]
+4:   ok    21t-d (2). ...and the log says waiting  [EJThreshold: "EJ Test Compressor" window 10 gr=-- sinceWrite=unknown pre=+0.0 post=+0.0 mode=listen settle=2/3 grCrest=0.0 grLevel=n/a grVia= settleHeard=0.0s slotHeard=0.0s state=waiting]
+4:   ok    21t-d (2). nothing was written while it waited
+4:   ok    21t-d (2). ...and it RESUMES when signal returns  [EJ Test Compressor working 0.2 dB]
+4:   ok    21t-d (2). ...and starts working again on the first real window  [1 step(s)]
+4: 
+4: == 21t-d (3): the drive limit ends it with the figure it measured ==
+4:   ok    21t-d (3). it ends CLAMPED rather than driving past +/-12  [12.0 dB]
+4:   ok    21t-d (3). ...and the drive never left the limit  [12.0]
+4:   ok    21t-d (3). ...and the line names the figure it MEASURED, not one it did not  [I could not get EJ Test Compressor into the 2.0-3.0 dB band with drive alone - it is working 0.4 dB at +12.0 dB of drive. How does the chain sound now?]
+4: 
+4: == 21t-e: a chain with no compressor gets no drive and no loop ==
+4:   ok    21t-e. a loop that was never begun is not running  [0]
+4:   ok    21t-e. ...while a compressor's loop is  [EJ Test Compressor]
+4: 
+4: == 21t-d (5): the drive stops where the INPUT runs out of headroom ==
+4:   ok    21t-d (5). it stops at +6 dB - the drive that puts a -9 dBTP input at the -3 ceiling  (RED as it stood: it drove to the step budget and clipped the input on the way)  [6.0 dB]
+4:   ok    21t-d (5). ...and says so in the ruled words  [EJ Test Compressor: band not reached - drive limited by headroom at +6.0 dB, working 0.5 dB. How does the chain sound now?]
+4:   ok    21t-d (5). ...as a HEADROOM stop, not a step-budget one
+4:   ok    21t-d (5). ...and with headroom to spare it is the step budget that ends it, as before  [6.0 dB after 6 step(s)]
+4: 
+4: == 21t-d (4): a handover continues the loop, it does not restart it ==
+4:   ok    21t-d (4). fixture: the loop has already taken steps  [2]
+4:   ok    21t-d (4). the handover is logged  [EJThreshold: "EJ Test Compressor" window 4 gr=0.3 sinceWrite=unknown pre=+2.0 post=-2.0 mode=listen settle=2/3 grCrest=0.0 grLevel=n/a grVia= settleHeard=0.0s slotHeard=0.0s state=handover]
+4:   ok    21t-d (4). ...with the step count and the drive UNCHANGED  [2 step(s), 2.0 dB]
+4:   ok    21t-d (4). ...and the first window on the new host is not judged - it is that host's first  [2]
+4:   ok    21t-d (4). ...and the one after it continues the count  [3]
+4: 
+4: == 21t-d: a window with dropped frames is not a measurement ==
+4:   ok    21t-d. a dropped window advances nothing, and is not counted as silence  [0 step(s), 0 ms]
+4:   ok    21t-d. ...but a dropped window that was SILENT does count toward the 30 s clock  [3000 ms]
+4: 
+4: == 21t-g (6): a passive loop shows no card, asks for nothing, and reports once ==
+4:   ok    21t-g (6a). a passive loop draws NO card before it has measured anything  [(silent)]
+4:   ok    21t-g (6a). ...and none while it steps - no "Listening", no "play the loudest part"  [(silent)]
+4:   ok    21t-g (6a) as re-ruled twice. ...and it steps TOWARD THE BAND, one dB at a time and never more than the settle's three, silently  [1 step(s) of at most 3, drive 1.0]
+4:   ok    21t-g (6a). ...and 30 s of silence asks for nothing either (the listen pass would prompt)  [(silent)]
+4:   ok    21t-g (6a) as re-ruled. ...and it never posts a closing line  [(none)]
+4:   ok    21t-g (6a) as re-ruled. ...and it does not close itself: the next word is the user's  [still listening]
+4:   ok    21t-g (6b) as re-ruled. a compressor already in band moves nothing and stays measuring  [0 step(s), running]
+4:   ok    21t-g (6b). ...and there is no closing line - the only line it ever posts is the question  [(silent)]
+4:   SKIP  SUPERSEDED  21t-g (6b) as re-ruled. ...and after two judged windows it says what it measured and asks  [was: EJ Test Compressor on, landing it as it plays...]
+4:   ok    21t-g (6c). a LISTEN loop still asks for playback, word for word as before  [Listening... play the loudest part]
+4:   ok    21t-g (6c). ...and its closing line still ends in a question about the chain  [Adjusted the EJ Test Compressor to +1.0 dB - it is working 2.5 dB. How does the chain sound now?]
+4:   ok    21t-g (6d). too little reduction LOWERS the threshold by 1 dB - both sides of the pair, and the drive is not touched  [Thresh L + Thresh R = -19.0 / writeDrive no]
+4:   ok    21t-g (6d). ...and too MUCH reduction raises it again, by the same step  [-19.0 -> -18.0]
+4:   ok    21t-g (6d). ...and the profile's own range stops it rather than dialling past the control  [finished, threshold left at -39.5]
+4:   ok    21t-g (6d). ...and a LISTEN pass says the band was not reached, and names the figure it did measure  [I could not get UnFairchild 670M II into the 2.0-3.0 dB band with Thresh L + Thresh R alone - it is working 0.]
+4:   ok    21t-i (6d) as re-ruled. ...in passive the floor CLAMPS the settle, and the comparative that follows moves nothing rather than dialling past the control  [0 write(s) after the comparative, threshold -40.0, running]
+4:   ok    21t-i (6d). ...and it still posts no closing line
+4:   ok    21t-g (6d). ...and the mode, the knob and its value survive the sidecar round trip  [Thresh L + Thresh R @ -18.0 listen]
+4: 
+4: == 21t-g (6b): the calibration block's wire shape, parsed from JSON text ==
+4:   ok    21t-j. ...and a block that DID carry start_db says so, which is the only thing the "a block carrying start_db is the step" rule may consult  [carried]
+4:   ok    21t-g (6b). mode "passive", actuator "threshold", param "Thresh", sense "lower_is_harder", start_db -13.4, min/max, gr_target_db - all accepted, nothing flagged  [Thresh @ -13.4 slot 0]
+4:   ok    21t-g (6b) as re-ruled. param as an ARRAY is a pair and start_db applies to every entry; a "sense" that contradicts the actuator KIND is named and not followed  [Input L + Input R @ -18.2 sense -1 why: sense "higher_is_harder" contradicts actuator "threshold" (lower is harder for that kind) - following the KIND, as ruled.]
+4:   ok    21t-g (6b). start_db null on a LISTEN block parses, and leaves the value unset (NaN) so the opening write is skipped  [listen, start unset]
+4:   ok    21t-g (6b) as re-ruled. threshold with sense NULL stays a THRESHOLD - lower-is-harder comes from the kind - and the log says so rather than the direction being guessed  [Thresh sense -1 why: actuator "threshold" carries no sense - taking lower-is-harder from the kind.]
+4:   ok    21t-g (6b/c). drive with start_db null leaves the opening value UNSET and says the BLOCK did not carry one, so the caller can open from the staging without that substitution being read later as a move the server already made  [unset]
+4:   ok    21t-i (6b/c) as re-ruled. the settle's FIRST step moves one dB from the staging, never from zero  [5.0 dB]
+4:   ok    21t-i (6b/c) as re-ruled. ...and the settle lands having stepped UP FROM THE STAGING, inside its budget, never from zero  [1 step(s), 4.0 -> 5.0 dB, landed]
+4:   ok    21t-g (6b/c) as re-ruled. ...and the ONE step a comparative buys moves ONE dB from where the settle left it, not from zero and not twice  [1 write(s), 5.0 -> 6.0 dB]
+4:   ok    21t-k 3. a drive block carrying a param AND a start is refused: the start is IGNORED and the drive opens at the staging  (RED as it stood: -15.0 went onto the staging pre-gain and the plugin never compressed)  [unset]
+4:   ok    21t-k 3. ...and the log says so, in the ruled words  [a drive block carries a param and a start - contradictory: the param is "Threshold" and start_db -15.00 is IGNORED; the drive open]
+4:   ok    21t-k 3. ...so the pre-slot gain stays at the staging  [-3.00 dB]
+4:   ok    21t-g (6b). a mode or actuator outside the two literals is NAMED in the log and the quiet, safe choice is taken (passive, drive)  [mode "quiet" is not "passive" or "listen" - running PASSIVE. actuator "knob" is not "threshold", "input", "drive" or "amount" and ]
+4:   ok    21t-h. fixture: the contract's own blocks are on disk  [calibration_blocks_from_contract.txt]
+4:   ok    21t-h. ...both of them  [2 block(s)]
+4:   ok    21t-h. block 1 from the contract parses as an object  [{"calibration": {   "actuator": "threshold",               "]
+4:     contract block 1 -> ok=1 why="mode "" is not "passive" or "listen" - running PASSIVE."
+4:   ok    21t-h. B's OWN block parses whole: wire slot 1 -> index 0, threshold, Thresh, lower_is_harder, start -13.4, range -15..15  [slot 0, Thresh @ -13.4, why: mode "" is not "passive" or "listen" - running PASSIVE. ]
+4:   ok    21t-h. ...and the 0-BASED slot the server sent at 10:15 is refused with the WIRE value named (it used to print the converted number and read like an empty rack)  [wire slot 0 (1-based, so slot index -1), rack has 2 slot(s); nothing started.]
+4:   ok    21t-h. block 2 from the contract parses as an object  [{"calibration": {   "source": "tally",               "heard_]
+4:     contract block 2 -> ok=0 why="wire slot (absent) (1-based, so slot index -1), rack has 2 slot(s); nothing started."
+4:   ok    21t-h. ...and B's tally-source block, which carries NO slot, starts nothing - the refusal says the slot was absent rather than inventing one  [wire slot (absent) (1-based, so slot index -1), rack has 2 slot(s); nothing star]
+4:   ok    21t-g (6b). a slot the rack does not have starts nothing, and says which - by its WIRE value  [wire slot 9 (1-based, so slot index 8), rack has 2 slot(s); nothing started.]
+4:   ok    21t-g (6b). source and measure outside their literals are named too - a new value shows up in the log instead of passing as one of ours  [source "guess" is not "tally" or "listen". measure "rms" is not short90/shortmax/int.]
+4:   ok    21t-g (6b). every `source` the server emits parses with NOTHING flagged: tally, measured, working_position, listen  [all four clean]
+4: 
+4: == 21t-f (5): SHORT90 - where the programme SITS, not its loudest moment ==
+4:   ok    21t-f (5). SHORT90 has a reading once windows have closed  [-26.25]
+4:   ok    21t-f (5). the loudest 3 s window is well above SHORT90 - the loud passage moves SHORTMAX, not where the programme sits  [SHORTMAX -18.6 vs SHORT90 -26.2]
+4:   ok    21t-f (5). ...and SHORT90 itself moves only as far as the distribution moved it  [-26.2 -> -26.2]
+4:   ok    21t-f (5). the reset clears SHORT90 with the max hold - both describe the same window, so they start together  [SHORT90 nan]
+4: 
+4: == 21t-i: set once, then measure and ask ==
+4:   ok    21t-i (1) as re-ruled. the settle takes AT MOST THREE steps, however far out  [1 write(s)]
+4:   ok    21t-i (1) as re-ruled twice. ...and AFTER LANDING twelve judged windows 17 dB out of band move THE ACTUATOR not at all  [0 actuator write(s) after landing]
+4:   ok    21t-m (1). ...and the hold writes AT MOST TWICE over those twelve windows - once on the landed drive and at most one refinement, never once per window  [0 hold write(s) after landing]
+4:   SKIP  SUPERSEDED  21t-i (1). ...and every judged window still prints its line, so a loop sitting in band and a loop that has stalled cannot look the same  [was: 8 line(s) of 12]
+4:   ok    21t-i (1) as re-ruled. ...and the knob moved only inside the settle's budget  [3 step(s), drive -7.00 dB]
+4:   ok    21t-i (2) as re-ruled. the settle completes the build's line  [NEOLD U2A on, set from 80 s of this track. Doing about 2.5 dB of gain reduction. Say 'ease off' or 'more'.]
+4:   ok    21t-i (2) as re-ruled. ...naming the plugin, what it was set from, the MEASURED figure, and the two words  [NEOLD U2A on, set from 80 s of this track. Doing about 2.5 dB of gain reduction. Say 'ease off' or 'more'.]
+4:   ok    21t-i (2) as re-ruled. ...and it says it ONCE, not on every window after  [silent]
+4:   ok    21t-i (2). ...and there is no closing line in this mode at all
+4:   ok    21t-i (3). a comparative buys EXACTLY ONE step over twelve more windows  [1 write(s)]
+4:   ok    21t-i (3) as re-ruled. ...one dB harder than WHERE THE SETTLE LEFT IT, and no further  [-7.00 -> -6.00 dB]
+4:   SKIP  SUPERSEDED  21t-i (3) as re-ruled. ...and the line completes again in place with the new figure  [was: drive -7.0 → -6.0, 5.4 dB on the loud phrases, level held.]
+4:   ok    21t-i (4). a re-target that did not move the band moves no knob  [0 write(s)]
+4:   ok    21t-i (5). "step" on the wire is read as the threshold's step size  [3.0 dB]
+4:   ok    21t-i (5) as re-ruled. ...and the SETTLE moves the threshold by the block's three dB, in the harder direction (lower is harder)  [-17.0 dB]
+4:   ok    21t-i (5) as re-ruled. ...and one comparative moves it by THREE dB, once, from where the settle left it  [1 write(s), -17.0 -> -20.0 dB]
+4:   SKIP  SUPERSEDED  21t-i (7). the question quotes the BLOCK's heard_s  (RED as it stood: it quoted the slot tally's heard time, which is the age of the slot)  [was: drive -8.0 → -7.0, 5.4 dB on the loud phrases, level held.]
+4:   ok    21t-i (7). ...and never the slot's own figure  [drive -8.0 → -7.0, 5.4 dB on the loud phrases, level held.]
+4:   ok    21t-i (7). source "working_position": the sentence says where it came from instead of quoting a measurement nobody made  [Tube-Tech CL 1B on, set from the working position. Doing about 2.5 dB of gain reduction. Say 'ease off' or 'more'.]
+4:   ok    21t-i (7). a block with no heard_s and no working-position flag omits the clause entirely - it quotes no figure and does not read as a stutter  [Pro-C 2 on. Doing about 2.5 dB of gain reduction. Say 'ease off' or 'more'.]
+4:   ok    21t-i (8) as re-ruled. a re-target with the SAME band and nudge "softer" buys exactly one softer step from where the settle left it  (RED as it stood: an unmoved band bought nothing)  [1 write(s), -7.00 -> -8.00 dB]
+4:   ok    21t-i (8) as re-ruled. ...and a block with no band keeps the loop's band and still takes the nudge's step  [1 write(s), -7.00 -> -6.00 dB, band 2.0-3.0]
+4:   ok    21t-i (8). "harder" and "softer" parse clean, nothing flagged  [harder=1 softer=-1]
+4:   ok    21t-i (8). ...and an unknown nudge literal is NAMED in the log and ignored, never guessed  [nudge "a bit less" is not "harder" or "softer" - ignored.]
+4:   ok    21t-i (8). heard_s, source "measured", nudge and step all parse off one block with nothing flagged  [heard_s 84, nudge 1, step 2.0]
+4:   SKIP  SUPERSEDED  21t-i (8). ...and the sentence quotes that block's 84 s, with the slot only 12 s old  [was: drive -5.0 → -4.0, 5.4 dB on the loud phrases, level held.]
+4:   ok    21t-i (6). 30 s with nothing heard asks for playback, ONCE  [1 line(s)]
+4:   ok    21t-i (6). ...in the ruled words  [NEOLD U2A is on - play it and I'll tell you what it's doing.]
+4: 
+4: == 21t-l item 5: a calibration block on an edit turn waits for the ops ==
+4:   ok    21t-l 5. an edit that ADDS a plugin is one whose block must wait for the ops  (RED as it stood: the block was judged the instant the apply returned, against a rack with no slots)
+4:   ok    21t-l 5. ...and an edit that only SETS does not wait - there is a rack already, so "rack has 0 slots" is a real refusal there
+4:   ok    21t-l 5. ...and an empty edit adds nothing
+4:   ok    21t-l 5. ...and a block naming slot 1 of an EMPTY rack is still refused, with the reason  [wire slot 1 (1-based, so slot index 0), rack has 0 slot(s); nothing started.]
+4: 
+4: == 21t-j: the GR-meter cross-check ==
+4:   ok    21t-j (cross-check). a build that names a sense control owes FIVE windows of it  [5]
+4:   ok    21t-j (cross-check). ...FIVE and no more - a check, not a running commentary  [5 line(s)]
+4:     EJGrMeter: Purple Audio MC 77 "GR Meter L" window 1/5 raw=0.4100 text="4.2 dB" parsed=4.20 dB prints_db=yes
+4:     EJGrMeter: Purple Audio MC 77 "GR Meter L" window 2/5 raw=0.4100 text="0.41" parsed=0.41 dB prints_db=yes NOTE: the parsed figure equals the raw position - this control may not be printing dB
+4:     EJGrMeter: Purple Audio MC 77 "GR Meter L" window 3/5 raw=0.4100 text="--" parsed=NO prints_db=no
+4:     EJGrMeter: Purple Audio MC 77 "GR Meter L" window 4/5 raw=0.4100 text="-3.5 dB" parsed=-3.50 dB prints_db=yes
+4:     EJGrMeter: Purple Audio MC 77 "GR Meter L" window 5/5 raw=0.4100 text="GR" parsed=NO prints_db=no
+4:   ok    21t-j (cross-check). ...numbered, so a truncated run is visible in the log  [EJGrMeter: Purple Audio MC 77 "GR Meter L" window 1/5 raw=0.4100 text="4.2 dB" parsed=4.20 dB prints_db=yes]
+4:   ok    21t-j (cross-check). a real dB meter: the line carries the raw position, the printed text, the parse and the verdict, and nothing else  [EJGrMeter: Purple Audio MC 77 "GR Meter L" window 1/5 raw=0.4100 text="4.2 dB" parsed=4.20 dB prints_db=yes]
+4:   ok    21t-j (cross-check). a control printing its BARE POSITION parses as dB - and the line says the figure equals the raw position, which is the observation, not a guess  [EJGrMeter: Purple Audio MC 77 "GR Meter L" window 2/5 raw=0.4100 text="0.41" parsed=0.41 dB prints_db=yes NOTE: the parsed figure equals the raw position - this control may not be printing dB]
+4:   ok    21t-j (cross-check). ...and a control printing nothing numeric says prints_db=no, which is a finding, not an absence  [EJGrMeter: Purple Audio MC 77 "GR Meter L" window 3/5 raw=0.4100 text="--" parsed=NO prints_db=no]
+4:   ok    21t-j (cross-check). a build with NO sense control logs nothing at all  [0]
+4: 
+4: == 21t-j: the settle is the tail of the build ==
+4:   ok    21t-j (settle). the BUILD posts one line and it promises what the product then does  [Mock Comp on, set from 90 s of this track, landing it as it plays...]
+4:   ok    21t-j (settle). ...and it asks for nothing: there is no ask state any more  [Mock Comp on, set from 90 s of this track, landing it as it plays...]
+4:   ok    21t-j (settle). ...and the settle is open
+4:   ok    21t-j (settle). the settle completes the SAME line in place, not a second message  [Mock Comp on, set from 90 s of this track. Doing about 2.5 dB of gain reduction. Say 'ease off' or 'more'.]
+4:   ok    21t-j (settle). ...quoting the MEASURED crest difference, positive  [Mock Comp on, set from 90 s of this track. Doing about 2.5 dB of gain reduction. Say 'ease off' or 'more'.]
+4:   ok    21t-j (settle). ...and it has landed
+4:   SKIP  SUPERSEDED  21t-j (settle). ...with no step at all, because it was already in band  [was: 2 step(s), 0 write(s)]
+4:   ok    21t-j (settle). NEVER MORE THAN THREE STEPS, however far out of band it is  [3 step(s), 1 write(s)]
+4:   ok    21t-j (settle). ...and it still lands, and still says what it landed on  [drive +0.0 → +1.0, 0.2 dB on the loud phrases, level held.]
+4:   SKIP  SUPERSEDED  21t-j (settle). ...naming the band when the figure is outside it  [was: drive +0.0 → +1.0, 0.2 dB on the loud phrases, level held.]
+4:   ok    21t-j (settle). a build with NO AUDIO moves nothing and does not land - it waits, for as long as it takes  [0 write(s)]
+4:   ok    21t-j (settle). ...and the line it posted still says what it is waiting for  [Mock Comp on, set from 90 s of this track, landing it as it plays...]
+4:   ok    21t-j (settle). audio arriving later completes the same line - one line, not two  [Mock Comp on, set from 90 s of this track. Doing about 2.4 dB of gain reduction. Say 'ease off' or 'more'.]
+4:   ok    21t-j (settle). the budget is HEARD seconds, and spending it lands the line  [21.0 s heard, 3 step(s)]
+4:   ok    21t-j (settle). a user edit CANCELS the settle  [EJThreshold: "Mock Comp" window 1 gr=0.2 sinceWrite=0.0s pre=+1.0 post=-1.0 mode]
+4:   SKIP  SUPERSEDED  21t-j (settle). ...and the line closes with the setting as it stands  [was: drive +0.0 → +1.0, 0.2 dB on the loud phrases, level held.]
+4:   ok    21t-j (settle). AFTER LANDING nothing moves and nothing is said, for 120 s of windows, even with the figures well out of band  [0 write(s), 0 line(s)]
+4: 
+4: == 21t-i: the stored level record ==
+4:   ok    21t-i (record). a record made from a tally that has heard audio is valid and has HEARD  [HEARD 7.7 s, INT -12.8]
+4:   ok    21t-i (record). the transport stopping loses nothing  [-12.8 LUFS, HEARD 7.7 s]
+4:   ok    21t-i (record). a tally that has just been reset cannot erase a figure the record already holds  [-12.8 LUFS]
+4:   ok    21t-i (record). it survives the round trip through var, figure for figure, with its timestamp  [INT -12.8, HEARD 7.7 s, updated 1200000]
+4:   ok    21t-i (record). an empty record is the ONLY thing that reads as no signal  [empty]
+4:   ok    21t-i (record). the line carries every ruled token, and AGE as the ruled integer with NO unit suffix (27 Sep ruling: "AGE <seconds>")  [MOM no reading, SHORT -12.8, SHORTMAX -12.8, SHORT90 -12.8, INT -12.8, PEAK -16.1, PSR -3.3, HEARD 8, AGE 7]
+4: exit code: 0  (0 == GREEN, nonzero == RED)
+4: SCRIBBLE LEG: running again with MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 ...
+4: scribble leg exit code: 0  (0 == GREEN, nonzero == RED)
+4: BOTH LEGS: GREEN
+1/1 Test #4: loudness_loop_guard ..............   Passed  147.37 sec
+
+The following tests passed:
+	loudness_loop_guard
+
+100% tests passed out of 1
+
+Label Time Summary:
+fast    = 147.37 sec*proc (1 test)
+
+Total Test time (real) = 147.37 sec
+loud exit 0

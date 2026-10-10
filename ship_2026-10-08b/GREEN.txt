@@ -1,0 +1,45 @@
+GREEN - 8 Oct 2026. Full gate 62 of 62, every stage clean. Tree: cfce470.
+
+THE GATE, 17:44 -> 19:42:47, both archives DELETED first so each is provably built from the tree's headers:
+    S1 archives      exit 0  errors 0
+    S2 guards        exit 0  errors 0      (all 52 targets relinked)
+    S3 four bundles  exit 0  errors 0
+    S4 ctest         exit 0  100% tests passed out of 62
+    S5 link_state_guard GREEN both sides
+    GATE3 DONE 19:42:47
+62, not 61: linksync_test joined the gate today. It had its own script, which linked a 30 SEPTEMBER archive and
+never exported EJ_STATE_TEST_HOME, so it could not run at all - a test that cannot run, against a library that is
+not the one being changed, is not evidence.
+
+THESE BINARIES ARE THE ONES THE GATE TESTED, checked rather than assumed: the arm64 UUID in this folder is
+byte-identical to the bundle in build-guards that S3 built and S4 ran against.
+
+UUIDs (arm64 first):
+  EchoJay V2.component    arm64 3A13AC5F-E7E8-3F7D-A9A2-DAA5A2F1A551  x86_64 B44183A4-D6E9-3729-B1B5-0C24D3C7280F
+  EchoJay V2.vst3         arm64 B4B6C1EC-FD80-3E9B-95EF-4CC66FE08357  x86_64 8FA7FA21-EC38-3C42-86EB-5BA9D33C58EC
+  EchoJay Link.component  arm64 35F01C49-0CFD-350C-ABF9-BA9D2F9E66CF  x86_64 72BD3D5F-29B7-3598-A58A-88F93CD2A97F
+  EchoJay Link.vst3       arm64 23A3EC04-B290-3EBD-9B61-0DCEB505A8B2  x86_64 DEEB4E29-016B-3E8D-86F3-397A4EEF64A7
+THE LINK MOVED THIS TIME (35F01C49, was 2EBEB279 through 06b/06c/08a): items 0 and 5 are Link-side changes - the
+hand-back fix and the IN/OUT readouts - so for the first time in these rounds BOTH plugins must be installed.
+
+WHAT IS IN IT (newest first):
+  cfce470  item 9 (2/2): the level check ENDS - a 20-window staleness bound and a 200-window cap, each with its
+           own honest sentence ("No audio reaching X - press play..." / "Nothing dialled on X - set it by ear")
+  1917cde  CHAINS (B): a save appears in the list without reopening; an empty memory is not proof of an empty
+           library; the CHAINS path logs open/fetch/count/render
+  c61bd8b  CHAINS (C): Save serialises the rack the user is LOOKING AT, not this instance's own
+  bb3c0dd  item 9 (1/2): loop bookkeeping carries the rack revision it belongs to; the map-arrived line once per
+           revision
+  356c150  item 8d: the Apply result reports only the slots that Apply touched, with one headline; params.eq_bands
+           is hoisted to settings_structured.eq_bands and the repair is LOGGED
+  1dd86eb  the landed Level gain survives a save/reload (the state cache is captured after a loop write)
+  4668e68  item 5: the Link's slot cards get the same IN/OUT readouts, from ONE shared struct
+  5983756  item 4: the Link Mixer's meter bars are POST-FADER, clip lamp with them
+  0af24d0  item 0 green + linksync_test joins the gate
+  16142df  item 0: the persistent bypass after a hand-back - the model was saving the lease's dry rack
+
+NOT IN IT: CHAINS (A), the blank panel / vanishing toggle - deferred to 08c by ruling. Its LOGGING half shipped
+inside (B), so the next occurrence is diagnosable from the log instead of a photograph. Workaround: reopen the
+window. Also not in it: FG-X 2 (investigation only - all six of today's AUHostingService crashes are third-party
+exit handlers, with zero EchoJay frames on any of 29 threads), and the AAX build (SDK now at ~/AAX_SDK, build-only,
+after this round).

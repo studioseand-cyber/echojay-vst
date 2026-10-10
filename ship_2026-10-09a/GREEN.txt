@@ -1,0 +1,46 @@
+ship_2026-10-09a - GATED GREEN, 10 Oct 2026 01:25
+
+GATE: 63/63. All five stages clean.
+  S1 archives (FORCED delete + relink, header change)  exit 0, 0 errors
+  S2 guards (53 targets)                               exit 0, 0 errors
+  S3 formats (4 bundles)                               exit 0, 0 errors
+  S4 ctest, 63 tests                                   100% passed
+  S5 link_state_guard                                  GREEN (both sides)
+
+UUIDs, arm64 first:
+  EchoJay V2.component   arm64 C2DC5454-299D-329E-A495-6C86258235D7  x86_64 8A2DE947-5593-3BA6-9E68-F9DD994294AB
+  EchoJay V2.vst3        arm64 8E37C1DD-D87E-37DC-B1F8-C48C9715E41A  x86_64 415D57FC-7EF5-35E3-9937-9EE3982E9EFA
+  EchoJay Link.component arm64 26D5BDDE-2A17-3AF7-AAF0-4DBBF9CB3793  x86_64 D1C2E87B-4095-3F57-8A13-77F18F3CFC1D
+  EchoJay Link.vst3      arm64 93208801-5DDC-3E68-8F2E-01706602198D  x86_64 B4BAA207-16B3-3A68-9BB7-29248ADEF83F
+
+WHAT IS IN IT
+  ROUND 08c, all five items with legs proven both directions:
+    F2  every build gets a Level slot; CHANNEL and BUS builds VOLUME-MATCH; only FullMix and MasterBus hit a
+        target (Sean, 9 Oct - MusicBus matches); the opening gain is measured on THIS chain and fires only while
+        ARMED; a landing goes stale when the chain's gain moves under it and says so once, with a Listen pill.
+        F2-1 lands Sean's exact 8 Oct case: Level +8.89 dB, output -7.96 LUFS on an independent meter.
+    E   a FINAL limiter's ceiling is held at -0.1 dBTP whatever the block asked for, and the asked-for figure is
+        logged. (B's server-side `ceiling_fixed` validator closes the third-party half.)
+    C   the loudness verb matcher takes a VERB, not a sentence containing one: "check the level of the mix bus"
+        reaches chat, and a taken verb always leaves an answer.
+    D   the chains list's bottom edge has ONE author, with a LAYOUT log line that proves it.
+    B   the Link card's name box yields the readout column, from one function both editors call.
+
+  CONTRACT_LEVEL_PARAMS (B's contract, reconciled): params.option is the authority; the device fallback is gone;
+  writeGainDb MERGES so the server's fields survive a landing; the Level slot goes before a final limiter or
+  else LAST; option = match | commercial | pushed | dynamic with commercial 10 dB and pushed 12 dB GR caps
+  (Sean's ruling 3). Legs L1-L7.
+
+  AGENT MODE, DORMANT: Session A2's client, panel, protocol and 70-odd legs are merged and COMPILED, and the
+  hooks (T1, E1-E6) are behind EchoJayEditor::agentModeOn() - dev mode AND an `agent_mode` flag file. With the
+  flag off nothing is constructed and no path runs, so this build behaves exactly as 08c alone. Removed before
+  beta.
+
+NOT IN IT, and owed
+  - Remote control Stage 1. Code written tonight, compiled and gated from 07:00.
+  - For Sean: should a chain with NO limiter have one INSERTED before the loop drives level into it? Nothing is
+    substituted today, which is the conservative answer.
+  - For B: emit option "commercial" rather than collapsing it to "pushed", or ruling 3's 10 dB cap can never be
+    reached in practice.
+
+UNSIGNED - sign on the signing Mac before installing.

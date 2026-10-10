@@ -1307,11 +1307,12 @@ static int guardMain()
     std::printf ("== E. a FINAL limiter's ceiling is held at -0.1 dBTP, with the asked-for figure logged ==\n");
     {
         Rig r (false);   // EchoJay Limiter last
-        const auto ceilingOf = [&r] (int slot) -> double
+        const auto ceilingOfSlot = [] (ChainHost& host, int slot) -> double
         {
-            auto* d = dynamic_cast<EedDeviceProcessor*> (r.h.getSlotProcessor (slot));
+            auto* d = dynamic_cast<EedDeviceProcessor*> (host.getSlotProcessor (slot));
             return d != nullptr ? d->getParamValue ("ceiling_db") : -999.0;
         };
+        const auto ceilingOf = [&r, &ceilingOfSlot] (int slot) { return ceilingOfSlot (r.h, slot); };
         // THE BLOCK AS IT ARRIVED, verbatim in shape: ceiling_db -1.
         { auto* pp = new juce::DynamicObject();
           pp->setProperty ("input_db", 0.0); pp->setProperty ("ceiling_db", -1.0); pp->setProperty ("true_peak", 1);
@@ -1322,6 +1323,20 @@ static int guardMain()
                "E. THE LAST SLOT'S CEILING IS -0.1 dBTP THOUGH THE BLOCK ASKED FOR -1 (RED as it stood: the "
                "limiter obeyed and Sean's master came out 0.9 dB quieter than it needed to be)",
                f1 ((float) ceilingOf (r.limSlot)) + " dBTP");
+
+        // AND THE OTHER DIRECTION, which the clamp did not cover until the limiter-v2 merge: a ceiling ABOVE
+        // -0.1. v2's schema default is 0.0 (Pro-L 2's), so this is not a hypothetical - it is what a block that
+        // sends no ceiling, or sends 0, produces. The rule is a VALUE, not a floor.
+        Rig hi (false);
+        { auto* pp = new juce::DynamicObject();
+          pp->setProperty ("ceiling_db", 0.0); pp->setProperty ("true_peak", 1);
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          hi.h.setSlotStructuredSettings (hi.limSlot, juce::var (w)); }
+        EchoJayBorrowHostTestAccess::applyExact (hi.h, hi.limSlot);
+        check (std::abs (ceilingOfSlot (hi.h, hi.limSlot) + 0.1) < 1.0e-4,
+               "E. A CEILING OF 0.0 IS BROUGHT DOWN TO -0.1 TOO (RED as it stood: the clamp only raised a low "
+               "ceiling, so limiter v2's 0.0 default left the final limiter at 0 dBTP under a rule that says -0.1)",
+               f1 ((float) ceilingOfSlot (hi.h, hi.limSlot)) + " dBTP");
 
         // AND A BLOCK THAT ALREADY AGREES IS NOT TOUCHED - nothing to clamp, nothing to say.
         Rig ok (false);

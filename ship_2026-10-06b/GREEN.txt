@@ -1,0 +1,47 @@
+GATED GREEN — 6/7 Oct 2026, round 06b.   Logic CLOSED throughout.   NOT INSTALLED.
+
+  build-release archives            0 errors
+  39 guard binaries                 0 errors
+  4 plugin bundles                  0 errors
+  ctest -L "fast|plugins"           100% passed out of 59
+  link_state_guard                  GREEN both sides
+  chain completed                   21:00
+
+ONE RUN, no composition this time (unlike 06a): the chain now deletes both build-release archives before stage 1, so
+the two-sided guards never hit the stale-archive refusal.
+
+WHAT THIS BUILD FIXES, over installed 06a:
+  1. THE QUIT CRASH (17:54). ~EchoJayEditor -> borrowEditorClosed() -> borrowRelease(false) is what releases on a
+     quit, so four instances went into the pending list and the 1 Hz timer disposed them 220 ms later, into Softube's
+     dying library. Now: a process-wide ONE-WAY flag set by ~EchoJayProcessor (AP_Close), plus a 2.5 s quiet window
+     before the timer may dispose - the window is what wins the race, since no processor had been destroyed when the
+     fatal dispose fired. Release and drain both KEEP once set. ~EchoJayEditor is NOT a signal: that window closes
+     constantly mid-session.
+  2. THE MID-SESSION CRASH (18:32:09). A hosted THIRD-PARTY AU is never disposed mid-session: it is PARKED for reuse
+     (cap 1 per plugin, 24 total) or kept forever when the pool is full. Built-ins remain the only things disposed.
+     The 18:31:24 dispose left a Softube NSWindow observer that the NLS Buss popout's frame change called 44 s later.
+  3. THE 1176 REPORTING 0.6 dB AGAINST A METER SHOWING 20. Crest is not trusted alone on an input-drive unit (the
+     sensors were 5.6 dB apart); the card never claims "level matched" on a figure nobody measured; and a build does
+     not write from two windows when the figure is untrustworthy.
+  4. LOG ONLY: every IN write (slot, before -> after, clamped, current OUT), and out90 / slotDiff / chainIn /
+     chainOut / chainDiff on every window line, both twins.
+
+LEGS: teardown_dispose_guard (1) third-party release disposes nothing and parks; (1b) a built-in IS still disposed;
+(2) ~ChainHost disposes nothing hosted; (3) engage/release/engage = ZERO third-party disposes, 1 parked, fallback
+never fires; (4) a release during teardown disposes 0 however often the timer runs, and runs LAST because the flag is
+one-way. level_loop_guard (4i) the 1176 case end to end; (4f)(4g)(14d) unchanged from 06a and still green.
+
+TWO JUDGEMENT CALLS, for Sean:
+  - Third-party instances are parked whatever reuse_on says, because the ruling leaves no option both safe and
+    bounded (a cap on a never-freed store cannot free anything). reuse_on still governs REUSE.
+  - buildMayWriteNow() reconciles two opposing rulings: 30 Sep "a build is a one-shot, it never waits" against 6 Oct
+    "a build never writes before its settle windows". The one-shot is kept where the measurement is sound; the wait
+    applies only where the figure is untrustworthy. The blanket form is one line, named in the comment.
+
+NOT IN: the editor-view half of the 18:32 ruling (LinkEditor.h:597 does destroy the inline editor first, but
+rewriting third-party editor lifecycle unattended was not something to do overnight, and the crash is attributed to
+the dispose, which is fixed); the once-a-second level line (needs a timer outside the loop); the readout and tiles;
+the profiled compressor's measured GR in the multi-hold line; the classify small body built from scratch.
+
+SCOPE: all 61 tests carry a label (58 fast + 1 plugins + 2 none). Excluded: comp_render_check (loads a named AU -
+permanent machine exclusion, PACE/iLok) and level_loop_red_prefix (needs a pre-fix archive).

@@ -4915,7 +4915,13 @@ juce::String ChainHost::applyStructuredToBuiltinSlot(int slotIndex, const juce::
                 if (params->hasProperty("ceiling_db"))
                 {
                     const double asked = (double) params->getProperty("ceiling_db");
-                    if (asked < kFinalCeilingDb - 1.0e-6)
+                    // 10 Oct 2026, AT THE LIMITER-V2 MERGE: this clamp was ONE-SIDED - it only ever RAISED a
+                    // ceiling that sat below -0.1. Limiter v2's schema default for ceiling_db is 0.0 (Pro-L 2's),
+                    // so a block that sends no ceiling, or sends 0, left the final limiter at 0 dBTP and sailed
+                    // past a rule that says "held at -0.1". Sean's rule is a value, not a floor; it is now held
+                    // in both directions. (v2's true-peak margin keeps overs at zero either way - 0 of 360
+                    // stress configs - so this is about the ruled figure, not about safety.)
+                    if (std::abs (asked - (double) kFinalCeilingDb) > 1.0e-6)
                     {
                         // A COPY, not a write through the caller's value: the structured var is shared with the
                         // slot's stored settings and the dial ledger, and rewriting it in place would make the

@@ -1,0 +1,10 @@
+ship_2026-10-04d  placed 2026-10-04 21:45:00  from build-release (four plugin targets, -j 4)
+newest Source: Oct  4 21:16:33 2026 Source/ChainHost.cpp
+== EchoJay V2 ==
+  arm64  2C6C480F-857A-3E12-B848-8B3835B82A6E
+  x86_64 32DCB892-4A3E-3EBB-945E-EE4FCDAE7DEA
+  size   67M
+== EchoJay Link ==
+  arm64  E49EF4E4-EDAD-310A-82DD-A9BED97E9FD4
+  x86_64 386EFE0D-1D78-3A09-A3B5-1C7E275A7979
+  size   49M

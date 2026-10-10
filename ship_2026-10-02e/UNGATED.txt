@@ -1,0 +1,8 @@
+UNGATED - DO NOT INSTALL YET.
+
+These bundles were built and placed in parallel with the fast gate to save time, at Sean's instruction
+(2 Oct, ~15:25). The gate had NOT finished when they were written, so nothing here is proven beyond
+"it compiles and the UUIDs match the build tree".
+
+This file is removed only when the full fast gate reports GREEN on this exact tree, and the report says so.
+If this file is still here, the build has not been gated. Install ship_2026-10-02c until then.

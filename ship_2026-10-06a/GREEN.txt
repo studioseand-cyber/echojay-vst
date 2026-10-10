@@ -1,0 +1,76 @@
+GATED GREEN — 6 Oct 2026, round 06a.   Logic CLOSED throughout.
+
+HOW THE VERDICT IS COMPOSED, stated plainly rather than presented as one sweep:
+  Run 1 (15:26-16:49): archives 0 err, 39 guard binaries 0 err, 4 bundles 0 err,
+                       ctest -L "fast|plugins"  54 of 59 PASSED, 5 FAILED,
+                       link_state_guard GREEN both sides.
+  The 5 failures were ALL the two-sided guards (calib_link, alias_mirror, lease_id, level_match, role_snapshot) and
+  NONE was a product failure: each refused to compile because the build-release LINK archive (11:33) predated
+  Source/PluginProcessor.h (15:18). CMake relinks an archive only when its own sources change, and LinkProcessor.cpp
+  was untouched. Two faults behind it, both in my own tooling:
+    - harness_build.py narrowed the .cpp list using EchoJay.dir (the V2 target) for BOTH archives, so the Link
+      archive was checked against V2's object list. Fixed: the object dir now follows the archive's own name.
+    - every header still counts by design (a layout mismatch is a segfault, not a red), so the chain now DELETES
+      both archives before stage 1, making the rebuild unconditional and the check's precondition simply true.
+  Run 2 (16:52-17:09): both archives rebuilt from scratch (Link archive 16:52), those 5 guards re-run:
+                       100% PASSED out of 5. They now RUN the two-process protocol instead of refusing, which is why
+                       they take 120-275 s each.
+  The two runs are independent: the 5 compile against build-release archives, the other 54 ran from build-guards
+  binaries that an archive rebuild cannot touch. No Source file changed between the runs (the only commit was
+  docs/COMP_PROFILE_SPEC_v1.md). So: 59 of 59 green, across two runs, for the reason above.
+
+The Link BUNDLES were then force-rebuilt for the same reason the archive was: place_ship.sh compares against the
+newest file in Source/, and PluginProcessor.cpp (15:23) is V2-only and not in the Link bundle - a false positive of
+the same coarse-check class. Every source the Link actually compiles predated its bundle, so the rebuild changes
+nothing but the timestamp and the gate still stands on unchanged sources.
+
+WHAT IS IN 06a, each with the leg that proves it:
+  1. pendingDispose_ covered at teardown (a gap 05c introduced: ~ChainHost would dispose inside AP_Close)
+       -> teardown_dispose_guard (2): teardown disposes nothing hosted
+  2. release progress lines (entered / per-slot elapsed / about to clear / completed) + 500 ms watchdog
+       -> no leg, log-only. Stated, not claimed.
+  3. every ENABLED non-main input bus fed from the slot's input, in the one shared rebuildGraph()
+       -> sidechain_guard two-bus leg: "2 fed of 2 enabled", both keys 0.3500. First written VACUOUS (0 of 0); the
+          mock now refuses layouts that drop a sidechain, which is what makes it discriminate.
+  4. input-drive GR rule: meter -> crest -> unmeasurable-inputdrive, never a level figure reported as GR.
+     Actuator::Drive deliberately excluded (EchoJay's own pre-trim is outside out-minus-in).
+       -> level_loop_guard (4h): the predicate on Input/Drive/Threshold, and 20 dB GR behind 20 dB input gain
+          reported as unknown rather than 0.
+  5. the card names each plugin and states its write - including the REAL bug behind Sean's 10:41:48 card:
+     advanceCalibCompanions' endedWith did `c = {}`, wiping the companion record the closing line is composed from
+     later, so plugin/levelTrimmedDb/slotGainDb were all gone. active() is only state != Idle, so Idle is all that
+     was needed.
+       -> level_loop_guard (16): the fixture names "Comp A"/"Comp B" and both must appear;
+          (9): the ordinal fallback must be ABSENT.
+  6. classify body trimmed and never skipped: history dropped (that was the 208 KB), a trim line with before/after,
+     and a second stage falling back to the typed text alone past 32 KB.
+       -> NO LEG. Owed; it needs an EchoJayAPI fixture.
+  7. parked edits per the 6 Oct ruling: both park sites DROP instead of parking, borrowRearmParkedFor REFUSES at the
+     door so no caller can resurrect an index-only op, one chat line via takeBorrowParkedNotice(), and the sticky
+     banner no longer promises a retry it will not make.
+       -> ui_guard R2 (06a): parked == 0, re-arm returns 0, the notice is posted, and the banner does NOT say
+          "go through the moment".
+
+NOT IN 06a:
+  - removeSlot through the exactly-once dispose: deliberately NOT done. removeSlot pushes to graveyard_, keeping the
+    instance alive for the session on purpose (the AMEK EQ 250 leaked-timer SIGSEGV); disposing it would reintroduce
+    that crash. The graveyard is already covered at teardown via leakedNodeStore().
+  - the same-tick leg (needs the editor-driven engage path).
+  - gr1= / assumedIn= / detW= on window lines. Only in90= exists. The detector-weighted figure needs a 400 ms p95
+    TrackLevel on each slot's IN tap, which is item 6's groundwork.
+  - identity + satisfied check + background delivery for parked edits: next round, as ruled.
+  - the 10 s ack wait: left at 5 s. borrowFlushPendingThen waits with Thread::sleep on the MESSAGE THREAD, and the
+    25 Sep ruling cut it from 8 s to 5 s. Raising it would double a known-bad blocking wait; awaiting Sean's call on
+    10 s versus making it non-blocking.
+
+OWED TOOLING FIX (next round): narrow the staleness checks by HEADER too, using the .o.d dependency files CMake
+already writes, so neither harness_build.py nor place_ship.sh needs a forced rebuild to be correct.
+
+SCOPE: all 61 registered tests carry a label (58 fast + 1 plugins + 2 none). The 2 excluded, both label `none`:
+  comp_render_check       PERMANENT MACHINE EXCLUSION - it resolves a plugin by LOADING it, which on this Mac means
+                          PACE/iLok prompts for plugins whose iLok is elsewhere, and that has taken the host down.
+                          Not a code exclusion; says nothing about this build.
+  level_loop_red_prefix   Needs a PRE-FIX archive to be meaningful; cannot pass against the current tree.
+
+Placed by tools/place_ship.sh, which refuses a binary older than the newest tracked Source file and an AU whose
+arm64 UUID matches the installed build. NOT INSTALLED.

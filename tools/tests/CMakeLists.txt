@@ -320,24 +320,37 @@ ej_add_guard(pregain_readback         SOURCE tools/pregain_readback/harness.cpp 
 # PREVIOUSLY: re-baselined 27 Sep 2026 by ruling, from 5f47897e..., for the ruled short90 token on the
 # [CHAIN LEVELS] header (OWN_CHANNEL_BASELINE_efdec55.txt).
 #
-# RE-BASELINED 9 OCT 2026 BY RULING (Sean), and only after the diff was read and reported RED first. ONE LINE
-# changed, 14,469 -> 14,530 bytes, and it is the 08c item F2 level contract showing up in the own-channel
-# injection because that text prints the built-in schemas:
+# RE-BASELINED 10 OCT 2026 BY RULING, at the limiter-v2 merge. THE TEXT NOW CARRIES BOTH RULED CHANGES, so it
+# matches NEITHER side's pin: 08c item F2's "match" option on the Level device AND limiter v2's schema. Sean
+# pre-ruled this move ("own_diff will move by the limiter's mode-list line only: re-baseline if that's the whole
+# diff, record the new sha"); the diff was read and confirmed limiter + match lines only before the pin changed.
+# The two rulings this supersedes are kept verbatim below, because each was a separate decision and the record of
+# WHY a baseline moved is the only thing that makes the next move diffable.
 #
-#   -  loudness_option (commercial|pushed|dynamic|keep, default commercial) - which loudness the target came from
-#   +  loudness_option (commercial|pushed|dynamic|keep|match, default commercial) - ...; "match" means the aim is
-#      this chain's own input level
+# [A, 9 Oct] RE-BASELINED 9 OCT 2026 BY RULING (Sean), and only after the diff was read and reported RED first. ONE LINE
+# [A, 9 Oct] changed, 14,469 -> 14,530 bytes, and it is the 08c item F2 level contract showing up in the own-channel
+# [A, 9 Oct] injection because that text prints the built-in schemas:
 #
-# "match" is the CHANNEL/BUS aim from CONTRACT_LEVEL_PARAMS: a chain that must not change the level. It is a ruled
-# product change, not a regression. The text is OWN_CHANNEL_BASELINE_6d42a67.txt so the next move can be diffed
-# rather than guessed.
+# [A, 9 Oct]   -  loudness_option (commercial|pushed|dynamic|keep, default commercial) - which loudness the target came from
+# [A, 9 Oct]   +  loudness_option (commercial|pushed|dynamic|keep|match, default commercial) - ...; "match" means the aim is
+# [A, 9 Oct]      this chain's own input level
 #
-# PROVEN BOTH DIRECTIONS, on the same text and two baselines: against 46da20e4 (the old one) this text is RED,
-# which is the run that reported it; against 4bf16c07 it is GREEN. A baseline that only ever passes is as useless
-# as one that only ever fails.
+# [A, 9 Oct] "match" is the CHANNEL/BUS aim from CONTRACT_LEVEL_PARAMS: a chain that must not change the level. It is a ruled
+# [A, 9 Oct] product change, not a regression. The text is OWN_CHANNEL_BASELINE_6d42a67.txt so the next move can be diffed
+# [A, 9 Oct] rather than guessed.
 #
-# PREVIOUSLY: re-baselined 29 Sep 2026 from the 21t-k feed change (OWN_CHANNEL_BASELINE_c7b142a.txt), and 27 Sep
-# from the short90 token (OWN_CHANNEL_BASELINE_efdec55.txt).
+# [A, 9 Oct] PROVEN BOTH DIRECTIONS, on the same text and two baselines: against 46da20e4 (the old one) this text is RED,
+# [A, 9 Oct] which is the run that reported it; against 4bf16c07 it is GREEN. A baseline that only ever passes is as useless
+# [A, 9 Oct] as one that only ever fails.
+#
+# [A, 9 Oct] PREVIOUSLY: re-baselined 29 Sep 2026 from the 21t-k feed change (OWN_CHANNEL_BASELINE_c7b142a.txt), and 27 Sep
+# [A, 9 Oct] from the short90 token (OWN_CHANNEL_BASELINE_efdec55.txt).
+#
+# [L, 9 Oct] RE-BASELINED 9 Oct 2026 BY SEAN'S RULING (limiter v2 gate round c), after session G read and reported the diff:
+# [L, 9 Oct] 11 lines changed against c7b142a, every one the EchoJay Limiter's schema text (ceiling_db default 0, release_ms 400,
+# [L, 9 Oct] NEW attack_ms 275, lookahead_ms 0..5 default 0.18, NEW link_pct 75, NEW release_link_pct 100, true_peak on), zero
+# [L, 9 Oct] non-limiter lines; 14,469 -> 15,028 bytes. The text is OWN_CHANNEL_BASELINE_70f5407.txt (the gated commit).
+# [L, 9 Oct] "own_diff re-baselined by Sean's ruling, limiter schema only."
 #
 # THE STANDING RULE IS UNCHANGED for every future move: if this goes RED, STOP AND REPORT - never re-baseline.
 ej_add_guard(mapfps_sync_guard        SOURCE tools/mapfps_sync_guard/harness.cpp              LABEL fast SCRIBBLE)

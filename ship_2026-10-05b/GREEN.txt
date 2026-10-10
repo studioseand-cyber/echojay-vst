@@ -1,0 +1,47 @@
+GATED GREEN — 5 Oct 2026, round 05b-fix (the awaiting-fresh-window regression in 05a).   Logic CLOSED for the gate.
+
+  build-release archives (what the two-sided guards compile against)    0 errors
+  39 guard binaries                                                     0 errors   17:33
+  4 plugin bundles (EchoJay_AU EchoJay_VST3 EchoJayLink_AU EchoJayLink_VST3)  0 errors   17:35
+  ctest -L "fast|plugins"                      100% passed out of 59
+  link_state_guard (two processes, isolated shm)                         GREEN both sides   18:13
+
+WHAT THIS BUILD FIXES, over installed 05a: the fresh-window wait never released, so no loop was ever judged, no
+level hold ran and no make-up was written (Sean's 16:19-16:23: windows 2-14 all awaiting, slotHeard 5.9 -> 41.2 s).
+The cause was the anchor's LIFETIME, not its value: the host reloads the loop from its stored var every tick and
+fromVar deliberately carries no clock reading, so the anchor was re-taken on every window and the bar moved forever.
+The wait is a one-shot flag again, which survives that round trip; the staleness gate already forces the next window
+to carry a whole window of new audio, so the first window let through is the first whole window after the write.
+Sean's 11:24 case stays fixed - the pendingStep bypass remains closed. heardAtWriteS is now LOG ONLY.
+
+BUDGET, NOW VISIBLE IN THE LOG (Sean's 5 Oct terms): every window line carries sinceWrite=N.Ns in AUDIO seconds, so
+a stopped transport costs nothing, and the make-up line carries "[N.N s of audio since the write]". "unknown" rather
+than 0 when the figure did not survive a reload or handover.
+
+THE LEG WHOSE ABSENCE LET 05a SHIP THIS: (14d) drives the REAL path - calibStartMany + calibTick, the host's own
+tallies and clock, the per-tick reload - and is deliberately NOT beginDriven, with noFreshWait = false stated.
+Measured tonight: judged in 2 windows, make-up written in 3 windows at OUT -1.00. Every other loop leg holds a
+CalibLoop in memory and most opt out of the wait, which is exactly why 59/59 was green over a stalled loop.
+Also (4g): with no heard clock stated the first window is HELD - unknown is the conservative direction.
+
+SCOPE, WRITTEN DOWN. All 61 registered tests carry a label: 58 fast + 1 plugins + 2 none. Nothing is unlabelled, so
+nothing is silently dropped. The 2 excluded, both label `none`:
+  comp_render_check       PERMANENT MACHINE EXCLUSION. It resolves a plugin by LOADING it; on this Mac that means
+                          PACE/iLok prompts for plugins whose iLok is elsewhere, which has taken the host down
+                          (1 Oct, killed twice, exit 144). Not a code exclusion; says nothing about this build.
+  level_loop_red_prefix   Needs a PRE-FIX archive to be meaningful. Cannot pass against the current tree.
+Nothing was removed from the gate relative to HEAD (the 04e-era list); sidechain_guard and teardown_dispose_guard
+were added. The derivation gives 57 for 04e against Sean's recalled 58; no 04e ctest log survives, so that one
+test's difference is unresolved rather than explained away.
+
+STILL OPEN, NOT TOUCHED TONIGHT (05b proper, all ruled and recorded in HANDOFF):
+  item 2  release leaves 2 extra refs - "node refs after the pump = 3 - STILL HELD". Layer (b) covers the crash.
+  item 3  the stale chunk applied async over our write, AND a second defect: settleVerify reverts our own correct
+          write to settlePrevNorm. Fix (i) + (ii), and the revert must never fire when a known third party moved it.
+  item 6  the slot's own loud_rms_dbfs / loud_peak_dbfs / slot_heard_s on its [CURRENT CHAIN] line.
+  short listens: predicted make-up as a STAGING write (ruling (a)); the hold keeps its single real write.
+  (14d)'s make-up bar is the observed 3 windows, looser than the 6 s budget - reason to be established.
+  sidechain_guard is green while asserting the BUILT-IN case; re-aim owed. link_state_guard still outside the tree.
+
+Placed by tools/place_ship.sh, which refuses a binary older than the newest tracked Source file and an AU whose
+arm64 UUID matches the installed build. Proven both directions today.

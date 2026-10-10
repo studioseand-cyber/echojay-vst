@@ -1,0 +1,28 @@
+GATED GREEN — 5 Oct 2026, round 05a.   Logic was CLOSED for this gate.
+
+  build-release archives (the two-sided guards compile against these)   0 errors
+  39 guard binaries                                                     0 errors
+  4 plugin bundles (EchoJay_AU EchoJay_VST3 EchoJayLink_AU EchoJayLink_VST3)  0 errors
+  ctest -L "fast|plugins"                     100% passed out of 59
+  link_state_guard (two processes, isolated shm, Logic closed)          GREEN both sides
+
+SCOPE, WRITTEN DOWN RATHER THAN SILENT. All 61 registered tests carry a label: 58 fast + 1 plugins + 2 none.
+Nothing is unlabelled, so nothing is silently dropped by the filter. The 2 excluded, both label `none`:
+
+  comp_render_check       EXCLUDED DELIBERATELY AND PERMANENTLY ON THIS MACHINE. It resolves a plugin by loading
+                          it; on Sean's Mac that means PACE/iLok prompts for plugins whose iLok is on another
+                          machine, which has taken the host down (1 Oct 2026, killed twice, exit 144). It is not
+                          a code exclusion and says nothing about this build.
+  level_loop_red_prefix   Needs a PRE-FIX archive and headers to be meaningful (it proves a guard still fails on
+                          known-bad). It cannot pass against the current tree by construction.
+
+Against HEAD, which still holds the 04e-era list (the CMake changes are uncommitted): nothing was REMOVED from
+the gate. Two guards were ADDED - sidechain_guard and teardown_dispose_guard. Note the derivation gives 57 tests
+for 04e against Sean's recalled 58; no 04e ctest log survives, so that one test's difference is unresolved rather
+than explained away.
+
+KNOWN, AND OWED IN 05b: sidechain_guard is green but asserts the BUILT-IN case, not a real AU whose sidechain
+survives adoption - green while testing the wrong thing. Re-aiming it, and the item 6 slot-level field, are 05b.
+
+Placed by tools/place_ship.sh, which refuses a binary older than the newest tracked Source file and refuses an AU
+whose arm64 UUID matches the installed build. Proven both directions today.

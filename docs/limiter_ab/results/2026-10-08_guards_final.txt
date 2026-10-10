@@ -1,0 +1,26 @@
+# guard runs on build-guards-lv2 (arm64, no LTO, -j 2), final source, 8 Oct 2026
+
+guard build exit 0
+[100%] Built target limiter_wall_guard
+[100%] Built target loudness_loop_guard
+[100%] Built target EchoJayBuiltinRegistryTest
+######## limiter_wall_guard
+1/1 Test #3: limiter_wall_guard ...............   Passed   34.50 sec
+######## loudness_loop_guard
+1/1 Test #4: loudness_loop_guard ..............   Passed  159.69 sec
+-rwxr-xr-x  1 SeanD  staff  20462920  8 Oct 10:57 ./EchoJayBuiltinRegistryTest_artefacts/Release/EchoJayBuiltinRegistryTest
+######## builtin_registry_test
+exit 0
+1703
+  [PASS] while the dialled 5 ms is REMEMBERED, not destroyed
+    key_root (C|C#|D|D#|E|F|F#|G|G#|A|A#|B, default C) - the root the scale is built on. IGNORED while scale is chromatic, which is the default - so setting this alone changes nothing. Only meaningful once the user has told you the key and you have set a named scale to match
+    natural_vibrato (%, 0..200, default 0) - DEFAULT 0 = KEEP VIBRATO OFF (PROVISIONAL, round 50, 5 Sep 2026; was 100). MEASURED on the reference take, all-voiced off-grid vs D minor @ 440: the defaults with 100 render 8.71c / 30.1% within 5c - WORSE THAN THE SOURCE (6.72c / 39.8%) and worse at onsets too (10.41c vs 8.26c); with 0 they render 2.44c / 66.2%. Every ear-confirmed clip and every dial measurement of rounds 31-46 was made at 0; the schema default never went through the measurement. The mode table is unchanged (natural and balanced keep at 100). AS SHIPPED THIS IS A SWITCH, NOT A GAIN (measured 5 Sep 2026, UI_SIMPLIFICATION.md ruling 3): 100 keeps the singer's own vibrato exactly as sung; EVERY OTHER VALUE removes it entirely - 0, 40, 150 and 200 render bit-identically. The intended gain (0 dead-still, 200 exaggerated) reaches the audio only on the shift path, which is selected only at 100; making it a true gain at every value is DSP work with its own bar (the ring-aligned fast term). Presets: natural and balanced 100 (keep); tuned 40 and hard 0 (REMOVE). Applies at every retune speed
+    formant_mode (off|preserve|shift, default preserve) - what happens to the vocal character when pitch moves. preserve is the default and the right answer for correction. off is a TRANSPOSE-TIME control, not a correction mode: at tuning-sized corrections it is measured IDENTICAL to preserve (and the build asserts that equivalence), and it only matters when transpose moves pitch by semitones - preserved formants keep the same singer, moving formants make a smaller or larger one. Setting off with transpose at 0 changes nothing. shift keeps formants independent of pitch AND moves them by formant_shift, on a heavier synthesis path with a MEASURED quality cost even at formant_shift 0 - about 1.6 dB of harmonicity and several times the roughness of preserve - so reach for it only when the character change IS the point
+  [PASS] EchoJay Limiter mode: mode (transparent|punchy|clip, default transparent) - how it holds the ceiling: transparent is the clean lookahead limiter (use i
+  [PASS] EchoJay Limiter true_peak is advertised on/off: true_peak (on/off, default off) - measure the peak BETWEEN samples, not just at them, so the ceiling st
+  [PASS] EchoJay Limiter: reports a (fixed) latency to compensate (1160)
+  [PASS] EchoJay Limiter: untriggered, it is transparent (worst delta 0.0000000)
+[exited with code 0]
+
+## limiter_wall_guard full output
+3: ==== limiter_wall_guard: GREEN (0 assertion(s) failed) ====

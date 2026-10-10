@@ -1,0 +1,23 @@
+GATED GREEN — 5 Oct 2026, round 05c. Written 6 Oct from the gate record (it was reported in chat and the file was
+not written at the time; this is that record, not a re-run).
+
+  build-release archives            0 errors
+  39 guard binaries                 0 errors
+  4 plugin bundles                  0 errors
+  ctest -L "fast|plugins"           100% passed out of 59
+  link_state_guard                  GREEN both sides
+  chain completed                   5 Oct 20:43
+
+arm64: V2 AU 56D501F5-37EC-3C81-A862-CBF98AF431ED   Link AU 34654DDC-E90D-384E-983B-40F1D73A226B
+       V2 VST3 AFDE3F83-21CF-3E66-AF92-37892058344F  Link VST3 03B199E5-466E-36B4-99F8-8C9985F7F1D6
+
+WHAT THIS BUILD FIXED: the deterministic exactly-once disposal of a released hosted AU. Confirmed in Logic by Sean
+on 6 Oct, 10:40-10:45: three close/reopens with no crash, "rack released, 0 instance(s) parked", the CL 1B held at
+refs=2 and "disposing ... this is the ONE dispose of this instance" 39 ms later from the timer.
+
+SCOPE: all 61 registered tests carry a label (58 fast + 1 plugins + 2 none); the 2 excluded are comp_render_check
+(loads a named AU - permanently excluded on this Mac, PACE/iLok) and level_loop_red_prefix (needs a pre-fix archive).
+
+KNOWN AND OPEN IN THIS BUILD, fixed in 06a: the companion hold's record was wiped when it ended, so a two-compressor
+build's closing line named it "Compressor 2" and said "level already matched" while the log showed its write; and
+the blind R2 replay of index-only parked edits was still armed at engage.

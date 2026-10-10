@@ -1,0 +1,10 @@
+ship_2026-10-04c  placed 2026-10-04 18:54:32  from build-release (four plugin targets, -j 4)
+newest Source: Oct  4 18:23:24 2026 Source/PluginProcessor.cpp
+== EchoJay V2 ==
+  arm64  A56A40B9-7DE9-3CF1-B57D-1EF22F56B88F
+  x86_64 17F573F2-0F89-3A47-8633-6E9BAA6F58EC
+  size   67M
+== EchoJay Link ==
+  arm64  CF0C477A-1570-3748-A19B-E84FABB42736
+  x86_64 DEABF26D-17F0-322E-A8A3-5726D6348B05
+  size   49M

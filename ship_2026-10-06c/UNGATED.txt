@@ -1,0 +1,64 @@
+UNGATED — 7 Oct 2026, round 06c. Placed on Sean's explicit instruction with the gate RED. NOT INSTALLED BY ME.
+
+THE GATE: 98%, 58 of 59 passed. Clean rebuild of build-release (0 errors), 39 guard binaries (0 errors), 4 bundles
+(0 errors), link_state_guard GREEN both sides. The one failure:
+
+  16 - dialinfo_keep_guard (fast)
+
+AND IT IS NOT A BROKEN ASSERTION. Every assertion passed, the plain leg exited 0, and the SCRIBBLE leg segfaulted
+AFTER the test had finished:
+    ==== dialinfo_keep_guard: GREEN (0 assertion(s) failed) ====
+    ChainHost: HOST TEARDOWN HAS BEGUN (an EchoJayProcessor destructor (AP_Close))
+    EJNet: config fetch ok, prompt in force = REMOTE v21 (served version 21)
+    run_guard.sh: line 80: 76275 Segmentation fault: 11
+    scribble leg exit code: 139   BOTH LEGS: RED (plain 0, scribble 139)
+A network config-fetch callback landed after ~EchoJayProcessor had begun. Re-run twice immediately afterwards: PASSED
+both times, so it is a race, not a deterministic break. 06c does not touch that path - the callback writes
+EchoJayAPI members from a network thread; the new teardown log line only made the window visible. It is a REAL
+latent bug of the same family as this week's crashes (an async callback into an object being destroyed) and is
+06d item 1, not a shrug: `aliveToken_` exists on the processor for exactly this and this callback does not consult it.
+
+WHAT IS IN 06c (V2 ONLY - see the note on the Link below). Five items, legs green for 1-4:
+ 1. AN EXPLICIT CONTROL-BY-CONTROL EDIT NEVER STARTS A LOOP. startCalibrationFromOps skips any op carrying
+    `controls` / `controls_norm` / a non-empty `settings_structured`, logs that it is the user's own move, and says
+    out loud when a target was ignored. Sean's SC HPF 110 Hz + attack 40 ms edit had started a loop that set the
+    working position and drove IN to +5.0 dB. Leg: 0 loops for the explicit edit, IN/OUT untouched, 0 when controls
+    AND a target arrive, and 1 for a plain amount request (so builds are not disabled).
+ 2. A BUS SAYS NOTHING ABOUT LANDING. sayCalibrationCouldNotStart asks calibTargetIsBus first and returns silently;
+    "land it" is retired from user-facing text. The 12:10:57 message claimed "its settings never landed" one line
+    after the apply log said they did.
+ 3. "CHANGES APPLIED" IS JUDGED ON THE SLOTS, NOT ON OP DELIVERY. Extracted as the pure
+    EchoJayEditor::everySlotFullyApplied(...), so DialStatus::applied / ::partial / ::builtinPayloadUnmatched decide
+    the sentence; the failure case names what arrived and what was ignored, from reasons the device already computed
+    and used to discard. Closes BOTH the 10:37 unknown-param-id case and the 13:19 "got keys: []" case.
+ 4. THE REROUTE FOOTER IS GONE. renderRerouteReply returns the reply unchanged; rerouteQuietLine() is deliberately
+    KEPT so the two guards have the exact string to assert ABSENT. Both re-aimed (ui_round_guard, stream_reroute_guard).
+ 5. THE SUBSTITUTION CARD NAMES THE LICENCE REASON AND THE REPLACEMENT, from SlotDialInfo::substitutedFrom and
+    ::substitutedWhy ("licence"), and offers Suggest an alternative. Card wording only - no leg.
+
+THE LINK BINARY IS UNCHANGED, AND THAT IS CORRECT. arm64 2EBEB279 is identical to the installed 06b Link because the
+Link archive compiles NONE of the three files 06c changed (PluginEditor.cpp, PluginProcessor.cpp, EchoJayAPI.cpp are
+all absent from its object list), so it rebuilt bit-identically. place_ship.sh REFUSED on that basis - its
+"a rebuilt binary cannot keep its UUID" rule is false for a reproducible build with unchanged inputs. That blind spot
+is a tooling item: the staleness-vs-source check already covers the case the UUID check was written for, so the UUID
+check must defer to it. This folder was therefore placed by hand, and this file is why.
+
+NOT IN 06c: item 6/10 FINAL (the bus Level set at landing), item 12 (substitute.settings_structured onto a licence
+substitute), the editor-view half of the 18:32 ruling, and the AAX build-only change. All queued.
+
+---
+CORRECTION, 7 Oct 20:0x, after reading the crash report (.ips BC815958, 19:12:25). My attribution above - "a network
+callback writes EchoJayAPI members from a network thread, aliveToken_ not consulted" - IS WRONG. Those members are
+CLASS STATICS (EchoJayAPI.h:1085-1097) and outlive every instance, and the faulting thread is not ours: it is
+com.apple.NSURLSession-work inside -[__NSCFURLSessionDelegateWrapper didBecomeInvalidWithError:] ->
+-[NSURLSession finalizeDelegateWithError:], SIGSEGV at 0x0. CFNetwork is finalising the shared NSURLSession and
+messaging a delegate that has already been released - JUCE's JUCE_URLDelegate_, owned by SharedSession
+(juce_Network_mac.mm:132-200) and destroyed when the last in-flight request goes away. MallocScribble is why only
+the scribble leg sees it: the released delegate's memory is poisoned rather than merely stale.
+What IS ours, and is a real defect: ~EchoJayProcessor joins its own threads (scanner, loadThread, saveThread) and
+then exits with up to seven detached NETWORK workers still inside a blocking read, the config fetch's connection
+timeout being 60 seconds. Quitting a host within a minute of opening EchoJay, offline or on a slow network, is the
+condition in that report. Measured rate before any fix: 0 of 20 runs red unsealed, 0 of 20 through run_guard.sh
+--scribble as ctest runs it, with a request still in flight at exit in 15 of 20 - one crash in about 41 runs. The
+fix and the leg are written up as 06d item 1 in HANDOFF_COMP_PROFILES_PLUGIN.md. NOTHING IN THE 06c BINARIES
+CHANGES because of this correction: the defect is older than this round and was only made visible by it.
