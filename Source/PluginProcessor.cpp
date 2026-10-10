@@ -3089,6 +3089,73 @@ bool EchoJayProcessor::borrowSessionShapeDirty() const
     return false;
 }
 
+// ---- THE VALUE RING, PRODUCER SIDE (stage 3, 10 Oct 2026) ------------------------------------------
+// MESSAGE THREAD. The V2 produces; it never drains. So a std::map and a lazy mmap are fine here, and the
+// audio-thread discipline that governs the Link's side does not apply to this one.
+echojay::cmdring::CmdRing* EchoJayProcessor::ringFor (const juce::String& linkUid)
+{
+    if (linkUid.isEmpty()) return nullptr;
+    if (auto it = cmdRings_.find (linkUid); it != cmdRings_.end()) return it->second;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir (err);
+    if (dir.isEmpty()) return nullptr;
+    int fd = -1, e2 = 0; bool laidDown = false;
+    auto* r = echojay::cmdring::openRingRW (dir, linkUid, fd, e2, laidDown);
+    // CACHED EVEN WHEN NULL, so a rack whose ring will not map is attempted ONCE and then quietly uses the
+    // file channel. Retrying every mouse move would put a failed open in the drag's path.
+    cmdRings_[linkUid] = r;
+    if (r != nullptr && laidDown)
+        EchoJay_NSLog (("EJRing: laid down the value ring for \"" + linkUid + "\"").toRawUTF8());
+    else if (r == nullptr)
+        EchoJay_NSLog (("EJRing: no value ring for \"" + linkUid + "\" (errno " + juce::String (e2)
+                        + ") - values will go by the file channel, which is slower and still correct").toRawUTF8());
+    return r;
+}
+
+bool EchoJayProcessor::ringPushFrame (const juce::String& linkUid, uint32_t phase, uint32_t gesture, int kind,
+                                      int slot, int paramId, double value, uint32_t structureRevision)
+{
+    auto* r = ringFor (linkUid);
+    if (r == nullptr) return false;
+    echojay::cmdring::CmdFrame f;
+    f.seq     = ringGestureSeq_.fetch_add (1, std::memory_order_relaxed) + 1;   // strictly increasing
+    f.kind    = (uint32_t) kind;
+    f.phase   = phase;
+    f.gesture = gesture;
+    f.slot    = slot;
+    f.paramId = (uint32_t) juce::jmax (0, paramId);
+    f.value   = value;
+    f.flags   = structureRevision & 0xFFFFu;   // 3.2: the mismatch is discarded with a count, never applied
+    return echojay::cmdring::push (r, f);
+}
+
+uint32_t EchoJayProcessor::ringBeginGesture (const juce::String& linkUid, int kind, int slot, int paramId,
+                                             double value, uint32_t structureRevision)
+{
+    // Gesture ids share the frame counter, so an id is never reused within a session and a `begin` can always
+    // be told from the gesture before it even if a drag is interrupted.
+    const uint32_t g = ringGestureSeq_.fetch_add (1, std::memory_order_relaxed) + 1;
+    if (! ringPushFrame (linkUid, echojay::cmdring::kBegin, g, kind, slot, paramId, value, structureRevision))
+        return 0;
+    return g;
+}
+
+bool EchoJayProcessor::ringStreamValue (const juce::String& linkUid, uint32_t gesture, int kind, int slot,
+                                        int paramId, double value, uint32_t structureRevision)
+{
+    if (gesture == 0) return false;   // no gesture was opened: the caller is on the file channel
+    return ringPushFrame (linkUid, echojay::cmdring::kStream, gesture, kind, slot, paramId, value,
+                          structureRevision);
+}
+
+bool EchoJayProcessor::ringEndGesture (const juce::String& linkUid, uint32_t gesture, int kind, int slot,
+                                       int paramId, double value, uint32_t structureRevision)
+{
+    if (gesture == 0) return false;
+    return ringPushFrame (linkUid, echojay::cmdring::kEnd, gesture, kind, slot, paramId, value,
+                          structureRevision);
+}
+
 int EchoJayProcessor::writeChainEditCommand(const juce::String& linkUid, const juce::var& editOps, const juce::var& baseSlots,
                                              const juce::String& sourceNote, const juce::String& leaseId)
 {

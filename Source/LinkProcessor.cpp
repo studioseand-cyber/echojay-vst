@@ -1,5 +1,6 @@
 #include "LinkProcessor.h"
 #include "EJRemoteControl.h"   // stage 1: the Link processes its own rack; the lease is control only
+#include "EJCmdRing.h"        // stage 3: the value ring, drained in processBlock
 #include "EJRackSidecarFill.h"   // ruling 1 (21s-b): one source for the slot list
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include <signal.h>   // kill(pid, 0): publisher liveness (C4b)
@@ -176,6 +177,11 @@ void LinkProcessor::timerCallback()
     // registry walk; sidecar parses only when a file's mtime moved).
     if (++soloScanDivider_ >= 8) { soloScanDivider_ = 0; soloFabricScan(); }
     calibTickOwnRack();   // 21t-d: while THIS process owns the rack, it owns the calibration loop
+    // ---- THE RING: map it, then reconcile what the audio thread already applied ----------------
+    // Stage 3. The mapping happens HERE and never on the audio thread; processBlock only ever reads an atomic
+    // pointer. A rack with no ring is not a failure - the file channel carries everything, which is the
+    // correct fallback - so this is attempted quietly and once.
+    ringTick();
     if (++heartbeatDivider_ >= 30)
     {
         heartbeatDivider_ = 0;
@@ -2285,6 +2291,46 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
     for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear(ch, 0, buffer.getNumSamples());
 
+    // ---- THE VALUE RING, DRAINED HERE (stage 3, 10 Oct 2026) --------------------------------------
+    // BEFORE the chain runs, so a value written by the V2 lands on THIS buffer - that is the whole bound the
+    // ring exists for (one buffer: 2.7 ms at 128 samples, 10.7 ms at 512). Draining after the chain, or on a
+    // timer, would put the move a buffer or a timer tick late and the drag would feel broken.
+    // Allocation-free and lock-free: cmdring::drain coalesces into a fixed array and the appliers write only
+    // the atomics the audio path reads. The logging, the revision bump and the undo step are downstream, on
+    // the message thread (ChainHost::drainRingBookkeeping).
+    if (auto* ring = cmdRing_.load (std::memory_order_acquire))
+    {
+        const auto d = echojay::cmdring::drain (ring, (uint32_t) chainHost.getChainRevision());
+        for (int i = 0; i < d.count; ++i)
+        {
+            const auto& f = d.kept[i];
+            using K = echojay::cmdring::Kind;
+            using RF = ChainHost::RingFigure;
+            switch (f.kind)
+            {
+                case K::kSlotIn:    chainHost.applyRingValueRT (RF::SlotIn,    f.slot, (float) f.value); break;
+                case K::kSlotOut:   chainHost.applyRingValueRT (RF::SlotOut,   f.slot, (float) f.value); break;
+                case K::kMasterWet: chainHost.applyRingValueRT (RF::MasterWet, -1,     (float) f.value / 100.0f); break;
+                case K::kPreGain:   chainHost.applyRingValueRT (RF::PreGain,   -1,     (float) f.value); break;
+                case K::kLinkGain:  gainDb_.store ((float) f.value, std::memory_order_relaxed); break;
+                case K::kSetParam:
+                    // NOT APPLIED HERE, BY RULING. A device parameter is a plugin call and can never be made
+                    // real-time safe, so it is staged for the message thread and the contract says so. Counted
+                    // so a frame cannot vanish silently.
+                    ringSetParamPending_.fetch_add (1, std::memory_order_relaxed);
+                    break;
+                default: break;
+            }
+        }
+        // Figures, not frames: a 400-frame drag reports as one move. Published for the message thread's log.
+        if (d.count > 0 || d.dropped > 0)
+        {
+            ringLastKept_.store (d.count, std::memory_order_relaxed);
+            ringLastDropped_.fetch_add (d.dropped, std::memory_order_relaxed);
+            ringLastOverflow_.store (d.overflow, std::memory_order_relaxed);
+        }
+    }
+
     // Hosted chain runs FIRST so the ring tap (and the track) hears the
     // processed signal. Empty / all-bypassed chain = the graph stays out of
     // circuit; only >2ch layouts skip it. On a mono track the signal is
@@ -2631,6 +2677,47 @@ void LinkProcessor::resyncChainModelFromHost()
         next.push_back(std::move(s));
     }
     chainModel = std::move(next);
+}
+
+// ---- THE VALUE RING: mapping and bookkeeping (stage 3, 10 Oct 2026) -----------------------------
+// MESSAGE THREAD ONLY. Two jobs, both deliberately off the audio thread:
+//   (1) MAP the rack's ring once, publishing the pointer through an atomic so processBlock never touches a
+//       mapping. A rack whose ring will not map keeps using the file channel, which is the right fallback.
+//   (2) RECONCILE: run the ordinary setter for every move the audio thread already applied, so the log, the
+//       value revision and the readback catch up with the audio. This is the "downstream" half of Sean's
+//       ruling (a): the RT applier is the authority for the figure, this makes every other surface agree.
+void LinkProcessor::ringTick()
+{
+    if (cmdRing_.load(std::memory_order_acquire) == nullptr)
+    {
+        int err = 0;
+        const juce::String dir = LinkShm::resolveDir(err);
+        const juce::String uid = instanceUid_;
+        if (dir.isNotEmpty() && uid.isNotEmpty())
+        {
+            int fd = -1, e2 = 0;
+            if (auto* r = echojay::cmdring::openRingForDrain(dir, uid, fd, e2))
+            {
+                cmdRingFd_ = fd;
+                cmdRing_.store(r, std::memory_order_release);
+                EchoJay_NSLog(("EJRing: mapped the value ring for \"" + uid
+                               + "\" - values arrive within one buffer now").toRawUTF8());
+            }
+        }
+    }
+
+    const int reconciled = chainHost.drainRingBookkeeping();
+    const int dropped    = ringLastDropped_.exchange(0, std::memory_order_relaxed);
+    const int setParams  = ringSetParamPending_.exchange(0, std::memory_order_relaxed);
+    if (reconciled > 0 || dropped > 0 || setParams > 0)
+        EchoJay_NSLog(("EJRing: reconciled " + juce::String(reconciled) + " ring move(s)"
+                       + (dropped > 0 ? ", DISCARDED " + juce::String(dropped)
+                                        + " (stale structure revision)" : juce::String())
+                       + (setParams > 0 ? ", " + juce::String(setParams)
+                                          + " set_param frame(s) staged (a device parameter is a plugin call "
+                                            "and is never applied on the audio thread - by ruling)"
+                                        : juce::String())
+                       + ", overflow " + juce::String((int) ringLastOverflow_.load(std::memory_order_relaxed))).toRawUTF8());
 }
 
 void LinkProcessor::rackLeaseEngage()

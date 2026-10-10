@@ -40,7 +40,7 @@ instance uid (the registry key, the same string the sidecar and the mixer strip 
 
 | command | fields | meaning |
 |---|---|---|
-| `set_param` | `slot`, `param` (schema id), `value` (double) | one parameter on one slot's device, in the device's own units. **The HUMAN GESTURE path only** - a knob being dragged. An agent's considered change is `set` on the chain channel: see §8 |
+| `set_param` | `slot`, `param` (schema id), `value` (double) | one parameter on one slot's device, in the device's own units. **The HUMAN GESTURE path only** - a knob being dragged. An agent's considered change is `set` on the chain channel: see §8. **Applied on the MESSAGE THREAD, not in `processBlock`** - a device parameter is a plugin call and cannot be made real-time safe (§7, corrected 10 Oct 2026) |
 | `slot_in` | `slot`, `db` | the slot's pre-trim (`setSlotPreTrimDb`) — **MISSING as an op today**, §2 of the plan |
 | `slot_out` | `slot`, `db` | the slot's output gain (`setSlotOutGainDb`) — likewise missing |
 | `slot_wet` | `slot`, `pct` (0..100) | the slot's wet/dry |
@@ -213,7 +213,8 @@ measured and where from.
 
 | path | target | measured as |
 |---|---|---|
-| ring frame written → applied in the Link's `processBlock` | **≤ 1 buffer** (2.7 ms at 128 samples, 10.7 ms at 512) | the Link logs the wall-clock delta between the frame's write stamp and the block that applied it; the leg asserts the bound at both buffer sizes |
+| ring frame written → applied in the Link's `processBlock` — **the four FIGURE commands only** (`slot_in`, `slot_out`, `master_wet`, `pre_gain`) | **≤ 1 buffer** (2.7 ms at 128 samples, 10.7 ms at 512) | the Link drains before the chain runs, so the value lands on that buffer. The figure moves on the audio thread (`ChainHost::applyRingValueRT`); the log, the value revision and the undo step follow on the message thread |
+| ring frame written → applied, **`set_param`** | **NOT one buffer** — one message-loop turn, unbounded | **CORRECTED 10 Oct 2026, and it was wrong when I wrote it.** A device parameter is a plugin `setParameter` call: it allocates, locks and can block, so it can never be applied on the audio thread. §2.1 put `set_param` on the ring beside the four figures and gave the whole row one bound, which this file had no right to promise. The frame is staged on arrival and applied on the message thread, and the Link's log counts the staged frames so a slow one is visible rather than merely felt. The ring still earns its place for `set_param` — coalescing and gesture framing both still apply, so a drag is one write per control and one undo step — but the FEEL of a `set_param` drag is bounded by the message loop, not by a buffer. Sean's ruling, 10 Oct: RT appliers for the four figures only |
 | drag → audible | **≤ 30 ms** | the above plus the host's own output latency, which is not ours; the leg asserts our half |
 | structural command → ack | **≤ 500 ms** typical, **5 s** budget before the caller gives up | EXISTS as a budget ("the 10 s ack wait stays at 5 s"); the **typical** figure is NEW and currently unmeasured |
 | `open_editor` → window on screen | **no target yet** | third-party editors open at their own pace; the command acks when the Link has *asked*, and a separate state says whether the window is up |
@@ -247,6 +248,14 @@ unchanged inside the plugin, and B's column is what the model and the server say
 agent's considered change is `set` on the **chain** channel, with its ack and its staleness guard. The ring's
 `set_param` is the **human gesture** path — a knob the user is dragging — and that is the only thing it is for.
 One name for two jobs was the mistake; they are now two.
+
+**And its LATENCY is corrected too (10 Oct 2026).** This file promised every ring command ≤ 1 buffer. That is
+true of the four FIGURE commands and false of `set_param`, because a device parameter is a plugin
+`setParameter` call — it allocates, locks and may block, so it cannot be applied on the audio thread at all.
+Sean's ruling: RT appliers for `slot_in`, `slot_out`, `master_wet` and `pre_gain` only; `set_param` is staged on
+arrival and applied on the message thread. See §7's table. I am recording that the error was mine and in this
+document, not in the implementation that found it: the bound was asserted here before anything had tried to
+honour it.
 
 **B adopted the ring's ack rule verbatim** (§4.3): no per-frame ack, the plugin answers the agent's call when the
 meter frame shows the settled `(gesture, seq)` applied, else `{ok:false, error:{code:"not_applied", message:

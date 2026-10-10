@@ -368,6 +368,79 @@ int main()
         }
     }
 
+    std::printf ("\n== (6) STAGE 3: A RING MOVE AND A CARD MOVE END AT THE SAME VALUE, ONE UNDO STEP ==\n");
+    {
+        // SEAN'S LEG, and it is the one that makes ruling (a) safe to live with. The RT applier moves the
+        // audio immediately and the bookkeeping follows on the message thread, so for a window the figure the
+        // audio uses and the figure the readback reports are written by two different things. If those two ever
+        // disagreed, "one authority per figure" would be a claim and not a fact - so it is measured, on the
+        // same figure, by both routes, against each other.
+        using namespace echojay::cmdring;
+        using RF = ChainHost::RingFigure;
+
+        auto procHeap = std::make_unique<EchoJayProcessor>();
+        auto& proc = *procHeap;
+        proc.prepareToPlay (48000.0, 512);
+        auto& h = proc.getChainHost();
+        const auto* gain = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        check (gain != nullptr, "precondition: EchoJay Gain is registered");
+        if (gain != nullptr)
+        {
+            h.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*gain), 0);
+            pump (150);
+
+            // ---- ROUTE 1: THE CARD. The ordinary setter, as the Link's own UI calls it.
+            h.setSlotPreTrimDb (0, -4.0f);
+            const float byCard = h.getSlotPreTrimDb (0);
+            check (std::abs (byCard + 4.0f) < 0.01f, "the CARD route lands -4.0 dB on the slot's IN",
+                   juce::String (byCard, 2));
+
+            // ---- ROUTE 2: THE RING. The audio-thread applier, then the message thread's catch-up.
+            h.setSlotPreTrimDb (0, 0.0f); pump (20);          // back to a known place
+            const bool rtOk = h.applyRingValueRT (RF::SlotIn, 0, -4.0f);
+            check (rtOk, "the RING route's audio-thread applier accepted the move");
+            // BEFORE the bookkeeping: the audio has moved and the RECORD has not. Asserted, because this
+            // window is the price of the one-buffer bound and a leg that skipped it would be hiding it.
+            check (h.pendingRingBookkeeping() == 1,
+                   "...and the record is OWED - one move waiting, which is the window ruling (a) accepts",
+                   juce::String (h.pendingRingBookkeeping()));
+            const int reconciled = h.drainRingBookkeeping();
+            const float byRing = h.getSlotPreTrimDb (0);
+            check (reconciled == 1 && h.pendingRingBookkeeping() == 0,
+                   "...and the message thread reconciles it exactly once",
+                   juce::String (reconciled) + " reconciled");
+
+            // THE ASSERTION SEAN ASKED FOR.
+            check (std::abs (byRing - byCard) < 0.01f,
+                   "STAGE 3: a RING move and a CARD move on the same figure END AT THE SAME VALUE - so the "
+                   "audio-thread applier is the authority and the bookkeeping agrees with it, rather than the "
+                   "two being separate writers that can drift",
+                   "card " + juce::String (byCard, 3) + " vs ring " + juce::String (byRing, 3));
+
+            // ...AND ONE UNDO STEP. A gesture is one step whichever route it came by: if the ring's catch-up
+            // pushed a step per frame, a 400-frame drag would need 400 undos to get back.
+            auto& H = proc.undoHistory();
+            const int depth0 = H.undoDepth();
+            h.setSlotPreTrimDb (0, 0.0f); pump (20);
+            const int afterCard = H.undoDepth();
+            const int cardSteps = afterCard - depth0;
+            for (int i = 1; i <= 40; ++i) h.applyRingValueRT (RF::SlotIn, 0, (float) -i * 0.1f);
+            check (h.pendingRingBookkeeping() == 40,
+                   "forty ring frames applied to the audio, forty records owed",
+                   juce::String (h.pendingRingBookkeeping()));
+            h.drainRingBookkeeping(); pump (20);
+            const int ringSteps = H.undoDepth() - afterCard;
+            check (ringSteps <= cardSteps * 1,
+                   "STAGE 3: ...and forty ring frames cost NO MORE undo steps than one card move - a drag must "
+                   "not need forty undos to get back",
+                   "card " + juce::String (cardSteps) + " step(s), 40 ring frames " + juce::String (ringSteps)
+                       + " step(s)");
+            check (std::abs (h.getSlotPreTrimDb (0) + 4.0f) < 0.05f,
+                   "STAGE 3: ...and the figure ends on the LAST frame's value, not the first",
+                   juce::String (h.getSlotPreTrimDb (0), 2));
+        }
+    }
+
     std::printf ("\n==== remote_ops_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

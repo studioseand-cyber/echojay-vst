@@ -11,6 +11,7 @@
 #include "WaveformRecorder.h"
 #include "ChainHost.h"
 #include "EJCalibLoop.h"   // 21t-d: the calibration loop (shared with the Link)
+#include "EJCmdRing.h"   // stage 3: the value ring, producer side
 #include "EJStateRoot.h"   // echojay::userAppData() - every state path goes through the root so a runner can isolate it
 #include "EJLevelRecord.h"  // 21t-i: the stored level record (shared with the Link)
 #include "EchoJayAPI.h"
@@ -711,6 +712,28 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     // lease). Used by the editor's Link-tab edit path and by the borrowed-rack push above. Returns the seq or -1.
     int  writeChainEditCommand(const juce::String& linkUid, const juce::var& editOps, const juce::var& baseSlots,
                                const juce::String& sourceNote, const juce::String& leaseId);
+    // ---- THE VALUE RING, PRODUCER SIDE (remote control stage 3, 10 Oct 2026) ----------------------------
+    // The FILE above is for decisions; this is for values. The rule that picks the channel is one question -
+    // does the next one supersede this one? A drag has no meaningful ack because the next frame supersedes it,
+    // so it goes here and gets none.
+    //
+    // THE GESTURE IS THE UNIT. ringBegin / ringValue / ringEnd frame one drag, and the Link's coalescer keeps
+    // the newest STREAM frame per control while never discarding a boundary - that is what makes a 400-frame
+    // drag cost one write per control and still produce exactly one undo step.
+    //
+    // Every frame carries the rack's structureRevision in its flags, so a V2 holding a stale sidecar cannot
+    // apply a value to the wrong parameter: the Link discards the mismatch with a count. Same class of
+    // mistake baseSlots guards on the chain channel, same treatment.
+    /** Opens a gesture on a rack and returns its id, or 0 if the rack has no ring (the caller then uses the
+        file channel, which is the correct fallback and not a failure). */
+    uint32_t ringBeginGesture (const juce::String& linkUid, int kind, int slot, int paramId,
+                               double value, uint32_t structureRevision);
+    /** A value inside an open gesture. Cheap by design: call it as often as the mouse moves. */
+    bool     ringStreamValue (const juce::String& linkUid, uint32_t gesture, int kind, int slot, int paramId,
+                              double value, uint32_t structureRevision);
+    /** The settled value, and the authority for the gesture. */
+    bool     ringEndGesture  (const juce::String& linkUid, uint32_t gesture, int kind, int slot, int paramId,
+                              double value, uint32_t structureRevision);
     // After a pushed edit is acked: the session's base becomes the live rack (created slots gain a record so their state edits
     // still commit at deselect). Public for the guard.
     void borrowRebaseAfterPush();
@@ -1642,6 +1665,13 @@ private:
     std::shared_ptr<bool> aliveToken_ { std::make_shared<bool>(true) };
     AlignDelay alignPre_, alignPost_;
     juce::SmoothedValue<float> borrowCtxMix_ { 0.0f };
+    // The producer's rings, one per rack uid, mapped lazily on the message thread and kept for the session.
+    // A std::map is fine here: this is never touched from the audio thread - the V2 PRODUCES, it does not drain.
+    std::map<juce::String, echojay::cmdring::CmdRing*> cmdRings_;
+    std::atomic<uint32_t> ringGestureSeq_ { 0 };   // gesture ids, and the frame seq, both strictly increasing
+    echojay::cmdring::CmdRing* ringFor (const juce::String& linkUid);
+    bool ringPushFrame (const juce::String& linkUid, uint32_t phase, uint32_t gesture, int kind, int slot,
+                        int paramId, double value, uint32_t structureRevision);
     bool borrowApplyReleaseOnFail_ = false;   // switchable mid-flight (close)
     void borrowApplyFinish(bool applied, const juce::String& why,
                            bool restored);

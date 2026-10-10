@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EJRemoteControl.h"   // stage 1: the lease is control only - no bypass, no mute, no detour
+#include "EJCmdRing.h"        // stage 3: the value ring
 #include <JuceHeader.h>
 #include "ChainHost.h"
 #include "LoudnessLoop.h"   // LEVELLING V2 (10 Oct 2026): every Link levels its OWN rack
@@ -395,6 +396,7 @@ private:
     // The rack-lease arms, extracted from the poll switch so linksync_test
     // drives the REAL engage/restore code, not a test-local copy.
     void rackLeaseEngage();
+    void ringTick();   // stage 3: map the value ring, and reconcile what the audio thread applied
     void rackLeaseRelease();
     friend struct EchoJayLinkSyncTestAccess;
     // 21t-d: the Link-side calibration guard reads the loop and the chain it drives
@@ -674,6 +676,18 @@ private:
     // §8 in-context: the lease-carried mute (muteOut). Want set by the poll
     // (message thread), consumed on the audio thread through the ramp.
     std::atomic<bool>  rackLeaseMuteWant_ { false };
+    // ---- THE VALUE RING (stage 3, 10 Oct 2026) -----------------------------------------------
+    // Mapped on the message thread, read by processBlock through an atomic pointer so the audio thread never
+    // touches the mapping itself. nullptr = no ring for this rack yet, and the file channel carries everything,
+    // which is the correct fallback rather than a failure.
+    std::atomic<echojay::cmdring::CmdRing*> cmdRing_ { nullptr };
+    int                                    cmdRingFd_ = -1;
+    // Counters the audio thread publishes and the message thread reads for its log. A dropped frame must be
+    // countable: "it felt like nothing happened" is not a diagnosis.
+    std::atomic<int>      ringLastKept_        { 0 };
+    std::atomic<int>      ringLastDropped_     { 0 };
+    std::atomic<uint32_t> ringLastOverflow_    { 0 };
+    std::atomic<int>      ringSetParamPending_ { 0 };   // staged for the message thread, by ruling
     // Mute/solo layer (27 Aug 2026): THREE reasons, ONE silence, composed
     // — never shared. muteUserOn_ is the user's mix decision (persists in
     // saved state; a session release must never clear it). soloOn_ is this

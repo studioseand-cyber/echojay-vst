@@ -1565,6 +1565,45 @@ public:
         minuend kept loudness and true peak from before the window and the subtraction compared two different
         spans. resetAllLevels() is not usable here - it would clear the song's own chain-IN reading, which
         Sean's standing rule forbids a loop reset from touching. */
+    // ===================================================================================================
+    // THE RING'S AUDIO-THREAD WRITERS (remote control stage 3, 10 Oct 2026 - Sean's ruling (a), scoped)
+    // ===================================================================================================
+    //
+    // THE CONFLICT THESE RESOLVE, AND IT WAS A REAL ONE. The value ring promises change-to-audible within ONE
+    // BUFFER, which means applying on the audio thread. But the ordinary setters are not real-time safe:
+    // setSlotPreTrimDb and setPreGainDb both EchoJay_NSLog and update message-thread state, and a device
+    // parameter (set_param) is a plugin call that never can be. Meanwhile stage 2 committed to ONE WRITER PER
+    // FIGURE, so the Link's own card and a remote move cannot disagree about what happened.
+    //
+    // SEAN'S RULING (a), SCOPED: RT-safe appliers for these four figures ONLY, each NAMED as the audio-thread
+    // writer, with the logging, the revision bump and the undo step downstream of it. So there is still one
+    // AUTHORITY per figure - this applier - even though two things touch the figure: the applier moves the
+    // audio immediately, and the bookkeeping that follows makes the RECORD agree with what the audio already
+    // did. set_param stays on the message thread, and the contract now says so.
+    //
+    // WHAT "DOWNSTREAM" MEANS CONCRETELY: applyRingValueRT writes only the atomic the audio path reads and
+    // records the move in a fixed, lock-free pending list. drainRingBookkeeping() runs on the message thread
+    // and calls the ORDINARY setter for each pending move, which is what logs, bumps the value revision and
+    // brings the readback (getSlotPreTrimDb and friends) into line. Between the two the audio is already right
+    // and the readback is briefly stale; that window is the price of the bound, and it is asserted rather than
+    // assumed - remote_ops_guard proves a ring move and a card move on the same figure END AT THE SAME VALUE.
+    //
+    // NO ALLOCATION, NO LOCKS, NO LOGGING in applyRingValueRT. It is called from processBlock.
+    enum class RingFigure { SlotIn, SlotOut, MasterWet, PreGain };
+
+    /** AUDIO THREAD. Moves the figure the audio reads, now. Returns false if the figure could not be moved
+        (a slot that does not exist, a non-finite value - refused here as the ordinary setters refuse it, so a
+        NaN cannot reach a write by the fast path either). */
+    bool applyRingValueRT (RingFigure fig, int slot, float value) noexcept;
+
+    /** MESSAGE THREAD. Runs the ordinary setter for every move the audio thread applied since the last call,
+        so the log, the revision and the readback catch up with the audio. Returns how many it reconciled. */
+    int drainRingBookkeeping();
+
+    /** How many RT moves are waiting for their bookkeeping. Message thread; for the legs and the log. */
+    int pendingRingBookkeeping() const noexcept
+        { return (int) (ringPendWrite_.load(std::memory_order_acquire) - ringPendRead_); }
+
     void resetSlotLevels(int i);
     void resetAllLevels();   // source change, manual reset
 
@@ -2781,6 +2820,17 @@ private:
     echojay::TrackLevel trackLevel_;   // spec section 5, pre-chain
     // Running level at the chain input and output (see getChainInLevels):
     // K-weighted (LUFS), the perceived level C7 matches
+    // The ring's pending-bookkeeping list. Single producer (the audio thread), single consumer (the message
+    // thread). A FIXED array because the producer may not allocate; if it fills, the oldest unreconciled move
+    // is dropped from the RECORD only - the audio has already moved, and drainRingBookkeeping reports the loss
+    // rather than hiding it. 64 is far more distinct controls than one buffer can carry.
+    struct RingPend { uint32_t fig = 0; int slot = -1; float value = 0.0f; };
+    static constexpr int kRingPendCap = 64;
+    RingPend ringPend_[kRingPendCap] {};
+    std::atomic<uint32_t> ringPendWrite_ { 0 };   // audio thread
+    uint32_t              ringPendRead_  { 0 };   // message thread only
+    std::atomic<uint32_t> ringPendLost_  { 0 };   // records dropped because the list was full
+
     echojay::LevelTally chainInTally_  { echojay::LevelTally::Weighting::K };
     echojay::LevelTally chainInLoopTally_ { echojay::LevelTally::Weighting::K };   // 08c F2: the loop's input window
 

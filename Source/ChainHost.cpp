@@ -3288,6 +3288,88 @@ juce::String ChainHost::slotIdentityHex(int i) const
     return juce::String::toHexString(descUid(slots_[(size_t)i].desc));
 }
 
+// ===========================================================================================
+// THE RING'S AUDIO-THREAD WRITERS (stage 3, Sean's ruling (a), scoped) - see ChainHost.h
+// ===========================================================================================
+bool ChainHost::applyRingValueRT (RingFigure fig, int slot, float value) noexcept
+{
+    // A NaN MUST NEVER REACH A WRITE (30 Sep ruling). The ordinary setters refuse it on the write path itself
+    // so the rule holds for every caller; the fast path is a caller too, and the rule holds here for the same
+    // reason - a guard once printed "output gain set to nan dB" and PASSED because a later write covered it.
+    if (! std::isfinite (value)) return false;
+
+    switch (fig)
+    {
+        case RingFigure::SlotIn:
+        {
+            if (slot < 0 || slot >= (int) slots_.size()) return false;
+            auto& sl = slots_[(size_t) slot];
+            if (! sl.preTrimShared) return false;
+            // The SAME clamp the ordinary setter applies, here as well: if the fast path clamped differently
+            // the audio and the record would land on two different numbers and the leg that compares them
+            // would be measuring the discrepancy rather than the figure.
+            sl.preTrimShared->store (juce::jlimit (-24.0f, 12.0f, value), std::memory_order_relaxed);
+            break;
+        }
+        case RingFigure::SlotOut:
+        {
+            if (slot < 0 || slot >= (int) slots_.size()) return false;
+            auto& sl = slots_[(size_t) slot];
+            if (sl.blendNode == nullptr) return false;
+            auto* b = dynamic_cast<SlotWetBlend*> (sl.blendNode->getProcessor());
+            if (b == nullptr) return false;
+            b->setOutGainDb (juce::jlimit (-24.0f, 12.0f, value));   // an atomic store behind a smoother
+            break;
+        }
+        case RingFigure::MasterWet:
+            masterWet_.store (juce::jlimit (0.0f, 1.0f, value), std::memory_order_relaxed);
+            break;
+        case RingFigure::PreGain:
+            preGainDb_.store (juce::jlimit (kPreGainMinDb, kPreGainMaxDb, value), std::memory_order_relaxed);
+            break;
+        default: return false;
+    }
+
+    // ...and the RECORD is owed. Published after the audio move, so a message thread that sees the entry
+    // knows the audio has already taken it.
+    const uint32_t w = ringPendWrite_.load (std::memory_order_relaxed);
+    if (w - ringPendRead_ >= (uint32_t) kRingPendCap)
+        ringPendLost_.fetch_add (1, std::memory_order_relaxed);   // the AUDIO moved; only the record is lost
+    else
+    {
+        ringPend_[w % (uint32_t) kRingPendCap] = RingPend { (uint32_t) fig, slot, value };
+        ringPendWrite_.store (w + 1, std::memory_order_release);
+    }
+    return true;
+}
+
+int ChainHost::drainRingBookkeeping()
+{
+    const uint32_t w = ringPendWrite_.load (std::memory_order_acquire);
+    int done = 0;
+    for (; ringPendRead_ != w; ++ringPendRead_)
+    {
+        const auto p = ringPend_[ringPendRead_ % (uint32_t) kRingPendCap];
+        // THE ORDINARY SETTER, deliberately. It is what logs the move, bumps the value revision and brings the
+        // readback into line, and routing the catch-up through it is what keeps ONE AUTHORITY per figure: the
+        // RT applier decided the value, this makes every other surface agree with it.
+        switch ((RingFigure) p.fig)
+        {
+            case RingFigure::SlotIn:    setSlotPreTrimDb (p.slot, p.value); break;
+            case RingFigure::SlotOut:   setSlotOutGainDb (p.slot, p.value); break;
+            case RingFigure::MasterWet: setMasterWet (p.value); break;
+            case RingFigure::PreGain:   setPreGainDb (p.value, /*userSet*/ false); break;
+            default: break;
+        }
+        ++done;
+    }
+    if (const uint32_t lost = ringPendLost_.exchange (0, std::memory_order_relaxed); lost > 0)
+        EchoJay_NSLog (("EJRing: " + juce::String ((int) lost) + " ring move(s) applied to the AUDIO but lost "
+                        "from the record (the pending list filled) - the figures are right and the log, the "
+                        "revision and the readback for those moves are not").toRawUTF8());
+    return done;
+}
+
 void ChainHost::resetSlotLevels(int i)
 {
     if (i < 0 || i >= (int)slots_.size()) return;
