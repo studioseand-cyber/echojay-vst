@@ -4,7 +4,9 @@
 // functions. Here every source is a fake the guard owns (a rack, a registry, two analyses, two tallies, a window
 // recorder), so each leg asserts the SHAPE and the COMPACTNESS the contract names, not a measurement:
 //   G1   startContext: channel {uid:"self", name, kind, links[]}, capabilities, agentMode; a Link target names the Link
-//   G2   look(rack) / get_rack: 1-based n, name/bypassed/wet/keepLevel/builtin/settings/inDb/outDb/grDb; settings capped
+//   G2   look(rack) / get_rack: 1-based n, name/bypassed/wet/keepLevel/builtin/settings/inDb/outDb/grDb; settings capped;
+//        the LEVELLING RECORD rides at rack level {option, targetLufs, drives, landedGainDb, in/out, converged} and
+//        NO slot is an EchoJay Level (Sean, 10 Oct: the slot is dropped)
 //   G3   look(rack, channel:<uid>) reads the Link's sidecar; an unknown uid -> unknown_channel
 //   G4   look(channel) / list_tracks: the registry rows with connected / audio / gone / placement
 //   G5   look(analysis) / analyse: the numbers + at most six bands; no audio -> not_playing with the hint
@@ -48,6 +50,7 @@ struct FakeHost
     RackRead own, link;
     std::vector<TrackRead> tracks;
     AnalysisRead ownA, linkA;
+    LevellingRead ownL, linkL;
     echojay::LevelTally::Snapshot inLoop, out;
     int windows = 0, songResets = 0;
     bool transportKnown = true, playing = true;
@@ -57,18 +60,22 @@ struct FakeHost
     FakeHost()
     {
         own.valid = true; own.name = "Mix Bus"; own.kind = "mix_bus"; own.revision = 7; own.masterWet = 1.0f; own.preGainDb = -3.0f;
-        const char* names[] = { "EchoJay EQ", "API-2500 (s)", "bx_saturator V2", "EchoJay Level", "EchoJay Limiter" };
-        for (int i = 0; i < 5; ++i)
+        // no EchoJay Level slot anywhere: levelling is a rack-level record (10 Oct 2026)
+        const char* names[] = { "EchoJay EQ", "API-2500 (s)", "bx_saturator V2", "EchoJay Limiter" };
+        for (int i = 0; i < 4; ++i)
         {
             SlotRead s; s.n = i + 1; s.name = names[i]; s.builtin = juce::String (names[i]).startsWith ("EchoJay");
             s.wet = i == 2 ? 0.15f : 1.0f; s.settings = i == 1 ? "ratio 4:1, attack 10 ms, release 300 ms" : "";
             s.dialSummary = i == 0 ? "bell 300 Hz -2.0 dB Q 1.4" : ""; s.preTrimDb = i == 1 ? -2.0f : 0.0f;
-            s.pictureValid = i != 3; s.grKnown = i == 1; s.grDb = 2.4f; s.inLufs = -16.0f - i; s.outLufs = -16.5f - i; s.inTpDb = -4.0f; s.outTpDb = -4.5f;
+            s.pictureValid = i != 2; s.grKnown = i == 1; s.grDb = 2.4f; s.inLufs = -16.0f - i; s.outLufs = -16.5f - i; s.inTpDb = -4.0f; s.outTpDb = -4.5f;
             own.slots.push_back (s);
         }
+        ownL.present = true; ownL.option = "dynamic"; ownL.targetLufs = -12.0f; ownL.drives = "limiter_in"; ownL.landedGainDb = 3.3f;
+        ownL.inLufs = -15.3f; ownL.outLufs = -12.1f; ownL.converged = true; ownL.state = "landed";
         link.valid = true; link.remote = true; link.uid = "lnk_kick"; link.name = "Kick"; link.kind = "channel"; link.revision = 3;
         { SlotRead s; s.n = 1; s.name = "UAD 1176"; s.settings = "fast attack"; link.slots.push_back (s); }
-        { SlotRead s; s.n = 2; s.name = "EchoJay Level"; s.builtin = true; link.slots.push_back (s); }
+        { SlotRead s; s.n = 2; s.name = "EchoJay EQ"; s.builtin = true; link.slots.push_back (s); }
+        linkL.present = true; linkL.option = "match"; linkL.drives = "rack_out"; linkL.landedGainDb = -1.2f; linkL.inLufs = -20.0f; linkL.outLufs = -20.3f; linkL.converged = true;
         TrackRead t1; t1.uid = "lnk_kick"; t1.name = "Kick"; t1.connected = true; t1.audioFlowing = true; t1.channels = 2; t1.placement = 2;
         TrackRead t2; t2.uid = "lnk_vox"; t2.name = "Lead Vocal"; t2.connected = true; t2.audioFlowing = false; t2.fresh = false; t2.gainDb = -1.5f;
         tracks = { t1, t2 };
@@ -92,6 +99,8 @@ struct FakeHost
         s.tracks = [this] { return tracks; };
         s.ownAnalysis = [this] { return ownA; };
         s.linkAnalysis = [this] (const juce::String& uid) { if (uid == link.uid) return linkA; AnalysisRead a; a.why = "no Link with uid \"" + uid + "\""; return a; };
+        s.ownLevelling = [this] { return ownL; };
+        s.linkLevelling = [this] (const juce::String& uid) { return uid == link.uid ? linkL : LevellingRead(); };
         s.chainInLoop = [this] { return inLoop; };
         s.chainOut = [this] { return out; };
         s.beginWindow = [this] { ++windows; };
@@ -141,6 +150,8 @@ int main()
                && ch.getProperty ("links", {}).getArray() != nullptr && ch.getProperty ("links", {}).getArray()->size() == 2
                && (bool) ctx.getProperty ("agentMode", {}) && ctx.getProperty ("capabilities", {}).getArray() != nullptr && ctx.getProperty ("project", {}).toString() == "Guard Song",
                "G1 startContext: channel {uid:self, name, kind, links[2]}, capabilities, agentMode:true, project");
+        check (ctx.getProperty ("levelling", {}).getProperty ("option", {}).toString() == "dynamic" && std::abs ((double) ctx.getProperty ("levelling", {}).getProperty ("targetLufs", {}) + 12.0) < 0.01,
+               "G1c ...and the rack-level levelling record {option, targetLufs}");
         ex.setTarget ("lnk_kick");
         auto ctx2 = ex.startContext();
         check (ctx2.getProperty ("channel", {}).getProperty ("uid", {}).toString() == "lnk_kick" && ctx2.getProperty ("channel", {}).getProperty ("name", {}).toString() == "Kick",
@@ -151,8 +162,18 @@ int main()
     {
         auto o = runCounted (ex, "look", call ("look", R"({"what":"rack","channel":"self"})"));
         auto* slots = o.result.getProperty ("slots", {}).getArray();
-        check (o.ok && slots != nullptr && slots->size() == 5 && (int) (*slots)[0].getProperty ("n", {}) == 1 && (int) (*slots)[4].getProperty ("n", {}) == 5,
+        check (o.ok && slots != nullptr && slots->size() == 4 && (int) (*slots)[0].getProperty ("n", {}) == 1 && (int) (*slots)[3].getProperty ("n", {}) == 4,
                "G2a look(rack): one line per slot, n is 1-based");
+        {
+            bool anyLevelSlot = false;
+            for (auto& sv : *slots) if (sv.getProperty ("name", {}).toString() == "EchoJay Level" || sv.getProperty ("role", {}).toString() == "level") anyLevelSlot = true;
+            const auto lv = o.result.getProperty ("levelling", {});
+            check (! anyLevelSlot && lv.getProperty ("option", {}).toString() == "dynamic" && std::abs ((double) lv.getProperty ("targetLufs", {}) + 12.0) < 0.01
+                   && lv.getProperty ("drives", {}).toString() == "limiter_in" && std::abs ((double) lv.getProperty ("landedGainDb", {}) - 3.3) < 0.01
+                   && std::abs ((double) lv.getProperty ("inLufs", {}) + 15.3) < 0.01 && std::abs ((double) lv.getProperty ("outLufs", {}) + 12.1) < 0.01
+                   && std::abs ((double) lv.getProperty ("deltaDb", {}) - 3.2) < 0.01 && (bool) lv.getProperty ("converged", {}) && lv.getProperty ("state", {}).toString() == "landed",
+                   "G2h the LEVELLING RECORD rides at rack level {option, targetLufs, drives, landedGainDb, in/out, delta, converged, state}; no slot is a Level");
+        }
         const auto s0 = (*slots)[0], s1 = (*slots)[1], s2 = (*slots)[2], s3 = (*slots)[3];
         check (s0.getProperty ("name", {}).toString() == "EchoJay EQ" && (bool) s0.getProperty ("builtin", {}) && s0.getProperty ("role", {}).toString() == "eq"
                && s0.getProperty ("settings", {}).toString() == "bell 300 Hz -2.0 dB Q 1.4",
@@ -160,7 +181,7 @@ int main()
         check (s1.getProperty ("settings", {}).toString() == "ratio 4:1, attack 10 ms, release 300 ms" && ! s1.hasProperty ("role") && std::abs ((double) s1.getProperty ("inDb", {}) + 2.0) < 0.01
                && std::abs ((double) s1.getProperty ("grDb", {}) - 2.4) < 0.01,
                "G2c a third-party slot carries its prose settings, its IN trim and its GR, and no guessed role");
-        check ((int) s2.getProperty ("wet", {}) == 15 && (int) s0.getProperty ("wet", {}) == 100 && ! s3.hasProperty ("grDb"),
+        check ((int) s2.getProperty ("wet", {}) == 15 && (int) s0.getProperty ("wet", {}) == 100 && ! s3.hasProperty ("grDb") && ! s2.hasProperty ("grDb"),
                "G2d wet is a percentage; a slot with no GR reading carries no grDb");
         check (o.result.getProperty ("channel", {}).getProperty ("kind", {}).toString() == "mix_bus" && (int) o.result.getProperty ("revision", {}) == 7
                && (int) o.result.getProperty ("masterWet", {}) == 100 && std::abs ((double) o.result.getProperty ("preGainDb", {}) + 3.0) < 0.01 && (bool) o.result.getProperty ("remote", {}) == false,
@@ -177,8 +198,10 @@ int main()
     {
         auto o = runCounted (ex, "look", call ("look", R"({"what":"rack","channel":"lnk_kick"})"));
         check (o.ok && (bool) o.result.getProperty ("remote", {}) && o.result.getProperty ("channel", {}).getProperty ("uid", {}).toString() == "lnk_kick"
-               && o.result.getProperty ("slots", {}).getArray()->size() == 2 && (*o.result.getProperty ("slots", {}).getArray())[0].getProperty ("name", {}).toString() == "UAD 1176",
-               "G3a look(rack, channel:<uid>) reads the Link's sidecar: remote:true, its slots");
+               && o.result.getProperty ("slots", {}).getArray()->size() == 2 && (*o.result.getProperty ("slots", {}).getArray())[0].getProperty ("name", {}).toString() == "UAD 1176"
+               && o.result.getProperty ("levelling", {}).getProperty ("option", {}).toString() == "match" && o.result.getProperty ("levelling", {}).getProperty ("drives", {}).toString() == "rack_out"
+               && std::abs ((double) o.result.getProperty ("levelling", {}).getProperty ("landedGainDb", {}) + 1.2) < 0.01,
+               "G3a look(rack, channel:<uid>) reads the Link's sidecar: remote:true, its slots, its rack-level levelling (match drives the rack OUT)");
         auto bad = run (ex, "look", call ("look", R"({"what":"rack","channel":"lnk_nope"})"));
         check (! bad.ok && bad.errorCode == "unknown_channel" && bad.errorMessage.contains ("lnk_nope"), "G3b an unknown uid -> unknown_channel naming it");
         ex.setTarget ("lnk_kick");
@@ -224,8 +247,8 @@ int main()
         auto o = runCounted (ex, "look", call ("look", R"({"what":"levels"})"));
         auto* slots = o.result.getProperty ("slots", {}).getArray();
         auto chain = o.result.getProperty ("chain", {});
-        check (o.ok && slots != nullptr && slots->size() == 5 && std::abs ((double) (*slots)[1].getProperty ("grDb", {}) - 2.4) < 0.01
-               && (*slots)[3].getProperty ("reading", {}).toString() == "none"
+        check (o.ok && slots != nullptr && slots->size() == 4 && std::abs ((double) (*slots)[1].getProperty ("grDb", {}) - 2.4) < 0.01
+               && (*slots)[2].getProperty ("reading", {}).toString() == "none"
                && std::abs ((double) chain.getProperty ("inLufs", {}) + 15.3) < 0.01 && std::abs ((double) chain.getProperty ("outLufs", {}) + 12.1) < 0.01
                && std::abs ((double) chain.getProperty ("deltaDb", {}) - 3.2) < 0.01,
                "G6 look(levels): per-slot readings or \"none\", and the chain in/out/delta from the loop's tallies");
@@ -256,6 +279,9 @@ int main()
                && std::abs ((double) o.result.getProperty ("deltaDb", {}) - 3.2) < 0.01 && std::abs ((double) o.result.getProperty ("outDbtp", {}) + 0.2) < 0.01
                && std::abs ((double) o.result.getProperty ("loudest3sLufs", {}) + 9.8) < 0.01 && o.result.getProperty ("source", {}).toString() == "chain_tallies",
                "G9a check(level): the window's in/out/delta, loudest 3 s and peak from the loop's tallies");
+        check (o.result.getProperty ("option", {}).toString() == "dynamic" && std::abs ((double) o.result.getProperty ("targetLufs", {}) + 12.0) < 0.01
+               && o.result.getProperty ("drives", {}).toString() == "limiter_in" && std::abs ((double) o.result.getProperty ("landedGainDb", {}) - 3.3) < 0.01 && (bool) o.result.getProperty ("converged", {}),
+               "G9a2 ...plus the contract's option / targetLufs / converged from the RACK-LEVEL record, and what drives the gain and what landed");
         auto alias = runCounted (ex, "check", call ("check", R"({"what":"measure"})"));
         check (alias.ok && juce::JSON::toString (alias.result, true) == juce::JSON::toString (o.result, true), "G9b measure is the same answer as level");
         fh.out.known = false;
@@ -264,8 +290,9 @@ int main()
         fh.out.known = true;
         ex.setTarget ("lnk_kick");
         auto lk = runCounted (ex, "check", call ("check", R"({"what":"level"})"));
-        check (lk.ok && lk.result.getProperty ("source", {}).toString() == "link_frame" && std::abs ((double) lk.result.getProperty ("outLufs", {}) + 20.3) < 0.01,
-               "G9d on a Link target the level comes from the Link's frame, and says so");
+        check (lk.ok && lk.result.getProperty ("source", {}).toString() == "link_frame" && std::abs ((double) lk.result.getProperty ("outLufs", {}) + 20.3) < 0.01
+               && lk.result.getProperty ("option", {}).toString() == "match" && lk.result.getProperty ("drives", {}).toString() == "rack_out",
+               "G9d on a Link target the level comes from the Link's frame, and says so; its levelling from the Link's record");
         ex.setTarget ({});
     }
     // ---- G10 check(gr) --------------------------------------------------------------------------------------------------------
@@ -274,14 +301,14 @@ int main()
         check (o.ok && (int) o.result.getProperty ("slot", {}) == 2 && o.result.getProperty ("name", {}).toString() == "API-2500 (s)" && std::abs ((double) o.result.getProperty ("grDb", {}) - 2.4) < 0.01,
                "G10a check(gr, slot 2): the slot's GR");
         auto oor = run (ex, "check", call ("check", R"({"what":"gr","slot":9})"));
-        check (! oor.ok && oor.errorCode == "unknown_slot" && oor.errorMessage.contains ("1..5"), "G10b slot 9 of 5 -> unknown_slot naming the range");
+        check (! oor.ok && oor.errorCode == "unknown_slot" && oor.errorMessage.contains ("1..4"), "G10b slot 9 of 4 -> unknown_slot naming the range");
         auto nr = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
         check (! nr.ok && nr.errorCode == "not_playing", "G10c a slot with no GR reading -> not_playing");
     }
     // ---- G11 check(true_peak) --------------------------------------------------------------------------------------------------
     {
         auto o = runCounted (ex, "check", call ("check", R"({"what":"true_peak"})"));
-        check (o.ok && (int) o.result.getProperty ("slot", {}) == 5 && o.result.getProperty ("name", {}).toString() == "EchoJay Limiter"
+        check (o.ok && (int) o.result.getProperty ("slot", {}) == 4 && o.result.getProperty ("name", {}).toString() == "EchoJay Limiter"
                && std::abs ((double) o.result.getProperty ("peakDbtp", {}) + 4.5) < 0.01 && (int) o.result.getProperty ("oversCount", {}) == 3,
                "G11a check(true_peak): the LAST slot's output peak and the overs");
         auto n2 = runCounted (ex, "check", call ("check", R"({"what":"true_peak","slot":2})"));
@@ -308,18 +335,23 @@ int main()
     // ---- G13 checkpoints ---------------------------------------------------------------------------------------------------------------
     {
         const auto tok = ex.captureCheckpoint ("agent: build the mix bus");
-        check (tok == "cp_1" && ex.checkpoint (tok) != nullptr && ex.checkpoint (tok)->rack.slots.size() == 5 && ex.checkpoint (tok)->out.known, "G13a captureCheckpoint snapshots the rack and the out tally, keyed by a token");
+        check (tok == "cp_1" && ex.checkpoint (tok) != nullptr && ex.checkpoint (tok)->rack.slots.size() == 4 && ex.checkpoint (tok)->out.known
+               && ex.checkpoint (tok)->levelling.present && std::abs (ex.checkpoint (tok)->levelling.landedGainDb - 3.3f) < 0.01f,
+               "G13a captureCheckpoint snapshots the rack, the out tally and the levelling record, keyed by a token");
         auto same = runCounted (ex, "check", call ("check", R"({"what":"compare_to_checkpoint","checkpoint":"cp_1"})"));
         check (same.ok && (bool) same.result.getProperty ("rackChanged", {}) == false && std::abs ((double) same.result.getProperty ("deltaDb", {})) < 0.01
                && same.result.getProperty ("slotsThen", {}).toString() == same.result.getProperty ("slotsNow", {}).toString(),
                "G13b nothing changed -> rackChanged:false, deltaDb 0, the same slot line twice");
-        fh.own.slots[2].bypassed = true; fh.out.levelDb = -10.6f;
+        fh.own.slots[2].bypassed = true; fh.out.levelDb = -10.6f; fh.ownL.landedGainDb = 4.8f;
         auto diff = runCounted (ex, "check", call ("check", R"({"what":"compare_to_checkpoint"})"));
         check (diff.ok && (bool) diff.result.getProperty ("rackChanged", {}) && std::abs ((double) diff.result.getProperty ("deltaDb", {}) - 1.5) < 0.01
                && diff.result.getProperty ("slotsNow", {}).toString().contains ("(byp)") && ! diff.result.getProperty ("slotsThen", {}).toString().contains ("(byp)")
                && diff.result.getProperty ("checkpoint", {}).toString() == "cp_1",
                "G13c a bypass and a 1.5 dB level move -> rackChanged:true, deltaDb 1.5; no token means the newest checkpoint");
-        fh.own.slots[2].bypassed = false; fh.out.levelDb = -12.1f;
+        check (std::abs ((double) diff.result.getProperty ("landedGainThenDb", {}) - 3.3) < 0.01 && std::abs ((double) diff.result.getProperty ("landedGainNowDb", {}) - 4.8) < 0.01
+               && std::abs ((double) diff.result.getProperty ("landedGainDeltaDb", {}) - 1.5) < 0.01 && ! diff.result.hasProperty ("optionChanged"),
+               "G13c2 ...and the levelling record's landed gain then / now / delta, from the rack-level record");
+        fh.own.slots[2].bypassed = false; fh.out.levelDb = -12.1f; fh.ownL.landedGainDb = 3.3f;
         auto unk = run (ex, "check", call ("check", R"({"what":"compare_to_checkpoint","checkpoint":"cp_99"})"));
         check (! unk.ok && unk.errorCode == "unknown_checkpoint", "G13d an unknown token -> unknown_checkpoint");
         ex.setTarget ("lnk_kick");

@@ -2,7 +2,11 @@
 #include "EchoJayLookAndFeel.h"   // Colours + EchoJayChrome::kFieldCorner
 
 using namespace echojay::agentui;
-using Colours = EchoJayLookAndFeel::Colours;
+// 9 Oct 2026 (first compile, A): `using Colours = ...` at file scope is AMBIGUOUS with juce::Colours, which
+// JuceHeader.h makes visible through its own `using namespace juce`. 39 references, every one of them a hard
+// error. Renamed rather than qualified at each site: one short alias the file can use everywhere, and no name
+// that another header can collide with.
+using EJC = EchoJayLookAndFeel::Colours;
 using Step = EJAgentClient::Step;
 using State = EJAgentClient::State;
 
@@ -50,21 +54,21 @@ EJAgentPanel::~EJAgentPanel()
 
 void EJAgentPanel::styleSecondary (juce::TextButton& b)
 {
-    b.setColour (juce::TextButton::buttonColourId, Colours::bg4);
-    b.setColour (juce::TextButton::textColourOffId, Colours::text2);
-    b.setColour (juce::TextButton::textColourOnId, Colours::text);
+    b.setColour (juce::TextButton::buttonColourId, EJC::bg4);
+    b.setColour (juce::TextButton::textColourOffId, EJC::text2);
+    b.setColour (juce::TextButton::textColourOnId, EJC::text);
 }
 void EJAgentPanel::stylePrimary (juce::TextButton& b)
 {
-    b.setColour (juce::TextButton::buttonColourId, Colours::blue);   // the LnF reads this as the teal glow button
-    b.setColour (juce::TextButton::textColourOffId, Colours::blue2);
-    b.setColour (juce::TextButton::textColourOnId, Colours::text);
+    b.setColour (juce::TextButton::buttonColourId, EJC::blue);   // the LnF reads this as the teal glow button
+    b.setColour (juce::TextButton::textColourOffId, EJC::blue2);
+    b.setColour (juce::TextButton::textColourOnId, EJC::text);
 }
 void EJAgentPanel::styleDanger (juce::TextButton& b)
 {
     b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2a1216));
-    b.setColour (juce::TextButton::textColourOffId, Colours::red);
-    b.setColour (juce::TextButton::textColourOnId, Colours::text);
+    b.setColour (juce::TextButton::textColourOffId, EJC::red);
+    b.setColour (juce::TextButton::textColourOnId, EJC::text);
 }
 
 // =============================================================================
@@ -332,7 +336,7 @@ void EJAgentPanel::placeButtons()
             bool approved = true;
             for (const auto& s : client_.steps()) if (s.id == id) { approved = s.approved; break; }
             styleSecondary (b);
-            b.setColour (juce::TextButton::textColourOffId, approved ? Colours::green : Colours::text3);
+            b.setColour (juce::TextButton::textColourOffId, approved ? EJC::green : EJC::text3);
             b.setButtonText (approved ? "Apply" : "Skip");           // the line's decision, as the contract names it
             b.setTooltip (approved ? "This line will be applied - tap to skip it" : "This line is skipped - tap to apply it");
             b.onClick = [this, id, approved] { client_.setLineApproved (id, ! approved); };
@@ -360,21 +364,21 @@ void EJAgentPanel::placeButtons()
 void EJAgentPanel::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat().reduced (0.5f);
-    g.setColour (Colours::bg3);
+    g.setColour (EJC::bg3);
     g.fillRoundedRectangle (r, EchoJayChrome::kFieldCorner);
-    g.setColour (Colours::border2);
+    g.setColour (EJC::border2);
     g.drawRoundedRectangle (r, EchoJayChrome::kFieldCorner, 1.0f);
 
     // header: dot + status line
     const auto st = client_.state();
-    juce::Colour dot = Colours::text3;
+    juce::Colour dot = EJC::text3;
     switch (st)
     {
-        case State::Connecting: case State::Streaming: case State::Executing: dot = Colours::blue2; break;
-        case State::AwaitingApproval: case State::AwaitingAsk: case State::Listening: dot = Colours::amber; break;
-        case State::Done:    dot = Colours::green; break;
-        case State::Failed:  dot = Colours::red; break;
-        case State::Stopped: dot = Colours::amber.withAlpha (0.7f); break;
+        case State::Connecting: case State::Streaming: case State::Executing: dot = EJC::blue2; break;
+        case State::AwaitingApproval: case State::AwaitingAsk: case State::Listening: dot = EJC::amber; break;
+        case State::Done:    dot = EJC::green; break;
+        case State::Failed:  dot = EJC::red; break;
+        case State::Stopped: dot = EJC::amber.withAlpha (0.7f); break;
         default: break;
     }
     if (st == State::Connecting || st == State::Streaming || st == State::Executing || st == State::Listening)
@@ -384,12 +388,12 @@ void EJAgentPanel::paint (juce::Graphics& g)
     g.fillEllipse ((float) H.getX() + Metrics::pad, (float) H.getCentreY() - 4.0f, 8.0f, 8.0f);
     const int textX = H.getX() + Metrics::pad + 14;
     const int textR = layout_.stop.isEmpty() ? H.getRight() - Metrics::pad : layout_.stop.getX() - Metrics::btnGap;
-    g.setColour (Colours::text);
+    g.setColour (EJC::text);
     g.setFont (headerFont());
     g.drawText ("Agent" + (client_.statusLine().isNotEmpty() ? juce::String::fromUTF8 (" \xc2\xb7 ") + client_.statusLine() : juce::String()),
                 textX, H.getY(), juce::jmax (1, textR - textX), H.getHeight(), juce::Justification::centredLeft, true);
     // a hairline under the header and over the footer so the scrolling body reads as its own region
-    g.setColour (Colours::border);
+    g.setColour (EJC::border);
     g.drawHorizontalLine (H.getBottom(), (float) Metrics::pad, (float) getWidth() - Metrics::pad);
     if (! layout_.footer.isEmpty())
         g.drawHorizontalLine (layout_.footer.getY(), (float) Metrics::pad, (float) getWidth() - Metrics::pad);
@@ -401,14 +405,14 @@ void EJAgentPanel::paintGlyph (juce::Graphics& g, juce::Rectangle<int> r, Step::
     switch (st)
     {
         case Step::Status::Pending:
-            g.setColour (Colours::text3); g.drawEllipse (c, 1.2f); break;
+            g.setColour (EJC::text3); g.drawEllipse (c, 1.2f); break;
         case Step::Status::AwaitingApproval:
-            g.setColour (Colours::amber); g.drawEllipse (c, 1.2f); break;
+            g.setColour (EJC::amber); g.drawEllipse (c, 1.2f); break;
         case Step::Status::Running:
         {
             juce::Path p;
             p.addCentredArc (c.getCentreX(), c.getCentreY(), 6.0f, 6.0f, 0.0f, phase_, phase_ + juce::MathConstants<float>::pi * 1.3f, true);
-            g.setColour (Colours::blue2);
+            g.setColour (EJC::blue2);
             g.strokePath (p, juce::PathStrokeType (1.6f));
             break;
         }
@@ -418,28 +422,28 @@ void EJAgentPanel::paintGlyph (juce::Graphics& g, juce::Rectangle<int> r, Step::
             p.startNewSubPath (c.getX() + 1.5f, c.getCentreY() + 0.5f);
             p.lineTo (c.getX() + 5.0f, c.getBottom() - 1.5f);
             p.lineTo (c.getRight() - 1.0f, c.getY() + 1.5f);
-            g.setColour (Colours::green);
+            g.setColour (EJC::green);
             g.strokePath (p, juce::PathStrokeType (1.8f));
             break;
         }
         case Step::Status::Failed:
         {
-            g.setColour (Colours::red);
+            g.setColour (EJC::red);
             g.drawLine (c.getX() + 2.0f, c.getY() + 2.0f, c.getRight() - 2.0f, c.getBottom() - 2.0f, 1.6f);
             g.drawLine (c.getRight() - 2.0f, c.getY() + 2.0f, c.getX() + 2.0f, c.getBottom() - 2.0f, 1.6f);
             break;
         }
         case Step::Status::Declined: case Step::Status::NotRun:
-            g.setColour (Colours::text3);
+            g.setColour (EJC::text3);
             g.drawLine (c.getX() + 2.0f, c.getCentreY(), c.getRight() - 2.0f, c.getCentreY(), 1.6f);
             break;
         case Step::Status::Undone:
-            g.setColour (Colours::amber);
+            g.setColour (EJC::amber);
             g.drawEllipse (c, 1.2f);
             g.drawLine (c.getX() + 3.0f, c.getCentreY(), c.getRight() - 3.0f, c.getCentreY(), 1.2f);
             break;
         case Step::Status::Stopped:
-            g.setColour (Colours::text3);
+            g.setColour (EJC::text3);
             g.fillRect (c.reduced (2.5f));
             break;
     }
@@ -448,10 +452,10 @@ void EJAgentPanel::paintGlyph (juce::Graphics& g, juce::Rectangle<int> r, Step::
 void EJAgentPanel::paintContent (juce::Graphics& g)
 {
     const auto& L = layout_;
-    if (! L.goal.isEmpty())   drawWrapped (g, "Goal: " + client_.goal(), detailFont(), Colours::text2, L.goal);
-    if (! L.text.isEmpty())   drawWrapped (g, client_.liveText().trim(), bodyFont(), Colours::text, L.text);
-    if (! L.notice.isEmpty()) drawWrapped (g, client_.notice(), detailFont(), Colours::amber, L.notice);
-    if (! L.planHeading.isEmpty()) drawWrapped (g, client_.planHeading(), bodyFont(), Colours::text, L.planHeading);
+    if (! L.goal.isEmpty())   drawWrapped (g, "Goal: " + client_.goal(), detailFont(), EJC::text2, L.goal);
+    if (! L.text.isEmpty())   drawWrapped (g, client_.liveText().trim(), bodyFont(), EJC::text, L.text);
+    if (! L.notice.isEmpty()) drawWrapped (g, client_.notice(), detailFont(), EJC::amber, L.notice);
+    if (! L.planHeading.isEmpty()) drawWrapped (g, client_.planHeading(), bodyFont(), EJC::text, L.planHeading);
 
     const auto& steps = client_.steps();
     for (size_t i = 0; i < L.rowRects.size() && i < steps.size(); ++i)
@@ -460,25 +464,25 @@ void EJAgentPanel::paintContent (juce::Graphics& g)
         const auto& s  = steps[i];
         paintGlyph (g, rr.glyph, s.status);
         const bool dim = s.status == Step::Status::Declined || s.status == Step::Status::NotRun || s.status == Step::Status::Stopped;
-        drawWrapped (g, L.rows[i].label, rowFont(), dim ? Colours::text3 : Colours::text, rr.label);
+        drawWrapped (g, L.rows[i].label, rowFont(), dim ? EJC::text3 : EJC::text, rr.label);
         if (! rr.detail.isEmpty())
         {
-            const auto dc = s.status == Step::Status::Failed ? Colours::red.withAlpha (0.9f)
-                          : s.status == Step::Status::Undone ? Colours::amber
-                          : Colours::text3;
+            const auto dc = s.status == Step::Status::Failed ? EJC::red.withAlpha (0.9f)
+                          : s.status == Step::Status::Undone ? EJC::amber
+                          : EJC::text3;
             drawWrapped (g, L.rows[i].detail, detailFont(), dc, rr.detail);
         }
     }
 
     if (! L.askQuestion.isEmpty())
-        drawWrapped (g, client_.pendingAsk().question, bodyFont(), Colours::text, L.askQuestion);
+        drawWrapped (g, client_.pendingAsk().question, bodyFont(), EJC::text, L.askQuestion);
 
     if (! L.playbackRing.isEmpty())
     {
         // the listening indicator: a ring that fills as the heard seconds approach the minimum, pulsing while empty
         const auto pb = client_.playback();
         const auto c = L.playbackRing.toFloat().withSizeKeepingCentre (14.0f, 14.0f);
-        g.setColour (Colours::border2);
+        g.setColour (EJC::border2);
         g.drawEllipse (c, 1.5f);
         const float frac = pb.minSeconds > 0.0 ? juce::jlimit (0.0f, 1.0f, (float) (pb.heardSeconds / pb.minSeconds)) : 0.0f;
         juce::Path p;
@@ -487,9 +491,9 @@ void EJAgentPanel::paintContent (juce::Graphics& g)
             p.addCentredArc (c.getCentreX(), c.getCentreY(), 7.0f, 7.0f, 0.0f, a0, a0 + frac * juce::MathConstants<float>::twoPi, true);
         else
             p.addCentredArc (c.getCentreX(), c.getCentreY(), 7.0f, 7.0f, 0.0f, phase_, phase_ + 1.2f, true);
-        g.setColour (pb.reached ? Colours::green : Colours::blue2);
+        g.setColour (pb.reached ? EJC::green : EJC::blue2);
         g.strokePath (p, juce::PathStrokeType (1.8f));
-        drawWrapped (g, pb.line, bodyFont(), Colours::text, L.playbackLine);
+        drawWrapped (g, pb.line, bodyFont(), EJC::text, L.playbackLine);
     }
 }
 

@@ -37,6 +37,7 @@
 #include <JuceHeader.h>
 #include <array>
 #include <functional>
+#include <limits>
 #include <map>
 #include <vector>
 #include "EJAgentTools.h"
@@ -90,6 +91,23 @@ struct AnalysisRead
     juce::uint32 ageMs = 0;          // a Link's latched frame age; 0 for the own channel
 };
 
+// THE LEVELLING RECORD, AT RACK LEVEL (Sean, 10 Oct 2026: the EchoJay Level slot is dropped; levelling drives the
+// rack OUT gain for `match` or the final limiter's IN gain for a target, and the record lives on the rack). The
+// executor REPORTS it; it never derives it from a slot. Absent fields are NaN / empty and are simply not sent.
+struct LevellingRead
+{
+    bool  present = false;
+    juce::String option;             // match | pushed | dynamic (CONTRACT_LEVEL_PARAMS.md's words)
+    float targetLufs = std::numeric_limits<float>::quiet_NaN();     // with pushed / dynamic
+    juce::String drives;             // "rack_out" (match) | "limiter_in" (a target) | ""
+    float landedGainDb = std::numeric_limits<float>::quiet_NaN();   // what the levelling wrote
+    float inLufs  = std::numeric_limits<float>::quiet_NaN();        // the chain's recorded in / out integrated loudness
+    float outLufs = std::numeric_limits<float>::quiet_NaN();
+    bool  converged = false;
+    juce::String state;              // the loop's own word when it has one (armed / measuring / proposed / landed / stale)
+    juce::int64 updatedMs = 0;
+};
+
 struct Sources
 {
     // identity
@@ -104,6 +122,9 @@ struct Sources
     std::function<AnalysisRead()> ownAnalysis;
     std::function<AnalysisRead (const juce::String& uid)> linkAnalysis;
     // the own rack's tallies (the loop's own readings; LevelTally snapshots)
+    // levelling: the rack-level record (own rack: the loop + the stored record; a Link: its sidecar's record)
+    std::function<LevellingRead()> ownLevelling;
+    std::function<LevellingRead (const juce::String& uid)> linkLevelling;
     std::function<echojay::LevelTally::Snapshot()> chainInLoop;   // loop-owned input window (08c F2)
     std::function<echojay::LevelTally::Snapshot()> chainOut;      // the chain output window
     // the window: resets ONLY the loop-owned tallies (LoudnessLoop::startWindow's list), never the song's integrated reading
@@ -134,7 +155,8 @@ public:
     void undoToCheckpoint (const juce::String& checkpoint, Done done) override;
 
     // ---- the pure shapes (the guard reads these directly) ----
-    static juce::var rackVar (const RackRead& r);
+    static juce::var rackVar (const RackRead& r, const LevellingRead& lv = LevellingRead());
+    static juce::var levellingVar (const LevellingRead& lv);       // {} when ! present
     static juce::var channelVar (const juce::String& name, const juce::String& kind, const juce::String& uid,
                                  const std::vector<TrackRead>& tracks, const juce::String& project);
     static juce::var tracksVar (const std::vector<TrackRead>& tracks);
@@ -155,12 +177,15 @@ public:
         RackRead rack;
         echojay::LevelTally::Snapshot out;
         AnalysisRead analysis;
+        LevellingRead levelling;
     };
     const Checkpoint* checkpoint (const juce::String& token) const;
 
 private:
     RackRead targetRack() const;
     AnalysisRead targetAnalysis() const;
+    LevellingRead targetLevelling() const;
+    LevellingRead levellingFor (const juce::String& uid) const;   // "" = own
     juce::String resolveChannelArg (const ToolCall& call) const;   // "" own | uid
     static ToolOutcome notPlaying (const juce::String& what);
 

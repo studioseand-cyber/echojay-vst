@@ -144,6 +144,26 @@ same stack.
 
 ---
 
+## 2b. Levelling is a RACK-LEVEL record (Sean, 10 Oct 2026)
+
+The EchoJay Level slot is dropped. Levelling drives the rack OUT gain (`match`) or the final limiter's IN gain (a
+target), and its record is stored at rack level. The read-only executor REPORTS that record and never looks for a
+slot: `look(rack)` carries a top-level `levelling {option, targetLufs?, drives: "rack_out"|"limiter_in",
+landedGainDb, inLufs, outLufs, deltaDb, converged, state?}`, `check(level)` carries `option / targetLufs / drives /
+landedGainDb / converged` beside the window's figures, `startContext` carries `levelling {option, targetLufs}`, and
+`compare_to_checkpoint` reports `landedGainThenDb / landedGainNowDb / landedGainDeltaDb` and `optionChanged`.
+
+**The seam for A** is two lambdas in `bindToProcessor`: `ownLevelling` (today: the loop's `loudnessOption()` mapped
+to the contract's option, `target()`, `currentGainDb()`, `everArmed / isArmed / hasProposal` for converged, and the
+stored `LevelRecord`'s INT for the chain input) and `linkLevelling` (today: the sidecar's `levels` record for the
+Link's INT, and the rack-level keys `option / target / drives / landedDb / inLufs / converged` read from that var when
+A publishes them). When the record lands, those two lambdas change and nothing the executor sends changes shape.
+
+**B's contracts had NOT changed as of 10 Oct 10:00** (`CONTRACT_LEVEL_PARAMS.md` and `CONTRACT_AGENT_TOOLS.md` on
+`hold/agent-contract` still describe the Level slot, `set_level`, the `level_contract` validator and `check(level)` as
+"the Level slot's own reading"). The executor's shape above is what the plugin can state today; B's rewrite should
+name `levelling` at rack level and retire `set_level`'s "added if absent" clause.
+
 ## 3. The executor contract (what A's class implements; `Source/EJAgentTools.h`)
 
 **Built by A2 (read-only, `Source/EJAgentExecutorRead.h/.cpp`):** `startContext`, `look`, `check`,
@@ -244,19 +264,19 @@ guard's):
 
 | leg | what is RED without the behaviour |
 |---|---|
-| G1 | startContext: `channel {uid:self, name, kind, links[]}`, capabilities, agentMode; a Link target names the Link |
-| G2 | look(rack) / get_rack: 1-based n; name / bypassed / wet % / keepLevel / builtin / settings / inDb / outDb / grDb; built-in role; settings capped at 160 |
+| G1 | startContext: `channel {uid:self, name, kind, links[]}`, capabilities, agentMode, `levelling {option, targetLufs}`; a Link target names the Link |
+| G2 | look(rack) / get_rack: 1-based n; name / bypassed / wet % / keepLevel / builtin / settings / inDb / outDb / grDb; built-in role; settings capped at 160; the RACK-LEVEL `levelling` record and NO Level slot |
 | G3 | look(rack, channel:uid) reads the Link's sidecar, remote:true; unknown uid -> `unknown_channel`; a Link target makes self the Link |
 | G4 | look(channel) / list_tracks: the registry rows with audio / placement / gone / gainDb |
 | G5 | look(analysis) / analyse: integrated, loudest 3 s, peak, PSR, overs, heard, playing, six `{band, vsAverageDb}`; no audio -> `not_playing` + hint; a Link's from its frame |
 | G6 | look(levels): per slot or "none"; chain in / out / delta from the loop's tallies |
 | G7 | 400 inventory names -> under 8 KB, `truncated:true`, count 400; unbound -> `inventory_unavailable` |
 | G8 | maps -> `server_tool`; unknown what -> `unknown_what` |
-| G9 | check(level) / measure: in / out / delta / loudest 3 s / peak, `source`; nothing heard -> `not_playing`; a Link target reads the frame |
+| G9 | check(level) / measure: in / out / delta / loudest 3 s / peak, `source`, plus `option / targetLufs / drives / landedGainDb / converged` from the rack-level record; nothing heard -> `not_playing`; a Link target reads the frame and its record |
 | G10 | check(gr): the slot's GR; out of range -> `unknown_slot` with the range; no reading -> `not_playing` |
 | G11 | check(true_peak): the last slot's peak + overs, or a named slot |
 | G12 | check(spectrum): six bands; check(balance): Link vs this mix bus, else `no_mix_reading` |
-| G13 | checkpoint + compare: unchanged -> false / 0; a bypass + 1.5 dB -> true / 1.5; newest when unnamed; unknown token; a Link compares frames |
+| G13 | checkpoint + compare: unchanged -> false / 0; a bypass + 1.5 dB -> true / 1.5; the landed gain then / now / delta; newest when unnamed; unknown token; a Link compares frames |
 | G14 | the window opens ONCE and never resets the song's reading; readPlayback from the out tally; a Link counts beyond its base |
 | G15 | doOp / undo -> `not_in_phase` |
 | G16 | a 16-slot rack with 300-char settings and every result in the guard under 8 KB |

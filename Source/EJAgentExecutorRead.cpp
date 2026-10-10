@@ -3,7 +3,8 @@
 #include "ChainHost.h"
 #include "LinkShm.h"
 #include "MeterEngine.h"
-#include "LoudnessLoop.h"   // kCountFloorLufs: the window counts what the loop counts
+#include "LoudnessLoop.h"   // kCountFloorLufs: the window counts what the loop counts; the loop's option / target
+#include "EJLevelRecord.h"  // the stored level record (21t-i), the rack-level levelling record's home
 #include <cmath>
 
 namespace echojay::agent
@@ -21,6 +22,17 @@ namespace
     {
         const auto t = s.trim();
         return t.length() <= maxChars ? t : t.substring (0, maxChars - 1) + juce::String::fromUTF8 ("\xe2\x80\xa6");
+    }
+
+    // check(level)'s levelling fields (contract 2.3: targetLufs?, option, converged - plus what drives the gain and what landed)
+    void addLevelling (juce::DynamicObject* o, const LevellingRead& lv)
+    {
+        if (! lv.present) return;
+        if (lv.option.isNotEmpty()) o->setProperty ("option", lv.option);
+        if (std::isfinite (lv.targetLufs)) o->setProperty ("targetLufs", r1 (lv.targetLufs));
+        if (lv.drives.isNotEmpty()) o->setProperty ("drives", lv.drives);
+        if (std::isfinite (lv.landedGainDb)) o->setProperty ("landedGainDb", r1 (lv.landedGainDb));
+        o->setProperty ("converged", lv.converged);
     }
 
     // A coarse role from a built-in's name only; third-party roles are the server's to know from its maps.
@@ -65,6 +77,29 @@ AnalysisRead ExecutorRead::targetAnalysis() const
     return src_.ownAnalysis ? src_.ownAnalysis() : AnalysisRead();
 }
 
+LevellingRead ExecutorRead::levellingFor (const juce::String& uid) const
+{
+    if (uid.isNotEmpty()) return src_.linkLevelling ? src_.linkLevelling (uid) : LevellingRead();
+    return src_.ownLevelling ? src_.ownLevelling() : LevellingRead();
+}
+LevellingRead ExecutorRead::targetLevelling() const { return levellingFor (target_); }
+
+juce::var ExecutorRead::levellingVar (const LevellingRead& lv)
+{
+    if (! lv.present) return juce::var();
+    auto* o = new juce::DynamicObject();
+    if (lv.option.isNotEmpty()) o->setProperty ("option", lv.option);
+    if (std::isfinite (lv.targetLufs)) o->setProperty ("targetLufs", r1 (lv.targetLufs));
+    if (lv.drives.isNotEmpty()) o->setProperty ("drives", lv.drives);
+    if (std::isfinite (lv.landedGainDb)) o->setProperty ("landedGainDb", r1 (lv.landedGainDb));
+    if (std::isfinite (lv.inLufs))  o->setProperty ("inLufs", r1 (lv.inLufs));
+    if (std::isfinite (lv.outLufs)) o->setProperty ("outLufs", r1 (lv.outLufs));
+    if (std::isfinite (lv.inLufs) && std::isfinite (lv.outLufs)) o->setProperty ("deltaDb", r1 (lv.outLufs - lv.inLufs));
+    o->setProperty ("converged", lv.converged);
+    if (lv.state.isNotEmpty()) o->setProperty ("state", lv.state);
+    return juce::var (o);
+}
+
 ToolOutcome ExecutorRead::notPlaying (const juce::String& what)
 {
     auto o = ToolOutcome::failure ("not_playing", "No audio has been heard for " + what + " yet.");
@@ -106,7 +141,7 @@ juce::var ExecutorRead::fitUnder8K (juce::var v)
     return v;
 }
 
-juce::var ExecutorRead::rackVar (const RackRead& r)
+juce::var ExecutorRead::rackVar (const RackRead& r, const LevellingRead& lv)
 {
     auto* o = new juce::DynamicObject();
     auto* ch = new juce::DynamicObject();
@@ -139,6 +174,9 @@ juce::var ExecutorRead::rackVar (const RackRead& r)
     o->setProperty ("slots", juce::var (slots));
     o->setProperty ("masterWet", (int) std::lround (r.masterWet * 100.0f));
     o->setProperty ("preGainDb", r1 (r.preGainDb));
+    // the levelling record rides at RACK level (10 Oct 2026): no slot carries it, and no slot is looked for
+    const auto lvv = levellingVar (lv);
+    if (! lvv.isVoid()) o->setProperty ("levelling", lvv);
     return fitUnder8K (juce::var (o));
 }
 
@@ -261,6 +299,8 @@ juce::var ExecutorRead::startContext()
     ch->setProperty ("kind", kind);
     ch->setProperty ("links", tracksVar (tracks));
     o->setProperty ("channel", juce::var (ch));
+    const auto lvv = levellingVar (targetLevelling());
+    if (! lvv.isVoid()) o->setProperty ("levelling", lvv);
     juce::Array<juce::var> caps; caps.add ("look"); caps.add ("check"); caps.add ("wait_for_playback"); caps.add ("checkpoint");
     o->setProperty ("capabilities", juce::var (caps));
     o->setProperty ("agentMode", true);
@@ -280,7 +320,7 @@ void ExecutorRead::look (const ToolCall& call, Done done)
     {
         RackRead r = uid.isNotEmpty() ? (src_.linkRack ? src_.linkRack (uid) : RackRead()) : (src_.ownRack ? src_.ownRack() : RackRead());
         if (! r.valid) { done (ToolOutcome::failure ("unknown_channel", r.why.isNotEmpty() ? r.why : "no rack can be read for \"" + uid + "\"")); return; }
-        done (ToolOutcome::success (rackVar (r)));
+        done (ToolOutcome::success (rackVar (r, levellingFor (uid))));
         return;
     }
     if (what == "channel" || what == "list_tracks")
@@ -365,6 +405,7 @@ void ExecutorRead::check (const ToolCall& call, Done done)
             setLevel (o, "outDbtp", a.truePeakMaxDb);
             o->setProperty ("heardSeconds", r1 (a.heardSeconds));
             o->setProperty ("source", "link_frame");
+            addLevelling (o, targetLevelling());
             done (ToolOutcome::success (fitUnder8K (juce::var (o))));
             return;
         }
@@ -379,6 +420,7 @@ void ExecutorRead::check (const ToolCall& call, Done done)
         setLevel (o, "outDbtp", out.truePeakDb);
         o->setProperty ("heardSeconds", r1 (out.heardSeconds));
         o->setProperty ("source", "chain_tallies");
+        addLevelling (o, targetLevelling());
         done (ToolOutcome::success (fitUnder8K (juce::var (o))));
         return;
     }
@@ -464,6 +506,15 @@ void ExecutorRead::check (const ToolCall& call, Done done)
         o->setProperty ("rackChanged", rackChanged);
         o->setProperty ("slotsThen", thenNames.joinIntoString (" > "));
         o->setProperty ("slotsNow", nowNames.joinIntoString (" > "));
+        // the levelling record then and now: the landed gain is the figure a check wants to see move (or not)
+        {
+            const auto lvNow = targetLevelling();
+            if (std::isfinite (cp->levelling.landedGainDb)) o->setProperty ("landedGainThenDb", r1 (cp->levelling.landedGainDb));
+            if (std::isfinite (lvNow.landedGainDb))         o->setProperty ("landedGainNowDb", r1 (lvNow.landedGainDb));
+            if (std::isfinite (cp->levelling.landedGainDb) && std::isfinite (lvNow.landedGainDb))
+                o->setProperty ("landedGainDeltaDb", r1 (lvNow.landedGainDb - cp->levelling.landedGainDb));
+            if (lvNow.option.isNotEmpty() && lvNow.option != cp->levelling.option) o->setProperty ("optionChanged", true);
+        }
         // levels: the checkpoint's chain-out snapshot against now's (own rack), or the frames (a Link)
         if (target_.isEmpty())
         {
@@ -521,6 +572,7 @@ juce::String ExecutorRead::captureCheckpoint (const juce::String& label)
     cp.rack = targetRack();
     if (target_.isEmpty() && src_.chainOut) cp.out = src_.chainOut();
     cp.analysis = targetAnalysis();
+    cp.levelling = targetLevelling();
     checkpoints_[cp.token] = cp;
     return cp.token;
 }
@@ -707,6 +759,56 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         if (p->readLinkMeterFrame (regIdx, f) && f.audioStale == 0) return analysisFromFrame (f, 0);
         if (p->linkLastGoodFrame (uid, f, age)) return analysisFromFrame (f, age);   // the last-good latch: honest about its age
         AnalysisRead a; a.why = "no audio has been published by the Link yet"; return a;
+    };
+    // THE LEVELLING RECORD. Sean, 10 Oct 2026: the EchoJay Level slot is gone; levelling drives the rack OUT gain
+    // (match) or the final limiter's IN gain (a target) and its record is stored at rack level. A is building that
+    // record; until it lands this reads what exists today - the loop's option / target / state and the stored
+    // level record's in / out figures - through ONE seam, so when A's record arrives only these two lambdas change
+    // and nothing the executor sends changes shape. A: fill `drives`, `landedGainDb` and `converged` from the record.
+    s.ownLevelling = [p]
+    {
+        LevellingRead l;
+        auto& loop = p->loudnessLoop();
+        const auto rec = p->levelRecordFor ({});
+        const auto word = loop.loudnessOption();          // the brief's word today; the contract's option once the record carries it
+        l.present = loop.everArmed() || word.isNotEmpty() || rec.valid;
+        if (! l.present) return l;
+        if (word == "keep" || word == "match") l.option = "match";
+        else if (word == "dynamic") l.option = "dynamic";
+        else if (word.isNotEmpty()) l.option = "pushed";   // commercial / pushed / explicit map to pushed (CONTRACT_LEVEL_PARAMS)
+        if (loop.everArmed() && std::isfinite (loop.target()) && loop.target() < -0.5f) l.targetLufs = loop.target();
+        l.drives = l.option == "match" ? "rack_out" : (std::isfinite (l.targetLufs) ? "limiter_in" : juce::String());
+        if (loop.everArmed()) l.landedGainDb = loop.currentGainDb();   // A: the record's landed gain once it exists
+        if (echojay::LevelRecord::has (rec.intLufs)) l.inLufs = rec.intLufs;   // the own record is the chain INPUT (the song)
+        const auto out = p->getChainHost().getChainOutLevels();
+        if (out.known) l.outLufs = out.levelDb;
+        l.converged = loop.everArmed() && ! loop.isArmed() && ! loop.hasProposal();
+        l.updatedMs = rec.updatedMs;
+        return l;
+    };
+    s.linkLevelling = [p] (const juce::String& uid)
+    {
+        LevellingRead l;
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty() || uid.isEmpty()) return l;
+        const auto sc = LinkShm::readRackSidecar (dir, uid);
+        if (! sc.valid) return l;
+        const auto rec = echojay::LevelRecord::fromVar (sc.levels);   // the Link's stored record (21t-i); A adds option/target/landed to the sidecar
+        if (! rec.valid) return l;
+        l.present = true;
+        if (echojay::LevelRecord::has (rec.intLufs)) l.outLufs = rec.intLufs;   // a Link's record is taken after its chain
+        if (auto* o = sc.levels.getDynamicObject())
+        {   // A's rack-level fields, read when present and ignored when not (an older Link publishes none)
+            if (o->hasProperty ("option"))   l.option = o->getProperty ("option").toString();
+            if (o->hasProperty ("target"))   l.targetLufs = (float) (double) o->getProperty ("target");
+            if (o->hasProperty ("drives"))   l.drives = o->getProperty ("drives").toString();
+            if (o->hasProperty ("landedDb")) l.landedGainDb = (float) (double) o->getProperty ("landedDb");
+            if (o->hasProperty ("inLufs"))   l.inLufs = (float) (double) o->getProperty ("inLufs");
+            if (o->hasProperty ("converged")) l.converged = (bool) o->getProperty ("converged");
+        }
+        l.updatedMs = rec.updatedMs;
+        return l;
     };
     s.chainInLoop = [p] { return p->getChainHost().getChainInLoopLevels(); };
     s.chainOut    = [p] { return p->getChainHost().getChainOutLevels(); };
