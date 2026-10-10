@@ -1570,6 +1570,166 @@ static int guardMain()
                "L5. ...and carries no target, as the contract requires of a match insert",
                std::isfinite (t.lufs) ? f1 (t.lufs) : juce::String ("none"));
     }
+    // ========== LEVELLING V2 (10 Oct 2026 ruling): NO LEVEL SLOT ======================================
+    // Sean's ruling after test 1: the EchoJay Level slot is dropped for levelling. The loop drives gains that
+    // already exist - the rack's OUT gain for a match, the final limiter's input_db for a target - and every Link
+    // runs its OWN loop on its OWN rack. The legs below are the cases named in the ruling.
+    std::printf ("== V1. a MATCH build drives the rack OUT gain, and inserts nothing ==\n");
+    {
+        // A chain ENDING IN A REVERB - the case a Level slot could not do, because Sean's sat 5th of 6 BEFORE
+        // the reverb, where no gain can make out = in for the chain.
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        auto& h = proc.getChainHost();
+        const auto* eq = BuiltinDeviceRegistry::instance().findByName ("EchoJay EQ");
+        const auto* rv = BuiltinDeviceRegistry::instance().findByName ("EchoJay Reverb");
+        const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        const auto* tail = rv != nullptr ? rv : gn;   // a reverb if this build registers one, else a gain
+        check (eq != nullptr && tail != nullptr, "V1. precondition: a two-slot chain can be built");
+        if (eq != nullptr && tail != nullptr)
+        {
+            EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*eq));
+            EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*tail));
+            const int slotsBefore = h.getNumSlots();
+            proc.setChannelType (ChannelType::LeadVocal);   // a CHANNEL -> match
+            auto& loop = proc.loudnessLoop();
+            juce::StringArray logs; loop.logLine = [&logs] (const juce::String& l) { logs.add (l); };
+            loop.isPlaying = [] { return true; };
+            check (loop.armFromChain(), "V1. a match build arms with no Level slot and no target",
+                   logs.joinIntoString (" | ").substring (0, 180));
+            check (loop.stageName() == "rack_out",
+                   "V1. ...on the RACK OUT stage, post every slot including the tail", loop.stageName());
+            check (h.getNumSlots() == slotsBefore,
+                   "V1. ...and NOTHING is inserted - no Level, no limiter (a match pushes into nothing)",
+                   juce::String (h.getNumSlots()) + " slot(s), was " + juce::String (slotsBefore));
+            int levels = 0;
+            for (int i = 0; i < h.getNumSlots(); ++i) if (h.getSlotInfo (i).name == "EchoJay Level") ++levels;
+            check (levels == 0, "V1. ...and no EchoJay Level slot exists anywhere in the rack",
+                   juce::String (levels) + " Level slot(s)");
+            check (loop.aimWords() == "matched to input", "V1. ...and it says so", loop.aimWords());
+        }
+    }
+    std::printf ("== V2. a TARGET build drives the final limiter's input_db ==\n");
+    {
+        Rig r (false);   // EchoJay Limiter last
+        r.proc.setChannelType (ChannelType::FullMix);   // a MIX BUS -> target
+        { auto* pp = new juce::DynamicObject();
+          pp->setProperty ("target_lufs", -9.0); pp->setProperty ("option", "commercial");
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        calibrate (r.proc, r.prog, -18.0f);
+        const int before = r.h.getNumSlots();
+        check (r.loop.armFromChain(), "V2. a target build arms");
+        check (r.loop.stageName() == "limiter_in",
+               "V2. ...on the LIMITER IN stage (input_db), not a Level slot", r.loop.stageName());
+        check (r.h.getNumSlots() == before,
+               "V2. ...and nothing is inserted, because the chain already ends in a limiter",
+               juce::String (r.h.getNumSlots()) + " vs " + juce::String (before));
+        for (int k = 0; k < 14 && std::abs (r.loop.currentGainDb()) < 0.05f; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+        check (std::abs (r.loop.currentGainDb()) > 0.05f,
+               "V2. ...and the opening lands ON THAT STAGE", f1 (r.loop.currentGainDb()) + " dB");
+        auto* lim = dynamic_cast<EedDeviceProcessor*> (r.h.getSlotProcessor (r.limSlot));
+        check (lim != nullptr && std::abs ((float) lim->getParamValue ("input_db") - r.loop.currentGainDb()) < 0.05f,
+               "V2. ...which IS the limiter's own input_db, read back off the device",
+               lim != nullptr ? f1 ((float) lim->getParamValue ("input_db")) : juce::String ("no device"));
+        check (lim != nullptr && std::abs ((float) lim->getParamValue ("ceiling_db") + 0.1) < 1.0e-4,
+               "V2. ...and the ceiling is still held at -0.1 dBTP");
+    }
+    std::printf ("== V3. a TARGET build with NO limiter gets one inserted last at -0.1 ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        auto& h = proc.getChainHost();
+        const auto* eq = BuiltinDeviceRegistry::instance().findByName ("EchoJay EQ");
+        if (eq != nullptr) EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*eq));
+        proc.setChannelType (ChannelType::FullMix);
+        auto& loop = proc.loudnessLoop();
+        juce::StringArray logs; loop.logLine = [&logs] (const juce::String& l) { logs.add (l); };
+        loop.isPlaying = [] { return true; };
+        // a target, with nothing holding a ceiling
+        { auto* pp = new juce::DynamicObject();
+          pp->setProperty ("target_lufs", -8.0); pp->setProperty ("option", "pushed");
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          h.setSlotStructuredSettings (0, juce::var (w)); }
+        const int before = h.getNumSlots();
+        check (loop.armFromChain(), "V3. it arms", logs.joinIntoString (" | ").substring (0, 180));
+        check (h.getNumSlots() == before + 1,
+               "V3. an EchoJay Limiter IS inserted (a target drives level INTO a ceiling, so there must be one)",
+               juce::String (before) + " -> " + juce::String (h.getNumSlots()));
+        const int last = h.getNumSlots() - 1;
+        check (h.getSlotInfo (last).name == "EchoJay Limiter", "V3. ...LAST", h.getSlotInfo (last).name);
+        if (auto* d = dynamic_cast<EedDeviceProcessor*> (h.getSlotProcessor (last)))
+            check (std::abs ((float) d->getParamValue ("ceiling_db") + 0.1) < 1.0e-4,
+                   "V3. ...at the ruled -0.1 dBTP", f1 ((float) d->getParamValue ("ceiling_db")));
+        check (loop.stageName() == "limiter_in", "V3. ...and the stage is its input_db", loop.stageName());
+    }
+    std::printf ("== V4. an old EchoJay Level slot is MIGRATED, and the log says when the sound changes ==\n");
+    {
+        // A chain written before 10 Oct: a Level slot carrying gain. Its dB moves to the stage and the slot goes.
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.proc.setChannelType (ChannelType::LeadVocal);   // a channel -> match -> rack_out
+        // put a gain on the Level slot, as an old landing would have left it
+        { auto* pp = new juce::DynamicObject(); pp->setProperty ("gain_db", 4.0);
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        EchoJayBorrowHostTestAccess::applyExact (r.h, r.levelSlot);
+        calibrate (r.proc, r.prog, -18.0f);
+        const int before = r.h.getNumSlots();
+        const float busBefore = r.proc.getBusGainDb();
+        check (r.loop.armFromChain(), "V4. it arms");
+        int levels = 0;
+        for (int i = 0; i < r.h.getNumSlots(); ++i) if (r.h.getSlotInfo (i).name == "EchoJay Level") ++levels;
+        check (levels == 0 && r.h.getNumSlots() == before - 1,
+               "V4. THE LEVEL SLOT IS GONE", juce::String (levels) + " Level(s), "
+                   + juce::String (before) + " -> " + juce::String (r.h.getNumSlots()) + " slots");
+        check (std::abs (r.proc.getBusGainDb() - (busBefore + 4.0f)) < 0.05f,
+               "V4. ...and its +4.0 dB moved to the rack OUT gain",
+               f1 (busBefore) + " -> " + f1 (r.proc.getBusGainDb()) + " dB");
+        const auto lg = r.logs.joinIntoString (" | ");
+        check (lg.contains ("migrated the EchoJay Level slot away"), "V4. ...and the migration is logged");
+        check (lg.contains ("the sound DOES change here"),
+               "V4. ...AND THE LOG SAYS THE SOUND CHANGES, because this Level was NOT last - claiming "
+               "level-identical there would be the lie (Sean's sat before Vocal Reverb)");
+    }
+    std::printf ("== V5. the levelling record is at RACK level, and is downgrade-safe ==\n");
+    {
+        Rig r (false); r.proc.setChannelType (ChannelType::FullMix);
+        { auto* pp = new juce::DynamicObject();
+          pp->setProperty ("target_lufs", -9.0); pp->setProperty ("option", "commercial");
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        calibrate (r.proc, r.prog, -18.0f);
+        check (r.loop.armFromChain(), "V5. armed");
+        const auto rec = r.h.getLevellingRecord();
+        auto* o = rec.getDynamicObject();
+        check (o != nullptr, "V5. the rack carries a levelling record");
+        if (o != nullptr)
+        {
+            check (o->getProperty ("option").toString() == "commercial", "V5. ...with the option",
+                   o->getProperty ("option").toString());
+            check (std::abs ((double) o->getProperty ("target_lufs") + 9.0) < 0.01, "V5. ...the target");
+            check (o->getProperty ("stage").toString() == "limiter_in", "V5. ...and the STAGE it drives",
+                   o->getProperty ("stage").toString());
+            check (o->getProperty ("aim_words").toString().contains ("-9.0 LUFS"), "V5. ...and the words",
+                   o->getProperty ("aim_words").toString());
+        }
+        for (int k = 0; k < 14 && std::abs (r.loop.currentGainDb()) < 0.05f; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+        auto* o2 = r.h.getLevellingRecord().getDynamicObject();
+        check (o2 != nullptr && o2->hasProperty ("landed_db"),
+               "V5. ...and after a landing it carries landed_db");
+        // DOWNGRADE SAFETY (Sean's rule b): ship_2026-10-09a knows none of these keys and no EchoJay Level slot.
+        // What it DOES know is the gain's own control, and that is where the level lives - so an old build opens
+        // this rack at the same loudness, ignoring a record it cannot read. Asserted as: the record is PURELY
+        // ADDITIVE (a separate var, not a change to any slot's shape) and the gain is on a device param the old
+        // build already restores.
+        int levels = 0;
+        for (int i = 0; i < r.h.getNumSlots(); ++i) if (r.h.getSlotInfo (i).name == "EchoJay Level") ++levels;
+        check (levels == 0, "V5. (downgrade) no Level slot for an old build to miss");
+        auto* lim = dynamic_cast<EedDeviceProcessor*> (r.h.getSlotProcessor (r.limSlot));
+        check (lim != nullptr && std::abs ((float) lim->getParamValue ("input_db") - r.loop.currentGainDb()) < 0.05f,
+               "V5. (downgrade) the landed gain lives on the limiter's own input_db - a param ship_2026-10-09a "
+               "reads and restores, so the level is preserved without the record");
+    }
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     // ---- 21t-d: the compressor calibration loop --------------------------------------------------------------
     // Driven by the SHIPPED state machine (EJCalibLoop.h, the one both binaries compile), over windows measured

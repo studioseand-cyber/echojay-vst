@@ -2067,18 +2067,6 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
         const auto sh = echojay::readSettingsShape (ss);
         for (const auto& leaf : sh.leaves)
         {
-            const auto k = kv.name.toString();
-            if (k == "controls" || k == "bands" || k == "dropped_controls") continue;
-            // 18e (item 6): a nested object (params, eq_settings, ...) prints as key=value pairs, never "Object 0x..."
-            if (auto* inner = kv.value.getDynamicObject())
-            {
-                juce::StringArray kvs;
-                for (const auto& ik : inner->getProperties()) kvs.add(ik.name.toString() + "=" + fmtVal(ik.value));
-                parts.add(k + " {" + kvs.joinIntoString(", ") + "}");
-                continue;
-            }
-            if (kv.value.isArray()) { parts.add(k + " [" + juce::String(kv.value.getArray()->size()) + "]"); continue; }
-            parts.add(k + " " + fmtVal(kv.value));
             if (leaf.name == "dropped_controls") continue;
             if (leaf.name.startsWith ("bands[")) continue;   // counted below
             parts.add (leaf.name + " " + fmtVal (leaf.value));
@@ -5605,6 +5593,7 @@ void ChainHost::collapseFlatDuplicates(const juce::var& structured, std::vector<
 juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& map, std::vector<ApplyReport>& report)
 {
     auto& s = slots_[(size_t) slotIndex];
+    s.misdialRows.clear();   // ported with the rows below: one walk, one clear
     collapseFlatDuplicates(s.structuredSettings, report, s.desc.name);
     EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name + "\"), "
                    + juce::String((int)report.size()) + " result(s)").toRawUTF8());
@@ -5622,6 +5611,43 @@ juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& m
     s.dialRequestedCount = (int) report.size();
     for (auto& r : report)
     {
+
+        // ---- PORTED from integration/reasoning-plus-pitch at the 10 Oct merge ------------------------
+        // MISDIAL REPORT v1 collected its rows in an INLINE copy of this very loop. 18g had already
+        // extracted the loop into recordApplyReport, so the merge left TWO walks over one report and two
+        // appliedSummary builds - which is what "redefinition of appliedSummary" was. The summary keeps ONE
+        // author (this function). The misdial rows were the genuinely new part, so they are collected here
+        // rather than in a second walk.
+        {
+            echojay::MisdialRow mr;
+            mr.fp         = s.fp;                 // COPIED: a snapshot, not a live read
+            // THE REPORT ID IS MINTED HERE, ONCE PER ROW, not once per press.
+            // Per press would dedupe a double tap and nothing else: reopening
+            // the popup would mint a new id and file the same defect twice.
+            // Minted at capture, the id is the row's for as long as the row
+            // lives, so a second press dedupes across windows as well.
+            mr.reportId   = echojay::newMisdialReportId();
+            mr.mapKey     = r.semantic;           // the RAW key, never semanticLabel()
+            mr.index      = r.index;
+            mr.landedText = r.landedText.trim();
+            if (r.requestedValue.isDouble() || r.requestedValue.isInt()
+                || r.requestedValue.isInt64())
+            {
+                const double rv = (double) r.requestedValue;
+                if (std::isfinite (rv)) { mr.valueDialled = rv; mr.hasValue = true; }
+            }
+            // The outcome, used when there is no readback to send instead. The
+            // specific refusal first, because "outside the range" tells Kathy
+            // more than "not applied".
+            mr.outcome = r.outOfRange        ? "refused: outside the map's range"
+                       : r.readbackMismatch  ? "written then reverted: the display disagreed"
+                       : r.staleDisplayKept  ? "written, display could not confirm it"
+                       : r.anchorsUnverified ? "written from another version's anchors"
+                       : r.applied           ? "applied"
+                                             : (r.note.isNotEmpty() ? r.note
+                                                                    : juce::String ("not applied"));
+            s.misdialRows.push_back (mr);
+        }
         EchoJay_NSLog(("EJParamApply:   " + r.semantic + ": "
                        + (r.applied ? juce::String("APPLIED ") : juce::String("manual  "))
                        + juce::String(r.normalized, 3) + "  (" + r.note + ")"
@@ -6047,130 +6073,6 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     s.structuredApplied = true;
 
     juce::StringArray appliedSummary = recordApplyReport(slotIndex, it->second, report);   // 18g: extracted (bubble truth + the harness seam)
-    EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex) + " (\"" + s.desc.name + "\"), "
-                   + juce::String((int)report.size()) + " result(s)").toRawUTF8());
-    juce::StringArray appliedSummary;
-    s.dialManual.clear();
-    s.dialReadbackMiss.clear();
-    s.dialUnconfirmed.clear();
-    s.dialApproximate.clear();
-    s.dialServedFrom = it->second.getProperty("served_from", juce::var()).toString();
-    s.dialOutOfRange.clear();
-    s.misdialRows.clear();
-    // dial-3 denominator (A3): the count of settings the model asked for,
-    // stored HERE because appliedCount + manual.size() is not a substitute
-    // (both dedupe through semanticLabel).
-    s.dialRequestedCount = (int) report.size();
-    for (auto& r : report)
-    {
-        EchoJay_NSLog(("EJParamApply:   " + r.semantic + ": "
-                       + (r.applied ? juce::String("APPLIED ") : juce::String("manual  "))
-                       + juce::String(r.normalized, 3) + "  (" + r.note + ")"
-                       + (r.landedText.isNotEmpty() ? "  landed \"" + r.landedText.trim() + "\""
-                                                    : juce::String())).toRawUTF8());
-        // MISDIAL REPORT v1: capture the row BEFORE the branch, so a refused
-        // control is reportable too. A value that would not go in is exactly
-        // the kind of map defect this feature exists to collect, and gating the
-        // capture on r.applied would have thrown those away.
-        //
-        // requestedValue is a juce::var and may be a string on a choice
-        // control; hasValue records whether it is a finite number, and the
-        // completeness rule refuses the row rather than sending a NaN.
-        {
-            echojay::MisdialRow mr;
-            mr.fp         = s.fp;                 // COPIED: a snapshot, not a live read
-            // THE REPORT ID IS MINTED HERE, ONCE PER ROW, not once per press.
-            // Per press would dedupe a double tap and nothing else: reopening
-            // the popup would mint a new id and file the same defect twice.
-            // Minted at capture, the id is the row's for as long as the row
-            // lives, so a second press dedupes across windows as well.
-            mr.reportId   = echojay::newMisdialReportId();
-            mr.mapKey     = r.semantic;           // the RAW key, never semanticLabel()
-            mr.index      = r.index;
-            mr.landedText = r.landedText.trim();
-            if (r.requestedValue.isDouble() || r.requestedValue.isInt()
-                || r.requestedValue.isInt64())
-            {
-                const double rv = (double) r.requestedValue;
-                if (std::isfinite (rv)) { mr.valueDialled = rv; mr.hasValue = true; }
-            }
-            // The outcome, used when there is no readback to send instead. The
-            // specific refusal first, because "outside the range" tells Kathy
-            // more than "not applied".
-            mr.outcome = r.outOfRange        ? "refused: outside the map's range"
-                       : r.readbackMismatch  ? "written then reverted: the display disagreed"
-                       : r.staleDisplayKept  ? "written, display could not confirm it"
-                       : r.anchorsUnverified ? "written from another version's anchors"
-                       : r.applied           ? "applied"
-                                             : (r.note.isNotEmpty() ? r.note
-                                                                    : juce::String ("not applied"));
-            s.misdialRows.push_back (mr);
-        }
-        if (r.applied)
-        {
-            // The value comes off the RESULT, not a flat lookup on the
-            // settings object: band values live in bands[i] and control
-            // values in controls["Name"], so the flat lookup returned void
-            // and the card printed bare repeated labels ("freq Hz, gain dB,
-            // freq Hz, gain dB") - no values, no record of what happened.
-            auto line = echojay::formatSemanticSetting(r.semantic, r.requestedValue);
-            // A successful write shows NOTHING extra (9 Aug 2026, Sean's
-            // call): silence is the signal that it worked, like everything
-            // else in the app. The old "(unverified)" suffix surfaced an
-            // INTERNAL proof-class distinction (norm round-trip vs display
-            // comparison) as user-facing doubt, on every setread map -
-            // i.e. the entire campaign corpus, forever. The distinction is
-            // not lost: r.note carries it in the EJParamApply log line,
-            // and the verification class is static per control
-            // (method/trust on the map entry). The dangerous case - the
-            // display DISAGREEING - was never silent and still is not: it
-            // reverts, lands in dialManual/dialReadbackMiss, and uploads a
-            // readback_mismatch dial_miss.
-            appliedSummary.add(line);
-            // The bridged report-only case is NOT the silent class: the
-            // display DISAGREED and the write was kept anyway, on a measured
-            // fact about the instance. The 9 Aug silence rule reasoned "the
-            // display disagreeing was never silent - it reverts"; with the
-            // revert gone, the caveat must surface instead.
-            if (r.staleDisplayKept)
-                s.dialUnconfirmed.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
-            // THE 9 AUG SILENCE RULE DOES NOT REACH HERE (26 Aug 2026). That
-            // rule says a successful write shows nothing extra, and it was
-            // right because silence meant "it landed as asked". On a product
-            // fallback the anchors came from another version and drift on
-            // ~19% of controls, so silence would be asserting something we
-            // measured to be false a fifth of the time. Named here, on the
-            // card, and marked to the model.
-            if (r.anchorsUnverified)
-                s.dialApproximate.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
-        }
-        else
-        {
-            s.dialManual.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
-            if (r.readbackMismatch)
-                s.dialReadbackMiss.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
-            if (r.outOfRange)
-                s.dialOutOfRange.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
-        }
-    }
-
-    // The range-check counter (12 Aug 2026), printed on EVERY dialled slot
-    // in the EJMapFps vocabulary, zero case included: if out-of-range asks
-    // turn out to be common on healthy (non-diverged) turns, the exposure
-    // is not communicating ranges to the model well enough - a finding
-    // nothing else can currently see.
-    EchoJay_NSLog(("EJRangeCheck: slot=" + juce::String(slotIndex)
-                   + " \"" + s.desc.name + "\""
-                   + " requested=" + juce::String((int) report.size())
-                   + " outOfRange=" + juce::String(s.dialOutOfRange.size())
-                   + (s.dialOutOfRange.isEmpty() ? juce::String()
-                        : " [" + s.dialOutOfRange.joinIntoString(", ") + "]")
-                   + (s.staleIndexedFp.isNotEmpty() ? " diverged=y" : " diverged=n")).toRawUTF8());
-
-    // Honest per-slot verdict: applied only when EVERY requested semantic
-    // was written; anything less is partial (some written) or unusableMap
-    // (map exists, nothing written). ">=1 written" reported as success
-    // would still overclaim (the spiff class of bug).
     s.dialAppliedCount = (int) appliedSummary.size();
     if (report.empty())
         s.dialStatus = DialStatus::mapNoCoverage; // structured present, nothing requested survived

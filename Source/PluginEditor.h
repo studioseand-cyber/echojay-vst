@@ -710,6 +710,17 @@ private:
     void refreshUndoButtons();
     juce::TextButton resetBtn { "Reset" };
     juce::TextButton compareBtn { "Compare" };
+    // Reference Presets - RESTORED at the 10 Oct merge by Sean's ruling (see the Rects note above). The feature
+    // saves and recalls named sets of REFERENCE TRACKS in <state root>/EchoJay/Presets.
+    juce::ComboBox presetBox;
+    juce::TextButton savePresetBtn { "Save Preset" };
+    juce::TextButton deletePresetBtn { "Delete" };
+    void loadPresetList();
+    void saveCurrentPreset(const juce::String& name);
+    void loadPreset(const juce::String& name);
+    void deletePreset(const juce::String& name);
+    juce::File getPresetsFolder();
+    juce::StringArray presetNames;
     juce::TextButton settingsBtn { "Settings" };
     juce::ComboBox channelTypeBox;
     juce::ComboBox genreBox;
@@ -1620,6 +1631,11 @@ private:
         struct Rects
         {
             juce::Rectangle<int> card, titleBar, closeX, title, leftPane, rightPane;
+            // The presets strip, moved off the Compare page 13 Sep 2026. RESTORED at the 10 Oct merge:
+            // integration deleted the preset feature in 6a5efb68 and Sean ruled it KEPT, so its declarations
+            // come back with it. The deletion was clean and outside any conflict, which is why the merge took it
+            // silently and the .cpp was left referencing members that no longer existed.
+            juce::Rectangle<int> presetBox, presetSave, presetDelete;
         };
         static Rects layoutFor (juce::Rectangle<int> panelBounds);
     };

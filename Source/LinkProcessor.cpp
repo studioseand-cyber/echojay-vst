@@ -63,6 +63,51 @@ LinkProcessor::LinkProcessor()
         // thread signal only.
         meterEngine_.resetHolds();
     };
+
+    // ---- LEVELLING V2 (10 Oct 2026): THIS LINK'S OWN STAGES ------------------------------------------
+    // match  -> this Link's own output gain, post its whole rack (reverb included). It is the mixer strip's
+    //           GAIN, a control that already exists, per Sean's ruling; 08c's staleness machinery handles the
+    //           shared ownership rather than the loop fighting the user for the fader.
+    // target -> the final limiter slot's own input_db, exactly as the V2 resolves it for its own rack.
+    loudnessLoop_.resolveStage = [this] (bool match) -> LoudnessLoop::Stage
+    {
+        LoudnessLoop::Stage st;
+        if (match)
+        {
+            st.name    = "rack_out";
+            st.ready   = [] { return true; };
+            st.readDb  = [this] { return gainDb_.load (std::memory_order_relaxed); };
+            st.writeDb = [this] (float db) { setGainDb (db); };   // clamps, mirrors to the slot, dirty-marks
+            return st;
+        }
+        st.name  = "limiter_in";
+        st.ready = [this]
+        {
+            const int n = chainHost.getNumSlots();
+            return n > 0 && ChainHost::isLimiterLikeName (chainHost.getSlotInfo (n - 1).name);
+        };
+        st.readDb = [this] () -> float
+        {
+            const int n = chainHost.getNumSlots(); if (n <= 0) return 0.0f;
+            if (auto* d = dynamic_cast<EedDeviceProcessor*> (chainHost.getSlotProcessor (n - 1)))
+                return (float) d->getParamValue ("input_db");
+            return 0.0f;
+        };
+        st.writeDb = [this] (float db)
+        {
+            const int n = chainHost.getNumSlots(); if (n <= 0) return;
+            auto* pp = new juce::DynamicObject();
+            pp->setProperty ("input_db", (double) juce::jlimit (-12.0f, 12.0f, db));
+            auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+            chainHost.setSlotStructuredSettings (n - 1, juce::var (w));
+        };
+        return st;
+    };
+    // A Link is a CHANNEL or a BUS. Only a mix bus or master hits a target (Sean, 9 Oct), and a Link is neither,
+    // so it volume-matches unless the chain's own `option` says otherwise - which armFromChain honours.
+    loudnessLoop_.aimIsTarget = [] { return false; };
+    loudnessLoop_.isPlaying   = [this] { return transportPlaying_.load (std::memory_order_relaxed); };
+    loudnessLoop_.logLine     = [] (const juce::String& l) { EchoJay_NSLog (l.toRawUTF8()); };
 }
 
 LinkProcessor::~LinkProcessor()

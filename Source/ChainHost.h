@@ -1569,6 +1569,15 @@ public:
     // cost 0.9 dB of loudness for nothing. The clamp lives in applyStructuredToBuiltinSlot, the one funnel every
     // dialled built-in passes through, and it logs the figure that was asked for.
     static constexpr float kFinalCeilingDb = -0.1f;
+    // ---- LEVELLING V2 (10 Oct 2026): THE RECORD, AT RACK LEVEL ---------------------------------------
+    // The EchoJay Level slot is gone; the loop drives a gain that already exists (the rack's OUT gain, or the
+    // final limiter's input_db). So what the levelling DECIDED has no slot to live on, and lives here instead:
+    //   { option, target_lufs?, landed_db, stage, aim_words }
+    // Persisted with the project and with a saved chain, and ADDITIVE - a build that does not know this key
+    // ignores it, which is what makes a new-build project open sensibly in ship_2026-10-09a: no Level slot to
+    // miss, an unknown key to skip, and the gain itself on a control the old build already restores.
+    juce::var getLevellingRecord() const { return levellingRecord_; }
+    void setLevellingRecord (const juce::var& v) { levellingRecord_ = v; bumpChainValue(); }
     static bool isLimiterLikeName (const juce::String& name)
     {
         const auto l = name.toLowerCase();
@@ -2721,6 +2730,7 @@ private:
         juce::CriticalSection::ScopedLockType lock;
     };
     std::atomic<int>  chainRevision_ { 0 };       // see getChainRevision() - STRUCTURE only (ruling 2)
+    juce::var         levellingRecord_;          // see getLevellingRecord() - levelling v2, rack level
     std::atomic<int>  chainValueRev_ { 0 };       // see getChainValueRevision() - values, for the save/sidecar path
     // Every chain mutation is also a settings-cache trigger: this is the
     // "after a chain edit settles" refresh point, reached through the same

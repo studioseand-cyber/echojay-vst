@@ -2844,10 +2844,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         juce::Component* settingsMovers[] = {
             &settingsName, &settingsMonitors, &settingsHeadphones, &settingsGenres,
             &settingsExpLevel, &settingsLanguage, &uiScaleCombo, &autoDialToggle,
-                                     &dialWritesToggle,
+            // 10 Oct merge: ONE entry each. My blanket "both" duplicated dialWritesToggle, settingsScanBtn and
+            // viewAllPluginsBtn, and re-added &settingsWithheldToggleBtn_ - a button round 60 task 1 (da6939f7)
+            // deliberately deleted along with the whole WITHHELD FROM THE CHAIN LIST section. The merge was right
+            // to keep that deletion (base and integration both have the section, this line removed it); the
+            // resolution was wrong to reference it again. echoJayOnlyToggle is integration's genuine addition.
+            &dialWritesToggle, &echoJayOnlyToggle,
             &settingsScanBtn, &viewAllPluginsBtn,
-            &echoJayOnlyToggle, &dialWritesToggle,
-            &settingsScanBtn, &viewAllPluginsBtn, &settingsWithheldToggleBtn_,
             &saveSettingsBtn, &settingsManualBtn, &settingsSavedLabel,
             &settingsHelpBtn, &dumpMetersBtn, &logoutBtn, &settingsOrbCard_ };
         for (auto* m : settingsMovers) settingsContent_.addChildComponent(*m);
@@ -30565,6 +30568,8 @@ bool EchoJayEditor::handleProposalAffirmation(const juce::String& typed)
                     + juce::String (idx) + " - applying locally, no model call").toRawUTF8());
     applyStagedProposal (idx, "affirmed: \"" + typed + "\"");
     return true;
+}
+
 // ============================================================================
 // MISDIAL REPORT v1: the popup and the send, from the SUGGESTED SETTINGS panel.
 //

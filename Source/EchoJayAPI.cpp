@@ -3541,6 +3541,8 @@ static juce::String formatSlotGrNote(const ChainHost& chainHost, int slotIndex)
         n << "last_gr_db " << juce::String(std::abs(last), 1);
     }
     return n;
+}
+
 // ---------------------------------------------------------------------------
 // ONLY ECHOJAY PLUGINS: the feed with no third-party names in it at all.
 //

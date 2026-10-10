@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "ChainHost.h"
+#include "LoudnessLoop.h"   // LEVELLING V2 (10 Oct 2026): every Link levels its OWN rack
 #include "MeterEngine.h"
 #include "EchoJayLevelTally.h"   // 21t-d: SHORTMAX + HEARD
 #include "EJLevelRecord.h"   // 21t-i: the stored level record
@@ -215,6 +216,12 @@ public:
     };
 
     ChainHost& getChainHost() { return chainHost; }
+    /** LEVELLING V2 (Sean, 10 Oct 2026): EVERY LINK RUNS ITS OWN LOUDNESS LOOP ON ITS OWN RACK, so levelling
+        works on every track in place. The V2 only TRIGGERS it and shows the result over the remote channel; it
+        computes nothing, which is the same rule the meters already follow - this process is the only one that
+        sees this rack's audio. Before this, one loop held a reference to the V2's own ChainHost and there was no
+        loop on a borrowed host at all, which is why Sean's vocal build on this Link never levelled (test 1). */
+    LoudnessLoop& loudnessLoop() noexcept { return loudnessLoop_; }
     const std::vector<ChainSlotSpec>& getChainModel() const { return chainModel; }
 
     // Structure plan, display parity (24 Aug 2026): apply + the SAME
@@ -351,6 +358,7 @@ private:
 
     // ---- Chain hosting internals (message thread unless noted) ----
     ChainHost chainHost;                    // audio-thread process() via processBlock
+    LoudnessLoop loudnessLoop_ { chainHost };   // levelling v2: THIS rack's loop (declared after chainHost)
     std::vector<ChainSlotSpec> chainModel;
     bool chainBuilding = false;
     // Set in prepareToPlay (host/audio thread), read on the audio thread and by
