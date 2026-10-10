@@ -1,4 +1,6 @@
 #pragma once
+
+#include "EJRemoteControl.h"   // stage 1: the lease is control only - no bypass, no mute, no detour
 #include <JuceHeader.h>
 #include "ChainHost.h"
 #include "LoudnessLoop.h"   // LEVELLING V2 (10 Oct 2026): every Link levels its OWN rack
@@ -635,7 +637,12 @@ public:
     // confirms — the §8.5b watchdog contract is unchanged by composition.
     bool linkMuteWanted() const
     {
-        return (rackLeaseActive_
+        // STAGE 1 (10 Oct 2026): the LEASE arm is gated by policy - see echojay::leaseMutesTheLink(). It
+        // existed because the V2 was summing a processed copy of this channel into its own output, so the Link
+        // had to go quiet or the two would double. With no injection a lease that still muted would make
+        // selecting a Link SILENCE that channel. The user's own mute and the solo fabric are untouched.
+        return (echojay::leaseMutesTheLink()
+                    && rackLeaseActive_
                     && rackLeaseMuteWant_.load(std::memory_order_relaxed))
             || muteUserOn_.load(std::memory_order_relaxed)
             || soloMuteWant_.load(std::memory_order_relaxed);

@@ -1,4 +1,5 @@
 #include "LinkProcessor.h"
+#include "EJRemoteControl.h"   // stage 1: the Link processes its own rack; the lease is control only
 #include "EJRackSidecarFill.h"   // ruling 1 (21s-b): one source for the slot list
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include <signal.h>   // kill(pid, 0): publisher liveness (C4b)
@@ -1144,12 +1145,14 @@ void LinkProcessor::pollEditLease()
             }
             leaseSlot0_       = slot0;
             leasePriorBypass_ = chainHost.getSlotInfo(slot0).bypassed;
-            // Bypass the slot for the lease's duration: the ring taps
-            // post-rack, so without this the editing copy would receive
-            // audio ALREADY processed by this instance and process it again
-            // in series. setSlotBypassed bumps chainRevision, so the sidecar
-            // republishes with the controlled flag riding along.
-            chainHost.setLeaseBypass(slot0, true);   // v9: the lease's write
+            // STAGE 1 (10 Oct 2026): NOT ANY MORE, AND THE OLD REASON SAYS WHY. It was "the ring taps
+            // post-rack, so without this the editing copy would receive audio ALREADY processed by this
+            // instance and process it again in series" - a true and careful reason, and it is entirely about
+            // the audio detour. There is no editing copy processing audio now (see
+            // echojay::borrowAudioDetourAllowed), so bypassing the slot would switch off a plugin the user is
+            // listening to in order to protect a path that no longer exists.
+            if (echojay::leaseBypassesTheRack())
+                chainHost.setLeaseBypass(slot0, true);   // v9: the lease's write
             leaseActive_.store(true, std::memory_order_relaxed);
             notifyChainModel();   // the open editor dims + disables the slot
             EchoJay_NSLog(("EJLease: engaged slot "
@@ -2645,16 +2648,24 @@ void LinkProcessor::rackLeaseEngage()
                        + " prior state(s) kept; the rack is already dry").toRawUTF8());
         return;
     }
-    chainHost.setAttachBypassed(true);    // v9 change A: BEFORE the existing slots are bypassed
-    // WHOLE-RACK ENGAGE: save every slot's bypass, bypass all once, stream
-    // dry. setSlotBypassed bumps the revision, so the sidecar republishes
-    // with every slot controlled. Extracted so linksync_test drives the
-    // REAL arm, not a test-local copy.
+    // ---- STAGE 1 (10 Oct 2026): THE RACK IS NOT SWITCHED OFF ANY MORE --------------------------------
+    // What stood here: setAttachBypassed(true), then setLeaseBypass(i, true) for every slot - "WHOLE-RACK
+    // ENGAGE: save every slot's bypass, bypass all once, stream dry". That is Sean's kick. The rack went dry in
+    // place, so the channel strip, the sends and the drum bus downstream of it all carried an UNPROCESSED kick,
+    // while the processed one was summed in at the V2's position. See echojay::leaseBypassesTheRack().
+    // The snapshot is still taken. It is no longer a restore list - nothing is being changed to restore from -
+    // but rackLeaseRelease() still walks it, and a project saved under the OLD behaviour can still arrive here
+    // with slots the lease had bypassed. Keeping it makes the release an idempotent restatement of intent
+    // instead of a path that only works on racks this build created. It goes at stage 5 with the rest.
     rackLeasePrior_.clear();
     for (int i = 0; i < chainHost.getNumSlots(); ++i)
     {
         rackLeasePrior_.push_back(chainHost.getSlotInfo(i).intendedBypassed);   // v9: the INTENT, not the effective state
-        chainHost.setLeaseBypass(i, true);
+        if (echojay::leaseBypassesTheRack())
+        {
+            chainHost.setAttachBypassed(true);
+            chainHost.setLeaseBypass(i, true);
+        }
     }
     rackLeaseActive_ = true;
     leaseSlot0_      = -1;
@@ -2677,7 +2688,9 @@ void LinkProcessor::rackLeaseEngage()
             snap << (k ? "," : "") << juce::String ((int) k + 1) << (rackLeasePrior_[k] ? ":byp" : ":live");
         EchoJay_NSLog(("EJLease: RACK engaged id \"" + leaseGate_.activeId + "\" rev " + juce::String(leaseBaseRev_)
                        + ", snapshot TAKEN of " + juce::String((int) rackLeasePrior_.size())
-                       + " slot(s) [" + snap + "], all bypassed, streaming dry").toRawUTF8());
+                       + " slot(s) [" + snap + "], "
+                       + (echojay::leaseBypassesTheRack() ? "all bypassed, streaming dry"
+                                                          : "the rack KEEPS PROCESSING in its own place (stage 1)")).toRawUTF8());
     }
 }
 
@@ -2746,17 +2759,26 @@ ChainHost::PlanResult LinkProcessor::applyStructurePlanAndSync(
         rackLeasePrior_ = std::move(np);
         // v9: this loop is now the INSTRUMENT. Every slot arrived bypassed
         // (change A); a live one here is the invariant broken, said loudly.
-        for (int i = 0; i < chainHost.getNumSlots(); ++i)
-        {
-            if (! chainHost.getSlotInfo(i).bypassed)
-                EchoJay_NSLog(("EJLease: INVARIANT BROKEN - slot " + juce::String(i + 1)
-                               + " (\"" + chainHost.getSlotInfo(i).name
-                               + "\") attached LIVE under the lease; bypassing it now").toRawUTF8());
-            chainHost.setLeaseBypass(i, true);
-        }
+        // STAGE 1 (10 Oct 2026): THERE IS NO DRY RACK TO RE-ASSERT. This loop was the v9 INSTRUMENT - every
+        // slot arrived bypassed, so a live one here meant the invariant was broken and it said so loudly before
+        // bypassing it. The invariant itself is gone: a leased rack keeps processing, so a live slot after a
+        // reshape is CORRECT and the loop would have quietly switched the user's rack off again after every
+        // plan. Caught by linksync_test's reshape leg, which read [0:byp,1:byp,2:byp] where the plan asked for
+        // two live survivors and one bypassed Create.
+        if (echojay::leaseBypassesTheRack())
+            for (int i = 0; i < chainHost.getNumSlots(); ++i)
+            {
+                if (! chainHost.getSlotInfo(i).bypassed)
+                    EchoJay_NSLog(("EJLease: INVARIANT BROKEN - slot " + juce::String(i + 1)
+                                   + " (\"" + chainHost.getSlotInfo(i).name
+                                   + "\") attached LIVE under the lease; bypassing it now").toRawUTF8());
+                chainHost.setLeaseBypass(i, true);
+            }
         EchoJay_NSLog(("EJLease: priors remapped through the plan ("
                        + juce::String((int) rackLeasePrior_.size())
-                       + " slots), dry rack re-asserted").toRawUTF8());
+                       + " slots)"
+                       + (echojay::leaseBypassesTheRack() ? ", dry rack re-asserted"
+                                                          : ", the rack keeps processing (stage 1)")).toRawUTF8());
     }
     // UNCONDITIONAL: applied changed the shape, a rollback tore it down
     // and rebuilt it — the editor-facing model is stale either way. Runs

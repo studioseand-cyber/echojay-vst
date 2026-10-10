@@ -73,12 +73,59 @@ static BuiltinDevice makeProbe()
 }
 static const BuiltinDeviceRegistrar probeReg { makeProbe() };
 
+// ---- a probe that CHANGES THE SIGNAL, for stage 1's acceptance test ------
+// SyncProbe's processBlock is empty, which is right for the structure legs - they are about plans, indices and
+// bypass state - but it means no leg here could ever show whether a rack was in circuit. Sean's acceptance test
+// for stage 1 is "the kick still goes through the drum bus", and that is a claim about AUDIO: a state-only
+// assertion that nothing is flagged bypassed would still pass if the rack were switched off some other way.
+// x2 is +6.02 dB, chosen so the measurement cannot be confused with a dry path (x1) or silence.
+struct SyncGain : juce::AudioProcessor
+{
+    SyncGain() : juce::AudioProcessor (BusesProperties()
+        .withInput ("In", juce::AudioChannelSet::stereo(), true)
+        .withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
+    const juce::String getName() const override { return "EJ Sync Gain"; }
+    void prepareToPlay (double, int) override {}
+    void releaseResources() override {}
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+    { b.applyGain (2.0f); }
+    double getTailLengthSeconds() const override { return 0.0; }
+    bool acceptsMidi() const override { return false; }
+    bool producesMidi() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override { return false; }
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {}
+    void setStateInformation (const void*, int) override {}
+};
+
+static BuiltinDevice makeGain()
+{
+    BuiltinDevice d;
+    d.name = "EJ Sync Gain"; d.category = "Utility";
+    d.descriptiveName = d.name; d.summary = "linksync_test gain probe (x2)";
+    d.identifier = "echojay:test:syncgain"; d.uid = 0x454A5347;
+    d.create = [] { return std::make_unique<SyncGain>(); };
+    return d;
+}
+static const BuiltinDeviceRegistrar gainReg { makeGain() };
+
 // The friend declared in LinkProcessor.h — drives the REAL rack-lease arms
 // (engage saves priors and bypasses all; release restores), so the gate
 // proves the shipping code, not a re-implementation.
 struct EchoJayLinkSyncTestAccess
 {
     static void engage (LinkProcessor& p)  { p.rackLeaseEngage(); }
+    // Stage 1: the lease is a CONTROL lease now, so a leg has to be able to say it is still HELD while the
+    // audio is untouched. Reading rackLeaseActive_ directly, because that IS the control lease's own flag.
+    static bool leaseHeld (LinkProcessor& p) { return p.rackLeaseActive_; }
+    // Stage 1: the ruling "a session release can never clear a user mute" is about the USER's reason, so the
+    // leg reads that reason rather than inferring it from silence - silence has three possible authors.
+    static bool userMuteStillOn (LinkProcessor& p) { return p.userMuteOn(); }
     static void release (LinkProcessor& p)
     {
         p.leaseActive_.store (false, std::memory_order_relaxed);
@@ -356,10 +403,27 @@ int main()
         host.setSlotBypassed (1, true);
         host.setSlotBypassed (2, false);
         EchoJayLinkSyncTestAccess::engage (proc);
-        bool allDry = true;
-        for (int i = 0; i < host.getNumSlots(); ++i)
-            if (! host.getSlotInfo (i).bypassed) allDry = false;
-        check (allDry, "engage bypassed every slot (dry rack)");
+        // ---- STAGE 1 (10 Oct 2026): ENGAGE NO LONGER SWITCHES THE RACK OFF ---------------------------
+        // This used to assert the opposite - "engage bypassed every slot (dry rack)" - and it was GREEN, which
+        // is the point worth recording: the leg was right about the code and the code was the fault Sean could
+        // hear. A dry rack in place means the channel strip, the sends and the drum bus downstream all carry an
+        // UNPROCESSED signal while the processed one is summed in at the V2's position.
+        // Re-aimed to the ruling, BOTH SIDES asserted: every slot the user wanted live IS live, and a slot the
+        // user had bypassed STAYS bypassed. The second half matters - "nothing is bypassed" would also pass if
+        // engage had started forcing slots ON, which would be the same class of fault pointing the other way.
+        // The rack here is [live, BYPASSED, live] from the three lines above.
+        {
+            juce::String got;
+            for (int i = 0; i < host.getNumSlots(); ++i)
+                got << (i ? "," : "") << juce::String (i) << (host.getSlotInfo (i).bypassed ? ":byp" : ":live");
+            const bool asIntended = host.getNumSlots() == 3
+                                 && ! host.getSlotInfo (0).bypassed
+                                 &&   host.getSlotInfo (1).bypassed
+                                 && ! host.getSlotInfo (2).bypassed;
+            check (asIntended,
+                   "stage 1: engage leaves every slot AS THE USER INTENDED - the rack keeps processing in its "
+                   "own place, so the kick still reaches its own strip and its bus", got);
+        }
 
         // The plan, THROUGH computePlan (byp must ride from CurrentSlot):
         // remove pre-borrow slot 1 (the bypassed one), create one at the
@@ -387,11 +451,24 @@ int main()
         const auto res3 = proc.applyStructurePlanAndSync (dir, wire);
         check (res3.ok, "the reshape applied mid-lease",
                res3.reasons.joinIntoString ("; "));
-        allDry = true;
-        for (int i = 0; i < host.getNumSlots(); ++i)
-            if (! host.getSlotInfo (i).bypassed) allDry = false;
-        check (allDry, "the lease's dry rack held through the reshape "
-                       "(created slot included)");
+        // STAGE 1 (10 Oct 2026): there is no dry rack to hold. This asserted that the lease's bypass-all
+        // survived a reshape, created slot included; the lease no longer bypasses anything. The claim that
+        // SURVIVES the ruling - and it is the one the reshape could actually break - is that every slot, the
+        // created one included, sits at the INTENT the plan carried. The plan above creates its new slot with
+        // bypassed TRUE, and the two pre-borrow survivors were [live, live] (slot 1, the bypassed one, was the
+        // one removed).
+        {
+            juce::String got;
+            for (int i = 0; i < host.getNumSlots(); ++i)
+                got << (i ? "," : "") << juce::String (i) << (host.getSlotInfo (i).bypassed ? ":byp" : ":live");
+            const bool asPlanned = host.getNumSlots() == 3
+                                && ! host.getSlotInfo (0).bypassed
+                                && ! host.getSlotInfo (1).bypassed
+                                &&   host.getSlotInfo (2).bypassed;
+            check (asPlanned,
+                   "stage 1: after the reshape every slot sits at the intent the plan carried - the survivors "
+                   "live, the created slot bypassed because that is what the Create op said", got);
+        }
         // THE GENERAL RULE, mid-lease: the model records the TRUE states,
         // not the lease's temporary bypass — because the model persists.
         const auto& m = proc.getChainModel();
@@ -574,9 +651,24 @@ int main()
     // muteOut zeroes the Link's OUTPUT (after the ring write) while the
     // rack lease holds; lifting it restores. Ramped, so the assert allows
     // the 30ms tail and checks the settled blocks.
+    // ---- WHY THESE MUTE LEGS BYPASS THE RACK EXPLICITLY (10 Oct 2026) ------
+    // The two blocks below are about the MUTE COMPOSITION - three reasons, one silence - and not about the rack.
+    // They measured a path that only ever carried audio because a LEASE bypassed the whole rack: this harness
+    // builds its rack from TU-local probes and a real AUDelay and never pumps a message thread, so ChainHost's
+    // graph is not a working one here. With the rack live the chain delivers silence, and the instrumented run
+    // says so precisely - slot 0's IN reads -200.0 dBTP, so nothing reaches the rack at all, let alone leaves it.
+    // Stage 1 stopped the lease bypassing anything, which removed the side effect these legs were standing on.
+    // So the bypass is now asked for OUT LOUD, by the leg that needs it, instead of arriving as a side effect of
+    // the thing under test. That is the honest version either way: a leg about mute should not depend on a rack.
+    auto bypassWholeRack = [&] (bool on)
+    {
+        for (int i = 0; i < host.getNumSlots(); ++i) host.setSlotBypassed (i, on);
+    };
+
     std::printf ("== §8 mute: lease-carried, output-only ==\n");
     {
         proc.prepareToPlay (48000.0, 512);
+        bypassWholeRack (true);   // see the note above: this leg is about mute, not the rack
         juce::AudioBuffer<float> blk (2, 512);
         juce::MidiBuffer midi;
         auto feed = [&]{ for (int ch = 0; ch < 2; ++ch)
@@ -589,18 +681,32 @@ int main()
                                  m = juce::jmax (m, std::abs (blk.getSample (ch, i)));
                          return m; };
         EchoJayLinkSyncTestAccess::engage (proc);   // rack lease active
-        feed();
+        // STAGE 1 (10 Oct 2026): A SETTLED BLOCK, not the first one. This called feed() ONCE, which was enough
+        // while a lease bypassed the whole rack - a dry chain reaches full level in a single block. The rack now
+        // keeps processing, so the chain's own wet/dry smoothing ramps, and the first block is mid-ramp. This
+        // block's own comment already said the rule ("Ramped, so the assert allows the 30ms tail and checks the
+        // settled blocks"); the engage arm was the one place that did not follow it.
+        for (int b = 0; b < 8; ++b) feed();
         check (peak() > 0.01f, "unmuted lease passes signal",
                juce::String (peak()));
+        // RETIRED (STAGE 1, 10 Oct 2026): "muteOut silences the OUTPUT" and "the restore path unmutes".
+        // Their subject was THE LEASE'S OWN MUTE, and it is gone. It existed because the V2 summed a processed
+        // copy of this channel into its own output, so the Link had to go quiet or the two would double - the
+        // mute was the audio detour's other half. With no injection, a lease that still muted would mean
+        // SELECTING A LINK SILENCES THAT CHANNEL, which is worse than the kick that started this.
+        // The lease still CARRIES muteOut on the wire and the Link still parses it - the "file -> poll -> want"
+        // legs below are untouched and still assert that - it simply no longer composes into silence. Keeping
+        // the parse is deliberate: an older V2 will still send it, and the Link must read it without obeying it.
         EchoJayLinkSyncTestAccess::setMute (proc, true);
-        for (int b = 0; b < 8; ++b) feed();         // ride out the 30ms ramp
-        check (peak() < 0.001f, "muteOut silences the OUTPUT",
-               juce::String (peak()));
-        // The one restore path lifts it (Release/Expire clears the want).
-        EchoJayLinkSyncTestAccess::releaseArmClearsMute (proc);
         for (int b = 0; b < 8; ++b) feed();
-        check (peak() > 0.01f, "the restore path unmutes",
+        check (peak() > 0.01f,
+               "stage 1: a lease's muteOut does NOT silence the channel - the V2 is not standing in for this "
+               "rack any more, so a selected Link stays audible where it is",
                juce::String (peak()));
+        check (EchoJayLinkSyncTestAccess::muteWant (proc),
+               "stage 1: ...and the want is still PARSED and held, so an older V2's muteOut is read and "
+               "disobeyed rather than ignored");
+        EchoJayLinkSyncTestAccess::releaseArmClearsMute (proc);
         EchoJayLinkSyncTestAccess::release (proc);
     }
 
@@ -711,6 +817,7 @@ int main()
     std::printf ("== mute/solo: three reasons, one silence ==\n");
     {
         using T = EchoJayLinkSyncTestAccess;
+        bypassWholeRack (true);   // see the note above the §8 mute block
         juce::AudioBuffer<float> blk (2, 512);
         juce::MidiBuffer midi;
         auto feed = [&]{ for (int ch = 0; ch < 2; ++ch)
@@ -728,13 +835,19 @@ int main()
                juce::String (peak()));
         T::setUserMute (proc, true); settle();
         check (peak() < 0.001f, "user mute alone silences", juce::String (peak()));
+        // THE RULING SURVIVES STAGE 1, and it is the half worth keeping: a session release can NEVER clear a
+        // user mute. The session mute itself no longer composes into silence (see the retirement note in the
+        // block above), so "user + session mutes hold together" is now carried by the user's mute alone - which
+        // is exactly what the ruling is about. Asserted through the real release arm, as before.
         T::engage (proc); T::setMute (proc, true); settle();
-        check (peak() < 0.001f, "user + session mutes hold together");
-        // THE RULING: releasing the session clears ONLY its own reason.
+        check (peak() < 0.001f,
+               "the USER mute holds while a session mute is also wanted", juce::String (peak()));
         T::releaseArmClearsMute (proc); T::release (proc); settle();
         check (peak() < 0.001f,
                "session released - the USER mute survives (the ruling)",
                juce::String (peak()));
+        check (T::userMuteStillOn (proc),
+               "...and it survives as the USER's own reason, not as a leftover of the session's");
         T::setUserMute (proc, false); settle();
         check (peak() > 0.01f, "user mute lifted - audible again",
                juce::String (peak()));
@@ -924,6 +1037,75 @@ int main()
 
         // Leave the rack as the later arms expect it.
         host.setSlotBypassed (1, false);
+    }
+
+    // ---- STAGE 1 ACCEPTANCE: THE KICK STILL GOES THROUGH THE DRUM BUS -----
+    // Sean's own acceptance test for stage 1, and it is a claim about AUDIO. Every other lease leg in this file
+    // is about plans, indices and flags; none could tell whether the rack was in circuit.
+    //
+    // THE SHAPE OF THE OLD FAULT, which is what the leg has to be able to see: during a lease the Link's rack
+    // was bypassed in place, so the Link's OUTPUT WAS ITS INPUT. Everything downstream in the host - the
+    // channel's own fader and sends, the drum bus and its chain - carried an unprocessed kick, while a processed
+    // copy was summed in at the V2's position.
+    //
+    // ON THE SHARED `proc`, DELIBERATELY: a freshly constructed LinkProcessor outputs silence until it has been
+    // through the registration and mute arms this file runs earlier, so a private one would measure my fixture
+    // and not the product. (My first attempt did exactly that and read 0.0000 with and without a lease - the
+    // same figure under both, which is the tell that it was measuring nothing.)
+    std::printf ("\n== stage 1 acceptance: the rack processes WHILE A LEASE IS HELD ==\n");
+    {
+        using T = EchoJayLinkSyncTestAccess;
+        const auto* gainDev = BuiltinDeviceRegistry::instance().findByName ("EJ Sync Gain");
+        check (gainDev != nullptr, "acceptance precondition: the x2 gain probe is registered");
+        if (gainDev != nullptr)
+        {
+            const int at = host.getNumSlots();
+            host.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*gainDev), at);
+            juce::AudioBuffer<float> blk (2, 512); juce::MidiBuffer midi;
+            auto feed = [&] { for (int ch = 0; ch < 2; ++ch)
+                                  for (int i = 0; i < 512; ++i) blk.setSample (ch, i, 0.25f);
+                              proc.processBlock (blk, midi);
+                              float m = 0.0f;
+                              for (int ch = 0; ch < 2; ++ch)
+                                  for (int i = 0; i < 512; ++i) m = juce::jmax (m, std::abs (blk.getSample (ch, i)));
+                              return m; };
+            auto settled = [&] { float m = 0.0f; for (int b = 0; b < 10; ++b) m = feed(); return m; };
+
+            // THE TWO-SIDED CONTROL FIRST, so the measurement is known to be able to tell the two apart at all.
+            // Bypassed, this slot must not multiply; live, it must. Without this pair, "x2 arrived" could be any
+            // figure at all and the acceptance assertion below would be unfalsifiable.
+            host.setSlotBypassed (at, true);
+            const float byp = settled();
+            host.setSlotBypassed (at, false);
+            const float live = settled();
+            check (byp > 0.1f && byp < 0.30f,
+                   "acceptance control: with the x2 slot BYPASSED the Link passes its input unmultiplied",
+                   juce::String (byp, 4) + " from 0.2500");
+            check (live > byp * 1.8f,
+                   "acceptance control: with the x2 slot LIVE the Link's rack is in circuit (x2 arrives)",
+                   juce::String (live, 4) + " vs bypassed " + juce::String (byp, 4));
+
+            // NOW THE RULING: hold a control lease across the render and nothing about the audio may change.
+            T::engage (proc);
+            const float leased = settled();
+            check (leased > byp * 1.8f,
+                   "STAGE 1 ACCEPTANCE: a lease is HELD and the Link still processes its own rack - the kick "
+                   "reaches its own strip and its bus PROCESSED (RED as it stood: the rack was bypassed in "
+                   "place, so the Link's output was its input)",
+                   juce::String (leased, 4) + " vs bypassed " + juce::String (byp, 4));
+            // The stronger claim, and the one that says the detour is gone rather than merely quieter: the lease
+            // changed the audio NOT AT ALL.
+            check (std::abs (leased - live) < 0.001f,
+                   "STAGE 1 ACCEPTANCE: ...and the lease changed the audio NOT AT ALL",
+                   juce::String (live, 4) + " -> " + juce::String (leased, 4));
+            check (T::leaseHeld (proc),
+                   "STAGE 1 ACCEPTANCE: ...while the lease is still HELD as a control lease (the command "
+                   "channel, the acks and the sidecar are untouched - only the audio detour is gone)");
+
+            T::release (proc);
+            host.removeSlot (at);   // leave the shared rack as it was found
+            settled();
+        }
     }
 
     // ---- negative control -------------------------------------------------

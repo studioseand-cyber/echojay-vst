@@ -2,6 +2,7 @@
 #include "EJRackSidecarFill.h"   // ruling 1 (21s-b)
 #include "EJNetCensus.h"   // 7 Oct 2026 (06d item 1): no network worker outlives the last processor
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
+#include "EJRemoteControl.h"   // stage 1: the Link processes its own rack, so no audio detours through the V2
 #include <signal.h>
 #include <unistd.h>
 #include "EedLatencyLog.h"
@@ -1464,9 +1465,18 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // borrow route survives ONLY as the automatic monitoring fallback when
     // in-context is refused (incapable Link, over-budget rack, watchdog
     // drop) — no user flag in the trigger.
-    const bool fallbackSolo = borrowActive()
+    // ---- STAGE 1 (10 Oct 2026): NO AUDIO DETOUR THROUGH THE V2 -----------------------------------
+    // Both of these existed to make an edited channel audible while its OWN rack was switched off: the
+    // in-context injection stood in for that rack's output, and the through-main route was the monitoring
+    // fallback when in-context was refused. The Link's rack is no longer switched off (see
+    // echojay::leaseBypassesTheRack), so neither is merely unnecessary - each would be a SECOND copy of a
+    // signal already audible where it belongs, which is the double-processing the plan names as this stage's
+    // failure mode. borrowActive() still answers true: the V2 is still ADDRESSING that rack. One flag used to
+    // mean both "I am addressing this" and "its audio comes through me"; this separates them.
+    const bool detour = echojay::borrowAudioDetourAllowed();
+    const bool fallbackSolo = detour && borrowActive()
                         && ! borrowInContextOk_.load(std::memory_order_relaxed);
-    const bool ctxNow = borrowActive()
+    const bool ctxNow = detour && borrowActive()
                         && borrowInContextOk_.load(std::memory_order_relaxed);
     // §8.3 (26 Aug, corrected per ruling): the CONSTANT full-budget delay
     // sits on the passthrough BEFORE the sum, so at this point the
