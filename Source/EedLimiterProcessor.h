@@ -102,8 +102,10 @@ public:
     // The three limiter modes, in the schema's order. Named rather than bare
     // indices because the processor branches on them and "mode_ == 2" in a
     // processBlock is how a reordered schema becomes a silent behaviour change.
-    enum class Mode { Transparent = 0, Punchy = 1, Clip = 2 };
-    static constexpr int kNumModes = 3;
+    // 9 Oct 2026 (styles): 3 modern and 4 allround ADDED; 1 punchy now runs the tuned Punchy (Sean's ruling: the value
+    // and its name keep their meaning); 2 clip is still the Transparent placeholder; 0 transparent is exactly as gated.
+    enum class Mode { Transparent = 0, Punchy = 1, Clip = 2, Modern = 3, Allround = 4 };
+    static constexpr int kNumModes = 5;
 
     Mode mode() const noexcept { return mode_; }
 

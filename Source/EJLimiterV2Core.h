@@ -65,6 +65,7 @@ struct Tuning
     double slowFraction   = 1.0;    // the slow floor's target as a fraction of the required reduction (Pro-L 2 measured ~0.72)
     double slowFraction2  = 1.0;    // a SECOND, slower charge of the floor toward this fraction (sustained material keeps charging)
     double slowAttack2Ms  = 0.0;    // its time constant; 0 disables the second stage
+    double slowRelease2Ms = 0.0;    // 9 Oct 2026 (styles): the second stage's OWN recovery constant; 0 = slowReleaseMs (Transparent, unchanged)
     double slowWindowMs   = 20.0;   // the slow limb charges from the largest reduction over this window (> one LF cycle)
     double slowCloseMs    = 0.0;    // 8 Oct 2026: a morphological CLOSING of the floor's source - dilate by slowWindowMs, then erode by this
                                     // (the smallest reduction over the last slowCloseMs of the dilated signal): an isolated kick keeps its own
@@ -109,6 +110,62 @@ inline Tuning transparent()
     t.linkRelease   = 1.0;     // Pro-L 2's release link at 100 %: one floor for both channels
     t.tpMarginDb    = 0.05;    // C6: Pro-L 2 lands at -0.01..-0.04 dBTP; the detector and the post-check keep overs at zero
     return t;
+}
+
+// THE STYLES (9 Oct 2026): three more Tunings of the same engine, our own algorithm, generic names, tuned to Sean's
+// Pro-L 2 prints in each style (docs/limiter_ab/renders/styles/<style>/, targets in results/2026-10-09_styles_targets_*.txt,
+// sweeps in SESSION_L_NOTES.md). Each is the best MEASURED variant of two sweeps; the third sweep was stopped for session
+// A's gate, so the bass HOLD is not matched yet (stated per style). What every style has: Transparent's window, fast part,
+// links and margins - the hot mix's kick shape is Pro-L 2's in all three (within 7 % at +1/+3/+8 ms).
+inline Tuning modern()
+{
+    Tuning t = transparent();
+    t.slowCloseMs    = 30.0;     // a 30 ms erosion: a kick (dilated 12 ms) VANISHES from the floor's source, a note survives - the
+                                 // hot mix's between-hit GR stays at -0.11 (Pro-L 2 -0.08) while the floor can take the whole reduction
+    t.slowFraction   = 1.0;      // sustained material held at the full reduction: tone THD -115 / -136 dB (Pro-L 2 -59 / -114: steadier)
+    t.slowAttackMs   = 60.0;
+    t.slowFraction2  = 1.0;
+    t.slowAttack2Ms  = 400.0;
+    t.slowRelease2Ms = 1500.0;   // the second stage's own slow release (its "modern" tail)
+    // measured (M1): hot -0.29/-0.49/-0.74/-0.27 vs -0.31/-0.44/-0.73/-0.29, t63 0.3 = 0.3, level -10.11 vs -10.07; tone_50 -5.21 vs
+    // -5.06, tone_997 -0.53 vs -0.69. NOT matched: bass level -7.39 vs -7.69 and the hold after a note (+20 ms -0.58 vs -1.49, t90
+    // 1.3 vs 1069 ms): the 30 ms erosion delays a note's reduction by 30 ms. Next: erosion 15-20 ms with attack 5-10 ms (sweep 3).
+    return t;
+}
+inline Tuning punchy()
+{
+    Tuning t = transparent();
+    t.slowAttackMs   = 30.0;     // a hit charges the first stage within its own length: the body is held (+20 ms -0.47 vs Pro-L 2 -0.46)
+    t.slowReleaseMs  = 50.0;     // and let go quickly (Pro-L 2's hot-mix t90 16.7 ms)
+    t.slowFraction   = 0.9;
+    t.slowAttack2Ms  = 400.0;
+    t.slowRelease2Ms = 900.0;    // the long tail on sustained material (bass t90 666 ms)
+    // measured (P1): hot -0.30/-0.51/-0.76/-0.47 vs -0.30/-0.49/-0.82/-0.46, t63 0.3 = 0.3. NOT matched: between-hit mean -0.19 vs
+    // -0.09 and level -10.23 vs -10.10 (the fast charge leaks between hits), bass -7.41 vs -7.20 with the hold short (+20 ms -0.83 vs
+    // -2.04, t90 1.3 vs 666). Next: a short erosion (5-8 ms) so only a hit's own length charges, attack 10 ms (sweep 3).
+    return t;
+}
+inline Tuning allround()
+{
+    Tuning t = transparent();
+    t.slowAttackMs   = 40.0;     // between Transparent and Punchy (+20 ms -0.39 vs Pro-L 2 -0.41)
+    t.slowReleaseMs  = 60.0;
+    t.slowFraction   = 0.85;
+    t.slowAttack2Ms  = 800.0;
+    t.slowRelease2Ms = 1000.0;   // the long tail (bass t90 761 ms)
+    // measured (A3): hot -0.29/-0.49/-0.74/-0.39 vs -0.30/-0.48/-0.80/-0.41, t63 0.3 = 0.3; bass level -7.28 vs -7.11. NOT matched:
+    // between-hit mean -0.15 vs -0.09, level -10.17 vs -10.10, the bass hold (+20 ms -0.64 vs -1.23, t90 1.3 vs 761), tones
+    // steadier than Pro-L 2's (THD -45 / -43 vs -22 / -50). Next: erosion 6-10 ms, attack 15 ms (sweep 3).
+    return t;
+}
+// MODE -> Tuning, the schema's values: 0 transparent, 1 punchy, 2 clip (placeholder: Transparent), 3 modern, 4 allround
+inline Tuning styleTuning (int mode)
+{
+    switch (mode) { case 1: return punchy(); case 3: return modern(); case 4: return allround(); default: return transparent(); }
+}
+inline const char* styleName (int mode)
+{
+    switch (mode) { case 1: return "punchy"; case 2: return "clip"; case 3: return "modern"; case 4: return "allround"; default: return "transparent"; }
 }
 
 // 8x true-peak interpolator: 8 phases of a 96-tap Kaiser (beta 9) windowed sinc. Fixed arrays, no allocation.
@@ -418,7 +475,7 @@ public:
                 const double slowTarget = dWin * tuning_.slowFraction;
                 eSlow_[c] += (slowTarget - eSlow_[c]) * (slowTarget > eSlow_[c] ? coefSlowAtk_ : coefSlowRel_);
                 double floor = eSlow_[c];
-                if (coefSlowAtk2_ > 0.0) { const double t2 = dWin * tuning_.slowFraction2; eSlow2_[c] += (t2 - eSlow2_[c]) * (t2 > eSlow2_[c] ? coefSlowAtk2_ : coefSlowRel_); floor = std::max (floor, eSlow2_[c]); }
+                if (coefSlowAtk2_ > 0.0) { const double t2 = dWin * tuning_.slowFraction2; eSlow2_[c] += (t2 - eSlow2_[c]) * (t2 > eSlow2_[c] ? coefSlowAtk2_ : coefSlowRel2_); floor = std::max (floor, eSlow2_[c]); }
                 floorC[c] = floor; envFastC[c] = eFast_[c];
             }
             // the release link: the floors blended toward the deeper of the two (1 = one floor for both)
@@ -502,6 +559,7 @@ private:
         coefSlowRel_ = 1.0 - std::exp (-1.0 / (std::max (1.0, tuning_.slowReleaseMs) * 0.001 * sr_));
         coefSlowAtk_ = 1.0 - std::exp (-1.0 / (std::max (0.1, tuning_.slowAttackMs) * 0.001 * sr_));
         coefSlowAtk2_ = tuning_.slowAttack2Ms > 0.0 ? 1.0 - std::exp (-1.0 / (tuning_.slowAttack2Ms * 0.001 * sr_)) : 0.0;
+        coefSlowRel2_ = tuning_.slowRelease2Ms > 0.0 ? 1.0 - std::exp (-1.0 / (tuning_.slowRelease2Ms * 0.001 * sr_)) : coefSlowRel_;
         gainCoef_ = (float) (1.0 - std::exp (-1.0 / (0.02 * sr_)));
     }
 
@@ -511,7 +569,7 @@ private:
     double eFast_[kMaxChannels] { 0.0, 0.0 }, eSlow_[kMaxChannels] { 0.0, 0.0 }, eSlow2_[kMaxChannels] { 0.0, 0.0 };
     std::vector<float> delay_[kMaxChannels], delay2_[kMaxChannels], gaRing_; int delayCap_ = 1, delaySamples_ = 0, wpos_ = 0, delayCap2_ = 1, delaySamples2_ = 0, wpos2_ = 0;
     int S_ = 3, K_ = 1, K2_ = 1;
-    double decayFast_ = 0.0, coefSlowRel_ = 0.0, coefSlowAtk_ = 0.0, coefSlowAtk2_ = 0.0;
+    double decayFast_ = 0.0, coefSlowRel_ = 0.0, coefSlowAtk_ = 0.0, coefSlowAtk2_ = 0.0, coefSlowRel2_ = 0.0;
     float inputGain_ = 1.0f, gainNow_ = 1.0f, gainCoef_ = 0.0f, ceilLin_ = 1.0f, ceilTarget_ = 1.0f, tpMarginLin_ = 1.0f, grDb_ = 0.0f, blockGrDb_ = 0.0f;
     bool truePeak_ = true, prepared_ = false, fixedLatency_ = false, scHpfOn_ = false;
     int maxLatency_ = 0; std::vector<float> scDelay_[kMaxChannels]; int scDelayCap_ = 1, scPos_ = 0;

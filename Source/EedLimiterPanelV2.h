@@ -162,7 +162,7 @@ inline EedLimiterPanelV2::EedLimiterPanelV2 (echojay::limv2::MeterTap& tap) : ta
     picture_.assign ((size_t) kPictureCols, {});
     setLookAndFeel (&dialLnf_);
 
-    styleBox_.addItemList ({ "Transparent", "Punchy", "Clip" }, 1); styleBox_.setSelectedId (1, juce::dontSendNotification);
+    styleBox_.addItemList ({ "Transparent", "Punchy", "Clip", "Modern", "Allround" }, 1);   // item id = mode + 1, the schema's order styleBox_.setSelectedId (1, juce::dontSendNotification);
     styleBox_.setColour (juce::ComboBox::backgroundColourId, C::bg3); styleBox_.setColour (juce::ComboBox::textColourId, C::text); styleBox_.setColour (juce::ComboBox::outlineColourId, C::border2);
     styleBox_.onChange = [this] { if (! suppress_ && model_.onChange) model_.onChange ("mode", (double) (styleBox_.getSelectedId() - 1)); };
     addAndMakeVisible (styleBox_);
@@ -223,7 +223,7 @@ inline void EedLimiterPanelV2::setModel (const Model& m)
     gainDial_.setValue (m.gainDb, juce::dontSendNotification); ceilingDial_.setValue (m.ceilingDb, juce::dontSendNotification);
     lookaheadDial_.setValue (m.lookaheadMs, juce::dontSendNotification); attackDial_.setValue (m.attackMs, juce::dontSendNotification); releaseDial_.setValue (m.releaseMs, juce::dontSendNotification);
     linkDial_.setValue (m.linkPct, juce::dontSendNotification); rlsLinkDial_.setValue (m.releaseLinkPct, juce::dontSendNotification); hpfDial_.setValue (m.scHpfHz, juce::dontSendNotification);
-    styleBox_.setSelectedId (juce::jlimit (0, 2, m.style) + 1, juce::dontSendNotification); truePeakBtn_.setToggleState (m.truePeak, juce::dontSendNotification); bypassBtn_.setToggleState (m.bypassed, juce::dontSendNotification);
+    styleBox_.setSelectedId (juce::jlimit (0, 4, m.style) + 1, juce::dontSendNotification); truePeakBtn_.setToggleState (m.truePeak, juce::dontSendNotification); bypassBtn_.setToggleState (m.bypassed, juce::dontSendNotification);
     repaint();
 }
 

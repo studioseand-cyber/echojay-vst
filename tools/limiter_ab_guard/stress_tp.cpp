@@ -70,6 +70,7 @@ int main (int argc, char** argv)
         std::vector<std::vector<double>> out ((size_t) nch, std::vector<double> (N)); for (size_t n = 0; n < N; ++n) { out[0][n] = L[n + (size_t) lat]; if (nch > 1) out[1][n] = R[n + (size_t) lat]; } return out; };
     struct Lim { std::string name; std::function<std::vector<std::vector<double>> (const Sig&, double, double)> fn; };
     std::vector<Lim> lims; if (only.empty() || only == "transparent") lims.push_back ({ "v2 Transparent", v2 (T) }); if (only.empty() || only == "clean") lims.push_back ({ "v2 Clean", v2 (Cl) }); if (only.empty() || only == "legacy") lims.push_back ({ "current limiter", legacy });
+    if (only == "modern") lims.push_back ({ "v2 Modern", v2 (echojay::limv2::modern()) }); if (only == "punchy") lims.push_back ({ "v2 Punchy", v2 (echojay::limv2::punchy()) }); if (only == "allround") lims.push_back ({ "v2 Allround", v2 (echojay::limv2::allround()) });
     std::vector<double> gains = quick ? std::vector<double> { 10.0 } : std::vector<double> { 6.0, 10.0, 15.0 }; std::vector<double> ceilings = quick ? std::vector<double> { 0.0 } : std::vector<double> { 0.0, -1.0 };
     std::vector<double> rates = quick ? std::vector<double> { 48000.0 } : std::vector<double> { 44100.0, 48000.0, 96000.0 }; std::vector<int> chans = quick ? std::vector<int> { 2 } : std::vector<int> { 1, 2 };
     if (! optRates.empty()) rates = optRates; if (! optGains.empty()) gains = optGains; if (! optCeils.empty()) ceilings = optCeils; if (! optChans.empty()) chans = optChans;

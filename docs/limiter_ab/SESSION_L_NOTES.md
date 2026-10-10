@@ -337,3 +337,35 @@ limiter. Legs in limiter_wall_guard: (d) an old-format chain at the old defaults
 values 0.18 / 400 / 275 / 75 / 100, gain kept, TRUE PK on; (e) moving each of the 8 dials (incl. attack_ms, link_pct,
 release_link_pct) sets that parameter on the processor; (f) a parameter set from outside shows on its dial after the
 sync; (g) the processor feeds the tap (columns and hops arrive while audio runs).
+
+### 9-10 Oct: the STYLES round (Modern, Punchy, Allround) - stopped mid-sweep for A's gate
+Prints (coordinator-checked): renders/styles/<style>/{fullmix_hot,bass_sustain,probe_transients,tone_50,tone_997}.wav,
+gains hot 10.87 / bass 8.45 / synthetic 8.2, laid into the harness naming by symlink (proL2_<case>.wav, source_<case>.wav).
+TARGETS (results/2026-10-09_styles_targets_<style>.txt; Pro-L 2 in each style, hot-mix kick GR +1/+3/+8/+20 ms, bass):
+  transparent  hot -0.29/-0.46/-0.76/-0.27 mean -0.06 level -10.06 | bass -7.09, +20 ms -0.79, t90 1.3   | tone_50 -4.14 THD -19.6 | tone_997 0.01 THD -26.6
+  modern       hot -0.31/-0.44/-0.73/-0.29 mean -0.08 level -10.07 | bass -7.69, +20 ms -1.49, t90 1069  | tone_50 -5.06 THD -58.8 | tone_997 -0.69 THD -113.7
+  punchy       hot -0.30/-0.49/-0.82/-0.46 mean -0.09 level -10.10 | bass -7.20, +20 ms -2.04, t90 666   | tone_50 -4.43 THD -26.2 | tone_997 -0.20 THD -52.4
+  allround     hot -0.30/-0.48/-0.80/-0.41 mean -0.09 level -10.10 | bass -7.11, +20 ms -1.23, t90 761   | tone_50 -4.21 THD -22.3 | tone_997 -0.17 THD -49.5
+  Modern's print lands at 0.00 dBTP by the arbiter with 0 overs above +0.02 (no over by a hair). All prints 0 overs.
+READING: on the hot mix every style's kick shape is Transparent's within a few hundredths; the styles differ in what
+happens AFTER a hit and on sustained material: Modern holds the gain dead steady on tones (THD -114) and holds a bass
+note's reduction for a second (t90 1069) while a kick still recovers in 0.3 ms; Punchy holds a hit's body (+20 ms -0.46)
+and lets go within ~17 ms on the hot mix but keeps a long tail on bass (t90 666); Allround sits between.
+ENGINE: a second-stage release (slowRelease2Ms; 0 = slowReleaseMs, so Transparent is unchanged - proven by a core leg and
+by byte-identical renders against the gated C11 files for hot/bass/probe).
+SWEEP 1 (closing/attack/fraction): hot matched for all three (M1 -0.29/-0.49/-0.74/-0.27, P1 -0.30/-0.51/-0.76/-0.47, A3
+-0.29/-0.49/-0.74/-0.39); the bass HOLD missed everywhere (+20 ms -0.6..-0.8 vs -1.2..-2.0, t90 1.3 vs 666-1069).
+SWEEP 2 (a MEAN-reduction floor source, "level detector"): wrong in kind - on a steady tone it reads only the peaks'
+share of the window, the floor sits far too low and the fast part rides (tone_997 THD -21 vs -114, level 0.03 vs -0.69).
+Removed from the engine. The max/closing source holds tones; the bass hold needs a SHORTER erosion (a note shows up
+sooner, a kick still vanishes) with a fast first-stage attack - sweep 3 (erosion 5-20 ms, attack 5-20 ms) was launched
+and KILLED at Sean's instruction (A's 08c gate, the Mac in swap). Constants pinned to the best measured variants
+(M1 / P1 / A3) with the misses written in the code; sweep 3 is the next step when A is idle.
+MODE: 0 transparent (exactly as gated), 1 punchy (the tuned Punchy), 2 clip (placeholder, Transparent), 3 modern, 4
+allround; kNumModes 5; the schema's choice list and the AI-facing description changed (own_diff WILL move: a ruling
+and a re-baseline after the merge). Panel menu: Transparent, Punchy, Clip, Modern, Allround. Legs written, NOT RUN:
+core test (Transparent unchanged by the second release, styleTuning (0) == transparent(), each style renders/aligns/
+holds the ceiling on the probe, program-dependent release); limiter_wall_guard (zero difference per style: the
+processor at mode 1/3/4 == its Tuning, same latency); builtin_registry_test (modern -> 3, allround -> 4, range ends at 4).
+Scripts: style_sweep.sh (per-style five-case sweep), make_blind_styles.sh (matched + unmatched pairs, KEY.txt separate).
+NOTHING BUILT OR RUN since the stop; the working tree is unbuilt against these constants.

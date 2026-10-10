@@ -56,11 +56,11 @@ const echojay::ParamSchema& EedLimiterProcessor::schema()
 
         // ---- the depth pass ------------------------------------------------
         { kMode, "", 0.0, (double) (kNumModes - 1), 0.0,
-          "how it holds the ceiling: transparent is the clean lookahead limiter "
-          "(use it on a master), punchy is faster with a touch of drive so a loud "
-          "mix feels dense rather than just loud, clip is a hard ceiling - the "
-          "loudest and most aggressive, and it ignores release and lookahead",
-          false, { "transparent", "punchy", "clip" } },
+          "how it holds the ceiling, each a tuning of the same true-peak engine: transparent is the clean "
+          "one (use it on a master); punchy holds a hit's body down a little longer so a loud mix feels dense "
+          "rather than just loud; modern keeps the gain steady on sustained material (no ride on bass or tones, "
+          "the smoothest); allround sits between transparent and punchy; clip is reserved (runs transparent)",
+          false, { "transparent", "punchy", "clip", "modern", "allround" } },
 
         { kTruePeak, "", 0.0, 1.0, 1.0,
           "measure the peak BETWEEN samples, not just at them, so the ceiling "
@@ -118,8 +118,8 @@ void EedLimiterProcessor::applyLookahead()
 {
     // Every mode runs the Transparent tuning (8 Oct 2026); punchy and clip keep their dial value, recorded as not yet
     // tuned. The knobs are LITERAL (see the header): at the schema defaults this is exactly limv2::transparent().
-    echojay::limv2::Tuning t = echojay::limv2::transparent();
-    const echojay::limv2::Tuning base = echojay::limv2::transparent();
+    const echojay::limv2::Tuning base = echojay::limv2::styleTuning ((int) mode_);   // the style's Tuning (0 = Transparent, exactly as gated)
+    echojay::limv2::Tuning t = base;
     t.lookaheadMs   = base.lookaheadMs * juce::jlimit (0.0, kMaxLookaheadMs, lookaheadMs_) / 0.18;   // label 0.18 = the tuned window (0.06 ms); label/3
     t.slowReleaseMs = base.slowReleaseMs * juce::jlimit (1.0, 1000.0, releaseMs_) / 400.0;
     t.slowAttackMs  = base.slowAttackMs  * juce::jlimit (10.0, 2000.0, attackMs_) / 275.0;
@@ -169,6 +169,10 @@ void EedLimiterProcessor::prepareToPlay (double sampleRate, int)
     // peak on; every later change is a window or coefficient change inside that storage, never an allocation.
     echojay::limv2::Tuning t = echojay::limv2::transparent();
     t.maxLookaheadMs = t.lookaheadMs * kMaxLookaheadMs / 0.18;   // the window the knob's 5 ms label asks for (1.67 ms)
+    // 10 Oct 2026 (styles): the floor's rings are sized here too, for the LARGEST window any style asks for - a style
+    // switched to later must not have its closing clamped to Transparent's (the wall guard's zero-difference leg caught
+    // Modern's 30 ms erosion running as 10 ms inside the plugin)
+    for (int m = 0; m < kNumModes; ++m) { const auto st = echojay::limv2::styleTuning (m); t.slowWindowMs = juce::jmax (t.slowWindowMs, st.slowWindowMs); t.slowCloseMs = juce::jmax (t.slowCloseMs, st.slowCloseMs); }
     engine_.prepare (sampleRate_, t);
     meterTap_.prepare (sampleRate_); engine_.setMeterTap (&meterTap_);   // the panel's tap, sized here, never on the audio thread
     engine_.setFixedLatency (true);

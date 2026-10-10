@@ -97,6 +97,25 @@ int main()
         }
         check (worst == 0.0 && differing == 0, "EedLimiterProcessor at its defaults (ceiling 0.0, TRUE PK on, lookahead 0.18, attack 275, release 400, link 75/100) renders SAMPLE-IDENTICAL to limv2::transparent() over 2 s", "worst " + juce::String (worst, 9) + ", differing samples " + juce::String (differing));
     }
+    std::printf ("== ZERO DIFFERENCE PER STYLE (9 Oct 2026): the processor at mode 1 / 3 / 4 == punchy() / modern() / allround() ==\n");
+    for (int mode : { 1, 3, 4 })
+    {
+        const double sr = 48000.0; const int total = 48000 * 2;
+        EedLimiterProcessor proc; proc.setPlayConfigDetails (2, 2, sr, 512); proc.prepareToPlay (sr, 512);
+        { auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", 9.0); pp->setProperty ("mode", (double) mode); auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); int a = 0, k = 0; proc.applyStructured (juce::var (w), EedDeviceProcessor::ParamSource::Assistant, &a, &k); }
+        proc.prepareToPlay (sr, 512);
+        echojay::limv2::Core core; auto t = echojay::limv2::styleTuning (mode); t.maxLookaheadMs = t.lookaheadMs * EedLimiterProcessor::kMaxLookaheadMs / 0.18; core.prepare (sr, t); core.setFixedLatency (true); core.setInputGainDb (9.0); core.setCeilingDb (0.0); core.setTruePeak (true); core.reset();
+        juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m; std::vector<float> cl (512), cr (512); double worst = 0; long long differing = 0; juce::Random rngA (23), rngB (23);
+        auto sig = [] (juce::Random& r, int n) { const bool burst = (n / 4800) % 3 == 0; return burst ? (r.nextFloat() * 2.0f - 1.0f) * 1.2f : 0.3f * std::sin (0.009f * (float) n) + 0.05f * std::sin (0.7f * (float) n); };
+        for (int pos = 0; pos < total; pos += 512)
+        {
+            for (int i = 0; i < 512; ++i) { const float v = sig (rngA, pos + i); b.setSample (0, i, v); b.setSample (1, i, v); }
+            for (int i = 0; i < 512; ++i) { const float v = sig (rngB, pos + i); cl[(size_t) i] = v; cr[(size_t) i] = v; }
+            proc.processBlock (b, m); float* p[2] = { cl.data(), cr.data() }; core.process (p, 2, 512);
+            for (int i = 0; i < 512; ++i) { const double d = std::abs ((double) b.getSample (0, i) - (double) cl[(size_t) i]); worst = std::max (worst, d); if (d != 0.0) ++differing; }
+        }
+        check (worst == 0.0 && differing == 0 && proc.getLatencySamples() == core.latencySamples(), "mode " + juce::String (mode) + " (" + echojay::limv2::styleName (mode) + ") at the defaults renders SAMPLE-IDENTICAL to its Tuning, same latency", "worst " + juce::String (worst, 9) + ", differing " + juce::String (differing) + ", latency " + juce::String (proc.getLatencySamples()) + " vs " + juce::String (core.latencySamples()));
+    }
     std::printf ("== state migration (8 Oct 2026): a pre-v2 state at the OLD defaults loads as the NEW defaults; anything else literally ==\n");
     {
         const double sr = 48000.0;

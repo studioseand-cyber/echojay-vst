@@ -2966,7 +2966,7 @@ int main()
                "it emerged at sample 96, exactly the reported latency");
     }
 
-    std::printf ("== LIMITER: three modes, and clip is a HARD ceiling ==\n");
+    std::printf ("== LIMITER: five modes (styles since 9 Oct 2026), one true-peak engine ==\n");
     {
         auto proc = makeByName ("EchoJay Limiter");
         auto* device = dynamic_cast<EedDeviceProcessor*> (proc.get());
@@ -2986,6 +2986,12 @@ int main()
 
         device->applyStructured (paramsMove ({ { "mode", "punchy" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (near (device->getParamValue ("mode"), 1.0), "and punchy by name");
+        // 9 Oct 2026 (styles): modern and allround are NEW values 3 and 4; the first three keep their indices
+        device->applyStructured (paramsMove ({ { "mode", "modern" } }), EedDeviceProcessor::ParamSource::Assistant);
+        check (near (device->getParamValue ("mode"), 3.0), "modern by name lands on index 3");
+        device->applyStructured (paramsMove ({ { "mode", "allround" } }), EedDeviceProcessor::ParamSource::Assistant);
+        check (near (device->getParamValue ("mode"), 4.0), "allround by name lands on index 4");
+        check (device->paramSchema().find ("mode") != nullptr && near (device->paramSchema().find ("mode")->max, 4.0), "mode's range ends at 4 (five values)");
 
         // v2 (8 Oct 2026): every mode runs the Transparent engine tonight and the latency is FIXED (see the latency
         // section above): one number for punchy, clip and transparent, true peak on or off, equal to the measured

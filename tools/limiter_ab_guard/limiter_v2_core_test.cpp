@@ -112,6 +112,20 @@ int main()
             check (R.hits[0].retentionDb > -8.2 - 1.0 && R.hits[0].retentionDb < -8.2 + 0.3, "a +8.2 dB over impulse lands at or within 1 dB under the ceiling", f2 (R.hits[0].retentionDb));
         }
     }
+    {   // STYLES (9 Oct 2026): Transparent is unchanged by the second-stage release code path (slowRelease2Ms 0 = slowReleaseMs:
+        // the explicit value renders sample-identical), and every style renders, aligns and holds the ceiling on the probe
+        const auto src = ejfix::generate (ejfix::layout ("probe_transients"), sr);
+        { auto t2 = T; t2.slowRelease2Ms = T.slowReleaseMs; const auto a = render (src, 8.2, 0.0, true, T), b = render (src, 8.2, 0.0, true, t2); double worst = 0; for (size_t i = 0; i < a.frames(); ++i) worst = std::max (worst, std::abs (a.ch[0][i] - b.ch[0][i]));
+          check (worst == 0.0, "TRANSPARENT: slowRelease2Ms 0 (as gated) == slowReleaseMs written explicitly, sample for sample (the styles' second release changed nothing)", "worst " + std::to_string (worst)); }
+        check (echojay::limv2::styleTuning (0).slowRelease2Ms == 0.0 && echojay::limv2::styleTuning (0).lookaheadMs == T.lookaheadMs && echojay::limv2::styleTuning (0).slowCloseMs == T.slowCloseMs, "styleTuning (0) is transparent()", "");
+        struct St { const char* name; echojay::limv2::Tuning t; }; const St styles[] = { { "modern", echojay::limv2::modern() }, { "punchy", echojay::limv2::punchy() }, { "allround", echojay::limv2::allround() } };
+        for (const auto& st : styles)
+        {
+            const auto R = ejm::analyse ("probe_transients", st.name, src, render (src, 8.2, 0.0, true, st.t), 8.2, 0.0);
+            check (R.aligned && R.hits.size() == 14 && R.pk.overs == 0, std::string (st.name) + ": renders, aligns, 14 hits, zero overs on the probe at +8.2 dB", R.align.why + " hits " + std::to_string (R.hits.size()) + " " + f2 (R.pk.truePeakDb) + " dBTP");
+            check (R.aligned && R.hits.size() == 14 && R.hits[0].t63 < R.hits[6].t63, std::string (st.name) + ": program-dependent release (a 1-sample hit recovers faster than a 1 s burst)", R.aligned && R.hits.size() == 14 ? f2 (R.hits[0].t63) + " vs " + f2 (R.hits[6].t63) + " ms" : "n/a");
+        }
+    }
     {   // tones. CLEAN holds a steady tone at a GAIN (THD below -60 dB). TRANSPARENT (C4 approved, 7 Oct) rides the waveform
         // the way Pro-L 2 measured (-26.6 dB at 997 Hz, -19.6 at 50 Hz, +8.2 over): THD between -45 and -12 dB, odd harmonics.
         for (const char* name : { "tone_997", "tone_50" })
