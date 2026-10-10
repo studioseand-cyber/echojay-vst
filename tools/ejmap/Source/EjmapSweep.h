@@ -177,6 +177,9 @@ struct Plan
     }
     // v1.4: the repeat with the HOLD DOUBLED - the same read window at the end of a hold twice as long.
     Plan holdDoubled() const { Plan slow = *this; slow.holdS = holdS * 2.0; slow.discardS = slow.holdS - winS; return slow; }
+    // the precondition writes "<index>:<norm>" without a pair-written twin (10 Oct)
+    static juce::StringArray setsWithout (const juce::StringArray& sets, int pairIdx)
+    { if (pairIdx < 0) return sets; juce::StringArray out; for (const auto& x : sets) if (x.upToFirstOccurrenceOf (":", false, false).getIntValue() != pairIdx || ! x.containsChar (':')) out.add (x); return out; }
     void makeProfile() { profile = true; repeats = 2; holdS = 2.5; discardS = 2.2; winS = 0.3; quietReference = true; if (referenceFallbackNote.isEmpty()) referenceFallbackNote = "profile sweep: the quiet-level reference on every product by design"; }
     // SEVERAL THRESHOLDS AND NO PICK (ruled 30 Sep): every candidate is swept and labelled, the others held at their
     // instantiate defaults, and a human reads curves instead of guessing from names. thr stays -1; the driver loops.
@@ -185,6 +188,8 @@ struct Plan
     // THE PAIR WRITE (Kathy's ruling 3, 6 Oct - dbx-160 (s), Vac Attack, MAGNUM-K): a dual-mono pair's twin threshold is written
     // WITH the amount at every position (the same norm), so both channels are measured and the record is gated on the worse one
     int pairIndex = -1; juce::String pairName;
+    // ...and is NEVER a precondition or a neutral (10 Oct, MAGNUM-K: [28] Threshold 2 was held at its instantiate 0.5 as a precondition
+    // AND written with the amount - the processes read it back as '0.0' and '0.5' and the map went unreadable)
     Plan forCandidate (const Candidate& c) const
     {
         Plan q = *this;
@@ -772,7 +777,9 @@ inline Measured parseSweep (const juce::String& out)
 // ONE PROCESS PER POSITION: the reference process's lines, then each position process's, merged in walk order.
 // A position process that did not exit cleanly becomes a skipped position that names the outcome.
 struct ProcessOut { juce::String out; bool clean = true; juce::String outcome; float norm = 0.0f; };
-inline Measured mergeProcesses (const ProcessOut& reference, const std::vector<ProcessOut>& positions)
+// varyingIdx (10 Oct): a control written with the amount at every position (the dual-mono pair's twin) reads back a different text per
+// position BY DESIGN - it is left out of the "every process read its preconditions back the same" check (MAGNUM-K's [28])
+inline Measured mergeProcesses (const ProcessOut& reference, const std::vector<ProcessOut>& positions, int varyingIdx = -1)
 {
     auto m = parseSweep (reference.clean ? reference.out : juce::String());
     if (! reference.clean) { m.ok = false; m.refused = "reference process: " + reference.outcome; }
@@ -798,6 +805,7 @@ inline Measured mergeProcesses (const ProcessOut& reference, const std::vector<P
         if (! p.processFailed)
         for (const auto& [idx, text] : one.setTexts)
         {
+            if (idx == varyingIdx) continue;
             auto it = m.setTexts.find (idx);
             if (it == m.setTexts.end()) { m.setTexts[idx] = text; if (one.setNorms.count (idx)) m.setNorms[idx] = one.setNorms.at (idx); }
             else if (it->second != text && m.setConflict.isEmpty())
@@ -1781,6 +1789,7 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
         juce::Array<juce::var> pre;
         for (const auto& [idx, norm] : p.sets)
         {
+            if (idx == p.pairIndex) continue;   // 10 Oct: the pair-written twin is written with the amount, never a precondition
             auto* o = new juce::DynamicObject();
             o->setProperty ("index", idx); o->setProperty ("norm", norm);
             if (d.setTexts.count (idx)) o->setProperty ("set", d.setTexts.at (idx));

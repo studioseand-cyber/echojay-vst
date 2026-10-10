@@ -4811,6 +4811,17 @@ void testSweepRatioAndPicks()
     check (withRefusal.setConflict.isEmpty() && withRefusal.positions.size() == 2 && withRefusal.positions[1].processFailed,
            "ratio R7: a process that REFUSED its precondition contributes no read-back - its position is skipped, not a conflict");
 
+    // PAIR P1 (10 Oct, MAGNUM-K): the dual-mono twin [28] is written WITH the amount, so its read-back differs per position by design -
+    // not a precondition conflict; and it is never in the precondition writes (its instantiate 0.5 was held as one beside the pair write)
+    {
+        ProcessOut q0 { "sweep\tproto\t1\nset\t28\t0.000000\tconfirm_ms\t1\tgetValue\t0\ttext\t0.0\npos\t0\tnorm\t0.0\tconfirm_ms\t1\tslices\t1\tinstack_match\t1\tgetValue\t0\ttext_ms\t1\treads\t2\ttext\t0.0\n", true, "exit 0", 0.0f };
+        ProcessOut q1 { "sweep\tproto\t1\nset\t28\t0.500000\tconfirm_ms\t1\tgetValue\t0.5\ttext\t0.5\npos\t0\tnorm\t0.5\tconfirm_ms\t1\tslices\t1\tinstack_match\t1\tgetValue\t0.5\ttext_ms\t1\treads\t2\ttext\t0.5\n", true, "exit 0", 0.5f };
+        const auto asTwin = mergeProcesses (ref, { q0, q1 }, 28), asPrecondition = mergeProcesses (ref, { q0, q1 });
+        const auto kept = Plan::setsWithout ({ "7:0.500000", "28:0.500000", "3:1.000000" }, 28);
+        check (asTwin.setConflict.isEmpty() && asPrecondition.setConflict.contains ("[28] read back '0.0'") && kept.joinIntoString (",") == "7:0.500000,3:1.000000"
+               && Plan::setsWithout ({ "7:0.5", "28:0.5" }, -1).size() == 2,
+               "pair P1: MAGNUM-K's twin [28] is written with the amount - its per-position read-back is no conflict, and it is never kept as a precondition");
+    }
     // THE PICKS, from the pushed fixtures themselves (echojay-saas 2454c0a), by range and step count - never by name.
     const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/plan");
     const auto xla = planFromFixture (juce::JSON::parse (dir.getChildFile ("AudioUnit_62485258_1.10.1.json").loadFileAsString()));

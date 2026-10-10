@@ -2052,7 +2052,7 @@ inline int runCertSweep (const SweepOptions& opt)
             juce::StringArray a { "--sweep", "thr=" + juce::String (q.thr), "norms=" + norms, "levels=" + levelList.joinIntoString (","), "hz=997",
                                   "hold=" + juce::String (q.holdS, 2), "discard=" + juce::String (q.discardS, 2), "win=" + juce::String (q.winS, 2), "ref=" + ref, "moving_db=0.1",
                                   juce::String ("reset=") + (opt.resetPerHold ? "1" : "0") };
-            juce::StringArray all = sets;                                     // the plan's preconditions (ratio raise, auto make-up off)
+            juce::StringArray all = sweep::Plan::setsWithout (sets, q.pairIndex);   // the plan's preconditions (ratio raise, auto make-up off) - never the pair-written twin (10 Oct)
             for (const auto& w : q.engage) all.add (juce::String (w.index) + ":" + juce::String (w.norm, 6));   // plus the engage writes
             if (q.pairIndex >= 0 && norms.isNotEmpty()) all.add (juce::String (q.pairIndex) + ":" + norms);          // the dual-mono twin, WITH the amount (ruled 6 Oct)
             if (! all.isEmpty()) a.add ("set=" + all.joinIntoString (","));
@@ -2077,7 +2077,7 @@ inline int runCertSweep (const SweepOptions& opt)
         // read at its end), tagged "r2." + prefix; the disagreement on any in_at_gr point is quality.point_error_db, the
         // trust gate - a point that moves had not settled. Only the profile sweep (repeats = 2) does this.
         const bool repeatIt = q.repeats > 1 && ! windowSeen && ! overBudget()
-                              && sweep::repeatWorthwhile (sweep::derive (sweep::mergeProcesses (refOut, posOut), q.testLevels(), q.ratioIndex, q.quietReference));
+                              && sweep::repeatWorthwhile (sweep::derive (sweep::mergeProcesses (refOut, posOut, q.pairIndex), q.testLevels(), q.ratioIndex, q.quietReference));
         if (q.repeats > 1 && ! repeatIt) std::cout << "  hold-doubled repeat skipped: the first pass is pass-through (identical at every position)" << std::endl;
         if (repeatIt)
         {
@@ -2123,7 +2123,7 @@ inline int runCertSweep (const SweepOptions& opt)
             sweep::Plan quick = t; quick.norms = { q.norms.front(), q.norms[q.norms.size() / 2], q.norms.back() };
             if (quick.profile) { quick.profile = false; quick.quietReference = false; quick.holdS = 1.5; quick.discardS = 0.75; quick.winS = 0.25; }   // the quick probe stays quick
             sweepFor (quick, "eq" + juce::String (w.index) + "." + prefix, tr, tp);
-            const auto d = sweep::derive (sweep::mergeProcesses (tr, tp), quick.testLevels(), q.ratioIndex, quick.quietReference);
+            const auto d = sweep::derive (sweep::mergeProcesses (tr, tp, q.pairIndex), quick.testLevels(), q.ratioIndex, quick.quietReference);
             const bool hit = sweep::showsResponse (d);
             q.engageTried.add (w.name + " -> " + juce::String (w.norm, 1) + " (from '" + w.fromDisplay + "'): " + (hit ? "GAIN REDUCTION" : d.result + (d.reason.isNotEmpty() ? " - " + d.reason : juce::String())));
             std::cout << "    " << q.engageTried[q.engageTried.size() - 1] << std::endl;
@@ -2135,7 +2135,7 @@ inline int runCertSweep (const SweepOptions& opt)
     {
         sweepFor (q, prefix, r, ps);
         if (windowSeen || overBudget()) return q;
-        auto first = sweep::derive (sweep::mergeProcesses (r, ps), q.testLevels(), q.ratioIndex, q.quietReference);
+        auto first = sweep::derive (sweep::mergeProcesses (r, ps, q.pairIndex), q.testLevels(), q.ratioIndex, q.quietReference);
         // THE ENGAGE SEARCH RUNS IN PROFILE MODE TOO (2 Oct): until today the quiet-reference early return above this
         // block skipped it for every profile sweep, so a product flat at its defaults got no search and no record of one.
         if (sweep::engageSignature (first) && q.engage.empty())
@@ -2157,7 +2157,7 @@ inline int runCertSweep (const SweepOptions& opt)
             std::cout << "  engage verified: " << q.engage.front().name << " -> " << q.engage.front().norm << "; full sweep with the write" << std::endl;
             sweepFor (q, "e" + juce::String (q.engage.front().index) + "." + prefix, r, ps);
             if (windowSeen || overBudget()) return q;
-            first = sweep::derive (sweep::mergeProcesses (r, ps), q.testLevels(), q.ratioIndex, q.quietReference);
+            first = sweep::derive (sweep::mergeProcesses (r, ps, q.pairIndex), q.testLevels(), q.ratioIndex, q.quietReference);
         }
         if (q.quietReference) return q;                                          // already on the quiet reference: no fallback to make
         if (! sweep::needsQuietFallback (first)) return q;
@@ -2180,13 +2180,13 @@ inline int runCertSweep (const SweepOptions& opt)
             juce::StringArray a { "--sweep", "thr=" + juce::String (pl.thr), "norms=" + juce::String (norm, 6), "levels=" + levelList.joinIntoString (","), "hz=997",
                                   "hold=" + juce::String (pl.holdS, 2), "discard=" + juce::String (pl.discardS, 2), "win=" + juce::String (pl.winS, 2), "ref=0", "moving_db=0.1",
                                   juce::String ("reset=") + (opt.resetPerHold ? "1" : "0") };
-            juce::StringArray all = sets; for (const auto& w : q.engage) all.add (juce::String (w.index) + ":" + juce::String (w.norm, 6));
+            juce::StringArray all = sweep::Plan::setsWithout (sets, pl.pairIndex); for (const auto& w : q.engage) all.add (juce::String (w.index) + ":" + juce::String (w.norm, 6));
             if (pl.pairIndex >= 0) all.add (juce::String (pl.pairIndex) + ":" + juce::String (norm, 6));
             if (! all.isEmpty()) a.add ("set=" + all.joinIntoString (","));
             return a; };
         for (int round = 1; round <= sweep::kRefineRounds && ! windowSeen && ! overBudget(); ++round)
         {
-            const auto d = sweep::derive (sweep::mergeProcesses (r, ps), q.testLevels(), q.ratioIndex, q.quietReference);
+            const auto d = sweep::derive (sweep::mergeProcesses (r, ps, q.pairIndex), q.testLevels(), q.ratioIndex, q.quietReference);
             std::vector<juce::var> two; for (const auto& g : d.inAtGr) two.push_back (g.at.count (2) ? g.at.at (2) : juce::var());
             // THE 1 dB CURVE TOO (4 Oct, DSM V3): where the 2 dB point is not reached the 1 dB gaps still count - the export needs nine
             // 1 dB positions, and a unit whose top range never reaches 2 dB (DSM V3: 8 of 19) can only get them from the 1 dB gaps
@@ -2244,7 +2244,7 @@ inline int runCertSweep (const SweepOptions& opt)
             candRuns.push_back ({ q, { cr, cp } });
             if (r1 && k == 0)
             {
-                const auto first = sweep::derive (sweep::mergeProcesses (cr, cp), q.testLevels(), q.ratioIndex, q.quietReference);
+                const auto first = sweep::derive (sweep::mergeProcesses (cr, cp, q.pairIndex), q.testLevels(), q.ratioIndex, q.quietReference);
                 if (first.result == "certified") { ruleOneDecided = c; std::cout << "  RULE 1: '" << c.name << "' certifies - the amount control; the other candidates stay at their instantiate values" << std::endl; break; }
                 std::cout << "  RULE 1: '" << c.name << "' did not certify (" << first.result << ") - falling back to the full candidate table" << std::endl;
             }
@@ -2278,8 +2278,8 @@ inline int runCertSweep (const SweepOptions& opt)
         return refuse (6, "budget", "stopped after " + juce::String (unclean) + " unclean processes (budget " + juce::String (kUncleanBudget)
                        + ", each already re-run once): " + uncleanWhat.joinIntoString ("; ") + "; nothing derived");
 
-    const auto m = plan.candidates.empty() ? sweep::mergeProcesses (refOut, posOut)
-                                           : sweep::mergeProcesses (candRuns.front().second.first, candRuns.front().second.second);
+    const auto m = plan.candidates.empty() ? sweep::mergeProcesses (refOut, posOut, plan.pairIndex)
+                                           : sweep::mergeProcesses (candRuns.front().second.first, candRuns.front().second.second, candRuns.front().first.pairIndex);
     juce::String pluginArch = m.arch;
     bool bridged = false;
     const auto bundles = componentBundles();
@@ -2327,7 +2327,7 @@ inline int runCertSweep (const SweepOptions& opt)
     // v1.3: the repeat's derivation, when the sweep ran twice (quality lives on the sweep var at composition).
     auto repeatFor = [&] (const sweep::Plan& q, const juce::String& prefix) -> std::optional<sweep::Derived> {
         auto it = repeatRuns.find (prefix); if (it == repeatRuns.end() || it->second.empty()) return std::nullopt;
-        return sweep::derive (sweep::mergeProcesses (refOut.out.isEmpty() ? sweep::ProcessOut { juce::String(), true, "none", -1.0f } : refOut, it->second), q.testLevels(), q.ratioIndex, q.quietReference); };
+        return sweep::derive (sweep::mergeProcesses (refOut.out.isEmpty() ? sweep::ProcessOut { juce::String(), true, "none", -1.0f } : refOut, it->second, q.pairIndex), q.testLevels(), q.ratioIndex, q.quietReference); };
     if (plan.candidates.empty())
     {
         juce::String whyNot;
@@ -2345,13 +2345,13 @@ inline int runCertSweep (const SweepOptions& opt)
         SweepRunInfo ci = info;
         ci.headline = "CANDIDATE [" + juce::String (q.thr) + "] " + q.thrName + " (flags " + q.thrFlags.joinIntoString (",") + ") - " + s.product
                       + " (class " + plan.cls + ", " + juce::String ((int) plan.candidates.size()) + " candidates; the others at their instantiate defaults)";
-        auto one = deriveOne (q, sweep::mergeProcesses (run.first, run.second), pv, ci, outName);
+        auto one = deriveOne (q, sweep::mergeProcesses (run.first, run.second, q.pairIndex), pv, ci, outName);
         juce::String pre = "c" + juce::String (q.thr) + ".";
         if (! q.engage.empty()) pre = "e" + juce::String (q.engage.front().index) + "." + pre;
         if (q.quietReference && ! q.referenceFallbackNote.isEmpty() && repeatRuns.count ("q." + pre)) pre = "q." + pre;
         if (auto it = repeatRuns.find (pre); it != repeatRuns.end() && one.written)
         {
-            const auto d2 = sweep::derive (sweep::mergeProcesses (run.first, it->second), q.testLevels(), q.ratioIndex, q.quietReference);
+            const auto d2 = sweep::derive (sweep::mergeProcesses (run.first, it->second, q.pairIndex), q.testLevels(), q.ratioIndex, q.quietReference);
             sweep::attachRepeatQuality (one.sweepVar, one.d, &d2);
         }
         else if (one.written) sweep::attachRepeatQuality (one.sweepVar, one.d, nullptr);
@@ -2461,7 +2461,7 @@ inline void restoreWrites (sweep::Plan& q, const juce::var& oldSweep, const swee
     {
         for (const auto& x : *pre)
         {
-            const int idx = (int) x.getProperty ("index", -1); if (idx < 0 || have.count (idx)) continue;
+            const int idx = (int) x.getProperty ("index", -1); if (idx < 0 || have.count (idx) || idx == q.pairIndex) continue;
             q.sets.push_back ({ idx, (float) (double) x.getProperty ("norm", 0.0) }); have.insert (idx);
             if (x.hasProperty ("role")) q.setRoles[idx] = x.getProperty ("role", "").toString();
         }
@@ -2471,7 +2471,7 @@ inline void restoreWrites (sweep::Plan& q, const juce::var& oldSweep, const swee
     // have their own record (restoreEngage): they and the swept control stay out of the preconditions
     std::set<int> engaged; for (const auto& e : q.engage) engaged.insert (e.index);
     for (const auto& [idx, norm] : m.setNorms)
-        if (! engaged.count (idx) && ! have.count (idx) && idx != q.thr) { q.sets.push_back ({ idx, norm }); q.setRoles[idx] = "from_trace"; have.insert (idx); }
+        if (! engaged.count (idx) && ! have.count (idx) && idx != q.thr && idx != q.pairIndex) { q.sets.push_back ({ idx, norm }); q.setRoles[idx] = "from_trace"; have.insert (idx); }
 }
 // The grid refinement rides the traces as ordinary positions; what the fixture restores is the record of it.
 inline void restoreRefinement (sweep::Plan& q, const juce::var& oldSweep)
@@ -2522,8 +2522,8 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, run.prefix)) { std::cout << "REDERIVE: cannot load the traces" << std::endl; return 2; }
         sweep::ProcessOut ref2; std::vector<sweep::ProcessOut> pos2; std::optional<sweep::Derived> rpt;
         if (sweep::loadProcesses (processesJson, rawDir, ref2, pos2, "r2." + run.prefix) || (loadRepeatPositions (processesJson, rawDir, "r2." + run.prefix, pos2)))
-            rpt = sweep::derive (sweep::mergeProcesses (ref, pos2), plan.testLevels(), plan.ratioIndex, plan.quietReference);
-        const auto merged = sweep::mergeProcesses (ref, pos);
+            rpt = sweep::derive (sweep::mergeProcesses (ref, pos2, plan.pairIndex), plan.testLevels(), plan.ratioIndex, plan.quietReference);
+        const auto merged = sweep::mergeProcesses (ref, pos, plan.pairIndex);
         restoreWrites (plan, old, merged);
         composeAndReport (base, plan, merged, pv, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"), info, nullptr, rpt ? &*rpt : nullptr);
         return 0;
@@ -2547,10 +2547,10 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, run.prefix)) { std::cout << "REDERIVE: no traces for candidate " << c.index << std::endl; return 2; }
         std::vector<sweep::ProcessOut> pos2; std::optional<sweep::Derived> rpt;
         if (loadRepeatPositions (processesJson, rawDir, "r2." + run.prefix, pos2))
-            rpt = sweep::derive (sweep::mergeProcesses (ref, pos2), q.testLevels(), q.ratioIndex, q.quietReference);
+            rpt = sweep::derive (sweep::mergeProcesses (ref, pos2, q.pairIndex), q.testLevels(), q.ratioIndex, q.quietReference);
         SweepRunInfo ci = info;
         ci.headline = "CANDIDATE [" + juce::String (q.thr) + "] " + q.thrName + " - re-derived";
-        const auto mergedC = sweep::mergeProcesses (ref, pos);
+        const auto mergedC = sweep::mergeProcesses (ref, pos, q.pairIndex);
         restoreWrites (q, oldC, mergedC);
         auto one = deriveOne (q, mergedC, pv, ci, fixtureOut.getFileName());
         if (one.written) sweep::attachRepeatQuality (one.sweepVar, one.d, rpt ? &*rpt : nullptr);
