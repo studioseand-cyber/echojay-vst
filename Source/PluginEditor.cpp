@@ -28706,6 +28706,36 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     const auto b = composeBuildBubble(ch, chainJson);
     clearStageStatus();   // the bubble replaces the load/dial-window label
     appendLocalResultBubble(b.text, b.altPrompt, b.altLabel, {}, b.dialWarning);
+    // ---- LEVELLING V2 (10 Oct 2026): THE BUILD'S LEVELLING INTENT -> THE RACK RECORD -----------------
+    // The Level slot carried `target_lufs` and `option` in its params and is gone, so the intent needs a door of
+    // its own. It is the rack record, written here from the block just before the arm reads it.
+    // THE FIELD IS `leveling` (B's contract proposal) and `level` is accepted as an ALIAS (my own doc asked for
+    // the latter). Either works, so neither of us has to land first - and the one that arrives is logged, so a
+    // server sending the wrong one is visible rather than silently ignored.
+    {
+        const auto cv = juce::JSON::parse (chainJson);
+        if (auto* co = cv.getDynamicObject())
+        {
+            juce::var lev = co->getProperty ("leveling");
+            juce::String which = "leveling";
+            if (lev.getDynamicObject() == nullptr) { lev = co->getProperty ("level"); which = "level (alias)"; }
+            if (auto* lo = lev.getDynamicObject())
+            {
+                auto* rec = new juce::DynamicObject();
+                const auto opt = lo->getProperty ("option").toString();
+                if (opt.isNotEmpty()) rec->setProperty ("option", opt.toLowerCase());
+                const auto tgt = lo->getProperty ("target_lufs");
+                if (tgt.isDouble() || tgt.isInt() || tgt.isInt64())
+                    rec->setProperty ("target_lufs", (double) tgt);
+                ch.setLevellingRecord (juce::var (rec));
+                EchoJay_NSLog (("EJLoudness: levelling intent from the block via \"" + which + "\": option \""
+                                + opt + "\""
+                                + ((tgt.isDouble() || tgt.isInt() || tgt.isInt64())
+                                       ? ", target " + juce::String ((double) tgt, 1) + " LUFS"
+                                       : juce::String (", no target"))).toRawUTF8());
+            }
+        }
+    }
     armLoudnessLoopIfTargeted();   // ruling G
 }
 

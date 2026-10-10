@@ -229,8 +229,26 @@ public:
         if (t.limiterSlot < 0)
             for (int i = n - 1; i >= 0; --i)
                 if (host_.getSlotInfo (i).name != "EchoJay Level") { t.limiterSlot = i; break; }
+        // ---- LEVELLING V2: THE INTENT COMES FROM THE RACK RECORD ---------------------------------------
+        // The Level slot was the loop's INPUT as well as its output - the target and the option rode its params.
+        // With no Level slot there has to be another door, and it is the rack-level record: the build writes
+        // `{option, target_lufs?}` there (CONTRACT_LEVELLING_V2 section 5 asks B to send `level:` on the block),
+        // the loop reads it, and the loop writes the landed figures back to the same var. One record, read and
+        // written, which is also the thing that persists.
+        // Read FIRST, because it is the current contract; a Level slot's params are the legacy door below.
+        if (auto* rec = host_.getLevellingRecord().getDynamicObject())
+        {
+            const auto ov = rec->getProperty ("option");
+            if (ov.isString() && ov.toString().isNotEmpty())
+            { t.option = ov.toString().toLowerCase(); t.optionSource = "rack record"; }
+            const auto tv = rec->getProperty ("target_lufs");
+            if (tv.isDouble() || tv.isInt() || tv.isInt64())
+            { t.lufs = (float) (double) tv; t.source = "rack record"; }
+        }
+        // LEGACY: a chain written before 10 Oct still carries an EchoJay Level slot, and its params are where the
+        // intent lived. Read only when the record did not supply it, so a migrated rack never reads twice.
         for (int i = n - 1; i >= 0; --i) if (host_.getSlotInfo (i).name == "EchoJay Level") { t.levelSlot = i; break; }
-        if (t.levelSlot >= 0)
+        if (t.levelSlot >= 0 && (t.optionSource.isEmpty() || ! std::isfinite (t.lufs)))
         {
             if (auto* lv = dynamic_cast<EedLevelProcessor*> (host_.getSlotProcessor (t.levelSlot)))
             {

@@ -326,9 +326,9 @@ struct EchoJayTabStripTestAccess
     static std::vector<juce::Rectangle<int>> rowRects (EchoJayEditor& e) { return e.chainRowRects_; }
     static int displayRows (EchoJayEditor& e) { return (int) e.chainDisplayRows_.size(); }
     static bool chainsModeOn (EchoJayEditor& e) { return e.processorRef.chainSidebarChainsMode; }
-    // test 6: the ONE predicate and the one it must agree with
+    // test 6: the ONE predicate. replyAllowed already exists at the top of this struct (:157) - the one it must
+    // agree with - so only the two genuinely new accessors are added here.
     static bool chainsShowing (EchoJayEditor& e) { return e.chainsSidebarShowing(); }
-    static bool replyAllowed  (EchoJayEditor& e) { return e.chatReplyControlsAllowed(); }
     static void setCollapsed  (EchoJayEditor& e, bool on) { e.processorRef.chatSidebarCollapsed = on; e.resized(); }
     static juce::StringArray chips (EchoJayEditor& e, const Msg& m) { juce::StringArray out; for (const auto& c : e.resultChipList (m)) out.add (c.label + "#" + juce::String (c.kind)); return out; }
     // 18h (1): the chip layout at a given width, the row count, the on-screen chip buttons

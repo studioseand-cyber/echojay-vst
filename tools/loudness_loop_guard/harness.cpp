@@ -215,7 +215,8 @@ struct Rig
         const auto* lv = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
         const auto* lm = BuiltinDeviceRegistry::instance().findByName (thirdPartyLast ? limiterName : "EchoJay Limiter");
         check (lv != nullptr && lm != nullptr, "precondition: EchoJay Level and the limiter are registered");
-        EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*lv));
+        // LEVELLING V2 (10 Oct 2026): NO ECHOJAY LEVEL SLOT IS LOADED - the product no longer has one.
+        juce::ignoreUnused (lv);
         if (gainSlot)
         {
             const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
@@ -223,7 +224,8 @@ struct Rig
             EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*gn));
         }
         EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*lm));
-        levelSlot = 0; limSlot = gainSlot ? 2 : 1;
+        levelSlot = -1;                 // no Level slot; legs assert -1 so the ruling is visible
+        limSlot = gainSlot ? 1 : 0;     // one slot fewer
 #ifdef EJ_LOUDNESSLOOP_MANNERS
         if (thirdPartyLast && ceilingReadBack) EchoJayBorrowHostTestAccess::markCeilingApplied (h, limSlot);
 #else
@@ -235,8 +237,11 @@ struct Rig
     }
     void setTarget (float t, double limiterInputDb = 0.0)
     {
-        { auto* pp = new juce::DynamicObject(); pp->setProperty ("gain_db", 0.0); pp->setProperty ("target_lufs", (double) t); pp->setProperty ("loudness_option", 0);
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (levelSlot, juce::var (w)); }
+        // LEVELLING V2: the intent rides the RACK RECORD - the door the build writes and the loop reads.
+        { auto* rec = new juce::DynamicObject();
+          rec->setProperty ("option", "commercial");
+          rec->setProperty ("target_lufs", (double) t);
+          h.setLevellingRecord (juce::var (rec)); }
         if (h.getSlotInfo (limSlot).name == "EchoJay Limiter")
         { auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", limiterInputDb); pp->setProperty ("ceiling_db", -0.1); pp->setProperty ("true_peak", 1);
           auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (limSlot, juce::var (w)); }
@@ -256,7 +261,19 @@ struct Rig
         feed (proc, prog, 1, /*silent*/ true, nullptr, nullptr);
         return loop.armFromChain();
     }
-    float levelGain() const { return (float) dynamic_cast<EedLevelProcessor*> (h.getSlotProcessor (levelSlot))->gainDb(); }
+    // The gain the loop drives, whichever stage. This used to dereference the Level device directly, which
+    // SIGSEGV'd the moment the slot stopped existing - a rig that models the product beats one that models the
+    // code it was written against.
+    float levelGain() const { return loop.currentGainDb(); }
+    /** The legs pre-set "where the build left the gain". That is the STAGE now; for a mix-bus target rig it is
+        the final limiter's input_db. */
+    void presetStageGain (float db)
+    {
+        auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", (double) db);
+        auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+        h.setSlotStructuredSettings (limSlot, juce::var (w));
+        EchoJayBorrowHostTestAccess::applyExact (h, limSlot);
+    }
     void setGainDb (float db)   // the Gain stand-in (slot 1 when the Rig has one), through the schema path
     { auto* pp = new juce::DynamicObject(); pp->setProperty ("level_db", (double) db); auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (1, juce::var (w)); }
     double limiterInput() const { auto* l = dynamic_cast<EedLimiterProcessor*> (h.getSlotProcessor (limSlot)); return l ? l->inputDb() : 0.0; }
@@ -313,7 +330,9 @@ static int guardMain()
         Rig r (false); r.setTarget (-9.0f, 0.0);
         const float cal = calibrate (r.proc, r.prog, -18.0f); check (std::abs (cal + 18.0f) < 0.6f, "programme calibrated at the chain input to -18 LUFS", f1 (cal));
         check (r.armNoReading(), "armed from the Level slot's params", r.logs.joinIntoString (" | ").substring (0, 200));
-        check (r.loop.armSource() == "level_params" && r.loop.levelSlot() == 0 && r.loop.limiterSlot() == 1, "arm source level_params, Level slot 0, limiter slot 1", r.loop.armSource());
+        check (r.loop.armSource() == "rack record" && r.loop.levelSlot() == -1 && r.loop.stageName() == "limiter_in",
+               "arm source = the rack record, NO Level slot (-1), the stage is the limiter's IN gain",
+               r.loop.armSource() + " slot " + juce::String (r.loop.levelSlot()) + " stage " + r.loop.stageName());
         r.runWindow();
         check (r.loop.state() == LoudnessLoop::State::proposed, "after the window the loop PROPOSES (state proposed)", juce::String ((int) r.loop.state()));
         check (std::abs (r.levelGain()) < 0.01f, "A. ask before applying: nothing moves until go", "Level gain " + f1 (r.levelGain()) + " dB");
@@ -491,45 +510,19 @@ static int guardMain()
     std::printf ("== G. 18d: arm AFTER the exact built-in apply (the live order) - on the Level slot ==\n");
     {
         Rig r (false);
-        r.h.setSlotSettings (r.levelSlot, "Level 0 dB to the -9 LUFS target");   // the text first, as a build attaches it
+        // 10 Oct: the LIMITER carries the prose an exact apply replaces now. Same subject, the slot that exists.
+        r.h.setSlotSettings (r.limSlot, "ceiling -0.1 dBTP to the -9 LUFS target");
         r.setTarget (-9.0f, 8.8);                                                  // then the structured settings: the exact apply replaces the text
-        EchoJayBorrowHostTestAccess::applyExact (r.h, r.levelSlot); EchoJayBorrowHostTestAccess::applyExact (r.h, r.limSlot);
-        check (r.h.getSlotInfo (r.levelSlot).settings.startsWith ("Applied automatically"), "the exact apply replaced the Level slot's text", r.h.getSlotInfo (r.levelSlot).settings.substring (0, 60));
+        EchoJayBorrowHostTestAccess::applyExact (r.h, r.limSlot);
+        check (r.h.getSlotInfo (r.limSlot).settings.startsWith ("Applied automatically"), "the exact apply replaced the slot's prose", r.h.getSlotInfo (r.limSlot).settings.substring (0, 60));
         check (r.armNoReading() && std::abs (r.loop.target() + 9.0f) < 0.01f && r.loop.armSource() == "level_params", "G. arm after the exact built-in apply (18d) stays GREEN", r.loop.armSource());
         r.loop.leaveIt();
     }
-    std::printf ("== I. COMPATIBILITY: a LIVE-shaped chain (88x7asebn: target_lufs on the EchoJay Limiter with input_db +8.8, NO Level slot) ==\n");
-    {
-        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512); auto& h = proc.getChainHost();
-        const auto* eq = BuiltinDeviceRegistry::instance().findByName ("EchoJay EQ");
-        if (eq) EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*eq));
-        EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*dev));
-        const int limAt = h.getNumSlots() - 1;
-        { auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", 8.8); pp->setProperty ("ceiling_db", -0.1); pp->setProperty ("true_peak", 1); pp->setProperty ("target_lufs", -9.0); pp->setProperty ("loudness_option", "commercial");
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (limAt, juce::var (w)); }
-        auto& loop = proc.loudnessLoop(); juce::StringArray logs, bubbles; loop.logLine = [&] (const juce::String& l) { logs.add (l); }; loop.onBubble = [&] (const LoudnessLoop::Bubble& b) { if (! b.text.startsWith ("Listening") && ! b.text.startsWith ("Checking...")) bubbles.add (b.text); }; loop.isPlaying = [] { return true; };
-        Programme prog; calibrate (proc, prog, -15.0f);
-        // 8 Oct 2026: arm() LANDS the Level from the chain-output reading when it has one (item 10 FINAL), and
-        // this leg is about the INSERTION and the server's input_db, so it arms with no reading - the deferred
-        // reset is made real by one silent block, exactly as Rig::armNoReading does.
-        h.resetChainOutLevels();
-        { juce::AudioBuffer<float> z (2, 512); z.clear(); juce::MidiBuffer m; proc.processBlock (z, m); }
-        const bool armed = loop.armFromChain();
-        check (armed, "I. the live-shaped chain ARMS (the loop inserts the Level slot it needs; RED as it stood: not armed, the insertion lived in the editor)", logs.joinIntoString (" | ").substring (0, 200));
-        check (h.getNumSlots() == limAt + 2 && h.getSlotInfo (limAt).name == "EchoJay Level" && h.getSlotInfo (limAt + 1).name == "EchoJay Limiter", "I. EchoJay Level was inserted immediately before the limiter", h.getSlotInfo (0).name + " | " + h.getSlotInfo (1).name + (h.getNumSlots() > 2 ? " | " + h.getSlotInfo (2).name : juce::String()));
-        check (armed && loop.armSource() == "level_params" && std::abs (loop.target() + 9.0f) < 0.01f && loop.levelSlot() == limAt && loop.limiterSlot() == limAt + 1, "I. armed from the inserted Level slot's params, target -9 (copied from the limiter), limiter slot = the last", loop.armSource() + " " + juce::String (loop.levelSlot()) + "/" + juce::String (loop.limiterSlot()));
-        auto* lim = dynamic_cast<EedLimiterProcessor*> (h.getSlotProcessor (limAt + 1));
-        auto* lv  = dynamic_cast<EedLevelProcessor*> (h.getSlotProcessor (limAt));
-        check (lim != nullptr && std::abs (lim->inputDb() - 8.8) < 0.01 && lv != nullptr && std::abs (lv->gainDb()) < 0.01, "I. the server's input_db +8.8 stays on the limiter; the Level starts at 0", lim ? juce::String (lim->inputDb(), 2) : "no limiter");
-#ifdef EJ_LOUDNESSLOOP_MANNERS
-        loop.listen();   // 18g: the window starts on Listen
-#endif
-        for (int k = 0; k < 16 && (loop.state() == LoudnessLoop::State::waitAudio || loop.state() == LoudnessLoop::State::measuring); ++k) feed (proc, prog, 100, false, &loop, nullptr);
-        check (loop.state() == LoudnessLoop::State::proposed || loop.state() == LoudnessLoop::State::tracking, "I. a window measured -> a proposal (or on target)", bubbles.isEmpty() ? juce::String() : bubbles[bubbles.size() - 1]);
-        if (loop.state() == LoudnessLoop::State::proposed) loop.go();
-        check (lv != nullptr && lim != nullptr && std::abs (lim->inputDb() - 8.8) < 0.01, "I. after go the loop DROVE THE LEVEL SLOT and the limiter's input_db is still +8.8", "Level " + juce::String (lv ? lv->gainDb() : 0.0, 2) + " dB, limiter input_db " + juce::String (lim ? lim->inputDb() : 0.0, 2));
-        check (logs.joinIntoString ("\n").contains ("EJLoudness: inserted EchoJay Level at slot"), "I. the insertion is logged as EJLoudness", logs.joinIntoString (" | ").substring (0, 160));
-    }
+    // ---- LEG I RETIRED, 10 Oct 2026: ITS SUBJECT NO LONGER EXISTS (Sean) ----------------------------
+    // I was "a LIVE-shaped chain ARMS - the loop INSERTS the Level slot it needs, copies the target off the
+    // limiter, and leaves the server's input_db UNTOUCHED". Levelling v2 inserts no Level slot, and the loop now
+    // DRIVES input_db, so "untouched" is the opposite of the ruling. The surviving half - what a target build
+    // with nothing holding a ceiling gets - is leg V3: an EchoJay Limiter inserted last at -0.1.
 #endif
 
     std::printf ("== J. 18g loop manners: explicit Listen / Check, +-1 dB with step scaling and 3 proposals, Done, the GR estimate, the ceiling safety net ==\n");
@@ -624,9 +617,9 @@ static int guardMain()
         // and the comparison would be between two different signals. The gain is set to the clipper rig's instead.
         b.armNoReading(); b.loop.listen(); b.runWindow();
         if (b.last().contains ("is as loud as this goes")) b.loop.pushIt(); else b.loop.go();   // leave the proposal, or check() refuses
-        { auto* pp = new juce::DynamicObject(); pp->setProperty ("gain_db", (double) r.levelGain());
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-          b.h.setSlotStructuredSettings (b.levelSlot, juce::var (w)); }
+        // 10 Oct: the bypass rig is given the SAME gain as the clipper rig so the two are a ruler for each
+        // other. That gain lives on the stage now, not a Level slot.
+        b.presetStageGain (r.levelGain());
         b.loop.check(); IndependentMeter indB; b.runWindow (0.0f, &indB);
         feed (r.proc, r.prog, 400, false, nullptr, nullptr, 0.0f); feed (b.proc, b.prog, 400, false, nullptr, nullptr, 0.0f);   // 21m: a full 3 s window on both tallies after the loop's own window (its tracking reset empties the chain-out ring)
         const float g = r.levelGain();
@@ -634,7 +627,7 @@ static int guardMain()
         const float truthLoud = (in.shortTermDb + g) - out.shortTermDb;   // the latest full 3 s window on both tallies (the max hold restarts when the loop starts tracking - 21m)
         const float truthPeak = indB.truePeakDb() - ind.truePeakDb();
         const float estLoud = r.loop.grEstimateDb(), estPeak = r.loop.grPeakEstimateDb();
-        std::printf ("  K5 inputs: amp %.3f / %.3f, gain %+.2f / %+.2f dB | chain in maxST %.2f, chain out maxST %.2f | Level OUT TP %.2f, chain OUT TP %.2f (tallies) | independent TP clipper %.2f, bypass %.2f\n", r.prog.amp, b.prog.amp, g, b.levelGain(), in.maxShortTermDb, out.maxShortTermDb, dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (r.levelSlot))->outputLevels().truePeakDb, out.truePeakDb, ind.truePeakDb(), indB.truePeakDb());
+        std::printf ("  K5 inputs: amp %.3f / %.3f, gain %+.2f / %+.2f dB | chain in maxST %.2f, chain out maxST %.2f | limiter IN TP %.2f, chain OUT TP %.2f (tallies) | independent TP clipper %.2f, bypass %.2f\n", r.prog.amp, b.prog.amp, g, b.levelGain(), in.maxShortTermDb, out.maxShortTermDb, r.loop.stageTap().truePeakDb, out.truePeakDb, ind.truePeakDb(), indB.truePeakDb());
         check (std::abs (r.prog.amp - b.prog.amp) < 1e-4f && std::abs (g - b.levelGain()) < 0.01f, "K5. the two rigs ran the same programme at the same gain (the bypass rig is the pre-limiter truth)", juce::String (r.prog.amp, 4) + " / " + juce::String (b.prog.amp, 4));
         check (std::isfinite (estLoud) && truthLoud > 0.3f && std::abs (estLoud - truthLoud) <= 1.0f, "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (chain in + gain - chain out), and the clipper is working", "estimate " + f1 (estLoud) + " vs truth " + f1 (truthLoud) + " dB");
         check (std::isfinite (estPeak) && truthPeak > 0.5f && std::abs (estPeak - truthPeak) <= 1.0f, "K5. ...and the PEAK GR estimate (Level OUT true peak - chain OUT true peak) is within 1 dB of the independent pre/post true-peak difference", "estimate " + f1 (estPeak) + " vs truth " + f1 (truthPeak) + " dB");
@@ -705,7 +698,11 @@ static int guardMain()
     }
     {
         Rig r (false); r.setTarget (-8.0f, 0.0); r.prog.peaky = true;
-        { auto* pp = new juce::DynamicObject(); pp->setProperty ("gain_db", 12.0); pp->setProperty ("target_lufs", -8.0); pp->setProperty ("loudness_option", 0); auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        { // 10 Oct: the intent to the RACK RECORD, the opening gain onto the STAGE - the two things the
+          // Level slot's params used to carry, each in the place that owns it now.
+          auto* rec = new juce::DynamicObject(); rec->setProperty ("option", "commercial");
+          rec->setProperty ("target_lufs", -8.0); r.h.setLevellingRecord (juce::var (rec));
+          r.presetStageGain (12.0f); }
         check (std::abs (r.levelGain() - 12.0f) < 0.01f, "K3. the build opened the Level at +12 dB (the server's estimate)", f1 (r.levelGain()));
         r.h.resetAllLevels(); feed (r.proc, r.prog, 900, false, nullptr, nullptr, 0.0f);   // ~9.6 s of the peaky programme: the chain-in tally knows its true peak
         const auto in = r.h.getChainInLevels(); const float maxOpen = -0.1f + 3.0f - in.truePeakDb;
@@ -727,7 +724,11 @@ static int guardMain()
     std::printf ("== L. 22 Sep 2026 rulings 5b + 2: the opening-gain FLOOR (-6.0) with the card's reason, and the complaint verb (softer x2) ==\n");
     {
         Rig r (false); r.setTarget (-8.0f, 0.0); r.prog.peaky = true; r.prog.burst = 40.0f;   // hits far above the ceiling: ceiling + 3 - TP is well below -6
-        { auto* pp = new juce::DynamicObject(); pp->setProperty ("gain_db", 6.0); pp->setProperty ("target_lufs", -8.0); pp->setProperty ("loudness_option", 0); auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        { // 10 Oct: the intent to the RACK RECORD, the opening gain onto the STAGE - the two things the
+          // Level slot's params used to carry, each in the place that owns it now.
+          auto* rec = new juce::DynamicObject(); rec->setProperty ("option", "commercial");
+          rec->setProperty ("target_lufs", -8.0); r.h.setLevellingRecord (juce::var (rec));
+          r.presetStageGain (6.0f); }
         r.h.resetAllLevels(); feed (r.proc, r.prog, 900, false, nullptr, nullptr, 0.0f);
         const auto in = r.h.getChainInLevels(); const float raw = -0.1f + 3.0f - in.truePeakDb;
         check (in.known && raw < -6.5f, "L1. precondition: ceiling + 3 - build-time true peak is below the floor", f1 (raw) + " (TP " + f1 (in.truePeakDb) + ")");
@@ -739,9 +740,12 @@ static int guardMain()
         check (r.levelGain() > -0.01f && ! r.logs.joinIntoString ("\n").contains ("floored at -6.0"),
                "L1. the opening gain is NOT pulled below zero and nothing is \"floored at -6.0\" - the cap that "
                "needed a floor is gone (7 Oct ruling)", "Level " + f1 (r.levelGain()));
-        check (r.h.getSlotInfo (r.levelSlot).settings != "Level -6.0 dB: the mix already peaks above the ceiling",
+        // 10 Oct: this asserted the LEVEL SLOT's own prose, which no longer exists. The surviving subject - the
+        // 7 Oct ruling that the peak-headroom cap is gone, so a mix already over the ceiling is NOT refused a
+        // trim - is asserted by the gain itself on the line above. The prose check is retired with its slot.
+        supersededCheck (false,
                "L1. ...and the chain card no longer carries the capped-Level reason",
-               r.h.getSlotInfo (r.levelSlot).settings.substring (0, 80));
+               "retired with the Level slot");
     }
     {
         Rig r (false); r.setTarget (-9.0f, 0.0);
@@ -750,23 +754,11 @@ static int guardMain()
         check (r.loop.backOffComplaint() && std::abs (r.levelGain() - (before - 2.0f)) < 0.05f && std::abs (r.loop.target() - (tBefore - 2.0f)) < 0.01f && r.loop.bubbleCount() == nb + 1 && r.last().startsWith ("Applied -2.0 dB (Level now "),
                "L2 (item 2, client half). a complaint after the apply = the softer step twice: Level -2, target -2, ONE bubble \"Applied -2.0 dB (Level now ...)\"", r.last() + " | Level " + f1 (before) + " -> " + f1 (r.levelGain()));
     }
-    std::printf ("== N. 22 Sep 2026 (21m item 1): the loop tracks its Level slot by IDENTITY - an insert before it keeps the loop armed on the same Level; removing the Level stops it ==\n");
-    {
-        Rig r (false); r.setTarget (-9.0f, 0.0);
-        calibrate (r.proc, r.prog, -18.0f);
-        check (r.armNoReading() && r.loop.levelSlot() == 0, "N0. armed on the Level at slot 0", juce::String (r.loop.levelSlot()));
-        auto* levelBefore = r.h.getSlotProcessor (0);
-        const auto* byp = BuiltinDeviceRegistry::instance().findByName ("EJ Test Bypass");
-        check (byp != nullptr && r.h.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*byp), 0).isEmpty() && r.h.getNumSlots() == 3 && r.h.getSlotInfo (1).name == "EchoJay Level", "N1. a slot inserted BEFORE the Level moves it to index 1", r.h.getSlotInfo (0).name + " | " + r.h.getSlotInfo (1).name);
-        r.loop.tickNow();
-        check (r.loop.state() != LoudnessLoop::State::hold && r.loop.levelSlot() == 1 && r.h.getSlotProcessor (1) == levelBefore && ! r.last().contains ("no longer in the chain"),
-               "N1. the loop stays ARMED on the SAME Level instance (now slot 1), no \"no longer in the chain\" (RED today: index 0 is the inserted slot, the loop stops)", "state " + juce::String ((int) r.loop.state()) + " slot " + juce::String (r.loop.levelSlot()) + " | " + r.last());
-        r.runWindow();
-        check (r.loop.state() == LoudnessLoop::State::proposed && r.loop.go() && std::abs ((float) dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (1))->gainDb() - 6.0f) < 0.1f, "N1. ...and Go drives that same Level (slot 1 gained +6)", f1 ((float) dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (1))->gainDb()));
-        r.loop.check();   // a window is running (after Go the loop holds by design and says nothing until Check)
-        r.h.removeSlot (1); r.loop.tickNow();
-        check (r.loop.state() == LoudnessLoop::State::hold && r.last().contains ("The Level slot is no longer in the chain"), "N2. removing the Level itself stops the loop with the message", r.last());
-    }
+    // ---- LEGS N0/N1 RETIRED, 10 Oct 2026: THEIR SUBJECT NO LONGER EXISTS (Sean) ---------------------
+    // N tracked the Level slot by IDENTITY so an insert in front of it could not break the loop (21m item 1).
+    // There is no Level slot to track. The hazard DOES reappear for the target stage - it is the LAST slot, so an
+    // insert after it changes which slot the loop drives - and that is a NEW leg with a new subject, not a
+    // migration of this one. Recorded here so it is owed rather than forgotten.
     std::printf ("== O. 22 Sep 2026 (21m item 3): the cap is on the TYPICAL reduction (top 20 %% of 100 ms blocks), the worst peak is shown beside it ==\n");
     {   // one 9 dB transient among hits typically ~4 dB over the ceiling -> NOT capped under Commercial (6)
         Rig r (true); r.setTarget (-10.5f, 0.0); r.prog.peaky = true;   // target ~1.5 dB above the measured level: a small trim, so the projected typical stays under the cap
@@ -908,45 +900,11 @@ static int guardMain()
             supersededCheck (false, "V3. the fixture drove slot 1 over -3 dBTP", "input was " + f1 (pic.inTpDb) + " dBTP - fixture too quiet");
     }
     // ================= 21s-b: R1, R2, R3 ==========================================================
-    {   // R1: a stale trim on an EXEMPT slot is cleared, said out loud, and shown
-        std::printf ("\n== R1 (21s-b): the Level and Limiter slots carry no trim, ever ==\n");
-        Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
-        calibrate (r.proc, r.prog, -18.0f);
-        // the defect, staged: a pre-trim left on the Level slot by an earlier build
-        r.h.setSlotPreTrimDb (r.levelSlot, -2.9f);   // 21t-m: only IN can be stale now
-        check (std::abs (r.h.getSlotPreTrimDb (r.levelSlot) + 2.9f) < 0.01f, "R1. fixture: a stale -2.9 dB pre-trim sits on the Level slot");
-        juce::StringArray lines;
-        r.h.clearExemptTrims (r.levelSlot, r.limSlot, &lines);   // 21t-m: the clear is its own call now
-        const auto joined = lines.joinIntoString (" | ");
-        check (std::abs (r.h.getSlotPreTrimDb (r.levelSlot)) < 0.01f,
-               "R1. the Level slot's pre-trim is CLEARED  (RED as it stood: it survived every Listen, unseen)",
-               f1 (r.h.getSlotPreTrimDb (r.levelSlot)));
-        check (joined.contains ("exempt trim cleared: EchoJay Level pre -2.9"),
-               "R1. ...and the value found is LOGGED before it is zeroed", joined.substring (0, 150));
-        // SUPERSEDED 1 Oct 2026 by 21t-m item 1: the compare-only post trim is deleted.
-        supersededCheck (joined.contains ("exempt trim cleared") && joined.contains ("post 1.7"),
-               "R1. ...the limiter's post trim too");
-        // SUPERSEDED 1 Oct 2026 by 21t-m item 1: the compare-only post trim is deleted.
-        supersededCheck (r.h.slotPictureText (r.levelSlot).contains ("exempt: pre"),
-               "R1. ...and an exempt slot's line now SHOWS its pair instead of saying nothing",
-               r.h.slotPictureText (r.levelSlot));
-        // the arithmetic the stale trim used to break: Level OUT = the slot before it + the Level's gain
-        // The arithmetic the stale trim used to break. The Level is the FIRST slot in this fixture, so what feeds
-        // it is the chain input - and with the exempt pre-trim cleared, its own gain is the whole difference.
-        r.h.resetAllLevels(); r.armNoReading(); r.runWindow();
-        auto* lv = dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (r.levelSlot));
-        if (lv != nullptr)
-        {
-            const float inTp   = lv->inputLevels().truePeakDb;
-            const float outTp  = lv->outputLevels().truePeakDb;
-            const float expect = inTp + (float) lv->gainDb();
-            check (std::abs (outTp - expect) < 0.2f,
-                   "R1. Level OUT TP = its input + its own gain, within 0.2 dB - nothing hidden in front of it "
-                   "(the 2.9 dB that went missing)",
-                   "in " + f1 (inTp) + " + gain " + f1 ((float) lv->gainDb()) + " = " + f1 (expect) + ", read " + f1 (outTp));
-        }
-        else check (false, "R1. fixture: the Level slot is an EchoJay Level");
-    }
+    // ---- R1 RETIRED, 10 Oct 2026: ITS SUBJECT NO LONGER EXISTS (Sean) -------------------------------
+    // R1 was the EXEMPT-TRIM rule: the Level and Limiter slots carry no trim, a stale one is cleared, logged and
+    // shown, and "Level OUT = its input + its own gain" proved nothing hid in front of it. Levelling v2 deletes
+    // the Level slot, so there is no exempt pair, no slot whose trim goes stale this way, and no Level OUT tap to
+    // do the arithmetic against. clearExemptTrims still guards the limiter; a leg for that is separate work.
     {   // R2: ONE figure everywhere. (21t-m: the "match trim is a compare device" half is gone with the gain.)
         std::printf ("\n== R2 (21s-b): the proposal and Done agree on one figure ==\n");
         Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
@@ -1077,8 +1035,11 @@ static int guardMain()
                                                         ChainHost::kApiStateMaxTotalBytes, "this session");
         juce::String b64;
         if (auto* o = states.getDynamicObject())
-            b64 = o->getProperty (juce::String (r.levelSlot + 1)).toString();
-        check (b64.isNotEmpty(), "Z3. the Level slot has a cached state at all (RED as it stood on a cold cache)",
+            b64 = o->getProperty (juce::String (r.limSlot + 1)).toString();
+        // 10 Oct: the landed gain is the LIMITER's input_db now, so the slot whose cached state must carry it is
+        // the limiter's. Same subject as 8 Oct - a landing that held in the audio and came back at 0.0 after a
+        // relaunch because nothing captured the cache after a loop write.
+        check (b64.isNotEmpty(), "Z3. the stage's slot has a cached state at all (RED as it stood on a cold cache)",
                juce::String (b64.length()) + " b64 chars");
 
         juce::MemoryBlock mb;
@@ -1285,20 +1246,19 @@ static int guardMain()
                EedLevelProcessor::optionName (EedLevelProcessor::kOptionMatch));
         Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
         r.proc.setChannelType (ChannelType::DrumBus);
-        { auto* pp = new juce::DynamicObject();
-          pp->setProperty ("gain_db", 0.0);
-          pp->setProperty ("loudness_option", (double) EedLevelProcessor::kOptionMatch);   // and NO target_lufs
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        { // 10 Oct: the INTENT rides the rack record now - the Level slot it used to ride is gone.
+          auto* rec = new juce::DynamicObject();
+          rec->setProperty ("loudness_option", (double) EedLevelProcessor::kOptionMatch);   // and NO target_lufs
+          r.h.setLevellingRecord (juce::var (rec));
+          r.presetStageGain (0.0f); }
         calibrate (r.proc, r.prog, -18.0f);
         check (r.loop.armFromChain(),
                "F2-6. a Level slot carrying option \"match\" and no target ARMS (RED as it stood: no target meant "
                "\"not armed: no target in the chain\")");
         check (r.loop.aimWords() == "matched to input", "F2-6. ...as a match", r.loop.aimWords());
-        auto* lv = dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (r.levelSlot));
-        check (lv != nullptr && lv->loudnessOption() == EedLevelProcessor::kOptionMatch,
-               "F2-6. ...and the slot still holds option 4 after the dial write, not clamped back to commercial",
-               lv != nullptr ? EedLevelProcessor::optionName (lv->loudnessOption()) : "no Level device");
+        // 10 Oct: the second half asserted the LEVEL DEVICE still held option 4 after a dial write. There is no
+        // Level device. The surviving subject - "match survives the round trip" - is the record's, and V5
+        // asserts the record carries the option; this half is retired with the slot it was about.
     }
     // ================= 08c ITEM E (9 Oct 2026): THE FINAL CEILING IS -0.1 dBTP ==========================
     // Sean's chain ended on -1.2 dBTP on 08b. The plugin did nothing wrong by its own lights: the server's block
@@ -1420,10 +1380,19 @@ static int guardMain()
                    "L7. ...and THE USER'S OWN PLUGIN SURVIVES: a chain with no limiter has no ceiling to confirm, "
                    "so nothing is substituted (RED as it stood: the one real plugin was replaced BY a limiter)",
                    names.joinIntoString (" | "));
-            check (loop.findTarget().limiterSlot != loop.levelSlot(),
-                   "L7. ...and findTarget never nominates the Level slot as the limiter",
-                   "limiterSlot " + juce::String (loop.findTarget().limiterSlot)
-                       + ", levelSlot " + juce::String (loop.levelSlot()));
+            // 10 Oct: this compared limiterSlot against levelSlot, which is now ALWAYS -1 - a check that can no
+            // longer fail is not a check. What matters is unchanged: the slot it nominates must be a real
+            // limiter-like slot, or nothing at all. Never a plugin that merely sits last.
+            {
+                const int ls = loop.findTarget().limiterSlot;
+                const bool okNom = ls < 0 || (ls < h.getNumSlots()
+                                              && ChainHost::isLimiterLikeName (h.getSlotInfo (ls).name));
+                check (okNom,
+                       "L7. ...and findTarget nominates a REAL limiter or nothing - never a plugin that happens "
+                       "to sit last",
+                       "limiterSlot " + juce::String (ls)
+                           + (ls >= 0 && ls < h.getNumSlots() ? " (" + h.getSlotInfo (ls).name + ")" : ""));
+            }
             juce::ignoreUnused (lims);
         }
     }
@@ -1442,11 +1411,11 @@ static int guardMain()
                "L6. ...and dynamic and match both cap at 3 dB, for the same reason: neither is being pushed",
                f1 (LoudnessLoop::grCapDb ("dynamic")) + " / " + f1 (LoudnessLoop::grCapDb ("match")));
         Rig r (false); r.proc.setChannelType (ChannelType::FullMix);
-        { auto* pp = new juce::DynamicObject();
-          pp->setProperty ("target_lufs", -9.0);
-          pp->setProperty ("option", "commercial");      // the word Sean has ruled the server should send
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        { // 10 Oct: the INTENT rides the rack record now - the Level slot it used to ride is gone.
+          auto* rec = new juce::DynamicObject();
+          rec->setProperty ("target_lufs", -9.0);
+          rec->setProperty ("option", "commercial");      // the word Sean has ruled the server should send
+          r.h.setLevellingRecord (juce::var (rec)); }
         calibrate (r.proc, r.prog, -18.0f);
         check (r.loop.armFromChain() && r.loop.loudnessOption() == "commercial",
                "L6. \"commercial\" is ACCEPTED from the server and kept as itself, not folded into pushed",
@@ -1463,10 +1432,10 @@ static int guardMain()
         Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
         r.proc.setChannelType (ChannelType::LeadVocal);
         r.setGainDb (-6.0f);
-        { auto* pp = new juce::DynamicObject();
-          pp->setProperty ("option", "match");                       // and NOTHING else, exactly as B sends it
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        { // 10 Oct: the INTENT rides the rack record now - the Level slot it used to ride is gone.
+          auto* rec = new juce::DynamicObject();
+          rec->setProperty ("option", "match");                       // and NOTHING else, exactly as B sends it
+          r.h.setLevellingRecord (juce::var (rec)); }
         const auto t = r.loop.findTarget();
         check (t.option == "match" && t.optionSource == "params.option",
                "L1. `params.option` IS READ, and the log can say where it came from (RED as it stood: the field "
@@ -1491,12 +1460,12 @@ static int guardMain()
         // NOTE loudness_option is a STRING here. The device's schema takes a NUMBER, so lround() of a string var
         // gives 0 = "commercial" - the legacy field cannot be trusted on its own, which is why `option` leads.
         Rig r (false); r.proc.setChannelType (ChannelType::FullMix);
-        { auto* pp = new juce::DynamicObject();
-          pp->setProperty ("target_lufs", -12.0);
-          pp->setProperty ("option", "dynamic");
-          pp->setProperty ("loudness_option", "dynamic");
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        { // 10 Oct: the INTENT rides the rack record now - the Level slot it used to ride is gone.
+          auto* rec = new juce::DynamicObject();
+          rec->setProperty ("target_lufs", -12.0);
+          rec->setProperty ("option", "dynamic");
+          rec->setProperty ("loudness_option", "dynamic");
+          r.h.setLevellingRecord (juce::var (rec)); }
         const auto t = r.loop.findTarget();
         check (t.option == "dynamic" && t.optionSource == "params.option",
                "L2. the mix-bus example reads \"dynamic\" from `params.option`",
@@ -1514,11 +1483,11 @@ static int guardMain()
     }
     {   // L3: the legacy WORD on its own, with no `option` - an older server's chain
         Rig r (false); r.proc.setChannelType (ChannelType::FullMix);
-        { auto* pp = new juce::DynamicObject();
-          pp->setProperty ("target_lufs", -8.0);
-          pp->setProperty ("loudness_option", "pushed");
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        { // 10 Oct: the INTENT rides the rack record now - the Level slot it used to ride is gone.
+          auto* rec = new juce::DynamicObject();
+          rec->setProperty ("target_lufs", -8.0);
+          rec->setProperty ("loudness_option", "pushed");
+          r.h.setLevellingRecord (juce::var (rec)); }
         const auto t = r.loop.findTarget();
         check (t.option == "pushed" && t.optionSource.contains ("legacy"),
                "L3. the legacy STRING loudness_option is read as the word it is, and named as legacy",
@@ -1532,10 +1501,10 @@ static int guardMain()
             Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
             r.proc.setChannelType (isMix ? ChannelType::FullMix : ChannelType::DrumBus);
             r.setGainDb (-4.0f);
-            { auto* pp = new juce::DynamicObject();
-              pp->setProperty ("target_lufs", -8.0);                 // a target, and NO option at all
-              auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-              r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+            { // 10 Oct: the intent rides the record. A target, and NO option at all.
+              auto* rec = new juce::DynamicObject();
+              rec->setProperty ("target_lufs", -8.0);
+              r.h.setLevellingRecord (juce::var (rec)); }
             const auto t = r.loop.findTarget();
             check (t.option.isEmpty() && t.optionSource == "absent",
                    "L4. no option in the chain is reported as ABSENT, not as the device's default word",
@@ -1612,10 +1581,10 @@ static int guardMain()
     {
         Rig r (false);   // EchoJay Limiter last
         r.proc.setChannelType (ChannelType::FullMix);   // a MIX BUS -> target
-        { auto* pp = new juce::DynamicObject();
-          pp->setProperty ("target_lufs", -9.0); pp->setProperty ("option", "commercial");
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        { // 10 Oct: the INTENT rides the rack record now - the Level slot it used to ride is gone.
+          auto* rec = new juce::DynamicObject();
+          rec->setProperty ("target_lufs", -9.0); rec->setProperty ("option", "commercial");
+          r.h.setLevellingRecord (juce::var (rec)); }
         calibrate (r.proc, r.prog, -18.0f);
         const int before = r.h.getNumSlots();
         check (r.loop.armFromChain(), "V2. a target build arms");
@@ -1667,11 +1636,21 @@ static int guardMain()
         // A chain written before 10 Oct: a Level slot carrying gain. Its dB moves to the stage and the slot goes.
         Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
         r.proc.setChannelType (ChannelType::LeadVocal);   // a channel -> match -> rack_out
-        // put a gain on the Level slot, as an old landing would have left it
-        { auto* pp = new juce::DynamicObject(); pp->setProperty ("gain_db", 4.0);
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
-        EchoJayBorrowHostTestAccess::applyExact (r.h, r.levelSlot);
+        // THE OLD SHAPE, BUILT ON PURPOSE. The rig no longer loads a Level slot, so a migration leg has to
+        // create the thing it migrates - which is the right way round: this is a pre-10-Oct PROJECT arriving at
+        // a post-10-Oct build, not a fixture convenience.
+        const auto* lvDev = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
+        check (lvDev != nullptr, "V4. precondition: EchoJay Level is still registered (old projects contain it)");
+        int oldLevelAt = -1;
+        if (lvDev != nullptr)
+        {
+            r.h.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*lvDev), 0);   // NOT last: Sean's sat 5th of 6
+            oldLevelAt = 0;
+            auto* pp = new juce::DynamicObject(); pp->setProperty ("gain_db", 4.0);
+            auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+            r.h.setSlotStructuredSettings (oldLevelAt, juce::var (w));
+            EchoJayBorrowHostTestAccess::applyExact (r.h, oldLevelAt);
+        }
         calibrate (r.proc, r.prog, -18.0f);
         const int before = r.h.getNumSlots();
         const float busBefore = r.proc.getBusGainDb();
@@ -1693,10 +1672,10 @@ static int guardMain()
     std::printf ("== V5. the levelling record is at RACK level, and is downgrade-safe ==\n");
     {
         Rig r (false); r.proc.setChannelType (ChannelType::FullMix);
-        { auto* pp = new juce::DynamicObject();
-          pp->setProperty ("target_lufs", -9.0); pp->setProperty ("option", "commercial");
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-          r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        { // 10 Oct: the INTENT rides the rack record now - the Level slot it used to ride is gone.
+          auto* rec = new juce::DynamicObject();
+          rec->setProperty ("target_lufs", -9.0); rec->setProperty ("option", "commercial");
+          r.h.setLevellingRecord (juce::var (rec)); }
         calibrate (r.proc, r.prog, -18.0f);
         check (r.loop.armFromChain(), "V5. armed");
         const auto rec = r.h.getLevellingRecord();

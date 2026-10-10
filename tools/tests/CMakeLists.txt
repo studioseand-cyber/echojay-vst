@@ -144,6 +144,12 @@ function(ej_add_guard NAME)
         juce::juce_recommended_config_flags
         $<$<NOT:$<BOOL:${EJ_GUARDS_NO_LTO}>>:juce::juce_recommended_lto_flags>
         $<TARGET_FILE:${EJ_PLUGIN_TARGET}>
+        # 10 Oct 2026, at the integration merge: the V2 archive now REFERENCES integration's binary-data library
+        # (juce_add_binary_data(EchoJayPlaybackArt), the Playback grid's pictures), so every guard that links the
+        # archive needs it too or the link fails on EJPlaybackArt::club_floor_jpg and five siblings. The plugin
+        # target links it at CMakeLists.txt:441; this is the same dependency, stated once for the guard tree.
+        # Only for the V2 side - the Link archive does not reference the art.
+        $<$<STREQUAL:${EJ_PLUGIN_TARGET},EchoJay>:EchoJayPlaybackArt>
         ${EJ_GUARD_FRAMEWORKS}
         "-lcurl")
     target_include_directories(${NAME} PRIVATE ${EJ_JUCE_INCS})
