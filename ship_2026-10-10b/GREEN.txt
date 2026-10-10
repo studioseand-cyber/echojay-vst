@@ -1,0 +1,119 @@
+ship_2026-10-10b - GREEN
+========================
+
+Branch feat/08c, HEAD 51ef90a3. Gated 10 Oct 2026.
+NOTHING INSTALLED. NOTHING PUSHED.
+
+THE ROUND: the four items Sean queued, in order.
+
+1. THE GR MODEL RE-DERIVED (and green before anything reached Logic, as ruled)
+   All seven known-stale legs are green as REAL passes and kKnownStaleLegs is EMPTY.
+   Three causes, two of them product faults:
+     - A UNIT BUG, and the broken figure was the one the USER SEES. The GR estimate
+       subtracted a Weighting::Plain slot tally from a K-weighted chain tally, and it
+       is only REPORTED for a third-party limiter - so "limiter working ~X dB" was a
+       dBFS reading taken from a LUFS one. The tap read 0.46 where the gained input
+       was 6.57, and the estimate came out -3.30 against a +2.80 truth: a limiter
+       reported as making the signal LOUDER. True peak agreed throughout, because it
+       is unweighted on both, which is why only half of it ever looked wrong. The
+       reduction is now taken across the limiter's OWN TWO LEGS.
+     - NOTHING RESET THE STAGE TAP at the window. startWindow accounted for the
+       meters that went away and not for the one that ARRIVED.
+     - K5's RULER WAS LIMITING: our own 10 Oct ruling had inserted an EchoJay Limiter
+       into the bypass rig, so its "unlimited" reference read -0.07 dBTP - our own
+       ceiling. K5's TRUTH was re-derived too; it had agreed with the estimate only
+       while both made the same two mistakes.
+
+2. THE PLUGIN HALF OF THE DATA FIX (from B)
+   The four empty arrays are gone - with B's merge answer, [] is the one shape that
+   DELETES. pinnedProjects is forwarded. baseUpdatedAt is sent only when the read
+   supplied one. All three are pure predicates, and a NEW GATED GUARD runs them:
+   the rule was already a predicate so a suite could execute it, and the only thing
+   executing it (mapfps_test) is not registered in ctest.
+
+3. REMOTE CONTROL, STAGES 1-5
+   Stage 1: the audio detour and the lease MUTE are gone. Sean's acceptance test is
+            green ON RENDERED AUDIO: a lease is HELD, the rack still processes, and
+            the lease changes the audio NOT AT ALL (0.3536 -> 0.3536, with a
+            two-sided control first). The mute was the half that would have shipped
+            something worse than the bug: a selected Link would have gone SILENT.
+   Stage 2: slot_in, slot_out, master_wet, pre_gain as acked ops, through the same
+            host setters the Link's own cards use. The ack reports what LANDED.
+   Stage 3: the value ring - layout pinned byte-for-byte, coalescing newest-wins,
+            gesture boundaries never discarded, stale revisions dropped with a count.
+            RT appliers for the four figures (Sean's ruling (a), scoped), bookkeeping
+            downstream. A RING move and a CARD move on the same figure END AT THE
+            SAME VALUE, and 40 ring frames cost no more undo steps than one card
+            move. set_param stays on the message thread AND THE CONTRACT IS
+            CORRECTED - it promised <= 1 buffer for every ring command, which was
+            wrong when I wrote it.
+   Stage 4: open_editor, with embed PROVEN by pid and refused with its reason in all
+            three refusal cases.
+   Stage 5: undo under remote control - one step per gesture on release, the previous
+            value SENT BACK, a skip that says so. THE REMOVALS ARE DEFERRED and the
+            reason is in the commit and in docs/NEXT_ROUND_QUEUE.md: they are coupled
+            to the borrowed-copy migration, which is still load-bearing (93 call
+            sites, and the 4 Oct ruling exists because of it).
+
+4. AGENT MODE
+   ExecutorDo on top of A2's read half (a SUBCLASS - the read half is inherited, not
+   forked, and the read-only executor still refuses). The Settings switch is a REAL
+   switch now: agentModeOn() was dev-mode AND a flag file, so the toggle Sean asked
+   for could not have turned it on for Sean. OFF by default; off = chat and Apply.
+   The switch governs `do` AND `undo`, read live. echoJayOnly and can_act ride the
+   start context.
+
+THE GATE
+--------
+S1  archives, forced delete + relink (both, universal)
+S2  56 guard targets   (54 + userdata_write_guard + remote_ops_guard)
+S3  4 bundles
+S4  ctest -L "fast|plugins", 66 tests: 66 PASSED, 0 failed
+S5  link_state_guard: GREEN, both sides
+
+own_diff PASSED on the pin set this morning (e16eb2d8) - so nothing in this round
+moved the own-channel text, which is the check that no built-in's schema changed.
+
+Outside the labels, with written exclusions: comp_render_check and
+level_loop_red_prefix. tools/mapfps_test is NEITHER gated NOR excluded and reports
+19 failing text pins - queued as a decision for Sean, not touched here.
+
+DOWNGRADE SAFETY
+----------------
+Nothing in this round adds or changes a saved-state field. The value ring is a
+SEPARATE MAPPED FILE (cmd-ring-<uid>.bin) and the agent-mode switch is a flag file;
+neither is plugin state, so ship_2026-10-09a ignores both and opens a project
+written by this build exactly as it opens one written by itself. The levelling
+record's additive-var argument from ship_2026-10-10a is unchanged and still asserted
+by loudness_loop_guard V1-V5.
+
+BUNDLES (arm64 first)
+---------------------
+EchoJay V2.component    arm64 84E8B5EE-A6AB-3400-AAA7-1C22EE634938
+                        x86_64 B342ABD7-893D-3E63-9A8E-150435A46E4D
+EchoJay V2.vst3         arm64 C2A14153-218F-3A8B-BE4E-D3A2F1781B62
+                        x86_64 4A57D430-F342-3D5B-974F-4C6BA02F9CE9
+EchoJay Link.component  arm64 2FE6FEAC-885D-3542-A17F-ABD2DCD961AC
+                        x86_64 060F2DB0-2CB8-3B16-8C70-2C102591CA29
+EchoJay Link.vst3       arm64 358FA734-F9AE-31BC-B55F-38CF6354A8C6
+                        x86_64 DD488FCF-7959-3EB1-9B86-2C783F87D6E7
+
+IN-HOST TESTS THIS BUILD IS FOR (what a guard cannot see)
+---------------------------------------------------------
+1. THE KICK THROUGH THE DRUM BUS. Select the kick's Link in the V2. The kick should
+   arrive at the drum bus PROCESSED, its own fader and sends should move it, and the
+   V2's position should add nothing. Selecting it should change the sound not at all.
+2. A SELECTED LINK IS NOT SILENT. The old build muted it; this one must not.
+3. open_editor: ask the V2 to open a third-party plugin's editor on a Link. The
+   window should be the Link's own and its knobs instant.
+4. Agent mode: the switch is in Settings, OFF. With it off, EchoJay proposes and you
+   press Apply. With it on, it may change things itself.
+
+FLAGGED
+-------
+Sean: two stores for reference sets (the kept preset feature + integration's library).
+Sean: mapfps_test is neither gated nor excluded, with 19 failing pins.
+B:    set_level is now the RACK RECORD, not a Level slot - CONTRACT_AGENT_TOOLS.md
+      should say so if it still names the slot.
+B:    emit option "commercial" rather than collapsing it to "pushed";
+      docs/ECHOJAY_API_CONTRACT.md does not state the chat-stream refusal shape.
