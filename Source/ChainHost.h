@@ -1065,6 +1065,7 @@ public:
     // through an original->current map as earlier ops shift the rack.
     struct ChainEditOp {
         juce::String op;        // add | remove | replace | move | bypass | set | set_wet
+                                // | slot_in | slot_out | master_wet | pre_gain  (stage 2, 10 Oct 2026)
         int  slot  = -1;        // original index (remove/replace/move/bypass/set/set_wet)
         int  to    = -1;        // move target (original numbering)
         int  after = -2;        // add: insert after this original slot; -1 = first
@@ -1111,6 +1112,18 @@ public:
         // See HANDOVER/op-targets-v1.md.
         juce::String slotName;
         juce::String afterName;
+        // ---- REMOTE CONTROL STAGE 2 (10 Oct 2026): THE VALUE OPS -------------------------------------
+        // slot_in, slot_out, master_wet and pre_gain, named as docs/CONTRACT_LINK_COMMANDS.md §2.1 names
+        // them, with the contract's own field names: `db` for a gain, `pct` for a wet.
+        // WHY THEY WERE MISSING AND WHAT IT COST: these four were written STRAIGHT ONTO THE HOST
+        // (setSlotPreTrimDb / setSlotOutGainDb / setMasterWet / setPreGainDb), which is correct for a rack the
+        // V2 owns and impossible for one it does not. So on a REMOTE rack the V2's own IN/OUT readouts were
+        // read-only - onSlotGainSet is suppressed when `remote` - and the user could see a figure they could
+        // not move. The plan calls that out in section 2: "MISSING as an op".
+        // NaN = ABSENT, never zero. A gain op that read a missing field as 0 dB would silently set unity, and a
+        // wet op would silently set fully dry; the same rule wet_pct and the headroom numbers already follow.
+        float dbValue  = std::numeric_limits<float>::quiet_NaN();   // slot_in | slot_out | pre_gain
+        float pctValue = std::numeric_limits<float>::quiet_NaN();   // master_wet (0..100)
         // Server-decided no-such-control verdict riding the op (9 Aug
         // 2026): term the user asked for + provenance tier (deferred /
         // unmapped / complete). The card composes the REASON a suggestion

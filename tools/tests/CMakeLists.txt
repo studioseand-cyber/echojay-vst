@@ -393,6 +393,11 @@ ej_add_guard(pregain_readback         SOURCE tools/pregain_readback/harness.cpp 
 # and the only thing running it was tools/mapfps_test, which is NOT REGISTERED HERE. A predicate nobody executes
 # in the gate is a text pin with extra steps. See the guard's own opening comment for both defects it covers.
 ej_add_guard(userdata_write_guard     SOURCE tools/userdata_write_guard/harness.cpp          LABEL fast SCRIBBLE)
+# 10 Oct 2026, remote control stage 2: the four VALUE ops (slot_in, slot_out, master_wet, pre_gain) that make
+# the V2's own controls work on a rack it does not own. They were written straight onto the host before, which
+# is why a remote rack's IN/OUT readouts were read-only. Stages 3-5 add to this guard (the ring, open_editor,
+# undo over the transport), which is why it is its own file rather than legs bolted onto level_slot_guard.
+ej_add_guard(remote_ops_guard         SOURCE tools/remote_ops_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(mapfps_sync_guard        SOURCE tools/mapfps_sync_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(own_diff                 SOURCE tools/own_diff/harness.cpp                       LABEL fast
              WRAPPER run_own_diff.sh WRAPPER_ARG e16eb2d8c4e59156ad912967b611fc8364452980c6fbf0aa083d5f02c1937fc7)

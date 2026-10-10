@@ -1998,6 +1998,12 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
                     op.headroomMode.clear();
                 }
             }
+            // STAGE 2 (10 Oct 2026): the value ops' own fields, read where every op is read so no apply
+            // path parses JSON of its own. Same rule as wet_pct and the headroom numbers: a number that is
+            // not a number is ABSENT, never zero - a gain op defaulting to 0 dB would silently set unity and
+            // a wet op would silently set fully dry, and both would look like the user's own move.
+            if (op.op == "slot_in" || op.op == "slot_out" || op.op == "pre_gain") num ("db", op.dbValue);
+            if (op.op == "master_wet") num ("pct", op.pctValue);
             if (auto* sc = eo->getProperty ("scope").getDynamicObject())
             {
                 const auto r = sc->getProperty ("role").toString().trim().toLowerCase();
@@ -2106,6 +2112,21 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
         return juce::String::fromUTF8("\xe2\x97\x90 set wet ")
              + juce::String(juce::roundToInt(juce::jmax(0.0f, op.wetPct))) + "% on "
              + slotName(op.slot) + " (slot " + juce::String(op.slot + 1) + ")";
+    // ---- STAGE 2 (10 Oct 2026): the value ops say what they will do, in the user's own units ----------
+    // They go on the card like every other op. An op the card cannot describe gets no row, a card with no
+    // rows has no height, and a card with no height gets no Apply button - which is exactly how the
+    // chat-route level-match card came to be readable and not applicable (21t-i).
+    if (op.op == "slot_in" || op.op == "slot_out")
+        return juce::String::fromUTF8("\xe2\x86\x95 set ") + (op.op == "slot_in" ? "IN" : "OUT") + " "
+             + (std::isfinite(op.dbValue) ? juce::String(op.dbValue, 1) + " dB" : juce::String("(no db)"))
+             + " on " + slotName(op.slot) + " (slot " + juce::String(op.slot + 1) + ")";
+    if (op.op == "master_wet")
+        return juce::String::fromUTF8("\xe2\x97\x90 set the rack's master wet to ")
+             + (std::isfinite(op.pctValue) ? juce::String(juce::roundToInt(op.pctValue)) + "%"
+                                           : juce::String("(no pct)"));
+    if (op.op == "pre_gain")
+        return juce::String::fromUTF8("\xe2\x86\x95 set the pre-chain gain to ")
+             + (std::isfinite(op.dbValue) ? juce::String(op.dbValue, 1) + " dB" : juce::String("(no db)"));
     if (op.op == "set")
     {
         // A set op without structured settings dials NOTHING - it puts the
@@ -2221,9 +2242,18 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
     // for any other reason - a trim, a wet knob, a slot added at the end - is not a reason to refuse them. The
     // touched-slot guard below still has to pass: if the slot this op names is not the slot the preview named,
     // it is still refused, and by the guard that actually checked.
+    // STAGE 2 (10 Oct 2026): the four VALUE ops join R3's list, and for R3's own stated reason. slot_in,
+    // slot_out, master_wet and pre_gain change a FIGURE and nothing about the shape of the rack, so a
+    // revision that moved for any other reason is not a reason to refuse them - and refusing them would be
+    // worse here than for a dial, because these are the ops a user reaches for WHILE adjusting something
+    // else. The touched-slot guard below still applies to the two that name a slot; master_wet and pre_gain
+    // name none, which is why they could never be caught by it and are judged on the figure alone.
     const bool dialOnly = [&ops]
     {
-        for (const auto& o : ops) if (o.op != "set" && o.op != "set_wet") return false;
+        for (const auto& o : ops)
+            if (o.op != "set" && o.op != "set_wet"
+                && o.op != "slot_in" && o.op != "slot_out"
+                && o.op != "master_wet" && o.op != "pre_gain") return false;
         return ! ops.empty();
     }();
     if (expectedRevision >= 0 && expectedRevision != getChainRevision() && ! dialOnly)
@@ -2444,6 +2474,24 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
                 if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
                 if (op.wetPct < 0.0f) return bad("set_wet without a wet_pct (0 to 100)");
             }
+            // ---- STAGE 2: THE VALUE OPS -----------------------------------------------------------
+            // Each refuses an ABSENT value rather than applying a default, for the reason in the struct's
+            // note: a default here is indistinguishable from the user's own move once it has landed.
+            else if (op.op == "slot_in" || op.op == "slot_out")
+            {
+                if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
+                if (! std::isfinite(op.dbValue)) return bad(op.op + " without a db");
+            }
+            else if (op.op == "master_wet")
+            {
+                // Slotless by nature: it is the rack's own blend, so a slot on it is a mistake worth naming
+                // rather than ignoring - an op aimed at a slot that this op cannot act on is a client bug.
+                if (! std::isfinite(op.pctValue)) return bad("master_wet without a pct (0 to 100)");
+            }
+            else if (op.op == "pre_gain")
+            {
+                if (! std::isfinite(op.dbValue)) return bad("pre_gain without a db");
+            }
             else return bad("unknown operation \"" + op.op + "\"");
         }
     }
@@ -2606,6 +2654,57 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
                        + slots_[(size_t)cur].desc.name + "\" wet=" + juce::String(op.wetPct, 1) + "%").toRawUTF8());
         finishOpAndContinue("set wet " + juce::String(juce::roundToInt(op.wetPct)) + "% on "
                             + slots_[(size_t)cur].desc.name);
+        return;
+    }
+    // ---- STAGE 2 (10 Oct 2026): THE VALUE OPS ----------------------------------------------------
+    // slot_in / slot_out / master_wet / pre_gain. These four were written straight onto the host, which is
+    // right for a rack the V2 owns and impossible for one it does not - so the V2's IN/OUT readouts on a
+    // REMOTE rack were read-only and the user saw figures they could not move.
+    // They follow set_wet's shape exactly: resolve the ORIGINAL index through the map, refuse a target
+    // mismatch, write through the SAME host setter the Link's own card uses, log, and return a result line
+    // the ack carries. Going through the same setter is the point: there is then one writer per figure, and
+    // the Link's own card and a remote move cannot disagree about what happened.
+    if (op.op == "slot_in" || op.op == "slot_out")
+    {
+        const int cur = curOf(op.slot);
+        if (cur < 0) return failAndStop(op.op + " failed: slot no longer present");
+        {
+            const auto why = targetRefusal(cur);
+            if (why.isNotEmpty()) return failButContinue(op.op + " refused: " + why);
+        }
+        const bool isIn = (op.op == "slot_in");
+        if (isIn) setSlotPreTrimDb (cur, op.dbValue);
+        else      setSlotOutGainDb (cur, op.dbValue);
+        const auto nm = slots_[(size_t)cur].desc.name;
+        // The LANDED figure, read back from the host rather than echoing what was asked. A setter that
+        // clamps (and both of these do) would otherwise have its clamp reported as the user's own value.
+        const float landed = isIn ? getSlotPreTrimDb (cur) : getSlotOutGainDb (cur);
+        EchoJay_NSLog(("EJEdit: " + op.op + " slot=" + juce::String(cur + 1) + " \"" + nm
+                       + "\" asked=" + juce::String(op.dbValue, 2)
+                       + " landed=" + juce::String(landed, 2) + " dB").toRawUTF8());
+        finishOpAndContinue("set " + juce::String(isIn ? "IN" : "OUT") + " "
+                            + juce::String(landed, 1) + " dB on " + nm);
+        return;
+    }
+    if (op.op == "master_wet")
+    {
+        setMasterWet (juce::jlimit (0.0f, 100.0f, op.pctValue) / 100.0f);
+        const float landed = getMasterWet() * 100.0f;
+        EchoJay_NSLog(("EJEdit: master_wet asked=" + juce::String(op.pctValue, 1)
+                       + " landed=" + juce::String(landed, 1) + "%").toRawUTF8());
+        finishOpAndContinue("set the rack's master wet to " + juce::String(juce::roundToInt(landed)) + "%");
+        return;
+    }
+    if (op.op == "pre_gain")
+    {
+        // userSet FALSE: this is a remote move, not a hand on the Link's own dial. The flag exists so the
+        // Link can tell an explicit choice from a default it may still revise, and a V2's op is the former
+        // for the V2 and not for this instance - so it is recorded as what it is.
+        setPreGainDb (op.dbValue, /*userSet*/ false);
+        const float landed = getPreGainDb();
+        EchoJay_NSLog(("EJEdit: pre_gain asked=" + juce::String(op.dbValue, 2)
+                       + " landed=" + juce::String(landed, 2) + " dB").toRawUTF8());
+        finishOpAndContinue("set the pre-chain gain to " + juce::String(landed, 1) + " dB");
         return;
     }
     if (op.op == "move")
