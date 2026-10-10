@@ -1,0 +1,76 @@
+NOISE CENSUS, 10 Oct: every control in Sean's cert 2 + 3 (compressor fixtures + every Phase B text-at trace; read-only) whose NAME the strip
+noise rule matches (noise / hiss / drift / wow / flutter / crackle / Virtual Gain), any category. 43 products have one.
+Rule fix found by this census (EjmapStrip.h): 'Noise Reduct' (UAD Oxide Tape), 'Noise Bypass' (Retro Fi: Off = the noise plays), 'Noise Solo'
+(bx_dynEQ) and 'Noise Shaping' (Waves L1/L2, Pro-L 2: dither shaping) are not noise sources - now excluded. None of them was written.
+
+A. WITH AN OFF POSITION, MEASURED WITH THE NOISE ON (instantiate not off) - non-strip records:
+   ADA STD-1 Stereo Tapped Delay      Noise Level        ['delay', 'gainall']         instantiate '-93.0 dB'  off ('0.000', '-oo dB')
+   Abbey Road J37 Tape (m)            WOW Depth          ['gainall', 'saturation']    instantiate '0.0dB'  off ('0.000', 'Off')
+   Abbey Road J37 Tape (m)            Flutter Depth      ['gainall', 'saturation']    instantiate '0.0dB'  off ('0.000', 'Off')
+   Abbey Road J37 Tape (s)            WOW Depth          ['gainall', 'saturation']    instantiate '0.0dB'  off ('0.000', 'Off')
+   Abbey Road J37 Tape (s)            Flutter Depth      ['gainall', 'saturation']    instantiate '0.0dB'  off ('0.000', 'Off')
+   Acme Opticom XLA-3                 Noise Level        ['gaincal']                  instantiate '-90.0 dB'  off ('0.000', '-oo dB')
+   Little Radiator                    Noise              ['gainall', 'saturation']    instantiate 'On'  off ('0.000', 'Off')
+   Radiator                           Noise              ['gainall', 'saturation']    instantiate 'On'  off ('0.000', 'Off')
+   UAD ADA STD-1 Stereo Tapped Delay  Noise              ['delay']                    instantiate '-93.0'  off ('0.000', '-oo')
+   UAD Ampex ATR-102                  Wow & Flutter      ['gainall']                  instantiate 'ON'  off ('0.000', 'OFF')
+   Unfiltered Audio lo-fi-af          Stereo Noise       ['gainall']                  instantiate 'On'  off ('0.000', 'Off')
+   bx_townhouse Buss Compressor       Virtual Gain       ['gaincal']                  instantiate '-100 dB'  off ('0.000', '-oo dB')
+   (UAD Oxide Tape 'Noise Reduct' On: not a noise source - excluded)
+
+B. WITH AN OFF POSITION, ALREADY OFF AT INSTANTIATE (measured clean): NLS Buss / Channel (m, s) VCA 1-8 Noise + Noise, DPR-402 (m, s),
+   dbx-160 (m, s), Aphex Vintage Exciter (m, s), Kramer Tape (m, s) Noise, Abbey Road J37 Noise Level, SPL PQ V-Gain, UAD Ampex ATR-102 Noise,
+   Unfiltered Audio lo-fi-af Noise (0 %), Sandman Pro Wow/Jitter (0 %), bx_dynEQ Noise Solo, Retro Fi Noise Bypass
+
+C. NOISE-NAMED, NO OFF POSITION READ (the rule cannot write them; the sampled texts have no off end):
+   AMEK EQ 200                        V-Gain               instantiate '-93  dB'
+   AMEK EQ 250                        V-Gain               instantiate '-93  dB'
+   Abbey Road J37 Tape (m)            WOW Rate             instantiate '0.0'
+   Abbey Road J37 Tape (m)            Flutter Rate         instantiate '0.0'
+   Abbey Road J37 Tape (s)            WOW Rate             instantiate '0.0'
+   Abbey Road J37 Tape (s)            Flutter Rate         instantiate '0.0'
+   Kiive Tape Face                    NOISE                instantiate '-100.0'
+   Kramer HLS (m)                     Noise                instantiate 'ORIG'
+   Kramer HLS (s)                     Noise                instantiate 'ORIG'
+   Kramer Tape (m)                    Wow and Flutter      instantiate '50.0'
+   Kramer Tape (s)                    Wow and Flutter      instantiate '50.0'
+   L1+ Ultramaximizer (s)             Noise Shaping        instantiate 'Normal'
+   L2 (m)                             Noise Shaping        instantiate 'Normal'
+   L2 (s)                             Noise Shaping        instantiate 'Normal'
+   Pro-L 2                            Noise Shaping        instantiate '2'
+   Retro Fi (m)                       Noise Type           instantiate 'Cassette1'
+   Retro Fi (m)                       Noise Level          instantiate '-32.0 dB'
+   Retro Fi (m)                       Wow A                instantiate '2.42'
+   Retro Fi (m)                       Wow B                instantiate '4.45'
+   Retro Fi (m->s)                    Noise Type           instantiate 'Cassette1'
+   Retro Fi (m->s)                    Noise Level          instantiate '-32.0 dB'
+   Retro Fi (m->s)                    Wow A                instantiate '2.42'
+   Retro Fi (m->s)                    Wow B                instantiate '4.45'
+   Retro Fi (s)                       Noise Type           instantiate 'Cassette1'
+   Retro Fi (s)                       Noise Level          instantiate '-32.0 dB'
+   Retro Fi (s)                       Wow A                instantiate '2.42'
+   Retro Fi (s)                       Wow B                instantiate '4.45'
+   SSL Native X-Echo                  Wow & Flutter        instantiate '50.0'
+   UAD Ampex ATR-102                  Hiss Level           instantiate '0.00 dB'
+   UAD Ampex ATR-102                  Wow Level            instantiate '0.027 %'
+   UAD Ampex ATR-102                  Flutter Level        instantiate '0.012 %'
+   UAD Studer A800                    Hum Noise            instantiate '0.0 dB'
+   UAD Studer A800                    Hiss Noise           instantiate '0.0 dB'
+   Unfiltered Audio lo-fi-af          Noise Mode           instantiate 'TAPE HISS'
+   Unfiltered Audio lo-fi-af          Noise Gen Mode       instantiate 'ALWAYS ON'
+   ValhallaDelay                      Wow                  instantiate '0.5'
+   ValhallaDelay                      Flutter              instantiate '0.5'
+   iZotope Trash 2                    CONV: Gain           instantiate '5.96046e-07'
+
+D. THE 37 PUBLISHED PROFILES: three products carry a noise-named control - DPR-402 (m) and dbx-160 (m) (Noise, Off at instantiate:
+   measured clean) and bx_townhouse Buss Compressor (Virtual Gain -100 dB: measured with the noise ON).
+   bx_townhouse, measured here (the full compressor path + tone check, 4 runs at once, cert-traces evidence in scratch townhouse/):
+     noise on  x2: the raw sweep record differs in 160 figures (reduction_db / displayEngage by 0.01 dB) - the PROFILE and its TONE CHECK
+                   are identical (0 figures); g 2.0 PASS both
+     noise off x2 (EJ_PROBE_PRESET 12:0 -> '-oo dB'): records bit for bit
+     on vs off: the profile's figures identical; only its neutral Virtual Gain write differs (-100 dB vs -oo dB) - the published
+                profile already carries Virtual Gain = -100 dB as a neutral write, so the server reproduces the measured state
+   -> noise-on changes no figure a published profile or its tone check depends on. Per Kathy's rule: the noise-off write is NOT
+      extended to every mode; nothing changes for the publish set or the morning equality.
+   Not measured: the A-list's non-published Phase B products (ADA STD-1 delay noise -93 dB, J37 / ATR-102 wow & flutter, Radiator /
+   Little Radiator noise On, lo-fi-af Stereo Noise, XLA-3 Noise -90 dB) - their repeatability was not tested tonight.

@@ -158,7 +158,10 @@ inline OtherDynamics otherDynamicsFor (const std::vector<Section>& sections, con
 inline bool noiseSourceName (const juce::String& name)
 {
     const auto t = tokens (name);
-    for (const auto& x : t) if (x == "gate" || x == "reduction" || x == "reduce" || x == "filter" || x == "threshold" || x == "thresh" || x == "key" || x == "suppress" || x == "suppression" || x == "shaper") return false;
+    // not a noise SOURCE (10 Oct census: UAD Oxide Tape "Noise Reduct", Retro Fi "Noise Bypass" - Off = the noise plays -, bx_dynEQ
+    // "Noise Solo", Waves / FabFilter "Noise Shaping" - dither shaping)
+    for (const auto& x : t) if (x == "gate" || x.startsWith ("reduc") || x == "filter" || x == "threshold" || x == "thresh" || x == "key" || x.startsWith ("suppress") || x == "shaper"
+                                || x == "shaping" || x == "bypass" || x == "solo") return false;
     for (const auto& x : t) if (x == "noise" || x == "hiss" || x == "drift" || x == "wow" || x == "flutter" || x == "crackle") return true;
     const auto j = t.joinIntoString (" ");
     return j.contains ("virtual gain") || j == "vgain" || j.contains ("v gain");
