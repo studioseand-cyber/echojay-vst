@@ -1,0 +1,85 @@
+ship_2026-10-10a - GREEN
+========================
+
+Branch feat/08c, HEAD 87600ab3 (the own_diff pin is the commit after it; see below).
+Gated 10 Oct 2026. NOTHING INSTALLED. NOTHING PUSHED.
+
+THE ROUND
+---------
+The levelling redesign's harness tail, plus the gate's own tail. Five product faults,
+all of them found behind stale legs rather than by looking for them:
+
+  1. DONE DID NOTHING.        done() gated on the Level slot's index, permanently -1.
+  2. GLOBAL UNDO WAS REFUSED. applyUndoEntry, same dead cache - fourth site.
+     (everArmed() was the third, which also silenced the agent executor's
+     levelling read: present / landedGainDb / converged.)
+  3. findTarget NOMINATED A GAIN PLUGIN AS THE LIMITER on a one-op chain.
+  4. THE LANDING WAS NOT IN WHAT GETS SAVED. The live param held +6.49 dB and the
+     saved blob for the same slot said 0.00 - Sean's 8 Oct "it came back at 0.0" by
+     a new route. Proven both directions (RED 0.00 vs 6.49, GREEN after).
+  5. THE REFERENCE LIBRARY WROTE TO A RAW ~/Library, which no runner can isolate.
+
+THE GATE
+--------
+S1  archives, forced delete + relink (both, universal)
+S2  54 guard targets
+S3  4 bundles
+S4  ctest -L "fast|plugins", 64 tests: 63 passed + own_diff (see below)
+S5  link_state_guard: GREEN, both sides
+
+Outside the labels, with written exclusions in tools/tests/CMakeLists.txt:
+comp_render_check (a tool, loads a real AU) and level_loop_red_prefix (a pre-fix
+reproducer, built so it cannot rot, run by hand).
+
+own_diff
+--------
+RED in the gate against the old pin 4bf16c07, measured at e16eb2d8 (15,586 bytes),
+REPORTED first, and re-baselined only on Sean's explicit ruling - including for the
+one line that his standing authorisation did not cover (the EchoJay-only paragraph).
+The three reasons are recorded in full at tools/tests/CMakeLists.txt. The new pin IS
+the sha this gate produced, measured twice (an isolated run and the gate run agreed),
+so own_diff is green by that equality; it has not been re-executed since the pin.
+
+KNOWN-STALE, NAMED (Sean's 10 Oct ruling)
+-----------------------------------------
+7 GR-model calibration assertions in loudness_loop_guard's kKnownStaleLegs, excluded
+from the exit code, reported separately on every run, with a line that fires if one
+goes GREEN so the marking comes off: K5 x4, K4, K1's capped trim, O1.
+
+Their truth was derived around the OLD Level-OUT tap. K5 compares an estimate of
++4.67 against a truth of -6.16 - a SIGN disagreement, so it is the leg's arithmetic,
+not a tolerance. O1's premise says the hits are typically UNDER the 10 dB Commercial
+cap while the estimate reads 11.7 dB where the product's own hitsMeasure() reads 2.9.
+Forcing them green would ship unfalsifiable checks.
+
+  RE-DERIVING THEM IS THE FIRST ITEM OF THE NEXT ROUND, BEFORE ANY REMOTE-CONTROL
+  WORK, AND THEY MUST BE GREEN BEFORE ANYTHING REACHES LOGIC.
+
+DOWNGRADE SAFETY
+----------------
+Asserted by legs V1-V5 in loudness_loop_guard: a project or saved chain written by
+this build opens sensibly in ship_2026-10-09a. The levelling record is a NEW var
+beside the slots, not a change to any slot's shape, and the landed gain lives on the
+limiter's own input_db - a param ship_2026-10-09a already reads and restores - so the
+level is preserved even by a build that knows nothing about the record.
+
+BUNDLES (arm64 first)
+---------------------
+EchoJay V2.component    arm64 0D9FF365-FB0F-379D-8DC2-5B19378B8C8B
+                        x86_64 BF9E495A-874B-3F49-87F6-C1D7475AF8E9
+EchoJay V2.vst3         arm64 E4BE0738-7C59-36F1-858D-0F025546A4F4
+                        x86_64 F7823043-4D4B-3055-993E-C98DAD9498D5
+EchoJay Link.component  arm64 D5F8AD42-4E27-371B-9225-868F4E9485F9
+                        x86_64 C415271A-E484-374E-ABA3-A446EB83DA04
+EchoJay Link.vst3       arm64 5E02A821-7DA1-3879-99BA-ECCFF7192890
+                        x86_64 876F6D71-DF60-3C3C-8512-244699F405EF
+
+FLAGGED
+-------
+Sean: the merged tree has TWO stores for reference sets - the kept preset feature and
+      integration's new reference library.
+Sean: level_slot_guard's summary separator moved with the integration merge
+      ("gain_db 2.5", not "gain_db=2.5"). Ruled 10 Oct: keep the re-aim, no product
+      change.
+B:    emit option "commercial" rather than collapsing it to "pushed";
+      docs/ECHOJAY_API_CONTRACT.md does not state the current chat-stream refusal shape.

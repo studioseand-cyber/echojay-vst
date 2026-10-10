@@ -328,10 +328,37 @@ ej_add_guard(pregain_readback         SOURCE tools/pregain_readback/harness.cpp 
 # PREVIOUSLY: re-baselined 27 Sep 2026 by ruling, from 5f47897e..., for the ruled short90 token on the
 # [CHAIN LEVELS] header (OWN_CHANNEL_BASELINE_efdec55.txt).
 #
-# RE-BASELINED 10 OCT 2026 BY RULING, at the limiter-v2 merge. THE TEXT NOW CARRIES BOTH RULED CHANGES, so it
-# matches NEITHER side's pin: 08c item F2's "match" option on the Level device AND limiter v2's schema. Sean
-# pre-ruled this move ("own_diff will move by the limiter's mode-list line only: re-baseline if that's the whole
-# diff, record the new sha"); the diff was read and confirmed limiter + match lines only before the pin changed.
+# RE-BASELINED 10 OCT 2026 BY SEAN'S RULING ("own_diff: approved. Pin e16eb2d8 and record the three reasons"),
+# after the diff was read, measured and REPORTED RED first, and after the one line that was NOT covered by the
+# standing authorisation was put to Sean rather than waved through.
+#
+#   pin  4bf16c07 (OWN_CHANNEL_BASELINE_6d42a67.txt, 14,530 bytes)
+#   ->   e16eb2d8 (OWN_CHANNEL_BASELINE_87600ab.txt, 15,586 bytes)
+#
+# THE THREE REASONS, each a ruled product change, diffed three ways (against 4bf16c07, the match pin, and against
+# 300ee864 = OWN_CHANNEL_BASELINE_70f5407.txt, limiter v2's own pin) so that no fourth change could hide:
+#
+#   1. THE LIMITER'S SCHEMA (limiter v2). The mode list becomes
+#      transparent|punchy|clip|modern|allround; NEW attack_ms 275, link_pct 75, release_link_pct 100; and the
+#      Pro-L 2 defaults for ceiling_db (0.0), release_ms (400), lookahead_ms (0..5, 0.18) and true_peak (on).
+#      Sean pre-ruled this one: "own_diff will move by the limiter's mode-list line only ... record the new sha".
+#
+#   2. THE "match" OPTION. loudness_option gains |match - the CHANNEL/BUS aim from CONTRACT_LEVEL_PARAMS, a
+#      chain that must not change the level. Ruled 9 Oct; already in the 4bf16c07 pin, and listed here because
+#      it is one of the three changes the current text carries against 300ee864.
+#
+#   3. THE SETTINGS PARAGRAPH: TWO TOGGLES BECOME THREE. "Only use EchoJay's own devices (no third-party
+#      plugins)" joins Dial-only and never-dial, and the paragraph now spells out which of the three is about
+#      WHICH PLUGINS ARE OFFERED, which about WHETHER THEY MUST BE DIALABLE, and which about WHETHER VALUES ARE
+#      WRITTEN. This is Sean's 10 Oct EchoJay-only ruling ("keep it as its OWN button, separate from Dial only")
+#      reaching the own-channel injection.
+#      THIS LINE WAS NOT COVERED by the standing authorisation, which said "limiter and match lines only". It is
+#      a consequence of a ruling Sean had given, but it was not the ruling he gave ABOUT THIS GUARD, so the pin
+#      was left alone and the question was asked. He approved it explicitly. Recorded at length because the
+#      next person to see a third change in this text should ask too, not reason from this precedent.
+#
+# NOTHING ELSE MOVED: 6 lines removed, 9 added, and every one of them belongs to a reason above.
+#
 # The two rulings this supersedes are kept verbatim below, because each was a separate decision and the record of
 # WHY a baseline moved is the only thing that makes the next move diffable.
 #
@@ -363,7 +390,7 @@ ej_add_guard(pregain_readback         SOURCE tools/pregain_readback/harness.cpp 
 # THE STANDING RULE IS UNCHANGED for every future move: if this goes RED, STOP AND REPORT - never re-baseline.
 ej_add_guard(mapfps_sync_guard        SOURCE tools/mapfps_sync_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(own_diff                 SOURCE tools/own_diff/harness.cpp                       LABEL fast
-             WRAPPER run_own_diff.sh WRAPPER_ARG 4bf16c07ed95ffdb38d769e20e9f12227b3e3b5880ef7b8e8a7767f9baea4752)
+             WRAPPER run_own_diff.sh WRAPPER_ARG e16eb2d8c4e59156ad912967b611fc8364452980c6fbf0aa083d5f02c1937fc7)
 
 
 # 21t-m (29 Sep 2026): builtin_registry_test JOINS THE GATE. It is built by the ROOT CMakeLists as an
