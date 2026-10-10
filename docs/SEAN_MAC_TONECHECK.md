@@ -10,20 +10,36 @@ caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,eq,saturation,d
 
 From night 2 on, run the NEXT build (cut after Kathy has checked night 1's zip; install it over 00f2ae79 the same way - same folder,
 same `cert/run_all.json`, nothing deleted). Its first night re-checks every tone check once (they were made by 00f2ae79: the
-re-check rule, ~40 min, already in night 2's hours).
+re-check rule, ~40 min, in night 2's hours). The next build measures Phase B rows in parallel: **start at `--jobs 2`; go to
+`--jobs 4` only after Kathy has checked a night at 2.**
 
 ```
-# Night 2  ~4.4 h   the follow-up once (new build), reverb / delay, transients / gates
-caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,reverb_delay,transient_gate,drafts --until 07:00
-# Night 3  ~5.6 h   limiters through the compressor certification (their drafts: compressor profile + ceiling block)
-caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,limiter_comp,drafts --until 07:00
-# Night 4  ~4.8 h   no_pool (resumes), categorise, then the accuracy passes: combined, material
-caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,no_pool,categorise,combined,material,drafts --until 07:00
-# Night 5  ~1.8 h + the strips start   frequency, samplerate, tuners, then the strips until 07:00
-caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,frequency,samplerate,tuners,strips,drafts --until 07:00
-# Night 6 (and 7 if the nights are short)   the rest of the strips (~14 h in all, resumes where it stopped)
-caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,strips,drafts --until 07:00
+# Night 2  ~6.5 h at --jobs 2 (~4.8 h at 4)   the follow-up once, reverb / delay, transients / gates, limiters as compressors
+caffeinate -i "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,reverb_delay,transient_gate,limiter_comp,drafts --until 07:00
+# Night 3  ~6.6 h at --jobs 2 (~5.9 h at 4)   no_pool (resumes), categorise, the accuracy passes, tuners
+caffeinate -i "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,no_pool,categorise,combined,material,frequency,samplerate,tuners,drafts --until 07:00
+# Night 4 (and 5)  ~14 h in all, the same at any --jobs   the strips (they run one at a time: see below)
+caffeinate -i "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,strips,drafts --until 07:00
 ```
+
+| night | steps | serial (--jobs 1) | --jobs 2 | --jobs 4 |
+|---|---|---|---|---|
+| 1 (tonight, 00f2ae79) | re-checks, fix-ups, EQ, saturation | 5.1 h | - | - |
+| 2 | follow-up, reverb / delay, transients / gates, limiter_comp | 10.0 h | 6.5 h | 4.8 h |
+| 3 | no_pool, categorise, combined, material, frequency, samplerate, tuners | 8.1 h | 6.6 h | 5.9 h |
+| 4 (+5) | strips | 14.0 h | 14.0 h | 14.0 h |
+| nights left incl. tonight | | ~6-7 | ~5 | ~5 |
+
+How the parallel run works, for the morning output:
+- Within a step, up to N products measure at once; each in its own folder, the row written only when it is complete.
+- Some products always run ALONE (the pool empties first): every UAD unit, everything your licences.csv governs or a demo, every
+  PACE / iLok product (and one whose PACE state cannot be checked), and anything that has ever shown a window, a licence stop, a
+  timeout, refused to load, gone silent or crashed. The log lists them as "serial lane: <category>: <product> (why)". The strips
+  run alone too (bx_console N gave different readings run to run even one at a time, so parallel could not be proven safe).
+- No new product starts while the Mac's free memory is under 1.5 GB; at 07:00 / Ctrl-C nothing new starts and the products
+  that were running are thrown away and run again next night - nothing finished is ever lost.
+- The ETA line still prints the serial hours; at --jobs 2 expect the table's.
+- Why nights 4-5 do not shrink: the strips (14 h) are serial. --jobs 4 saves time on nights 2-3 but not a night overall.
 
 The rules for these lines:
 - **Only move to the next night's line when the morning's output says the line's sequence is complete.** If 07:00 (or Ctrl-C)
@@ -34,8 +50,7 @@ The rules for these lines:
 - **followup and fixups are in every line too, and cost nothing once done**: the follow-up runs again only if some tone check was
   made by another build (night 1: 86 on your folder), the fixups once. If a night's output starts with
   "RUN-ALL: N tone check(s) made by another build", the follow-up ran first that night - that is the rule, not a fault.
-- **limiter_comp exists only in the next build**: if night 3 comes and you are still on 00f2ae79, run night 4's line and come back
-  to night 3's when the next build is installed.
+- **limiter_comp, --jobs and the strips-serial rule exist only in the next build**: night 2 onward need it installed.
 - **The UAD-2 Satellite (next build)**: if it is not seen, the UAD rows are LEFT UNRUN (not filed) and the step says "waiting for
   the UAD-2 device" - it resumes by itself the next night the Satellite is connected and powered; the 44 UAD EQs filed "device not
   connected" on 10 Oct run again then. Check `--uad-preflight` says PRESENT before a night if you can.

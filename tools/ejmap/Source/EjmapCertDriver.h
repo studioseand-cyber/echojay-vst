@@ -6526,7 +6526,7 @@ inline int runRunAll (const RunAllOptions& ro)
     if (ro.until.isNotEmpty() && ! until) { say ("RUN-ALL: --until '" + ro.until + "' is not HH:MM"); return 2; }
     const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
     say ("RUN-ALL: " + juce::String (totalN) + " step(s) to run, " + juce::String ((int) steps().size() - totalN) + " done or skipped; ETA " + hms (etaSeconds (p, st)) + (until ? "; stops at " + until->formatted ("%H:%M %d %b") : juce::String()) + "; state " + stateFile.getFullPathName());
-    for (const auto* s : p) say ("  " + s->name.paddedRight (' ', 18) + (isResume (st, s->name) ? "RESUME " : "       ") + argsFor (*s, isResume (st, s->name), cert.getFullPathName(), ro.only).joinIntoString (" ") + "   (~" + hms (s->estimateS) + ", " + s->why + ")");
+    for (const auto* s : p) say ("  " + s->name.paddedRight (' ', 18) + (isResume (st, s->name) ? "RESUME " : "       ") + argsFor (*s, isResume (st, s->name), cert.getFullPathName(), ro.only).joinIntoString (" ") + (ro.jobs > 1 && takesJobs (*s) ? " --jobs " + juce::String (ro.jobs) : juce::String()) + "   (~" + hms (s->estimateS) + ", " + s->why + ")");
     if (ro.dryRun) return 0;
     runAllInterrupted() = 0; std::signal (SIGINT, [] (int) { runAllInterrupted() = 1; }); std::signal (SIGTERM, [] (int) { runAllInterrupted() = 1; });
     const auto t0 = juce::Time::getMillisecondCounterHiRes(); int deviceWaitN = 0; int doneN = 0, failedN = 0; juce::String stopped;

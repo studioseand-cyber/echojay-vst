@@ -1,0 +1,31 @@
+Night lines at --jobs 2 on the NEXT build (build tree 0ec0b571-dirty), dry-run only, simulated copy of cert 2 + 3: night 1 marked finished by 00f2ae79 (its
+checks stamped 00f2ae79), so night 2 shows the forced follow-up; nights 3-4 with the earlier nights marked finished by the next build.
+The ETA printed is the SERIAL estimate (the runbook table has the --jobs 2 / 4 hours).
+
+== NIGHT 2: --jobs 2 --steps preflight,followup,fixups,reverb_delay,transient_gate,limiter_comp,drafts --until 07:00
+RUN-ALL: 86 tone check(s) made by another build than 0ec0b571-dirty: the follow-up runs again (stale checks first)
+RUN-ALL: 6 step(s) to run, 21 done or skipped; ETA 9:58:30; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  followup                 --cert-tonecheck-all --out <cert>   (~0:40:00, the compressor follow-up)
+  reverb_delay             --phaseb-all --redo reverb,delay --out <cert> --jobs 2   (~3:11:40, reverb and delay (role tests twice: x1.5-1.65 rehearsed, 8 Oct))
+  transient_gate           --phaseb-all --redo transient,gate --out <cert> --jobs 2   (~0:31:40, transient shapers and gates (role tests twice: x1.3-1.65 rehearsed, 8 Oct))
+  limiter_comp             --phaseb-all --redo limitercomp --out <cert> --jobs 2   (~5:35:00, limiters through the compressor certification (their drafts: compressor profile + ceiling block))
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
+
+== NIGHT 3: --jobs 2 --steps preflight,followup,fixups,no_pool,categorise,combined,material,frequency,samplerate,tuners,drafts --until 07:00
+RUN-ALL: 9 step(s) to run, 18 done or skipped; ETA 6:38:10; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  no_pool           RESUME --phaseb-all --out <cert> --jobs 2   (~3:00:00, the Soundtoys / 2C empty-list rows (~40 min per delay or reverb))
+  categorise               --categorise-propose --include-pace --out <cert>   (~1:30:00, the review sheet for the uncategorised (never categories.json))
+  combined                 --phaseb-all --redo combined --out <cert> --jobs 2   (~0:40:00, combined settings)
+  material                 --phaseb-all --redo material --out <cert> --jobs 2   (~1:10:00, real material)
+  frequency                --phaseb-all --redo frequency --out <cert> --jobs 2   (~1:10:00, three frequencies)
+  samplerate               --phaseb-all --redo samplerate --out <cert> --jobs 2   (~0:08:00, three sample rates on a spread of ten)
+  tuners                   --phaseb-all --redo tuners --out <cert> --jobs 2   (~0:30:00, tuners (humanize, flex))
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
+
+== NIGHT 4: --jobs 2 --steps preflight,followup,fixups,strips,drafts --until 07:00
+RUN-ALL: 3 step(s) to run, 24 done or skipped; ETA 14:00:10; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  strips                   --phaseb-all --redo strips --out <cert> --jobs 2   (~14:00:00, channel strips, every section drafted)
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
