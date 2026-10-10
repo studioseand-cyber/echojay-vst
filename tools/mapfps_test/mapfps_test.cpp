@@ -30,6 +30,7 @@
 #include "EJSettingsClip.h"      // 6a: header-inline, the shipped model-side clip
 #include "EJParamReads.h"        // 6c §8: header-inline, the shipped read serialiser
 #include "EJRefusalLine.h"      // refusal bubble: header-inline, the shipped composer
+#include "EJStreamFallback.h"   // M6 stream refusal fallback: header-inline, the shipped decision
 #include "EJDisableReasons.h"  // disable provenance: header-inline, shipped
 #include "EJVariantPreference.h" // Waves channel-variant rank: header-inline, shipped
 #include "EJWavesAlias.h"       // Waves marketing-name alias: header-inline, shipped
@@ -8325,6 +8326,112 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         check (codecPageLayout ({ 10, 130, 565, 380 }, 9).card
                == codecPageLayout ({ 10, 130, 565, 380 }, 9).card,
                "cp PIN6: pure, and the count is a parameter rather than a lookup");
+    }
+
+    // ---- M6: the stream refusal fallback (open list 150, 15 Sep 2026) -------
+    // Since 14 Sep /api/chat-stream answers 403 code chat_turn_not_streamed
+    // for any turn the SERVER resolves to chat, before the charge opens. The
+    // plugin resends that ONE refusal once to /api/chat. Every other non-200
+    // keeps its sentence: a resend on any of them is a second charge attempt.
+    // The decision is header-inline (streamRefusalIsResendable) so it runs
+    // here; the wiring around it is pinned structurally, because the archive
+    // this harness links is the previous build's and cannot run the socket.
+    {
+        std::cout << "stream refusal fallback:\n";
+        auto resendable = [] (const char* body)
+        {
+            return echojay::streamRefusalIsResendable (juce::JSON::parse (juce::String (body)));
+        };
+
+        // PIN 1: the exact body the server sends (api/chat-stream.js :904).
+        check (resendable ("{\"error\":\"Not a chain build. Send this turn to /api/chat.\","
+                           "\"code\":\"chat_turn_not_streamed\",\"resolvedTurnType\":\"chat\",\"turnId\":\"t_1\"}"),
+               "sf PIN1: the 14 Sep refusal body is the one resendable shape");
+        // PIN 2: the code alone decides. The sentence is for humans and may
+        // change; a bare code is enough and the sentence is never consulted.
+        check (resendable ("{\"code\":\"chat_turn_not_streamed\"}"),
+               "sf PIN2: code alone is sufficient");
+        check (resendable ("{\"error\":\"anything at all\",\"code\":\"chat_turn_not_streamed\"}"),
+               "sf PIN2: the sentence is not consulted");
+
+        // PIN 3: every other refusal keeps its sentence. These are the other
+        // bodies CONTRACT_stream_charge.md section 3 lists, none resendable
+        // from the client on today's server.
+        check (! resendable ("{\"error\":\"uid_required\"}"),
+               "sf PIN3: uid_required carries no code, no resend");
+        check (! resendable ("{\"error\":\"Monthly limit reached\",\"limitReached\":true}"),
+               "sf PIN3: the meter's deny is never resent");
+        check (! resendable ("{\"error\":\"AI service error\"}"),
+               "sf PIN3: an upstream refusal is never resent");
+        check (! resendable ("{\"error\":\"Internal server error\",\"creditRefunded\":true}"),
+               "sf PIN3: a refunded 500 is never resent");
+        check (! resendable ("{\"error\":\"x\",\"code\":\"uid_required\"}"),
+               "sf PIN3: any other code is not this code");
+
+        // PIN 4: equality, not containment, not case-folded, not trimmed.
+        check (! resendable ("{\"code\":\"chat_turn_not_streamed_v2\"}"),
+               "sf PIN4: a longer code is a different code");
+        check (! resendable ("{\"code\":\"CHAT_TURN_NOT_STREAMED\"}"),
+               "sf PIN4: case is significant");
+        check (! resendable ("{\"code\":\" chat_turn_not_streamed\"}"),
+               "sf PIN4: whitespace is significant");
+        check (! resendable ("{\"code\":\"turn_not_streamed\"}"),
+               "sf PIN4: a substring is not the code");
+
+        // PIN 5: a body that does not parse to an object says nothing about
+        // the charge and is never resent.
+        check (! resendable (""),                                    "sf PIN5: empty body");
+        check (! resendable ("<html>502 Bad Gateway</html>"),        "sf PIN5: proxy HTML");
+        check (! resendable ("\"chat_turn_not_streamed\""),          "sf PIN5: a bare string");
+        check (! resendable ("[\"chat_turn_not_streamed\"]"),        "sf PIN5: an array");
+        check (! resendable ("{\"code\":true}"),                      "sf PIN5: a non-string code");
+        check (! resendable ("{\"code\":null}"),                      "sf PIN5: a null code");
+        check (! resendable ("{\"code\":{\"code\":\"chat_turn_not_streamed\"}}"),
+               "sf PIN5: a nested object is not a code");
+
+        // PIN 6 to 9: THE WIRING, pinned on code with comments stripped.
+        {
+            std::ifstream fap ("Source/EchoJayAPI.cpp");
+            std::stringstream sap; sap << fap.rdbuf();
+            const auto api = codeOnly (juce::String (sap.str()));
+            const auto stream = functionBody (api, "void EchoJayAPI::startChatStream(");
+            check (stream.isNotEmpty(), "sf PIN6: found startChatStream");
+            // PIN 6: the non-200 branch asks the pinned function, and the
+            // once-guard is an exchange on the handle evaluated AFTER it, so
+            // a non-resendable refusal never burns the one resend.
+            check (stream.contains ("if (echojay::streamRefusalIsResendable (json)\n"
+                                    "                    && ! handle->chatFallbackUsed.exchange (true))"),
+                   "sf PIN6: the branch resends only on the pinned decision, once per handle");
+            // PIN 7: exactly one resend site in the socket half, and the
+            // sentence path it falls through to is intact.
+            int sites = 0;
+            for (int i = stream.indexOf ("resendRefusedStreamTurn ("); i >= 0;
+                 i = stream.indexOf (i + 1, "resendRefusedStreamTurn (")) ++sites;
+            check (sites == 1, "sf PIN7: one resend site in startChatStream", juce::String (sites));
+            check (stream.contains ("juce::String msg = \"Something went wrong. Please try again.\";")
+                   && stream.contains ("msg = o->getProperty (\"error\").toString();"),
+                   "sf PIN7: every other non-200 still shows the body's sentence");
+            // PIN 8: the resend posts the SAME body to /api/chat and never
+            // re-enters the stream, which is what makes a loop impossible
+            // regardless of what the server answers.
+            const auto resend = functionBody (api, "void EchoJayAPI::resendRefusedStreamTurn(");
+            check (resend.contains ("postJSON (\"/api/chat\", body,"),
+                   "sf PIN8: the resend posts the refused body to /api/chat");
+            check (! resend.contains ("startChatStream") && ! resend.contains ("streamChatInternal")
+                   && ! resend.contains ("chat-stream") && ! resend.contains ("buildChatRequestBody"),
+                   "sf PIN8: and never re-enters the stream or rebuilds the body");
+            // PIN 9: one /api/chat handler. The fallback renders through the
+            // same completion sendChat uses, so usage ingestion, the 401
+            // sign-out and the 429 copy cannot drift between the two paths.
+            check (resend.contains ("handleChatResponse (json, statusCode,"),
+                   "sf PIN9: the fallback answer goes through handleChatResponse");
+            const auto send = functionBody (api, "void EchoJayAPI::sendChat(");
+            check (send.contains ("handleChatResponse(json, statusCode, onComplete);"),
+                   "sf PIN9: and so does sendChat, one handler for /api/chat");
+            check (resend.contains ("if (ev->onDone) ev->onDone (juce::var (frame));")
+                   && resend.contains ("if (ev->onError) ev->onError (reply, statusCode);"),
+                   "sf PIN9: a reply is a done frame, a failure is onError, as a stream turn is");
+        }
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";

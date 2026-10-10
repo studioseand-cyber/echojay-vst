@@ -1,6 +1,7 @@
 #include "EchoJayAPI.h"
 #include "EJStreamFraming.h" // SSE byte-to-frame splitter (spec step 2)
 #include "EJReplyBlocks.h"   // the whole-reply block strip (moved verbatim, spec step 3)
+#include "EJStreamFallback.h" // M6: the one resendable stream refusal (open list 150)
 #include "ChainHost.h"    // buildCurrentChainInjection reads the live rack
 #include "LinkShm.h"      // RackSidecar — targeted [CURRENT CHAIN] (Phase R)
 #include "EJSettingsClip.h" // the model-side slot-settings cap, and its marker
@@ -1498,126 +1499,136 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
 
     postJSON("/api/chat", body, [this, onComplete](const juce::var& json, int statusCode)
     {
-        if (statusCode == 200 && json.isObject())
+        handleChatResponse(json, statusCode, onComplete);
+    });
+}
+
+// The /api/chat completion. This WAS the lambda inside sendChat, moved here
+// byte for byte (15 Sep 2026, open list 150) so the stream's M6 fallback
+// can render a resent turn through the same handler instead of a copy.
+// Message thread (postJSON marshals its completion there).
+void EchoJayAPI::handleChatResponse(const juce::var& json, int statusCode,
+                                    const std::function<void(const juce::String& reply, bool success)>& onComplete)
+{
+    if (statusCode == 200 && json.isObject())
+    {
+        auto* obj = json.getDynamicObject();
+        if (obj && obj->hasProperty("reply"))
         {
-            auto* obj = json.getDynamicObject();
-            if (obj && obj->hasProperty("reply"))
+            juce::String reply = obj->getProperty("reply").toString();
+
+            // Model that handled THIS turn, for the input-bar indicator.
+            // Absent field keeps the previous value (no blanking).
+            if (obj->hasProperty("modelName"))
             {
-                juce::String reply = obj->getProperty("reply").toString();
+                auto mn = obj->getProperty("modelName").toString().trim();
+                if (mn.isNotEmpty()) lastChatModelName_ = mn;
+            }
 
-                // Model that handled THIS turn, for the input-bar indicator.
-                // Absent field keeps the previous value (no blanking).
-                if (obj->hasProperty("modelName"))
+            // Server-side turn classification for THIS reply (the client
+            // turnType is a staged label the server reclassifies; this is
+            // the truth). Gates the prose name-scan chain fallback and
+            // lands in the log for live turn-class verification.
+            lastResolvedTurnType_ = obj->getProperty("resolvedTurnType").toString().trim();
+            EchoJay_NSLog(("EJChat: resolvedTurnType="
+                           + (lastResolvedTurnType_.isNotEmpty()
+                                ? lastResolvedTurnType_ : juce::String("(absent)"))).toRawUTF8());
+
+            // Check if this message used a credit (don't increment daily counter)
+            bool usedCredit = false;
+            
+            // Try to read server's usage count from response
+            // Could be flat: {"usage": 42} or nested: {"usage": {"messagesUsedToday": 42}}
+            if (obj->hasProperty("usage"))
+            {
+                auto usageVal = obj->getProperty("usage");
+                if (usageVal.isObject())
                 {
-                    auto mn = obj->getProperty("modelName").toString().trim();
-                    if (mn.isNotEmpty()) lastChatModelName_ = mn;
-                }
-
-                // Server-side turn classification for THIS reply (the client
-                // turnType is a staged label the server reclassifies; this is
-                // the truth). Gates the prose name-scan chain fallback and
-                // lands in the log for live turn-class verification.
-                lastResolvedTurnType_ = obj->getProperty("resolvedTurnType").toString().trim();
-                EchoJay_NSLog(("EJChat: resolvedTurnType="
-                               + (lastResolvedTurnType_.isNotEmpty()
-                                    ? lastResolvedTurnType_ : juce::String("(absent)"))).toRawUTF8());
-
-                // Check if this message used a credit (don't increment daily counter)
-                bool usedCredit = false;
-                
-                // Try to read server's usage count from response
-                // Could be flat: {"usage": 42} or nested: {"usage": {"messagesUsedToday": 42}}
-                if (obj->hasProperty("usage"))
-                {
-                    auto usageVal = obj->getProperty("usage");
-                    if (usageVal.isObject())
+                    if (auto* usageObj = usageVal.getDynamicObject())
                     {
-                        if (auto* usageObj = usageVal.getDynamicObject())
+                        if (usageObj->hasProperty("usedCredit"))
+                            usedCredit = (bool)usageObj->getProperty("usedCredit");
+                        if (usageObj->hasProperty("credits"))
+                            userInfo.credits = (int)usageObj->getProperty("credits");
+                        if (usageObj->hasProperty("messagesUsedToday"))
+                            userInfo.messagesUsedToday = (int)usageObj->getProperty("messagesUsedToday");
+                        if (usageObj->hasProperty("messagesPerDay"))
+                            userInfo.messageLimit = (int)usageObj->getProperty("messagesPerDay");
+                        if (usageObj->hasProperty("remaining"))
                         {
-                            if (usageObj->hasProperty("usedCredit"))
-                                usedCredit = (bool)usageObj->getProperty("usedCredit");
-                            if (usageObj->hasProperty("credits"))
-                                userInfo.credits = (int)usageObj->getProperty("credits");
-                            if (usageObj->hasProperty("messagesUsedToday"))
-                                userInfo.messagesUsedToday = (int)usageObj->getProperty("messagesUsedToday");
-                            if (usageObj->hasProperty("messagesPerDay"))
-                                userInfo.messageLimit = (int)usageObj->getProperty("messagesPerDay");
-                            if (usageObj->hasProperty("remaining"))
-                            {
-                                int rem = (int)usageObj->getProperty("remaining");
-                                userInfo.messagesUsedToday = userInfo.messageLimit - rem;
-                            }
+                            int rem = (int)usageObj->getProperty("remaining");
+                            userInfo.messagesUsedToday = userInfo.messageLimit - rem;
                         }
-                    }
-                    else
-                    {
-                        // Flat integer
-                        userInfo.messagesUsedToday = (int)usageVal;
                     }
                 }
                 else
                 {
-                    // No usage in response — increment locally only if not a credit use
-                    if (!usedCredit)
-                        userInfo.messagesUsedToday++;
+                    // Flat integer
+                    userInfo.messagesUsedToday = (int)usageVal;
                 }
-                
-                saveSettings(); // persist usage count to disk
-                onComplete(reply, true);
-                return;
             }
-        }
-        
-        if (statusCode == 401)
-        {
-            authToken = "";
-            userInfo = UserInfo();
-            saveSettings();
-            onComplete("Session expired. Please log in again.", false);
-            return;
-        }
-        
-        if (statusCode == 429)
-        {
-            // Display the server's error message directly (the server sends
-            // the lane-correct copy). The 429 body also carries a FRESH
-            // usagePool — ingest it so Settings bars and the premium locks
-            // reflect the blocked state immediately, without waiting for
-            // the next /api/me poll.
-            juce::String serverMsg;
-            if (json.isObject())
+            else
             {
-                auto* obj = json.getDynamicObject();
-                if (obj)
-                {
-                    if (obj->hasProperty("error"))
-                        serverMsg = obj->getProperty("error").toString();
-                    if (obj->hasProperty("usagePool"))
-                    {
-                        parseUsagePool(obj, userInfo);
-                        EchoJay_NSLog("EJChat: 429 carried usagePool -- state refreshed");
-                    }
-                    if ((bool) obj->getProperty("upgradeRequired"))
-                        EchoJay_NSLog("EJChat: 429 upgradeRequired=true");
-                }
+                // No usage in response: increment locally only if not a credit use
+                if (!usedCredit)
+                    userInfo.messagesUsedToday++;
             }
-            if (serverMsg.isEmpty())
-                serverMsg = getLimitReachedMessage();
-            onComplete(serverMsg, false);
+            
+            saveSettings(); // persist usage count to disk
+            onComplete(reply, true);
             return;
         }
-        
-        juce::String error = (statusCode == 0)
-            ? "Could not reach EchoJay. Check your connection and try again."
-            : "Failed to get AI response";
+    }
+    
+    if (statusCode == 401)
+    {
+        authToken = "";
+        userInfo = UserInfo();
+        saveSettings();
+        onComplete("Session expired. Please log in again.", false);
+        return;
+    }
+    
+    if (statusCode == 429)
+    {
+        // Display the server's error message directly (the server sends
+        // the lane-correct copy). The 429 body also carries a FRESH
+        // usagePool: ingest it so Settings bars and the premium locks
+        // reflect the blocked state immediately, without waiting for
+        // the next /api/me poll.
+        juce::String serverMsg;
         if (json.isObject())
         {
             auto* obj = json.getDynamicObject();
-            if (obj && obj->hasProperty("error"))
-                error = obj->getProperty("error").toString();
+            if (obj)
+            {
+                if (obj->hasProperty("error"))
+                    serverMsg = obj->getProperty("error").toString();
+                if (obj->hasProperty("usagePool"))
+                {
+                    parseUsagePool(obj, userInfo);
+                    EchoJay_NSLog("EJChat: 429 carried usagePool -- state refreshed");
+                }
+                if ((bool) obj->getProperty("upgradeRequired"))
+                    EchoJay_NSLog("EJChat: 429 upgradeRequired=true");
+            }
         }
-        onComplete(error, false);
-    });
+        if (serverMsg.isEmpty())
+            serverMsg = getLimitReachedMessage();
+        onComplete(serverMsg, false);
+        return;
+    }
+    
+    juce::String error = (statusCode == 0)
+        ? "Could not reach EchoJay. Check your connection and try again."
+        : "Failed to get AI response";
+    if (json.isObject())
+    {
+        auto* obj = json.getDynamicObject();
+        if (obj && obj->hasProperty("error"))
+            error = obj->getProperty("error").toString();
+    }
+    onComplete(error, false);
 }
 
 // ===========================================================================
@@ -1880,6 +1891,28 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                 logNon2xx ("/api/chat-stream", statusCode, bodyText);
                 if (! aliveFlag->load() || handle->isCancelled()) return;
                 auto json = juce::JSON::parse (bodyText);
+
+                // M6 (open list 150, 15 Sep 2026). The server resolved this
+                // turn to chat and refused it BEFORE the charge opened
+                // (api/chat-stream.js: the 403 at :904 precedes
+                // turnCharge.open at :919), so the request cost nothing and
+                // one resend to /api/chat is one charge. ONLY that code, and
+                // the pinned header function is the whole decision: every
+                // other non-200, any other code, and any unparseable body
+                // falls through to the sentence below exactly as before. A
+                // blanket retry here would turn a billing refusal into a
+                // second charge attempt. ONCE: the exchange on the handle is
+                // set before the resend is dispatched, and the resend never
+                // re-enters this function, so a second refusal cannot loop.
+                if (echojay::streamRefusalIsResendable (json)
+                    && ! handle->chatFallbackUsed.exchange (true))
+                {
+                    EchoJay_NSLog (("EJStream: " + juce::String (statusCode)
+                                    + " chat_turn_not_streamed, resending once to /api/chat").toRawUTF8());
+                    dispatch ([this, ev, body, handle] { resendRefusedStreamTurn (handle, body, ev); });
+                    return;
+                }
+
                 juce::String msg = "Something went wrong. Please try again.";
                 if (auto* o = json.getDynamicObject())
                     if (o->hasProperty ("error"))
@@ -2074,6 +2107,49 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
             });
             return;
         }
+    });
+}
+
+// M6 (open list 150): the one resend. Runs on the message thread, dispatched
+// from the worker by the non-200 branch above. The body is the exact string
+// the stream refused: buildChatRequestBody consumed the staged per-turn state
+// when it composed it, so nothing is rebuilt and nothing is re-staged. The
+// limit gate does not run again either: the same turn already passed it in
+// streamChatInternal. postJSON's connection-level retries are unchanged and
+// safe here for the reason sendChat relies on: an attempt that never reached
+// the server is not a turn.
+void EchoJayAPI::resendRefusedStreamTurn(std::shared_ptr<ChatStreamHandle> handle,
+                                         const juce::String& body,
+                                         std::shared_ptr<ChatStreamEvents> ev)
+{
+    postJSON ("/api/chat", body, [this, handle, ev] (const juce::var& json, int statusCode)
+    {
+        // postJSON vouched for `this` before firing on the message thread;
+        // the handle's cancel is the stream's own lever and still applies.
+        if (handle->isCancelled()) return;
+        handleChatResponse (json, statusCode, [ev, statusCode] (const juce::String& reply, bool success)
+        {
+            if (! success)
+            {
+                // The sentence the one-shot path shows for this status. A
+                // second refusal of any kind lands here too: there is no
+                // further resend from this function, ever.
+                EchoJay_NSLog (("EJStream: /api/chat fallback failed status="
+                                + juce::String (statusCode)).toRawUTF8());
+                if (ev->onError) ev->onError (reply, statusCode);
+                return;
+            }
+            // Rendered the way a chat turn is rendered today: the editor's
+            // onDone hands done.reply to handleChatReply, the identical
+            // pipeline the one-shot path uses. Only reply rides. The frame
+            // carries no chainBlock, so the failed-build guard, which the
+            // one-shot path never consults, stays out of a chat turn.
+            EchoJay_NSLog ("EJStream: /api/chat fallback delivered, rendering as a chat turn");
+            auto* frame = new juce::DynamicObject();
+            frame->setProperty ("reply", reply);
+            frame->setProperty ("viaChatFallback", true);
+            if (ev->onDone) ev->onDone (juce::var (frame));
+        });
     });
 }
 

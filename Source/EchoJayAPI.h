@@ -134,6 +134,12 @@ private:
     std::atomic<bool> cancelled { false };
     std::mutex streamLock;
     juce::WebInputStream* active = nullptr;   // worker-owned; guarded by streamLock
+    // M6 (open list 150): the ONE resend of a refused stream request to
+    // /api/chat. Set by exchange BEFORE the resend is dispatched, so a
+    // second chat_turn_not_streamed on the same handle, from any path,
+    // falls through to the sentence instead of a second resend. Never
+    // cleared: a handle is one turn.
+    std::atomic<bool> chatFallbackUsed { false };
 };
 
 class EchoJayAPI
@@ -1273,6 +1279,22 @@ private:
     void startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                          const juce::String& body,
                          ChatStreamEvents events);
+
+    // The /api/chat completion, lifted VERBATIM out of sendChat (15 Sep
+    // 2026, open list 150) so the stream's M6 fallback renders a resent
+    // turn through the same handler: usage ingestion, the 401 sign-out,
+    // the 429 copy, the error sentence. One handler, two callers; a copy
+    // would drift.
+    void handleChatResponse(const juce::var& json, int statusCode,
+                            const std::function<void(const juce::String& reply, bool success)>& onComplete);
+    // M6: resend `body` (the request the stream just refused, byte for
+    // byte) ONCE to /api/chat and deliver the answer through the stream's
+    // events: a 200 reply as a done frame, anything else as onError.
+    // Message thread only. Never re-enters startChatStream, so it cannot
+    // loop. The decision to call it lives in EJStreamFallback.h.
+    void resendRefusedStreamTurn(std::shared_ptr<ChatStreamHandle> handle,
+                                 const juce::String& body,
+                                 std::shared_ptr<ChatStreamEvents> ev);
 
     // Classifier gate, latched for the process. Once the server has answered
     // mode:"off" there is nothing to re-ask: the allowlist is keyed on the
