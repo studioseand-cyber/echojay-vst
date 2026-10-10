@@ -1,0 +1,96 @@
+WIZARD REHEARSAL, 10 Oct late (branch feat/ejmap-wizard; this Mac; hostable units; scratch only; nothing sent)
+
+MOCK DB (a local folder, no network): Lindell_SBC_1.0.3 (Sean's profile + tone check: the EXACT case) and bx_townhouse_Buss_Compressor_1.8.0
+(Sean's 1.8.1 profile relabelled 1.8.0, map_fp cleared, marked mock_note: the VERSION-CHANGED case). Installed here: bx_townhouse 1.8.1.
+
+== 1. scan + look up + quick live check:
+WIZARD: 2 profile(s) in the database (mockdb, a local folder: nothing is fetched)
+  Lindell 254E                   1.2.2     -> queued: no profile for this plugin yet
+  Lindell SBC                    1.0.3     -> ready: the same plugin and version and map
+  bx_opto                        1.10.1    -> queued: no profile for this plugin yet
+  elysia mpressor                1.15.1    -> queued: no profile for this plugin yet
+  bx_townhouse Buss Compressor   1.8.1     -> ready_from_version: the version 1.8.0 profile: 31 write(s) read back as the profile says
+WIZARD: 5 plugin(s) found: 2 plugins ready, 3 measuring
+
+== 2. measure the queue (--jobs 2) + 3. bundle + upload stub:
+WIZARD: 2 profile(s) in the database (mockdb, a local folder: nothing is fetched)
+WIZARD: 5 plugin(s) found: 2 plugins ready, 3 measuring
+WIZARD: measuring 3 plugin(s), 2 at a time - stop any time; it carries on next time
+PHASEB: 3 product(s) over 1 category -> <scratch>/wizreh/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+PHASEB: --jobs 2: 3 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[wizard 1/3 | all 1/3] elysia mpressor: ok 339.51 s | elapsed 0:05:40 | ETA 0:11:19
+[wizard 2/3 | all 2/3] bx_opto: ok 387.306 s | elapsed 0:06:28 | ETA 0:06:03
+[wizard 3/3 | all 3/3] Lindell 254E: ok 311.521 s | elapsed 0:10:52 | ETA 0:00:00
+WIZARD: 2 plugins ready, 3 newly measured, ready to send
+WIZARD: contribution bundle -> contribution.zip (3 new profile(s), 1 confirmation(s) of another version's profile, 0 skipped with the reason; 21.4 KB; checked: no paths, names or tokens)
+WIZARD: UPLOAD (stubbed): nothing is sent. A real app shows this list and sends only when the user presses Send.
+
+bundle contents:
+     1569  10-10-2026 22:36   manifest.json
+        0  10-10-2026 22:36   profiles/
+    31874  10-10-2026 22:28   profiles/elysia_mpressor_1.15.1.json
+    29480  10-10-2026 22:33   profiles/Lindell_254E_1.2.2.json
+    12545  10-10-2026 22:29   profiles/bx_opto_1.10.1.tonecheck.json
+    34362  10-10-2026 22:29   profiles/bx_opto_1.10.1.json
+    13932  10-10-2026 22:28   profiles/elysia_mpressor_1.15.1.tonecheck.json
+    14582  10-10-2026 22:33   profiles/Lindell_254E_1.2.2.tonecheck.json
+---------                     -------
+   138344                     8 files
+manifest:
+{
+  "schema": "ej_contribution/0",
+  "created": "2026-10-10T22:36:50.502+01:00",
+  "tool": "EJ Map 45acd558-dirty",
+  "platform": "Mac OSX 15.7.5",
+  "profiles": [
+    {
+      "product": "Lindell 254E",
+      "plugin_id": "AudioUnit|6f457233|1.2.2",
+      "map_fp": "1ba7ad6d8695f5024617abe840d84d772132756aa1da00a5eda84f9634de3c76",
+      "profile": "profiles/Lindell_254E_1.2.2.json",
+      "tone_check": "profiles/Lindell_254E_1.2.2.tonecheck.json",
+      "tone_check_g2_pass": true
+    },
+    {
+      "product": "bx_opto",
+      "plugin_id": "AudioUnit|417f7e74|1.10.1",
+      "map_fp": "a21e559b70943059fe7b9ff2cc7f6d9f94525fc6e9454c863a8c7e4e3cce90a9",
+      "profile": "profiles/bx_opto_1.10.1.json",
+      "tone_check": "profiles/bx_opto_1.10.1.tonecheck.json",
+      "tone_check_g2_pass": true
+    },
+    {
+      "product": "elysia mpressor",
+      "plugin_id": "AudioUnit|49696d78|1.15.1",
+      "map_fp": "b3396255fdc18668cbadcdda4edac425fa4598506b60dbb11788a3eae9ed91d3",
+      "profile": "profiles/elysia_mpressor_1.15.1.json",
+      "tone_check": "profiles/elysia_mpressor_1.15.1.tonecheck.json",
+      "tone_check_g2_pass": true
+    }
+  ],
+  "confirmations": [
+    {
+      "product": "bx_townhouse Buss Compressor",
+      "plugin_id": "AudioUnit|417f6e76|1.8.1",
+      "profile_from_version": "1.8.0",
+      "readback": "31 write(s) read back as the profile says"
+    }
+  ],
+  "skipped": [],
+  "note": "results only: profiles, their tone checks and this manifest - no plugin files, no audio, no account token"
+}
+
+== resume (the same command again):
+WIZARD: 2 profile(s) in the database (mockdb, a local folder: nothing is fetched)
+WIZARD: 5 plugin(s) found: 2 plugins ready, 3 measuring
+WIZARD: measuring 3 plugin(s), 2 at a time - stop any time; it carries on next time
+  wizard       3 product(s), 3 already done; hang guard 30 min (the compressor certification for a plugin the database does not have (the wizard's queue))
+WIZARD: 2 plugins ready, 3 newly measured, ready to send
+WIZARD: contribution bundle -> contribution.zip (3 new profile(s), 1 confirmation(s) of another version's profile, 0 skipped with the reason; 21.4 KB; checked: no paths, names or tokens)
+WIZARD: UPLOAD (stubbed): nothing is sent. A real app shows this list and sends only when the user presses Send.
+
+== B failing live (mockdb2: one amount display altered):
+WIZARD: 2 profile(s) in the database (mockdb2, a local folder: nothing is fetched)
+  Lindell SBC                    1.0.3     -> ready: the same plugin and version and map
+  bx_townhouse Buss Compressor   1.8.1     -> queued: the version 1.8.0 profile does not fit ('Thresh' at 0.2000 shows '-14.0 dB', the profile says 'x-14.0 dB'): measure this version
+WIZARD: 2 plugin(s) found: 1 plugin ready, 1 measuring

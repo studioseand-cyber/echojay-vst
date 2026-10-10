@@ -60,6 +60,8 @@ inline const std::vector<Category>& categories()
         { "strips",      "--cert-strip",         "",          { "channel_strip" },             2400.0, "a section per mode (eq ~6-12 min, gate ~5, saturation ~4): ~15-25 min", true },
         // limiters through the compressor certification (Kathy's ruling, 10 Oct; opt-in: the run-all step limiter_comp / --redo limitercomp)
         { "limitercomp", "--cert-limiter-comp",  "",          { "limiter" },                   1800.0, "the compressor certification on a limiter: the profile sweep (31 levels x up to 16 positions), the detector, the tone check", true },
+        // the user-side wizard (feat/ejmap-wizard): its queue (<out>/wizard_queue.txt), each through the full compressor path; opt-in
+        { "wizard",      "--cert-limiter-comp",  "",          {},                              1800.0, "the compressor certification for a plugin the database does not have (the wizard's queue)", true },
         { "gainall",     "--cert-gain-cal",      "all",       { "eq", "limiter", "de-esser", "saturation", "amp_sim", "reverb", "delay", "transient_shaper", "gate" }, 600.0, "21 norms x 2-3 levels per gain control + the unnamed pool: ~1-4 min", true } };
     return k;
 }

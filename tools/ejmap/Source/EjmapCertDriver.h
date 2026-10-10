@@ -1504,6 +1504,7 @@ struct SweepOptions
     juce::File certRoot;                             // --cert-root: the real cert folder when --out is a Phase B temp folder (combined settings read their inputs there)
     bool assumeUadDevice = false;                    // --assume-uad-device: the UAD-2 preflight found none but Sean says the Satellite is connected (the registry lines are recorded)
     std::set<int> onlyControls;                      // --only-controls i,j,k (item E, 7 Oct): the mode's fixture holds these controls alone (a strip's section)
+    juce::String purpose;                            // --cert-limiter-comp --purpose contribution (the wizard): marks the records a contribution
     int jobs = 1;                                    // --jobs N (10 Oct): Phase B rows N at a time (EjmapJobs.h); 1 = the serial run
     std::shared_ptr<Subject> sectionSubject;         // item E (7 Oct): a subject the CALLER supplies (a strip's compressor section) - the sweep takes it instead of the worklist's
     juce::String stripWritesJson;                    // --strip-writes <json> (7 Oct ruling): the section's engage + the other dynamics sections' off writes, for the record and profile
@@ -3207,7 +3208,8 @@ inline int runLimiterCompressor (const SweepOptions& opt0)
     SweepOptions opt = opt0; opt.fixtures = opt.out.getChildFile ("fixtures"); opt.fixtures.createDirectory(); opt.profile = true;
     auto sub = std::make_shared<Subject>(); sub->desc = hits[0].desc; sub->product = opt0.product; sub->uid = juce::String::toHexString (hits[0].desc.uniqueId).toLowerCase(); sub->version = hits[0].desc.version;
     sub->reach = Subject::Reach::unfixtured; sub->installedUnique = true; sub->category = "compressor";
-    sub->detail = "a limiter through the compressor certification (v0.2: its profile = the compressor profile + the ceiling block)";
+    const bool contribution = opt0.purpose == "contribution";
+    sub->detail = contribution ? juce::String ("a contribution: the compressor certification on the user's Mac (the wizard)") : juce::String ("a limiter through the compressor certification (v0.2: its profile = the compressor profile + the ceiling block)");
     { auto* o = new juce::DynamicObject(); o->setProperty ("product", sub->product); o->setProperty ("uid", sub->uid); o->setProperty ("version", sub->version); o->setProperty ("format", "AudioUnit"); o->setProperty ("category", "compressor"); sub->pushed = juce::var (o); }
     opt.sectionSubject = sub;
     const int rc = runCertSweep (opt);
@@ -3215,11 +3217,11 @@ inline int runLimiterCompressor (const SweepOptions& opt0)
     if (rc == kToneLicenceKnownExit) return rc;   // a licence / device stop: the row says so
     const auto rec = latestRecordFor (opt.fixtures, opt.product);
     if (! rec.existsAsFile()) { say ("LIMITER-COMP: no record written (nothing to sweep)"); return 4; }
-    auto mark = [&] (const juce::File& f) { auto p = juce::JSON::parse (f.loadFileAsString()); if (auto* o = p.getDynamicObject()) { o->setProperty ("limiter_compressor", true); o->setProperty ("not_for_publication", true); f.replaceWithText (juce::JSON::toString (p) + "\n", false, false, "\n"); } };
+    auto mark = [&] (const juce::File& f) { auto p = juce::JSON::parse (f.loadFileAsString()); if (auto* o = p.getDynamicObject()) { o->setProperty (contribution ? "contribution" : "limiter_compressor", true); o->setProperty ("not_for_publication", true); f.replaceWithText (juce::JSON::toString (p) + "\n", false, false, "\n"); } };
     mark (rec);
     auto outcomes = juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()); if (! outcomes.isArray()) outcomes = juce::Array<juce::var>();
     auto row = finishRecord (opt, rec, "compressor");
-    if (auto* o = row.getDynamicObject()) { o->setProperty ("limiter_compressor", true); o->setProperty ("not_for_publication", true); }
+    if (auto* o = row.getDynamicObject()) { o->setProperty (contribution ? "contribution" : "limiter_compressor", true); o->setProperty ("not_for_publication", true); }
     outcomes = loop::mergeRow (outcomes, row); opt.out.getChildFile ("outcomes.json").replaceWithText (juce::JSON::toString (outcomes) + "\n", false, false, "\n");
     say ("LIMITER-COMP: " + row.getProperty ("state", "").toString() + ": " + row.getProperty ("reason", "").toString());
     if (row.getProperty ("state", "").toString() == "exported" || row.getProperty ("reason", "").toString().startsWith ("export pending"))
@@ -6266,6 +6268,11 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 for (const auto& ir : installed) if (ir.desc.name == product) { PhaseBProduct pp; pp.product = product; pp.stem = stemFor (ir.desc); pp.category = cat.name; pp.desc = ir.desc; pp.recordFile = latestRecordFor (opt.out.getChildFile ("fixtures"), product).getFullPathName(); list.push_back (pp); break; }
             }
         }
+        else if (cat.name == "wizard")
+        {   // the wizard's queue: one installed product name per line
+            for (const auto& line : juce::StringArray::fromLines (opt.out.getChildFile ("wizard_queue.txt").loadFileAsString()))
+                for (const auto& ir : installed) if (line.trim().isNotEmpty() && ir.desc.name == line.trim()) { PhaseBProduct pp; pp.product = ir.desc.name; pp.stem = stemFor (ir.desc); pp.category = cat.name; pp.desc = ir.desc; list.push_back (pp); break; }
+        }
         else if (cat.name == "multiband")
         {
             if (const auto* a = outcomes.getArray()) for (const auto& row : *a)
@@ -6398,6 +6405,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 if (cat.name == "timing" && pp.recordFile.isNotEmpty()) { tmp.getChildFile ("fixtures").createDirectory(); juce::File (pp.recordFile).copyFileTo (tmp.getChildFile ("fixtures").getChildFile (juce::File (pp.recordFile).getFileName())); }
                 juce::StringArray args { exe.getFullPathName(), cat.mode, pp.product };
                 if (cat.kindArg.isNotEmpty()) { args.add ("--kind"); args.add (cat.kindArg); }
+                if (cat.name == "wizard") { args.add ("--purpose"); args.add ("contribution"); }
                 if (cat.name == "combined" || cat.name == "material" || cat.name == "frequency" || cat.name == "samplerate" || cat.name == "saturation") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts; a saturator's gain draft) live in the real folder
                 args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName() });
                 int reused = 0;

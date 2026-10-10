@@ -85,6 +85,7 @@
 #include "EjmapEq.h"
 #include <functional>
 #include "EjmapCertDriver.h"
+#include "EjmapWizard.h"
 #include "EjmapCertReview.h"
 #include "EjmapSaturation.h"
 #include "EjmapReverbDelay.h"
@@ -9219,6 +9220,57 @@ void testTextPassTimeout()
     check (textPassTimeoutMs (0, 120000) == 120000, "text T3: nothing to sample still has the floor");
 }
 
+/** THE WIZARD (EjmapWizard.h, feat/ejmap-wizard): the lookup, the quick live check, the bundle's privacy check, the plain summary. */
+void testWizard()
+{
+    using namespace ejmap::wizard;
+    auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+    auto profile = [&] (const char* uid, const char* ver, const char* fp)
+    {
+        juce::Array<juce::var> curve { mk ({ { "norm", 0.0 }, { "display", "10.00" } }), mk ({ { "norm", 0.066667 }, { "display", "9.20" } }) };
+        juce::Array<juce::var> neutral { mk ({ { "control", "Knee" }, { "index", 4 }, { "set", "SOFT" }, { "norm", 0.0 } }) };
+        return mk ({ { "schema", "ej_comp_profile/1" }, { "plugin", mk ({ { "plugin_id", juce::String ("AudioUnit|") + uid + "|" + ver }, { "version", ver }, { "map_fp", fp } }) },
+                     { "amount", mk ({ { "control", "Threshold" }, { "curve", curve } }) }, { "neutral", neutral } });
+    };
+    // WZ-LOOKUP: A exact (uid + version, map_fp equal when both known); B another version, or the same version with another map; C none
+    {
+        std::vector<DbEntry> db (2); db[0].profile = profile ("6f747363", "1.0.3", "afdb"); db[1].profile = profile ("417f7e74", "1.10.1", "");
+        const auto a = lookup (db, "6F747363", "1.0.3", "afdb"), a2 = lookup (db, "417f7e74", "1.10.1", "c0ff"), b = lookup (db, "6f747363", "1.0.2", "afdb"),
+                   b2 = lookup (db, "6f747363", "1.0.3", "beef"), c = lookup (db, "11111111", "1.0", "");
+        check (a.match == Match::exact && a2.match == Match::exact && b.match == Match::sameControls && b.why.contains ("1.0.3") && b2.match == Match::sameControls && c.match == Match::none,
+               "wizard WZ-LOOKUP: A = same plugin + version (+ map when both known); B = another version or another map -> check; C = not in the database");
+    }
+    // WZ-READBACK: every written control read back as the profile says -> pass; a renamed, moved or rescaled control -> fail with the reason
+    {
+        const auto w = writesOf (profile ("6f747363", "1.0.3", "afdb"));
+        std::map<juce::String, int> names { { "Threshold", 13 }, { "Knee", 4 } };
+        std::map<int, std::map<juce::String, juce::String>> obs { { 13, { { normKey (0.0), "10.00" }, { normKey (0.066667), "9.20" } } }, { 4, { { normKey (0.0), "SOFT" } } } };
+        auto rescaled = obs; rescaled[13][normKey (0.066667)] = "9.0";
+        std::map<juce::String, int> renamed { { "Thresh", 13 }, { "Knee", 4 } }, moved { { "Threshold", 13 }, { "Knee", 5 } };
+        const auto ok = readback (w, names, obs), bad = readback (w, names, rescaled), gone = readback (w, renamed, obs), mv = readback (w, moved, obs);
+        check (w.size() == 3 && ok.pass && ok.checked == 3 && ! bad.pass && bad.why.contains ("9.0") && ! gone.pass && gone.why.contains ("no control named 'Threshold'") && ! mv.pass && mv.why.contains ("moved"),
+               "wizard WZ-READBACK: three writes read back as the profile says -> pass; a rescaled display, a renamed control, a moved index -> fail (" + bad.why + ")");
+    }
+    // WZ-BUNDLE: nothing personal leaves the Mac - the home path, any /Users/ path, the user name, the host name, anything token-like
+    {
+        const auto clean = juce::JSON::toString (profile ("6f747363", "1.0.3", "afdb"));
+        const auto p1 = personalProblems ("{\"x\": \"/Users/kathy/Library/ejmap/cert\"}", "/Users/kathy", "kathy", "kathys-mac");
+        const auto p2 = personalProblems ("{\"mapper_token\": \"abc\"}", "/Users/kathy", "kathy", "kathys-mac");
+        const auto p3 = personalProblems ("measured on Kathys-Mac", "/Users/kathy", "kathy", "kathys-mac");
+        check (personalProblems (clean, "/Users/kathy", "kathy", "kathys-mac").isEmpty() && p1.contains ("the home folder path") && p2.joinIntoString (";").contains ("credential") && p3.contains ("the computer's name"),
+               "wizard WZ-BUNDLE: a clean profile passes; a home path, a token, the computer's name are caught before packing");
+    }
+    // WZ-SUMMARY: the outcomes in plain words, and the one line a user reads
+    {
+        std::map<juce::String, int> n { { "ready", 20 }, { "ready_from_version", 3 }, { "measuring", 4 }, { "needs_licence", 2 } };
+        check (plainOutcome ("ok", "exported") == "measured" && plainOutcome ("ok", "needs_review") == "not_measurable" && plainOutcome ("window", "") == "needs_licence"
+               && plainOutcome ("needs_device", "") == "needs_hardware" && plainOutcome ("silent_output", "") == "silent" && plainOutcome ("probe_crashed", "") == "crashed"
+               && summaryLine (n) == "23 plugins ready, 4 measuring, 2 need a licence"
+               && summaryLine ({ { "ready", 2 }, { "queued", 3 } }) == "2 plugins ready, 3 to measure",
+               "wizard WZ-SUMMARY: '" + summaryLine (n) + "'");
+    }
+}
+
 /** --jobs N (EjmapJobs.h, 10 Oct): the split, the serial lane, the single writer, the resume. */
 void testJobs()
 {
@@ -9287,7 +9339,7 @@ void testJobs()
 void testPhaseB()
 {
     using namespace ejmap::phaseb;
-    check (categories().size() == 19 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories()[14].name == "frequency" && categories()[15].name == "samplerate" && categories()[16].name == "strips" && categories()[17].name == "limitercomp" && categories().back().name == "gainall", "phaseb P1: nineteen categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, frequency, samplerate, strips, limitercomp, gain-all)");
+    check (categories().size() == 20 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories()[14].name == "frequency" && categories()[15].name == "samplerate" && categories()[16].name == "strips" && categories()[17].name == "limitercomp" && categories()[18].name == "wizard" && categoryNamed ("wizard")->optIn && categories().back().name == "gainall", "phaseb P1: twenty categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, frequency, samplerate, strips, limitercomp, wizard (opt-in), gain-all)");
     // LIM-COMP (Kathy's ruling, 10 Oct): limiters through the compressor certification - an opt-in category over the ledger's limiters,
     // its run-all step after transient_gate (a redo step: its resume never re-deletes); a bare --phaseb-all never runs it
     {
@@ -9560,6 +9612,7 @@ int main (int, char**)
     testMultibandStageThresholds();
     testRoleEvidence();
     testTextPassTimeout();
+    testWizard();
     testJobs();
     testPhaseB();
     testLoopOutcomes();
