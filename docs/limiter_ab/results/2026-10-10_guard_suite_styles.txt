@@ -1,0 +1,676 @@
+Test project /Users/SeanD/echojay-limiter/build-guards-lv2
+      Start 15: substitute_guard
+      Start  4: loudness_loop_guard
+ 1/49 Test #15: substitute_guard .................***Failed   23.29 sec
+substitute_guard: under dial-only a noMap slot becomes the built-in of its role, dialled; no coral row
+== dial-only ON ==
+2026-10-10 10:37:04.492 substitute_guard[71542:220817] EJPlace: stored "Guard Comp" mfr="Guard" (async load)
+2026-10-10 10:37:04.492 substitute_guard[71542:220817] EJPlace: "Guard Comp" loaded at host sampleRate=48000 Hz
+2026-10-10 10:37:04.492 substitute_guard[71542:220817] ChainHost: "Guard Comp" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:37:04.492 substitute_guard[71542:220817] EJStaleMap: slot=1 "Guard Comp" indexed=(none) live=b9055b44ade0 rung=first-index
+2026-10-10 10:37:04.492 substitute_guard[71542:220817] EJDial: slot 1 ("Guard Comp") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:37:04.492 substitute_guard[71542:220817] EJFallback: asking for slot 1 ("Guard Comp") fp b9055b44ade0 -- no exact map
+2026-10-10 10:37:04.492 substitute_guard[71542:220817] EJDial: slot 1 ("Guard Comp") NO MAP for fp=b9055b44ade0  fetch_requested=y  in_flight=y  fetch_wired=y  cached_maps=0 -> pending
+2026-10-10 10:37:04.526 substitute_guard[71542:220817] EJParamMaps: stored/updated 0 map(s), retracted 0 from server
+2026-10-10 10:37:04.527 substitute_guard[71542:220817] EJDial: slot 1 ("Guard Comp") NO MAP for fp=b9055b44ade0  fetch_requested=y  in_flight=y  fetch_wired=y  cached_maps=0 -> pending
+2026-10-10 10:37:04.548 substitute_guard[71542:220817] EJFallback: no map for AudioUnit|4e6d009|10.5.0 -- tier miss, reason fewer_params
+2026-10-10 10:37:04.548 substitute_guard[71542:220817] EJFallback: 0 served, 1 refused
+2026-10-10 10:37:04.548 substitute_guard[71542:220817] EJDial: slot 1 ("Guard Comp") NO MAP for fp=b9055b44ade0  fetch_requested=y  in_flight=n  fetch_wired=y  cached_maps=0 -> noMap
+  ok    precondition: the probe ends noMap after its fetches answered  [noMap]
+2026-10-10 10:37:04.552 substitute_guard[71542:220817] ChainHost: "Guard Comp" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:37:04.552 substitute_guard[71542:220817] ChainHost: "EchoJay Compressor" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:37:04.552 substitute_guard[71542:220817] EJDial: slot 2 ("EchoJay Compressor") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:37:04.552 substitute_guard[71542:220817] ChainHost: built-in "" added as slot 1
+2026-10-10 10:37:04.552 substitute_guard[71542:220817] ChainHost: "EchoJay Compressor" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:37:04.553 substitute_guard[71542:220817] EJParamApply: slot 0 ("EchoJay Compressor") EXACT built-in apply, 2 band(s), 0 skipped
+2026-10-10 10:37:04.553 substitute_guard[71542:220817] EJParamApply: slot 0 readback -> threshold_db -18 dB, ratio 4, attack_ms 10 ms, release_ms 120 ms, knee_db 6 dB, makeup_db 0 dB, mix 100 %, mode clean, detector rms, sc_hpf_hz 0 Hz, lookahead_ms 0 ms, auto_release off, stereo_link 100 %, range_db 0 dB
+2026-10-10 10:37:04.553 substitute_guard[71542:220817] EJDial: SUBSTITUTED slot 0 "Guard Comp" -> "EchoJay Compressor" (no map for fp, no near map) applied 2/2
+  ok    substituteNoMapSlots swapped the probe for EchoJay Compressor  [Guard Comp -> EchoJay Compressor]
+  ok    slot 0 is a BUILT-IN (EchoJay Compressor) after the settle  [EchoJay Compressor]
+  ok    dialled: applied 2/2 (threshold_db, ratio) on the built-in  [applied applied=2]
+  ok    the row says why (SUBSTITUTED for "Guard Comp")  [applied  fp=(none)  localMap=n  serverDialable=?(no lookup this scan)  SUBSTITUTED for "Guard Comp"]
+  ok    AMENDMENT: no coral NOT DIALABLE row anywhere under dial-only
+  ok    the card text says the swap in normal words  [Guard Comp had no working map - built EchoJay Compressor instead]
+== control: dial-only OFF ==
+2026-10-10 10:37:04.553 substitute_guard[71542:220817] EJParamMaps: cache loaded, 1 identities, 0 map(s), 0 fp skip marker(s), 0 synced identit(ies)
+2026-10-10 10:37:04.554 substitute_guard[71542:220817] EJPlace: stored "Guard Comp" mfr="Guard" (async load)
+2026-10-10 10:37:04.554 substitute_guard[71542:220817] EJPlace: "Guard Comp" loaded at host sampleRate=48000 Hz
+2026-10-10 10:37:04.555 substitute_guard[71542:220817] ChainHost: "Guard Comp" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:37:04.555 substitute_guard[71542:220817] EJStaleMap: slot=1 "Guard Comp" indexed=(none) live=9a36b39af488 rung=first-index
+2026-10-10 10:37:04.555 substitute_guard[71542:220817] EJDial: slot 1 ("Guard Comp") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:37:04.555 substitute_guard[71542:220817] EJFallback: asking for slot 1 ("Guard Comp") fp 9a36b39af488 -- no exact map
+2026-10-10 10:37:04.555 substitute_guard[71542:220817] EJDial: slot 1 ("Guard Comp") NO MAP for fp=9a36b39af488  fetch_requested=y  in_flight=y  fetch_wired=y  cached_maps=0 -> pending
+2026-10-10 10:37:04.589 substitute_guard[71542:220817] EJParamMaps: stored/updated 0 map(s), retracted 0 from server
+2026-10-10 10:37:04.589 substitute_guard[71542:220817] EJDial: slot 1 ("Guard Comp") NO MAP for fp=9a36b39af488  fetch_requested=y  in_flight=y  fetch_wired=y  cached_maps=0 -> pending
+2026-10-10 10:37:04.609 substitute_guard[71542:220817] EJFallback: no map for AudioUnit|4e6d00a|10.5.0 -- tier miss, reason fewer_params
+2026-10-10 10:37:04.609 substitute_guard[71542:220817] EJFallback: 0 served, 1 refused
+2026-10-10 10:37:04.609 substitute_guard[71542:220817] EJDial: slot 1 ("Guard Comp") NO MAP for fp=9a36b39af488  fetch_requested=y  in_flight=n  fetch_wired=y  cached_maps=0 -> noMap
+  ok    dial-only OFF: nothing substituted
+  ok    dial-only OFF: the red NOT DIALABLE row exists (the amendment's only home)  [noMap  fp=9a36b39af488  localMap=n  serverDialable=?(no lookup this scan)  nearMap=no near map  NOT DIALABLE (no map for fp, no near map)]
+2026-10-10 10:37:04.609 substitute_guard[71542:220817] ChainHost: teardown KEPT 1 hosted plugin instance(s) alive on purpose [Guard Comp] - disposing a third-party AU inside AP_Close is what aborts on the Softube CL 1B. This is a deliberate leak at teardown only; the OS reclaims it when the process exits.
+== 18 Sep 2026 (item 4): a SUBSTITUTED built-in is always dialled - the model's THIRD-PARTY controls translate by semantic ==
+2026-10-10 10:37:04.610 substitute_guard[71542:220817] EJParamMaps: cache loaded, 2 identities, 0 map(s), 0 fp skip marker(s), 0 synced identit(ies)
+2026-10-10 10:37:04.610 substitute_guard[71542:220817] EJPlace: stored "AMEK Mastering Compressor" mfr="Guard" (async load)
+2026-10-10 10:37:04.610 substitute_guard[71542:220817] EJPlace: "AMEK Mastering Compressor" loaded at host sampleRate=48000 Hz
+2026-10-10 10:37:04.610 substitute_guard[71542:220817] ChainHost: "AMEK Mastering Compressor" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:37:04.611 substitute_guard[71542:220817] EJStaleMap: slot=1 "AMEK Mastering Compressor" indexed=(none) live=b11639da240a rung=first-index
+2026-10-10 10:37:04.611 substitute_guard[71542:220817] EJDial: slot 1 ("AMEK Mastering Compressor") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:37:04.611 substitute_guard[71542:220817] EJFallback: asking for slot 1 ("AMEK Mastering Compressor") fp b11639da240a -- no exact map
+2026-10-10 10:37:04.611 substitute_guard[71542:220817] EJDial: slot 1 ("AMEK Mastering Compressor") NO MAP for fp=b11639da240a  fetch_requested=y  in_flight=y  fetch_wired=y  cached_maps=0 -> pending
+2026-10-10 10:37:04.645 substitute_guard[71542:220817] EJParamMaps: stored/updated 0 map(s), retracted 0 from server
+2026-10-10 10:37:04.645 substitute_guard[71542:220817] EJDial: slot 1 ("AMEK Mastering Compressor") NO MAP for fp=b11639da240a  fetch_requested=y  in_flight=y  fetch_wired=y  cached_maps=0 -> pending
+2026-10-10 10:37:04.665 substitute_guard[71542:220817] EJFallback: no map for AudioUnit|4e6d013|10.5.0 -- tier miss, reason fewer_params
+2026-10-10 10:37:04.665 substitute_guard[71542:220817] EJFallback: 0 served, 1 refused
+2026-10-10 10:37:04.665 substitute_guard[71542:220817] EJDial: slot 1 ("AMEK Mastering Compressor") NO MAP for fp=b11639da240a  fetch_requested=y  in_flight=n  fetch_wired=y  cached_maps=0 -> noMap
+2026-10-10 10:37:04.668 substitute_guard[71542:220817] ChainHost: "AMEK Mastering Compressor" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:37:04.668 substitute_guard[71542:220817] ChainHost: "EchoJay Compressor" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:37:04.669 substitute_guard[71542:220817] EJDial: slot 2 ("EchoJay Compressor") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:37:04.669 substitute_guard[71542:220817] ChainHost: built-in "" added as slot 1
+2026-10-10 10:37:04.669 substitute_guard[71542:220817] ChainHost: "EchoJay Compressor" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:37:04.669 substitute_guard[71542:220817] EJDial: TRANSLATED slot 0 ("EchoJay Compressor") third-party controls -> built-in schema: 5 translated, 0 dropped [Ratio 2:1 -> ratio 2; Threshold -18 dB -> threshold_db -18; Attack 30 ms -> attack_ms 30; Release auto -> auto_release 1; Gain Reduction 3-4 dB (threshold given, GR target noted)]
+2026-10-10 10:37:04.669 substitute_guard[71542:220817] EJParamApply: slot 0 ("EchoJay Compressor") EXACT built-in apply, 4 band(s), 0 skipped
+2026-10-10 10:37:04.669 substitute_guard[71542:220817] EJParamApply: slot 0 readback -> threshold_db -18 dB, ratio 2, attack_ms 30 ms, release_ms 120 ms, knee_db 6 dB, makeup_db 0 dB, mix 100 %, mode clean, detector rms, sc_hpf_hz 0 Hz, lookahead_ms 0 ms, auto_release on, stereo_link 100 %, range_db 0 dB
+2026-10-10 10:37:04.669 substitute_guard[71542:220817] EJDial: SUBSTITUTED slot 0 "AMEK Mastering Compressor" -> "EchoJay Compressor" (no map for fp, no near map) applied 4/4
+  ok    AMEK -> EchoJay Compressor substituted  [EchoJay Compressor]
+  ok    APPLIED n/n: Ratio 2:1 / Threshold -18 dB / Attack 30 ms / Release auto translated and dialled (was 0/3)  [status=applied applied=4/4]
+  ok    the values landed on the device: ratio 2, threshold -18, attack 30 ms, auto release on  [ratio=2 thr=-18 atk=30 autoRel=1]
+  ok    the card never says hand-dialing for a built-in  [AMEK Mastering Compressor had no working map - built EchoJay Compressor instead]
+  ok    GR 3-4 dB at 2:1 with input p90 -20 -> threshold_db -27 (p90 - GR * r/(r-1))  [thr=-27 Ratio 2:1 -> ratio 2; Gain Reduction 3-4 dB -> threshold_db -27.0 (derived: input p90 -20.0 dB, ratio 2.0)]
+  ok    a control with no built-in counterpart is listed as dropped, not guessed  [Timing 1 (no built-in control for it)]
+  ok    with no measured level the GR target is NOT turned into a number (declined, listed)  [Timing 1 (no built-in control for it); Gain Reduction 3-4 dB (needs the measured input level to derive a threshold; none yet)]
+  ok    EchoJay Limiter dials input_db +7.5 and ceiling_db -0.1 (2/2 applied)  [applied=2 skipped=0]
+  FAIL  +7.5 dB of input gain is heard before the ceiling (a 0.1 impulse leaves above 0.2, after the 50 ms ease)  [0.000]
+== V. 22 Sep 2026 (21m item 2): a mono variant is never loaded on a stereo rack - the stereo sibling by name, else refused ==
+2026-10-10 10:37:04.673 substitute_guard[71542:220817] EJParamMaps: cache loaded, 3 identities, 0 map(s), 0 fp skip marker(s), 0 synced identit(ies)
+2026-10-10 10:37:04.674 substitute_guard[71542:220817] EJVariant: "PuigChild 660 (m)" is a mono variant on a stereo rack - loading its stereo sibling "PuigChild 660 (s)" (AudioUnit)
+  ok    V1. "PuigChild 660 (m)" requested on a STEREO rack -> "PuigChild 660 (s)" (the same product's stereo sibling)  [PuigChild 660 (s) | ]
+2026-10-10 10:37:04.674 substitute_guard[71542:220817] EJVariant: "Kramer Tape (m)" is a mono variant on a stereo rack and has no stereo sibling - refused
+  ok    V2. a mono variant with NO stereo sibling -> refused "mono-only plugin on a stereo channel" (not loaded)  [Kramer Tape (m) | mono-only plugin on a stereo channel]
+  ok    V3. a stereo variant is untouched  [PuigChild 660 (s)]
+  ok    V4. on a MONO rack the mono variant loads as asked  [PuigChild 660 (m)]
+== F. 22 Sep 2026 (21n ruling 1c): the [AVAILABLE PLUGINS] feed carries REGISTRATION names with their variant suffixes; a family is never collapsed onto a bare stem ==
+2026-10-10 10:37:04.674 substitute_guard[71542:220817] EJParamMaps: cache loaded, 3 identities, 0 map(s), 0 fp skip marker(s), 0 synced identit(ies)
+2026-10-10 10:37:04.674 substitute_guard[71542:220817] EJScan: 0 VST3 row(s) withheld by architecture (process arm64), 0 unreadable, kept
+2026-10-10 10:37:04.674 substitute_guard[71542:220817] EJScan: [feed-rename] scanner "PuigChild 660" -> entry "PuigChild 660 (m)" [AudioUnit]
+2026-10-10 10:37:04.674 substitute_guard[71542:220817] EJScan: 0 Waves product(s) added from the registry, of 1 registered (1 already offered under another name, 0 name(s) held by a different plugin, 0 unticked in Settings)
+2026-10-10 10:37:04.674 substitute_guard[71542:220817] EJScan: resolver rebuilt, 1 resolved (input=1, enabled=1, excluded=0 from 0 uid(s), duplicates=0, unmatched=0, wavesFromRegistry=0, feed=1)
+2026-10-10 10:37:04.674 substitute_guard[71542:220817] EJScan: [feed-variant] "PuigChild 660" -> "PuigChild 660 (m)"
+2026-10-10 10:37:04.674 substitute_guard[71542:220817] EJScan: [feed-variant] 1 row(s) renamed to their registration name, 0 sibling variant row(s) added, feed=1
+2026-10-10 10:37:04.674 substitute_guard[71542:220817] EJFeed: split MODE=OFF (full list), 1 recommendable
+  ok    F1. a scan with only "(m)" registered -> the feed carries "PuigChild 660 (m)", not the bare stem (RED as it stood: "PuigChild 660")  [PuigChild 660 (m)|EchoJay EQ|EchoJay Compressor|EchoJay Limiter]
+2026-10-10 10:37:04.674 substitute_guard[71542:220817] EJMapFps: feed=1 exact=0 uidFb=0 ambig=0 miss=1 noUid=0 rackWon=0 dupSameFp=0 dupDiffFp=0 dupUnresolved=0 nameConfl=0 capped=0 synced=0 syncStore=0 -> 0 entr(ies)
+2026-10-10 10:37:04.674 substitute_guard[71542:220817] EJMapFps: feed=1 exact=0 uidFb=0 ambig=0 miss=1 noUid=0 rackWon=0 dupSameFp=0 dupDiffFp=0 dupUnresolved=0 nameConfl=0 capped=0 synced=0 syncStore=0 -> 0 entr(ies)
+2026-10-10 10:37:04.674 substitute_guard[71542:220817] EJMapFps: feed=1 exact=0 uidFb=0 ambig=0 miss=1 noUid=0 rackWon=0 dupSameFp=0 dupDiffFp=0 dupUnresolved=0 nameConfl=0 capped=0 synced=0 syncStore=0 -> 0 entr(ies)
+  ok    F1. mapFps keys on the same registration name (no fingerprint -> no entry, but never the bare stem)  [{}]
+2026-10-10 10:37:04.675 substitute_guard[71542:220817] EJParamMaps: cache loaded, 3 identities, 0 map(s), 0 fp skip marker(s), 0 synced identit(ies)
+2026-10-10 10:37:04.675 substitute_guard[71542:220817] EJScan: 0 VST3 row(s) withheld by architecture (process arm64), 0 unreadable, kept
+2026-10-10 10:37:04.675 substitute_guard[71542:220817] EJScan: [feed-rename] scanner "CLA-76" -> entry "CLA-76 (s)" [AudioUnit]
+2026-10-10 10:37:04.675 substitute_guard[71542:220817] EJScan: 0 Waves product(s) added from the registry, of 1 registered (1 already offered under another name, 0 name(s) held by a different plugin, 0 unticked in Settings)
+2026-10-10 10:37:04.675 substitute_guard[71542:220817] EJScan: resolver rebuilt, 1 resolved (input=1, enabled=1, excluded=0 from 0 uid(s), duplicates=0, unmatched=0, wavesFromRegistry=0, feed=1)
+2026-10-10 10:37:04.675 substitute_guard[71542:220817] EJScan: [feed-variant] "CLA-76" -> "CLA-76 (s)"
+2026-10-10 10:37:04.675 substitute_guard[71542:220817] EJScan: [feed-variant] 1 row(s) renamed to their registration name, 1 sibling variant row(s) added, feed=2
+2026-10-10 10:37:04.675 substitute_guard[71542:220817] EJFeed: split MODE=OFF (full list), 2 recommendable
+  ok    F2. (m) + (s) registered -> both rows, no bare stem  [CLA-76 (s)|CLA-76 (m)|EchoJay EQ|EchoJay Compressor|EchoJay Limiter]
+2026-10-10 10:37:04.675 substitute_guard[71542:220817] EJParamMaps: cache loaded, 3 identities, 0 map(s), 0 fp skip marker(s), 0 synced identit(ies)
+2026-10-10 10:37:04.675 substitute_guard[71542:220817] EJScan: 0 VST3 row(s) withheld by architecture (process arm64), 0 unreadable, kept
+2026-10-10 10:37:04.675 substitute_guard[71542:220817] EJScan: 0 Waves product(s) added from the registry, of 0 registered (0 already offered under another name, 0 name(s) held by a different plugin, 0 unticked in Settings)
+2026-10-10 10:37:04.675 substitute_guard[71542:220817] EJScan: resolver rebuilt, 1 resolved (input=1, enabled=1, excluded=0 from 0 uid(s), duplicates=0, unmatched=0, wavesFromRegistry=0, feed=1)
+2026-10-10 10:37:04.676 substitute_guard[71542:220817] EJScan: [feed-variant] 0 row(s) renamed to their registration name, 0 sibling variant row(s) added, feed=1
+2026-10-10 10:37:04.676 substitute_guard[71542:220817] EJFeed: split MODE=OFF (full list), 1 recommendable
+  ok    F3 as re-ruled. an unsuffixed registration is offered exactly as before - one scanned row, beside the built-ins the feed now always carries  [scanned: Pro-Q 3   all: Pro-Q 3|EchoJay EQ|EchoJay Compressor|EchoJay Limiter]
+
+-- a blacklisted NAME-ONLY row is withheld from the feed, not just refused at load --
+2026-10-10 10:37:04.676 substitute_guard[71542:220817] EJParamMaps: cache loaded, 3 identities, 0 map(s), 0 fp skip marker(s), 0 synced identit(ies)
+2026-10-10 10:37:04.676 substitute_guard[71542:220817] EJScan: 0 VST3 row(s) withheld by architecture (process arm64), 0 unreadable, kept
+2026-10-10 10:37:04.676 substitute_guard[71542:220817] EJScan: 0 Waves product(s) added from the registry, of 0 registered (0 already offered under another name, 0 name(s) held by a different plugin, 0 unticked in Settings)
+2026-10-10 10:37:04.676 substitute_guard[71542:220817] EJScan: resolver rebuilt, 1 resolved (input=2, enabled=2, excluded=0 from 0 uid(s), duplicates=0, unmatched=1, wavesFromRegistry=0, feed=1)
+2026-10-10 10:37:04.676 substitute_guard[71542:220817] EJScan: [feed-variant] 0 row(s) renamed to their registration name, 0 sibling variant row(s) added, feed=1
+2026-10-10 10:37:04.676 substitute_guard[71542:220817] EJFeed: split MODE=OFF (full list), 1 recommendable
+  ok    a blacklisted plugin is ABSENT from the outgoing feed, so the model never proposes it  (RED as it stood: offered, proposed, then refused at load - the user saw it withheld in the same turn)  [AVOX THROAT|EchoJay EQ|EchoJay Compressor|EchoJay Limiter]
+  ok    ...while its unlisted sibling - same manufacturer, same trailing-space OSType - is still offered  [AVOX THROAT|EchoJay EQ|EchoJay Compressor|EchoJay Limiter]
+
+-- a trailing-space OSType is blacklistable --
+  ok    the fixture is the real pair: the identifier is one character longer than the stored line  [32 vs 31]
+  ok    the stored (trimmed) line and the real identifier reduce to ONE key, so a file already on disk keeps matching  (RED as it stood: an exact compare answered false and the plugin was offered)  ["AudioUnit:Effects/aufx,AnVD,VST"]
+  ok    ...while a DIFFERENT manufacturer is still a different key - the normalisation is trailing whitespace only, not a fuzzy match
+  ok    ...and LEADING space is not stripped: it is not part of any identifier, so a line carrying one is malformed and must not silently match
+
+==== substitute_guard: RED (1 assertion(s) failed) ====
+exit code: 1  (0 == GREEN, nonzero == RED)
+SCRIBBLE LEG: running again with MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 ...
+---- scribble leg FAILURES ----
+  FAIL  +7.5 dB of input gain is heard before the ceiling (a 0.1 impulse leaves above 0.2, after the 50 ms ease)  [0.000]
+---- scribble leg output (tail) ----
+2026-10-10 10:37:15.564 substitute_guard[77179:232284] EJFeed: split MODE=OFF (full list), 1 recommendable
+  ok    F1. a scan with only "(m)" registered -> the feed carries "PuigChild 660 (m)", not the bare stem (RED as it stood: "PuigChild 660")  [PuigChild 660 (m)|EchoJay EQ|EchoJay Compressor|EchoJay Limiter]
+2026-10-10 10:37:15.564 substitute_guard[77179:232284] EJMapFps: feed=1 exact=0 uidFb=0 ambig=0 miss=1 noUid=0 rackWon=0 dupSameFp=0 dupDiffFp=0 dupUnresolved=0 nameConfl=0 capped=0 synced=0 syncStore=0 -> 0 entr(ies)
+2026-10-10 10:37:15.564 substitute_guard[77179:232284] EJMapFps: feed=1 exact=0 uidFb=0 ambig=0 miss=1 noUid=0 rackWon=0 dupSameFp=0 dupDiffFp=0 dupUnresolved=0 nameConfl=0 capped=0 synced=0 syncStore=0 -> 0 entr(ies)
+2026-10-10 10:37:15.564 substitute_guard[77179:232284] EJMapFps: feed=1 exact=0 uidFb=0 ambig=0 miss=1 noUid=0 rackWon=0 dupSameFp=0 dupDiffFp=0 dupUnresolved=0 nameConfl=0 capped=0 synced=0 syncStore=0 -> 0 entr(ies)
+  ok    F1. mapFps keys on the same registration name (no fingerprint -> no entry, but never the bare stem)  [{}]
+2026-10-10 10:37:15.564 substitute_guard[77179:232284] EJParamMaps: cache loaded, 3 identities, 0 map(s), 0 fp skip marker(s), 0 synced identit(ies)
+2026-10-10 10:37:15.565 substitute_guard[77179:232284] EJScan: 0 VST3 row(s) withheld by architecture (process arm64), 0 unreadable, kept
+2026-10-10 10:37:15.565 substitute_guard[77179:232284] EJScan: [feed-rename] scanner "CLA-76" -> entry "CLA-76 (s)" [AudioUnit]
+2026-10-10 10:37:15.565 substitute_guard[77179:232284] EJScan: 0 Waves product(s) added from the registry, of 1 registered (1 already offered under another name, 0 name(s) held by a different plugin, 0 unticked in Settings)
+2026-10-10 10:37:15.565 substitute_guard[77179:232284] EJScan: resolver rebuilt, 1 resolved (input=1, enabled=1, excluded=0 from 0 uid(s), duplicates=0, unmatched=0, wavesFromRegistry=0, feed=1)
+2026-10-10 10:37:15.565 substitute_guard[77179:232284] EJScan: [feed-variant] "CLA-76" -> "CLA-76 (s)"
+2026-10-10 10:37:15.565 substitute_guard[77179:232284] EJScan: [feed-variant] 1 row(s) renamed to their registration name, 1 sibling variant row(s) added, feed=2
+2026-10-10 10:37:15.565 substitute_guard[77179:232284] EJFeed: split MODE=OFF (full list), 2 recommendable
+  ok    F2. (m) + (s) registered -> both rows, no bare stem  [CLA-76 (s)|CLA-76 (m)|EchoJay EQ|EchoJay Compressor|EchoJay Limiter]
+2026-10-10 10:37:15.565 substitute_guard[77179:232284] EJParamMaps: cache loaded, 3 identities, 0 map(s), 0 fp skip marker(s), 0 synced identit(ies)
+2026-10-10 10:37:15.565 substitute_guard[77179:232284] EJScan: 0 VST3 row(s) withheld by architecture (process arm64), 0 unreadable, kept
+2026-10-10 10:37:15.565 substitute_guard[77179:232284] EJScan: 0 Waves product(s) added from the registry, of 0 registered (0 already offered under another name, 0 name(s) held by a different plugin, 0 unticked in Settings)
+2026-10-10 10:37:15.566 substitute_guard[77179:232284] EJScan: resolver rebuilt, 1 resolved (input=1, enabled=1, excluded=0 from 0 uid(s), duplicates=0, unmatched=0, wavesFromRegistry=0, feed=1)
+2026-10-10 10:37:15.566 substitute_guard[77179:232284] EJScan: [feed-variant] 0 row(s) renamed to their registration name, 0 sibling variant row(s) added, feed=1
+2026-10-10 10:37:15.566 substitute_guard[77179:232284] EJFeed: split MODE=OFF (full list), 1 recommendable
+  ok    F3 as re-ruled. an unsuffixed registration is offered exactly as before - one scanned row, beside the built-ins the feed now always carries  [scanned: Pro-Q 3   all: Pro-Q 3|EchoJay EQ|EchoJay Compressor|EchoJay Limiter]
+
+-- a blacklisted NAME-ONLY row is withheld from the feed, not just refused at load --
+2026-10-10 10:37:15.566 substitute_guard[77179:232284] EJParamMaps: cache loaded, 3 identities, 0 map(s), 0 fp skip marker(s), 0 synced identit(ies)
+2026-10-10 10:37:15.566 substitute_guard[77179:232284] EJScan: 0 VST3 row(s) withheld by architecture (process arm64), 0 unreadable, kept
+2026-10-10 10:37:15.566 substitute_guard[77179:232284] EJScan: 0 Waves product(s) added from the registry, of 0 registered (0 already offered under another name, 0 name(s) held by a different plugin, 0 unticked in Settings)
+2026-10-10 10:37:15.566 substitute_guard[77179:232284] EJScan: resolver rebuilt, 1 resolved (input=2, enabled=2, excluded=0 from 0 uid(s), duplicates=0, unmatched=1, wavesFromRegistry=0, feed=1)
+2026-10-10 10:37:15.566 substitute_guard[77179:232284] EJScan: [feed-variant] 0 row(s) renamed to their registration name, 0 sibling variant row(s) added, feed=1
+2026-10-10 10:37:15.566 substitute_guard[77179:232284] EJFeed: split MODE=OFF (full list), 1 recommendable
+  ok    a blacklisted plugin is ABSENT from the outgoing feed, so the model never proposes it  (RED as it stood: offered, proposed, then refused at load - the user saw it withheld in the same turn)  [AVOX THROAT|EchoJay EQ|EchoJay Compressor|EchoJay Limiter]
+  ok    ...while its unlisted sibling - same manufacturer, same trailing-space OSType - is still offered  [AVOX THROAT|EchoJay EQ|EchoJay Compressor|EchoJay Limiter]
+
+-- a trailing-space OSType is blacklistable --
+  ok    the fixture is the real pair: the identifier is one character longer than the stored line  [32 vs 31]
+  ok    the stored (trimmed) line and the real identifier reduce to ONE key, so a file already on disk keeps matching  (RED as it stood: an exact compare answered false and the plugin was offered)  ["AudioUnit:Effects/aufx,AnVD,VST"]
+  ok    ...while a DIFFERENT manufacturer is still a different key - the normalisation is trailing whitespace only, not a fuzzy match
+  ok    ...and LEADING space is not stripped: it is not part of any identifier, so a line carrying one is malformed and must not silently match
+
+==== substitute_guard: RED (1 assertion(s) failed) ====
+---- end scribble leg output ----
+scribble leg exit code: 1  (0 == GREEN, nonzero == RED)
+BOTH LEGS: RED (plain 1, scribble 1)
+
+      Start  3: limiter_wall_guard
+ 2/49 Test  #3: limiter_wall_guard ...............   Passed   27.68 sec
+      Start  1: land_by_name_guard
+ 3/49 Test  #1: land_by_name_guard ...............   Passed   21.32 sec
+      Start  2: stepped_position_guard
+ 4/49 Test  #2: stepped_position_guard ...........   Passed   33.21 sec
+      Start  5: level_slot_guard
+ 5/49 Test  #5: level_slot_guard .................   Passed   30.69 sec
+      Start  6: level_loop_guard
+ 6/49 Test  #4: loudness_loop_guard ..............   Passed  146.98 sec
+      Start  7: track_level_guard
+ 7/49 Test  #7: track_level_guard ................   Passed   22.53 sec
+      Start  8: comp_profile_guard
+ 8/49 Test  #8: comp_profile_guard ...............   Passed   26.11 sec
+      Start  9: comp_contract_guard
+ 9/49 Test  #9: comp_contract_guard ..............   Passed   22.77 sec
+      Start 10: comp_render_check
+10/49 Test #10: comp_render_check ................***Failed   22.02 sec
+comp_render_check - COMP_PROFILE_SPEC_v1 section 8 acceptance check
+  --id "AudioUnit:Effects/aufx,dcmp,appl" --set "Compression Threshold=-30"
+  [--tone <dBFS>]  a 997 Hz sine at that RMS instead of the vocal-shaped signal, for the
+                   section 8 tone check: GR on it must be within 0.5 dB of the target.
+  [--name "..."] [--wav in.wav] [--sr 48000] [--seconds 20] [--json out.json]
+
+  --id is REQUIRED and names ONE AudioComponent. This tool never scans: resolving a name by
+  scanning asks every component on the machine what it contains, which for licence-bound
+  plugins means loading them - on 1 Oct 2026 that drove iLok prompts and crashes on Sean's
+  Mac and the process was killed twice. Licence-bound ids (Waves/UAD/PACE) are REFUSED here;
+  EJ Maps owns those (spec section 4).
+exit code: 1  (0 == GREEN, nonzero == RED)
+SCRIBBLE LEG: running again with MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 ...
+---- scribble leg FAILURES ----
+(no FAIL line: the leg died without reporting one - see the tail)
+---- scribble leg output (tail) ----
+comp_render_check - COMP_PROFILE_SPEC_v1 section 8 acceptance check
+  --id "AudioUnit:Effects/aufx,dcmp,appl" --set "Compression Threshold=-30"
+  [--tone <dBFS>]  a 997 Hz sine at that RMS instead of the vocal-shaped signal, for the
+                   section 8 tone check: GR on it must be within 0.5 dB of the target.
+  [--name "..."] [--wav in.wav] [--sr 48000] [--seconds 20] [--json out.json]
+
+  --id is REQUIRED and names ONE AudioComponent. This tool never scans: resolving a name by
+  scanning asks every component on the machine what it contains, which for licence-bound
+  plugins means loading them - on 1 Oct 2026 that drove iLok prompts and crashes on Sean's
+  Mac and the process was killed twice. Licence-bound ids (Waves/UAD/PACE) are REFUSED here;
+  EJ Maps owns those (spec section 4).
+---- end scribble leg output ----
+scribble leg exit code: 1  (0 == GREEN, nonzero == RED)
+BOTH LEGS: RED (plain 1, scribble 1)
+
+      Start 11: level_loop_red_prefix
+11/49 Test  #6: level_loop_guard .................   Passed  153.27 sec
+      Start 12: pair_dial_guard
+12/49 Test #12: pair_dial_guard ..................   Passed   21.07 sec
+      Start 13: deltas_guard
+13/49 Test #13: deltas_guard .....................   Passed   20.99 sec
+      Start 14: bubble_parity_guard
+14/49 Test #14: bubble_parity_guard ..............   Passed   21.84 sec
+      Start 16: dialinfo_keep_guard
+15/49 Test #16: dialinfo_keep_guard ..............   Passed   23.01 sec
+      Start 17: near_map_guard
+16/49 Test #17: near_map_guard ...................   Passed   22.13 sec
+      Start 18: dial_wait_guard
+17/49 Test #18: dial_wait_guard ..................   Passed   31.60 sec
+      Start 19: preflight_guard
+18/49 Test #11: level_loop_red_prefix ............***Failed  236.27 sec
+== level_loop_guard PRE-FIX RED: the hold on a +6 dB channel slot ==
+2026-10-10 10:41:03.581 level_loop_red_prefix[90459:460846] EJNet: base=https://www.echojay.ai source=built-in devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-10-10 10:41:03.583 level_loop_red_prefix[90459:460831] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+  ok    precondition: EchoJay Gain is registered
+2026-10-10 10:41:03.583 level_loop_red_prefix[90459:460831] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:41:03.583 level_loop_red_prefix[90459:460831] EJDial: slot 1 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:41:03.583 level_loop_red_prefix[90459:460831] ChainHost: built-in "" added as slot 0
+2026-10-10 10:41:03.738 level_loop_red_prefix[90459:460831] EJParamApply: slot 0 ("EchoJay Gain") EXACT built-in apply, 1 band(s), 0 skipped
+2026-10-10 10:41:03.739 level_loop_red_prefix[90459:460831] EJParamApply: slot 0 readback -> level_db 6 dB, pan 0, mode stereo, mid_db 0 dB, side_db 0 dB, mono off, phase_left off, phase_right off
+2026-10-10 10:41:03.766 level_loop_red_prefix[90459:460846] EJNet: config fetch ok, prompt in force = REMOTE v21 (served version 21)
+2026-10-10 10:41:03.946 level_loop_red_prefix[90459:460831] EJCompProfile: slot 1 ("EchoJay Gain") expects no gain reduction figure
+2026-10-10 10:41:03.946 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" slot 1 PASSIVE, band 2.0-3.0 dB, dialling the drive from 0.0 dB, quoting 90 s heard
+2026-10-10 10:41:03.947 level_loop_red_prefix[90459:460831] EJThreshold: slot 1 output gain set to -0.00 dB (EchoJay's own, the plugin named no output control)
+2026-10-10 10:41:03.947 level_loop_red_prefix[90459:460831] EJThreshold: slot 1 both legs reset - SHORTMAX and SHORT90 start again on each (the build set the actuator); no window from before this can enter a sample
+2026-10-10 10:41:04.588 level_loop_red_prefix[90459:460831] EJPrompt: host identity resolved: "Terminal" pid=1423 start=1791621054.650552 via responsible-pid
+2026-10-10 10:41:07.016 level_loop_red_prefix[90459:460831] EJThreshold: asked the user: Fake Comp +6 on, set from 90 s of this track, landing it as it plays...
+2026-10-10 10:41:10.083 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 1 gr=0.0 in90=-17.2 sinceWrite=6.0s pre=+0.0 post=+0.0 mode=passive settle=2/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=11.7s state=awaiting-fresh-window
+2026-10-10 10:41:13.163 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 2 gr=0.0 in90=-17.2 sinceWrite=unknown pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=14.6s state=settling
+2026-10-10 10:41:13.163 level_loop_red_prefix[90459:460831] EJThreshold: slot 1 output gain set to -1.00 dB (EchoJay's own, the plugin named no output control)
+2026-10-10 10:41:13.163 level_loop_red_prefix[90459:460831] EJThreshold: slot 1 drive (IN pre-gain) set to 1.00 dB, asked 1.00 dB
+2026-10-10 10:41:13.163 level_loop_red_prefix[90459:460831] EJThreshold: slot 1 both legs reset - SHORTMAX and SHORT90 start again on each (the loop moved the drive); no window from before this can enter a sample
+2026-10-10 10:41:16.231 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 3 gr=0.0 in90=-17.8 sinceWrite=3.0s pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=17.6s state=awaiting-fresh-window
+2026-10-10 10:41:19.329 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 4 gr=0.0 in90=-16.2 sinceWrite=6.0s pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=20.6s state=settling
+2026-10-10 10:41:22.390 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 5 gr=0.0 in90=-16.2 sinceWrite=9.0s pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=23.6s state=settled
+2026-10-10 10:41:25.479 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 6 gr=0.0 in90=-16.2 sinceWrite=12.0s pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=12.0s slotHeard=26.6s state=landed-step-budget-holding
+2026-10-10 10:41:28.560 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 7 gr=0.0 in90=-16.2 sinceWrite=15.0s pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=12.0s slotHeard=29.6s state=settling
+2026-10-10 10:41:31.642 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 8 gr=0.0 in90=-16.2 sinceWrite=18.0s pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=12.0s slotHeard=32.6s state=settled
+2026-10-10 10:41:34.719 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 9 gr=0.0 in90=-16.2 sinceWrite=21.0s pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=21.0s slotHeard=35.6s state=level-hold-slot
+2026-10-10 10:41:34.719 level_loop_red_prefix[90459:460831] EJThreshold: slot 1 output gain set to -7.00 dB (EchoJay's own, the plugin named no output control)
+2026-10-10 10:41:34.720 level_loop_red_prefix[90459:460831] EJThreshold: slot 1 both legs reset - SHORTMAX and SHORT90 start again on each (the hold moved EchoJay's slot output gain); no window from before this can enter a sample
+2026-10-10 10:41:34.720 level_loop_red_prefix[90459:460831] EJThreshold: level hold - EchoJay's slot output gain = -7.00 dB on slot 1 (the plugin is 6.0 dB louder out than in; residual before this write 6.00 dB; written total -6.00 dB) [0.0 s of audio since the write]
+2026-10-10 10:41:37.819 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 10 gr=0.0 in90=-16.2 sinceWrite=3.0s pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=21.0s slotHeard=38.6s state=settling
+2026-10-10 10:41:40.891 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 11 gr=0.0 in90=-15.8 sinceWrite=6.0s pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=21.0s slotHeard=41.6s state=settled
+2026-10-10 10:41:43.950 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 12 gr=0.0 in90=-15.8 sinceWrite=9.0s pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=30.0s slotHeard=44.6s state=landed-held-one-write
+2026-10-10 10:41:43.950 level_loop_red_prefix[90459:460831] EJThreshold: asked the user: drive +0.0 ‚Üí +1.0, 0.0 dB on the loud phrases, level held.
+    PRE-FIX: 28 window(s), 2 write(s) to the slot output gain [-1.00, -7.00]
+    PRE-FIX: chain in -14.92, chain out -11.91 (out-in +3.02 dB)
+    PRE-FIX: closing line: drive +0.0 → +1.0, 0.0 dB on the loud phrases, level held.
+  ok    AT MOST TWO WRITES for the whole settle  [2 write(s)]
+  ok    THE WRITTEN TOTAL never exceeds the first measured excess plus 1 dB  [-7.00 dB of 7.00 allowed]
+  FAIL  the chain out equals the chain in  [3.02 dB]
+  FAIL  the closing sentence states the WRITTEN TOTAL  [drive +0.0 → +1.0, 0.0 dB on the loud phrases, level held.]
+
+-- item 6a: a dynamics slot only the MAP knows about --
+2026-10-10 10:42:30.177 level_loop_red_prefix[90459:460831] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+  ok    precondition: EchoJay Gain is registered
+2026-10-10 10:42:30.177 level_loop_red_prefix[90459:460831] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:42:30.178 level_loop_red_prefix[90459:460831] EJDial: slot 1 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:42:30.178 level_loop_red_prefix[90459:460831] ChainHost: built-in "" added as slot 0
+2026-10-10 10:42:30.331 level_loop_red_prefix[90459:460831] EJParamApply: slot 0 ("EchoJay Gain") EXACT built-in apply, 1 band(s), 0 skipped
+2026-10-10 10:42:30.332 level_loop_red_prefix[90459:460831] EJParamApply: slot 0 readback -> level_db 6 dB, pan 0, mode stereo, mid_db 0 dB, side_db 0 dB, mono off, phase_left off, phase_right off
+2026-10-10 10:42:30.575 level_loop_red_prefix[90459:460831] EJPlace: stored "AUDelay" mfr="Apple" (async load)
+2026-10-10 10:42:30.575 level_loop_red_prefix[90459:460831] EJPlace: "AUDelay" loaded at host sampleRate=48000 Hz
+2026-10-10 10:42:30.576 level_loop_red_prefix[90459:460831] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:42:30.576 level_loop_red_prefix[90459:460831] ChainHost: "AUDelay" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:42:30.577 level_loop_red_prefix[90459:460831] EJStaleMap: slot=2 "AUDelay" indexed=(none) live=ffea97d5fca8 rung=first-index
+2026-10-10 10:42:30.577 level_loop_red_prefix[90459:460831] EJDial: slot 2 ("AUDelay") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+  ok    precondition: AUDelay loaded as slot 2  [2 slot(s)]
+  ok    precondition: it carries a fingerprint  [ffea97d5fca805e4]
+2026-10-10 10:42:30.673 level_loop_red_prefix[90459:460831] EJParamMaps: stored/updated 1 map(s), retracted 0 from server
+2026-10-10 10:42:30.673 level_loop_red_prefix[90459:460831] EJDial: slot 2 ("AUDelay") no settings yet [map-arrived] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+  ok    item 6a: a slot whose MAP says category=compressor counts as a dynamics slot  [1 of 2  <-- PRE-FIX READS 0, which is Sean's "loops started 1 of 0 dynamics slots"]
+2026-10-10 10:42:30.830 level_loop_red_prefix[90459:460831] ChainHost: teardown KEPT 1 hosted plugin instance(s) alive on purpose [AUDelay] - disposing a third-party AU inside AP_Close is what aborts on the Softube CL 1B. This is a deliberate leak at teardown only; the OS reclaims it when the process exits.
+
+-- item 6c: a loop left running by a rebuild --
+2026-10-10 10:42:30.947 level_loop_red_prefix[90459:460831] EJParamMaps: cache loaded, 1 identities, 1 map(s), 0 fp skip marker(s), 0 synced identit(ies)
+2026-10-10 10:42:30.948 level_loop_red_prefix[90459:460831] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+  ok    precondition: EchoJay Gain is registered
+2026-10-10 10:42:30.948 level_loop_red_prefix[90459:460831] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:42:30.948 level_loop_red_prefix[90459:460831] EJDial: slot 1 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:42:30.949 level_loop_red_prefix[90459:460831] ChainHost: built-in "" added as slot 0
+2026-10-10 10:42:31.103 level_loop_red_prefix[90459:460831] EJParamApply: slot 0 ("EchoJay Gain") EXACT built-in apply, 1 band(s), 0 skipped
+2026-10-10 10:42:31.103 level_loop_red_prefix[90459:460831] EJParamApply: slot 0 readback -> level_db 6 dB, pan 0, mode stereo, mid_db 0 dB, side_db 0 dB, mono off, phase_left off, phase_right off
+2026-10-10 10:42:31.298 level_loop_red_prefix[90459:460831] EJCompProfile: slot 1 ("EchoJay Gain") expects no gain reduction figure
+2026-10-10 10:42:31.298 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" slot 1 PASSIVE, band 2.0-3.0 dB, dialling the drive from 0.0 dB, quoting 90 s heard
+2026-10-10 10:42:31.299 level_loop_red_prefix[90459:460831] EJThreshold: slot 1 output gain set to -0.00 dB (EchoJay's own, the plugin named no output control)
+2026-10-10 10:42:31.299 level_loop_red_prefix[90459:460831] EJThreshold: slot 1 both legs reset - SHORTMAX and SHORT90 start again on each (the build set the actuator); no window from before this can enter a sample
+2026-10-10 10:42:34.390 level_loop_red_prefix[90459:460831] EJThreshold: asked the user: Fake Comp +6 on, set from 90 s of this track, landing it as it plays...
+2026-10-10 10:42:37.476 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 1 gr=0.0 in90=-17.2 sinceWrite=6.0s pre=+0.0 post=+0.0 mode=passive settle=2/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=11.7s state=awaiting-fresh-window
+2026-10-10 10:42:40.574 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 2 gr=0.0 in90=-17.2 sinceWrite=unknown pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=14.6s state=settling
+2026-10-10 10:42:40.574 level_loop_red_prefix[90459:460831] EJThreshold: slot 1 output gain set to -1.00 dB (EchoJay's own, the plugin named no output control)
+2026-10-10 10:42:40.575 level_loop_red_prefix[90459:460831] EJThreshold: slot 1 drive (IN pre-gain) set to 1.00 dB, asked 1.00 dB
+2026-10-10 10:42:40.575 level_loop_red_prefix[90459:460831] EJThreshold: slot 1 both legs reset - SHORTMAX and SHORT90 start again on each (the loop moved the drive); no window from before this can enter a sample
+2026-10-10 10:42:43.660 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 3 gr=0.0 in90=-17.8 sinceWrite=3.0s pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=17.6s state=awaiting-fresh-window
+  ok    precondition: the loop is running before the rebuild  [window 3]
+2026-10-10 10:42:43.660 level_loop_red_prefix[90459:460831] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:42:43.661 level_loop_red_prefix[90459:460831] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:42:43.661 level_loop_red_prefix[90459:460831] EJDial: slot 2 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:42:43.661 level_loop_red_prefix[90459:460831] ChainHost: built-in "" added as slot 1
+2026-10-10 10:42:46.963 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 4 gr=0.0 in90=-16.2 sinceWrite=unknown pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=2.6s state=waiting
+2026-10-10 10:42:50.045 level_loop_red_prefix[90459:460831] EJThreshold: "Fake Comp +6" window 5 gr=0.0 in90=-16.2 sinceWrite=unknown pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=5.6s state=stale-window
+  FAIL  item 6c: the rebuild CANCELS the loop  [still running, window 3 -> 5  <-- PRE-FIX KEEPS JUDGING, which is Sean's re-posted "Mike-E Comp is on"]
+
+==== level_loop_guard PRE-FIX RED: RED (3 assertion(s) failed) ====
+exit code: 1  (0 == GREEN, nonzero == RED)
+SCRIBBLE LEG: running again with MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 ...
+---- scribble leg FAILURES ----
+  FAIL  the chain out equals the chain in  [3.02 dB]
+  FAIL  the closing sentence states the WRITTEN TOTAL  [drive +0.0 → +1.0, 0.0 dB on the loud phrases, level held.]
+  FAIL  item 6c: the rebuild CANCELS the loop  [still running, window 3 -> 5  <-- PRE-FIX KEEPS JUDGING, which is Sean's re-posted "Mike-E Comp is on"]
+---- scribble leg output (tail) ----
+2026-10-10 10:44:29.221 level_loop_red_prefix[38522:557111] ChainHost: "AUDelay" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:44:29.222 level_loop_red_prefix[38522:557111] EJStaleMap: slot=2 "AUDelay" indexed=(none) live=ffea97d5fca8 rung=first-index
+2026-10-10 10:44:29.222 level_loop_red_prefix[38522:557111] EJDial: slot 2 ("AUDelay") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+  ok    precondition: AUDelay loaded as slot 2  [2 slot(s)]
+  ok    precondition: it carries a fingerprint  [ffea97d5fca805e4]
+2026-10-10 10:44:29.323 level_loop_red_prefix[38522:557111] EJParamMaps: stored/updated 1 map(s), retracted 0 from server
+2026-10-10 10:44:29.323 level_loop_red_prefix[38522:557111] EJDial: slot 2 ("AUDelay") no settings yet [map-arrived] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+  ok    item 6a: a slot whose MAP says category=compressor counts as a dynamics slot  [1 of 2  <-- PRE-FIX READS 0, which is Sean's "loops started 1 of 0 dynamics slots"]
+2026-10-10 10:44:29.478 level_loop_red_prefix[38522:557111] ChainHost: teardown KEPT 1 hosted plugin instance(s) alive on purpose [AUDelay] - disposing a third-party AU inside AP_Close is what aborts on the Softube CL 1B. This is a deliberate leak at teardown only; the OS reclaims it when the process exits.
+
+-- item 6c: a loop left running by a rebuild --
+2026-10-10 10:44:29.639 level_loop_red_prefix[38522:557111] EJParamMaps: cache loaded, 1 identities, 1 map(s), 0 fp skip marker(s), 0 synced identit(ies)
+2026-10-10 10:44:29.641 level_loop_red_prefix[38522:557111] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+  ok    precondition: EchoJay Gain is registered
+2026-10-10 10:44:29.641 level_loop_red_prefix[38522:557111] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:44:29.641 level_loop_red_prefix[38522:557111] EJDial: slot 1 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:44:29.641 level_loop_red_prefix[38522:557111] ChainHost: built-in "" added as slot 0
+2026-10-10 10:44:29.796 level_loop_red_prefix[38522:557111] EJParamApply: slot 0 ("EchoJay Gain") EXACT built-in apply, 1 band(s), 0 skipped
+2026-10-10 10:44:29.796 level_loop_red_prefix[38522:557111] EJParamApply: slot 0 readback -> level_db 6 dB, pan 0, mode stereo, mid_db 0 dB, side_db 0 dB, mono off, phase_left off, phase_right off
+2026-10-10 10:44:30.016 level_loop_red_prefix[38522:557111] EJCompProfile: slot 1 ("EchoJay Gain") expects no gain reduction figure
+2026-10-10 10:44:30.016 level_loop_red_prefix[38522:557111] EJThreshold: "Fake Comp +6" slot 1 PASSIVE, band 2.0-3.0 dB, dialling the drive from 0.0 dB, quoting 90 s heard
+2026-10-10 10:44:30.017 level_loop_red_prefix[38522:557111] EJThreshold: slot 1 output gain set to -0.00 dB (EchoJay's own, the plugin named no output control)
+2026-10-10 10:44:30.017 level_loop_red_prefix[38522:557111] EJThreshold: slot 1 both legs reset - SHORTMAX and SHORT90 start again on each (the build set the actuator); no window from before this can enter a sample
+2026-10-10 10:44:33.104 level_loop_red_prefix[38522:557111] EJThreshold: asked the user: Fake Comp +6 on, set from 90 s of this track, landing it as it plays...
+2026-10-10 10:44:36.170 level_loop_red_prefix[38522:557111] EJThreshold: "Fake Comp +6" window 1 gr=0.0 in90=-17.2 sinceWrite=6.0s pre=+0.0 post=+0.0 mode=passive settle=2/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=11.7s state=awaiting-fresh-window
+2026-10-10 10:44:39.257 level_loop_red_prefix[38522:557111] EJThreshold: "Fake Comp +6" window 2 gr=0.0 in90=-17.2 sinceWrite=unknown pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=14.6s state=settling
+2026-10-10 10:44:39.257 level_loop_red_prefix[38522:557111] EJThreshold: slot 1 output gain set to -1.00 dB (EchoJay's own, the plugin named no output control)
+2026-10-10 10:44:39.258 level_loop_red_prefix[38522:557111] EJThreshold: slot 1 drive (IN pre-gain) set to 1.00 dB, asked 1.00 dB
+2026-10-10 10:44:39.258 level_loop_red_prefix[38522:557111] EJThreshold: slot 1 both legs reset - SHORTMAX and SHORT90 start again on each (the loop moved the drive); no window from before this can enter a sample
+2026-10-10 10:44:42.357 level_loop_red_prefix[38522:557111] EJThreshold: "Fake Comp +6" window 3 gr=0.0 in90=-17.8 sinceWrite=3.0s pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=17.6s state=awaiting-fresh-window
+  ok    precondition: the loop is running before the rebuild  [window 3]
+2026-10-10 10:44:42.359 level_loop_red_prefix[38522:557111] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:44:42.359 level_loop_red_prefix[38522:557111] ChainHost: "EchoJay Gain" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:44:42.360 level_loop_red_prefix[38522:557111] EJDial: slot 2 ("EchoJay Gain") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:44:42.360 level_loop_red_prefix[38522:557111] ChainHost: built-in "" added as slot 1
+2026-10-10 10:44:45.616 level_loop_red_prefix[38522:557111] EJThreshold: "Fake Comp +6" window 4 gr=0.0 in90=-16.2 sinceWrite=unknown pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=2.6s state=waiting
+2026-10-10 10:44:48.707 level_loop_red_prefix[38522:557111] EJThreshold: "Fake Comp +6" window 5 gr=0.0 in90=-16.2 sinceWrite=unknown pre=+1.0 post=-1.0 mode=passive settle=3/3 grCrest=0.0 grLevel=-6.0 grVia=crest lowLevelGain=(waiting, n=0) settleHeard=0.0s slotHeard=5.6s state=stale-window
+  FAIL  item 6c: the rebuild CANCELS the loop  [still running, window 3 -> 5  <-- PRE-FIX KEEPS JUDGING, which is Sean's re-posted "Mike-E Comp is on"]
+
+==== level_loop_guard PRE-FIX RED: RED (3 assertion(s) failed) ====
+---- end scribble leg output ----
+scribble leg exit code: 1  (0 == GREEN, nonzero == RED)
+BOTH LEGS: RED (plain 1, scribble 1)
+
+      Start 20: checklist_reason_guard
+19/49 Test #20: checklist_reason_guard ...........   Passed   22.06 sec
+      Start 21: scrollbar_contrast_guard
+20/49 Test #19: preflight_guard ..................***Failed   86.99 sec
+preflight_guard: a plugin that hangs on load is caught out of process, marked, substituted; the message thread never blocks
+  ok    (c) precondition: known_good.json holds the good product only  [/Users/SeanD/Library/Caches/preflight_guard/ej_preflight_4567878/Library/EchoJay/known_good.json]
+2026-10-10 10:44:13.126 preflight_guard[70057:621018] EJPreflight: probing "Guard Hanger" out of process as arm64 (attempt 1, 10000 ms bound)
+2026-10-10 10:44:13.126 preflight_guard[70057:621018] EJPreflight: probing "Guard Failer" out of process as arm64 (attempt 1, 10000 ms bound)
+  ok    (c) two probes spawned (the known-good product needed none), in parallel  [2]
+2026-10-10 10:44:13.230 preflight_guard[70057:621018] EJPreflight: "Guard Failer" probe exit 1 (not evidence: licence-bound plugins fail out of process) - in-host create proceeds in 103 ms (attempt 1)
+2026-10-10 10:44:23.202 preflight_guard[70057:621018] EJPreflight: "Guard Hanger" no instance within 10000 ms - slow, not a verdict; retrying once with a 3000 ms bound
+2026-10-10 10:44:23.204 preflight_guard[70057:621018] EJPreflight: probing "Guard Hanger" out of process as arm64 (attempt 2, 3000 ms bound)
+2026-10-10 10:44:26.244 preflight_guard[70057:621018] EJPreflight: "Guard Hanger" HANGS ON LOAD (two consecutive timeouts, last probe killed after 3039 ms) - marked in the disabled-set note; the build substitutes
+  ok    the pre-flight settled  [13135 ms]
+  ok    (a) the sleeping fixture timed out at 10 s, was RETRIED (3 s test bound) and timed out again -> hang (two consecutive timeouts)  [state=2 after 13135 ms: hangs on load: two consecutive out-of-process probes produced no instance (10000 ms, then 3000 ms)]
+  ok    (a) the identity is marked hangs-on-load in the disabled-set note (scanner key name_manufacturer)  [hangs on load (two out-of-process checks timed out: 10 s, then 3 s) - re-checked after 2026-10-17]
+  ok    (a) the message thread was never blocked during the wait (worst tick gap < 250 ms)  [13.6 ms]
+2026-10-10 10:44:26.262 preflight_guard[70057:621018] ChainHost: "EchoJay Compressor" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:44:26.262 preflight_guard[70057:621018] EJDial: slot 1 ("EchoJay Compressor") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:44:26.262 preflight_guard[70057:621018] ChainHost: built-in "" added as slot 0
+2026-10-10 10:44:26.262 preflight_guard[70057:621018] EJPreflight: SUBSTITUTED "Guard Hanger" -> "EchoJay Compressor" (hangs on load)
+  ok    (a) the build SUBSTITUTED EchoJay Compressor for the hanging plugin (never created in-host)  [EchoJay Compressor]
+  ok    (a) the row and the card say why  [Guard Hanger hangs on load (the out-of-process check timed out) - built EchoJay Compressor instead; withheld from the auto-dial set]
+  ok    (b) a non-zero exit is NOT evidence: verdict error, identity NOT marked  [probe exit 1 (not evidence: licence-bound plugins fail out of process) - in-host create proceeds]
+2026-10-10 10:44:26.543 preflight_guard[70057:621018] EJLoad: "Guard Failer" FAILED to load - No compatible plug-in format exists for this plug-in
+2026-10-10 10:44:26.655 preflight_guard[70057:621018] ChainHost: "EchoJay Compressor" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:44:26.655 preflight_guard[70057:621018] ChainHost: "EchoJay Compressor" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:44:26.655 preflight_guard[70057:621018] EJDial: slot 2 ("EchoJay Compressor") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:44:26.655 preflight_guard[70057:621018] ChainHost: built-in "" added as slot 1
+2026-10-10 10:44:26.655 preflight_guard[70057:621018] EJLoad: SUBSTITUTED "Guard Failer" -> "EchoJay Compressor" (No compatible plug-in format exists for this plug-in) - the slot is KEPT, so no index after it moves
+  ok    (b) the in-host create was ATTEMPTED (a real create error on the fake identity, not pre-empted as a hang)  ["Guard Failer" didn't load (No compatible plug-in format exists for this plug-in]
+  ok    (b) ...and the failed load KEEPS its slot (2 Oct ruling: a load failure is a substitution, not a hole - a compacting rack is what sent a calibration block at the wrong plugin)  [2 slot(s)]
+  ok    (b) ...and the card names the plugin and the host's own reason, NOT "hangs on load" - which is how this case stays distinguishable from (a)  [Guard Failer didn't load (No compatible plug-in format exists for this plug-in) - using EchoJay Compressor instead; withheld from the auto-dial set]
+  ok    (c) the known-good product has no probe verdict (none was run)
+  ok    (d) the helper is looked for as EchoJayProbe beside the plugin binary (Contents/MacOS)  [/Users/SeanD/echojay-limiter/build-guards-lv2/guards/EchoJayProbe]
+== (e)(f) 18 Sep 2026: a hangs-on-load mark expires after 7 days; a live mark is never probed nor loaded ==
+  ok    (e) a fresh mark is LIVE (until = at + 7 days)  [hangs on load (test) - re-checked after 2026-10-17]
+  ok    (f) a mark whose expiry passed is EXPIRED
+2026-10-10 10:44:26.657 preflight_guard[70057:621018] EJPreflight: "Guard Fresh" carries a live hangs-on-load mark - not probed, not loaded; substituted
+2026-10-10 10:44:26.657 preflight_guard[70057:621018] EJPreflight: "Guard Stale" hangs-on-load mark expired (7 days) - cleared, probing again
+2026-10-10 10:44:26.658 preflight_guard[70057:621018] EJPreflight: probing "Guard Stale" out of process as arm64 (attempt 1, 10000 ms bound)
+  ok    (e) the LIVE mark spawned NO probe; (f) the EXPIRED one was probed again (one spawn)  [1]
+  ok    (f) the expired mark was CLEARED before the re-probe
+  ok    (e) the live mark IS the verdict (hang) without a probe
+2026-10-10 10:44:26.659 preflight_guard[70057:621018] ChainHost: "EchoJay Compressor" input buses=1 totalInCh=2 non-main buses fed=0
+2026-10-10 10:44:26.659 preflight_guard[70057:621018] EJDial: slot 1 ("EchoJay Compressor") no settings yet [slot-loaded] -- EXPECTED ORDERING, not a fault. Settings are attached after load; see the EJDialSummary line for what actually dialled.
+2026-10-10 10:44:26.659 preflight_guard[70057:621018] ChainHost: built-in "" added as slot 0
+2026-10-10 10:44:26.659 preflight_guard[70057:621018] EJPreflight: SUBSTITUTED "Guard Fresh" -> "EchoJay Compressor" (hangs on load)
+  ok    (e) the live-marked plugin is never loaded in-host: substituted  [EchoJay Compressor]
+2026-10-10 10:44:36.714 preflight_guard[70057:621018] EJPreflight: "Guard Stale" no instance within 10000 ms - slow, not a verdict; retrying once with a 3000 ms bound
+2026-10-10 10:44:36.717 preflight_guard[70057:621018] EJPreflight: probing "Guard Stale" out of process as arm64 (attempt 2, 3000 ms bound)
+2026-10-10 10:44:39.743 preflight_guard[70057:621018] EJPreflight: "Guard Stale" HANGS ON LOAD (two consecutive timeouts, last probe killed after 3026 ms) - marked in the disabled-set note; the build substitutes
+  ok    (f) the re-probe timed out again -> a NEW mark with a new 7-day expiry  [hangs on load (two out-of-process checks timed out: 10 s, then 3 s) - re-checked after 2026-10-17]
+== (h)(i)(j)(k) 18 Sep 2026: host arch, retry, two-timeouts, instantiated-marker (AMEK Mastering Compressor) ==
+  ok    (h) an x86_64 (Rosetta) host spawns the probe through /usr/bin/arch -x86_64  [/usr/bin/arch -x86_64 /Users/SeanD/echojay-limiter/build-guards-lv2/guards/EchoJayProbe Guard Arch AudioUnit:Effects/aufx,gd41,Grd_ 5e6d029 /Users/SeanD/Library/Caches/preflight_guard/ej_preflight_5e6d029_70057.instantiated]
+  ok    (h) a native arm64 host spawns the helper directly  [/Users/SeanD/echojay-limiter/build-guards-lv2/guards/EchoJayProbe Guard Arch AudioUnit:Effects/aufx,gd41,Grd_ 5e6d029 /Users/SeanD/Library/Caches/preflight_guard/ej_preflight_5e6d029_70057.instantiated]
+  ok    (h) both carry the INSTANTIATE marker path as the last argument  [/Users/SeanD/Library/Caches/preflight_guard/ej_preflight_5e6d029_70057.instantiated]
+  ok    (h) the default picks this process's architecture (arm64)
+2026-10-10 10:44:39.803 preflight_guard[70057:621018] EJPreflight: probing "Guard Slow" out of process as arm64 (attempt 1, 1500 ms bound)
+2026-10-10 10:44:39.805 preflight_guard[70057:621018] EJPreflight: probing "Guard Twice" out of process as arm64 (attempt 1, 1500 ms bound)
+2026-10-10 10:44:39.807 preflight_guard[70057:621018] EJPreflight: probing "Guard Loaded" out of process as arm64 (attempt 1, 1500 ms bound)
+2026-10-10 10:44:41.380 preflight_guard[70057:621018] EJPreflight: "Guard Slow" no instance within 1500 ms - slow, not a verdict; retrying once with a 2000 ms bound
+2026-10-10 10:44:41.384 preflight_guard[70057:621018] EJPreflight: probing "Guard Slow" out of process as arm64 (attempt 2, 2000 ms bound)
+2026-10-10 10:44:41.385 preflight_guard[70057:621018] EJPreflight: "Guard Twice" no instance within 1500 ms - slow, not a verdict; retrying once with a 2000 ms bound
+2026-10-10 10:44:41.386 preflight_guard[70057:621018] EJPreflight: probing "Guard Twice" out of process as arm64 (attempt 2, 2000 ms bound)
+2026-10-10 10:44:41.387 preflight_guard[70057:621018] EJPreflight: "Guard Loaded" instantiated within the bound; the probe's render check did not finish in 1500 ms (not a load hang) - in-host create proceeds
+2026-10-10 10:44:41.486 preflight_guard[70057:621018] EJPreflight: "Guard Slow" probe ok in 103 ms (attempt 2)
+2026-10-10 10:44:43.475 preflight_guard[70057:621018] EJPreflight: "Guard Twice" HANGS ON LOAD (two consecutive timeouts, last probe killed after 2087 ms) - marked in the disabled-set note; the build substitutes
+  ok    (i)(j)(k) the pre-flight settled  [3761 ms]
+  ok    (i) RETRY: first timeout -> retried once -> success -> verdict ok  [attempts=2 state=1 probe ok]
+  ok    (i) ...and it was NOT marked hangs-on-load
+  ok    (j) TWO consecutive timeouts -> hang  [attempts=2 hangs on load: two consecutive out-of-process probes produced no instance (1500 ms, then 2000 ms)]
+  ok    (j) ...and only then is it marked hangs-on-load
+  ok    (k) INSTANTIATED then stalled in the render check -> ok, no retry, never a hang (the AMEK case)  [instantiated within the bound; the probe's render check did not finish in 1500 ms (not a load hang) - in-host create proceeds]
+  ok    (k) ...and NOT marked
+  ok    (k) the marker is cleaned up after the verdict
+2026-10-10 10:44:43.569 preflight_guard[70057:621018] EJPreflight: probing "Guard Crasher" out of process as arm64 (attempt 1, 1500 ms bound)
+2026-10-10 10:44:43.665 preflight_guard[70057:621018] EJPreflight: "Guard Crasher" probe ok in 98 ms (attempt 1)
+  ok    (l) a probe that crashes AFTER instantiate -> ok (instantiated; a render/exit crash is not a load hang)  [state=1 instantiated=y exit=0 probe ok]
+  ok    (l) ...and NOT marked hangs-on-load
+== (g) 18 Sep 2026 LIVENESS: a build whose chain names THREE not-known-good products spawns THREE probes ==
+2026-10-10 10:44:43.702 preflight_guard[70057:621470] EJNet: base=https://www.echojay.ai source=built-in devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-10-10 10:44:43.704 preflight_guard[70057:621018] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+2026-10-10 10:44:43.748 preflight_guard[70057:621018] EJOrbCard: 6 glyph clusters [2..147] [166..319] [339..484] [508..699] [721..829] [851..1149] ‚Äî using #4 x=[508..699] y=[43..232] (192x190, aspect 1.01) | mid-height notches: left=YES right=YES -> O confirmed
+2026-10-10 10:44:43.749 preflight_guard[70057:621018] EJOrbCard: 5176 particles (stride 2, edge 1)
+2026-10-10 10:44:43.749 preflight_guard[70057:621018] EJScan: press accepted, scan starting
+  ok    (g) precondition: a real editor
+2026-10-10 10:44:43.802 preflight_guard[70057:621018] EJScan: enabledState watch active (scanner 0x16d735290)
+2026-10-10 10:44:43.821 preflight_guard[70057:621018] EJCtx: engage decision uid=uid-LINK-G capable=Y pad=Y budget=N -> in-context REFUSED, false term(s): budget
+2026-10-10 10:44:43.821 preflight_guard[70057:621018] EJBorrow: session ACTIVE <- true (engage begin, uid=uid-LINK-G)
+2026-10-10 10:44:43.822 preflight_guard[70057:621018] EJCtx(main): renew muteOut=N ok=N soloSup=N
+2026-10-10 10:44:43.822 preflight_guard[70057:621018] EJBorrow: engaged uid=uid-LINK-G ringSlot=-1 - setup took 0.9 ms; the instances load asynchronously and each slot's own line carries its elapsed time (0 parked instance(s) available to reuse)
+  ok    (g) precondition: the Link rack is engaged (borrowed host live)
+  ok    (g) precondition: the three names resolve and none is known-good
+2026-10-10 10:44:43.822 preflight_guard[70057:621018] EJPanel: rebuild slots=0 sel=-1
+2026-10-10 10:44:43.822 preflight_guard[70057:621018] EJScan: 0 VST3 row(s) withheld by architecture (process arm64), 0 unreadable, kept
+2026-10-10 10:44:43.822 preflight_guard[70057:621018] EJScan: 0 Waves product(s) added from the registry, of 0 registered (0 already offered under another name, 0 name(s) held by a different plugin, 0 unticked in Settings)
+2026-10-10 10:44:43.822 preflight_guard[70057:621018] EJScan: resolver rebuilt, 0 resolved (input=0, enabled=0, excluded=0 from 0 uid(s), duplicates=0, unmatched=0, wavesFromRegistry=0, feed=0)
+2026-10-10 10:44:43.822 preflight_guard[70057:621018] EJScan: [feed-variant] 0 row(s) renamed to their registration name, 0 sibling variant row(s) added, feed=0
+2026-10-10 10:44:43.822 preflight_guard[70057:621018] EJFeed: split MODE=OFF (full list), 0 recommendable
+2026-10-10 10:44:43.822 preflight_guard[70057:621018] EJChain: build target uid=uid-LINK-G  path=SESSION (borrowed host) removes=0 adds=3
+2026-10-10 10:44:43.824 preflight_guard[70057:621018] EJPreflight: probing "Guard Probe One" out of process as arm64 (attempt 1, 10000 ms bound)
+2026-10-10 10:44:43.825 preflight_guard[70057:621018] EJPreflight: probing "Guard Probe Two" out of process as arm64 (attempt 1, 10000 ms bound)
+2026-10-10 10:44:43.827 preflight_guard[70057:621018] EJPreflight: probing "Guard Probe Three" out of process as arm64 (attempt 1, 10000 ms bound)
+2026-10-10 10:44:43.857 preflight_guard[70057:621491] EJScan: AU registry read, 1514 entr(ies), 1466 with plist version(s)
+  diag  descs=3 sameHost=y primarySpawns=0 borrowSpawns=3 [Guard Probe One uid=99012639 builtin=n knownGood=n verdict=0] [Guard Probe Two uid=99012640 builtin=n knownGood=n verdict=0] [Guard Probe Three uid=99012641 builtin=n knownGood=n verdict=0]
+  ok    (g) THREE probes spawned by the real build entry (one per not-known-good name)  [spawned=3]
+  ok    (g) each name was probed exactly once (EJPreflight: probing ... per name)  [Guard Probe One, Guard Probe Two, Guard Probe Three]
+  ok    (g) the overlay says "Checking plugins..." while the probes run  [Checking plugins…]
+2026-10-10 10:44:43.899 preflight_guard[70057:621018] EJBorrow: dial info kept for 0 slot(s), uid=uid-LINK-G (1 rack(s))
+2026-10-10 10:44:43.899 preflight_guard[70057:621018] EJBorrow: session ACTIVE <- false (release, uid=uid-LINK-G, keepEdits=N)
+2026-10-10 10:44:43.899 preflight_guard[70057:621018] EJBorrowPool: release ENTERED with 0 slot(s)
+2026-10-10 10:44:43.899 preflight_guard[70057:621018] EJBorrowPool: release about to clear 0 slot(s) [+0.1 ms]
+2026-10-10 10:44:43.899 preflight_guard[70057:621018] EJBorrowPool: rack released, 0 instance(s) parked (default: destroyed, not parked) [completed in 0.2 ms]
+2026-10-10 10:44:43.899 preflight_guard[70057:621018] EJBorrow: released uid=uid-LINK-G (lease deleted; Link restores its own bypasses)
+2026-10-10 10:44:43.934 preflight_guard[70057:621470] EJNet: config fetch ok, prompt in force = REMOTE v21 (served version 21)
+2026-10-10 10:44:43.968 preflight_guard[70057:621491] EJScan: VST3 folders read, 2 row(s), 0 from the validated cache, 2 thin (unvalidated)
+2026-10-10 10:44:43.968 preflight_guard[70057:621491] EJScan: 0 entr(ies) withheld by crash blacklist
+2026-10-10 10:44:43.969 preflight_guard[70057:621491] EJScan: supersession 0 older-version row(s) marked across 2 multi-version plugin(s), 0 left alone (unparseable version)
+2026-10-10 10:44:43.977 preflight_guard[70057:621491] EJScan: cache written, 1516 entr(ies) (1514 AU + 2 VST3), 553414b -> /Users/SeanD/Library/Caches/preflight_guard/ej_preflight_4567878/Library/EchoJay/chain_entries.xml
+2026-10-10 10:44:43.977 preflight_guard[70057:621491] EJScan: scan complete, 1516 entr(ies) in 0s
+== (l) 21 Sep 2026: the probe's --list-params mode; an unsigned harness refuses a PACE-wrapped bundle ==
+  FAIL  (l) the probe binary exists (EJ_PROBE_BIN or the build-release artefact)  [/Users/SeanD/echojay-limiter/build-release/EchoJayProbe_artefacts/Release/EchoJayProbe]
+  FAIL  (l1) --list-params on a non-PACE AU (AUDelay) prints >= 1 "index<TAB>name<TAB>label<TAB>numSteps<TAB>isDiscrete" line and exits 0 (RED on the current probe: no such mode)  [rc 127, rows 0, head: env: /Users/SeanD/echojay-limiter/build-release/EchoJayProbe_artefacts/Release/EchoJayProb]
+  ok    (l1) ...and touched NO state file: nothing under the isolated root's Library/EchoJay changed (mtimes: marker, plugin_disabled*.json, known_good.json), no "--list-params" marker in cwd (RED on the current probe: it creates a marker file named "--list-params")  [root files before 4 after 4, cwd files 135 -> 135]
+  FAIL  (l4) --list-params on a WaveShell AU (CLA-76 (m)) prints row 0 at the START of a line (the banner no longer glues to it)  [rc 127: ]
+  FAIL  (l5) --list-steps 5 on CLA-76 (m) walks the Analog control's 3 detents and prints their panel texts (50Hz / 60Hz / Off)  [rc 127 steps 0 texts  (2 lines)]
+  ok    (l5) ...and step mode writes no marker file
+  FAIL  (l6) a .vst3 path is probed as VST3 AND LOADS (rc 0, a parameter row; 22 Sep 2026: rc 3 "Unable to load VST-3 plug-in file" no longer passes - the class is resolved through findAllTypesForFile)  [none of: Pitchwheel rc 127; Master Plan v10 rc 127; Omnisphere rc 127; AL-1 rc 127; Invisible_Limiter_G2 rc 127; FabFilter Pro-Q 4 rc 127; ]
+  ok    (l7) the probe's entitlements source in the repo carries disable-library-validation AND allow-unsigned-executable-memory (the PACE wrapper's in-memory code)  [both keys]
+  FAIL  (l2) --list-params with the timeout FORCED (bound 0 ms) prints "refused timeout ..." and exits 3  [rc 127: env: /Users/SeanD/echojay-limiter/build-release/EchoJayProbe_artefacts/Release/E ... e_artefacts/Release/EchoJayProbe: No such file or directory | ]
+  ok    (l3) isPaceWrapped: Decapitator.component (an Eden bundle) true; AUDelay's component false  [/Library/Audio/Plug-Ins/Components/Decapitator.component / ]
+  ok    (l3) an unsigned harness REFUSES a PACE-wrapped description before load with "PACE-wrapped: signed probe only"  [PACE-wrapped: signed probe only (Decapitator.component)]
+
+==== preflight_guard: RED (6 assertion(s) failed) ====
+exit code: 1  (0 == GREEN, nonzero == RED)
+SCRIBBLE LEG: running again with MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 ...
+---- scribble leg FAILURES ----
+  FAIL  (l) the probe binary exists (EJ_PROBE_BIN or the build-release artefact)  [/Users/SeanD/echojay-limiter/build-release/EchoJayProbe_artefacts/Release/EchoJayProbe]
+  FAIL  (l1) --list-params on a non-PACE AU (AUDelay) prints >= 1 "index<TAB>name<TAB>label<TAB>numSteps<TAB>isDiscrete" line and exits 0 (RED on the current probe: no such mode)  [rc 127, rows 0, head: env: /Users/SeanD/echojay-limiter/build-release/EchoJayProbe_artefacts/Release/EchoJayProb]
+  FAIL  (l4) --list-params on a WaveShell AU (CLA-76 (m)) prints row 0 at the START of a line (the banner no longer glues to it)  [rc 127: ]
+  FAIL  (l5) --list-steps 5 on CLA-76 (m) walks the Analog control's 3 detents and prints their panel texts (50Hz / 60Hz / Off)  [rc 127 steps 0 texts  (2 lines)]
+  FAIL  (l6) a .vst3 path is probed as VST3 AND LOADS (rc 0, a parameter row; 22 Sep 2026: rc 3 "Unable to load VST-3 plug-in file" no longer passes - the class is resolved through findAllTypesForFile)  [none of: Pitchwheel rc 127; Master Plan v10 rc 127; Omnisphere rc 127; AL-1 rc 127; Invisible_Limiter_G2 rc 127; FabFilter Pro-Q 4 rc 127; ]
+  FAIL  (l2) --list-params with the timeout FORCED (bound 0 ms) prints "refused timeout ..." and exits 3  [rc 127: env: /Users/SeanD/echojay-limiter/build-release/EchoJayProbe_artefacts/Release/E ... e_artefacts/Release/EchoJayProbe: No such file or directory | ]
+---- scribble leg output (tail) ----
+2026-10-10 10:45:27.596 preflight_guard[79534:640491] EJScan: 0 VST3 row(s) withheld by architecture (process arm64), 0 unreadable, kept
+2026-10-10 10:45:27.596 preflight_guard[79534:640491] EJScan: 0 Waves product(s) added from the registry, of 0 registered (0 already offered under another name, 0 name(s) held by a different plugin, 0 unticked in Settings)
+2026-10-10 10:45:27.596 preflight_guard[79534:640491] EJScan: resolver rebuilt, 0 resolved (input=0, enabled=0, excluded=0 from 0 uid(s), duplicates=0, unmatched=0, wavesFromRegistry=0, feed=0)
+2026-10-10 10:45:27.596 preflight_guard[79534:640491] EJScan: [feed-variant] 0 row(s) renamed to their registration name, 0 sibling variant row(s) added, feed=0
+2026-10-10 10:45:27.596 preflight_guard[79534:640491] EJFeed: split MODE=OFF (full list), 0 recommendable
+2026-10-10 10:45:27.597 preflight_guard[79534:640491] EJChain: build target uid=uid-LINK-G  path=SESSION (borrowed host) removes=0 adds=3
+2026-10-10 10:45:27.599 preflight_guard[79534:640491] EJPreflight: probing "Guard Probe One" out of process as arm64 (attempt 1, 10000 ms bound)
+2026-10-10 10:45:27.601 preflight_guard[79534:640491] EJPreflight: probing "Guard Probe Two" out of process as arm64 (attempt 1, 10000 ms bound)
+2026-10-10 10:45:27.602 preflight_guard[79534:640491] EJPreflight: probing "Guard Probe Three" out of process as arm64 (attempt 1, 10000 ms bound)
+2026-10-10 10:45:27.609 preflight_guard[79534:672794] EJNet: config fetch ok, prompt in force = REMOTE v21 (served version 21)
+2026-10-10 10:45:27.648 preflight_guard[79534:672876] EJScan: AU registry read, 1514 entr(ies), 1466 with plist version(s)
+  diag  descs=3 sameHost=y primarySpawns=0 borrowSpawns=3 [Guard Probe One uid=99012639 builtin=n knownGood=n verdict=0] [Guard Probe Two uid=99012640 builtin=n knownGood=n verdict=0] [Guard Probe Three uid=99012641 builtin=n knownGood=n verdict=0]
+  ok    (g) THREE probes spawned by the real build entry (one per not-known-good name)  [spawned=3]
+  ok    (g) each name was probed exactly once (EJPreflight: probing ... per name)  [Guard Probe One, Guard Probe Two, Guard Probe Three]
+  ok    (g) the overlay says "Checking plugins..." while the probes run  [Checking plugins…]
+2026-10-10 10:45:27.674 preflight_guard[79534:640491] EJBorrow: dial info kept for 0 slot(s), uid=uid-LINK-G (1 rack(s))
+2026-10-10 10:45:27.674 preflight_guard[79534:640491] EJBorrow: session ACTIVE <- false (release, uid=uid-LINK-G, keepEdits=N)
+2026-10-10 10:45:27.674 preflight_guard[79534:640491] EJBorrowPool: release ENTERED with 0 slot(s)
+2026-10-10 10:45:27.674 preflight_guard[79534:640491] EJBorrowPool: release about to clear 0 slot(s) [+0.1 ms]
+2026-10-10 10:45:27.674 preflight_guard[79534:640491] EJBorrowPool: rack released, 0 instance(s) parked (default: destroyed, not parked) [completed in 0.2 ms]
+2026-10-10 10:45:27.674 preflight_guard[79534:640491] EJBorrow: released uid=uid-LINK-G (lease deleted; Link restores its own bypasses)
+2026-10-10 10:45:27.732 preflight_guard[79534:672876] EJScan: VST3 folders read, 2 row(s), 0 from the validated cache, 2 thin (unvalidated)
+2026-10-10 10:45:27.732 preflight_guard[79534:672876] EJScan: 0 entr(ies) withheld by crash blacklist
+2026-10-10 10:45:27.734 preflight_guard[79534:672876] EJScan: supersession 0 older-version row(s) marked across 2 multi-version plugin(s), 0 left alone (unparseable version)
+2026-10-10 10:45:27.742 preflight_guard[79534:672876] EJScan: cache written, 1516 entr(ies) (1514 AU + 2 VST3), 553414b -> /Users/SeanD/Library/Caches/preflight_guard/ej_preflight_4611696/Library/EchoJay/chain_entries.xml
+2026-10-10 10:45:27.744 preflight_guard[79534:672876] EJScan: scan complete, 1516 entr(ies) in 0s
+== (l) 21 Sep 2026: the probe's --list-params mode; an unsigned harness refuses a PACE-wrapped bundle ==
+  FAIL  (l) the probe binary exists (EJ_PROBE_BIN or the build-release artefact)  [/Users/SeanD/echojay-limiter/build-release/EchoJayProbe_artefacts/Release/EchoJayProbe]
+  FAIL  (l1) --list-params on a non-PACE AU (AUDelay) prints >= 1 "index<TAB>name<TAB>label<TAB>numSteps<TAB>isDiscrete" line and exits 0 (RED on the current probe: no such mode)  [rc 127, rows 0, head: env: /Users/SeanD/echojay-limiter/build-release/EchoJayProbe_artefacts/Release/EchoJayProb]
+  ok    (l1) ...and touched NO state file: nothing under the isolated root's Library/EchoJay changed (mtimes: marker, plugin_disabled*.json, known_good.json), no "--list-params" marker in cwd (RED on the current probe: it creates a marker file named "--list-params")  [root files before 4 after 4, cwd files 135 -> 135]
+  FAIL  (l4) --list-params on a WaveShell AU (CLA-76 (m)) prints row 0 at the START of a line (the banner no longer glues to it)  [rc 127: ]
+  FAIL  (l5) --list-steps 5 on CLA-76 (m) walks the Analog control's 3 detents and prints their panel texts (50Hz / 60Hz / Off)  [rc 127 steps 0 texts  (2 lines)]
+  ok    (l5) ...and step mode writes no marker file
+  FAIL  (l6) a .vst3 path is probed as VST3 AND LOADS (rc 0, a parameter row; 22 Sep 2026: rc 3 "Unable to load VST-3 plug-in file" no longer passes - the class is resolved through findAllTypesForFile)  [none of: Pitchwheel rc 127; Master Plan v10 rc 127; Omnisphere rc 127; AL-1 rc 127; Invisible_Limiter_G2 rc 127; FabFilter Pro-Q 4 rc 127; ]
+  ok    (l7) the probe's entitlements source in the repo carries disable-library-validation AND allow-unsigned-executable-memory (the PACE wrapper's in-memory code)  [both keys]
+  FAIL  (l2) --list-params with the timeout FORCED (bound 0 ms) prints "refused timeout ..." and exits 3  [rc 127: env: /Users/SeanD/echojay-limiter/build-release/EchoJayProbe_artefacts/Release/E ... e_artefacts/Release/EchoJayProbe: No such file or directory | ]
+  ok    (l3) isPaceWrapped: Decapitator.component (an Eden bundle) true; AUDelay's component false  [/Library/Audio/Plug-Ins/Components/Decapitator.component / ]
+  ok    (l3) an unsigned harness REFUSES a PACE-wrapped description before load with "PACE-wrapped: signed probe only"  [PACE-wrapped: signed probe only (Decapitator.component)]
+
+==== preflight_guard: RED (6 assertion(s) failed) ====
+---- end scribble leg output ----
+scribble leg exit code: 1  (0 == GREEN, nonzero == RED)
+BOTH LEGS: RED (plain 1, scribble 1)
+
+      Start 22: stream_reroute_guard
+21/49 Test #21: scrollbar_contrast_guard .........   Passed   22.14 sec
+      Start 23: borrow_budget_guard
+22/49 Test #22: stream_reroute_guard .............   Passed   23.79 sec
+      Start 24: overlay_liveness_guard
+23/49 Test #23: borrow_budget_guard ..............   Passed   24.37 sec
+      Start 25: wet_rebuild_guard
+24/49 Test #24: overlay_liveness_guard ...........   Passed   24.29 sec
+      Start 26: slotwet_readback
+25/49 Test #25: wet_rebuild_guard ................   Passed   25.04 sec
+      Start 27: slotwet_knobpath
+26/49 Test #26: slotwet_readback .................   Passed   23.18 sec
+      Start 28: pitch_mode_test
+27/49 Test #27: slotwet_knobpath .................   Passed   23.52 sec
+      Start 29: readback_search_guard
+28/49 Test #29: readback_search_guard ............   Passed   22.14 sec
+      Start 30: slotwet_nomutation
+29/49 Test #28: pitch_mode_test ..................   Passed   31.49 sec
+      Start 31: overlay_gate_harness
+30/49 Test #30: slotwet_nomutation ...............   Passed   23.18 sec
+      Start 32: key_gate_harness
+31/49 Test #31: overlay_gate_harness .............   Passed   23.02 sec
+      Start 33: detected_key_text
+32/49 Test #32: key_gate_harness .................   Passed   23.25 sec
+      Start 34: attach_order
+33/49 Test #33: detected_key_text ................   Passed   23.92 sec
+      Start 35: sidechain_guard
+34/49 Test #34: attach_order .....................   Passed   23.47 sec
+      Start 36: teardown_dispose_guard
+35/49 Test #35: sidechain_guard ..................   Passed   26.27 sec
+      Start 37: borrowkept_harness
+36/49 Test #36: teardown_dispose_guard ...........   Passed   28.38 sec
+      Start 38: global_undo_guard
+37/49 Test #37: borrowkept_harness ...............   Passed   22.97 sec
+      Start 39: groups_guard
+38/49 Test #39: groups_guard .....................   Passed   26.61 sec
+      Start 40: ui_guard
+39/49 Test #38: global_undo_guard ................   Passed   29.84 sec
+      Start 41: history_guard
+40/49 Test #41: history_guard ....................   Passed   22.32 sec
+      Start 42: classify_body_guard
+41/49 Test #42: classify_body_guard ..............   Passed   21.45 sec
+      Start 43: shm_layout_guard
+42/49 Test #43: shm_layout_guard .................   Passed   22.13 sec
+      Start 44: wire_tokens_guard
+43/49 Test #44: wire_tokens_guard ................   Passed   22.39 sec
+      Start 46: latch_harness
+44/49 Test #40: ui_guard .........................   Passed  107.69 sec
+      Start 47: eq_readback
+45/49 Test #46: latch_harness ....................   Passed   21.87 sec
+      Start 48: pregain_readback
+46/49 Test #47: eq_readback ......................   Passed   23.56 sec
+      Start 49: mapfps_sync_guard
+47/49 Test #48: pregain_readback .................   Passed   24.09 sec
+      Start 50: own_diff
+48/49 Test #49: mapfps_sync_guard ................   Passed   23.77 sec
+49/49 Test #50: own_diff .........................***Failed   23.37 sec
+2026-10-10 10:51:42.504 own_diff[6475:1294295] EJNet: base=https://www.echojay.ai source=built-in devTransport=off bypass=absent (first resolved for /api/vst-config; applies to every request routed through transportEndpoint)
+2026-10-10 10:51:42.506 own_diff[6475:1293965] EJCtx: prepareToPlay stored borrow budget OFF (was OFF) [capable Link seen: n]
+2026-10-10 10:51:42.614 own_diff[6475:1293965] EJOrbCard: 6 glyph clusters [2..147] [166..319] [339..484] [508..699] [721..829] [851..1149] ‚Äî using #4 x=[508..699] y=[43..232] (192x190, aspect 1.01) | mid-height notches: left=YES right=YES -> O confirmed
+2026-10-10 10:51:42.614 own_diff[6475:1293965] EJOrbCard: 5176 particles (stride 2, edge 1)
+2026-10-10 10:51:42.615 own_diff[6475:1293965] EJScan: press accepted, scan starting
+2026-10-10 10:51:42.615 own_diff[6475:1293965] EJChat: chain injection attached -- 4 recommendable names in feed
+2026-10-10 10:51:42.615 own_diff[6475:1293965] EJChat: CURRENT RACK EMPTY declaration attached (0 slots)
+2026-10-10 10:51:42.615 own_diff[6475:1293965] EJChat: SAVED CHAINS not attached -- 0 names, dropped 0 over cap, source=none
+own-channel injection written to /tmp/own_out.txt (15163 bytes)
+2026-10-10 10:51:42.638 own_diff[6475:1294295] EJNet: config fetch ok, prompt in force = REMOTE v21 (served version 21)
+2026-10-10 10:51:42.858 own_diff[6475:1294432] EJScan: AU registry read, 1514 entr(ies), 1466 with plist version(s)
+exit code: 0  (0 == GREEN, nonzero == RED)
+OWN_DIFF_SHA aef73f2e4ea30e8403d9c50fc6ff0b11fa670993b073c0f79ce05c89aa87eae0
+OWN_DIFF_BASELINE 300ee864801cb8035e57b06958b971dfa29a58bb180c2113ee31b04b71b76aa7
+own_diff: RED (sha moved - STOP AND REPORT, do not re-baseline)
+
+
+90% tests passed, 5 tests failed out of 49
+
+Label Time Summary:
+fast       = 1454.06 sec*proc (46 tests)
+none       = 258.29 sec*proc (2 tests)
+plugins    =  86.99 sec*proc (1 test)
+
+Total Test time (real) = 901.70 sec
+
+The following tests FAILED:
+	 10 - comp_render_check (Failed)                        none
+	 11 - level_loop_red_prefix (Failed)                    none
+	 15 - substitute_guard (Failed)                         fast
+	 19 - preflight_guard (Failed)                          plugins
+	 50 - own_diff (Failed)                                 fast
+Errors while running CTest
