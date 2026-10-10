@@ -20,6 +20,8 @@ Read alongside: `docs/LINK_REMOTE_CONTROL_PLAN.md`, `HANDOFF_COMP_PROFILES_PLUGI
 | `Source/EJAgentClient.h/.cpp` | the loop driver: `/api/agent/start` + `/step` as SSE POSTs (one-byte reads, cancel handle, `net::Worker` census entry, callAsync behind alive + generation), rounds, free calls first then the plan card then the approved lines in wire order, `talk(ask)`, `wait_for_playback` (client-run, 60 s, never hangs), Stop (`POST /api/agent/stop`, in-flight calls marked stopped, nothing else posted), Undo per step / Undo all, Retry, a 90 s stall watchdog. Renders nothing. | EJAgentFraming, EJAgentProtocol, EJAgentTools, `EJNetCensus.h` |
 | `Source/EJAgentPanelLayout.h` | the panel's geometry as pure functions (`wrappedTextHeight`, `layoutRows`, `layoutChips`, `checkRows`). One author for paint and buttons; what the guard asserts. | JuceHeader |
 | `Source/EJAgentPanel.h/.cpp` | the card: header (status dot, status line, **Stop**), scrolling body (goal, streamed talk, notice, the plan frame's **heading**, **the checklist** with glyphs + the server's summary + landed line/error + per-row **Apply/Skip** toggles while the plan waits and **Undo** once allowed, the **ask** question + choice pills, the **playback** ring + sentence), footer (**Apply all / Apply / Skip all**, **Got it, you can stop**, **Undo all / Retry / Close**). EchoJay palette (`EchoJayLookAndFeel::Colours`), the chat's 26 px pills, `kFieldCorner`. | EJAgentClient, EJAgentPanelLayout, `EchoJayLookAndFeel.h` |
+| `Source/EJAgentExecutorRead.h/.cpp` | **the READ-ONLY half of the executor** (`echojay::agent::ExecutorRead`): `look` (rack / get_rack, channel / list_tracks, analysis / analyse, levels, inventory; maps and saved_chains answer `server_tool`), `check` (level / measure, gr, true_peak, spectrum, balance, compare_to_checkpoint), `captureCheckpoint`, the playback window (`beginPlaybackWindow` resets ONLY the loop-owned tallies, exactly `LoudnessLoop::startWindow`'s list; the song's integrated reading is never touched), `readPlayback`. `doOp` / undo answer `not_in_phase` for A. Reads through `Sources` (functions): `bindToProcessor(proc)` binds them to ChainHost + its tallies + MeterEngine for the own rack and to the registry row + `LinkShm::readRackSidecar` + `readLinkMeterFrame` / `linkLastGoodFrame` for a Link (LINK_REMOTE_CONTROL_PLAN.md section 5: files plus shared memory, read-only). Every result passes `fitUnder8K`. | EJAgentTools, PluginProcessor, ChainHost, LinkShm, MeterEngine, LoudnessLoop |
+| `tools/agent_executor_read_guard/harness.cpp` | G1-G16 against a fake host (section 5). | the V2 archive |
 | `Tests/test_agent_framing.cpp` | standalone: `c++ -std=c++17 Tests/test_agent_framing.cpp -o /tmp/ej_agent_framing && /tmp/ej_agent_framing` | nothing |
 | `tools/agent_client_guard/harness.cpp` | the legs (section 5), in-process, no network: a recorder replaces the socket through the ONE named seam (`EJAgentClientTestAccess`, declared friend), a fake executor replaces A's. | the V2 archive |
 
@@ -34,10 +36,13 @@ Read alongside: `docs/LINK_REMOTE_CONTROL_PLAN.md`, `HANDOFF_COMP_PROFILES_PLUGI
     Source/EJAgentPanelLayout.h
     Source/EJAgentPanel.cpp
     Source/EJAgentPanel.h
+    Source/EJAgentExecutorRead.cpp
+    Source/EJAgentExecutorRead.h
 ```
 and in `tools/tests/CMakeLists.txt`, with the fast guards:
 ```
-ej_add_guard(agent_client_guard       SOURCE tools/agent_client_guard/harness.cpp              LABEL fast)
+ej_add_guard(agent_client_guard        SOURCE tools/agent_client_guard/harness.cpp              LABEL fast)
+ej_add_guard(agent_executor_read_guard SOURCE tools/agent_executor_read_guard/harness.cpp       LABEL fast)
 ```
 (`Source/*.cpp` is an explicit list in four targets; the Link target does not need these.)
 
@@ -67,7 +72,12 @@ ej_add_guard(agent_client_guard       SOURCE tools/agent_client_guard/harness.cp
 
 **E2 — construction (PluginEditor.cpp ctor, after `api` and the chat components exist):**
 ```cpp
-    agentExecutor_ = std::make_unique<echojay::agent::StubExecutor>();   // -> A's executor
+    // the read-only half (A2); A's mutating half replaces doOp / undo on the same object or wraps it
+    auto sources = echojay::agent::bindToProcessor (processorRef);
+    sources.inventory = [this] { return /* E2b: the installed names the scanner / recommendable feed holds */ juce::StringArray(); };
+    auto readExec = std::make_unique<echojay::agent::ExecutorRead> (std::move (sources));
+    agentReadExecutor_ = readExec.get();                                  // keep a typed pointer for setTarget
+    agentExecutor_ = std::move (readExec);
     agentClient_ = std::make_unique<EJAgentClient> (
         [this] { const auto t = api.agentTransport(); return EJAgentClient::Transport { t.baseUrl, t.authToken, t.extraHeaders, t.appVersion }; },
         *agentExecutor_,
@@ -107,6 +117,7 @@ ask, rendered inside the card, so a shelf underneath would be a second question.
     if (agentClient_ && agentClient_->interceptTyped (msg)) return;      // a pending ask takes it; a running agent refuses it WITH a line
     if (agentModeOn() && agentClient_ && ! agentClient_->isActive())
     {
+        if (agentReadExecutor_) agentReadExecutor_->setTarget (activeChatLinkUid());   // "" = this rack, else the chat's Link
         agentClient_->start (msg, currentChatId);                        // the goal; the panel appears through onLayoutNeeded
         return;
     }
@@ -133,7 +144,37 @@ same stack.
 
 ---
 
+## 2b. Levelling is a RACK-LEVEL record (Sean, 10 Oct 2026)
+
+The EchoJay Level slot is dropped. Levelling drives the rack OUT gain (`match`) or the final limiter's IN gain (a
+target), and its record is stored at rack level. The read-only executor REPORTS that record and never looks for a
+slot: `look(rack)` carries a top-level `levelling {option, targetLufs?, drives: "rack_out"|"limiter_in",
+landedGainDb, inLufs, outLufs, deltaDb, converged, state?}`, `check(level)` carries `option / targetLufs / drives /
+landedGainDb / converged` beside the window's figures, `startContext` carries `levelling {option, targetLufs}`, and
+`compare_to_checkpoint` reports `landedGainThenDb / landedGainNowDb / landedGainDeltaDb` and `optionChanged`.
+
+**The seam for A** is two lambdas in `bindToProcessor`: `ownLevelling` (today: the loop's `loudnessOption()` mapped
+to the contract's option, `target()`, `currentGainDb()`, `everArmed / isArmed / hasProposal` for converged, and the
+stored `LevelRecord`'s INT for the chain input) and `linkLevelling` (today: the sidecar's `levels` record for the
+Link's INT, and the rack-level keys `option / target / drives / landedDb / inLufs / converged` read from that var when
+A publishes them). When the record lands, those two lambdas change and nothing the executor sends changes shape.
+
+**B's contracts had NOT changed as of 10 Oct 10:00** (`CONTRACT_LEVEL_PARAMS.md` and `CONTRACT_AGENT_TOOLS.md` on
+`hold/agent-contract` still describe the Level slot, `set_level`, the `level_contract` validator and `check(level)` as
+"the Level slot's own reading"). The executor's shape above is what the plugin can state today; B's rewrite should
+name `levelling` at rack level and retire `set_level`'s "added if absent" clause.
+
 ## 3. The executor contract (what A's class implements; `Source/EJAgentTools.h`)
+
+**Built by A2 (read-only, `Source/EJAgentExecutorRead.h/.cpp`):** `startContext`, `look`, `check`,
+`captureCheckpoint`, `beginPlaybackWindow`, `readPlayback`. **Left to A:** `doOp` (every op in contract 2.2 plus
+`open_editor`, over the chain / control / ring channels of `docs/CONTRACT_LINK_COMMANDS.md`), `undoStep`,
+`undoToCheckpoint` (the plugin-wide history; the read half's checkpoint token can be the undo checkpoint too, or A
+keys its own). The member names the binding reads were checked against the 9 Oct headers (`getChannelType`,
+`getCustomChannelName`, `getProjectName`, `getLinkSlotInfos`, `readLinkMeterFrame`, `linkLastGoodFrame`,
+`resolveLinkDisplayName`, `getChainHost`, `getMeterEngine().getMeterData()` / `reduceMacroWindow`,
+`ChainHost::getSlotInfo / slotPicture / dialSummaryRow / isBuiltinSlot / getChainInLoopLevels / getChainOutLevels`,
+`LoudnessLoop::kCountFloorLufs`, `LinkShm::resolveDir / readRackSidecar`); the first compile will say if any moved.
 
 ```cpp
 class ToolExecutor {
@@ -218,6 +259,28 @@ class ToolExecutor {
 | T1-T2 | typed under a running agent refused with a line; passes through otherwise |
 | L0-L8 | the panel at 6 widths x 4 height caps in 4 scenes (plan card with heading, ask with six chips, listening, done) passes `checkLayout`; chips wrap at 380; a short cap scrolls, never cuts; re-dock asked for; hidden after dismiss |
 
+`tools/agent_executor_read_guard` (fast), the read-only executor against a FAKE host (every `Sources` function is the
+guard's):
+
+| leg | what is RED without the behaviour |
+|---|---|
+| G1 | startContext: `channel {uid:self, name, kind, links[]}`, capabilities, agentMode, `levelling {option, targetLufs}`; a Link target names the Link |
+| G2 | look(rack) / get_rack: 1-based n; name / bypassed / wet % / keepLevel / builtin / settings / inDb / outDb / grDb; built-in role; settings capped at 160; the RACK-LEVEL `levelling` record and NO Level slot |
+| G3 | look(rack, channel:uid) reads the Link's sidecar, remote:true; unknown uid -> `unknown_channel`; a Link target makes self the Link |
+| G4 | look(channel) / list_tracks: the registry rows with audio / placement / gone / gainDb |
+| G5 | look(analysis) / analyse: integrated, loudest 3 s, peak, PSR, overs, heard, playing, six `{band, vsAverageDb}`; no audio -> `not_playing` + hint; a Link's from its frame |
+| G6 | look(levels): per slot or "none"; chain in / out / delta from the loop's tallies |
+| G7 | 400 inventory names -> under 8 KB, `truncated:true`, count 400; unbound -> `inventory_unavailable` |
+| G8 | maps -> `server_tool`; unknown what -> `unknown_what` |
+| G9 | check(level) / measure: in / out / delta / loudest 3 s / peak, `source`, plus `option / targetLufs / drives / landedGainDb / converged` from the rack-level record; nothing heard -> `not_playing`; a Link target reads the frame and its record |
+| G10 | check(gr): the slot's GR; out of range -> `unknown_slot` with the range; no reading -> `not_playing` |
+| G11 | check(true_peak): the last slot's peak + overs, or a named slot |
+| G12 | check(spectrum): six bands; check(balance): Link vs this mix bus, else `no_mix_reading` |
+| G13 | checkpoint + compare: unchanged -> false / 0; a bypass + 1.5 dB -> true / 1.5; the landed gain then / now / delta; newest when unnamed; unknown token; a Link compares frames |
+| G14 | the window opens ONCE and never resets the song's reading; readPlayback from the out tally; a Link counts beyond its base |
+| G15 | doOp / undo -> `not_in_phase` |
+| G16 | a 16-slot rack with 300-char settings and every result in the guard under 8 KB |
+
 `Tests/test_agent_framing.cpp` covers the splitter at chunk sizes whole/7/3/1, CRLF, pings, event-without-data,
 multi-line data, mid-frame EOF.
 
@@ -243,7 +306,17 @@ the playback timeout answer, `open_editor`.
    60 s timeout is the contract's.
 6. **Stack or exclude** the ask shelf and the agent card (hook E3). I recommend exclude.
 7. **For A:** `EchoJayAPI::transportEndpoint`'s exact signature; whether agent lines persist to the chat store
-   (I think yes); `startContext()`'s shape (contract 1: `{channel:{uid,name,kind,links}, capabilities, appVersion}`).
+   (I think yes); the inventory binding (E2b: the installed names live with the scanner, not the processor).
+8. **Names (for B).** Sean's brief names `list_tracks`, `get_rack`, `analyse`, `measure` and
+   `compare_to_checkpoint`; B's contract names `look(what: rack | channel | analysis | levels | inventory)` and
+   `check(what: level | gr | true_peak | spectrum | balance)`. The executor answers BOTH spellings (the aliases map
+   onto the contract's shapes; `list_tracks` answers `{count, tracks[]}` and `compare_to_checkpoint` is new).
+   One of the two lists should go into the contract so the model is told one vocabulary.
+9. **`look(levels)` fields.** The contract says `inDbfs / outDbfs`; the plugin's per-slot picture holds LUFS and
+   dBTP (`slotPicture`), so the executor sends `inLufs / outLufs / inDbtp / outDbtp / grDb`. B to confirm or rename.
+10. **`check(balance)`** needs the session's target to be a Link and THIS instance to sit on the mix bus (the two
+    readings come from two hosts, no sample alignment assumed - plan section 5); any other arrangement answers
+    `no_mix_reading`.
 
 ## 7. What I did NOT establish
 - Anything about compilation. The JUCE calls are the ones the tree already uses (`FontOptions`, `TextLayout`,
