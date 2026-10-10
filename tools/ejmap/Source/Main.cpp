@@ -836,6 +836,7 @@ namespace
                     if (k == "--until") ro.until = v; else if (k == "--only") ro.only.add (v); else if (k == "--steps") ro.steps.addTokens (v, ",", ""); else if (k == "--skip") ro.skip.addTokens (v, ",", "");
                     else if (k == "--dry-run") ro.dryRun = true; else if (k == "--out") ro.opt.out = cwdFile (v); else if (k == "--probe") { ro.opt.probe = cwdFile (v); ro.probeGiven = true; } else if (k == "--ejmap-ledger") { ro.opt.ledger = cwdFile (v); ro.ledgerGiven = true; }
                     else if (k == "--assume-uad-device") ro.opt.assumeUadDevice = true;
+                    else if (k == "--jobs") ro.jobs = juce::jlimit (1, 8, v.getIntValue());   // 10 Oct: Phase B rows N at a time
                 }
                 for (const auto& n : ro.steps) if (ejmap::runall::stepNamed (n) == nullptr) { std::cerr << "--steps: '" << n << "' is not a step" << std::endl; return 2; }
                 for (const auto& n : ro.skip) if (ejmap::runall::stepNamed (n) == nullptr) { std::cerr << "--skip: '" << n << "' is not a step" << std::endl; return 2; }
@@ -859,7 +860,8 @@ namespace
                 ejmap::cert::SweepOptions o; juce::StringArray cats, only, redo;
                 for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
                     if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--category") cats.add (v); else if (k == "--only") only.add (v);
-                    else if (k == "--redo") { for (const auto& r : juce::StringArray::fromTokens (v, ",", "")) if (r.trim().isNotEmpty()) redo.add (r.trim()); } }
+                    else if (k == "--redo") { for (const auto& r : juce::StringArray::fromTokens (v, ",", "")) if (r.trim().isNotEmpty()) redo.add (r.trim()); }
+                    else if (k == "--jobs") o.jobs = juce::jlimit (1, 8, v.getIntValue()); }
                 // --redo gain-cal,timing names categories (their rows run again); --redo nothing_nominated re-runs the rows that finished with no record
                 for (auto& r : redo) { if (r == "gain-cal") r = "gaincal"; if (r == "gain-all") r = "gainall"; }
                 for (auto& c : cats) { if (c == "gain-cal") c = "gaincal"; if (c == "gain-all") c = "gainall"; }

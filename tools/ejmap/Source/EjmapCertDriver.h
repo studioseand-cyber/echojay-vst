@@ -74,6 +74,7 @@
 #include "EjmapTunerProfile.h"
 #include "EjmapRoleEvidence.h"
 #include "EjmapPhaseB.h"
+#include "EjmapJobs.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -243,6 +244,7 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
     ChildResult r;
     int fds[2];
     if (args.isEmpty() || pipe (fds) != 0) return r;
+    fcntl (fds[0], F_SETFD, FD_CLOEXEC); fcntl (fds[1], F_SETFD, FD_CLOEXEC);   // --jobs (10 Oct): one job's pipe never leaks into another job's child (dup2 onto stdout clears it there)
 
     posix_spawn_file_actions_t fa;
     posix_spawn_file_actions_init (&fa);
@@ -1478,6 +1480,7 @@ struct SweepOptions
     juce::File certRoot;                             // --cert-root: the real cert folder when --out is a Phase B temp folder (combined settings read their inputs there)
     bool assumeUadDevice = false;                    // --assume-uad-device: the UAD-2 preflight found none but Sean says the Satellite is connected (the registry lines are recorded)
     std::set<int> onlyControls;                      // --only-controls i,j,k (item E, 7 Oct): the mode's fixture holds these controls alone (a strip's section)
+    int jobs = 1;                                    // --jobs N (10 Oct): Phase B rows N at a time (EjmapJobs.h); 1 = the serial run
     std::shared_ptr<Subject> sectionSubject;         // item E (7 Oct): a subject the CALLER supplies (a strip's compressor section) - the sweep takes it instead of the worklist's
     juce::String stripWritesJson;                    // --strip-writes <json> (7 Oct ruling): the section's engage + the other dynamics sections' off writes, for the record and profile
     bool gainAll = false;                            // --cert-gain-cal --kind all (the gain-all rows, 6 Oct item 6): the product is not a compressor, so the plan's amount is a gain target too
@@ -6205,6 +6208,7 @@ inline int runPhaseBDrafts (const SweepOptions& opt, const juce::StringArray& on
     say ("DRAFTS: " + juce::String (written) + " written from " + juce::String (total) + " record(s), " + juce::String (refusedN) + " refused; nothing loaded, nothing measured, nothing under cert/profiles touched");
     return total > 0 ? 0 : 2;
 }
+inline volatile sig_atomic_t& phasebStop() { static volatile sig_atomic_t f = 0; return f; }   // --phaseb-all: SIGINT / SIGTERM seen (10 Oct, --jobs)
 inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyCategories, const juce::StringArray& onlyProducts, const juce::StringArray& redo = {})
 {
     using namespace phaseb;
@@ -6260,6 +6264,11 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
         if (cat.name == "samplerate" && onlyProducts.isEmpty()) { std::vector<PhaseBProduct> f; for (int i : samplerate::spreadOf ((int) list.size())) f.push_back (list[(size_t) i]); list = f; }   // A4: a spread of ten, evenly over the sorted list
         work[cat.name] = list;
     }
+    // THE PAST, before any redo deletes it (10 Oct, --jobs): every outcome each product has had in any category - a past window /
+    // licence / timeout / unhostable / silent / crash row puts the product in the serial lane
+    std::map<juce::String, std::set<juce::String>> pastOutcomes;
+    for (const auto& f : phasebDir.findChildFiles (juce::File::findFiles, true, "*.phaseb.json"))
+    { if (f.getFullPathName().contains ("/.tmp-")) continue; const auto row = juce::JSON::parse (f.loadFileAsString()); pastOutcomes[row.getProperty ("product", "").toString()].insert (row.getProperty ("outcome", "").toString()); }
     // THE REDO (6 Oct): the rows named are deleted first, so the counts below see them as not done and the loop runs them again
     int redone = 0; std::set<juce::String> resumeTraces;   // "<category>/<stem>": a timed-out row being re-run resumes from its complete traces (9 Oct)
     if (! redo.isEmpty())
@@ -6305,14 +6314,36 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     say ("PHASEB: " + juce::String (totalAll) + " product(s) over " + juce::String ((int) work.size()) + " categor" + (work.size() == 1 ? "y" : "ies") + " -> " + phasebDir.getFullPathName() + "  (resumable; Ctrl-C any time; a product's result lands only when it is complete)");
     for (const auto& cat : categories()) if (work.count (cat.name)) say ("  " + cat.name.paddedRight (' ', 11) + juce::String ((int) work[cat.name].size()).paddedLeft (' ', 3) + " product(s), " + juce::String (prog.cats[cat.name].done) + " already done; hang guard " + juce::String (cat.guardS / 60.0, 0) + " min (" + cat.guardWhy + ")");
     saveProgress ({});
-    // THE RUN: one child ejmap process per product into a temp folder, renamed into place when complete
+    // THE RUN (--jobs N, 10 Oct: EjmapJobs.h): one child ejmap process per product into its own temp folder, renamed into place when
+    // complete. prepare and finish run HERE (the parent is the only writer); only the child runs on a worker; the serial lane alone.
     int deviceLeft = 0;
-    for (const auto& cat : categories())
+    struct PItem { const phaseb::Category* cat; PhaseBProduct pp; jobs::Lane lane; juce::String laneWhy; };
+    struct PWork { const phaseb::Category* cat = nullptr; PhaseBProduct pp; juce::File catDir, tmp; juce::DynamicObject::Ptr row; LicenceGate gate; juce::StringArray args; int reused = 0; };
+    struct PResult { ChildResult r; double seconds = 0.0; };
+    std::vector<PItem> items;
     {
-        if (! work.count (cat.name)) continue;
-        for (const auto& pp : work[cat.name])
+        const auto bundles = componentBundles(); const auto lines = licenceLinesOf (opt.out);
+        juce::StringArray siblings; for (const auto& r : installedAudioUnits()) siblings.add (r.desc.name);
+        for (const auto& cat : categories()) if (work.count (cat.name)) for (const auto& pp : work[cat.name])
         {
-            if (isDone (phasebDir, cat.name, pp.stem)) continue;
+            jobs::LaneInputs in; in.uad = uad::isUadProduct (pp.product, pp.desc.manufacturerName);
+            if (! lines.empty()) { const auto m = licence::matchPlugin (pp.product, pp.desc.manufacturerName, lines, siblings); const auto v = licence::verdictFor (m, runDateIso()); in.governed = ! v.outsideFile; in.demo = v.demo; }
+            in.pace = paceHeld (pp.desc, bundles, in.paceWhy);
+            if (const auto h = pastOutcomes.find (pp.product); h != pastOutcomes.end()) in.pastOutcomes = h->second;
+            PItem it { &cat, pp, jobs::Lane::parallel, {} }; it.lane = jobs::laneFor (in, &it.laneWhy); items.push_back (it);
+        }
+        if (opt.jobs > 1) { int sN = 0; for (const auto& it : items) if (it.lane == jobs::Lane::serial) ++sN; say ("PHASEB: --jobs " + juce::String (opt.jobs) + ": " + juce::String ((int) items.size() - sN) + " row(s) in parallel, " + juce::String (sN) + " in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)");
+                            for (const auto& it : items) if (it.lane == jobs::Lane::serial) say ("  serial lane: " + it.cat->name + ": " + it.pp.product + " (" + it.laneWhy + ")"); }
+    }
+    phasebStop() = 0; std::signal (SIGINT, [] (int) { phasebStop() = 1; }); std::signal (SIGTERM, [] (int) { phasebStop() = 1; });
+    jobs::Pool<PItem, PWork, PResult> pool;
+    pool.laneOf = [] (const PItem& it) { return it.lane; };
+    pool.stopped = [] { return phasebStop() != 0; };
+    pool.lowMemory = [] { return jobs::memoryLow (jobs::freeMemoryBytes()); };
+    pool.prepare = [&] (const PItem& item) -> std::optional<PWork>
+    {
+        const auto& cat = *item.cat; const auto& pp = item.pp;
+        if (isDone (phasebDir, cat.name, pp.stem)) return std::nullopt;
             auto& c = prog.cats[cat.name];
             const auto catDir = phasebDir.getChildFile (cat.name); catDir.createDirectory();
             const auto tmp = catDir.getChildFile (".tmp-" + pp.stem);
@@ -6321,12 +6352,12 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             if (tmp.isDirectory()) { juce::ChildProcess pk; pk.start (juce::StringArray { "/usr/bin/pkill", "-f", tmp.getFullPathName() }); pk.waitForProcessToFinish (5000); }
             tmp.deleteRecursively(); tmp.createDirectory();
             saveProgress (cat.name + ": " + pp.product);
-            auto* row = new juce::DynamicObject(); row->setProperty ("product", pp.product); row->setProperty ("identity", "AudioUnit|" + juce::String::toHexString (pp.desc.uniqueId) + "|" + pp.desc.version); row->setProperty ("category", cat.name); row->setProperty ("mode", cat.mode);
+            juce::DynamicObject::Ptr row = new juce::DynamicObject(); row->setProperty ("product", pp.product); row->setProperty ("identity", "AudioUnit|" + juce::String::toHexString (pp.desc.uniqueId) + "|" + pp.desc.version); row->setProperty ("category", cat.name); row->setProperty ("mode", cat.mode);
             juce::String outcome; double seconds = 0.0;
             // THE LICENCE GATE (6 Oct): the scan's stop or a needs_licence row (skipped), the UAD-2 device (needs_device), the licence
             // file (needs_licence: expired / unowned / unmatched); a running demo measures and stamps the row and its records
             const auto gate = licenceGate (opt, pp.product, pp.desc.manufacturerName, opt.out, false);
-            if (uad::leaveUnrunForDevice (gate.stop)) { tmp.deleteRecursively(); ++deviceLeft; say ("  " + cat.name + ": " + pp.product + " - left unrun: " + gate.stop + " (resumes when the device is present)"); continue; }
+            if (uad::leaveUnrunForDevice (gate.stop)) { tmp.deleteRecursively(); ++deviceLeft; say ("  " + cat.name + ": " + pp.product + " - left unrun: " + gate.stop + " (resumes when the device is present)"); return std::nullopt; }
             if (gate.stop.isNotEmpty())
             {
                 outcome = gate.stop.contains (uad::kNotConnected) ? "needs_device" : gate.stop.startsWith ("licence file") ? "needs_licence" : "skipped";
@@ -6354,9 +6385,24 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                     }
                     args.add ("--resume-traces");
                 }
-                const auto t1 = juce::Time::getMillisecondCounterHiRes();
-                const auto r = runChild (args, (int) (cat.guardS * 1000.0));
-                seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0;
+                PWork w; w.cat = &cat; w.pp = pp; w.catDir = catDir; w.tmp = tmp; w.row = row; w.gate = gate; w.args = args; w.reused = reused; return w;
+            }
+            row->setProperty ("outcome", outcome); row->setProperty ("seconds", std::round (seconds)); row->setProperty ("at", nowStamp()); row->setProperty ("probe", id.cdhash);
+            writeAtomic (rowFile (phasebDir, cat.name, pp.stem), juce::JSON::toString (juce::var (row.get())));   // the DONE marker, whole or absent
+            tmp.deleteRecursively();
+            ++c.done; if (outcome == "ok") c.ok++; else if (outcome == "timed_out") c.timedOut++; else if (outcome == "skipped" || outcome == "needs_licence" || outcome == "needs_device" || outcome == "unhostable") c.skipped++; else c.failed++;   // a licence / device stop is not a failure
+            if (outcome != "skipped") c.seconds.push_back (seconds);
+            saveProgress ({});
+            say (progressLine (prog, cat.name, pp.product, outcome, seconds));
+            return std::nullopt;
+    };
+    pool.run = [] (const PWork& w) { PResult res; const auto t1 = juce::Time::getMillisecondCounterHiRes(); res.r = runChild (w.args, (int) (w.cat->guardS * 1000.0)); res.seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0; return res; };
+    pool.discard = [&] (const PItem& item, PWork& w) { w.tmp.deleteRecursively(); say ("  " + item.cat->name + ": " + item.pp.product + " - stopped with the run: no row, it runs again on the resume"); };
+    pool.finish = [&] (const PItem& item, PWork& w, PResult& res)
+    {
+        const auto& cat = *item.cat; const auto& pp = item.pp; const auto& catDir = w.catDir; const auto& tmp = w.tmp; const auto& gate = w.gate; auto row = w.row;
+        auto& c = prog.cats[cat.name]; const auto& r = res.r; const double seconds = res.seconds; const int reused = w.reused; juce::String outcome;
+        {
                 tmp.getChildFile ("log.txt").replaceWithText (r.out, false, false, "\n");
                 const bool slept = r.sleptMs > kSleptMs;
                 if (r.kind == ChildResult::Kind::timedOut) outcome = "timed_out";
@@ -6418,14 +6464,16 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 if (outcome == "timed_out") row->setProperty ("reason", "hang guard " + juce::String (cat.guardS / 60.0, 0) + " min reached: partial data kept (" + juce::String (rawN) + " trace(s)), the record " + (records.isEmpty() ? juce::String ("not written") : juce::String ("written")));
             }
             row->setProperty ("outcome", outcome); row->setProperty ("seconds", std::round (seconds)); row->setProperty ("at", nowStamp()); row->setProperty ("probe", id.cdhash);
-            writeAtomic (rowFile (phasebDir, cat.name, pp.stem), juce::JSON::toString (juce::var (row)));   // the DONE marker, whole or absent
+            writeAtomic (rowFile (phasebDir, cat.name, pp.stem), juce::JSON::toString (juce::var (row.get())));   // the DONE marker, whole or absent
             tmp.deleteRecursively();
             ++c.done; if (outcome == "ok") c.ok++; else if (outcome == "timed_out") c.timedOut++; else if (outcome == "skipped" || outcome == "needs_licence" || outcome == "needs_device" || outcome == "unhostable") c.skipped++; else c.failed++;   // a licence / device stop is not a failure
             if (outcome != "skipped") c.seconds.push_back (seconds);
             saveProgress ({});
             say (progressLine (prog, cat.name, pp.product, outcome, seconds));
-        }
-    }
+    };
+    pool (items, juce::jmax (1, opt.jobs));
+    std::signal (SIGINT, SIG_DFL); std::signal (SIGTERM, SIG_DFL);
+    if (phasebStop() != 0) { saveProgress ({}); say ("PHASEB: stopped (07:00 / Ctrl-C): no new child started; the rows that were running run again on the resume"); return 130; }
     saveProgress ({});
     // THE SUMMARY: every row, by category
     { auto* sm = new juce::DynamicObject(); auto* cats = new juce::DynamicObject();
@@ -6445,7 +6493,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
 // to cert/run_all/<step>.log; the state in cert/run_all.json, written before a step starts (started) and after it ends (done / failed).
 static_assert (runall::kStepDeviceAbsentExit == uad::kDeviceAbsentExit, "the run-all step and --phaseb-all must agree on the device-absent exit");
 inline volatile sig_atomic_t& runAllInterrupted() { static volatile sig_atomic_t f = 0; return f; }
-struct RunAllOptions { SweepOptions opt; juce::String until; juce::StringArray only, steps, skip; bool dryRun = false, probeGiven = false, ledgerGiven = false; };
+struct RunAllOptions { SweepOptions opt; juce::String until; juce::StringArray only, steps, skip; bool dryRun = false, probeGiven = false, ledgerGiven = false; int jobs = 1; };
 inline int runRunAll (const RunAllOptions& ro)
 {
     using namespace runall;
@@ -6480,6 +6528,7 @@ inline int runRunAll (const RunAllOptions& ro)
         if (takesPaths && ro.probeGiven) { args.add ("--probe"); args.add (ro.opt.probe.getFullPathName()); }
         if (takesPaths && ro.ledgerGiven) { args.add ("--ejmap-ledger"); args.add (ro.opt.ledger.getFullPathName()); }
         if (ro.opt.assumeUadDevice && (takesPaths || s->name == "uad_preflight")) args.add ("--assume-uad-device");
+        if (ro.jobs > 1 && runall::takesJobs (*s)) { args.add ("--jobs"); args.add (juce::String (ro.jobs)); }
         auto& ss = st[s->name]; ss.state = "started"; ss.startedAt = nowStamp(); ++ss.runs; save();
         const auto logFile = logDir.getChildFile (s->name + ".log");
         say (progressLine (doneN, totalN, s->name + (resume ? " (resume)" : ""), (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, etaSeconds (runall::plan (st, ro.steps, ro.skip, forced), st), until));

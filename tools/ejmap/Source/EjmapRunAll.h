@@ -149,6 +149,9 @@ inline juce::String stepResult (int code, bool takesPaths, const juce::String& n
     if (code == kStepDeviceAbsentExit && takesPaths) return "device_absent";
     return "failed";
 }
+// --jobs N (10 Oct) reaches the Phase B steps only (rows in parallel inside a step); the follow-up, categorise, the licence steps,
+// preflight and drafts stay serial
+inline bool takesJobs (const Step& s) { return s.kind == "redo" || s.kind == "selector" || s.kind == "fixup"; }
 inline bool isResume (const State& st, const juce::String& step) { return st.count (step) && (st.at (step).state == "started" || st.at (step).state == "failed"); }
 
 // THE DEADLINE: "07:00" -> the next 07:00 after `now` (today's if still ahead, else tomorrow's); empty -> none

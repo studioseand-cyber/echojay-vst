@@ -9160,6 +9160,69 @@ void testTextPassTimeout()
     check (textPassTimeoutMs (0, 120000) == 120000, "text T3: nothing to sample still has the floor");
 }
 
+/** --jobs N (EjmapJobs.h, 10 Oct): the split, the serial lane, the single writer, the resume. */
+void testJobs()
+{
+    using namespace ejmap::jobs;
+    // JOB-SPLIT: which rows run in parallel, which alone
+    {
+        LaneInputs plain, u, g, d, p, h, h2; u.uad = true; g.governed = true; d.demo = true; p.pace = true; h.pastOutcomes = { "ok", "window" }; h2.pastOutcomes = { "ok", "needs_review" };
+        juce::String why;
+        check (laneFor (plain) == Lane::parallel && laneFor (u) == Lane::serial && laneFor (g) == Lane::serial && laneFor (d) == Lane::serial && laneFor (p) == Lane::serial
+               && laneFor (h, &why) == Lane::serial && why.contains ("window") && laneFor (h2) == Lane::parallel
+               && kSerialHistory().contains ("silent_output") && kSerialHistory().contains ("probe_crashed") && kSerialHistory().contains ("timed_out") && kSerialHistory().contains ("unhostable") && kSerialHistory().contains ("needs_licence"),
+               "jobs JOB-SPLIT: UAD, licence-governed, demo, PACE and a past window / licence / timeout / unhostable / silent / crash row run in the serial lane; the rest in parallel");
+    }
+    // JOB-SCHED: the scheduler - a serial item waits for the pool to drain, nothing launches beside it, N is the cap, low memory
+    // holds new jobs while one runs, a stop launches nothing
+    {
+        auto st = [] (int jobs, int running, bool serialRunning, bool stop, bool mem) { Sched s; s.jobs = jobs; s.running = running; s.serialRunning = serialRunning; s.stop = stop; s.memLow = mem; return s; };
+        check (next (st (2, 0, false, false, false), Lane::parallel) == Act::launch && next (st (2, 1, false, false, false), Lane::parallel) == Act::launch
+               && next (st (2, 2, false, false, false), Lane::parallel) == Act::wait && next (st (2, 1, false, false, false), Lane::serial) == Act::wait
+               && next (st (2, 0, false, false, false), Lane::serial) == Act::launch && next (st (4, 1, true, false, false), Lane::parallel) == Act::wait
+               && next (st (4, 1, false, false, true), Lane::parallel) == Act::wait && next (st (4, 0, false, false, true), Lane::parallel) == Act::launch
+               && next (st (4, 1, false, true, false), Lane::parallel) == Act::wait && next (st (4, 0, false, true, false), Lane::parallel) == Act::done
+               && next (st (1, 1, false, false, false), Lane::parallel) == Act::wait && next (st (2, 0, false, false, false), std::nullopt) == Act::done
+               && memoryLow (1.0e9) && ! memoryLow (2.0e9) && ! memoryLow (-1.0),
+               "jobs JOB-SCHED: N caps the pool; a serial item launches only on an empty pool and alone; low memory holds a second job; a stop launches nothing");
+    }
+    // JOB-POOL (the single writer): fake jobs through the real pool - every finish on the calling thread, never more than N children,
+    // N reached, a serial item alone, every item finished exactly once, in-queue order for the serial items
+    {
+        struct It { int id; Lane lane; };
+        std::vector<It> items; for (int i = 0; i < 12; ++i) items.push_back ({ i, (i == 5 || i == 9) ? Lane::serial : Lane::parallel });
+        std::mutex mx; int live = 0, peak = 0; bool serialShared = false; std::vector<int> finished; bool offThread = false; const auto me = std::this_thread::get_id();
+        Pool<It, int, int> pool;
+        pool.laneOf = [] (const It& it) { return it.lane; };
+        pool.prepare = [] (const It& it) -> std::optional<int> { return it.id; };
+        pool.run = [&] (const int& id) { { std::lock_guard<std::mutex> g (mx); ++live; peak = juce::jmax (peak, live); if ((id == 5 || id == 9) && live > 1) serialShared = true; }
+                                          std::this_thread::sleep_for (std::chrono::milliseconds (40)); { std::lock_guard<std::mutex> g (mx); if (live > 1 && (id == 5 || id == 9)) serialShared = true; --live; } return id * 10; };
+        pool.finish = [&] (const It& it, int& w, int& r) { if (std::this_thread::get_id() != me) offThread = true; if (r == w * 10) finished.push_back (it.id); };
+        pool.discard = [&] (const It&, int&) {};
+        pool (items, 4);
+        std::vector<int> sorted (finished); std::sort (sorted.begin(), sorted.end()); std::vector<int> want; for (int i = 0; i < 12; ++i) want.push_back (i);
+        check (! offThread && peak == 4 && ! serialShared && sorted == want,
+               "jobs JOB-POOL: every finish (the only writer) on the calling thread; at most N = 4 children and N reached (" + juce::String (peak) + "); the serial items ran alone; each item finished once");
+    }
+    // JOB-RESUME: after a stop no new child starts and a job that ends after it writes nothing (discarded: it runs again on the resume)
+    {
+        struct It { int id; };
+        std::vector<It> items; for (int i = 0; i < 10; ++i) items.push_back ({ i });
+        std::atomic<bool> stop { false }; std::vector<int> finished, discarded, launched; bool launchAfterStop = false, finishAfterStop = false;
+        Pool<It, int, int> pool;
+        pool.laneOf = [] (const It&) { return Lane::parallel; };
+        pool.prepare = [&] (const It& it) -> std::optional<int> { if (stop) launchAfterStop = true; launched.push_back (it.id); return it.id; };
+        pool.run = [&] (const int& id) { std::this_thread::sleep_for (std::chrono::milliseconds (id == 0 ? 10 : 300)); return id; };
+        pool.finish = [&] (const It& it, int&, int&) { if (stop) finishAfterStop = true; finished.push_back (it.id); if (finished.size() == 1) stop = true; };
+        pool.discard = [&] (const It& it, int&) { discarded.push_back (it.id); };
+        pool.stopped = [&] { return stop.load(); };
+        pool (items, 2);
+        check (finished.size() == 1 && ! launchAfterStop && ! finishAfterStop && ! discarded.empty() && discarded.size() + finished.size() == launched.size() && (int) launched.size() < (int) items.size(),
+               "jobs JOB-RESUME: the stop came after the first row (a long one still running); nothing launched or finished after it, every job running then was discarded (no row), the rest never launched (" + juce::String ((int) launched.size()) + " launched, "
+               + juce::String ((int) discarded.size()) + " discarded)");
+    }
+}
+
 /** THE PHASE B BATCH (EjmapPhaseB.h, 5 Oct evening): the category table, the done marker, the progress and ETA arithmetic, the lines. */
 void testPhaseB()
 {
@@ -9437,6 +9500,7 @@ int main (int, char**)
     testMultibandStageThresholds();
     testRoleEvidence();
     testTextPassTimeout();
+    testJobs();
     testPhaseB();
     testLoopOutcomes();
     testCategoriesMerge();

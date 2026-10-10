@@ -1,0 +1,33 @@
+--jobs in-process rehearsal, 10 Oct (build tree): --phaseb-all --category saturation --category deesser, 5 hostable units, --jobs 1 then --jobs 3, scratch
+
+== --jobs 1
+[deesser 1/2 | all 1/5] Lindell 902 De-esser: ok 18.7728 s | elapsed 0:00:19 | ETA 0:01:15
+[deesser 2/2 | all 2/5] SPL De-Esser: ok 18.2957 s | elapsed 0:00:37 | ETA 0:00:56
+[saturation 1/3 | all 3/5] Ampeg B15N: ok 45.9857 s | elapsed 0:01:24 | ETA 0:01:32
+[saturation 2/3 | all 4/5] CamelCrusher: ok 33.915 s | elapsed 0:01:58 | ETA 0:00:40
+[saturation 3/3 | all 5/5] Fuchs Overdrive Supreme 50: ok 50.4752 s | elapsed 0:02:48 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261010T173500, updated 20261010T173748); summary <scratch>/jobsreh/j1/cert/phaseb/summary.json
+
+== --jobs 3
+PHASEB: --jobs 3: 4 row(s) in parallel, 1 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[deesser 1/2 | all 1/5] SPL De-Esser: ok 18.7813 s | elapsed 0:00:19 | ETA 0:01:15
+[deesser 2/2 | all 2/5] Lindell 902 De-esser: ok 19.2026 s | elapsed 0:00:20 | ETA 0:00:57
+[saturation 1/3 | all 3/5] Ampeg B15N: ok 46.5942 s | elapsed 0:00:47 | ETA 0:01:33
+[saturation 2/3 | all 4/5] CamelCrusher: ok 34.2868 s | elapsed 0:01:21 | ETA 0:00:40
+[saturation 3/3 | all 5/5] Fuchs Overdrive Supreme 50: ok 50.3206 s | elapsed 0:02:12 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261010T173749, updated 20261010T174001); summary <scratch>/jobsreh/j3/cert/phaseb/summary.json
+
+wall: --jobs 1 170 s, --jobs 3 133 s (one row in the serial lane, drained and run alone - CamelCrusher, see j3b below)
+
+compare.py j1 j3:
+== all: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 165: numbers differing 1 (max |d| 3 in 'pos' slices) ; line-count diffs 0; token diffs 0
+
+== --jobs 3 again (j3b, the build with the lane reasons):
+PHASEB: --jobs 3: 4 row(s) in parallel, 1 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+  serial lane: saturation: CamelCrusher (PACE / iLok-wrapped)
+the reason in full (all rows done, nothing loaded):
+  serial lane: saturation: CamelCrusher (PACE / iLok: no bundle found for aumf,CaCr,CamA, so its PACE state cannot be checked: held, not assumed clear)
+compare.py j1 j3b:
+== all: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 165: numbers differing 1 (max |d| 3 in 'pos' slices) ; line-count diffs 0; token diffs 0
