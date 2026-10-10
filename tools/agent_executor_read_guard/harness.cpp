@@ -21,11 +21,14 @@
 //        rackChanged:true and deltaDb; an unknown token -> unknown_checkpoint; a Link target compares frames
 //   G14  beginPlaybackWindow calls the window ONCE and never the song's reset; readPlayback reads the out tally;
 //        a Link target counts heardSeconds beyond the base at window start
-//   G15  doOp / undoStep / undoToCheckpoint -> not_in_phase
+//   G15  doOp / undoStep / undoToCheckpoint -> not_in_phase ON THE READ-ONLY HALF (it must stay that way)
+//   G17  A's MUTATING half: the switch governs do AND undo; one do = one command = one undo step; set_io may
+//        carry both; set_level is the RACK RECORD; a refusal names the field or the op (10 Oct 2026)
 //   G16  EVERY result in this guard, plus a 16-slot rack with 300-char settings, serialises under 8 KB
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "EJAgentExecutorRead.h"
+#include "EJAgentExecutorDo.h"
 #include <cmath>
 #include <cstdio>
 
@@ -380,12 +383,124 @@ int main()
                "G14d ...and counts the frame's heardSeconds beyond the base at window start");
         fh.linkA.heardSeconds = 30.0f; ex.setTarget ({});
     }
-    // ---- G15 the mutating half --------------------------------------------------------------------------------------------------------------
+    // ---- G15 the mutating half: STILL not_in_phase on the READ-ONLY executor ----------------------------------------------------------------
+    // A2's ExecutorRead has not changed and must not: it is the half that cannot act, and a build where the
+    // read-only executor started acting would be the whole safety story gone. A's half is a SUBCLASS and is
+    // asserted separately in G17 below.
     {
         auto d = run (ex, "do", call ("do", R"({"op":"set","slot":1})"));
         ToolOutcome u1, u2; ex.undoStep ("u1", [&] (ToolOutcome o) { u1 = o; }); ex.undoToCheckpoint ("cp_1", [&] (ToolOutcome o) { u2 = o; });
         check (! d.ok && d.errorCode == "not_in_phase" && d.errorMessage.contains ("set") && ! u1.ok && u1.errorCode == "not_in_phase" && ! u2.ok && u2.errorCode == "not_in_phase",
-               "G15 doOp, undoStep and undoToCheckpoint answer not_in_phase (A's half)");
+               "G15 the READ-ONLY executor still answers not_in_phase for do / undoStep / undoToCheckpoint");
+    }
+    // ---- G17 A'S MUTATING HALF (10 Oct 2026) -------------------------------------------------------------------------------------------------
+    // ExecutorDo subclasses ExecutorRead, so this also asserts the read half is INHERITED and not forked.
+    {
+        bool modeOn = false, ejOnly = false;
+        juce::String sentUid; juce::var sentOps; int sends = 0;
+        DoSinks sinks;
+        sinks.agentModeOn = [&modeOn] { return modeOn; };
+        sinks.echoJayOnly = [&ejOnly] { return ejOnly; };
+        sinks.applyChainOps = [&] (const juce::String& uid, const juce::var& ops,
+                                   std::function<void (bool, juce::String)> cb)
+        { sentUid = uid; sentOps = ops; ++sends; if (cb) cb (true, "sent to the rack"); };
+        sinks.undoOne = [] (const juce::String&, std::function<void (bool, juce::String)> cb)
+        { if (cb) cb (true, "undone"); };
+        FakeHost dh;
+        ExecutorDo xd (dh.sources(), sinks);
+
+        // AGENT MODE OFF IS THE DEFAULT, AND IT REFUSES - with the sentence a user needs, naming the switch.
+        // This is Sean's standing rule asserted as behaviour: off = chat and Apply, nothing changed.
+        {
+            auto d = run (xd, "do", call ("do", R"({"op":"set_pre_gain","db":-3})"));
+            check (! d.ok && d.errorCode == "not_permitted" && d.errorMessage.containsIgnoreCase ("Agent mode is off")
+                   && d.errorMessage.containsIgnoreCase ("Settings") && sends == 0,
+                   "G17 with agent mode OFF a `do` is refused, names the switch, and NOTHING is sent",
+                   d.errorCode + ": " + d.errorMessage.substring (0, 70));
+        }
+        // ...and the start context SAYS SO, so a model does not plan a round it cannot execute.
+        {
+            auto ctx = xd.startContext();
+            auto* o = ctx.getDynamicObject();
+            check (o != nullptr && ! (bool) o->getProperty ("can_act"),
+                   "G17 the start context reports can_act FALSE while the switch is off");
+            check (o != nullptr && o->hasProperty ("channel"),
+                   "G17 ...and A2's read-half context is INHERITED, not re-implemented");
+        }
+        modeOn = true; ejOnly = true;
+        {
+            auto ctx = xd.startContext();
+            auto* o = ctx.getDynamicObject();
+            check (o != nullptr && (bool) o->getProperty ("can_act")
+                   && (bool) o->getProperty ("echojay_only"),
+                   "G17 with the switch ON the context reports can_act and echojay_only - both read LIVE, so a "
+                   "user who turns either one off mid-round is obeyed");
+        }
+        // ONE `do`, ONE COMMAND, in the chain channel's own vocabulary.
+        {
+            sends = 0;
+            auto d = run (xd, "do", call ("do", R"({"op":"set_pre_gain","db":-3})"));
+            auto* arr = sentOps.getArray();
+            const auto* first = (arr != nullptr && arr->size() == 1) ? (*arr)[0].getDynamicObject() : nullptr;
+            check (d.ok && sends == 1 && first != nullptr && first->getProperty ("op").toString() == "pre_gain"
+                   && std::abs ((double) first->getProperty ("db") + 3.0) < 0.001,
+                   "G17 set_pre_gain becomes ONE pre_gain op on the chain channel", juce::JSON::toString (sentOps, true));
+            check (d.undoToken.isNotEmpty(), "G17 ...and a landed `do` carries an undo token, because one do is one undo step");
+        }
+        // set_io MAY CARRY BOTH, and it is STILL one command and one ack - the user asked for one thing.
+        {
+            sends = 0;
+            auto d = run (xd, "do", call ("do", R"({"op":"set_io","slot":2,"inDb":3,"outDb":-3})"));
+            auto* arr = sentOps.getArray();
+            check (d.ok && sends == 1 && arr != nullptr && arr->size() == 2,
+                   "G17 set_io with both inDb and outDb is TWO ops in ONE command and ONE ack",
+                   juce::JSON::toString (sentOps, true));
+            bool sawIn = false, sawOut = false, slotKept = false;
+            if (arr != nullptr) for (auto& v : *arr) if (auto* o = v.getDynamicObject())
+            {
+                if (o->getProperty ("op").toString() == "slot_in")  sawIn = true;
+                if (o->getProperty ("op").toString() == "slot_out") sawOut = true;
+                if ((int) o->getProperty ("slot") == 2) slotKept = true;   // 1-based, passed through unchanged
+            }
+            check (sawIn && sawOut && slotKept,
+                   "G17 ...as slot_in and slot_out, with the 1-based slot passed through unchanged");
+        }
+        // set_level IS THE RACK RECORD, not a Level slot - the 10 Oct ruling dropped that slot, and an
+        // executor still writing it would be addressing a plugin that is not in the rack.
+        {
+            sends = 0;
+            auto d = run (xd, "do", call ("do", R"({"op":"set_level","option":"commercial","target_lufs":-9})"));
+            auto* arr = sentOps.getArray();
+            const auto* first = (arr != nullptr && arr->size() == 1) ? (*arr)[0].getDynamicObject() : nullptr;
+            const auto* lv = first != nullptr ? first->getProperty ("level").getDynamicObject() : nullptr;
+            check (d.ok && first != nullptr && first->getProperty ("op").toString() == "set_level"
+                   && lv != nullptr && lv->getProperty ("option").toString() == "commercial"
+                   && std::abs ((double) lv->getProperty ("target_lufs") + 9.0) < 0.001,
+                   "G17 set_level carries {option, target_lufs} for the RACK RECORD, not a Level slot",
+                   juce::JSON::toString (sentOps, true));
+        }
+        // A MISSING VALUE IS REFUSED WITH THE SENTENCE THE MODEL IS SHOWN, unparaphrased (contract 4.3).
+        {
+            sends = 0;
+            auto d = run (xd, "do", call ("do", R"({"op":"set_io","slot":1})"));
+            check (! d.ok && d.errorCode == "bad_request" && d.errorMessage.containsIgnoreCase ("inDb")
+                   && sends == 0,
+                   "G17 a set_io with neither inDb nor outDb is refused, says which fields it wanted, and "
+                   "sends nothing", d.errorMessage);
+        }
+        // AN UNKNOWN OP IS NAMED. A model told "that failed" tries the same op again.
+        {
+            auto d = run (xd, "do", call ("do", R"({"op":"set_sideways","slot":1})"));
+            check (! d.ok && d.errorMessage.contains ("set_sideways"),
+                   "G17 an op this build does not have is refused BY NAME", d.errorMessage);
+        }
+        // AND THE SWITCH GOVERNS UNDO TOO, or an agent could unwind a user's work with the switch off.
+        {
+            modeOn = false;
+            ToolOutcome u; xd.undoStep ("tok", [&u] (ToolOutcome o) { u = o; });
+            check (! u.ok && u.errorCode == "not_permitted",
+                   "G17 with agent mode OFF an agent undo is refused too", u.errorMessage.substring (0, 60));
+        }
     }
     // ---- G16 compactness ------------------------------------------------------------------------------------------------------------------------
     {

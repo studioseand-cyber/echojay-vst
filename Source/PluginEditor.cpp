@@ -1319,6 +1319,21 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     echoJayOnlyToggle.setVisible(false);
     echoJayOnlyToggle.onClick = [this] { api.setEchoJayOnly(echoJayOnlyToggle.getToggleState()); };
     addAndMakeVisible(echoJayOnlyToggle);
+    // AGENT MODE (Sean's standing rule): the user's own switch, OFF by default. The state is read from the
+    // flag file rather than held in a member, so the toggle cannot drift from the thing the executor checks -
+    // there is one answer to "is agent mode on" and both read it.
+    agentModeToggle.setColour(juce::ToggleButton::textColourId, C::text2);
+    agentModeToggle.setColour(juce::ToggleButton::tickColourId, C::blue);
+    agentModeToggle.setVisible(false);
+    agentModeToggle.setToggleState(agentModeOn(), juce::dontSendNotification);
+    agentModeToggle.onClick = [this]
+    {
+        setAgentModeOn(agentModeToggle.getToggleState());
+        // Re-read rather than trust the click: if the write failed (a read-only state root, a sandbox refusal)
+        // the tick must go back to what is TRUE, or a user would believe agent mode was on when it is off.
+        agentModeToggle.setToggleState(agentModeOn(), juce::dontSendNotification);
+    };
+    addAndMakeVisible(agentModeToggle);
 
     // Load and apply persisted scale before first paint
     loadUIScale();
@@ -2849,7 +2864,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // deliberately deleted along with the whole WITHHELD FROM THE CHAIN LIST section. The merge was right
             // to keep that deletion (base and integration both have the section, this line removed it); the
             // resolution was wrong to reference it again. echoJayOnlyToggle is integration's genuine addition.
-            &dialWritesToggle, &echoJayOnlyToggle,
+            &dialWritesToggle, &echoJayOnlyToggle, &agentModeToggle,
             &settingsScanBtn, &viewAllPluginsBtn,
             &saveSettingsBtn, &settingsManualBtn, &settingsSavedLabel,
             &settingsHelpBtn, &dumpMetersBtn, &logoutBtn, &settingsOrbCard_ };
@@ -2914,7 +2929,38 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // unique_ptrs stay null and every hook below is a null check.
     if (agentModeOn())
     {
-        agentExecutor_ = std::make_unique<echojay::agent::StubExecutor>();   // -> A's executor (section 3)
+        // ---- A'S EXECUTOR (10 Oct 2026): the read half A2 wrote, with the mutating half on top ----------
+        // ExecutorDo SUBCLASSES ExecutorRead, so every read path, every checkpoint and the start context are
+        // A2's unchanged and only doOp / undoStep / undoToCheckpoint are overridden. A fork would have left
+        // two copies of the read half to drift.
+        {
+            auto sources = echojay::agent::bindToProcessor (processorRef);
+            echojay::agent::DoSinks sinks;
+            // ONE OP VOCABULARY. The executor translates a `do` into the chain channel's own `edit` array and
+            // sends it through the path the editor already uses for a Link, so an agent's change takes exactly
+            // the route a user's Apply takes - including the staleness guard and the ack.
+            sinks.applyChainOps = [this] (const juce::String& uid, const juce::var& ops,
+                                          std::function<void (bool, juce::String)> cb)
+            {
+                const int seq = processorRef.writeChainEditCommand (uid, ops, juce::var(), "agent", {});
+                if (cb) cb (seq >= 0, seq >= 0 ? juce::String ("sent to the rack")
+                                               : juce::String ("that rack would not take the change"));
+            };
+            // READ LIVE, both of them. A user who turns agent mode off mid-round means it, and a cached
+            // answer would let the rest of the round through.
+            sinks.agentModeOn = [] { return agentModeOn(); };
+            sinks.echoJayOnly = [this] { return api.getEchoJayOnly(); };
+            sinks.undoOne = [this] (const juce::String&, std::function<void (bool, juce::String)> cb)
+            {
+                // ONE UNDO BUTTON FOR EVERYTHING. The plugin-wide history already walks local and remote
+                // edits in one order (stage 5), so an agent's undo is that same step and not a second stack.
+                const bool ok = processorRef.undoHistory().undo();
+                if (cb) cb (ok, ok ? processorRef.lastUndoStatus() : juce::String ("there was nothing to undo"));
+            };
+            auto exec = std::make_unique<echojay::agent::ExecutorDo> (std::move (sources), std::move (sinks));
+            agentReadExecutor_ = exec.get();   // the typed pointer setTarget needs
+            agentExecutor_ = std::move (exec);
+        }
         agentClient_   = std::make_unique<EJAgentClient> (
             [this] { const auto t = api.agentTransport();
                      return EJAgentClient::Transport { t.baseUrl, t.authToken, t.extraHeaders, t.appVersion }; },
@@ -16691,6 +16737,10 @@ void EchoJayEditor::showSettingsView()
     dialWritesToggle.setVisible(true);
     echoJayOnlyToggle.setToggleState(api.getEchoJayOnly(), juce::dontSendNotification);
     echoJayOnlyToggle.setVisible(true);
+    // AGENT MODE: the tick is read from the flag file EVERY time this view is shown, never cached. One answer
+    // to "is agent mode on", read by both the toggle and the executor, so they cannot disagree.
+    agentModeToggle.setToggleState(agentModeOn(), juce::dontSendNotification);
+    agentModeToggle.setVisible(true);
 
     // Plugins row: scan button + View all + Help & Support. No inline list.
     settingsScanBtn.setVisible(true);
@@ -16793,6 +16843,7 @@ void EchoJayEditor::hideSettingsView()
     autoDialToggle.setVisible(false);
     dialWritesToggle.setVisible(false);
     echoJayOnlyToggle.setVisible(false);
+    agentModeToggle.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
@@ -25553,6 +25604,7 @@ void EchoJayEditor::resized()
             // with do-not-dial, but a stacked column does not have to assert
             // that and a three-across row would have asserted the opposite.
             echoJayOnlyToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
+            agentModeToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
 
             // PLUGINS: scan button + "View all" beside it
             sy += labelGap;

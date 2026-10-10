@@ -6,6 +6,7 @@
 #include "EJGainReadout.h"   // 06d item 5: the per-slot IN/OUT readout, shared with the Link editor
 #include "EJAgentClient.h"    // HOOK E1 (agent mode, Session A2)
 #include "EJAgentPanel.h"
+#include "EJAgentExecutorDo.h"   // agent mode: A2's read half plus the mutating half
 #include "PluginProcessor.h"
 #include "EJReferenceRows.h"   // the browser's pane rule: header-inline, pinned
 #include "EJReferenceBar.h"    // the reference bar's geometry and stepping: pinned
@@ -1819,6 +1820,11 @@ private:
     // the LookAndFeel centres the label with drawText, which TRUNCATES rather
     // than shrinks. The label is worth more than the row.
     juce::ToggleButton echoJayOnlyToggle { "Only use EchoJay's own devices (no third-party plugins)" };
+    // AGENT MODE, THE USER'S OWN SWITCH (Sean's standing rule, 10 Oct 2026). OFF by default and off means
+    // today's behaviour: chat plus Apply, nothing changed without a press. The label says what ON means in
+    // the sentence a user would use, because "Agent mode" alone says nothing about consequence - and this is
+    // the one setting on this page that lets something else move their plugins.
+    juce::ToggleButton agentModeToggle { "Let EchoJay make changes itself (off: it proposes and you press Apply)" };
     float uiScale_ = 1.0f;          // current scale factor
     void applyUIScale(float scale);
     void saveUIScale() const;
@@ -2435,16 +2441,41 @@ private:
     // DECLARATION ORDER MATTERS, and A2 said so: the panel removes itself as a listener in its destructor, so
     // it must be destroyed BEFORE the client. Members are destroyed in reverse declaration order, so the panel
     // is declared AFTER the client. The executor outlives both (the client holds a reference).
-    std::unique_ptr<echojay::agent::ToolExecutor> agentExecutor_;   // StubExecutor until A's lands
+    std::unique_ptr<echojay::agent::ToolExecutor> agentExecutor_;   // ExecutorDo (10 Oct): A2's read half + A's mutating half
+    // The same object, typed, for setTarget - which only the read half declares. Never owned here.
+    echojay::agent::ExecutorRead* agentReadExecutor_ = nullptr;
     std::unique_ptr<EJAgentClient>                agentClient_;
     std::unique_ptr<EJAgentPanel>                 agentPanel_;
     /** HOOK E5's switch. Off = byte-identical to today: nothing is constructed, nothing is sent, no path runs.
         Dev-mode marker AND a named flag file, which is the discipline every new path in this round uses, and it
         comes out before beta. */
-    static bool agentModeOn()
+    /** AGENT MODE (Sean's standing rule): a switch the USER owns, OFF by default, and off means today's
+        behaviour - chat plus Apply, nothing changed without a press. It stays until Sean signs off.
+
+        10 Oct 2026: the dev-mode condition is GONE from this predicate. It was `devModeActive() && the flag
+        file`, which meant the Settings toggle Sean asked for could not turn agent mode on for Sean - he is not
+        running a dev build. A switch that cannot be switched is not a switch. The flag file alone is the
+        answer, written by the Settings toggle, and OFF is still the default because the file does not exist
+        until somebody ticks it. */
+    static juce::File agentModeFlagFile()
     {
-        return ChainHost::devModeActive()
-            && echojay::userAppData().getChildFile ("EchoJay").getChildFile ("agent_mode").existsAsFile();
+        return echojay::userAppData().getChildFile ("EchoJay").getChildFile ("agent_mode");
+    }
+    static bool agentModeOn() { return agentModeFlagFile().existsAsFile(); }
+    /** The toggle's write. Creating the file turns it on; deleting it turns it off. A file rather than a
+        preference because every harness already runs in an isolated ECHOJAY_STATE_HOME, so a guard can turn
+        agent mode on for itself without touching Sean's own setting. */
+    static void setAgentModeOn (bool on)
+    {
+        auto f = agentModeFlagFile();
+        if (on)
+        {
+            f.getParentDirectory().createDirectory();
+            if (! f.existsAsFile()) f.replaceWithText ("on");
+        }
+        else if (f.existsAsFile()) f.deleteFile();
+        EchoJay_NSLog (("EJAgent: agent mode " + juce::String (on ? "ON" : "OFF")
+                        + " (the user's switch; off = chat and Apply, nothing changed without a press)").toRawUTF8());
     }
 
     struct ChainRow {

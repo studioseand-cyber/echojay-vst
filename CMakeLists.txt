@@ -142,6 +142,7 @@ target_sources(EchoJay PRIVATE
     Source/EJAgentPanel.cpp
     Source/EJAgentPanel.h
     Source/EJAgentExecutorRead.cpp
+    Source/EJAgentExecutorDo.cpp
     Source/EJAgentExecutorRead.h
     Source/PluginProcessor.cpp
     Source/PluginProcessor.h
