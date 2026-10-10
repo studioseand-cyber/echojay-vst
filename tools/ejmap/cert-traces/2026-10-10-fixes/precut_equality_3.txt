@@ -1,0 +1,32 @@
+PRE-CUT equality #3, 10 Oct late: build tree (sources = 2b97eb2e: + strips noise-off, strips in the pool) vs packaged 00f2ae79.
+
+== current
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 82 old / 82 new, only-old [], only-new [], differ 0
+  controls: 45 old / 45 new, only-old [], only-new [], differ 0
+== seanzip
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 45 old / 45 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+== cert_sc
+  rows 90 90 state/reason diffs 0 []
+  fixtures: 19 old / 19 new, only-old [], only-new [], differ 0
+  profiles: 7 old / 7 new, only-old [], only-new [], differ 0
+  controls: 2 old / 2 new, only-old [], only-new [], differ 0
+== cert_tc35
+  rows 87 87 state/reason diffs 0 []
+  fixtures: 14 old / 14 new, only-old [], only-new [], differ 0
+  profiles: 4 old / 4 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+
+drafts old 1106 new 1106 only-old 0 only-new 0
+   1067  status v0.2 (50a39e1b)
+     39  status v0.2 (50a39e1b) + limiter: compressor_profile null + the one-profile note (5185311f / 7ee67720)
+UNEXPLAINED: 0
+
+EXPECTED DIFFERENCES FOR THE MORNING CUT (vs 00f2ae79), each named by its fix:
+  derive-only / drafts over Sean's folder: 1067 drafts status 'v0.2' (50a39e1b); 39 limiter drafts + compressor_profile null + the one-profile note (5185311f / 7ee67720). Nothing else.
+  live runs only (no derive-only output sees them): strip records / drafts gain noise_off + the noise_off neutral write per section where a strip names a modelling-noise source (03bbe341: bx_console's Virtual Gain);
+    their measured figures change accordingly (noise floor off); strips run in the --jobs pool (2b97eb2e); and every earlier live-only change (--jobs, probe_crashed, silent_output incl. tail traces, empty_param_list, UnFairchild, UAD device, limiter_comp, delay card steps, --dry-run refusal, run-all notes).
