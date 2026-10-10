@@ -1375,6 +1375,7 @@ static bool shouldSelfSupervise (int argc, char* argv[])
 
 int main (int argc, char* argv[])
 {
+    ejmap::cert::runningBuild() = EJMAP_GIT_HASH;   // 10 Oct: FIRST - the headless CLI (--run-all, the follow-up) runs before initialise()
     // The supervisor must run before any GUI exists, so it is handled here
     // rather than in initialise().
     for (int i = 1; i < argc; ++i)

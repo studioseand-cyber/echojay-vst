@@ -105,7 +105,8 @@ namespace ejmap::cert
 // made by ANOTHER (older) build is STALE and runs again - a check with no stamp (every check before this build) included. One rule covers
 // the 38 b0258a7b-era checks, the profiles the 9-10 Oct fixes change, the VBCs, AMEK and MAGNUM-K's re-sweep.
 inline juce::String& runningBuild() { static juce::String b; return b; }
-inline bool toneCheckStale (const juce::var& tc) { const auto b = tc.getProperty ("build", "").toString(); return b.isEmpty() || b != runningBuild(); }
+// an UNKNOWN running build judges nothing stale (a binary that never set it must not re-check forever; the cut's dry-run caught one)
+inline bool toneCheckStale (const juce::var& tc) { if (runningBuild().isEmpty()) return false; const auto b = tc.getProperty ("build", "").toString(); return b.isEmpty() || b != runningBuild(); }
 
 
 //==============================================================================

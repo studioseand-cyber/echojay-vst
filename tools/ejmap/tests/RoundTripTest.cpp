@@ -4849,8 +4849,9 @@ void testSweepRatioAndPicks()
         auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, x] : kv) o->setProperty (k, x); return juce::var (o); };
         const auto keep = ejmap::cert::runningBuild(); ejmap::cert::runningBuild() = "1a2b3c4d";
         const bool st = ejmap::cert::toneCheckStale (mk ({ { "spec", "v1.7" } })) && ejmap::cert::toneCheckStale (mk ({ { "build", "5ab8352b" } })) && ! ejmap::cert::toneCheckStale (mk ({ { "build", "1a2b3c4d" } }));
+        ejmap::cert::runningBuild() = ""; const bool unknownNeverStale = ! ejmap::cert::toneCheckStale (mk ({ { "spec", "v1.7" } }));
         ejmap::cert::runningBuild() = keep;
-        check (st && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Gain Reduction" } })) && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Opt A Comp 1 Gain Reduction dB" } }))
+        check (st && unknownNeverStale && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Gain Reduction" } })) && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Opt A Comp 1 Gain Reduction dB" } }))
                && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "GR" } })) && ! ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Peak Reduction" } })) && ! ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Output Gain" } }))
                && ! ejmap::profile::isReadoutOrMeter (mk ({ { "name", "GR Limit" } })) && ! ejmap::profile::isReadoutOrMeter (mk ({ { "name", "GR Limit On" } })) && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Max GR" } })),
                "tone R1: a tone check without a build, or made by another build, is stale; 'Gain Reduction' / '... Gain Reduction dB' / 'GR' are output-only (never a neutral); LA-2A's Peak Reduction, an Output Gain and elysia's GR Limit / GR Limit On are controls");
