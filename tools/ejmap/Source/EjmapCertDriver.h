@@ -127,6 +127,7 @@ struct ChildResult
     juce::Array<juce::var> windowDetails;   // owner, pid, title, bounds, static text (when Accessibility is trusted) of each, taken before the kill (6 Oct)
     double ms = 0.0;                   // AWAKE time the child ran for (the clock every timeout is measured on)
     double sleptMs = 0.0;              // continuous minus awake time over the run: > 0 means the Mac slept during it
+    int pid = 0;                       // the child's pid (10 Oct): a probe crash report names it as parentPid
 
     bool cleanExit (int wanted = 0) const { return kind == Kind::exited && code == wanted; }
     juce::String describe() const
@@ -264,6 +265,7 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
     posix_spawn_file_actions_destroy (&fa);
     close (fds[1]);
     if (rc != 0) { close (fds[0]); return r; }
+    r.pid = (int) pid;
 
     fcntl (fds[0], F_SETFL, O_NONBLOCK);
     juce::MemoryOutputStream collected;
@@ -6319,7 +6321,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     int deviceLeft = 0;
     struct PItem { const phaseb::Category* cat; PhaseBProduct pp; jobs::Lane lane; juce::String laneWhy; };
     struct PWork { const phaseb::Category* cat = nullptr; PhaseBProduct pp; juce::File catDir, tmp; juce::DynamicObject::Ptr row; LicenceGate gate; juce::StringArray args; int reused = 0; };
-    struct PResult { ChildResult r; double seconds = 0.0; };
+    struct PResult { ChildResult r; double seconds = 0.0; juce::Time startedAt; };
     std::vector<PItem> items;
     {
         const auto bundles = componentBundles(); const auto lines = licenceLinesOf (opt.out);
@@ -6396,7 +6398,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             say (progressLine (prog, cat.name, pp.product, outcome, seconds));
             return std::nullopt;
     };
-    pool.run = [] (const PWork& w) { PResult res; const auto t1 = juce::Time::getMillisecondCounterHiRes(); res.r = runChild (w.args, (int) (w.cat->guardS * 1000.0)); res.seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0; return res; };
+    pool.run = [] (const PWork& w) { PResult res; res.startedAt = juce::Time::getCurrentTime(); const auto t1 = juce::Time::getMillisecondCounterHiRes(); res.r = runChild (w.args, (int) (w.cat->guardS * 1000.0)); res.seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0; return res; };
     pool.discard = [&] (const PItem& item, PWork& w) { w.tmp.deleteRecursively(); say ("  " + item.cat->name + ": " + item.pp.product + " - stopped with the run: no row, it runs again on the resume"); };
     pool.finish = [&] (const PItem& item, PWork& w, PResult& res)
     {
@@ -6416,6 +6418,18 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 {   // silent output (10 Oct): never ok
                     juce::StringArray tr; for (const auto& f : tmp.getChildFile ("raw").findChildFiles (juce::File::findFiles, false)) if (! f.getFileName().contains (".list-params.") && ! f.getFileName().contains (".text-at")) tr.add (f.loadFileAsString());
                     juce::String why; if (const auto so = phaseb::silentFiling (outcome, tr, why); so.isNotEmpty()) { outcome = so; row->setProperty ("reason", why); }
+                }
+                {   // a probe that died before its trace's end marker (10 Oct): never ok; its crash report (parentPid = this child) named
+                    std::vector<std::pair<juce::String, juce::String>> tr; for (const auto& f : tmp.getChildFile ("raw").findChildFiles (juce::File::findFiles, false)) if (! f.getFileName().contains (".list-params.") && ! f.getFileName().contains (".text-at")) tr.push_back ({ f.getFileNameWithoutExtension(), f.loadFileAsString() });
+                    juce::String why;
+                    if (const auto pc = phaseb::crashFiling (outcome, tr, why); pc.isNotEmpty())
+                    {
+                        outcome = pc; juce::String report = "no crash report found (macOS may not have written one)";
+                        juce::Thread::sleep (1500);   // the report lands a moment after the death
+                        for (const auto& f : juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Logs/DiagnosticReports").findChildFiles (juce::File::findFiles, false, opt.probe.getFileName() + "-*.ips"))   // named after the probe binary (EchoJayProbe on Sean's Mac)
+                            if (f.getLastModificationTime() >= res.startedAt - juce::RelativeTime::seconds (2)) { const auto ips = f.loadFileAsString(); if (phaseb::crashReportOfChild (ips, r.pid)) { report = f.getFileName() + ": " + phaseb::crashReportSummary (ips); break; } }
+                        row->setProperty ("reason", why + "; crash report: " + report); row->setProperty ("crash_report", report);
+                    }
                 }
                 {
                     juce::StringArray lp; for (const auto& f : tmp.getChildFile ("raw").findChildFiles (juce::File::findFiles, false)) if (f.getFileName().contains (".list-params.")) lp.add (f.loadFileAsString());

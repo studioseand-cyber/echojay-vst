@@ -8793,6 +8793,25 @@ void testRunAll()
                                              && ejmap::phaseb::silentFiling ("ok", { silentTail, silentTail, liveTail }, b).isEmpty(); } (),
                "phaseb PB-SILENT: every output silent with the input present -> silent_output (" + w1 + "); one live output, no input, too few lines, a licence row -> unchanged");
     }
+    // PB-CRASH (Kathy, 10 Oct; G8's ramp): a trace with no end marker is a probe that died - probe_crashed, never ok; the end marker
+    // may be followed by a plugin's own output (curl's meter); a refusal is an end; a licence row is never re-filed; the crash report
+    // is the one whose parentPid is this child, summarised as its exception and the plugin's bundle
+    {
+        using namespace ejmap::phaseb;
+        const juce::String g8 = "probe: \"G8\"\nramp\tproto\t1\nrwin\tt_ms\t1397.500\tseg\tup\tin_db\t-43.207\tout_db\t-573.485\nrwin\tt_ms\t1402.500\tseg\tup\tin_db\t-43.102\tout_db\t-574.432\n";
+        const juce::String done = "probe: \"X\"\nhold\t0\nstage\tdone\n100   518  100    35    0     0\n";
+        const juce::String refused = "probe: \"X\"\nstage\tprepare\nrefused set_unlanded 3\n";
+        const juce::String header = "probe: \"Auto-Tune Pro\" | AudioUnit:Effects/aufx,...";
+        juce::String w1, w2, w3, w4;
+        const auto ips = juce::String ("{\"app_name\":\"EchoJayProbe\"}\n{\n  \"pid\" : 9638,\n  \"parentPid\" : 9601,\n  \"exception\" : {\"codes\":\"0x0\",\"rawCodes\":[0,0],\"type\":\"EXC_CRASH\",\"signal\":\"SIGABRT\"},\n")
+                       + "  \"CFBundleIdentifier\" : \"com.apple.audio.AudioToolboxCore\",\n  \"CFBundleIdentifier\" : \"com.echojay.EchoJayProbe\",\n  \"CFBundleIdentifier\" : \"com.UnfilteredAudio.G8\",\n";
+        check (! traceEnded (g8) && traceEnded (done) && traceEnded (refused) && ! traceEnded (header)
+               && crashFiling ("ok", { { "c0.n0.00", g8 }, { "c1", done } }, w1) == "probe_crashed" && w1.contains ("1 of 2") && w1.contains ("c0.n0.00")
+               && crashFiling ("ok", { { "a", done }, { "b", refused } }, w2).isEmpty() && crashFiling ("needs_licence", { { "wet", g8 } }, w3).isEmpty()
+               && crashFiling ("ok", { { "f89.static-40", header } }, w4) == "probe_crashed"
+               && crashReportOfChild (ips, 9601) && ! crashReportOfChild (ips, 9638) && ! crashReportOfChild (ips, 0) && crashReportSummary (ips) == "EXC_CRASH SIGABRT in com.UnfilteredAudio.G8",
+               "phaseb PB-CRASH: a trace that stops before its end marker files the row probe_crashed (" + w1 + "); an end marker followed by noise, a refusal, a licence row: unchanged; the report is the child's by parentPid (" + crashReportSummary (ips) + ")");
+    }
     // PB-DRY (10 Oct): --phaseb-all refuses --dry-run (anywhere in the line, the last argument too) instead of ignoring it and loading
     check (ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--category", "delay", "--out", "/c", "--dry-run" }).contains ("no --dry-run")
            && ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--dry-run", "--category", "delay" }).isNotEmpty()

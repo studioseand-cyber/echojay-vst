@@ -206,6 +206,34 @@ inline constexpr double kGuardPerProcessS = 60.0, kGuardTextPassS = 180.0;
 inline double gainGuardS (int processes) { return kGuardTextPassS + kGuardPerProcessS * juce::jmax (0, processes); }
 // a probe trace is COMPLETE when it ends its stages ("stage<TAB>done"): only a complete trace is reused when a timed-out row resumes
 inline bool traceComplete (const juce::String& out) { return out.contains ("\nstage\tdone") || out.startsWith ("stage\tdone"); }
+// PROBE CRASHED MID-TRACE (Kathy, 10 Oct; G8's ramp at ~1.4 s): a measurement trace ends with the probe's `stage\tdone` (anywhere: a
+// plugin's own stdout - curl's progress meter - can follow it) or with a `refused ...` line; anything else is a probe that died
+// before its end marker. A row with one is `probe_crashed`, never ok (the crash report, matched by its parentPid, named when found).
+inline bool traceEnded (const juce::String& trace)
+{
+    if (traceComplete (trace)) return true;
+    const auto lines = juce::StringArray::fromLines (trace.trimEnd());
+    return ! lines.isEmpty() && lines[lines.size() - 1].trimStart().startsWith ("refused");
+}
+inline juce::String crashFiling (const juce::String& outcome, const std::vector<std::pair<juce::String, juce::String>>& traces, juce::String& reason)
+{
+    if (outcome != "ok" && outcome != "failed" && outcome != "slept") return {};
+    juce::StringArray cut; for (const auto& [name, text] : traces) if (! traceEnded (text)) cut.add (name);
+    if (cut.isEmpty()) return {};
+    reason = "probe crashed mid-trace: " + juce::String (cut.size()) + " of " + juce::String ((int) traces.size()) + " trace(s) end before the probe's end marker (" + cut.joinIntoString (", ") + "); not ok, not re-run (delete the row to re-run)";
+    return "probe_crashed";
+}
+// a macOS crash report (.ips) in one line: its exception and the first non-Apple, non-EchoJay bundle it names (the plugin)
+inline juce::String crashReportSummary (const juce::String& ips)
+{
+    auto field = [&] (const juce::String& from, const char* key) { const auto k = juce::String ("\"") + key + "\""; const int i = from.indexOf (k); if (i < 0) return juce::String(); const int q1 = from.indexOfChar (from.indexOfChar (i + k.length(), ':') + 1, '"'); const int q2 = from.indexOfChar (q1 + 1, '"'); return q1 >= 0 && q2 > q1 ? from.substring (q1 + 1, q2) : juce::String(); };
+    const int ex = ips.indexOf ("\"exception\""); const auto exText = ex >= 0 ? ips.substring (ex, ex + 300) : juce::String();
+    juce::String bundle;
+    for (int i = ips.indexOf ("\"CFBundleIdentifier\""); i >= 0 && bundle.isEmpty(); i = ips.indexOf (i + 1, "\"CFBundleIdentifier\""))
+    { const auto b = field (ips.substring (i), "CFBundleIdentifier"); if (b.isNotEmpty() && ! b.startsWith ("com.apple.") && ! b.startsWith ("com.echojay.")) bundle = b; }
+    return (field (exText, "type") + " " + field (exText, "signal")).trim() + (bundle.isNotEmpty() ? " in " + bundle : juce::String());
+}
+inline bool crashReportOfChild (const juce::String& ips, int childPid) { return childPid > 0 && (ips.contains ("\"parentPid\" : " + juce::String (childPid) + ",") || ips.contains ("\"parentPid\":" + juce::String (childPid) + ",")); }
 // --phaseb-all / --phaseb-status take no --dry-run (10 Oct): the flag was silently ignored and a "dry" batch started loading every
 // product of the category; refused before anything runs or is deleted - the plan without loads is --run-all --dry-run
 inline juce::String refusedPhaseBFlag (const juce::StringArray& args)

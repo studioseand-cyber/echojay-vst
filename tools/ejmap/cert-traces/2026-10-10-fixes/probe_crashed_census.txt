@@ -1,0 +1,18 @@
+Probe-crashed census, 10 Oct: every measurement trace (not list-params / text-at) in Sean's ~/Downloads/cert 2 + cert 3 (read-only)
+judged by phaseb::traceEnded - `stage\tdone` anywhere in it (a plugin's own stdout, e.g. curl's progress meter, can follow it) or a
+final `refused ...` line. 41,745 traces end on `stage done`, 108 on a refusal; 27 traces in 27 rows end before their end marker.
+
+ROWS THAT WERE FILED "ok" (re-filed probe_crashed when re-run under the next build):
+  cert 2  gate     Unfiltered Audio G8   ok   c0.n0.00       (last line 'bwin', 1059 lines)   G8 aborts (SIGABRT in com.UnfilteredAudio.G8)
+  cert 2  tuners   Auto-Tune Pro         ok   f89.static-40  (the probe's header line only)
+  cert 3  delay    EchoBoy               ok   mix10          (stops at a `stage` line, 6 lines)
+  cert 3  delay    EchoBoy Jr            ok   r2.n1          (stops at a `stage` line, 6 lines)
+
+ROWS ALREADY FILED AS AN ANSWER (unchanged: the filing applies to ok / failed / slept only):
+  cert 2  UAD delays / reverbs / saturation / transient (16 rows)  needs_licence  one trace each, stopped at `stage prepare`
+  cert 2  tuners  UAD Auto-Tune Realtime Advanced  window
+  cert 2  eq      6 UAD EQs (API 550A, Millennia NSEQ-2, MDWEQ5-5B, Trident A-Range, Chandler Curve Bender, MDWEQ5-3B): traces from
+                  the interrupted 9 Oct EQ step, no row in cert 2 (their cert 3 rows are among the 44 needs_device)
+
+Rehearsed here (G8, the next build): the row is probe_crashed, 2 of 214 traces (both passes of q0.n0), crash report
+"probe-rd-2026-10-10-180728.ips: EXC_CRASH SIGABRT in com.UnfilteredAudio.G8" (matched by its parentPid = the mode child's pid).
