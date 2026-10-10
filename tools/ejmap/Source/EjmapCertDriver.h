@@ -3977,7 +3977,7 @@ inline int runTiming (const SweepOptions& opt)
     setRoles (o, roles, "a burst pair per control costs ~12 s: the unnamed pool is not probed in this mode");
     // THE `time` BLOCK, DRAFT (Kathy's timing spec v0.1 section 7, 6 Oct): data only - never written into a compressor profile
     {
-        auto* tb = new juce::DynamicObject(); tb->setProperty ("status", "DRAFT against COMP_TIMING_SPEC v0.1 (a proposal): data only, not in any compressor profile, not exported");
+        auto* tb = new juce::DynamicObject(); tb->setProperty ("status", "DRAFT against COMP_TIMING_SPEC v0.2 (a proposal): data only, not in any compressor profile, not exported");
         tb->setProperty ("definition", timing::kDefinition);
         { auto* ma = new juce::DynamicObject(); ma->setProperty ("amount_control", plan.thrName); ma->setProperty ("amount_by", amountBy); ma->setProperty ("norm", (double) norms[best]); if (stepDb0) ma->setProperty ("gr_step_db", std::round (*stepDb0 * 100.0) / 100.0); juce::Array<juce::var> bd { quiet, loud }; ma->setProperty ("burst_dbfs", bd); tb->setProperty ("measured_at", juce::var (ma)); }
         for (const char* role : { "attack", "release" })

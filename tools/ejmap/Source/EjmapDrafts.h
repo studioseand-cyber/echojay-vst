@@ -71,7 +71,9 @@ inline juce::var measuredBlock (const juce::String& tool, const juce::String& da
     auto* m = new juce::DynamicObject(); m->setProperty ("tool", tool); m->setProperty ("date", date); m->setProperty ("sample_rate", sampleRate); m->setProperty ("signal", signal);
     return juce::var (m);
 }
-inline juce::String statusLine (const juce::String& specName) { return "DRAFT against " + specName + " v0.1 (a proposal): data only, not exported, not published"; }
+// the status line names the same version as the spec tag (Kathy, 10 Oct: it said v0.1 under a v0.2 tag)
+inline constexpr const char* kStatusVersion = "v0.2";
+inline juce::String statusLine (const juce::String& specName) { return "DRAFT against " + specName + " " + kStatusVersion + " (a proposal): data only, not exported, not published"; }
 // identity -> uid hex / version ("AudioUnit|417f6e6e|1.2.1")
 inline juce::String uidOfIdentity (const juce::String& identity) { return identity.fromFirstOccurrenceOf ("|", false, false).upToFirstOccurrenceOf ("|", false, false); }
 inline juce::String versionOfIdentity (const juce::String& identity) { return identity.fromLastOccurrenceOf ("|", false, false); }

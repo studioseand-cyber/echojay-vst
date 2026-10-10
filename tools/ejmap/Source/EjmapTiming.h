@@ -211,11 +211,11 @@ inline juce::var timeBlockDraft (const juce::var& rec)
         auto tb = rec.getProperty ("time_draft", {}); juce::Array<juce::var> notes; if (const auto* n = tb.getProperty ("notes", {}).getArray()) notes = *n;
         // the field rule: every position carries gr_shift_db - null with a note when the run could not read it
         for (const char* role : { "attack", "release" }) if (const auto* ps = tb.getProperty (role, {}).getProperty ("positions", {}).getArray()) for (const auto& p : *ps) if (! p.hasProperty ("gr_shift_db")) { notes.add (juce::String (role) + " at norm " + p.getProperty ("norm", juce::var()).toString() + ": gr_shift_db null - no instantiate reference step on this run"); }
-        if (auto* o = tb.getDynamicObject()) { o->setProperty ("notes", notes); o->setProperty ("source", "the run's own time_draft"); }
+        if (auto* o = tb.getDynamicObject()) { o->setProperty ("notes", notes); o->setProperty ("source", "the run's own time_draft"); o->setProperty ("status", o->getProperty ("status").toString().replace (" v0.1 (a proposal)", " v0.2 (a proposal)")); }
         return tb;
     }
     auto* tb = new juce::DynamicObject(); juce::Array<juce::var> notes;
-    tb->setProperty ("status", "DRAFT against COMP_TIMING_SPEC v0.1 (a proposal): data only, not in any compressor profile, not exported; built from a record without time_draft (a run before 6 Oct)");
+    tb->setProperty ("status", "DRAFT against COMP_TIMING_SPEC v0.2 (a proposal): data only, not in any compressor profile, not exported; built from a record without time_draft (a run before 6 Oct)");
     tb->setProperty ("definition", kDefinition);
     { auto* ma = new juce::DynamicObject(); ma->setProperty ("amount_control", rec.getProperty ("amount_control", juce::var())); ma->setProperty ("norm", rec.getProperty ("amount_norm", juce::var()));
       // the GR step: the median gr_step_db over the measured positions (the run had no instantiate reference of its own)

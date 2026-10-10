@@ -385,7 +385,7 @@ inline juce::String renderPhaseB (const std::vector<CategoryReview>& cats)
     if (allRan > 0) line ("  all categories: acceptance " + juce::String (allPass) + "/" + juce::String (allRan) + " (" + juce::String (100.0 * allPass / allRan, 1) + " %)");
     head ("11. DRAFTS (cert/phaseb/<category>/drafts/; never cert/profiles)");
     int total = 0, bad = 0; for (const auto& c : cats) { total += c.drafts; bad += c.draftsBadSpec; if (c.drafts > 0) line ("  " + c.name.paddedRight (' ', 11) + juce::String (c.drafts).paddedLeft (' ', 4) + " draft(s), " + juce::String (c.draftsWithNotes) + " with notes" + (c.draftsBadSpec > 0 ? ", " + juce::String (c.draftsBadSpec) + " WITHOUT the 'v0.1 PROPOSAL' spec tag or the .draft.json name" : juce::String())); }
-    line ("  " + juce::String (total) + " draft(s)" + (bad > 0 ? ", " + juce::String (bad) + " break the drafts rule" : ", all tagged v0.1 PROPOSAL"));
+    line ("  " + juce::String (total) + " draft(s)" + (bad > 0 ? ", " + juce::String (bad) + " break the drafts rule" : ", all tagged v0.1 / v0.2 PROPOSAL"));
     head ("12. TOP FINDINGS");
     int shown = 0;
     for (const auto& c : cats) if (! c.failedRows.isEmpty()) { line ("  " + c.name + ": " + juce::String (c.failedRows.size()) + " failed row(s): " + c.failedRows.joinIntoString ("; ").substring (0, 300)); ++shown; }

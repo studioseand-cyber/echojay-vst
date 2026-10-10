@@ -7109,7 +7109,7 @@ void testTunerV01()
                         "humanize": [], "readbacks": {"1": {"index": 1, "name": "Key", "kind": "key", "values": {"C": 0.0, "C#": 0.0909}}, "2": {"index": 2, "name": "Scale", "kind": "scale", "values": {"Major": 0.0, "Chromatic": 1.0}}}}})json");
     const auto e = ejmap::tunerprofile::exportTunerProfileDraft (rec);
     const auto sp = e.profile.getProperty ("speed", {});
-    check (e.ok && e.profile.getProperty ("schema", "").toString() == "ej_tuner_profile/1" && e.profile.getProperty ("status", "").toString().startsWith ("PROPOSAL v0.1 - not for publication"), "tuner V6: the draft says what it is");
+    check (e.ok && e.profile.getProperty ("schema", "").toString() == "ej_tuner_profile/1" && e.profile.getProperty ("status", "").toString().startsWith ("PROPOSAL v0.2 - not for publication"), "tuner V6: the draft says what it is");
     check (sp.getProperty ("control", "").toString() == "Retune Speed" && sp.getProperty ("direction", "").toString() == "lower_is_harder" && sp.getProperty ("curve", {}).size() == 3
              && sp.getProperty ("curve", {})[1].getProperty ("transition_ms", 1).isVoid() && (double) sp.getProperty ("curve", {})[2].getProperty ("faster_than_ms", 0.0) == 21.4,
            "tuner V7: speed = the moving candidate; lower_is_harder read from the display (400 slow, 0 fast); a refused position is null, a bound carries faster_than_ms");
@@ -8641,6 +8641,16 @@ void testDraftsPass()
         const auto& cb = lim.getProperty ("ceiling", {});
         check (lim.getProperty ("spec", "") == ejmap::drafts::specTag ("LIMITER_PROFILE_SPEC") && lim.getProperty ("plugin", {}).getProperty ("version", "") == "1.2.1" && lim.getProperty ("measured", {}).getProperty ("date", "") == "2026-10-05" && cb.getProperty ("positions", {}).size() == 2 && cb.getProperty ("positions", {})[0].getProperty ("verdict", "") == "holds_true_peak" && cb.getProperty ("positions", {})[1].getProperty ("verdict", "") == "not_driven" && cb.getProperty ("notes", {})[0].toString().contains ("driven at -1 dBFS flat"),
                "drafts P1d: a 5 Oct limiter record drafts its block from its rows (judged on the output: -0.12 not_driven) with the old-drive note, the date from measuredAt, the version from the identity");
+        // DS-V02 (Kathy, 10 Oct): a draft's status names v0.2, as its spec tag does - the shared line, the tuner's, and a time block an
+        // older run wrote with "v0.1" on the record
+        {
+            const auto rec = mk ({ { "time_draft", mk ({ { "status", "DRAFT against COMP_TIMING_SPEC v0.1 (a proposal): data only" }, { "definition", "63%" } }) } });
+            const auto tb = ejmap::timing::timeBlockDraft (rec);
+            check (ejmap::drafts::statusLine ("EQ_PROFILE_SPEC") == "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published"
+                   && juce::String (ejmap::tunerprofile::kStatus).startsWith ("PROPOSAL v0.2") && tb.getProperty ("status", "").toString().contains ("COMP_TIMING_SPEC v0.2 (a proposal)")
+                   && ! tb.getProperty ("status", "").toString().contains ("v0.1"),
+                   "drafts DS-V02: every draft status says v0.2, the spec tag's version, including a time block read from an older record (" + tb.getProperty ("status", "").toString() + ")");
+        }
         // LIM-ONE (10 Oct, the v0.2 gap list): "one profile: the compressor profile plus the ceiling block" - an exported compressor
         // profile of the same identity gets the block added (the profile itself untouched); none -> the block alone, said so
         {

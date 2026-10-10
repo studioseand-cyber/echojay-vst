@@ -28,7 +28,7 @@ inline constexpr int kDefaultTuneStep = 1;   // v0.2 (Sean, 8 Oct): tuning asked
 
 
 inline constexpr const char* kSchema = "ej_tuner_profile/1";
-inline constexpr const char* kStatus = "PROPOSAL v0.1 - not for publication";
+inline constexpr const char* kStatus = "PROPOSAL v0.2 - not for publication";
 inline constexpr double kStrengthMovesBy = 0.2;      // a candidate whose static strength spans this much is a strength control
 inline constexpr double kSpeedMovesBy = 1.5;         // a candidate whose transition times span this RATIO is a speed control
 
