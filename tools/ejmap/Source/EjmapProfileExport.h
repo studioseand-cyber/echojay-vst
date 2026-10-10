@@ -256,9 +256,13 @@ inline bool isReadoutOrMeter (const juce::var& c)
     // 10 Oct (Kathy): an OUTPUT-ONLY control is never a neutral write - a gain-reduction readout ("Gain Reduction", "Comp 1 Gain Reduction
     // dB", "GR") reports what the unit does; writing it (Auto-Tune Vocal Compressor's at 1.0) measures nothing and asks the host for nonsense
     const auto l = n.toLowerCase();
-    if (l.contains ("gain reduction")) return true;
+    if (l.contains ("gain reduction") && ! l.contains ("limit") && ! l.contains ("amount") && ! l.contains ("range")) return true;
     { juce::StringArray toks; juce::String cur; for (auto ch : l) { if (juce::CharacterFunctions::isLetterOrDigit (ch)) cur << ch; else if (cur.isNotEmpty()) { toks.add (cur); cur.clear(); } } if (cur.isNotEmpty()) toks.add (cur);
-      if (toks.contains ("gr")) return true; }
+      // "GR" alone is a readout ("GR", "Max GR"); with a control word it is a SETTING (elysia mpressor's "GR Limit" / "GR Limit On")
+      static const juce::StringArray controlWords { "limit", "on", "off", "amount", "range", "threshold", "thresh", "mix", "enable", "bypass", "depth", "ratio", "attack", "release", "knee", "mode", "link" };
+      bool controlWord = false; for (const auto& t : toks) if (controlWords.contains (t)) controlWord = true;
+      if (toks.contains ("gr") && ! controlWord) return true;
+      if (controlWord && ! l.contains ("gain reduction")) return false; }
     return false;
 }
 

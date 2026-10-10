@@ -4851,8 +4851,9 @@ void testSweepRatioAndPicks()
         const bool st = ejmap::cert::toneCheckStale (mk ({ { "spec", "v1.7" } })) && ejmap::cert::toneCheckStale (mk ({ { "build", "5ab8352b" } })) && ! ejmap::cert::toneCheckStale (mk ({ { "build", "1a2b3c4d" } }));
         ejmap::cert::runningBuild() = keep;
         check (st && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Gain Reduction" } })) && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Opt A Comp 1 Gain Reduction dB" } }))
-               && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "GR" } })) && ! ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Peak Reduction" } })) && ! ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Output Gain" } })),
-               "tone R1: a tone check without a build, or made by another build, is stale; 'Gain Reduction' / '... Gain Reduction dB' / 'GR' are output-only (never a neutral); LA-2A's Peak Reduction and an Output Gain are controls");
+               && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "GR" } })) && ! ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Peak Reduction" } })) && ! ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Output Gain" } }))
+               && ! ejmap::profile::isReadoutOrMeter (mk ({ { "name", "GR Limit" } })) && ! ejmap::profile::isReadoutOrMeter (mk ({ { "name", "GR Limit On" } })) && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Max GR" } })),
+               "tone R1: a tone check without a build, or made by another build, is stale; 'Gain Reduction' / '... Gain Reduction dB' / 'GR' are output-only (never a neutral); LA-2A's Peak Reduction, an Output Gain and elysia's GR Limit / GR Limit On are controls");
     }
     // THE PICKS, from the pushed fixtures themselves (echojay-saas 2454c0a), by range and step count - never by name.
     const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/plan");
