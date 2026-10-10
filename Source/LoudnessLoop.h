@@ -581,8 +581,8 @@ public:
     {
         if (slot_ < 0) return false;
         state_ = State::hold; stopTimer(); pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none; continueAfterGo_ = false;
-        log ("done: Level " + fmtSigned (currentGainDb()) + " dB, last measured " + fmt (lastMeasured()) + " LUFS - the loop is finished");
-        emit ("Done - Level " + fmtSigned (currentGainDb()) + " dB, last measured " + fmt (lastMeasured()) + " LUFS. Say listen to measure again.", -1.0f, false, true, Bubble::Kind::result);
+        log ("done: " + stageName() + " " + fmtSigned (currentGainDb()) + " dB, last measured " + fmt (lastMeasured()) + " LUFS - the loop is finished");
+        emit ("Done - " + fmtSigned (currentGainDb()) + " dB, last measured " + fmt (lastMeasured()) + " LUFS. Say listen to measure again.", -1.0f, false, true, Bubble::Kind::result);
         return true;
     }
 
@@ -603,7 +603,7 @@ public:
         // it may propose again; that proposal carries [Undo]. (The 18g "one automatic check if audio continues" branch is removed.)
         continueAfterGo_ = true; reportOnly_ = false;
         state_ = State::hold; stopTimer();
-        emit ("Applied " + fmtSigned (appliedDelta_) + " dB (Level now " + fmtSigned (currentGainDb()) + "). How's it sounding?", -1.0f, false, false, Bubble::Kind::info, afterVerbPills());
+        emit ("Applied " + fmtSigned (appliedDelta_) + " dB (now " + fmtSigned (currentGainDb()) + "). How's it sounding?", -1.0f, false, false, Bubble::Kind::info, afterVerbPills());
         return true;
     }
     // 18f: the quiet-window answers
@@ -639,7 +639,7 @@ public:
     {
         round_ = 0; proposals_ = 0; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none; continueAfterGo_ = false; lastCommanded_ = 0.0f;
         state_ = State::hold; stopTimer();
-        emit ("Applied " + fmtSigned (deltaDb) + " dB (Level now " + fmtSigned (currentGainDb()) + "). How's it sounding?", -1.0f, false, false, Bubble::Kind::info, afterVerbPills());
+        emit ("Applied " + fmtSigned (deltaDb) + " dB (now " + fmtSigned (currentGainDb()) + "). How's it sounding?", -1.0f, false, false, Bubble::Kind::info, afterVerbPills());
     }
     // 22 Sep 2026 (item 2, client half): a typed complaint the server classified loop_verb ("too squashed", "over limited", "distorted",
     // "pumping", "too loud") is the softer step TWICE - one move of -2 dB, one bubble
@@ -677,8 +677,8 @@ public:
         pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none;
         if (watching) { state_ = State::tracking; startTracking(); }
         else { state_ = State::hold; stopTimer(); }
-        log ("leave it: holding at " + fmt (lastMeasured()) + " LUFS, Level " + fmtSigned (currentGainDb()) + " dB" + (watching ? ", still watching" : ""));
-        emit ("Leaving it at " + fmt (lastMeasured()) + " LUFS, Level " + fmtSigned (currentGainDb()) + " dB." + (watching ? " Still watching for a louder section." : ""), -1.0f, false, true, Bubble::Kind::result, pillsFor (target_ - lastMeasured()));
+        log ("leave it: holding at " + fmt (lastMeasured()) + " LUFS, " + stageName() + " " + fmtSigned (currentGainDb()) + " dB" + (watching ? ", still watching" : ""));
+        emit ("Leaving it at " + fmt (lastMeasured()) + " LUFS, " + fmtSigned (currentGainDb()) + " dB." + (watching ? " Still watching for a louder section." : ""), -1.0f, false, true, Bubble::Kind::result, pillsFor (target_ - lastMeasured()));
     }
 
     State state() const noexcept { return state_; }
@@ -1124,15 +1124,35 @@ private:
         for (int i = host_.getNumSlots() - 1; i >= 0; --i)
             if (host_.getSlotInfo (i).name == "EchoJay Level") { at = i; break; }
         if (at < 0) return std::numeric_limits<float>::quiet_NaN();
+        // THE GAIN BEING MIGRATED IS THE LEVEL SLOT'S, and this read was wrong twice over.
+        //  (1) It said `gain = currentGainDb()` - the STAGE's gain, not the slot's - because my blanket
+        //      lv->gainDb() -> currentGainDb() substitution for the Stage refactor hit this site too. So the
+        //      migration moved NOTHING out of the Level and wrote currentGainDb() + currentGainDb(): zero when
+        //      the stage was at unity (what leg V4 caught), and a SILENTLY DOUBLED rack gain when it was not.
+        //  (2) Reading the device at all is unreliable on a restore: the device only holds gain_db once a dial
+        //      path has run, and a project that has just been opened may not have dialled yet.
+        // So: the slot's own PARAMS first - what the project or saved chain actually recorded - then the device.
         float gain = 0.0f;
-        if (auto* lv = dynamic_cast<EedLevelProcessor*> (host_.getSlotProcessor (at)))
-            gain = currentGainDb();
+        {
+            bool fromParams = false;
+            const auto st = host_.getSlotStructured (at);
+            if (st.getDynamicObject() != nullptr)
+                if (auto* po = st.getProperty ("params", juce::var()).getDynamicObject())
+                {
+                    const auto gv = po->getProperty ("gain_db");
+                    if (gv.isDouble() || gv.isInt() || gv.isInt64())
+                    { gain = (float) (double) gv; fromParams = true; }
+                }
+            if (! fromParams)
+                if (auto* lv = dynamic_cast<EedLevelProcessor*> (host_.getSlotProcessor (at)))
+                    gain = (float) lv->gainDb();
+        }
         const int n = host_.getNumSlots();
         const bool wasLast = (at == n - 1);
         const auto before = host_.getChainOutLevels();
         if (stageReady()) stage_.writeDb (currentGainDb() + gain);
         host_.removeSlot (at);
-        log ("migrated the EchoJay Level slot away: " + fmtSigned (gain) + " dB moved from slot "
+        log ("migrated the EchoJay Level slot away: " + fmtSigned (gain) + " dB (the slot's own gain) moved from slot "
              + juce::String (at + 1) + " of " + juce::String (n) + " to " + stage_.name
              + (wasLast ? " - it was already LAST, so this is level-identical"
                         : " - it was NOT last, so the sound DOES change here: a gain ahead of a non-linear slot "
@@ -1316,7 +1336,7 @@ private:
         lastCommanded_ = trim; prevMeasured_ = lastMeasured_;   // 18g (item 2): the next proposal scales its step by achieved/commanded
         const float newDb = juce::jlimit (-kLevelMaxDb, kLevelMaxDb, currentGainDb() + trim);
         appliedDelta_ = newDb - currentGainDb();   // 21 Sep: the delta the after-verb bubble reports
-        log (juce::String (why) + ": Level " + fmtSigned (currentGainDb()) + " -> " + fmtSigned (newDb) + " dB (trim " + fmtSigned (trim) + ")");
+        log (juce::String (why) + ": " + stageName() + " " + fmtSigned (currentGainDb()) + " -> " + fmtSigned (newDb) + " dB (trim " + fmtSigned (trim) + ")");
         writeGainDb (newDb);
     }
 public:

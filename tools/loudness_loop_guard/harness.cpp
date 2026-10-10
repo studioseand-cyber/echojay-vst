@@ -1616,9 +1616,12 @@ static int guardMain()
         loop.isPlaying = [] { return true; };
         // a target, with nothing holding a ceiling
         { auto* pp = new juce::DynamicObject();
-          pp->setProperty ("target_lufs", -8.0); pp->setProperty ("option", "pushed");
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-          h.setSlotStructuredSettings (0, juce::var (w)); }
+          juce::ignoreUnused (pp);
+          // 10 Oct: the intent rides the RACK RECORD. (This leg uses a bare `h`, which is why the sweep that
+          // re-aimed the rig-based legs missed it - and why V3's four assertions all failed on one cause.)
+          auto* rec = new juce::DynamicObject();
+          rec->setProperty ("target_lufs", -8.0); rec->setProperty ("option", "pushed");
+          h.setLevellingRecord (juce::var (rec)); }
         const int before = h.getNumSlots();
         check (loop.armFromChain(), "V3. it arms", logs.joinIntoString (" | ").substring (0, 180));
         check (h.getNumSlots() == before + 1,
