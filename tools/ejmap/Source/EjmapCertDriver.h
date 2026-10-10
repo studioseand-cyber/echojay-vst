@@ -5118,7 +5118,7 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     }
     // 7. THE ACCEPTANCE (section 8): write what the server would compute, re-measure
     if (mix.index >= 0 && ! sendOnly (mixPts, inputDb))
-        for (const auto& [word, target] : mixSteps())
+        for (const auto& [word, target] : mixStepsFor (kind))
         {
             const auto inv = invertMap (wetReDryMap (mixPts), target, false);
             auto* a = new juce::DynamicObject(); a->setProperty ("map", "mix"); a->setProperty ("step", word); a->setProperty ("target_wet_re_dry_db", target);

@@ -844,6 +844,8 @@ namespace
             // --phaseb-all [--out <cert>] [--probe <path>] [--ejmap-ledger <dir>] [--category <name>]... [--only <product>]...: the Phase B batch (5 Oct evening), and --phaseb-status
             if (a == "--phaseb-all" || a == "--phaseb-status")
             {
+                { juce::StringArray all; for (int j = 1; j < argc; ++j) all.add (argAt (argc, argv, j));
+                  if (const auto why = ejmap::phaseb::refusedPhaseBFlag (all); why.isNotEmpty()) { std::cerr << why << std::endl; return 2; } }
                 ejmap::cert::SweepOptions o; juce::StringArray cats, only, redo;
                 for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
                     if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--category") cats.add (v); else if (k == "--only") only.add (v);

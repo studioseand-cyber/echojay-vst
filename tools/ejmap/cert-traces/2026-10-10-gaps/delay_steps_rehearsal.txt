@@ -1,0 +1,19 @@
+v0.2 gap 1 - delay card steps, rehearsed 10 Oct on this Mac with the gap build (74f44509 + the change), scratch output, signed probe
+
+ADA STD-1 Stereo Tapped Delay 1.5.1 (from an unintended --phaseb-all --category delay that took --dry-run as ignored; stopped after this product - see the commit):
+   {"map": "mix", "step": "default", "target_wet_re_dry_db": -30.0, "ran": false, "pass": false, "why": "null: the target -30.000 is outside the measured span -10.472 .. 0.767"}
+   {"map": "mix", "step": "cap", "target_wet_re_dry_db": -26.0, "ran": false, "pass": false, "why": "null: the target -26.000 is outside the measured span -10.472 .. 0.767"}
+   full_wet {"control": "Out Mix L", "norm": 1.0, "display": "100 %", "dry_db": -6.75, "wet_gain_db": -5.99, "verdict": "cannot_full_wet", "basis": "the mix map's least-dry position; levels relative to the input as recorded; wet = the tail's level just after the burst (reverb) / the first repeat (delay)"}
+   RD: ADA STD-1 Stereo Tapped Delay 1.5.1 (delay), names propose: mix [4] Out Mix L; time [17] Fixed Delay; feedback [8] Regeneration Level; sync -; note -
+     mix: [4] Out Mix L (name) - the name's nominee shows the mix signature
+     mix: other (worst deviation: linear 15.49 dB, equal power 11.60 dB (fit within 1.0))
+       measured role mix, UNNAMED  [4] Out Mix L - the wet/dry ratio moves 11.64 dB, dry and wet opposite
+       measured role mix, UNNAMED  [5] Out Mix R - the wet/dry ratio moves 102.96 dB, dry and wet opposite
+       measured role mix, UNNAMED  [11] Tap Assign 1 - the wet/dry ratio moves -14.26 dB, dry and wet opposite
+       measured role mix, UNNAMED  [12] Tap Assign 2 - the wet/dry ratio moves 12.40 dB, dry and wet opposite
+
+bx_delay2500 1.8.1 (--only, the intended rehearsal): no mix control, so no mix acceptance (log):
+     mix: none - the name's nominee [8] does not show the mix signature and no other control does
+     acceptance time 834.8 ms: 834.5 ms -> PASS
+     acceptance time 1655.2 ms: 1654.5 ms -> PASS
+     acceptance feedback 5 repeats: repeat 5 at -29.44 dB -> PASS

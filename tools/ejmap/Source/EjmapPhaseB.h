@@ -136,6 +136,13 @@ inline constexpr double kGuardPerProcessS = 60.0, kGuardTextPassS = 180.0;
 inline double gainGuardS (int processes) { return kGuardTextPassS + kGuardPerProcessS * juce::jmax (0, processes); }
 // a probe trace is COMPLETE when it ends its stages ("stage<TAB>done"): only a complete trace is reused when a timed-out row resumes
 inline bool traceComplete (const juce::String& out) { return out.contains ("\nstage\tdone") || out.startsWith ("stage\tdone"); }
+// --phaseb-all / --phaseb-status take no --dry-run (10 Oct): the flag was silently ignored and a "dry" batch started loading every
+// product of the category; refused before anything runs or is deleted - the plan without loads is --run-all --dry-run
+inline juce::String refusedPhaseBFlag (const juce::StringArray& args)
+{
+    if (args.contains ("--dry-run")) return "--phaseb-all has no --dry-run: it would load every product it lists (and --redo would delete rows first). For the plan without loads use --run-all ... --dry-run";
+    return {};
+}
 // UNHOSTABLE (9 Oct, AVOX SYBIL: "refused An OS error occurred during initialisation of the plug-in (4097)" in every mode): the AU
 // refuses to initialise on this Mac - an answer, filed with the OS's text, never retried as a failure
 inline juce::String unhostableReason (const juce::String& out)

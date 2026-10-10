@@ -270,6 +270,10 @@ inline juce::StringArray tailProbeArgs (const juce::String& burstMs, const juce:
 }
 inline constexpr double kSendOnlyDb = -60.0;                        // section 6: no dry at the dry end (relative to the input) -> send_only
 inline const std::vector<std::pair<const char*, double>>& mixSteps() { static const std::vector<std::pair<const char*, double>> k { { "touch", -18.0 }, { "some", -12.0 }, { "lots", -6.0 }, { "drenched", 0.0 } }; return k; }
+// v0.2 (Sean's ruling 8 Oct): DELAYS get their own, lower card steps - on a rap vocal the default is about 3 % card mix (about -30 dB wet
+// below dry), capped at 5 % (about -26 dB). The four steps above are reverb's only; a delay's mix acceptance writes these two
+inline const std::vector<std::pair<const char*, double>>& delayMixSteps() { static const std::vector<std::pair<const char*, double>> k { { "default", -30.0 }, { "cap", -26.0 } }; return k; }
+inline const std::vector<std::pair<const char*, double>>& mixStepsFor (const juce::String& kind) { return kind == "delay" ? delayMixSteps() : mixSteps(); }
 inline const std::vector<std::pair<const char*, double>>& lengthTargets() { static const std::vector<std::pair<const char*, double>> k { { "short", 0.5 }, { "medium", 1.3 }, { "long", 2.6 }, { "huge", 5.0 } }; return k; }   // the middle of each band (section 5)
 inline constexpr double kAcceptMixDb = 1.0, kAcceptDecayPct = 15.0, kAcceptTimePct = 2.0, kAcceptTimeMs = 1.0, kAcceptSyncPct = 2.0, kAcceptRepeatDb = 3.0, kRepeatTargetDb = -30.0;
 

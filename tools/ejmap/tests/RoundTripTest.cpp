@@ -8594,6 +8594,15 @@ void testDraftsPass()
                && c.getProperty ("verdict", "") == "cannot_full_wet" && std::abs ((double) c.getProperty ("dry_db", 0.0) + 31.7) < 1e-9 && n3.joinIntoString ("|").contains ("cannot_full_wet")
                && e.getProperty ("verdict", "") == "full_wet" && n1.isEmpty() && n2.isEmpty(),
                "rd RD9: full_wet from the mix map - relative levels as recorded, old absolute ones less the -15.01 dBFS input, an unread dry is silence; 40 dB down is full_wet, 31.7 is cannot_full_wet");
+        // RD10 (10 Oct, the v0.2 gap list): delays get their own lower card steps (-30 default, -26 cap); reverb keeps Touch..Drenched
+        {
+            juce::StringArray dw, rw; std::vector<double> dt, rt;
+            for (const auto& [w, x] : ejmap::reverbdelay::mixStepsFor ("delay")) { dw.add (w); dt.push_back (x); }
+            for (const auto& [w, x] : ejmap::reverbdelay::mixStepsFor ("reverb")) { rw.add (w); rt.push_back (x); }
+            check (dw.joinIntoString (",") == "default,cap" && dt == std::vector<double> { -30.0, -26.0 } && rw.joinIntoString (",") == "touch,some,lots,drenched"
+                   && rt == std::vector<double> { -18.0, -12.0, -6.0, 0.0 },
+                   "rd RD10: a delay's mix acceptance writes its own steps (default -30, cap -26 dB wet re dry); reverb keeps its four (" + dw.joinIntoString (",") + " | " + rw.joinIntoString (",") + ")");
+        }
         // E28 default_bands by measured range
         auto band = [&] (const char* name, const char* verdict, double lo, double hi) { juce::Array<juce::var> fm { mk ({ { "norm", 0.0 }, { "centre_hz", lo } }), mk ({ { "norm", 1.0 }, { "centre_hz", hi } }) }; return mk ({ { "name", name }, { "verdict", verdict }, { "freq_map", fm } }); };
         juce::Array<juce::var> bands { band ("LF", "measured", 30.0, 300.0), band ("LMF", "measured", 200.0, 2000.0), band ("HMF", "measured", 800.0, 8000.0), band ("HF", "measured", 3000.0, 16000.0), band ("Air", "dynamic", 5000.0, 20000.0) };
@@ -8689,6 +8698,11 @@ void testRunAll()
                && argsFor (*fx, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --category multiband --category gainall --out /c",
                "runall RA8: stale checks force the follow-up (done) ahead of the resumed steps; the fixups step runs for a pre-stamp state only; its resume drops --redo (" + names.joinIntoString (",") + ")");
     }
+    // PB-DRY (10 Oct): --phaseb-all refuses --dry-run (anywhere in the line, the last argument too) instead of ignoring it and loading
+    check (ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--category", "delay", "--out", "/c", "--dry-run" }).contains ("no --dry-run")
+           && ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--dry-run", "--category", "delay" }).isNotEmpty()
+           && ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--redo", "multiband,unfinished", "--category", "multiband" }).isEmpty(),
+           "phaseb PB-DRY: --phaseb-all with --dry-run is refused before anything loads or is deleted; a line without it is untouched");
     // RA9 (10 Oct, the night lines): the notes above the plan say what THIS plan does - no fixups note once fixups is done (Sean's state after
     // night 1 still has an unstamped multiband), and stale checks under a --steps without followup are said as left stale
     {
