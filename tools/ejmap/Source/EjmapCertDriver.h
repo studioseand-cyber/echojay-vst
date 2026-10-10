@@ -6382,8 +6382,7 @@ inline int runRunAll (const RunAllOptions& ro)
     for (const auto& f : cert.getChildFile ("profiles").findChildFiles (juce::File::findFiles, false, "*.tonecheck.json")) if (toneCheckStale (juce::JSON::parse (f.loadFileAsString()))) ++staleN;
     if (staleN > 0) forced.add ("followup");
     const auto p = plan (st, ro.steps, ro.skip, forced); const int totalN = (int) p.size();
-    if (staleN > 0) say ("RUN-ALL: " + juce::String (staleN) + " tone check(s) made by another build than " + runningBuild() + ": the follow-up runs again (stale checks first)");
-    if (runall::fixupOwed (st)) say ("RUN-ALL: multiband / gain-all finished by a build before the 9-10 Oct fixes: the fixups step re-runs multiband and the gain-all rows that timed out or failed");
+    for (const auto& n : planNotes (st, p, staleN, runningBuild())) say (n);
     const auto until = deadlineFor (ro.until, juce::Time::getCurrentTime());
     if (ro.until.isNotEmpty() && ! until) { say ("RUN-ALL: --until '" + ro.until + "' is not HH:MM"); return 2; }
     const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);

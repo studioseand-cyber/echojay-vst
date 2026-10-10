@@ -8689,6 +8689,21 @@ void testRunAll()
                && argsFor (*fx, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --category multiband --category gainall --out /c",
                "runall RA8: stale checks force the follow-up (done) ahead of the resumed steps; the fixups step runs for a pre-stamp state only; its resume drops --redo (" + names.joinIntoString (",") + ")");
     }
+    // RA9 (10 Oct, the night lines): the notes above the plan say what THIS plan does - no fixups note once fixups is done (Sean's state after
+    // night 1 still has an unstamped multiband), and stale checks under a --steps without followup are said as left stale
+    {
+        State sean; for (const char* n : { "preflight", "followup", "multiband", "limiter", "deesser", "gain_all", "gain_timing" }) sean[n].state = "done";
+        const auto p1 = plan (sean, juce::StringArray::fromTokens ("preflight,followup,fixups,eq,drafts", ",", ""), {}, { "followup" });
+        const auto n1 = planNotes (sean, p1, 86, "00f2ae79");
+        State after = sean; after["fixups"].state = "done"; after["fixups"].build = "00f2ae79";
+        const auto p2 = plan (after, juce::StringArray::fromTokens ("preflight,followup,fixups,reverb_delay,drafts", ",", ""), {});
+        const auto n2 = planNotes (after, p2, 0, "00f2ae79");
+        const auto p3 = plan (after, juce::StringArray::fromTokens ("preflight,reverb_delay,drafts", ",", ""), {}, { "followup" });
+        const auto n3 = planNotes (after, p3, 5, "00f2ae79");
+        check (n1.size() == 2 && n1[0].contains ("86 tone check(s)") && n1[0].contains ("runs again") && n1[1].contains ("fixups step re-runs")
+               && fixupOwed (after) && n2.isEmpty() && n3.size() == 1 && n3[0].contains ("not in this plan") && ! n3[0].contains ("runs again"),
+               "runall RA9: the fixups note only when fixups is planned; stale checks a plan does not re-check are said as left stale (" + n1.joinIntoString (" / ") + " | " + n2.joinIntoString (" / ") + " | " + n3.joinIntoString (" / ") + ")");
+    }
     // RA7 (8 Oct, the switch-over): a state file from an earlier build keeps its done steps done, but preflight and drafts run every time
     {
         State st; for (const char* n : { "preflight", "limiter", "deesser", "drafts" }) st[n].state = "done"; st["eq"].state = "started";

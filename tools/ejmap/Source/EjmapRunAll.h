@@ -126,6 +126,18 @@ inline std::vector<const Step*> plan (const State& st, const juce::StringArray& 
     }
     return p;
 }
+// the notes the run prints above its plan (10 Oct, the night lines): each one names what THIS plan does - a fixups note only when the
+// fixups step is planned (once done, a pre-stamp multiband / gain_all no longer means anything runs), and stale checks the plan does
+// not re-check (a --steps without followup) said as left stale, never as "runs again"
+inline juce::StringArray planNotes (const State& st, const std::vector<const Step*>& p, int staleN, const juce::String& build)
+{
+    auto planned = [&] (const char* n) { for (const auto* x : p) if (x->name == n) return true; return false; };
+    juce::StringArray notes;
+    if (staleN > 0) notes.add ("RUN-ALL: " + juce::String (staleN) + " tone check(s) made by another build than " + build
+                               + (planned ("followup") ? ": the follow-up runs again (stale checks first)" : ": the follow-up is not in this plan (--steps / --skip) - they stay stale"));
+    if (planned ("fixups") && fixupOwed (st)) notes.add ("RUN-ALL: multiband / gain-all finished by a build before the 9-10 Oct fixes: the fixups step re-runs multiband and the gain-all rows that timed out or failed");
+    return notes;
+}
 inline bool isResume (const State& st, const juce::String& step) { return st.count (step) && (st.at (step).state == "started" || st.at (step).state == "failed"); }
 
 // THE DEADLINE: "07:00" -> the next 07:00 after `now` (today's if still ahead, else tomorrow's); empty -> none
