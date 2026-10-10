@@ -322,4 +322,42 @@ v2 Allround     white_burst                 96000 Hz 2ch gain +10.0 ceil +0.0 : 
 v2 Allround     white_burst                 96000 Hz 2ch gain +10.0 ceil -1.0 : arbiter  -0.54 dB re ceiling (    0 overs)  meter96  -0.24
 v2 Allround     white_burst                 96000 Hz 2ch gain +15.0 ceil +0.0 : arbiter  -0.52 dB re ceiling (    0 overs)  meter96  -0.26
 v2 Allround     white_burst                 96000 Hz 2ch gain +15.0 ceil -1.0 : arbiter  -0.52 dB re ceiling (    0 overs)  meter96  -0.27
-v2 Allround     pink
+v2 Allround     pink_burst                  96000 Hz 2ch gain  +6.0 ceil +0.0 : arbiter  -0.09 dB re ceiling (    0 overs)  meter96  -0.04
+v2 Allround     pink_burst                  96000 Hz 2ch gain  +6.0 ceil -1.0 : arbiter  -0.09 dB re ceiling (    0 overs)  meter96  -0.05
+v2 Allround     pink_burst                  96000 Hz 2ch gain +10.0 ceil +0.0 : arbiter  -0.09 dB re ceiling (    0 overs)  meter96  +0.09
+v2 Allround     pink_burst                  96000 Hz 2ch gain +10.0 ceil -1.0 : arbiter  -0.08 dB re ceiling (    0 overs)  meter96  +0.07
+v2 Allround     pink_burst                  96000 Hz 2ch gain +15.0 ceil +0.0 : arbiter  -0.08 dB re ceiling (    0 overs)  meter96  +0.02
+v2 Allround     pink_burst                  96000 Hz 2ch gain +15.0 ceil -1.0 : arbiter  -0.08 dB re ceiling (    0 overs)  meter96  +0.01
+v2 Allround     square_100                  96000 Hz 2ch gain  +6.0 ceil +0.0 : arbiter  -0.05 dB re ceiling (    0 overs)  meter96  -0.06
+v2 Allround     square_100                  96000 Hz 2ch gain  +6.0 ceil -1.0 : arbiter  -0.05 dB re ceiling (    0 overs)  meter96  -0.06
+v2 Allround     square_100                  96000 Hz 2ch gain +10.0 ceil +0.0 : arbiter  -0.05 dB re ceiling (    0 overs)  meter96  -0.06
+v2 Allround     square_100                  96000 Hz 2ch gain +10.0 ceil -1.0 : arbiter  -0.05 dB re ceiling (    0 overs)  meter96  -0.06
+v2 Allround     square_100                  96000 Hz 2ch gain +15.0 ceil +0.0 : arbiter  -0.05 dB re ceiling (    0 overs)  meter96  -0.06
+v2 Allround     square_100                  96000 Hz 2ch gain +15.0 ceil -1.0 : arbiter  -0.05 dB re ceiling (    0 overs)  meter96  -0.06
+v2 Allround     square_1000                 96000 Hz 2ch gain  +6.0 ceil +0.0 : arbiter  -0.14 dB re ceiling (    0 overs)  meter96  -0.22
+v2 Allround     square_1000                 96000 Hz 2ch gain  +6.0 ceil -1.0 : arbiter  -0.14 dB re ceiling (    0 overs)  meter96  -0.22
+v2 Allround     square_1000                 96000 Hz 2ch gain +10.0 ceil +0.0 : arbiter  -0.14 dB re ceiling (    0 overs)  meter96  -0.22
+v2 Allround     square_1000                 96000 Hz 2ch gain +10.0 ceil -1.0 : arbiter  -0.14 dB re ceiling (    0 overs)  meter96  -0.22
+v2 Allround     square_1000                 96000 Hz 2ch gain +15.0 ceil +0.0 : arbiter  -0.14 dB re ceiling (    0 overs)  meter96  -0.22
+v2 Allround     square_1000                 96000 Hz 2ch gain +15.0 ceil -1.0 : arbiter  -0.14 dB re ceiling (    0 overs)  meter96  -0.22
+v2 Allround     tone_20000                  96000 Hz 2ch gain  +6.0 ceil +0.0 : arbiter  -1.08 dB re ceiling (    0 overs)  meter96  -1.09
+v2 Allround     tone_20000                  96000 Hz 2ch gain  +6.0 ceil -1.0 : arbiter  -1.08 dB re ceiling (    0 overs)  meter96  -1.09
+v2 Allround     tone_20000                  96000 Hz 2ch gain +10.0 ceil +0.0 : arbiter  -1.08 dB re ceiling (    0 overs)  meter96  -1.09
+v2 Allround     tone_20000                  96000 Hz 2ch gain +10.0 ceil -1.0 : arbiter  -1.08 dB re ceiling (    0 overs)  meter96  -1.09
+v2 Allround     tone_20000                  96000 Hz 2ch gain +15.0 ceil +0.0 : arbiter  -1.08 dB re ceiling (    0 overs)  meter96  -1.09
+v2 Allround     tone_20000                  96000 Hz 2ch gain +15.0 ceil -1.0 : arbiter  -1.08 dB re ceiling (    0 overs)  meter96  -1.09
+v2 Allround     tone_22000                  96000 Hz 2ch gain  +6.0 ceil +0.0 : arbiter  -1.36 dB re ceiling (    0 overs)  meter96  -1.37
+v2 Allround     tone_22000                  96000 Hz 2ch gain  +6.0 ceil -1.0 : arbiter  -1.36 dB re ceiling (    0 overs)  meter96  -1.37
+v2 Allround     tone_22000                  96000 Hz 2ch gain +10.0 ceil +0.0 : arbiter  -1.36 dB re ceiling (    0 overs)  meter96  -1.37
+v2 Allround     tone_22000                  96000 Hz 2ch gain +10.0 ceil -1.0 : arbiter  -1.36 dB re ceiling (    0 overs)  meter96  -1.37
+v2 Allround     tone_22000                  96000 Hz 2ch gain +15.0 ceil +0.0 : arbiter  -1.36 dB re ceiling (    0 overs)  meter96  -1.37
+v2 Allround     tone_22000                  96000 Hz 2ch gain +15.0 ceil -1.0 : arbiter  -1.36 dB re ceiling (    0 overs)  meter96  -1.37
+v2 Allround     tone_23500                  96000 Hz 2ch gain  +6.0 ceil +0.0 : arbiter  -0.81 dB re ceiling (    0 overs)  meter96  -0.84
+v2 Allround     tone_23500                  96000 Hz 2ch gain  +6.0 ceil -1.0 : arbiter  -0.81 dB re ceiling (    0 overs)  meter96  -0.84
+v2 Allround     tone_23500                  96000 Hz 2ch gain +10.0 ceil +0.0 : arbiter  -0.81 dB re ceiling (    0 overs)  meter96  -0.84
+v2 Allround     tone_23500                  96000 Hz 2ch gain +10.0 ceil -1.0 : arbiter  -0.81 dB re ceiling (    0 overs)  meter96  -0.84
+v2 Allround     tone_23500                  96000 Hz 2ch gain +15.0 ceil +0.0 : arbiter  -0.81 dB re ceiling (    0 overs)  meter96  -0.84
+v2 Allround     tone_23500                  96000 Hz 2ch gain +15.0 ceil -1.0 : arbiter  -0.81 dB re ceiling (    0 overs)  meter96  -0.84
+
+==== SUMMARY (arbiter: exact band-limited peak, over = more than +0.02 dB above the ceiling) ====
+  v2 Allround     worst  -0.01 dB above the ceiling (pink_burst 44100 Hz 1ch +10 dB ceil -1); configs over by > 0.02 dB: 0 of 360
