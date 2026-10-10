@@ -58,6 +58,13 @@ REPO=~/src/echojay-vst            # wherever the checkout is
 #   drafts on every --run-all run. Derive-only EQUAL to dc77d0a5 on the four sets with 0 differences, build tree and packaged
 #   (tools/ejmap/cert-traces/2026-10-08-switch/); packaged at ~/Desktop/ejmap-dist-8oct-e. Sean runs a6c85e6f tonight WITHOUT multiband
 #   and switches to this one on a later night (runbook "Tonight and the switch-over"). a6c85e6f IS ITS FALLBACK.
+#   THE 10 OCT BUILD (Kathy's rulings on Sean's night): 00f2ae79 - c7f762ed + the pair-twin fix (MAGNUM-K), neutral instantiate as the
+#   sweep read it (the VBCs), the linked twin never neutral (AMEK), output-only meters never neutral, the re-check rule (a tone check
+#   by another build is stale; --run-all forces the follow-up), the fixups step folded into --run-all, the build set in main().
+#   Equality vs dc77d0a5: differences ONLY from the VBC instantiate fix (instantiate_seen on re-derived records; 25 neutrals), the
+#   linked-twin fix (10 neutrals), the meter rule (15 neutrals) - every one classified, UNEXPLAINED 0, build tree and packaged
+#   (tools/ejmap/cert-traces/2026-10-10-cut/). Packaged at ~/Desktop/ejmap-dist-10oct-b. 5ab8352b IS ITS FALLBACK.
+#   (c2dd8d8d at ~/Desktop/ejmap-dist-10oct: superseded - its command line stamped no build.)
 #   THE FIX-UP BUILD (9 Oct, Kathy's rulings on Sean's cert 2): c7f762ed - 5ab8352b + the multiband fixes (limiter stages, measured
 #   topology, depth / level / range enable written as neutral writes, sidechain controls never bands, per-band crossovers) + the
 #   gain-all fixes (declared guard with resume, labels in chunks, --redo unfinished, no_pool reaching gain-all's existing rows,

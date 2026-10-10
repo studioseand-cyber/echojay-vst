@@ -1,0 +1,25 @@
+THE SWITCH-OVER TO 00f2ae79, rehearsed on a copy of Sean's cert 2 + cert 3 (10 Oct)
+
+dry-run of: --run-all --skip nothing_nominated --until 07:00
+RUN-ALL: 83 tone check(s) made by another build than 00f2ae79: the follow-up runs again (stale checks first)
+RUN-ALL: multiband / gain-all finished by a build before the 9-10 Oct fixes: the fixups step re-runs multiband and the gain-all rows that timed out or failed
+RUN-ALL: 16 step(s) to run, 10 done or skipped; ETA 29:26:30; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  followup                 --cert-tonecheck-all --out <cert>   (~0:40:00, the compressor follow-up)
+  no_pool           RESUME --phaseb-all --out <cert>   (~3:00:00, the Soundtoys / 2C empty-list rows (~40 min per delay or reverb))
+  fixups                   --phaseb-all --redo multiband,unfinished --category multiband --category gainall --out <cert>   (~1:10:00, multiband again (9 Oct fixes) + the gain-all rows that timed out o
+  categorise               --categorise-propose --include-pace --out <cert>   (~1:30:00, the review sheet for the uncategorised (never categories.json))
+  combined                 --phaseb-all --redo combined --out <cert>   (~0:40:00, combined settings)
+  material                 --phaseb-all --redo material --out <cert>   (~1:10:00, real material)
+  frequency                --phaseb-all --redo frequency --out <cert>   (~1:10:00, three frequencies)
+  samplerate               --phaseb-all --redo samplerate --out <cert>   (~0:08:00, three sample rates on a spread of ten)
+  tuners                   --phaseb-all --redo tuners --out <cert>   (~0:30:00, tuners (humanize, flex))
+  eq                RESUME --phaseb-all --category eq --out <cert>   (~2:30:00, EQ (adaptive frequency points))
+  saturation               --phaseb-all --redo saturation --out <cert>   (~2:00:00, saturation + amp sims)
+  reverb_delay             --phaseb-all --redo reverb,delay --out <cert>   (~3:11:40, reverb and delay (role tests twice: x1.5-1.65 rehearsed, 8 Oct))
+  transient_gate           --phaseb-all --redo transient,gate --out <cert>   (~0:31:40, transient shapers and gates (role tests twice: x1.3-1.65 rehearsed, 8 Oct))
+  strips                   --phaseb-all --redo strips --out <cert>   (~14:00:00, channel strips, every section drafted)
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
+
+real re-check (narrowed to one stale product): bx_opto 5 Oct check (no build) -> re-checked under 00f2ae79, g 2 PASS 1.98 dB, 9 deep levels, exported; no other check changed; every other step state kept
+CLA-76 (m): installed Waves 12.0.0 here vs record 15.0.70 -> section 11 refused (correct); SSL Native X-Comp v6: PACE iLok window on this Mac, killed by the probe's watch, filed needs_licence (no click)

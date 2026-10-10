@@ -1,0 +1,42 @@
+== current (build tree 00f2ae79)
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 94
+  profiles: 82 old / 82 new, only-old [], only-new [], differ 17
+  controls: 45 old / 45 new, only-old [], only-new [], differ 0
+  38928 x record: instantiate_seen added (VBC instantiate fix)
+    21 x profile: neutral at the sweep's instantiate value (VBC instantiate fix)
+    10 x profile: linked twin no longer a neutral (linked-twin fix)
+     9 x profile: output-only meter no longer a neutral (meter rule)
+     twin: AMEK Mastering Compressor: Threshold 2; Abbey Road RS124 (s): Input Control R; DPR-402 (s): Threshold R/S; Millennia TCL-2: Threshold 2; MixWave DW Fearn VT-7: Right Threshold; SPL IRON: Threshold R; UnFairchild: R Threshold; VBC FG-MU: Threshold Right; Vertigo VSC-2: Threshold B; elysia alpha master: Threshold 2
+     meter: MixWave DW Fearn VT-7: Gain Reduction; SSL Native X-Comp v6: Max GR; Vertigo VSC-2: Gain Reduction A; Vertigo VSC-2: Gain Reduction B; bx_townhouse Buss Compressor: Gain Reduction; elysia alpha master: Gain Reduction 1; elysia alpha master: Gain Reduction 2; elysia alpha mix: Gain Reduction; elysia mpressor: Gain Reduction
+     inst: VBC FG-Grey: Attack 0.1@0.0 -> 3.0@0.5; VBC FG-Grey: Release 0.1@0.0 -> 0.6@0.5; VBC FG-MU: Attack Left 0.0@0.0 -> 2.5@0.5; VBC FG-MU: Attack Right 0.0@0.0 -> 2.5@0.5; VBC FG-MU: Input Gain Left -24.0dB@0.0 -> 0.0dB@0.5; VBC FG-MU: Input Gain Right -24.0dB@0.0 -> 0.0dB@0.5; VBC FG-MU: Release Left 0.0@0.0 -> 2.5@0.5; VBC FG-MU: Release Right 0.0@0.0 -> 2.5@0.5; VBC FG-Red: Attack 0.0@0.0 -> 4.0@0.4; VBC FG-Red: Release 0.0@0.0 -> 5.5@0.55; VBC Rack: Grey Attack 0.1@0.0 -> 3.0@0.5; VBC Rack: Grey Release 0.1@0.0 -> 0.6@0.5 ...
+  UNEXPLAINED: 0
+== seanzip (build tree 00f2ae79)
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 73
+  profiles: 45 old / 45 new, only-old [], only-new [], differ 6
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+  37694 x record: instantiate_seen added (VBC instantiate fix)
+     4 x profile: output-only meter no longer a neutral (meter rule)
+     4 x profile: neutral at the sweep's instantiate value (VBC instantiate fix)
+     meter: SSL Native X-Comp v6: Max GR; bx_townhouse Buss Compressor: Gain Reduction; elysia alpha mix: Gain Reduction; elysia mpressor: Gain Reduction
+     inst: VBC FG-Grey: Attack 0.1@0.0 -> 3.0@0.5; VBC FG-Grey: Release 0.1@0.0 -> 0.6@0.5; VBC FG-Red: Attack 0.0@0.0 -> 4.0@0.4; VBC FG-Red: Release 0.0@0.0 -> 5.5@0.55
+  UNEXPLAINED: 0
+== cert_sc (build tree 00f2ae79)
+  rows 90 90 state/reason diffs 0 []
+  fixtures: 19 old / 19 new, only-old [], only-new [], differ 7
+  profiles: 7 old / 7 new, only-old [], only-new [], differ 1
+  controls: 2 old / 2 new, only-old [], only-new [], differ 0
+   590 x record: instantiate_seen added (VBC instantiate fix)
+     1 x profile: output-only meter no longer a neutral (meter rule)
+     meter: elysia mpressor: Gain Reduction
+  UNEXPLAINED: 0
+== cert_tc35 (build tree 00f2ae79)
+  rows 87 87 state/reason diffs 0 []
+  fixtures: 14 old / 14 new, only-old [], only-new [], differ 5
+  profiles: 4 old / 4 new, only-old [], only-new [], differ 1
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+   558 x record: instantiate_seen added (VBC instantiate fix)
+     1 x profile: output-only meter no longer a neutral (meter rule)
+     meter: elysia mpressor: Gain Reduction
+  UNEXPLAINED: 0

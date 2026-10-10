@@ -1,3 +1,29 @@
+# TONIGHT, 10 Oct (Kathy's rulings) — switch to 00f2ae79, the same line
+
+Build **00f2ae79** from the commit on your Mac as before (packaged and signed here at ~/Desktop/ejmap-dist-10oct-b; 5ab8352b is its
+fallback). Install it over 5ab8352b - same folder, same `cert/run_all.json`, nothing deleted - then the SAME line as last night:
+
+```
+caffeinate -i "$BIN" --run-all --skip nothing_nominated --until 07:00
+```
+
+What it does differently from last night (rehearsed on a copy of your cert 2 + cert 3, 10 Oct):
+- **The stale tone checks go first.** Every tone check made by an older build is re-checked under 00f2ae79 - the follow-up step
+  runs again although it is marked done (85 checks on your folder: the 38 from 5 Oct, the ones the 9-10 Oct fixes change - VBC
+  FG-Red / Grey / MU / Rack, AMEK, the linked pairs, the meters - and, by the rule, the rest once). MAGNUM-K is re-swept with its
+  pair fix. A check made by 00f2ae79 is never re-run by 00f2ae79.
+- **The fix-up items are folded in:** right after no_pool resumes, a `fixups` step re-runs every multiband row (the 9 Oct fixes)
+  and the gain-all rows that timed out or failed (PrimalTap, LISA, Auto-Tune Vocal EQ, Vocal Reverb, EchoBoy resume from their
+  traces; bx_rooMS reads its labels in chunks; 2C-Aether is read again; AVOX SYBIL is filed unhostable). No separate fix-up night.
+- Everything else you finished stays finished; EQ and no_pool resume where they stopped.
+- Order: preflight, the follow-up (stale checks), no_pool (resumes), fixups, categorise, combined, material, frequency, samplerate,
+  tuners, EQ (resumes), saturation, reverb / delay, transients / gates, strips, drafts. About 1.5 h more than last night's plan for
+  the re-checks and the fix-ups; still about four nights in all.
+
+The 9 Oct section below (the review picks copy, the line) still holds; this replaces only the build.
+
+---
+
 # TONIGHT, 9 Oct (Kathy's ruling) — 5ab8352b, the run that is still owed
 
 You are on **5ab8352b** (built from the commit on your Mac; your preflight passed). Your `cert/run_all.json` already has preflight,
