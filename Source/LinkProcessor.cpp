@@ -74,8 +74,9 @@ LinkProcessor::LinkProcessor()
         LoudnessLoop::Stage st;
         if (match)
         {
-            st.name    = "rack_out";
-            st.ready   = [] { return true; };
+            st.name       = "rack_out";
+            st.outsideTap = true;   // applied AFTER the chain-output tally the loop measures
+            st.ready      = [] { return true; };
             st.readDb  = [this] { return gainDb_.load (std::memory_order_relaxed); };
             st.writeDb = [this] (float db) { setGainDb (db); };   // clamps, mirrors to the slot, dirty-marks
             return st;
@@ -86,20 +87,42 @@ LinkProcessor::LinkProcessor()
             const int n = chainHost.getNumSlots();
             return n > 0 && ChainHost::isLimiterLikeName (chainHost.getSlotInfo (n - 1).name);
         };
+        // THE IN GAIN, AND NOT EVERY LIMITER HAS ONE. An EchoJay Limiter carries input_db (L's hand-off: the in
+        // gain for this move, ramped in the engine). A THIRD-PARTY limiter does not, and writing input_db at it
+        // is a param it skips - which is why leg D read a landing of 0.00 against a third-party limiter last.
+        // So: input_db where the device has it, the slot's own PRE-TRIM otherwise, which ChainHost provides for
+        // any slot of any brand.
         st.readDb = [this] () -> float
         {
             const int n = chainHost.getNumSlots(); if (n <= 0) return 0.0f;
             if (auto* d = dynamic_cast<EedDeviceProcessor*> (chainHost.getSlotProcessor (n - 1)))
-                return (float) d->getParamValue ("input_db");
-            return 0.0f;
+                if (d->paramSchema().find ("input_db") != nullptr)
+                    return (float) d->getParamValue ("input_db");
+            return chainHost.getSlotPreTrimDb (n - 1);
         };
         st.writeDb = [this] (float db)
         {
             const int n = chainHost.getNumSlots(); if (n <= 0) return;
-            auto* pp = new juce::DynamicObject();
-            pp->setProperty ("input_db", (double) juce::jlimit (-12.0f, 12.0f, db));
-            auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-            chainHost.setSlotStructuredSettings (n - 1, juce::var (w));
+            const float v = juce::jlimit (-12.0f, 12.0f, db);
+            // SYMMETRIC WITH readDb ABOVE, and it was not: I fixed the read to fall back to the slot's pre-trim
+            // for a limiter with no input_db and left the WRITE writing input_db unconditionally. A third-party
+            // limiter skips that param, so the landing read back as 0.00 and leg D stayed red through a fix that
+            // only touched half the pair. The capability test belongs on both sides or neither.
+            if (auto* d = dynamic_cast<EedDeviceProcessor*> (chainHost.getSlotProcessor (n - 1)))
+                if (d->paramSchema().find ("input_db") != nullptr)
+                {
+                    // Through the HOST so the slot's stored params carry it and a reopen restores it.
+                    auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", (double) v);
+                    auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+                    chainHost.setSlotStructuredSettings (n - 1, juce::var (w));
+                    // The saved state cache, not only the stored params - see the V2's copy of this write for
+                    // the fault leg Z3 caught: the live param held the landing and the saved blob did not.
+                    // Every Link runs its OWN loop on its OWN rack, so every Link needs its own capture.
+                    chainHost.captureSlotStateNow (n - 1);
+                    return;
+                }
+            chainHost.setSlotPreTrimDb (n - 1, v);   // any brand: the slot's own IN trim
+            chainHost.captureSlotStateNow (n - 1);
         };
         return st;
     };

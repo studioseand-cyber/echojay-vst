@@ -114,6 +114,16 @@ FRAMEWORKS = ["CoreAudioKit","DiscRecording","CoreAudio","CoreMIDI","AudioToolbo
               "UniformTypeIdentifiers","AVFoundation","CoreMedia","AVKit"]
 SRC_ROOT = os.environ.get("EJ_SRC_ROOT") or ROOT   # EJ_SRC_ROOT: a checkout whose headers match EJ_LIB (a RED run pairs the pre-round headers with the pre-round lib)
 cmd = ["clang++"] + out + os.environ.get("EJ_CXXFLAGS", "").split() + ["-I", os.path.join(SRC_ROOT, "Source"), SRC, LIB]   # EJ_CXXFLAGS: e.g. -DEJ_GUARD_TODAY
+# 10 Oct 2026: the V2 archive references the Playback grid's binary data (juce_add_binary_data(EchoJayPlaybackArt),
+# linked into the EchoJay target by CMakeLists.txt:441), so anything linking that archive needs the art lib too or
+# the link fails on EJPlaybackArt::festival_field_jpg and its siblings. tools/tests/CMakeLists.txt already does
+# this for the ctest guards; this is the same fix for the standalone builder. Appended only when it exists and
+# only for the V2 archive, so a Link-side or EJ_LIB run is untouched.
+if "libEchoJay V2_SharedCode.a" in LIB:
+    for art in (os.path.join(os.path.dirname(LIB), "..", "..", "libEchoJayPlaybackArt.a"),
+                os.path.join(ROOT, "build-release/libEchoJayPlaybackArt.a"),
+                os.path.join(ROOT, "build/libEchoJayPlaybackArt.a")):
+        if os.path.exists(art): cmd.append(os.path.normpath(art)); break
 for f in FRAMEWORKS: cmd += ["-framework", f]
 cmd += ["-lcurl", "-o", OUT]
 

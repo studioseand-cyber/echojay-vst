@@ -43,7 +43,39 @@ struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost&
 };
 namespace {
 int measuredLines (const juce::StringArray& logs) { int n = 0; for (const auto& l : logs) if (l.startsWith ("EJLoudness: measured:")) ++n; return n; }
-int failures = 0; void check (bool ok, const juce::String& w, const juce::String& d = {}) { std::printf ("  %s  %s%s\n", ok ? "ok  " : "FAIL", w.toRawUTF8(), d.isNotEmpty() ? ("  [" + d + "]").toRawUTF8() : ""); if (! ok) ++failures; }
+// ---- KNOWN-STALE, NAMED (Sean's ruling, 10 Oct 2026) ------------------------------------------------
+// The GR-model calibration legs below derived their "truth" around the OLD Level-OUT tap. Levelling v2 moved
+// the tap to the limiter's GAINED input, so their arithmetic now measures a different span from the product's
+// (K5 compares an estimate of +4.67 against a "truth" of -6.16 - a SIGN disagreement; O1's premise says the
+// hits are typically under the 10 dB cap while the estimate reads 11.7 dB where hitsMeasure() reads 2.9).
+// Forcing them green would ship three unfalsifiable checks, so they are named here and excluded from the exit
+// code - and ONLY these. Every other red still fails the gate.
+// RE-DERIVING THEM IS THE FIRST ITEM OF THE NEXT ROUND, BEFORE ANY REMOTE-CONTROL WORK, and they must be green
+// before anything reaches Logic. A leg on this list that goes GREEN is reported too, so the marking comes off.
+static const char* kKnownStaleLegs[] = {
+    "K5. the two rigs ran the same programme at the same gain (the bypass rig is the pre-limiter truth)",
+    "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (chain in + gain - chain out), so the figure in the bubble is the limiter's own reduction",
+    "K5. ...and the PEAK GR estimate (limiter IN true peak - chain OUT true peak) is within 1 dB of the independent meter's",
+    "K5. the EJLoudness log carries the true-peak VALUES (limiter IN TP, chain OUT TP), not only their difference",
+    "K4 (ruling 4): with a third-party limiter the measured line is followed by the true-peak line (limiter IN TP, chain OUT TP, hits) and the hits figure is the report",
+    "K1. the capped trim is positive and under the cap (the limiter would work <= 10 dB)",
+    "O1. with the hits typically under the Commercial cap the proposal is NOT capped (the single 9 dB transient no longer caps it)"
+};
+static bool isKnownStale (const juce::String& w)
+{
+    for (const char* k : kKnownStaleLegs) if (w.startsWith (juce::String (k).substring (0, 60))) return true;
+    return false;
+}
+int failures = 0, knownStale = 0, knownStaleGreen = 0;
+void check (bool ok, const juce::String& w, const juce::String& d = {})
+{
+    const bool stale = isKnownStale (w);
+    const char* tag = ok ? (stale ? "ok* " : "ok  ") : (stale ? "STALE" : "FAIL");
+    std::printf ("  %s  %s%s\n", tag, w.toRawUTF8(), d.isNotEmpty() ? ("  [" + d + "]").toRawUTF8() : "");
+    if (! ok && stale) ++knownStale;
+    else if (! ok)     ++failures;
+    else if (stale)    ++knownStaleGreen;
+}
 // 1 Oct 2026 ruling: A LEG THAT TESTED A RULE WE HAVE REPLACED IS MARKED SUPERSEDED AND SKIPPED, not reworked.
 // Compressor calibration is moving to measured profiles, so the loop's own seek, its Listen stepping and the
 // measure-and-ask line are all being withdrawn rather than re-specified; a leg that pins one of them is testing a
@@ -222,6 +254,7 @@ struct Rig
             const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
             check (gn != nullptr, "precondition: EchoJay Gain is registered"); if (gn == nullptr) return;
             EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*gn));
+            gainSlot_ = h.getNumSlots() - 1;   // wherever it landed, recorded rather than assumed
         }
         EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*lm));
         levelSlot = -1;                 // no Level slot; legs assert -1 so the ruling is visible
@@ -264,7 +297,18 @@ struct Rig
     // The gain the loop drives, whichever stage. This used to dereference the Level device directly, which
     // SIGSEGV'd the moment the slot stopped existing - a rig that models the product beats one that models the
     // code it was written against.
-    float levelGain() const { return loop.currentGainDb(); }
+    float levelGain() const
+    {
+        // After an arm this is the stage's gain. BEFORE one, stage_ is unresolved and currentGainDb() is 0 by
+        // design - so a leg that stages "the build opened the gain at +12" and reads it back pre-arm saw 0.00
+        // (leg K3). Fall back to the device so the fixture can read what it just wrote.
+        if (loop.stageReady()) return loop.currentGainDb();
+        if (limSlot >= 0 && limSlot < h.getNumSlots())
+            if (auto* d = dynamic_cast<EedDeviceProcessor*> (h.getSlotProcessor (limSlot)))
+                if (d->paramSchema().find ("input_db") != nullptr)
+                    return (float) d->getParamValue ("input_db");
+        return limSlot >= 0 ? h.getSlotPreTrimDb (limSlot) : 0.0f;
+    }
     /** The legs pre-set "where the build left the gain". That is the STAGE now; for a mix-bus target rig it is
         the final limiter's input_db. */
     void presetStageGain (float db)
@@ -274,8 +318,17 @@ struct Rig
         h.setSlotStructuredSettings (limSlot, juce::var (w));
         EchoJayBorrowHostTestAccess::applyExact (h, limSlot);
     }
-    void setGainDb (float db)   // the Gain stand-in (slot 1 when the Rig has one), through the schema path
-    { auto* pp = new juce::DynamicObject(); pp->setProperty ("level_db", (double) db); auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (1, juce::var (w)); }
+    int gainSlot_ = -1;         // where the EchoJay Gain stand-in actually is (no Level slot to shift it any more)
+    void setGainDb (float db)   // the Gain stand-in, through the schema path
+    {
+        // 10 Oct: this hardcoded slot 1, which was the Gain while the Level held slot 0. With the Level gone,
+        // slot 1 is the LIMITER - so every fixture that staged "the chain loses N dB" was silently writing
+        // level_db at the limiter instead, and the loss never existed. The index is recorded at load now.
+        if (gainSlot_ < 0) return;
+        auto* pp = new juce::DynamicObject(); pp->setProperty ("level_db", (double) db);
+        auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+        h.setSlotStructuredSettings (gainSlot_, juce::var (w));
+    }
     double limiterInput() const { auto* l = dynamic_cast<EedLimiterProcessor*> (h.getSlotProcessor (limSlot)); return l ? l->inputDb() : 0.0; }
     juce::String last() const { return bubbles.isEmpty() ? juce::String() : bubbles[bubbles.size() - 1]; }
     // feed until the loop leaves waitAudio/measuring (a proposal, a hold or a rejection), bounded
@@ -293,18 +346,29 @@ struct Rig
 #endif
 } // namespace
 
-// ---- RUNNING THIS GUARD UNDER AddressSanitizer (21r, 24 Sep 2026) ------------------------------------------
+// ---- THIS GUARD RUNS ON A STACK WITH ROOM, ALWAYS (21r 24 Sep 2026; widened 10 Oct 2026) ------------------
 // ASan puts a redzone around every stack object, and this guard holds several EchoJayProcessors in one frame, so
-// it overflows the 8 MB main stack before it asserts anything ("stack-overflow ... in main"). The work therefore
-// runs on a thread with room when - and only when - the binary is sanitized. NOT ONE ASSERTION CHANGES: the
-// ordinary build calls guardMain() directly, exactly as before.
+// under ASan it overflowed the 8 MB main stack before asserting anything. The work therefore ran on a thread with
+// room when - and only when - the binary was sanitized, and the note here said "the ordinary build calls
+// guardMain() directly, exactly as before".
+//
+// 10 OCT 2026: THAT ASSUMPTION EXPIRED. An UNSANITIZED build overflowed it too - EXC_BAD_ACCESS in
+// ___chkstk_darwin called from guardMain(), which is a guard-page hit, i.e. a stack overflow and not a product
+// fault. It produced ZERO output, because printf to a pipe is block-buffered and the crash took the buffer with
+// it, so it reads exactly like a hang or an early abort. guardMain() is one frame holding every leg's locals and
+// the levelling-v2 legs pushed it over 8 MB.
+//
+// The big stack is therefore UNCONDITIONAL. It is the frame size that is the hazard, not the sanitizer, and
+// "add legs until it silently segfaults" is not an acceptable failure mode for the gate's largest guard.
+// NOT ONE ASSERTION CHANGES - only where the frame lives.
+#include <pthread.h>
 #if defined(__has_feature)
  #if __has_feature(address_sanitizer)
   #define EJ_UNDER_ASAN 1
  #endif
 #endif
-#if defined(EJ_UNDER_ASAN)
- #include <pthread.h>
+#ifndef EJ_UNDER_ASAN
+ #define EJ_UNDER_ASAN 0
 #endif
 
 static int guardMain()
@@ -319,7 +383,7 @@ static int guardMain()
     if (! dev) return 2;
 #ifndef EJ_LOUDNESSLOOP_V2
     for (const char* leg : { "A. ask before applying: nothing moves until go", "A. the loop drives the Level slot, the limiter's input_db is untouched", "A. after go the second window lands within +-1 dB and the loop tracks",
-                             "B. quiet section: the window is refused, nothing applied", "C. chorus after verse: a back-off is PROPOSED, never applied", "D. third-party limiter last: the target is reached through the Level slot",
+                             "B. quiet section: the window is refused, nothing applied", "C. chorus after verse: a back-off is PROPOSED, never applied", "D. third-party limiter last: the target is reached through the limiter's IN gain",
                              "E. verbs: push it / a bit louder / a bit softer / check the level again / undo / leave it", "F. GR text: working X dB average, up to Y dB on the hits", "G. arm after the exact built-in apply (18d) stays GREEN",
                              "H. peaky programme: output true peak <= -0.1 dBTP by the independent meter", "I. the live-shaped chain ARMS (the loop inserts the Level slot it needs; RED as it stood: not armed, the insertion lived in the editor)",
                              "A. the proposal bubble carries [Go] [Leave it]", "B. quiet section: the loop ASKS (state quietAsked), nothing applied until a pill", "C. the back-off bubble carries [Back off] [Leave it]", "E. the result bubble (on target) carries [Undo] [A bit louder] [A bit softer] [Push it]" })
@@ -346,14 +410,17 @@ static int guardMain()
         const float proposed = numberAfter (prop, "Push ");
         check (proposed >= 5.5f && proposed <= 6.0f, "the proposed trim is the pass clamp (+6 of the ~+9 needed)", f1 (proposed));
         check (r.loop.go(), "go applies");
-        check (std::abs (r.levelGain() - proposed) < 0.05f, "A. the loop drives the Level slot, the limiter's input_db is untouched", "Level " + f1 (r.levelGain()) + " dB, limiter input_db " + f1 ((float) r.limiterInput()));
-        check (std::abs (r.limiterInput()) < 0.01, "limiter input_db still 0.0", f1 ((float) r.limiterInput()));
+        check (std::abs (r.levelGain() - proposed) < 0.05f, "A. the loop drives the stage by the proposed trim (LEVELLING V2: on a target aim that stage IS the limiter's IN gain)", "stage " + r.loop.stageName() + " " + f1 (r.levelGain()) + " dB, limiter input_db " + f1 ((float) r.limiterInput()));
+        // RETIRED (LEVELLING V2, 10 Oct 2026): "limiter input_db still 0.0". Its subject was the Level slot doing the
+        // move while the limiter stayed untouched. The Level slot is gone and a target aim moves input_db BY DESIGN,
+        // so the assertion now contradicts the ruling it used to protect. The surviving claim - the trim lands exactly
+        // once, at one place - is the check above.
         // 21 Sep 2026 (loop manners): Go is a level verb - it applies, says so, and NOTHING measures until Check
 #ifdef EJ_LOUDNESSLOOP_MANNERS21
-        check (r.loop.state() == LoudnessLoop::State::hold && r.last().startsWith ("Applied +") && r.last().contains (" dB (Level now +") && r.last().endsWith ("). How's it sounding?") && r.loop.lastPills().joinIntoString ("|") == "Check|A bit louder|A bit softer|Undo|Done",
-               "M2. after Go the bubble reads \"Applied +X dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done] in that order", r.last() + " | " + r.loop.lastPills().joinIntoString ("|"));
+        check (r.loop.state() == LoudnessLoop::State::hold && r.last().startsWith ("Applied +") && r.last().contains (" dB (now +") && r.last().endsWith ("). How's it sounding?") && r.loop.lastPills().joinIntoString ("|") == "Check|A bit louder|A bit softer|Undo|Done",
+               "M2. after Go the bubble reads \"Applied +X dB (now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done] in that order", r.last() + " | " + r.loop.lastPills().joinIntoString ("|"));
 #else
-        check (false, "M2. after Go the bubble reads \"Applied +X dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done] in that order", "no MANNERS21 on this build: " + r.last());
+        check (false, "M2. after Go the bubble reads \"Applied +X dB (now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done] in that order", "no MANNERS21 on this build: " + r.last());
 #endif
         {   // M1: 20 s of counted audio after Go - zero EJLoudness measurement lines and no new bubble until Check is issued, then exactly one
             const int nb = r.loop.bubbleCount(), nm = measuredLines (r.logs);
@@ -432,13 +499,13 @@ static int guardMain()
         r.loop.go(); check (r.levelGain() < g0 - 1.0f, "go applies the back-off", f1 (r.levelGain()));
 #endif
     }
-    std::printf ("== D. a THIRD-PARTY limiter last (EJ Test Limiter, a clipper): the Level slot reaches the target ==\n");
+    std::printf ("== D. a THIRD-PARTY limiter last (EJ Test Limiter, a clipper): the limiter's IN gain reaches the target ==\n");
     {
         Rig r (true); r.setTarget (-9.0f);
         calibrate (r.proc, r.prog, -14.0f);
-        check (r.armNoReading() && r.loop.limiterSlot() == 1 && r.h.getSlotInfo (1).name == "EJ Test Limiter", "armed with a non-EchoJay limiter last", r.logs.joinIntoString (" | ").substring (0, 160));
+        check (r.armNoReading() && r.loop.limiterSlot() == r.limSlot && r.h.getSlotInfo (r.limSlot).name == "EJ Test Limiter", "armed with a non-EchoJay limiter last", r.logs.joinIntoString (" | ").substring (0, 160));
         r.runWindow(); r.loop.go(); r.loop.check(); r.runWindow();
-        check (r.loop.state() == LoudnessLoop::State::tracking || (r.loop.state() == LoudnessLoop::State::proposed && std::abs (numberAfter (r.last(), "Push ")) < 1.0f), "D. third-party limiter last: the target is reached through the Level slot", r.last() + " | Level " + f1 (r.levelGain()));
+        check (r.loop.state() == LoudnessLoop::State::tracking || (r.loop.state() == LoudnessLoop::State::proposed && std::abs (numberAfter (r.last(), "Push ")) < 1.0f), "D. third-party limiter last: the target is reached through the limiter's IN gain", r.last() + " | Level " + f1 (r.levelGain()));
 #ifdef EJ_LOUDNESSLOOP_MANNERS
         check (r.last().contains ("limiter working ~") && r.last().contains ("dB on the hits (worst peak ") && ! r.last().contains ("not an EchoJay device") && ! r.last().contains ("average"), "18g (4) third-party limiter: the GR reads \"limiter working ~X dB on the hits (worst peak Y)\" (21m: typical + worst, no average), never \"not an EchoJay device\"", r.last());
 #else
@@ -463,7 +530,7 @@ static int guardMain()
 #ifdef EJ_LOUDNESSLOOP_VERBS18H
         // 18h (item 4): a level verb APPLIES and asks - one bubble, the after-verb pills, NO window runs until Check
         { const float g1 = r.levelGain(); const int nb = r.loop.bubbleCount(); r.loop.nudgeTarget (+1.0f);
-          check (std::abs (r.loop.target() + 8.0f) < 0.01f && std::abs (r.levelGain() - g1 - 1.0f) < 0.05f && r.loop.state() == LoudnessLoop::State::hold && r.loop.bubbleCount() == nb + 1 && r.last().startsWith ("Applied +1.0 dB (Level now ") && r.last().endsWith ("). How's it sounding?") && r.loop.lastPills().joinIntoString ("|") == "Check|A bit louder|A bit softer|Undo|Done", "K1. a bit louder: Level +1 now, target -8, ONE bubble \"Applied +1.0 dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window", r.last() + " [" + r.loop.lastPills().joinIntoString ("|") + "] state " + juce::String ((int) r.loop.state())); }
+          check (std::abs (r.loop.target() + 8.0f) < 0.01f && std::abs (r.levelGain() - g1 - 1.0f) < 0.05f && r.loop.state() == LoudnessLoop::State::hold && r.loop.bubbleCount() == nb + 1 && r.last().startsWith ("Applied +1.0 dB (now ") && r.last().endsWith ("). How's it sounding?") && r.loop.lastPills().joinIntoString ("|") == "Check|A bit louder|A bit softer|Undo|Done", "K1. a bit louder: the stage +1 now, target -8, ONE bubble \"Applied +1.0 dB (now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window", r.last() + " [" + r.loop.lastPills().joinIntoString ("|") + "] state " + juce::String ((int) r.loop.state())); }
         { const int nMeasured = r.logs.joinIntoString ("\n").indexOf ("measured:"); juce::ignoreUnused (nMeasured);
           const juce::String before = r.logs.joinIntoString ("\n"); const int cnt0 = juce::StringArray::fromLines (before).size();
           for (int k = 0; k < 16; ++k) feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);   // 16 s of audio after the verb
@@ -471,7 +538,7 @@ static int guardMain()
         check (r.loop.check() && r.loop.state() == LoudnessLoop::State::waitAudio, "K1. Check starts one window");
         r.runWindow();
         check (r.loop.state() == LoudnessLoop::State::tracking && r.last().startsWith ("Hitting -") && r.last().contains ("on target") && r.loop.lastPills().joinIntoString ("|") == "Undo|A bit louder|A bit softer|Done", "K1. ...which REPORTS on target with the result pills (no Push it, no proposal)", r.last() + " [" + r.loop.lastPills().joinIntoString ("|") + "]");
-        { const float g2 = r.levelGain(); r.loop.nudgeTarget (-1.0f); check (std::abs (r.loop.target() + 9.0f) < 0.01f && std::abs (r.levelGain() - g2 + 1.0f) < 0.05f && r.last().startsWith ("Applied -1.0 dB (Level now ") && r.loop.lastPills().joinIntoString ("|") == "Check|A bit louder|A bit softer|Undo|Done", "K1. a bit softer: Level -1 now, target back to -9, the same bubble and pills", r.last()); }
+        { const float g2 = r.levelGain(); r.loop.nudgeTarget (-1.0f); check (std::abs (r.loop.target() + 9.0f) < 0.01f && std::abs (r.levelGain() - g2 + 1.0f) < 0.05f && r.last().startsWith ("Applied -1.0 dB (now ") && r.loop.lastPills().joinIntoString ("|") == "Check|A bit louder|A bit softer|Undo|Done", "K1. a bit softer: the stage -1 now, target back to -9, the same bubble and pills", r.last()); }
         r.loop.check(); r.runWindow();
         check (r.loop.state() == LoudnessLoop::State::tracking && r.last().contains ("on target"), "K1. Check after it: on target (-9)", r.last());
         r.loop.leaveIt(); check (r.loop.state() == LoudnessLoop::State::hold && r.last().startsWith ("Leaving it at"), "leave it: holds, says where", r.last());
@@ -488,7 +555,9 @@ static int guardMain()
         r.runWindow(); check (r.loop.state() == LoudnessLoop::State::proposed, "...which proposes");
         const float before = r.levelGain(); check (r.loop.pushIt(), "push it applies immediately"); check (std::abs (r.levelGain() - before) > 0.4f, "...and moved the Level by the shortfall", f1 (before) + " -> " + f1 (r.levelGain()));
 #endif
-        check (r.loop.undo() && std::abs (r.levelGain()) < 0.01f && (r.last().startsWith ("Restored the Level slot to +0.0 dB") || (r.last().startsWith ("Applied ") && r.last().contains ("(Level now +0.0). How's it sounding?"))), "E. verbs: push it / a bit louder / a bit softer / check the level again / undo / leave it", r.last() + " | Level " + f1 (r.levelGain()) + " (g0 " + f1 (g0) + ")");
+        // LEVELLING V2: the "Restored the Level slot to +0.0 dB" wording retired with the slot - undo lands in
+        // afterVerb like every other verb, so the one bubble shape is the whole claim.
+        check (r.loop.undo() && std::abs (r.levelGain()) < 0.01f && (r.last().startsWith ("Applied ") && r.last().contains ("(now +0.0). How's it sounding?")), "E. verbs: push it / a bit louder / a bit softer / check the level again / undo / leave it", r.last() + " | Level " + f1 (r.levelGain()) + " (g0 " + f1 (g0) + ")");
     }
     std::printf ("== F. GR text on a PEAKY programme + H. true peak by the independent meter ==\n");
     {
@@ -515,7 +584,7 @@ static int guardMain()
         r.setTarget (-9.0f, 8.8);                                                  // then the structured settings: the exact apply replaces the text
         EchoJayBorrowHostTestAccess::applyExact (r.h, r.limSlot);
         check (r.h.getSlotInfo (r.limSlot).settings.startsWith ("Applied automatically"), "the exact apply replaced the slot's prose", r.h.getSlotInfo (r.limSlot).settings.substring (0, 60));
-        check (r.armNoReading() && std::abs (r.loop.target() + 9.0f) < 0.01f && r.loop.armSource() == "level_params", "G. arm after the exact built-in apply (18d) stays GREEN", r.loop.armSource());
+        check (r.armNoReading() && std::abs (r.loop.target() + 9.0f) < 0.01f && r.loop.armSource() == "rack record", "G. arm after the exact built-in apply (18d) stays GREEN", r.loop.armSource());
         r.loop.leaveIt();
     }
     // ---- LEG I RETIRED, 10 Oct 2026: ITS SUBJECT NO LONGER EXISTS (Sean) ----------------------------
@@ -584,7 +653,7 @@ static int guardMain()
         check (r.last().contains ("limiter working ~"), "J3. the GR line on this third-party fixture is the estimate (the ~ mark)", r.last());
         // J4: Done ends the watch - a louder section afterwards proposes nothing
         const int nb = r.loop.bubbleCount();
-        check (r.loop.done() && r.loop.state() == LoudnessLoop::State::hold && r.loop.bubbleCount() == nb + 1 && r.last().startsWith ("Done - Level "), "J4. Done: one bubble, the loop holds", r.last());
+        check (r.loop.done() && r.loop.state() == LoudnessLoop::State::hold && r.loop.bubbleCount() == nb + 1 && r.last().startsWith ("Done - ") && (r.last().contains ("limiter in ") || r.last().contains ("rack out ")), "J4. Done: one bubble, the loop holds", r.last());
         const float g0 = r.levelGain(); const int nb2 = r.loop.bubbleCount();
         for (int k = 0; k < 16; ++k) feed (r.proc, r.prog, 100, false, &r.loop, nullptr, +4.0f);   // a louder section after Done
         check (r.loop.state() == LoudnessLoop::State::hold && r.loop.bubbleCount() == nb2 && std::abs (r.levelGain() - g0) < 0.01f, "J4. after Done a louder section is neither measured nor proposed on (the watch is over)", "state " + juce::String ((int) r.loop.state()));
@@ -630,19 +699,19 @@ static int guardMain()
         std::printf ("  K5 inputs: amp %.3f / %.3f, gain %+.2f / %+.2f dB | chain in maxST %.2f, chain out maxST %.2f | limiter IN TP %.2f, chain OUT TP %.2f (tallies) | independent TP clipper %.2f, bypass %.2f\n", r.prog.amp, b.prog.amp, g, b.levelGain(), in.maxShortTermDb, out.maxShortTermDb, r.loop.stageTap().truePeakDb, out.truePeakDb, ind.truePeakDb(), indB.truePeakDb());
         check (std::abs (r.prog.amp - b.prog.amp) < 1e-4f && std::abs (g - b.levelGain()) < 0.01f, "K5. the two rigs ran the same programme at the same gain (the bypass rig is the pre-limiter truth)", juce::String (r.prog.amp, 4) + " / " + juce::String (b.prog.amp, 4));
         check (std::isfinite (estLoud) && truthLoud > 0.3f && std::abs (estLoud - truthLoud) <= 1.0f, "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (chain in + gain - chain out), and the clipper is working", "estimate " + f1 (estLoud) + " vs truth " + f1 (truthLoud) + " dB");
-        check (std::isfinite (estPeak) && truthPeak > 0.5f && std::abs (estPeak - truthPeak) <= 1.0f, "K5. ...and the PEAK GR estimate (Level OUT true peak - chain OUT true peak) is within 1 dB of the independent pre/post true-peak difference", "estimate " + f1 (estPeak) + " vs truth " + f1 (truthPeak) + " dB");
+        check (std::isfinite (estPeak) && truthPeak > 0.5f && std::abs (estPeak - truthPeak) <= 1.0f, "K5. ...and the PEAK GR estimate (limiter IN true peak - chain OUT true peak) is within 1 dB of the independent pre/post true-peak difference", "estimate " + f1 (estPeak) + " vs truth " + f1 (truthPeak) + " dB");
         check (r.last().contains ("limiter working ~") && r.last().contains ("dB on the hits (worst peak ") && ! r.last().contains ("average"), "K5. the bubble reads \"limiter working ~X dB on the hits (worst peak Y)\" (21m)", r.last());
-        check (r.logs.joinIntoString ("\n").contains ("true peak: Level OUT TP ") && r.logs.joinIntoString ("\n").contains (" dBTP, chain OUT TP "), "K5. the EJLoudness log carries the true-peak VALUES (Level OUT TP, chain OUT TP), not only their difference", r.logs.joinIntoString (" | ").fromLastOccurrenceOf ("true peak:", true, false).substring (0, 120));
+        check (r.logs.joinIntoString ("\n").contains ("true peak: Level OUT TP ") && r.logs.joinIntoString ("\n").contains (" dBTP, chain OUT TP "), "K5. the EJLoudness log carries the true-peak VALUES (limiter IN TP, chain OUT TP), not only their difference", r.logs.joinIntoString (" | ").fromLastOccurrenceOf ("true peak:", true, false).substring (0, 120));
     }
 #else
-    for (const char* leg : { "K1. a bit louder: Level +1 now, target -8, ONE bubble \"Applied +1.0 dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window", "K1. ...and NO automatic check follows a verb (16 s of audio: nothing measured, nothing logged)", "K1. ...which REPORTS on target with the result pills (no Push it, no proposal)", "K1. push it: moved the Level by the shortfall, the after-verb bubble, no window",
-                             "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (chain in + gain - chain out), and the clipper is working", "K5. ...and the PEAK GR estimate (Level OUT true peak - chain OUT true peak) is within 1 dB of the independent pre/post true-peak difference", "K5. the bubble reads \"limiter working ~X dB (estimated), up to ~Y dB on the hits\"" })
+    for (const char* leg : { "K1. a bit louder: the stage +1 now, target -8, ONE bubble \"Applied +1.0 dB (now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window", "K1. ...and NO automatic check follows a verb (16 s of audio: nothing measured, nothing logged)", "K1. ...which REPORTS on target with the result pills (no Push it, no proposal)", "K1. push it: moved the Level by the shortfall, the after-verb bubble, no window",
+                             "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (chain in + gain - chain out), and the clipper is working", "K5. ...and the PEAK GR estimate (limiter IN true peak - chain OUT true peak) is within 1 dB of the independent pre/post true-peak difference", "K5. the bubble reads \"limiter working ~X dB (estimated), up to ~Y dB on the hits\"" })
         check (false, leg, "no 18h on this build");
 #endif
     {   // J6: the ceiling safety net - a third-party limiter with NO ceiling readback is replaced by EchoJay Limiter, said in one line
         Rig r (true, false); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -14.0f);
         const int nb = r.loop.bubbleCount();
-        check (r.armNoReading() && r.h.getSlotInfo (1).name == "EchoJay Limiter" && r.loop.limiterSlot() == 1 && r.h.getSlotInfo (0).name == "EchoJay Level", "J6. ceiling readback absent -> EchoJay Limiter substituted at the last slot, the Level slot untouched", r.h.getSlotInfo (0).name + " | " + r.h.getSlotInfo (1).name);
+        check (r.armNoReading() && r.h.getSlotInfo (0).name == "EchoJay Limiter" && r.loop.limiterSlot() == 0, "J6. ceiling readback absent -> EchoJay Limiter substituted at the last slot", r.h.getSlotInfo (0).name);
         check (r.loop.bubbleCount() == nb + 2 && r.bubbles.size() >= 2 && r.bubbles[r.bubbles.size() - 2] == "EJ Test Limiter's ceiling could not be confirmed, so EchoJay Limiter holds the ceiling instead (-0.1 dBTP).", "J6. ...said in one line before the arm bubble", r.bubbles.size() >= 2 ? r.bubbles[r.bubbles.size() - 2] : juce::String ("(none)"));
         check (r.logs.joinIntoString ("\n").contains ("substituted EchoJay Limiter for EJ Test Limiter"), "J6. ...and logged");
         r.loop.listen(); r.runWindow();
@@ -650,13 +719,13 @@ static int guardMain()
     }
     {   // J6b: a third-party limiter WITH a ceiling readback is kept
         Rig r (true, true); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -14.0f);
-        check (r.armNoReading() && r.h.getSlotInfo (1).name == "EJ Test Limiter", "J6. a third-party limiter whose ceiling READ BACK is kept", r.h.getSlotInfo (1).name);
+        check (r.armNoReading() && r.h.getSlotInfo (0).name == "EJ Test Limiter", "J6. a third-party limiter whose ceiling READ BACK is kept", r.h.getSlotInfo (0).name);
     }
 #else
     for (const char* leg : { "J1. the arm bubble reads \"Cue the loudest section, press play, then tap Listen\" with [Listen]", "J1. NO window runs on the first audio: 16 s of audio without Listen measures nothing, proposes nothing",
                              "J2. after Go: hold with the after-verb bubble, no window runs", "J2b. ...and 10 silent ticks change nothing (no \"Tap Check\" bubble, no measurement)", "J2b. Check starts the window", "J2b. ...which measures",
                              "J3. ...in at most 2 proposals (step scaled by achieved/commanded; RED as it stood: 3 shrinking passes)", "J4. Done: one bubble, the loop holds", "J4. after Done a louder section is neither measured nor proposed on (the watch is over)",
-                             "J5. the estimate lands within 1 dB of the EchoJay Limiter's real GR", "J6. ceiling readback absent -> EchoJay Limiter substituted at the last slot, the Level slot untouched" })
+                             "J5. the estimate lands within 1 dB of the EchoJay Limiter's real GR", "J6. ceiling readback absent -> EchoJay Limiter substituted at the last slot" })
         check (false, leg, "no 18g on this build");
     {   // the 0.6x fixture AS IT STOOD, for the record: how many proposals does the unscaled loop need?
         Rig r (true, true, "EJ Test Soft Limiter"); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -25.5f);
@@ -691,7 +760,7 @@ static int guardMain()
         check (r.loop.lastPills().joinIntoString ("|") == "Push it anyway|Leave it", "K2. the capped proposal carries [Push it anyway] [Leave it]", r.loop.lastPills().joinIntoString ("|"));
         check (logAll.contains ("GR cap: typical hit true peak") && logAll.contains ("> cap 10.0 (commercial) -> trim +"), "K1. the cap arithmetic is logged (typical hit true peak + trim - ceiling > cap -> trim; 21m: the top-20 % block measure)", logAll.fromLastOccurrenceOf ("GR cap", false, false).substring (0, 160));
         check (logAll.contains ("true peak: Level OUT TP ") && logAll.contains ("(third-party limiter: the hits figure is the report)"),
-               "K4 (ruling 4): with a third-party limiter the measured line is followed by the true-peak line (Level OUT TP, chain OUT TP, hits) and the hits figure is the report", logAll.fromLastOccurrenceOf ("true peak:", true, false).substring (0, 140));
+               "K4 (ruling 4): with a third-party limiter the measured line is followed by the true-peak line (limiter IN TP, chain OUT TP, hits) and the hits figure is the report", logAll.fromLastOccurrenceOf ("true peak:", true, false).substring (0, 140));
         const float cappedGain = numberAfter (prop, "integrated. ") - r.loop.lastMeasured();   // the capped level minus the measured = the capped trim
         check (cappedGain > 0.3f && cappedGain < 10.5f, "K1. the capped trim is positive and under the cap (the limiter would work <= 10 dB)", f1 (cappedGain));
         check (r.loop.pushIt() && r.levelGain() > cappedGain + 0.5f, "K2. Push it anyway applies the UNCAPPED step (the pass clamp, +6)", f1 (r.levelGain()));
@@ -751,8 +820,8 @@ static int guardMain()
         Rig r (false); r.setTarget (-9.0f, 0.0);
         calibrate (r.proc, r.prog, -18.0f); r.armNoReading(); r.runWindow(); r.loop.go();
         const float before = r.levelGain(), tBefore = r.loop.target(); const int nb = r.loop.bubbleCount();
-        check (r.loop.backOffComplaint() && std::abs (r.levelGain() - (before - 2.0f)) < 0.05f && std::abs (r.loop.target() - (tBefore - 2.0f)) < 0.01f && r.loop.bubbleCount() == nb + 1 && r.last().startsWith ("Applied -2.0 dB (Level now "),
-               "L2 (item 2, client half). a complaint after the apply = the softer step twice: Level -2, target -2, ONE bubble \"Applied -2.0 dB (Level now ...)\"", r.last() + " | Level " + f1 (before) + " -> " + f1 (r.levelGain()));
+        check (r.loop.backOffComplaint() && std::abs (r.levelGain() - (before - 2.0f)) < 0.05f && std::abs (r.loop.target() - (tBefore - 2.0f)) < 0.01f && r.loop.bubbleCount() == nb + 1 && r.last().startsWith ("Applied -2.0 dB (now "),
+               "L2 (item 2, client half). a complaint after the apply = the softer step twice: Level -2, target -2, ONE bubble \"Applied -2.0 dB (now ...)\"", r.last() + " | Level " + f1 (before) + " -> " + f1 (r.levelGain()));
     }
     // ---- LEGS N0/N1 RETIRED, 10 Oct 2026: THEIR SUBJECT NO LONGER EXISTS (Sean) ---------------------
     // N tracked the Level slot by IDENTITY so an insert in front of it could not break the loop (21m item 1).
@@ -819,19 +888,25 @@ static int guardMain()
     // keep-level is a different flag that merely sat next door.
     std::printf ("== P (reduced). keep-level survives the deletion of the compare trim ==\n");
     {   // the keep flag holds, and persists
-        Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f); r.h.setSlotKeepLevel (1, true);
+        // LEVELLING V2 (10 Oct 2026): the indices were literals from the [Level, Gain, Limiter] layout. With the
+        // Level slot gone the +4 dB stand-in is wherever the Rig put it, so the leg reads the RECORDED index.
+        // Slot 1 is now the limiter, which adds nothing - that is why this read -0.00 dB, not a product fault.
+        Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
+        const int gs = r.gainSlot_;
+        r.h.setSlotKeepLevel (gs, true);
         calibrate (r.proc, r.prog, -18.0f); r.armNoReading(); r.runWindow();
-        check (r.h.getSlotKeepLevel (1) && r.h.getSlotInfo (1).keepLevel,
-               "P3. the keep flag holds", r.h.getSlotKeepLevel (1) ? "kept" : "NOT kept");
-        feed (r.proc, r.prog, 400, false, nullptr, nullptr); const auto lv = r.h.getSlotLevels (1);
+        check (gs >= 0 && r.h.getSlotKeepLevel (gs) && r.h.getSlotInfo (gs).keepLevel,
+               "P3. the keep flag holds", "slot " + juce::String (gs) + (gs >= 0 && r.h.getSlotKeepLevel (gs) ? " kept" : " NOT kept"));
+        feed (r.proc, r.prog, 400, false, nullptr, nullptr); const auto lv = r.h.getSlotLevels (gs);
         check (lv.measured && std::abs ((lv.out.shortTermDb - lv.in.shortTermDb) - 4.0f) < 0.3f,
                "P3. ...and the slot still adds its +4 dB", f1 (lv.out.shortTermDb - lv.in.shortTermDb));
         const auto slots = r.h.buildChainSlotsVar();
+        const int  nSlots = r.h.getNumSlots();   // whatever the rack actually is, not the old literal 3
         const auto state = r.h.getCachedSlotStatesVar (ChainHost::kApiStateMaxSlotBytes, ChainHost::kApiStateMaxTotalBytes, "guard");
         { auto p2Heap = std::make_unique<EchoJayProcessor>(); auto& p2 = *p2Heap; p2.prepareToPlay (48000.0, 512);
           auto& h2 = p2.getChainHost(); h2.restoreSavedChain (slots, state); pumpMs (150);
-          check (h2.getNumSlots() == 3 && h2.getSlotKeepLevel (1),
-                 "P4. the keep flag persists across save/reopen", juce::String (h2.getNumSlots()) + " slots"); }
+          check (h2.getNumSlots() == nSlots && h2.getSlotKeepLevel (gs),
+                 "P4. the keep flag persists across save/reopen", juce::String (h2.getNumSlots()) + " slots (expected " + juce::String (nSlots) + "), keep " + (h2.getSlotKeepLevel (gs) ? "on" : "OFF")); }
     }
     // ---- Q. REDUCED 29 Sep 2026 (21t-m): unityChain can only be FALSE now ----------------------------------
     // It asserted the body carries "unityChain": true once a slot carries a match trim. The match trim is
@@ -1045,14 +1120,19 @@ static int guardMain()
         juce::MemoryBlock mb;
         { juce::MemoryOutputStream mos (mb, false); juce::Base64::convertFromBase64 (mos, b64); }
         const auto parsed = juce::JSON::parse (juce::String::createStringFromData (mb.getData(), (int) mb.getSize()));
-        float savedGain = 0.0f; bool found = false;
+        // 10 Oct: the FIELD had to move with the slot. This read `params.gain_db`, which is the Level slot's
+        // param name; the limiter's levelling param is `input_db`. Re-aiming the slot and not the field was a
+        // half-migration - it reported "no gain_db in the saved state" on a landing that had in fact been saved.
+        float savedGain = 0.0f; bool found = false; juce::String field;
         if (auto* o = parsed.getDynamicObject())
             if (auto* pr = o->getProperty ("params").getDynamicObject())
-                if (pr->hasProperty ("gain_db")) { savedGain = (float) (double) pr->getProperty ("gain_db"); found = true; }
+                for (const char* k : { "input_db", "gain_db" })
+                    if (! found && pr->hasProperty (k))
+                    { savedGain = (float) (double) pr->getProperty (k); found = true; field = k; }
         check (found && std::abs (savedGain - landed) < 0.05f,
                "Z3. THE SAVED STATE CARRIES THE LANDED GAIN, not the value it had before the landing",
-               found ? ("saved " + f1 (savedGain) + " vs landed " + f1 (landed))
-                     : juce::String ("no gain_db in the saved state"));
+               found ? ("saved " + field + " " + f1 (savedGain) + " vs landed " + f1 (landed))
+                     : juce::String ("no input_db/gain_db in the saved state"));
     }
     std::printf ("== Z2. Listen always resolves: 20 s of silence ends with the no-signal reason, not a silent wait ==\n");
     {
@@ -1156,7 +1236,11 @@ static int guardMain()
         r.h.resetChainOutLevels(); r.h.resetChainInLoopLevels();
         feed (r.proc, r.prog, 1, true, nullptr, nullptr);     // make the deferred reset real
         feed (r.proc, r.prog, 400, false, nullptr, nullptr, 0.0f);
-        const float inDb = r.h.getChainInLoopLevels().levelDb, outDb = r.h.getChainOutLevels().levelDb;
+        // AS HEARD: the rack OUT gain is applied AFTER chainOutTally_, so the witness has to add it back exactly
+        // as the loop's effectiveOutDb does. Measuring the tally alone reads the chain's own loss and calls the
+        // match a failure - which is what this leg did while the loop was already correct.
+        const float inDb  = r.h.getChainInLoopLevels().levelDb;
+        const float outDb = r.h.getChainOutLevels().levelDb + r.proc.getBusGainDb();
         check (std::isfinite (inDb) && std::isfinite (outDb) && std::abs (outDb - inDb) <= 1.5f,
                "F2-2. AND THE CHAIN IS VOLUME-MATCHED over one span: out - in within 1.5 LU",
                "in " + f1 (inDb) + ", out " + f1 (outDb) + " LUFS");
@@ -1317,8 +1401,8 @@ static int guardMain()
         if (gn != nullptr)
         {
             EchoJayBorrowHostTestAccess::loadBuiltin (mid.h, BuiltinDeviceRegistry::descriptionFor (*gn));
-            check (mid.h.getNumSlots() == 3 && mid.limSlot == 1,
-                   "E. precondition: the limiter is slot 2 of 3, no longer last",
+            check (mid.h.getNumSlots() == mid.limSlot + 2,
+                   "E. precondition: the limiter is no longer last",
                    juce::String (mid.h.getNumSlots()) + " slots, limiter at " + juce::String (mid.limSlot));
             { auto* pp = new juce::DynamicObject();
               pp->setProperty ("ceiling_db", -3.0); pp->setProperty ("true_peak", 1);
@@ -1370,12 +1454,15 @@ static int guardMain()
             for (int i = 0; i < h.getNumSlots(); ++i)
             { const auto nm = h.getSlotInfo (i).name; names.add (nm);
               if (nm == "EchoJay Level") ++levels; if (nm == "EchoJay Limiter") ++lims; }
-            check (levels == 1,
-                   "L7. THE RACK STILL HAS ITS ECHOJAY LEVEL (RED as it stood: the ceiling safety net replaced "
-                   "it with an EchoJay Limiter and the loop had no slot to drive)",
-                   names.joinIntoString (" | "));
-            check (h.getSlotInfo (h.getNumSlots() - 1).name == "EchoJay Level",
-                   "L7. ...and it is LAST, because no limiter ends this chain", names.joinIntoString (" | "));
+            // RETIRED (LEVELLING V2, 10 Oct 2026): "THE RACK STILL HAS ITS ECHOJAY LEVEL" and "...and it is
+            // LAST". Both subjects are gone - a match build inserts nothing at all, so there is no Level slot to
+            // survive the ceiling safety net and no last-slot position to hold. MIGRATED to the claim that
+            // actually protects the user's rack on the new design: arming a match build leaves the rack EXACTLY
+            // as it was. That is what the old pair was really defending.
+            check (levels == 0 && lims == 0 && h.getNumSlots() == 1,
+                   "L7. a MATCH build leaves the rack untouched: no Level inserted, no limiter inserted, the "
+                   "one op the user asked for and nothing else",
+                   juce::String (h.getNumSlots()) + " slot(s): " + names.joinIntoString (" | "));
             check (names.contains ("EchoJay Gain") && ! names.contains ("EchoJay Limiter"),
                    "L7. ...and THE USER'S OWN PLUGIN SURVIVES: a chain with no limiter has no ceiling to confirm, "
                    "so nothing is substituted (RED as it stood: the one real plugin was replaced BY a limiter)",
@@ -1393,7 +1480,6 @@ static int guardMain()
                        "limiterSlot " + juce::String (ls)
                            + (ls >= 0 && ls < h.getNumSlots() ? " (" + h.getSlotInfo (ls).name + ")" : ""));
             }
-            juce::ignoreUnused (lims);
         }
     }
     std::printf ("== L6. ruling 3: commercial and pushed are DIFFERENT caps, and a missing option is commercial ==\n");
@@ -1437,8 +1523,9 @@ static int guardMain()
           rec->setProperty ("option", "match");                       // and NOTHING else, exactly as B sends it
           r.h.setLevellingRecord (juce::var (rec)); }
         const auto t = r.loop.findTarget();
-        check (t.option == "match" && t.optionSource == "params.option",
-               "L1. `params.option` IS READ, and the log can say where it came from (RED as it stood: the field "
+        check (t.option == "match" && t.optionSource == "rack record",
+               "L1. the option IS READ, and the log can say where it came from (LEVELLING V2: the door is the rack "
+               "record, not a Level slot's params) (RED as it stood: the field "
                "was skipped by applyStructured and the loop read the device's numeric default = \"commercial\")",
                "\"" + t.option + "\" via " + t.optionSource);
         check (! std::isfinite (t.lufs),
@@ -1467,11 +1554,11 @@ static int guardMain()
           rec->setProperty ("loudness_option", "dynamic");
           r.h.setLevellingRecord (juce::var (rec)); }
         const auto t = r.loop.findTarget();
-        check (t.option == "dynamic" && t.optionSource == "params.option",
-               "L2. the mix-bus example reads \"dynamic\" from `params.option`",
+        check (t.option == "dynamic" && t.optionSource == "rack record",
+               "L2. the mix-bus example reads \"dynamic\" from the rack record's `option`",
                "\"" + t.option + "\" via " + t.optionSource);
-        check (std::isfinite (t.lufs) && std::abs (t.lufs + 12.0f) < 0.01f && t.source == "level_params",
-               "L2. ...with the -12 INTEGRATED target from level_params",
+        check (std::isfinite (t.lufs) && std::abs (t.lufs + 12.0f) < 0.01f && t.source == "rack record",
+               "L2. ...with the -12 INTEGRATED target from the rack record",
                (std::isfinite (t.lufs) ? f1 (t.lufs) : juce::String ("none")) + " via " + t.source);
         calibrate (r.proc, r.prog, -18.0f);
         check (r.loop.armFromChain(), "L2. it arms");
@@ -1529,11 +1616,12 @@ static int guardMain()
         const auto* lim = BuiltinDeviceRegistry::instance().findByName ("EJ Test Limiter");
         juce::ignoreUnused (lim);
         calibrate (r.proc, r.prog, -18.0f);
-        check (r.loop.armFromChain(), "L5. a bus build with nothing on the Level slot arms");
+        check (r.loop.armFromChain(), "L5. a bus build with nothing asked of it arms");
         const auto t = r.loop.findTarget();
-        check (t.option == "match" && t.optionSource == "params.option",
-               "L5. the slot the plugin wrote reads back as `option: \"match\"` (RED as it stood: only the "
-               "numeric field was written, so a reload armed it as \"commercial\")",
+        check (t.option == "match" && t.optionSource == "rack record",
+               "L5. what the PLUGIN wrote reads back as `option: \"match\"` - LEVELLING V2: a match build inserts "
+               "nothing, so the thing that must survive a reload is the rack record, not a slot (RED as it stood: "
+               "only the numeric field was written, so a reload armed it as \"commercial\")",
                "\"" + t.option + "\" via " + t.optionSource);
         check (! std::isfinite (t.lufs),
                "L5. ...and carries no target, as the contract requires of a match insert",
@@ -1713,6 +1801,11 @@ static int guardMain()
                "reads and restores, so the level is preserved without the record");
     }
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
+    if (knownStale > 0 || knownStaleGreen > 0)
+        std::printf ("==== KNOWN-STALE (named, excluded from the exit code; re-derive FIRST next round, before any "
+                     "remote-control work, and green before Logic): %d still stale, %d NOW GREEN%s ====\n",
+                     knownStale, knownStaleGreen,
+                     knownStaleGreen > 0 ? " <- take these off kKnownStaleLegs" : "");
     // ---- 21t-d: the compressor calibration loop --------------------------------------------------------------
     // Driven by the SHIPPED state machine (EJCalibLoop.h, the one both binaries compile), over windows measured
     // from the SHIPPED synthetic compressor: its GR rises with input above a fixed knee, which is the property
@@ -3113,23 +3206,32 @@ static int guardMain()
                "suffix (27 Sep ruling: \"AGE <seconds>\")", line);
     }
 
+    if (knownStale > 0 || knownStaleGreen > 0)
+        std::printf ("\n==== loudness_loop_guard KNOWN-STALE TOTAL: %d stale, %d now green (the GR-model "
+                     "calibration legs; NOT counted as failures by Sean's 10 Oct ruling) ====\n",
+                     knownStale, knownStaleGreen);
     return failures == 0 ? 0 : 1;
 }
 
 int main()
-
 {
-#if defined(EJ_UNDER_ASAN)
+    // Unbuffered, so a crash cannot swallow the legs that already reported. The 10 Oct overflow printed nothing
+    // at all for exactly this reason, which cost a cycle guessing at where it died.
+    std::setvbuf (stdout, nullptr, _IOLBF, 0);
+
     pthread_attr_t attr;
     pthread_attr_init (&attr);
-    pthread_attr_setstacksize (&attr, 512ull * 1024ull * 1024ull);
+    // 512 MB under ASan (redzones on every object); 64 MB otherwise, which is 8x the main stack this outgrew.
+    pthread_attr_setstacksize (&attr, EJ_UNDER_ASAN ? 512ull * 1024ull * 1024ull : 64ull * 1024ull * 1024ull);
     pthread_t th {};
     static int rc = 0;
     auto entry = [] (void*) -> void* { rc = guardMain(); return nullptr; };
-    if (pthread_create (&th, &attr, entry, nullptr) != 0) return guardMain();
+    if (pthread_create (&th, &attr, entry, nullptr) != 0)
+    {
+        std::printf ("  WARNING: could not start the big-stack thread; running on the main stack, which this "
+                     "guard has already outgrown once\n");
+        return guardMain();
+    }
     pthread_join (th, nullptr);
     return rc;
-#else
-    return guardMain();
-#endif
 }

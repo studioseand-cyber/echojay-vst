@@ -3,7 +3,7 @@
 #define EJ_LOUDNESSLOOP_V2 1          // 18e: the Level slot, max short-term, ask-before-apply, the verbs, EJLoudness lines
 #define EJ_LOUDNESSLOOP_PILLS 1       // 18f: bubbles carry their verbs as pills; the quiet-window and back-off asks
 #define EJ_LOUDNESSLOOP_MANNERS 1     // 18g: explicit Listen / Check, +-1 dB with step scaling and 3 proposals, Done, GR estimate, ceiling-readback safety net
-#define EJ_LOUDNESSLOOP_MANNERS21 1  // 21 Sep: Go is a level verb ("Applied +X dB (Level now +Y). How's it sounding?"); NO automatic check after it - nothing measures until Check; a proposal after any apply carries [Undo]
+#define EJ_LOUDNESSLOOP_MANNERS21 1  // 21 Sep: Go is a level verb ("Applied +X dB (now +Y). How's it sounding?"); NO automatic check after it - nothing measures until Check; a proposal after any apply carries [Undo]
 #define EJ_LOUDNESSLOOP_VERBS18H 1    // 18h: a level verb applies and asks "How's it sounding?" (no auto-check); Push it only when short; peak GR estimate
 // LoudnessLoop v2 (18e, 19 Sep 2026): deterministic inside V2, no server round-trip.
 //
@@ -59,7 +59,7 @@ public:
     // 18h (item 3): [Push it] is offered only when the loop is SHORT of the target (shortPills), never on an on-target result
     static juce::StringArray resultPills()   { return { "Undo", "A bit louder", "A bit softer", "Done" }; }
     static juce::StringArray shortPills()    { return { "Push it", "Undo", "A bit louder", "A bit softer", "Done" }; }
-    // 18h (item 4): after a level verb (A bit louder / softer / Push it / Undo): "Applied +-X dB (Level now +Y). How's it sounding?"
+    // 18h (item 4): after a level verb (A bit louder / softer / Push it / Undo): "Applied +-X dB (now +Y). How's it sounding?"
     static juce::StringArray afterVerbPills(){ return { "Check", "A bit louder", "A bit softer", "Undo", "Done" }; }
     static juce::StringArray armPills()      { return { "Listen" }; }
     // 21r item 1: THE ARM BUBBLE'S TEXT AS A CONSTANT, and the pills that belong to the loop's CURRENT state.
@@ -87,6 +87,15 @@ public:
         else if (loudnessOption_.equalsIgnoreCase ("pushed")) w += ", pushed";
         else if (loudnessOption_.isNotEmpty())                w += ", " + loudnessOption_;
         return w;
+    }
+    /** LEVELLING V2: the stage in WORDS, for bubbles. The old bubbles all said "Level" because there was a Level
+        slot to name; dropping it left "Done - +6.0 dB", a figure with no noun. The user is told which gain moved. */
+    juce::String stageWords() const
+    {
+        const auto n = stageName();
+        if (n == "rack_out")   return "rack out";
+        if (n == "limiter_in") return "limiter in";
+        return n.isEmpty() ? juce::String ("level") : n.replaceCharacter ('_', ' ');
     }
     static juce::StringArray checkPills()    { return { "Check" }; }
     static juce::StringArray proposalPills() { return { "Go", "Leave it" }; }
@@ -182,6 +191,13 @@ public:
     struct Stage
     {
         juce::String               name;                               // "rack_out" | "limiter_in"
+        /** TRUE when this gain is applied AFTER the chain-output tally the loop measures. The V2's bus gain is:
+            applyBusGainSmoothed runs between chainHost.process and the meter tap, deliberately, so the loop
+            CANNOT see its own correction there - it would write +6 dB, measure the same figure, and write +6
+            again. Leg F2-2 caught exactly that: in -18.00, out -23.99, six dB short, which is the chain loss the
+            correction was supposed to cancel. Where this is set, the effective output is the measured output
+            PLUS the stage's own gain, and the arithmetic below accounts for it rather than pretending otherwise. */
+        bool                       outsideTap = false;
         std::function<bool()>      ready   { [] { return false; } };
         std::function<float()>     readDb  { [] { return 0.0f; } };
         std::function<void(float)> writeDb { [] (float) {} };
@@ -226,9 +242,13 @@ public:
         // "EchoJay EQ | EchoJay Limiter" with no Level at all. The fault is older than tonight's position fix,
         // which only made it visible: before it the fallback nominated whatever sat last instead, and the
         // substitution would have eaten that.
-        if (t.limiterSlot < 0)
-            for (int i = n - 1; i >= 0; --i)
-                if (host_.getSlotInfo (i).name != "EchoJay Level") { t.limiterSlot = i; break; }
+        // ---- LEVELLING V2 (10 Oct 2026): THAT FALLBACK IS DELETED ------------------------------------
+        // It existed because a target build HAD to have something holding the ceiling, and the only tool was
+        // substitution. Under the ruling a target build gets a REAL limiter inserted last by
+        // ensureLimiterForTarget() and nothing is ever substituted, so guessing is no longer needed - and the
+        // guess was wrong the moment the Level slot went: with "EchoJay Level" the only excluded name, a
+        // one-op "EchoJay Gain" chain had its GAIN nominated as the limiter (caught by leg L7). A limiter is
+        // now nominated by its NAME or not at all.
         // ---- LEVELLING V2: THE INTENT COMES FROM THE RACK RECORD ---------------------------------------
         // The Level slot was the loop's INPUT as well as its output - the target and the option rode its params.
         // With no Level slot there has to be another door, and it is the rack-level record: the build writes
@@ -239,8 +259,13 @@ public:
         if (auto* rec = host_.getLevellingRecord().getDynamicObject())
         {
             const auto ov = rec->getProperty ("option");
+            const auto lo = rec->getProperty ("loudness_option");
             if (ov.isString() && ov.toString().isNotEmpty())
             { t.option = ov.toString().toLowerCase(); t.optionSource = "rack record"; }
+            // The same legacy door the Level slot had, on the new record: an older server may still send the
+            // WORD as `loudness_option`. Read as the word it is - never lround()ed, which gave 0 = "commercial".
+            else if (lo.isString() && lo.toString().isNotEmpty())
+            { t.option = lo.toString().toLowerCase(); t.optionSource = "rack record (legacy word)"; }
             const auto tv = rec->getProperty ("target_lufs");
             if (tv.isDouble() || tv.isInt() || tv.isInt64())
             { t.lufs = (float) (double) tv; t.source = "rack record"; }
@@ -288,6 +313,10 @@ public:
                 else                                                   { t.option = {}; t.optionSource = "absent"; }
             }
         }
+        // LEVELLING V2: "nothing was asked" is an ANSWER and the loop says it. The only writer of "absent" used
+        // to be the Level slot's params branch, so with the slot gone an optionless rack reported an empty source
+        // and the log could not distinguish "nobody asked" from "we did not look".
+        if (t.option.isEmpty() && t.optionSource.isEmpty()) t.optionSource = "absent";
         if (! std::isfinite (t.lufs))
             for (int i = n - 1; i >= 0; --i)
             {
@@ -325,7 +354,28 @@ public:
     {
         const int n = host_.getNumSlots();
         if (n > 0 && ChainHost::isLimiterLikeName (host_.getSlotInfo (n - 1).name))
-            return n - 1;                                   // the chain already ends in one
+        {
+            // THE CEILING IS HELD ON THE LIMITER WE USE, not only on one we insert. Leg V2 caught this: a target
+            // build on a chain that ALREADY ends in a limiter never had its ceiling set, so it kept the device
+            // default - which limiter v2 moved to 0.0 (Pro-L 2's). That is Sean's 8 Oct complaint exactly, by a
+            // different route: his master ended on -1.2 dBTP because nobody held the figure. Item E's clamp only
+            // fires when a BLOCK dials ceiling_db; a block that never mentions it left the ceiling wherever the
+            // device happened to sit. A target drives level into this ceiling, so the loop owns it.
+            const int at = n - 1;
+            if (auto* d = dynamic_cast<EedDeviceProcessor*> (host_.getSlotProcessor (at)))
+                if (d->paramSchema().find ("ceiling_db") != nullptr
+                    && std::abs ((float) d->getParamValue ("ceiling_db") - ChainHost::kFinalCeilingDb) > 1.0e-4f)
+                {
+                    auto* pp = new juce::DynamicObject();
+                    pp->setProperty ("ceiling_db", (double) ChainHost::kFinalCeilingDb);
+                    pp->setProperty ("true_peak", 1);
+                    auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+                    host_.setSlotStructuredSettings (at, juce::var (w));
+                    log ("held the final limiter's ceiling at " + fmt (ChainHost::kFinalCeilingDb)
+                         + " dBTP (it sat elsewhere; a target build drives level into this ceiling)");
+                }
+            return at;
+        }
         const auto* dev = BuiltinDeviceRegistry::instance().findByName ("EchoJay Limiter");
         if (dev == nullptr) { log ("a target build needs a limiter last, but EchoJay Limiter is not registered"); return -1; }
         const auto err = host_.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*dev), n);
@@ -494,6 +544,7 @@ public:
         // harnesses pass -1) so the 18e call shape survives, and the stage is already resolved by armFromChain.
         juce::ignoreUnused (levelSlot);
         target_ = targetLufs; slot_ = -1; limiterSlot_ = limiterSlot; round_ = 0; pendingTrim_ = 0.0f;
+        armedOnce_ = true;   // LEVELLING V2: armed-ness is its OWN fact. It used to be read off slot_ >= 0, and slot_ is now always -1 here (there is no Level slot to resolve), so everArmed() and done() both read false forever - the Done pill did nothing and the agent's levelling read said nothing had landed.
         levelPtr_ = nullptr;
         limiterPtr_ = (limiterSlot >= 0 && limiterSlot < host_.getNumSlots()) ? host_.getSlotProcessor (limiterSlot) : nullptr;   // 21m item 1: identity, not index
         if (! haveUndo_) { preLoopGainDb_ = currentGainDb(); haveUndo_ = true; }
@@ -579,10 +630,10 @@ public:
     // 18g (item 3): Done ends the watch phase - nothing is measured or proposed after it.
     bool done()
     {
-        if (slot_ < 0) return false;
+        if (! stageReady()) return false;   // LEVELLING V2: was `slot_ < 0` - the Level slot's index, now permanently -1, which refused every Done
         state_ = State::hold; stopTimer(); pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none; continueAfterGo_ = false;
         log ("done: " + stageName() + " " + fmtSigned (currentGainDb()) + " dB, last measured " + fmt (lastMeasured()) + " LUFS - the loop is finished");
-        emit ("Done - " + fmtSigned (currentGainDb()) + " dB, last measured " + fmt (lastMeasured()) + " LUFS. Say listen to measure again.", -1.0f, false, true, Bubble::Kind::result);
+        emit ("Done - " + stageWords() + " " + fmtSigned (currentGainDb()) + " dB, last measured " + fmt (lastMeasured()) + " LUFS. Say listen to measure again.", -1.0f, false, true, Bubble::Kind::result);
         return true;
     }
 
@@ -668,7 +719,7 @@ public:
         const float delta = preLoopGainDb_ - currentGainDb();
         writeGainDb (preLoopGainDb_);
         log ("undo: " + stageName() + " restored to " + fmtSigned (preLoopGainDb_) + " dB (delta " + fmtSigned (delta) + ")");
-        afterVerb (delta);   // 18h: "Applied -X dB (Level now +Y). How's it sounding?"
+        afterVerb (delta);   // 18h: "Applied -X dB (now +Y). How's it sounding?"
         return true;
     }
     void leaveIt()
@@ -683,7 +734,7 @@ public:
 
     State state() const noexcept { return state_; }
     bool  isArmed() const noexcept { return state_ == State::waitAudio || state_ == State::measuring; }
-    bool  everArmed() const noexcept { return slot_ >= 0; }
+    bool  everArmed() const noexcept { return armedOnce_; }   // LEVELLING V2: was `slot_ >= 0`
     bool  hasProposal() const noexcept { return state_ == State::proposed; }
     float pendingTrimDb() const noexcept { return pendingTrim_; }
     int   round() const noexcept { return round_; }
@@ -703,10 +754,32 @@ public:
         reading; what they must not do is read a tap that is not there. */
     echojay::LevelTally::Snapshot stageTap() const
     {
+        // THE SIGNAL ENTERING THE FINAL LIMITER, whatever brand it is. My first version read the EchoJay
+        // limiter's own inputLevels(), which is empty for a THIRD-PARTY limiter - and that is precisely the case
+        // the GR ESTIMATE exists for (an EchoJay limiter reports real GR and needs no model). So a target build
+        // ending in bx_limiter or Pro-L 2 lost its only reading and the proposal said "limiter GR not measured
+        // yet". ChainHost's per-slot IN tally is the same tap and is brand-agnostic.
+        // ORDER MATTERS, and I had it backwards. An EchoJay Limiter's own inputLevels() reads the GAINED input -
+        // after its input_db - which is the signal actually hitting the ceiling and so the true minuend for
+        // "IN minus chain OUT". ChainHost's per-slot IN tally is the slot's input BEFORE the device's own gain,
+        // so for an EchoJay limiter the two differ by exactly input_db: leg J5 read estimate -0.41 against a
+        // real GR of 5.67, which is that gain. The slot tally is the right tap for OTHER brands, which have no
+        // device gain of ours to account for.
         if (auto* lim = echoJayLimiter()) return lim->inputLevels();
+        if (limiterSlot_ >= 0 && limiterSlot_ < host_.getNumSlots())
+        {
+            const auto sl = host_.getSlotLevels (limiterSlot_);
+            if (sl.measured) return sl.in;
+        }
         return {};
     }
     juce::String stageName() const { return stage_.name; }
+    /** The chain's output AS HEARD, which is the measured tally plus the stage's gain when the stage sits
+        outside that tally (see Stage::outsideTap). Every target/match comparison goes through here. */
+    float effectiveOutDb (float measuredOutDb) const
+    {
+        return stage_.outsideTap ? measuredOutDb + currentGainDb() : measuredOutDb;
+    }
     float countedSeconds() const { return host_.getChainOutLevels().heardAboveSeconds; }
     float grAvg() const noexcept { return grN_ > 0 ? grSum_ / (float) grN_ : 0.0f; }
     float grMax() const noexcept { return juce::jmax (0.0f, grMax_); }
@@ -727,7 +800,15 @@ public:
     // not a loss: a target build always ends in a limiter whose GR is readable, and a match build is not pushing
     // into anything, so there is nothing to estimate. Kept as a named seam rather than deleted so the callers
     // keep saying which figure they used.
-    float grPeakEstimateDb() const { return std::numeric_limits<float>::quiet_NaN(); }
+    float grPeakEstimateDb() const
+    {
+        // RESTORED. I stubbed this to NaN when the Level slot's OUT tap went away and there was nothing to
+        // subtract from; stageTap() is that tap again (the limiter's gained input, or the slot's IN tally for
+        // another brand), so the estimate is a measurement once more rather than an absence. Leg K5 compares it
+        // with an independent pre/post true-peak difference and read "nan vs -6.16" while it was stubbed.
+        const float a = stageTap().truePeakDb, b = host_.getChainOutLevels().truePeakDb;
+        return (a > -150.0f && b > -150.0f) ? a - b : std::numeric_limits<float>::quiet_NaN();
+    }
     // 21m item 3: the hits, block by block. typical = mean reduction (Level OUT TP - chain OUT TP) over the top 20 % of the last
     // 30 hops ranked by Level OUT true peak (the hits); worst = the largest single-block reduction; typicalLvTp = the mean Level
     // OUT true peak of those top blocks (what the cap projects the trim onto). NaN until both tallies carry hops.
@@ -850,7 +931,9 @@ public:
         // about 4.5 dB on Sean's mix bus, which is exactly what his ear found (+8 was right, the loop proposed
         // +3.4). Both chain tallies are K-weighted, so levelDb IS integrated LUFS, and startWindow() resets the
         // out tally, so this is the integrated loudness OF THIS WINDOW at the chain output, post limiter.
-        const float measured = out.levelDb;
+        // AS HEARD, not as tapped: where the stage sits after the tally (the V2's bus gain), the measured figure
+        // is short by exactly the stage's own gain and every proposal below would chase its own tail.
+        const float measured = effectiveOutDb (out.levelDb);
         if (! out.known || ! std::isfinite (measured))
         {
             if (pastResolveDeadline()) { resolveUnfinished (counted, out); return; }
@@ -1195,7 +1278,8 @@ private:
 
         const float cur = currentGainDb();
         if (needIn) target_ = inNow.levelDb;            // the aim, measured
-        const float want = juce::jlimit (-kLevelMaxDb, kLevelMaxDb, cur + (target_ - outNow.levelDb));
+        const float want = juce::jlimit (-kLevelMaxDb, kLevelMaxDb,
+                                         cur + (target_ - effectiveOutDb (outNow.levelDb)));
         if (needIn)
             log ("opening gain (VOLUME MATCH): chain in " + fmt (inNow.levelDb) + " LUFS, out "
                  + fmt (outNow.levelDb) + " LUFS over the same window -> Level " + fmtSigned (cur) + " -> "
@@ -1358,9 +1442,14 @@ public:
         // a loop write - so Sean's landing of +8.1 dB held in the audio, was confirmed in the log, and came back
         // at 0.0 after the host relaunched. The Level is a built-in: its capture is a small JSON, so every write
         // takes it rather than us deciding which writes "count".
-        // LEVELLING V2: the record carries the landed gain, at rack level. The old per-slot state capture is
-        // gone with the slot; the stage's own control is persisted by whoever owns it (a Link's gainDb in its
-        // state, the limiter's input_db in the slot's params), which is what makes the landing survive a reopen.
+        // LEVELLING V2: the record carries the landed gain, at rack level, and the stage's own control is
+        // persisted by whoever owns it (a Link's gainDb in its state, the limiter's input_db in its slot).
+        // 10 OCT 2026 - THAT WAS NOT ENOUGH, AND THIS COMMENT SAID IT WAS. "the limiter's input_db in the slot's
+        // params" is the STORED PARAMS; what the host saves is the per-slot STATE CACHE, and they are two
+        // different things. The live param read +6.49 dB while the saved blob for the same slot said 0.00, which
+        // is Sean's 8 Oct "it came back at 0.0" by a new route. Leg Z3 caught it. The capture the Level slot used
+        // to take is now taken by the stage's own writer, on both processors - see PluginProcessor's limiter_in
+        // writeDb. The owner persists its own control, which is what this comment claimed all along.
         writeRecord (db, true);
         // 08c F2: ONE AUTHOR FOR THE STAMP. Every gain the loop writes - the opening, an applied proposal, a
         // tracking nudge, an undo restore - re-records the chain it was true of. Stamping only at the opening
@@ -1389,6 +1478,7 @@ public:
     ChainHost& host_;
     float trimDeltaDb_ = 0.0f;   // 21m ruling 2: the sum of unity-trim changes at the last window close
     State state_ = State::idle;
+    bool armedOnce_ = false;   // set by arm(); never inferred from a slot cache
     mutable int slot_ = -1, limiterSlot_ = -1; int round_ = 0;   // slot_/limiterSlot_ are caches re-resolved from the instances (21m item 1), hence mutable
     // 22 Sep 2026 (21m item 1): the loop tracks its Level slot and its limiter by IDENTITY (the processor instances), never by
     // index - an insert/remove/reorder of OTHER slots moves the indices, the instances stay; the indices are re-resolved on every call

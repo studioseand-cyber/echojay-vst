@@ -2895,16 +2895,16 @@ int main()
 #ifdef EJ_LOUDNESSLOOP_MANNERS21
         { const auto goMsg = M.back();
           check (goMsg.role == "assistant" && goMsg.content.startsWith ("Applied +") && goMsg.content.endsWith ("). How's it sounding?") && A::chips (*ed, goMsg).joinIntoString ("|") == "Check#2|A bit louder#2|A bit softer#2|Undo#2|Done#2" && loop.state() == LoudnessLoop::State::hold,
-                 "21 Sep (Go) the [Go] tap answers \"Applied +X dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done] and the loop holds", goMsg.content.substring (0, 90) + " | " + A::chips (*ed, goMsg).joinIntoString ("|") + " | state " + juce::String ((int) loop.state()));
+                 "21 Sep (Go) the [Go] tap answers \"Applied +X dB (now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done] and the loop holds", goMsg.content.substring (0, 90) + " | " + A::chips (*ed, goMsg).joinIntoString ("|") + " | state " + juce::String ((int) loop.state()));
           juce::Random rng (12); juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi; logs.clear(); const size_t nMsgs = M.size();
           for (int b = 0; b < 800; ++b) { for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = (rng.nextFloat() * 2.0f - 1.0f) * 0.1f; } proc.processBlock (buf, midi); if ((b % 23) == 22) loop.tickNow(); }
           pumpMs (100);
           check (loop.state() == LoudnessLoop::State::hold && ! logs.joinIntoString ("\n").contains ("measured:") && M.size() == nMsgs, "21 Sep (Go) 8 s of audio after Go: nothing measured, no new bubble, the loop holds until Check", "state " + juce::String ((int) loop.state()) + " msgs +" + juce::String ((int) (M.size() - nMsgs))); }
 #else
-        check (false, "21 Sep (Go) the [Go] tap answers \"Applied +X dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done] and the loop holds", "no MANNERS21 on this build: " + M.back().content.substring (0, 80));
+        check (false, "21 Sep (Go) the [Go] tap answers \"Applied +X dB (now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done] and the loop holds", "no MANNERS21 on this build: " + M.back().content.substring (0, 80));
         check (false, "21 Sep (Go) 8 s of audio after Go: nothing measured, no new bubble, the loop holds until Check", "no MANNERS21 on this build");
 #endif
-        // (3)+(4): the verbs after a Go: "Applied +-X dB (Level now +Y). How's it sounding?" with exactly the five pills, no auto-check
+        // (3)+(4): the verbs after a Go: "Applied +-X dB (now +Y). How's it sounding?" with exactly the five pills, no auto-check
         // (the tapped pill above was [Go] - the first pill - so the loop is checking; let it finish on audio)
         { juce::Random rng (8); juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi; int b = 0;
           while ((loop.state() == LoudnessLoop::State::waitAudio || loop.state() == LoudnessLoop::State::measuring) && b < 6000) { for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = (rng.nextFloat() * 2.0f - 1.0f) * 0.1f; } proc.processBlock (buf, midi); if ((++b % 23) == 0) loop.tickNow(); } }
@@ -2913,7 +2913,7 @@ int main()
         {
             const size_t n0 = M.size(); logs.clear(); A::send (*ed, v); pumpMs (100);
             const auto& last = M.back();
-            check (M.size() == n0 + 2 && last.role == "assistant" && last.content.startsWith ("Applied ") && last.content.endsWith ("). How's it sounding?") && A::chips (*ed, last).joinIntoString ("|") == "Check#2|A bit louder#2|A bit softer#2|Undo#2|Done#2" && loop.state() == LoudnessLoop::State::hold, juce::String ("18h (4) \"") + v + "\": one bubble \"Applied +-X dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window", last.content.substring (0, 70) + " [" + A::chips (*ed, last).joinIntoString ("|") + "] state " + juce::String ((int) loop.state()));
+            check (M.size() == n0 + 2 && last.role == "assistant" && last.content.startsWith ("Applied ") && last.content.endsWith ("). How's it sounding?") && A::chips (*ed, last).joinIntoString ("|") == "Check#2|A bit louder#2|A bit softer#2|Undo#2|Done#2" && loop.state() == LoudnessLoop::State::hold, juce::String ("18h (4) \"") + v + "\": one bubble \"Applied +-X dB (now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window", last.content.substring (0, 70) + " [" + A::chips (*ed, last).joinIntoString ("|") + "] state " + juce::String ((int) loop.state()));
         }
         // no auto-check after a verb: 8 s of audio, still holding, no measurement
         { juce::Random rng (9); juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi; logs.clear();
@@ -2927,7 +2927,7 @@ int main()
 #else
     for (const char* leg : { "18h (1) 5 pills at 420 px: every chip inside the width at its natural size (40-140 px), rows = 2", "18h (1) 2 pills at 420 px: every chip inside the width at its natural size (40-140 px), rows = 1", "18h (1) 5 pills at 1200 px: every chip inside the width at its natural size (40-140 px), rows = 1", "18h (1) 2 pills at 1200 px: every chip inside the width at its natural size (40-140 px), rows = 1",
                              "18h (2) [Go] is a 40-80 px pill, not the bubble's width (the 1,130 px bar in the Chat tab)", "18h (2) no stray component after a pill tap in the Chat tab (the large visible components are the same set as before)", "18h (2) every visible loop pill sits inside the transcript and is at most 160 px wide (no bar) - before the tap",
-                             "18h (4) \"a bit louder\": one bubble \"Applied +-X dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window", "18h (4) no automatic check after a verb (8 s of audio: nothing measured)", "18h (3) Push it is absent on an on-target result" })
+                             "18h (4) \"a bit louder\": one bubble \"Applied +-X dB (now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window", "18h (4) no automatic check after a verb (8 s of audio: nothing measured)", "18h (3) Push it is absent on an on-target result" })
         check (false, leg, "no 18h on this build");
     {   // AS IT STOOD: [Go] at 1200 px
         EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512); std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor()); auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
@@ -2984,7 +2984,7 @@ int main()
         check (A::forcedVerb (*ed, "too squashed now"), "(2c) the forced verb is CONSUMED locally (never sent as a chat)");
         pumpMs (60);
         check (lv != nullptr && std::abs ((float) lv->gainDb() - (gBefore - 2.0f)) < 0.05f && std::abs (loop.target() - (tBefore - 2.0f)) < 0.01f, "(2c) the Level moved -2 dB and the target -2 (the softer step twice)", "Level " + juce::String (gBefore, 2) + " -> " + juce::String (lv ? lv->gainDb() : 0.0, 2));
-        check (M.size() >= nBefore + 2 && M.back().content.startsWith ("Applied -2.0 dB (Level now "), "(2c) one after-verb bubble \"Applied -2.0 dB (Level now ...)\" (plus the local user bubble)", M.back().content.substring (0, 60));
+        check (M.size() >= nBefore + 2 && M.back().content.startsWith ("Applied -2.0 dB (now "), "(2c) one after-verb bubble \"Applied -2.0 dB (now ...)\" (plus the local user bubble)", M.back().content.substring (0, 60));
     }
     // This leg constructs a SECOND EchoJayProcessor and destroys it. Until 21t-f (b) that was fatal - the
     // deferred state restore fired into freed memory afterwards and aborted the process, so this leg ran LAST

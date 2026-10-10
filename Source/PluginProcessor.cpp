@@ -475,8 +475,9 @@ EchoJayProcessor::EchoJayProcessor()
         LoudnessLoop::Stage st;
         if (match)
         {
-            st.name    = "rack_out";
-            st.ready   = [] { return true; };
+            st.name       = "rack_out";
+            st.outsideTap = true;   // applied AFTER the chain-output tally the loop measures
+            st.ready      = [] { return true; };
             st.readDb  = [this] { return getBusGainDb(); };
             st.writeDb = [this] (float db) { setBusGainDb (db); };
             return st;
@@ -487,22 +488,45 @@ EchoJayProcessor::EchoJayProcessor()
             const int n = chainHost.getNumSlots();
             return n > 0 && ChainHost::isLimiterLikeName (chainHost.getSlotInfo (n - 1).name);
         };
+        // THE IN GAIN, AND NOT EVERY LIMITER HAS ONE. An EchoJay Limiter carries input_db (L's hand-off: the in
+        // gain for this move, ramped in the engine). A THIRD-PARTY limiter does not, and writing input_db at it
+        // is a param it skips - which is why leg D read a landing of 0.00 against a third-party limiter last.
+        // So: input_db where the device has it, the slot's own PRE-TRIM otherwise, which ChainHost provides for
+        // any slot of any brand.
         st.readDb = [this] () -> float
         {
             const int n = chainHost.getNumSlots(); if (n <= 0) return 0.0f;
             if (auto* d = dynamic_cast<EedDeviceProcessor*> (chainHost.getSlotProcessor (n - 1)))
-                return (float) d->getParamValue ("input_db");
-            return 0.0f;
+                if (d->paramSchema().find ("input_db") != nullptr)
+                    return (float) d->getParamValue ("input_db");
+            return chainHost.getSlotPreTrimDb (n - 1);
         };
         st.writeDb = [this] (float db)
         {
             const int n = chainHost.getNumSlots(); if (n <= 0) return;
-            // Through the HOST, so the slot's stored params carry it and a reopen restores it - the same reason
-            // the old Level write went through setSlotStructuredSettings rather than straight at the device.
-            auto* pp = new juce::DynamicObject();
-            pp->setProperty ("input_db", (double) juce::jlimit (-12.0f, 12.0f, db));
-            auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-            chainHost.setSlotStructuredSettings (n - 1, juce::var (w));
+            const float v = juce::jlimit (-12.0f, 12.0f, db);
+            // SYMMETRIC WITH readDb ABOVE, and it was not: I fixed the read to fall back to the slot's pre-trim
+            // for a limiter with no input_db and left the WRITE writing input_db unconditionally. A third-party
+            // limiter skips that param, so the landing read back as 0.00 and leg D stayed red through a fix that
+            // only touched half the pair. The capability test belongs on both sides or neither.
+            if (auto* d = dynamic_cast<EedDeviceProcessor*> (chainHost.getSlotProcessor (n - 1)))
+                if (d->paramSchema().find ("input_db") != nullptr)
+                {
+                    // Through the HOST so the slot's stored params carry it and a reopen restores it.
+                    auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", (double) v);
+                    auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+                    chainHost.setSlotStructuredSettings (n - 1, juce::var (w));
+                    // ...AND THE STATE CACHE IS WHAT THE HOST ACTUALLY SAVES. 10 Oct 2026, caught by leg Z3:
+                    // the live param read back +6.49 dB while the saved blob for the same slot still said
+                    // input_db 0.00, so a reopen would have lost the landing - Sean's 8 Oct fault exactly, by a
+                    // new route. The Level slot's write used to take this capture; writeGainDb's comment then
+                    // claimed "the limiter's input_db in the slot's params" was enough on its own, and it is
+                    // not: the stored params and the saved state cache are two different things.
+                    chainHost.captureSlotStateNow (n - 1);
+                    return;
+                }
+            chainHost.setSlotPreTrimDb (n - 1, v);   // any brand: the slot's own IN trim
+            chainHost.captureSlotStateNow (n - 1);   // same reason: the landing has to be in what gets saved
         };
         return st;
     };
