@@ -1,0 +1,87 @@
+######## serialA vs serialB
+== comp: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 73: numbers differing 0 ; line-count diffs 0; token diffs 0
+== eq: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 15: numbers differing 0 ; line-count diffs 0; token diffs 0
+== sat: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 35: numbers differing 0 ; line-count diffs 0; token diffs 0
+== delay: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 156: numbers differing 0 ; line-count diffs 0; token diffs 0
+== reverb: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 201: numbers differing 0 ; line-count diffs 0; token diffs 0
+== gate: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 216: numbers differing 0 ; line-count diffs 0; token diffs 0
+== transient: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 33: numbers differing 0 ; line-count diffs 0; token diffs 0
+== deesser: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 16: numbers differing 1 (max |d| 6 in 'pos' slices) ; line-count diffs 0; token diffs 0
+######## serialA vs par2
+== comp: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 73: numbers differing 0 ; line-count diffs 0; token diffs 0
+== eq: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 15: numbers differing 0 ; line-count diffs 0; token diffs 0
+== sat: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 35: numbers differing 0 ; line-count diffs 0; token diffs 0
+== delay: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 156: numbers differing 0 ; line-count diffs 0; token diffs 0
+== reverb: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 201: numbers differing 7660 (max |d| 560 in 'twin' out_peak_db) ; line-count diffs 0; token diffs 0
+== gate: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 216: numbers differing 0 ; line-count diffs 0; token diffs 0
+== transient: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 33: numbers differing 0 ; line-count diffs 0; token diffs 0
+== deesser: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 16: numbers differing 1 (max |d| 8 in 'pos' slices) ; line-count diffs 0; token diffs 0
+######## serialA vs par4
+== comp: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 73: numbers differing 0 ; line-count diffs 0; token diffs 0
+== eq: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 15: numbers differing 0 ; line-count diffs 0; token diffs 0
+== sat: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 35: numbers differing 0 ; line-count diffs 0; token diffs 0
+== delay: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 156: numbers differing 0 ; line-count diffs 0; token diffs 0
+== reverb: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 201: numbers differing 0 ; line-count diffs 0; token diffs 0
+== gate: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 216: numbers differing 0 ; line-count diffs 1; token diffs 0
+== transient: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 33: numbers differing 0 ; line-count diffs 0; token diffs 0
+== deesser: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 16: numbers differing 1 (max |d| 6 in 'pos' slices) ; line-count diffs 0; token diffs 0
+serialA wall 719
+comp rc=0 start=1791645936.776858 end=1791646323.619406
+eq rc=0 start=1791646323.647595 end=1791646341.611646
+sat rc=0 start=1791646341.640353 end=1791646378.6997051
+delay rc=0 start=1791646378.7283998 end=1791646478.220313
+reverb rc=0 start=1791646478.2501628 end=1791646522.7362409
+gate rc=0 start=1791646522.765159 end=1791646611.606464
+transient rc=0 start=1791646611.634655 end=1791646635.655082
+deesser rc=0 start=1791646635.6847901 end=1791646655.433901
+serialB wall 705
+comp rc=0 start=1791646671.024273 end=1791647051.484093
+eq rc=0 start=1791647051.512442 end=1791647069.704596
+sat rc=0 start=1791647069.733162 end=1791647104.97682
+delay rc=0 start=1791647105.006179 end=1791647203.1595361
+reverb rc=0 start=1791647203.187267 end=1791647243.7527208
+gate rc=0 start=1791647243.779062 end=1791647332.1536472
+transient rc=0 start=1791647332.180131 end=1791647355.5443661
+deesser rc=0 start=1791647355.5722098 end=1791647375.744023
+par2 wall 384
+eq rc=0 start=1791647377.525328 end=1791647396.043078
+sat rc=0 start=1791647396.0704262 end=1791647430.713525
+delay rc=0 start=1791647430.7416399 end=1791647531.003406
+reverb rc=0 start=1791647531.0310981 end=1791647572.566635
+gate rc=0 start=1791647572.593884 end=1791647663.016887
+transient rc=0 start=1791647663.045717 end=1791647686.3435352
+deesser rc=0 start=1791647686.3713121 end=1791647706.3186119
+comp rc=0 start=1791647377.5252118 end=1791647761.497387
+par4 wall 383
+eq rc=0 start=1791647762.9042351 end=1791647781.623403
+sat rc=0 start=1791647762.903519 end=1791647799.23432
+reverb rc=0 start=1791647781.651492 end=1791647823.6931462
+transient rc=0 start=1791647823.7235498 end=1791647846.8934221
+delay rc=0 start=1791647762.903827 end=1791647865.893573
+deesser rc=0 start=1791647846.921232 end=1791647867.327123
+gate rc=0 start=1791647799.264396 end=1791647890.0256908
+comp rc=0 start=1791647762.9041789 end=1791648145.718766

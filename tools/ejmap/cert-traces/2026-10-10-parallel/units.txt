@@ -1,0 +1,8 @@
+comp|bx_opto|direct
+eq|Maag EQ4|eq
+sat|CamelCrusher|saturation
+delay|bx_delay2500|delay
+reverb|MReverb|reverb
+gate|Unfiltered Audio G8|gate
+transient|Transient Master|transient
+deesser|SPL De-Esser|deesser
