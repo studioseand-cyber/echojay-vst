@@ -4837,6 +4837,14 @@ void testSweepRatioAndPicks()
     }
     check (ejmap::cert::channelsVerdict ({ 0.99, 0.99 }).startsWith ("both") && ejmap::cert::channelsVerdict ({ 0.31, 2.79 }) == "the output channels disagree",
            "tone T1: VBC's 0.99 / 0.99 is both channels missing together; AMEK's 0.31 / 2.79 is channels disagreeing");
+    {   // pair P2 (10 Oct, AMEK): a linked pair's twin is never a neutral write
+        auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, x] : kv) o->setProperty (k, x); return juce::var (o); };
+        juce::Array<juce::var> tw { juce::var ("Threshold 2") };
+        const auto lk = ejmap::profile::linkedTwinNames (mk ({ { "ruleDecided", mk ({ { "rule", "linked_pair" }, { "twin", tw } }) } }));
+        const auto dm = ejmap::profile::linkedTwinNames (mk ({ { "ruleDecided", mk ({ { "rule", "dual_mono_pair" }, { "twin", tw } }) } }));
+        check (lk.size() == 1 && lk[0] == "Threshold 2" && dm.isEmpty() && ejmap::profile::linkedTwinNames (mk ({})).isEmpty(),
+               "pair P2: AMEK's linked twin 'Threshold 2' is never written as a neutral (a dual-mono twin is written WITH the amount, P1)");
+    }
     // THE PICKS, from the pushed fixtures themselves (echojay-saas 2454c0a), by range and step count - never by name.
     const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/plan");
     const auto xla = planFromFixture (juce::JSON::parse (dir.getChildFile ("AudioUnit_62485258_1.10.1.json").loadFileAsString()));

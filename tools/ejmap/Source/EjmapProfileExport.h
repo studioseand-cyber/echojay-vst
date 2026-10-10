@@ -56,6 +56,14 @@ namespace ejmap::profile
 // A NEUTRAL'S INSTANTIATE VALUE (10 Oct, VBC FG-Grey / FG-MU / Rack): the fixture's label pass and the sweep's own processes can disagree -
 // VBC's Attack, Release and Input Gain read 0.0 to the label pass and 0.4-0.55 in every process, so "restore instantiate" re-voiced the unit
 // (Input Gain to -24 dB). The value the sweep's processes read before any write is what the measurement ran with: it wins when they differ.
+// A LINKED PAIR'S TWIN IS NEVER WRITTEN (10 Oct, AMEK: 'Threshold 2' written as a neutral at its instantiate '0.0 dB' moved the linked
+// amount through Param Link - per-channel GR 0.31 / 2.79 against 2.0): the sweep never wrote it, so the profile does not either
+inline juce::StringArray linkedTwinNames (const juce::var& fixture)
+{
+    juce::StringArray out; const auto rd = fixture.getProperty ("ruleDecided", {});
+    if (rd.getProperty ("rule", "").toString() == "linked_pair") if (const auto* t = rd.getProperty ("twin", {}).getArray()) for (const auto& n : *t) out.add (n.toString());
+    return out;
+}
 struct NeutralValue { bool fromSweep = false; double norm = 0.0; juce::String text; };
 inline NeutralValue neutralInstantiate (const juce::var& fixtureDefault, const juce::var& seenBySweep)
 {
@@ -568,13 +576,14 @@ inline Export exportCompProfile (const juce::var& f)
             for (const auto& w : *ws) engaged.insert ((int) w.getProperty ("index", -1));
         const auto nt = neverTouch (f);
         // THE DUAL-MONO TWIN (ruled 6 Oct) is written with the amount, never as a neutral
+        const auto linkedTwins = linkedTwinNames (f);   // 10 Oct: never written (AMEK)
         const int pairIdx = (int) sweepVar.getProperty ("pairWrite", {}).getProperty ("index", (int) f.getProperty ("ruleDecided", {}).getProperty ("pair_with", {}).getProperty ("index", -1));
         if (const auto* cs = f.getProperty ("controls", {}).getArray())
             for (const auto& c : *cs)
             {
                 const int idx = (int) c.getProperty ("index", -1);
                 const auto name = c.getProperty ("name", "").toString();
-                if (idx == plan.thr || idx == plan.ratioIndex || idx == pairIdx || engaged.count (idx) || nt.contains (name)) continue;
+                if (idx == plan.thr || idx == plan.ratioIndex || idx == pairIdx || engaged.count (idx) || nt.contains (name) || linkedTwins.contains (name)) continue;
                 if (isReadoutOrMeter (c)) continue;
                 auto* o = new juce::DynamicObject();
                 o->setProperty ("control", name);

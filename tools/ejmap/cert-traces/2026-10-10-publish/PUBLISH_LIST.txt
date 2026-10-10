@@ -1,0 +1,45 @@
+PUBLISH SET - Sean cert 2 + cert 3, 10 Oct; profiles = his files (identical to the c7f762ed re-derive apart from the tone check)
+product | profile file | g2 GR dB | deep levels passed / nulled | checked at
+API-2500 (m) | API-2500_(m)_15.0.70.json | 2.05 | 9 / 0 | 20261010T014638.755+0100
+API-2500 (s) | API-2500_(s)_15.0.70.json | 2.06 | 9 / 0 | 20261010T015541.901+0100
+Auto-Tune Vocal Compressor | Auto-Tune_Vocal_Compressor_1.5.0.json | 1.99 | 9 / 0 | 20261010T013026.484+0100
+Bettermaker Bus Compressor DSP | Bettermaker_Bus_Compressor_DSP_1.0.0.json | 1.96 | 9 / 0 | 20261010T014715.692+0100
+bx_townhouse Buss Compressor | bx_townhouse_Buss_Compressor_1.8.1.json | 1.95 | 9 / 0 | 20261010T014537.401+0100
+C1 comp (m) | C1_comp_(m)_15.0.70.json | 1.98 | 9 / 0 | 20261010T014226.083+0100
+C1 comp (s) | C1_comp_(s)_15.0.70.json | 1.98 | 9 / 0 | 20261010T015355.886+0100
+C1 comp-gate (m) | C1_comp-gate_(m)_15.0.70.json | 1.98 | 9 / 0 | 20261010T014209.227+0100
+C1 comp-gate (s) | C1_comp-gate_(s)_15.0.70.json | 1.98 | 9 / 0 | 20261010T015415.239+0100
+C1 comp-sc (m) | C1_comp-sc_(m)_15.0.70.json | 1.98 | 9 / 0 | 20261010T015128.455+0100
+C1 comp-sc (s) | C1_comp-sc_(s)_15.0.70.json | 1.98 | 9 / 0 | 20261010T013638.198+0100
+dbx-160 (m) | dbx-160_(m)_15.0.70.json | 1.95 | 9 / 0 | 20261010T015841.576+0100
+dbx-160 (s) | dbx-160_(s)_15.0.70.json | 1.95 | 9 / 0 | 20261010T014929.179+0100
+DPR-402 (m) | DPR-402_(m)_15.0.70.json | 1.95 | 9 / 0 | 20261010T014015.975+0100
+DPR-402 (s) | DPR-402_(s)_15.0.70.json | 1.91 | 9 / 0 | 20261010T015048.908+0100
+elysia mpressor | elysia_mpressor_1.15.1.json | 1.99 | 9 / 0 | 20261010T014457.271+0100
+Empirical Labs Mike-E Comp | Empirical_Labs_Mike-E_Comp_2.5.62.json | 1.96 | 9 / 0 | 20261010T022311.724+0100
+H-Comp (m) | H-Comp_(m)_15.0.72.json | 1.97 | 9 / 0 | 20261010T014852.138+0100
+H-Comp (s) | H-Comp_(s)_15.0.72.json | 1.98 | 9 / 0 | 20261010T015859.960+0100
+kHs Compressor | kHs_Compressor_2.1.0.json | 2.0 | 9 / 0 | 20261010T014958.303+0100
+Lindell 254E | Lindell_254E_1.2.2.json | 2.14 | 9 / 0 | 20261010T015220.462+0100
+Lindell SBC | Lindell_SBC_1.0.3.json | 1.99 | 9 / 0 | 20261010T013737.995+0100
+MCompressor | MCompressor_14.16.0.json | 2.03 | 9 / 0 | 20261010T015626.370+0100
+Mixland Vac Attack | Mixland_Vac_Attack_1.0.1.json | 1.97 | 9 / 0 | 20261010T014610.120+0100
+Pro Audio DSP DSM V3 | Pro_Audio_DSP_DSM_V3_3.6.1.json | 1.99 | 9 / 0 | 20261010T015645.195+0100
+RCompressor (m) | RCompressor_(m)_15.0.70.json | 1.95 | 9 / 0 | 20261010T014838.362+0100
+RCompressor (s) | RCompressor_(s)_15.0.70.json | 1.95 | 9 / 0 | 20261010T015919.093+0100
+Shadow Hills Class A Mastering Comp | Shadow_Hills_Class_A_Mastering_Comp_1.4.1.json | 2.29 | 9 / 0 | 20261010T014142.372+0100
+Shadow Hills Mastering Compressor | Shadow_Hills_Mastering_Compressor_1.5.1.json | 1.86 | 9 / 0 | 20261010T013951.312+0100
+Solid Bus Comp | Solid_Bus_Comp_1.4.5.json | 1.98 | 9 / 0 | 20261010T014814.433+0100
+SPL IRON | SPL_IRON_1.6.1.json | 1.99 | 9 / 0 | 20261010T015440.910+0100
+SSL LMC+ | SSL_LMC+_1.1.9.json | 1.91 | 9 / 0 | 20261010T015604.731+0100
+SSL Native Bus Compressor 2 | SSL_Native_Bus_Compressor_2_1.3.4.json | 1.93 | 9 / 0 | 20261010T014435.129+0100
+SSLComp (m) | SSLComp_(m)_15.0.70.json | 1.97 | 9 / 0 | 20261010T015712.276+0100
+SSLComp (s) | SSLComp_(s)_15.0.70.json | 1.97 | 9 / 0 | 20261010T014242.665+0100
+TBTECH Cenozoix Compressor | TBTECH_Cenozoix_Compressor_1.1.0.json | 2.02 | 9 / 0 | 20261010T015732.489+0100
+Tube-Tech CL 1B | Tube-Tech_CL_1B_2.5.62.json | 2.0 | 9 / 0 | 20261010T014308.033+0100
+U73b Compressor | U73b_Compressor_3.0.0.json | 1.99 | 9 / 0 | 20261010T015509.066+0100
+UnFairchild | UnFairchild_1.0.4.json | 2.22 | 9 / 0 | 20261010T021302.610+0100
+Unfiltered Audio Zip | Unfiltered_Audio_Zip_1.4.2.json | 1.98 | 9 / 0 | 20261010T015333.141+0100
+VBC FG-Red | VBC_FG-Red_1.3.5.json | 1.95 | 9 / 0 | 20261010T013557.980+0100
+VComp (m) | VComp_(m)_15.0.70.json | 1.96 | 9 / 0 | 20261010T013624.730+0100
+VComp (s) | VComp_(s)_15.0.70.json | 1.96 | 9 / 0 | 20261010T015021.374+0100

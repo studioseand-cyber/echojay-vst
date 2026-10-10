@@ -42,7 +42,9 @@ inline const std::vector<Step>& steps()
         { "followup",         "plain",    { "--cert-tonecheck-all" },                               2400.0,  "the compressor follow-up" },
         { "gain_timing",      "redo",     { "gaincal,timing" },                                     3000.0,  "gain and timing for every certified compressor" },
         { "uad",              "selector", { "uad" },                                                600.0,   "UAD rows the Satellite admits" },
-        { "no_pool",          "selector", { "no_pool" },                                            1800.0,  "the Soundtoys / 2C empty-list rows" },
+        // 10 Oct (Sean's night): 9 rows took 2 h+ (EchoBoy 42 min, EchoBoy Jr 35, Little PrimalTap 37 - delays under the 7 Oct reverb / delay
+        // mode, role tests twice, tails to 20 s): slow, not stuck; the estimate follows
+        { "no_pool",          "selector", { "no_pool" },                                            10800.0, "the Soundtoys / 2C empty-list rows (~40 min per delay or reverb)" },
         { "multiband",        "redo",     { "multiband" },                                          1200.0,  "multiband (the enable step)" },
         { "categorise",       "plain",    { "--categorise-propose", "--include-pace" },             5400.0,  "the review sheet for the uncategorised (never categories.json)" },
         { "combined",         "redo",     { "combined" },                                           2400.0,  "combined settings" },
