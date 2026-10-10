@@ -1,0 +1,22 @@
+THE FOUR probe_crashed ROWS, 10 Oct late (G8 measured here; the other three from Sean's traces - their .ips reports are on his Mac)
+
+G8 (Unfiltered Audio, gate) - DETERMINISTIC, every run, both passes of the q0.n0 ramp: control 13 Threshold -40 dB + control 0 (attack) at
+  its zero end "0 ms"; at ~1.4 s the gate opens and the probe aborts (SIGABRT, malloc free-list checksum corruption).
+  First report: the abort surfaced in JUCE's MidiBuffer::addEvent under renderMidiOutput (G8 emits gate-open MIDI inside AudioUnitRender).
+  TESTED, NOT the cause: (a) the MIDI-output callback removed -> SIGSEGV in G8 (it calls the callback without a null check), 199 of
+  201 traces died; (b) the callback replaced by one that discards the packets -> the same 2 traces still die, now inside G8's own
+  JuceAU::Render (free_tiny -> free_list_checksum_botch). G8 corrupts its own heap at gate-open with a 0 ms attack. Both probe changes
+  reverted (the probe in the cut is the HEAD source).
+  Avoidance not built (needs a ruling: it changes what is measured): when a plugin dies at a control's END, re-measure that position
+  nudged inward (e.g. norm 0.02). Untested here: another block size (the probe takes none).
+EchoBoy (Soundtoys, delay, cert 3) - died INSIDE prepareToPlay (trace stops at `stage prepare`, 6 lines) on 1 call of ~150; its other
+  calls prepare fine -> intermittent, in the plugin's load path (licence / iLok state not established).
+EchoBoy Jr (Soundtoys, delay, cert 3) - the same: `stage prepare`, 6 lines, 1 call; intermittent.
+Auto-Tune Pro (Antares, tuners, cert 2) - died before configure (the probe header line only) on 1 call; intermittent, at load.
+
+THE FIX FOR THE INTERMITTENT ONES (the next build): runProbeCall - a probe killed by a signal or exiting unclean (not a refusal) with
+no end marker is run ONCE more at every Phase B probe call and the tone check's (19 call sites); the second run's trace is kept with a
+`crash_retry first <what happened>` line. A refusal, a window, a timeout, a clean exit, a death after the end marker: never re-run.
+Rehearsed (retryreh): G8 dies twice -> still probe_crashed, crash report "EXC_CRASH SIGABRT in com.UnfilteredAudio.G8"; Lindell 902 +
+SPL De-Esser alongside: 0 figure differences (the two strings are the rebuilt probe's cdhash in the drafts' `measured.tool`).
+EchoBoy / EchoBoy Jr / Auto-Tune Pro cannot load here (PACE / iLok): their recovery is proven by the pin only (a crash then a clean run).

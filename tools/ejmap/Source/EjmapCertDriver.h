@@ -357,6 +357,28 @@ inline Attempted runWithRetry (const juce::StringArray& args, int timeoutMs, con
     return a;
 }
 
+// A PROBE THAT DIED MID-TRACE IS RE-RUN ONCE (10 Oct; Sean's EchoBoy / EchoBoy Jr died inside prepareToPlay on one call of ~150, Auto-Tune
+// Pro at load on one call): the Phase B modes and the tone check called the probe once, so one intermittent death cost the row. Killed by a
+// signal or exited unclean (not a refusal) with no end marker -> run once more; the trace keeps the second run, a `crash_retry` line at its
+// end says what the first did. A refusal, a window, a timeout (the hang guard's business) and a clean exit are never re-run. A plugin that
+// dies every time (G8 at 0 ms attack) dies twice and stays probe_crashed.
+inline bool crashedMidTrace (const ChildResult& r)
+{
+    // died: killed by a signal, or an unclean exit that is not the probe's refusal (3); a window (uiShown) and a timeout are neither
+    const bool died = r.kind == ChildResult::Kind::signaled || (r.kind == ChildResult::Kind::exited && r.code != 0 && r.code != 3);
+    return died && ! phaseb::traceEnded (r.out);
+}
+inline ChildResult runProbeCall (const juce::StringArray& args, int timeoutMs, const std::function<ChildResult()>& runner = {})
+{
+    auto once = [&] { return runner ? runner() : runChild (args, timeoutMs); };
+    auto r = once();
+    if (! crashedMidTrace (r)) return r;
+    const auto first = r.describe();
+    auto r2 = once();
+    r2.out << "\ncrash_retry\tfirst\t" << first << "\n";
+    return r2;
+}
+
 struct ProbeIdentity { bool ok = false; juce::String why, team, cdhash; };
 
 inline ProbeIdentity checkProbe (const juce::File& probe, const juce::String& signIdentity,
@@ -2849,7 +2871,7 @@ inline ModeFixture sampledFixture (const SweepOptions& opt, const juce::PluginDe
     auto nominate = [&] (const juce::var& b) { std::vector<int> idxs; if (const auto* cs = b.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) { const auto n = c.getProperty ("name", "").toString(); for (const char* t : terms) if (nametokens::controlAnswersTerm (n, t)) { idxs.push_back ((int) c.getProperty ("index", -1)); break; } } return idxs; };
     ModeFixture fx;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra, int timeoutMs) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
-        const auto r = runChild (args, timeoutMs); raw.getChildFile (stem + "." + mode + "." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
+        const auto r = runProbeCall (args, timeoutMs); raw.getChildFile (stem + "." + mode + "." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
     const auto lp = run ("list-params", { "--list-params" }, opt.timeoutMs);
     if (! lp.cleanExit())
     {   // 9 Oct: the probe's own refusal text rides along (AVOX SYBIL: "refused An OS error occurred during initialisation of the plug-in (4097)")
@@ -3137,7 +3159,7 @@ inline int runCategorisePropose (const SweepOptions& opt, const juce::StringArra
             row.category = row.proposed.size() == 1 ? row.proposed[0] : juce::String(); say ("  " + row.product + ": " + row.why); rows.push_back (row); continue;
         }
         const auto uidHex = r.uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + r.desc.version;
-        auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), r.desc.name, r.desc.fileOrIdentifier, juce::String::toHexString (r.desc.uniqueId) }; args.addArray (extra); const auto x = runChild (args, opt.timeoutMs); raw.getChildFile (stem + ".categorise." + tag + ".1.txt").replaceWithText (x.out, false, false, "\n"); return x; };
+        auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), r.desc.name, r.desc.fileOrIdentifier, juce::String::toHexString (r.desc.uniqueId) }; args.addArray (extra); const auto x = runProbeCall (args, opt.timeoutMs); raw.getChildFile (stem + ".categorise." + tag + ".1.txt").replaceWithText (x.out, false, false, "\n"); return x; };
         const auto t1 = juce::Time::getMillisecondCounterHiRes();
         const auto lp = run ("list-params", { "--list-params" });
         if (lp.kind == ChildResult::Kind::uiShown) { row.why = "a window at the load (" + lp.describe() + "): not loaded again; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); rows.push_back (row); continue; }
@@ -3473,7 +3495,7 @@ inline int runCombined (const SweepOptions& opt)
                                  "--sweep", "thr=" + juce::String (setting.amountIndex), "norms=" + juce::String (setting.amountNorm, 6),
                                  "levels=" + toneLevels + juce::String (setting.Lpeak, 4), "hz=997", "hold=" + juce::String (holdS, 2), "discard=" + juce::String (discardS, 2), "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
         if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
-        const auto r = runChild (args, juce::jmax (opt.timeoutMs, (int) (holdS * 8000.0)));
+        const auto r = runProbeCall (args, juce::jmax (opt.timeoutMs, (int) (holdS * 8000.0)));
         raw.getChildFile (stem + ".combined." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
         if (r.kind == ChildResult::Kind::uiShown) return false;
         if (! r.cleanExit()) return true;
@@ -3560,7 +3582,7 @@ inline int runMaterial (const SweepOptions& opt)
     {
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--material", "kind=" + kind, "rms=" + juce::String (Lrms, 2), "quiet=-40", "seconds=6", "win_ms=50" };
         if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
-        const auto r = runChild (args, opt.timeoutMs);
+        const auto r = runProbeCall (args, opt.timeoutMs);
         raw.getChildFile (stem + ".material." + kind + ".1.txt").replaceWithText (r.out, false, false, "\n");
         if (r.kind == ChildResult::Kind::uiShown) { say ("MATERIAL: a window appeared; stopping"); return 5; }
         const auto parsed = material::parseMaterial (r.cleanExit() ? r.out : juce::String ("refused " + r.describe()));
@@ -3621,7 +3643,7 @@ inline int runFrequency (const SweepOptions& opt)
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--sweep", "thr=" + juce::String (amountIdx), "norms=" + juce::String (pickNorm, 6),
                                  "levels=" + toneLevels + juce::String (Lpeak, 4), "hz=" + juce::String (hz, 0), "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
         if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
-        const auto r = runChild (args, opt.timeoutMs);
+        const auto r = runProbeCall (args, opt.timeoutMs);
         raw.getChildFile (stem + ".frequency.hz" + juce::String (hz, 0) + ".1.txt").replaceWithText (r.out, false, false, "\n");
         if (r.kind == ChildResult::Kind::uiShown) { say ("FREQUENCY: a window appeared; stopping"); return 5; }
         std::optional<double> gr;
@@ -3688,7 +3710,7 @@ inline int runSampleRate (const SweepOptions& opt)
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--sweep", "thr=" + juce::String (amountIdx), "norms=" + juce::String (pickNorm, 6),
                                  "levels=" + toneLevels + juce::String (Lpeak, 4), "hz=997", "sr=" + juce::String (sr, 0), "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
         if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
-        const auto r = runChild (args, opt.timeoutMs);
+        const auto r = runProbeCall (args, opt.timeoutMs);
         raw.getChildFile (stem + ".samplerate.sr" + juce::String (sr, 0) + ".1.txt").replaceWithText (r.out, false, false, "\n");
         if (r.kind == ChildResult::Kind::uiShown) { say ("SAMPLERATE: a window appeared; stopping"); return 5; }
         std::optional<double> gr;
@@ -3735,7 +3757,7 @@ inline int runGainCal (const SweepOptions& opt)
         if (opt.resumeTraces && rf.existsAsFile())   // 9 Oct: a timed-out row resumes - a COMPLETE trace from the last run is the reading
             if (const auto prev = rf.loadFileAsString(); phaseb::traceComplete (prev)) { ChildResult c; c.kind = ChildResult::Kind::exited; c.code = 0; c.out = prev; ++reusedTraces; return c; }
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
-        const auto r = runChild (args, opt.timeoutMs);
+        const auto r = runProbeCall (args, opt.timeoutMs);
         rf.replaceWithText (r.out, false, false, "\n");
         return r;
     };
@@ -3914,7 +3936,7 @@ inline int runTiming (const SweepOptions& opt)
         juce::StringArray all = sets; all.addArray (extraSets);
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--burst", "quiet=" + juce::String (quiet, 2), "loud=" + juce::String (loud, 2),
                                  "pre=1.0", "hold=" + juce::String (holdS, 2), "post=" + juce::String (postS, 2), "hz=" + juce::String (hz, 0), "win_ms=" + juce::String (winMs, 0), "set=" + all.joinIntoString (",") };
-        const auto r = runChild (args, opt.timeoutMs);
+        const auto r = runProbeCall (args, opt.timeoutMs);
         raw.getChildFile (stem + ".timing." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
         return { timing::derive (timing::parseBurst (r.cleanExit() ? r.out : juce::String ("refused " + r.describe()))), r };
     };
@@ -4089,7 +4111,7 @@ inline int runLimiter (const SweepOptions& opt)
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra)
     {
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
-        const auto r = runChild (args, opt.timeoutMs);
+        const auto r = runProbeCall (args, opt.timeoutMs);
         raw.getChildFile (stem + ".limiter." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
         return r;
     };
@@ -4318,7 +4340,7 @@ inline int runEq (const SweepOptions& opt)
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra)
     {
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
-        const auto r = runChild (args, opt.timeoutMs);
+        const auto r = runProbeCall (args, opt.timeoutMs);
         raw.getChildFile (stem + ".eq." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
         return r;
     };
@@ -4655,7 +4677,7 @@ inline int runSaturation (const SweepOptions& opt)
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("saturation"); outDir.createDirectory();
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
-        const auto r = runChild (args, opt.timeoutMs); raw.getChildFile (stem + ".saturation." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
+        const auto r = runProbeCall (args, opt.timeoutMs); raw.getChildFile (stem + ".saturation." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
     struct Target { int index; juce::String name; };
     std::vector<Target> targets;
@@ -4917,7 +4939,7 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("reverbdelay"); outDir.createDirectory();
     int processN = 0;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
-        const auto r = runChild (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".reverbdelay." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
+        const auto r = runProbeCall (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".reverbdelay." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
     const auto fx = sampledFixture (opt, desc, raw, stem, "reverbdelay", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "mix", "dry/wet", "wet", "blend", "dry wet", "drywet", "sync", "tempo sync", "note", "division", "subdivision", "beat", "rate", "delay", "time", "pre-delay", "predelay", "pre delay", "pre", "decay", "reverb time", "rt60", "length", "size", "tail", "feedback", "regen", "regeneration", "repeats", "fb" });
     if (! fx.ok) { say ("RD: " + fx.why); return 1; }
@@ -5272,7 +5294,7 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("dynamics"); outDir.createDirectory();
     int processN = 0;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
-        const auto r = runChild (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".dynamics." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
+        const auto r = runProbeCall (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".dynamics." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
     const auto fx = sampledFixture (opt, desc, raw, stem, "dynamics", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "attack", "transient", "punch", "transients", "sustain", "body", "release", "tail", "threshold", "thresh", "open", "range", "floor", "depth", "reduction", "hold", "decay" });
     if (! fx.ok) { say ("DYN: " + fx.why); return 1; }
@@ -5557,7 +5579,7 @@ inline int runDeesser (const SweepOptions& opt)
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("deesser"); outDir.createDirectory();
     int processN = 0;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
-        const auto r = runChild (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".deesser." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
+        const auto r = runProbeCall (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".deesser." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
     const auto fx = sampledFixture (opt, desc, raw, stem, "deesser", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "threshold", "thresh", "thr", "sensitivity", "amount", "reduction", "range", "frequency", "freq", "hz", "center", "centre", "tune", "mode", "type", "split", "wide", "band" });
     if (! fx.ok) { say ("DS: " + fx.why); return 1; }
@@ -5880,7 +5902,7 @@ inline int runMultiband (const SweepOptions& opt)
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("multiband"); outDir.createDirectory();
     int processN = 0;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
-        const auto r = runChild (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".multiband." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
+        const auto r = runProbeCall (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".multiband." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
     const auto fx = sampledFixture (opt, desc, raw, stem, "multiband", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "threshold", "thresh", "thr", "crossover", "xover", "cross", "x-over", "freq", "frequency", "hz", "amount", "depth", "compression" });
     if (! fx.ok) { say ("MB: " + fx.why); return 1; }
@@ -6625,7 +6647,7 @@ inline juce::String inertCheckOnRecord (const SweepOptions& opt, const juce::Fil
     const auto ir = runInertCheck (record, thr, norm, sets, [&] (const juce::String& tag, const juce::StringArray& a)
     {
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (a);
-        const auto r = runChild (args, opt.timeoutMs);
+        const auto r = runProbeCall (args, opt.timeoutMs);
         raw.getChildFile (stem + ".followup." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
         return r;
     });
@@ -7377,7 +7399,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
              + "; section 6 picks norm " + juce::String (lr.pick.norm, 4) + (lr.pick.i1 >= 0 ? " between points " + juce::String (lr.pick.i0) + " and " + juce::String (lr.pick.i1) : " at point " + juce::String (lr.pick.i0))
              + " (in_at_gr at g: " + juce::String (lr.pick.inAtG0, 2) + (lr.pick.i1 >= 0 ? " / " + juce::String (lr.pick.inAtG1, 2) : juce::String()) + "; pick's 1 dB point " + juce::String (lr.pick.pickOneDb, 2) + ")"
              + (lr.pick.note.isNotEmpty() ? "; " + lr.pick.note : juce::String()) + "; " + ratioNote);
-        const auto r = runChild (args, opt.timeoutMs);
+        const auto r = runProbeCall (args, opt.timeoutMs);
         auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
         raw.getChildFile (profileFile.getFileNameWithoutExtension() + ".tonecheck" + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
         if (r.kind == ChildResult::Kind::uiShown) { lr.window = true; lr.why = "the probe " + r.describe(); say ("TONE: " + lr.why); return lr; }
@@ -7479,7 +7501,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
                                      "levels=" + toneLevels + juce::String (main.Lpeak, 4), "hz=997", "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
             { juce::StringArray all = sets; if (pairIdx >= 0) all.add (juce::String (pairIdx) + ":" + juce::String (main.pick.norm, 6)); if (! all.isEmpty()) args.add ("set=" + all.joinIntoString (",")); }
             args.add ("sidechain=" + sw);
-            const auto r = runChild (args, opt.timeoutMs);
+            const auto r = runProbeCall (args, opt.timeoutMs);
             auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
             raw.getChildFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.ab." + sw + ".1.txt").replaceWithText (r.out, false, false, "\n");
             auto* o = new juce::DynamicObject();
@@ -7663,7 +7685,7 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
                                  "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
         if (twoTone) args.add ("hz2=" + juce::String (runHz2, 0));
         if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
-        const auto r = runChild (args, opt.timeoutMs);
+        const auto r = runProbeCall (args, opt.timeoutMs);
         auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
         raw.getChildFile (recordFile.getFileNameWithoutExtension() + ".detector" + retryTag + (twoTone ? (runTag.isNotEmpty() ? runTag : juce::String (".twotone")) + ".1.txt" : juce::String (".sine.1.txt"))).replaceWithText (r.out, false, false, "\n");
         if (! r.cleanExit()) { say ("DETECTOR: the " + juce::String (twoTone ? "two-tone" : "sine") + " process " + r.describe()); return std::nullopt; }
