@@ -2182,7 +2182,7 @@ inline int runCertSweep (const SweepOptions& opt)
     // positions like any other. Rounds until no gap is over the bar, or the round / position caps.
     auto refineGrid = [&] (sweep::Plan& q, const juce::String& prefix, sweep::ProcessOut& r, std::vector<sweep::ProcessOut>& ps)
     {
-        if (! q.profile) return;
+        if (! sweep::refineAllowed (q.profile, q.stepped)) return;
         juce::StringArray levelList; for (double L : q.probeLevels()) levelList.add (juce::String ((int) L));
         auto args = [&] (const sweep::Plan& pl, float norm) {
             juce::StringArray a { "--sweep", "thr=" + juce::String (pl.thr), "norms=" + juce::String (norm, 6), "levels=" + levelList.joinIntoString (","), "hz=997",

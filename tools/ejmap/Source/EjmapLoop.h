@@ -508,9 +508,7 @@ inline PlanDiff planDiffers (const juce::var& record, const sweep::Plan& now)
         const auto det = sweep::landingDetentNorms (record, idx);
         if (det.empty()) return false;
         const auto norms = sv.getProperty ("positionNorms", {});
-        bool same = norms.size() == (int) det.size();
-        for (int i = 0; same && i < norms.size(); ++i) { bool hit = false; for (float d : det) if (std::abs ((double) norms[i] - d) < 1e-4) hit = true; same = hit; }
-        if (same) return false;
+        if (sweep::sweptAtDetents (sv, det)) return false;   // 10 Oct: the LANDED positions are the detents (unlanded refinement leftovers ignored)
         d.resweep = true; d.why = "swept at " + juce::String (norms.size()) + " position(s) but the control holds " + juce::String ((int) det.size()) + " detents (the landing read): re-swept at the detents as read back";
         return true;
     };

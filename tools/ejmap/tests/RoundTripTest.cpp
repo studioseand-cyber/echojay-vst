@@ -8742,6 +8742,18 @@ void testRunAll()
                && ! ejmap::phaseb::noPoolFiling ("ok", { aether }).applies,
                "phaseb PB-EMPTY: an AU with no parameter at create / after prepare / after render is filed empty_param_list and never retried; one that publishes after prepare is not");
     }
+    // SW-STEP (Kathy, 10 Oct; UnFairchild): a stepped plan is never refined; the detent check reads only the LANDED positions - 21
+    // detents + two unlanded refinement leftovers (0.075, 0.175, Sean's 10 Oct follow-up) is swept at the detents; a missing detent is not
+    {
+        std::vector<float> det; for (int k = 0; k <= 20; ++k) det.push_back ((float) k / 20.0f);
+        juce::Array<juce::var> norms, lb; for (float d : det) { norms.add ((double) d); lb.add ("instack"); }
+        norms.add (0.075); lb.add ("unlanded"); norms.add (0.175); lb.add ("unlanded");
+        auto sv = [] (const juce::Array<juce::var>& n, const juce::Array<juce::var>& l) { auto* o = new juce::DynamicObject(); o->setProperty ("positionNorms", n); o->setProperty ("positionLandedBy", l); return juce::var (o); };
+        juce::Array<juce::var> n2 (norms), l2 (lb); n2.remove (5); l2.remove (5);
+        check (ejmap::sweep::sweptAtDetents (sv (norms, lb), det) && ! ejmap::sweep::sweptAtDetents (sv (n2, l2), det)
+               && ! ejmap::sweep::refineAllowed (true, true) && ejmap::sweep::refineAllowed (true, false) && ! ejmap::sweep::refineAllowed (false, false),
+               "sweep SW-STEP: no grid refinement on a stepped plan; the detent check compares the landed positions only (21 + 2 unlanded = at the detents; 20 landed = not)");
+    }
     // PB-SILENT (Kathy, 10 Oct; smartDeess): the input present and every output silent is silent_output, never ok; one live output, a
     // silent output with no input, or too few lines are not; a window / licence row is never re-filed
     {

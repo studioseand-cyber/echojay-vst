@@ -379,6 +379,23 @@ inline int landedDetents (const juce::var& sweepVar)
     for (int k = 0; k < n; ++k) if (std::abs (landed[(size_t) k] - (double) k / (n - 1)) > 1e-4) return 0;
     return n;
 }
+// UNFAIRCHILD (Kathy, 10 Oct): a stepped plan (swept at every step) gets NO grid refinement - a position between detents cannot
+// land (Sean's 10 Oct follow-up: 23 steps + 2 refined, 0.075 and 0.175, both unlanded) - and the detent check compares only the
+// positions that LANDED, so refinement leftovers in an older record never re-trigger a re-sweep that cannot converge
+inline bool refineAllowed (bool profileSweep, bool steppedPlan) { return profileSweep && ! steppedPlan; }
+inline bool sweptAtDetents (const juce::var& sweepVar, const std::vector<float>& detents)
+{
+    const auto norms = sweepVar.getProperty ("positionNorms", {}); const auto* lb = sweepVar.getProperty ("positionLandedBy", {}).getArray();
+    std::vector<double> landed;
+    for (int i = 0; i < norms.size(); ++i)
+    {
+        if (lb != nullptr && i < lb->size() && (*lb)[i].toString() == "unlanded") continue;
+        bool dup = false; for (double x : landed) dup = dup || std::abs (x - (double) norms[i]) < 1e-4; if (! dup) landed.push_back ((double) norms[i]);
+    }
+    if (landed.size() != detents.size()) return false;
+    for (double n : landed) { bool hit = false; for (float d : detents) if (std::abs (n - d) < 1e-4) hit = true; if (! hit) return false; }
+    return true;
+}
 inline bool isSteppedControl (const juce::var& c)
 {
     const int steps = (int) c.getProperty ("numSteps", 0);
