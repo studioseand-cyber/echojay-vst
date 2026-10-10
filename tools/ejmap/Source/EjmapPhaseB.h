@@ -151,6 +151,23 @@ inline Silence outputSilence (const juce::StringArray& traces)
 {
     Silence s;
     for (const auto& t : traces)
+    {
+        // a TAIL trace (reverb / delay `twin` windows, 10 Oct: Pro-R 2, Timeless 3) is judged WHOLE - a live 100 % wet unit is silent
+        // in its first windows (pre-delay), so one trace = one judged output: live if any window's output is above kSilentDb
+        if (t.contains ("\ntwin\t") || t.startsWith ("twin\t"))
+        {
+            bool input = false, live = false;
+            for (const auto& line : juce::StringArray::fromLines (t))
+            {
+                if (! line.startsWith ("twin\t")) continue;
+                const auto f = juce::StringArray::fromTokens (line, "\t", ""); const int ii = f.indexOf ("in_db"), io = f.indexOf ("out_db");
+                if (ii < 0 || io < 0 || ii + 1 >= f.size() || io + 1 >= f.size()) continue;
+                if (f[ii + 1].getDoubleValue() > kSignalPresentDb) input = true;
+                if (f[io + 1].getDoubleValue() > kSilentDb) { live = true; break; }
+            }
+            if (input || live) { ++s.judged; if (! live) ++s.silent; }
+            continue;
+        }
         for (const auto& line : juce::StringArray::fromLines (t))
         {
             const auto f = juce::StringArray::fromTokens (line, "\t", ""); if (f.isEmpty() || (f[0] != "hold" && f[0] != "rtotal")) continue;
@@ -159,6 +176,7 @@ inline Silence outputSilence (const juce::StringArray& traces)
             if (f[ii + 1].getDoubleValue() <= kSignalPresentDb) continue;   // no input: not a test of the output
             ++s.judged; if (f[io + 1].getDoubleValue() <= kSilentDb) ++s.silent;
         }
+    }
     return s;
 }
 // the filing: an ok / failed / slept row whose every judged output was silent becomes silent_output (the reason names the count)

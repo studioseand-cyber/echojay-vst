@@ -8785,7 +8785,12 @@ void testRunAll()
         juce::String w1, w2, w3, w4, w5;
         check (ejmap::phaseb::silentFiling ("ok", { sd, rt }, w1) == "silent_output" && w1.contains ("4 of 4")
                && ejmap::phaseb::silentFiling ("ok", { sd, rt, live }, w2).isEmpty() && ejmap::phaseb::silentFiling ("ok", { noIn }, w3).isEmpty()
-               && ejmap::phaseb::silentFiling ("ok", { sd }, w4).isEmpty() && ejmap::phaseb::silentFiling ("needs_licence", { sd, rt }, w5).isEmpty(),
+               && ejmap::phaseb::silentFiling ("ok", { sd }, w4).isEmpty() && ejmap::phaseb::silentFiling ("needs_licence", { sd, rt }, w5).isEmpty()
+               && [] { // tail traces judged whole: Pro-R 2's (every window -600) is silent; a live reverb silent only in its pre-delay is not
+                      const juce::String silentTail = "twin\tt_ms\t0.500\tseg\tburst\tin_db\t-14.997\tout_db\t-600.000\ntwin\tt_ms\t40.5\tseg\ttail\tin_db\t-999\tout_db\t-600.000\n";
+                      const juce::String liveTail = "twin\tt_ms\t0.500\tseg\tburst\tin_db\t-14.997\tout_db\t-600.000\ntwin\tt_ms\t30.5\tseg\ttail\tin_db\t-999\tout_db\t-41.2\n";
+                      juce::String a, b; return ejmap::phaseb::silentFiling ("ok", { silentTail, silentTail, silentTail }, a) == "silent_output"
+                                             && ejmap::phaseb::silentFiling ("ok", { silentTail, silentTail, liveTail }, b).isEmpty(); } (),
                "phaseb PB-SILENT: every output silent with the input present -> silent_output (" + w1 + "); one live output, no input, too few lines, a licence row -> unchanged");
     }
     // PB-DRY (10 Oct): --phaseb-all refuses --dry-run (anywhere in the line, the last argument too) instead of ignoring it and loading

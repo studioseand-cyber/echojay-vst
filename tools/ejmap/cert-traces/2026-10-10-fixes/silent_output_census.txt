@@ -24,3 +24,10 @@ cert 2  saturation freqtube                         ok             False        
 
 Cause per unit NOT established (APB = PACE here; the bx_ pedals and the rest unknown: activation / licence / bus state). These rows
 are done; they are re-filed only if re-run. The next build files a re-run of any of them silent_output.
+
+ADDENDUM (10 Oct evening): the rule above did not judge reverb / delay TAIL traces (`twin` windows). Census of those, each trace
+judged whole (live if any window's output is above -300 dB - a live 100 % wet unit is silent in its pre-delay windows): 121 rows
+with tail traces, 2 all-silent, both filed ok, both products already above (dry -999 and wet -999 at every mix position):
+  cert 2  delay   Timeless 3  3.0.8  ok  102 traces
+  cert 2  reverb  Pro-R 2     2.0.4  ok  102 traces
+17 partly silent (not filed). The rule now judges tail traces this way: 20 silent rows, 13 products.
