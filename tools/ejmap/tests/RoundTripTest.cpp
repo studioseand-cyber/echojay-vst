@@ -8754,6 +8754,20 @@ void testRunAll()
                && ! ejmap::sweep::refineAllowed (true, true) && ejmap::sweep::refineAllowed (true, false) && ! ejmap::sweep::refineAllowed (false, false),
                "sweep SW-STEP: no grid refinement on a stepped plan; the detent check compares the landed positions only (21 + 2 unlanded = at the detents; 20 landed = not)");
     }
+    // UAD-DEV (Kathy, 10 Oct): the device absent leaves a UAD row unrun (a licence stop is still filed); present re-files an old
+    // needs_device row; the step's exit 7 keeps it started (resumes), never failed; a resumed step is planned again
+    {
+        using namespace ejmap;
+        auto row = [] (const char* oc) { auto* o = new juce::DynamicObject(); o->setProperty ("outcome", oc); return juce::var (o); };
+        runall::State st; st["eq"].state = "started";
+        const auto p = runall::plan (st, juce::StringArray::fromTokens ("preflight,eq,drafts", ",", ""), {});
+        bool eqPlanned = false; for (const auto* x : p) if (x->name == "eq") eqPlanned = true;
+        check (uad::leaveUnrunForDevice (juce::String (uad::kNotConnected) + " (no device in the I/O registry); not loaded") && ! uad::leaveUnrunForDevice ("licence file: expired (Oxford Limiter V2)")
+               && uad::refileForDevice (row ("needs_device"), true) && ! uad::refileForDevice (row ("needs_device"), false) && ! uad::refileForDevice (row ("needs_licence"), true)
+               && runall::stepResult (7, true, "eq") == "device_absent" && runall::stepResult (7, false, "categorise") == "failed" && runall::stepResult (0, true, "eq") == "done"
+               && eqPlanned && runall::isResume (st, "eq"),
+               "uad UAD-DEV: device absent -> the row is left unrun and the step stays resumable (exit 7); present -> old needs_device rows run again; a licence stop is still an answer");
+    }
     // PB-SILENT (Kathy, 10 Oct; smartDeess): the input present and every output silent is silent_output, never ok; one live output, a
     // silent output with no input, or too few lines are not; a window / licence row is never re-filed
     {

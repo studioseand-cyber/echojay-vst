@@ -1,0 +1,11 @@
+UAD device absent, rehearsed 10 Oct on this Mac (no UAD-2 device; nothing loaded), build tree after the change:
+$ ejmap --phaseb-all --category eq --only "UAD Pultec EQP-1A" --only "UAD Neve 1081" --out <scratch> ...
+exit 7
+PHASEB: UAD-2 device ABSENT: no UAD-2 / Universal Audio device in the I/O registry or the hardware listing (the UAD Meter & Control Panel is running: the software is installed, no device) -> 2 UAD row(s) will be left unrun (no row written: they run when the device is present; the step stays resumable), none loaded
+PHASEB: 2 product(s) over 1 category -> <scratch>/uadreh/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  eq           2 product(s), 0 already done; hang guard 45 min (ten responses per band (baselines at two levels and two grids, gain at -12 / -30, freq, Q at +6 / +3, two acceptance writes), up to ten bands, the engage search and the pool: ~12-25 min)
+  eq: UAD Neve 1081 - left unrun: UAD-2 device not connected (no UAD-2 / Universal Audio device in the I/O registry or the hardware listing (the UAD Meter & Control Panel is running: the software is installed, no device)); not loaded (resumes when the device is present)
+  eq: UAD Pultec EQP-1A - left unrun: UAD-2 device not connected (no UAD-2 / Universal Audio device in the I/O registry or the hardware listing (the UAD Meter & Control Panel is running: the software is installed, no device)); not loaded (resumes when the device is present)
+PHASEB: done - PHASE B PROGRESS (started 20261010T151626, updated 20261010T151627); summary <scratch>/uadreh/phaseb/summary.json
+PHASEB: 2 UAD row(s) left unrun - the UAD-2 device is absent; connect the Satellite and run the same line (exit 7)
+phaseb/eq/ after the run: 0 row file(s)

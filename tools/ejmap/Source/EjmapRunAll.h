@@ -138,6 +138,15 @@ inline juce::StringArray planNotes (const State& st, const std::vector<const Ste
     if (planned ("fixups") && fixupOwed (st)) notes.add ("RUN-ALL: multiband / gain-all finished by a build before the 9-10 Oct fixes: the fixups step re-runs multiband and the gain-all rows that timed out or failed");
     return notes;
 }
+// a step's result from its exit (10 Oct): done | device_absent (UAD rows left unrun: the step stays started, resumes next run, never
+// "failed") | failed. The preflight and the probe-backed steps also accept 4 (nothing to measure) as done; the Satellite check is information
+inline constexpr int kStepDeviceAbsentExit = 7;   // == uad::kDeviceAbsentExit
+inline juce::String stepResult (int code, bool takesPaths, const juce::String& name)
+{
+    if (code == 0 || (code == 4 && takesPaths) || name == "uad_preflight") return "done";
+    if (code == kStepDeviceAbsentExit && takesPaths) return "device_absent";
+    return "failed";
+}
 inline bool isResume (const State& st, const juce::String& step) { return st.count (step) && (st.at (step).state == "started" || st.at (step).state == "failed"); }
 
 // THE DEADLINE: "07:00" -> the next 07:00 after `now` (today's if still ahead, else tomorrow's); empty -> none

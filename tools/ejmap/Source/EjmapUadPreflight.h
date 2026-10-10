@@ -72,5 +72,11 @@ inline const Device& device (bool assumePresent = false)
 inline juce::var deviceVar (const Device& d) { auto* o = new juce::DynamicObject(); o->setProperty ("present", d.present); o->setProperty ("how", d.how); o->setProperty ("panel_running", d.panelRunning); juce::Array<juce::var> ls; for (const auto& l : d.lines) ls.add (l); o->setProperty ("lines", ls); return juce::var (o); }
 
 inline constexpr const char* kNotConnected = "UAD-2 device not connected";
+// THE DEVICE IS A CONDITION, NOT AN ANSWER (Kathy, 10 Oct: Sean's Satellite read ABSENT at 04:51 and 44 UAD EQ rows were filed
+// "device not connected"): with the device absent a UAD row is LEFT UNRUN (no row written, the step ends resumable); with it present
+// an old needs_device row is re-filed (deleted) so it runs. A licence stop is still an answer.
+inline constexpr int kDeviceAbsentExit = 7;   // --phaseb-all: UAD rows were left unrun for the device; the run-all step stays resumable
+inline bool leaveUnrunForDevice (const juce::String& gateStop) { return gateStop.contains (kNotConnected); }
+inline bool refileForDevice (const juce::var& row, bool devicePresent) { return devicePresent && row.getProperty ("outcome", "").toString() == "needs_device"; }
 
 } // namespace ejmap::uad

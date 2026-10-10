@@ -6228,6 +6228,16 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 { if (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()).getProperty ("outcome", "").toString() == "timed_out" && (cat.name == "gaincal" || cat.name == "gainall")) resumeTraces.insert (cat.name + "/" + pp.stem);
                   rowFile (phasebDir, cat.name, pp.stem).deleteFile(); ++redone; }
     if (! redo.isEmpty()) say ("PHASEB: --redo " + redo.joinIntoString (",") + ": " + juce::String (redone) + " finished row(s) run again");
+    {   // 10 Oct: a row filed needs_device runs again once the device is present (the 44 UAD EQ rows of Sean's 10 Oct night)
+        bool anyUad = false; for (const auto& [c, l] : work) for (const auto& pp : l) if (uad::isUadProduct (pp.product, pp.desc.manufacturerName)) anyUad = true;
+        if (anyUad)
+        {
+            const bool present = uad::device (opt.assumeUadDevice).present; int refiled = 0;
+            for (const auto& cat : categories()) if (work.count (cat.name)) for (const auto& pp : work[cat.name])
+                if (isDone (phasebDir, cat.name, pp.stem) && uad::refileForDevice (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()), present)) { rowFile (phasebDir, cat.name, pp.stem).deleteFile(); ++refiled; }
+            if (refiled > 0) say ("PHASEB: UAD-2 device present: " + juce::String (refiled) + " row(s) filed 'device not connected' run again");
+        }
+    }
     // PROGRESS: resumed from the file (the elapsed and the measured seconds carry over); the totals are tonight's discovery
     Progress prog = progressFromVar (juce::JSON::parse (phasebDir.getChildFile ("progress.json").loadFileAsString()));
     if (prog.startedAt.isEmpty()) prog.startedAt = nowStamp();
@@ -6248,13 +6258,14 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     };
     {   // THE UAD-2 PREFLIGHT, once, said at the start (Sean, 6 Oct): absent -> every UAD product below is filed "UAD-2 device not connected", none loaded
         int uadN = 0; for (const auto& [c, l] : work) for (const auto& pp : l) if (uad::isUadProduct (pp.product, pp.desc.manufacturerName)) ++uadN;
-        if (uadN > 0) { const auto& d = uad::device (opt.assumeUadDevice); say ("PHASEB: UAD-2 device " + juce::String (d.present ? "present" : "ABSENT") + ": " + d.how + (d.present ? juce::String() : " -> " + juce::String (uadN) + " UAD row(s) will be filed '" + uad::kNotConnected + "', none loaded")); }
+        if (uadN > 0) { const auto& d = uad::device (opt.assumeUadDevice); say ("PHASEB: UAD-2 device " + juce::String (d.present ? "present" : "ABSENT") + ": " + d.how + (d.present ? juce::String() : " -> " + juce::String (uadN) + " UAD row(s) will be left unrun (no row written: they run when the device is present; the step stays resumable), none loaded")); }
         const auto lines = licenceLinesOf (opt.out); if (! lines.empty()) say ("PHASEB: licence file licences.csv: " + juce::String ((int) lines.size()) + " line(s); governed products are gated (owned / demo load, the rest never)");
     }
     say ("PHASEB: " + juce::String (totalAll) + " product(s) over " + juce::String ((int) work.size()) + " categor" + (work.size() == 1 ? "y" : "ies") + " -> " + phasebDir.getFullPathName() + "  (resumable; Ctrl-C any time; a product's result lands only when it is complete)");
     for (const auto& cat : categories()) if (work.count (cat.name)) say ("  " + cat.name.paddedRight (' ', 11) + juce::String ((int) work[cat.name].size()).paddedLeft (' ', 3) + " product(s), " + juce::String (prog.cats[cat.name].done) + " already done; hang guard " + juce::String (cat.guardS / 60.0, 0) + " min (" + cat.guardWhy + ")");
     saveProgress ({});
     // THE RUN: one child ejmap process per product into a temp folder, renamed into place when complete
+    int deviceLeft = 0;
     for (const auto& cat : categories())
     {
         if (! work.count (cat.name)) continue;
@@ -6274,6 +6285,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             // THE LICENCE GATE (6 Oct): the scan's stop or a needs_licence row (skipped), the UAD-2 device (needs_device), the licence
             // file (needs_licence: expired / unowned / unmatched); a running demo measures and stamps the row and its records
             const auto gate = licenceGate (opt, pp.product, pp.desc.manufacturerName, opt.out, false);
+            if (uad::leaveUnrunForDevice (gate.stop)) { tmp.deleteRecursively(); ++deviceLeft; say ("  " + cat.name + ": " + pp.product + " - left unrun: " + gate.stop + " (resumes when the device is present)"); continue; }
             if (gate.stop.isNotEmpty())
             {
                 outcome = gate.stop.contains (uad::kNotConnected) ? "needs_device" : gate.stop.startsWith ("licence file") ? "needs_licence" : "skipped";
@@ -6385,10 +6397,12 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
       sm->setProperty ("categories", juce::var (cats)); sm->setProperty ("progress", progressVar (prog)); sm->setProperty ("probe", id.cdhash); sm->setProperty ("writtenAt", nowStamp());
       writeAtomic (phasebDir.getChildFile ("summary.json"), juce::JSON::toString (juce::var (sm))); }
     say ("PHASEB: done - " + progressText (prog).upToFirstOccurrenceOf ("\n", false, false) + "; summary " + phasebDir.getChildFile ("summary.json").getFullPathName());
+    if (deviceLeft > 0) { say ("PHASEB: " + juce::String (deviceLeft) + " UAD row(s) left unrun - the UAD-2 device is absent; connect the Satellite and run the same line (exit " + juce::String (uad::kDeviceAbsentExit) + ")"); return uad::kDeviceAbsentExit; }
     return 0;
 }
 // THE ONE-COMMAND RUN (Kathy, 8 Oct stretch S1; the pure parts in EjmapRunAll.h). Each step a child ejmap in its own process group, output
 // to cert/run_all/<step>.log; the state in cert/run_all.json, written before a step starts (started) and after it ends (done / failed).
+static_assert (runall::kStepDeviceAbsentExit == uad::kDeviceAbsentExit, "the run-all step and --phaseb-all must agree on the device-absent exit");
 inline volatile sig_atomic_t& runAllInterrupted() { static volatile sig_atomic_t f = 0; return f; }
 struct RunAllOptions { SweepOptions opt; juce::String until; juce::StringArray only, steps, skip; bool dryRun = false, probeGiven = false, ledgerGiven = false; };
 inline int runRunAll (const RunAllOptions& ro)
@@ -6412,7 +6426,7 @@ inline int runRunAll (const RunAllOptions& ro)
     for (const auto* s : p) say ("  " + s->name.paddedRight (' ', 18) + (isResume (st, s->name) ? "RESUME " : "       ") + argsFor (*s, isResume (st, s->name), cert.getFullPathName(), ro.only).joinIntoString (" ") + "   (~" + hms (s->estimateS) + ", " + s->why + ")");
     if (ro.dryRun) return 0;
     runAllInterrupted() = 0; std::signal (SIGINT, [] (int) { runAllInterrupted() = 1; }); std::signal (SIGTERM, [] (int) { runAllInterrupted() = 1; });
-    const auto t0 = juce::Time::getMillisecondCounterHiRes(); int doneN = 0, failedN = 0; juce::String stopped;
+    const auto t0 = juce::Time::getMillisecondCounterHiRes(); int deviceWaitN = 0; int doneN = 0, failedN = 0; juce::String stopped;
     for (const auto* s : p)
     {
         if (runAllInterrupted()) { stopped = "interrupted (Ctrl-C) before " + s->name; break; }
@@ -6456,14 +6470,16 @@ inline int runRunAll (const RunAllOptions& ro)
         ss.exitCode = code; ss.finishedAt = nowStamp();
         if (sentInt) { ss.state = "started"; save(); stopped = s->name + " stopped by " + why + " (it resumes next time)"; break; }
         // a step's success: exit 0; the preflight and the probe-backed steps also accept 4 (nothing to measure) as done
-        const bool ok = code == 0 || (code == 4 && takesPaths) || s->name == "uad_preflight";   // the Satellite check is information: PRESENT or ABSENT is in its log, the run goes on
+        const auto result = stepResult (code, takesPaths, s->name);
+        if (result == "device_absent") { ss.state = "started"; save(); ++deviceWaitN; say ("  " + s->name + ": UAD row(s) left unrun - the UAD-2 device is absent; the step resumes next run (connect the Satellite)"); continue; }
+        const bool ok = result == "done";
         ss.state = ok ? "done" : "failed"; if (ok) ss.build = runningBuild(); save();
         if (ok) ++doneN; else ++failedN;
         say ("  " + s->name + ": " + (ok ? juce::String ("done") : "FAILED (exit " + juce::String (code) + ") - see " + logFile.getFullPathName()) + "  " + progressLine (doneN, totalN, {}, (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, etaSeconds (runall::plan (st, ro.steps, ro.skip, forced), st), until));
         if (! ok && s->stopOnFail) { stopped = s->name + " failed: nothing after it can be trusted"; break; }
     }
     std::signal (SIGINT, SIG_DFL); std::signal (SIGTERM, SIG_DFL);
-    say ("RUN-ALL: " + juce::String (doneN) + " done, " + juce::String (failedN) + " failed" + (stopped.isNotEmpty() ? "; stopped: " + stopped + ". Run the same command again to continue; --dry-run shows what is left." : juce::String ("; the sequence is complete (cert/run_all.json: every step done; delete it to run the whole sequence again).")));
+    say ("RUN-ALL: " + juce::String (doneN) + " done, " + juce::String (failedN) + " failed" + (deviceWaitN > 0 ? ", " + juce::String (deviceWaitN) + " waiting for the UAD-2 device" : juce::String()) + (stopped.isNotEmpty() ? "; stopped: " + stopped + ". Run the same command again to continue; --dry-run shows what is left." : juce::String ("; the sequence is complete (cert/run_all.json: every step done; delete it to run the whole sequence again).")));
     return failedN > 0 ? 1 : 0;
 }
 inline int runPhaseBStatus (const SweepOptions& opt)
