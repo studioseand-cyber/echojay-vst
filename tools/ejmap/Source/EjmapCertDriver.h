@@ -4656,7 +4656,15 @@ inline int runEq (const SweepOptions& opt)
         {
             juce::Array<juce::var> acc; int passN = 0, ranN = 0;
             const bool steppedFreq = sweep::isSteppedControl (sweep::findControl (base, fIdx)), steppedGain = sweep::isSteppedControl (sweep::findControl (base, gIdx));
-            const auto targets = eq::acceptanceTargets (freqPoints, steppedFreq);
+            // STEPPED BY EVIDENCE (Kathy, 10 Oct; Lindell 6X-500): a control that declares itself continuous but snaps to detents
+            // makes an interpolated write read back elsewhere ("the written position did not land") - every acceptance write unrun.
+            // Then the band's acceptance runs again as stepped: targets at the nearest MEASURED positions, each judged against that
+            // position's own measured gain / figure (eq::normForGain / acceptanceTargets, stepped).
+            bool windowSeen = false, snapped = false;
+            auto runAcceptance = [&] (bool steppedFreqA, bool steppedGainA)
+            {
+                acc.clear(); passN = 0; ranN = 0; int unlanded = 0;
+                const auto targets = eq::acceptanceTargets (freqPoints, steppedFreqA); const bool steppedGain = steppedGainA;
             if (targets.empty()) say ("    acceptance: fewer than two usable frequency positions: no figure targets");
             for (const auto& t : targets)
             {
@@ -4666,15 +4674,27 @@ inline int runEq (const SweepOptions& opt)
                 {
                     juce::StringArray asets = engageSets; asets.add (juce::String (fIdx) + ":" + juce::String (t.norm, 6));
                     auto [ar, rr] = response (tag + ".acc" + juce::String (t.targetHz, 0), gIdx, gnorms, asets);
-                    if (rr.kind == ChildResult::Kind::uiShown) { say ("EQ: a window appeared; stopping"); return 5; }
+                    if (rr.kind == ChildResult::Kind::uiShown) { windowSeen = true; return 0; }
                     for (auto& a : pair) if (a.gain.ok) for (const auto& p : ar.positions) if (std::abs (p.norm - a.gain.norm) < 1e-4) { a.ran = true; a.measured = eq::deriveBand (eq::deviation (p, baseline)); }
                 }
                 for (auto& a : pair)
                 {
-                    if (! a.gain.ok) a.why = "not written: " + a.gain.why; else if (! a.ran) a.why = "the written position did not land"; else eq::judgeAcceptance (a);
+                    if (! a.gain.ok) a.why = "not written: " + a.gain.why; else if (! a.ran) { a.why = "the written position did not land"; ++unlanded; } else eq::judgeAcceptance (a);
                     if (a.ran) ++ranN; if (a.pass) ++passN; acc.add (eq::acceptanceVar (a));
                     say ("    acceptance " + juce::String (a.targetDb > 0 ? "+" : "") + juce::String (a.targetDb, 0) + " dB at " + juce::String (a.targetHz, 0) + " Hz" + (t.stepped ? " (detent " + t.display + ")" : "") + ": " + (a.ran && eq::usable (a.measured) ? "measured " + juce::String (a.measured.gainDb, 2) + " dB at " + juce::String (eq::figureOf (a.measured), 0) + " Hz -> " + (a.pass ? "PASS" : "FAIL") + " (" + a.why + ")" : a.why));
                 }
+            }
+                return unlanded;
+            };
+            const int unlandedFirst = runAcceptance (steppedFreq, steppedGain);
+            if (windowSeen) { say ("EQ: a window appeared; stopping"); return 5; }
+            if (eq::retryAsStepped (unlandedFirst, steppedFreq && steppedGain))
+            {
+                say ("    acceptance: " + juce::String (unlandedFirst) + " write(s) did not land - the controls snap to detents: running it again at the measured positions");
+                runAcceptance (true, true); snapped = true;
+                if (windowSeen) { say ("EQ: a window appeared; stopping"); return 5; }
+                bo->setProperty ("acceptance_snapped_to_detents", true);
+                bo->setProperty ("acceptance_note", juce::String (unlandedFirst) + " interpolated write(s) did not land (the controls snap to detents): the acceptance ran at the nearest measured positions, judged against their own measured figures");
             }
             bo->setProperty ("acceptance", acc); bo->setProperty ("acceptance_summary", juce::String (passN) + " of " + juce::String (acc.size()) + " passed (" + juce::String (ranN) + " ran)");
         }

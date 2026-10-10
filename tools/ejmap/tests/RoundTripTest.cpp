@@ -8874,6 +8874,21 @@ void testRunAll()
                && ends.size() == 1 && ends[0].index == 7 && ejmap::cert::nudgedArgs ({ "thr=7", "norms=1.000000" }, 0.01)[1] == "norms=0.990000",
                "phaseb PB-CRASHPOS: G8's 0 ms attack - dead twice, measured at 0.01 with crash_position [0] 0.0; always dead: 0.01 and 0.05 tried, stays crashed; nothing at an end: no nudge; a sweep's single norm at 1 -> 0.99");
     }
+    // EQ-SNAP (Kathy, 10 Oct; Lindell 6X-500): writes that did not land on controls that were not treated as stepped -> the acceptance runs
+    // again as stepped; there the gain target takes the nearest MEASURED position and promises that position's own gain, the figure target the
+    // nearest measured detent (its own figure) - never an interpolated norm
+    {
+        using namespace ejmap::eq;
+        auto row = [] (float n, double g) { GainRow r; r.norm = n; r.display = juce::String (g, 1) + " dB"; r.band.result = "measured"; r.band.gainDb = g; return r; };
+        std::vector<GainRow> rows { row (0.0f, 0.0), row (0.333333f, 3.4), row (0.666667f, 6.7), row (1.0f, 10.0) };
+        std::vector<FreqPoint> pts { { 0.0f, "3kHz", 3000.0 }, { 0.5f, "6kHz", 6000.0 }, { 1.0f, "10kHz", 10000.0 } };
+        const auto gs = normForGain (rows, 5.5, true), gc = normForGain (rows, 5.5, false);
+        const auto ts = acceptanceTargets (pts, true);
+        bool tsOnDetents = ts.size() == 2; for (const auto& tt : ts) tsOnDetents = tsOnDetents && (tt.norm == 0.0f || tt.norm == 0.5f || tt.norm == 1.0f) && tt.detentHz == tt.targetHz;
+        check (retryAsStepped (2, false) && ! retryAsStepped (2, true) && ! retryAsStepped (0, false)
+               && gs.ok && std::abs (gs.norm - 0.666667f) < 1e-5f && std::abs (gs.promisedDb - 6.7) < 1e-9 && gc.ok && gc.norm > 0.34f && gc.norm < 0.66f && tsOnDetents,
+               "eq EQ-SNAP: unlanded writes on controls not treated as stepped -> run again as stepped; a stepped +5.5 dB takes the measured 0.667 (6.7 dB promised), the figure the nearest detent");
+    }
     // PB-DRY (10 Oct): --phaseb-all refuses --dry-run (anywhere in the line, the last argument too) instead of ignoring it and loading
     check (ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--category", "delay", "--out", "/c", "--dry-run" }).contains ("no --dry-run")
            && ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--dry-run", "--category", "delay" }).isNotEmpty()

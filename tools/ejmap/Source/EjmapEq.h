@@ -365,6 +365,9 @@ inline GainInverse normForGain (std::vector<GainRow> rows, double targetDb, bool
     g.why = "no bracketing pair"; return g;
 }
 // the judgement: the measured gain within kAcceptGainBarDb of the target at the figure; the measured figure within kAcceptFigurePct of
+// STEPPED BY EVIDENCE (10 Oct): run the acceptance again as stepped when a write did not land and the controls were not already treated
+// as stepped (a write that lands nowhere is a control that snaps; it is never retried when it was already stepped)
+inline bool retryAsStepped (int unlandedWrites, bool alreadyStepped) { return unlandedWrites > 0 && ! alreadyStepped; }
 // the target (a stepped frequency: within kAcceptDetentPct of the reported detent's own figure)
 struct Acceptance { double targetDb = 0.0, targetHz = 0.0; GainInverse gain; FigureTarget figure; bool ran = false; Band measured; double gainMissDb = 0.0, figureOffPct = 0.0; bool pass = false; juce::String why; };
 inline void judgeAcceptance (Acceptance& a)

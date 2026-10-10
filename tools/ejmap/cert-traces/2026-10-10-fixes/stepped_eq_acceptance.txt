@@ -1,0 +1,25 @@
+STEPPED EQ ACCEPTANCE, 11 Oct (feat/ejmap-cert)
+
+CENSUS of Sean's cert 2 + 3 EQ drafts (120 EQs): acceptance writes that did not run because 'the written position did not land':
+  1 EQ - Lindell 6X-500 (2 of its 4 writes; its other 2 are -3 dB targets outside a boost-only span). Every other not-run write is
+  'the target is outside the measured span' (a cut on a boost-only band, a boost on a cut-only one): a correct refusal, unchanged.
+
+REHEARSAL here (eqsnap; Lindell 6X-500 1.2.2 + Maag EQ4 1.15.1):
+  band 'measured [1] Sub': gain [1] Sub, freq [-1] (none)
+    verdict: stepped - frequency or gain only at detents
+  band 'Hi': gain [3] Hi boost, freq [4] Hi frequency
+    verdict: measured
+    acceptance +3 dB at 8327.5 Hz: the written position did not land
+    acceptance -3 dB at 8327.5 Hz: not written: the target -3.0 dB is outside the measured span 0.00 .. 6.48
+    acceptance +3 dB at 11528 Hz: the written position did not land
+    acceptance -3 dB at 11528 Hz: not written: the target -3.0 dB is outside the measured span 0.00 .. 6.48
+    acceptance: 2 write(s) did not land - the controls snap to detents: running it again at the measured positions
+    acceptance +3 dB at 9982.15 Hz (detent 10kHz): measured 2.44 dB at 9982.15 Hz -> PASS (gain within 0.00 dB; figure 9982.15 Hz is 0.0 % off the detent)
+    acceptance -3 dB at 9982.15 Hz (detent 10kHz): not written: the target -3.0 dB is outside the measured span 0.00 .. 6.48
+    acceptance +3 dB at 9982.15 Hz (detent 10kHz): measured 2.44 dB at 9982.15 Hz -> PASS (gain within 0.00 dB; figure 9982.15 Hz is 0.0 % off the detent)
+    acceptance -3 dB at 9982.15 Hz (detent 10kHz): not written: the target -3.0 dB is outside the measured span 0.00 .. 6.48
+  band 'Low': gain [5] Low boost, freq [6] Low frequency
+    verdict: dynamic - the gain map at -12 and -30 dBFS disagrees by 9.89 dB at most over 7 position(s): the response moves with level (dynamic): out of scope for v1
+
+Maag EQ4: fixed-frequency bands (no frequency control) - no figure targets, its declared-stepped gains already handled: unaffected.
+Caveat: both of 6X-500 Hi's figure targets (1/3, 2/3 of its range) snap to the same 10 kHz detent - one detent checked twice.
