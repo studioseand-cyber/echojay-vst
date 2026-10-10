@@ -4655,36 +4655,44 @@ void EchoJayAPI::saveUserSettings(const UserSettings& settings,
 
         // Preserve existing data fields from the GET response.
         //
-        // A KEY MISSING FROM AN OTHERWISE GOOD BODY IS STILL WRITTEN AS AN
-        // EMPTY ARRAY, AND THAT IS LEFT EXACTLY AS IT WAS. Omitting the key
-        // instead would be safe ONLY under MERGE semantics, and whether
-        // POST /api/data merges or replaces is UNANSWERED: see
-        // HANDOVER/ECHOJAY_API_CONTRACT.md section 6. It must be READ in
-        // echojay-saas-dash rather than guessed here, so this round changes
-        // only the case that is wrong under BOTH answers, which is writing
-        // after a read that failed.
+        // 10 OCT 2026 - THE OPEN QUESTION IS ANSWERED, AND THE OTHER HALF OF
+        // THE DEFECT IS NOW FIXED. What stood here said a key missing from an
+        // otherwise good body was still written as an EMPTY ARRAY, that
+        // omitting it would be safe ONLY under merge semantics, and that
+        // merge-or-replace was UNANSWERED - so this round changed only the
+        // case that was wrong under both answers (writing after a failed read).
+        //
+        // B has now read the server: A MISSING KEY KEEPS THE STORED VALUE, AN
+        // EXPLICIT EMPTY ARRAY CLEARS IT. So `[]` is not a harmless echo - it
+        // is the one shape that DESTROYS the stored value, and the plugin was
+        // sending it for every key the body did not happen to carry.
+        //
+        // The rule is now: ECHO WHAT THE READ CARRIED, OMIT WHAT IT DID NOT.
+        // pinnedProjects joins the forwarded keys (B's second item): it was not
+        // echoed at all, so under replace semantics a settings save silently
+        // unpinned every song, and under merge it survived only because the key
+        // was absent. Luck is not a mechanism.
+        //
+        // THE DECISION IS A PURE PREDICATE so the suite can EXECUTE it:
+        // echojay::userDataForwardedKeys / userDataMayForwardKey, same reason
+        // as the failed-read predicate above (open list 217).
+        for (const auto& key : echojay::userDataForwardedKeys())
         {
-            {
-                if (root->hasProperty("chats"))
-                    payload->setProperty("chats", root->getProperty("chats"));
-                else
-                    payload->setProperty("chats", juce::var(juce::Array<juce::var>()));
-                    
-                if (root->hasProperty("albums"))
-                    payload->setProperty("albums", root->getProperty("albums"));
-                else
-                    payload->setProperty("albums", juce::var(juce::Array<juce::var>()));
-                    
-                if (root->hasProperty("reviews"))
-                    payload->setProperty("reviews", root->getProperty("reviews"));
-                else
-                    payload->setProperty("reviews", juce::var(juce::Array<juce::var>()));
-                    
-                if (root->hasProperty("refTracks"))
-                    payload->setProperty("refTracks", root->getProperty("refTracks"));
-                else
-                    payload->setProperty("refTracks", juce::var(juce::Array<juce::var>()));
-            }
+            const bool carried = root->hasProperty (key);
+            if (echojay::userDataMayForwardKey (carried))
+                payload->setProperty (key, root->getProperty (key));
+            // else: NOT written. Never [], never null - that is the delete.
+        }
+
+        // baseUpdatedAt (B's third item, optional): the version this write is
+        // based on, echoed back ONLY when the read supplied one, so the server
+        // can reject a write that raced another client. Inventing a stamp would
+        // be worse than sending none - the server would take it as a conflict
+        // check that passed.
+        {
+            const auto base = root->getProperty ("updatedAt").toString();
+            if (echojay::userDataMaySendBaseUpdatedAt (base))
+                payload->setProperty ("baseUpdatedAt", base);
         }
         
         // Build profile object

@@ -8144,6 +8144,11 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "ud PIN1: statusCode 0, an unreachable server, refuses");
         }
 
+        // ud PIN2 lives in tools/userdata_write_guard, NOT here (10 Oct 2026). The absent-key rule and
+        // pinnedProjects are asserted there because that guard is REGISTERED IN ctest and this harness is not,
+        // so a rule placed here would not run in the gate. PIN1 above is left exactly as it was rather than
+        // duplicated: two copies of one rule drift, and the gated guard is the authority.
+
         // cg PIN9 -- THE BUTTONS ARE A GESTURE, BY TEXT.
         //
         // cg PIN8 pins the RULE; nothing can pin that the editor obeys it,

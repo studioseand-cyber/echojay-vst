@@ -388,6 +388,11 @@ ej_add_guard(pregain_readback         SOURCE tools/pregain_readback/harness.cpp 
 # [L, 9 Oct] "own_diff re-baselined by Sean's ruling, limiter schema only."
 #
 # THE STANDING RULE IS UNCHANGED for every future move: if this goes RED, STOP AND REPORT - never re-baseline.
+# 10 Oct 2026: the user-data WRITE policy, executed in the gate. Source/EJUserDataWrite.h was made a pure
+# predicate precisely so a suite could RUN the rule instead of grepping EchoJayAPI.cpp for it (open list 217) -
+# and the only thing running it was tools/mapfps_test, which is NOT REGISTERED HERE. A predicate nobody executes
+# in the gate is a text pin with extra steps. See the guard's own opening comment for both defects it covers.
+ej_add_guard(userdata_write_guard     SOURCE tools/userdata_write_guard/harness.cpp          LABEL fast SCRIBBLE)
 ej_add_guard(mapfps_sync_guard        SOURCE tools/mapfps_sync_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(own_diff                 SOURCE tools/own_diff/harness.cpp                       LABEL fast
              WRAPPER run_own_diff.sh WRAPPER_ARG e16eb2d8c4e59156ad912967b611fc8364452980c6fbf0aa083d5f02c1937fc7)

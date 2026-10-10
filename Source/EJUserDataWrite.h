@@ -66,4 +66,69 @@ inline bool userDataWriteMayProceed (int statusCode, bool bodyIsObject,
     return statusCode == 200 && bodyIsObject && rootNonNull;
 }
 
+// ===========================================================================
+// WHICH COLLECTION KEYS A SETTINGS WRITE MAY CARRY (10 Oct 2026, from B)
+// ===========================================================================
+//
+// THE QUESTION ABOVE IS NOW ANSWERED. The comment left open whether
+// POST /api/data MERGES or REPLACES, and said the failed-read fix did not
+// depend on the answer. B has answered it:
+//
+//   A MISSING KEY KEEPS THE STORED VALUE. AN EXPLICIT EMPTY ARRAY CLEARS IT.
+//
+// So the remaining half of the defect is live. saveUserSettings copies the
+// user's collections forward from the GET, and for a key the body did NOT
+// carry it wrote `[]`. Under merge semantics that is not a harmless echo: it
+// is the one shape that DESTROYS the stored value. A body that omits `albums`
+// - because the server trimmed it, or the user has none yet, or the shape
+// changed - came back as a write asserting the user has no albums.
+//
+// The rule is therefore: ECHO WHAT THE READ CARRIED, OMIT WHAT IT DID NOT.
+// Never synthesise a value for a key this client does not originate. The
+// plugin is not the author of chats, albums, reviews, reference tracks or
+// pinned projects; it is a settings editor that must hand them back untouched.
+//
+// pinnedProjects JOINS THE LIST (B's second item). It was not echoed at all,
+// so under REPLACE semantics a settings save silently unpinned every song, and
+// under MERGE it survived only by luck - the key's absence is what saved it.
+// Luck is not a mechanism, and the workspace sync already round-trips this key
+// (EchoJayWorkspace.cpp writes "pinnedProjects"), so the two writers now agree.
+//
+// WHY A PREDICATE, AGAIN: open list 217, the reason recorded above. The gate
+// never links EchoJayAPI.cpp, so a rule expressed as an `if` there is a string
+// a pin can grep for and not behaviour a suite can run.
+
+/** The collection keys a settings write forwards from the read, in the order
+    the payload carries them. Not a list of things the plugin owns - the exact
+    opposite: these are the keys it must hand back exactly as it found them. */
+inline juce::StringArray userDataForwardedKeys()
+{
+    return { "chats", "albums", "reviews", "refTracks", "pinnedProjects" };
+}
+
+/** May this write carry `key`, given whether the 200 body carried it?
+
+    TRUE  -> copy the read's value across verbatim.
+    FALSE -> OMIT the key. Do not write [], {} or null: under the merge
+             semantics B confirmed, an explicit empty value is a DELETE, and
+             this client has nothing to restore it from.
+
+    Deliberately total rather than clever: a key the read did not carry is
+    never written, whatever it is. */
+inline bool userDataMayForwardKey (bool readCarriedKey) noexcept
+{
+    return readCarriedKey;
+}
+
+/** May the write carry `baseUpdatedAt` for the server to check against?
+
+    Only when the read actually supplied a non-empty stamp. A write that
+    invents one, or sends an empty string, is claiming to have read a version
+    it did not - which is worse than sending no stamp at all, because the
+    server would take it as a conflict check that passed. */
+inline bool userDataMaySendBaseUpdatedAt (const juce::String& stampFromRead) noexcept
+{
+    return stampFromRead.isNotEmpty();
+}
+
 } // namespace echojay
