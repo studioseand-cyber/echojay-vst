@@ -31,6 +31,7 @@
 #include "ChainHost.h"
 #include "EedGainProcessor.h"
 #include "EedDeviceRegistry.h"
+#include "EJCmdRing.h"   // stage 3: the value ring
 #include <cstdio>
 
 namespace {
@@ -244,6 +245,127 @@ int main()
         const auto bareL = ChainHost::describeEditOp (bare, names);
         check (bareL.isNotEmpty() && bareL.containsIgnoreCase ("no db"),
                "an op with no value still gets a row, and the row says the value is missing", bareL);
+    }
+
+    std::printf ("\n== (5) STAGE 3: THE VALUE RING ==\n");
+    {
+        using namespace echojay::cmdring;
+
+        // THE LAYOUT IS THE WIRE. Two processes map this block and are built
+        // separately, so a field added in the middle is a silent mis-application
+        // between a V2 and a Link of different vintages. The static_asserts in the
+        // header make that a compile error; these check the numbers a reader of the
+        // contract would check, so the contract and the code can be compared
+        // without reading C++.
+        check (sizeof (CmdFrame) == 64, "ring: a frame is 64 bytes",
+               juce::String ((int) sizeof (CmdFrame)));
+        check (sizeof (CmdRing) == 64 + 64 * 256, "ring: the block is a 64-byte header plus 256 frames",
+               juce::String ((int) sizeof (CmdRing)));
+        check (kMagic == 0xEC4A3003u && kLayoutVersion == 1u && kCapacity == 256u,
+               "ring: magic, layout version and capacity are the contract's",
+               juce::String::toHexString ((int) kMagic));
+        // The enum numbers ARE the wire and may never be reordered. Pinned by value.
+        check (kSetParam == 1 && kSlotIn == 2 && kSlotOut == 3 && kSlotWet == 4
+               && kMasterWet == 5 && kPreGain == 6 && kLinkGain == 7,
+               "ring: the command numbers are pinned - a renumbering is a silent "
+               "mis-application between two builds, not a compile error");
+
+        auto ring = std::make_unique<CmdRing>();
+        check (! ringUsable (ring.get()),
+               "ring: an UNINITIALISED block is refused - a mapped block is written by another process and a "
+               "wrong layout read as frames is a segfault");
+        initRing (ring.get());
+        check (ringUsable (ring.get()), "ring: an initialised block is usable");
+
+        auto frame = [] (uint32_t kind, int slot, uint32_t paramId, double v,
+                         uint32_t phase, uint32_t gesture, uint32_t rev)
+        {
+            CmdFrame f; f.kind = kind; f.slot = slot; f.paramId = paramId; f.value = v;
+            f.phase = phase; f.gesture = gesture; f.flags = rev & 0xFFFFu; return f;
+        };
+
+        // COALESCING: 400 stream frames for ONE control collapse to the NEWEST.
+        for (int i = 0; i < 400; ++i)
+            push (ring.get(), frame (kSetParam, 0, 3, (double) i, kStream, 7, 0));
+        {
+            const auto d = drain (ring.get(), 0);
+            check (d.count == 1 && std::abs (d.kept[0].value - 399.0) < 0.001,
+                   "ring: 400 stream frames for one control drain to ONE frame, the NEWEST - which is what "
+                   "makes a drag cost one write per control instead of one per pixel",
+                   juce::String (d.count) + " kept, value " + juce::String (d.kept[0].value, 1)
+                       + ", " + juce::String (d.discarded) + " superseded");
+            check (d.overflow > 0,
+                   "ring: ...and lapping the reader was COUNTED, not hidden (400 frames into a 256 ring)",
+                   juce::String ((int) d.overflow));
+        }
+
+        // DISTINCT CONTROLS DO NOT COALESCE INTO EACH OTHER.
+        push (ring.get(), frame (kSetParam, 0, 3, 1.0, kStream, 8, 0));
+        push (ring.get(), frame (kSetParam, 0, 4, 2.0, kStream, 8, 0));   // same slot, other param
+        push (ring.get(), frame (kSetParam, 1, 3, 3.0, kStream, 8, 0));   // other slot, same param
+        push (ring.get(), frame (kSlotIn,   0, 0, 4.0, kStream, 8, 0));   // other kind
+        {
+            const auto d = drain (ring.get(), 0);
+            check (d.count == 4, "ring: four DISTINCT controls survive as four frames - coalescing is per "
+                                 "(kind, slot, paramId), not per gesture", juce::String (d.count));
+        }
+
+        // THE BOUNDARIES ARE NEVER DISCARDED, because one undo step per gesture
+        // depends on them. This is the half a newest-wins coalescer gets wrong.
+        push (ring.get(), frame (kSetParam, 0, 3, 0.0, kBegin,  9, 0));
+        for (int i = 1; i <= 50; ++i)
+            push (ring.get(), frame (kSetParam, 0, 3, (double) i, kStream, 9, 0));
+        push (ring.get(), frame (kSetParam, 0, 3, 99.0, kEnd,   9, 0));
+        {
+            const auto d = drain (ring.get(), 0);
+            int begins = 0, ends = 0, streams = 0;
+            for (int i = 0; i < d.count; ++i)
+            {
+                if (d.kept[i].phase == kBegin)  ++begins;
+                if (d.kept[i].phase == kEnd)    ++ends;
+                if (d.kept[i].phase == kStream) ++streams;
+            }
+            check (begins == 1 && ends == 1 && streams == 1 && d.count == 3,
+                   "ring: a whole gesture drains to begin + ONE coalesced stream + end - the boundaries are "
+                   "never discarded, because they are what make one undo step per gesture possible",
+                   juce::String (begins) + " begin, " + juce::String (streams) + " stream, "
+                       + juce::String (ends) + " end");
+            // ...and the end frame is the SETTLED value, which is the authority.
+            bool endIsSettled = false;
+            for (int i = 0; i < d.count; ++i)
+                if (d.kept[i].phase == kEnd && std::abs (d.kept[i].value - 99.0) < 0.001) endIsSettled = true;
+            check (endIsSettled, "ring: ...and the end frame carries the settled value");
+        }
+
+        // A STALE STRUCTURE REVISION IS DISCARDED WITH A COUNT, never applied. A V2
+        // with an old sidecar cannot name a parameter the Link lacks, but it CAN
+        // name the wrong one - the same class of mistake baseSlots guards on the
+        // chain channel, so it gets the same treatment.
+        push (ring.get(), frame (kSetParam, 0, 3, 5.0, kStream, 10, 4242));   // stale
+        push (ring.get(), frame (kSetParam, 0, 3, 6.0, kStream, 10, 777));    // live
+        {
+            const auto d = drain (ring.get(), 777);
+            check (d.dropped == 1 && d.count == 1 && std::abs (d.kept[0].value - 6.0) < 0.001,
+                   "ring: a frame stamped with a STALE structure revision is dropped WITH A COUNT and the "
+                   "live one applies", juce::String (d.dropped) + " dropped, " + juce::String (d.count) + " kept");
+        }
+        // ...and BOTH DIRECTIONS: with the matching revision it applies, so the
+        // guard is not simply dropping everything.
+        push (ring.get(), frame (kSetParam, 0, 3, 8.0, kStream, 11, 777));
+        {
+            const auto d = drain (ring.get(), 777);
+            check (d.dropped == 0 && d.count == 1 && std::abs (d.kept[0].value - 8.0) < 0.001,
+                   "ring: ...and a MATCHING revision applies - the check is a decision, not a blanket refusal",
+                   juce::String (d.dropped) + " dropped, " + juce::String (d.count) + " kept");
+        }
+        // An empty ring drains to nothing and says so, rather than handing the audio
+        // thread a stale frame it already applied.
+        {
+            const auto d = drain (ring.get(), 777);
+            check (d.count == 0 && d.discarded == 0 && d.dropped == 0,
+                   "ring: a drained ring drains to NOTHING - no frame is applied twice",
+                   juce::String (d.count));
+        }
     }
 
     std::printf ("\n==== remote_ops_guard: %s (%d assertion(s) failed) ====\n",
