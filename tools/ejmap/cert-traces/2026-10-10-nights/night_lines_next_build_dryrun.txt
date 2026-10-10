@@ -1,0 +1,43 @@
+Night lines dry-run on the NEXT build (build tree 462a77b9-dirty, after 7ee67720's sources), 10 Oct: --dry-run only (plan output, nothing loaded),
+on a copy of ~/Downloads/cert 2 + cert 3 (run_all.json = Sean's 10 Oct state). Night 1 is tonight's line on 00f2ae79 (dry-run: night_lines_dryrun.txt).
+Simulation: night 1 marked finished by 00f2ae79 (its checks stamped 00f2ae79), so night 2 - the first on the next build - shows the follow-up
+forced (every check is another build's: the re-check rule); later nights with the earlier ones marked finished by the next build.
+
+== NIGHT 2: --steps preflight,followup,fixups,reverb_delay,transient_gate,drafts --until 07:00
+RUN-ALL: 86 tone check(s) made by another build than 462a77b9-dirty: the follow-up runs again (stale checks first)
+RUN-ALL: 5 step(s) to run, 22 done or skipped; ETA 4:23:30; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  followup                 --cert-tonecheck-all --out <cert>   (~0:40:00, the compressor follow-up)
+  reverb_delay             --phaseb-all --redo reverb,delay --out <cert>   (~3:11:40, reverb and delay (role tests twice: x1.5-1.65 rehearsed, 8 Oct))
+  transient_gate           --phaseb-all --redo transient,gate --out <cert>   (~0:31:40, transient shapers and gates (role tests twice: x1.3-1.65 rehearsed, 8 Oct))
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
+
+== NIGHT 3: --steps preflight,followup,fixups,limiter_comp,drafts --until 07:00
+RUN-ALL: 3 step(s) to run, 24 done or skipped; ETA 5:35:10; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  limiter_comp             --phaseb-all --redo limitercomp --out <cert>   (~5:35:00, limiters through the compressor certification (their drafts: compressor profile + ceiling block))
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
+
+== NIGHT 4: --steps preflight,followup,fixups,no_pool,categorise,combined,material,drafts --until 07:00
+RUN-ALL: 6 step(s) to run, 21 done or skipped; ETA 4:50:10; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  no_pool           RESUME --phaseb-all --out <cert>   (~3:00:00, the Soundtoys / 2C empty-list rows (~40 min per delay or reverb))
+  categorise               --categorise-propose --include-pace --out <cert>   (~1:30:00, the review sheet for the uncategorised (never categories.json))
+  combined                 --phaseb-all --redo combined --out <cert>   (~0:40:00, combined settings)
+  material                 --phaseb-all --redo material --out <cert>   (~1:10:00, real material)
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
+
+== NIGHT 5: --steps preflight,followup,fixups,frequency,samplerate,tuners,strips,drafts --until 07:00
+RUN-ALL: 6 step(s) to run, 21 done or skipped; ETA 15:48:10; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  frequency                --phaseb-all --redo frequency --out <cert>   (~1:10:00, three frequencies)
+  samplerate               --phaseb-all --redo samplerate --out <cert>   (~0:08:00, three sample rates on a spread of ten)
+  tuners                   --phaseb-all --redo tuners --out <cert>   (~0:30:00, tuners (humanize, flex))
+  strips                   --phaseb-all --redo strips --out <cert>   (~14:00:00, channel strips, every section drafted)
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
+
+== NIGHT 6: --steps preflight,followup,fixups,strips,drafts --until 07:00
+RUN-ALL: 3 step(s) to run, 24 done or skipped; ETA 7:00:10; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  strips            RESUME --phaseb-all --category strips --out <cert>   (~14:00:00, channel strips, every section drafted)
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)

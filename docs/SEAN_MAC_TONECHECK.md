@@ -1,18 +1,27 @@
-# THE NIGHTS FROM 10 Oct (Kathy's priority) — 00f2ae79, one line per night
+# THE NIGHTS FROM 10 Oct (Kathy's priority) — night 1 on 00f2ae79, then the next build; one line per night
 
 Build and install **00f2ae79** as the next section says (same folder, same `cert/run_all.json`, nothing deleted; the 9 Oct
 review-picks copy still comes first if you have not done it). Then ONE line a night, in this order. Each stops at 07:00 by itself.
 
 ```
-# Night 1 (tonight)  ~5.1 h   the re-checks, the fix-ups, EQ (resumes), saturation
+# Night 1 (tonight, on 00f2ae79)  ~5.1 h   the re-checks, the fix-ups, EQ (resumes), saturation
 caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,eq,saturation,drafts --until 07:00
-# Night 2            ~3.7 h   reverb / delay, transients / gates
+```
+
+From night 2 on, run the NEXT build (cut after Kathy has checked night 1's zip; install it over 00f2ae79 the same way - same folder,
+same `cert/run_all.json`, nothing deleted). Its first night re-checks every tone check once (they were made by 00f2ae79: the
+re-check rule, ~40 min, already in night 2's hours).
+
+```
+# Night 2  ~4.4 h   the follow-up once (new build), reverb / delay, transients / gates
 caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,reverb_delay,transient_gate,drafts --until 07:00
-# Night 3            ~4.8 h   no_pool (resumes), categorise, then the accuracy passes: combined, material
+# Night 3  ~5.6 h   limiters through the compressor certification (their drafts: compressor profile + ceiling block)
+caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,limiter_comp,drafts --until 07:00
+# Night 4  ~4.8 h   no_pool (resumes), categorise, then the accuracy passes: combined, material
 caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,no_pool,categorise,combined,material,drafts --until 07:00
-# Night 4            ~1.8 h + the strips start   frequency, samplerate, tuners, then the strips until 07:00
+# Night 5  ~1.8 h + the strips start   frequency, samplerate, tuners, then the strips until 07:00
 caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,frequency,samplerate,tuners,strips,drafts --until 07:00
-# Night 5 (and 6 if the nights are short)   the rest of the strips (~14 h in all, resumes where it stopped)
+# Night 6 (and 7 if the nights are short)   the rest of the strips (~14 h in all, resumes where it stopped)
 caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,strips,drafts --until 07:00
 ```
 
@@ -25,11 +34,15 @@ The rules for these lines:
 - **followup and fixups are in every line too, and cost nothing once done**: the follow-up runs again only if some tone check was
   made by another build (night 1: 86 on your folder), the fixups once. If a night's output starts with
   "RUN-ALL: N tone check(s) made by another build", the follow-up ran first that night - that is the rule, not a fault.
-- **00f2ae79 prints one wrong line on nights 2-5**: "the fixups step re-runs multiband ..." although fixups is done and is not in
-  its plan list. Ignore it - the plan list underneath is what runs (fixed in b98788e2, for the next build).
+- **limiter_comp exists only in the next build**: if night 3 comes and you are still on 00f2ae79, run night 4's line and come back
+  to night 3's when the next build is installed.
+- **The UAD-2 Satellite (next build)**: if it is not seen, the UAD rows are LEFT UNRUN (not filed) and the step says "waiting for
+  the UAD-2 device" - it resumes by itself the next night the Satellite is connected and powered; the 44 UAD EQs filed "device not
+  connected" on 10 Oct run again then. Check `--uad-preflight` says PRESENT before a night if you can.
 - `nothing_nominated` is in no line: every row it would re-run is in a category these lines re-run whole.
-- The hours are the dry-run's ETA on a copy of your cert 2 + cert 3 (plan only, nothing loaded); nights 2-5 were dry-run on a copy
-  with the earlier nights marked finished, so each shows that night's own plan.
+- The hours are the dry-run's ETA on a copy of your cert 2 + cert 3 (plan only, nothing loaded); nights 2-6 were dry-run with the
+  next build's sources on a copy with the earlier nights marked finished, so each shows that night's own plan. limiter_comp's hours
+  are measured here: 467 s per limiter (3 rehearsed) x ~43 of your 46 that load.
 
 Every morning, as before: `--zip ... --since marker`, then `--cert-review-zip` on that zip.
 
