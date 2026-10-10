@@ -8684,6 +8684,22 @@ void testDraftsPass()
 /** THE STRIP DRAFT (7 Oct item 7): every section in its category's shape under one draft naming the parent; engage and neutral writes carried. */
 void testStripDraft()
 {
+    {   // ST-NOISE (Kathy, 10 Oct; bx_console N): a named modelling-noise source with an off end is written off for every section (role
+        // noise_off); THD, the console channel, a noise GATE / reduction, a source already off at instantiate: untouched
+        using namespace ejmap::strip;
+        auto ctl = [] (int i, const char* n, int steps, std::initializer_list<std::pair<const char*, float>> texts, const char* inst) { Control c; c.index = i; c.name = n; c.numSteps = steps; for (const auto& [t, v] : texts) c.texts[t] = v; c.instText = inst; return c; };
+        std::vector<Control> cs { ctl (5, "Virtual Gain", 0, { { "-oo dB", 0.0f }, { "-95.0 dB", 0.5f }, { "-70.0 dB", 1.0f } }, "-85.0 dB"),
+                                  ctl (6, "THD", 0, { { "Off", 0.0f }, { "-75.0", 0.5f }, { "-30.0", 1.0f } }, "-60.0"),
+                                  ctl (9, "Console Channel", 72, { { "1", 0.0f }, { "37", 0.5f }, { "72", 1.0f } }, "1"),
+                                  ctl (20, "Noise Gate Threshold", 0, { { "Off", 0.0f }, { "-20 dB", 1.0f } }, "-40 dB"),
+                                  ctl (21, "Tape Hiss", 2, { { "Off", 0.0f }, { "On", 1.0f } }, "On"),
+                                  ctl (22, "Analog Noise", 0, { { "0 %", 0.0f }, { "100 %", 1.0f } }, "0 %") };
+        const auto w = noiseOffWrites (cs);
+        Section eq; eq.name = "eq"; OtherDynamics od;
+        const auto ws = stripWrites (eq, od, w);
+        check (w.size() == 2 && w[0].index == 5 && w[0].norm == 0.0f && w[0].set == "-oo dB" && w[0].role == "noise_off" && w[1].index == 21 && w[1].set == "Off" && ws.size() == 2,
+               "strip ST-NOISE: Virtual Gain -> '-oo dB' and Tape Hiss -> 'Off' written off for every section (noise_off); THD, Console Channel, a noise gate and a source already off untouched (" + juce::String ((int) w.size()) + ")");
+    }
     auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
     const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap-strip-pin-" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
     dir.createDirectory(); const juce::String stem = "AudioUnit_41747d65_1.7.1";

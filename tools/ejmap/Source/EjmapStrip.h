@@ -149,11 +149,42 @@ inline OtherDynamics otherDynamicsFor (const std::vector<Section>& sections, con
     }
     return o;
 }
-inline std::vector<StripWrite> stripWrites (const Section& sec, const OtherDynamics& od)
+// MODELLING NOISE OFF (Kathy, 10 Oct: bx_console N did not repeat serial vs serial - 440 record figures; its "Virtual Gain", the
+// modelled analogue noise floor at -85 dB by default, made every quiet reading random: run-to-run |A-B| 0.03-0.05 dB median under
+// -80 dB out, 0.000 above -40). A control NAMED as a noise source (noise / hiss / drift / wow / flutter / crackle, or Virtual Gain)
+// that reads an OFF end ("-oo dB", "-inf", "Off", "0 %") is written to that end for every section, carried as a neutral write
+// (role noise_off) on the record and the draft; the server writes it too. Not a noise SOURCE: a noise gate / reduction / filter /
+// threshold / key. THD and console-channel / tolerance models are deterministic (the same every run): left as instantiated.
+inline bool noiseSourceName (const juce::String& name)
+{
+    const auto t = tokens (name);
+    for (const auto& x : t) if (x == "gate" || x == "reduction" || x == "reduce" || x == "filter" || x == "threshold" || x == "thresh" || x == "key" || x == "suppress" || x == "suppression" || x == "shaper") return false;
+    for (const auto& x : t) if (x == "noise" || x == "hiss" || x == "drift" || x == "wow" || x == "flutter" || x == "crackle") return true;
+    const auto j = t.joinIntoString (" ");
+    return j.contains ("virtual gain") || j == "vgain" || j.contains ("v gain");
+}
+inline bool offText (const juce::String& text)
+{
+    const auto s = text.trim().toLowerCase().removeCharacters (" ");
+    return s.startsWith ("-oo") || s.startsWith ("-inf") || s.startsWith (juce::CharPointer_UTF8 ("-\xe2\x88\x9e")) || s == "off" || s == "0%" || s == "0.0%" || s == "0.00%";
+}
+inline std::vector<StripWrite> noiseOffWrites (const std::vector<Control>& controls)
+{
+    std::vector<StripWrite> out;
+    for (const auto& c : controls)
+    {
+        if (! noiseSourceName (c.name)) continue;
+        for (const auto& [text, norm] : c.texts)
+            if (offText (text)) { if (! offText (c.instText)) out.push_back ({ c.index, c.name, text, "noise_off", norm }); break; }
+    }
+    return out;
+}
+inline std::vector<StripWrite> stripWrites (const Section& sec, const OtherDynamics& od, const std::vector<StripWrite>& noiseOff = {})
 {
     std::vector<StripWrite> ws;
     if (sec.engage) ws.push_back ({ sec.engage->index, sec.engage->name, sec.engageText, "engage", sec.engageNorm });
     for (const auto& w : od.offWrites) ws.push_back (w);
+    for (const auto& w : noiseOff) { bool dup = false; for (const auto& x : ws) dup = dup || x.index == w.index; if (! dup) ws.push_back (w); }
     return ws;
 }
 inline juce::String presetOf (const std::vector<StripWrite>& ws) { juce::StringArray a; for (const auto& w : ws) a.add (juce::String (w.index) + ":" + juce::String (w.norm, 6)); return a.joinIntoString (","); }

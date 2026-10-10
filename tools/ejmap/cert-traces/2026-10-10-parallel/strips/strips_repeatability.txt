@@ -1,0 +1,34 @@
+STRIPS REPEATABILITY, 10 Oct (hostable units, scratch, signed probe)
+
+1. WHY bx_console N did not repeat (serial A vs serial B, before the fix; par2m/serialA vs serialB):
+   instantiate: Setting A, Virtual Gain 0.700 = '-85.0 dB' (range '-oo dB' at 0 .. '-70.0 dB' at 1), THD 0.667 = '-60.0' (Off at 0),
+   Console Channel 1 (of 72), Stereo Mode Analog - the SAME in every run (text-at traces).
+   |A-B| by output level over every differing trace (84 traces, every section):
+     out  -130..-120 dB  n    608  median 0.0480 dB  p95 0.1530 dB
+     out  -120..-110 dB  n   2978  median 0.0370 dB  p95 0.2610 dB
+     out  -110..-100 dB  n   2841  median 0.0360 dB  p95 0.2730 dB
+     out  -100.. -90 dB  n   3740  median 0.0390 dB  p95 0.2770 dB
+     out   -90.. -80 dB  n   4280  median 0.0300 dB  p95 0.2370 dB
+     out   -80.. -70 dB  n   5104  median 0.0190 dB  p95 0.1980 dB
+     out   -70.. -60 dB  n   8281  median 0.0030 dB  p95 0.1280 dB
+     out   -60.. -50 dB  n   6157  median 0.0040 dB  p95 0.1230 dB
+     out   -50.. -40 dB  n  20532  median 0.0000 dB  p95 0.0190 dB
+     out   -40.. -30 dB  n   8185  median 0.0010 dB  p95 0.0290 dB
+     out   -30.. -20 dB  n   6575  median 0.0000 dB  p95 0.0070 dB
+     out   -20.. -10 dB  n   7627  median 0.0000 dB  p95 0.0010 dB
+     out   -10..   0 dB  n    739  median 0.0000 dB  p95 0.0010 dB
+   -> a NOISE signature (large where the output is quiet, ~0 where it is loud): the modelled analogue noise floor that Virtual Gain sets;
+      not THD / TMT channel / stereo analog mode (deterministic: identical every run, see 2).
+
+2. TWO MORE STRIPS serial twice (the build before the fix; stripx):
+== SSLChannelm: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 46: numbers differing 0 ; line-count diffs 0; token diffs 0
+== Lindell69Channel: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 66: numbers differing 0 ; line-count diffs 0; token diffs 0
+   SSLChannel (m) (Waves; 'Analog' switch) and Lindell 69 Channel (PA; THD, TMT Link, TMT Channel; 4 sections) repeat bit for bit.
+   -> bx_console's Virtual Gain noise, not strips in general.
+
+3. AFTER the fix (Virtual Gain -> '-oo dB' as a neutral write, every section; stripfix):
+STRIP: modelling noise off for every section (a neutral write the server makes too): Virtual Gain -> '-oo dB'
+== bxN: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 100: numbers differing 0 ; line-count diffs 0; token diffs 0

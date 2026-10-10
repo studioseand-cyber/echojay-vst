@@ -2955,6 +2955,7 @@ inline juce::var stripDraftFrom (const juce::var& stripRec, const juce::File& st
     auto* P = new juce::DynamicObject(); P->setProperty ("schema", "ej_strip_profile/0"); P->setProperty ("spec", drafts::specTag ("STRIP (each section to its category spec)"));
     P->setProperty ("status", "DRAFT: each section in its category's v0.2 PROPOSAL shape (EQ / gate / saturation / compressor); strip profiles' export is held (ruled 7 Oct): data only, not exported, not published");
     P->setProperty ("parent", plugin); P->setProperty ("rule", stripRec.getProperty ("rule", ""));
+    if (stripRec.hasProperty ("noise_off")) P->setProperty ("noise_off", stripRec.getProperty ("noise_off", {}));   // 10 Oct: the modelling-noise neutral writes, every section
     juce::Array<juce::var> secs, notes; const auto date = stripRec.getProperty ("measuredAt", "").toString().substring (0, 8);
     const auto measured = drafts::measuredBlock ("EJ Map (feat/ejmap-cert), the strip's sections through their categories' modes", date.length() == 8 ? date.substring (0, 4) + "-" + date.substring (4, 6) + "-" + date.substring (6, 8) : runDateIso(), 48000, "per section: its category's signal");
     auto recordOf = [&] (const juce::String& section, const juce::String& suffix) { const auto f = stripDir.getChildFile (section + "." + stem + suffix); return f.existsAsFile() ? juce::JSON::parse (f.loadFileAsString()) : juce::var(); };
@@ -3015,12 +3016,15 @@ inline int runStrip (const SweepOptions& opt)
             controls.push_back (k);
         }
     const auto sections = strip::sectionsOf (controls);
+    const auto noiseOff = strip::noiseOffWrites (controls);   // 10 Oct: modelling noise off for every section (repeatability)
+    if (! noiseOff.empty()) { juce::StringArray n; for (const auto& w : noiseOff) n.add (w.control + " -> '" + w.set + "'"); say ("STRIP: modelling noise off for every section (a neutral write the server makes too): " + n.joinIntoString (", ")); }
     juce::String line = "STRIP: " + opt.product + " " + desc.version + ": " + juce::String ((int) controls.size()) + " control(s) in " + juce::String ((int) sections.size()) + " section(s):";
     for (const auto& sec : sections) line << "  " << sec.name << " " << (int) sec.controls.size() << (sec.engage ? " (engage " + sec.engage->name + " -> '" + sec.engageText + "')" : juce::String());
     say (line);
     const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
     auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_strip_prototype/0"); o->setProperty ("status", "PROTOTYPE (item E, 7 Oct): sections by name, each through its category's mode with its engage switch as the probe's preset; data only, nothing exported");
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    if (! noiseOff.empty()) o->setProperty ("noise_off", strip::stripWritesVar (noiseOff));
     o->setProperty ("rule", "Rule 1 (2 Oct): the section's own engage switch rides with it; every other section at its instantiate value - a section's measurement is the strip with that section engaged, the others as instantiated");
     juce::Array<juce::var> secs; int ran = 0;
     for (const auto& sec : sections)
@@ -3032,7 +3036,8 @@ inline int runStrip (const SweepOptions& opt)
         // THE OTHER DYNAMICS SECTIONS (Kathy's ruling, 7 Oct) for a dynamics section: switched off by their own engage for the whole run,
         // carried as neutral writes; EQ / saturation at instantiate, recorded; one without an engage control -> needs_review
         const auto od = strip::isDynamics (sec.name) ? strip::otherDynamicsFor (sections, sec.name) : strip::OtherDynamics();
-        const auto sws = strip::stripWrites (sec, od);
+        const auto sws = strip::stripWrites (sec, od, noiseOff);
+        if (! strip::isDynamics (sec.name) && ! noiseOff.empty()) so->setProperty ("strip_writes", strip::stripWritesVar (sws));   // 10 Oct: the noise-off writes, on every section's record and draft
         if (strip::isDynamics (sec.name))
         {
             so->setProperty ("strip_writes", strip::stripWritesVar (sws)); so->setProperty ("other_sections_at_instantiate", od.atInstantiate.joinIntoString ("; ")); if (! od.alreadyOff.isEmpty()) so->setProperty ("other_dynamics_already_off", od.alreadyOff.joinIntoString ("; "));
