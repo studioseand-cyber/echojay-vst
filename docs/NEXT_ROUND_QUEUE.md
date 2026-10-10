@@ -1,60 +1,69 @@
 # Next round — the queue, in order
 
-Written 10 Oct 2026. Nothing here is started; this is the agreed order for the round AFTER the
-levelling-redesign merge batch.
+Rewritten 10 Oct 2026, after the round that closed items 1–4. Nothing here is started.
 
-## 1. RE-DERIVE THE GR-MODEL CALIBRATION LEGS — before any remote-control work
+## 1. THE REMOTE-CONTROL REMOVALS (plan §6) — the deferred half of stage 5
 
-Sean's ruling (10 Oct): these are marked **known-stale and named** in `loudness_loop_guard`
-(`kKnownStaleLegs`), excluded from the exit code so that any *other* red still fails the gate.
-**They must be green before anything reaches Logic.**
+Stages 1–5 are in. Stage 5's **removals** are not, and the reason is a coupling worth
+reading before anyone picks this up.
 
-The seven assertions, and why they are stale rather than broken:
+The plan's migration note says the V2's saved borrowed **copy** must be ignored rather than
+applied, or the rack doubles. That is only true once the borrowed host is **gone**. While it
+is still the edit-staging path — and it is: **48 uses in `PluginProcessor.cpp`, 45 in
+`PluginEditor.cpp`**, with builds still landing in `borrowHostIfActiveFor` — that copy is
+**load-bearing**. The 4 Oct ruling exists because of it: a chain built on a Link mid-lease
+and saved without switching racks lived *only* there, and dropping it is how Sean lost one.
 
-| Leg | Symptom |
-|---|---|
-| `K5` ×4 | the GR estimate is compared against a "truth" computed around the old **Level OUT** tap. `K5` reads estimate `+4.67` against truth `−6.16` — a **sign** disagreement, so it is the leg's arithmetic, not a 1 dB tolerance |
-| `K4` | the true-peak line's hits figure, same tap |
-| `K1` (capped trim) | the capped trim came back `0.01` |
-| `O1` | its premise is "the hits are typically **under** the 10 dB Commercial cap", but the estimate reads **11.7 dB** where the product's own `hitsMeasure()` reads **2.9 dB** |
+So the deletion and the migration move together, and together they are a re-routing of
+~93 call sites so **every edit becomes a command**. That is this item, and it is a round.
 
-`O1` is on the list for the same single cause as `K1`/`K4`/`K5`, not as a widening of scope: the
-estimate and `hitsMeasure()` disagree about the same quantity in the same proposal.
+What goes when it does (plan §6): `rackLeaseEngage`/`Release` and `rackLeasePrior_`,
+`setAttachBypassed`/`attachBypassed_`/`setLeaseBypass`, the `intendedBypassed` overlay dance,
+the rack arm of `leaseGate_`, `leaseBaseRev_`, `rackLeaseMuteWant_`, `rackLeaseEditPending_`,
+`slotWetParkedSaid_`, and the borrowed host entirely. Six bugs retire with it.
 
-What re-derivation means here: the tap moved to the limiter's **GAINED input**
-(`limv2::MeterTap` / `inputLevels()`), so the span the estimate covers is no longer the span the
-legs' truth covers. Derive the truth from the new tap, then prove each leg **both directions**.
+The behavioural seams are already named and already false (`Source/EJRemoteControl.h`), so the
+deletion is hygiene rather than behaviour — which is exactly why it must not be rushed at the
+end of a long day. I have swallowed 241 lines twice in this repo by walking braces.
 
-## 2. Settings sync — from B's findings (10 Oct)
+## 2. The ring's measured latency
 
-B's server **now merges**, which answers the question left open in
-`Source/EchoJayAPI.cpp` (`saveUserSettings`) and in `ECHOJAY_API_CONTRACT.md` §6.
+`docs/LINK_REMOTE_CONTROL_PLAN.md` §10 lists this as not established, and it still is not:
+the ≤1 buffer figure is from the structure of the code, not a stopwatch. The contract asks for
+the Link to log the wall-clock delta between a frame's write stamp and the block that applied
+it, asserted at both buffer sizes. The drain is wired; the measurement is not.
 
-- [x] **Never POST `/api/data` after a failed GET.** *Already in* — the predicate
-      `echojay::userDataWriteMayProceed` gates it, and it is executed by the suite rather than
-      grepped for. No work owed; listed so the queue matches B's list.
-- [ ] **Stop writing the four empty arrays.** `chats`, `albums`, `reviews`, `refTracks` are each
-      written as `[]` when absent from an otherwise-good body. The code says, in a comment, that
-      omitting the key is safe **only** under merge semantics and that merge-vs-replace was
-      UNANSWERED. B has now answered it: **a missing key keeps the stored value, but an explicit
-      empty array still clears it.** So omit the key when the GET did not carry it. Leg: a good
-      body missing `albums` must produce a payload with **no** `albums` property.
-- [ ] **Include `pinnedProjects` in the settings sync.** Not currently in the profile payload.
-- [ ] *(optional)* **Send `baseUpdatedAt`** from the 200 response, for conflict detection.
+## 3. `tools/mapfps_test` is not in the gate
 
-## 3. Remote control, stages 1–5 + the `doOp` executor
+It is registered nowhere in `tools/tests/CMakeLists.txt` and currently reports **19 failing
+assertions**, almost all text pins over source that has since moved. The suite's own rule is
+that every test is in the gate or carries a written exclusion like `comp_render_check`'s —
+right now it is neither, which is the one state that rule forbids. Gate it and fix the 19, or
+write the exclusion. **Sean's call.**
 
-Per `LINK_REMOTE_CONTROL_PLAN.md` and `docs/CONTRACT_LINK_COMMANDS.md`, merging A2's work as it
-lands. **Blocked behind item 1.**
+## 4. Flagged, needing someone else's decision
 
-## 4. Owed leg (noted when leg N was retired)
-
-The target stage is the **LAST** slot, so an insert after it changes which slot the loop drives.
-New subject, so a new leg rather than a re-aim.
-
-## Flagged, needing someone else's decision
-
-- **Sean:** the merged tree now has **two** stores for reference sets — the kept preset feature
-  and integration's new reference library.
+- **Sean:** the merged tree has **two** stores for reference sets — the kept preset feature and
+  integration's new reference library.
+- **Sean:** `level_slot_guard`'s summary separator moved with the integration merge
+  (`gain_db 2.5`, not `gain_db=2.5`). Ruled 10 Oct: keep the re-aim, no product change. Noted
+  here only so the change is not rediscovered as a regression.
 - **B:** emit `option: "commercial"` rather than collapsing it to `pushed`;
   `docs/ECHOJAY_API_CONTRACT.md` does not state the current chat-stream refusal shape.
+- **B:** `set_level` is now the **rack record**, not a Level slot. B's `CONTRACT_AGENT_TOOLS.md`
+  should say so if it still describes a Level slot.
+
+## Done this round, for the record
+
+1. **The GR model re-derived** — all seven known-stale legs green as real passes;
+   `kKnownStaleLegs` is empty. A unit bug (a `Plain`-weighted slot tally subtracted from a
+   `K`-weighted chain tally, in the figure shown to the user), a tap nothing reset at the
+   window, and a ruler rig our own ruling had given a limiter.
+2. **The data fix** — the four empty arrays gone, `pinnedProjects` forwarded, `baseUpdatedAt`
+   sent when the read supplied one. New gated `userdata_write_guard`.
+3. **Remote control stages 1–5** — the audio detour and the lease mute gone (Sean's acceptance
+   test green on rendered audio); the four value ops acked; the value ring with RT appliers for
+   the four figures and `set_param` on the message thread (contract corrected); `open_editor`
+   with embed proven by pid; undo under remote control, one step per gesture.
+4. **Agent mode** — `ExecutorDo` on top of A2's read half, the Settings switch (a real one now:
+   the dev-mode gate is gone), `echoJayOnly` and `can_act` in the start context.
