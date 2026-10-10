@@ -614,8 +614,20 @@ int main()
         check (! A::replyAllowed (*ed) && ! A::applyBtn (*ed, 0).isVisible(), "(12c) switch to SETTINGS -> the Apply button is NOT visible  (RED as it stood: it drew over the account panel)", juce::String ((int) A::applyBtn (*ed, 0).isVisible()));
         A::toTab (*ed, A::tabChat()); A::applyBtn (*ed, 0).setVisible (true);
         check (A::replyAllowed (*ed) && A::applyBtn (*ed, 0).isVisible(), "(12c) switch back -> the rule allows it again and the button stays visible", juce::String ((int) A::applyBtn (*ed, 0).isVisible()));
-        A::setChainsMode (*ed, true);
+        // 10 Oct 2026 (test 6): THE CHAINS LIST HAS TO BE ON SCREEN, not merely requested. This set chains mode
+        // while on the CHAT tab and expected the controls to hide, which passed only because
+        // chatReplyControlsAllowed() asked processorRef.chainSidebarChainsMode ALONE. That flag-only reading is
+        // the test-6 fault itself: it said "no assistant" whenever chains mode was REQUESTED, including where the
+        // sidebar could not show it, and then NOTHING drew the column - Sean's blank AI ASSISTANT column, header
+        // and all. The predicate is now the conjunction the layout uses, so the fixture goes to the tab that
+        // actually hosts the chains list. Sean's original complaint - Apply drawing over the saved-chains list -
+        // is asserted where it happened.
+        A::toTab (*ed, A::tabChain()); A::setChainsMode (*ed, true); pumpMs (40);
         check (! A::replyAllowed (*ed) && ! A::applyBtn (*ed, 0).isVisible(), "(12c) the panel shows CHAINS -> not visible  (RED as it stood: Apply drew over the saved-chains list)", juce::String ((int) A::applyBtn (*ed, 0).isVisible()));
+        // ...AND THE OTHER DIRECTION, which is the half test 6 was missing: chains mode REQUESTED on a tab that
+        // cannot show the list must NOT silence the assistant, or the column goes blank.
+        A::toTab (*ed, A::tabChat()); pumpMs (40); A::applyBtn (*ed, 0).setVisible (true);
+        check (A::replyAllowed (*ed) && A::applyBtn (*ed, 0).isVisible(), "(12c) chains mode REQUESTED but the Chat tab is showing -> the assistant is NOT silenced (test 6: the blank column)", juce::String ((int) A::applyBtn (*ed, 0).isVisible()));
         A::setChainsMode (*ed, false); A::applyBtn (*ed, 0).setVisible (true);
         check (A::replyAllowed (*ed) && A::applyBtn (*ed, 0).isVisible(), "(12c) back to AI -> allowed and visible again");
         // ---- (12d) the chain strip has no undo/redo of its own ----
@@ -2718,8 +2730,35 @@ int main()
         // the emit path wrote the message to the workspace twice, and pills are not part of that store, so every
         // reload drew bare copies.
         {
+            // 10 Oct 2026: THIS FIXTURE OWNS ITS BUILD, AND ITS OWN INSTANCE. It used to read liveBubbleText()
+            // off whatever state the loop happened to be in after two thousand lines of other legs - the arm
+            // from the build at the top of this block, which 18g (1)'s [Listen] tap had since moved out of
+            // `armed`. It passed only because nothing in between disturbed it, and the levelling redesign did.
+            // A fixture for "ONE arm bubble PER BUILD" has to do a build.
+            // It does that build on a PRIVATE processor and editor. Doing it on the shared `ed` was my first
+            // attempt and it broke two later legs (18g (1)'s verb sequence), because every leg below here
+            // inherits this editor's loop - which is the same class of fault as reading the leftover state.
+            // A fixture that changes state other legs depend on is not isolated, and isolation is the
+            // precondition for the evidence.
+            EchoJayProcessor proc13; proc13.prepareToPlay (48000.0, 512);
+            proc13.setChannelType (ChannelType::FullMix);   // a TARGET aim, which is the arm-bubble case
+            std::unique_ptr<juce::AudioProcessorEditor> ed13Base (proc13.createEditor());
+            auto* ed13 = dynamic_cast<EchoJayEditor*> (ed13Base.get()); if (! ed13) return 2;
+            ed13->setSize (2000, 1100); A::toChat (*ed13); pumpMs (60);
+            auto& loop13 = proc13.loudnessLoop();
+            A::build (*ed13, "{\"chain\":[{\"name\":\"EchoJay EQ\",\"role\":\"eq\",\"settings\":\"\"},"
+                             "{\"name\":\"EchoJay Limiter\",\"role\":\"limiter\","
+                             "\"settings_structured\":{\"params\":{\"ceiling_db\":-0.1,\"target_lufs\":-12,\"option\":\"dynamic\"}}}]}");
+            for (int k = 0; k < 40 && loop13.liveBubbleText().isEmpty(); ++k) pumpMs (100);
+            // Shadow the three names the body below uses, so the checks read exactly as they did.
+            auto* ed = ed13; auto& loop = loop13; auto& M = A::msgs (*ed13);
+            juce::ignoreUnused (loop);
             const auto armText = loop.liveBubbleText();
-            check (armText.isNotEmpty(), "(13) fixture: the build armed the loop", armText);
+            check (armText.isNotEmpty(), "(13) fixture: the build armed the loop",
+                   armText.isNotEmpty() ? armText : ("state " + juce::String ((int) loop.state())
+                                                     + " everArmed " + juce::String (loop.everArmed() ? 1 : 0)
+                                                     + " stageReady " + juce::String (loop.stageReady() ? 1 : 0)
+                                                     + " stage " + loop.stageName()));
             int armBubbles = 0, armIdx = -1;
             for (int i = 0; i < (int) M.size(); ++i)
                 if (M[(size_t) i].role == "assistant" && M[(size_t) i].content == armText) { ++armBubbles; armIdx = i; }
@@ -2738,7 +2777,9 @@ int main()
             A::toTab (*ed, A::tabSettings()); pumpMs (30);
             check (! A::replyAllowed (*ed) && chipsAt (armIdx).isEmpty(),
                    "(13) hidden on a tab that hides the chat-reply controls (Settings)", chipsAt (armIdx));
-            A::setChainsMode (*ed, true); A::toChat (*ed); pumpMs (30);
+            // On the tab that HOSTS the chains list, not merely with the flag set - see (12c): asking the flag
+            // alone is the test-6 fault, and chains mode requested on the Chat tab must leave the assistant alone.
+            A::setChainsMode (*ed, true); A::toTab (*ed, A::tabChain()); pumpMs (30);
             check (! A::replyAllowed (*ed) && chipsAt (armIdx).isEmpty(),
                    "(13) hidden in CHAINS mode, like Apply and Build", chipsAt (armIdx));
             A::setChainsMode (*ed, false); A::toChat (*ed); pumpMs (30);
@@ -2820,18 +2861,27 @@ int main()
         check (A::chips (*ed, M.back()).joinIntoString ("|") == "Back off#2|Leave it#2", "18g (3) the watch's back-off bubble renders [Back off] [Leave it]", A::chips (*ed, M.back()).joinIntoString ("|"));
         // (5) BUBBLE TRUTH: the 20 Sep fixture - controls{Ceiling, Limiter Mode} applied, a flat ceiling_db beside them with no mapping
         auto& ch = proc.getChainHost();
+        // LEVELLING V2: the LIMITER'S OWN INDEX, not the literal 1. This fixture was written when every build
+        // carried a Level slot, so the limiter sat at 1; with nothing inserted it is the only slot and the
+        // writes went to a slot that does not exist - setSlotStructuredSettings and record() both no-ops, and
+        // the leg reported "no infos" about a readback it had never managed to make.
+        const int limIdx = ch.getNumSlots() - 1;
+        check (limIdx >= 0 && ChainHost::isLimiterLikeName (ch.getSlotInfo (limIdx).name),
+               "18g (5) precondition: the chain ends in the limiter this readback is about",
+               limIdx >= 0 ? (juce::String (ch.getNumSlots()) + " slot(s), last = " + ch.getSlotInfo (limIdx).name)
+                           : juce::String ("no slots"));
         { auto* co = new juce::DynamicObject(); co->setProperty ("Ceiling", -0.1); co->setProperty ("Limiter Mode", "Modern");
           auto* pp = new juce::DynamicObject(); pp->setProperty ("ceiling_db", -0.1); pp->setProperty ("true_peak", 1);
           auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); w->setProperty ("controls", juce::var (co)); w->setProperty ("ceiling_db", -0.1);
-          ch.setSlotStructuredSettings (1, juce::var (w)); }
+          ch.setSlotStructuredSettings (limIdx, juce::var (w)); }
         std::vector<ChainHost::ApplyReport> report;
         { ChainHost::ApplyReport r; r.semantic = "ceiling_db"; r.applied = false; r.normalized = 0.0f; r.note = "no mapping for this control on this plugin"; report.push_back (r); }
         { ChainHost::ApplyReport r; r.semantic = "Ceiling"; r.applied = true; r.normalized = 0.945f; r.requestedValue = -0.1; r.note = "applied (display unverifiable on this plugin)"; r.landedText = "-0.09 dB"; report.push_back (r); }
         { ChainHost::ApplyReport r; r.semantic = "Limiter Mode"; r.applied = true; r.normalized = 1.0f; r.requestedValue = "Modern"; r.note = "applied, reads \"Modern\""; r.landedText = "Modern"; report.push_back (r); }
-        EchoJayBorrowHostTestAccess::record (ch, 1, report);
+        EchoJayBorrowHostTestAccess::record (ch, limIdx, report);
         const auto infos = ch.getDialInfos();
-        check (infos.size() >= 2 && infos[1].status == ChainHost::DialStatus::applied && infos[1].manual.isEmpty() && infos[1].applied.joinIntoString ("|") == "Ceiling|Limiter Mode", "18g (5) the duplicate flat ceiling_db collapses to the APPLIED Ceiling: status applied, nothing manual, applied = Ceiling | Limiter Mode", infos.size() >= 2 ? "status " + juce::String ((int) infos[1].status) + " manual [" + infos[1].manual.joinIntoString ("|") + "] applied [" + infos[1].applied.joinIntoString ("|") + "]" : juce::String ("no infos"));
-        const auto bubble = A::compose (*ed, ch, "{\"chain\":[{\"name\":\"EchoJay Level\",\"role\":\"level\"},{\"name\":\"EchoJay Limiter\",\"role\":\"limiter\"}]}");
+        check (limIdx >= 0 && infos.size() > (size_t) limIdx && infos[(size_t) limIdx].status == ChainHost::DialStatus::applied && infos[(size_t) limIdx].manual.isEmpty() && infos[(size_t) limIdx].applied.joinIntoString ("|") == "Ceiling|Limiter Mode", "18g (5) the duplicate flat ceiling_db collapses to the APPLIED Ceiling: status applied, nothing manual, applied = Ceiling | Limiter Mode", (limIdx >= 0 && infos.size() > (size_t) limIdx) ? "slot " + juce::String (limIdx) + " status " + juce::String ((int) infos[(size_t) limIdx].status) + " manual [" + infos[(size_t) limIdx].manual.joinIntoString ("|") + "] applied [" + infos[(size_t) limIdx].applied.joinIntoString ("|") + "]" : ("no infos for slot " + juce::String (limIdx) + " (" + juce::String ((int) infos.size()) + " info(s))"));
+        const auto bubble = A::compose (*ed, ch, "{\"chain\":[{\"name\":\"EchoJay Limiter\",\"role\":\"limiter\"}]}");   // LEVELLING V2: no Level slot in the built chain
         check (! bubble.contains ("hand-dialing") && bubble.startsWith ("Chain built"), "18g (5) the build bubble from that readback never says \"needs hand-dialing\" (a clean build line)", bubble.substring (0, 160));
     }
 #else
@@ -2980,10 +3030,15 @@ int main()
           while (loop.state() != LoudnessLoop::State::proposed && b < 6000) { for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = (rng.nextFloat() * 2.0f - 1.0f) * 0.1f; } proc.processBlock (buf, midi); if ((++b % 23) == 22) loop.tickNow(); } }
         check (loop.state() == LoudnessLoop::State::proposed && loop.go(), "(2c) precondition: a proposal, then Go (the apply bubble)");
         const auto& M = A::msgs (*ed); const size_t nBefore = M.size();
-        auto* lv = dynamic_cast<EedLevelProcessor*> (proc.getChainHost().getSlotProcessor (loop.levelSlot())); const float gBefore = lv ? (float) lv->gainDb() : 0.0f; const float tBefore = loop.target();
+        // LEVELLING V2: read the gain off THE STAGE, not off an EchoJay Level device. This did
+        // getSlotProcessor (loop.levelSlot()) with levelSlot() permanently -1, so lv was null, gBefore was 0 and
+        // the assertion failed on its own fixture. The claim is unchanged - a complaint is the softer step twice,
+        // so the gain moves -2 dB and the target moves -2 - and currentGainDb() is that gain wherever it lives.
+        const float gBefore = loop.currentGainDb(); const float tBefore = loop.target();
+        check (loop.stageReady(), "(2c) precondition: the loop has a gain stage", loop.stageName());
         check (A::forcedVerb (*ed, "too squashed now"), "(2c) the forced verb is CONSUMED locally (never sent as a chat)");
         pumpMs (60);
-        check (lv != nullptr && std::abs ((float) lv->gainDb() - (gBefore - 2.0f)) < 0.05f && std::abs (loop.target() - (tBefore - 2.0f)) < 0.01f, "(2c) the Level moved -2 dB and the target -2 (the softer step twice)", "Level " + juce::String (gBefore, 2) + " -> " + juce::String (lv ? lv->gainDb() : 0.0, 2));
+        check (std::abs (loop.currentGainDb() - (gBefore - 2.0f)) < 0.05f && std::abs (loop.target() - (tBefore - 2.0f)) < 0.01f, "(2c) the stage moved -2 dB and the target -2 (the softer step twice)", loop.stageName() + " " + juce::String (gBefore, 2) + " -> " + juce::String (loop.currentGainDb(), 2) + ", target " + juce::String (tBefore, 1) + " -> " + juce::String (loop.target(), 1));
         check (M.size() >= nBefore + 2 && M.back().content.startsWith ("Applied -2.0 dB (now "), "(2c) one after-verb bubble \"Applied -2.0 dB (now ...)\" (plus the local user bubble)", M.back().content.substring (0, 60));
     }
     // This leg constructs a SECOND EchoJayProcessor and destroys it. Until 21t-f (b) that was fatal - the
@@ -3061,18 +3116,20 @@ int main()
         auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
         ed->setSize (2000, 1100); pumpMs (60);
         A::build (*ed, "{\"chain\":[{\"name\":\"EchoJay EQ\",\"role\":\"eq\",\"settings\":\"\"}]}");
-        for (int k = 0; k < 40 && proc.getChainHost().getNumSlots() < 2; ++k) pumpMs (100);
-        // 9 Oct 2026 (08c F2): EVERY BUILD GETS A LEVEL SLOT - Sean's ruling - so a one-op build is TWO slots
-        // now, the EQ and an EchoJay Level after it. The precondition is re-aimed rather than loosened: it names
-        // both slots and their order, so the ruling is visible here instead of a number quietly going from 1 to
-        // 2. (The Level goes LAST because no limiter ends this chain; before the limiter when one does.)
+        for (int k = 0; k < 40 && proc.getChainHost().getNumSlots() < 1; ++k) pumpMs (100);
+        // 9 Oct 2026 (08c F2) said EVERY BUILD GETS A LEVEL SLOT, so this expected TWO slots - the EQ and an
+        // EchoJay Level after it - and waited for the second one to appear.
+        // 10 OCT 2026 REVERSES THAT RULING: no Level slot is ever inserted. This instance answered no channel
+        // question, so the aim is a volume MATCH, and a match build inserts NOTHING - it drives the rack's own
+        // OUT gain. A one-op build is therefore ONE slot again. Re-aimed, not loosened: it still names the slot
+        // and still asserts nothing was added, so the CURRENT ruling is visible here rather than a count
+        // quietly moving. (A target build is the other case and gets a limiter last - leg V2 in
+        // loudness_loop_guard owns that one.)
         const auto& bh = proc.getChainHost();
-        const bool twoWithLevelLast = bh.getNumSlots() == 2
-                                   && bh.getSlotInfo (0).name == "EchoJay EQ"
-                                   && bh.getSlotInfo (1).name == "EchoJay Level";
-        check (twoWithLevelLast,
-               "Build 2. precondition: the one-op build is EQ + an EchoJay Level after it (08c F2: every build "
-               "gets a Level slot)",
+        const bool oneOpUntouched = bh.getNumSlots() == 1 && bh.getSlotInfo (0).name == "EchoJay EQ";
+        check (oneOpUntouched,
+               "Build 2. precondition: the one-op build is the EQ and NOTHING ELSE (10 Oct ruling: a match "
+               "build inserts no Level and no limiter)",
                juce::String (bh.getNumSlots()) + " slot(s): "
                    + (bh.getNumSlots() > 0 ? bh.getSlotInfo (0).name : juce::String())
                    + (bh.getNumSlots() > 1 ? " | " + bh.getSlotInfo (1).name : juce::String()));

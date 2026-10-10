@@ -26,14 +26,36 @@ for i, a in enumerate(args):
 FRAMEWORKS = ["CoreAudioKit","DiscRecording","CoreAudio","CoreMIDI","AudioToolbox","Accelerate",
               "WebKit","Metal","MetalKit","QuartzCore","Cocoa","Foundation","IOKit","Security","OpenGL",
               "UniformTypeIdentifiers","AVFoundation","CoreMedia","AVKit"]
+def _ej_fail(stderr):
+    # 10 Oct 2026: this printed stderr[-4000:] only, and clang puts WARNINGS after the error, so a real failure
+    # arrived as four thousand characters of -Wfloat-equal with the cause scrolled off. Errors and undefined
+    # symbols are surfaced FIRST, every time, then the tail for context.
+    lines = stderr.splitlines()
+    keep, i = [], 0
+    while i < len(lines):
+        l = lines[i]
+        if ("error:" in l) or ("Undefined symbols" in l) or ("symbol(s) not found" in l) or l.strip().startswith('"_'):
+            keep.extend(lines[i:i + 4]); i += 4
+        else:
+            i += 1
+    if keep:
+        print("COMPILE/LINK ERRORS:\n" + "\n".join(keep[:120]))
+    print("TAIL:\n" + stderr[-2500:])
+
 cmd = ["clang++"] + out + ["-I", os.path.join(ROOT, "Source"), SRC, LIB]
+# The V2 archive references the Playback grid's binary data (juce_add_binary_data(EchoJayPlaybackArt), linked
+# into the EchoJay target by CMakeLists.txt), so anything linking that archive needs the art lib too or the link
+# fails on EJPlaybackArt::laptop_jpg and its siblings. Same fix as tools/harness_build.py and tools/tests.
+for _art in (os.path.join(ROOT, "build-release/libEchoJayPlaybackArt.a"),
+             os.path.join(ROOT, "build/libEchoJayPlaybackArt.a")):
+    if os.path.exists(_art): cmd.append(_art); break
 for f in FRAMEWORKS: cmd += ["-framework", f]
 cmd += ["-lcurl", "-o", OUT]
 
 print("compiling harness ...", flush=True)
 r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
 if r.returncode != 0:
-    print("COMPILE FAILED:\n" + r.stderr[-4000:]); sys.exit(3)
+    print("COMPILE FAILED:"); _ej_fail(r.stderr); sys.exit(3)
 print("compiled -> " + OUT, flush=True)
 
 print("running harness (isolated ECHOJAY_STATE_HOME set inside) ...", flush=True)

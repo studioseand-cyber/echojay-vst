@@ -108,10 +108,10 @@ int main()
     { p.setLinkAlias ("lnk_01", "Lead Vox"); check (U.top()->kind == "alias" && p.linkAlias ("lnk_01") == "Lead Vox", "7. a rename is an ALIAS entry", U.undoLabel());
       U.undo(); check (p.linkAlias ("lnk_01").isEmpty(), "7. undo clears the alias"); U.redo(); check (p.linkAlias ("lnk_01") == "Lead Vox", "7. redo restores it"); }
     // ---- loop ----
-    { auto& loop = p.loudnessLoop(); const bool armed = loop.armFromChain(); check (armed, "8. the loop arms from the Level slot", loop.armSource());
+    { auto& loop = p.loudnessLoop(); const bool armed = loop.armFromChain(); check (armed, "8. the loop arms from the rack record (LEVELLING V2: there is no Level slot)", loop.armSource());
       const int n = U.undoDepth(); loop.writeGainDb (3.0f);
-      check (U.undoDepth() == n + 1 && U.top()->kind == "loop" && U.undoLabel().contains ("+3.0 dB"), "8. a loop write of the Level gain is a LOOP entry", U.undoLabel());
-      U.undo(); check (std::abs (loop.currentGainDb()) < 0.01f, "8. undo restores the Level gain", f1 (loop.currentGainDb())); }
+      check (U.undoDepth() == n + 1 && U.top()->kind == "loop" && U.undoLabel().contains ("+3.0 dB"), "8. a loop write of the stage gain is a LOOP entry", U.undoLabel());
+      U.undo(); check (std::abs (loop.currentGainDb()) < 0.01f, "8. undo restores the stage gain", f1 (loop.currentGainDb())); }
     // ---- not recorded: session load ----
     { const int n = U.undoDepth(); juce::MemoryBlock mb; p.getStateInformation (mb); p.setStateInformation (mb.getData(), (int) mb.getSize()); pumpMs (200);
       check (U.undoDepth() == n, "9. a session load records nothing", juce::String (U.undoDepth() - n)); }

@@ -6632,7 +6632,10 @@ bool EchoJayProcessor::applyUndoEntry(echojay::UndoEntry& e, bool toBefore)
         return true;
     }
     if (e.kind == "alias") { setLinkAlias(e.target, v.toString()); return true; }
-    if (e.kind == "loop")  { if (loudnessLoop_.levelSlot() < 0) return false; loudnessLoop_.writeGainDb((float)(double) v); return true; }
+    // LEVELLING V2: gated on stageReady(), not levelSlot(). levelSlot() is the Level slot's index and is now
+    // permanently -1, so this refused EVERY loop undo - the fourth place the dead cache silently disabled a
+    // feature (done(), everArmed(), and findTarget's nomination were the others). Caught by global_undo_guard 8.
+    if (e.kind == "loop")  { if (! loudnessLoop_.stageReady()) return false; loudnessLoop_.writeGainDb((float)(double) v); return true; }
     // 21t-k item 6 (28/29 Sep 2026 ruling): THE GROUP FADER IS ONE GESTURE, ONE STEP, AND IT IS A VCA. The undo
     // re-sends the INVERSE DELTA through moveLinkGroup rather than a list of absolute member gains, so members
     // keep the offsets they had - which is what "relative, a VCA" means - and a member that has since moved or

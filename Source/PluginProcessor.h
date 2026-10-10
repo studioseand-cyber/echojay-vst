@@ -11,6 +11,7 @@
 #include "WaveformRecorder.h"
 #include "ChainHost.h"
 #include "EJCalibLoop.h"   // 21t-d: the calibration loop (shared with the Link)
+#include "EJStateRoot.h"   // echojay::userAppData() - every state path goes through the root so a runner can isolate it
 #include "EJLevelRecord.h"  // 21t-i: the stored level record (shared with the Link)
 #include "EchoJayAPI.h"
 #include "DashPoll.h"
@@ -1596,8 +1597,11 @@ public:
         separately is how they drift. */
     static juce::File referenceIndexDir()
     {
-        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("EchoJay");
+        // THROUGH THE STATE ROOT, NEVER A RAW ~/Library. This arrived with the reference library on the
+        // integration line and went straight to juce::userApplicationDataDirectory, which no runner can
+        // isolate: under a guard it reads and WRITES Sean's real library. echojay::userAppData() is the same
+        // path in a normal run and $ECHOJAY_STATE_HOME/Library under a harness. Caught by state_path_guard.
+        return echojay::userAppData().getChildFile ("EchoJay");
     }
 
     /** Write the library, merged, after a change. Message thread, no lock. */

@@ -36,7 +36,7 @@ int main()
     (void) EedLimiterProcessor::schema(); (void) EedGainProcessor::schema();   // the static archive links a registrar object only when referenced
 #ifndef EJ_LOUDNESSLOOP_V2
     for (const char* leg : { "EchoJay Level is its own registered device (not an alias of EchoJay Gain)", "gain_db -24..+24 applies (+6 dB = +6 dB at the output)", "the device meters its INPUT and OUTPUT (short-term LUFS-S + true peak) and the output reads +6 over the input",
-                             "insertBuiltinAt places the Level slot before the last slot", "the tally's max short-term hold restarts on resetShortTermMax", "structuredSummary prints params as key=value, never Object 0x" })
+                             "insertBuiltinAt places the Level slot before the last slot", "the tally's max short-term hold restarts on resetShortTermMax", "structuredSummary prints every param's key AND value, never a pointer (\"Object 0x\") and never the \"params\" wrapper as a leaf" })
         check (false, leg, "no EchoJay Level on this build");
 #else
     const auto* lv = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
@@ -81,7 +81,15 @@ int main()
         auto* pp = new juce::DynamicObject(); pp->setProperty ("gain_db", 2.5); pp->setProperty ("target_lufs", -9.0);
         auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); op.structuredSettings = juce::var (w);
         const auto line = ChainHost::describeEditOp (op, juce::StringArray { "EchoJay Level", "EchoJay Limiter" });
-        check (! line.contains ("Object 0x") && line.contains ("gain_db=2.5") && line.contains ("target_lufs=-9"), "structuredSummary prints params as key=value, never Object 0x", line);
+        // 10 Oct 2026: the SEPARATOR moved with the integration merge - that line's readSettingsShape loop
+        // prints "gain_db 2.5" where this tree printed "gain_db=2.5". The DEFECT this leg exists for is
+        // juce::var::toString() on an object printing its POINTER ("params Object 0x66cf3ee0") on the consent
+        // card, and that every requested param appears with its value. Asserted on the claim, not on the
+        // punctuation, so a cosmetic choice two lines disagreed about cannot make it red. Flagged for Sean.
+        const bool named = (line.contains ("gain_db=2.5") || line.contains ("gain_db 2.5"))
+                        && (line.contains ("target_lufs=-9") || line.contains ("target_lufs -9"));
+        check (! line.contains ("Object 0x") && ! line.contains ("params ") && named,
+               "structuredSummary prints every param's key AND value, never a pointer (\"Object 0x\") and never the \"params\" wrapper as a leaf", line);
     }
 #endif
     {   // 22 Sep 2026 (item 8): the Level card's "OUT -> limiter" tag is built through the UTF-8-safe constructor: the arrow is U+2192, never "â"

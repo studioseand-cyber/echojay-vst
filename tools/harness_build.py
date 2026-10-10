@@ -113,6 +113,22 @@ FRAMEWORKS = ["CoreAudioKit","DiscRecording","CoreAudio","CoreMIDI","AudioToolbo
               "WebKit","Metal","MetalKit","QuartzCore","Cocoa","Foundation","IOKit","Security","OpenGL",
               "UniformTypeIdentifiers","AVFoundation","CoreMedia","AVKit"]
 SRC_ROOT = os.environ.get("EJ_SRC_ROOT") or ROOT   # EJ_SRC_ROOT: a checkout whose headers match EJ_LIB (a RED run pairs the pre-round headers with the pre-round lib)
+def _ej_fail(stderr):
+    # 10 Oct 2026: this printed stderr[-4000:] only, and clang puts WARNINGS after the error, so a real failure
+    # arrived as four thousand characters of -Wfloat-equal with the cause scrolled off. Errors and undefined
+    # symbols are surfaced FIRST, every time, then the tail for context.
+    lines = stderr.splitlines()
+    keep, i = [], 0
+    while i < len(lines):
+        l = lines[i]
+        if ("error:" in l) or ("Undefined symbols" in l) or ("symbol(s) not found" in l) or l.strip().startswith('"_'):
+            keep.extend(lines[i:i + 4]); i += 4
+        else:
+            i += 1
+    if keep:
+        print("COMPILE/LINK ERRORS:\n" + "\n".join(keep[:120]))
+    print("TAIL:\n" + stderr[-2500:])
+
 cmd = ["clang++"] + out + os.environ.get("EJ_CXXFLAGS", "").split() + ["-I", os.path.join(SRC_ROOT, "Source"), SRC, LIB]   # EJ_CXXFLAGS: e.g. -DEJ_GUARD_TODAY
 # 10 Oct 2026: the V2 archive references the Playback grid's binary data (juce_add_binary_data(EchoJayPlaybackArt),
 # linked into the EchoJay target by CMakeLists.txt:441), so anything linking that archive needs the art lib too or
@@ -130,7 +146,7 @@ cmd += ["-lcurl", "-o", OUT]
 print("compiling %s ..." % os.path.basename(SRC), flush=True)
 r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
 if r.returncode != 0:
-    print("COMPILE FAILED:\n" + r.stderr[-4000:]); sys.exit(3)
+    print("COMPILE FAILED:"); _ej_fail(r.stderr); sys.exit(3)
 print("compiled -> " + OUT, flush=True)
 
 print("running ...", flush=True)
