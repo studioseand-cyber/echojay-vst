@@ -552,6 +552,68 @@ int main()
         }
     }
 
+    std::printf ("\n== (8) STAGE 5: UNDO UNDER REMOTE CONTROL - one step per gesture, and it SENDS the value back ==\n");
+    {
+        // WHAT WAS WRONG, and it was not a bug: EchoJay's undo recorded NOTHING that happened on a Link. The
+        // stack is wired to ChainHost mutations IN THIS PROCESS, and a Link Mixer move is a transport command -
+        // no ChainHost here mutates, so no hook fires. Undo was never told. Under remote control that is most
+        // of the product, because then every rack edit is a command to a Link.
+        using namespace echojay::cmdring;
+        auto procHeap = std::make_unique<EchoJayProcessor>();
+        auto& proc = *procHeap;
+        proc.prepareToPlay (48000.0, 512);
+        auto& H = proc.undoHistory();
+
+        const juce::String uid = "remoteopsguard01";
+        const int depth0 = H.undoDepth();
+
+        // A WHOLE DRAG: one begin, forty streams, one release. The release is the only thing that records.
+        const uint32_t g = proc.ringBeginGesture (uid, (int) kSlotIn, 0, 0, 0.0, 0);
+        for (int i = 1; i <= 40; ++i)
+            proc.ringStreamValue (uid, g, (int) kSlotIn, 0, 0, -0.1 * i, 0);
+        proc.ringEndGestureWithUndo (uid, g, (int) kSlotIn, 0, 0, /*before*/ 0.0, /*after*/ -4.0, 0,
+                                     "IN on slot 1");
+        const int afterDrag = H.undoDepth() - depth0;
+        check (afterDrag == 1,
+               "STAGE 5: a 42-frame drag is ONE undo step, pushed on RELEASE - without begin/end the V2 cannot "
+               "tell a drag from forty writes, and a step per write would need forty undos to get back",
+               juce::String (afterDrag) + " step(s) for 42 frames");
+        check (H.undoLabel().contains ("IN on slot 1"),
+               "...and the step is LABELLED with what it was, so the Undo tooltip can say it", H.undoLabel());
+
+        // A SECOND GESTURE IS A SECOND STEP. Coalescing within a gesture is right; coalescing two gestures
+        // would make the second drag unundoable on its own.
+        const uint32_t g2 = proc.ringBeginGesture (uid, (int) kSlotIn, 0, 0, -4.0, 0);
+        proc.ringEndGestureWithUndo (uid, g2, (int) kSlotIn, 0, 0, -4.0, -6.0, 0, "IN on slot 1");
+        check (H.undoDepth() - depth0 == 2,
+               "STAGE 5: a SECOND gesture is a SECOND step", juce::String (H.undoDepth() - depth0));
+
+        // A PLAIN ringEndGesture RECORDS NOTHING. That is what a RESTORE uses, and an undo that pushed an
+        // undo would make the stack grow every time it was walked.
+        const int beforePlain = H.undoDepth();
+        const uint32_t g3 = proc.ringBeginGesture (uid, (int) kSlotIn, 0, 0, -6.0, 0);
+        proc.ringEndGesture (uid, g3, (int) kSlotIn, 0, 0, -4.0, 0);
+        check (H.undoDepth() == beforePlain,
+               "STAGE 5: a plain end (what a RESTORE uses) records NOTHING - an undo must not push an undo",
+               juce::String (H.undoDepth() - beforePlain));
+
+        // AND UNDO REPORTS RATHER THAN PRETENDING. This uid is not a present Link, so the restore must be a
+        // SKIP WITH A LINE, never a silent success that leaves the stack and the rack disagreeing - the next
+        // undo would then compound the disagreement.
+        // UndoHistory::undo() returns true whenever it POPPED a step - the skip is reported through the
+        // status line, which is this codebase's existing convention (the linkActive arm does the same). My
+        // first draft expected false and was simply wrong about the contract, not about the behaviour.
+        const int redoBefore = H.redoDepth();
+        H.undo();
+        check (proc.lastUndoStatus().containsIgnoreCase ("no longer present"),
+               "STAGE 5: an undo for a Link that is NOT PRESENT is a SKIP THAT SAYS SO - never a silent "
+               "success that leaves the stack and the rack disagreeing, because the next undo would then "
+               "compound the disagreement", proc.lastUndoStatus());
+        check (H.redoDepth() == redoBefore + 1,
+               "...and the step still moves to REDO, so a skip loses nothing and the user can try again once "
+               "the Link is back", juce::String (H.redoDepth() - redoBefore));
+    }
+
     std::printf ("\n==== remote_ops_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

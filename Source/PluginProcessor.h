@@ -734,6 +734,14 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     /** The settled value, and the authority for the gesture. */
     bool     ringEndGesture  (const juce::String& linkUid, uint32_t gesture, int kind, int slot, int paramId,
                               double value, uint32_t structureRevision);
+    /** STAGE 5: the settled value AND one undo step for the whole gesture. This is what a release should call:
+        the plain ringEndGesture above records nothing, which is right for a restore (an undo must not push an
+        undo) and wrong for a user's own drag. Carries {uid, what, slot, before, after} as the plan specifies,
+        as a CHAIN entry in the plugin-wide history so one Undo button walks local and remote edits in one
+        order. */
+    bool     ringEndGestureWithUndo (const juce::String& linkUid, uint32_t gesture, int kind, int slot,
+                                     int paramId, double beforeValue, double afterValue,
+                                     uint32_t structureRevision, const juce::String& label = {});
     // After a pushed edit is acked: the session's base becomes the live rack (created slots gain a record so their state edits
     // still commit at deselect). Public for the guard.
     void borrowRebaseAfterPush();

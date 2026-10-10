@@ -1108,6 +1108,50 @@ int main()
         }
     }
 
+    // ---- STAGE 5 MIGRATION: A PROJECT SAVED MID-LEASE OPENS SENSIBLY -------
+    // The plan asks for one explicit migration test: open a project saved during a lease and confirm the Link
+    // has its rack, the V2 shows it, and nothing is doubled.
+    //
+    // WHAT STAGE 1 ALREADY SETTLED, which is most of it: an old lease file can no longer bypass or mute
+    // anything, because nothing does. So the dangerous half of that migration - a rack that comes back dry, or
+    // a channel that comes back silent, because a stale lease file was read as fresh - is closed by
+    // construction rather than by a restore path that has to remember to undo something.
+    //
+    // THE OTHER HALF IS NOT CLOSED AND I AM NOT PRETENDING IT IS: the plan also says the V2's saved borrowed
+    // COPY must be ignored rather than applied, or the rack doubles. That is only true once the borrowed host
+    // is gone - while it is still the edit-staging path, that copy is load-bearing (the 4 Oct ruling: a chain
+    // built on a Link mid-lease and saved without switching racks lived ONLY there, and dropping it is how it
+    // was lost in the first place). The two must move together, and they are the deferred half of stage 5.
+    std::printf ("\n== stage 5 migration: a lease file from an old session cannot dry or silence the rack ==\n");
+    {
+        using T = EchoJayLinkSyncTestAccess;
+        // A rack at a MIXED intent, as a user's own would be.
+        host.setSlotBypassed (0, false);
+        host.setSlotBypassed (1, true);
+        // A lease is engaged, exactly as a reopen that reads a still-fresh lease file would engage it.
+        T::engage (proc);
+        juce::String got;
+        for (int i = 0; i < juce::jmin (2, host.getNumSlots()); ++i)
+            got << (i ? "," : "") << juce::String (i) << (host.getSlotInfo (i).bypassed ? ":byp" : ":live");
+        check (host.getNumSlots() >= 2 && ! host.getSlotInfo (0).bypassed && host.getSlotInfo (1).bypassed,
+               "stage 5 migration: with a lease HELD the rack sits at the user's intent - a stale lease file "
+               "cannot bring a rack back dry", got);
+        check (! proc.linkMuteWanted(),
+               "stage 5 migration: ...and it cannot bring the channel back SILENT either (the lease arm of the "
+               "mute composition is gone)");
+        // ...and the MODEL - what the editor renders and what persists - records the intent, so the next save
+        // cannot write the lease's state as the user's.
+        T::resync (proc);
+        const auto& m = T::model (proc);
+        bool modelHonest = (int) m.size() == host.getNumSlots();
+        for (int i = 0; i < (int) m.size() && modelHonest; ++i)
+            if (m[(size_t) i].bypassed != host.getSlotInfo (i).intendedBypassed) modelHonest = false;
+        check (modelHonest,
+               "stage 5 migration: ...and the MODEL records intent, so the next save cannot persist a lease's "
+               "state as the user's");
+        T::release (proc);
+    }
+
     // ---- negative control -------------------------------------------------
     check (false, "NEGATIVE CONTROL - this line is SUPPOSED to fail");
     const bool caught = (failures == 1);

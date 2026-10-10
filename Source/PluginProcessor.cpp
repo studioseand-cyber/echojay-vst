@@ -3156,6 +3156,41 @@ bool EchoJayProcessor::ringEndGesture (const juce::String& linkUid, uint32_t ges
                           structureRevision);
 }
 
+// ---- STAGE 5 (10 Oct 2026): ONE UNDO STEP PER GESTURE, PUSHED ON RELEASE ---------------------------
+// The gesture framing in stage 3 is what makes this possible at all: without begin/end the V2 cannot tell a
+// drag from a hundred writes, and a step per write would mean a drag needed a hundred undos to get back.
+// Pushed on RELEASE and nowhere else, so the count is right by construction rather than by coalescing on a
+// timer - the wet knob's "one step per knob gesture" is the precedent.
+// The entry is a CHAIN entry in the plugin-wide history, the same class the local rack uses, so one Undo
+// button walks local and remote edits in ONE order. That is the whole point: a user does not know or care
+// which process their last edit went to.
+bool EchoJayProcessor::ringEndGestureWithUndo (const juce::String& linkUid, uint32_t gesture, int kind,
+                                               int slot, int paramId, double beforeValue, double afterValue,
+                                               uint32_t structureRevision, const juce::String& label)
+{
+    const bool sent = ringEndGesture (linkUid, gesture, kind, slot, paramId, afterValue, structureRevision);
+
+    auto payload = [&] (double v)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("kind", kind); o->setProperty ("slot", slot);
+        o->setProperty ("paramId", paramId); o->setProperty ("value", v);
+        o->setProperty ("rev", (int) structureRevision);
+        return juce::var (o);
+    };
+    // RECORDED EVEN IF THE RING REFUSED IT, because the fallback in applyUndoEntry can still restore the
+    // value over the file channel - and a move the user MADE that the history does not hold is the fault this
+    // whole stage exists to close. If nothing can carry it, the undo says so when it is asked.
+    echojay::UndoEntry e;
+    e.kind   = "remoteValue";
+    e.target = linkUid;
+    e.label  = label.isNotEmpty() ? label : juce::String ("a change on a Link");
+    e.before = payload (beforeValue);
+    e.after  = payload (afterValue);
+    undoHistory_.push (std::move (e));
+    return sent;
+}
+
 int EchoJayProcessor::writeChainEditCommand(const juce::String& linkUid, const juce::var& editOps, const juce::var& baseSlots,
                                              const juce::String& sourceNote, const juce::String& leaseId)
 {
@@ -6699,6 +6734,65 @@ bool EchoJayProcessor::applyUndoEntry(echojay::UndoEntry& e, bool toBefore)
         if (e.kind == "keep") h->setSlotKeepLevel(i, (bool) v);
         if (e.kind == "dial") h->applySlotParamSnapshot(i, v);
         if (e.kind == "gesture") { auto* o = new juce::DynamicObject(); o->setProperty(juce::Identifier(juce::String((int) v.getProperty("index", juce::var()))), v.getProperty("value", juce::var())); h->applySlotParamSnapshot(i, juce::var(o)); }
+        return true;
+    }
+    // ---- STAGE 5 (10 Oct 2026): UNDO UNDER REMOTE CONTROL -----------------------------------------
+    // Until now EchoJay's own undo recorded NOTHING that happened on a Link, and it was not failing - it was
+    // never told. The stack is wired to ChainHost mutations IN THIS PROCESS, and a Link Mixer move is a
+    // transport command: no ChainHost here mutates, so no hook fires. Under remote control that is most of
+    // the product, because then every rack edit is a command to a Link.
+    //
+    // UNDO SENDS THE PREVIOUS VALUE BACK as an ordinary command - the same ring frame a user's own release
+    // writes - and reports when it could not. An undo that silently leaves the stack and the rack disagreeing
+    // is worse than one that refuses, because the next undo then compounds the disagreement.
+    if (e.kind == "remoteValue")
+    {
+        // The Link must still be there. A rack that has gone is a SKIP with a line, never a half-apply: the
+        // same rule the linkActive arm below follows, and for the same reason.
+        bool present = false;
+        for (const auto& li : getLinkSlotInfos()) if (li.uid == e.target) present = true;
+        if (! present)
+        {
+            lastUndoStatus_ = "skipped: that Link is no longer present";
+            return false;
+        }
+        auto* o = v.getDynamicObject();
+        if (o == nullptr) return false;
+        const int kind = (int) o->getProperty ("kind");
+        const int slot = (int) o->getProperty ("slot");
+        const int pid  = (int) o->getProperty ("paramId");
+        const double val = (double) o->getProperty ("value");
+        const uint32_t rev = (uint32_t) (int) o->getProperty ("rev");
+        // ONE FRAME, phase END: a restore is a settled absolute value, not a gesture. It is the authority for
+        // the control and it is exactly what the coalescer keeps.
+        const uint32_t g = ringBeginGesture (e.target, kind, slot, pid, val, rev);
+        const bool sent = g != 0 && ringEndGesture (e.target, g, kind, slot, pid, val, rev);
+        if (! sent)
+        {
+            // THE RING IS NOT THE ONLY ROAD. A rack with no ring still has the file channel, and the contract
+            // names this as the one place the two channels overlap by design: an `end` that could not go by
+            // the ring is re-sent as a settled absolute value on the chain channel.
+            static const char* figureOp[] = { "", "set_param", "slot_in", "slot_out", "slot_wet",
+                                              "master_wet", "pre_gain", "link_gain" };
+            const juce::String opName = (kind > 0 && kind < 8) ? figureOp[kind] : juce::String();
+            if (opName.isEmpty() || opName == "set_param")
+            {
+                lastUndoStatus_ = "skipped: that value cannot be restored on this Link";
+                return false;
+            }
+            auto* eo = new juce::DynamicObject();
+            eo->setProperty ("op", opName);
+            if (slot >= 0) eo->setProperty ("slot", slot + 1);   // the wire is 1-based
+            eo->setProperty (opName == "master_wet" ? "pct" : "db", val);
+            juce::Array<juce::var> arr; arr.add (juce::var (eo));
+            const int seq = writeChainEditCommand (e.target, juce::var (arr), juce::var(),
+                                                   "undo (no ring on this rack)", {});
+            if (seq < 0)
+            {
+                lastUndoStatus_ = "skipped: the undo could not be sent to that Link";
+                return false;
+            }
+        }
         return true;
     }
     if (e.kind == "linkActive" || e.kind == "linkGain")
