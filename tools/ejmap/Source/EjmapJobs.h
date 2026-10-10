@@ -29,9 +29,11 @@ namespace ejmap::jobs
 {
 
 enum class Lane { parallel, serial };
-// the modes kept serial whatever the product (10 Oct test, cert-traces/2026-10-10-parallel): strips - bx_console N did not repeat even
-// serially (440 record figures, almost every trace number), so parallel could not be shown to be within the noise
-inline const juce::StringArray& kSerialModes() { static const juce::StringArray k { "strips" }; return k; }
+// the modes kept serial whatever the product. EMPTY since 10 Oct late: strips were here (bx_console N did not repeat even serially);
+// with the modelling noise written off (strip::noiseOffWrites) bx_console N, SSLChannel (m) and Lindell 69 Channel repeat bit for bit
+// serially AND at 2 / 4 at once; bx_console SSL 4000 E keeps a floor-level residual serially (h4 / h5 near -150 dB, <= 0.2 % in a
+// frequency), the same kind and size in parallel (cert-traces/2026-10-10-parallel/strips)
+inline const juce::StringArray& kSerialModes() { static const juce::StringArray k {}; return k; }
 struct LaneInputs { bool uad = false, governed = false, demo = false, pace = false; juce::String paceWhy, category; std::set<juce::String> pastOutcomes; };
 inline const juce::StringArray& kSerialHistory() { static const juce::StringArray k { "window", "needs_licence", "timed_out", "unhostable", "silent_output", "probe_crashed" }; return k; }
 inline Lane laneFor (const LaneInputs& in, juce::String* why = nullptr)

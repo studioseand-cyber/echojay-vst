@@ -18,7 +18,7 @@ re-check rule, ~40 min, in night 2's hours). The next build measures Phase B row
 caffeinate -i "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,reverb_delay,transient_gate,limiter_comp,drafts --until 07:00
 # Night 3  ~6.6 h at --jobs 2 (~5.9 h at 4)   no_pool (resumes), categorise, the accuracy passes, tuners
 caffeinate -i "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,no_pool,categorise,combined,material,frequency,samplerate,tuners,drafts --until 07:00
-# Night 4 (and 5)  ~14 h in all, the same at any --jobs   the strips (they run one at a time: see below)
+# Night 4 (and 5)  the strips: ~9.1 h at --jobs 2 (one long night or two), ~6.5 h at 4 (14 h serial)
 caffeinate -i "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,strips,drafts --until 07:00
 ```
 
@@ -27,19 +27,21 @@ caffeinate -i "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,strips
 | 1 (tonight, 00f2ae79) | re-checks, fix-ups, EQ, saturation | 5.1 h | - | - |
 | 2 | follow-up, reverb / delay, transients / gates, limiter_comp | 10.0 h | 6.5 h | 4.8 h |
 | 3 | no_pool, categorise, combined, material, frequency, samplerate, tuners | 8.1 h | 6.6 h | 5.9 h |
-| 4 (+5) | strips | 14.0 h | 14.0 h | 14.0 h |
-| nights left incl. tonight | | ~6-7 | ~5 | ~5 |
+| 4 (+5) | strips | 14.0 h | 9.1 h | 6.5 h |
+| nights left incl. tonight | | ~6-7 | ~5 (4 if night 4 runs 9 h+) | ~4 |
 
 How the parallel run works, for the morning output:
 - Within a step, up to N products measure at once; each in its own folder, the row written only when it is complete.
 - Some products always run ALONE (the pool empties first): every UAD unit, everything your licences.csv governs or a demo, every
   PACE / iLok product (and one whose PACE state cannot be checked), and anything that has ever shown a window, a licence stop, a
-  timeout, refused to load, gone silent or crashed. The log lists them as "serial lane: <category>: <product> (why)". The strips
-  run alone too (bx_console N gave different readings run to run even one at a time, so parallel could not be proven safe).
+  timeout, refused to load, gone silent or crashed. The log lists them as "serial lane: <category>: <product> (why)".
+- The strips' modelling noise is switched off for the measurement (bx_console's Virtual Gain -> '-oo dB'; the log says
+  "modelling noise off for every section") - a neutral write the server makes too. With it the strips repeat run to run and
+  run in parallel like the rest.
 - No new product starts while the Mac's free memory is under 1.5 GB; at 07:00 / Ctrl-C nothing new starts and the products
   that were running are thrown away and run again next night - nothing finished is ever lost.
 - The ETA line still prints the serial hours; at --jobs 2 expect the table's.
-- Why nights 4-5 do not shrink: the strips (14 h) are serial. --jobs 4 saves time on nights 2-3 but not a night overall.
+- The strips night assumes ~30 % of strips in the serial lane (UAD / SSL Native / APB strips run alone).
 
 The rules for these lines:
 - **Only move to the next night's line when the morning's output says the line's sequence is complete.** If 07:00 (or Ctrl-C)

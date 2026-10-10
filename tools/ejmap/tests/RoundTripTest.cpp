@@ -9204,10 +9204,10 @@ void testJobs()
         LaneInputs plain, u, g, d, p, h, h2; u.uad = true; g.governed = true; d.demo = true; p.pace = true; h.pastOutcomes = { "ok", "window" }; h2.pastOutcomes = { "ok", "needs_review" };
         juce::String why;
         LaneInputs strip; strip.category = "strips"; LaneInputs eqRow; eqRow.category = "eq";
-        check (laneFor (strip) == Lane::serial && laneFor (eqRow) == Lane::parallel && laneFor (plain) == Lane::parallel && laneFor (u) == Lane::serial && laneFor (g) == Lane::serial && laneFor (d) == Lane::serial && laneFor (p) == Lane::serial
+        check (laneFor (strip) == Lane::parallel && laneFor (eqRow) == Lane::parallel && kSerialModes().isEmpty() && laneFor (plain) == Lane::parallel && laneFor (u) == Lane::serial && laneFor (g) == Lane::serial && laneFor (d) == Lane::serial && laneFor (p) == Lane::serial
                && laneFor (h, &why) == Lane::serial && why.contains ("window") && laneFor (h2) == Lane::parallel
                && kSerialHistory().contains ("silent_output") && kSerialHistory().contains ("probe_crashed") && kSerialHistory().contains ("timed_out") && kSerialHistory().contains ("unhostable") && kSerialHistory().contains ("needs_licence"),
-               "jobs JOB-SPLIT: the strips mode, UAD, licence-governed, demo, PACE and a past window / licence / timeout / unhostable / silent / crash row run in the serial lane; the rest in parallel");
+               "jobs JOB-SPLIT: strips in the pool (repeat with noise off); UAD, licence-governed, demo, PACE and a past window / licence / timeout / unhostable / silent / crash row run in the serial lane; the rest in parallel");
     }
     // JOB-SCHED: the scheduler - a serial item waits for the pool to drain, nothing launches beside it, N is the cap, low memory
     // holds new jobs while one runs, a stop launches nothing

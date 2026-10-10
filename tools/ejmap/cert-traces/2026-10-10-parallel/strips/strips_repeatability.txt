@@ -32,3 +32,29 @@ STRIPS REPEATABILITY, 10 Oct (hostable units, scratch, signed probe)
 STRIP: modelling noise off for every section (a neutral write the server makes too): Virtual Gain -> '-oo dB'
 == bxN: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
    traces compared 100: numbers differing 0 ; line-count diffs 0; token diffs 0
+
+4. STRIPS IN PARALLEL (strippar; the build with the noise-off rule; serial baselines: bx_console N stripfix A/B, SSLChannel (m) / Lindell 69 stripx A/B, bx_console SSL 4000 E strippar serialA/B/C):
+-- serial vs par2
+== bxN: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 100: numbers differing 0 ; line-count diffs 0; token diffs 0
+== SSLChannelm: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 46: numbers differing 0 ; line-count diffs 0; token diffs 0
+== Lindell69Channel: json figures differing 0; strings 1; keys 0; list-lens 0; files only-one 0
+   traces compared 66: numbers differing 0 ; line-count diffs 0; token diffs 0
+== bx4000E: json figures differing 93 (max |d| 19.5 at phaseb/strips/strip/saturation.AudioUnit_41747d65_1.7.1.saturation.json/controls[]/levels[]/curve[]/harmonics_db/h5); strings 5; keys 0; list-lens 0; files only-one 0
+   traces compared 91: numbers differing 6357 (max |d| 21.69 in 'rharm' out_db) ; line-count diffs 0; token diffs 0
+-- serial vs par4
+== bxN: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 100: numbers differing 0 ; line-count diffs 0; token diffs 0
+== SSLChannelm: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 46: numbers differing 0 ; line-count diffs 0; token diffs 0
+== Lindell69Channel: json figures differing 0; strings 1; keys 0; list-lens 0; files only-one 0
+   traces compared 66: numbers differing 0 ; line-count diffs 0; token diffs 0
+== bx4000E: json figures differing 98 (max |d| 29.3 at phaseb/strips/strip/saturation.AudioUnit_41747d65_1.7.1.saturation.json/controls[]/levels[]/curve[]/harmonics_db/h5); strings 4; keys 0; list-lens 0; files only-one 0
+   traces compared 89: numbers differing 6155 (max |d| 29.3 in 'rharm' out_db) ; line-count diffs 0; token diffs 0
+-- bx_console SSL 4000 E serial vs serial (noise off): 95 / 95 / 91 figures over three runs - a floor-level residual: h4 / h5 at -139..-173 dB, a band centre near 11 Hz (10.7 / 12.7), every other figure <= 0.3 %; verdicts and passes identical
+-- parallel vs the three serial runs: 93-105 figures; the paths that moved only in parallel: freq_intervals 7851 -> 7852 Hz, a corner 7851.4 -> 7851.7, a q-sweep centre 2730.5 -> 2725.0, a gain -10.39 -> -10.40, two h2 -94.0 -> -93.9 / -85.9 -> -86.0: the residual's kind and size
+-- the Lindell string difference is the tone check's build stamp (the serial baseline came from an earlier binary), not a reading
+par2 wall 1089 s; peak RSS 246 MB; peak CPU 138.5 %
+par4 wall 578 s; peak RSS 519 MB; peak CPU 186.3 %
+serial sum of the four: 566 + 220 + 365 + 517 = 1668 s -> N=2 1089 s (x1.53), N=4 578 s (x2.9; bx_console N alone 578 s = the critical path)
