@@ -8728,6 +8728,20 @@ void testRunAll()
                && argsFor (*fx, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --category multiband --category gainall --out /c",
                "runall RA8: stale checks force the follow-up (done) ahead of the resumed steps; the fixups step runs for a pre-stamp state only; its resume drops --redo (" + names.joinIntoString (",") + ")");
     }
+    // PB-EMPTY (Kathy, 10 Oct; 2C-Aether): zero parameters at all three stages (the re-read ran) is an answer, never retried by no_pool;
+    // Soundtoys' 0 -> 12 is not; a trace with no paramcount line (an older probe) is no proof; an old no_pool row still re-runs once
+    {
+        const juce::String aether = "probe: \"2C-Aether\"\nstage\tconfigure\nparamcount\tat_create\t0\tafter_prepare\t0\tafter_render\t0\n";
+        const juce::String decap = "paramcount\tat_create\t0\tafter_prepare\t12\tafter_render\t12\n";
+        auto row = [] (const char* oc, bool np) { auto* o = new juce::DynamicObject(); o->setProperty ("outcome", oc); if (np) o->setProperty ("no_pool", true); return juce::var (o); };
+        check (ejmap::phaseb::emptyParamListConfirmed (aether) && ! ejmap::phaseb::emptyParamListConfirmed (decap) && ! ejmap::phaseb::emptyParamListConfirmed ("probe: \"X\"\nstage\tconfigure\n")
+               && ! ejmap::phaseb::rowIsNoPool (row ("empty_param_list", false), "no control to sample") && ejmap::phaseb::rowIsNoPool (row ("failed", true))
+               && ! ejmap::phaseb::emptyParamListConfirmed ("paramcount\tat_create\t0\tafter_prepare\t0\tafter_render\t3\n")
+               && ejmap::phaseb::noPoolFiling ("x no control to sample", { aether }).outcome == "empty_param_list" && ! ejmap::phaseb::noPoolFiling ("x no control to sample", { aether }).noPool
+               && ejmap::phaseb::noPoolFiling ("x no control to sample", { decap }).noPool && ejmap::phaseb::noPoolFiling ("x no control to sample", { decap }).outcome.isEmpty()
+               && ! ejmap::phaseb::noPoolFiling ("ok", { aether }).applies,
+               "phaseb PB-EMPTY: an AU with no parameter at create / after prepare / after render is filed empty_param_list and never retried; one that publishes after prepare is not");
+    }
     // PB-DRY (10 Oct): --phaseb-all refuses --dry-run (anywhere in the line, the last argument too) instead of ignoring it and loading
     check (ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--category", "delay", "--out", "/c", "--dry-run" }).contains ("no --dry-run")
            && ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--dry-run", "--category", "delay" }).isNotEmpty()

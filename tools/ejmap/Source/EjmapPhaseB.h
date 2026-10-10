@@ -117,6 +117,29 @@ inline bool rowIsNoPool (const juce::var& row, const juce::String& logText = {})
     if ((bool) row.getProperty ("no_pool", false)) return true;
     return row.getProperty ("outcome", "").toString() == "failed" && logText.contains (kNoPoolText);
 }
+// THE EMPTY PARAMETER LIST AS AN ANSWER (Kathy, 10 Oct; 2C-Aether): the probe's list-params trace says the AU published no parameter
+// at create, after prepare AND after a first render (the re-read that recovered Soundtoys ran and still saw none) -> the row is
+// `empty_param_list` (no no_pool flag, not "failed"), so --redo no_pool never selects it. A trace without the paramcount line (a probe before the re-read) is not proof.
+// A VST3 load path for such a unit is later scope.
+inline bool emptyParamListConfirmed (const juce::String& listParamsTrace)
+{
+    for (const auto& line : juce::StringArray::fromLines (listParamsTrace))
+    {
+        const auto f = juce::StringArray::fromTokens (line, "\t", "");
+        if (f.size() >= 7 && f[0] == "paramcount" && f[1] == "at_create" && f[3] == "after_prepare" && f[5] == "after_render")
+            return f[2].trim() == "0" && f[4].trim() == "0" && f[6].trim() == "0";
+    }
+    return false;
+}
+// the row's filing when the mode found no control to sample: confirmed empty -> empty_param_list (an answer); else no_pool (retried)
+struct NoPoolFiling { bool applies = false, noPool = false; juce::String outcome, reason; };
+inline NoPoolFiling noPoolFiling (const juce::String& childOut, const juce::StringArray& listParamsTraces)
+{
+    NoPoolFiling f; if (! childOut.contains (kNoPoolText)) return f;
+    f.applies = true;
+    for (const auto& t : listParamsTraces) if (emptyParamListConfirmed (t)) { f.outcome = "empty_param_list"; f.reason = "the AU publishes no parameter at create, after prepare or after a first render (the probe's re-read ran): an answer, not re-run (a VST3 load path is later scope)"; return f; }
+    f.noPool = true; f.reason = "no control to sample: an empty parameter list (--redo no_pool re-runs it; the probe now re-reads the list after prepare and a first render)"; return f;
+}
 // --redo unfinished (9 Oct, the fix-up night): a row that TIMED OUT or FAILED runs again - never one filed needs_licence / needs_device /
 // window / unhostable (those are answers), never one that finished ok
 inline bool rowIsUnfinished (const juce::var& row) { const auto oc = row.getProperty ("outcome", "").toString(); return oc == "timed_out" || oc == "failed"; }

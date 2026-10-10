@@ -6314,7 +6314,11 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 else outcome = "failed";
                 if (outcome == "failed") if (const auto why = phaseb::unhostableReason (r.out); why.isNotEmpty()) { outcome = "unhostable"; row->setProperty ("reason", "the AU refuses to initialise on this Mac: " + why + " - an answer, not re-run"); }
                 if (reused > 0) row->setProperty ("resumed_traces", reused);
-                if (r.out.contains (phaseb::kNoPoolText)) { row->setProperty ("no_pool", true); row->setProperty ("reason", "no control to sample: an empty parameter list (--redo no_pool re-runs it; the probe now re-reads the list after prepare and a first render)"); }
+                {
+                    juce::StringArray lp; for (const auto& f : tmp.getChildFile ("raw").findChildFiles (juce::File::findFiles, false)) if (f.getFileName().contains (".list-params.")) lp.add (f.loadFileAsString());
+                    const auto np = phaseb::noPoolFiling (r.out, lp);
+                    if (np.applies) { if (np.outcome.isNotEmpty()) outcome = np.outcome; if (np.noPool) row->setProperty ("no_pool", true); row->setProperty ("reason", np.reason); }
+                }
                 // THE WINDOW'S TEXT (Sean, 6 Oct): title, owner and static text of every window the watch caught; demo / expired /
                 // authorisation words file the row needs_licence by themselves
                 if (! r.windowDetails.isEmpty() || outcome == "window")
