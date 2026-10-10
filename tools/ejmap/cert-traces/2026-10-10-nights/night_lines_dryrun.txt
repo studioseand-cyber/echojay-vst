@@ -1,0 +1,51 @@
+Night lines dry-run, 10 Oct: packaged 00f2ae79 (~/Desktop/ejmap-dist-10oct-b), --dry-run only (plan output, nothing loaded),
+on a fresh copy of ~/Downloads/cert 2 + cert 3 (cert 3 copied over cert 2; run_all.json = Sean's 10 Oct state).
+Nights 2-5: a second copy with the earlier nights' steps marked done (build 00f2ae79) and the tone checks stamped 00f2ae79 - simulation of a finished night, not a run.
+
+== NIGHT 1: --steps preflight,followup,fixups,eq,saturation,drafts --until 07:00
+RUN-ALL: 86 tone check(s) made by another build than 00f2ae79: the follow-up runs again (stale checks first)
+RUN-ALL: multiband / gain-all finished by a build before the 9-10 Oct fixes: the fixups step re-runs multiband and the gain-all rows that timed out or failed
+RUN-ALL: 6 step(s) to run, 20 done or skipped; ETA 5:05:10; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  followup                 --cert-tonecheck-all --out <cert>   (~0:40:00, the compressor follow-up)
+  fixups                   --phaseb-all --redo multiband,unfinished --category multiband --category gainall --out <cert>   (~1:10:00, multiband again (9 Oct fixes) + the gain-all rows that timed out or failed)
+  eq                RESUME --phaseb-all --category eq --out <cert>   (~2:30:00, EQ (adaptive frequency points))
+  saturation               --phaseb-all --redo saturation --out <cert>   (~2:00:00, saturation + amp sims)
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
+
+== NIGHT 2: --steps preflight,followup,fixups,reverb_delay,transient_gate,drafts --until 07:00
+RUN-ALL: multiband / gain-all finished by a build before the 9-10 Oct fixes: the fixups step re-runs multiband and the gain-all rows that timed out or failed
+RUN-ALL: 4 step(s) to run, 22 done or skipped; ETA 3:43:30; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  reverb_delay             --phaseb-all --redo reverb,delay --out <cert>   (~3:11:40, reverb and delay (role tests twice: x1.5-1.65 rehearsed, 8 Oct))
+  transient_gate           --phaseb-all --redo transient,gate --out <cert>   (~0:31:40, transient shapers and gates (role tests twice: x1.3-1.65 rehearsed, 8 Oct))
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
+
+== NIGHT 3: --steps preflight,followup,fixups,no_pool,categorise,combined,material,drafts --until 07:00
+RUN-ALL: multiband / gain-all finished by a build before the 9-10 Oct fixes: the fixups step re-runs multiband and the gain-all rows that timed out or failed
+RUN-ALL: 6 step(s) to run, 20 done or skipped; ETA 4:50:10; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  no_pool           RESUME --phaseb-all --out <cert>   (~3:00:00, the Soundtoys / 2C empty-list rows (~40 min per delay or reverb))
+  categorise               --categorise-propose --include-pace --out <cert>   (~1:30:00, the review sheet for the uncategorised (never categories.json))
+  combined                 --phaseb-all --redo combined --out <cert>   (~0:40:00, combined settings)
+  material                 --phaseb-all --redo material --out <cert>   (~1:10:00, real material)
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
+
+== NIGHT 4: --steps preflight,followup,fixups,frequency,samplerate,tuners,strips,drafts --until 07:00
+RUN-ALL: multiband / gain-all finished by a build before the 9-10 Oct fixes: the fixups step re-runs multiband and the gain-all rows that timed out or failed
+RUN-ALL: 6 step(s) to run, 20 done or skipped; ETA 15:48:10; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  frequency                --phaseb-all --redo frequency --out <cert>   (~1:10:00, three frequencies)
+  samplerate               --phaseb-all --redo samplerate --out <cert>   (~0:08:00, three sample rates on a spread of ten)
+  tuners                   --phaseb-all --redo tuners --out <cert>   (~0:30:00, tuners (humanize, flex))
+  strips                   --phaseb-all --redo strips --out <cert>   (~14:00:00, channel strips, every section drafted)
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
+
+== NIGHT 5: --steps preflight,followup,fixups,strips,drafts --until 07:00
+RUN-ALL: multiband / gain-all finished by a build before the 9-10 Oct fixes: the fixups step re-runs multiband and the gain-all rows that timed out or failed
+RUN-ALL: 3 step(s) to run, 23 done or skipped; ETA 7:00:10; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  strips            RESUME --phaseb-all --category strips --out <cert>   (~14:00:00, channel strips, every section drafted)
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
+
+fresh copy's run_all.json unchanged by the dry-runs (cmp with Sean's)

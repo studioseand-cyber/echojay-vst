@@ -1,7 +1,44 @@
-# TONIGHT, 10 Oct (Kathy's rulings) — switch to 00f2ae79, the same line
+# THE NIGHTS FROM 10 Oct (Kathy's priority) — 00f2ae79, one line per night
+
+Build and install **00f2ae79** as the next section says (same folder, same `cert/run_all.json`, nothing deleted; the 9 Oct
+review-picks copy still comes first if you have not done it). Then ONE line a night, in this order. Each stops at 07:00 by itself.
+
+```
+# Night 1 (tonight)  ~5.1 h   the re-checks, the fix-ups, EQ (resumes), saturation
+caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,eq,saturation,drafts --until 07:00
+# Night 2            ~3.7 h   reverb / delay, transients / gates
+caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,reverb_delay,transient_gate,drafts --until 07:00
+# Night 3            ~4.8 h   no_pool (resumes), categorise, then the accuracy passes: combined, material
+caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,no_pool,categorise,combined,material,drafts --until 07:00
+# Night 4            ~1.8 h + the strips start   frequency, samplerate, tuners, then the strips until 07:00
+caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,frequency,samplerate,tuners,strips,drafts --until 07:00
+# Night 5 (and 6 if the nights are short)   the rest of the strips (~14 h in all, resumes where it stopped)
+caffeinate -i "$BIN" --run-all --steps preflight,followup,fixups,strips,drafts --until 07:00
+```
+
+The rules for these lines:
+- **Only move to the next night's line when the morning's output says the line's sequence is complete.** If 07:00 (or Ctrl-C)
+  stopped it, run the SAME line again the next night: it resumes, and nothing finished is run again. (Moving on early would let
+  the next line's steps go first: the run always takes steps in its own fixed order, not the order typed.)
+- **preflight and drafts are in every line on purpose**: with `--steps`, only the steps named run, so they must be named. The
+  preflight checks the app and probe every night; the drafts are re-derived every night from the records on disk.
+- **followup and fixups are in every line too, and cost nothing once done**: the follow-up runs again only if some tone check was
+  made by another build (night 1: 86 on your folder), the fixups once. If a night's output starts with
+  "RUN-ALL: N tone check(s) made by another build", the follow-up ran first that night - that is the rule, not a fault.
+- **00f2ae79 prints one wrong line on nights 2-5**: "the fixups step re-runs multiband ..." although fixups is done and is not in
+  its plan list. Ignore it - the plan list underneath is what runs (fixed in b98788e2, for the next build).
+- `nothing_nominated` is in no line: every row it would re-run is in a category these lines re-run whole.
+- The hours are the dry-run's ETA on a copy of your cert 2 + cert 3 (plan only, nothing loaded); nights 2-5 were dry-run on a copy
+  with the earlier nights marked finished, so each shows that night's own plan.
+
+Every morning, as before: `--zip ... --since marker`, then `--cert-review-zip` on that zip.
+
+---
+
+# 10 Oct (Kathy's rulings) — the switch to 00f2ae79 (install as here; the night lines in the section above replace this line)
 
 Build **00f2ae79** from the commit on your Mac as before (packaged and signed here at ~/Desktop/ejmap-dist-10oct-b; 5ab8352b is its
-fallback). Install it over 5ab8352b - same folder, same `cert/run_all.json`, nothing deleted - then the SAME line as last night:
+fallback). Install it over 5ab8352b - same folder, same `cert/run_all.json`, nothing deleted. The line this section first gave (now replaced by the night lines above):
 
 ```
 caffeinate -i "$BIN" --run-all --skip nothing_nominated --until 07:00
