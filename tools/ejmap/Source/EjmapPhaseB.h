@@ -62,6 +62,7 @@ inline const std::vector<Category>& categories()
         { "limitercomp", "--cert-limiter-comp",  "",          { "limiter" },                   1800.0, "the compressor certification on a limiter: the profile sweep (31 levels x up to 16 positions), the detector, the tone check", true },
         // the user-side wizard (feat/ejmap-wizard): its queue (<out>/wizard_queue.txt), each through the full compressor path; opt-in
         { "wizard",      "--cert-limiter-comp",  "",          {},                              1800.0, "the compressor certification for a plugin the database does not have (the wizard's queue)", true },
+        { "wizard_eq",   "--cert-eq",            "",          {},                              2700.0, "the EQ certification for a plugin the database does not have (the wizard's EQ queue)", true },
         { "gainall",     "--cert-gain-cal",      "all",       { "eq", "limiter", "de-esser", "saturation", "amp_sim", "reverb", "delay", "transient_shaper", "gate" }, 600.0, "21 norms x 2-3 levels per gain control + the unnamed pool: ~1-4 min", true } };
     return k;
 }

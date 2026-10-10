@@ -6268,9 +6268,9 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 for (const auto& ir : installed) if (ir.desc.name == product) { PhaseBProduct pp; pp.product = product; pp.stem = stemFor (ir.desc); pp.category = cat.name; pp.desc = ir.desc; pp.recordFile = latestRecordFor (opt.out.getChildFile ("fixtures"), product).getFullPathName(); list.push_back (pp); break; }
             }
         }
-        else if (cat.name == "wizard")
-        {   // the wizard's queue: one installed product name per line
-            for (const auto& line : juce::StringArray::fromLines (opt.out.getChildFile ("wizard_queue.txt").loadFileAsString()))
+        else if (cat.name == "wizard" || cat.name == "wizard_eq")
+        {   // the wizard's queues: one installed product name per line (compressors / EQs)
+            for (const auto& line : juce::StringArray::fromLines (opt.out.getChildFile (cat.name == "wizard" ? "wizard_queue.txt" : "wizard_queue_eq.txt").loadFileAsString()))
                 for (const auto& ir : installed) if (line.trim().isNotEmpty() && ir.desc.name == line.trim()) { PhaseBProduct pp; pp.product = ir.desc.name; pp.stem = stemFor (ir.desc); pp.category = cat.name; pp.desc = ir.desc; list.push_back (pp); break; }
         }
         else if (cat.name == "multiband")

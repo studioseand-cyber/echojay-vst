@@ -9260,6 +9260,31 @@ void testWizard()
         check (personalProblems (clean, "/Users/kathy", "kathy", "kathys-mac").isEmpty() && p1.contains ("the home folder path") && p2.joinIntoString (";").contains ("credential") && p3.contains ("the computer's name"),
                "wizard WZ-BUNDLE: a clean profile passes; a home path, a token, the computer's name are caught before packing");
     }
+    // WZ-MAP (no map store): the category from the server's catalogue first, then only compressor / EQ words (a "dynamics" gate is not
+    // a compressor); the wizard's own map carries the identity, the parameter list, the join key and the category
+    {
+        const auto cat = juce::JSON::parse ("{\"Lindell SBC\": \"compressor\", \"Maag EQ4\": \"eq\", \"G8\": \"gate\", \"C1 comp-gate (m)\": \"gate\"}");
+        const auto m = paramMap ("Lindell SBC", "Plugin Alliance", "6F747363", "1.0.3", "afdb", { { 0, "SC HPF" }, { 13, "Threshold" } }, "compressor");
+        check (wizardCategory ("Lindell SBC", cat) == "compressor" && wizardCategory ("Maag EQ4", cat) == "eq" && wizardCategory ("G8", cat).isEmpty() && wizardCategory ("C1 comp-gate (m)", cat).isEmpty()
+               && wizardCategory ("bx_opto", {}) == "compressor" && wizardCategory ("Some EQ", {}) == "eq" && wizardCategory ("Noise Gate X", {}).isEmpty() && wizardCategory ("elysia mpressor", {}).isEmpty()
+               && m.getProperty ("fp", "") == "afdb" && m.getProperty ("identity", {}).getProperty ("uid", "") == "6f747363" && (int) m.getProperty ("identity", {}).getProperty ("param_count", 0) == 2
+               && m.getProperty ("params", {})[1].getProperty ("name", "") == "Threshold" && m.getProperty ("category", "") == "compressor",
+               "wizard WZ-MAP: catalogue > words (compressor / EQ only, never 'dynamics'); the wizard's map: identity (uid lower), params, fp, category");
+    }
+    // WZ-EQ: an EQ profile's writes come from its bands (gain / freq / Q maps by control name), a placeholder neutral ("-") is not a write;
+    // an EQ is ready to send when a band is measured and every acceptance that ran passed
+    {
+        juce::Array<juce::var> gm { mk ({ { "norm", 0.5 }, { "display", "0.0 dB" } }) }, fm { mk ({ { "norm", 0.0 }, { "display", "1.5 kHz" } }) };
+        juce::Array<juce::var> accOk { mk ({ { "ran", true }, { "pass", true } }), mk ({ { "ran", false }, { "pass", false } }) }, accBad { mk ({ { "ran", true }, { "pass", false } }) };
+        auto eqp = [&] (const juce::Array<juce::var>& acc) {
+            juce::Array<juce::var> bands { mk ({ { "verdict", "measured" }, { "gain_control", "HF Gain" }, { "freq_control", "HF Freq" }, { "gain_map", gm }, { "freq_map", fm }, { "q_map", juce::Array<juce::var>() }, { "acceptance", acc } }) };
+            juce::Array<juce::var> neutral { mk ({ { "control", "EQ Mode" }, { "set", "E" }, { "norm", 1.0 } }), mk ({ { "control", "-" }, { "set", "-" }, { "norm", 0.0 } }) };
+            return mk ({ { "schema", "ej_eq_profile/1" }, { "bands", bands }, { "neutral", neutral } }); };
+        const auto w = writesOf (eqp (accOk)); juce::String why1, why2;
+        check (w.size() == 3 && w[0].control == "HF Gain" && w[0].expect == "0.0 dB" && w[1].control == "HF Freq" && w[2].control == "EQ Mode"
+               && eqAccepted (eqp (accOk), why1) && why1.contains ("1 of 1") && ! eqAccepted (eqp (accBad), why2),
+               "wizard WZ-EQ: an EQ profile's writes are its bands' gain / freq maps + real neutral writes (the '-' placeholder dropped); accepted when every acceptance that ran passed (" + why1 + ")");
+    }
     // WZ-SUMMARY: the outcomes in plain words, and the one line a user reads
     {
         std::map<juce::String, int> n { { "ready", 20 }, { "ready_from_version", 3 }, { "measuring", 4 }, { "needs_licence", 2 } };
@@ -9339,7 +9364,7 @@ void testJobs()
 void testPhaseB()
 {
     using namespace ejmap::phaseb;
-    check (categories().size() == 20 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories()[14].name == "frequency" && categories()[15].name == "samplerate" && categories()[16].name == "strips" && categories()[17].name == "limitercomp" && categories()[18].name == "wizard" && categoryNamed ("wizard")->optIn && categories().back().name == "gainall", "phaseb P1: twenty categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, frequency, samplerate, strips, limitercomp, wizard (opt-in), gain-all)");
+    check (categories().size() == 21 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories()[14].name == "frequency" && categories()[15].name == "samplerate" && categories()[16].name == "strips" && categories()[17].name == "limitercomp" && categories()[18].name == "wizard" && categoryNamed ("wizard")->optIn && categories()[19].name == "wizard_eq" && categoryNamed ("wizard_eq")->optIn && categoryNamed ("wizard_eq")->mode == "--cert-eq" && categories().back().name == "gainall", "phaseb P1: twenty-one categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, frequency, samplerate, strips, limitercomp, wizard + wizard_eq (opt-in), gain-all)");
     // LIM-COMP (Kathy's ruling, 10 Oct): limiters through the compressor certification - an opt-in category over the ledger's limiters,
     // its run-all step after transient_gate (a redo step: its resume never re-deletes); a bare --phaseb-all never runs it
     {

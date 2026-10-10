@@ -1,0 +1,107 @@
+WIZARD ON AN EMPTY MAP STORE + EQ, 10 Oct late (feat/ejmap-wizard; this Mac; hostable units; scratch only; nothing sent)
+
+MOCK DB: Lindell SBC 1.0.3 (exact), bx_townhouse relabelled 1.8.0, Maag EQ4 1.15.1 EQ draft (Sean's: exact), Maag EQ2 EQ draft relabelled 1.11.0,
+categories.json (the server's catalogue stand-in). 8 plugins: 5 compressors + Maag EQ4, Maag EQ2, Lindell 6X-500.
+
+== RUN 2 (the one that counts): --ejmap-ledger <empty store>, the user's real home
+WIZARD: 4 profile(s) in the database (mockdb, a local folder: nothing is fetched)
+WIZARD: map store <scratch>/wiz2/freshstore2/maps: 0 map(s); 8 of the 8 plugin(s) need mapping
+  Lindell 254E                   mapped: 13 parameter(s), map 1ba7ad6d8695, a compressor
+  Lindell 6X-500                 mapped: 17 parameter(s), map 1c4e9f48bdd7, a eq
+  Lindell SBC                    mapped: 22 parameter(s), map afdb3916a60b, a compressor
+  Maag EQ2                       mapped: 10 parameter(s), map 6a4b50cb8bd2, a eq
+  Maag EQ4                       mapped: 9 parameter(s), map a8f9c2ec8088, a eq
+  bx_opto                        mapped: 10 parameter(s), map a21e559b7094, a compressor
+  elysia mpressor                mapped: 18 parameter(s), map b3396255fdc1, a compressor
+  bx_townhouse Buss Compressor   mapped: 16 parameter(s), map 7e8ca3f402d1, a compressor
+  Lindell 254E                   1.2.2     (compressor) -> queued: no profile for this plugin yet
+  Lindell 6X-500                 1.2.2     (eq) -> queued: no profile for this plugin yet
+  Lindell SBC                    1.0.3     (compressor) -> ready: the same plugin and version and map
+  Maag EQ2                       1.11.1    (eq) -> ready_from_version: the version 1.11.0 profile: 60 write(s) read back as the profile says
+  Maag EQ4                       1.15.1    (eq) -> ready: the same plugin and version and map
+  bx_opto                        1.10.1    (compressor) -> queued: no profile for this plugin yet
+  elysia mpressor                1.15.1    (compressor) -> queued: no profile for this plugin yet
+  bx_townhouse Buss Compressor   1.8.1     (compressor) -> ready_from_version: the version 1.8.0 profile: 31 write(s) read back as the profile says
+WIZARD: 8 plugin(s) found: 4 plugins ready, 4 to measure
+WIZARD: measuring 4 plugin(s), 2 at a time - stop any time; it carries on next time
+PHASEB: 4 product(s) over 2 categories -> <scratch>/wiz2/work2/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+PHASEB: --jobs 2: 4 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[wizard 1/3 | all 1/4] elysia mpressor: ok 340.339 s | elapsed 0:05:41 | ETA 0:17:01
+[wizard 2/3 | all 2/4] bx_opto: ok 387.607 s | elapsed 0:06:28 | ETA 0:12:08
+[wizard_eq 1/1 | all 3/4] Lindell 6X-500: ok 35.5722 s | elapsed 0:07:04 | ETA 0:06:04
+[wizard 3/3 | all 4/4] Lindell 254E: ok 310.536 s | elapsed 0:10:51 | ETA 0:00:00
+WIZARD: 4 plugins ready, 3 newly measured, ready to send, 1 could not be measured
+WIZARD: contribution bundle -> contribution.zip (3 new profile(s), 2 confirmation(s) of another version's profile, 1 skipped with the reason; 21.5 KB; checked: no paths, names or tokens)
+WIZARD: UPLOAD (stubbed): nothing is sent. A real app shows this list and sends only when the user presses Send.
+real ~/Library/ejmap: 1123 maps before and after, 0 files changed; the empty store ends with 8 maps (the wizard's)
+
+manifest:
+{
+  "schema": "ej_contribution/0",
+  "created": "2026-10-10T23:46:00.431+01:00",
+  "tool": "EJ Map 560764a1-dirty",
+  "platform": "Mac OSX 15.7.5",
+  "profiles": [
+    {
+      "product": "Lindell 254E",
+      "kind": "compressor",
+      "plugin_id": "AudioUnit|6f457233|1.2.2",
+      "map_fp": "1ba7ad6d8695f5024617abe840d84d772132756aa1da00a5eda84f9634de3c76",
+      "profile": "profiles/Lindell_254E_1.2.2.json",
+      "tone_check": "profiles/Lindell_254E_1.2.2.tonecheck.json",
+      "tone_check_g2_pass": true
+    },
+    {
+      "product": "bx_opto",
+      "kind": "compressor",
+      "plugin_id": "AudioUnit|417f7e74|1.10.1",
+      "map_fp": "a21e559b70943059fe7b9ff2cc7f6d9f94525fc6e9454c863a8c7e4e3cce90a9",
+      "profile": "profiles/bx_opto_1.10.1.json",
+      "tone_check": "profiles/bx_opto_1.10.1.tonecheck.json",
+      "tone_check_g2_pass": true
+    },
+    {
+      "product": "elysia mpressor",
+      "kind": "compressor",
+      "plugin_id": "AudioUnit|49696d78|1.15.1",
+      "map_fp": "b3396255fdc18668cbadcdda4edac425fa4598506b60dbb11788a3eae9ed91d3",
+      "profile": "profiles/elysia_mpressor_1.15.1.json",
+      "tone_check": "profiles/elysia_mpressor_1.15.1.tonecheck.json",
+      "tone_check_g2_pass": true
+    }
+  ],
+  "confirmations": [
+    {
+      "product": "Maag EQ2",
+      "plugin_id": "AudioUnit|6e424032|1.11.1",
+      "profile_from_version": "1.11.0",
+      "readback": "60 write(s) read back as the profile says"
+    },
+    {
+      "product": "bx_townhouse Buss Compressor",
+      "plugin_id": "AudioUnit|417f6e76|1.8.1",
+      "profile_from_version": "1.8.0",
+      "readback": "31 write(s) read back as the profile says"
+    }
+  ],
+  "skipped": [
+    {
+      "product": "Lindell 6X-500",
+      "state": "not_measurable",
+      "why": "measured, but 1 band(s) measured, 0 of 0 acceptance write(s) passed"
+    }
+  ],
+  "note": "results only: profiles, their tone checks and this manifest - no plugin files, no audio, no account token"
+}
+
+== RUN 1 (kept as a finding): the same, but HOME also pointed at an empty folder
+WIZARD: 4 profile(s) in the database (mockdb, a local folder: nothing is fetched)
+WIZARD: 8 plugin(s) found: 4 plugins ready, 4 to measure
+[wizard 1/3 | all 1/4] bx_opto: silent_output 178.245 s | elapsed 0:02:58 | ETA 0:08:55
+[wizard 2/3 | all 2/4] elysia mpressor: silent_output 180.012 s | elapsed 0:03:00 | ETA 0:05:58
+[wizard_eq 1/1 | all 3/4] Lindell 6X-500: silent_output 21.7436 s | elapsed 0:03:22 | ETA 0:02:59
+[wizard 3/3 | all 4/4] Lindell 254E: silent_output 176.036 s | elapsed 0:05:55 | ETA 0:00:00
+WIZARD: 4 plugins ready, 4 pass no sound
+WIZARD: contribution bundle -> contribution.zip (0 new profile(s), 2 confirmation(s) of another version's profile, 4 skipped with the reason; 0.9 KB; checked: no paths, names or tokens)
+-> every Plugin Alliance unit passed digital silence: their activation lives under the user's home. The silent filing caught all
+   four and the bundle sent none of them. A real app must run as the user with the real home visible (WHATS_LEFT 10).
