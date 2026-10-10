@@ -6328,7 +6328,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
         juce::StringArray siblings; for (const auto& r : installedAudioUnits()) siblings.add (r.desc.name);
         for (const auto& cat : categories()) if (work.count (cat.name)) for (const auto& pp : work[cat.name])
         {
-            jobs::LaneInputs in; in.uad = uad::isUadProduct (pp.product, pp.desc.manufacturerName);
+            jobs::LaneInputs in; in.category = cat.name; in.uad = uad::isUadProduct (pp.product, pp.desc.manufacturerName);
             if (! lines.empty()) { const auto m = licence::matchPlugin (pp.product, pp.desc.manufacturerName, lines, siblings); const auto v = licence::verdictFor (m, runDateIso()); in.governed = ! v.outsideFile; in.demo = v.demo; }
             in.pace = paceHeld (pp.desc, bundles, in.paceWhy);
             if (const auto h = pastOutcomes.find (pp.product); h != pastOutcomes.end()) in.pastOutcomes = h->second;

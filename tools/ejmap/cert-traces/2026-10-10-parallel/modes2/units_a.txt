@@ -1,0 +1,6 @@
+strips|bx_console N|strips
+limcomp|bx_limiter|limitercomp
+gainall|CamelCrusher|gainall
+multiband|C6 (s)|multiband
+tuners|bx_crispytuner|tuners
+timing|bx_opto|timing

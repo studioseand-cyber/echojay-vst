@@ -1,0 +1,85 @@
+######## serialA vs serialB
+== strips: json figures differing 440 (max |d| 2188 at phaseb/strips/strip/eq.AudioUnit_417f7950_1.9.1.eq.json/bands[]/gain_sweep_m30[]/centre_hz); strings 37; keys 0; list-lens 0; files only-one 0
+   traces compared 92: numbers differing 44868 (max |d| 21.82 in 'rwin' out_db) ; line-count diffs 0; token diffs 0
+   str ('phaseb/strips/drafts/AudioUnit_417f7950_1.9.1.strip_profile.draft.json/sections[]/profile/bands[]/acceptance[]/why', 'gain within 0.08 dB; figure 3229.49 Hz is -2.7 % off the target', 'gain within 0.08 dB; figure 3229.91 Hz is -2.7 % off the target')
+   str ('phaseb/strips/drafts/AudioUnit_417f7950_1.9.1.strip_profile.draft.json/sections[]/profile/bands[]/acceptance[]/why', 'gain within 0.12 dB; figure 1625.86 Hz is 0.3 % off the target', 'gain within 0.12 dB; figure 1625.86 Hz is 0.2 % off the target')
+   str ('phaseb/strips/drafts/AudioUnit_417f7950_1.9.1.strip_profile.draft.json/sections[]/profile/bands[]/acceptance[]/why', 'gain within 0.12 dB; figure 3656.88 Hz is -0.3 % off the target', 'gain within 0.12 dB; figure 3658.38 Hz is -0.3 % off the target')
+   num (2188.2999999999993, 'phaseb/strips/strip/eq.AudioUnit_417f7950_1.9.1.eq.json/bands[]/gain_sweep_m30[]/centre_hz', 23500.0, 21311.7)
+   num (303.89999999999964, 'phaseb/strips/strip/eq.AudioUnit_417f7950_1.9.1.eq.json/bands[]/q_sweep_3db[]/centre_hz', 5608.8, 5912.7)
+   num (290.40000000000055, 'phaseb/strips/strip/eq.AudioUnit_417f7950_1.9.1.eq.json/bands[]/gain_sweep_m30[]/centre_hz', 5679.2, 5969.6)
+== limcomp: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 53: numbers differing 0 ; line-count diffs 0; token diffs 0
+== gainall: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 28: numbers differing 0 ; line-count diffs 0; token diffs 0
+== multiband: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 0: numbers differing 0 ; line-count diffs 0; token diffs 0
+== tuners: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 0: numbers differing 0 ; line-count diffs 0; token diffs 0
+== timing: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 3: numbers differing 0 ; line-count diffs 0; token diffs 0
+######## serialA vs par2
+== strips: json figures differing 471 (max |d| 2351 at phaseb/strips/strip/eq.AudioUnit_417f7950_1.9.1.eq.json/bands[]/gain_sweep_m30[]/centre_hz); strings 49; keys 0; list-lens 0; files only-one 0
+   traces compared 92: numbers differing 44891 (max |d| 14.3 in 'rharm' out_db) ; line-count diffs 0; token diffs 0
+   str ('phaseb/strips/drafts/AudioUnit_417f7950_1.9.1.strip_profile.draft.json/sections[]/profile/bands[]/acceptance[]/why', 'gain within 0.09 dB; figure 1431.11 Hz is -2.2 % off the target', 'gain within 0.09 dB; figure 1431.05 Hz is -2.2 % off the target')
+   str ('phaseb/strips/drafts/AudioUnit_417f7950_1.9.1.strip_profile.draft.json/sections[]/profile/bands[]/acceptance[]/why', 'gain within 0.08 dB; figure 3229.49 Hz is -2.7 % off the target', 'gain within 0.08 dB; figure 3229.93 Hz is -2.7 % off the target')
+   str ('phaseb/strips/drafts/AudioUnit_417f7950_1.9.1.strip_profile.draft.json/sections[]/profile/bands[]/acceptance[]/why', 'gain within 0.08 dB; figure 3235.18 Hz is -2.5 % off the target', 'gain within 0.08 dB; figure 3235.6 Hz is -2.5 % off the target')
+   num (2351.0, 'phaseb/strips/strip/eq.AudioUnit_417f7950_1.9.1.eq.json/bands[]/gain_sweep_m30[]/centre_hz', 23500.0, 21149.0)
+   num (303.89999999999964, 'phaseb/strips/strip/eq.AudioUnit_417f7950_1.9.1.eq.json/bands[]/q_sweep_3db[]/centre_hz', 5608.8, 5912.7)
+   num (111.19999999999982, 'phaseb/strips/strip/eq.AudioUnit_417f7950_1.9.1.eq.json/bands[]/gain_sweep[]/centre_hz', 5856.3, 5745.1)
+== limcomp: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 53: numbers differing 0 ; line-count diffs 0; token diffs 0
+== gainall: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 28: numbers differing 0 ; line-count diffs 0; token diffs 0
+== multiband: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 0: numbers differing 0 ; line-count diffs 0; token diffs 0
+== tuners: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 0: numbers differing 0 ; line-count diffs 0; token diffs 0
+== timing: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 3: numbers differing 0 ; line-count diffs 0; token diffs 0
+######## serialA vs par4
+== strips: json figures differing 450 (max |d| 1630 at phaseb/strips/strip/eq.AudioUnit_417f7950_1.9.1.eq.json/bands[]/gain_sweep_m30[]/centre_hz); strings 40; keys 0; list-lens 0; files only-one 0
+   traces compared 92: numbers differing 44887 (max |d| 14.24 in 'rharm' out_db) ; line-count diffs 0; token diffs 0
+   str ('phaseb/strips/drafts/AudioUnit_417f7950_1.9.1.strip_profile.draft.json/sections[]/profile/bands[]/acceptance[]/why', 'gain within 0.09 dB; figure 1431.11 Hz is -2.2 % off the target', 'gain within 0.09 dB; figure 1431.31 Hz is -2.2 % off the target')
+   str ('phaseb/strips/drafts/AudioUnit_417f7950_1.9.1.strip_profile.draft.json/sections[]/profile/bands[]/acceptance[]/why', 'gain within 0.09 dB; figure 1434.04 Hz is -2.0 % off the target', 'gain within 0.09 dB; figure 1433.84 Hz is -2.0 % off the target')
+   str ('phaseb/strips/drafts/AudioUnit_417f7950_1.9.1.strip_profile.draft.json/sections[]/profile/bands[]/acceptance[]/why', 'gain within 0.08 dB; figure 3235.18 Hz is -2.5 % off the target', 'gain within 0.08 dB; figure 3235.6 Hz is -2.5 % off the target')
+   num (1630.0, 'phaseb/strips/strip/eq.AudioUnit_417f7950_1.9.1.eq.json/bands[]/gain_sweep_m30[]/centre_hz', 23500.0, 21870.0)
+   num (303.89999999999964, 'phaseb/strips/strip/eq.AudioUnit_417f7950_1.9.1.eq.json/bands[]/q_sweep_3db[]/centre_hz', 5912.7, 5608.8)
+   num (286.6999999999998, 'phaseb/strips/strip/eq.AudioUnit_417f7950_1.9.1.eq.json/bands[]/gain_sweep_m30[]/centre_hz', 5626.0, 5912.7)
+== limcomp: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 53: numbers differing 0 ; line-count diffs 0; token diffs 0
+== gainall: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 28: numbers differing 0 ; line-count diffs 0; token diffs 0
+== multiband: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 0: numbers differing 0 ; line-count diffs 0; token diffs 0
+== tuners: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 0: numbers differing 0 ; line-count diffs 0; token diffs 0
+== timing: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 3: numbers differing 0 ; line-count diffs 0; token diffs 0
+serialA wall 966
+strips rc=0 start=1791648863.2084749 end=1791649427.54569
+limcomp rc=0 start=1791649427.577016 end=1791649788.714622
+gainall rc=0 start=1791649788.7482162 end=1791649824.116419
+multiband rc=0 start=1791649824.149177 end=1791649825.770695
+tuners rc=0 start=1791649825.800271 end=1791649826.931422
+timing rc=0 start=1791649826.9655008 end=1791649829.903723
+serialB wall 967
+strips rc=0 start=1791649830.3598678 end=1791650396.1263082
+limcomp rc=0 start=1791650396.15806 end=1791650758.787489
+gainall rc=0 start=1791650758.822707 end=1791650791.756834
+multiband rc=0 start=1791650791.784362 end=1791650793.355391
+tuners rc=0 start=1791650793.385931 end=1791650794.434601
+timing rc=0 start=1791650794.463283 end=1791650797.221834
+par2 wall 572
+limcomp rc=0 start=1791650799.077816 end=1791651162.462215
+gainall rc=0 start=1791651162.495622 end=1791651194.687788
+multiband rc=0 start=1791651194.7212312 end=1791651196.0280252
+tuners rc=0 start=1791651196.054785 end=1791651197.074846
+timing rc=0 start=1791651197.103839 end=1791651199.866511
+strips rc=0 start=1791650799.077687 end=1791651371.454664
+par4 wall 579
+multiband rc=0 start=1791651373.360248 end=1791651375.334629
+tuners rc=0 start=1791651375.368098 end=1791651376.554753
+timing rc=0 start=1791651376.585783 end=1791651379.41177
+gainall rc=0 start=1791651373.360207 end=1791651407.969308
+limcomp rc=0 start=1791651373.3601952 end=1791651739.8848388
+strips rc=0 start=1791651373.360147 end=1791651952.248662

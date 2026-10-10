@@ -29,11 +29,15 @@ namespace ejmap::jobs
 {
 
 enum class Lane { parallel, serial };
-struct LaneInputs { bool uad = false, governed = false, demo = false, pace = false; juce::String paceWhy; std::set<juce::String> pastOutcomes; };
+// the modes kept serial whatever the product (10 Oct test, cert-traces/2026-10-10-parallel): strips - bx_console N did not repeat even
+// serially (440 record figures, almost every trace number), so parallel could not be shown to be within the noise
+inline const juce::StringArray& kSerialModes() { static const juce::StringArray k { "strips" }; return k; }
+struct LaneInputs { bool uad = false, governed = false, demo = false, pace = false; juce::String paceWhy, category; std::set<juce::String> pastOutcomes; };
 inline const juce::StringArray& kSerialHistory() { static const juce::StringArray k { "window", "needs_licence", "timed_out", "unhostable", "silent_output", "probe_crashed" }; return k; }
 inline Lane laneFor (const LaneInputs& in, juce::String* why = nullptr)
 {
     auto say = [&] (const juce::String& w) { if (why != nullptr) *why = w; return Lane::serial; };
+    if (kSerialModes().contains (in.category)) return say ("the " + in.category + " mode runs serially (not shown repeatable in parallel)");
     if (in.uad) return say ("UAD (shared DSP, the Satellite)");
     if (in.governed || in.demo) return say ("governed by the licence file");
     if (in.pace) return say ("PACE / iLok: " + (in.paceWhy.isNotEmpty() ? in.paceWhy : juce::String ("wrapped")));

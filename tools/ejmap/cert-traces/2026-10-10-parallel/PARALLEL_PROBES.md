@@ -65,3 +65,21 @@ by design (the new build's one follow-up, categorise) and ~28.5 h is Phase B row
 | 2 | 2.1 + 28.5 x (0.3 + 0.7/2) = ~20.6 h | ~4 | ~5 |
 | 4 | 2.1 + 28.5 x (0.3 + 0.7/4) = ~15.6 h | ~3 | ~4 |
 Assumes per-row times hold at N (measured here only at light loads) and Sean's Mac has the same headroom.
+
+## The untested modes (10 Oct evening, Kathy's BUILD --jobs item 2) - modes2/
+Same harness, serial twice then 2 and 4 at once. In set a, multiband / tuners / timing were mis-chosen (0 rows: those categories'
+work lists need an outcomes row / the ledger category here) and re-run in set b with C6 (s) under a seeded `multiband` outcome,
+bx_crispytuner through --cert-tuner, and timing on a Lindell SBC certified first (seed: --cert-limiter-comp, tone check PASS).
+
+| mode (unit) | serial vs serial | serial vs 2 | serial vs 4 | verdict |
+|---|---|---|---|---|
+| strips (bx_console N, 9.4 min) | 440 record figures, 44,868 trace numbers (EQ centre up to 2.2 kHz) | 471 / 44,891 | 450 / 44,887 | NOT REPEATABLE EVEN SERIALLY: parallel cannot be shown within the noise -> KEPT SERIAL (kSerialModes) |
+| limiter_comp (bx_limiter, 6 min) | 0 / 0 | 0 / 0 | 0 / 0 | parallel |
+| gain-all (CamelCrusher) | 0 / 0 | 0 / 0 | 0 / 0 | parallel (CamelCrusher itself is serial-lane: PACE state unknown) |
+| multiband (C6 (s), 4 min) | 0 records; 33 trace numbers, all landing slices | 0; 34 slices | 0; 32 slices | parallel |
+| tuners (bx_crispytuner, 2 min) | 0 records; 17,073 trace numbers (per-window pitch, out_cents) | 0; 10,000 | 0; 17,083 | parallel (records identical; traces jitter as much serially) |
+| timing (Lindell SBC, every Release position + the 4 kHz pass) | 0 / 0 | 0 / 0 | 0 / 0 | parallel |
+| timing (bx_opto, set a: program dependence only) | 0 / 0 | 0 / 0 | 0 / 0 | parallel |
+
+The strips' noise is the unit's own output varying run to run (inferred: bx_console's analogue noise / tolerance modelling, not
+established). A strip that repeats serially is needed before strips can run in parallel. Peak RSS (ejmap + probes) <= 0.29 GB, CPU <= 119 %.

@@ -1,0 +1,37 @@
+######## serialA vs serialB
+== tuners: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 19: numbers differing 17073 (max |d| 1.007e+04 in 'pwin' out_cents) ; line-count diffs 0; token diffs 0
+== multiband: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 48: numbers differing 33 (max |d| 8 in 'pos' slices) ; line-count diffs 0; token diffs 0
+== timing: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 21: numbers differing 0 ; line-count diffs 0; token diffs 0
+######## serialA vs par2
+== tuners: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 19: numbers differing 10000 (max |d| 65.91 in 'pwin' out_cents) ; line-count diffs 0; token diffs 0
+== multiband: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 48: numbers differing 34 (max |d| 8 in 'pos' slices) ; line-count diffs 0; token diffs 0
+== timing: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 21: numbers differing 0 ; line-count diffs 0; token diffs 0
+######## serialA vs par4
+== tuners: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 19: numbers differing 17083 (max |d| 1.007e+04 in 'pwin' out_cents) ; line-count diffs 0; token diffs 0
+== multiband: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 48: numbers differing 32 (max |d| 8 in 'pos' slices) ; line-count diffs 0; token diffs 0
+== timing: json figures differing 0; strings 0; keys 0; list-lens 0; files only-one 0
+   traces compared 21: numbers differing 0 ; line-count diffs 0; token diffs 0
+serialA wall 393
+tuners rc=0 start=1791652228.4168162 end=1791652359.6408892
+multiband rc=0 start=1791652359.673341 end=1791652607.574933
+timing rc=0 start=1791652607.611181 end=1791652621.086509
+serialB wall 394
+tuners rc=0 start=1791652621.9450188 end=1791652751.859145
+multiband rc=0 start=1791652751.8875651 end=1791653001.688032
+timing rc=0 start=1791653001.7163851 end=1791653015.623878
+par2 wall 243
+tuners rc=0 start=1791653016.853434 end=1791653146.817955
+timing rc=0 start=1791653146.8490849 end=1791653161.001497
+multiband rc=0 start=1791653016.8532321 end=1791653259.312556
+par4 wall 246
+timing rc=0 start=1791653259.943251 end=1791653274.313798
+tuners rc=0 start=1791653259.9437969 end=1791653389.983676
+multiband rc=0 start=1791653259.942843 end=1791653505.777259

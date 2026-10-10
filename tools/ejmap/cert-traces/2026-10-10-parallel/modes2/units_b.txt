@@ -1,0 +1,3 @@
+tuners|bx_crispytuner|direct-tuner
+multiband|C6 (s)|multiband
+timing|Lindell SBC|timing
