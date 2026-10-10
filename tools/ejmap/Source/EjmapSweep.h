@@ -681,6 +681,7 @@ struct Measured
     double movingDb = 0.1;
     bool resetPerHold = false;
     std::map<int, std::pair<juce::String, juce::String>> params;   // index -> (name, text) as instantiated
+    std::map<int, double> paramNorms;                                // index -> its value as the process read it at instantiate, before any write (10 Oct)
     juce::String refText;                        // the threshold's text at instantiate (the reference process)
     std::map<juce::String, double> refDb, inRmsDb, inPeakDb;       // the DEFAULT-threshold reference (spec 4.7 only)
     std::map<juce::String, double> refToneFrac;                     // -1 when not printed
@@ -720,8 +721,8 @@ inline Measured parseSweep (const juce::String& out)
         else if (t == "bus" && f.size() > 5 && f[1] == "render" && f[2] == "in" && f[3].getIntValue() > 0) m.extraInputBuses.push_back ({ f[3].getIntValue(), f[4], f[5].getIntValue() });
         else if (t == "spec") { m.movingDb = kv (f, 1, "moving_db").getDoubleValue(); m.resetPerHold = kv (f, 1, "reset_per_hold") == "1";
                                 m.holdS = kv (f, 1, "hold_s").getDoubleValue(); m.winS = kv (f, 1, "win_s").getDoubleValue(); }
-        else if (t == "param" && f.size() >= 5) m.params[f[1].getIntValue()] = { f[3], f[4] };
-        else if (t == "param" && f.size() == 4) m.params[f[1].getIntValue()] = { f[3], {} };
+        else if (t == "param" && f.size() >= 5) { m.params[f[1].getIntValue()] = { f[3], f[4] }; m.paramNorms[f[1].getIntValue()] = f[2].getDoubleValue(); }
+        else if (t == "param" && f.size() == 4) { m.params[f[1].getIntValue()] = { f[3], {} }; m.paramNorms[f[1].getIntValue()] = f[2].getDoubleValue(); }
         else if (t == "refpos") m.refText = kv (f, 1, "text");
         else if (t == "set" && f.size() > 2) { m.setTexts[f[1].getIntValue()] = kv (f, 2, "text"); m.setNorms[f[1].getIntValue()] = f[2].getFloatValue(); }
         else if (t == "ref" && f.size() > 2)
@@ -783,6 +784,8 @@ inline Measured mergeProcesses (const ProcessOut& reference, const std::vector<P
 {
     auto m = parseSweep (reference.clean ? reference.out : juce::String());
     if (! reference.clean) { m.ok = false; m.refused = "reference process: " + reference.outcome; }
+    // the instantiate state when there is no reference process (ref=0): the first position's own dump, before its writes (10 Oct)
+    if (m.paramNorms.empty()) for (const auto& po : positions) if (po.clean) { const auto one = parseSweep (po.out); if (! one.paramNorms.empty()) { m.paramNorms = one.paramNorms; if (m.params.empty()) m.params = one.params; break; } }
     for (size_t k = 0; k < positions.size(); ++k)
     {
         const auto& po = positions[k];
@@ -855,6 +858,7 @@ struct Derived
     juce::StringArray notTone;                      // "position@level" holds refused because the output was not the input's tone
     std::optional<double> flatSpanDb;               // the largest reduction span across ALL positions at any level (the flat test's number)
     juce::String sidechainPolicy; std::vector<Measured::InputBus> extraInputBuses;   // carried from Measured (4 Oct)
+    std::map<int, std::pair<double, juce::String>> seenAtInstantiate;   // 10 Oct: every control's value + text as the sweep's processes read it, before any write
     std::optional<double> responseDb;               // the largest measured reduction against the reference (what a reference error is compared with)
     std::optional<double> refErrorDb, refErrorFrac; // the reference error that was judged, and its fraction of the response
     std::vector<double> levels;                     // the TEST levels, ascending (quiet reference levels are separate)
@@ -1056,6 +1060,7 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
     d.quietReference = quietReference;
     d.setTexts = m.setTexts;
     d.sidechainPolicy = m.sidechainPolicy; d.extraInputBuses = m.extraInputBuses;
+    for (const auto& [idx, v] : m.paramNorms) d.seenAtInstantiate[idx] = { v, m.params.count (idx) ? m.params.at (idx).second : juce::String() };
     d.holdS = m.holdS; d.winS = m.winS;
     std::sort (d.levels.begin(), d.levels.end());
     if (! m.ok) { d.reason = m.refused.isNotEmpty() ? "probe refused: " + m.refused : "no sweep output"; return d; }
@@ -1797,6 +1802,14 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
             pre.add (juce::var (o));
         }
         s->setProperty ("preconditions", pre);
+    }
+    // THE INSTANTIATE STATE AS THE SWEEP SAW IT (10 Oct, the VBCs): the export's neutral writes take it over the fixture's label pass
+    // when the two disagree (VBC FG-MU's Input Gain: the label pass read '-24.0dB' at 0.0, every process started at '0.0dB' / 0.5)
+    if (! d.seenAtInstantiate.empty())
+    {
+        auto* si = new juce::DynamicObject();
+        for (const auto& [idx, vt] : d.seenAtInstantiate) { auto* x = new juce::DynamicObject(); x->setProperty ("norm", vt.first); x->setProperty ("text", vt.second); si->setProperty (juce::String (idx), juce::var (x)); }
+        s->setProperty ("instantiate_seen", juce::var (si));
     }
     // THE SIDECHAIN POLICY (4 Oct): what the processes ran under and which input buses past the main one the plugin
     // declared - the follow-up's evidence-based re-sweep reads this (EjmapCertDriver.h sidechainPolicyCheck)

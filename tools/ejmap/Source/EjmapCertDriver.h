@@ -2816,6 +2816,14 @@ inline void setRoles (juce::DynamicObject* o, const std::vector<roleevidence::Ro
 // ("--text-at 3,7,12"), with the timeout scaled to the count actually sampled; the mode nominates again on the sampled fixture.
 inline constexpr double kTextSampleMs = 200.0;   // the measured 78 ms per sample (6 run-loop spins) with room; three samples per control
 inline int textPassTimeoutMs (int sampled, int floorMs) { return juce::jmax (floorMs, (int) std::lround (sampled * 3.0 * kTextSampleMs) + 30000); }
+// the tone check's per-channel wording (10 Oct: "the output channels disagree" printed for VBC's 0.99 / 0.99) - they DISAGREE only when they
+// differ from each other by more than the check's 0.5 dB; otherwise both channels miss the target together
+inline juce::String channelsVerdict (const std::vector<double>& chGr)
+{
+    if (chGr.size() < 2) return "the channel misses the target";
+    const auto [lo, hi] = std::minmax_element (chGr.begin(), chGr.end());
+    return *hi - *lo > 0.5 ? "the output channels disagree" : "both output channels miss the target together";
+}
 inline constexpr int kTextChunk = 8;
 inline std::vector<std::vector<int>> textChunks (const std::vector<int>& idx, int k) { std::vector<std::vector<int>> out; for (size_t i = 0; i < idx.size(); i += (size_t) k) out.emplace_back (idx.begin() + (long) i, idx.begin() + (long) std::min (idx.size(), i + (size_t) k)); return out; }
 // a control the label pass could not read: present, with its name and no labels (no displayAt: never judged against a label)
@@ -7243,7 +7251,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
         }
         bool channelsOk = true; for (double g2 : lr.chGrDb) if (std::abs (g2 - lr.pick.expectedGrDb) > 0.5) channelsOk = false;
         lr.pass = lr.gr && lr.quietOk && std::abs (*lr.gr - lr.pick.expectedGrDb) <= 0.5 && channelsOk;
-        if (! channelsOk) say ("TONE: " + product + " - the output channels disagree: per-channel GR " + [&] { juce::StringArray a; for (double g2 : lr.chGrDb) a.add (juce::String (g2, 2)); return a.joinIntoString (" / "); }() + " dB against " + juce::String (lr.pick.expectedGrDb, 1) + " (a twin write mirroring onto the amount, or independent channels)");
+        if (! channelsOk) say ("TONE: " + product + " - " + channelsVerdict (lr.chGrDb) + ": per-channel GR " + [&] { juce::StringArray a; for (double g2 : lr.chGrDb) a.add (juce::String (g2, 2)); return a.joinIntoString (" / "); }() + " dB against " + juce::String (lr.pick.expectedGrDb, 1) + " (a twin write mirroring onto the amount, or independent channels)");
         say ("TONE: " + product + " - GR " + (lr.gr ? juce::String (*lr.gr, 2) : juce::String ("unreadable")) + " dB at L (target " + juce::String (lr.pick.expectedGrDb, 1) + ", quiet check "
              + (lr.quietOk ? "ok" : "FAILED") + ") -> " + (lr.pass ? "PASS" : "FAIL") + " (within 0.5 dB)");
         return lr;

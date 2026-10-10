@@ -53,6 +53,20 @@
 namespace ejmap::profile
 {
 
+// A NEUTRAL'S INSTANTIATE VALUE (10 Oct, VBC FG-Grey / FG-MU / Rack): the fixture's label pass and the sweep's own processes can disagree -
+// VBC's Attack, Release and Input Gain read 0.0 to the label pass and 0.4-0.55 in every process, so "restore instantiate" re-voiced the unit
+// (Input Gain to -24 dB). The value the sweep's processes read before any write is what the measurement ran with: it wins when they differ.
+struct NeutralValue { bool fromSweep = false; double norm = 0.0; juce::String text; };
+inline NeutralValue neutralInstantiate (const juce::var& fixtureDefault, const juce::var& seenBySweep)
+{
+    NeutralValue w;
+    const auto sn = seenBySweep.getProperty ("norm", {}); if (! (sn.isDouble() || sn.isInt())) return w;
+    const auto fn = fixtureDefault.getProperty ("normalised", {});
+    if ((fn.isDouble() || fn.isInt()) && std::abs ((double) sn - (double) fn) <= 1.0e-3) return w;
+    w.fromSweep = true; w.norm = (double) sn; w.text = seenBySweep.getProperty ("text", "").toString(); return w;
+}
+
+
 inline constexpr double kPeakToSineRmsDb = 3.0102999566398120;   // 20 log10 sqrt 2
 inline constexpr double kTargetGrDb = 2.0;                        // his default target, the yardstick for fit error
 inline constexpr int    kMinCurvePoints = 9;
@@ -578,8 +592,17 @@ inline Export exportCompProfile (const juce::var& f)
                     const auto doi = c.getProperty ("defaultOnInstantiate", {});
                     if (! doi.isObject() || ! (doi.getProperty ("normalised", {}).isDouble() || doi.getProperty ("normalised", {}).isInt()))
                         return refuse ("neutral needs every control's instantiate value and '" + name + "' has none in the record (no defaults sample)");
-                    o->setProperty ("set", doi.getProperty ("display", "")); o->setProperty ("norm", doi.getProperty ("normalised", 0.0));
-                    o->setProperty ("source", "instantiate");
+                    const auto seen = sweepVar.getProperty ("instantiate_seen", {}).getProperty (juce::String (idx), {});
+                    if (const auto w = neutralInstantiate (doi, seen); w.fromSweep)
+                    {   // 10 Oct (the VBCs): the sweep's own processes started this control elsewhere - the profile writes what the sweep ran with
+                        o->setProperty ("set", w.text); o->setProperty ("norm", w.norm);
+                        o->setProperty ("source", "instantiate (as the sweep's processes read it; the label pass said '" + doi.getProperty ("display", "").toString() + "' at " + juce::String ((double) doi.getProperty ("normalised", 0.0), 3) + ")");
+                    }
+                    else
+                    {
+                        o->setProperty ("set", doi.getProperty ("display", "")); o->setProperty ("norm", doi.getProperty ("normalised", 0.0));
+                        o->setProperty ("source", "instantiate");
+                    }
                 }
                 neutral.add (juce::var (o));
             }

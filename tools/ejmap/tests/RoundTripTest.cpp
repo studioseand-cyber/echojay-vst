@@ -4822,6 +4822,21 @@ void testSweepRatioAndPicks()
                && Plan::setsWithout ({ "7:0.5", "28:0.5" }, -1).size() == 2,
                "pair P1: MAGNUM-K's twin [28] is written with the amount - its per-position read-back is no conflict, and it is never kept as a precondition");
     }
+    // INSTANTIATE AS SEEN (10 Oct, the VBCs): the neutral's instantiate value is what the sweep's processes read before any write when the
+    // fixture's label pass says otherwise (VBC FG-MU Input Gain: label pass '-24.0dB' @ 0.0, every process '0.0dB' @ 0.5)
+    {
+        ProcessOut r0 { "sweep\tproto\t1\nparam\t3\t0.500000\tInput Gain Right\t0.0dB\nparam\t5\t1.000000\tThreshold Left\t-6.0\nref\t-24.00\tlevel_db\t-27\tin_peak_db\t-24\tin_rms_db\t-27\n", true, "exit 0", -1.0f };
+        const auto mm = mergeProcesses (r0, {}); const auto dd = derive (mm, sweeptest::kLevels, -1);
+        auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, x] : kv) o->setProperty (k, x); return juce::var (o); };
+        const auto w1 = ejmap::profile::neutralInstantiate (mk ({ { "display", "-24.0dB" }, { "normalised", 0.0 } }), mk ({ { "norm", 0.5 }, { "text", "0.0dB" } }));
+        const auto w2 = ejmap::profile::neutralInstantiate (mk ({ { "display", "0.0dB" }, { "normalised", 0.5 } }), mk ({ { "norm", 0.5004 }, { "text", "0.0dB" } }));
+        const auto w3 = ejmap::profile::neutralInstantiate (mk ({ { "display", "0.0dB" }, { "normalised", 0.5 } }), juce::var());
+        check (dd.seenAtInstantiate.count (3) && std::abs (dd.seenAtInstantiate.at (3).first - 0.5) < 1e-9 && dd.seenAtInstantiate.at (3).second == "0.0dB"
+               && w1.fromSweep && w1.norm == 0.5 && w1.text == "0.0dB" && ! w2.fromSweep && ! w3.fromSweep,
+               "neutral N1: a process's param dump reaches the derive; the sweep's 0.5 '0.0dB' beats the label pass's 0.0 '-24.0dB'; agreeing (within 0.001) or unseen, the fixture stands");
+    }
+    check (ejmap::cert::channelsVerdict ({ 0.99, 0.99 }).startsWith ("both") && ejmap::cert::channelsVerdict ({ 0.31, 2.79 }) == "the output channels disagree",
+           "tone T1: VBC's 0.99 / 0.99 is both channels missing together; AMEK's 0.31 / 2.79 is channels disagreeing");
     // THE PICKS, from the pushed fixtures themselves (echojay-saas 2454c0a), by range and step count - never by name.
     const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/plan");
     const auto xla = planFromFixture (juce::JSON::parse (dir.getChildFile ("AudioUnit_62485258_1.10.1.json").loadFileAsString()));
