@@ -4008,6 +4008,18 @@ inline int runTiming (const SweepOptions& opt)
     return measured > 0 ? 0 : 4;
 }
 
+// the exported compressor profile of one identity in <cert>/profiles (the limiter's one profile, v0.2); `source` = its file name
+inline juce::var compProfileFor (const juce::File& certDir, const juce::String& identity, juce::String& source)
+{
+    if (certDir == juce::File() || identity.isEmpty()) return {};
+    for (const auto& f : certDir.getChildFile ("profiles").findChildFiles (juce::File::findFiles, false, "*.json"))
+    {
+        if (f.getFileName().endsWith (".tonecheck.json")) continue;
+        const auto p = juce::JSON::parse (f.loadFileAsString());
+        if (p.getProperty ("plugin", {}).getProperty ("plugin_id", "").toString() == identity) { source = "profiles/" + f.getFileName(); return p; }
+    }
+    return {};
+}
 // LIMITER CEILING ACCURACY (roadmap 2.4; PROTOTYPE, 5 Oct overnight B3; derivation in EjmapLimiter.h). The ceiling control by
 // name (ceiling / out ceiling / output ceiling / margin), the amount control from the plan (threshold or input-as-threshold), the
 // oversampling switch by name (oversampl / os / true peak), every other control as instantiated; the hard end by measurement.
@@ -4229,7 +4241,8 @@ inline int runLimiter (const SweepOptions& opt)
         D->setProperty ("measured", drafts::measuredBlock ("EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, "997 Hz sine, peak at the ceiling label + 6 dB, amount at its hard end; sample peak and BS.1770 4x-oversampled true peak over 0.75 s"));
         D->setProperty ("ceiling", limiter::ceilingBlock (ceilingName, measuredCeiling ? "measurement" : "name", offRows, onRows, osName, osOnText, acceptance));
         const auto f = drafts::draftFile (opt.out, stem, "limiter_ceiling");
-        const auto problem = drafts::writeDraft (f, juce::var (D));
+        juce::String src; const auto cp = compProfileFor (opt.out, "AudioUnit|" + uidHex + "|" + desc.version, src);
+        const auto problem = drafts::writeDraft (f, limiter::oneProfile (juce::var (D), cp, src, "AudioUnit|" + uidHex + "|" + desc.version));
         say (problem.isEmpty() ? "LIMITER: draft ceiling block -> " + f.getFullPathName() : "LIMITER: " + problem);
     }
     return 0;
@@ -6074,7 +6087,7 @@ namespace draftpass
     }
 }
 // one record -> one draft var (empty when the category has no draft or the record is not its shape; `why` says)
-inline juce::var draftFromRecord (const juce::String& category, const juce::var& rec, const juce::String& manufacturer, juce::String& why)
+inline juce::var draftFromRecord (const juce::String& category, const juce::var& rec, const juce::String& manufacturer, juce::String& why, const juce::File& certDir = {})
 {
     const auto* sp = draftpass::specFor (category); if (! sp) { why = "no draft for category '" + category + "'"; return {}; }
     const auto identity = rec.getProperty ("identity", "").toString(); const auto product = rec.getProperty ("product", rec.getProperty ("plugin", {}).getProperty ("name", "")).toString();
@@ -6097,7 +6110,8 @@ inline juce::var draftFromRecord (const juce::String& category, const juce::var&
     {
         if (! rec.getProperty ("ceiling", {}).isArray()) { why = "not a limiter record with ceiling rows"; return {}; }
         auto* D = new juce::DynamicObject(); D->setProperty ("schema", sp->schema); D->setProperty ("spec", spec); D->setProperty ("status", status + "; the ceiling block only"); D->setProperty ("block", "ceiling"); D->setProperty ("plugin", plugin); D->setProperty ("measured", measured);
-        D->setProperty ("ceiling", limiter::ceilingBlockFromRecord (rec)); return juce::var (D);
+        D->setProperty ("ceiling", limiter::ceilingBlockFromRecord (rec));
+        juce::String src; const auto cp = compProfileFor (certDir, identity, src); return limiter::oneProfile (juce::var (D), cp, src, identity);
     }
     if (category == "deesser")
     {
@@ -6137,7 +6151,7 @@ inline int runPhaseBDrafts (const SweepOptions& opt, const juce::StringArray& on
             auto stem = f.getFileNameWithoutExtension(); for (const char* suf : { ".gaincal", ".timing", ".multiband", ".limiter", ".eq", ".deesser", ".saturation", ".tuner", ".reverbdelay", ".dynamics", ".strip" }) if (stem.endsWith (suf)) stem = stem.dropLastCharacters (juce::String (suf).length());
             const auto product = rec.getProperty ("product", rec.getProperty ("plugin", {}).getProperty ("name", "")).toString();
             const auto D = category == "strips" ? stripDraftFrom (rec, f.getParentDirectory(), stem, drafts::pluginBlock (product, manufacturerOf.count (product) ? manufacturerOf[product] : rec.getProperty ("manufacturer", "").toString(), drafts::uidOfIdentity (rec.getProperty ("identity", "").toString()), drafts::versionOfIdentity (rec.getProperty ("identity", "").toString()), juce::var()))
-                                                 : draftFromRecord (category, rec, manufacturerOf.count (product) ? manufacturerOf[product] : juce::String(), why);
+                                                 : draftFromRecord (category, rec, manufacturerOf.count (product) ? manufacturerOf[product] : juce::String(), why, opt.out);
             if (D.isVoid()) { ++r; ++refusedN; reasons.add (f.getFileName() + ": " + why); continue; }
             const auto out = drafts::draftFile (phasebDir.getChildFile (category), stem, sp.kind);
             const auto problem = drafts::writeDraft (out, D);

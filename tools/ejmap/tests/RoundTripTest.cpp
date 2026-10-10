@@ -8641,6 +8641,26 @@ void testDraftsPass()
         const auto& cb = lim.getProperty ("ceiling", {});
         check (lim.getProperty ("spec", "") == ejmap::drafts::specTag ("LIMITER_PROFILE_SPEC") && lim.getProperty ("plugin", {}).getProperty ("version", "") == "1.2.1" && lim.getProperty ("measured", {}).getProperty ("date", "") == "2026-10-05" && cb.getProperty ("positions", {}).size() == 2 && cb.getProperty ("positions", {})[0].getProperty ("verdict", "") == "holds_true_peak" && cb.getProperty ("positions", {})[1].getProperty ("verdict", "") == "not_driven" && cb.getProperty ("notes", {})[0].toString().contains ("driven at -1 dBFS flat"),
                "drafts P1d: a 5 Oct limiter record drafts its block from its rows (judged on the output: -0.12 not_driven) with the old-drive note, the date from measuredAt, the version from the identity");
+        // LIM-ONE (10 Oct, the v0.2 gap list): "one profile: the compressor profile plus the ceiling block" - an exported compressor
+        // profile of the same identity gets the block added (the profile itself untouched); none -> the block alone, said so
+        {
+            const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap-limone-" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+            tmp.getChildFile ("profiles").createDirectory();
+            const auto comp = mk ({ { "schema", "ej_comp_profile/1" }, { "plugin", mk ({ { "name", "X" }, { "plugin_id", "AudioUnit|417f6e6e|1.2.1" } }) }, { "amount", mk ({ { "control", "Input" } }) } });
+            const auto pf = tmp.getChildFile ("profiles/X_1.2.1.json"); pf.replaceWithText (juce::JSON::toString (comp));
+            tmp.getChildFile ("profiles/X_1.2.1.tonecheck.json").replaceWithText (juce::JSON::toString (mk ({ { "plugin", mk ({ { "plugin_id", "AudioUnit|417f6e6e|1.2.1" } }) } })));
+            const auto before = pf.loadFileAsString();
+            const auto recL = mk ({ { "product", "X" }, { "identity", "AudioUnit|417f6e6e|1.2.1" }, { "measuredAt", "20261005T010203" }, { "ceiling_control", "Ceiling" }, { "nominated_by", "names" }, { "ceiling", limRows } });
+            juce::String w1, w2; const auto with = ejmap::cert::draftFromRecord ("limiter", recL, {}, w1, tmp);
+            const auto recO = mk ({ { "product", "Y" }, { "identity", "AudioUnit|11111111|1.0" }, { "measuredAt", "20261005T010203" }, { "ceiling_control", "Ceiling" }, { "nominated_by", "names" }, { "ceiling", limRows } });
+            const auto alone = ejmap::cert::draftFromRecord ("limiter", recO, {}, w2, tmp);
+            juce::String an; if (const auto* n = alone.getProperty ("notes", {}).getArray()) for (const auto& x : *n) an << x.toString() << "|";
+            check (with.getProperty ("schema", "") == "ej_comp_profile/1" && with.getProperty ("amount", {}).getProperty ("control", "") == "Input" && with.getProperty ("ceiling", {}).isObject()
+                   && with.getProperty ("compressor_profile", "") == "profiles/X_1.2.1.json" && with.getProperty ("spec", "") == ejmap::drafts::specTag ("LIMITER_PROFILE_SPEC") && pf.loadFileAsString() == before
+                   && alone.getProperty ("ceiling", {}).isObject() && alone.hasProperty ("compressor_profile") && alone.getProperty ("compressor_profile", {}).isVoid() && an.contains ("no compressor profile exported for AudioUnit|11111111|1.0"),
+                   "drafts LIM-ONE: a limiter with an exported compressor profile drafts that profile plus the ceiling block (the export untouched; the tone-check sidecar never matched); one without gets the block alone and says why (" + an + ")");
+            tmp.deleteRecursively();
+        }
     }
 }
 

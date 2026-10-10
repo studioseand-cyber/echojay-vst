@@ -288,4 +288,30 @@ inline juce::var ceilingBlockFromRecord (const juce::var& rec)
     return blk;
 }
 
+// ONE PROFILE (v0.2, Sean's ruling 8 Oct: "the compressor profile plus the `ceiling` block"): the unit's exported compressor profile
+// with the ceiling block added, when one exists (the GR prediction is the compressor half's job); else the ceiling draft as it was,
+// `compressor_profile` null and a note naming why it is the block alone. Never invents a compressor half.
+inline juce::var oneProfile (const juce::var& ceilingDraft, const juce::var& compProfile, const juce::String& compSource, const juce::String& identity)
+{
+    if (compProfile.isObject() && compProfile.getProperty ("schema", "").toString().startsWith ("ej_comp_profile"))
+    {
+        auto P = juce::JSON::parse (juce::JSON::toString (compProfile));   // a deep copy: the exported profile is never touched
+        if (auto* o = P.getDynamicObject())
+        {
+            o->setProperty ("spec", ceilingDraft.getProperty ("spec", juce::var())); o->setProperty ("status", ceilingDraft.getProperty ("status", "").toString() + "; v0.2 one profile: the compressor profile (" + compSource + ") plus the ceiling block");
+            o->setProperty ("ceiling", ceilingDraft.getProperty ("ceiling", juce::var())); o->setProperty ("ceiling_measured", ceilingDraft.getProperty ("measured", juce::var()));
+            o->setProperty ("compressor_profile", compSource);
+        }
+        return P;
+    }
+    auto D = juce::JSON::parse (juce::JSON::toString (ceilingDraft));
+    if (auto* o = D.getDynamicObject())
+    {
+        juce::Array<juce::var> notes; if (const auto* n = o->getProperty ("notes").getArray()) notes = *n;
+        notes.add ("v0.2: a limiter profile is the compressor profile plus this block; no compressor profile exported for " + identity + " (limiters are not run through the compressor certification): the ceiling block alone, no GR prediction");
+        o->setProperty ("compressor_profile", juce::var()); o->setProperty ("notes", notes);
+    }
+    return D;
+}
+
 } // namespace ejmap::limiter
