@@ -1547,6 +1547,12 @@ public:
     void resetChainOutShortTermMax() { chainOutTally_.resetShortTermMax(); }   // 18e: the loop's measurement window
     void resetChainInShortTermMax()  { chainInTally_.resetShortTermMax(); }
     SlotLevels getSlotLevels(int i) const;
+    /** LEVELLING V2 (10 Oct 2026): ONE slot's tallies, for the loudness loop's window. The loop's GR estimate
+        is the stage slot's IN tally minus the chain output; startWindow() reset only the chain output, so the
+        minuend kept loudness and true peak from before the window and the subtraction compared two different
+        spans. resetAllLevels() is not usable here - it would clear the song's own chain-IN reading, which
+        Sean's standing rule forbids a loop reset from touching. */
+    void resetSlotLevels(int i);
     void resetAllLevels();   // source change, manual reset
 
     // ---- Pre-chain gain (headroom + operating level, 18 Aug 2026) ------

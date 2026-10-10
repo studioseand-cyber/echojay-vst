@@ -43,27 +43,22 @@ struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost&
 };
 namespace {
 int measuredLines (const juce::StringArray& logs) { int n = 0; for (const auto& l : logs) if (l.startsWith ("EJLoudness: measured:")) ++n; return n; }
-// ---- KNOWN-STALE, NAMED (Sean's ruling, 10 Oct 2026) ------------------------------------------------
-// The GR-model calibration legs below derived their "truth" around the OLD Level-OUT tap. Levelling v2 moved
-// the tap to the limiter's GAINED input, so their arithmetic now measures a different span from the product's
-// (K5 compares an estimate of +4.67 against a "truth" of -6.16 - a SIGN disagreement; O1's premise says the
-// hits are typically under the 10 dB cap while the estimate reads 11.7 dB where hitsMeasure() reads 2.9).
-// Forcing them green would ship three unfalsifiable checks, so they are named here and excluded from the exit
-// code - and ONLY these. Every other red still fails the gate.
-// RE-DERIVING THEM IS THE FIRST ITEM OF THE NEXT ROUND, BEFORE ANY REMOTE-CONTROL WORK, and they must be green
-// before anything reaches Logic. A leg on this list that goes GREEN is reported too, so the marking comes off.
-static const char* kKnownStaleLegs[] = {
-    "K5. the two rigs ran the same programme at the same gain (the bypass rig is the pre-limiter truth)",
-    "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (chain in + gain - chain out), so the figure in the bubble is the limiter's own reduction",
-    "K5. ...and the PEAK GR estimate (limiter IN true peak - chain OUT true peak) is within 1 dB of the independent meter's",
-    "K5. the EJLoudness log carries the true-peak VALUES (limiter IN TP, chain OUT TP), not only their difference",
-    "K4 (ruling 4): with a third-party limiter the measured line is followed by the true-peak line (limiter IN TP, chain OUT TP, hits) and the hits figure is the report",
-    "K1. the capped trim is positive and under the cap (the limiter would work <= 10 dB)",
-    "O1. with the hits typically under the Commercial cap the proposal is NOT capped (the single 9 dB transient no longer caps it)"
-};
+// ---- KNOWN-STALE, NAMED (Sean's ruling, 10 Oct 2026) - THE LIST IS EMPTY, AND THAT IS THE OUTCOME ------
+// The facility stands; nothing is on it. Seven GR-model calibration assertions were listed here and excluded
+// from the exit code (K5 x4, K4, K1's capped trim, O1) because their truth had been derived around the old
+// Level-OUT tap, and forcing them green would have shipped seven unfalsifiable checks. They were RE-DERIVED on
+// 10 Oct and all seven are green, so the marking came off - which is what the "NOW GREEN <- take these off"
+// line exists to make happen. What the re-derivation found is in the commit: a unit bug (a Plain-weighted slot
+// tally subtracted from a K-weighted chain tally), a tap nothing reset at the window, and a ruler rig that our
+// own ruling had quietly given a limiter.
+// KEPT, not deleted: an empty list costs one branch per assertion and the next ruling of this kind needs only
+// the leg names. A leg that is merely INCONVENIENT does not belong on it - only one whose truth is known to be
+// stale, named, with the re-derivation booked.
+static const char* kKnownStaleLegs[] = { nullptr };
 static bool isKnownStale (const juce::String& w)
 {
-    for (const char* k : kKnownStaleLegs) if (w.startsWith (juce::String (k).substring (0, 60))) return true;
+    for (const char* k : kKnownStaleLegs)
+        if (k != nullptr && w.startsWith (juce::String (k).substring (0, 60))) return true;
     return false;
 }
 int failures = 0, knownStale = 0, knownStaleGreen = 0;
@@ -311,12 +306,24 @@ struct Rig
     }
     /** The legs pre-set "where the build left the gain". That is the STAGE now; for a mix-bus target rig it is
         the final limiter's input_db. */
+    // SYMMETRIC WITH THE STAGE'S OWN WRITE, and it was not. This wrote input_db unconditionally; the stage
+    // writes input_db only where the device's SCHEMA has it and the slot's PRE-TRIM otherwise. EJ Test Limiter
+    // and EJ Test Bypass have no input_db, so this set nothing at all - which is why K5's ruler rig sat at its
+    // own loop's +6.00 while the rig it was meant to be a ruler for was at +3.57. The same asymmetry that kept
+    // leg D red through a fix that touched only half the pair; the capability test belongs on both sides.
     void presetStageGain (float db)
     {
-        auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", (double) db);
-        auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-        h.setSlotStructuredSettings (limSlot, juce::var (w));
-        EchoJayBorrowHostTestAccess::applyExact (h, limSlot);
+        if (limSlot < 0) return;
+        if (auto* d = dynamic_cast<EedDeviceProcessor*> (h.getSlotProcessor (limSlot)))
+            if (d->paramSchema().find ("input_db") != nullptr)
+            {
+                auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", (double) db);
+                auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+                h.setSlotStructuredSettings (limSlot, juce::var (w));
+                EchoJayBorrowHostTestAccess::applyExact (h, limSlot);
+                return;
+            }
+        h.setSlotPreTrimDb (limSlot, db);
     }
     int gainSlot_ = -1;         // where the EchoJay Gain stand-in actually is (no Level slot to shift it any more)
     void setGainDb (float db)   // the Gain stand-in, through the schema path
@@ -673,7 +680,15 @@ static int guardMain()
         // 22 Sep 2026 (item 5): the target sits ABOVE the programme (+6) so the first proposal is a capped push; [Push it anyway] then drives
         // both rigs into the clipper by the same +6 (arming had clamped the opening gain below 0 dB: peaks ~+9 dBTP over a -0.5 ceiling)
         Rig r (true, true); r.setTarget (+6.0f); calibrate (r.proc, r.prog, +3.0f);   // +3 LUFS in: sample peaks ~+1.7 dBFS, over the -0.5 dBFS clip
-        Rig b (true, true, "EJ Test Bypass"); b.setTarget (+6.0f); calibrate (b.proc, b.prog, +3.0f);
+        // ---- THE RULER IS A RULER (re-derived 10 Oct 2026) ------------------------------------------
+        // It must NOT be a target build. Sean's 10 Oct ruling gives a target build with no limiter last an
+        // EchoJay Limiter inserted at the ruled -0.1 dBTP - and "EJ Test Bypass" is not a limiter by name, so
+        // this rig was handed a REAL limiter and its "unlimited" output measured -0.07 dBTP. That is our own
+        // ceiling. The ruler was limiting, so the truth it supplied was not pre-limiter at all, and the peak
+        // comparison came out -6.16 dB: the ruler quieter than the thing it was measuring.
+        // So: no setTarget and no arm on this rig. It carries the same programme at the same gain through a
+        // bypass and nothing else, which is the only thing it was ever for.
+        Rig b (true, true, "EJ Test Bypass"); calibrate (b.proc, b.prog, +3.0f);
         // 22 Sep 2026 (item 5): arming CLAMPS the opening gain (peaks +7 dBTP over a -0.5 ceiling -> the Level opens below 0 dB) and the
         // first proposal is capped, so both rigs are driven into the clipper the user's way - [Push it anyway] (+6, the same on both) -
         // and the estimate window is measured after that push with fresh tallies and fresh independent meters
@@ -684,28 +699,51 @@ static int guardMain()
         // the 7 Oct ruling it got there by both rigs taking [Push it anyway] off a capped proposal. With the
         // commercial cap at 10 dB this fixture no longer caps, so the two loops would land on different numbers
         // and the comparison would be between two different signals. The gain is set to the clipper rig's instead.
-        b.armNoReading(); b.loop.listen(); b.runWindow();
-        if (b.last().contains ("is as loud as this goes")) b.loop.pushIt(); else b.loop.go();   // leave the proposal, or check() refuses
-        // 10 Oct: the bypass rig is given the SAME gain as the clipper rig so the two are a ruler for each
-        // other. That gain lives on the stage now, not a Level slot.
-        b.presetStageGain (r.levelGain());
-        b.loop.check(); IndependentMeter indB; b.runWindow (0.0f, &indB);
-        feed (r.proc, r.prog, 400, false, nullptr, nullptr, 0.0f); feed (b.proc, b.prog, 400, false, nullptr, nullptr, 0.0f);   // 21m: a full 3 s window on both tallies after the loop's own window (its tracking reset empties the chain-out ring)
+        // The clipper rig has finished moving, so its gain is final; the ruler is set to THAT and never runs a
+        // loop of its own. Running one was the second half of the fault: both loops kept proposing after the
+        // preset, so the two rigs drifted apart (+3.57 against +6.00) and the comparison was between two
+        // different signals.
         const float g = r.levelGain();
+        b.presetStageGain (g);
+        // Both rigs then get the SAME fresh span on FRESH meters, with no loop attached to either, so every
+        // figure below is measured over audio that postdates the last gain write on both sides. The window
+        // meter `ind` above spans the loop's own window, which straddles the push - a true-peak max hold over
+        // that is a hold over two different gains, and that is not a figure about either of them.
+        IndependentMeter indR, indB;
+        feed (r.proc, r.prog, 400, false, nullptr, &indR, 0.0f);
+        feed (b.proc, b.prog, 400, false, nullptr, &indB, 0.0f);
         const auto in = r.h.getChainInLevels(), out = r.h.getChainOutLevels();
-        const float truthLoud = (in.shortTermDb + g) - out.shortTermDb;   // the latest full 3 s window on both tallies (the max hold restarts when the loop starts tracking - 21m)
-        const float truthPeak = indB.truePeakDb() - ind.truePeakDb();
+        // THE TRUTH IS THE LIMITER'S OWN REDUCTION, measured independently of the loop: the slot's IN and OUT
+        // tallies, which are one tally type (Plain on both legs), over the span fed above.
+        // 10 Oct: this was (chain in + stage gain) - chain out, which is a DIFFERENT quantity - the whole
+        // chain's loss, attributed to the limiter - and it mixed units, because the chain tallies are
+        // K-weighted and a slot's are not. It agreed with the estimate only while the estimate made the same
+        // two mistakes. A truth that is only true when the thing it judges is wrong is not a ruler.
+        const auto slotLv = r.h.getSlotLevels (r.limSlot);
+        const float truthLoud = slotLv.measured ? (slotLv.in.shortTermDb - slotLv.out.shortTermDb)
+                                                : std::numeric_limits<float>::quiet_NaN();
+        const float truthPeak = indB.truePeakDb() - indR.truePeakDb();   // pre-limiter (bypass) minus post-limiter (clipper), both over the span fed above
         const float estLoud = r.loop.grEstimateDb(), estPeak = r.loop.grPeakEstimateDb();
-        std::printf ("  K5 inputs: amp %.3f / %.3f, gain %+.2f / %+.2f dB | chain in maxST %.2f, chain out maxST %.2f | limiter IN TP %.2f, chain OUT TP %.2f (tallies) | independent TP clipper %.2f, bypass %.2f\n", r.prog.amp, b.prog.amp, g, b.levelGain(), in.maxShortTermDb, out.maxShortTermDb, r.loop.stageTap().truePeakDb, out.truePeakDb, ind.truePeakDb(), indB.truePeakDb());
+        const auto tap = r.loop.stageTap();
+        std::printf ("  K5 inputs: amp %.3f / %.3f, gain %+.2f / %+.2f dB | chain in ST %.2f maxST %.2f, chain out ST %.2f maxST %.2f | stage tap ST %.2f TP %.2f heard %.1f s | chain OUT TP %.2f | independent TP clipper %.2f, bypass %.2f\n",
+                      r.prog.amp, b.prog.amp, g, b.levelGain(), in.shortTermDb, in.maxShortTermDb, out.shortTermDb, out.maxShortTermDb,
+                      tap.shortTermDb, tap.truePeakDb, tap.heardSeconds, out.truePeakDb, indR.truePeakDb(), indB.truePeakDb());
         check (std::abs (r.prog.amp - b.prog.amp) < 1e-4f && std::abs (g - b.levelGain()) < 0.01f, "K5. the two rigs ran the same programme at the same gain (the bypass rig is the pre-limiter truth)", juce::String (r.prog.amp, 4) + " / " + juce::String (b.prog.amp, 4));
-        check (std::isfinite (estLoud) && truthLoud > 0.3f && std::abs (estLoud - truthLoud) <= 1.0f, "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (chain in + gain - chain out), and the clipper is working", "estimate " + f1 (estLoud) + " vs truth " + f1 (truthLoud) + " dB");
-        check (std::isfinite (estPeak) && truthPeak > 0.5f && std::abs (estPeak - truthPeak) <= 1.0f, "K5. ...and the PEAK GR estimate (limiter IN true peak - chain OUT true peak) is within 1 dB of the independent pre/post true-peak difference", "estimate " + f1 (estPeak) + " vs truth " + f1 (truthPeak) + " dB");
+        check (std::isfinite (estLoud) && truthLoud > 0.3f && std::abs (estLoud - truthLoud) <= 1.0f, "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (the limiter slot's own IN minus OUT), and the clipper is working", "estimate " + f1 (estLoud) + " vs truth " + f1 (truthLoud) + " dB");
+        check (std::isfinite (estPeak) && truthPeak > 0.5f && std::abs (estPeak - truthPeak) <= 1.0f, "K5. ...and the PEAK GR estimate (limiter IN true peak - limiter OUT true peak) is within 1 dB of the independent pre/post true-peak difference", "estimate " + f1 (estPeak) + " vs truth " + f1 (truthPeak) + " dB");
         check (r.last().contains ("limiter working ~") && r.last().contains ("dB on the hits (worst peak ") && ! r.last().contains ("average"), "K5. the bubble reads \"limiter working ~X dB on the hits (worst peak Y)\" (21m)", r.last());
-        check (r.logs.joinIntoString ("\n").contains ("true peak: Level OUT TP ") && r.logs.joinIntoString ("\n").contains (" dBTP, chain OUT TP "), "K5. the EJLoudness log carries the true-peak VALUES (limiter IN TP, chain OUT TP), not only their difference", r.logs.joinIntoString (" | ").fromLastOccurrenceOf ("true peak:", true, false).substring (0, 120));
+        // 10 Oct: this looked for "Level OUT TP", which the product stopped printing when the Level slot went -
+        // it says "limiter IN TP". The CLAIM is that the log carries the VALUES and not only their difference,
+        // so it now names the pair the estimate is actually taken across, plus chain OUT, which is still
+        // printed beside them and is still worth having.
+        const auto lg = r.logs.joinIntoString ("\n");
+        check (lg.contains ("true peak: limiter IN TP ") && lg.contains (" dBTP, limiter OUT TP ") && lg.contains (" dBTP, chain OUT TP "),
+               "K5. the EJLoudness log carries the true-peak VALUES (limiter IN TP, limiter OUT TP, chain OUT TP), not only their difference",
+               lg.fromLastOccurrenceOf ("true peak:", true, false).substring (0, 150));
     }
 #else
     for (const char* leg : { "K1. a bit louder: the stage +1 now, target -8, ONE bubble \"Applied +1.0 dB (now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window", "K1. ...and NO automatic check follows a verb (16 s of audio: nothing measured, nothing logged)", "K1. ...which REPORTS on target with the result pills (no Push it, no proposal)", "K1. push it: moved the Level by the shortfall, the after-verb bubble, no window",
-                             "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (chain in + gain - chain out), and the clipper is working", "K5. ...and the PEAK GR estimate (limiter IN true peak - chain OUT true peak) is within 1 dB of the independent pre/post true-peak difference", "K5. the bubble reads \"limiter working ~X dB (estimated), up to ~Y dB on the hits\"" })
+                             "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (the limiter slot's own IN minus OUT), and the clipper is working", "K5. ...and the PEAK GR estimate (limiter IN true peak - limiter OUT true peak) is within 1 dB of the independent pre/post true-peak difference", "K5. the bubble reads \"limiter working ~X dB (estimated), up to ~Y dB on the hits\"" })
         check (false, leg, "no 18h on this build");
 #endif
     {   // J6: the ceiling safety net - a third-party limiter with NO ceiling readback is replaced by EchoJay Limiter, said in one line
@@ -759,8 +797,12 @@ static int guardMain()
                "K1. the proposal is CAPPED by limiter GR on the hits (Commercial <= 10 dB after the 7 Oct ruling): \"<level> is as loud as this goes with the limiter working <=10 dB. Push to -4.0 anyway?\"", prop);
         check (r.loop.lastPills().joinIntoString ("|") == "Push it anyway|Leave it", "K2. the capped proposal carries [Push it anyway] [Leave it]", r.loop.lastPills().joinIntoString ("|"));
         check (logAll.contains ("GR cap: typical hit true peak") && logAll.contains ("> cap 10.0 (commercial) -> trim +"), "K1. the cap arithmetic is logged (typical hit true peak + trim - ceiling > cap -> trim; 21m: the top-20 % block measure)", logAll.fromLastOccurrenceOf ("GR cap", false, false).substring (0, 160));
-        check (logAll.contains ("true peak: Level OUT TP ") && logAll.contains ("(third-party limiter: the hits figure is the report)"),
-               "K4 (ruling 4): with a third-party limiter the measured line is followed by the true-peak line (limiter IN TP, chain OUT TP, hits) and the hits figure is the report", logAll.fromLastOccurrenceOf ("true peak:", true, false).substring (0, 140));
+        // 10 Oct: "Level OUT TP" is wording the product stopped printing when the Level slot went. The claim -
+        // the measured line is FOLLOWED by a true-peak line, and the hits figure is what is reported for a
+        // third-party limiter - is asserted on the line the product actually writes.
+        check (logAll.contains ("true peak: limiter IN TP ") && logAll.contains (" dBTP, limiter OUT TP ")
+               && logAll.contains ("(third-party limiter: the hits figure is the report)"),
+               "K4 (ruling 4): with a third-party limiter the measured line is followed by the true-peak line (limiter IN TP, limiter OUT TP, chain OUT TP, hits) and the hits figure is the report", logAll.fromLastOccurrenceOf ("true peak:", true, false).substring (0, 140));
         const float cappedGain = numberAfter (prop, "integrated. ") - r.loop.lastMeasured();   // the capped level minus the measured = the capped trim
         check (cappedGain > 0.3f && cappedGain < 10.5f, "K1. the capped trim is positive and under the cap (the limiter would work <= 10 dB)", f1 (cappedGain));
         check (r.loop.pushIt() && r.levelGain() > cappedGain + 0.5f, "K2. Push it anyway applies the UNCAPPED step (the pass clamp, +6)", f1 (r.levelGain()));

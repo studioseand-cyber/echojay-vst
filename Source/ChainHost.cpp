@@ -3189,6 +3189,26 @@ juce::String ChainHost::slotIdentityHex(int i) const
     return juce::String::toHexString(descUid(slots_[(size_t)i].desc));
 }
 
+void ChainHost::resetSlotLevels(int i)
+{
+    if (i < 0 || i >= (int)slots_.size()) return;
+    auto& s = slots_[(size_t)i];
+    // The slot owns its IN tally (21t-k item 3: the blend node can outlive the shared tally it was built with),
+    // so reset the slot's shared one AND the blend's own pair, exactly as getSlotLevels reads them.
+    if (s.inTallyShared) { s.inTallyShared->reset(); s.inTallyShared->resetShortTermMax(); }
+    if (s.blendNode)
+        if (auto* b = dynamic_cast<SlotWetBlend*>(s.blendNode->getProcessor()))
+        {
+            // BOTH LEGS TOGETHER, and the short-term stats with them - 21t-j's own rule, written for this pair:
+            // SHORTMAX and the 30-hop true-peak ring are since-reset figures, so a reduction taken across the
+            // two legs only describes ONE setting if both start counting at the same instant. The loop's
+            // hitsMeasure() reads that ring, so a window that reset only the levels would rank hops from before
+            // the window against hops inside it.
+            b->resetTallies();
+            b->resetShortTermStats();
+        }
+}
+
 ChainHost::SlotLevels ChainHost::getSlotLevels(int i) const
 {
     SlotLevels out;

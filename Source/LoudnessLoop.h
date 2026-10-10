@@ -773,6 +773,32 @@ public:
         }
         return {};
     }
+    /** THE SAME TAP'S OTHER LEG: the signal LEAVING the final limiter.
+        10 Oct 2026 - WHY THIS EXISTS, AND IT IS A UNIT BUG. The GR estimate was stageTap() minus
+        host_.getChainOutLevels(), and those two are not in the same units: ChainHost's chain tallies are
+        Weighting::K (so their levelDb IS LUFS) while a SLOT's own tally is Weighting::Plain (dBFS RMS). For a
+        THIRD-PARTY limiter - the only case the estimate is ever REPORTED for - the minuend came from the Plain
+        slot tally and the subtrahend from the K-weighted chain tally, so the figure in the user's bubble was a
+        dBFS reading subtracted from a LUFS one. Measured on leg K5: the tap's short term read 0.46 where the
+        gained input was 3.00 + 3.57 = 6.57, and the estimate came out -3.30 dB against a +2.80 truth - a
+        limiter reported as making the signal LOUDER. The true peaks agreed all along, because true peak is
+        unweighted on both, which is why only the loudness half ever looked wrong.
+        The reduction is now taken ACROSS THE LIMITER'S OWN TWO LEGS, which are always the same tally type as
+        each other: inputLevels()/outputLevels() on an EchoJay Limiter (both K), the slot's IN/OUT tally on any
+        other brand (both Plain). A difference between two readings of ONE tally type is a reduction in dB
+        whatever the weighting is, which is the whole point. It is also the better measurement: chain OUT is
+        everything after the limiter as well, and attributing that to the limiter was only ever safe because the
+        stage contract happens to put the limiter last. */
+    echojay::LevelTally::Snapshot stageTapOut() const
+    {
+        if (auto* lim = echoJayLimiter()) return lim->outputLevels();
+        if (limiterSlot_ >= 0 && limiterSlot_ < host_.getNumSlots())
+        {
+            const auto sl = host_.getSlotLevels (limiterSlot_);
+            if (sl.measured) return sl.out;
+        }
+        return {};
+    }
     juce::String stageName() const { return stage_.name; }
     /** The chain's output AS HEARD, which is the measured tally plus the stage's gain when the stage sits
         outside that tally (see Stage::outsideTap). Every target/match comparison goes through here. */
@@ -806,7 +832,10 @@ public:
         // subtract from; stageTap() is that tap again (the limiter's gained input, or the slot's IN tally for
         // another brand), so the estimate is a measurement once more rather than an absence. Leg K5 compares it
         // with an independent pre/post true-peak difference and read "nan vs -6.16" while it was stubbed.
-        const float a = stageTap().truePeakDb, b = host_.getChainOutLevels().truePeakDb;
+        // ACROSS THE LIMITER'S OWN TWO LEGS - see stageTapOut() for the unit bug this closes. True peak was
+        // already right against chain OUT (both unweighted); taking it from the same pair as the loudness
+        // figure means the bubble's two numbers describe one span measured one way.
+        const float a = stageTap().truePeakDb, b = stageTapOut().truePeakDb;
         return (a > -150.0f && b > -150.0f) ? a - b : std::numeric_limits<float>::quiet_NaN();
     }
     // 21m item 3: the hits, block by block. typical = mean reduction (Level OUT TP - chain OUT TP) over the top 20 % of the last
@@ -816,7 +845,11 @@ public:
     HitsMeasure hitsMeasure() const
     {
         HitsMeasure m; if (! stageReady()) return m;
-        const auto a = stageTap(), b = host_.getChainOutLevels();
+        // The limiter's own two legs, for the reason in stageTapOut(): the per-hop reduction has to be a
+        // difference between two readings of ONE tally type, or it is a unit conversion pretending to be a
+        // measurement. (This is also why leg O1's premise broke: the estimate read 11.7 dB of typical hits
+        // where this same measure, taken properly, reads 2.9.)
+        const auto a = stageTap(), b = stageTapOut();
         const int n = juce::jmin (a.hopTruePeakCount, b.hopTruePeakCount); if (n <= 0) return m;
         std::vector<int> order; for (int k = 0; k < n; ++k) order.push_back (k);
         const int offA = a.hopTruePeakCount - n, offB = b.hopTruePeakCount - n;   // newest-aligned
@@ -880,8 +913,17 @@ public:
             { const float gr = -lim->gainReductionDb(); grMin_ = juce::jmin (grMin_, gr); grMax_ = juce::jmax (grMax_, gr); grSum_ += gr; ++grN_; }
             {   // 18g (item 4), levelling v2: the ESTIMATE, limiter IN minus chain OUT (short-term LUFS) over the window. On every
                 // limiter (a guard compares it with the EchoJay Limiter's real GR); it is REPORTED only for a third-party one.
-                const float lvOut = stageTap().shortTermDb, chOut = out.shortTermDb;
-                if (std::isfinite (lvOut) && std::isfinite (chOut)) { const float e = lvOut - chOut; estSum_ += e; ++estN_; estMax_ = juce::jmax (estMax_, e); }
+                // ONE snapshot, and only once BOTH taps have actually heard this window. LevelTally::reset() is
+                // deferred to the audio thread, so for the first ticks after startWindow() the stage tap can
+                // still answer with the old window's short-term figure (or a near-silent one mid-clear) while
+                // the chain output is already filling. Averaging those ticks in is what made leg K5's estimate
+                // read -3.30 dB against a +2.80 truth: not a wrong formula, a mean taken over a span the two
+                // sides did not share. 1 s is the same floor the rest of this file uses for a believable tally.
+                const auto tapIn = stageTap(), tapOut = stageTapOut();
+                const float lvIn = tapIn.shortTermDb, lvOut = tapOut.shortTermDb;
+                if (std::isfinite (lvIn) && std::isfinite (lvOut)
+                    && tapIn.heardSeconds >= 1.0f && tapOut.heardSeconds >= 1.0f)
+                { const float e = lvIn - lvOut; estSum_ += e; ++estN_; estMax_ = juce::jmax (estMax_, e); }
             }
             if (state_ == State::waitAudio)
             {
@@ -1064,7 +1106,7 @@ public:
         const juce::String grText = grText_();
         // 22 Sep 2026 (ruling 4): the true-peak values THEMSELVES, not only their difference
         { const auto hm2 = hitsMeasure(); log ("hits: typical " + fmt (hm2.typicalDb) + " dB over the top 20 % of " + juce::String (hm2.blocks) + " blocks, worst " + fmt (hm2.worstDb) + " dB"); }   // 21m item 3: both figures, for the re-calibration
-        log ("true peak: limiter IN TP " + fmt (stageTap().truePeakDb) + " dBTP, chain OUT TP " + fmt (host_.getChainOutLevels().truePeakDb) + " dBTP, hits " + fmt (juce::jmax (0.0f, grPeakEstimateDb())) + " dB" + (grIsEstimated() ? " (third-party limiter: the hits figure is the report)" : " (EchoJay Limiter: its own GR reading " + fmt (grMax()) + " dB is the report)"));
+        log ("true peak: limiter IN TP " + fmt (stageTap().truePeakDb) + " dBTP, limiter OUT TP " + fmt (stageTapOut().truePeakDb) + " dBTP, chain OUT TP " + fmt (host_.getChainOutLevels().truePeakDb) + " dBTP, hits " + fmt (juce::jmax (0.0f, grPeakEstimateDb())) + " dB" + (grIsEstimated() ? " (third-party limiter: the hits figure is the report)" : " (EchoJay Limiter: its own GR reading " + fmt (grMax()) + " dB is the report)"));
         if (capped)
         {
             state_ = State::proposed; pendingTrim_ = trim; pendingKind_ = PendingKind::propose; ++proposals_;
@@ -1387,8 +1429,20 @@ private:
         openingOwed_ = false;
         host_.resetChainOutShortTermMax(); host_.resetChainInShortTermMax();
         if (auto* lim = echoJayLimiter()) lim->resetOutputPeak();
-        // Levelling v2: no Level slot, so no Level meters to reset. The chain IN/OUT tallies reset above ARE the
-        // window, and for a target build the limiter's own peak hold is reset on the line above this one.
+        // ---- AND THE STAGE TAP, which is the GR estimate's MINUEND (10 Oct 2026) -----------------------
+        // The note that stood here said "no Level slot, so no Level meters to reset" and stopped there. It
+        // accounted for the meters that went away and not for the one that ARRIVED: with the Level slot gone,
+        // stageTap() is the limiter's gained input - its own in-meter on an EchoJay Limiter, the slot's IN tally
+        // on any other brand - and NOTHING reset it. So the chain output was a fresh window while the minuend
+        // carried loudness and true peak from everything played before it, and the subtraction compared two
+        // different spans. The same fault 08c F2 fixed on the opening, one tap further along: a figure that
+        // predates the span it is quoted over is not a measurement of that span.
+        // Measured, not argued: leg K5's loudness estimate read -3.30 dB where the truth was +2.80 - a limiter
+        // reported as making the signal LOUDER - and its peak estimate was a max-hold over all time.
+        // LevelTally::reset() is DEFERRED to the audio thread, so the accumulator below still waits for a
+        // settled reading rather than believing the first tick after this.
+        if (auto* lim = echoJayLimiter()) lim->resetMeters();
+        else if (limiterSlot_ >= 0 && limiterSlot_ < host_.getNumSlots()) host_.resetSlotLevels (limiterSlot_);
         lastCounted_ = 0.0f; waitingSaid_ = false; passStartMs_ = nowMs();
         firstAudioMs_ = 0; resolvedLate_ = false;   // the kResolveMs clocks (7 Oct ruling: Listen always resolves)
         log ("state -> listening: window open, needs " + juce::String ((int) kNeedSeconds) + " s above "

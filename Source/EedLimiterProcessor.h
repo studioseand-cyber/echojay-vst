@@ -83,6 +83,21 @@ public:
     echojay::limv2::MeterTap& meterTap() noexcept { return meterTap_; }
     float  outputPeakDbMax() const noexcept { const float p = outPeakMax_.load (std::memory_order_relaxed); return p > 0.0f ? 20.0f * std::log10 (p) : -120.0f; }
     void   resetOutputPeak() noexcept { outPeakMax_.store (0.0f, std::memory_order_relaxed); }
+    /** LEVELLING V2 (10 Oct 2026): the loop's window needs this tap restarted WITH the chain-out tally. The
+        loop's GR estimate is inputLevels() minus the chain output, and the loop reset only the chain output -
+        so the minuend carried loudness and true peak from before the window and the two figures described
+        different spans. An integrated figure that predates the span it is quoted over is not a measurement of
+        that span, which is the same fault 08c F2 fixed on the opening. LevelTally::reset() is DEFERRED to the
+        audio thread, so a reader must still wait for heardSeconds before believing what comes back. */
+    void   resetInputMeter() noexcept { inMeter_.reset(); inMeter_.resetShortTermMax(); }
+    /** BOTH LEGS TOGETHER (21t-j's rule). The loop takes the limiter's reduction across inputLevels() and
+        outputLevels(), and the 30-hop true-peak ring behind hitsMeasure() is a since-reset figure, so the two
+        legs have to start counting at the same instant or the ranking mixes hops from two different windows. */
+    void   resetMeters() noexcept
+    {
+        inMeter_.reset();  inMeter_.resetShortTermMax();
+        outMeter_.reset(); outMeter_.resetShortTermMax();
+    }
 
     static constexpr const char* kCeilingDb   = "ceiling_db";
     static constexpr const char* kReleaseMs   = "release_ms";
