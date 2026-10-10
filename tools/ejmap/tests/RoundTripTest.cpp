@@ -8838,7 +8838,7 @@ void testRunAll()
         auto mk = [] (ChildResult::Kind k, int code, int sig, const char* out) { ChildResult r; r.kind = k; r.code = code; r.signal = sig; r.out = out; return r; };
         const auto crashed = mk (ChildResult::Kind::signaled, 0, 6, "probe: \"EchoBoy\"\nstage\tconfigure\nstage\tprepare\n");
         const auto good = mk (ChildResult::Kind::exited, 0, 0, "probe: \"EchoBoy\"\ntwin\tt_ms\t0.5\nstage\tdone\n");
-        auto seq = [] (std::vector<ChildResult> rs, int& calls) { return [rs, &calls] () mutable { return rs[(size_t) juce::jmin (calls++, (int) rs.size() - 1)]; }; };
+        auto seq = [] (std::vector<ChildResult> rs, int& calls) { return [rs, &calls] (const juce::StringArray&) mutable { return rs[(size_t) juce::jmin (calls++, (int) rs.size() - 1)]; }; };
         int c1 = 0, c2 = 0, c3 = 0, c4 = 0, c5 = 0, c6 = 0, c7 = 0, c8 = 0;
         ejmap::cert::runProbeCall ({}, 0, seq ({ mk (ChildResult::Kind::exited, 3, 0, "probe: \"X\"\nstage\tprepare\n"), good }, c8));   // a refusal (exit 3) that printed no refused line
         ejmap::cert::runProbeCall ({}, 0, seq ({ mk (ChildResult::Kind::exited, 1, 0, "probe: \"X\"\nhold\t0\nstage\tdone\n"), good }, c6));   // died AFTER its end marker
@@ -8851,6 +8851,28 @@ void testRunAll()
         check (c1 == 2 && recovered.cleanExit() && ejmap::phaseb::traceEnded (recovered.out) && recovered.out.contains ("crash_retry\tfirst\tkilled by signal 6")
                && c2 == 2 && ! ejmap::phaseb::traceEnded (twice.out) && c3 == 1 && c4 == 1 && c5 == 1 && c6 == 1 && c7 == 1 && c8 == 1,
                "phaseb PB-RETRY: a probe dying mid-trace runs once more (recovered: the second trace, the first noted); twice dead stays crashed; a refusal, a window, a timeout, a clean run, a death after the end marker: one call");
+    }
+    // PB-CRASHPOS (Kathy, 10 Oct; G8): dead twice with a control at an END -> once more one step inside; completed -> the inside measurement
+    // with a crash_position line (lifted onto the row / records / drafts); a call writing nothing at an end, or still dying inside, stays crashed
+    {
+        using ejmap::cert::ChildResult;
+        ChildResult dead; dead.kind = ChildResult::Kind::signaled; dead.signal = 6; dead.out = "probe: \"G8\"\nramp\tproto\t1\nrwin\tt_ms\t1402.5\n";
+        ChildResult good; good.kind = ChildResult::Kind::exited; good.out = "probe: \"G8\"\nrwin\tt_ms\t1402.5\nstage\tdone\n";
+        const juce::StringArray g8 { "/p", "G8", "f", "737a5876", "--ramp", "from=-70", "set=13:0.500000,0:0.000000" };
+        juce::StringArray seen;
+        auto runner = [&] (const juce::StringArray& a) { seen.add (a.joinIntoString (" ")); return a.contains ("set=13:0.500000,0:0.010000") ? good : dead; };
+        const auto r = ejmap::cert::runProbeCall (g8, 0, runner);
+        const auto cp = ejmap::cert::crashPositionsOf ({ r.out });
+        int calls2 = 0; auto alwaysDead = [&] (const juce::StringArray&) { ++calls2; return dead; };
+        const auto r2 = ejmap::cert::runProbeCall (g8, 0, alwaysDead);
+        int calls3 = 0; auto deadMid = [&] (const juce::StringArray&) { ++calls3; return dead; };
+        ejmap::cert::runProbeCall ({ "/p", "X", "--ramp", "set=13:0.500000" }, 0, deadMid);
+        const auto ends = ejmap::cert::endWrites ({ "--sweep", "thr=7", "norms=1.000000", "set=3:0.25" });
+        check (r.cleanExit() && seen.size() == 3 && r.out.contains ("crash_position\t0\t0.000000\tmeasured_at\t0.010000") && cp.size() == 1 && (int) cp[0].getProperty ("index", -1) == 0
+               && std::abs ((double) cp[0].getProperty ("measured_at", 0.0) - 0.01) < 1e-9 && cp[0].getProperty ("rule", "").toString().contains ("never write")
+               && calls2 == 4 && ! ejmap::phaseb::traceEnded (r2.out) && calls3 == 2
+               && ends.size() == 1 && ends[0].index == 7 && ejmap::cert::nudgedArgs ({ "thr=7", "norms=1.000000" }, 0.01)[1] == "norms=0.990000",
+               "phaseb PB-CRASHPOS: G8's 0 ms attack - dead twice, measured at 0.01 with crash_position [0] 0.0; always dead: 0.01 and 0.05 tried, stays crashed; nothing at an end: no nudge; a sweep's single norm at 1 -> 0.99");
     }
     // PB-DRY (10 Oct): --phaseb-all refuses --dry-run (anywhere in the line, the last argument too) instead of ignoring it and loading
     check (ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--category", "delay", "--out", "/c", "--dry-run" }).contains ("no --dry-run")

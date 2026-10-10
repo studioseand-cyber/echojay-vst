@@ -368,15 +368,79 @@ inline bool crashedMidTrace (const ChildResult& r)
     const bool died = r.kind == ChildResult::Kind::signaled || (r.kind == ChildResult::Kind::exited && r.code != 0 && r.code != 3);
     return died && ! phaseb::traceEnded (r.out);
 }
-inline ChildResult runProbeCall (const juce::StringArray& args, int timeoutMs, const std::function<ChildResult()>& runner = {})
+// THE CRASH POSITION (Kathy, 10 Oct; G8 dies at its attack's "0 ms" end with the gate opening): a probe that dies TWICE on a call that
+// writes a control at an END (norm 0 or 1, in set= or a sweep's single norms=) is run once more with those writes ONE STEP INSIDE
+// (0.01, then 0.05). If that completes, the measurement is the inside one and the trace carries `crash_position <idx> <norm>
+// measured_at <norm'>`: Phase B lifts it onto the row, every record and every draft (crash_positions) - a value the server must never
+// write. Nothing at an end, or still dying inside: the call stays crashed.
+struct EndWrite { int index = -1; double norm = 0.0; };
+inline bool atEnd (double n) { return n <= 1.0e-6 || n >= 1.0 - 1.0e-6; }
+inline std::vector<EndWrite> endWrites (const juce::StringArray& args)
 {
-    auto once = [&] { return runner ? runner() : runChild (args, timeoutMs); };
-    auto r = once();
+    std::vector<EndWrite> e; int thr = -1; juce::StringArray norms;
+    for (const auto& a : args)
+    {
+        if (a.startsWith ("set=")) for (const auto& w : juce::StringArray::fromTokens (a.fromFirstOccurrenceOf ("=", false, false), ",", ""))
+        { const double n = w.fromFirstOccurrenceOf (":", false, false).getDoubleValue(); if (w.contains (":") && atEnd (n)) e.push_back ({ w.upToFirstOccurrenceOf (":", false, false).getIntValue(), n }); }
+        if (a.startsWith ("thr=")) thr = a.fromFirstOccurrenceOf ("=", false, false).getIntValue();
+        if (a.startsWith ("norms=")) norms = juce::StringArray::fromTokens (a.fromFirstOccurrenceOf ("=", false, false), ",", "");
+    }
+    if (thr >= 0 && norms.size() == 1 && atEnd (norms[0].getDoubleValue())) e.push_back ({ thr, norms[0].getDoubleValue() });
+    return e;
+}
+inline double insideOf (double n, double step) { return n <= 0.5 ? n + step : n - step; }
+inline juce::StringArray nudgedArgs (const juce::StringArray& args, double step)
+{
+    juce::StringArray out;
+    for (const auto& a : args)
+    {
+        if (a.startsWith ("set="))
+        {
+            juce::StringArray ws; for (const auto& w : juce::StringArray::fromTokens (a.fromFirstOccurrenceOf ("=", false, false), ",", ""))
+            { const double n = w.fromFirstOccurrenceOf (":", false, false).getDoubleValue(); ws.add (w.contains (":") && atEnd (n) ? w.upToFirstOccurrenceOf (":", false, false) + ":" + juce::String (insideOf (n, step), 6) : w); }
+            out.add ("set=" + ws.joinIntoString (",")); continue;
+        }
+        if (a.startsWith ("norms=") && ! a.contains (",") && atEnd (a.fromFirstOccurrenceOf ("=", false, false).getDoubleValue()))
+        { out.add ("norms=" + juce::String (insideOf (a.fromFirstOccurrenceOf ("=", false, false).getDoubleValue(), step), 6)); continue; }
+        out.add (a);
+    }
+    return out;
+}
+inline ChildResult runProbeCall (const juce::StringArray& args, int timeoutMs, const std::function<ChildResult (const juce::StringArray&)>& runner = {})
+{
+    auto run = [&] (const juce::StringArray& a) { return runner ? runner (a) : runChild (a, timeoutMs); };
+    auto r = run (args);
     if (! crashedMidTrace (r)) return r;
     const auto first = r.describe();
-    auto r2 = once();
+    auto r2 = run (args);
+    if (! crashedMidTrace (r2)) { r2.out << "\ncrash_retry\tfirst\t" << first << "\n"; return r2; }
+    const auto ends = endWrites (args);
+    if (! ends.empty())
+        for (double step : { 0.01, 0.05 })
+        {
+            auto r3 = run (nudgedArgs (args, step));
+            if (crashedMidTrace (r3)) continue;
+            r3.out << "\ncrash_retry\tfirst\t" << first << "\tsecond\t" << r2.describe() << "\n";
+            for (const auto& e : ends) r3.out << "crash_position\t" << e.index << "\t" << juce::String (e.norm, 6) << "\tmeasured_at\t" << juce::String (insideOf (e.norm, step), 6) << "\n";
+            return r3;
+        }
     r2.out << "\ncrash_retry\tfirst\t" << first << "\n";
     return r2;
+}
+// the crash positions a run's traces carry (deduplicated by control and value)
+inline juce::Array<juce::var> crashPositionsOf (const juce::StringArray& traces)
+{
+    juce::Array<juce::var> out; std::set<juce::String> seen;
+    for (const auto& t : traces)
+        for (const auto& line : juce::StringArray::fromLines (t))
+        {
+            const auto f = juce::StringArray::fromTokens (line, "\t", "");
+            if (f.size() < 5 || f[0] != "crash_position") continue;
+            const auto key = f[1] + "|" + f[2]; if (! seen.insert (key).second) continue;
+            auto* o = new juce::DynamicObject(); o->setProperty ("index", f[1].getIntValue()); o->setProperty ("norm", f[2].getDoubleValue()); o->setProperty ("measured_at", f[4].getDoubleValue());
+            o->setProperty ("rule", "the plugin crashed twice with this control at this value during measurement: the server must never write it"); out.add (juce::var (o));
+        }
+    return out;
 }
 
 struct ProbeIdentity { bool ok = false; juce::String why, team, cdhash; };
@@ -6226,6 +6290,7 @@ inline int runPhaseBDrafts (const SweepOptions& opt, const juce::StringArray& on
             const auto D = category == "strips" ? stripDraftFrom (rec, f.getParentDirectory(), stem, drafts::pluginBlock (product, manufacturerOf.count (product) ? manufacturerOf[product] : rec.getProperty ("manufacturer", "").toString(), drafts::uidOfIdentity (rec.getProperty ("identity", "").toString()), drafts::versionOfIdentity (rec.getProperty ("identity", "").toString()), juce::var()))
                                                  : draftFromRecord (category, rec, manufacturerOf.count (product) ? manufacturerOf[product] : juce::String(), why, opt.out);
             if (D.isVoid()) { ++r; ++refusedN; reasons.add (f.getFileName() + ": " + why); continue; }
+            if (rec.hasProperty ("crash_positions")) if (auto* dO = D.getDynamicObject()) dO->setProperty ("crash_positions", rec.getProperty ("crash_positions", {}));   // 10 Oct: never written by the server
             const auto out = drafts::draftFile (phasebDir.getChildFile (category), stem, sp.kind);
             const auto problem = drafts::writeDraft (out, D);
             if (problem.isNotEmpty()) { ++r; ++refusedN; reasons.add (f.getFileName() + ": " + problem); continue; }
@@ -6476,6 +6541,15 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 row->setProperty ("child", r.describe()); row->setProperty ("exit_code", r.code); row->setProperty ("slept_ms", r.sleptMs);
                 if (r.kind == ChildResult::Kind::exited && r.code == 4) row->setProperty ("nothing_measured", true);   // exit 4 = nothing to measure (nothing nominated, or nothing moved): --redo nothing_nominated finds it even with a record
                 if (slept) row->setProperty ("reason", "the Mac slept during the measurement (" + juce::String (r.sleptMs / 1000.0, 1) + " s): recorded, the data is not trusted; delete this row to re-run");
+                // CRASH POSITIONS (10 Oct): measured one step inside; carried by the row and every record / draft moved below
+                juce::Array<juce::var> crashPos;
+                { juce::StringArray tr; for (const auto& f : tmp.getChildFile ("raw").findChildFiles (juce::File::findFiles, false)) tr.add (f.loadFileAsString()); crashPos = crashPositionsOf (tr); }
+                if (! crashPos.isEmpty())
+                {
+                    row->setProperty ("crash_positions", crashPos);
+                    juce::StringArray cp; for (const auto& c : crashPos) cp.add ("[" + c.getProperty ("index", 0).toString() + "] at " + c.getProperty ("norm", 0).toString() + " (measured at " + c.getProperty ("measured_at", 0).toString() + ")");
+                    row->setProperty ("note", "the plugin crashed twice at " + cp.joinIntoString (", ") + ": measured one step inside; the server never writes the crashing value");
+                }
                 // the mode's record(s) and raw traces, moved into place (the raw gzipped); the row is written LAST
                 juce::StringArray records; int rawN = 0;
                 for (const auto& d : tmp.findChildFiles (juce::File::findDirectories, false))
@@ -6485,7 +6559,8 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                     const auto dstName = cat.name == "tuners" && d.getFileName() == "fixtures" ? juce::String ("tuner") : d.getFileName();
                     const auto dst = catDir.getChildFile (dstName); dst.createDirectory();
                     for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.json")) { const auto target = dst.getChildFile (f.getFileName()); target.deleteFile(); f.moveFileTo (target); records.addIfNotAlreadyThere (dstName + "/" + f.getFileName());
-                        if (gate.demo) { auto rec = juce::JSON::parse (target.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { ro->setProperty ("licence", gate.stamp); target.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } } }
+                        if (gate.demo) { auto rec = juce::JSON::parse (target.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { ro->setProperty ("licence", gate.stamp); target.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } }
+                        if (! crashPos.isEmpty()) { auto rec = juce::JSON::parse (target.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { ro->setProperty ("crash_positions", crashPos); target.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } } }
                 }
                 { const auto lg = catDir.getChildFile ("logs"); lg.createDirectory(); const auto target = lg.getChildFile (pp.stem + ".log.txt"); target.deleteFile(); tmp.getChildFile ("log.txt").moveFileTo (target); }
                 // THE DRAFT FOR THIS ROW (7 Oct item 5): gaincal / gainall / timing / tuners / multiband derive theirs here from the moved record
@@ -6498,6 +6573,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                         auto stem = f.getFileNameWithoutExtension(); for (const char* suf : { ".gaincal", ".timing", ".multiband", ".tuner" }) if (stem.endsWith (suf)) stem = stem.dropLastCharacters (juce::String (suf).length());
                         const auto D = draftFromRecord (cat.name, rec, pp.desc.manufacturerName, why);
                         if (D.isVoid()) continue;
+                        if (rec.hasProperty ("crash_positions")) if (auto* dO = D.getDynamicObject()) dO->setProperty ("crash_positions", rec.getProperty ("crash_positions", {}));
                         const auto out = drafts::draftFile (catDir, stem, draftpass::specFor (cat.name)->kind);
                         if (drafts::writeDraft (out, D).isEmpty()) records.addIfNotAlreadyThere (juce::String (drafts::kFolder) + "/" + out.getFileName());   // 9 Oct: the mode's own draft is the same file
                     }

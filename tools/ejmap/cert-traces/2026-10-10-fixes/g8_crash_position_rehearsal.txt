@@ -1,0 +1,7 @@
+G8 rehearsal (crashpos): 
+[gate 1/1 | all 1/1] Unfiltered Audio G8: ok 92.6143 s | elapsed 0:01:34 | ETA 0:00:00
+set	0	0.050000	confirm_ms	3.0	getValue	0.050000	landed_by	instack	render_blocks	0	text	1.25 ms
+crash_retry	first	killed by signal 6	second	killed by signal 6
+crash_position	0	0.000000	measured_at	0.050000
+row ok the plugin crashed twice at [0] at 0.0 (measured at 0.05): measured one step inside; the server never writes the crashing value
+crash_positions [{'index': 0, 'norm': 0.0, 'measured_at': 0.05, 'rule': 'the plugin crashed twice with this control at this value during measurement: the server must never write it'}]

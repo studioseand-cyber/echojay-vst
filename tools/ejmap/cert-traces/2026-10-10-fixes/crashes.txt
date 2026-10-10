@@ -20,3 +20,8 @@ no end marker is run ONCE more at every Phase B probe call and the tone check's 
 Rehearsed (retryreh): G8 dies twice -> still probe_crashed, crash report "EXC_CRASH SIGABRT in com.UnfilteredAudio.G8"; Lindell 902 +
 SPL De-Esser alongside: 0 figure differences (the two strings are the rebuilt probe's cdhash in the drafts' `measured.tool`).
 EchoBoy / EchoBoy Jr / Auto-Tune Pro cannot load here (PACE / iLok): their recovery is proven by the pin only (a crash then a clean run).
+
+CORRECTION + CRASH POSITIONS (10 Oct late): G8's control 0 is HOLD, not attack (DYN: "attack [41] Attack; hold [0] Hold") - G8 dies with
+Hold at its "0 ms" end and the gate opening. With the crash-position rule the q0.n0 ramp died twice at Hold 0.0, died again at 0.01,
+and completed at 0.05 ("1.25 ms"); the row is ok with note "the plugin crashed twice at [0] at 0.0 (measured at 0.05)", and the row, the
+dynamics record and the gate draft carry crash_positions [{index 0, norm 0.0, measured_at 0.05, rule: the server must never write it}].
