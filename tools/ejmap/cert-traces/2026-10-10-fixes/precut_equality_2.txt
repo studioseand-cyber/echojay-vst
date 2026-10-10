@@ -1,0 +1,32 @@
+PRE-CUT equality #2, 10 Oct late: build tree (sources = 5fbd875c: + --jobs, probe_crashed, strips serial, tail-trace silence) vs packaged 00f2ae79.
+
+Compressor derive-only, the four sets:
+== current
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 82 old / 82 new, only-old [], only-new [], differ 0
+  controls: 45 old / 45 new, only-old [], only-new [], differ 0
+== seanzip
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 45 old / 45 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+== cert_sc
+  rows 90 90 state/reason diffs 0 []
+  fixtures: 19 old / 19 new, only-old [], only-new [], differ 0
+  profiles: 7 old / 7 new, only-old [], only-new [], differ 0
+  controls: 2 old / 2 new, only-old [], only-new [], differ 0
+== cert_tc35
+  rows 87 87 state/reason diffs 0 []
+  fixtures: 14 old / 14 new, only-old [], only-new [], differ 0
+  profiles: 4 old / 4 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+
+--phaseb-drafts over a copy of Sean's cert 2 + 3 (classify_drafts.py):
+drafts old 1106 new 1106 only-old 0 only-new 0
+   1067  status v0.2 (50a39e1b)
+     39  status v0.2 (50a39e1b) + limiter: compressor_profile null + the one-profile note (5185311f / 7ee67720)
+UNEXPLAINED: 0
+files outside drafts/ differing: 0
+
+Live-run-only changes (derive-only cannot see them): --jobs (rows in parallel; --jobs 1 = the serial run), probe_crashed, silent_output (incl. tail traces), empty_param_list, UnFairchild, UAD left-unrun / re-file, limiter_comp, delay card steps, --phaseb-all --dry-run refusal, run-all notes.
