@@ -1,0 +1,93 @@
+MERGE: cert 2 + cert 3 + cert3_as_since.zip (5908 file(s)) -> <scratch>/morning-dry/cert
+
+================ THE MORNING REPORT ================
+RUN-ALL STEPS (state, build that finished it):
+   deesser          done     build (none: before the build stamp) runs 1  finished 20261008T215822
+   eq               started  build (none: before the build stamp) runs 1  finished 
+   followup         done     build (none: before the build stamp) runs 2  finished 20261010T025256
+   gain_all         done     build (none: before the build stamp) runs 1  finished 20261009T083255
+   gain_timing      done     build (none: before the build stamp) runs 1  finished 20261010T045112
+   licence_check    done     build (none: before the build stamp) runs 1  finished 20261009T144335
+   licence_stamp    done     build (none: before the build stamp) runs 1  finished 20261009T144336
+   limiter          done     build (none: before the build stamp) runs 1  finished 20261008T214954
+   multiband        done     build (none: before the build stamp) runs 1  finished 20261008T212403
+   no_pool          started  build (none: before the build stamp) runs 1  finished 20261010T070000
+   preflight        done     build (none: before the build stamp) runs 3  finished 20261010T012823
+   uad              done     build (none: before the build stamp) runs 1  finished 20261010T045135
+   uad_preflight    done     build (none: before the build stamp) runs 1  finished 20261009T144338
+
+FOLLOW-UP RE-CHECKS: 86 tone check(s) in the folder; by build: (no build stamp) 86
+   in this zip: 47 re-checked; passing g 2: 43, failing: 4
+   Tube-Tech CL 1B                g2 2.00 PASS  g4 4.03 PASS  g5 5.01 PASS  g6 6.00 PASS   build (none)  20261010T014308  NEW in zip
+   Unfiltered Audio Zip           g2 1.98 PASS  g4 3.99 PASS  g5 5.02 PASS  g6 6.02 PASS   build (none)  20261010T015333  NEW in zip
+   bx_opto                        g2 1.98 PASS  g4 3.99 PASS  g5 5.00 PASS  g6 5.97 PASS   build (none)  20261005T215135  not in zip
+   Mixland Vac Attack             g2 1.97 PASS  g4 3.96 PASS  g5 4.97 PASS  g6 5.99 PASS   build (none)  20261010T014610  NEW in zip
+   dbx-160 (s)                    g2 1.95 PASS  g4 3.99 PASS  g5 4.98 PASS  g6 6.02 PASS   build (none)  20261010T014929  NEW in zip
+   DPR-402 (s)                    g2 1.91 PASS  g4 3.97 PASS  g5 4.97 PASS  g6 5.94 PASS   build (none)  20261010T015048  NEW in zip
+   SPL IRON                       g2 1.99 PASS  g4 4.00 PASS  g5 5.05 PASS  g6 6.06 PASS   build (none)  20261010T015440  NEW in zip
+   Auto-Tune Vocal Compressor     g2 1.99 PASS  g4 4.02 PASS  g5 5.02 PASS  g6 6.01 PASS   build (none)  20261010T013026  NEW in zip
+
+ROWS IN THIS ZIP, by category and outcome:
+   deesser      ok 1
+   delay        needs_licence 5, ok 3
+   eq           needs_device 44, ok 5
+   gainall      needs_licence 81, ok 3, window 1
+   gaincal      ok 80, timed_out 1
+   limiter      needs_licence 3
+   reverb       needs_licence 8, ok 2, failed 1
+   saturation   needs_licence 39, ok 3
+   timing       ok 80, timed_out 1
+   transient    needs_licence 1
+   tuners       needs_licence 4
+
+FIXUPS: step not run (build -); multiband rows in zip 0, gain-all rows in zip 85
+EQ: 175 row(s) in the folder (ok 130, needs_device 44, skipped 1); step started; last progress: [eq 126/175 | all 1316/1365] TDR SlickEQ M: ok 86.3803 s | elapsed 21:02:35 | ETA 0:21:14
+
+NEW SILENT / CRASHED (what the next build would file, judged on the zip rows' traces):
+   probe_crashed  delay      EchoBoy  (1 trace(s): AudioUnit_77632921_5.4.1.reverbdelay.mix10.1.txt.gz)
+   probe_crashed  delay      EchoBoy Jr  (1 trace(s): AudioUnit_77624b21_5.4.1.reverbdelay.r2.n1.1.txt.gz)
+
+CUT: skipped (no --cut): the equality runs on the build-tree binary
+
+================ EQUALITY vs 00f2ae79 ================
+== compressor set current
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 82 old / 82 new, only-old [], only-new [], differ 0
+  controls: 45 old / 45 new, only-old [], only-new [], differ 0
+== compressor set seanzip
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 45 old / 45 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+== compressor set cert_sc
+  rows 90 90 state/reason diffs 0 []
+  fixtures: 19 old / 19 new, only-old [], only-new [], differ 0
+  profiles: 7 old / 7 new, only-old [], only-new [], differ 0
+  controls: 2 old / 2 new, only-old [], only-new [], differ 0
+== compressor set cert_tc35
+  rows 87 87 state/reason diffs 0 []
+  fixtures: 14 old / 14 new, only-old [], only-new [], differ 0
+  profiles: 4 old / 4 new, only-old [], only-new [], differ 0
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+== drafts over the merged folder (classified):
+  drafts old 1106 new 1106 only-old 0 only-new 0
+     1067  status v0.2 (50a39e1b)
+       39  status v0.2 (50a39e1b) + limiter: compressor_profile null + the one-profile note (5185311f / 7ee67720)
+  UNEXPLAINED: 0
+
+EQUALITY: every difference named (build tree); nothing unexplained
+
+================ RESUME: the next night on the merged folder (dry-run, nothing loaded) ================
+RUN-ALL: 86 tone check(s) made by another build than e3332875-dirty: the follow-up runs again (stale checks first)
+RUN-ALL: multiband / gain-all finished by a build before the 9-10 Oct fixes: the fixups step re-runs multiband and the gain-all rows that timed out or failed
+RUN-ALL: 7 step(s) to run, 20 done or skipped; ETA 11:08:30; stops at 07:00 11 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  followup                 --cert-tonecheck-all --out <cert>   (~0:40:00, the compressor follow-up)
+  fixups                   --phaseb-all --redo multiband,unfinished --category multiband --category gainall --out <cert> --jobs 2   (~1:10:00, multiband again (9 Oct fixe
+  reverb_delay             --phaseb-all --redo reverb,delay --out <cert> --jobs 2   (~3:11:40, reverb and delay (role tests twice: x1.5-1.65 rehearsed, 8 Oct))
+  transient_gate           --phaseb-all --redo transient,gate --out <cert> --jobs 2   (~0:31:40, transient shapers and gates (role tests twice: x1.3-1.65 rehearsed, 8 Oct
+  limiter_comp             --phaseb-all --redo limitercomp --out <cert> --jobs 2   (~5:35:00, limiters through the compressor certification (their drafts: compressor prof
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
+
+MORNING: done - <scratch>/morning-dry
