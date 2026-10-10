@@ -1,0 +1,26 @@
+Silent-output census, 10 Oct: the PB-SILENT rule (input present > -100 dBFS, output <= -300 dB on every sweep `hold` / response
+`rtotal` line, at least 3 lines) over every raw trace in Sean's ~/Downloads/cert 2 + cert 3 (Python port of phaseb::outputSilence,
+read-only). 947 rows judged; 18 all-silent (below), 136 partly silent (NOT filed - one live output is enough).
+
+folder  category   product                          filed as       nothing_measured  judged lines
+cert 2  deesser    smartDeess                       ok             True              108
+cert 2  eq         APB Royal Q                      ok             True              237
+cert 2  gainall    APB L-18 Limiter                 ok             True              58
+cert 2  gainall    smartDeess                       ok             True              116
+cert 2  gainall    APB MooTube                      ok             True              50
+cert 2  gainall    bx_yellowdrive                   ok             True              46
+cert 2  gainall    bx_blackdist2                    ok             True              12
+cert 2  gainall    bx_distorange                    ok             True              50
+cert 2  gainall    bx_greenscreamer                 ok             True              50
+cert 2  gainall    bx_megasingle                    ok             True              273
+cert 2  gainall    APB Royal Q                      ok             True              484
+cert 2  gainall    Timeless 3                       ok             True              3772
+cert 2  gainall    Pro-R 2                          ok             True              622
+cert 2  gainall    AL-1                             ok             True              191
+cert 2  gainall    freqtube                         ok             True              98
+cert 2  limiter    APB L-18 Limiter                 ok             True              6
+cert 2  saturation bx_yellowdrive                   ok             False             37   <- a record was written from silence
+cert 2  saturation freqtube                         ok             False             58   <- a record was written from silence
+
+Cause per unit NOT established (APB = PACE here; the bx_ pedals and the rest unknown: activation / licence / bus state). These rows
+are done; they are re-filed only if re-run. The next build files a re-run of any of them silent_output.

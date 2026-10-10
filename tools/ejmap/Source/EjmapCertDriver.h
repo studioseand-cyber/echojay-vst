@@ -6314,6 +6314,10 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 else outcome = "failed";
                 if (outcome == "failed") if (const auto why = phaseb::unhostableReason (r.out); why.isNotEmpty()) { outcome = "unhostable"; row->setProperty ("reason", "the AU refuses to initialise on this Mac: " + why + " - an answer, not re-run"); }
                 if (reused > 0) row->setProperty ("resumed_traces", reused);
+                {   // silent output (10 Oct): never ok
+                    juce::StringArray tr; for (const auto& f : tmp.getChildFile ("raw").findChildFiles (juce::File::findFiles, false)) if (! f.getFileName().contains (".list-params.") && ! f.getFileName().contains (".text-at")) tr.add (f.loadFileAsString());
+                    juce::String why; if (const auto so = phaseb::silentFiling (outcome, tr, why); so.isNotEmpty()) { outcome = so; row->setProperty ("reason", why); }
+                }
                 {
                     juce::StringArray lp; for (const auto& f : tmp.getChildFile ("raw").findChildFiles (juce::File::findFiles, false)) if (f.getFileName().contains (".list-params.")) lp.add (f.loadFileAsString());
                     const auto np = phaseb::noPoolFiling (r.out, lp);

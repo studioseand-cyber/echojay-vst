@@ -8742,6 +8742,19 @@ void testRunAll()
                && ! ejmap::phaseb::noPoolFiling ("ok", { aether }).applies,
                "phaseb PB-EMPTY: an AU with no parameter at create / after prepare / after render is filed empty_param_list and never retried; one that publishes after prepare is not");
     }
+    // PB-SILENT (Kathy, 10 Oct; smartDeess): the input present and every output silent is silent_output, never ok; one live output, a
+    // silent output with no input, or too few lines are not; a window / licence row is never re-filed
+    {
+        const juce::String sd = "hold\t0\t-30.00\tlevel_db\t-999.0000\tin_rms_db\t-33.0103\ttone_frac\t0\nhold\t0\t-24.00\tlevel_db\t-999.0000\tin_rms_db\t-27.0103\n";
+        const juce::String rt = "rtotal\t0\tin_rms_db\t-24.120\tout_rms_db\t-600.000\nrtotal\t1\tin_rms_db\t-24.120\tout_rms_db\t-600.000\n";
+        const juce::String live = "rtotal\t2\tin_rms_db\t-24.120\tout_rms_db\t-31.536\n";
+        const juce::String noIn = "hold\t0\t-30.00\tlevel_db\t-999.0000\tin_rms_db\t-999.0\nhold\t0\t-30.00\tlevel_db\t-999.0000\tin_rms_db\t-999.0\nhold\t0\t-30.00\tlevel_db\t-999.0000\tin_rms_db\t-999.0\n";
+        juce::String w1, w2, w3, w4, w5;
+        check (ejmap::phaseb::silentFiling ("ok", { sd, rt }, w1) == "silent_output" && w1.contains ("4 of 4")
+               && ejmap::phaseb::silentFiling ("ok", { sd, rt, live }, w2).isEmpty() && ejmap::phaseb::silentFiling ("ok", { noIn }, w3).isEmpty()
+               && ejmap::phaseb::silentFiling ("ok", { sd }, w4).isEmpty() && ejmap::phaseb::silentFiling ("needs_licence", { sd, rt }, w5).isEmpty(),
+               "phaseb PB-SILENT: every output silent with the input present -> silent_output (" + w1 + "); one live output, no input, too few lines, a licence row -> unchanged");
+    }
     // PB-DRY (10 Oct): --phaseb-all refuses --dry-run (anywhere in the line, the last argument too) instead of ignoring it and loading
     check (ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--category", "delay", "--out", "/c", "--dry-run" }).contains ("no --dry-run")
            && ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--dry-run", "--category", "delay" }).isNotEmpty()

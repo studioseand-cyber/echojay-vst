@@ -140,6 +140,33 @@ inline NoPoolFiling noPoolFiling (const juce::String& childOut, const juce::Stri
     for (const auto& t : listParamsTraces) if (emptyParamListConfirmed (t)) { f.outcome = "empty_param_list"; f.reason = "the AU publishes no parameter at create, after prepare or after a first render (the probe's re-read ran): an answer, not re-run (a VST3 load path is later scope)"; return f; }
     f.noPool = true; f.reason = "no control to sample: an empty parameter list (--redo no_pool re-runs it; the probe now re-reads the list after prepare and a first render)"; return f;
 }
+// SILENT OUTPUT (Kathy, 10 Oct; smartDeess): with the input present, every measured output read digital silence -> the row is
+// `silent_output`, never "ok" (it was filed ok + nothing_measured). Judged on the sweep's `hold` lines (level_db) and the response
+// totals (`rtotal`, out_rms_db) - the two shapes Sean's smartDeess rows carry; a row whose traces have neither is not judged.
+inline constexpr double kSignalPresentDb = -100.0, kSilentDb = -300.0;
+struct Silence { int judged = 0, silent = 0; bool all() const { return judged >= 3 && silent == judged; } };
+inline Silence outputSilence (const juce::StringArray& traces)
+{
+    Silence s;
+    for (const auto& t : traces)
+        for (const auto& line : juce::StringArray::fromLines (t))
+        {
+            const auto f = juce::StringArray::fromTokens (line, "\t", ""); if (f.isEmpty() || (f[0] != "hold" && f[0] != "rtotal")) continue;
+            const char* outKey = f[0] == "hold" ? "level_db" : "out_rms_db";
+            const int io = f.indexOf (outKey), ii = f.indexOf ("in_rms_db"); if (io < 0 || ii < 0 || io + 1 >= f.size() || ii + 1 >= f.size()) continue;
+            if (f[ii + 1].getDoubleValue() <= kSignalPresentDb) continue;   // no input: not a test of the output
+            ++s.judged; if (f[io + 1].getDoubleValue() <= kSilentDb) ++s.silent;
+        }
+    return s;
+}
+// the filing: an ok / failed / slept row whose every judged output was silent becomes silent_output (the reason names the count)
+inline juce::String silentFiling (const juce::String& outcome, const juce::StringArray& traces, juce::String& reason)
+{
+    if (outcome != "ok" && outcome != "failed" && outcome != "slept") return {};
+    const auto s = outputSilence (traces); if (! s.all()) return {};
+    reason = "silent output: " + juce::String (s.silent) + " of " + juce::String (s.judged) + " measured output(s) digital silence with the input present - the unit passes no signal on this Mac (activation / licence / state not established); not ok, not re-run (delete the row to re-run)";
+    return "silent_output";
+}
 // --redo unfinished (9 Oct, the fix-up night): a row that TIMED OUT or FAILED runs again - never one filed needs_licence / needs_device /
 // window / unhostable (those are answers), never one that finished ok
 inline bool rowIsUnfinished (const juce::var& row) { const auto oc = row.getProperty ("outcome", "").toString(); return oc == "timed_out" || oc == "failed"; }
