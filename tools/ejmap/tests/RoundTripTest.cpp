@@ -4845,6 +4845,15 @@ void testSweepRatioAndPicks()
         check (lk.size() == 1 && lk[0] == "Threshold 2" && dm.isEmpty() && ejmap::profile::linkedTwinNames (mk ({})).isEmpty(),
                "pair P2: AMEK's linked twin 'Threshold 2' is never written as a neutral (a dual-mono twin is written WITH the amount, P1)");
     }
+    {   // tone R1 (10 Oct): a check made by another build, or carrying no build, is stale; a meter is never a neutral
+        auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, x] : kv) o->setProperty (k, x); return juce::var (o); };
+        const auto keep = ejmap::cert::runningBuild(); ejmap::cert::runningBuild() = "1a2b3c4d";
+        const bool st = ejmap::cert::toneCheckStale (mk ({ { "spec", "v1.7" } })) && ejmap::cert::toneCheckStale (mk ({ { "build", "5ab8352b" } })) && ! ejmap::cert::toneCheckStale (mk ({ { "build", "1a2b3c4d" } }));
+        ejmap::cert::runningBuild() = keep;
+        check (st && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Gain Reduction" } })) && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Opt A Comp 1 Gain Reduction dB" } }))
+               && ejmap::profile::isReadoutOrMeter (mk ({ { "name", "GR" } })) && ! ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Peak Reduction" } })) && ! ejmap::profile::isReadoutOrMeter (mk ({ { "name", "Output Gain" } })),
+               "tone R1: a tone check without a build, or made by another build, is stale; 'Gain Reduction' / '... Gain Reduction dB' / 'GR' are output-only (never a neutral); LA-2A's Peak Reduction and an Output Gain are controls");
+    }
     // THE PICKS, from the pushed fixtures themselves (echojay-saas 2454c0a), by range and step count - never by name.
     const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/plan");
     const auto xla = planFromFixture (juce::JSON::parse (dir.getChildFile ("AudioUnit_62485258_1.10.1.json").loadFileAsString()));
@@ -8662,6 +8671,22 @@ void testRunAll()
     check (eq && sel && lic && rd && steps().front().name == "preflight" && steps().back().name == "drafts" && stepNamed ("preflight")->stopOnFail, "runall RA1: the sequence starts with the preflight (a failure stops it) and ends with the drafts");
     check (argsFor (*eq, false, "/c", {}).joinIntoString (" ") == "--phaseb-all --redo eq --out /c" && argsFor (*eq, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --category eq --out /c",
            "runall RA2: a redo step's FIRST start is --redo (its rows deleted and run again); its RESUME is --category (finished rows kept, only the missing run)");
+    // RA8 (10 Oct): a stale tone check forces the follow-up although it is done; the fixups step only for a state finished before steps carried
+    // their build, and its resume never re-deletes
+    {
+        State sean; for (const char* n : { "preflight", "followup", "multiband", "limiter", "deesser", "gain_all", "gain_timing" }) sean[n].state = "done"; sean["eq"].state = "started"; sean["no_pool"].state = "started";
+        const auto p = plan (sean, {}, { "nothing_nominated" }, { "followup" });
+        juce::StringArray names; for (const auto* x : p) names.add (x->name);
+        State fresh = sean; for (auto& [k, v] : fresh) v.build = "abc12345";
+        const auto pf = plan (fresh, {}, { "nothing_nominated" });
+        juce::StringArray fn; for (const auto* x : pf) fn.add (x->name);
+        const auto* fx = stepNamed ("fixups");
+        check (names.size() > 3 && names[0] == "preflight" && names.contains ("followup") && names.indexOf ("followup") < names.indexOf ("no_pool") && names.contains ("fixups") && fixupOwed (sean)
+               && ! fn.contains ("fixups") && ! fn.contains ("followup") && ! fixupOwed (fresh) && fx != nullptr
+               && argsFor (*fx, false, "/c", {}).joinIntoString (" ") == "--phaseb-all --redo multiband,unfinished --category multiband --category gainall --out /c"
+               && argsFor (*fx, true, "/c", {}).joinIntoString (" ") == "--phaseb-all --category multiband --category gainall --out /c",
+               "runall RA8: stale checks force the follow-up (done) ahead of the resumed steps; the fixups step runs for a pre-stamp state only; its resume drops --redo (" + names.joinIntoString (",") + ")");
+    }
     // RA7 (8 Oct, the switch-over): a state file from an earlier build keeps its done steps done, but preflight and drafts run every time
     {
         State st; for (const char* n : { "preflight", "limiter", "deesser", "drafts" }) st[n].state = "done"; st["eq"].state = "started";
@@ -8682,7 +8707,7 @@ void testRunAll()
     check (argsFor (*lic, false, "/c", {}).joinIntoString (" ") == "--licence-check /c" && argsFor (*eq, false, "/c", { "Maag EQ4" }).joinIntoString (" ") == "--phaseb-all --redo eq --only Maag EQ4 --out /c", "runall RA4: {cert} substituted; --only passed to the Phase B steps");
     State st; st["licence_check"].state = "done"; st["eq"].state = "started"; st["limiter"].state = "failed";   // (preflight is every-run: RA7)
     const auto pl = plan (st, {}, { "categorise" }); bool hasPre = false, hasCat = false, hasEq = false; for (const auto* x : pl) { if (x->name == "licence_check") hasPre = true; if (x->name == "categorise") hasCat = true; if (x->name == "eq") hasEq = true; }
-    check (! hasPre && ! hasCat && hasEq && isResume (st, "eq") && isResume (st, "limiter") && ! isResume (st, "deesser") && (int) pl.size() == (int) steps().size() - 2, "runall RA5: done steps never rerun, --skip removes, a started or failed step resumes");
+    check (! hasPre && ! hasCat && hasEq && isResume (st, "eq") && isResume (st, "limiter") && ! isResume (st, "deesser") && (int) pl.size() == (int) steps().size() - 3, "runall RA5: done steps never rerun, --skip removes, a started or failed step resumes (and the fixups step is not owed: RA8)");
     check (plan (st, { "eq", "drafts" }, {}).size() == 2, "runall RA5b: --steps narrows the plan");
     const juce::Time evening (2026, 9, 7, 23, 30, 0, 0, true), early (2026, 9, 8, 6, 0, 0, 0, true);   // months are 0-based: 7 / 8 Oct
     const auto d1 = deadlineFor ("07:00", evening), d2 = deadlineFor ("07:00", early);

@@ -46,6 +46,10 @@ inline const std::vector<Step>& steps()
         // mode, role tests twice, tails to 20 s): slow, not stuck; the estimate follows
         { "no_pool",          "selector", { "no_pool" },                                            10800.0, "the Soundtoys / 2C empty-list rows (~40 min per delay or reverb)" },
         { "multiband",        "redo",     { "multiband" },                                          1200.0,  "multiband (the enable step)" },
+        // THE FIX-UP (10 Oct, folded into the run): every multiband row and the gain-all rows that timed out or failed, re-run under this
+        // build - planned ONLY for a state whose multiband or gain_all step was finished by a build from before the steps carried a build
+        // stamp (Sean's 8-9 Oct run); a fresh run never needs it, and once done it is done
+        { "fixups",           "fixup",    { "--phaseb-all", "--redo", "multiband,unfinished", "--category", "multiband", "--category", "gainall" }, 4200.0, "multiband again (9 Oct fixes) + the gain-all rows that timed out or failed" },
         { "categorise",       "plain",    { "--categorise-propose", "--include-pace" },             5400.0,  "the review sheet for the uncategorised (never categories.json)" },
         { "combined",         "redo",     { "combined" },                                           2400.0,  "combined settings" },
         { "material",         "redo",     { "material" },                                           4200.0,  "real material" },
@@ -79,6 +83,7 @@ inline juce::StringArray argsFor (const Step& s, bool resume, const juce::String
         else { a.add ("--redo"); a.add (s.args[0]); }
     }
     else if (s.kind == "selector") { a.add ("--phaseb-all"); if (! resume) { a.add ("--redo"); a.add (s.args[0]); } }
+    else if (s.kind == "fixup" && resume) { for (int i = 0; i < s.args.size(); ++i) { if (s.args[i] == "--redo") { ++i; continue; } a.add (s.args[i]); } }   // a resume never re-deletes what the first start redid
     else for (const auto& x : s.args) a.add (x == "{cert}" ? certPath : x);
     const bool phaseb = a.contains ("--phaseb-all"), categorise = a.contains ("--categorise-propose");
     if (phaseb || categorise) for (const auto& p : only) { a.add ("--only"); a.add (p); }
@@ -87,29 +92,36 @@ inline juce::StringArray argsFor (const Step& s, bool resume, const juce::String
 }
 
 // THE STATE (cert/run_all.json): step -> { state, started_at, finished_at, exit, runs }
-struct StepState { juce::String state = "pending"; juce::String startedAt, finishedAt; int exitCode = 0, runs = 0; };
+struct StepState { juce::String state = "pending"; juce::String startedAt, finishedAt, build; int exitCode = 0, runs = 0; };   // build: the build that finished it (10 Oct)
 using State = std::map<juce::String, StepState>;
 inline State stateFromVar (const juce::var& v)
 {
     State st; if (auto* o = v.getProperty ("steps", {}).getDynamicObject()) for (const auto& kv : o->getProperties())
-    { StepState s; s.state = kv.value.getProperty ("state", "pending").toString(); s.startedAt = kv.value.getProperty ("started_at", "").toString(); s.finishedAt = kv.value.getProperty ("finished_at", "").toString(); s.exitCode = (int) kv.value.getProperty ("exit", 0); s.runs = (int) kv.value.getProperty ("runs", 0); st[kv.name.toString()] = s; }
+    { StepState s; s.state = kv.value.getProperty ("state", "pending").toString(); s.startedAt = kv.value.getProperty ("started_at", "").toString(); s.finishedAt = kv.value.getProperty ("finished_at", "").toString(); s.exitCode = (int) kv.value.getProperty ("exit", 0); s.runs = (int) kv.value.getProperty ("runs", 0); s.build = kv.value.getProperty ("build", "").toString(); st[kv.name.toString()] = s; }
     return st;
 }
 inline juce::var stateVar (const State& st)
 {
     auto* o = new juce::DynamicObject(); auto* ss = new juce::DynamicObject();
-    for (const auto& [n, s] : st) { auto* x = new juce::DynamicObject(); x->setProperty ("state", s.state); x->setProperty ("started_at", s.startedAt); x->setProperty ("finished_at", s.finishedAt); x->setProperty ("exit", s.exitCode); x->setProperty ("runs", s.runs); ss->setProperty (n, juce::var (x)); }
+    for (const auto& [n, s] : st) { auto* x = new juce::DynamicObject(); x->setProperty ("state", s.state); x->setProperty ("started_at", s.startedAt); x->setProperty ("finished_at", s.finishedAt); x->setProperty ("exit", s.exitCode); x->setProperty ("runs", s.runs); if (s.build.isNotEmpty()) x->setProperty ("build", s.build); ss->setProperty (n, juce::var (x)); }
     o->setProperty ("schema", "ej_run_all/1"); o->setProperty ("steps", juce::var (ss)); return juce::var (o);
 }
 // the plan: the steps to run now, in order (done ones skipped; --steps narrows, --skip removes)
-inline std::vector<const Step*> plan (const State& st, const juce::StringArray& onlySteps, const juce::StringArray& skip)
+// forced (10 Oct): steps planned even when done - the follow-up when stale tone checks exist (the driver decides from the folder)
+inline bool fixupOwed (const State& st)
+{
+    for (const char* dep : { "multiband", "gain_all" }) if (st.count (dep) && st.at (dep).state == "done" && st.at (dep).build.isEmpty()) return true;
+    return false;
+}
+inline std::vector<const Step*> plan (const State& st, const juce::StringArray& onlySteps, const juce::StringArray& skip, const juce::StringArray& forced = {})
 {
     std::vector<const Step*> p;
     for (const auto& s : steps())
     {
         if (! onlySteps.isEmpty() && ! onlySteps.contains (s.name)) continue;
         if (skip.contains (s.name)) continue;
-        if (st.count (s.name) && st.at (s.name).state == "done" && ! s.everyRun) continue;
+        if (s.kind == "fixup" && ! (st.count (s.name) && st.at (s.name).state != "done" && st.at (s.name).state != "pending") && ! fixupOwed (st)) continue;
+        if (st.count (s.name) && st.at (s.name).state == "done" && ! s.everyRun && ! forced.contains (s.name)) continue;
         p.push_back (&s);
     }
     return p;

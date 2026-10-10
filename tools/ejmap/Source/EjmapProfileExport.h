@@ -253,6 +253,12 @@ inline bool isReadoutOrMeter (const juce::var& c)
     if (c.getProperty ("readout", false).isBool() && (bool) c.getProperty ("readout", false)) return true;
     const auto n = c.getProperty ("name", "").toString();
     for (const char* t : { "meter", "vu", "readout", "display" }) if (nametokens::controlAnswersTerm (n, t)) return true;
+    // 10 Oct (Kathy): an OUTPUT-ONLY control is never a neutral write - a gain-reduction readout ("Gain Reduction", "Comp 1 Gain Reduction
+    // dB", "GR") reports what the unit does; writing it (Auto-Tune Vocal Compressor's at 1.0) measures nothing and asks the host for nonsense
+    const auto l = n.toLowerCase();
+    if (l.contains ("gain reduction")) return true;
+    { juce::StringArray toks; juce::String cur; for (auto ch : l) { if (juce::CharacterFunctions::isLetterOrDigit (ch)) cur << ch; else if (cur.isNotEmpty()) { toks.add (cur); cur.clear(); } } if (cur.isNotEmpty()) toks.add (cur);
+      if (toks.contains ("gr")) return true; }
     return false;
 }
 

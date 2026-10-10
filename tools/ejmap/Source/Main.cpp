@@ -42,6 +42,7 @@ public:
 
     void initialise (const juce::String& commandLine) override
     {
+        ejmap::cert::runningBuild() = EJMAP_GIT_HASH;   // 10 Oct: every tone check carries the build that made it
         // --ledger-root DIR         write the ledger somewhere throwaway
         // --selftest-reentry ID     scripted double-click proof, then quit
         // preserveQuotedStrings keeps the quotes IN the token, and JUCE quotes

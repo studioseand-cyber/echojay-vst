@@ -101,6 +101,13 @@ extern char** environ;
 namespace ejmap::cert
 {
 
+// THE RUNNING BUILD (10 Oct, Kathy's re-check rule): Main sets it from EJMAP_GIT_HASH; every tone check carries it as "build", and a check
+// made by ANOTHER (older) build is STALE and runs again - a check with no stamp (every check before this build) included. One rule covers
+// the 38 b0258a7b-era checks, the profiles the 9-10 Oct fixes change, the VBCs, AMEK and MAGNUM-K's re-sweep.
+inline juce::String& runningBuild() { static juce::String b; return b; }
+inline bool toneCheckStale (const juce::var& tc) { const auto b = tc.getProperty ("build", "").toString(); return b.isEmpty() || b != runningBuild(); }
+
+
 //==============================================================================
 // A CHILD PROCESS WITH A DEADLINE, AND ITS EXACT WAIT STATUS.
 struct ChildResult
@@ -6369,7 +6376,13 @@ inline int runRunAll (const RunAllOptions& ro)
     const auto stateFile = cert.getChildFile ("run_all.json");
     State st = stateFromVar (juce::JSON::parse (stateFile.loadFileAsString()));
     auto save = [&] { phaseb::writeAtomic (stateFile, juce::JSON::toString (stateVar (st))); };
-    const auto p = plan (st, ro.steps, ro.skip); const int totalN = (int) p.size();
+    // 10 Oct: the follow-up runs again when any tone check in the folder is stale (made by another build), even though its step is done
+    juce::StringArray forced; int staleN = 0;
+    for (const auto& f : cert.getChildFile ("profiles").findChildFiles (juce::File::findFiles, false, "*.tonecheck.json")) if (toneCheckStale (juce::JSON::parse (f.loadFileAsString()))) ++staleN;
+    if (staleN > 0) forced.add ("followup");
+    const auto p = plan (st, ro.steps, ro.skip, forced); const int totalN = (int) p.size();
+    if (staleN > 0) say ("RUN-ALL: " + juce::String (staleN) + " tone check(s) made by another build than " + runningBuild() + ": the follow-up runs again (stale checks first)");
+    if (runall::fixupOwed (st)) say ("RUN-ALL: multiband / gain-all finished by a build before the 9-10 Oct fixes: the fixups step re-runs multiband and the gain-all rows that timed out or failed");
     const auto until = deadlineFor (ro.until, juce::Time::getCurrentTime());
     if (ro.until.isNotEmpty() && ! until) { say ("RUN-ALL: --until '" + ro.until + "' is not HH:MM"); return 2; }
     const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
@@ -6392,7 +6405,7 @@ inline int runRunAll (const RunAllOptions& ro)
         if (ro.opt.assumeUadDevice && (takesPaths || s->name == "uad_preflight")) args.add ("--assume-uad-device");
         auto& ss = st[s->name]; ss.state = "started"; ss.startedAt = nowStamp(); ++ss.runs; save();
         const auto logFile = logDir.getChildFile (s->name + ".log");
-        say (progressLine (doneN, totalN, s->name + (resume ? " (resume)" : ""), (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, etaSeconds (runall::plan (st, ro.steps, ro.skip), st), until));
+        say (progressLine (doneN, totalN, s->name + (resume ? " (resume)" : ""), (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, etaSeconds (runall::plan (st, ro.steps, ro.skip, forced), st), until));
         // the child: its own process group, stdout + stderr appended to the step's log
         std::vector<std::string> av { exe.getFullPathName().toStdString() }; for (const auto& a : args) av.push_back (a.toStdString());
         std::vector<char*> cav; for (auto& x : av) cav.push_back (x.data()); cav.push_back (nullptr);
@@ -6414,7 +6427,7 @@ inline int runRunAll (const RunAllOptions& ro)
             const double now = juce::Time::getMillisecondCounterHiRes();
             if (! sentInt && (runAllInterrupted() || (until && juce::Time::getCurrentTime() >= *until))) { kill (-pid, SIGINT); sentInt = true; intAt = now; why = runAllInterrupted() ? "Ctrl-C" : "the hour " + until->formatted ("%H:%M"); say ("RUN-ALL: " + why + ": stopping " + s->name + " (SIGINT to its process group; it resumes next time)"); }
             if (sentInt && now - intAt > 60000.0) { kill (-pid, SIGKILL); }
-            if (now - lastLine > 60000.0) { lastLine = now; say (progressLine (doneN, totalN, s->name, (now - t0) / 1000.0, etaSeconds (runall::plan (st, ro.steps, ro.skip), st), until)); }
+            if (now - lastLine > 60000.0) { lastLine = now; say (progressLine (doneN, totalN, s->name, (now - t0) / 1000.0, etaSeconds (runall::plan (st, ro.steps, ro.skip, forced), st), until)); }
             juce::Thread::sleep (500);
         }
         const int code = WIFEXITED (status) ? WEXITSTATUS (status) : -1;
@@ -6422,9 +6435,9 @@ inline int runRunAll (const RunAllOptions& ro)
         if (sentInt) { ss.state = "started"; save(); stopped = s->name + " stopped by " + why + " (it resumes next time)"; break; }
         // a step's success: exit 0; the preflight and the probe-backed steps also accept 4 (nothing to measure) as done
         const bool ok = code == 0 || (code == 4 && takesPaths) || s->name == "uad_preflight";   // the Satellite check is information: PRESENT or ABSENT is in its log, the run goes on
-        ss.state = ok ? "done" : "failed"; save();
+        ss.state = ok ? "done" : "failed"; if (ok) ss.build = runningBuild(); save();
         if (ok) ++doneN; else ++failedN;
-        say ("  " + s->name + ": " + (ok ? juce::String ("done") : "FAILED (exit " + juce::String (code) + ") - see " + logFile.getFullPathName()) + "  " + progressLine (doneN, totalN, {}, (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, etaSeconds (runall::plan (st, ro.steps, ro.skip), st), until));
+        say ("  " + s->name + ": " + (ok ? juce::String ("done") : "FAILED (exit " + juce::String (code) + ") - see " + logFile.getFullPathName()) + "  " + progressLine (doneN, totalN, {}, (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, etaSeconds (runall::plan (st, ro.steps, ro.skip, forced), st), until));
         if (! ok && s->stopOnFail) { stopped = s->name + " failed: nothing after it can be trusted"; break; }
     }
     std::signal (SIGINT, SIG_DFL); std::signal (SIGTERM, SIG_DFL);
@@ -6607,7 +6620,8 @@ inline int runToneCheckAll (SweepOptions opt)
         // --retry-licence reaches exactly that set). A FAILED check is run again every time (6 Oct): the seven that failed on
         // Sean's Mac failed on writes the re-derive had lost, and the fix above changes the writes, not the check's file.
         if (! opt.deriveOnly && tc.getProperty ("spec", "").toString() == "v1.7" && tc.hasProperty ("deep_levels") && tc.hasProperty ("L_ref_dbfs") && (bool) tc.getProperty ("pass_within_0_5_db", true)
-            && ! loop::sidechainAbOwed (rec0)) { ++skipped; continue; }
+            && ! loop::sidechainAbOwed (rec0) && ! toneCheckStale (tc)) { ++skipped; continue; }
+        if (! opt.deriveOnly && tc.isObject() && toneCheckStale (tc)) std::cout << "  " << product << ": its tone check is stale (made by " << (tc.getProperty ("build", "").toString().isEmpty() ? juce::String ("a build before the stamp") : tc.getProperty ("build", "").toString()) << ", this is " << runningBuild() << "): checked again" << std::endl;
         if (! opt.deriveOnly && ! opt.retryLicence) if (const auto stop = loop::carriedLicenceStop (scanStops, product); stop) { std::cout << "  " << product << ": needs licence at the scan, not loaded" << std::endl; ++licence; continue; }
         std::cout << "\n=== tone checks: " << product << std::endl;
         // 1. RE-DERIVE from the traces (the deep points), carrying over what the traces do not hold
@@ -7400,7 +7414,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     if (writeFaultNote.isNotEmpty()) o->setProperty ("write_fault", writeFaultNote);
     if (! main.ran) o->setProperty ("why_not_run", main.why);
     o->setProperty ("probe", id.cdhash); o->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
-    o->setProperty ("ratio_norm_source", ratioNote); o->setProperty ("spec", "v1.7");
+    o->setProperty ("ratio_norm_source", ratioNote); o->setProperty ("spec", "v1.7"); o->setProperty ("build", runningBuild());   // 10 Oct: stale when another build runs
     if (profile.getProperty ("licence", {}).isObject()) o->setProperty ("licence", profile.getProperty ("licence", {})); else stampLicence (o);   // the demo stamp (6 Oct)
     // THE DEEP LEVELS (v1.7 section 8): every deep level the profile carries on any position, same tolerance; a level that
     // FAILS is null across ALL positions of the exported profile and never fails the profile.
