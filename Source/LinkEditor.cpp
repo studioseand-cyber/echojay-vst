@@ -237,6 +237,29 @@ void LinkEditor::syncAlias()
 
 void LinkEditor::timerCallback()
 {
+    // ---- STAGE 4 (10 Oct 2026): THE V2 ASKED FOR AN EDITOR ----------------------------------------
+    // An editor belongs to the instance that owns the plugin, so the V2 cannot open this window - it asks,
+    // and this is where the asking is honoured. Collected by SEQ rather than by a flag, so a second request
+    // for the same slot is a second open and not a no-op: a user who closed the window and clicked again
+    // meant it.
+    if (const auto req = proc.editorRequest(); req.seq != lastEditorReqSeq_)
+    {
+        lastEditorReqSeq_ = req.seq;
+        if (req.slot >= 0)
+        {
+            if (req.open)
+            {
+                // selectSlot does the whole job the user's own click does - selection, the inline or
+                // floating decision per editorPlacement, the pop-out button's state and the settings card.
+                // Going through it rather than straight to openPopoutForSelected is deliberate: a remote
+                // open should leave this editor in exactly the state a local click would.
+                chainPanel.selectSlot (req.slot);
+                if (! req.embed) chainPanel.openPopoutForSelected();
+            }
+            else
+                chainPanel.closeAllEditors();
+        }
+    }
     chainPanel.syncPreGain();   // keep the Link's own pre-gain knob live
     syncAlias();                // 21n item 2: follows a ctrl-cmd alias applied off the editor's own path
     // Repaint only when the mono fold-down note appears/disappears/changes, so

@@ -397,6 +397,25 @@ private:
     // drives the REAL engage/restore code, not a test-local copy.
     void rackLeaseEngage();
     void ringTick();   // stage 3: map the value ring, and reconcile what the audio thread applied
+public:
+    // ---- STAGE 4 (10 Oct 2026): THE EDITOR REQUEST, for this Link's own editor ----------------------
+    // A small named hook, because the editor is where session A2 works. The editor polls the seq on its timer
+    // and acts when it moves; a request nobody collects stays visible in the log rather than being lost.
+    struct EditorRequest { int slot = -1; bool open = false; bool embed = false; uint32_t seq = 0; };
+    EditorRequest editorRequest() const noexcept
+    {
+        EditorRequest r;
+        r.seq   = editorReqSeq_.load (std::memory_order_acquire);
+        r.slot  = editorReqSlot_.load (std::memory_order_relaxed);
+        r.open  = editorReqOpen_.load (std::memory_order_relaxed);
+        r.embed = editorReqEmbed_.load (std::memory_order_relaxed);
+        return r;
+    }
+private:
+    std::atomic<uint32_t> editorReqSeq_   { 0 };
+    std::atomic<int>      editorReqSlot_  { -1 };
+    std::atomic<bool>     editorReqOpen_  { false };
+    std::atomic<bool>     editorReqEmbed_ { false };
     void rackLeaseRelease();
     friend struct EchoJayLinkSyncTestAccess;
     // 21t-d: the Link-side calibration guard reads the loop and the chain it drives

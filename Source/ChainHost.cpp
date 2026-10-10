@@ -2004,6 +2004,14 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
             // a wet op would silently set fully dry, and both would look like the user's own move.
             if (op.op == "slot_in" || op.op == "slot_out" || op.op == "pre_gain") num ("db", op.dbValue);
             if (op.op == "master_wet") num ("pct", op.pctValue);
+            // STAGE 4: where the editor goes. Anything that is not "embed" reads as "float", which is the
+            // default and the only placement this contract promises - an unknown word must not become a
+            // refusal of the whole op, because the user asked for an EDITOR, not for a placement.
+            if (op.op == "open_editor" || op.op == "close_editor")
+            {
+                const auto w = eo->getProperty ("where").toString().trim().toLowerCase();
+                op.editorWhere = (w == "embed") ? "embed" : "float";
+            }
             if (auto* sc = eo->getProperty ("scope").getDynamicObject())
             {
                 const auto r = sc->getProperty ("role").toString().trim().toLowerCase();
@@ -2127,6 +2135,14 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
     if (op.op == "pre_gain")
         return juce::String::fromUTF8("\xe2\x86\x95 set the pre-chain gain to ")
              + (std::isfinite(op.dbValue) ? juce::String(op.dbValue, 1) + " dB" : juce::String("(no db)"));
+    if (op.op == "open_editor")
+        return juce::String::fromUTF8("\xe2\x96\xa1 open ") + slotName(op.slot)
+             + "'s editor (slot " + juce::String(op.slot + 1) + ")"
+             + (op.editorWhere == "embed" ? juce::String(", embedded if it is in this process")
+                                          : juce::String(", in its own window"));
+    if (op.op == "close_editor")
+        return juce::String::fromUTF8("\xe2\x96\xa1 close ") + slotName(op.slot)
+             + "'s editor (slot " + juce::String(op.slot + 1) + ")";
     if (op.op == "set")
     {
         // A set op without structured settings dials NOTHING - it puts the
@@ -2492,6 +2508,10 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
             {
                 if (! std::isfinite(op.dbValue)) return bad("pre_gain without a db");
             }
+            else if (op.op == "open_editor" || op.op == "close_editor")
+            {
+                if (!validSlot(op.slot)) return bad(slotLabel(op.slot) + " does not exist");
+            }
             else return bad("unknown operation \"" + op.op + "\"");
         }
     }
@@ -2705,6 +2725,44 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
         EchoJay_NSLog(("EJEdit: pre_gain asked=" + juce::String(op.dbValue, 2)
                        + " landed=" + juce::String(landed, 2) + " dB").toRawUTF8());
         finishOpAndContinue("set the pre-chain gain to " + juce::String(landed, 1) + " dB");
+        return;
+    }
+    // ---- STAGE 4 (10 Oct 2026): open_editor / close_editor ---------------------------------------
+    // The HOST does not open the window; the instance that OWNS the plugin does. So this records a request
+    // and the owning editor acts on it, which is why the ack says the Link has been ASKED rather than that a
+    // window is up: a third-party editor opens at its own pace and claiming otherwise would be a promise we
+    // cannot keep (the contract's own latency table says so).
+    if (op.op == "open_editor" || op.op == "close_editor")
+    {
+        const int cur = curOf(op.slot);
+        if (cur < 0) return failAndStop(op.op + " failed: slot no longer present");
+        {
+            const auto why = targetRefusal(cur);
+            if (why.isNotEmpty()) return failButContinue(op.op + " refused: " + why);
+        }
+        const auto nm = slots_[(size_t)cur].desc.name;
+        if (op.op == "close_editor")
+        {
+            if (onEditorRequest) onEditorRequest (cur, /*open*/ false, /*embed*/ false);
+            EchoJay_NSLog(("EJEdit: close_editor slot=" + juce::String(cur + 1) + " \"" + nm + "\"").toRawUTF8());
+            finishOpAndContinue("asked to close " + nm + "'s editor");
+            return;
+        }
+        // EMBED IS PROVEN, NOT ASSUMED, and a refusal is SAID. "embed quietly became float" is the kind of
+        // silent downgrade that surfaces months later as a bug report about latency that was never about
+        // latency. The proof is one integer: the rack sidecar's publisherPid against our own.
+        bool embed = false; juce::String note;
+        if (op.editorWhere == "embed")
+        {
+            const int ourPid = (int) ::getpid();
+            embed = echojay::embedAllowed (editorPeerPid, ourPid);
+            if (! embed) note = " (" + echojay::embedRefusedReason (editorPeerPid, ourPid) + ")";
+        }
+        if (onEditorRequest) onEditorRequest (cur, /*open*/ true, embed);
+        EchoJay_NSLog(("EJEdit: open_editor slot=" + juce::String(cur + 1) + " \"" + nm + "\" where="
+                       + (embed ? "embed" : "float") + note).toRawUTF8());
+        finishOpAndContinue("asked to open " + nm + "'s editor" + (embed ? " embedded" : " in its own window")
+                            + note);
         return;
     }
     if (op.op == "move")

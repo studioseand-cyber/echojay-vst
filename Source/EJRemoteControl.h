@@ -116,4 +116,56 @@ inline bool leaseBypassesTheRack() noexcept { return false; }
     send `muteOut` and must not be able to silence a channel with it. */
 inline bool leaseMutesTheLink() noexcept { return false; }
 
+// ---- STAGE 4 (10 Oct 2026): EDITORS -----------------------------------------------
+//
+// AN EDITOR BELONGS TO THE INSTANCE THAT OWNS IT. The V2 cannot show a window for a
+// plugin living in another process, so `open_editor` asks the LINK to open its own
+// floating window for slot N. The knobs are then the real instance's and a turn is
+// instant by construction - it works in every host and needs no shared address
+// space.
+//
+// `embed` IS THE NICER ONE AND IT IS NOT ALWAYS SAFE. In Logic today both plugins do
+// share a process - every one of the six AUHostingServiceXPC crash reports from
+// 8 October lists EchoJay V2 and EchoJay Link in one process's usedImages. That is a
+// fact about Logic's AU view hosting, NOT a guarantee: AUv3 and sandboxed hosts put
+// each plugin in its own container, Bitwig sandboxes by default, Reaper can bridge
+// selectively, and AAX has its own rules.
+//
+// SO IT IS PROVEN AT RUNTIME, NEVER INFERRED FROM THE HOST'S NAME. The rack sidecar
+// already publishes `publisherPid` - the pid of the process writing it - so "are we
+// in the same process as this Link" is one integer comparison against our own
+// getpid(). Cheap, honest, and it cannot be fooled by a host that renames itself or
+// by a version of Logic that changes its mind about view hosting.
+
+/** Where an editor may be put. `Float` is the default and the only one promised. */
+enum class EditorWhere { Float, Embed };
+
+/** May `embed` be honoured for a Link whose sidecar says it is published by
+    `linkPublisherPid`, when we are `ourPid`?
+
+    Only on a POSITIVE match. A sidecar with no pid (0, an older Link that does not
+    publish one) is NOT a match: absence is not permission, and treating it as one
+    would embed across a process boundary in exactly the hosts that sandbox. The
+    refusal is then reported with its reason, because "embed quietly became float" is
+    the kind of silent downgrade that gets discovered months later in a bug report
+    about latency that was never about latency. */
+inline bool embedAllowed (int linkPublisherPid, int ourPid) noexcept
+{
+    return linkPublisherPid > 0 && ourPid > 0 && linkPublisherPid == ourPid;
+}
+
+/** The sentence a refused `embed` carries back. One author, so the ack, the log and
+    anything a model is shown all say the same thing. */
+inline juce::String embedRefusedReason (int linkPublisherPid, int ourPid)
+{
+    if (linkPublisherPid <= 0)
+        return "this Link does not publish a process id, so the same-process proof cannot be made - "
+               "opened as a floating window instead";
+    if (linkPublisherPid != ourPid)
+        return "this Link runs in another process (pid " + juce::String (linkPublisherPid)
+             + ", this is " + juce::String (ourPid) + "), so its editor cannot be embedded here - "
+               "opened as a floating window instead";
+    return {};
+}
+
 } // namespace echojay

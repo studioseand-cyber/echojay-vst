@@ -2688,6 +2688,26 @@ void LinkProcessor::resyncChainModelFromHost()
 //       ruling (a): the RT applier is the authority for the figure, this makes every other surface agree.
 void LinkProcessor::ringTick()
 {
+    // STAGE 4: the same-process proof's own side of the comparison. This process publishes the rack's
+    // sidecar, so for THIS host the peer pid is our own - and an embed request only ever reaches here from a
+    // V2 that compared its pid against the one in our sidecar. Set every tick rather than once, because a
+    // ChainHost can be rebuilt under us and a stale 0 would read as "no proof" and refuse a legitimate embed.
+    chainHost.editorPeerPid = (int) ::getpid();
+    if (! chainHost.onEditorRequest)
+        chainHost.onEditorRequest = [this] (int slot, bool open, bool embed)
+        {
+            // RECORDED, NOT ACTED ON HERE. The window belongs to the editor, which may not exist - a Link
+            // with no window open is the normal case - so the request is held and the editor takes it when it
+            // next ticks. A request that nobody collects is visible in the log rather than silently lost.
+            editorReqSlot_.store (slot, std::memory_order_relaxed);
+            editorReqOpen_.store (open, std::memory_order_relaxed);
+            editorReqEmbed_.store (embed, std::memory_order_relaxed);
+            editorReqSeq_.fetch_add (1, std::memory_order_release);
+            EchoJay_NSLog (("EJEditorReq: slot " + juce::String (slot + 1) + (open ? " OPEN" : " CLOSE")
+                            + (embed ? " embedded" : " floating")
+                            + " - held for this Link's editor").toRawUTF8());
+        };
+
     if (cmdRing_.load(std::memory_order_acquire) == nullptr)
     {
         int err = 0;

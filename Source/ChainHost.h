@@ -1,4 +1,6 @@
 #pragma once
+
+#include "EJRemoteControl.h"   // remote control: the lease is control only; embed is proven, not inferred
 #include <array>
 #include "EJChainRole.h"   // 21t-m item 5: the chain role and its three sources
 #include <JuceHeader.h>
@@ -1066,6 +1068,7 @@ public:
     struct ChainEditOp {
         juce::String op;        // add | remove | replace | move | bypass | set | set_wet
                                 // | slot_in | slot_out | master_wet | pre_gain  (stage 2, 10 Oct 2026)
+                                // | open_editor | close_editor                (stage 4, 10 Oct 2026)
         int  slot  = -1;        // original index (remove/replace/move/bypass/set/set_wet)
         int  to    = -1;        // move target (original numbering)
         int  after = -2;        // add: insert after this original slot; -1 = first
@@ -1124,6 +1127,10 @@ public:
         // wet op would silently set fully dry; the same rule wet_pct and the headroom numbers already follow.
         float dbValue  = std::numeric_limits<float>::quiet_NaN();   // slot_in | slot_out | pre_gain
         float pctValue = std::numeric_limits<float>::quiet_NaN();   // master_wet (0..100)
+        // ---- STAGE 4 (10 Oct 2026): open_editor / close_editor -----------------------------------
+        // "float" (the default and the only one promised) or "embed" (refused unless the same-process
+        // proof holds at runtime - see echojay::embedAllowed). Empty on every other op.
+        juce::String editorWhere;
         // Server-decided no-such-control verdict riding the op (9 Aug
         // 2026): term the user asked for + provenance tier (deferred /
         // unmapped / complete). The card composes the REASON a suggestion
@@ -1603,6 +1610,15 @@ public:
     /** How many RT moves are waiting for their bookkeeping. Message thread; for the legs and the log. */
     int pendingRingBookkeeping() const noexcept
         { return (int) (ringPendWrite_.load(std::memory_order_acquire) - ringPendRead_); }
+
+    // ---- STAGE 4 (10 Oct 2026): THE EDITOR REQUEST ------------------------------------------------
+    // The host records the request; the instance that OWNS the plugin acts on it. A small named hook, because
+    // the editor is where session A2 works and a hook it can see is better than a flag it has to discover.
+    // (slot, open, embed). Never called from the audio thread.
+    std::function<void (int, bool, bool)> onEditorRequest;
+    /** The pid publishing THIS rack's sidecar, for the same-process proof. Set by the owner; 0 = unknown, and
+        unknown is NOT permission - see echojay::embedAllowed. */
+    int editorPeerPid = 0;
 
     void resetSlotLevels(int i);
     void resetAllLevels();   // source change, manual reset

@@ -32,6 +32,7 @@
 #include "EedGainProcessor.h"
 #include "EedDeviceRegistry.h"
 #include "EJCmdRing.h"   // stage 3: the value ring
+#include "EJRemoteControl.h"   // stage 4: embed is proven, not inferred
 #include <cstdio>
 
 namespace {
@@ -438,6 +439,116 @@ int main()
             check (std::abs (h.getSlotPreTrimDb (0) + 4.0f) < 0.05f,
                    "STAGE 3: ...and the figure ends on the LAST frame's value, not the first",
                    juce::String (h.getSlotPreTrimDb (0), 2));
+        }
+    }
+
+    std::printf ("\n== (7) STAGE 4: open_editor, and embed is PROVEN rather than inferred ==\n");
+    {
+        // WHAT THIS GUARD CAN AND CANNOT SEE, said plainly. It can prove the op arrives, names the right slot,
+        // reaches the owner as a request, and that `embed` is refused unless the same-process proof holds with
+        // the refusal SAID. It cannot prove a window appeared or that a knob turns instantly - that needs a
+        // real third-party plugin and a screen, and it is Sean's in-host test, not this file's.
+        using namespace echojay;
+
+        // THE PROOF ITSELF, both directions and all three cases. One integer, and it cannot be fooled by a
+        // host that renames itself or by a version of Logic that changes its mind about view hosting.
+        check (embedAllowed (4321, 4321), "embed is allowed when the pids MATCH");
+        check (! embedAllowed (4321, 9999), "embed is refused across a process boundary");
+        check (! embedAllowed (0, 4321),
+               "embed is refused when the Link publishes NO pid - absence is not permission, and treating it "
+               "as permission would embed across a boundary in exactly the hosts that sandbox");
+        check (! embedAllowed (4321, 0), "embed is refused when our own pid is unknown");
+        // ...and the refusal carries a REASON, which is what stops "embed quietly became float".
+        check (embedRefusedReason (0, 4321).containsIgnoreCase ("does not publish a process id"),
+               "a Link with no pid refuses with that reason", embedRefusedReason (0, 4321));
+        check (embedRefusedReason (4321, 9999).contains ("4321") && embedRefusedReason (4321, 9999).contains ("9999"),
+               "a cross-process refusal names BOTH pids, so it can be checked rather than believed",
+               embedRefusedReason (4321, 9999));
+        check (embedRefusedReason (4321, 4321).isEmpty(),
+               "...and a MATCH has no refusal reason at all");
+
+        // THE WIRE, and the default. "float" is the only placement promised, so anything that is not "embed"
+        // must read as float rather than refusing the op - the user asked for an editor, not a placement.
+        const auto ops = ChainHost::parseChainEditOps (
+            "{\"edit\":["
+            "{\"op\":\"open_editor\",\"slot\":2,\"where\":\"float\"},"
+            "{\"op\":\"open_editor\",\"slot\":1,\"where\":\"embed\"},"
+            "{\"op\":\"open_editor\",\"slot\":1,\"where\":\"sideways\"},"
+            "{\"op\":\"open_editor\",\"slot\":1},"
+            "{\"op\":\"close_editor\",\"slot\":3}"
+            "]}");
+        check (ops.size() == 5, "five editor ops parsed", juce::String ((int) ops.size()));
+        if (ops.size() == 5)
+        {
+            check (ops[0].op == "open_editor" && ops[0].slot == 1 && ops[0].editorWhere == "float",
+                   "open_editor carries its slot (wire 2 -> index 1) and where=float",
+                   ops[0].editorWhere + " slot " + juce::String (ops[0].slot));
+            check (ops[1].editorWhere == "embed", "where=embed is carried as asked", ops[1].editorWhere);
+            check (ops[2].editorWhere == "float",
+                   "an UNKNOWN placement reads as float - the default, not a refusal of the op",
+                   ops[2].editorWhere);
+            check (ops[3].editorWhere == "float", "an ABSENT placement reads as float", ops[3].editorWhere);
+            check (ops[4].op == "close_editor" && ops[4].slot == 2, "close_editor carries its slot",
+                   juce::String (ops[4].slot));
+        }
+
+        // AND IT REACHES THE OWNER, with the slot resolved through the map and the embed decision made.
+        auto procHeap = std::make_unique<EchoJayProcessor>();
+        auto& h = procHeap->getChainHost();
+        procHeap->prepareToPlay (48000.0, 512);
+        const auto* gain = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        if (gain != nullptr)
+        {
+            h.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*gain), 0);
+            h.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*gain), 1);
+            pump (150);
+            int gotSlot = -1; bool gotOpen = false, gotEmbed = false, called = false;
+            h.onEditorRequest = [&] (int sl, bool open, bool emb)
+            { gotSlot = sl; gotOpen = open; gotEmbed = emb; called = true; };
+
+            // A FLOAT request on a rack whose peer pid is another process.
+            h.editorPeerPid = 999999;
+            {
+                std::vector<ChainHost::ChainEditOp> o1;
+                ChainHost::ChainEditOp e; e.op = "open_editor"; e.slot = 1; e.editorWhere = "float";
+                o1.push_back (e);
+                juce::StringArray res; bool ab = true;
+                applyOps (h, o1, juce::StringArray { "EchoJay Gain", "EchoJay Gain" }, res, ab);
+                check (called && gotSlot == 1 && gotOpen && ! gotEmbed,
+                       "open_editor reaches the OWNER with the slot resolved and float decided",
+                       "slot " + juce::String (gotSlot) + " open " + juce::String ((int) gotOpen));
+                check (res.joinIntoString (" ").containsIgnoreCase ("own window"),
+                       "...and the ack says the Link has been ASKED, in its own window",
+                       res.joinIntoString (" | "));
+            }
+            // AN EMBED request across a process boundary: honoured as float, and the ack SAYS SO.
+            {
+                called = false; gotEmbed = true;
+                std::vector<ChainHost::ChainEditOp> o2;
+                ChainHost::ChainEditOp e; e.op = "open_editor"; e.slot = 0; e.editorWhere = "embed";
+                o2.push_back (e);
+                juce::StringArray res; bool ab = true;
+                applyOps (h, o2, juce::StringArray { "EchoJay Gain", "EchoJay Gain" }, res, ab);
+                check (called && ! gotEmbed,
+                       "an embed request across a process boundary is NOT embedded");
+                check (res.joinIntoString (" ").containsIgnoreCase ("another process"),
+                       "...and the ack carries the REASON, so the downgrade is visible rather than silent",
+                       res.joinIntoString (" | "));
+            }
+            // ...and with the pids MATCHING it IS embedded, so the proof is a decision and not a refusal
+            // dressed up as one.
+            {
+                called = false; gotEmbed = false;
+                h.editorPeerPid = (int) ::getpid();
+                std::vector<ChainHost::ChainEditOp> o3;
+                ChainHost::ChainEditOp e; e.op = "open_editor"; e.slot = 0; e.editorWhere = "embed";
+                o3.push_back (e);
+                juce::StringArray res; bool ab = true;
+                applyOps (h, o3, juce::StringArray { "EchoJay Gain", "EchoJay Gain" }, res, ab);
+                check (called && gotEmbed,
+                       "in ONE process an embed request IS embedded - the proof decides both ways",
+                       res.joinIntoString (" | "));
+            }
         }
     }
 

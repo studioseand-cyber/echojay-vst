@@ -28,6 +28,7 @@ public:
     // when the note text changes, so idle playback never flickers the hosted
     // native editor.
     void timerCallback() override;
+    uint32_t lastEditorReqSeq_ = 0;   // stage 4: the V2's editor requests, collected by seq
     // 21n item 2: the alias line's text ("" when no alias) - the guard reads what the window shows
     juce::String aliasText() const { return aliasLabel.getText(); }
     void syncAlias();
