@@ -1,4 +1,30 @@
-# THE NIGHTS FROM 10 Oct (Kathy's priority) — night 1 on 00f2ae79, then the next build; one line per night
+# FROM 11 Oct - THE NEW BUILD (Kathy's morning ruling): check the build first, then one line a night at --jobs 2
+
+You ran 5ab8352b last night (its preflight log), so none of 00f2ae79's re-checks or fix-ups ran, and the Mac slept ~4.5 h (22
+saturation rows "slept"). The new build fixes both: slept rows run again by themselves, and the preflight refuses to start a Mac that
+can sleep.
+
+**Step 1, every night: run the line and read the preflight's FIRST line.** It must say `EJ Map pre-flight - build <commit>` with the
+commit Kathy gave you for this build. Anything else: stop, you are on the wrong app. If it prints `sleep : REFUSED`, do what its FIX
+line says (start with `caffeinate -dimsu`, keep the charger in, System Settings > Energy > "Prevent automatic sleeping when the
+display is off" ON) - nothing starts until then.
+
+```
+# Night A  ~5.5 h at --jobs 2   the re-checks (every tone check, once: they were made by 5ab8352b), the fix-ups, saturation (resumes; the 22 slept rows again), reverb / delay, transients / gates
+caffeinate -dimsu "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,saturation,reverb_delay,transient_gate,drafts --until 07:00
+# Night B (and C)  ~12 h at --jobs 2 in all   limiters as compressors (~3.0 h), then the strips (~9.1 h)
+caffeinate -dimsu "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,limiter_comp,strips,drafts --until 07:00
+```
+
+Repeat a line until its morning output says the sequence is complete; only then the next. preflight and drafts are in every line on
+purpose; followup and fixups cost nothing once done. --jobs 4 only after Kathy has checked a night at 2. The ETA the run prints is
+the serial estimate; the hours above are the --jobs 2 ones (each step's serial share measured from your rows).
+
+Every morning, as before: `--zip ... --since marker`, then send Kathy the zip.
+
+---
+
+# 10 Oct - the plan before your 10-11 Oct night (superseded by the section above)
 
 Build and install **00f2ae79** as the next section says (same folder, same `cert/run_all.json`, nothing deleted; the 9 Oct
 review-picks copy still comes first if you have not done it). Then ONE line a night, in this order. Each stops at 07:00 by itself.
@@ -15,11 +41,11 @@ re-check rule, ~40 min, in night 2's hours). The next build measures Phase B row
 
 ```
 # Night 2  ~6.5 h at --jobs 2 (~4.8 h at 4)   the follow-up once, reverb / delay, transients / gates, limiters as compressors
-caffeinate -i "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,reverb_delay,transient_gate,limiter_comp,drafts --until 07:00
+caffeinate -dimsu "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,reverb_delay,transient_gate,limiter_comp,drafts --until 07:00
 # Night 3  ~6.6 h at --jobs 2 (~5.9 h at 4)   no_pool (resumes), categorise, the accuracy passes, tuners
-caffeinate -i "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,no_pool,categorise,combined,material,frequency,samplerate,tuners,drafts --until 07:00
+caffeinate -dimsu "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,no_pool,categorise,combined,material,frequency,samplerate,tuners,drafts --until 07:00
 # Night 4 (and 5)  the strips: ~9.1 h at --jobs 2 (one long night or two), ~6.5 h at 4 (14 h serial)
-caffeinate -i "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,strips,drafts --until 07:00
+caffeinate -dimsu "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,strips,drafts --until 07:00
 ```
 
 | night | steps | serial (--jobs 1) | --jobs 2 | --jobs 4 |

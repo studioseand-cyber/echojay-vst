@@ -196,6 +196,9 @@ inline juce::String silentFiling (const juce::String& outcome, const juce::Strin
     reason = "silent output: " + juce::String (s.silent) + " of " + juce::String (s.judged) + " measured output(s) digital silence with the input present - the unit passes no signal on this Mac (activation / licence / state not established); not ok, not re-run (delete the row to re-run)";
     return "silent_output";
 }
+// SLEPT ROWS RE-RUN BY THEMSELVES (Kathy, 11 Oct: Sean's Mac slept ~4.5 h, 22 saturation rows filed "slept" - "delete this row to re-run"):
+// a row filed slept holds data that is not trusted, so every run re-files it (the row deleted at the start, its product measured again)
+inline bool refileSlept (const juce::var& row) { return row.getProperty ("outcome", "").toString() == "slept"; }
 // --redo unfinished (9 Oct, the fix-up night): a row that TIMED OUT or FAILED runs again - never one filed needs_licence / needs_device /
 // window / unhostable (those are answers), never one that finished ok
 inline bool rowIsUnfinished (const juce::var& row) { const auto oc = row.getProperty ("outcome", "").toString(); return oc == "timed_out" || oc == "failed"; }

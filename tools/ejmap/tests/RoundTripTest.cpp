@@ -8893,6 +8893,25 @@ void testRunAll()
                && gs.ok && std::abs (gs.norm - 0.666667f) < 1e-5f && std::abs (gs.promisedDb - 6.7) < 1e-9 && gc.ok && gc.norm > 0.34f && gc.norm < 0.66f && tsOnDetents,
                "eq EQ-SNAP: unlanded writes on controls not treated as stepped -> run again as stepped; a stepped +5.5 dB takes the measured 0.667 (6.7 dB promised), the figure the nearest detent");
     }
+    // PB-SLEPT (Kathy, 11 Oct): a row filed slept is re-filed (measured again) on every run; ok / needs_licence / timed_out rows are not
+    {
+        auto row = [] (const char* oc) { auto* o = new juce::DynamicObject(); o->setProperty ("outcome", oc); return juce::var (o); };
+        check (ejmap::phaseb::refileSlept (row ("slept")) && ! ejmap::phaseb::refileSlept (row ("ok")) && ! ejmap::phaseb::refileSlept (row ("needs_licence")) && ! ejmap::phaseb::refileSlept (row ("timed_out")),
+               "phaseb PB-SLEPT: a slept row runs again by itself on the next run; no other outcome is re-filed by this rule");
+    }
+    // PF-SLEEP (Kathy, 11 Oct): the preflight refuses a Mac that can sleep - battery, or AC with only caffeinate -i and a sleep timer; passes
+    // AC + PreventSystemSleep (caffeinate -dimsu) or AC + sleep 0; the refusal names the exact fix
+    {
+        using namespace ejmap::sleepguard;
+        const juce::String ac = "Now drawing from 'AC Power'\n", batt = "Now drawing from 'Battery Power'\n";
+        const juce::String onlyI = "   PreventSystemSleep             0\n   PreventUserIdleSystemSleep     1\n", withS = "   PreventSystemSleep             1\n   PreventUserIdleSystemSleep     1\n";
+        const juce::String timer10 = " sleep                10\n displaysleep         10\n", timer0 = " sleep                0 (sleep prevented by caffeinate)\n";
+        const auto seans = judge (ac, onlyI, timer10), s1 = judge (ac, withS, timer10), s2 = judge (ac, onlyI, timer0), s3 = judge (batt, withS, timer0);
+        check (! seans.ok && seans.line.contains ("caffeinate -i") && seans.fix.contains ("caffeinate -dimsu") && seans.fix.contains ("Prevent automatic sleeping when the display is off")
+               && s1.ok && s2.ok && ! s3.ok && s3.line.contains ("battery"),
+               "preflight PF-SLEEP: AC + caffeinate -i + a 10 min timer (Sean's night) refused with the fix; AC + caffeinate -dimsu, or AC + sleep 0, pass; battery refused ["
+               + seans.line + " | " + s1.line + " | " + s2.line + " | " + s3.line + "]");
+    }
     // PB-DRY (10 Oct): --phaseb-all refuses --dry-run (anywhere in the line, the last argument too) instead of ignoring it and loading
     check (ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--category", "delay", "--out", "/c", "--dry-run" }).contains ("no --dry-run")
            && ejmap::phaseb::refusedPhaseBFlag (juce::StringArray { "--phaseb-all", "--dry-run", "--category", "delay" }).isNotEmpty()
