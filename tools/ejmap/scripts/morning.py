@@ -166,11 +166,19 @@ def cut(desk_name):
 # ---------------------------------------------------------------- 4. equality
 def equality(new_bin, cert, scratch, work):
     say(); say('================ EQUALITY vs 00f2ae79 ================')
-    src = os.path.join(scratch, 'equality', 'src'); old = os.path.join(scratch, 'equality19')
+    # the four sets: kept in the worktree's ignored build-ejmap/equality-baseline/src (survives a reboot), else the session scratch
+    src = os.path.join(WT, 'build-ejmap', 'equality-baseline', 'src')
+    if not os.path.isdir(src): src = os.path.join(scratch, 'equality', 'src')
+    if not os.path.isdir(src): sys.exit('MORNING: the four equality sets are missing (build-ejmap/equality-baseline/src) - STOP')
+    old = os.path.join(scratch, 'equality19')
     R = os.path.join(work, 'equality'); os.makedirs(R)
     stop = []
     for s in ('current', 'seanzip', 'cert_sc', 'cert_tc35'):
-        os.makedirs(os.path.join(R, s)); os.symlink(os.path.join(old, 'pk_' + s, 'new'), os.path.join(R, s, 'old'))
+        os.makedirs(os.path.join(R, s))
+        pk = os.path.join(old, 'pk_' + s, 'new')
+        if os.path.isdir(pk): os.symlink(pk, os.path.join(R, s, 'old'))
+        else:   # 00f2ae79's derive-only outputs, regenerated with the packaged 00f2ae79
+            shutil.copytree(os.path.join(src, s), os.path.join(R, s, 'old'), symlinks=True); sh([OLD_BIN, '--cert-tonecheck-all', '--derive-only', '--out', os.path.join(R, s, 'old')])
         shutil.copytree(os.path.join(src, s), os.path.join(R, s, 'new'), symlinks=True)
         sh([new_bin, '--cert-tonecheck-all', '--derive-only', '--out', os.path.join(R, s, 'new')])
         c = sh(['python3', os.path.join(WT, 'tools/ejmap/cert-traces/2026-10-07-equality/compare.py'), os.path.join(R, s)]).stdout
