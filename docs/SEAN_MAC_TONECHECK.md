@@ -1,6 +1,6 @@
 # FROM 11 Oct - THE NEW BUILD (Kathy's morning ruling): check the build first, then one line a night at --jobs 2
 
-You ran 5ab8352b last night (its preflight log), so none of 00f2ae79's re-checks or fix-ups ran, and the Mac slept ~4.5 h (22
+You ran 5ab8352b last night (its preflight log), so none of 00f2ae79's re-checks or fix-ups ran, and the Mac slept ~5.3 h in total (16
 saturation rows "slept"). The new build fixes both: slept rows run again by themselves, and the preflight refuses to start a Mac that
 can sleep.
 
@@ -10,7 +10,7 @@ line says (start with `caffeinate -dimsu`, keep the charger in, System Settings 
 display is off" ON) - nothing starts until then.
 
 ```
-# Night A  ~5.5 h at --jobs 2   the re-checks (every tone check, once: they were made by 5ab8352b), the fix-ups, saturation (resumes; the 22 slept rows again), reverb / delay, transients / gates
+# Night A  ~6.5 h at --jobs 2 (the build's dry-run ETA, 11 Oct)   the re-checks (every tone check, once: they were made by 5ab8352b), the fix-ups, saturation (resumes; the 16 slept rows again), reverb / delay, transients / gates
 caffeinate -dimsu "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,saturation,reverb_delay,transient_gate,drafts --until 07:00
 # Night B (and C)  ~12 h at --jobs 2 in all   limiters as compressors (~3.0 h), then the strips (~9.1 h)
 caffeinate -dimsu "$BIN" --run-all --jobs 2 --steps preflight,followup,fixups,limiter_comp,strips,drafts --until 07:00
