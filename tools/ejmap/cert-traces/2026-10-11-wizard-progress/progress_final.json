@@ -1,0 +1,40 @@
+{
+  "schema": "ej_wizard_progress/0",
+  "percent": 100.0,
+  "stage": "Done",
+  "stage_index": 4,
+  "stopped": false,
+  "current": [],
+  "plugins": 8,
+  "stage_counts": {
+    "done": 0,
+    "to_do": 0,
+    "total": 0
+  },
+  "problems": 1,
+  "elapsed_s": 20.0,
+  "eta_s": 0.0,
+  "eta_words": "finished",
+  "jobs": 2,
+  "seconds_per_plugin": {
+    "map": {
+      "seconds": 4.0,
+      "source": "starting figure"
+    },
+    "check": {
+      "seconds": 1.5,
+      "source": "measured"
+    },
+    "compressor": {
+      "seconds": 349.300000000000011,
+      "source": "measured"
+    },
+    "eq": {
+      "seconds": 36.0,
+      "source": "measured"
+    }
+  },
+  "line": "[####################] 100%  Done",
+  "summary": "Done in 20 s: 8 plugin(s) - 4 plugins ready, 3 newly measured, ready to send, 1 could not be measured. Ready to send: contribution.zip (3 new, 2 confirmation(s), 21.5 KB) - nothing was sent. Details: wizard.log",
+  "updated": "2026-10-11T12:13:12.698+01:00"
+}

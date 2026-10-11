@@ -16,10 +16,28 @@
 - Bundle: profiles + tone-check sidecars (tone check g 2 PASS only) + manifest (new profiles, confirmations of other versions'
   profiles, skipped with reasons); every file checked for home / user / host names and credential-like fields before packing.
 - Upload: STUBBED (prints what it would send; nothing leaves the Mac). Plain-words summary at every stage.
+- PROGRESS (11 Oct, `EjmapWizardProgress.h`, pins WZ-PROG-1..5b): `<out>/progress.json` (`ej_wizard_progress/0`) rewritten atomically on
+  every event and every 2 s while measuring - percent, stage (Scanning / Checking / Measuring / Packing / Done, or Stopped), the plugin(s)
+  being worked on, the stage's done / to do, problems, elapsed, an ETA from MEASURED per-category seconds (rows on disk + this run;
+  --jobs aware; starting figures from this Mac until then, labelled as such) and the plain line. The terminal shows one live line,
+  e.g. `[########------------]  41%  Measuring 2 of 4 - bx_opto (2 at a time) - about 4 min left`, and a final summary; every detail
+  line goes to `<out>/wizard.log` (`--verbose`: the old output). Fixed stage bands + a hold-at-highest guard: the bar never goes back;
+  a running plugin earns its time run (to 90%); a resumed run starts at the done share (41% after one of four compressors landed).
+  Ctrl-C while measuring: no bundle, no "Done" - `Stopped at 41%: 1 of 4 measured, 3 left (the 2 being measured start again) ... Run
+  the same command to carry on`, and progress.json says Stopped at that percent. A stop reports the DONE share only (Phase B discards
+  the rows in flight), which is exactly where the resume opens - the one place the bar goes back, and the line says why. The
+  rehearsals found three defects, all fixed and pinned: a stopped run packed a bundle with 3 "measuring" and said Done (WZ-PROG-5);
+  its progress.json said 100% / Done (5b); it said "Stopped at 66%" and the resume opened at 41% (5c).
+  Rehearsal: cert-traces/2026-10-11-wizard-progress/.
 
 ## Left before it is a real app
 1. **UI**: a window (scan list, "map now / overnight", progress, review-and-Send). Today a CLI; the JUCE app shell exists (MainComponent)
-   but no wizard screen. Estimated hours / ETA from real times per category.
+   but no wizard screen. The progress half is DONE as data: the window reads `progress.json` (percent, stage, current, counts, ETA,
+   the line, Stopped / Done + summary) - it needs no knowledge of Phase B. Still open: the window itself; a Stop button (today Ctrl-C:
+   the window would send SIGINT to the run's process group, which the CLI already handles); the ETA's starting figures come from this
+   Mac's rehearsal - a stranger's first run should use the server's per-category times; Ctrl-C during Scanning / Checking is NOT handled
+   (no handler is installed there, so the default signal ends the process): no "Stopped" line, and a map half-written at that moment
+   is untested (the maps are written with a plain replace, not atomically).
 2. **Sign-in + upload**: per-user accounts and tokens (plan section 5) - server side (Sean): auth, the contribution intake (holding
    area, validation, agreement with another version or a second user, then publish), the reward ledger. The client's upload call,
    retry / resume of an interrupted upload, and the Send confirmation.

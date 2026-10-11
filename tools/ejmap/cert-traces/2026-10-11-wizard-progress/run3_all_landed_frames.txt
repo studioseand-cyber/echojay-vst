@@ -1,0 +1,25 @@
+EJ Map wizard - every detail goes to <scratch>/wiz7/work/wizard.log
+[##------------------]  10%  Scanning 8 of 8 - working out the time
+[##------------------]  10%  Checking 1 of 8 - working out the time
+[##------------------]  10%  Checking 1 of 8 - Lindell 254E - working out the time
+[##------------------]  10%  Checking 2 of 8 - working out the time
+[##------------------]  10%  Checking 2 of 8 - Lindell 6X-500 - working out the time
+[##------------------]  11%  Checking 3 of 8 - working out the time
+[##------------------]  11%  Checking 3 of 8 - Lindell SBC - working out the time
+[##------------------]  11%  Checking 4 of 8 - working out the time
+[##------------------]  11%  Checking 4 of 8 - Maag EQ2 - working out the time
+[###-----------------]  12%  Checking 5 of 8 - working out the time
+[###-----------------]  12%  Checking 5 of 8 - Maag EQ4 - working out the time
+[###-----------------]  13%  Checking 6 of 8 - working out the time
+[###-----------------]  13%  Checking 6 of 8 - bx_opto - working out the time
+[###-----------------]  13%  Checking 7 of 8 - working out the time
+[###-----------------]  13%  Checking 7 of 8 - elysia mpressor - working out the time
+[###-----------------]  14%  Checking 8 of 8 - working out the time
+[###-----------------]  14%  Checking 8 of 8 - bx_townhouse Buss Compressor - working out the time
+[###-----------------]  15%  Checking 8 of 8 - working out the time
+[###################-]  97%  Measuring 4 of 4 - under a minute left
+[###################-]  97%  Packing 1 of 1 - under a minute left
+[###################-]  97%  Packing 1 of 1 - the contribution bundle - under a minute left
+[####################] 100%  Packing 1 of 1 - under a minute left
+[####################] 100%  Done
+Done in 20 s: 8 plugin(s) - 4 plugins ready, 3 newly measured, ready to send, 1 could not be measured. Ready to send: contribution.zip (3 new, 2 confirmation(s), 21.5 KB) - nothing was sent. Details: wizard.log

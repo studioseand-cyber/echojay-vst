@@ -1,0 +1,72 @@
+WIZARD: 4 profile(s) in the database (mockdb, a local folder: nothing is fetched)
+WIZARD: map store <scratch>/wiz7/store/maps: 0 map(s); 8 of the 8 plugin(s) need mapping
+  Lindell 6X-500                 mapped: 17 parameter(s), map 1c4e9f48bdd7, an EQ
+  Lindell 254E                   mapped: 13 parameter(s), map 1ba7ad6d8695, a compressor
+  Lindell SBC                    mapped: 22 parameter(s), map afdb3916a60b, a compressor
+  Maag EQ2                       mapped: 10 parameter(s), map 6a4b50cb8bd2, an EQ
+  Maag EQ4                       mapped: 9 parameter(s), map a8f9c2ec8088, an EQ
+  bx_opto                        mapped: 10 parameter(s), map a21e559b7094, a compressor
+  elysia mpressor                mapped: 18 parameter(s), map b3396255fdc1, a compressor
+  bx_townhouse Buss Compressor   mapped: 16 parameter(s), map 7e8ca3f402d1, a compressor
+  Lindell 254E                   1.2.2     (compressor) -> queued: no profile for this plugin yet
+  Lindell 6X-500                 1.2.2     (eq) -> queued: no profile for this plugin yet
+  Lindell SBC                    1.0.3     (compressor) -> ready: the same plugin and version and map
+  Maag EQ2                       1.11.1    (eq) -> ready_from_version: the version 1.11.0 profile: 60 write(s) read back as the profile says
+  Maag EQ4                       1.15.1    (eq) -> ready: the same plugin and version and map
+  bx_opto                        1.10.1    (compressor) -> queued: no profile for this plugin yet
+  elysia mpressor                1.15.1    (compressor) -> queued: no profile for this plugin yet
+  bx_townhouse Buss Compressor   1.8.1     (compressor) -> ready_from_version: the version 1.8.0 profile: 31 write(s) read back as the profile says
+WIZARD: 8 plugin(s) found: 4 plugins ready, 4 to measure
+WIZARD: measuring 4 plugin(s), 2 at a time - stop any time; it carries on next time
+PHASEB: 4 product(s) over 2 categories -> <scratch>/wiz7/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  wizard       3 product(s), 0 already done; hang guard 30 min (the compressor certification for a plugin the database does not have (the wizard's queue))
+  wizard_eq    1 product(s), 0 already done; hang guard 45 min (the EQ certification for a plugin the database does not have (the wizard's EQ queue))
+PHASEB: --jobs 2: 4 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[wizard 1/3 | all 1/4] elysia mpressor: ok 340.291 s | elapsed 0:05:41 | ETA 0:17:01
+  wizard: Lindell 254E - stopped with the run: no row, it runs again on the resume
+  wizard: bx_opto - stopped with the run: no row, it runs again on the resume
+PHASEB: stopped (07:00 / Ctrl-C): no new child started; the rows that were running run again on the resume
+WIZARD: stopped while measuring (1 of 4 landed): no bundle; the same command carries on
+WIZARD: 4 profile(s) in the database (mockdb, a local folder: nothing is fetched)
+WIZARD: map store <scratch>/wiz7/store/maps: 8 map(s); 0 of the 8 plugin(s) need mapping
+  Lindell 254E                   1.2.2     (compressor) -> queued: no profile for this plugin yet
+  Lindell 6X-500                 1.2.2     (eq) -> queued: no profile for this plugin yet
+  Lindell SBC                    1.0.3     (compressor) -> ready: the same plugin and version and map
+  Maag EQ2                       1.11.1    (eq) -> ready_from_version: the version 1.11.0 profile: 60 write(s) read back as the profile says
+  Maag EQ4                       1.15.1    (eq) -> ready: the same plugin and version and map
+  bx_opto                        1.10.1    (compressor) -> queued: no profile for this plugin yet
+  elysia mpressor                1.15.1    (compressor) -> queued: no profile for this plugin yet
+  bx_townhouse Buss Compressor   1.8.1     (compressor) -> ready_from_version: the version 1.8.0 profile: 31 write(s) read back as the profile says
+WIZARD: 8 plugin(s) found: 4 plugins ready, 4 to measure
+WIZARD: measuring 4 plugin(s), 2 at a time - stop any time; it carries on next time
+PHASEB: 4 product(s) over 2 categories -> <scratch>/wiz7/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  wizard       3 product(s), 1 already done; hang guard 30 min (the compressor certification for a plugin the database does not have (the wizard's queue))
+  wizard_eq    1 product(s), 0 already done; hang guard 45 min (the EQ certification for a plugin the database does not have (the wizard's EQ queue))
+PHASEB: --jobs 2: 4 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[wizard 2/3 | all 2/4] Lindell 254E: ok 315.036 s | elapsed 0:11:18 | ETA 0:10:55
+[wizard_eq 1/1 | all 3/4] Lindell 6X-500: ok 35.6308 s | elapsed 0:11:54 | ETA 0:05:28
+[wizard 3/3 | all 4/4] bx_opto: ok 392.788 s | elapsed 0:12:36 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261011T115112, updated 20261011T120402); summary <scratch>/wiz7/work/phaseb/summary.json
+WIZARD: 4 plugins ready, 3 newly measured, ready to send, 1 could not be measured
+WIZARD: contribution bundle -> contribution.zip (3 new profile(s), 2 confirmation(s) of another version's profile, 1 skipped with the reason; 21.5 KB; checked: no paths, names or tokens)
+WIZARD: UPLOAD (stubbed): nothing is sent. A real app shows this list and sends only when the user presses Send.
+WIZARD: 4 profile(s) in the database (mockdb, a local folder: nothing is fetched)
+WIZARD: map store <scratch>/wiz7/store/maps: 8 map(s); 0 of the 8 plugin(s) need mapping
+  Lindell 254E                   1.2.2     (compressor) -> queued: no profile for this plugin yet
+  Lindell 6X-500                 1.2.2     (eq) -> queued: no profile for this plugin yet
+  Lindell SBC                    1.0.3     (compressor) -> ready: the same plugin and version and map
+  Maag EQ2                       1.11.1    (eq) -> ready_from_version: the version 1.11.0 profile: 60 write(s) read back as the profile says
+  Maag EQ4                       1.15.1    (eq) -> ready: the same plugin and version and map
+  bx_opto                        1.10.1    (compressor) -> queued: no profile for this plugin yet
+  elysia mpressor                1.15.1    (compressor) -> queued: no profile for this plugin yet
+  bx_townhouse Buss Compressor   1.8.1     (compressor) -> ready_from_version: the version 1.8.0 profile: 31 write(s) read back as the profile says
+WIZARD: 8 plugin(s) found: 4 plugins ready, 4 to measure
+WIZARD: measuring 4 plugin(s), 2 at a time - stop any time; it carries on next time
+PHASEB: 4 product(s) over 2 categories -> <scratch>/wiz7/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  wizard       3 product(s), 3 already done; hang guard 30 min (the compressor certification for a plugin the database does not have (the wizard's queue))
+  wizard_eq    1 product(s), 1 already done; hang guard 45 min (the EQ certification for a plugin the database does not have (the wizard's EQ queue))
+PHASEB: --jobs 2: 4 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+PHASEB: done - PHASE B PROGRESS (started 20261011T115112, updated 20261011T121311); summary <scratch>/wiz7/work/phaseb/summary.json
+WIZARD: 4 plugins ready, 3 newly measured, ready to send, 1 could not be measured
+WIZARD: contribution bundle -> contribution.zip (3 new profile(s), 2 confirmation(s) of another version's profile, 1 skipped with the reason; 21.5 KB; checked: no paths, names or tokens)
+WIZARD: UPLOAD (stubbed): nothing is sent. A real app shows this list and sends only when the user presses Send.

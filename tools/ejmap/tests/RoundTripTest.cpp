@@ -86,6 +86,8 @@
 #include <functional>
 #include "EjmapCertDriver.h"
 #include "EjmapWizard.h"
+#include "EjmapWizardProgress.h"
+#include <sstream>
 #include "EjmapCertReview.h"
 #include "EjmapSaturation.h"
 #include "EjmapReverbDelay.h"
@@ -9220,6 +9222,120 @@ void testTextPassTimeout()
     check (textPassTimeoutMs (0, 120000) == 120000, "text T3: nothing to sample still has the floor");
 }
 
+/** THE WIZARD'S PROGRESS (EjmapWizardProgress.h, 11 Oct): the bar never goes backwards, the ETA comes from measured times (--jobs aware),
+    a resumed run starts the bar at the done share. */
+void testWizardProgress()
+{
+    using namespace ejmap::wizprog;
+    auto items = [] (int n, int done, const char* kind) { std::vector<Item> v; for (int i = 0; i < n; ++i) { Item it; it.product = juce::String (kind) + juce::String (i); it.kind = kind; it.done = i < done; v.push_back (it); } return v; };
+    // WZ-PROG-1 THE BAR NEVER GOES BACKWARDS: fixed bands per stage; items added mid-stage shrink the share, the bar waits
+    {
+        Times t; double last = 0.0;
+        const auto a = percent (Stage::scanning, items (4, 4, "map"), t, last);          // 10
+        const auto b = percent (Stage::checking, items (4, 0, "check"), t, last);        // 10 (the band starts where scanning ended)
+        const auto c = percent (Stage::measuring, items (2, 1, "compressor"), t, last);  // 15 + 82 x 0.5 = 56
+        const auto d = percent (Stage::measuring, items (4, 1, "compressor"), t, last);  // raw 35.5: held at 56
+        const auto e = percent (Stage::packing, items (1, 0, "pack"), t, last);          // 97
+        const auto f = percent (Stage::done, {}, t, last);                               // 100
+        // a running plugin earns its time run, capped at 90%: 2 compressors (340 s), one 170 s in -> 15 + 82 x 170/680; one 900 s in -> capped at 306
+        auto run = items (2, 0, "compressor"); run[0].running = true; run[0].ranS = 170.0; double l2 = 0.0;
+        auto over = items (2, 0, "compressor"); over[0].running = true; over[0].ranS = 900.0;
+        const auto g = percent (Stage::measuring, run, t, l2);
+        const bool runningMoves = std::abs (g - (15.0 + 82.0 * 170.0 / 680.0)) < 1e-9 && std::abs (stageShare (over, t) - 306.0 / 680.0) < 1e-9;
+        check (runningMoves && std::abs (a - 10.0) < 1e-9 && std::abs (b - 10.0) < 1e-9 && std::abs (c - 56.0) < 1e-9 && std::abs (d - 56.0) < 1e-9 && std::abs (e - 97.0) < 1e-9 && f == 100.0
+               && bandOf (Stage::scanning).to == bandOf (Stage::checking).from && bandOf (Stage::checking).to == bandOf (Stage::measuring).from && bandOf (Stage::measuring).to == bandOf (Stage::packing).from,
+               "wizard WZ-PROG-1: fixed contiguous bands; a share that shrinks mid-stage holds the bar (56 -> 56, not 35.5); 10/10/56/56/97/100; a running plugin earns its time (capped 90%)");
+    }
+    // WZ-PROG-2 THE ETA FROM MEASURED TIMES, --jobs aware: 3 parallel compressors at a measured 350 s, 2 at a time = 525 s, + 1 serial
+    // (UAD / PACE) at 350 s, + packing 2 s; before anything is measured the starting figure (340 s) is used and said
+    {
+        Times t; t.add ("compressor", 300.0); t.add ("compressor", 400.0);
+        auto q = items (4, 0, "compressor"); q[3].serial = true;
+        const auto eta = etaSeconds (Stage::measuring, q, t, 2, true, {});
+        auto r = q; r[0].running = true; r[0].ranS = 100.0;   // a running plugin counts what it has left: 350 - 100 = 250
+        auto late = q; late[0].running = true; late[0].ranS = 900.0;   // past its figure: a tenth (35 s), not zero
+        Times none;
+        check (std::abs (eta - (525.0 + 350.0 + 2.0)) < 1e-9 && std::abs (etaSeconds (Stage::measuring, r, t, 2, true, {}) - (475.0 + 350.0 + 2.0)) < 1e-9
+               && std::abs (etaSeconds (Stage::measuring, late, t, 2, true, {}) - (367.5 + 350.0 + 2.0)) < 1e-9
+               && t.isMeasured ("compressor") && ! none.isMeasured ("compressor") && none.perItem ("compressor") == defaultSeconds ("compressor") && none.perItem ("eq") == 36.0
+               && etaSeconds (Stage::checking, items (3, 1, "check"), t, 2, false, {}) < 0.0 && etaWords (-1.0) == "working out the time"
+               && etaWords (1500.0) == "about 25 min left" && etaWords (30.0) == "under a minute left" && etaWords (4800.0) == "about 1 h 20 min left",
+               "wizard WZ-PROG-2: ETA = parallel / jobs + serial + packing from MEASURED per-category seconds (877 s); a running plugin counts its time left (at least a tenth); unknown queue = 'working out the time'");
+    }
+    // WZ-PROG-3 RESUME: 2 of 4 queued compressors already landed (one ok, one licence) -> the bar starts at 15 + 82 x 0.5 = 56, one problem
+    {
+        std::map<juce::String, juce::String> landed { { "compressor0", "ok" }, { "compressor1", "needs_licence" } };
+        const auto r = resumeItems (items (4, 0, "compressor"), landed);
+        Times t; double last = 0.0;
+        int problems = 0; for (const auto& i : r) if (i.problem) ++problems;
+        check (r[0].done && r[1].done && ! r[2].done && ! r[3].done && problems == 1 && std::abs (percent (Stage::measuring, r, t, last) - 56.0) < 1e-9,
+               "wizard WZ-PROG-3: a resumed queue starts done where its rows landed: the bar opens at 56%, not 15%; a landed non-ok row is a problem");
+    }
+    // WZ-PROG-5 A STOPPED MEASURE (the 11 Oct rehearsal: Ctrl-C mid-measure packed a bundle with 3 'measuring' and said Done): Phase B's
+    // 130 means stopped - no bundle, the line says where it stopped and that the same command carries on; any other code carries on
+    {
+        const auto w = stoppedWords (41.4, 1, 4);
+        check (measureStopped (130) && ! measureStopped (0) && ! measureStopped (3)
+               && w.startsWith ("Stopped at 41%: 1 of 4 measured, 3 left.") && w.contains ("Nothing was packed or sent") && w.contains ("carry on"),
+               "wizard WZ-PROG-5: Phase B stopped (130) -> no bundle, 'Stopped at 41%: 1 of 4 measured, 3 left' + carry on; got '" + w + "'");
+    }
+    {   // ... and the file a window app reads says Stopped at the percent reached, never 100% / Done (the second 11 Oct rehearsal defect)
+        const auto dir = juce::File::createTempFile ("wzstop"); dir.createDirectory(); const auto json = dir.getChildFile ("progress.json");
+        std::ostringstream term; Tracker tr (json, term, false, 2);
+        Item a; a.product = "A"; a.kind = "compressor"; a.done = true; Item b; b.product = "B"; b.kind = "compressor";
+        tr.stage (Stage::measuring, { a, b }); tr.started ("B"); tr.ranFor ("B", 300.0);
+        const double heldBefore = tr.lastPercent();   // 15 + 82 x 640 / 680 ~ 92: shown while B runs
+        tr.finish (stoppedWords (tr.stoppedAt(), 1, 2, tr.running()), true);
+        const auto j = juce::JSON::parse (json.loadFileAsString());
+        check (heldBefore > 90.0 && std::abs (tr.lastPercent() - 56.0) < 1e-9 && j.getProperty ("stage", "") == "Stopped" && (bool) j.getProperty ("stopped", false) && std::abs ((double) j.getProperty ("percent", 0.0) - 56.0) < 1e-9
+               && j.getProperty ("line", "").toString().contains ("56%  Stopped") && j.getProperty ("summary", "").toString().startsWith ("Stopped at 56%: 1 of 2 measured, 1 left (the 1 being measured start again)"),
+               "wizard WZ-PROG-5b: a stopped run's progress.json: stage Stopped, stopped true, percent 56 (where it stopped), not 100 / Done");
+        dir.deleteRecursively();
+    }
+    {   // a stop drops the running credit and the hold: the bar reads the done share, which is where the resume opens
+        Times t; double last = 0.0;
+        auto r = items (2, 1, "compressor"); r[1].running = true; r[1].ranS = 300.0;
+        const auto shown = percent (Stage::measuring, r, t, last);                                   // 15 + 82 x (340 + 300) / 680
+        const auto stopped = stoppedPercent (Stage::measuring, r, t);                                // 15 + 82 x 340 / 680 = 56
+        double fresh = 0.0; const auto resumed = percent (Stage::measuring, resumeItems (items (2, 0, "compressor"), { { "compressor0", "ok" } }), t, fresh);
+        check (shown > 90.0 && std::abs (stopped - 56.0) < 1e-9 && std::abs (resumed - stopped) < 1e-9,
+               "wizard WZ-PROG-5c: shown " + juce::String (shown, 1) + "% with a plugin 300 s in; stopped -> " + juce::String (stopped, 1) + "% (done share only) = the resume's opening " + juce::String (resumed, 1) + "%");
+    }
+    // WZ-PROG-6 THE FINAL PROBLEM COUNT comes from the final states: the rehearsal's summary said "1 could not be measured" while the file said 0
+    {
+        const std::map<juce::String, int> c { { "ready", 2 }, { "ready_from_version", 2 }, { "measured", 3 }, { "not_measurable", 1 }, { "not_in_scope", 5 }, { "needs_licence", 1 }, { "silent", 1 } };
+        check (problemCount (c) == 3 && ! isProblemState ("not_in_scope") && ! isProblemState ("measured") && ! isProblemState ("ready_from_version"),
+               "wizard WZ-PROG-6: problems = not_measurable + needs_licence + silent (3); not_in_scope / measured / ready are not problems");
+    }
+    // WZ-PROG-4 THE TRACKER end to end: every percent it shows is >= the one before, progress.json carries the same number and line,
+    // the bar line reads as Kathy's example, and the final summary is printed
+    {
+        const auto dir = juce::File::createTempFile ("wzprog"); dir.createDirectory(); const auto json = dir.getChildFile ("progress.json");
+        std::ostringstream term; Tracker tr (json, term, false, 2); tr.setPlugins (3);
+        std::vector<double> seen;
+        auto mk1 = [] (const char* p, const char* k) { Item i; i.product = p; i.kind = k; return i; };
+        tr.stage (Stage::scanning, { mk1 ("A", "map"), mk1 ("B", "map"), mk1 ("C", "map") }); seen.push_back (tr.lastPercent());
+        for (const char* p : { "A", "B", "C" }) { tr.started (p); tr.finished (p, false, 4.0); seen.push_back (tr.lastPercent()); }
+        tr.stage (Stage::checking, { mk1 ("A", "check"), mk1 ("B", "check"), mk1 ("C", "check") }); seen.push_back (tr.lastPercent());
+        for (const char* p : { "A", "B", "C" }) { tr.started (p); tr.finished (p, false, 1.0); seen.push_back (tr.lastPercent()); }
+        tr.stage (Stage::measuring, resumeItems ({ mk1 ("A", "compressor"), mk1 ("B", "compressor"), mk1 ("C", "eq") }, { { "A", "ok" } })); seen.push_back (tr.lastPercent());
+        tr.started ("B"); tr.started ("C"); seen.push_back (tr.lastPercent());
+        const auto midLine = tr.lastLine();
+        tr.finished ("C", false, 30.0); seen.push_back (tr.lastPercent()); tr.finished ("B", true, 200.0); seen.push_back (tr.lastPercent());
+        tr.stage (Stage::packing, { mk1 ("bundle", "pack") }); tr.finished ("bundle", false, 1.0); seen.push_back (tr.lastPercent());
+        const auto j = juce::JSON::parse (json.loadFileAsString());
+        tr.finish ("Done in 1 s: 3 plugin(s)"); seen.push_back (tr.lastPercent());
+        const auto jf = juce::JSON::parse (json.loadFileAsString());
+        bool up = true; for (size_t i = 1; i < seen.size(); ++i) if (seen[i] + 1e-9 < seen[i - 1]) up = false;
+        check (up && seen.front() == 0.0 && seen.back() == 100.0 && std::abs ((double) j.getProperty ("percent", -1.0) - 100.0) < 1e-9 && j.getProperty ("stage", "") == "Packing"
+               && jf.getProperty ("stage", "") == "Done" && jf.getProperty ("eta_words", "") == "finished" && (int) jf.getProperty ("problems", -1) == 1 && jf.getProperty ("summary", "") == "Done in 1 s: 3 plugin(s)"
+               && midLine.startsWith ("[") && midLine.contains ("%  Measuring 2 of 3 - B (2 at a time) - ") && term.str().find ("Done in 1 s: 3 plugin(s)") != std::string::npos
+               && barText (45.0) == "[#########-----------]",
+               "wizard WZ-PROG-4: the tracker's percents never decrease (" + juce::String ((int) seen.size()) + " events, 0 -> 100); progress.json = the shown number; the line reads 'Measuring 2 of 3 - B (2 at a time)'; got '" + midLine + "'");
+        dir.deleteRecursively();
+    }
+}
+
 /** THE WIZARD (EjmapWizard.h, feat/ejmap-wizard): the lookup, the quick live check, the bundle's privacy check, the plain summary. */
 void testWizard()
 {
@@ -9638,6 +9754,7 @@ int main (int, char**)
     testRoleEvidence();
     testTextPassTimeout();
     testWizard();
+    testWizardProgress();
     testJobs();
     testPhaseB();
     testLoopOutcomes();

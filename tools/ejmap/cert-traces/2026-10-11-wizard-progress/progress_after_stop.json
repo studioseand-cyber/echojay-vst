@@ -1,0 +1,40 @@
+{
+  "schema": "ej_wizard_progress/0",
+  "percent": 41.399999999999999,
+  "stage": "Stopped",
+  "stage_index": 2,
+  "stopped": true,
+  "current": [],
+  "plugins": 8,
+  "stage_counts": {
+    "done": 1,
+    "to_do": 3,
+    "total": 4
+  },
+  "problems": 0,
+  "elapsed_s": 384.0,
+  "eta_s": 360.0,
+  "eta_words": "stopped",
+  "jobs": 2,
+  "seconds_per_plugin": {
+    "map": {
+      "seconds": 0.5,
+      "source": "measured"
+    },
+    "check": {
+      "seconds": 1.5,
+      "source": "measured"
+    },
+    "compressor": {
+      "seconds": 340.300000000000011,
+      "source": "measured"
+    },
+    "eq": {
+      "seconds": 36.0,
+      "source": "starting figure"
+    }
+  },
+  "line": "[########------------]  41%  Stopped",
+  "summary": "Stopped at 41%: 1 of 4 measured, 3 left (the 2 being measured start again). Nothing was packed or sent. Run the same command to carry on - it starts where it stopped.",
+  "updated": "2026-10-11T11:57:15.955+01:00"
+}

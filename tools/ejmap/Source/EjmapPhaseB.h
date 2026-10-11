@@ -21,9 +21,15 @@
 #include <vector>
 #include <map>
 #include <optional>
+#include <functional>
 
 namespace ejmap::phaseb
 {
+// the wizard's progress (11 Oct): told when a row starts (its child is about to run) and when it lands; unset = nothing happens
+struct RowHooks { std::function<void (const juce::String& cat, const juce::String& product)> started;
+                  std::function<void (const juce::String& cat, const juce::String& product, const juce::String& outcome, double seconds)> finished; };
+inline RowHooks& rowHooks() { static RowHooks h; return h; }
+
 
 // THE CATEGORIES in priority order. mode = the ejmap command; ledger = the categories.json names that feed it (empty = from
 // the cert folder: certified compressors for gaincal / timing, the multiband rows for multiband); guard = the hang guard.

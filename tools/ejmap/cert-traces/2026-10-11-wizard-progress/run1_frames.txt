@@ -1,0 +1,96 @@
+EJ Map wizard - every detail goes to <scratch>/wiz7/work/wizard.log
+[--------------------]   0%  Scanning 1 of 8 - working out the time
+[--------------------]   0%  Scanning 1 of 8 - Lindell 254E (2 at a time) - working out the time
+[--------------------]   2%  Scanning 2 of 8 - Lindell 254E (2 at a time) - working out the time
+[#-------------------]   2%  Scanning 3 of 8 - Lindell SBC (2 at a time) - working out the time
+[#-------------------]   4%  Scanning 4 of 8 - Maag EQ2 (2 at a time) - working out the time
+[#-------------------]   5%  Scanning 5 of 8 - Maag EQ4 (2 at a time) - working out the time
+[#-------------------]   6%  Scanning 6 of 8 - bx_opto (2 at a time) - working out the time
+[#-------------------]   7%  Scanning 6 of 8 - bx_opto (2 at a time) - working out the time
+[##------------------]   7%  Scanning 7 of 8 - elysia mpressor (2 at a time) - working out the time
+[##------------------]   9%  Scanning 8 of 8 - bx_townhouse Buss Compressor (2 at a time) - working out the time
+[##------------------]  10%  Scanning 8 of 8 - working out the time
+[##------------------]  10%  Checking 1 of 8 - working out the time
+[##------------------]  10%  Checking 1 of 8 - Lindell 254E - working out the time
+[##------------------]  10%  Checking 2 of 8 - working out the time
+[##------------------]  10%  Checking 2 of 8 - Lindell 6X-500 - working out the time
+[##------------------]  11%  Checking 3 of 8 - working out the time
+[##------------------]  11%  Checking 3 of 8 - Lindell SBC - working out the time
+[##------------------]  11%  Checking 4 of 8 - working out the time
+[##------------------]  11%  Checking 4 of 8 - Maag EQ2 - working out the time
+[###-----------------]  12%  Checking 5 of 8 - working out the time
+[###-----------------]  12%  Checking 5 of 8 - Maag EQ4 - working out the time
+[###-----------------]  13%  Checking 6 of 8 - working out the time
+[###-----------------]  13%  Checking 6 of 8 - bx_opto - working out the time
+[###-----------------]  13%  Checking 7 of 8 - working out the time
+[###-----------------]  13%  Checking 7 of 8 - elysia mpressor - working out the time
+[###-----------------]  14%  Checking 8 of 8 - working out the time
+[###-----------------]  14%  Checking 8 of 8 - bx_townhouse Buss Compressor - working out the time
+[###-----------------]  15%  Checking 8 of 8 - working out the time
+[###-----------------]  15%  Measuring 1 of 4 - about 9 min left
+[###-----------------]  15%  Measuring 1 of 4 - bx_opto (2 at a time) - about 9 min left
+[###-----------------]  16%  Measuring 1 of 4 - bx_opto (2 at a time) - about 9 min left
+[###-----------------]  17%  Measuring 1 of 4 - bx_opto (2 at a time) - about 9 min left
+[####----------------]  17%  Measuring 1 of 4 - bx_opto (2 at a time) - about 9 min left
+[####----------------]  18%  Measuring 1 of 4 - bx_opto (2 at a time) - about 9 min left
+[####----------------]  19%  Measuring 1 of 4 - bx_opto (2 at a time) - about 9 min left
+[####----------------]  20%  Measuring 1 of 4 - bx_opto (2 at a time) - about 9 min left
+[####----------------]  21%  Measuring 1 of 4 - bx_opto (2 at a time) - about 9 min left
+[####----------------]  22%  Measuring 1 of 4 - bx_opto (2 at a time) - about 9 min left
+[#####---------------]  22%  Measuring 1 of 4 - bx_opto (2 at a time) - about 9 min left
+[#####---------------]  22%  Measuring 1 of 4 - bx_opto (2 at a time) - about 8 min left
+[#####---------------]  23%  Measuring 1 of 4 - bx_opto (2 at a time) - about 8 min left
+[#####---------------]  24%  Measuring 1 of 4 - bx_opto (2 at a time) - about 8 min left
+[#####---------------]  25%  Measuring 1 of 4 - bx_opto (2 at a time) - about 8 min left
+[#####---------------]  26%  Measuring 1 of 4 - bx_opto (2 at a time) - about 8 min left
+[#####---------------]  27%  Measuring 1 of 4 - bx_opto (2 at a time) - about 8 min left
+[######--------------]  27%  Measuring 1 of 4 - bx_opto (2 at a time) - about 8 min left
+[######--------------]  28%  Measuring 1 of 4 - bx_opto (2 at a time) - about 8 min left
+[######--------------]  29%  Measuring 1 of 4 - bx_opto (2 at a time) - about 8 min left
+[######--------------]  30%  Measuring 1 of 4 - bx_opto (2 at a time) - about 8 min left
+[######--------------]  31%  Measuring 1 of 4 - bx_opto (2 at a time) - about 8 min left
+[######--------------]  32%  Measuring 1 of 4 - bx_opto (2 at a time) - about 8 min left
+[######--------------]  32%  Measuring 1 of 4 - bx_opto (2 at a time) - about 7 min left
+[#######-------------]  32%  Measuring 1 of 4 - bx_opto (2 at a time) - about 7 min left
+[#######-------------]  33%  Measuring 1 of 4 - bx_opto (2 at a time) - about 7 min left
+[#######-------------]  34%  Measuring 1 of 4 - bx_opto (2 at a time) - about 7 min left
+[#######-------------]  35%  Measuring 1 of 4 - bx_opto (2 at a time) - about 7 min left
+[#######-------------]  36%  Measuring 1 of 4 - bx_opto (2 at a time) - about 7 min left
+[#######-------------]  37%  Measuring 1 of 4 - bx_opto (2 at a time) - about 7 min left
+[########------------]  37%  Measuring 1 of 4 - bx_opto (2 at a time) - about 7 min left
+[########------------]  38%  Measuring 1 of 4 - bx_opto (2 at a time) - about 7 min left
+[########------------]  39%  Measuring 1 of 4 - bx_opto (2 at a time) - about 7 min left
+[########------------]  40%  Measuring 1 of 4 - bx_opto (2 at a time) - about 7 min left
+[########------------]  41%  Measuring 1 of 4 - bx_opto (2 at a time) - about 7 min left
+[########------------]  41%  Measuring 1 of 4 - bx_opto (2 at a time) - about 6 min left
+[########------------]  42%  Measuring 1 of 4 - bx_opto (2 at a time) - about 6 min left
+[#########-----------]  42%  Measuring 1 of 4 - bx_opto (2 at a time) - about 6 min left
+[#########-----------]  43%  Measuring 1 of 4 - bx_opto (2 at a time) - about 6 min left
+[#########-----------]  44%  Measuring 1 of 4 - bx_opto (2 at a time) - about 6 min left
+[#########-----------]  45%  Measuring 1 of 4 - bx_opto (2 at a time) - about 6 min left
+[#########-----------]  46%  Measuring 1 of 4 - bx_opto (2 at a time) - about 6 min left
+[#########-----------]  47%  Measuring 1 of 4 - bx_opto (2 at a time) - about 6 min left
+[##########----------]  47%  Measuring 1 of 4 - bx_opto (2 at a time) - about 6 min left
+[##########----------]  48%  Measuring 1 of 4 - bx_opto (2 at a time) - about 6 min left
+[##########----------]  49%  Measuring 1 of 4 - bx_opto (2 at a time) - about 6 min left
+[##########----------]  50%  Measuring 1 of 4 - bx_opto (2 at a time) - about 6 min left
+[##########----------]  50%  Measuring 1 of 4 - bx_opto (2 at a time) - about 5 min left
+[##########----------]  51%  Measuring 1 of 4 - bx_opto (2 at a time) - about 5 min left
+[##########----------]  52%  Measuring 1 of 4 - bx_opto (2 at a time) - about 5 min left
+[###########---------]  52%  Measuring 1 of 4 - bx_opto (2 at a time) - about 5 min left
+[###########---------]  53%  Measuring 1 of 4 - bx_opto (2 at a time) - about 5 min left
+[###########---------]  54%  Measuring 1 of 4 - bx_opto (2 at a time) - about 5 min left
+[###########---------]  55%  Measuring 1 of 4 - bx_opto (2 at a time) - about 5 min left
+[###########---------]  56%  Measuring 1 of 4 - bx_opto (2 at a time) - about 5 min left
+[###########---------]  57%  Measuring 1 of 4 - bx_opto (2 at a time) - about 5 min left
+[############--------]  57%  Measuring 1 of 4 - bx_opto (2 at a time) - about 5 min left
+[############--------]  58%  Measuring 1 of 4 - bx_opto (2 at a time) - about 5 min left
+[############--------]  59%  Measuring 1 of 4 - bx_opto (2 at a time) - about 5 min left
+[############--------]  60%  Measuring 1 of 4 - bx_opto (2 at a time) - about 4 min left
+[############--------]  61%  Measuring 1 of 4 - bx_opto (2 at a time) - about 4 min left
+[############--------]  62%  Measuring 1 of 4 - bx_opto (2 at a time) - about 4 min left
+[#############-------]  62%  Measuring 1 of 4 - bx_opto (2 at a time) - about 4 min left
+[#############-------]  65%  Measuring 2 of 4 - bx_opto (2 at a time) - about 4 min left
+[#############-------]  66%  Measuring 2 of 4 - bx_opto (2 at a time) - about 4 min left
+[########------------]  41%  Stopped
+Stopped at 41%: 1 of 4 measured, 3 left (the 2 being measured start again). Nothing was packed or sent. Run the same command to carry on - it starts where it stopped.

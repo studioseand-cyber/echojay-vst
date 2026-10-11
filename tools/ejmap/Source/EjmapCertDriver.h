@@ -6422,6 +6422,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                     }
                     args.add ("--resume-traces");
                 }
+                if (phaseb::rowHooks().started) phaseb::rowHooks().started (cat.name, pp.product);
                 PWork w; w.cat = &cat; w.pp = pp; w.catDir = catDir; w.tmp = tmp; w.row = row; w.gate = gate; w.args = args; w.reused = reused; return w;
             }
             row->setProperty ("outcome", outcome); row->setProperty ("seconds", std::round (seconds)); row->setProperty ("at", nowStamp()); row->setProperty ("probe", id.cdhash);
@@ -6431,6 +6432,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             if (outcome != "skipped") c.seconds.push_back (seconds);
             saveProgress ({});
             say (progressLine (prog, cat.name, pp.product, outcome, seconds));
+            if (phaseb::rowHooks().finished) phaseb::rowHooks().finished (cat.name, pp.product, outcome, seconds);
             return std::nullopt;
     };
     pool.run = [] (const PWork& w) { PResult res; res.startedAt = juce::Time::getCurrentTime(); const auto t1 = juce::Time::getMillisecondCounterHiRes(); res.r = runChild (w.args, (int) (w.cat->guardS * 1000.0)); res.seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0; return res; };
@@ -6519,6 +6521,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             if (outcome != "skipped") c.seconds.push_back (seconds);
             saveProgress ({});
             say (progressLine (prog, cat.name, pp.product, outcome, seconds));
+            if (phaseb::rowHooks().finished) phaseb::rowHooks().finished (cat.name, pp.product, outcome, seconds);
     };
     pool (items, juce::jmax (1, opt.jobs));
     std::signal (SIGINT, SIG_DFL); std::signal (SIGTERM, SIG_DFL);
