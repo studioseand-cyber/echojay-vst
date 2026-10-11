@@ -370,7 +370,7 @@ EchoJayProcessor::EchoJayProcessor()
         // setLatencySamples (RACK_BORROW_IMPLEMENTATION_SPEC §2.3). This
         // host is Primary, so the gate is structural, not behavioral.
         if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
-            ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), "PluginProcessor onChainChanged");
+            ejSetLatencyLogged (*this, lat, "PluginProcessor onChainChanged");   // 11 Oct: no borrow budget
         // The chain now produces different audio, so the held true peak / peak /
         // overs describe a signal that no longer exists (they were contradicting
         // a capture taken seconds later). Drop those holds; integrated LUFS / LRA
@@ -752,30 +752,15 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     // i.e. a click, in the exact path the solo battery listens through.
     editSoloMix_.reset(sampleRate, 0.030);
     borrowSoloMix_.reset(sampleRate, 0.030);
-    borrowCtxMix_.reset(sampleRate, 0.030);
-    // §8.3 (amended): the FIXED alignment budget, reported from
-    // instantiation — engage, release and rack-switching never touch the
-    // report, so ordinary browsing never re-runs PDC. The internal split
-    // (pre-sum alignment vs final pad) varies; the total never does.
-    alignPre_.prepare(kBorrowAlignBudgetFrames + 1);
-    alignPost_.prepare(kBorrowAlignBudgetFrames + 1);
     soloBuf_.setSize(2, std::max(8192, samplesPerBlock), false, true, false);   // additive solo: X's ring per block, allocated here, never on audio
-    borrowProcessed_.setSize(2, std::max(8192, samplesPerBlock), false, true, false);   // the borrowed rack's processed ring, pre-alignment, for the solo crossfade
-    // Round 53: prepare is the guaranteed re-decision point - the pending
-    // budget becomes the committed one HERE, before the report below.
-    {
-        const bool wantedNow = borrowBudgetWanted_.load(std::memory_order_relaxed);
-        const bool wasActive = borrowBudgetActive_.exchange(wantedNow, std::memory_order_relaxed);
-        // 8 Sep 2026 ruling: the prepare-time store reaches the SYSTEM log (the
-        // latency log is compiled out of the release build). Every store, with
-        // the value, so a silent OFF can never again be inferred instead of read.
-        EchoJay_NSLog(("EJCtx: prepareToPlay stored borrow budget " + juce::String(wantedNow ? "ON" : "OFF")
-                       + " (was " + (wasActive ? "ON" : "OFF") + ")"
-                       + " [capable Link seen: " + (capableLinkSeen_.load(std::memory_order_relaxed) ? "y" : "n") + "]").toRawUTF8());   // hurdle 1 item 4
-    }
-    if (! borrowBudgetActive_.load(std::memory_order_relaxed)) borrowInContextOk_.store(false, std::memory_order_relaxed);
+    // ---- 11 Oct 2026, THE REMOVALS: NO ALIGNMENT BUDGET ------------------------------------------------
+    // The fixed budget (kBorrowAlignBudgetFrames), its two delay lines and the commit machinery that decided
+    // when to report it are gone with the injection they aligned. What that means for a user: this plugin's
+    // reported latency is now its CHAIN's latency and nothing else. It used to carry the budget whenever a
+    // capable Link was merely present in the session - a PDC cost for owning a Link, paid whether or not any
+    // rack was ever addressed, and the reason round 53 had to reason so carefully about WHEN to commit it.
     if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
-        ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), "PluginProcessor prepareToPlay");
+        ejSetLatencyLogged (*this, lat, "PluginProcessor prepareToPlay");
     if (borrowHost_ != nullptr)
         borrowHost_->prepare(sampleRate, samplesPerBlock);
 }
@@ -799,11 +784,9 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         if (auto pos = playHead->getPosition())
         {
             bool playing = pos->getIsPlaying();
-            // Round 53 (C1/C2): a block observed with the transport STOPPED is
-            // the second and last place the budget commits. Unknown transport
-            // state never reaches here (no play head / no position = playing).
-            if (! playing && borrowBudgetWanted_.load(std::memory_order_relaxed) != borrowBudgetActive_.load(std::memory_order_relaxed))
-                commitBorrowBudget("PluginProcessor commit at STOPPED block");
+            // Round 53's budget commit at a STOPPED block went with the budget (11 Oct 2026). There is no
+            // longer any reported figure that depends on which racks are present, so there is nothing to
+            // choose a safe moment to change.
 #if EJ_LATENCY_LOG
             {
                 // Round 49: the first 50 blocks after playback starts, with what
@@ -1172,172 +1155,22 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                 // end-of-block overwrite. Capture cannot also be running
                 // (mutual exclusion at both start sites), so stealing the
                 // slot from the drain corrupts nothing.
-                // Step 2 BORROW: this Link's ring belongs to the borrow
-                // session — consume into the borrow scratch and run the
-                // whole borrowed CHAIN on it, unconditionally (no
-                // try-and-skip: the borrowed host is a session-long member
-                // and its graph carries the same prepare/process
-                // synchronization the main chainHost's does — spec §3).
-                if (li == borrowSession_.ringSlot.load(std::memory_order_relaxed))
-                {
-                    // LISTEN deleted (27 Aug 2026): the stream's consumers
-                    // are now the injection (in-context) and the AUTOMATIC
-                    // solo fallback (!in-context) — that is every session
-                    // state, so the drain gates on the session alone.
-                    // 26 Aug 2026 URGENT: this gate was audioOn-only (built
-                    // for solo), so the in-context default ran with the
-                    // drain DEAD — borrowBuf_ was never filled, and the
-                    // injection added an UNINITIALISED buffer every block
-                    // (peak 746, pinned meters, read as feedback). The
-                    // drain now runs for EVERY live consumer of the stream.
-                    const int want = buffer.getNumSamples();
-                    if (borrowBuf_.getNumSamples() >= want && borrowHost_ != nullptr)
-                    {
-                        auto* hdr = LinkShm::ringHeader(ls.map);
-                        if (LinkShm::loadAcquire(&hdr->writeIdx)
-                              - LinkShm::loadRelaxed(&hdr->readIdx) > kEditReseekTrip)
-                            LinkShm::ringSeekForward(ls.map, kEditCushionFrames);
-                        // STAMP-BASED ALIGNMENT (29 Aug 2026 ruling). The
-                        // Link stamps ring-index <-> host-position every
-                        // block; the seek targets CONTENT (position
-                        // P - cushion) and the measured age feeds the pad.
-                        // The -1024 field defect: the discard arm kept the
-                        // backlog ~0, the trim-only seek was a no-op, and
-                        // the pad subtracted a cushion the ring never held.
-                        // A seek that can step BACK into held content
-                        // builds the cushion the trim could not; relocate
-                        // discontinuities (the -20903 excursion) re-seek by
-                        // the same detector.
-                        auto* bhdr = LinkShm::ringHeader(ls.map);
-                        if (borrowAlignReset_.exchange(false,
-                                std::memory_order_relaxed))
-                        {
-                            borrowRingAgePrev_ = INT64_MIN;
-                            borrowLastStampSwValid_ = false;
-                        }
-                        int64_t P = -1; bool playing = false;
-                        if (auto* ph2 = getPlayHead())
-                            if (auto pos2 = ph2->getPosition())
-                            {
-                                playing = pos2->getIsPlaying();
-                                if (pos2->getTimeInSamples().hasValue())
-                                    P = *pos2->getTimeInSamples();
-                            }
-                        uint32_t sw = 0; int64_t sp = 0;
-                        const bool stamped = P >= 0
-                            && LinkShm::ringStampRead(ls.map, sw, sp);
-                        // TRANSPORT-STOPPED HOLD (30 Aug 2026 regression):
-                        // a frozen playhead (or a producer whose stamp
-                        // stopped advancing) is a STATE TO HOLD IN, not a
-                        // discontinuity to correct. Without this, stale
-                        // stamps made the measured age shrink every block,
-                        // the drift detector re-seeked to a frozen target,
-                        // and the same cushion of audio replayed forever —
-                        // the field loop on pause. Hold = keep the pad
-                        // (last measured age), consume sequentially, seek
-                        // nothing; the first FRESH stamp after play
-                        // resumes re-seeks once through the jump arm.
-                        const bool staleStamp = stamped
-                            && borrowLastStampSwValid_
-                            && sw == borrowLastStampSw_;
-                        int64_t age = -1;
-                        if (stamped && (! playing || staleStamp))
-                        {
-                            // hold: no seek, no measurement update
-                        }
-                        else if (stamped)
-                        {
-                            const uint32_t rNow =
-                                LinkShm::loadRelaxed(&bhdr->readIdx);
-                            age = P - (sp + (int32_t)(rNow - sw));
-                            const int64_t maxAge =
-                                (int64_t) kBorrowAlignBudgetFrames
-                                - borrowChainLat_.load(std::memory_order_relaxed);
-                            const bool jump =
-                                borrowRingAgePrev_ != INT64_MIN
-                                && std::abs(age - borrowRingAgePrev_)
-                                       > (int64_t) want;
-                            if (borrowRingAgePrev_ == INT64_MIN || jump
-                                || age < (int64_t) want || age > maxAge)
-                            {
-                                const uint32_t w2 =
-                                    LinkShm::loadAcquire(&bhdr->writeIdx);
-                                const uint32_t tgtU = (uint32_t)((int64_t) sw
-                                    + (P - (int64_t) kEditCushionFrames - sp));
-                                int64_t behind = (int32_t)(w2 - tgtU);
-                                behind = juce::jlimit((int64_t) 0,
-                                    (int64_t)(kLinkRingFrames - 8192),
-                                    behind);
-                                LinkShm::ringSeekTo(ls.map,
-                                    w2 - (uint32_t) behind);
-                                age = P - (sp + (int32_t)((w2
-                                    - (uint32_t) behind) - sw));
-                            }
-                            borrowRingAgePrev_ = age;
-                            borrowLastStampSw_ = sw;
-                            borrowLastStampSwValid_ = true;
-                            borrowAlignNoStamps_.store(false,
-                                std::memory_order_relaxed);
-                        }
-                        else
-                        {
-                            // NO STAMPS (old Link, or no transport
-                            // position): the cushion term is what the ring
-                            // ACTUALLY holds — the backlog, accurate to
-                            // one block — and borrowTick SAYS so at 1Hz.
-                            // Never a silent constant.
-                            if (LinkShm::loadAcquire(&bhdr->writeIdx)
-                                  - LinkShm::loadRelaxed(&bhdr->readIdx)
-                                      > kEditReseekTrip)
-                                LinkShm::ringSeekForward(ls.map,
-                                                         kEditCushionFrames);
-                            age = (int64_t)(int32_t)(
-                                LinkShm::loadAcquire(&bhdr->writeIdx)
-                                - LinkShm::loadRelaxed(&bhdr->readIdx));
-                            borrowRingAgePrev_ = INT64_MIN;
-                            borrowAlignNoStamps_.store(true,
-                                std::memory_order_relaxed);
-                        }
-                        if (age >= 0)   // the HOLD keeps the last values
-                        {
-                            borrowRingAgeMeasured_.store((int) juce::jlimit(
-                                (int64_t) 0,
-                                (int64_t) kBorrowAlignBudgetFrames, age),
-                                std::memory_order_relaxed);
-                            borrowAlignSkew_.store(
-                                age - (int64_t) kEditCushionFrames,
-                                std::memory_order_relaxed);
-                            borrowAlignSkewValid_.store(true,
-                                std::memory_order_relaxed);
-                        }
-                        const uint32_t n = LinkShm::ringConsume(ls.map,
-                                              borrowBuf_.getWritePointer(0),
-                                              borrowBuf_.getWritePointer(1), want);
-                        ls.framesRead.fetch_add((int64_t) n, std::memory_order_relaxed);
-                        for (int ch = 0; ch < 2; ++ch)
-                            if ((int) n < want)
-                                borrowBuf_.clear(ch, (int) n, want - (int) n);
-                        borrowConsumePeakIn_ = borrowBuf_.getMagnitude(0, 0, want);   // BUILD E diagnostic
-                        juce::MidiBuffer noMidi;
-                        // The whole borrowed chain, in order, on the dry stream.
-                        juce::AudioBuffer<float> view(borrowBuf_.getArrayOfWritePointers(),
-                                                      2, 0, want);
-                        borrowHost_->process(view, noMidi);
-                        // ADDITIVE SOLO of the borrowed rack (spec 6.1) reads the PROCESSED ring from THIS copy: the
-                        // injection block below runs its alignment delay on borrowBuf_ in place, which must not
-                        // reach the solo crossfade (solo is not aligned - it replaces).
-                        if (borrowProcessed_.getNumSamples() >= want)
-                            for (int ch = 0; ch < 2; ++ch) borrowProcessed_.copyFrom(ch, 0, borrowBuf_, ch, 0, want);
-                        if (++borrowConsumeDiagDivider_ >= 94)   // BUILD E diagnostic, 1 Hz: what the ring gave and what the rack returned
-                        {
-                            borrowConsumeDiagDivider_ = 0;
-                            EchoJay_NSLog(("EJCtx(ring): consumed " + juce::String((int) n) + "/" + juce::String(want)
-                                           + " peak-in=" + juce::String(borrowConsumePeakIn_, 3) + " peak-after-rack=" + juce::String(borrowBuf_.getMagnitude(0, 0, want), 3)).toRawUTF8());
-                        }
-                    }
-                    ls.lock.exit();
-                    continue;
-                }
+                // ---- 11 Oct 2026, THE REMOVALS: THE BORROW NO LONGER CONSUMES THIS RING -------------
+                // What stood here was the audio detour's intake: this Link's ring consumed into a scratch
+                // buffer, the whole borrowed CHAIN run on it, the stamp-based alignment measured, and the
+                // result left for the injection to sum into our own output. Plan section 6 names it ("the
+                // ring injection in processBlock") and stage 1 had already stopped anyone listening to the
+                // result.
+                //
+                // It could not simply be left running. The ring taps POST-RACK, and since stage 1 the Link's
+                // own rack is no longer bypassed while addressed - so this consumed a channel that had
+                // already been processed and processed it AGAIN. Anything that MEASURED on that copy was
+                // measuring double processing; the compressor calibration did (see calibTick's note), and it
+                // was invisible precisely because nobody could hear it.
+                //
+                // The borrow's ring slot now falls through to the ordinary arms below like any other Link:
+                // soloed, it fills soloBuf_ through the one solo path; otherwise it is drained or captured.
+                // One route per Link, whether or not the V2 happens to be addressing it.
                 if (li == editSession_.ringSlot.load(std::memory_order_relaxed)
                     && editSession_.audioOn.load(std::memory_order_acquire))
                 {
@@ -1454,125 +1287,43 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // (a borrowed vocal must not run through a guitar track's chain). One
     // read per block so the two sites cannot both fire.
     const bool borrowThrough = borrowRouteThroughMain();
-    // §8 audio (REDESIGNED 26 Aug 2026, the rack-switch crackle): the
-    // PASSTHROUGH DELAY NEVER CHANGES — the final alignPost_ runs at the
-    // constant budget, so no mode flip, rack switch or mid-build latency
-    // jump can ever discontinue the mix. The per-rack pad lives on the
-    // INJECTION's own delay line (end of block), where a change only
-    // interrupts the ramped injection, never the passthrough. ctxNow is
-    // independent of the MAIN's channel type (the route fork is SOLO's).
-    // LISTEN deleted (27 Aug 2026, MUTE_SOLO_SPEC §6.4): the through-main
-    // borrow route survives ONLY as the automatic monitoring fallback when
-    // in-context is refused (incapable Link, over-budget rack, watchdog
-    // drop) — no user flag in the trigger.
-    // ---- STAGE 1 (10 Oct 2026): NO AUDIO DETOUR THROUGH THE V2 -----------------------------------
-    // Both of these existed to make an edited channel audible while its OWN rack was switched off: the
-    // in-context injection stood in for that rack's output, and the through-main route was the monitoring
-    // fallback when in-context was refused. The Link's rack is no longer switched off (see
-    // echojay::leaseBypassesTheRack), so neither is merely unnecessary - each would be a SECOND copy of a
-    // signal already audible where it belongs, which is the double-processing the plan names as this stage's
-    // failure mode. borrowActive() still answers true: the V2 is still ADDRESSING that rack. One flag used to
-    // mean both "I am addressing this" and "its audio comes through me"; this separates them.
-    const bool detour = echojay::borrowAudioDetourAllowed();
-    const bool fallbackSolo = detour && borrowActive()
-                        && ! borrowInContextOk_.load(std::memory_order_relaxed);
-    const bool ctxNow = detour && borrowActive()
-                        && borrowInContextOk_.load(std::memory_order_relaxed);
-    // §8.3 (26 Aug, corrected per ruling): the CONSTANT full-budget delay
-    // sits on the passthrough BEFORE the sum, so at this point the
-    // passthrough is aged exactly `budget` and the injection — inherently
-    // aged cushion + chainLat, padded on ITS OWN line by
-    // budget - cushion - chainLat — is aged the same. Both then pass the
-    // MAIN'S OWN CHAIN together (the fidelity claim: the injected channel
-    // is processed like the original was), and no post-delay exists.
-    // mainChainLat cancels out of the arithmetic entirely. The passthrough
-    // delay NEVER changes (the crackle fix stands); a pad change still
-    // interrupts only the ramped injection.
-    if (borrowBudgetActive_.load(std::memory_order_relaxed))
-    {
-        alignPost_.process(buffer, kBorrowAlignBudgetFrames);
-        const int ctxChainLat = borrowChainLat_.load(std::memory_order_relaxed);
-        // THE AGE IS A MEASURED FACT (29 Aug ruling): the pad is computed
-        // from what the ring actually delivered this block, never from an
-        // assumed cushion. alignPad's assumed-cushion form survives ONLY
-        // as the engage/chain-change capability check and as the estimate
-        // before the first drain of a session.
-        const int ringAge = borrowRingAgeMeasured_.load(std::memory_order_relaxed);
-        const int injPad = ringAge >= 0
-            ? kBorrowAlignBudgetFrames - ringAge - ctxChainLat
-            : alignPad(ctxChainLat);
-        // THE HONORARY STRIP (MUTE_SOLO_SPEC §6.1): the injection stands in
-        // for the edited rack's output, so it follows the solo fabric as if
-        // it were that rack's strip — audible iff the solo set is empty or
-        // the edited rack is in it. Suppression is a MUTE, not a pad
-        // change: it rides the ramp target only, never padKey, so lifting
-        // it never clears the injection history.
-        const bool soloSup = borrowSoloSuppressInj_.load(std::memory_order_relaxed);
-        // RAMP IN ONLY AFTER THE MUTE IS CONFIRMED (30 Aug 2026): before
-        // confirmation the channel is still audible in the mix, and a
-        // perfectly aligned injection on top of it is a clean +6dB double
-        // — the volume jump on select. From silence to unity ONCE: the
-        // confirm gate is a mute (ramp target only), never a pad change.
-        const bool muteReady = borrowMuteConfirmedOnce_.load(std::memory_order_relaxed);
-        borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 && ! soloSup
-                                         && muteReady ? 1.0f : 0.0f);
-        const int padKey = (ctxNow && injPad >= 0) ? injPad : -1;
-        if (padKey != borrowLastPadKey_)
-        {
-            // A pad change interrupts ONLY the injection: silence it, clear
-            // its history, ramp back in. The passthrough never notices.
-            borrowLastPadKey_ = padKey;
-            alignPre_.buf.clear();
-            borrowCtxMix_.setCurrentAndTargetValue(0.0f);
-            borrowCtxMix_.setTargetValue(ctxNow && injPad >= 0 && ! soloSup
-                                             && muteReady ? 1.0f : 0.0f);
-        }
-        if ((ctxNow && injPad >= 0)
-            || borrowCtxMix_.getCurrentValue() > 0.0001f)
-        {
-            const int nS = buffer.getNumSamples();
-            const bool have = borrowHost_ != nullptr
-                           && borrowBuf_.getNumSamples() >= nS;
-            juce::AudioBuffer<float> inj(borrowBuf_.getArrayOfWritePointers(),
-                                         2, 0, nS);
-            if (have) alignPre_.process(inj, std::max(0, padKey));
-            // BUILD E diagnostic (1 Hz, system log): the injection path's terms, so a silent
-            // injection is read, not inferred. Rate-limited on the audio thread (a counter).
-            if (++borrowInjDiagDivider_ >= 94)
-            {
-                borrowInjDiagDivider_ = 0;
-                const float injPeak = have ? inj.getMagnitude(0, 0, nS) : -1.0f;
-                EchoJay_NSLog(("EJCtx(inj): ctxNow=" + juce::String((int) ctxNow) + " injPad=" + juce::String(injPad)
-                               + " padKey=" + juce::String(padKey) + " muteReady=" + juce::String((int) muteReady)
-                               + " soloSup=" + juce::String((int) soloSup) + " have=" + juce::String((int) have)
-                               + " mix=" + juce::String(borrowCtxMix_.getCurrentValue(), 3)
-                               + " injPeak=" + juce::String(injPeak, 3)
-                               + " ringAge=" + juce::String(borrowRingAgeMeasured_.load(std::memory_order_relaxed))).toRawUTF8());
-            }
-            for (int i = 0; i < nS; ++i)
-            {
-                const float g = borrowCtxMix_.getNextValue();
-                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-                {
-                    const float v = have
-                        ? inj.getSample(std::min(ch, 1), i) : 0.0f;
-                    buffer.getWritePointer(ch)[i] += v * g;
-                }
-            }
-        }
-        else
-            borrowCtxMix_.skip(buffer.getNumSamples());
-    }
+    // ---- 11 Oct 2026, THE REMOVALS: THE IN-CONTEXT INJECTION AND ITS ARITHMETIC ARE GONE --------------
+    //
+    // What stood here, in about seventy lines: a constant full-budget delay on the PASSTHROUGH (alignPost_),
+    // a per-rack pad on the INJECTION's own delay line computed from the ring age actually measured that
+    // block, the honorary solo strip, the mute-confirmation gate that stopped a perfectly aligned injection
+    // doubling the channel at +6 dB, and borrowCtxMix_ ramping the sum in and out. It was careful work and
+    // every line of it was in service of one thing: summing a V2-hosted copy of a Link's rack into the V2's
+    // own output while that Link's own rack was switched off.
+    //
+    // The Link's rack is not switched off any more, so the copy is not a stand-in - it is a second copy of a
+    // signal already audible where it belongs. Stage 1 proved that both directions (echojay::
+    // borrowAudioDetourAllowed) and this is the deletion it was holding the door open for.
+    //
+    // THREE THINGS GO WITH IT, and they are the reason this is worth more than tidiness:
+    //   * the BORROW BUDGET - reportedBudgetFrames() was added to this plugin's reported latency whenever a
+    //     capable Link was merely PRESENT in the session, because the injection had to be aligned against
+    //     something constant. Addressing a Link now costs the host no PDC at all;
+    //   * alignPre_ / alignPost_ / borrowCtxMix_ and the pad arithmetic;
+    //   * borrowInContextOk_ and the in-context/fallback fork - there is nothing to fall back FROM.
+    //
+    // What is NOT touched: the solo press. soloBuf_ is a Link's OWN ring and the crossfade below is the user
+    // asking to hear one channel; that is a feature with its own spec, not part of this detour. Its one
+    // borrow-shaped special case does go - see the note at the crossfade.
     if (borrowThrough)
         // BUILD E (9 Sep 2026 ruling): NO SILENT SOLO ON RACK SELECTION - a refused in-context
         // leaves the passthrough untouched (fallbackSolo drives no audio). The crossfade below
         // runs ONLY behind the explicit user act it was reserved for: the solo press.
         // ADDITIVE SOLO (9 Sep 2026 ruling): solo IS the explicit user act this crossfade was
-        // reserved for. Source: the PROCESSED ring when X is the borrowed rack (spec 6.1),
-        // otherwise X's own ring consumed above. Intentional: this runs BEFORE the main's
-        // own chain, so the soloed Link is heard through the mix-bus processing.
-        applyBorrowSoloMixOn(buffer, soloActive() && (soloSourceIsBorrowedRack() || soloRingSlot_.load(std::memory_order_acquire) >= 0));
-        (void) fallbackSolo;
+        // reserved for. Intentional: this runs BEFORE the main's own chain, so the soloed Link is heard
+        // through the mix-bus processing.
+        //
+        // ONE SOURCE (11 Oct 2026). It used to be two: the V2-hosted COPY's processed output when the soloed
+        // Link happened to be the one being addressed (spec 6.1), and the Link's own ring otherwise. That copy
+        // is not fed any more, and it should never have been the solo's source once the Link stopped being
+        // switched off - it was the same channel processed twice. Every soloed Link is now heard from its own
+        // ring, addressed or not, which also means the figure does not change when the user selects it.
+        applyBorrowSoloMixOn(buffer, soloActive() && soloRingSlot_.load(std::memory_order_acquire) >= 0);
 
     // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
     {
@@ -1713,10 +1464,10 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     }
 
     // ===== Step 2 BORROW SOLO, replace-after route =======================
-    // The through-main route ran BEFORE chainHost.process instead; exactly
-    // one of the two sites fires per block (borrowThrough, read once above).
-    if (!borrowThrough)
-        applyBorrowSoloMixOn(buffer, fallbackSolo);
+    // RETIRED 11 Oct 2026. Its only driver was `fallbackSolo` - the automatic monitoring fallback, which
+    // routed an addressed channel through the V2 when in-context was refused. There is nothing to monitor
+    // around: the channel is audible in its own place whether or not it is addressed. The solo PRESS has
+    // always been served by the through-main site above, which is unchanged.
 
     // ===== Stage 1 SOLO: the last word on the buffer =====================
     // While a remote edit session runs, the mix is REPLACED by the edited
@@ -2438,106 +2189,23 @@ struct EchoJayProcessor::BorrowLeaseTimer : juce::Timer
 
 void EchoJayProcessor::borrowTick()
 {
-    // §8 CLOSED LOOP (26 Aug 2026): "impossible by construction" was an
-    // open-loop claim — the capability announced, the command written, the
-    // mute HOPED. The real invariant: a commanded mute is CONFIRMED by the
-    // Link (sidecar muteEngaged, republished on flip); commanded-but-
-    // unconfirmed for ~3s drops to solo WITH A NAME, never a silent double.
-    // Confirmation is only judged on a FRESH cache read (an editor feeds
-    // the cache; stale reads prove nothing either way).
-    if (borrowActive()
-        && borrowInContextOk_.load(std::memory_order_relaxed))
-    {
-        bool freshRead = false, confirmed = false;
-        if (auto it = linkRackCache.find(borrowSession_.uid);
-            it != linkRackCache.end())
-        {
-            freshRead = juce::Time::getMillisecondCounter() - it->second.readMs
-                            < 3000;
-            confirmed = it->second.rack.muteEngaged;
-        }
-        if (freshRead)
-            borrowMuteUnconfirmedTicks_ = confirmed
-                ? 0 : borrowMuteUnconfirmedTicks_ + 1;
-        if (freshRead && confirmed)
-            borrowMuteConfirmedOnce_.store(true, std::memory_order_relaxed);
-        if (freshRead && ! confirmed && borrowMuteUnconfirmedTicks_ >= 3)
-        {
-            borrowInContextOk_.store(false, std::memory_order_relaxed);
-            const juce::String nm = resolveLinkDisplayName(borrowSession_.uid);
-            borrowStickyBanner_ = nm + "'s channel did not confirm its mute - "
-                "the mix may have doubled briefly. Soloing your edit "
-                "instead. If this repeats, update " + nm + "'s EchoJay Link.";
-            EchoJay_NSLog(("EJCtx: mute UNCONFIRMED after "
-                + juce::String(borrowMuteUnconfirmedTicks_)
-                + " ticks - dropped to solo, named").toRawUTF8());
-        }
-    }
-    else borrowMuteUnconfirmedTicks_ = 0;
-
-    if (!borrowActive()) return;
-    // §8 alignment trace, 1Hz: measured ring age vs the seek target. The
-    // pad absorbs any deviation, so this is a health line, not an error —
-    // except the no-stamp fallback, which is SAID rather than silent.
-    if (borrowAlignSkewValid_.exchange(false, std::memory_order_relaxed))
-        EchoJay_NSLog(("EJAlign(main): ring age="
-            + juce::String((juce::int64) kEditCushionFrames
-                + borrowAlignSkew_.load(std::memory_order_relaxed))
-            + " smp (target " + juce::String((int) kEditCushionFrames) + ")"
-            + (borrowAlignNoStamps_.load(std::memory_order_relaxed)
-                 ? juce::String(" NO STAMPS - aligned by backlog, one-block "
-                                "accuracy; update this Link for exact")
-                 : juce::String())).toRawUTF8());
+    // ---- 11 Oct 2026, THE REMOVALS: THE MUTE CLOSED LOOP AND THE ALIGNMENT TRACE ----------------------
+    //
+    // Two things stood here and both were the detour's instrumentation.
+    //
+    // The CLOSED LOOP (26 Aug 2026) was good work and worth recording: "impossible by construction" had been
+    // an open-loop claim - the capability announced, the command written, the mute HOPED - so the real
+    // invariant became "a commanded mute is CONFIRMED by the Link, and commanded-but-unconfirmed for ~3 s
+    // drops to solo WITH A NAME, never a silent double". It existed because the V2 was summing a processed
+    // copy of a channel into its own output and the Link had to go quiet or the mix doubled. Nothing is
+    // summed and nothing is commanded quiet, so there is no doubling to guard against and nothing to confirm.
+    //
+    // The ALIGNMENT TRACE and the RING RE-BIND went with the ring: this session no longer consumes it, so a
+    // stale slot binding is no longer "SILENT while the lease still holds the Link dry" - it is nothing at
+    // all. A Link that disappears mid-session is still noticed, by the registry sweep that notices any Link
+    // disappearing, and the session still ends with words.
     renewBorrowLease();
 
-    // RING RE-BIND, every tick (hands-on finding #3): the slot index bound
-    // at engage is not trusted — a sample-rate change or Link re-register
-    // can remap activeLinkSlots, and a stale binding is SILENT while the
-    // lease still holds the Link dry. Re-resolve by uid; tolerate a short
-    // gap (the Link may be mid-re-register); past tolerance, release WITH
-    // WORDS through the reason the editor shows.
-    int found = -1;
-    for (int i = 0; i < kMaxLinkSlots; ++i)
-        if (activeLinkSlots[i].map != nullptr
-            && activeLinkSlots[i].uid == borrowSession_.uid)
-            { found = i; break; }
-    switch (LinkShm::BorrowRing::poll(
-                borrowSession_.ringSlot.load(std::memory_order_relaxed),
-                found, borrowRingLostTicks_))
-    {
-        case LinkShm::BorrowRing::Verdict::Bound:
-            borrowRingLostTicks_ = 0;
-            break;
-        case LinkShm::BorrowRing::Verdict::Rebind:
-        {
-            borrowRingLostTicks_ = 0;
-            const juce::SpinLock::ScopedLockType sl(activeLinkSlots[found].lock);
-            if (activeLinkSlots[found].map != nullptr)
-                LinkShm::ringSeekForward(activeLinkSlots[found].map, kEditCushionFrames);
-            borrowSession_.ringSlot.store(found, std::memory_order_relaxed);
-            EchoJay_NSLog(("EJBorrow: ring re-bound to slot "
-                           + juce::String(found)).toRawUTF8());
-            break;
-        }
-        case LinkShm::BorrowRing::Verdict::Lost:
-            ++borrowRingLostTicks_;
-            EchoJay_NSLog(("EJBorrow: ring lost, tick " + juce::String(borrowRingLostTicks_)
-                           + " of " + juce::String(LinkShm::kBorrowRingMaxLostTicks)).toRawUTF8());
-            break;
-        case LinkShm::BorrowRing::Verdict::Release:
-        {
-            const juce::String name = resolveLinkDisplayName(borrowSession_.uid);
-            borrowRingLostTicks_ = 0;
-            borrowRelease(true);   // a lease death is never an implicit discard
-            borrowAutoReleaseReason_ =
-                "Released: " + name + "'s audio stream went away and did "
-                "not come back. The Link owns its rack again; nothing was "
-                "applied, and your edits are KEPT - press EDIT RACK on it "
-                "again to continue from them.";
-            EchoJay_NSLog("EJBorrow: SELF-RELEASED - ring gone past tolerance");
-            break;
-        }
-    }
 }
 
 // The borrow solo crossfade — one implementation, two call sites in
@@ -2551,9 +2219,12 @@ void EchoJayProcessor::applyBorrowSoloMixOn(juce::AudioBuffer<float>& buffer,
     if (on || borrowSoloMix_.getCurrentValue() > 0.0001f)
     {
         const int nS = buffer.getNumSamples();
-        const bool fromRack = soloSourceIsBorrowedRack() && borrowHost_ != nullptr && borrowProcessed_.getNumSamples() >= nS;
-        const bool have = fromRack || soloBuf_.getNumSamples() >= nS;
-        const juce::AudioBuffer<float>& src = fromRack ? borrowProcessed_ : soloBuf_;
+        // ONE SOURCE (11 Oct 2026): the soloed Link's OWN ring. The alternative source was the V2-hosted
+        // copy's processed output, chosen whenever the soloed Link happened to be the rack being addressed -
+        // the same channel processed twice, and the figure changed depending on whether the user had selected
+        // it. That copy is not fed any more.
+        const bool have = soloBuf_.getNumSamples() >= nS;
+        const juce::AudioBuffer<float>& src = soloBuf_;
         for (int i = 0; i < nS; ++i)
         {
             const float g = borrowSoloMix_.getNextValue();
@@ -2578,27 +2249,13 @@ ChainHost* EchoJayProcessor::borrowHost()
         borrowHost_->prepare(hostSampleRate_ > 0 ? hostSampleRate_ : 44100.0,
                              hostSamplesPerBlock_ > 0 ? hostSamplesPerBlock_ : 512);
         wireUndoHooks(*borrowHost_, "@borrow");   // 21n item 3: entries target the borrowed rack (resolved to its uid at apply)
-        // §8: the borrowed chain's latency feeds the pad math (INTERNAL use
-        // — the hard block on its host REPORT stands). A chain that grows
-        // past the budget mid-session drops to solo, with the named line,
-        // live; the report never moves.
-        borrowHost_->onChainChanged = [this]
-        {
-            const int lat = std::max(0, borrowHost_ != nullptr
-                                            ? borrowHost_->getTotalLatencySamples() : 0);
-            borrowChainLat_.store(lat, std::memory_order_relaxed);
-            if (borrowInContextOk_.load(std::memory_order_relaxed)
-                && alignPad(lat) < 0)
-            {
-                borrowInContextOk_.store(false, std::memory_order_relaxed);
-                const juce::String name = resolveLinkDisplayName(borrowUid());
-                borrowStickyBanner_ = name + "'s rack now needs more "
-                    "look-ahead than the in-mix budget - soloing your edit "
-                    "instead.";
-                EchoJay_NSLog(("EJCtx: chain latency " + juce::String(lat)
-                    + " exceeds budget - dropped to solo").toRawUTF8());
-            }
-        };
+        // 11 Oct 2026: the pad watcher is gone with the pad. It fed the borrowed chain's latency into the
+        // injection's alignment arithmetic and dropped the session to solo, with a named line, when a rack
+        // grew past the in-mix budget mid-session. There is no injection to align and no budget to exceed, so
+        // a user can now build a rack of any latency on a Link without the V2 having an opinion about it -
+        // the Link reports its own chain's latency to its own host, which is where that figure belongs.
+        // The hard block on a Borrowed host's REPORT stands (spec section 2.3) and is now structural: this
+        // host's latency is read by nothing at all.
     }
     return borrowHost_.get();
 }
@@ -2650,24 +2307,17 @@ void EchoJayProcessor::renewBorrowLease()
     // refuses — it cannot half-engage (LeaseScope, pinned in racklock_test).
     o->setProperty("slot",    0);
     o->setProperty("scope",   "rack");
-    // §8: the mute rides the LEASE — one lifetime with the bypasses, one
-    // restore path on the Link. True only while in-context is actually
-    // playing (not while LISTEN solos, not in the degenerate through-main
-    // placement, never when refused/incapable).
-    // LISTEN deleted: the session mute wants exactly while in-context
-    // monitoring is live (the fallback plays the ring through the main,
-    // where the Link's dry channel is not in the audible path anyway).
-    const bool muteWant = borrowInContextOk_.load(std::memory_order_relaxed);
-    o->setProperty("muteOut", muteWant);
-    // Additive: the failure-held session names itself so the Link's
-    // banner can speak to the state the user is actually in.
+    // 11 Oct 2026: muteOut IS NO LONGER WRITTEN. It asked the Link to go silent while the V2 stood in for
+    // its output, and nothing stands in for anything now. The key is simply absent, which is what an older
+    // Link reads as "no mute wanted" - so a new V2 driving an old Link cannot silence a channel either.
+    // DOWNGRADE-SAFE in the other direction too: a new Link ignores the key if an old V2 sends it.
+    //
+    // Additive: the failure-held session names itself so the Link's banner can speak to the state the user is
+    // actually in. This one is a CONTROL fact and it stays.
     o->setProperty("editPending", borrowEditPendingHeld_);
-    EchoJay_NSLog(("EJCtx(main): renew muteOut="
-        + juce::String(muteWant ? "Y" : "N") + " ok="
-        + juce::String(borrowInContextOk_.load(std::memory_order_relaxed) ? "Y" : "N")
-        + " soloSup="
-        + juce::String(borrowSoloSuppressInj_.load(std::memory_order_relaxed) ? "Y" : "N"))
-        .toRawUTF8());
+    EchoJay_NSLog(("EJCtx(main): renew lease for " + borrowSession_.uid
+        + " editPending=" + juce::String(borrowEditPendingHeld_ ? "Y" : "N")
+        + " (no muteOut: the rack is processing in its own place)").toRawUTF8());
     o->setProperty("tMs",     juce::Time::currentTimeMillis());
     juce::File(LinkShm::leasePath(dir, borrowSession_.uid))
         .replaceWithText(juce::JSON::toString(juce::var(o), true));
@@ -2680,9 +2330,6 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
 {
     if (borrowActive() || uid.isEmpty()) return;
     borrowHost();                                    // exists + prepared
-    borrowBuf_.setSize(2, 8192);                     // allocated HERE, never on audio
-    borrowBuf_.clear();   // setSize leaves contents UNDEFINED — an injection
-                          // source must never hold garbage, whatever the gates
     borrowSession_.uid     = uid;
     borrowSession_.leaseId = leaseId;
     // THE CAPABILITY SNAPSHOT RIDES THE SESSION FROM ITS FIRST INSTANT
@@ -2692,58 +2339,26 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     // it, and the picker's fork read false: the legacy refusal, on a
     // capable Link).
     borrowStructureCapable_ = structureCapable;
-    // §8 same rule: in-context OK = announced AND fits the budget, decided
-    // the instant the session exists; the chain watcher re-checks live.
-    borrowChainLat_.store(0, std::memory_order_relaxed);
-    // Round 53 (C1): in-context needs the COMMITTED budget - a pending one is
-    // inert here too; borrowing against an unreported budget is the defect.
-    borrowCtxCapable_ = inContextCapable;
-    {
-        const bool padOk   = alignPad(0) >= 0;
-        const bool budget  = borrowBudgetActive_.load(std::memory_order_relaxed);
-        const bool ok      = inContextCapable && padOk && budget;
-        borrowInContextOk_.store(ok, std::memory_order_relaxed);
-        // BUILD E: the held states are STATUS, not error. The budget term clears itself at
-        // the next STOPPED block (Build B re-evaluates); the others are real limitations.
-        if (! ok)
-        {
-            const juce::String nm = resolveLinkDisplayName(uid);
-            if (inContextCapable && padOk && ! budget)
-            { borrowBannerIsStatus_ = true;  borrowStickyBanner_ = "Waiting for the mix budget - " + nm + " blends at the next stop."; }
-            else if (! inContextCapable)
-            { borrowBannerIsStatus_ = false; borrowStickyBanner_ = "Cannot blend " + nm + " in context - its EchoJay Link predates in-context. Solo this rack to hear the edit."; }
-            else
-            { borrowBannerIsStatus_ = false; borrowStickyBanner_ = "Cannot blend " + nm + " in context - its rack needs more look-ahead than the mix budget. Solo this rack to hear the edit."; }
-        }
-        else { borrowBannerIsStatus_ = false; }
-        // 8 Sep 2026 ruling (standing rule): a decision that can refuse logs its
-        // refusal and the false term. Each term, then the verdict.
-        EchoJay_NSLog(("EJCtx: engage decision uid=" + uid + " capable=" + (inContextCapable ? "Y" : "N")
-                       + " pad=" + (padOk ? "Y" : "N") + " budget=" + (budget ? "Y" : "N")
-                       + " -> in-context " + (ok ? "OK" : "REFUSED")
-                       + (ok ? juce::String() : juce::String(", false term(s): ")
-                                 + juce::StringArray { inContextCapable ? "" : "capable", padOk ? "" : "pad", budget ? "" : "budget" }
-                                       .joinIntoString(",").trimCharactersAtStart(",").replace(",,", ",").trimCharactersAtEnd(","))).toRawUTF8());
-    }
-
-    // Bind the ring, editBegin's idiom: seek to the cushion so the audition
-    // starts near live rather than at the backlog.
+    // ---- 11 Oct 2026, THE REMOVALS: THERE IS NO IN-CONTEXT DECISION TO MAKE ---------------------------
+    //
+    // A three-term decision stood here - announced capability, a pad that fits, and a COMMITTED budget - and
+    // it chose between blending a V2-hosted copy into the mix and soloing it instead. Each refusal had its
+    // own sentence for the user, and they were honest sentences about a real limitation: "its rack needs more
+    // look-ahead than the mix budget. Solo this rack to hear the edit."
+    //
+    // None of it is a limitation any more, which is the point of the whole change. The rack the user is
+    // editing is audible because it is PROCESSING, in its own channel, through its own fader and its own bus.
+    // There is no budget to fit inside, no look-ahead to find, nothing to announce a capability for, and no
+    // banner to show - so an old Link that "predates in-context" is now just a Link.
+    // The ring slot is still RECORDED - the session names which slot its rack is on, and the log and the
+    // editor read it - but it is no longer BOUND: 11 Oct 2026, nothing on this side consumes that ring, so
+    // the seek-to-cushion that used to start the audition near live has gone with the audition.
     int ringSlot = -1;
     for (int i = 0; i < kMaxLinkSlots; ++i)
         if (activeLinkSlots[i].map != nullptr && activeLinkSlots[i].uid == uid)
             { ringSlot = i; break; }
-    if (ringSlot >= 0)
-    {
-        const juce::SpinLock::ScopedLockType sl(activeLinkSlots[ringSlot].lock);
-        if (activeLinkSlots[ringSlot].map != nullptr)
-            LinkShm::ringSeekForward(activeLinkSlots[ringSlot].map, kEditCushionFrames);
-    }
     const double engageStartMs = juce::Time::getMillisecondCounterHiRes();
     borrowSession_.ringSlot.store(ringSlot, std::memory_order_relaxed);
-    borrowAlignReset_.store(true, std::memory_order_relaxed);
-    borrowRingAgeMeasured_.store(-1, std::memory_order_relaxed);
-    borrowMuteConfirmedOnce_.store(false, std::memory_order_relaxed);
-    borrowRingLostTicks_ = 0;
     borrowRouteFlip_.store(false, std::memory_order_relaxed);   // default per channel type
     borrowSession_.active.store(true, std::memory_order_relaxed);
     // 5 Oct 2026: EVERY TRANSITION, NAMED. On 5 Oct borrowRelease ran twice 17 s apart and the second got past
@@ -2964,12 +2579,10 @@ void EchoJayProcessor::borrowRelease(bool keepEdits)
     borrowRemovedWithheld_.clear();
     borrowRemovedNames_.clear();
     borrowPendingPushes_.clear(); borrowPushInFlight_ = false;   // 20 Sep 2026: a session ending drops its queue
-    borrowInContextOk_.store(false, std::memory_order_relaxed);
     borrowStructureCapable_ = false;
-    // Ramp out first (the AMEK lesson): active drops both crossfade
-    // targets (fallbackSolo and ctxNow derive from it); the graph itself
-    // stays alive (session-long host), so there is no instance teardown
-    // racing the audio thread here at all.
+    // The AMEK lesson used to apply here - ramp out first, because `active` dropped both crossfade targets.
+    // Neither crossfade exists now (11 Oct 2026). The graph stays alive (session-long host), so there is no
+    // instance teardown racing the audio thread here at all.
     if (borrowLeaseTimer_) borrowLeaseTimer_->stopTimer();
     int err = 0;
     const juce::String dir = LinkShm::resolveDir(err);
@@ -2982,9 +2595,6 @@ void EchoJayProcessor::borrowRelease(bool keepEdits)
     borrowSession_.uid.clear();
     borrowSession_.leaseId.clear();
     borrowSession_.ringSlot.store(-1, std::memory_order_relaxed);
-    borrowAlignReset_.store(true, std::memory_order_relaxed);
-    borrowRingAgeMeasured_.store(-1, std::memory_order_relaxed);
-    borrowMuteConfirmedOnce_.store(false, std::memory_order_relaxed);
     if (borrowHost_)
     {
         borrowHost_->onNeedParamMaps    = nullptr;   // 10 Sep: a fetch firing after release is a no-op
@@ -3677,7 +3287,7 @@ void EchoJayProcessor::setLinkSolo(const juce::String& uid, bool on)
     EchoJay_NSLog(("EJSolo: " + juce::String(on ? "solo ON " : "solo OFF ") + uid
                    + (prev.isNotEmpty() && on && prev != uid ? " (moved from " + prev + ")" : juce::String())
                    + " -> output is " + (soloUid_.isEmpty() ? juce::String("the mix") : soloUid_ + " ring slot " + juce::String(slot))
-                   + (soloSourceIsBorrowedRack() ? " (the borrowed rack: processed ring, spec 6.1)" : "")).toRawUTF8());
+).toRawUTF8());   // 11 Oct 2026: one source, the Link's own ring, addressed or not
 }
 
 bool EchoJayProcessor::soloIndicatorOn(const juce::String& uid) const
@@ -3694,46 +3304,18 @@ juce::String EchoJayProcessor::firstSoloName() const
     return {};
 }
 
-void EchoJayProcessor::commitBorrowBudget(const char* where)
-{
-    // THE ONLY WRITER of borrowBudgetActive_. Called from prepareToPlay and
-    // from a processBlock that observed the transport STOPPED - nowhere else.
-    const bool wanted = borrowBudgetWanted_.load(std::memory_order_relaxed);
-    if (borrowBudgetActive_.exchange(wanted, std::memory_order_relaxed) == wanted)
-        return;
-    // The delay line starts clean at the new value (it held nothing useful:
-    // the transport was stopped, or we are inside prepare). A session that
-    // was in-context against the OLD budget cannot keep it - its arithmetic
-    // assumed that passthrough delay; it drops to the solo fallback.
-    alignPost_.buf.clear(); alignPost_.w = 0;
-    if (! wanted) borrowInContextOk_.store(false, std::memory_order_relaxed);
-    // BUILD B (8 Sep 2026 ruling): RE-EVALUATE on every commit, not only at engage.
-    // A session refused during an OFF window recovers when the budget commits ON.
-    // This does not undo round 53: round 53 governs WHEN the budget commits, and
-    // that commit already re-runs PDC once (below); no PDC event is added that
-    // round 53 did not sanction. The pad is re-checked against the live chain
-    // latency, as the chain watcher does. Live evidence for the race: 12:46:51
-    // "REFUSED, false term(s): budget", commit ON at 12:47:06, every later engage OK.
-    if (wanted && borrowActive() && ! borrowInContextOk_.load(std::memory_order_relaxed))
-    {
-        const int  lat   = borrowChainLat_.load(std::memory_order_relaxed);
-        const bool padOk = alignPad(lat) >= 0;
-        const bool ok    = borrowCtxCapable_ && padOk;
-        if (ok) { borrowInContextOk_.store(true, std::memory_order_relaxed); borrowBannerIsStatus_ = true; borrowStickyBanner_ = "Blending " + resolveLinkDisplayName(borrowSession_.uid) + " in context."; }
-        EchoJay_NSLog(((juce::String) "EJCtx: budget committed ON with a live session - re-evaluated: capable="
-                       + (borrowCtxCapable_ ? "Y" : "N") + " pad=" + (padOk ? "Y" : "N") + " (chain latency "
-                       + juce::String(lat) + ") -> in-context " + (ok ? "RESTORED" : "still REFUSED")
-                       + (ok ? juce::String() : juce::String(", false term(s): ") + (! borrowCtxCapable_ ? "capable" : "pad"))).toRawUTF8());
-    }
-    if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
-        ejSetLatencyLogged (*this, lat + reportedBudgetFrames(), where);
-    EJ_LAT_LOG ("top: borrow budget COMMITTED %s at %s (passthrough delay and report move together)", wanted ? "ON" : "OFF", where);
-    const bool active = wanted;
-    EchoJay_NSLog(("EJCtx: alignment budget "
-                   + juce::String(active ? "ON" : "OFF")
-                   + " (capable Link " + (active ? "present" : "gone")
-                   + ") - PDC re-runs once").toRawUTF8());
-}
+// ---- 11 Oct 2026, THE REMOVALS: commitBorrowBudget IS GONE ----------------------------------------------
+//
+// It was the only writer of borrowBudgetActive_, and it was careful for a reason worth recording: changing a
+// plugin's reported latency re-runs the host's PDC, which is audible, so round 53 ruled that the budget may
+// only commit at two moments the user cannot hear - inside prepareToPlay, or at a block observed with the
+// transport STOPPED. Build B then added a re-evaluation on every commit, because a session refused during an
+// OFF window had to recover when the budget came on (12:46:51 "REFUSED, false term(s): budget", commit ON at
+// 12:47:06).
+//
+// All of that was in service of a constant passthrough delay that the in-context injection could be aligned
+// against. With no injection there is no budget, so there is no figure whose change has to be timed, and the
+// reported latency is simply this plugin's own chain - which never depended on which Links were present.
 
 void EchoJayProcessor::borrowEditorClosed()
 {
@@ -7379,20 +6961,9 @@ void EchoJayProcessor::refreshLinkRegistry()
             }
         }
         if (anyCapable) capableLinkSeen_.store(true, std::memory_order_relaxed);   // hurdle 1 item 4: persisted with the state
-        if (borrowBudgetWanted_.exchange(anyCapable, std::memory_order_relaxed) != anyCapable)
-        {
-            EJ_LAT_LOG ("top: borrow budget WANTED %s (pending: inert until prepareToPlay or a STOPPED block)", anyCapable ? "ON" : "OFF");
-            // 8 Sep 2026 ruling: every WANTED transition reaches the system log
-            // with the value and the reason (what the pass saw).
-            EchoJay_NSLog(("EJCtx: borrow budget WANTED " + juce::String(anyCapable ? "ON" : "OFF")
-                           + " - listed " + juce::String(listed.size()) + " uid(s)"
-                           + (anyCapable ? juce::String(": a counted row exists")
-                                         : juce::String(": none counted (no sidecar yet ") + juce::String(wantedNoSidecar)
-                                           + ", publisher dead " + juce::String(wantedDead)
-                                           + ", not capable " + juce::String(wantedIncapable)
-                                           + ", foreign host " + juce::String(wantedForeignHost) + ")")
-                           + "; pending until prepareToPlay or a STOPPED block").toRawUTF8());
-        }
+        // 11 Oct 2026: the WANTED budget went with the budget. This pass still counts capable rows, because
+        // capableLinkSeen_ above is persisted with the state and read at load - but nothing turns that count
+        // into reported latency any more, so a project full of Links no longer pays PDC for them.
     }
 
     // ---- Mute/solo snapshot (27 Aug 2026, MUTE_SOLO_SPEC §3/§5/§6.1) ----
@@ -7439,38 +7010,18 @@ void EchoJayProcessor::refreshLinkRegistry()
         soloSetActive_     = anySolo;
         soloIncapableLive_ = incap;
         anySolo = anySolo || soloActive();                   // the main's own solo counts
-        const bool editedIn = borrowActive()
-            && ((muteSoloSnaps_.count(borrowSession_.uid)
-                 && muteSoloSnaps_[borrowSession_.uid].soloOn)
-                || linkSoloOn(borrowSession_.uid));
-        // THE HONORARY STRIP OBEYS EVERY SILENCE REASON (28 Aug 2026):
-        // solo-awareness alone shipped half a strip — while a session is
-        // live the Link's channel is session-muted and the audible copy
-        // IS the injection, so a user mute on the EDITED rack must ramp
-        // the injection out exactly as a foreign solo does. Mute wins
-        // over the rack's own solo membership (the strip OR); a FOREIGN
-        // mute is that strip's own business and never touches the
-        // injection.
-        const bool editedMuted = borrowActive()
-            && muteSoloSnaps_.count(borrowSession_.uid)
-            && muteSoloSnaps_[borrowSession_.uid].muteUser;
-        const bool suppress = borrowActive()
-            && (editedMuted || (anySolo && ! editedIn));
-        borrowSoloSuppressInj_.store(suppress, std::memory_order_relaxed);
-        if (suppress != soloSuppressPrev_)
-        {
-            soloSuppressPrev_ = suppress;
-            if (suppress && editedMuted)
-                borrowStickyBanner_ = resolveLinkDisplayName(borrowSession_.uid)
-                    + " is muted - your edit is muted with its strip. "
-                      "Un-mute to hear it.";
-            else if (suppress)
-                borrowStickyBanner_ = firstSoloName
-                    + " is soloed - your edit is muted with the other "
-                      "channels. Solo this rack to hear it.";
-            else if (borrowActive())
-                borrowStickyBanner_ = "Your edit is audible again.";
-        }
+        // ---- 11 Oct 2026, THE REMOVALS: THE HONORARY STRIP -------------------------------------------
+        // A block here computed whether the in-context injection should be ramped out, because the injection
+        // stood in for the edited rack's output and therefore had to obey that strip's silences: the rack's
+        // own user mute, and a foreign solo that excluded it. 28 Aug's note is the one worth keeping, because
+        // it is why half a strip shipped first: "solo-awareness alone shipped half a strip - while a session
+        // is live the Link's channel is session-muted and the audible copy IS the injection, so a user mute
+        // on the EDITED rack must ramp the injection out exactly as a foreign solo does".
+        //
+        // The premise in that sentence is what has gone. The Link's channel is not session-muted and the
+        // audible copy is not a copy - it is the channel, in its own strip, obeying its own mute and its own
+        // solo membership without anyone here having to mirror them. The three banners went with it; they
+        // explained why an edit had gone quiet, and an edit does not go quiet any more.
     }
 
     // DEAD-FILE REAP (25 Aug 2026), throttled to one sweep per 5 minutes per
@@ -8423,17 +7974,44 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     {
         // 4 Oct 2026: a LANDED slot keeps being measured for its low-level gain. This is the path a finished loop
         // falls down every tick, which is exactly where the hold's measurement used to stop dead.
-        if (auto* wh = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
-            wh->tickLowGainWatch();
+        // 11 Oct 2026: the low-gain watch follows the loop's owner. A Link rack's watch is ticked by that
+        // Link (LinkProcessor::calibTickOwnRack), on the host whose plugins are in the audio path.
+        if (uid.isEmpty())
+            getChainHost().tickLowGainWatch();
         calibSweepCompanionsOnly(uid);
         return {};
     }
 
 
-    // ONLY THE HOST THAT OWNS THE TALLIES ADVANCES IT. For a Link rack that is this instance only while the rack
-    // is leased here; after deselect the Link advances it from its own chain, and this instance renders the card
-    // from the state without touching it.
-    ChainHost* host = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid);
+    // ---- 11 Oct 2026, THE REMOVALS: ONLY THE HOST THAT HEARS THE CHANNEL ADVANCES IT -------------------
+    //
+    // The rule has not changed - only the host that owns the tallies may step a compressor - but which host
+    // that is has. It used to be this instance while the rack was leased here, because the lease switched the
+    // Link's rack off and fed a copy of the channel through ours. Stage 1 ended the switching-off, and from
+    // that moment this side's copy was being fed the ring (which taps POST-RACK) and processing it AGAIN: the
+    // threshold was being calibrated against doubly-processed audio. Nothing could hear it, because stage 1
+    // had also stopped anyone listening to that copy.
+    //
+    // So for a LINK rack this side never advances the loop now. It sends the block as a command, the Link runs
+    // it against the plugins it hosts in its own place in the graph, and this side renders the card from the
+    // state the Link publishes - which is what it already did after a deselect. One owner, and it is the one
+    // with the audio. See LinkProcessor::calibTickOwnRack for the other half.
+    ChainHost* host = uid.isEmpty() ? &getChainHost() : nullptr;
+    if (! uid.isEmpty())
+    {
+        // Not a stall and not a refusal: the right host is running it. Said once every 5 s on the same
+        // rate-limiter the stall uses, because silence here is what made 14:44 unreadable.
+        const double nowMs = juce::Time::getMillisecondCounterHiRes();
+        if (nowMs - calibStallLogMs_ > 5000.0)
+        {
+            calibStallLogMs_ = nowMs;
+            EchoJay_NSLog(("EJThreshold: \"" + loop.plugin + "\" on rack " + uid
+                           + " is advanced BY THAT LINK (11 Oct 2026: the host that hears the channel owns the "
+                             "loop); this instance renders the card from what it publishes").toRawUTF8());
+        }
+        calibSweepCompanionsOnly(uid);
+        return {};
+    }
     if (host == nullptr || loop.slot < 0 || loop.slot >= host->getNumSlots())
     {
         // 21t-i: A LOOP THAT CANNOT BE ADVANCED SAYS SO, every 5 s, because the alternative is silence - and

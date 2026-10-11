@@ -114,22 +114,26 @@ static BuiltinDevice makeGain()
 }
 static const BuiltinDeviceRegistrar gainReg { makeGain() };
 
-// The friend declared in LinkProcessor.h — drives the REAL rack-lease arms
-// (engage saves priors and bypasses all; release restores), so the gate
-// proves the shipping code, not a re-implementation.
+// The friend declared in LinkProcessor.h - drives the REAL rack-lease arm, so the gate proves the shipping
+// code and not a re-implementation.
+//
+// 11 Oct 2026, THE REMOVALS: there is one arm now and no counterpart. The engage used to save every slot's
+// bypass and switch the rack off; the release put it back. Both are gone, so "engage" means addressed and
+// "release" means no longer addressed - neither touches a slot.
 struct EchoJayLinkSyncTestAccess
 {
-    static void engage (LinkProcessor& p)  { p.rackLeaseEngage(); }
-    // Stage 1: the lease is a CONTROL lease now, so a leg has to be able to say it is still HELD while the
-    // audio is untouched. Reading rackLeaseActive_ directly, because that IS the control lease's own flag.
-    static bool leaseHeld (LinkProcessor& p) { return p.rackLeaseActive_; }
+    static void engage (LinkProcessor& p)  { p.rackLeaseAddress(); }
+    // The lease is a CONTROL lease, so a leg has to be able to say it is still HELD while the audio is
+    // untouched. Reading the flag directly, because that IS the control lease's own flag.
+    static bool leaseHeld (LinkProcessor& p) { return p.rackLeaseScope_; }
     // Stage 1: the ruling "a session release can never clear a user mute" is about the USER's reason, so the
     // leg reads that reason rather than inferring it from silence - silence has three possible authors.
     static bool userMuteStillOn (LinkProcessor& p) { return p.userMuteOn(); }
     static void release (LinkProcessor& p)
     {
         p.leaseActive_.store (false, std::memory_order_relaxed);
-        p.rackLeaseRelease();
+        p.rackLeaseScope_ = false;
+        p.notifyChainModel();
     }
     // Registration arms (26 Aug 2026): drive the REAL claim path the way
     // the 1s tick does, so the gate proves claim/wait/adopt end to end.
@@ -145,14 +149,11 @@ struct EchoJayLinkSyncTestAccess
     }
     static bool registered (LinkProcessor& p) { return p.regSlotIdx >= 0; }
     static juce::String uid (LinkProcessor& p) { return p.instanceUid_; }
-    // §8 mute arms: drive the REAL lease-mute state the poll would set.
-    static void setMute (LinkProcessor& p, bool m)
-    { p.rackLeaseMuteWant_.store (m, std::memory_order_relaxed); }
+    // 11 Oct 2026: setMute / muteWant / releaseArmClearsMute are GONE, because rackLeaseMuteWant_ is. The
+    // lease-carried mute is not merely disobeyed now - it is not read. A leg about muteOut therefore drives
+    // the REAL lease FILE through the REAL poll and asserts on the AUDIO, which is a stronger claim than the
+    // one it replaces: it proves an older V2's muteOut cannot silence this channel by any route.
     static void pollLease (LinkProcessor& p) { p.pollEditLease(); }
-    static bool muteWant (LinkProcessor& p)
-    { return p.rackLeaseMuteWant_.load (std::memory_order_relaxed); }
-    static void releaseArmClearsMute (LinkProcessor& p)
-    { p.rackLeaseMuteWant_.store (false, std::memory_order_relaxed); }
     // Mute/solo arms (27 Aug 2026): drive and observe the REAL composed
     // state, the REAL fabric scan, the REAL ctrl poll and publish.
     static void setUserMute (LinkProcessor& p, bool m)
@@ -690,23 +691,36 @@ int main()
         check (peak() > 0.01f, "unmuted lease passes signal",
                juce::String (peak()));
         // RETIRED (STAGE 1, 10 Oct 2026): "muteOut silences the OUTPUT" and "the restore path unmutes".
-        // Their subject was THE LEASE'S OWN MUTE, and it is gone. It existed because the V2 summed a processed
-        // copy of this channel into its own output, so the Link had to go quiet or the two would double - the
-        // mute was the audio detour's other half. With no injection, a lease that still muted would mean
-        // SELECTING A LINK SILENCES THAT CHANNEL, which is worse than the kick that started this.
-        // The lease still CARRIES muteOut on the wire and the Link still parses it - the "file -> poll -> want"
-        // legs below are untouched and still assert that - it simply no longer composes into silence. Keeping
-        // the parse is deliberate: an older V2 will still send it, and the Link must read it without obeying it.
-        EchoJayLinkSyncTestAccess::setMute (proc, true);
-        for (int b = 0; b < 8; ++b) feed();
-        check (peak() > 0.01f,
-               "stage 1: a lease's muteOut does NOT silence the channel - the V2 is not standing in for this "
-               "rack any more, so a selected Link stays audible where it is",
-               juce::String (peak()));
-        check (EchoJayLinkSyncTestAccess::muteWant (proc),
-               "stage 1: ...and the want is still PARSED and held, so an older V2's muteOut is read and "
-               "disobeyed rather than ignored");
-        EchoJayLinkSyncTestAccess::releaseArmClearsMute (proc);
+        // Their subject was THE LEASE'S OWN MUTE. It existed because the V2 summed a processed copy of this
+        // channel into its own output, so the Link had to go quiet or the two would double - the mute was the
+        // audio detour's other half. With no injection, a lease that still muted would mean SELECTING A LINK
+        // SILENCES THAT CHANNEL, which is worse than the kick that started this.
+        //
+        // 11 Oct 2026, THE REMOVALS: stage 1 left the key PARSED and disobeyed, and the leg asserted that.
+        // Now it is not parsed at all, so the claim has to be made on the audio and through the real wire -
+        // which is the stronger version of the same claim, and the one that matters to a user still running
+        // an older V2: a muteOut lease arriving on disk cannot silence this channel by ANY route.
+        {
+            int errM = 0;
+            const juce::String mdir = LinkShm::resolveDir (errM);
+            const juce::String muid = EchoJayLinkSyncTestAccess::uid (proc);
+            const juce::String leaseMute =
+                "{\"v\": 1, \"leaseId\": \"lease-mute-audio\", \"slot\": 0, "
+                "\"scope\": \"rack\", \"muteOut\": true, \"tMs\": "
+                + juce::String (juce::Time::currentTimeMillis()) + "}";
+            juce::File (LinkShm::leasePath (mdir, muid)).replaceWithText (leaseMute);
+            EchoJayLinkSyncTestAccess::pollLease (proc);
+            for (int b = 0; b < 8; ++b) feed();
+            check (peak() > 0.01f,
+                   "an older V2's muteOut, in a REAL lease file through the REAL poll, does NOT silence the "
+                   "channel - the V2 is not standing in for this rack, so a selected Link stays audible",
+                   juce::String (peak()));
+            check (EchoJayLinkSyncTestAccess::leaseHeld (proc),
+                   "...and that same file still ADDRESSES the rack, so the control lease is unaffected by the "
+                   "removal of its audio half");
+            juce::File (LinkShm::leasePath (mdir, muid)).deleteFile();
+            for (int t = 0; t < 40; ++t) EchoJayLinkSyncTestAccess::pollLease (proc);
+        }
         EchoJayLinkSyncTestAccess::release (proc);
     }
 
@@ -723,10 +737,14 @@ int main()
             + juce::String (juce::Time::currentTimeMillis()) + "}";
         juce::File (LinkShm::leasePath (ldir, myUid2)).replaceWithText (lease);
         EchoJayLinkSyncTestAccess::pollLease (proc);
-        check (EchoJayLinkSyncTestAccess::muteWant (proc),
-               "the Link's poll reads muteOut from the REAL file");
-        // editPending (27 Aug wrong-banner): absent reads FALSE — an old
-        // main never strands the pending wording.
+        // RETIRED 11 Oct 2026: "the Link's poll reads muteOut from the REAL file". It does not read it any
+        // more. The audio leg above now carries this file's whole subject, and carries it further: the key
+        // arrives, is ignored, and the channel stays audible.
+        check (EchoJayLinkSyncTestAccess::leaseHeld (proc),
+               "the Link's poll reads the lease's SCOPE from the REAL file and is addressed by it");
+        // editPending (27 Aug wrong-banner): absent reads FALSE - an old
+        // main never strands the pending wording. This one SURVIVES the removals: it is a control fact (an
+        // edit from the holder has not acked, so the lock is held for a reason), not an audio one.
         check (! proc.rackEditPendingHeld(),
                "a lease without editPending reads not-held");
         const juce::String lease2 =
@@ -741,8 +759,9 @@ int main()
         juce::File (LinkShm::leasePath (ldir, myUid2)).deleteFile();
         for (int t = 0; t < 40; ++t)                 // ride to the 3s expiry
             EchoJayLinkSyncTestAccess::pollLease (proc);
-        check (! EchoJayLinkSyncTestAccess::muteWant (proc),
-               "lease gone -> the want clears through the restore path");
+        check (! EchoJayLinkSyncTestAccess::leaseHeld (proc),
+               "lease gone -> the addressing clears through the ONE ending (Expire), which is also the arm "
+               "that expires a stale lease file saved by an older build");
         check (! proc.rackEditPendingHeld(),
                "lease gone -> the pending hold clears with it");
     }
@@ -835,14 +854,14 @@ int main()
                juce::String (peak()));
         T::setUserMute (proc, true); settle();
         check (peak() < 0.001f, "user mute alone silences", juce::String (peak()));
-        // THE RULING SURVIVES STAGE 1, and it is the half worth keeping: a session release can NEVER clear a
-        // user mute. The session mute itself no longer composes into silence (see the retirement note in the
-        // block above), so "user + session mutes hold together" is now carried by the user's mute alone - which
-        // is exactly what the ruling is about. Asserted through the real release arm, as before.
-        T::engage (proc); T::setMute (proc, true); settle();
+        // THE RULING SURVIVES THE REMOVALS, and it is the half worth keeping: a session release can NEVER
+        // clear a user mute. There is no session mute left to compose with (11 Oct 2026 - rackLeaseMuteWant_
+        // is gone, not merely disobeyed), so the leg is now the plainer and more useful claim: a session
+        // engaging and ending around a user mute leaves that mute exactly where the user put it.
+        T::engage (proc); settle();
         check (peak() < 0.001f,
-               "the USER mute holds while a session mute is also wanted", juce::String (peak()));
-        T::releaseArmClearsMute (proc); T::release (proc); settle();
+               "the USER mute holds while a session is addressing this rack", juce::String (peak()));
+        T::release (proc); settle();
         check (peak() < 0.001f,
                "session released - the USER mute survives (the ruling)",
                juce::String (peak()));

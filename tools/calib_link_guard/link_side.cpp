@@ -27,7 +27,9 @@ struct EJCalibLinkTestAccess
     // that entry point rather than planting a sidecar - the point is that this side reads the contract.
     static void startFromBlock (LinkProcessor& p, const juce::var& b) { p.startCalibFromBlock (b); }
     // 21t-g item 6a: the lease is the fact that decides who runs the loop, so the guard sets it.
-    static void setLeased (LinkProcessor& p, bool on) { p.rackLeaseActive_ = on; }
+    // 11 Oct 2026: the field is rackLeaseScope_ - a rack-scope lease is ADDRESSING this Link. It no longer
+    // bypasses anything, so "leased" here means only "a main plugin is driving this rack".
+    static void setLeased (LinkProcessor& p, bool on) { p.rackLeaseScope_ = on; }
     static void clearLoop (LinkProcessor& p) { p.calibLoop_ = echojay::CalibLoop{}; }
     static ChainHost&   host (LinkProcessor& p) { return p.chainHost; }
     static echojay::CalibLoop loop (LinkProcessor& p) { return p.calibLoop_; }

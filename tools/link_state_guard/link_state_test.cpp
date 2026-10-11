@@ -17,7 +17,10 @@ struct EchoJayLinkSyncTestAccess
     static int model (LinkProcessor& p)         { return (int) p.chainModel.size(); }
     static void sync (LinkProcessor& p)         { p.syncModelAfterStructuralChange(); }
     static void poll (LinkProcessor& p)         { p.pollChainCommand(); }
-    static void lease (LinkProcessor& p, bool on) { if (on) p.rackLeaseEngage(); else p.rackLeaseRelease(); }
+    // 11 Oct 2026: rackLeaseEngage/Release are gone. A rack-scope lease ADDRESSES the Link; it does not change
+    // it, so there is one entry point and no counterpart. "off" is what the gate's Expire/Release arm does.
+    static void lease (LinkProcessor& p, bool on)
+    { if (on) p.rackLeaseAddress(); else { p.rackLeaseScope_ = false; p.leaseActive_.store (false, std::memory_order_relaxed); p.notifyChainModel(); } }
 };
 struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost& h, const juce::PluginDescription& d) { return h.loadBuiltinNow (d); } };
 using TA = EchoJayLinkSyncTestAccess;
@@ -68,7 +71,11 @@ int main()
     {
         auto l = makeLink ("D"); seed3 (*l); TA::lease (*l, true); pumpMs (100);
         juce::MemoryBlock mb; l->getStateInformation (mb);
-        check (chunkSlots (mb) == 3, "D. under a lease the Link's chunk carries its 3 slots - deletes made in the main plugin's BorrowHost are invisible to it until the plan arrives at deselect", juce::String (chunkSlots (mb)) + " slot(s)");
+        // 11 Oct 2026: the FIGURE is unchanged and the REASON is the opposite one. It used to be that the
+        // Link could not see the holder's deletes until the deselect plan arrived. Now every edit reaches it as
+        // a command when it is made, so three slots in the chunk means three slots in the rack - and a save
+        // taken mid-selection carries the rack the user is actually looking at.
+        check (chunkSlots (mb) == 3, "D. the Link's chunk carries its own 3 slots while a main plugin is addressing the rack", juce::String (chunkSlots (mb)) + " slot(s)");
         TA::lease (*l, false);
     }
     std::printf ("== E. the mechanism of the return: a chunk with 3 slots applied to a Link ==\n");

@@ -590,48 +590,16 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     // against nothing (nothing else is audible), so this bounds LATENCY, not
     // alignment; stage 2's stamps do alignment.
     static constexpr uint32_t kEditCushionFrames = 1024;
-    // §8.3 (amended): the FIXED alignment budget, reported from
-    // instantiation so ordinary browsing never re-runs PDC. Measured, not
-    // guessed (this machine's catalogue, defaults, 48k): worst single slot
-    // found = Ozone 12 Low End Focus at 12,799; the common latency class
-    // sits at or under ~4k. 16384 = cushion 1024 + headroom 15360.
-    static constexpr int kBorrowAlignBudgetFrames = 16384;
-    // The pad that keeps every mode's TOTAL at exactly the budget:
-    // pad = budget - cushion - borrowedChainLatency; negative = the rack
-    // does not fit — in-context REFUSED for it (solo fallback, named line).
-    // Pure and public so the arithmetic is functionally gated.
-    static int alignPad(int borrowedChainLatency) noexcept
-    {
-        const int pad = kBorrowAlignBudgetFrames
-                      - (int) kEditCushionFrames - borrowedChainLatency;
-        return pad >= 0 ? pad : -1;
-    }
-    // Two integer-frame ring delays realise the split (pre-sum alignment on
-    // the passthrough; final pad after the main chain). Fixed capacity, no
-    // allocation on the audio thread.
-    struct AlignDelay
-    {
-        juce::AudioBuffer<float> buf; int w = 0;
-        void prepare(int cap) { buf.setSize(2, cap); buf.clear(); w = 0; }
-        void process(juce::AudioBuffer<float>& b, int delay)
-        {
-            const int cap = buf.getNumSamples();
-            if (cap == 0 || delay <= 0) return;
-            const int n = b.getNumSamples();
-            for (int i = 0; i < n; ++i)
-            {
-                const int r = (w - delay % cap + cap) % cap;
-                for (int ch = 0; ch < 2 && ch < b.getNumChannels(); ++ch)
-                {
-                    float* d = b.getWritePointer(ch);
-                    const float in = d[i];
-                    buf.setSample(ch, w, in);
-                    d[i] = buf.getSample(ch, r);
-                }
-                w = (w + 1) % cap;
-            }
-        }
-    };
+    // ---- 11 Oct 2026, THE REMOVALS: THE ALIGNMENT BUDGET AND ITS DELAY LINES --------------------------
+    // kBorrowAlignBudgetFrames (16384 samples, 341.3 ms at 48 k), alignPad() and the two AlignDelay ring
+    // delays are gone. They realised one idea: hold the passthrough at a CONSTANT delay so an injected copy
+    // of a Link's rack could be summed in perfectly aligned, whatever that rack's own latency. The figure was
+    // measured rather than guessed (this machine's catalogue, defaults, 48 k: worst single slot found was
+    // Ozone 12 Low End Focus at 12,799), and it was reported to the host as added latency whenever a capable
+    // Link was present. Nothing is injected now, so nothing needs aligning and nothing is reported.
+    //
+    // kEditCushionFrames above STAYS: it is the ring read target for the slot-edit audition and the solo
+    // press, which are their own features and still consume rings.
     static constexpr uint32_t kEditReseekTrip    = 8192;
 
     bool editActive() const { return editSession_.slot0 >= 0; }
@@ -909,48 +877,17 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     bool borrowEditPendingHeld_ = false;
     juce::String pendingAutoEngage_;   // engage this uid once released
     juce::String rackLockHeldUidForInstrument() const { return rackLockHeldUid_; }   // 9 Sep: the editor's lock instrument reads this
-    // §8 in-context state (public: the editor banners from it, the gates
-    // assert it): OK = announced AND fits the budget, decided at engage,
-    // re-checked live on every borrowed-chain change.
-    std::atomic<bool> borrowInContextOk_ { false };
-    std::atomic<int>  borrowChainLat_ { 0 };
-    int borrowMuteUnconfirmedTicks_ = 0;   // §8 closed-loop watchdog
-    int borrowLastPadKey_ = -2;            // §8 injection pad-change detector
-    // §8.3 refinement (26 Aug 2026 ruling): the budget is carried ONLY when
-    // the project has a capable Link. No Links -> no alignment budget -> no
-    // added latency. The transition re-runs PDC once, on the deliberate and
-    // rare act of adding/removing a Link — never on rack browsing. ONE
-    // writer: the registry pass, via setBorrowBudgetActive.
-    // ROUND 53 (the borrow-budget ruling, DEFECT_PRESS_PLAY_PHASING §10):
-    // ONE COMMITTED BUDGET. borrowBudgetActive_ is the delay actually
-    // applied (alignPost_), the value reported (reportedBudgetFrames), and
-    // the value the borrow path reads (in-context engage). It changes in
-    // EXACTLY TWO PLACES, both through commitBorrowBudget(): prepareToPlay,
-    // and a block observed with the transport STOPPED. The registry pass
-    // writes only borrowBudgetWanted_, which is INERT: not applied, not
-    // reported, not read by the borrow path. A transport whose state is
-    // unknown (no play head, no position) counts as PLAYING: no commit.
-    std::atomic<bool> borrowBudgetActive_ { false };   // COMMITTED - the one value
-    std::atomic<bool> borrowBudgetWanted_ { false };   // PENDING - inert
-    void setBorrowBudgetWanted(bool wanted) noexcept
-    { borrowBudgetWanted_.store(wanted, std::memory_order_relaxed); if (wanted) capableLinkSeen_.store(true, std::memory_order_relaxed); }
-    // HURDLE 1 ITEM 4 (17 Sep 2026): "a capable Link has been seen". Set the
-    // first time the capable listing arrives (refreshLinkRegistry), SAVED WITH
-    // THE STATE, and restored BEFORE prepareToPlay on a reopened session so the
-    // budget is reserved at prepare - no stop needed - instead of waiting for
-    // the listing to flip WANTED mid-play. The very first session keeps the
-    // mid-play -> stopped-block path (round 53). Budget facts: 16384 samples
-    // (341.3 ms at 48 k), reported to the host as extra latency (one PDC
-    // re-run on the transition); the ring alignment target (1024 = the edit
-    // cushion) is independent of it.
+    // ---- 11 Oct 2026, THE REMOVALS -------------------------------------------------------------------
+    // borrowInContextOk_, borrowChainLat_, borrowMuteUnconfirmedTicks_, borrowLastPadKey_,
+    // borrowBudgetActive_/Wanted_ and setBorrowBudgetWanted went with the injection. Round 53's ruling is
+    // the one worth remembering, because it is about PDC and PDC has not changed: a plugin's reported
+    // latency may only move at a moment the user cannot hear, which is why the budget committed in exactly
+    // two places. There is no longer a reported figure that depends on which racks are present, so there is
+    // no moment to choose.
     std::atomic<bool> capableLinkSeen_ { false };
     void markCapableLinkSeen() noexcept
-    { capableLinkSeen_.store(true, std::memory_order_relaxed); borrowBudgetWanted_.store(true, std::memory_order_relaxed); }
+    { capableLinkSeen_.store(true, std::memory_order_relaxed); }
     bool capableLinkSeen() const noexcept { return capableLinkSeen_.load(std::memory_order_relaxed); }
-    void commitBorrowBudget(const char* where);        // the only writer of borrowBudgetActive_
-    int  reportedBudgetFrames() const noexcept
-    { return borrowBudgetActive_.load(std::memory_order_relaxed)
-                 ? kBorrowAlignBudgetFrames : 0; }
     // C4, the scoping decision as a pure function (the suite drives it):
     // a rack counts only if it announces in-context capability, its host
     // identity is OURS (pid + process start), and its publisher is alive.
@@ -972,45 +909,16 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     std::map<juce::String, LinkMuteSoloSnap> muteSoloSnaps_;
     bool soloSetActive_ = false;      // any LIVE row publishes soloOn
     int  soloIncapableLive_ = 0;      // live rows lacking muteSoloCapable
-    // THE HONORARY STRIP (§6.1): the injection follows the fabric as if it
-    // were the edited rack's strip — suppressed iff a solo set exists and
-    // the edited rack is not in it. ONE writer (the registry pass); the
-    // audio thread only reads.
-    std::atomic<bool> borrowSoloSuppressInj_ { false };
-    // §8 ALIGNMENT TRACE (28 Aug 2026 investigation): the harness proves
-    // the in-process arithmetic sample-exact at three buffer sizes, so a
-    // field misalignment can only be TIMELINE SKEW between the Link's
-    // blocks and ours (Logic's PDC process-ahead, mid-cycle seek). The
-    // Link stamps ring-index <-> host-position every block; this measures
-    // the consumed content's age against the cushion the pad assumes.
-    // Positive skew = content older than assumed = the edit lands LATE.
-    // Written by the drain (audio thread), logged at 1Hz by borrowTick.
-    std::atomic<int64_t> borrowAlignSkew_ { 0 };
-    std::atomic<bool>    borrowAlignSkewValid_ { false };
-    // Stamp-based alignment (29 Aug 2026 ruling): the injection's age is a
-    // MEASURED FACT — the drain derives it from the Link's ring stamps and
-    // the pad is computed from it, never from an assumed cushion (a
-    // constant true on paper and absent in the ring is how the -1024
-    // shipped). -1 = no measurement yet this session. borrowRingAgePrev_
-    // is audio-thread scratch for the relocate/drift detector;
-    // borrowAlignReset_ reseeds it across engages from the message thread.
-    std::atomic<int>  borrowRingAgeMeasured_ { -1 };
-    std::atomic<bool> borrowAlignReset_ { true };
-    std::atomic<bool> borrowAlignNoStamps_ { false };
-    int64_t borrowRingAgePrev_ = INT64_MIN;   // audio-thread scratch
-    uint32_t borrowLastStampSw_ = 0;          // audio-thread scratch
-    bool     borrowLastStampSwValid_ = false;
-    // The injection ramps in only after the Link's mute is CONFIRMED
-    // (30 Aug 2026: with alignment exact, the mute-confirm window turned
-    // from flange into a clean +6dB double on select). Set by borrowTick
-    // from the sidecar's muteEngaged; cleared with the session.
-    std::atomic<bool> borrowMuteConfirmedOnce_ { false };
-    bool soloSuppressPrev_ = false;   // banner-transition detector
-    // The injection gain this instant (the honorary strip's lamp) — public
-    // so the gate asserts the BEHAVIOUR, not just the branch.
-    float borrowCtxMixNow() const noexcept
-    { return borrowCtxMix_.getCurrentValue(); }
-
+    // ---- 11 Oct 2026, THE REMOVALS: THE INJECTION'S STATE ---------------------------------------------
+    // Gone with it: borrowSoloSuppressInj_ (the honorary strip), the ALIGNMENT TRACE pair, the stamp-based
+    // age measurement, the no-stamps fallback flag, the mute-confirm latch and borrowCtxMixNow().
+    //
+    // The 28 Aug investigation is the part worth carrying forward, because it is a method rather than a
+    // mechanism: the harness proved the arithmetic sample-exact at three buffer sizes, which is how the
+    // remaining error was identified as TIMELINE SKEW between the Link's blocks and ours rather than a
+    // mistake in the sums - and the 29 Aug ruling that followed ("the age is a MEASURED FACT, never an
+    // assumed cushion; a constant true on paper and absent in the ring is how the -1024 shipped") applies to
+    // anything this codebase ever aligns again.
     // ---- Step 3: Apply & Release bookkeeping (message thread only) --------
     // Per-slot record from engage: the saved identity triplet (the SAME
     // fields stateFitsPlugin withheld the pull by — Apply re-runs the same
@@ -1083,7 +991,6 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     // Link that announced structureEditCapable THEN — never re-read mid-
     // session, so an old Link keeps settings-only behaviour throughout.
     bool borrowStructureCapable_ = false;
-    bool borrowCtxCapable_ = false;   // the session's announced in-context capability, kept so a later budget commit can re-evaluate (8 Sep 2026 ruling)
     // Removed-withheld memory: names of removed slots whose settings never
     // arrived — the confirm gives these their own line (spec: deleting
     // settings the user never saw). Checked AT removal (the node's seeded
@@ -1127,12 +1034,10 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     void applyPendingBorrowRestores();   // message thread only; called from the registry sweep
 private:
     std::unique_ptr<ChainHost> borrowHost_;
-    juce::AudioBuffer<float>   borrowBuf_;
     juce::SpinLock             borrowLock_;
     juce::LinearSmoothedValue<float> borrowSoloMix_ { 0.0f };
     struct BorrowLeaseTimer;
     std::unique_ptr<BorrowLeaseTimer> borrowLeaseTimer_;
-    int          borrowRingLostTicks_ = 0;           // message thread only
     juce::String borrowAutoReleaseReason_;           // message thread only
     std::atomic<bool> borrowRouteFlip_ { false };    // the visible override
     void applyBorrowSoloMixOn(juce::AudioBuffer<float>& buffer, bool on);
@@ -1183,8 +1088,8 @@ public:
     // panel says so. THE GUARANTEE, exactly: the main's output is X. Complete only when
     // the main is the last thing before the monitors; direct outs, hardware inserts and
     // parallel monitor paths are outside it and not detectable from inside AAX.
-    // When X is the borrowed rack the crossfade uses the PROCESSED ring (borrowBuf_):
-    // spec 6.1 unchanged.
+    // 11 Oct 2026: ONE SOURCE. The crossfade used to read the V2-hosted COPY's processed output when X
+    // happened to be the rack being addressed (spec 6.1); every soloed Link is now heard from its own ring.
     // This replaced the mute broadcast, its target enumeration, the reconcile pass, the
     // authoritative mute record, the hand-mute snapshot and restore, the dead-main
     // contract, the liveness dependency for targets, the poll floor, the pending lamp
@@ -1196,12 +1101,10 @@ public:
     juce::String soloUid() const { return soloUid_; }
     bool     soloIndicatorOn(const juce::String& uid) const;   // ONE author for every solo indicator (sidecar flag OR the local solo)
     juce::String firstSoloName() const;
-    bool     soloSourceIsBorrowedRack() const { return soloActive() && borrowActive() && soloUid_ == borrowSession_.uid; }
     juce::String soloUid_;                                       // message thread writes, audio thread reads the atomics below
     std::atomic<int>  soloRingSlot_ { -1 };                      // activeLinkSlots index of X's ring, -1 = none
     std::atomic<bool> soloSeekPending_ { true };                 // seek X's ring to the cushion once at engage
     juce::AudioBuffer<float> soloBuf_;                           // X's ring for this block (audio thread only)
-    juce::AudioBuffer<float> borrowProcessed_;                   // the borrowed rack's processed ring, copied before the injection alignment touches borrowBuf_
     std::atomic<float> soloBufPeak_ { 0.0f };                    // diagnostic / leg: peak of what was consumed this block
 public:
     void resetCapture();
@@ -1671,8 +1574,6 @@ private:
     // the borrow's token, it is the processor's, and the old name made three raw-`this`
     // captures look like a different concern. See ~EchoJayProcessor.
     std::shared_ptr<bool> aliveToken_ { std::make_shared<bool>(true) };
-    AlignDelay alignPre_, alignPost_;
-    juce::SmoothedValue<float> borrowCtxMix_ { 0.0f };
     // The producer's rings, one per rack uid, mapped lazily on the message thread and kept for the session.
     // A std::map is fine here: this is never touched from the audio thread - the V2 PRODUCES, it does not drain.
     std::map<juce::String, echojay::cmdring::CmdRing*> cmdRings_;

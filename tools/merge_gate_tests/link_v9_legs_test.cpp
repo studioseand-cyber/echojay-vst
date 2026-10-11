@@ -24,7 +24,7 @@ static void pumpMs (int ms) { const double end = juce::Time::getMillisecondCount
 struct EchoJayLinkSyncTestAccess
 {
     static juce::String uid (LinkProcessor& p)        { return p.instanceUid_; }
-    static bool rackLeased (LinkProcessor& p)          { return p.rackLeaseActive_; }
+    static bool rackLeased (LinkProcessor& p)          { return p.rackLeaseScope_; }
     static ChainHost& host (LinkProcessor& p)          { return p.chainHost; }
 };
 using TA = EchoJayLinkSyncTestAccess;

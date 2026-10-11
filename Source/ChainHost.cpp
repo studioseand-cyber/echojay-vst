@@ -4032,20 +4032,17 @@ void ChainHost::removeSlot(int i)
     }
 }
 
-void ChainHost::setLeaseBypass(int i, bool bypassed)
-{
-    GraphMutation graphMutation(*this);   // v9 change B
-    if (i < 0 || i >= (int)slots_.size()) return;
-    if (slots_[i].bypassed == bypassed) return;   // already the effective state: no rebuild
-    slots_[i].bypassed = bypassed;
-    bumpChainRevision();
-    rebuildGraph();
-    if (prepared_)
-    {
-        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
-        graph_->prepareToPlay(sampleRate_, blockSize_);
-    }
-}
+// ---- 11 Oct 2026, THE REMOVALS (plan section 6): setLeaseBypass IS GONE -----------------------------------
+//
+// It was the lease's own writer: it moved `bypassed` and deliberately left `intendedBypassed` alone, which is
+// what made a slot's state TWO states - the user's intent and the lease's overlay on top of it. The Link's rack
+// is never switched off by a selection any more (stage 1 proved it, echojay::leaseBypassesTheRack), so there is
+// no second writer and no overlay: setSlotBypassed is the one author of a slot's bypass, and `intendedBypassed`
+// is kept in step with it rather than diverging from it.
+//
+// Two of the bugs the plan lists retire exactly here: the PERSISTENT BYPASS after a hand-back (nothing is
+// changed, so nothing can be restored wrongly) and the bypass DISPLAY bug (every slot on a Link rack reading
+// bypassed, because the effective state was a lease artefact).
 
 void ChainHost::moveSlot(int i, int direction)
 {
@@ -4094,11 +4091,12 @@ void ChainHost::setSlotBypassed(int i, bool bypassed)
     GraphMutation graphMutation(*this);   // v9 change B
     if (i < 0 || i >= (int)slots_.size()) return;
     if (slots_[(size_t)i].bypassed != bypassed) pushUndo(juce::String(bypassed ? "bypass " : "un-bypass ") + slots_[(size_t)i].desc.name);   // 21m undo
-    // v9: this is the USER's / plan's request. While a rack lease holds the
-    // rack dry (attachBypassed_), the effective state stays bypassed and only
-    // the intent is recorded; the lease's release applies the intent.
+    // THE ONE AUTHOR (11 Oct 2026). This used to record the request in `intendedBypassed` and write a DIFFERENT
+    // value into `bypassed` whenever a lease held the rack dry. There is no lease overlay any more, so the two
+    // move together and `intendedBypassed` stays what its name says - the state the user asked for - without
+    // ever being a second answer to the same question.
     slots_[i].intendedBypassed = bypassed;
-    slots_[i].bypassed = attachBypassed_.load(std::memory_order_acquire) ? true : bypassed;
+    slots_[i].bypassed         = bypassed;
     bumpChainRevision();
     rebuildGraph();
     if (prepared_)
@@ -4189,20 +4187,18 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
         : juce::String();
     EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
                    + slot.desc.manufacturerName + "\"" + sinceEngage + " (async load"
-                   + juce::String(attachBypassed_.load(std::memory_order_acquire)
-                                      ? ", attached BYPASSED under the lease" : "")
                    + ")").toRawUTF8());
     // 3 Oct 2026 (Kathy): THE HOST SAMPLE RATE AT SLOT LOAD. A profile measured at 48 k and a session running at
     // 44.1 k is one of the three candidates for the CL 1B's constant 0.7 dB gap (the others being a Gain stage off
     // neutral and the tap position), and it is the one that is free to rule in or out from a log line.
     EchoJay_NSLog(("EJPlace: \"" + slot.desc.name + "\" loaded at host sampleRate="
                    + juce::String(sampleRate_, 0) + " Hz").toRawUTF8());
-    // v9 change A: the slot arrives in the lease's TARGET state - one write,
-    // never un-bypassed-then-corrected. attachBypassed_ is set by the Link's
-    // rack lease before it bypasses the existing slots and cleared after it
-    // restores them, so a plan attached under a lease is never rendered live.
-    slot.bypassed = attachBypassed_.load(std::memory_order_acquire);
-    slot.intendedBypassed = false;   // v9: what it would be without the lease
+    // A SLOT ARRIVES LIVE (11 Oct 2026). v9 change A attached it in "the lease's TARGET state" - bypassed,
+    // whenever a lease was held - so every plugin a build added under a lease arrived switched off and the
+    // model persisted it that way (Sean 8 Oct, 11:41). There is no lease state to arrive in: a slot the user
+    // just added is live unless they asked otherwise.
+    slot.bypassed         = false;
+    slot.intendedBypassed = false;
     const auto arrivedName = slot.desc.name;
     slots_.push_back(std::move(slot));
     // MOVE LOG: a slot arriving, and ONLY where the origin licenses a claim.
@@ -7260,7 +7256,7 @@ bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt
                    + slot.desc.manufacturerName + "\" (plan attach)").toRawUTF8());
     // v9 contract, exactly as completeLoad: arrive in the lease's TARGET state
     // under this same lock — never live-then-rebypassed, no lock-free window.
-    slot.bypassed = attachBypassed_.load(std::memory_order_acquire);
+    slot.bypassed         = false;   // 11 Oct 2026: no lease overlay, so a slot arrives live
     slot.intendedBypassed = false;
     insertAt = juce::jlimit(0, (int) slots_.size(), insertAt);
     slots_.insert(slots_.begin() + insertAt, std::move(slot));
@@ -7761,7 +7757,7 @@ bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
             slot.desc.manufacturerName = pi->getPluginDescription().manufacturerName;
     EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
                    + slot.desc.manufacturerName + "\" (plan attach)").toRawUTF8());
-    slot.bypassed = attachBypassed_.load(std::memory_order_acquire);   // v9 contract, as completeLoad
+    slot.bypassed         = false;   // 11 Oct 2026: no lease overlay, so a slot arrives live
     slot.intendedBypassed = false;
     slots_.push_back(std::move(slot));
     borrowReusedNodeIds_.insert(slots_.back().node->nodeID.uid);

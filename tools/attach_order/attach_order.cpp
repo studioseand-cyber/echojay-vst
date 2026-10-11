@@ -195,7 +195,10 @@ int main()
         using namespace LinkShm::StructureEdit;
         ChainHost host (ChainHost::Mode::Primary);
         host.prepare (48000.0, 512);
-        host.setAttachBypassed (true);                                       // the lease: arrive dry
+        // 11 Oct 2026: setAttachBypassed is GONE with the lease (plan section 6). This leg's subject was never
+        // the lease - it is the ATTACH ORDER: seed before the single prepare, never prepared while suspended,
+        // never rendered mid-attach. All of that is unchanged. What changes is the state the slot arrives in:
+        // live, because there is no overlay to arrive under.
         std::vector<SlotIdentity> base;
         std::vector<CurrentSlot> current;
         CurrentSlot c; c.identity.name = "EJ Rec Mock"; c.originIndex = -1; c.stateB64 = chunkFor (777);
@@ -220,18 +223,16 @@ int main()
         const int seedI = firstIdx (s, Ev::SetState, t0, t1), prepI = firstAnyPrepare (s, t0, t1);
         check (seedI >= 0 && prepI >= 0 && seedI < prepI, "switch: seed lands BEFORE the single prepare (=> before addNode)");
         check (countIn (s, Ev::Process, t0, t1) == 0,     "switch: never rendered before/during attach");
-        check (host.getSlotInfo (0).bypassed == true,     "switch: slot arrives in the lease's target state (bypassed == attachBypassed_)");
+        // The plan carried no bypass for this slot, and nothing overlays one: it is LIVE on arrival. This is
+        // the assertion that would have caught "every plugin a build added under a lease arrived switched off
+        // and the model persisted it that way" (Sean, 8 Oct 11:41) - the leg it replaces asserted the defect.
+        check (host.getSlotInfo (0).bypassed == false,         "switch: slot arrives LIVE (no lease overlay)");
+        check (host.getSlotInfo (0).intendedBypassed == false, "switch: ...and intent agrees - one state, not two");
 
-        pump (host, 8);                                                      // lease still held
-        const int t2 = (int) g_log.size();
-        check (countIn (s, Ev::Process, t1, t2) == 0,     "switch: NOT rendered while the lease holds it dry (no live window)");
-
-        host.setAttachBypassed (false);                                      // lease released
-        host.setSlotBypassed (0, false);
         pump (host, 8);
-        const int t3 = (int) g_log.size();
-        check (countIn (s, Ev::Process, t2, t3) >= 1,     "switch: renders once the lease releases (the AU is live and prepared)");
-        check (anyPrepare (s, t0, t3) == 1,               "switch: STILL exactly one prepare across the whole lease cycle", juce::String (anyPrepare (s, t0, t3)));
+        const int t2 = (int) g_log.size();
+        check (countIn (s, Ev::Process, t1, t2) >= 1,     "switch: renders as soon as it is attached and prepared (it is the user's plugin, in their rack)");
+        check (anyPrepare (s, t0, t2) == 1,               "switch: STILL exactly one prepare across the whole attach", juce::String (anyPrepare (s, t0, t2)));
     }
 
     std::printf ("\n==== attach_order: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);

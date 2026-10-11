@@ -151,7 +151,6 @@ public:
     // COMP_PROFILE_SPEC_v1 section 5: this track's own loud level, written for V2 (2 Oct 2026). Throttled; see
     // the .cpp. An idle Link writes nothing, and absence is what tells V2 there is no reading for this track.
     void publishTrackLevel();
-    bool slotWetParkedSaid_ = false;   // 2 Oct 2026: the parked-under-lease slotWet notice, once per lease
     float  tlLastRmsDb_   = -200.0f;
     float  tlLastPeakDb_  = -200.0f;
     double tlLastWriteMs_ = 0.0;
@@ -395,7 +394,7 @@ private:
     void syncModelAfterStructuralChange();
     // The rack-lease arms, extracted from the poll switch so linksync_test
     // drives the REAL engage/restore code, not a test-local copy.
-    void rackLeaseEngage();
+    void rackLeaseAddress();   // 11 Oct 2026: was rackLeaseEngage, which bypassed the rack
     void ringTick();   // stage 3: map the value ring, and reconcile what the audio thread applied
 public:
     // ---- STAGE 4 (10 Oct 2026): THE EDITOR REQUEST, for this Link's own editor ----------------------
@@ -416,7 +415,9 @@ private:
     std::atomic<int>      editorReqSlot_  { -1 };
     std::atomic<bool>     editorReqOpen_  { false };
     std::atomic<bool>     editorReqEmbed_ { false };
-    void rackLeaseRelease();
+    // rackLeaseRelease() REMOVED 11 Oct 2026: it restored what the engage had changed, and the engage changes
+    // nothing. The gate's Expire/Release arm clears the addressing flags and re-reads the model; see the
+    // comment at the poll.
     friend struct EchoJayLinkSyncTestAccess;
     // 21t-d: the Link-side calibration guard reads the loop and the chain it drives
     friend struct EJCalibLinkTestAccess;
@@ -554,7 +555,11 @@ private:
     int restoredChainRev_ = -1;
     // The revision this rack sat at when the CURRENT borrow engaged (-1 = no borrow open). Saved in the chunk and
     // republished after a restore, so the V2 can tell whether our rack moved after the borrow began.
-    int leaseBaseRev_ = -1;
+    // leaseBaseRev_ REMOVED 11 Oct 2026. It was the revision this rack sat at when a borrow engaged, and its
+    // only reader is the V2's tie-break for a SAVED borrowed copy. Nothing is staged on the V2 any more, so no
+    // new save can carry such a copy - but an OLD project can, so restoredLeaseBaseRev_ below is read from the
+    // chunk, republished in the sidecar, and written back out unchanged. Deleting the pass-through instead
+    // would make every old copy read -1, which is the one value that drops it: the 4 Oct bug, restored.
     int restoredLeaseBaseRev_ = -1;   // what our saved chunk said leaseBaseRev_ was
     // Uid claim gate (25 Aug 2026): decides duplicate vs ghost vs undecided
     // by the holder's heartbeat across claim-retry ticks. Reset when the
@@ -639,7 +644,7 @@ private:
     // ---- Edit lease (stage 1 remote editing) ------------------------------
     // The pure gate decides; this class acts. leaseActive_ is the ONE field
     // the audio thread reads (it forces ring production); everything else is
-    // message-thread state. leasePriorBypass_ is what the restore restores:
+    // message-thread state. Nothing is restored any more:
     // the bypass the USER had before the lease, not blanket false.
     void pollEditLease();
 
@@ -658,14 +663,12 @@ public:
     // confirms — the §8.5b watchdog contract is unchanged by composition.
     bool linkMuteWanted() const
     {
-        // STAGE 1 (10 Oct 2026): the LEASE arm is gated by policy - see echojay::leaseMutesTheLink(). It
-        // existed because the V2 was summing a processed copy of this channel into its own output, so the Link
-        // had to go quiet or the two would double. With no injection a lease that still muted would make
-        // selecting a Link SILENCE that channel. The user's own mute and the solo fabric are untouched.
-        return (echojay::leaseMutesTheLink()
-                    && rackLeaseActive_
-                    && rackLeaseMuteWant_.load(std::memory_order_relaxed))
-            || muteUserOn_.load(std::memory_order_relaxed)
+        // 11 Oct 2026, THE REMOVALS: THE LEASE ARM IS GONE, not merely gated. Stage 1 turned it off through
+        // echojay::leaseMutesTheLink() and the reason it had ever existed is recorded there: the V2 was summing
+        // a processed copy of this channel into its own output, so the Link had to go quiet or the two would
+        // double. Nothing sums anything now. What is left are the two mutes that are the USER's: their own
+        // mute button, and the solo fabric. Selecting a Link cannot silence a channel.
+        return muteUserOn_.load(std::memory_order_relaxed)
             || soloMuteWant_.load(std::memory_order_relaxed);
     }
     bool userMuteOn() const { return muteUserOn_.load(std::memory_order_relaxed); }
@@ -684,17 +687,22 @@ private:
     juce::String rackLockOwner_;             // message thread only
     double       lastLocalRackEditMs_ = 0.0; // message thread only
 
+    // ---- THE LEASE, AFTER THE REMOVALS (11 Oct 2026) ---------------------------------------------
+    // What is left is the lease as a CONTROL concept, which is what the plan said to keep: WHO is addressing
+    // this rack, so the lock overlay names them, the Link's own mutation points refuse, and a chain command
+    // carrying this id is accepted as the holder's own. The gate keeps its whole lifetime - Engage, Hold,
+    // Expire, Release - because a stale lease file from a crashed session (or from a project saved under the
+    // OLD behaviour) still has to expire on sight, and that is the migration arm plan section 8 asks for.
+    //
+    // What went: rackLeasePrior_ (the saved bypass of every slot), leasePriorBypass_ (the slot lease's one),
+    // rackLeaseMuteWant_ (the lease-carried mute) and leaseBaseRev_. Every one of them existed to undo
+    // something the lease DID to the audio, and the lease does nothing to the audio.
     LinkShm::LeaseGate leaseGate_;
     std::atomic<bool>  leaseActive_ { false };
     int                leaseSlot0_       = -1;
-    bool               leasePriorBypass_ = false;
-    // Whole-rack lease (step 2): the saved bypass of EVERY slot, restored by
-    // the same Expire/Release arm the slot lease uses. Message thread only.
-    bool               rackLeaseActive_ = false;
-    std::vector<bool>  rackLeasePrior_;
-    // §8 in-context: the lease-carried mute (muteOut). Want set by the poll
-    // (message thread), consumed on the audio thread through the ramp.
-    std::atomic<bool>  rackLeaseMuteWant_ { false };
+    // A rack-scope lease is addressing us. Named `...Scope_` and not `...Active_` on purpose: the old name was
+    // read as "the rack is leased, so it is switched off", which is what it used to mean.
+    bool               rackLeaseScope_ = false;
     // ---- THE VALUE RING (stage 3, 10 Oct 2026) -----------------------------------------------
     // Mapped on the message thread, read by processBlock through an atomic pointer so the audio thread never
     // touches the mapping itself. nullptr = no ring for this rack yet, and the file channel carries everything,

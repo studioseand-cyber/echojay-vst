@@ -378,11 +378,20 @@ int main()
     }
 #ifndef UI_GUARD_NO_HELPERS
     std::printf ("== (3) the borrowed-rack status line ==\n");
-    for (int inCtx = 0; inCtx < 2; ++inCtx) for (int cap = 0; cap < 2; ++cap) for (int kept = 0; kept < 2; ++kept)
+    // 11 Oct 2026: the two MONITORING flags (inContextOk, ctxCapable) are gone with the audio detour - there
+    // is one answer to "how am I hearing this" now - so the sweep is over the one flag that remains. The
+    // duplicate-sentence pin is unchanged in kind and re-aimed at the phrase the line actually carries.
+    for (int kept = 0; kept < 2; ++kept)
     {
-        const juce::String s = borrowStatusSentence ("Nafe Lead Vocal", inCtx != 0, cap != 0, kept != 0, {});
+        const juce::String s = borrowStatusSentence ("Nafe Lead Vocal", kept != 0, {});
         int n = 0; for (int at = 0; (at = s.indexOf (at, "when you leave this rack")) >= 0; ++at) ++n;
-        check (n == 1, "inCtx=" + juce::String (inCtx) + " ctxCapable=" + juce::String (cap) + " restoredKept=" + juce::String (kept) + " -> exactly one 'when you leave this rack'", s);
+        check (n == 1, "restoredKept=" + juce::String (kept) + " -> exactly one 'when you leave this rack'", s);
+        // ...and the claim that replaced the monitoring sentence is made, once, in every combination: a user
+        // reading this line must be told the rack moves as they edit it, not at the end.
+        int m = 0; for (int at = 0; (at = s.indexOf (at, "as you make them")) >= 0; ++at) ++m;
+        check (m == 1, "restoredKept=" + juce::String (kept) + " -> exactly one 'as you make them' (rack edits are commands)", s);
+        check (! s.contains ("soloing your edit instead") && ! s.contains ("hand the mix over"),
+               "restoredKept=" + juce::String (kept) + " -> no monitoring-refusal wording survives the removals", s);
     }
     std::printf ("== (4) the ask shelf never passes the chat column's right edge ==\n");
     {

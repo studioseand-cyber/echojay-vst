@@ -13377,9 +13377,7 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
             // Round C (17 Sep 2026): ONE writer for the status line (BorrowStatusText.h);
             // the "when you leave this rack" fact appears exactly once.
             safeThis->chainListPanel.statusText = borrowStatusSentence(
-                p2.resolveLinkDisplayName(st->uid),
-                p2.borrowInContextOk_.load(std::memory_order_relaxed),
-                st->ctxCapable, restoredKept,
+                p2.resolveLinkDisplayName(st->uid), restoredKept,
                 withheldN > 0
                     ? juce::String(withheldN) + " of " + juce::String(want)
                       + " plugins arrived WITHOUT " + p2.resolveLinkDisplayName(st->uid)

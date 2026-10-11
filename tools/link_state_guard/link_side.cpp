@@ -22,7 +22,7 @@ struct EchoJayLinkSyncTestAccess
     static juce::String uid (LinkProcessor& p)  { return p.instanceUid_; }
     static int model (LinkProcessor& p)         { return (int) p.chainModel.size(); }
     static void sync (LinkProcessor& p)         { p.syncModelAfterStructuralChange(); }
-    static bool leased (LinkProcessor& p)       { return p.rackLeaseActive_; }
+    static bool leased (LinkProcessor& p)       { return p.rackLeaseScope_; }   // 11 Oct: addressed, not bypassed
     static void pause (LinkProcessor& p, bool on) { if (on) p.stopTimer(); else p.startTimerHz (30); }
     // 4 Oct 2026 (G6): consume a waiting chain-cmd by hand. The Link's own 30 Hz timer does this, but a leg that
     // waits on a timer measures the timer; pumping it directly makes the load-order legs deterministic.
@@ -73,7 +73,7 @@ int main (int argc, char** argv)
     while (juce::Time::getMillisecondCounterHiRes() - t0 < 120000.0)
     {
         pumpMs (50);
-        if (! sawLease && TA::leased (*l)) { sawLease = true; std::printf ("  lease engaged on the Link (%d slots bypassed dry)\n", TA::host (*l).getNumSlots()); }
+        if (! sawLease && TA::leased (*l)) { sawLease = true; std::printf ("  lease addressing the Link (%d slots, ALL STILL PROCESSING - 11 Oct 2026)\n", TA::host (*l).getNumSlots()); }
         juce::File step (H + "/v2_step.json");
         // L1: a "pause" step stops this Link's timer for pauseMs (it neither polls the lease nor the command file)
         if (juce::File (H + "/v2_pause.json").existsAsFile() && ! pausedOnce)

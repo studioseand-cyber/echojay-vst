@@ -188,10 +188,8 @@ void LinkProcessor::timerCallback()
         // Bump heartbeat so the consumer can detect we're alive vs. crashed.
         // Registered-but-inactive Links heartbeat too — they must stay
         // visible (not reaped as stale) so remote re-activation works.
-        if (rackLeaseActive_)
-            EchoJay_NSLog(("EJCtx(link): leased muteWant="
-                + juce::String(rackLeaseMuteWant_.load(std::memory_order_relaxed)
-                                   ? "Y" : "N")).toRawUTF8());
+        if (rackLeaseScope_)
+            EchoJay_NSLog("EJCtx(link): addressed by a rack-scope lease (the rack keeps processing in place)");
         if (regSlotIdx >= 0)
         {
             LinkShm::bumpHeartbeat(regMap, regSlotIdx);
@@ -438,25 +436,20 @@ void LinkProcessor::publishRackSidecar()
                                        // landed (and see it die: controlled vanishing while it still holds the
                                        // lease is the teardown signal).
                                        return leaseActive_.load (std::memory_order_relaxed)
-                                              && (rackLeaseActive_ || i == leaseSlot0_);
+                                              && (rackLeaseScope_ || i == leaseSlot0_);
                                    });
     // 21t-d: THE LOOP STATE SURVIVES THIS PUBLISH. The Link rewrites its whole sidecar every time, so without
     // this the calibration state V2 wrote during a lease would be erased the moment the lease ended - the loop
     // would not "stop at handover", it would be deleted by it. When this process is running the loop it writes
     // its own state; when it is not, it carries forward whatever is already on disk.
-    // 21t-e: A LEASED RACK'S SLOTS ARE NOT THIS PROCESS'S TO ERASE. While the lease is held our own chain is
-    // PARKED (0 slots) and the lease holder has just republished the real picture; rewriting the file from our
-    // parked chain wipes it, which is how a [CURRENT CHAIN] block vanished ten seconds after the build that
-    // filled it. Carry the holder's slots forward instead - it is the one measuring and editing them.
-    if (rackLeaseActive_ && chainHost.getNumSlots() == 0)
-    {
-        const auto held = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
-        if (held.valid && ! held.slots.empty())
-        {
-            rc.slots = held.slots;
-            rc.revision = juce::jmax(rc.revision, held.revision);
-        }
-    }
+    // ---- 11 Oct 2026: ONE PUBLISHER -----------------------------------------------------------------
+    // What stood here carried a lease holder's slots forward whenever our own chain read 0 slots, because
+    // 21t-e was true then: "while the lease is held our own chain is PARKED (0 slots) and the lease holder has
+    // just republished the real picture". It is not true any more. A build on this rack arrives as a command
+    // and lands HERE (see sendChainToLink's note), so this chain is the rack, and 0 slots means 0 slots. The
+    // carry-forward would now resurrect a description of a rack the user had just emptied - and it is the
+    // sixth bug on the plan's list: the two-publisher sidecar, "the class of bug where the Link and the lease
+    // holder describe the same rack differently".
     // 4 Oct 2026 (save fix): what our saved chunk said its revision was, for the V2's tie-break.
     rc.restoredChainRev = restoredChainRev_;
     rc.restoredLeaseBaseRev = restoredLeaseBaseRev_;
@@ -486,20 +479,29 @@ void LinkProcessor::publishRackSidecar()
 }
 
 // 21t-d (25 Sep 2026): THE LINK DRIVES THE LOOP ONCE IT OWNS THE RACK.
-// While the rack is leased the per-slot tallies that matter are V2's borrowHost ones, and V2 advances the loop.
-// The moment the lease ends this process is the only one measuring the rack, so it takes the loop over - from
-// the sidecar, at the step count and drive V2 left it at, with the first window on this host not judged (the
-// handover rule: two hosts, two tally histories).
+// The handover machinery below is kept: a loop can still be read back from the sidecar at the step count and
+// drive a previous owner left it at, with the first window on this host not judged (two hosts, two tally
+// histories). What is gone is the previous owner.
+//
+// ---- 11 Oct 2026, THE REMOVALS: THIS PROCESS ALWAYS MEASURES ITS OWN RACK ------------------------------
+//
+// What stood here returned early whenever a lease was held, because 21t-d was true then: "while the rack is
+// leased the per-slot tallies that matter are V2's borrowHost ones, and V2 advances the loop". The V2 hosted a
+// copy that was fed this channel's audio and summed back into the mix, so its tallies were of a real signal.
+//
+// Stage 1 ended that and this gate became a measurement taken in the wrong place. The V2's copy is still fed
+// the ring - which taps POST-RACK - and this rack is no longer bypassed while leased, so what that copy
+// measured was this channel processed by this rack and then processed AGAIN by its own. A compressor's
+// threshold was being calibrated against doubly-processed audio, and nobody could hear it because stage 1 had
+// already stopped anyone listening to that copy. No figure Sean saw was flagged, which is exactly the GR unit
+// bug's shape: a number with nothing to contradict it.
+//
+// So the owner follows the audio. This process hosts the plugins, hears the channel in its own place in the
+// graph, and runs the loop. The V2 asks for a calibration by sending the block as a command, which is the
+// road startCalibFromBlock already arrives by.
 void LinkProcessor::calibTickOwnRack()
 {
     if (instanceUid_.isEmpty() || resolvedDir.isEmpty()) return;
-    if (rackLeaseActive_ || leaseActive_.load(std::memory_order_relaxed))
-    {
-        // V2 owns the tallies: drop our copy so the next release re-reads the state V2 has been writing.
-        calibLoadedFromSidecar_ = false;
-        calibLoop_ = {};
-        return;
-    }
     if (! calibLoadedFromSidecar_)
     {
         const auto rc = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
@@ -1102,13 +1104,12 @@ void LinkProcessor::pollEditLease()
             fileId    = o->getProperty("leaseId").toString();
             fileSlot1 = (int) o->getProperty("slot");
             fileScopeRack = o->getProperty("scope").toString() == "rack";
-            // §8 in-context: the mute rides the LEASE (one lifetime by
-            // construction — the expiry that restores bypasses restores
-            // the mute; no second restore path can exist). Re-read every
-            // poll so LISTEN's solo mode can lift it live.
-            rackLeaseMuteWant_.store(o->hasProperty("muteOut")
-                && (bool) o->getProperty("muteOut"),
-                std::memory_order_relaxed);
+            // 11 Oct 2026: muteOut IS NO LONGER READ. It rode the lease because the V2 was summing a
+            // processed copy of this channel into its own output and the two would have doubled. The key may
+            // still be written by an older main plugin; it is ignored, which is the whole point - an old V2
+            // can no longer silence a channel by selecting it. editPending still arrives and is still a
+            // CONTROL fact: an edit from the holder has not acked, so the lock is held for a reason and the
+            // Link's own banner says so.
             rackLeaseEditPending_.store(o->hasProperty("editPending")
                 && (bool) o->getProperty("editPending"),
                 std::memory_order_relaxed);
@@ -1136,7 +1137,7 @@ void LinkProcessor::pollEditLease()
                 leaseGate_.activeSlot1, chainHost.getNumSlots());
             if (scoped == LinkShm::LeaseScope::Engage::Rack)
             {
-                rackLeaseEngage();
+                rackLeaseAddress();
                 break;
             }
             const int slot0 = leaseGate_.activeSlot1 - 1;
@@ -1149,16 +1150,12 @@ void LinkProcessor::pollEditLease()
                 leaseGate_.activeId.clear(); leaseGate_.activeSlot1 = 0;
                 break;
             }
-            leaseSlot0_       = slot0;
-            leasePriorBypass_ = chainHost.getSlotInfo(slot0).bypassed;
-            // STAGE 1 (10 Oct 2026): NOT ANY MORE, AND THE OLD REASON SAYS WHY. It was "the ring taps
-            // post-rack, so without this the editing copy would receive audio ALREADY processed by this
-            // instance and process it again in series" - a true and careful reason, and it is entirely about
-            // the audio detour. There is no editing copy processing audio now (see
-            // echojay::borrowAudioDetourAllowed), so bypassing the slot would switch off a plugin the user is
-            // listening to in order to protect a path that no longer exists.
-            if (echojay::leaseBypassesTheRack())
-                chainHost.setLeaseBypass(slot0, true);   // v9: the lease's write
+            leaseSlot0_ = slot0;
+            // 11 Oct 2026: A SLOT-SCOPE LEASE CHANGES NOTHING ABOUT THE SLOT either. Stage 1 had already gated
+            // the bypass off and recorded the reason it had existed - "the ring taps post-rack, so without this
+            // the editing copy would receive audio ALREADY processed by this instance and process it again in
+            // series", which is entirely about an audio detour that is gone. With the write gone, so is
+            // leasePriorBypass_: there is nothing to put back.
             leaseActive_.store(true, std::memory_order_relaxed);
             notifyChainModel();   // the open editor dims + disables the slot
             EchoJay_NSLog(("EJLease: engaged slot "
@@ -1172,19 +1169,26 @@ void LinkProcessor::pollEditLease()
             // after a crash, a new id superseding a dead session -- and for
             // BOTH scopes: the rack arm restores every slot's saved bypass,
             // the slot arm restores its one, through this same switch case.
+            // 11 Oct 2026: ONE ENDING, AND IT RESTORES NOTHING - because nothing was changed. Every ending
+            // still comes through this one case, for both scopes, and it still matters: a clean release, an
+            // expiry after a crash, and a new id superseding a dead session all have to clear the addressing
+            // so the Link's own mutation points stop refusing and the lock overlay comes off.
+            //
+            // THIS IS ALSO THE MIGRATION ARM plan section 8 asks for. A project saved under the OLD behaviour
+            // carries a lease FILE, and the gate's own staleness rule expires it on sight - no code here needs
+            // to know it is an old one. What that project's Link must NOT do is restore a bypass from it, and
+            // it cannot: the restore is gone.
+            const bool wasRack = rackLeaseScope_;
             leaseActive_.store(false, std::memory_order_relaxed);
-            rackLeaseMuteWant_.store(false, std::memory_order_relaxed);
             rackLeaseEditPending_.store(false, std::memory_order_relaxed);
-            if (rackLeaseActive_)
-            {
-                rackLeaseRelease();
-            }
-            else if (leaseSlot0_ >= 0 && leaseSlot0_ < chainHost.getNumSlots())
-            {
-                chainHost.setLeaseBypass(leaseSlot0_, chainHost.getSlotInfo(leaseSlot0_).intendedBypassed);   // v9
-                EchoJay_NSLog("EJLease: released/expired - slot restored");
-            }
-            leaseSlot0_ = -1;
+            rackLeaseScope_ = false;
+            leaseSlot0_     = -1;
+            if (wasRack)
+                EchoJay_NSLog(("EJLease: RACK lease ended id \"" + leaseGate_.activeId
+                               + "\" - this rack has been processing in its own place throughout, so there is "
+                                 "nothing to restore").toRawUTF8());
+            else
+                EchoJay_NSLog("EJLease: released/expired - addressing cleared");
             notifyChainModel();
             break;
         }
@@ -1407,19 +1411,13 @@ void LinkProcessor::pollControlCommand()
         // deselect plan carries it back here (OpType::Values, wet and bypass for every surviving slot).
         // So this says what is true, ONCE per lease rather than per tick - a line per drag tick is how a real
         // defect hides. The verb keeps being written by V2 on purpose (slotwet_knobpath pins that).
-        const bool parkedUnderLease = rackLeaseActive_ && chainHost.getNumSlots() == 0;
-        if (parkedUnderLease)
-        {
-            if (! slotWetParkedSaid_)
-            {
-                slotWetParkedSaid_ = true;
-                EchoJay_NSLog(("EJCtrl: slotWet DEFERRED idx=" + juce::String(idx)
-                               + " - this rack is parked while V2 holds the borrow, so there is no slot to write; "
-                                 "V2 has it on the borrowed host and the deselect plan carries it back. Further "
-                                 "slotWet commands this lease are not logged.").toRawUTF8());
-            }
-        }
-        else if (idx < 0 || idx >= chainHost.getNumSlots() || want.isEmpty() || want != have)
+        // 11 Oct 2026: THE PARKED ARM IS GONE. It existed because "while V2 holds the borrow our own chain is
+        // parked at 0 slots BY DESIGN ... V2 has it on the borrowed host and the deselect plan carries it
+        // back", so a wet command against a rack we did not hold was a fact rather than a fault, logged once
+        // per lease instead of once per drag tick. This rack is never parked now - a build arrives as a
+        // command and lands here - so a wet command that cannot be matched is a genuine mismatch again, and
+        // it says so with the identity it wanted and the one it found.
+        if (idx < 0 || idx >= chainHost.getNumSlots() || want.isEmpty() || want != have)
         {
             EchoJay_NSLog(("EJCtrl: slotWet REJECTED idx=" + juce::String(idx)
                            + " want=" + want + " have=" + have
@@ -2638,35 +2636,17 @@ void LinkProcessor::resyncChainModelFromHost()
         auto info = chainHost.getSlotInfo(i);
         ChainSlotSpec s;
         s.name     = info.name;
-        // THE GENERAL RULE (24 Aug 2026): lease bypass is the LEASE'S
-        // business and never reaches the Link's own saved state — chainModel
-        // is what the editor renders AND what persists, and a persisted
-        // lease-bypass means a crash mid-borrow leaves the rack silently
-        // switched off. Under a lease the model records the TRUE state, not
-        // the lease's temporary dry rack.
+        // ---- 11 Oct 2026: ONE STATE, SO THERE IS NOTHING TO CHOOSE BETWEEN -------------------------
+        // Three arms stood here, picking between `intendedBypassed` and `bypassed` depending on whether a
+        // lease was held and whether this was its slot. They existed because bypass was two values: the
+        // user's intent and the lease's overlay. The history is worth keeping in one line, because it is two
+        // of the bugs the plan retires - a persisted lease-bypass left a rack silently switched off after a
+        // crash mid-borrow (24 Aug), and a slot ADDED during a lease had no prior and fell through to the
+        // overlay, so the model persisted every new plugin as bypassed (8 Oct, Sean 11:41).
         //
-        // 8 Oct 2026 - THE PERSISTENT BYPASS (Sean 11:41: "after the V2 hands
-        // a rack back, the Link's plugins RARELY stay bypassed"). This test
-        // used to be `i < rackLeasePrior_.size()`, and the prior list is
-        // captured AT ENGAGE - so a slot ADDED DURING the lease, which is
-        // what every build does, had no prior and fell through to
-        // `info.bypassed`. Under a lease that is TRUE for every slot
-        // (attachBypassed_), so the model - what the editor renders and what
-        // PERSISTS - recorded the new slot as bypassed, and nothing about
-        // releasing the lease could undo a value already saved. The host knew
-        // better the whole time: rackLeaseRelease() restores from
-        // `intendedBypassed`, and `setLeaseBypass` never touches it.
-        //
-        // So the model now reads the SAME source the release does, for every
-        // slot, and the prior list stops being the model's authority. One
-        // source of truth for "what did the user actually ask for", which is
-        // the only thing that may ever reach the saved state.
-        if (rackLeaseActive_)
-            s.bypassed = info.intendedBypassed;
-        else if (leaseSlot0_ == i && leaseActive_.load(std::memory_order_relaxed))
-            s.bypassed = info.intendedBypassed;
-        else
-            s.bypassed = info.bypassed;
+        // setSlotBypassed is now the one author and intendedBypassed moves with it, so either name reads the
+        // same thing. `bypassed` is used here because it is the one the audio path reads.
+        s.bypassed = info.bypassed;
         s.hostIdx  = i;
         s.wet      = info.wet;
         s.settings = info.settings;
@@ -2740,94 +2720,33 @@ void LinkProcessor::ringTick()
                        + ", overflow " + juce::String((int) ringLastOverflow_.load(std::memory_order_relaxed))).toRawUTF8());
 }
 
-void LinkProcessor::rackLeaseEngage()
+// ---- 11 Oct 2026, THE REMOVALS: ADDRESSING, NOT ENGAGING -------------------------------------------------
+//
+// rackLeaseEngage() and rackLeaseRelease() are replaced by this one function and no counterpart, because an
+// engage no longer does anything a release has to undo.
+//
+// WHAT THE ENGAGE DID, in its own words: "WHOLE-RACK ENGAGE: save every slot's bypass, bypass all once, stream
+// dry". Three things went with it:
+//
+//   * setAttachBypassed(true) + setLeaseBypass(i, true) for every slot - Sean's kick, going through its own
+//     channel strip and its own bus UNPROCESSED while the processed copy was summed in at the V2's position;
+//   * rackLeasePrior_, the snapshot the release restored from - and the source of the persistent bypass after
+//     a hand-back, because a slot added DURING a lease has no prior;
+//   * leaseBaseRev_, which existed only so the V2 could judge a copy it had staged. Nothing is staged now.
+//
+// What is left is a fact about WHO is addressing this rack, which is the lease as the plan keeps it: a control
+// concept. The one line of work is to let the editor re-read the model, so the lock overlay appears.
+void LinkProcessor::rackLeaseAddress()
 {
-    // 8 Oct 2026 (Sean's (a)): A SECOND ENGAGE NEVER OVERWRITES A LIVE SNAPSHOT.
-    // The prior list is only ever correct if it was taken while the rack was in the user's own state. Re-taking it
-    // under a lease would record the lease's own dry rack as "what the user asked for". With v9 the snapshot is of
-    // `intendedBypassed`, which the lease does not touch, so a re-entry is harmless TODAY - and the guard is here
-    // anyway, because the day someone changes what is snapshotted is the day a silent re-entry becomes a rack that
-    // never comes back. Logged either way: a skipped snapshot is a fact about a lease that was already held.
-    if (rackLeaseActive_)
-    {
-        EchoJay_NSLog(("EJLease: RACK engage while a lease is ALREADY held (id \"" + leaseGate_.activeId
-                       + "\") - snapshot SKIPPED, " + juce::String((int) rackLeasePrior_.size())
-                       + " prior state(s) kept; the rack is already dry").toRawUTF8());
-        return;
-    }
-    // ---- STAGE 1 (10 Oct 2026): THE RACK IS NOT SWITCHED OFF ANY MORE --------------------------------
-    // What stood here: setAttachBypassed(true), then setLeaseBypass(i, true) for every slot - "WHOLE-RACK
-    // ENGAGE: save every slot's bypass, bypass all once, stream dry". That is Sean's kick. The rack went dry in
-    // place, so the channel strip, the sends and the drum bus downstream of it all carried an UNPROCESSED kick,
-    // while the processed one was summed in at the V2's position. See echojay::leaseBypassesTheRack().
-    // The snapshot is still taken. It is no longer a restore list - nothing is being changed to restore from -
-    // but rackLeaseRelease() still walks it, and a project saved under the OLD behaviour can still arrive here
-    // with slots the lease had bypassed. Keeping it makes the release an idempotent restatement of intent
-    // instead of a path that only works on racks this build created. It goes at stage 5 with the rest.
-    rackLeasePrior_.clear();
-    for (int i = 0; i < chainHost.getNumSlots(); ++i)
-    {
-        rackLeasePrior_.push_back(chainHost.getSlotInfo(i).intendedBypassed);   // v9: the INTENT, not the effective state
-        if (echojay::leaseBypassesTheRack())
-        {
-            chainHost.setAttachBypassed(true);
-            chainHost.setLeaseBypass(i, true);
-        }
-    }
-    rackLeaseActive_ = true;
-    leaseSlot0_      = -1;
+    if (rackLeaseScope_) return;   // already addressed by this holder; nothing to restate
+    rackLeaseScope_ = true;
+    leaseSlot0_     = -1;
     leaseActive_.store(true, std::memory_order_relaxed);
-    // 4 Oct 2026 (save fix): THE REVISION THIS RACK SAT AT ONCE THE LEASE WAS ENGAGED - captured AFTER the
-    // bypass-all above, because setLeaseBypass bumps the revision and that bump is the lease's own doing, not a
-    // change to the rack's contents.
-    //
-    // This is the baseline for "did MY rack change after the borrow began", and it is captured HERE rather than on
-    // the V2 side on purpose: the V2 reads our sidecar at ITS engage, which may be before or after this bump, so a
-    // V2-side baseline would disagree with our own revision for reasons of timing alone and the comparison would
-    // never match. Both numbers the decision rests on are now ours, taken at two moments we control.
-    leaseBaseRev_ = chainHost.getChainRevision();
     notifyChainModel();
-    // (c) EVERY ENGAGE AND RELEASE NAMES ITS LEASE AND WHAT IT DID TO THE RACK, so a rack that comes back wrong
-    // can be read out of the log instead of reasoned about from a photograph.
-    {
-        juce::String snap;
-        for (size_t k = 0; k < rackLeasePrior_.size(); ++k)
-            snap << (k ? "," : "") << juce::String ((int) k + 1) << (rackLeasePrior_[k] ? ":byp" : ":live");
-        EchoJay_NSLog(("EJLease: RACK engaged id \"" + leaseGate_.activeId + "\" rev " + juce::String(leaseBaseRev_)
-                       + ", snapshot TAKEN of " + juce::String((int) rackLeasePrior_.size())
-                       + " slot(s) [" + snap + "], "
-                       + (echojay::leaseBypassesTheRack() ? "all bypassed, streaming dry"
-                                                          : "the rack KEEPS PROCESSING in its own place (stage 1)")).toRawUTF8());
-    }
-}
-
-void LinkProcessor::rackLeaseRelease()
-{
-    // v9: EVERY slot returns to its intended state - including slots that arrived under the
-    // lease (attached bypassed, intended live) which the prior list, captured at engage, never
-    // held. The leg "attach" measures exactly this: bypassed while leased, live after release.
-    for (int i = 0; i < chainHost.getNumSlots(); ++i)
-        chainHost.setLeaseBypass(i, chainHost.getSlotInfo(i).intendedBypassed);
-    chainHost.setAttachBypassed(false);   // v9 change A: AFTER the priors are restored
-    {
-        juce::String restored;
-        for (int i = 0; i < chainHost.getNumSlots(); ++i)
-            restored << (i ? "," : "") << juce::String(i + 1)
-                     << (chainHost.getSlotInfo(i).intendedBypassed ? ":byp" : ":live");
-        EchoJay_NSLog(("EJLease: RACK released/expired id \"" + leaseGate_.activeId + "\" - restored "
-                       + juce::String(chainHost.getNumSlots()) + " slot(s) from INTENT [" + restored
-                       + "]; the engage snapshot held " + juce::String((int) rackLeasePrior_.size())
-                       + " (slots added under the lease have no prior and are restored from intent, which is why "
-                         "the model records intent too)").toRawUTF8());
-    }
-    rackLeaseActive_ = false;
-    leaseBaseRev_ = -1;   // the borrow is over: there is no baseline to compare a saved copy against
-    slotWetParkedSaid_ = false;   // 2 Oct 2026: the parked-rack notice is once per LEASE, not once per process
-    rackLeasePrior_.clear();
-    // The model re-reads the restored truth: without this, a sync that ran
-    // mid-lease would leave the editor (and the SAVED state) claiming the
-    // lease's bypass long after the lease ended.
-    resyncChainModelFromHost();
+    EchoJay_NSLog(("EJLease: RACK addressed by id \"" + leaseGate_.activeId + "\" rev "
+                   + juce::String(chainHost.getChainRevision()) + " - " + juce::String(chainHost.getNumSlots())
+                   + " slot(s), ALL STILL PROCESSING in this instance's own place in the graph. A selection is "
+                     "not an audio act.").toRawUTF8());
 }
 
 void LinkProcessor::syncModelAfterStructuralChange()
@@ -2845,48 +2764,14 @@ ChainHost::PlanResult LinkProcessor::applyStructurePlanAndSync(
     const juce::String& dir, const LinkShm::StructureEdit::Plan& plan)
 {
     auto res = chainHost.applyStructurePlan(dir, plan);
-    if (res.ok && rackLeaseActive_)
-    {
-        // PLAN-AWARE PRIOR REMAP (24 Aug 2026: every plugin came back
-        // bypassed): the priors were captured per index before the plan,
-        // and the plan shifts indices. Each prior follows the SLOT it
-        // belongs to, through the plan's own finalOrigin record; a created
-        // slot's prior is the bypass state the plan carried for it (read
-        // from the slot, where Phase B just wrote it) — never a default
-        // and never "not restored". Then the lease's dry rack is
-        // re-asserted, created slots included.
-        std::vector<bool> np;
-        for (int i = 0; i < (int) res.finalOrigin.size(); ++i)
-        {
-            const int o = res.finalOrigin[(size_t) i];
-            np.push_back(o >= 0 && o < (int) rackLeasePrior_.size()
-                             ? (bool) rackLeasePrior_[(size_t) o]
-                             : chainHost.getSlotInfo(i).intendedBypassed);   // v9: a new slot's INTENT (false unless the plan said bypass)
-        }
-        rackLeasePrior_ = std::move(np);
-        // v9: this loop is now the INSTRUMENT. Every slot arrived bypassed
-        // (change A); a live one here is the invariant broken, said loudly.
-        // STAGE 1 (10 Oct 2026): THERE IS NO DRY RACK TO RE-ASSERT. This loop was the v9 INSTRUMENT - every
-        // slot arrived bypassed, so a live one here meant the invariant was broken and it said so loudly before
-        // bypassing it. The invariant itself is gone: a leased rack keeps processing, so a live slot after a
-        // reshape is CORRECT and the loop would have quietly switched the user's rack off again after every
-        // plan. Caught by linksync_test's reshape leg, which read [0:byp,1:byp,2:byp] where the plan asked for
-        // two live survivors and one bypassed Create.
-        if (echojay::leaseBypassesTheRack())
-            for (int i = 0; i < chainHost.getNumSlots(); ++i)
-            {
-                if (! chainHost.getSlotInfo(i).bypassed)
-                    EchoJay_NSLog(("EJLease: INVARIANT BROKEN - slot " + juce::String(i + 1)
-                                   + " (\"" + chainHost.getSlotInfo(i).name
-                                   + "\") attached LIVE under the lease; bypassing it now").toRawUTF8());
-                chainHost.setLeaseBypass(i, true);
-            }
-        EchoJay_NSLog(("EJLease: priors remapped through the plan ("
-                       + juce::String((int) rackLeasePrior_.size())
-                       + " slots)"
-                       + (echojay::leaseBypassesTheRack() ? ", dry rack re-asserted"
-                                                          : ", the rack keeps processing (stage 1)")).toRawUTF8());
-    }
+    // ---- 11 Oct 2026: THE PRIOR REMAP IS GONE --------------------------------------------------------
+    // A block here remapped rackLeasePrior_ through the plan's finalOrigin record and then re-asserted the
+    // lease's dry rack over every slot, created ones included. Both halves were about a rack that had been
+    // switched off: the remap so the release put the right bypass back on the right plugin after a reshape
+    // (24 Aug, "every plugin came back bypassed"), and the re-assert so a freshly attached slot was never
+    // rendered live. Stage 1 had already turned the re-assert off and linksync_test's reshape leg caught why:
+    // it read [0:byp,1:byp,2:byp] where the plan asked for two live survivors and one bypassed Create - the
+    // loop was quietly switching the user's rack off again after every plan.
     // UNCONDITIONAL: applied changed the shape, a rollback tore it down
     // and rebuilt it — the editor-facing model is stale either way. Runs
     // AFTER the remap so the sync records the lease's TRUE priors.
@@ -3528,17 +3413,11 @@ void LinkProcessor::pollChainCommand()
                 // judged on the rack as it stands - not swallowed as "already applied".
                 if (aborted && self->lastAppliedChainSeq_ == seq) self->lastAppliedChainSeq_ = 0;
                 if (! aborted) ++self->chainCmdApplied_;
-                // 20 Sep 2026: under a rack lease the priors (what the release restores, what the MODEL and the SAVED chunk
-                // report) follow the edited rack - one rule, the same as engage: the intent of every slot as it stands now.
-                if (self->rackLeaseActive_)
-                {
-                    self->rackLeasePrior_.clear();
-                    for (int i = 0; i < self->chainHost.getNumSlots(); ++i)
-                        self->rackLeasePrior_.push_back(self->chainHost.getSlotInfo(i).intendedBypassed);
-                }
+                // 11 Oct 2026: nothing to keep in step. The priors followed the edited rack here so the release
+                // would restore the right value to the right plugin; there is no release and no priors.
                 self->syncModelAfterStructuralChange();
                 EchoJay_NSLog(("EJLink: applied " + opNames + " count=" + juce::String(countBefore) + "->" + juce::String(self->chainHost.getNumSlots())
-                               + " model=" + juce::String((int) self->chainModel.size()) + " lease=" + juce::String((int) self->rackLeaseActive_)
+                               + " model=" + juce::String((int) self->chainModel.size()) + " lease=" + juce::String((int) self->rackLeaseScope_)
                                + " seq=" + juce::String(seq) + (aborted ? " ABORTED" : "") + " applied=" + juce::String(applied) + "/" + juce::String(results.size())).toRawUTF8());
                 // 21t-j (28 Sep 2026 ruling): AN ABORT IS NOT A STALENESS. "stale" means the rack moved under the
                 // edit, and the line above it in Sean's log said the staleness guards had PASSED - so the one word
@@ -3664,17 +3543,12 @@ void LinkProcessor::startCalibFromBlock(const juce::var& block)
     auto* co = block.getDynamicObject();
     if (co == nullptr) return;                       // no compressor in this chain: no block, nothing to start
 
-    // EXACTLY ONE LOOP PER BLOCK (21t-g item 6a, 26 Sep 2026). V2 starts the loop for the slots IT hosts - its own
-    // rack and any rack it has LEASED - and the same chain-cmd arrives here. While the rack is leased, the slots
-    // are in V2's borrow host and this process is not the one measuring them, so starting a second loop on the same
-    // block would have two hosts stepping one compressor. It is gated on the LEASE, deliberately, and not on
-    // "getNumSlots() happens to be zero": an empty rack is a coincidence, a lease is the fact.
-    if (rackLeaseActive_ || leaseActive_.load(std::memory_order_relaxed))
-    {
-        EchoJay_NSLog("EJThreshold(Link): a calibration block arrived while the rack is LEASED - V2 hosts these slots "
-                      "and runs the loop; not starting a second one here");
-        return;
-    }
+    // EXACTLY ONE LOOP PER BLOCK (21t-g item 6a, 26 Sep 2026), AND THIS IS THE ONE (11 Oct 2026). The rule has
+    // not changed - two hosts stepping one compressor is still the failure - but the host that may step it is
+    // now always the one that owns the plugins and hears the channel, which is this one. The gate that stood
+    // here refused the block whenever a lease was held and left the loop to the V2's copy, and the note on
+    // calibTickOwnRack says what that copy was measuring. The V2 side no longer starts a loop for a rack it
+    // does not host; it sends the block, and this runs it.
     // ONE PARSER, the shared header's (21t-g item 6b) - the same literals, the same violations, the same
     // threshold-with-no-sense refusal V2 applies. A Link is a TRACK, so the band default is the track band.
     echojay::CalibLoop::Config cfg;
@@ -3842,15 +3716,19 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     // the only thing that answers that. Additive: absent on an older chunk, and then restoredChainRev_ stays -1
     // and V2's copy is never treated as newer - the safe direction.
     obj->setProperty("chainRev", chainHost.getChainRevision());
-    // ...and the revision the CURRENT borrow started from, when one is open. The V2 side compares these two: equal
-    // means our rack has not changed since the lease engaged, so the copy the V2 saved is the newer one. -1 means
-    // no borrow was open at save time, and then the V2's copy is never preferred.
-    obj->setProperty("leaseBaseRev", leaseBaseRev_);
+    // ...and the revision a borrow started from. THIS IS NOW A PASS-THROUGH, and it is the migration (11 Oct
+    // 2026). No borrow stages a copy any more, so this build never has a live number to write - but a project
+    // saved under the OLD behaviour does, and that number is half of the tie-break that decides whether the
+    // V2's saved copy is restored or dropped. Writing a live -1 here would make every such copy read "no
+    // borrow was open", which is the value that DROPS it: Sean's 4 Oct bug, reintroduced by a deletion.
+    //
+    // So what the chunk said, the chunk says again, until a V2 that has handed its copy back stops sending it.
+    obj->setProperty("leaseBaseRev", restoredLeaseBaseRev_);
     juce::String json = juce::JSON::toString(juce::var(obj), true);
     dest.replaceAll(json.toRawUTF8(), json.getNumBytesAsUTF8());
     // 20 Sep 2026 (the deleted-chain-came-back observation): what the SAVED chunk carries, always logged
     EchoJay_NSLog(("EJLinkState: getState uid=" + instanceUid_ + " chainModel=" + juce::String((int) chainModel.size())
-                   + " slot(s), host=" + juce::String(chainHost.getNumSlots()) + " slot(s), lease=" + juce::String((int) rackLeaseActive_)
+                   + " slot(s), host=" + juce::String(chainHost.getNumSlots()) + " slot(s), lease=" + juce::String((int) rackLeaseScope_)
                    + ", " + juce::String((juce::int64) dest.getSize()) + " bytes").toRawUTF8());
 }
 

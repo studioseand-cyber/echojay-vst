@@ -60,7 +60,8 @@ public:
     struct SlotInfo {
         juce::String name;
         bool bypassed;
-        bool intendedBypassed = false;   // v9: the state a NON-lease caller asked for (the lease overlays `bypassed`)
+        bool intendedBypassed = false;   // 11 Oct 2026: kept, and now always EQUAL to `bypassed` - the lease
+                                         // overlay is gone, so there is one answer and this is its name
         juce::String settings;  // suggested dial-in guidance from AI (display only)
         juce::String format;    // "AudioUnit" / "VST3" — popout-only is per-format
         float wet = 1.0f;       // per-slot wet/dry (0..1, 1 = fully wet)
@@ -1052,12 +1053,9 @@ public:
     // 18e: a built-in placed at an index (the Level slot before the last limiter): appends, then rotates into place
     juce::String insertBuiltinAt (const juce::PluginDescription& desc, int index);
     bool moveSlotTo (int from, int to);
+    // THE ONE AUTHOR of a slot's bypass (11 Oct 2026). setLeaseBypass stood beside it and wrote the EFFECTIVE
+    // state only, which is what made bypass two states; see the note in ChainHost.cpp where it was removed.
     void setSlotBypassed(int i, bool bypassed);
-    // v9: the LEASE's write - effective state only, intended untouched. The
-    // lease engages with setLeaseBypass(i, true) and releases with
-    // setLeaseBypass(i, slot.intendedBypassed), so a plan slot that arrived
-    // bypassed under the lease comes back LIVE at release unless the plan said otherwise.
-    void setLeaseBypass(int i, bool bypassed);
     void setSlotSettings(int i, const juce::String& settings);  // store AI guidance text
 
     // ---- Structural edit operations (CHAIN_AI_BUILD_SPEC Phase 1c) --------
@@ -2134,9 +2132,8 @@ public:
     // behaviour unchanged) ------------------------------------------------
     juce::PluginDescription getSlotDescription(int i) const;
     juce::AudioProcessor*   getSlotProcessor(int i) const;
-    // Link v9 change A/B surface (see attachBypassed_ / graphLock_ below).
-    void setAttachBypassed(bool b) noexcept { attachBypassed_.store(b, std::memory_order_release); }
-    bool attachBypassed() const noexcept    { return attachBypassed_.load(std::memory_order_acquire); }
+    // Link v9 change B surface (see graphLock_ below). Change A - setAttachBypassed/attachBypassed, the flag that
+    // made every slot attach BYPASSED while a lease was held - went with the lease on 11 Oct 2026.
     int  processDuringRebuildCount() const noexcept { return processDuringRebuild_.load(std::memory_order_acquire); }
     int  rebuildInFlightNow() const noexcept        { return rebuildInFlight_.load(std::memory_order_acquire); }
 
@@ -2407,7 +2404,7 @@ private:
         double lowGainWatchLastMs = 0.0;      // wall clock of the last window taken: a 3 s floor, not a tick count
         int    lowGainWatchWindows = 0;
         bool                                 bypassed = false;
-        bool                                 intendedBypassed = false;   // v9: what the user/plan asked; `bypassed` is the effective state (lease overlays it)
+        bool                                 intendedBypassed = false;   // 11 Oct 2026: moves with `bypassed`; no overlay
         // 06d item 9: the rack revision this slot last said "no settings yet [map-arrived]" for, so the line is
         // printed once per slot per revision instead of once per slot per ARRIVING MAP.
         int                                  noSettingsSaidRev = -1;
@@ -2781,12 +2778,6 @@ private:
 
     bool   prepared_  = false;
     std::atomic<bool> hasActiveSlots_ { false };  // true when ≥1 non-bypassed slot exists
-    // Link v9 (9 Sep 2026), change A. The lease's TARGET bypass state for any
-    // slot that arrives while a rack lease is active: completeLoad writes
-    // slot.bypassed from this once. Before v9 a slot arrived un-bypassed and
-    // the lease corrected it after the whole plan was in - a live render of a
-    // freshly instantiated plugin for a few blocks (the 15:31 crash's window).
-    std::atomic<bool> attachBypassed_ { false };
     // Link v9, change B. The implied mutex JUCE documents between
     // prepareToPlay/releaseResources and processBlock (AudioProcessorGraph,
     // NodeStates::applySettings) - the CALLER provides it, and nothing did.

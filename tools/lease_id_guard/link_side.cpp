@@ -20,7 +20,7 @@ struct EchoJayLinkSyncTestAccess
     static ChainHost& host (LinkProcessor& p)   { return p.chainHost; }
     static juce::String uid (LinkProcessor& p)  { return p.instanceUid_; }
     static void sync (LinkProcessor& p)         { p.syncModelAfterStructuralChange(); }
-    static bool leased (LinkProcessor& p)       { return p.rackLeaseActive_; }
+    static bool leased (LinkProcessor& p)       { return p.rackLeaseScope_; }   // 11 Oct: addressed, not bypassed
 };
 struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost& h, const juce::PluginDescription& d) { return h.loadBuiltinNow (d); } };
 using TA = EchoJayLinkSyncTestAccess;
