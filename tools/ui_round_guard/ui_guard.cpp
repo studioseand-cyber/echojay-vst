@@ -1778,30 +1778,52 @@ int main()
             // the rack before each tick, is what a playing session looks like.
             for (int t = 0; t < 4; ++t) { pushSeconds (1.2, 0.25f); pumpMs (1600); A::tick (*ed); pumpMs (40); }
             const auto after = proc.calibLoad (luid);
-            check (after.window > windowsBefore,
-                   "21t-i. the tick JUDGED windows  (RED as it stood: nothing called calibTickAndPost, so a running "
-                   "loop never saw a window - Sean's 14:44 log, word for word)",
+            // ---- RE-AIMED 11 Oct 2026, THE REMOVALS: THIS SIDE JUDGES NOTHING ON A LINK RACK ---------------
+            //
+            // What this leg proved, and it was a real fix: nothing called calibTickAndPost, so a running loop
+            // never saw a window - Sean's 14:44 log, word for word. The TICK ROAD it proved is unchanged and
+            // still runs; what changed is which host may drive it for a Link rack.
+            //
+            // Stage 1 stopped the V2's copy from being heard, and from that moment the copy was being fed a
+            // POST-RACK ring and processing it again - so a threshold calibrated on it was calibrated against
+            // doubly-processed audio, invisibly. The owner follows the audio now: the Link hosts those plugins
+            // in their own place in the graph and judges their windows. Its half is calib_link_guard, which is
+            // a REAL LinkProcessor with real audio through processBlock, so the "every judged window prints
+            // its line" claim is tested where the judging happens rather than asserted twice.
+            check (after.window == windowsBefore,
+                   "21t-i. this side judges NO window on a Link rack - the Link hosts those plugins and hears "
+                   "that channel, so it owns the loop (calib_link_guard is its half)",
                    juce::String (windowsBefore) + " -> " + juce::String (after.window) + " window(s)");
             {
-                // THE LINE ITSELF, from the processor that emitted it. Reading the rolling log FILE asserted about
-                // the environment's logging as much as about the product: under the suite's sandbox seal the file
-                // was unreadable, so a judged and logged window looked exactly like a silent one and this leg went
-                // RED on working code. The product keeps the line on the same statement that logs it.
+                // AND IT SAYS SO, on the same 5 s rate-limiter the stall uses, because silence here is exactly
+                // what made 14:44 unreadable - a loop nobody is driving must not look like a loop sitting
+                // quietly in band.
                 const auto line = proc.calibLastLogLine();
                 const juce::File cur (juce::String (echojay::FileLog::instance().currentPath()));
                 const auto fresh = cur.loadFileAsString().substring (logStart);
-                int inFile = 0;
+                int advancedBy = 0;
                 for (const auto& l : juce::StringArray::fromLines (fresh))
-                    if (l.contains ("EJThreshold: \"EchoJay Compressor\" window")) ++inFile;
-                std::printf ("    window lines in the rolling log file: %d (the file is %s here)\n",
-                             inFile, cur.existsAsFile() ? "readable" : "NOT readable");
-                check (line.contains ("EJThreshold: \"EchoJay Compressor\" window"),
-                       "21t-i. ...and EVERY judged window printed its line, whether it moved anything or not - a "
-                       "stalled loop and a quiet in-band loop must not look the same",
-                       line.isEmpty() ? juce::String ("no window line") : line.substring (0, 110));
-                check (line.contains ("gr=") && line.contains ("mode="),
-                       "21t-i. ...with the reduction, the knob and the mode on it",
-                       line.isEmpty() ? juce::String ("(none)") : line.fromFirstOccurrenceOf ("window", true, false).substring (0, 80));
+                    if (l.contains ("is advanced BY THAT LINK")) ++advancedBy;
+                std::printf ("    \"advanced BY THAT LINK\" lines in the rolling log file: %d (the file is %s here)\n",
+                             advancedBy, cur.existsAsFile() ? "readable" : "NOT readable");
+                check (advancedBy > 0,
+                       "21t-i. ...and names the owner rather than going quiet about it",
+                       juce::String (advancedBy) + " line(s)");
+                // THE CARD IS STILL RENDERED. Advancing and rendering were one function, and the first cut of
+                // the removal returned {} for a Link rack - which blanked the card on a rack mid-hunt. The claim
+                // is that the tick renders WHATEVER THE STATE SAYS rather than blanking it, so it is made against
+                // the state itself: that holds for a loop with nothing measured yet (both empty) and for one
+                // mid-hunt (both the same text). Asserting "not empty" instead would have been a test of this
+                // fixture's measurements, and it was - it went RED on a loop that had legitimately measured
+                // nothing, because this side no longer judges its windows. The 21t-d wiring leg above makes the
+                // same claim from a sidecar with a reading in it.
+                check (proc.calibTick (luid) == proc.calibLoad (luid).card(),
+                       "21t-i. ...and the CARD still comes back, from the stored state - the tick renders what "
+                       "the state says  (RED on the first cut of this removal: advancing and rendering were one "
+                       "function and both went)",
+                       "tick \"" + proc.calibTick (luid).substring (0, 40) + "\" vs state \""
+                       + proc.calibLoad (luid).card().substring (0, 40) + "\"");
+                (void) line;
             }
             EchoJayBorrowTestAccess::release (proc);
             A::knownState (*ed, proc);
@@ -2565,9 +2587,16 @@ int main()
             int err = 0; const auto dir = LinkShm::resolveDir (err);
             juce::File (dir + "chain-ack-lnk_09.json").deleteFile();
             EchoJayBorrowTestAccess::engage (proc, "lnk_09");
+            // 11 Oct 2026: THE FIXTURE CLEARS THE QUEUE FIRST, and it has to. A build on a Link rack is a
+            // command now, so an earlier leg in this harness that built one leaves its own unacked push behind -
+            // nothing answers under the isolated home. The first run after that change read "4 edit(s) ...
+            // (build, build, bypass, remove)", which is the product telling the truth about a queue this leg did
+            // not mean to be measuring. Two edits, named by this leg, is what the assertions below are about.
+            EchoJayBorrowTestAccess::clearPending (proc);
             EchoJayBorrowTestAccess::queuePush (proc, 424242, "lnk_09-424242", "bypass");
             EchoJayBorrowTestAccess::queuePush (proc, 424243, "lnk_09-424243", "remove");
-            check (EchoJayBorrowTestAccess::pending (proc) == 2, "R2. fixture: two edits are queued");
+            check (EchoJayBorrowTestAccess::pending (proc) == 2, "R2. fixture: two edits are queued, and ONLY those two",
+                   juce::String (EchoJayBorrowTestAccess::pending (proc)) + " pending");
             // No Link exists under the isolated home, so nothing will ever answer - which is the case under test.
             const double t0 = juce::Time::getMillisecondCounterHiRes();
             proc.borrowApplyAndRelease (true);
@@ -3330,17 +3359,24 @@ int main()
     }
 
     {   // ---- 4 Oct 2026: THE SAVE FIX - an open borrowed rack survives a save with no rack switch -------------
-        std::printf ("\n== save fix: a borrowed rack saved WITHOUT a rack switch comes back ==\n");
-        // Sean's bug, narrowed by him: the chain is lost only if he saves WITHOUT switching racks first. A build on
-        // a Link track while this instance holds the lease lands in borrowHost_ ("never on the Link" -
-        // sendChainToLink), the hand-back happens on a rack switch, and until today NEITHER side's state carried
-        // it: this side saved only its own chainHost, the Link saved its own empty chainModel.
+        std::printf ("\n== the save fix, RE-AIMED: a build on a Link rack cannot be saved only here ==\n");
+        // Sean's bug, narrowed by him: the chain is lost only if he saves WITHOUT switching racks first. A build
+        // on a Link track while this instance held the lease landed in borrowHost_ ("never on the Link" -
+        // sendChainToLink), the hand-back happened on a rack switch, and NEITHER side's state carried it: this
+        // side saved only its own chainHost, the Link saved its own empty chainModel. The 4 October fix carried
+        // the open borrowed rack in the save under `borrowedRacks` and handed it back on the Link's own two
+        // revisions.
         //
-        // WHAT THIS LEG COVERS: the save format, the three fields that were missing from it, and all three
-        // tie-break outcomes, in ONE process.
-        // WHAT IT DOES NOT COVER: the two LOAD ORDERS (this instance restored before its Link, or after it). That
-        // needs two real processes over one shm directory, which is link_state_guard's rig - see the note at the
-        // end of this block and the gate file's exclusion list.
+        // ---- RE-AIMED 11 Oct 2026, plan section 6 ------------------------------------------------------------
+        // A build is a COMMAND now, so the Link has the rack before any save is possible and `borrowedRacks` is
+        // no longer written. This leg therefore asserts the OPPOSITE of what it used to, and the assertion that
+        // makes that safe rather than merely tidy: the rack reached the Link.
+        //
+        // THE TIE-BREAK's three outcomes moved to borrow_migration_guard (gated), because they can only be
+        // driven from a blob this binary can no longer produce - a hand-built one, which is the honest shape for
+        // a migration test. The richer per-slot fields went with them: the out gain, the pre-trim, the bypass and
+        // the wet, "which were in no save format at all - so every compressor build's level match was lost on
+        // reopen".
         EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
         { EedCompressorProcessor fc; SurgicalEqProcessor fe; juce::ignoreUnused (fc, fe); }
         const auto* comp = BuiltinDeviceRegistry::instance().findByName ("EchoJay Compressor");
@@ -3369,13 +3405,29 @@ int main()
             check (saved.getSize() > 0, "save fix. the session chunk was written",
                    juce::String ((juce::int64) saved.getSize()) + " bytes");
             const auto txt = juce::String::fromUTF8 ((const char*) saved.getData(), (int) saved.getSize());
-            check (txt.contains ("borrowedRacks"),
-                   "save fix. the chunk carries borrowedRacks  (RED as it stood: V2 saved only its own chainHost, "
-                   "so a rack held in borrowHost_ was in no save format anywhere)");
-            check (txt.contains ("outGainDb") && txt.contains ("preTrimDb"),
-                   "save fix. ...with each slot's OWN GAINS, which were in no save format at all - so every "
-                   "compressor build's level match was lost on reopen");
-            check (txt.contains (buid), "save fix. ...and the rack's uid, so it can be handed to the right Link");
+            check (! txt.contains ("borrowedRacks"),
+                   "save fix (11 Oct). the chunk carries NO borrowedRacks key - a second record of one rack, with "
+                   "a revision tie-break as the only thing that could tell the two apart, is a mechanism for "
+                   "recovering from a bug and not a thing to keep feeding",
+                   txt.contains ("borrowedRacks") ? juce::String ("present") : juce::String ("absent"));
+            // AND THIS IS WHAT MAKES THAT SAFE. The rack is not here-only any more, so there is nothing to carry.
+            {
+                int cerr = 0; const auto cdir = LinkShm::resolveDir (cerr);
+                const juce::File built (cdir + "chain-cmd-" + buid + ".json");
+                built.deleteFile();
+                EchoJayBorrowTestAccess::clearPending (proc);
+                const auto ops  = ChainHost::chainArrayToReplaceOps ({}, bh.getNumSlots());
+                const auto wire = ChainHost::editOpsToWireVar (ops);
+                const int seq = proc.borrowPushBuiltChain (wire, {}, bh.getNumSlots(), bh.getNumSlots());
+                pumpMs (120);
+                check (seq > 0 && built.existsAsFile(),
+                       "save fix (11 Oct). ...because a build on this rack is a COMMAND, written to the Link when "
+                       "it is made rather than held until the rack is left - which is the loss at the root of "
+                       "Sean's 4 October bug, closed rather than recovered from",
+                       juce::String (seq) + (built.existsAsFile() ? " written" : " NOT written"));
+                built.deleteFile();
+                EchoJayBorrowTestAccess::clearPending (proc);
+            }
 
             // ---- THE TIE-BREAK, all three outcomes. The decision is made on the LINK'S OWN pair of revisions,
             // published in its sidecar: rev at save vs rev when the borrow engaged.
@@ -3398,71 +3450,14 @@ int main()
             { EchoJayProcessor::LinkSlotInfo li; li.name = "Guard Rack"; li.uid = buid; li.active = true;
               li.connected = true; li.regIdx = 0; rows.push_back (li); }
 
-            {   // (1) THE LINK HAS NOT MOVED since the borrow engaged -> our copy is newer and goes back.
-                EchoJayProcessor p2; p2.prepareToPlay (48000.0, 512);
-                EchoJayBorrowTestAccess::stopTick (p2);
-                cmdFile().deleteFile();
-                writeSidecar (12, 12);
-                restoreInto (p2);
-                check (EchoJayBorrowTestAccess::pendingCount (p2) == 1,
-                       "save fix. the restored session holds the saved rack, pending its Link",
-                       juce::String (EchoJayBorrowTestAccess::pendingCount (p2)));
-                EchoJayAlignTestAccess::setLinks (p2, rows); pumpMs (30);
-                EchoJayBorrowTestAccess::applyRestores (p2);
-                check (cmdFile().existsAsFile(),
-                       "save fix. rev at save == rev at lease engage -> the rack is handed BACK to the Link");
-                const auto sent = juce::JSON::parse (cmdFile().loadFileAsString());
-                auto* arr = sent.getProperty ("chain", juce::var()).getArray();
-                check (arr != nullptr && arr->size() == 2,
-                       "save fix. ...as a 2-slot chain command, the same road a rack switch uses",
-                       juce::String (arr != nullptr ? arr->size() : -1));
-                if (arr != nullptr && arr->size() == 2)
-                {
-                    auto* s1 = (*arr)[1].getDynamicObject();
-                    check (s1 != nullptr && std::abs ((double) s1->getProperty ("outGainDb") + 3.5) < 0.01,
-                           "save fix. ...carrying the slot's OUT gain, so the level match survives the reopen",
-                           s1 != nullptr ? s1->getProperty ("outGainDb").toString() : juce::String ("no slot"));
-                    check (s1 != nullptr && std::abs ((double) s1->getProperty ("preTrimDb") - 2.0) < 0.01,
-                           "save fix. ...and its PRE-trim", s1 != nullptr ? s1->getProperty ("preTrimDb").toString()
-                                                                        : juce::String());
-                    check (s1 != nullptr && (bool) s1->getProperty ("bypassed"),
-                           "save fix. ...and its bypass");
-                    auto* s0 = (*arr)[0].getDynamicObject();
-                    check (s0 != nullptr && std::abs ((double) s0->getProperty ("wet") - 0.40) < 0.01,
-                           "save fix. ...and the other slot's wet", s0 != nullptr ? s0->getProperty ("wet").toString()
-                                                                                 : juce::String());
-                }
-                check (EchoJayBorrowTestAccess::pendingCount (p2) == 0,
-                       "save fix. ...and the entry is spent, so it cannot rebuild the rack every second");
-            }
-            {   // (2) THE LINK MOVED after the borrow engaged - a hand-back, or a DELETE on the Link. The Link is
-                // authoritative and our copy is dropped: this is what keeps a deleted rack deleted.
-                EchoJayProcessor p3; p3.prepareToPlay (48000.0, 512);
-                EchoJayBorrowTestAccess::stopTick (p3);
-                cmdFile().deleteFile();
-                writeSidecar (19, 12);          // saved at 19, borrow began at 12: the Link changed in between
-                restoreInto (p3);
-                EchoJayAlignTestAccess::setLinks (p3, rows); pumpMs (30);
-                EchoJayBorrowTestAccess::applyRestores (p3);
-                check (! cmdFile().existsAsFile(),
-                       "save fix. the Link's own rack moved after the borrow began -> our copy is DROPPED, so a "
-                       "rack deleted on the Link stays deleted  (and a stale copy cannot resurrect it)");
-                check (EchoJayBorrowTestAccess::pendingCount (p3) == 0,
-                       "save fix. ...and it is not retried");
-            }
-            {   // (3) NEITHER SIDE CAN SAY - an older Link that publishes no revisions, or no borrow open at save.
-                // The safe answer is to leave the Link alone rather than overwrite a rack on a guess.
-                EchoJayProcessor p4; p4.prepareToPlay (48000.0, 512);
-                EchoJayBorrowTestAccess::stopTick (p4);
-                cmdFile().deleteFile();
-                writeSidecar (-1, -1);
-                restoreInto (p4);
-                EchoJayAlignTestAccess::setLinks (p4, rows); pumpMs (30);
-                EchoJayBorrowTestAccess::applyRestores (p4);
-                check (! cmdFile().existsAsFile(),
-                       "save fix. an older Link that states no revisions keeps what it has - absent is not "
-                       "permission to overwrite");
-            }
+            // ---- CASES (1)(2)(3) MOVED 11 Oct 2026 to tools/borrow_migration_guard (gated) ----------------
+            // They were the tie-break's three outcomes - the Link had not moved (restore), the Link had moved
+            // (drop, which is what keeps a deleted rack deleted), and neither side could say (leave it alone) -
+            // driven from a blob this process had just produced. This build cannot produce one, so driving them
+            // from a live save would mean re-adding the write to test the reader, which is a test of nothing.
+            // They are driven from a hand-built older-build blob there, with the per-slot gains, the bypass and
+            // the wet, and leg (6) of that guard adds what this one explicitly did not cover: the entry WAITING
+            // for its Link, so both load orders work.
             {   // (4) A SESSION WITH NO borrowedRacks KEY loads exactly as today. The ruled compatibility case.
                 EchoJayProcessor p5; p5.prepareToPlay (48000.0, 512);
                 EchoJayBorrowTestAccess::stopTick (p5);

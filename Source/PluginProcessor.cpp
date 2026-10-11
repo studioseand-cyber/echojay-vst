@@ -7999,37 +7999,34 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     // it against the plugins it hosts in its own place in the graph, and this side renders the card from the
     // state the Link publishes - which is what it already did after a deselect. One owner, and it is the one
     // with the audio. See LinkProcessor::calibTickOwnRack for the other half.
+    // THE ONE LINE THAT CHANGES. For a LINK rack this instance is not a host of those plugins any more, so it
+    // takes the SAME road a rack whose slots have gone already took: no window judged here, companions swept,
+    // and - this is the part that matters - the CARD IS STILL RENDERED from the stored state. The first cut of
+    // this returned {} instead and ui_guard caught it within the hour: the card went blank on a Link rack
+    // mid-hunt, which is the 21t-d wiring leg's whole subject ("V2 renders the card from a loop the OTHER host
+    // is running"). Advancing and rendering were one function; only advancing moved.
     ChainHost* host = uid.isEmpty() ? &getChainHost() : nullptr;
-    if (! uid.isEmpty())
-    {
-        // Not a stall and not a refusal: the right host is running it. Said once every 5 s on the same
-        // rate-limiter the stall uses, because silence here is what made 14:44 unreadable.
-        const double nowMs = juce::Time::getMillisecondCounterHiRes();
-        if (nowMs - calibStallLogMs_ > 5000.0)
-        {
-            calibStallLogMs_ = nowMs;
-            EchoJay_NSLog(("EJThreshold: \"" + loop.plugin + "\" on rack " + uid
-                           + " is advanced BY THAT LINK (11 Oct 2026: the host that hears the channel owns the "
-                             "loop); this instance renders the card from what it publishes").toRawUTF8());
-        }
-        calibSweepCompanionsOnly(uid);
-        return {};
-    }
     if (host == nullptr || loop.slot < 0 || loop.slot >= host->getNumSlots())
     {
-        // 21t-i: A LOOP THAT CANNOT BE ADVANCED SAYS SO, every 5 s, because the alternative is silence - and
-        // silence here is indistinguishable from a loop sitting quietly in band, which is precisely the confusion
-        // Sean hit at 14:44. Rate-limited so a 1 Hz tick cannot flood the log.
+        // 21t-i: A LOOP THAT CANNOT BE ADVANCED HERE SAYS SO, every 5 s, because the alternative is silence -
+        // and silence here is indistinguishable from a loop sitting quietly in band, which is precisely the
+        // confusion Sean hit at 14:44. Rate-limited so a 1 Hz tick cannot flood the log.
         const double nowMs = juce::Time::getMillisecondCounterHiRes();
         if (nowMs - calibStallLogMs_ > 5000.0)
         {
             calibStallLogMs_ = nowMs;
-            EchoJay_NSLog(("EJThreshold: \"" + loop.plugin + "\" cannot be advanced - "
-                           + (host == nullptr
-                                  ? juce::String(uid.isEmpty() ? "no own chain host" : "this instance does not hold that rack")
-                                  : "slot " + juce::String(loop.slot + 1) + " is not in the rack ("
-                                    + juce::String(host->getNumSlots()) + " slot(s))")
-                           + " - no window can be judged here").toRawUTF8());
+            EchoJay_NSLog(("EJThreshold: \"" + loop.plugin + "\" "
+                           + (! uid.isEmpty()
+                                  // Not a stall and not a refusal: the right host is running it.
+                                  ? "on rack " + uid + " is advanced BY THAT LINK (11 Oct 2026: the host that "
+                                    "hears the channel owns the loop); this instance renders the card from what "
+                                    "it publishes"
+                                  : host == nullptr
+                                      ? juce::String("cannot be advanced - no own chain host"
+                                                     " - no window can be judged here")
+                                      : "cannot be advanced - slot " + juce::String(loop.slot + 1)
+                                        + " is not in the rack (" + juce::String(host->getNumSlots())
+                                        + " slot(s)) - no window can be judged here")).toRawUTF8());
         }
         // (o): ...and the COMPANIONS are still swept. This branch returned here too, so a rack whose slots had
         // gone left every companion unadvanced and unreported - the second half of Sean's silent-companion fault.

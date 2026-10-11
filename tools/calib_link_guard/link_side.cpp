@@ -97,19 +97,33 @@ int main (int argc, char** argv)
             b->setProperty ("start_db", -18.0);
             b->setProperty ("min_db", -40.0); b->setProperty ("max_db", 0.0);
             { juce::Array<juce::var> band; band.add (2.0); band.add (3.0); b->setProperty ("gr_target_db", band); }
-            // (6a) FIRST: WHILE THE RACK IS LEASED, THIS SIDE STARTS NOTHING. V2 hosts those slots and runs the
-            // loop; a second loop here would have two hosts stepping one compressor. Proven on the LEASE, not on
-            // an empty rack - the rack is full at this point, so "nothing started" cannot be a coincidence.
+            // (6a), INVERTED 11 Oct 2026 with plan section 6's removals.
+            //
+            // What it asserted: while the rack was leased this side started NOTHING, because V2 hosted those
+            // slots and ran the loop, and a second loop here would have two hosts stepping one compressor. The
+            // rule - exactly one host may step a compressor - has not changed. WHICH host has.
+            //
+            // Stage 1 stopped anyone listening to the V2's copy, and from that moment the copy was being fed
+            // this channel's POST-RACK ring and processing it AGAIN: a threshold calibrated on it was calibrated
+            // against doubly-processed audio, and nothing could contradict the figure. The owner follows the
+            // audio now. This process hosts the plugins and hears the channel in its own place in the graph, so
+            // a block that arrives while a main plugin is ADDRESSING the rack starts the loop HERE. The V2 side
+            // no longer starts one for a rack it does not host - ui_guard's 21t-i leg is that half.
+            //
+            // Still proven on the ADDRESSING and not on an empty rack: the rack is full at this point, so
+            // "started" cannot be a coincidence either.
             TA::clearLoop (*l);
             TA::setLeased (*l, true);
             const juce::var blockVar (b);
             TA::startFromBlock (*l, blockVar);
-            check (! TA::loop (*l).active() && TA::host (*l).getNumSlots() > 0,
-                   "21t-g (6a). a block arriving while the rack is LEASED starts NO loop on this side - V2 hosts "
-                   "those slots (and the rack is not empty, so this is the lease and not a coincidence)",
+            check (TA::loop (*l).active() && TA::host (*l).getNumSlots() > 0,
+                   "21t-g (6a), INVERTED. a block arriving while a main plugin ADDRESSES this rack starts the loop "
+                   "HERE - this is the host with the plugins and the audio (and the rack is not empty, so this is "
+                   "the addressing and not a coincidence)",
                    juce::String (TA::host (*l).getNumSlots()) + " slot(s) in the rack, loop "
-                   + (TA::loop (*l).active() ? "STARTED" : "not started"));
+                   + (TA::loop (*l).active() ? "started" : "NOT STARTED"));
             TA::setLeased (*l, false);
+            TA::clearLoop (*l);
 
             TA::startFromBlock (*l, blockVar);
             const auto started = TA::loop (*l);

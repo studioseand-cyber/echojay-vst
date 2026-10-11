@@ -70,14 +70,21 @@ juce::MemoryBlock oldBuildBlobWithBorrowedRack (const juce::String& uid, int bas
 {
     auto* root = new juce::DynamicObject();
     root->setProperty ("version", 1);
+    // THE RICHER FIELDS MATTER AND ARE HERE ON PURPOSE. ui_guard's save-fix block used to assert that a live
+    // save carried each slot's OWN GAINS, "which were in no save format at all - so every compressor build's
+    // level match was lost on reopen". This build cannot produce such a save any more, so the fields come from
+    // a hand-built blob instead - and they are still asserted to ride the restore command, because that loss
+    // is the one a user would hear.
     juce::Array<juce::var> chain;
-    for (const auto& nm : slotNames)
+    for (int i = 0; i < slotNames.size(); ++i)
     {
         auto* so = new juce::DynamicObject();
-        so->setProperty ("name", nm);
+        so->setProperty ("name", slotNames[i]);
         so->setProperty ("settings", juce::String());
-        so->setProperty ("bypassed", false);
-        so->setProperty ("wet", 1.0);
+        so->setProperty ("bypassed", i == 1);          // slot 2 bypassed, as a build's hold leaves it
+        so->setProperty ("wet",       i == 0 ? 0.40 : 1.0);
+        so->setProperty ("outGainDb", i == 1 ? -3.5 : 0.0);
+        so->setProperty ("preTrimDb", i == 1 ?  2.0 : 0.0);
         chain.add (juce::var (so));
     }
     auto* entry = new juce::DynamicObject();
@@ -202,6 +209,21 @@ int main()
         check (ch != nullptr && ch->size() == 3,
                "(3) ...with all three slots, through the Link's own build parser",
                ch != nullptr ? juce::String (ch->size()) + " slot(s)" : juce::String ("(no chain)"));
+        if (ch != nullptr && ch->size() == 3)
+        {
+            auto* s0 = (*ch)[0].getDynamicObject();
+            auto* s1 = (*ch)[1].getDynamicObject();
+            check (s1 != nullptr && std::abs ((double) s1->getProperty ("outGainDb") + 3.5) < 0.01,
+                   "(3) ...carrying the slot's OUT gain, so a compressor build's level match survives the reopen",
+                   s1 != nullptr ? s1->getProperty ("outGainDb").toString() : juce::String ("(no slot)"));
+            check (s1 != nullptr && std::abs ((double) s1->getProperty ("preTrimDb") - 2.0) < 0.01,
+                   "(3) ...and its PRE-trim",
+                   s1 != nullptr ? s1->getProperty ("preTrimDb").toString() : juce::String());
+            check (s1 != nullptr && (bool) s1->getProperty ("bypassed"), "(3) ...and its bypass");
+            check (s0 != nullptr && std::abs ((double) s0->getProperty ("wet") - 0.40) < 0.01,
+                   "(3) ...and the other slot's wet",
+                   s0 != nullptr ? s0->getProperty ("wet").toString() : juce::String());
+        }
         check (p.pendingBorrowRestore_.count (uid) == 0, "(3) ...and the entry is consumed: ONE attempt, never a loop");
     }
 
