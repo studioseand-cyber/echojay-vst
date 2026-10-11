@@ -1403,13 +1403,14 @@ void LinkProcessor::pollControlCommand()
         const float        wet  = juce::jlimit(0.0f, 1.0f,
                                                (float)(double) sw->getProperty("wet"));
         const juce::String have = chainHost.slotIdentityHex(idx);   // "" out of range
-        // A PARKED RACK IS NOT A REJECTION (2 Oct 2026, Sean's 14:20 finding 3). While V2 holds the borrow our own
-        // chain is parked at 0 slots BY DESIGN (RACK_BORROW_IMPLEMENTATION_SPEC §1/§2 - V2 owns the instances and
-        // we are reconciled at deselect), so a knob drag on the held rack arrives here once per tick and there is
-        // nothing to match it against. Sean's log carried 28 "REJECTED ... slots=0" lines in three seconds, which
-        // reads like a broken rack and is not: V2 has already applied the value to the borrowed host, and the
-        // deselect plan carries it back here (OpType::Values, wet and bypass for every surviving slot).
-        // So this says what is true, ONCE per lease rather than per tick - a line per drag tick is how a real
+        // A PARKED RACK IS NOT A REJECTION (2 Oct 2026, Sean's 14:20 finding 3) - and as of 11 Oct 2026 there
+        // are no parked racks, so the finding is history rather than a live case. It was real: V2 owned the
+        // instances while it held the borrow, our chain sat at 0 slots BY DESIGN, and a knob drag arrived here
+        // once per tick with nothing to match it against. Sean's log carried 28 "REJECTED ... slots=0" lines in
+        // three seconds, which reads like a broken rack and was not. This rack is never empty on account of a
+        // lease now, so a wet command that cannot be matched is a genuine mismatch and says so with both
+        // identities - which is the line the old gate was suppressing.
+        // The note below stands for the general rule it states, which has not changed: a line per drag tick is how a real
         // defect hides. The verb keeps being written by V2 on purpose (slotwet_knobpath pins that).
         // 11 Oct 2026: THE PARKED ARM IS GONE. It existed because "while V2 holds the borrow our own chain is
         // parked at 0 slots BY DESIGN ... V2 has it on the borrowed host and the deselect plan carries it

@@ -402,6 +402,26 @@ ej_add_guard(remote_ops_guard         SOURCE tools/remote_ops_guard/harness.cpp 
 # must never be lost (the 4 Oct case) and never doubled" - as a gated test, both halves, plus the new fact that
 # makes the rule finite: a build on a Link rack is a COMMAND now, so nothing lives only on the V2 side.
 ej_add_guard(borrow_migration_guard   SOURCE tools/borrow_migration_guard/harness.cpp        LABEL fast SCRIBBLE)
+# ---- 11 Oct 2026: THREE FILES WHOSE SUBJECT THIS ROUND DELETED -------------------------------------------
+# The suite's rule is that every test in the repo is in the gate or carries a written exclusion. These are the
+# exclusion, written rather than left implied, because I am the one who broke them.
+#
+#   tools/borrowhost_test        48 references to the audio detour's machinery - the alignment budget, the
+#                                in-context decision, borrowCtxMixNow, the ring consume. It is 2,700 lines and
+#                                the detour is most of its subject, so re-aiming it is a round of its own and
+#                                not an end-of-day job. It was ALREADY unregistered before today, which is the
+#                                state queue item 3 complains about for mapfps_test; it now joins that one
+#                                decision rather than creating a second.
+#   tools/latency_impulse_test   RE-AIMED today instead, because it was cheap (three legs) and because it
+#                                measures the DELAY rather than the reported figure, which the gated
+#                                borrow_budget_guard cannot. Still unregistered: it drives a fake play head
+#                                through five transport states and belongs to the by-hand latency rig.
+#   tools/merge_gate_tests/      an ARCHIVE of a past merge gate's legs. solo_legs_test's one reference is
+#                                re-aimed so the archive still describes something real; the results_* copies
+#                                are left exactly as they were, because an archive that gets edited is not one.
+#
+# SEAN'S CALL, as one decision with mapfps_test: gate them, or retire them.
+
 ej_add_guard(mapfps_sync_guard        SOURCE tools/mapfps_sync_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(own_diff                 SOURCE tools/own_diff/harness.cpp                       LABEL fast
              WRAPPER run_own_diff.sh WRAPPER_ARG e16eb2d8c4e59156ad912967b611fc8364452980c6fbf0aa083d5f02c1937fc7)

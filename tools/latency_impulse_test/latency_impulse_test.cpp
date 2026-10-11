@@ -1,12 +1,25 @@
 /*  latency_impulse_test (rounds 52-53, DEFECT_PRESS_PLAY_PHASING §9-§10):
-    does the plugin ACTUALLY delay by what it REPORTS, in every state the
-    borrow alignment budget can be in - including PENDING states, where the
-    ruling's point is that nothing half-engages? An impulse through the
+    does the plugin ACTUALLY delay by what it REPORTS? An impulse through the
     top-level EchoJay V2 processor (empty chain), the output peak located,
     compared with getLatencySamples(). The transport is a fake play head the
     test drives; latency notifications are counted through the processor's
-    listener (the same signal the host gets). Also the C4 scoping decision
-    and process liveness, and the quiet session (L7).
+    listener (the same signal the host gets).
+
+    RE-AIMED 11 October 2026, when its subject was deleted. It was built around
+    "every state the borrow alignment budget can be in - including PENDING
+    states, where the ruling's point is that nothing half-engages". There is no
+    budget: it existed to hold this plugin's passthrough at a constant delay so
+    a V2-hosted copy of a Link's rack could be summed into the V2's own output,
+    and that injection is the audio detour plan section 6 removed. So the
+    question this file asks is now a simpler and better one - does the report
+    stay put? - and the three budget legs are inverted rather than deleted,
+    because the measurement rig they sit in (impulse in, peak located, compared
+    with the report) is the part worth keeping.
+
+    THE GATED VERSION OF THIS CLAIM IS borrow_budget_guard, which was re-aimed
+    the same day. This file is the by-hand impulse rig: it measures the DELAY,
+    not just the reported figure, which is the one thing a state-only guard
+    cannot do.
 */
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
@@ -69,40 +82,40 @@ int main()
         check (at == rep && rep == expectReported, juce::String (name) + ": reported == actual == " + juce::String (expectReported));
     };
 
-    std::printf ("== L3: REPORT AND DELAY MOVE TOGETHER, INCLUDING WHILE PENDING (five states + C2) ==\n");
+    std::printf ("== L3 (RE-AIMED 11 Oct 2026): THE REPORT AND THE DELAY ARE THE CHAIN'S, AND THEY DO NOT MOVE ==\n");
     {
         EchoJayProcessor p; FakeHead head; p.setPlayHead (&head);
         LatencyCounter cnt; p.addListener (&cnt);
         p.prepareToPlay (48000.0, blk);
         const int afterPrepare = cnt.changes;
         head.playing = false;
-        leg ("(a) budget off, fresh, stopped", p, 0);
-        head.playing = true; p.setBorrowBudgetWanted (true);
-        leg ("(b) wanted ON during PLAYBACK: pending", p, 0);
-        head.known = false;   // C2: unknown transport counts as playing
-        leg ("(b') wanted ON, transport UNKNOWN: pending", p, 0);
+        leg ("(a) fresh, stopped: the delay IS the report", p, 0);
+        // What (b)-(e) used to do: flip the budget WANTED on mid-play, prove nothing half-engaged, commit at a
+        // STOPPED block, measure +16384, and queue the way back down. All five states were about one reported
+        // figure that followed capable-LINK PRESENCE. A capable Link is still noticed - the flag is still
+        // persisted with the state, because other things read it - but it buys no latency, so there is nothing
+        // to half-engage and no moment to choose for committing it.
+        head.playing = true; p.markCapableLinkSeen();
+        leg ("(b) a capable Link seen during PLAYBACK: the delay does not move", p, 0);
+        head.known = false;   // C2's case survives: unknown transport is still a state this rig visits
+        leg ("(b') ...with the transport UNKNOWN either", p, 0);
         head.known = true;
-        check (cnt.changes == afterPrepare, "no latency notification while pending (" + juce::String (cnt.changes - afterPrepare) + ")");
-        head.playing = false; runSilent (p, blk, 1);   // one STOPPED block commits
-        leg ("(c) committed at STOP", p, 16384);
-        check (cnt.changes == afterPrepare + 1, "exactly ONE latency notification at the stop (" + juce::String (cnt.changes - afterPrepare) + ")");
+        head.playing = false; runSilent (p, blk, 1);   // the moment the budget used to commit
+        leg ("(c) a STOPPED block - where the budget used to commit - moves nothing", p, 0);
         head.playing = true; runSilent (p, blk, 4);
-        check (cnt.changes == afterPrepare + 1, "play again: zero further notifications");
-        p.setBorrowBudgetWanted (false);
-        leg ("(d) wanted OFF during PLAYBACK: pending-down", p, 16384);
-        check (cnt.changes == afterPrepare + 1, "no notification while pending-down (C3: both directions queue)");
-        head.playing = false; runSilent (p, blk, 1);
-        leg ("(e) committed-down at STOP", p, 0);
-        check (cnt.changes == afterPrepare + 2, "exactly one notification at the second stop");
+        leg ("(d) playing again: still nothing", p, 0);
+        check (cnt.changes == afterPrepare,
+               "ZERO latency notifications across the whole sequence - a project is no longer re-PDC'd for "
+               "having a Link in it (" + juce::String (cnt.changes - afterPrepare) + ")");
         p.removeListener (&cnt);
     }
 
-    std::printf ("== prepare is the guaranteed re-decision point ==\n");
+    std::printf ("== prepare is still the guaranteed re-decision point, and it decides the same thing ==\n");
     {
         EchoJayProcessor p; FakeHead head; head.playing = true; p.setPlayHead (&head);
-        p.setBorrowBudgetWanted (true);
-        p.prepareToPlay (48000.0, blk);   // commits at prepare even though the head says playing
-        leg ("wanted ON before prepare -> committed at prepare", p, 16384);
+        p.markCapableLinkSeen();
+        p.prepareToPlay (48000.0, blk);
+        leg ("a capable Link seen BEFORE prepare -> the report is still the chain's", p, 0);
     }
 
     std::printf ("== L7: QUIET SESSION - no Link anywhere: reported stays at the chain total, zero notifications after prepare ==\n");

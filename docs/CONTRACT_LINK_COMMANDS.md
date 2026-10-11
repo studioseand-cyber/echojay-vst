@@ -60,6 +60,20 @@ Two **NEW** members:
 | `open_editor` | `slot`, `where` = `"float"` \| `"embed"` | the Link opens the slot's plugin editor. `float` is the default and the only one promised; `embed` is refused unless the same-pid proof in §4 of the plan holds at runtime, and the refusal says so |
 | `close_editor` | `slot` | symmetric, so a UI that opened a window can close it without guessing |
 
+**ADDED 11 October 2026, with plan §6's removals: a BUILD is a command on this channel too.** It was the one
+V2 edit that was not. A chain built on a Link rack landed in the V2's mirror and waited for the rack to be left,
+on the stated grounds that "the Link refuses chain-cmds while leased" — a refusal that only ever applied to a
+sender that is *not* the lease holder, and the holder is who is building. It now goes as the ordinary `remove`×n
++ `add`×n batch the mirror itself applied (`ChainHost::editOpsToWireVar`, the inverse of `parseChainEditOps`),
+through the same queue, the same ack poll and the same rebase as every other structural edit. An **aborted**
+build is not sent: the mirror does not have the rack, so neither should the Link.
+
+Two consequences worth stating here rather than leaving to be discovered. The Link's rack is never empty on
+account of a lease, so a command that cannot be matched against a slot is a genuine mismatch again and is
+reported as one. And nothing a user builds lives only on the V2 side, which is the class of loss the 4 October
+save fix exists to recover from — the recovery path stays for older projects (`borrow_migration_guard`), but it
+can no longer be needed by a project this build writes.
+
 `bypass` and `set` stay on the chain channel even though they are instant, because both change what the rack *is*:
 a bypass is a decision with an undo step, and a `set` carries a whole `settings_structured` block. A momentary
 bypass **button-down/up** gesture is not a use case anyone asked for; if it becomes one it gets a ring command and

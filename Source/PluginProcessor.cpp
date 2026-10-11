@@ -2265,12 +2265,18 @@ ChainHost* EchoJayProcessor::borrowHostIfActiveFor(const juce::String& uid)
     return (borrowActive() && borrowSession_.uid == uid) ? borrowHost_.get() : nullptr;
 }
 
-// RULING 1 (21s-b, 24 Sep 2026). While a rack is borrowed the Link parks its own slots and keeps publishing an
-// EMPTY sidecar, so the two sources disagree about what is in the rack for as long as the lease is held. That is
-// what refused a real edit on 24 Sep ("guard=baseSlots-count base=1 [UAD Teletronix LA-2] live=0") and what made
-// the chat say "sidecar missing/empty" about a rack it had just built into. The lease holder now writes the file
-// from the rack it actually holds: the SAME slot fill the Link uses (EJRackSidecarFill.h), the Link's own fields
-// preserved from the file already on disk, and the revision bumped so every reader sees it as newer.
+// RULING 1 (21s-b, 24 Sep 2026). The disagreement this fixed was real: the Link parked its own slots while a
+// rack was borrowed and kept publishing an EMPTY sidecar over the top, so the two sources disagreed about what
+// was in the rack for as long as the lease was held. That is what refused a real edit on 24 Sep
+// ("guard=baseSlots-count base=1 [UAD Teletronix LA-2] live=0") and what made the chat say "sidecar
+// missing/empty" about a rack it had just built into.
+//
+// 11 Oct 2026: THE DISAGREEMENT IS GONE AT THE ROOT. Plan section 6 removed the parking, and the Link is the
+// one publisher of its own rack again - its carry-forward hack went with it. This republish is kept because it
+// is still the fastest path to a correct file: the holder has just built into its mirror and can write the
+// description immediately, rather than waiting for the command to land, be acked and be republished from the
+// other side. It writes the SAME slot fill the Link uses (EJRackSidecarFill.h) and preserves the Link's own
+// fields from the file on disk, so the two cannot describe the rack differently even now.
 bool EchoJayProcessor::republishBorrowedRackSidecar()
 {
     if (! borrowActive() || borrowHost_ == nullptr || borrowSession_.uid.isEmpty()) return false;

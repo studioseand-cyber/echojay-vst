@@ -31450,12 +31450,17 @@ void EchoJayEditor::applyChainEditToLink(int msgIdx)
     if (ops.empty()) return;
 
     // R3 / O1 (21t-b, 25 Sep 2026): WHILE THIS RACK IS THE LIVE SESSION, THE EDIT LANDS IN THE SESSION.
-    // A build already diverts here (the Link parks its own slots while leased, so its chain is empty and the
-    // content lives in the borrowed host). The chat edit did not, so on 25 Sep a dial op was shipped to the Link
-    // and judged against an empty rack: "preflight REFUSED guard=touched-slot-missing slot=0 base=1
-    // [EchoJay Pitch] live=0" - the identity the preflight was asked to match was not there to match. Sent to the
-    // host that actually holds the slot, the same guard sees the same identity and accepts it, which is what R3
-    // asks for. The session commits to the Link at deselect, as every other session edit does.
+    // On 25 Sep a dial op was shipped to the Link and judged against an empty rack: "preflight REFUSED
+    // guard=touched-slot-missing slot=0 base=1 [EchoJay Pitch] live=0" - the identity the preflight was asked to
+    // match was not there to match. Sent to the host that actually holds the slot, the same guard sees the same
+    // identity and accepts it, which is what R3 asks for.
+    //
+    // 11 Oct 2026: THE REASON HAS CHANGED AND THE DESTINATION HAS NOT. The old reason was "the Link parks its
+    // own slots while leased, so its chain is empty and the content lives in the borrowed host" - and that is
+    // no longer true: the Link always holds its own rack, and a build reaches it as a command when it is made.
+    // The edit still lands here because this is where the V2's hosted COPY of those plugins is, which is what a
+    // dial op needs - a loaded instance with a parameter map. The copy is a MIRROR now, not the content; the
+    // rack itself moves by command, and the per-plugin state commits when the rack is left.
     if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
     {
         switchToTab(Tab::Chain);
@@ -33264,10 +33269,14 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         //
         // Two defects, one line apart. (a) It was gated on `hadFeed || relevant`, so "make it work harder" - a
         // turn with no plugin-feed cue - reached the server with no description of the rack it was about. (b) It
-        // read the SIDECAR, and while V2 holds the rack borrowed the Link parks its own slots and keeps
-        // publishing an EMPTY sidecar over the top of the one the lease holder republished: at 21:13:59 the
-        // republish wrote "1 slot(s), rev 5", and ten seconds later the next turn logged "sidecar missing/empty".
-        // The borrowed host IS the chain for as long as the lease is held, so that is what is read from.
+        // read the SIDECAR, and while V2 held the rack the Link parked its own slots and kept publishing an
+        // EMPTY sidecar over the top of the one the lease holder republished: at 21:13:59 the republish wrote
+        // "1 slot(s), rev 5", and ten seconds later the next turn logged "sidecar missing/empty".
+        //
+        // 11 Oct 2026: there is no parking and no second publisher, so the sidecar is now trustworthy on its
+        // own. The mirror is still read first because it is the one that cannot lag - it holds the instances
+        // the user is editing this instant, where the sidecar holds what has been published - and the two agree
+        // by construction, because every edit to that rack is a command.
         {
             LinkShm::RackSidecar rack;
             const char* src = "sidecar";
@@ -39819,14 +39828,20 @@ void EchoJayEditor::saveChainToApi(bool forceNew)
 // "5m ago" - and it holds the MIX BUS (EchoJay EQ -> Shadow Hills -> Spectre), because Save read
 // processorRef.getChainHost(): this instance's own rack.
 //
-// The EDIT path already answers this question the other way, and says why in its own comment: while a rack is
-// leased the Link PARKS its slots, so its chain is empty and the content lives in the BORROWED host - which is
-// why a chat edit on a Link rack is diverted there ("path=SESSION (borrowed host)"). Two paths, one question, two
-// answers, and the quiet one silently saved the wrong chain. One author now.
+// The EDIT path already answers this question the other way: a chat edit on a Link rack is diverted to the
+// borrowed host ("path=SESSION (borrowed host)"). Two paths, one question, two answers, and the quiet one
+// silently saved the wrong chain. One author now.
 //
 // It takes the VIEW's rack, not the chat's: Save is a button on the rack in front of the user, and
 // chainViewUid() is what that strip is showing. An empty uid, or a uid with no live borrow, is the local rack -
 // the same fallback the edit path uses, and the only honest reading of "no Link rack is selected".
+//
+// 11 Oct 2026: the reason the edit path gave for diverting was "while a rack is leased the Link PARKS its
+// slots, so its chain is empty and the content lives in the BORROWED host". That is no longer true - the Link
+// always holds its own rack - but the ANSWER here is unchanged and is now better founded: a Save has to
+// serialise loaded instances with their captured state, and for a Link rack those live in the mirror on this
+// side. It is a faithful mirror because every edit to that rack is a command, so the two agree by construction
+// rather than by a hand-back.
 ChainHost& EchoJayEditor::chainHostForSave (juce::String* whichOut)
 {
     const juce::String uid = chainViewUid();

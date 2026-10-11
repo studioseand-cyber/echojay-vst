@@ -184,13 +184,17 @@ struct Control
             ph.playing = false; buf.clear(); p->processBlock (buf, midi); ph.playing = true; render (30);
             p->borrowEngageBegin (A, A + "-rack-add", false, true); render (140);
             p->setLinkSolo (A, true); const auto tA2 = render (80);
-#ifdef EJ_LEGS_BUILD_F
-            const bool srcRack = p->soloSourceIsBorrowedRack();
-#else
-            const bool srcRack = false;
-#endif
-            say ("solo A while A is the borrowed rack", tA2); std::printf ("  source is the borrowed (processed) rack: %d\n", (int) srcRack);
-            const bool ok61 = tA2.a > 0.15 && tA2.in < 0.03 && srcRack && muted() <= 1;   // the borrowed rack's raw channel is session-muted by spec 6.1; nothing else may be
+            // 11 Oct 2026: soloSourceIsBorrowedRack is GONE. Spec 6.1's second source - the V2-hosted copy's
+            // processed output, used when the soloed Link happened to be the one being addressed - was the
+            // same channel processed twice once the Link stopped being bypassed while addressed. Every soloed
+            // Link is now heard from its OWN ring, addressed or not, so there is one source and this leg's
+            // question ("which source is it?") has one answer by construction.
+            say ("solo A while A is ALSO the addressed rack", tA2);
+            std::printf ("  source: A's own ring (11 Oct 2026: there is no second source to choose)\n");
+            // The srcRack term is dropped with the source it named. What is left is the claim that still
+            // holds and is the one a user would notice: soloing a Link you are addressing sounds the same as
+            // soloing any other - A audible, the rest of the mix out. `muted() <= 1` stays as it was.
+            const bool ok61 = tA2.a > 0.15 && tA2.in < 0.03 && muted() <= 1;
             p->setLinkSolo (A, false); if (p->borrowActive()) p->borrowRelease (false);
             const bool ok = okA && okBus && okOff && ok61 && t0.in > 0.15;
             std::printf ("ADDITIVE: baseline %s  solo-A %s  solo-Bus %s  off %s  spec6.1 %s -> %s\n", t0.in > 0.15 ? "PASS" : "FAIL", okA ? "PASS" : "FAIL", okBus ? "PASS" : "FAIL", okOff ? "PASS" : "FAIL", ok61 ? "PASS" : "FAIL", ok ? "PASS" : "FAIL");
