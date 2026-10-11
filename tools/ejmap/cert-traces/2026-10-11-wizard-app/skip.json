@@ -1,0 +1,10 @@
+[
+  {
+    "product": "Lindell 254E",
+    "stage": "Measuring",
+    "started": "2026-10-11T13:51:22.103+01:00",
+    "why": "the wizard closed while checking it: skipped for good, never retried",
+    "crash_report": "crash_reports/Lindell 254E.crash.txt",
+    "report_found": true
+  }
+]

@@ -109,6 +109,26 @@ if(APPLE)
 endif()
 
 #==============================================================================
+# EchoJay Wizard (feat/ejmap-wizard, docs/WIZARD_SPEC.md): the user-side window app. A thin JUCE GUI over the
+# engine (`ejmap --wizard`), which ships beside it in Contents/MacOS with EchoJayProbe (wizard_app/assemble.sh).
+juce_add_gui_app(ejmap-wizard
+    PRODUCT_NAME            "EchoJay Wizard"
+    COMPANY_NAME            "EchoJay"
+    BUNDLE_ID               "ai.echojay.wizard"
+    VERSION                 "0.1.0"
+    MICROPHONE_PERMISSION_ENABLED FALSE
+    HARDENED_RUNTIME_ENABLED TRUE)
+target_sources(ejmap-wizard PRIVATE wizard_app/WizardApp.cpp)
+target_compile_definitions(ejmap-wizard PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
+    JUCE_APPLICATION_NAME_STRING="EchoJay Wizard" JUCE_APPLICATION_VERSION_STRING="0.1.0")
+target_include_directories(ejmap-wizard PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source ${CMAKE_CURRENT_SOURCE_DIR}/../../Source)
+target_link_libraries(ejmap-wizard PRIVATE juce::juce_gui_basics juce::juce_cryptography
+    juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+if(APPLE)
+    target_link_libraries(ejmap-wizard PRIVATE "-framework IOKit")
+endif()
+
+#==============================================================================
 # Round-trip test: the drift guard.
 #
 # A map produced by ejmap must round-trip through EchoJay's applySettings and

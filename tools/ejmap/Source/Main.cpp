@@ -755,7 +755,7 @@ namespace
                 ejmap::cert::WizardOptions w; w.opt.hostVersion = EJMAP_VERSION;
                 for (int j = 1; j < argc; ++j) { const auto k = argAt (argc, argv, j); const auto v = j + 1 < argc ? argAt (argc, argv, j + 1) : juce::String();
                     if (k == "--db") w.db = cwdFile (v); else if (k == "--out") w.opt.out = cwdFile (v); else if (k == "--probe") w.opt.probe = cwdFile (v); else if (k == "--ejmap-ledger") w.opt.ledger = cwdFile (v);
-                    else if (k == "--only") w.only.add (v); else if (k == "--jobs") w.opt.jobs = juce::jlimit (1, 8, v.getIntValue()); else if (k == "--measure") w.measure = true; else if (k == "--bundle") w.bundle = true; else if (k == "--verbose") w.verbose = true; }
+                    else if (k == "--only") w.only.add (v); else if (k == "--jobs") w.opt.jobs = juce::jlimit (1, 8, v.getIntValue()); else if (k == "--measure") w.measure = true; else if (k == "--bundle") w.bundle = true; else if (k == "--verbose") w.verbose = true; else if (k == "--skip") w.skip = cwdFile (v); }
                 if (w.db == juce::File() || w.opt.out == juce::File()) { std::cerr << "usage: ejmap --wizard --db <profiles folder> --out <work folder> [--only NAME]... [--jobs N] [--measure] [--bundle] [--verbose]" << std::endl; return 2; }
                 if (w.opt.probe == juce::File()) w.opt.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
                 if (w.opt.ledger == juce::File()) w.opt.ledger = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap");

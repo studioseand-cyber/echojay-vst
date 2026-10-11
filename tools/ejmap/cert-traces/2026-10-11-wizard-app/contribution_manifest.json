@@ -1,0 +1,61 @@
+{
+  "schema": "ej_contribution/0",
+  "created": "2026-10-11T13:53:13.046+01:00",
+  "tool": "EJ Map 49a307f2-dirty",
+  "platform": "Mac OSX 15.7.5",
+  "profiles": [
+    {
+      "product": "bx_opto",
+      "kind": "compressor",
+      "plugin_id": "AudioUnit|417f7e74|1.10.1",
+      "map_fp": "a21e559b70943059fe7b9ff2cc7f6d9f94525fc6e9454c863a8c7e4e3cce90a9",
+      "profile": "profiles/bx_opto_1.10.1.json",
+      "tone_check": "profiles/bx_opto_1.10.1.tonecheck.json",
+      "tone_check_g2_pass": true
+    },
+    {
+      "product": "elysia mpressor",
+      "kind": "compressor",
+      "plugin_id": "AudioUnit|49696d78|1.15.1",
+      "map_fp": "b3396255fdc18668cbadcdda4edac425fa4598506b60dbb11788a3eae9ed91d3",
+      "profile": "profiles/elysia_mpressor_1.15.1.json",
+      "tone_check": "profiles/elysia_mpressor_1.15.1.tonecheck.json",
+      "tone_check_g2_pass": true
+    }
+  ],
+  "confirmations": [
+    {
+      "product": "Maag EQ2",
+      "plugin_id": "AudioUnit|6e424032|1.11.1",
+      "profile_from_version": "1.11.0",
+      "readback": "60 write(s) read back as the profile says"
+    },
+    {
+      "product": "bx_townhouse Buss Compressor",
+      "plugin_id": "AudioUnit|417f6e76|1.8.1",
+      "profile_from_version": "1.8.0",
+      "readback": "31 write(s) read back as the profile says"
+    }
+  ],
+  "skipped": [
+    {
+      "product": "Lindell 254E",
+      "state": "crashed",
+      "why": "the wizard closed while checking it: skipped for good, never retried"
+    },
+    {
+      "product": "Lindell 6X-500",
+      "state": "not_measurable",
+      "why": "measured, but 1 band(s) measured, 0 of 0 acceptance write(s) passed; 4 could not run (the written position did not land)"
+    }
+  ],
+  "crashed": [
+    {
+      "product": "Lindell 254E",
+      "stage": "Measuring",
+      "crash_report": "crash_reports/Lindell 254E.crash.txt",
+      "report_found": true
+    }
+  ],
+  "note": "results only: profiles, their tone checks and this manifest - no plugin files, no audio, no account token"
+}

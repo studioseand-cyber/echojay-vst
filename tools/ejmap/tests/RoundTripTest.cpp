@@ -9222,6 +9222,58 @@ void testTextPassTimeout()
     check (textPassTimeoutMs (0, 120000) == 120000, "text T3: nothing to sample still has the floor");
 }
 
+/** THE WIZARD APP's rules (EjmapWizardApp.h, 11 Oct): the crash marker and the never-retry list, skip what the database has, where to open. */
+void testWizardApp()
+{
+    using namespace ejmap::wizapp;
+    // WZ-APP-1 THE CRASH MARKER: written before a load, gone after; a leftover = the wizard went down with that plugin -> the never-retry
+    // list (once), a REDACTED crash report, the marker removed; the tracker writes / removes them and a stop clears them all
+    {
+        const auto work = juce::File::createTempFile ("wzapp"); work.createDirectory(); const auto mk = work.getChildFile ("engine/inflight");
+        const auto reports = work.getChildFile ("reports"); reports.createDirectory();
+        markerBegin (mk, "Lindell 254E", "Measuring"); const int afterBegin = (int) leftoverMarkers (mk).size();
+        markerEnd (mk, "Lindell 254E"); const int afterEnd = (int) leftoverMarkers (mk).size();
+        markerBegin (mk, "bx_opto", "Measuring");
+        // an OLD report whose mtime macOS refreshed (named 5 Oct, modified now) must not be taken for this crash
+        reports.getChildFile ("EchoJayProbe-2026-10-05-010101.ips").replaceWithText ("OLD REPORT from 5 Oct\n");
+        { const auto now = juce::Time::getCurrentTime(); reports.getChildFile ("EchoJayProbe-" + now.formatted ("%Y-%m-%d-%H%M%S") + ".ips").replaceWithText (
+            "Process: EchoJayProbe\nPath: /Users/kathytest/Library/Audio/Plug-Ins/x.component\nhost kathy-mbp\nuser kathytest\nException: EXC_BAD_ACCESS\n"); }
+        reports.getChildFile ("EchoJayProbe-2026-10-11-120000.ips.unused").replaceWithText ("Process: EchoJayProbe\nPath: /Users/kathytest/Library/Audio/Plug-Ins/x.component\nhost kathy-mbp\nuser kathytest\nException: EXC_BAD_ACCESS\n");
+        const auto c1 = recover (work, mk, reports, "/Users/kathytest", "kathytest", "kathy-mbp");
+        const auto rep = work.getChildFile ("crash_reports").getChildFile (c1.empty() ? juce::String ("x") : c1[0].report).loadFileAsString();
+        const auto c2 = recover (work, mk, reports, "/Users/kathytest", "kathytest", "kathy-mbp");
+        const auto skip = skipList (work);
+        // the tracker
+        std::ostringstream term; const auto mk2 = work.getChildFile ("m2");
+        ejmap::wizprog::Tracker tr (work.getChildFile ("progress.json"), term, false, 2); tr.setMarkerDir (mk2);
+        ejmap::wizprog::Item a; a.product = "A"; a.kind = "compressor"; ejmap::wizprog::Item b; b.product = "B"; b.kind = "compressor";
+        tr.stage (ejmap::wizprog::Stage::measuring, { a, b }); tr.started ("A"); tr.started ("B"); const int during = (int) leftoverMarkers (mk2).size();
+        tr.finished ("A", false, 10.0); const int oneLeft = (int) leftoverMarkers (mk2).size();
+        tr.finish ("Stopped", true); const int afterStop = (int) leftoverMarkers (mk2).size();
+        check (afterBegin == 1 && afterEnd == 0 && c1.size() == 1 && c1[0].product == "bx_opto" && c2.empty() && skip.size() == 1 && skip[0] == "bx_opto"
+               && rep.contains ("EXC_BAD_ACCESS") && ! rep.contains ("OLD REPORT") && rep.contains ("the wizard closed while checking bx_opto") && ! rep.contains ("/Users/") && ! rep.contains ("kathytest") && ! rep.contains ("kathy-mbp")
+               && leftoverMarkers (mk).empty() && during == 2 && oneLeft == 1 && afterStop == 0,
+               "wizard WZ-APP-1: marker begin/end; a leftover -> never-retry list once, report redacted (no /Users/, user, host), marker gone; tracker 2 -> 1 -> 0 on stop");
+        work.deleteRecursively();
+    }
+    // WZ-APP-2 SKIP WHAT THE DATABASE HAS: rule A never measures; rule B measures only when its quick check failed; rule C always
+    {
+        using ejmap::wizard::Match;
+        check (! needsMeasuring (Match::exact, false) && ! needsMeasuring (Match::exact, true) && ! needsMeasuring (Match::sameControls, true)
+               && needsMeasuring (Match::sameControls, false) && needsMeasuring (Match::none, false) && needsMeasuring (Match::none, true),
+               "wizard WZ-APP-2: A skipped, B skipped when its check passes, B measured when it fails, C measured");
+    }
+    // WZ-APP-3 WHERE THE APP OPENS: from the files alone - a crash is said before anything carries on, a stopped measure carries on
+    {
+        auto w = [] (bool si, bool sc, bool ms, bool md, bool up, bool rw, int cr) { Where x; x.signedIn = si; x.scanned = sc; x.measureStarted = ms; x.measureDone = md; x.uploaded = up; x.rewarded = rw; x.crashed = cr; return openOn (x); };
+        check (w (false, true, true, false, false, false, 1) == Screen::welcome && w (true, false, false, false, false, false, 0) == Screen::scan
+               && w (true, true, false, false, false, false, 0) == Screen::scanDone && w (true, true, true, false, false, false, 0) == Screen::measuring
+               && w (true, true, true, false, false, false, 1) == Screen::crashRecovered && w (true, true, true, true, false, false, 0) == Screen::upload
+               && w (true, true, true, true, true, false, 0) == Screen::reward && w (true, true, true, true, true, true, 0) == Screen::reward,
+               "wizard WZ-APP-3: welcome until signed in; scan; scan done; measuring resumes; a crash is said first; upload; reward");
+    }
+}
+
 /** THE WIZARD'S PROGRESS (EjmapWizardProgress.h, 11 Oct): the bar never goes backwards, the ETA comes from measured times (--jobs aware),
     a resumed run starts the bar at the done share. */
 void testWizardProgress()
@@ -9755,6 +9807,7 @@ int main (int, char**)
     testTextPassTimeout();
     testWizard();
     testWizardProgress();
+    testWizardApp();
     testJobs();
     testPhaseB();
     testLoopOutcomes();

@@ -31,6 +31,7 @@
 #include <ostream>
 #include <vector>
 #include <unistd.h>
+#include "EjmapWizardApp.h"
 
 namespace ejmap::wizprog
 {
@@ -174,6 +175,8 @@ public:
     ~Tracker() { stopTicker(); }
 
     void setPlugins (int n) { std::lock_guard<std::mutex> g (m_); plugins_ = n; }
+    // THE CRASH MARKER (the wizard app, 11 Oct): a file per plugin while it is loaded; a stop or the end removes them all
+    void setMarkerDir (const juce::File& d) { std::lock_guard<std::mutex> g (m_); markers_ = d; }
     void stage (Stage s, std::vector<Item> items)
     {
         std::lock_guard<std::mutex> g (m_);
@@ -188,6 +191,7 @@ public:
         std::lock_guard<std::mutex> g (m_);
         for (auto& i : items_) if (i.product == product && ! i.done) { i.running = true; startedAt_[product] = juce::Time::getMillisecondCounterHiRes(); }
         if (! current_.contains (product)) current_.add (product);
+        if (markers_ != juce::File()) wizapp::markerBegin (markers_, product, stageWord (stage_));
         emitLocked (false);
     }
     void finished (const juce::String& product, bool problem, double seconds = -1.0)
@@ -202,6 +206,7 @@ public:
             break;
         }
         current_.removeString (product);
+        if (markers_ != juce::File()) wizapp::markerEnd (markers_, product);
         emitLocked (true);
     }
     void ranFor (const juce::String& product, double s)   // the clock as if the plugin started s seconds ago (pins; a window app's restore)
@@ -215,6 +220,7 @@ public:
         if (stopped) { stopped_ = true; lastPct_ = stoppedPercent (stage_, items_, times_); for (auto& i : items_) { i.running = false; i.ranS = 0.0; } }
         else { stage_ = Stage::done; items_.clear(); }
         current_.clear(); summary_ = summary;
+        if (markers_ != juce::File()) wizapp::markersClear (markers_);   // a stop or the end: nothing is loaded any more
         emitLocked (true);
         term_ << (live_ ? "\n" : "") << summary << std::endl;
     }
@@ -280,7 +286,7 @@ private:
         if (tmp.replaceWithText (juce::JSON::toString (juce::var (o)) + "\n")) tmp.moveFileTo (json_);
     }
 
-    juce::File json_; std::ostream& term_; bool live_ = false; int jobs_ = 1;
+    juce::File json_, markers_; std::ostream& term_; bool live_ = false; int jobs_ = 1;
     std::mutex m_; std::thread ticker_; std::atomic<bool> run_ { false };
     Stage stage_ = Stage::scanning; std::vector<Item> items_, queue_; bool queueKnown_ = false;
     Times times_; juce::StringArray current_; std::map<juce::String, double> startedAt_;

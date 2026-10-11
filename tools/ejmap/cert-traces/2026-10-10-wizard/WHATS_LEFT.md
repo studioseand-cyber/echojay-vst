@@ -30,17 +30,22 @@
   its progress.json said 100% / Done (5b); it said "Stopped at 66%" and the resume opened at 41% (5c).
   Rehearsal: cert-traces/2026-10-11-wizard-progress/.
 
+- THE WINDOW APP (11 Oct, `tools/ejmap/wizard_app/`, spec `docs/WIZARD_SPEC.md`): "EchoJay Wizard.app", five screens + crash
+  recovery, the bar driven by progress.json, the crash marker (engine/inflight, written before every load) -> the never-retry list
+  (skip.json) + a redacted crash report in the upload, keep-awake (IOKit PreventUserIdleSystemSleep while the engine runs), close =
+  pause (SIGINT to the engine's process group) and reopen = carry on. Sign-in / lookup / upload / promo are LOCAL STUBS. Pins WZ-APP-1..3.
+  Rehearsal: cert-traces/2026-10-11-wizard-app/.
+
 ## Left before it is a real app
-1. **UI**: a window (scan list, "map now / overnight", progress, review-and-Send). Today a CLI; the JUCE app shell exists (MainComponent)
-   but no wizard screen. The progress half is DONE as data: the window reads `progress.json` (percent, stage, current, counts, ETA,
-   the line, Stopped / Done + summary) - it needs no knowledge of Phase B. Still open: the window itself; a Stop button (today Ctrl-C:
-   the window would send SIGINT to the run's process group, which the CLI already handles); the ETA's starting figures come from this
-   Mac's rehearsal - a stranger's first run should use the server's per-category times; Ctrl-C during Scanning / Checking is NOT handled
-   (no handler is installed there, so the default signal ends the process): no "Stopped" line, and a map half-written at that moment
-   is untested (the maps are written with a plain replace, not atomically).
-2. **Sign-in + upload**: per-user accounts and tokens (plan section 5) - server side (Sean): auth, the contribution intake (holding
-   area, validation, agreement with another version or a second user, then publish), the reward ledger. The client's upload call,
-   retry / resume of an interrupted upload, and the Send confirmation.
+1. **UI**: BUILT as the v1 window app (above). Still open: a Pause button besides closing the window; "overnight" scheduling;
+   accessibility (VoiceOver labels on the bar); dark mode; a first-launch explanation of what is measured and why; localisation;
+   the ETA's starting figures should come from the server for a stranger's first run; two plugins in flight when the wizard goes
+   down are BOTH skipped today (spec section 3: re-run the second alone once? Kathy to decide).
+2. **Sean's endpoints** (exact requests / responses in WIZARD_SPEC.md section 6): sign-in (`POST /sign-in`, token -> Keychain),
+   the lookup (`POST /lookup`: the server decides A / B / C / out_of_scope and the category), the upload (`POST /contributions`,
+   multipart manifest + zip, idempotent on the bundle's sha256, a genuine check in seconds), the promo (`POST /promo`, one code per
+   account, emailed). Server side beyond the endpoints: the holding area, agreement with another version or a second user, then
+   publish; the reward ledger. Client side once they exist: replace the four stubs, retry / resume of an interrupted upload.
 3. **The real database lookup**: "what's missing" on the server (plan section 8) instead of a local folder; the server, not the client,
    decides A / B / C, and records B confirmations and live-check misses.
 4. **Categories beyond compressors and EQs**: de-esser / saturation / reverb / delay / transient / gate / limiter / tuner / multiband /
@@ -49,10 +54,20 @@
    by the wizard yet" - the measurement categoriser (--categorise-propose) could decide it on the user's Mac.
 5. **Licence handling for strangers**: the user's own licences.csv does not exist - the wizard relies on window / PACE detection and the
    serial lane; a "skip anything that asks for a licence" default and a plain explanation screen.
-6. **Notarisation** (not just Developer ID signing) of the app and the probe; a first-run Accessibility prompt explained.
-7. **Windows**: AUs are Mac-only - a VST3 probe + window watch for Windows, or a Mac-only first launch (plan section 9).
-8. **Privacy review**: the manifest's `platform` (OS version) and the profiles' `measured.tool` (probe cdhash) are kept; decide what else
-   to strip; a lawyer's read of vendor licence terms on publishing measurements (plan section 10).
+6. **Signing + notarisation**: today the app and the engine are signed AD HOC by assemble.sh (only the probe carries the Developer
+   ID). For download: Developer ID on the app, the engine and the probe (hardened runtime, the probe's entitlements kept), then
+   notarise and staple the app (and a DMG). The engine loads no plugin itself (the probe does), so it needs no library-validation
+   exception; the probe already has its entitlements. A first-run Accessibility prompt (the licence-window watch) needs explaining.
+   Auto-update (Sparkle or the website) is not designed.
+7. **Windows**: the window is JUCE and would build there, but everything under it is Mac-only today: AUs (a VST3 probe is needed,
+   and VST3 identity is instance-only - see the P15 note), the licence-window watch, the IOKit keep-awake (SetThreadExecutionState),
+   the process-group pause (a Job object + CTRL_BREAK), the crash-report search (WER LocalDumps), the app bundle. Or Mac-only first
+   (plan section 9).
+8. **Legal / privacy**: what the bundle carries is listed in the spec (profiles, tone checks, EQ profiles, a manifest with the OS
+   version and the probe's cdhash, REDACTED crash reports - home path, user, host and /Users/ paths replaced; a report that still trips
+   the check is withheld). Needs: a lawyer's read of vendor licence terms on publishing measurements of their plugins; the terms the
+   user accepts (what is sent, that measurements may be published, the reward's conditions); a privacy notice for the account link and
+   the crash reports; data retention / deletion on request; whether crash reports (third-party plugin stacks) may be kept.
 9. **Field hardening**: the empty-store path is built and rehearsed; still open - sleep / lid-close handling in "overnight", disk-space
    checks before measuring, and the wizard's maps are parameter lists only (the GUI's role mapping is not run: the dial side must accept
    a map without roles, or the server supplies them).

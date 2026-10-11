@@ -1,0 +1,40 @@
+WIZARD: stopped while measuring (0 of 4 landed): no bundle; the same command carries on
+WIZARD: 4 profile(s) in the database (mockdb, a local folder: nothing is fetched)
+WIZARD: map store <scratch>/wfinal/work/store/maps: 8 map(s); 0 of the 8 plugin(s) need mapping
+  Lindell 254E                   1.2.2     (compressor) -> queued: no profile for this plugin yet
+  Lindell 6X-500                 1.2.2     (eq) -> queued: no profile for this plugin yet
+  Lindell SBC                    1.0.3     (compressor) -> ready: the same plugin and version and map
+  Maag EQ2                       1.11.1    (eq) -> ready_from_version: the version 1.11.0 profile: 60 write(s) read back as the profile says
+  Maag EQ4                       1.15.1    (eq) -> ready: the same plugin and version and map
+  bx_opto                        1.10.1    (compressor) -> queued: no profile for this plugin yet
+  elysia mpressor                1.15.1    (compressor) -> queued: no profile for this plugin yet
+  bx_townhouse Buss Compressor   1.8.1     (compressor) -> ready_from_version: the version 1.8.0 profile: 31 write(s) read back as the profile says
+WIZARD: 8 plugin(s) found: 4 plugins ready, 4 to measure
+WIZARD: measuring 4 plugin(s), 2 at a time - stop any time; it carries on next time
+PHASEB: 4 product(s) over 2 categories -> <scratch>/wfinal/work/engine/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  wizard       3 product(s), 0 already done; hang guard 30 min (the compressor certification for a plugin the database does not have (the wizard's queue))
+  wizard_eq    1 product(s), 0 already done; hang guard 45 min (the EQ certification for a plugin the database does not have (the wizard's EQ queue))
+PHASEB: --jobs 2: 4 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[wizard 1/3 | all 1/4] elysia mpressor: ok 338.098 s | elapsed 0:06:57 | ETA 0:16:54
+[wizard 2/3 | all 2/4] bx_opto: ok 385.926 s | elapsed 0:07:45 | ETA 0:12:04
+[wizard_eq 1/1 | all 3/4] Lindell 6X-500: ok 34.6148 s | elapsed 0:08:20 | ETA 0:06:02
+WIZARD: 4 profile(s) in the database (mockdb, a local folder: nothing is fetched)
+  Lindell 254E: on the never-retry list (the wizard closed while checking it) - not loaded
+WIZARD: map store <scratch>/wfinal/work/store/maps: 8 map(s); 0 of the 7 plugin(s) need mapping
+  Lindell 6X-500                 1.2.2     (eq) -> queued: no profile for this plugin yet
+  Lindell SBC                    1.0.3     (compressor) -> ready: the same plugin and version and map
+  Maag EQ2                       1.11.1    (eq) -> ready_from_version: the version 1.11.0 profile: 60 write(s) read back as the profile says
+  Maag EQ4                       1.15.1    (eq) -> ready: the same plugin and version and map
+  bx_opto                        1.10.1    (compressor) -> queued: no profile for this plugin yet
+  elysia mpressor                1.15.1    (compressor) -> queued: no profile for this plugin yet
+  bx_townhouse Buss Compressor   1.8.1     (compressor) -> ready_from_version: the version 1.8.0 profile: 31 write(s) read back as the profile says
+WIZARD: 7 plugin(s) found: 4 plugins ready, 3 to measure, 1 crashed (we moved on)
+WIZARD: measuring 3 plugin(s), 2 at a time - stop any time; it carries on next time
+PHASEB: 3 product(s) over 2 categories -> <scratch>/wfinal/work/engine/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  wizard       2 product(s), 2 already done; hang guard 30 min (the compressor certification for a plugin the database does not have (the wizard's queue))
+  wizard_eq    1 product(s), 1 already done; hang guard 45 min (the EQ certification for a plugin the database does not have (the wizard's EQ queue))
+PHASEB: --jobs 2: 3 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+PHASEB: done - PHASE B PROGRESS (started 20261011T134409, updated 20261011T135312); summary <scratch>/wfinal/work/engine/phaseb/summary.json
+WIZARD: 4 plugins ready, 2 newly measured, ready to send, 1 crashed (we moved on), 1 could not be measured
+WIZARD: contribution bundle -> contribution.zip (2 new profile(s), 2 confirmation(s) of another version's profile, 2 skipped with the reason; 18.8 KB; checked: no paths, names or tokens)
+WIZARD: UPLOAD (stubbed): nothing is sent. A real app shows this list and sends only when the user presses Send.

@@ -1,0 +1,16 @@
+13:43:36 LAUNCH 1 (closes itself 90 s into measuring: the close button)
+13:45:30 launch 1 ended; markers left: 0; rows: 0
+13:45:30 LAUNCH 2 (reopen: carries on)
+  pmset:    pid 24415(EchoJay Wizard): [0x0013e00f00019cce] 00:00:59 PreventUserIdleSystemSleep named: "EchoJay Wizard is measuring your plugins"  
+13:52:47 only one plugin in flight: {
+  "product": "Lindell 254E",
+  "stage": "Measuring",
+  "started": "2026-10-11T13:51:22.103+01:00",
+  "started_ms": 1.791723082103e12
+}
+13:52:48 FORCED CRASH: the probe 26364 (process name EchoJay) SIGSEGV, then the app 24415 and the engine 24417 SIGKILL
+13:52:56 after the crash: markers 1 (Lindell_254E-43f1efc2.json); newest probe report by name: EchoJayProbe-2026-10-11-135248.ips
+13:52:56 LAUNCH 3 (reopen after the crash)
+13:53:23 reward: {  "code": "EJ-FREE-8E7AE524",  "issued_now": true,  "emailed_to": "rehearsal@example.com"}
+13:53:25 real store:     1123 maps before, 1123 after; files changed under ~/Library/ejmap: 0
+13:53:25 DONE

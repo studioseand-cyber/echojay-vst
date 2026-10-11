@@ -19,7 +19,7 @@
 namespace ejmap::cert
 {
 
-struct WizardOptions { SweepOptions opt; juce::File db; juce::StringArray only; bool measure = false, bundle = false, verbose = false; };
+struct WizardOptions { SweepOptions opt; juce::File db, skip; juce::StringArray only; bool measure = false, bundle = false, verbose = false; };   // skip: the app's never-retry list (skip.json)
 
 // the map store (read): (uid|version) -> { fp, category }
 struct StoreEntry { juce::String fp, category; };
@@ -89,11 +89,23 @@ inline int runWizard (const WizardOptions& wo)
     }
     const bool live = ! wo.verbose && isatty (STDOUT_FILENO);
     wizprog::Tracker prog (out.getChildFile ("progress.json"), term, live, opt.jobs);
+    prog.setMarkerDir (out.getChildFile ("inflight"));
     const double tStart = juce::Time::getMillisecondCounterHiRes();
     const auto db = wizard::loadDb (wo.db);
     const auto catalogue = juce::JSON::parse (wo.db.getChildFile ("categories.json").loadFileAsString());
     say ("WIZARD: " + juce::String ((int) db.size()) + " profile(s) in the database (" + wo.db.getFileName() + ", a local folder: nothing is fetched)");
-    std::vector<InstalledRecord> plugins; for (const auto& r : installedAudioUnits()) if (wo.only.isEmpty() || wo.only.contains (r.desc.name)) plugins.push_back (r);
+    // THE NEVER-RETRY LIST (the app's crash recovery): a plugin the wizard went down with is not loaded again, by any stage
+    const auto skipped = wo.skip != juce::File() ? wizapp::skipList (wo.skip.getParentDirectory()) : juce::StringArray();
+    std::vector<InstalledRecord> plugins; juce::Array<juce::var> skippedRows;
+    for (const auto& r : installedAudioUnits())
+    {
+        if (! (wo.only.isEmpty() || wo.only.contains (r.desc.name))) continue;
+        if (skipped.contains (r.desc.name))
+        { auto* row = new juce::DynamicObject(); row->setProperty ("product", r.desc.name); row->setProperty ("plugin_id", "AudioUnit|" + juce::String::toHexString (r.desc.uniqueId).toLowerCase() + "|" + r.desc.version);
+          row->setProperty ("state", "crashed"); row->setProperty ("why", "the wizard closed while checking it: skipped for good, never retried"); skippedRows.add (juce::var (row));
+          say ("  " + r.desc.name + ": on the never-retry list (the wizard closed while checking it) - not loaded"); continue; }
+        plugins.push_back (r);
+    }
     auto store = mapStore (opt.ledger);
     prog.setPlugins ((int) plugins.size());
     const auto bundlesAll = componentBundles();
@@ -137,6 +149,7 @@ inline int runWizard (const WizardOptions& wo)
     }
     // 1. LOOK UP on the maps (A / B / C), the quick check for B
     auto* state = new juce::DynamicObject(); juce::Array<juce::var> rows; juce::StringArray queue, queueEq; std::map<juce::String, int> counts;
+    for (const auto& r : skippedRows) { rows.add (r); ++counts["crashed"]; }
     { std::vector<wizprog::Item> its; for (const auto& ir : plugins) { wizprog::Item it; it.product = ir.desc.name; it.kind = "check"; its.push_back (it); } prog.stage (wizprog::Stage::checking, its); }
     const auto problemState = [] (const juce::String& st) { return wizprog::isProblemState (st); };
     for (const auto& ir : plugins)
@@ -152,7 +165,7 @@ inline int runWizard (const WizardOptions& wo)
         else
         {
             const auto L = wizard::lookup (db, uid, ver, se.fp); why = L.why;
-            if (L.match == wizard::Match::exact) st = "ready";
+            if (L.match == wizard::Match::exact && ! wizapp::needsMeasuring (L.match, false)) st = "ready";   // rule A: skipped silently
             else if (L.match == wizard::Match::sameControls)
             {
                 const auto gate = licenceGate (opt, ir.desc.name, ir.desc.manufacturerName, out, false);
@@ -162,7 +175,7 @@ inline int runWizard (const WizardOptions& wo)
                     bool window = false; const auto rb = quickCheck (opt, ir.desc, L.entry->profile, window);
                     row->setProperty ("from_version", L.entry->version()); row->setProperty ("readback", rb.why);
                     if (window) { st = "needs_licence"; why = rb.why; }
-                    else if (rb.pass) { st = "ready_from_version"; why = "the version " + L.entry->version() + " profile: " + rb.why; }
+                    else if (! wizapp::needsMeasuring (L.match, rb.pass)) { st = "ready_from_version"; why = "the version " + L.entry->version() + " profile: " + rb.why; }
                     else { st = "queued"; why = "the version " + L.entry->version() + " profile does not fit (" + rb.why + "): measure this version"; (cat == "eq" ? queueEq : queue).add (ir.desc.name); }
                 }
             }
@@ -175,6 +188,13 @@ inline int runWizard (const WizardOptions& wo)
     out.getChildFile ("wizard_queue.txt").replaceWithText (queue.joinIntoString ("\n") + "\n");
     out.getChildFile ("wizard_queue_eq.txt").replaceWithText (queueEq.joinIntoString ("\n") + "\n");
     say ("WIZARD: " + juce::String ((int) plugins.size()) + " plugin(s) found: " + wizard::summaryLine (counts));
+    {   // what the scan screen says: "N plugins we don't have yet - about X" (the measured per-category seconds once any exist, --jobs aware)
+        std::vector<wizprog::Item> q; for (const auto& ir : plugins) { const bool eq = queueEq.contains (ir.desc.name); if (! eq && ! queue.contains (ir.desc.name)) continue;
+            wizprog::Item it; it.product = ir.desc.name; it.kind = eq ? "eq" : "compressor"; it.serial = serialOf (ir.desc); q.push_back (it); }
+        wizprog::Times tq; for (const auto* c : { "wizard", "wizard_eq" }) for (const auto& f : out.getChildFile ("phaseb").getChildFile (c).findChildFiles (juce::File::findFiles, false, "*.phaseb.json"))
+        { const auto r = juce::JSON::parse (f.loadFileAsString()); if (r.getProperty ("outcome", "").toString() == "ok") tq.add (juce::String (c) == "wizard_eq" ? "eq" : "compressor", (double) r.getProperty ("seconds", 0.0)); }
+        state->setProperty ("to_measure", (int) q.size()); state->setProperty ("to_measure_eta_s", std::round (wizprog::stageSecondsLeft (q, tq, opt.jobs)));
+    }
     // 2. MEASURE THE QUEUES (Phase B: --jobs, resumable, every outcome; the tone check / the EQ acceptance)
     if (wo.measure && (! queue.isEmpty() || ! queueEq.isEmpty()))
     {
@@ -234,7 +254,24 @@ inline int runWizard (const WizardOptions& wo)
     {
         { wizprog::Item it; it.product = "the contribution bundle"; it.kind = "pack"; prog.stage (wizprog::Stage::packing, { it }); prog.started (it.product); }
         const auto B = out.getChildFile ("contribution"); B.deleteRecursively(); B.getChildFile ("profiles").createDirectory();
-        juce::Array<juce::var> items, confirmations, skipped;
+        juce::Array<juce::var> items, confirmations, skipped, crashedList;
+        if (wo.skip != juce::File())
+        {   // the crash reports travel with the upload (already redacted by the app; one that still trips the check is withheld, said so)
+            const auto work = wo.skip.getParentDirectory(); B.getChildFile ("crash_reports").createDirectory();
+            char h[256] = {}; gethostname (h, sizeof h - 1);
+            const auto skipV = wizapp::readSkip (work);
+            if (const auto* a = skipV.getArray())
+                for (const auto& e : *a)
+                {
+                    const auto rel = e.getProperty ("crash_report", "").toString(); const auto src = work.getChildFile (rel);
+                    auto txt = src.loadFileAsString();
+                    const auto pp = wizard::personalProblems (txt, juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(), juce::SystemStats::getLogonName(), juce::String (h).upToFirstOccurrenceOf (".", false, false));
+                    if (! pp.isEmpty()) txt = "This crash report was withheld: it would carry " + pp.joinIntoString (", ") + ".\n";
+                    if (rel.isNotEmpty()) B.getChildFile (rel).replaceWithText (txt);
+                    auto* c = new juce::DynamicObject(); c->setProperty ("product", e.getProperty ("product", {})); c->setProperty ("stage", e.getProperty ("stage", {}));
+                    c->setProperty ("crash_report", rel); c->setProperty ("report_found", e.getProperty ("report_found", false)); crashedList.add (juce::var (c));
+                }
+        }
         for (const auto& rv : rows)
         {
             const auto st = rv.getProperty ("state", "").toString(); const auto product = rv.getProperty ("product", "").toString();
@@ -265,7 +302,7 @@ inline int runWizard (const WizardOptions& wo)
         }
         auto* M = new juce::DynamicObject(); M->setProperty ("schema", "ej_contribution/0"); M->setProperty ("created", juce::Time::getCurrentTime().toISO8601 (true));
         M->setProperty ("tool", juce::String ("EJ Map ") + EJMAP_GIT_HASH); M->setProperty ("platform", juce::SystemStats::getOperatingSystemName());
-        M->setProperty ("profiles", items); M->setProperty ("confirmations", confirmations); M->setProperty ("skipped", skipped);
+        M->setProperty ("profiles", items); M->setProperty ("confirmations", confirmations); M->setProperty ("skipped", skipped); M->setProperty ("crashed", crashedList);
         M->setProperty ("note", "results only: profiles, their tone checks and this manifest - no plugin files, no audio, no account token");
         B.getChildFile ("manifest.json").replaceWithText (juce::JSON::toString (juce::var (M)) + "\n");
         char host[256] = {}; gethostname (host, sizeof host - 1);
