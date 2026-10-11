@@ -1,0 +1,10 @@
+RUN-ALL: 86 tone check(s) made by another build than b287aef3: the follow-up runs again (stale checks first)
+RUN-ALL: multiband / gain-all finished by a build before the 9-10 Oct fixes: the fixups step re-runs multiband and the gain-all rows that timed out or failed
+RUN-ALL: 7 step(s) to run, 20 done or skipped; ETA 6:33:30; stops at 07:00 12 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  followup                 --cert-tonecheck-all --out <cert>   (~0:40:00, the compressor follow-up)
+  fixups                   --phaseb-all --redo multiband,unfinished --category multiband --category gainall --out <cert> --jobs 2   (~1:10:00, multiband again (9 Oct fixes) + the g
+  saturation        RESUME --phaseb-all --category saturation --out <cert> --jobs 2   (~2:00:00, saturation + amp sims)
+  reverb_delay             --phaseb-all --redo reverb,delay --out <cert> --jobs 2   (~3:11:40, reverb and delay (role tests twice: x1.5-1.65 rehearsed, 8 Oct))
+  transient_gate           --phaseb-all --redo transient,gate --out <cert> --jobs 2   (~0:31:40, transient shapers and gates (role tests twice: x1.3-1.65 rehearsed, 8 Oct))
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
