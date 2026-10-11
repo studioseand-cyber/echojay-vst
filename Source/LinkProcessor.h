@@ -709,6 +709,17 @@ private:
     // which is the correct fallback rather than a failure.
     std::atomic<echojay::cmdring::CmdRing*> cmdRing_ { nullptr };
     int                                    cmdRingFd_ = -1;
+    // 11 Oct 2026: how many times this Link has ATTEMPTED to open its ring, and when it may try again. Both
+    // exist because the first cut retried on every 30 Hz tick for ever (see ringTick), and the count is what
+    // the rate-limited line reports - a reader needs to know whether it tried twice or twenty thousand times.
+    int                                    ringOpenAttempts_ = 0;
+    double                                 ringNextTryMs_    = 0.0;
+    double                                 ringSaidMs_       = 0.0;
+    // ~1 Hz instead of the 30 Hz this tick runs at, and one line per half-minute. A rack with no ring is the
+    // NORMAL state for every Link no main plugin has addressed, so neither the attempt nor the line may be
+    // frequent enough to cost anything.
+    static constexpr double kRingRetryMs = 1000.0;
+    static constexpr double kRingSayMs   = 30000.0;
     // Counters the audio thread publishes and the message thread reads for its log. A dropped frame must be
     // countable: "it felt like nothing happened" is not a diagnosis.
     std::atomic<int>      ringLastKept_        { 0 };

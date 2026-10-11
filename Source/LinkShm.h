@@ -704,12 +704,19 @@ inline FileIdentity pathIdentity(const juce::String& path)
     return {};
 }
 
+/** createIfMissing (11 Oct 2026): a CONSUMER must be able to say "map this if it exists" without bringing the
+    file into being. The value ring's drain side could not, so it opened O_RDWR|O_CREAT, created a zeroed file
+    for every rack a producer had never touched, and then failed on it for ever - 361 of those were on disk, and
+    the retry behind them exhausted the AU hosting process. Defaulted true so every existing caller is
+    unchanged; only the ring's consumer passes false. */
 inline void* openFileMapped(const juce::String& path, size_t size,
-                             bool readOnly, int& fd_out, int& errno_out)
+                             bool readOnly, int& fd_out, int& errno_out,
+                             bool createIfMissing = true)
 {
 #if LINK_FILE_SUPPORTED
     const std::string p = path.toStdString();
-    const int flags = readOnly ? O_RDONLY : (O_RDWR | O_CREAT);
+    const int flags = readOnly ? O_RDONLY
+                               : (O_RDWR | (createIfMissing ? O_CREAT : 0));
     const int fd    = ::open(p.c_str(), flags, 0600);
     if (fd < 0) { errno_out = errno; fd_out = -1; return nullptr; }
 
@@ -719,6 +726,11 @@ inline void* openFileMapped(const juce::String& path, size_t size,
         ::fstat(fd, &st);
         if ((size_t)st.st_size != size)
         {
+            // 11 Oct 2026: a caller that refused to CREATE the file also refuses to RESIZE it. Growing a short
+            // file here would be creation by the back door - the consumer would still be laying a block down
+            // and still racing the producer's init, which is the thing passing createIfMissing=false prevents.
+            if (! createIfMissing)
+                { errno_out = EINVAL; ::close(fd); fd_out = -1; return nullptr; }
             if (::ftruncate(fd, (off_t)size) != 0)
                 { errno_out = errno; ::close(fd); fd_out = -1; return nullptr; }
         }

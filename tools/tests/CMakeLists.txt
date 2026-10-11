@@ -402,6 +402,11 @@ ej_add_guard(remote_ops_guard         SOURCE tools/remote_ops_guard/harness.cpp 
 # must never be lost (the 4 Oct case) and never doubled" - as a gated test, both halves, plus the new fact that
 # makes the rule finite: a build on a Link rack is a COMMAND now, so nothing lives only on the V2 side.
 ej_add_guard(borrow_migration_guard   SOURCE tools/borrow_migration_guard/harness.cpp        LABEL fast SCRIBBLE)
+# 11 Oct 2026, from a live bug in ship_2026-10-11a: stage 3's ring consumer leaked a descriptor AND a 16 KB
+# mapping per 30 Hz tick for every rack whose ring was not usable, which exhausted the AU hosting process and
+# presented as -10875 on every third-party AU, Links that "never published", and a frozen chain build. Nothing in
+# the suite asked what a mapping COST, or ran for the thousands of ticks a 30 Hz leak needs to matter.
+ej_add_guard(ring_leak_guard          SOURCE tools/ring_leak_guard/harness.cpp               LABEL fast LINKSIDE)
 # ---- 11 Oct 2026: THREE FILES WHOSE SUBJECT THIS ROUND DELETED -------------------------------------------
 # The suite's rule is that every test in the repo is in the gate or carries a written exclusion. These are the
 # exclusion, written rather than left implied, because I am the one who broke them.

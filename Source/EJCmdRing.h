@@ -267,11 +267,31 @@ inline CmdRing* openRingRW (const juce::String& dir, const juce::String& uid,
 inline CmdRing* openRingForDrain (const juce::String& dir, const juce::String& uid,
                                   int& fd_out, int& errno_out)
 {
-    void* m = LinkShm::openFileMapped (ringPath (dir, uid), sizeof (CmdRing),
-                                       /*readOnly*/ false, fd_out, errno_out);
-    if (m == nullptr) return nullptr;
+    // ---- 11 Oct 2026, THE LEAK ----------------------------------------------------------------------------
+    // This function had two faults and they compounded into the worst bug of the round.
+    //
+    // It opened O_RDWR|O_CREAT, so for any rack a producer had never addressed it CREATED a zeroed file, which
+    // can never pass ringUsable() - 361 of those were on Sean's disk, every one with magic 00000000. And it
+    // returned nullptr on the unusable path with the file still OPEN and still MAPPED, because openFileMapped
+    // does both before anyone can test what it mapped. Its caller only records the descriptor on success, so
+    // every failure dropped a descriptor and a 16 KB mapping on the floor. At 30 Hz per Link that exhausted
+    // the AU hosting process in minutes, and the kernel said so: "failed to open metal library with error: Too
+    // many open files". Every third-party AU then returned -10875, no Link could write its sidecar, and a
+    // chain build froze Logic. Three complaints, one cause.
+    //
+    // So: do not create (absence means "no ring yet", which is a correct and common state - the file channel
+    // carries everything), and RELEASE the mapping and the descriptor on every path that does not hand them
+    // to the caller. fd_out is left -1 unless the caller is receiving a live ring.
+    const auto path = ringPath (dir, uid);
+    void* m = LinkShm::openFileMapped (path, sizeof (CmdRing), /*readOnly*/ false,
+                                       fd_out, errno_out, /*createIfMissing*/ false);
+    if (m == nullptr) return nullptr;              // openFileMapped already closed its own descriptor
     auto* r = reinterpret_cast<CmdRing*> (m);
-    return ringUsable (r) ? r : nullptr;
+    if (ringUsable (r)) return r;                  // the caller now owns m and fd_out
+    LinkShm::closeMapped (m, sizeof (CmdRing), fd_out, {}, /*doUnlink*/ false);
+    fd_out = -1;
+    errno_out = 0;                                 // not an error: a ring this build cannot use, or not laid down yet
+    return nullptr;
 }
 
 } // namespace echojay::cmdring

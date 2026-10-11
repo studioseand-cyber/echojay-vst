@@ -2689,20 +2689,52 @@ void LinkProcessor::ringTick()
                             + " - held for this Link's editor").toRawUTF8());
         };
 
+    // ---- 11 Oct 2026: A SLOW, BOUNDED RETRY --------------------------------------------------------------
+    //
+    // What stood here retried whenever cmdRing_ was null, and this function runs at 30 Hz (the heartbeat below
+    // divides it by 30). A rack whose ring is not laid down keeps cmdRing_ null for ever, so "attempted quietly
+    // and once" - my own comment - was thirty attempts a second, for the life of the session, per Link. With
+    // the leak in openRingForDrain behind it, that is what exhausted the AU hosting process.
+    //
+    // The fix is not "try once and give up", which is what the V2's producer side correctly does: a ring
+    // legitimately APPEARS later, when the V2 first addresses this rack, and that can be minutes after this
+    // Link started. So the retry stays, at about 1 Hz instead of 30, and ring_leak_guard's leg (5) is the one
+    // that stops a future tidy-up turning a bounded retry into no retry at all.
     if (cmdRing_.load(std::memory_order_acquire) == nullptr)
     {
-        int err = 0;
-        const juce::String dir = LinkShm::resolveDir(err);
-        const juce::String uid = instanceUid_;
-        if (dir.isNotEmpty() && uid.isNotEmpty())
+        const double nowMs = juce::Time::getMillisecondCounterHiRes();
+        if (nowMs >= ringNextTryMs_)
         {
-            int fd = -1, e2 = 0;
-            if (auto* r = echojay::cmdring::openRingForDrain(dir, uid, fd, e2))
+            ringNextTryMs_ = nowMs + kRingRetryMs;
+            int err = 0;
+            const juce::String dir = LinkShm::resolveDir(err);
+            const juce::String uid = instanceUid_;
+            if (dir.isNotEmpty() && uid.isNotEmpty())
             {
-                cmdRingFd_ = fd;
-                cmdRing_.store(r, std::memory_order_release);
-                EchoJay_NSLog(("EJRing: mapped the value ring for \"" + uid
-                               + "\" - values arrive within one buffer now").toRawUTF8());
+                int fd = -1, e2 = 0;
+                ++ringOpenAttempts_;
+                if (auto* r = echojay::cmdring::openRingForDrain(dir, uid, fd, e2))
+                {
+                    cmdRingFd_ = fd;
+                    cmdRing_.store(r, std::memory_order_release);
+                    EchoJay_NSLog(("EJRing: mapped the value ring for \"" + uid + "\" after "
+                                   + juce::String(ringOpenAttempts_) + " attempt(s)"
+                                   + " - values arrive within one buffer now").toRawUTF8());
+                }
+                // NOT SILENT ANY MORE. This path said nothing at all, which is why the log pointed nowhere and
+                // it took a kernel message ("Too many open files") to find. One line per kRingSayMs, with the
+                // attempt COUNT on it - a reader needs to know whether this tried twice or twenty thousand
+                // times, which is the difference between "no ring yet" and a leak.
+                else if (nowMs - ringSaidMs_ >= kRingSayMs)
+                {
+                    ringSaidMs_ = nowMs;
+                    EchoJay_NSLog(("EJRing: no value ring for \"" + uid + "\" yet (errno "
+                                   + juce::String(e2) + ", " + juce::String(ringOpenAttempts_)
+                                   + " attempt(s) so far, retrying about every "
+                                   + juce::String((int) (kRingRetryMs / 1000.0)) + " s) - values go by the file"
+                                     " channel, which is slower and still correct. This is the NORMAL state for a"
+                                     " rack no main plugin has addressed.").toRawUTF8());
+                }
             }
         }
     }
