@@ -1,0 +1,117 @@
+Solid Bus Comp [RULED PUB] control(s) Attack, Release
+   moves >0.5 dB: attack 0.1 ms +3.23; attack 0.3 ms +3.08; attack 1 ms +2.78; attack 3 ms +2.26; attack 10 ms +1.30; release 0.2 s +0.52; release 0.4 s +0.86; release 0.8 s +1.57; release 1.6 s +2.11; release Auto +2.42
+   within 0.5 dB: attack 30 ms +0.00; release 0.1 s +0.00
+kHs Compressor [PUB] control(s) Attack, Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 1.00 ms +0.00; attack 2.43 ms +0.00; attack 5.90 ms +0.00; attack 14.3 ms +0.00; attack 34.9 ms -0.00; attack 84.7 ms -0.00; attack 206 ms -0.00; attack 500 ms -0.01; release 1.00 ms -0.00; release 2.43 ms -0.00; release 5.90 ms -0.00; release 14.3 ms -0.00; release 34.9 ms +0.00; release 84.7 ms +0.00; release 206 ms +0.00; release 500 ms +0.00
+Unfiltered Audio Zip [PUB] control(s) Attack, Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 1.00 ms +0.00; attack 11.2 ms -0.00; attack 41.7 ms -0.00; attack 92.7 ms -0.00; attack 164 ms -0.01; attack 256 ms -0.01; attack 368 ms -0.01; attack 500 ms -0.01; release 1.00 ms -0.01; release 41.8 ms -0.00; release 164 ms -0.00; release 368 ms +0.00; release 654 ms +0.00; release 1.021 s +0.00; release 1.470 s +0.00; release 2.000 s +0.00
+bx_townhouse Buss Compressor [PUB] control(s) Attack, Release
+   moves >0.5 dB: attack 0.1 ms +0.55; attack 10 ms -0.53; attack 30 ms -1.44
+   within 0.5 dB: attack 0.3 ms +0.43; attack 1 ms +0.29; attack 3 ms +0.00; release 0.1 s -0.46; release 0.3 s -0.30; release 0.6 s -0.05; release 1.2 s +0.16; release auto +0.00
+VComp (m) [PUB] control(s) Attack, Release Limiter
+   moves >0.5 dB: none
+   within 0.5 dB: attack Fast +0.00; attack Slow +0.00; release 100ms +0.00; release 200ms +0.00; release 800ms +0.00; release AUTO +0.00
+VComp (s) [PUB] control(s) Attack, Release Limiter
+   moves >0.5 dB: none
+   within 0.5 dB: attack Fast +0.00; attack Slow +0.00; release 100ms +0.00; release 200ms +0.00; release 800ms +0.00; release AUTO +0.00
+DPR-402 (m) [PUB] control(s) Attack, Release
+   moves >0.5 dB: attack 5 msec -0.51; attack ~10 ms -0.86; attack 20 msec -1.24; attack ~50 ms -1.85; attack 100 msec -2.27; release 5 msec -1.27; release ~10 ms -0.83
+   within 0.5 dB: attack 50 usec +0.31; attack ~100 us +0.27; attack 200 usec +0.22; attack ~500 us +0.13; attack 1 ms +0.00; attack ~2.5 ms -0.20; release 20 msec -0.47; release ~50 ms -0.17; release 100 ms +0.00; release ~250 ms +0.13; release 500 msec +0.22; release ~1 s +0.27; release 2 sec +0.30; release ~4 s +0.34; release Auto -0.01
+C1 comp-sc (m) [PUB] control(s) Comp Attack, Comp Release
+   moves >0.5 dB: attack 0.01 +1.32; attack 0.02 +1.31; attack 0.03 +1.30; attack 0.04 +1.29; attack 0.06 +1.28; attack 0.09 +1.26; attack 0.12 +1.24; attack 0.18 +1.20; attack 0.25 +1.15; attack 0.37 +1.06; attack 0.52 +0.93; attack 0.75 +0.73; attack 6.49 -0.59; attack 9.31 -0.68; attack 13.34 -0.73; attack 19.12 -0.77; attack 27.38 -0.79; attack 39.26 -0.81; attack 56.23 -0.81; attack 80.63 -0.82; attack 115.48 -0.83; attack 165.58 -0.83; attack 237.14 -0.84; attack 340.02 -0.84; attack 486.97 -0.85; attack 698.23 -0.85; attack 1000.00 -0.85; release 1 -1.57; release 2 -0.93; release 3 -0.75; release 4 -0.64
+   within 0.5 dB: attack 1.08 +0.48; attack 1.54 +0.20; attack 2.21 -0.07; attack 3.16 -0.29; attack 4.53 -0.46; release 6 -0.50; release 8 -0.40; release 10 -0.34; release 13 -0.26; release 18 -0.18; release 24 -0.12; release 32 -0.07; release 42 -0.03; release 56 +0.02; release 75 +0.05; release 100 +0.08; release 133 +0.11; release 178 +0.13; release 237 +0.14; release 316 +0.16; release 422 +0.17; release 562 +0.18; release 750 +0.19; release 1000 +0.20; release 1334 +0.20; release 1778 +0.21; release 2372 +0.21; release 3162 +0.22; release 4219 +0.22; release 5623 +0.22; release 7502 +0.22; release 10000 +0.23
+C1 comp-sc (s) [PUB] control(s) Comp Attack, Comp Release
+   moves >0.5 dB: attack 0.01 +1.32; attack 0.02 +1.31; attack 0.03 +1.30; attack 0.04 +1.29; attack 0.06 +1.28; attack 0.09 +1.26; attack 0.12 +1.24; attack 0.18 +1.20; attack 0.25 +1.15; attack 0.37 +1.06; attack 0.52 +0.93; attack 0.75 +0.73; attack 6.49 -0.59; attack 9.31 -0.68; attack 13.34 -0.73; attack 19.12 -0.77; attack 27.38 -0.79; attack 39.26 -0.81; attack 56.23 -0.81; attack 80.63 -0.82; attack 115.48 -0.83; attack 165.58 -0.83; attack 237.14 -0.84; attack 340.02 -0.84; attack 486.97 -0.85; attack 698.23 -0.85; attack 1000.00 -0.85; release 1 -1.57; release 2 -0.93; release 3 -0.75; release 4 -0.64
+   within 0.5 dB: attack 1.08 +0.48; attack 1.54 +0.20; attack 2.21 -0.07; attack 3.16 -0.29; attack 4.53 -0.46; release 6 -0.50; release 8 -0.40; release 10 -0.34; release 13 -0.26; release 18 -0.18; release 24 -0.12; release 32 -0.07; release 42 -0.03; release 56 +0.02; release 75 +0.05; release 100 +0.08; release 133 +0.11; release 178 +0.13; release 237 +0.14; release 316 +0.16; release 422 +0.17; release 562 +0.18; release 750 +0.19; release 1000 +0.20; release 1334 +0.20; release 1778 +0.21; release 2372 +0.21; release 3162 +0.22; release 4219 +0.22; release 5623 +0.22; release 7502 +0.22; release 10000 +0.23
+C1 comp-gate (m) [PUB] control(s) Gate Attack, Gate Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 0.01 +0.00; attack 0.02 +0.00; attack 0.03 +0.00; attack 0.04 +0.00; attack 0.06 +0.00; attack 0.09 +0.00; attack 0.12 +0.00; attack 0.18 +0.00; attack 0.25 +0.00; attack 0.37 +0.00; attack 0.52 +0.00; attack 0.75 +0.00; attack 1.08 +0.00; attack 1.54 +0.00; attack 2.21 +0.00; attack 3.16 +0.00; attack 4.53 +0.00; attack 6.49 +0.00; attack 9.31 +0.00; attack 13.34 +0.00; attack 19.12 -0.00; attack 27.38 -0.00; attack 39.26 +0.00; attack 56.23 +0.00; attack 80.63 -0.00; attack 115.48 -0.01; attack 165.58 -0.07; attack 237.14 +0.00; attack 340.02 +0.00; attack 486.97 +0.00; attack 698.23 +0.00; attack 1000.00 +0.00; release 1 +0.00; release 2 +0.00; release 3 +0.00; release 4 +0.00; release 6 +0.00; release 8 +0.00; release 10 +0.00; release 13 +0.00; release 18 +0.00; release 24 +0.00; release 32 +0.00; release 42 +0.00; release 56 +0.00; release 75 +0.00; release 100 +0.00; release 133 +0.00; release 178 +0.00; release 237 +0.00; release 316 +0.00; release 422 +0.00; release 562 +0.00; release 750 +0.00; release 1000 +0.00; release 1334 +0.00; release 1778 +0.00; release 2372 +0.00; release 3162 +0.00; release 4219 +0.00; release 5623 +0.00; release 7502 +0.00; release 10000 +0.00
+C1 comp-gate (s) [PUB] control(s) Gate Attack, Gate Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 0.01 +0.00; attack 0.02 +0.00; attack 0.03 +0.00; attack 0.04 +0.00; attack 0.06 +0.00; attack 0.09 +0.00; attack 0.12 +0.00; attack 0.18 +0.00; attack 0.25 +0.00; attack 0.37 +0.00; attack 0.52 +0.00; attack 0.75 +0.00; attack 1.08 +0.00; attack 1.54 +0.00; attack 2.21 +0.00; attack 3.16 +0.00; attack 4.53 +0.00; attack 6.49 +0.00; attack 9.31 +0.00; attack 13.34 +0.00; attack 19.12 -0.00; attack 27.38 -0.00; attack 39.26 +0.00; attack 56.23 +0.00; attack 80.63 -0.00; attack 115.48 -0.01; attack 165.58 -0.07; attack 237.14 +0.00; attack 340.02 +0.00; attack 486.97 +0.00; attack 698.23 +0.00; attack 1000.00 +0.00; release 1 +0.00; release 2 +0.00; release 3 +0.00; release 4 +0.00; release 6 +0.00; release 8 +0.00; release 10 +0.00; release 13 +0.00; release 18 +0.00; release 24 +0.00; release 32 +0.00; release 42 +0.00; release 56 +0.00; release 75 +0.00; release 100 +0.00; release 133 +0.00; release 178 +0.00; release 237 +0.00; release 316 +0.00; release 422 +0.00; release 562 +0.00; release 750 +0.00; release 1000 +0.00; release 1334 +0.00; release 1778 +0.00; release 2372 +0.00; release 3162 +0.00; release 4219 +0.00; release 5623 +0.00; release 7502 +0.00; release 10000 +0.00
+H-Comp (m) [PUB] control(s) Attack, Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 0.50 +0.00; attack 1.07 +0.00; attack 2.27 +0.00; attack 4.84 +0.00; attack 10.3 -0.00; attack 22.0 -0.00; attack 46.9 -0.00; attack 100 -0.00; release 3.00 +0.01; release 8.05 +0.00; release 21.6 +0.00; release 57.9 -0.00; release 155 -0.00; release 417 -0.00; release 1118 +0.00; release 3000 +0.00
+H-Comp (s) [PUB] control(s) Attack, Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 0.50 +0.00; attack 1.07 +0.00; attack 2.27 +0.00; attack 4.84 +0.00; attack 10.3 -0.00; attack 22.0 -0.00; attack 46.9 -0.00; attack 100 -0.00; release 3.00 +0.01; release 8.05 +0.00; release 21.6 +0.00; release 57.9 -0.00; release 155 -0.00; release 417 -0.00; release 1118 +0.00; release 3000 +0.00
+C1 comp (m) [PUB] control(s) Attack, Release
+   moves >0.5 dB: attack 0.01 +1.31; attack 0.02 +1.31; attack 0.03 +1.30; attack 0.04 +1.29; attack 0.06 +1.28; attack 0.09 +1.26; attack 0.12 +1.24; attack 0.18 +1.20; attack 0.25 +1.15; attack 0.37 +1.06; attack 0.52 +0.93; attack 0.75 +0.73; attack 6.49 -0.59; attack 9.31 -0.68; attack 13.34 -0.73; attack 19.12 -0.77; attack 27.38 -0.79; attack 39.26 -0.81; attack 56.23 -0.81; attack 80.63 -0.82; attack 115.48 -0.83; attack 165.58 -0.83; attack 237.14 -0.84; attack 340.02 -0.84; attack 486.97 -0.85; attack 698.23 -0.85; attack 1000.00 -0.85; release 1 -1.57; release 2 -0.93; release 3 -0.75; release 4 -0.64
+   within 0.5 dB: attack 1.08 +0.48; attack 1.54 +0.20; attack 2.21 -0.07; attack 3.16 -0.29; attack 4.53 -0.47; release 6 -0.50; release 8 -0.40; release 10 -0.34; release 13 -0.26; release 18 -0.18; release 24 -0.12; release 32 -0.07; release 42 -0.03; release 56 +0.02; release 75 +0.05; release 100 +0.08; release 133 +0.11; release 178 +0.13; release 237 +0.14; release 316 +0.16; release 422 +0.17; release 562 +0.18; release 750 +0.19; release 1000 +0.20; release 1334 +0.20; release 1778 +0.21; release 2372 +0.21; release 3162 +0.22; release 4219 +0.22; release 5623 +0.22; release 7502 +0.22; release 10000 +0.22
+C1 comp (s) [PUB] control(s) Attack, Release
+   moves >0.5 dB: attack 0.01 +1.31; attack 0.02 +1.31; attack 0.03 +1.30; attack 0.04 +1.29; attack 0.06 +1.28; attack 0.09 +1.26; attack 0.12 +1.24; attack 0.18 +1.20; attack 0.25 +1.15; attack 0.37 +1.06; attack 0.52 +0.93; attack 0.75 +0.73; attack 6.49 -0.59; attack 9.31 -0.68; attack 13.34 -0.73; attack 19.12 -0.77; attack 27.38 -0.79; attack 39.26 -0.81; attack 56.23 -0.81; attack 80.63 -0.82; attack 115.48 -0.83; attack 165.58 -0.83; attack 237.14 -0.84; attack 340.02 -0.84; attack 486.97 -0.85; attack 698.23 -0.85; attack 1000.00 -0.85; release 1 -1.57; release 2 -0.93; release 3 -0.75; release 4 -0.64
+   within 0.5 dB: attack 1.08 +0.48; attack 1.54 +0.20; attack 2.21 -0.07; attack 3.16 -0.29; attack 4.53 -0.47; release 6 -0.50; release 8 -0.40; release 10 -0.34; release 13 -0.26; release 18 -0.18; release 24 -0.12; release 32 -0.07; release 42 -0.03; release 56 +0.02; release 75 +0.05; release 100 +0.08; release 133 +0.11; release 178 +0.13; release 237 +0.14; release 316 +0.16; release 422 +0.17; release 562 +0.18; release 750 +0.19; release 1000 +0.20; release 1334 +0.20; release 1778 +0.21; release 2372 +0.21; release 3162 +0.22; release 4219 +0.22; release 5623 +0.22; release 7502 +0.22; release 10000 +0.22
+elysia mpressor [PUB] control(s) Attack, Release
+   moves >0.5 dB: attack 0.0 ms +0.73; attack 65.7 ms -0.70; attack 117.1 ms -1.15; attack 150.0 ms -1.41; release 5.0 ms -2.32; release 9.9 ms -1.79; release 29.4 ms -0.80; release 1200.0 ms +0.56
+   within 0.5 dB: attack 3.3 ms +0.48; attack 9.6 ms +0.24; attack 15.9 ms +0.07; attack 26.4 ms -0.15; release 75.0 ms -0.21; release 175.7 ms +0.15; release 360.0 ms +0.36; release 741.4 ms +0.49
+API-2500 (m) [PUB] control(s) Attack, Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 0.03 -0.00; attack 0.1 -0.00; attack 0.3 +0.00; attack 1 +0.00; attack 3 +0.00; attack 10 +0.00; attack 30 +0.01; release 0.05 -0.40; release 0.1 -0.35; release 0.2 -0.29; release 0.5 -0.15; release 1 -0.09; release 2 -0.01; release Var +0.00
+API-2500 (s) [PUB] control(s) Attack, Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 0.03 -0.00; attack 0.1 -0.00; attack 0.3 +0.00; attack 1 +0.00; attack 3 +0.00; attack 10 +0.00; attack 30 +0.01; release 0.05 -0.40; release 0.1 -0.35; release 0.2 -0.29; release 0.5 -0.15; release 1 -0.09; release 2 -0.01; release Var +0.00
+Tube-Tech CL 1B [PUB] control(s) Attack, Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 0.0 +0.06; attack 1.4 +0.06; attack 2.9 +0.06; attack 4.3 +0.06; attack 5.7 -0.24; attack 7.1 +0.00; attack 8.6 +0.00; attack 10.0 +0.00; release 0.0 +0.00; release 1.4 +0.00; release 2.9 +0.00; release 4.3 -0.10; release 5.7 +0.04; release 7.1 +0.07; release 8.6 +0.07; release 10.0 +0.04
+Empirical Labs Mike-E Comp [PUB] control(s) Attack, Release
+   moves >0.5 dB: attack 0.9 +0.93; attack 12.0 -1.26; attack 20.0 -1.88; attack 100.0 -1.60; release 0.05 -1.39; release 0.25 +0.73; release 0.50 +0.97
+   within 0.5 dB: attack 8.0 +0.00; release 0.10 +0.00
+TBTECH Cenozoix Compressor [PUB] control(s) Att Time, Rel Time
+   moves >0.5 dB: attack  -0.70; attack  -1.04; attack  -1.49; release  -2.08; release  -0.80
+   within 0.5 dB: attack  +0.38; attack  +0.30; attack  +0.16; attack  -0.09; attack  -0.38; release  -0.32; release  -0.06; release  +0.07; release  +0.15; release  +0.22; release  +0.27
+SSLComp (m) [PUB] control(s) Attack, Release
+   moves >0.5 dB: attack 30ms -1.13
+   within 0.5 dB: attack .1ms +0.09; attack .3ms +0.06; attack 1ms +0.00; attack 3ms -0.15; attack 10ms -0.46; release .1s -0.32; release .3s -0.22; release .6s -0.08; release 1.2s +0.00; release Auto -0.08
+SSLComp (s) [PUB] control(s) Attack, Release
+   moves >0.5 dB: attack 30ms -1.13
+   within 0.5 dB: attack .1ms +0.09; attack .3ms +0.06; attack 1ms +0.00; attack 3ms -0.15; attack 10ms -0.46; release .1s -0.32; release .3s -0.22; release .6s -0.08; release 1.2s +0.00; release Auto -0.08
+dbx-160 (m) [PUB] control(s) -, -
+   moves >0.5 dB: none
+   within 0.5 dB: none
+RCompressor (m) [PUB] control(s) Attack, Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 0.50 +0.00; attack 1.34 +0.00; attack 3.60 +0.00; attack 9.65 +0.00; attack 25.9 -0.00; attack 69.5 +0.00; attack 186 -0.00; attack 500 +0.01; release 5.00 -0.00; release 13.4 -0.00; release 36.0 -0.00; release 96.5 -0.00; release 259 +0.00; release 695 +0.00; release 1864 +0.00; release 5000 +0.00
+RCompressor (s) [PUB] control(s) Attack, Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 0.50 +0.00; attack 1.34 +0.00; attack 3.60 +0.00; attack 9.65 +0.00; attack 25.9 -0.00; attack 69.5 +0.00; attack 186 -0.00; attack 500 +0.01; release 5.00 -0.00; release 13.4 -0.00; release 36.0 -0.00; release 96.5 -0.00; release 259 +0.00; release 695 +0.00; release 1864 +0.00; release 5000 +0.00
+Pro Audio DSP DSM V3 [PUB] control(s) Attack, Release
+   moves >0.5 dB: attack 62.3 ms -0.52; attack 76.4 ms -0.59; attack 92.8 ms -0.66; attack 112 ms -0.71; attack 134 ms -0.74; attack 158 ms -0.77; attack 186 ms -0.81; attack 218 ms -0.84; attack 254 ms -0.88; attack 293 ms -0.92; attack 337 ms -0.96; attack 386 ms -1.00; attack 440 ms -1.02; attack 500 ms -1.03
+   within 0.5 dB: attack 0.10 ms +0.05; attack 0.11 ms +0.05; attack 0.14 ms +0.04; attack 0.22 ms +0.03; attack 0.40 ms +0.02; attack 0.72 ms +0.01; attack 1.25 ms -0.01; attack 2.05 ms -0.03; attack 3.23 ms -0.05; attack 4.87 ms -0.08; attack 7.08 ms -0.11; attack 9.99 ms -0.14; attack 13.7 ms -0.18; attack 18.4 ms -0.23; attack 24.2 ms -0.27; attack 31.3 ms -0.33; attack 39.9 ms -0.38; attack 50.1 ms -0.45; release 20.0 ms -0.39; release 107 ms -0.18; release 719 ms -0.04; release 2.38 s +0.01; release 5.61 s +0.03; release 10.9 s +0.04; release 18.9 s +0.05; release 30.0 s +0.05
+MCompressor [PUB] control(s) Attack, Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 0 ms +0.10; attack 0.42 ms +0.09; attack 6.7 ms +0.02; attack 34 ms -0.07; attack 107 ms -0.15; attack 260 ms -0.20; attack 540 ms -0.23; attack 1000 ms -0.25; release 0 ms -0.31; release 0.42 ms -0.26; release 6.7 ms -0.12; release 34 ms -0.02; release 107 ms +0.03; release 260 ms +0.06; release 540 ms +0.08; release 1000 ms +0.08
+SSL Native X-Comp v6 [RULED ] control(s) Attack, Release
+   moves >0.5 dB: attack 0.50 +0.73; attack 1.02 +0.66; attack 22.51 -0.51; attack 40.67 -1.02; attack 66.17 -1.55; attack 100.00 -2.08; release 1.00 -6.42; release 1.03 -6.35; release 1.13 -6.14; release 1.42 -5.61; release 2.04 -4.83; release 3.19 -3.94; release 5.11 -3.10; release 8.07 -2.38; release 12.42 -1.79; release 18.54 -1.31; release 26.85 -0.93; release 37.86 -0.63; release 435.79 +0.51; release 522.19 +0.55; release 620.63 +0.58; release 732.47 +0.61; release 859.35 +0.64; release 1002.15 +0.66; release 1161.65 +0.68; release 1340.21 +0.69; release 1538.08 +0.71; release 1757.98 +0.72; release 2000.00 +0.73
+   within 0.5 dB: attack 3.90 +0.38; attack 10.64 -0.03; release 52.03 -0.39; release 70.04 -0.20; release 92.39 -0.04; release 119.90 +0.09; release 153.25 +0.19; release 193.06 +0.28; release 240.44 +0.36; release 295.95 +0.42; release 360.65 +0.47
+UnFairchild [PUB] control(s) L Attack, R Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 1.0 +0.00; attack 2.0 +0.00; attack 3.0 +0.00; attack 4.0 +0.00; attack 5.0 +0.00; attack 6.0 +0.00; attack 7.0 +0.00; attack 8.0 +0.00; attack 9.0 +0.00; attack 10.0 +0.00; attack 11.0 +0.00; attack 12.0 +0.00; release 1.0 +0.00; release 2.0 +0.00; release 3.0 +0.00; release 4.0 +0.00; release 5.0 +0.00; release 6.0 +0.00; release 7.0 +0.00; release 8.0 +0.00; release 9.0 +0.00; release 10.0 +0.00; release 11.0 +0.00; release 12.0 +0.00
+Lindell 7X-500 [RULED ] control(s) Attack, Release
+   moves >0.5 dB: attack Fast +3.41; attack Medium +2.13; release Medium +1.99; release Slow +3.20
+   within 0.5 dB: attack Slow +0.00; release Fast +0.00
+Lindell 254E [PUB] control(s) -, Compress Recovery
+   moves >0.5 dB: release 100mS -0.66
+   within 0.5 dB: release 400mS -0.02; release 800mS +0.14; release 1.5S +0.24; release Auto +0.00
+Bettermaker Bus Compressor DSP [PUB] control(s) ATTACK, RELEASE
+   moves >0.5 dB: none
+   within 0.5 dB: attack 0.10 -0.00; attack 8.70 +0.00; attack 17.20 +0.00; attack 25.80 +0.00; attack 34.30 +0.00; attack 42.90 +0.00; attack 51.40 +0.00; attack 60.00 +0.00; release 10.00 -0.06; release 180.00 -0.00; release 350.00 +0.00; release 520.00 +0.00; release 690.00 +0.00; release 860.00 +0.00; release 1030.00 +0.00; release 1200.00 +0.00
+Lindell SBC [PUB] control(s) Attack, Release
+   moves >0.5 dB: none
+   within 0.5 dB: attack 0.03 ms +0.01; attack 0.1 ms -0.00; attack 0.3 ms -0.00; attack 1 ms +0.00; attack 3 ms +0.00; attack 10 ms +0.00; attack 30 ms +0.01; release 0.050 -0.00; release 0.121 -0.00; release 0.193 -0.00; release 0.321 -0.00; release 0.679 +0.00; release 1.179 +0.00; release 1.929 +0.00; release 3.000 +0.00
+SSL LMC+ [PUB] control(s) -, -
+   moves >0.5 dB: none
+   within 0.5 dB: none
+Shadow Hills Class A Mastering Comp [RULED PUB] control(s) Discrete Attack 1, Discrete Recover 1
+   moves >0.5 dB: attack 0.1 ms +3.51; attack 0.5 ms +3.38; attack 1 ms +3.11; attack 5 ms +2.60; attack 10 ms +1.54; release 0.25 s +0.55; release 0.5 s +1.38; release 0.8 s +1.66; release 1.2 s +2.07; release Dual +1.10
+   within 0.5 dB: attack 30 ms +0.00; release 0.1 s +0.00
+Shadow Hills Mastering Compressor [RULED PUB] control(s) Discrete Attack 1, Discrete Recover 1
+   moves >0.5 dB: attack 0.1 ms +5.95; attack 0.5 ms +5.70; attack 1 ms +5.22; attack 5 ms +4.22; attack 10 ms +2.58; release 0.25 s +0.93; release 0.5 s +2.31; release 0.8 s +2.77; release 1.2 s +3.36; release Dual +1.81
+   within 0.5 dB: attack 30 ms +0.00; release 0.1 s +0.00
+U73b Compressor [PUB] control(s) -, Release Time
+   moves >0.5 dB: none
+   within 0.5 dB: release 0 -0.08; release 1 -0.03; release 2 +0.00; release 3 +0.01; release 4 +0.04; release 5 +0.07
+SSL Native Bus Compressor 2 [PUB] control(s) Attack, Release
+   moves >0.5 dB: release 0.6 +0.51; release 0.8 +0.54; release 1.2 +0.57
+   within 0.5 dB: attack 0.1 +0.22; attack 0.3 +0.22; attack 1 +0.21; attack 3 +0.20; attack 10 +0.17; attack 20 +0.13; attack 30 +0.11; release 0.1 +0.40; release 0.3 +0.45; release 0.4 +0.48; release AUTO +0.00
