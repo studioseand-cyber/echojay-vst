@@ -75,6 +75,7 @@
 #include "EjmapRoleEvidence.h"
 #include "EjmapPhaseB.h"
 #include "EjmapJobs.h"
+#include "EjmapSleepGuard.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -2782,7 +2783,7 @@ inline juce::var finishRecord (const SweepOptions& opt, const juce::File& record
 
 inline int runPreflight (const SweepOptions& opt, const juce::File& executable)
 {
-    std::cout << "EJ Map pre-flight" << std::endl;
+    std::cout << "EJ Map pre-flight - build " << (runningBuild().isNotEmpty() ? runningBuild() : juce::String ("(unknown)")) << std::endl;   // 11 Oct: a wrong install is obvious
     std::cout << "  executable : " << executable.getFullPathName() << std::endl;
     {
         auto d = runChild ({ "/usr/bin/codesign", "-dvv", executable.getFullPathName() }, 20000);
@@ -2798,6 +2799,10 @@ inline int runPreflight (const SweepOptions& opt, const juce::File& executable)
     std::cout << "  ledger     : " << opt.ledger.getFullPathName() << (opt.ledger.exists() ? "" : "  (MISSING - scan first)") << std::endl;
     std::cout << "  iLok       : " << iLokPresence() << std::endl;
     std::cout << "  power      : " << runChild ({ "/usr/bin/pmset", "-g", "ps" }, 10000).out.upToFirstOccurrenceOf ("\n", false, false).trim() << std::endl;
+    // 11 Oct: the Mac must not be able to sleep through the run
+    const auto sg = sleepguard::judge (runChild ({ "/usr/bin/pmset", "-g", "ps" }, 10000).out, runChild ({ "/usr/bin/pmset", "-g", "assertions" }, 10000).out, runChild ({ "/usr/bin/pmset", "-g" }, 10000).out);
+    std::cout << "  sleep      : " << sg.line << std::endl;
+    if (! sg.ok) { std::cout << "  FIX        : " << sg.fix << std::endl << "PRE-FLIGHT: REFUSED - the Mac can sleep; nothing was started" << std::endl; return 3; }
     return id.ok ? 0 : 3;
 }
 
@@ -6392,6 +6397,12 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 { if (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()).getProperty ("outcome", "").toString() == "timed_out" && (cat.name == "gaincal" || cat.name == "gainall")) resumeTraces.insert (cat.name + "/" + pp.stem);
                   rowFile (phasebDir, cat.name, pp.stem).deleteFile(); ++redone; }
     if (! redo.isEmpty()) say ("PHASEB: --redo " + redo.joinIntoString (",") + ": " + juce::String (redone) + " finished row(s) run again");
+    {   // 11 Oct: a row filed slept is measured again on every resume (its data is not trusted; never deleted by hand)
+        int refiled = 0;
+        for (const auto& cat : categories()) if (work.count (cat.name)) for (const auto& pp : work[cat.name])
+            if (isDone (phasebDir, cat.name, pp.stem) && phaseb::refileSlept (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()))) { rowFile (phasebDir, cat.name, pp.stem).deleteFile(); ++refiled; }
+        if (refiled > 0) say ("PHASEB: " + juce::String (refiled) + " row(s) filed 'the Mac slept' run again (their data was not trusted)");
+    }
     {   // 10 Oct: a row filed needs_device runs again once the device is present (the 44 UAD EQ rows of Sean's 10 Oct night)
         bool anyUad = false; for (const auto& [c, l] : work) for (const auto& pp : l) if (uad::isUadProduct (pp.product, pp.desc.manufacturerName)) anyUad = true;
         if (anyUad)
@@ -6560,7 +6571,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 }
                 row->setProperty ("child", r.describe()); row->setProperty ("exit_code", r.code); row->setProperty ("slept_ms", r.sleptMs);
                 if (r.kind == ChildResult::Kind::exited && r.code == 4) row->setProperty ("nothing_measured", true);   // exit 4 = nothing to measure (nothing nominated, or nothing moved): --redo nothing_nominated finds it even with a record
-                if (slept) row->setProperty ("reason", "the Mac slept during the measurement (" + juce::String (r.sleptMs / 1000.0, 1) + " s): recorded, the data is not trusted; delete this row to re-run");
+                if (slept) row->setProperty ("reason", "the Mac slept during the measurement (" + juce::String (r.sleptMs / 1000.0, 1) + " s): recorded, the data is not trusted; it runs again on the next run");
                 // CRASH POSITIONS (10 Oct): measured one step inside; carried by the row and every record / draft moved below
                 juce::Array<juce::var> crashPos;
                 { juce::StringArray tr; for (const auto& f : tmp.getChildFile ("raw").findChildFiles (juce::File::findFiles, false)) tr.add (f.loadFileAsString()); crashPos = crashPositionsOf (tr); }
