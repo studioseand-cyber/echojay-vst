@@ -398,6 +398,10 @@ ej_add_guard(userdata_write_guard     SOURCE tools/userdata_write_guard/harness.
 # is why a remote rack's IN/OUT readouts were read-only. Stages 3-5 add to this guard (the ring, open_editor,
 # undo over the transport), which is why it is its own file rather than legs bolted onto level_slot_guard.
 ej_add_guard(remote_ops_guard         SOURCE tools/remote_ops_guard/harness.cpp              LABEL fast SCRIBBLE)
+# 11 Oct 2026, plan section 6's removals: Sean's rule for the migration - "a borrowed copy saved by an older build
+# must never be lost (the 4 Oct case) and never doubled" - as a gated test, both halves, plus the new fact that
+# makes the rule finite: a build on a Link rack is a COMMAND now, so nothing lives only on the V2 side.
+ej_add_guard(borrow_migration_guard   SOURCE tools/borrow_migration_guard/harness.cpp        LABEL fast SCRIBBLE)
 ej_add_guard(mapfps_sync_guard        SOURCE tools/mapfps_sync_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(own_diff                 SOURCE tools/own_diff/harness.cpp                       LABEL fast
              WRAPPER run_own_diff.sh WRAPPER_ARG e16eb2d8c4e59156ad912967b611fc8364452980c6fbf0aa083d5f02c1937fc7)
@@ -426,6 +430,13 @@ add_test(NAME rt_role_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/rt_role_guard
 set_tests_properties(rt_role_guard PROPERTIES LABELS "fast" TIMEOUT 120 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME state_path_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/state_path_guard/build_and_run.sh)
 set_tests_properties(state_path_guard PROPERTIES LABELS "fast" TIMEOUT 120 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# 11 Oct 2026: THE DOWNGRADE RULE, MECHANISED. "A project written by the new build must open sensibly in
+# ship_2026-10-09a - new state fields additive, nothing the old build depends on removed or renamed" has been
+# checked by reading the diff and saying "additive" at the end of every round. A REMOVAL round is the worst
+# possible round to rely on that, so it is a test: each reference build's own source supplies the keys it both
+# read and wrote, and a key this tree no longer writes must carry a recorded reason.
+add_test(NAME downgrade_keys_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/downgrade_keys_guard/build_and_run.sh)
+set_tests_properties(downgrade_keys_guard PROPERTIES LABELS "fast" TIMEOUT 120 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # 21t-d: one process, but the same shape - a real LinkProcessor against the Link archive, so it lives here.
 add_test(NAME calib_link_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/calib_link_guard/build_and_run.sh)
 set_tests_properties(calib_link_guard PROPERTIES LABELS "fast" TIMEOUT 900 RUN_SERIAL TRUE WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

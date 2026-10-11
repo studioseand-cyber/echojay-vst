@@ -676,6 +676,23 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     // Returns the command seq (>0) or -1 (no session / no shared dir). Logs "EJLink: push <op> slot=<n> count=<a>-><b> id=<uid>".
     int  borrowPushStructuralEdit(const juce::String& op, int slot0, int to0, bool on, const juce::String& name,
                                   const juce::StringArray& baseSlotsBefore, int countBefore);
+    // ---- 11 Oct 2026: A BUILD IS A COMMAND TOO ---------------------------------------------------------
+    // The one edit on a Link rack that was NOT a command. Every other - add, remove, move, bypass, replace -
+    // went through the push above the moment the user made it, acked and rebased (20 Sep, rebase-on-ack). A
+    // BUILD did not: it landed in the mirror and waited for the rack to be left, "the Link refuses chain-cmds
+    // while leased" (sendChainToLink's own note). That refusal only ever applied to a sender that was NOT the
+    // holder, and the holder is who is building - so the build had been free to travel for three weeks.
+    //
+    // It is Sean's 4 October bug at the root: a chain built on a Link and SAVED without switching racks lived
+    // only on this side. The save fix carried it across (borrowedRacks, and the revision tie-break that keeps
+    // a deleted rack deleted); this removes the reason it had to be carried. Nothing lives only in the mirror,
+    // so that whole class of loss cannot recur - and the migration below stays for the projects that still
+    // hold one.
+    //
+    // ONE QUEUE for every structural edit: the same ack poll, the same rebase, the same "unacked in 5 s, the
+    // user is told rather than the edit quietly waiting" path. Returns the seq (>0) or -1.
+    int  borrowPushBuiltChain(const juce::var& editOps, const juce::StringArray& baseSlotsBefore,
+                              int countBefore, int countAfter);
     // The ONE chain-command writer (chain-cmd-<uid>.json v:2): editOps + baseSlots (+ leaseId when the sender holds the rack's
     // lease). Used by the editor's Link-tab edit path and by the borrowed-rack push above. Returns the seq or -1.
     int  writeChainEditCommand(const juce::String& linkUid, const juce::var& editOps, const juce::var& baseSlots,

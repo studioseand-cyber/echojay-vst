@@ -176,6 +176,39 @@ same rule the loudness work already follows applies: a figure is only evidence w
 
 ## 6. Removing the lease — what goes, and which bugs go with it
 
+> **STATUS, 11 October 2026: DONE, except the borrowed host as an OBJECT.**
+>
+> The lease no longer touches audio or bypass, and the audio detour is deleted: the ring consume, the
+> borrowed host's `process`, the stamp-based alignment, the two delay lines, the 16,384-sample budget
+> (so addressing a Link now costs the host **no PDC at all**), `borrowCtxMix_`, the injection, the
+> in-context decision and its banners, the mute closed loop, the honorary strip and the monitoring
+> fallback. On the Link: `rackLeaseEngage`/`Release`, `rackLeasePrior_`, `leasePriorBypass_`,
+> `rackLeaseMuteWant_`, `slotWetParkedSaid_`, the parked-rack arm, `leaseBaseRev_` as a live field, the
+> prior remap, and in `ChainHost` the whole bypass overlay (`setLeaseBypass`, `setAttachBypassed`,
+> `attachBypassed_`).
+>
+> **Three deviations from the list above, each deliberate:**
+>
+> 1. `rackLeaseEditPending_` **stays.** The list puts it with the removals, but the plan's own principle
+>    is that the lease survives as a *control* concept, and this is one: an edit from the holder has not
+>    acked, so the lock is held for a reason and the Link's banner says which. It is not an audio fact.
+> 2. `leaseBaseRev` **stays in the saved chunk, as a pass-through** of whatever that chunk carried.
+>    Deleting it would make every older V2's saved borrowed copy read `-1`, which is the one value that
+>    drops it — §8's migration, reintroducing Sean's 4 October bug by way of a deletion.
+> 3. The **borrowed host object** stays, as a non-authoritative mirror — Sean's ruling, 11 October, on a
+>    recommendation. It is no longer an audio path; it is the V2 editor's read model for a Link rack
+>    (slot names, dial maps, master wet, loop state, the EQ editors, Save). Removing it is a re-routing
+>    of 119 direct uses and ~10 gated harnesses onto commands and the sidecar, and it is mechanical only
+>    once nothing depends on that mirror being authoritative — which is what this round made true.
+>
+> **One finding from doing it.** Leaving the ring consume running would not have been safe. The ring taps
+> *post-rack*, and since stage 1 the Link's rack is no longer bypassed while addressed, so the V2's copy
+> was being fed a channel this rack had already processed and processing it **again**. Anything that
+> *measured* on that copy measured double processing — and the compressor calibration did, because
+> `calibTick` advanced the loop on the borrowed host for a leased rack. Nobody could hear it, because
+> stage 1 had already stopped anyone listening to that copy. The owner now follows the audio: the Link
+> always measures and steps its own rack, and the V2 renders the card from what that Link publishes.
+
 If the Link always processes its own rack, selecting a Link in the V2 stops being an audio act and becomes
 **"which Link am I addressing"**. Then all of this can go:
 

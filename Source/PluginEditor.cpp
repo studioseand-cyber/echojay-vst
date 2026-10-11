@@ -37235,6 +37235,9 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
         }
         // ONE conversion, shared with the functional gate.
         auto ops = ChainHost::chainArrayToReplaceOps(*arr, nOld);
+        // 11 Oct 2026: ...and the SAME ops in wire form, so the Link gets what the mirror got. Taken here,
+        // before `ops` is moved into the sequencer.
+        const juce::var opsWire = ChainHost::editOpsToWireVar (ops);
         const int expectAdds = (int) ops.size() - nOld;
         EchoJay_NSLog(("EJChain: build target uid=" + linkUid
             + "  path=SESSION (borrowed host) removes=" + juce::String(nOld)
@@ -37245,13 +37248,24 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
             + " plugin(s) into your edit session...";
         chainListPanel.repaint();
         const juce::String chainJsonForBubble = chainJson;   // amendment 3: the SESSION path composes the same bubble as the own-rack path
-        auto finishCb = [safeThis, linkUid, chainJsonForBubble](const juce::StringArray& results,
+        auto finishCb = [safeThis, linkUid, chainJsonForBubble, opsWire, baseNow, nOld](const juce::StringArray& results,
                                 int applied, bool aborted)
         {
             if (safeThis == nullptr) return;
             auto& p4 = safeThis->processorRef;
             auto* bh2 = p4.borrowHostIfActiveFor(linkUid);
             if (bh2 == nullptr) return;
+            // ---- 11 Oct 2026: THE BUILD IS A COMMAND ---------------------------------------------------
+            // Sent HERE rather than at send time, because here is where the build actually landed and the
+            // count is known. Not sent on an ABORT: the mirror does not have the rack, so neither should the
+            // Link - and the user is already told ("Build stopped early") rather than left with two racks
+            // that disagree. The count is logged on both sides of the push so a divergence is readable
+            // instead of inferred.
+            if (! aborted)
+                p4.borrowPushBuiltChain (opsWire, baseNow, nOld, bh2->getNumSlots());
+            else
+                EchoJay_NSLog (("EJLink: build ABORTED on the mirror for uid=" + linkUid
+                                + " - NOT pushed to the Link; its rack is left as it was").toRawUTF8());
             // WHOLESALE session bookkeeping: every surviving slot is a
             // CREATE (origin -1, name-only identity — never a substitute's
             // uid — and a record). The base identity snapshot stays: the

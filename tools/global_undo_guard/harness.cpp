@@ -165,6 +165,47 @@ int main()
         EchoJayAlignTestAccess::setLinks (p, {});
     }
 
+    // ---- 11 Oct 2026 (Sean's leg, the removals): ONE UNDO WALKS V2 AND LINK EDITS IN ORDER -------------
+    //
+    // Every leg above proves ONE entry class in isolation. None of them proves the thing the plan actually
+    // promises - "the entry is a CHAIN entry in the plugin-wide history, the same class the local rack uses,
+    // so one Undo button walks local and remote edits in one order" (section 9). Under remote control that is
+    // most of the product, because then every rack edit is a command to a Link; a history that recorded both
+    // but unwound them in two separate orders would be worse than one that recorded neither, since the user
+    // would be pressing Undo and watching the wrong thing move.
+    //
+    // So: three edits, alternating sides, then three undos. The assertion is the ORDER - strict LIFO across
+    // the two - and it is made on the entry's own kind and target, not on a count.
+    {
+        std::vector<EchoJayProcessor::LinkSlotInfo> links;
+        EchoJayProcessor::LinkSlotInfo li; li.name = "Kick"; li.uid = "lnk_mix"; li.active = true;
+        li.connected = true; li.channels = 2; li.gainDb = 0.0f; links.push_back (li);
+        EchoJayAlignTestAccess::setLinks (p, links);
+        const int base = U.undoDepth();
+
+        h.setSlotKeepLevel (1, true);                      // (1) LOCAL rack
+        p.recordLinkGainUndo ("lnk_mix", 0.0f, -4.0f);     // (2) the KICK's trim, on its Link
+        h.setSlotKeepLevel (1, false);                     // (3) LOCAL rack again
+
+        check (U.undoDepth() == base + 3,
+               "order. three alternating edits make three entries in ONE history",
+               juce::String (U.undoDepth() - base));
+        check (U.top() != nullptr && U.top()->kind == "keep",
+               "order. the newest is the LAST edit made - the local one", U.undoLabel());
+        U.undo();
+        check (U.top() != nullptr && U.top()->kind == "linkGain" && U.top()->target == "lnk_mix",
+               "order. ...then the LINK edit, not the next local one  (this is the leg that fails if remote "
+               "entries live in their own stack)",
+               U.top() != nullptr ? U.top()->kind + " -> " + U.top()->target : juce::String ("(none)"));
+        U.undo();
+        check (U.top() != nullptr && U.top()->kind == "keep",
+               "order. ...then the FIRST local edit: strict LIFO across both sides", U.undoLabel());
+        U.undo();
+        check (U.undoDepth() == base,
+               "order. three undos unwind exactly the three edits", juce::String (U.undoDepth() - base));
+        EchoJayAlignTestAccess::setLinks (p, {});
+    }
+
     // ---- depth 50 ----
     { for (int k = 0; k < 60; ++k) h.setSlotKeepLevel (1, (k % 2) == 0); check (U.undoDepth() == 50, "10. the history is bounded at 50 (60 keep toggles)", juce::String (U.undoDepth())); }
     std::printf ("\n==== global_undo_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);

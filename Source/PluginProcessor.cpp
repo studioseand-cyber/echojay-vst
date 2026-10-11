@@ -2889,6 +2889,30 @@ int EchoJayProcessor::borrowPushStructuralEdit(const juce::String& op, int slot0
     return pp.seq;
 }
 
+int EchoJayProcessor::borrowPushBuiltChain(const juce::var& editOps,
+                                           const juce::StringArray& baseSlotsBefore,
+                                           int countBefore, int countAfter)
+{
+    if (! borrowActive()) return -1;
+    const auto* arr = editOps.getArray();
+    if (arr == nullptr || arr->isEmpty()) return -1;
+    const juce::String uid = borrowSession_.uid;
+    juce::Array<juce::var> base; for (const auto& n : baseSlotsBefore) base.add (n);
+    BorrowPendingPush pp;
+    pp.seq       = LinkShm::nextCtrlSeq();
+    pp.id        = uid + "-" + juce::String (pp.seq);
+    pp.op        = "build";
+    pp.editOps   = editOps;
+    pp.baseSlots = juce::var (base);
+    borrowPendingPushes_.push_back (pp);
+    EchoJay_NSLog (("EJLink: push build ops=" + juce::String ((int) arr->size())
+                    + " count=" + juce::String (countBefore) + "->" + juce::String (countAfter)
+                    + " id=" + pp.id + " queued=" + juce::String ((int) borrowPendingPushes_.size())
+                    + " - the rack the user just built goes to the Link NOW, not at deselect").toRawUTF8());
+    borrowWriteHeadPush();
+    return pp.seq;
+}
+
 void EchoJayProcessor::borrowWriteHeadPush()
 {
     if (borrowPushInFlight_ || borrowPendingPushes_.empty() || ! borrowActive()) return;
@@ -3340,9 +3364,16 @@ void EchoJayProcessor::borrowEditorClosed()
     // is bumped from its own juce::Timer (30 Hz, every 30th tick), NOT from processBlock, so it keeps climbing with
     // the transport stopped and the track idle - which is exactly why a wall-clock age is a fair test here.
     //
-    // SKIPPING IS ONLY SAFE BECAUSE THE SAVE NOW CARRIES THE RACK. Before today there was no fallback and the
-    // hand-back was the only road home, which is why it was attempted unconditionally. getStateInformation's
-    // borrowedRacks key is the carrier now, and the next open hands the rack back from there.
+    // SKIPPING IS ONLY SAFE BECAUSE THE RACK IS NOT ONLY HERE. Before 4 October there was no fallback and the
+    // hand-back was the only road home, which is why it was attempted unconditionally. The save's borrowedRacks
+    // key was that fallback for a week.
+    //
+    // 11 Oct 2026: THE REASON CHANGED AND IT IS NOW A BETTER ONE. The Link already has the rack, because every
+    // structural edit and every build is a command sent and acked when it is made - so there is no copy to get
+    // home. What a Link that cannot answer costs is the UNACKED tail, and that is already ruled and already
+    // visible: those edits are dropped, not parked (6 Oct), and the user is told in a banner that names them
+    // rather than left with a promise. Plugin STATE still commits at deselect and still records an
+    // unwrittenEditNote_ when it cannot, which is the honest half of this path and is unchanged.
     {
         // The Link heartbeats at 1 Hz, so three seconds is three missed beats - comfortably past jitter and well
         // short of the ~6 s the reaper uses. A row we have never seen climb (-1) is not evidence of life either.
@@ -5545,65 +5576,31 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
         state->setProperty("savedChainName", savedChainName);
     }
 
-    // ---- 4 Oct 2026 (ruled): THE OPEN BORROWED RACK RIDES THE SAVE -----------------------------------------
+    // ---- 4 Oct 2026 (ruled), AND 11 Oct 2026 (NO LONGER WRITTEN) --------------------------------------
     //
-    // A chain built on a Link track while this instance holds the lease lives ONLY in borrowHost_ until a rack
-    // switch hands it back ("a chain build lands in the SESSION (the borrowed host), never on the Link" -
-    // sendChainToLink). Save without switching racks first and the rack was in no save format anywhere: this side
-    // wrote only its own chainHost, and the Link wrote its own empty chainModel. Sean's bug, exactly.
+    // SEAN'S BUG, and the fix that stood here. A chain built on a Link track while this instance held the
+    // lease lived ONLY in borrowHost_ until a rack switch handed it back ("a chain build lands in the SESSION
+    // (the borrowed host), never on the Link" - sendChainToLink). Save without switching racks first and the
+    // rack was in no save format anywhere: this side wrote only its own chainHost, and the Link wrote its own
+    // empty chainModel. So getStateInformation wrote the open borrowed rack under `borrowedRacks`, in the
+    // LINK'S OWN chain-array format, cache-only (nothing here may call into a hosted plugin: the host may
+    // call this off the message thread), and additive - the key existed only when a borrow was open.
     //
-    // SHAPE: the LINK'S OWN chain-array format, not this side's slotsXml. Restoring then means handing the array
-    // to the Link, which is the same thing a rack switch does and goes through the Link's own proven restore
-    // parser - rather than a second restore path that would drift from it.
+    // IT IS NOT WRITTEN ANY MORE, because the thing it carried cannot happen. A build on a Link rack is a
+    // COMMAND now, sent and acked when the user makes it (borrowPushBuiltChain), so the Link has the rack
+    // before any save is possible and its own chunk carries it. Writing a copy as well would mean two records
+    // of one rack, and the only thing that could then tell them apart is the revision tie-break - which is a
+    // mechanism for recovering from a bug, not a thing to keep feeding.
     //
-    // CACHE-ONLY: every per-slot plugin state comes from getCachedSlotStatesVar, whose own comment is
-    // "Serialises the cache and NOTHING else: no call into a hosted plugin, no work that can block, so this is
-    // safe inside the host's save callback." The host may call this off the message thread, so nothing here asks
-    // a plugin for anything or waits on anything.
+    // THE READER STAYS, and that is the migration (Sean's rule: never lost, never doubled). A project saved
+    // by an OLDER build still carries this key, and setStateInformation still parses it into
+    // pendingBorrowRestore_ for applyPendingBorrowRestores to hand back when that Link is first seen - on the
+    // Link's own two numbers, so a rack the user deleted stays deleted. See LinkProcessor::getStateInformation,
+    // where leaseBaseRev became a pass-through for exactly this reason.
     //
-    // ADDITIVE: the key is written ONLY when a borrow is actually open and holding slots, so a session with no
-    // borrow grows no key and reads byte-for-byte as before.
-    if (borrowActive() && borrowHost_ != nullptr && borrowHost_->getNumSlots() > 0)
-    {
-        const auto cached = borrowHost_->getCachedSlotStatesVar(ChainHost::kSessionStateMaxSlotBytes,
-                                                               ChainHost::kSessionStateMaxTotalBytes,
-                                                               "borrowedRack");
-        auto* cachedObj = cached.getDynamicObject();
-        juce::Array<juce::var> chainArr;
-        const int n = borrowHost_->getNumSlots();
-        for (int i = 0; i < n; ++i)
-        {
-            const auto si = borrowHost_->getSlotInfo(i);
-            auto* so = new juce::DynamicObject();
-            so->setProperty("name",      si.name);
-            so->setProperty("settings",  si.settings);
-            so->setProperty("bypassed",  si.bypassed);
-            so->setProperty("wet",       (double) si.wet);
-            so->setProperty("outGainDb", (double) borrowHost_->getSlotOutGainDb(i));
-            so->setProperty("preTrimDb", (double) borrowHost_->getSlotPreTrimDb(i));
-            if (const auto st = borrowHost_->getSlotStructured(i); ! st.isVoid())
-                so->setProperty("settings_structured", st);
-            if (cachedObj != nullptr)
-            {
-                const juce::String key (i + 1);          // the cache is keyed 1-based
-                if (cachedObj->hasProperty(key)) so->setProperty("state", cachedObj->getProperty(key));
-            }
-            chainArr.add(juce::var(so));
-        }
-        auto* entry = new juce::DynamicObject();
-        entry->setProperty("uid",       borrowSession_.uid);
-        entry->setProperty("baseRev",   borrowBaseRev_);
-        entry->setProperty("masterWet", (double) borrowHost_->getMasterWet());
-        entry->setProperty("chain",     chainArr);
-        juce::Array<juce::var> racks; racks.add(juce::var(entry));
-        state->setProperty("borrowedRacks", racks);
-        EchoJay_NSLog(("EJBorrow: SAVED open borrowed rack uid=" + borrowSession_.uid
-                       + " baseRev=" + juce::String(borrowBaseRev_)
-                       + " slots=" + juce::String(n)
-                       + " (the Link does not have this rack yet - it is handed back on a rack switch, and this is"
-                         " what carries it across a save that happened first)").toRawUTF8());
-    }
-
+    // DOWNGRADE-SAFE in the other direction too: an older build opening a project saved by this one simply
+    // finds the key absent, which is the case it was already written to handle - and it needs nothing from it,
+    // because the Link's chunk has the rack.
     juce::String json = juce::JSON::toString(juce::var(state.release()), true);
     destData.append(json.toRawUTF8(), json.getNumBytesAsUTF8());
     } catch (...) {}

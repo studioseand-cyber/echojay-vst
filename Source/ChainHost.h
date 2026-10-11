@@ -1174,6 +1174,35 @@ public:
             }
         return ops;
     }
+    // ---- 11 Oct 2026: THE SAME OPS, ON THE WIRE -------------------------
+    // A build on a Link rack is now a COMMAND, sent when it is made rather than staged until the rack is
+    // left (plan section 6: "every V2 edit to a Link becomes a command"). The V2 applies the ops above to
+    // its mirror and sends THESE to the Link, and both come from one conversion so the two cannot drift -
+    // which matters more than it sounds, because a drift here would show up as the Link's rack quietly
+    // differing from the one on screen, and the user would have no way to tell which was real.
+    //
+    // THE WIRE IS 1-BASED (parseChainEditOps: slot/to/after all take 1 off), the structs are 0-based. That
+    // is the convention and it has caught me out before, so the conversion is here beside its inverse.
+    static juce::var editOpsToWireVar (const std::vector<ChainEditOp>& ops)
+    {
+        juce::Array<juce::var> arr;
+        for (const auto& o : ops)
+        {
+            auto* eo = new juce::DynamicObject();
+            eo->setProperty ("op", o.op);
+            if (o.slot  >= 0) eo->setProperty ("slot",  o.slot + 1);
+            if (o.to    >= 0) eo->setProperty ("to",    o.to + 1);
+            if (o.after >= -1) eo->setProperty ("after", o.after + 1);
+            if (o.op == "bypass") eo->setProperty ("on", o.on);
+            if (o.name.isNotEmpty())     eo->setProperty ("name", o.name);
+            if (o.settings.isNotEmpty()) eo->setProperty ("settings", o.settings);
+            if (! o.structuredSettings.isVoid()) eo->setProperty ("settings_structured", o.structuredSettings);
+            if (o.wetPct >= 0.0f) eo->setProperty ("wet_pct", (double) o.wetPct);
+            arr.add (juce::var (eo));
+        }
+        return juce::var (arr);
+    }
+
     // ---- OP TARGETS v1: the two target resolvers -------------------------
     // Static and header-inline so the gate exercises the SHIPPED decision
     // rather than a copy of it. Both are pure over a list of the current
