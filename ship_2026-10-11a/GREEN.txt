@@ -1,0 +1,220 @@
+ship_2026-10-11a - GATED GREEN, 11 Oct 2026
+
+Branch feat/08c, HEAD e971e5b7. The remote-control REMOVALS (plan section 6), except the mirror object.
+
+GATE: 68/68. All five stages clean.
+  S1 archives (FORCED delete + relink, header change)  exit 0, 0 errors - BOTH trees (see the note below)
+  S2 guards (70 targets, full LTO relink)              exit 0, 0 errors
+  S3 formats (4 bundles)                               exit 0, 0 errors
+  S4 ctest -L "fast|plugins", 68 tests                 100% passed
+  S5 link_state_guard                                  GREEN (both sides)
+
+own_diff: Passed. The own-channel injection is byte-identical to the pin set on 10 October
+(e16eb2d8c4e59156ad912967b611fc8364452980c6fbf0aa083d5f02c1937fc7), so nothing in a round that deleted this
+much moved a built-in's schema or the prompt text.
+
+A NOTE ON S1, because it cost a gate run. The forced delete has to cover THREE archives, not one. The
+guard tree (build-guards) and the ship tree are the same; the SCRIPT-BASED two-sided guards -
+role_snapshot_guard, calib_link_guard, alias_mirror_guard, lease_id_guard, level_match_guard,
+linkmeter_harness - link build-release through tools/harness_build.py. Six of them refused on the first
+run, correctly and by name: "the V2 archive is OLDER than the headers this would compile against, so the
+two would disagree about every object's layout. That is a segfault in the V2 side, not a result." The pair
+guard did its job; I had deleted two archives out of three.
+
+BUNDLES (arm64 first, then x86_64 - all four universal)
+  EchoJay V2.component   413AE28D-83EF-3B03-8F7B-2CA2685CAF49   3D6E2B28-78D8-3549-8B86-51C53BF70899
+  EchoJay V2.vst3        0CF86F0E-3A40-39E5-95F7-6C3BFFDFB8BF   666DAAEA-F52B-3E67-9682-051196551260
+  EchoJay Link.component B1D23C5A-D9A3-367E-B226-94734DE9B3FB   3382B4C5-C84D-3ECC-816B-3A49DCE68FDA
+  EchoJay Link.vst3      14531EA3-971B-33A1-9BF6-C96C0423D998   FA20202C-3C7B-3931-9019-36EB460FD965
+place_ship.sh placed all four with no refusals.
+
+================================================================================================
+WHAT THIS BUILD IS
+================================================================================================
+
+The lease stops being an audio act, and the machinery that made it one is deleted.
+
+Sean's complaint was a kick that left its own channel strip, its sends and its drum bus UNPROCESSED while
+the processed copy was summed in at the V2's position. Stage 1 (10 Oct) turned that off behind named
+predicates and left the paths in place, because "the detour's machinery is the only existing description of
+what correct monitoring looked like, and deleting it in the same change that disables it would leave
+nothing to compare a regression against". Stages 1-5 are green, so this is the deletion.
+
+THE LINK SIDE
+  rackLeaseEngage / rackLeaseRelease -> rackLeaseAddress(), with no counterpart: an engage no longer does
+  anything a release has to undo. Gone with them: rackLeasePrior_ (and with it the persistent bypass after
+  a hand-back, which came from a slot ADDED during a lease having no prior), leasePriorBypass_,
+  rackLeaseMuteWant_, slotWetParkedSaid_ and the parked-rack arm, leaseBaseRev_ as a live field, and the
+  prior remap through a structure plan. In ChainHost the whole bypass OVERLAY: setLeaseBypass,
+  setAttachBypassed, attachBypassed_. setSlotBypassed is the one author now and intendedBypassed moves with
+  it, so the bypass DISPLAY bug has nothing left to read.
+
+  An older V2's muteOut is no longer merely disobeyed - it is not read. Selecting a Link cannot silence a
+  channel by any route, and linksync_test proves it on rendered audio through a REAL lease file.
+
+THE V2 SIDE
+  The ring consume, borrowHost_->process, the stamp-based alignment, both AlignDelay lines, the
+  16,384-sample budget, borrowCtxMix_, the injection, the in-context decision and its three banners, the
+  mute closed loop, the honorary strip and the monitoring fallback.
+
+  ADDRESSING A LINK NOW COSTS THE HOST NO PDC AT ALL. The budget was added to this plugin's reported
+  latency whenever a capable Link was merely PRESENT in the session - 341.3 ms at 48 k, paid whether or not
+  any rack was ever addressed. A project with twelve Links carried it for all twelve.
+
+A BUILD IS A COMMAND
+  The last V2 edit that was not. Every other structural edit had gone to the Link when it was made since
+  20 September; a build landed in the mirror and waited for the rack to be left, on the stated grounds that
+  "the Link refuses chain-cmds while leased" - a refusal that only ever applied to a sender that is NOT the
+  lease holder, and the holder is who is building. Nothing a user builds lives only on the V2 side now, so
+  the 4 October save fix's key (borrowedRacks) is no longer WRITTEN. Its READER stays, for the projects
+  that still hold one.
+
+================================================================================================
+THE FINDING THIS ROUND TURNED UP, which is the one worth reading
+================================================================================================
+
+Leaving the ring consume running would not have been safe. The ring taps POST-RACK, and since stage 1 the
+Link's own rack is no longer bypassed while addressed - so the V2's copy was being fed a channel this rack
+had already processed, and processing it AGAIN.
+
+Anything that MEASURED on that copy was measuring double processing, and the compressor calibration did:
+calibTick advanced the loop on the borrowed host for a leased rack. Nobody could hear it, because stage 1
+had already stopped anyone listening to that copy. It is the same shape as the GR unit bug found on 10
+October - a number with nothing to contradict it.
+
+The owner follows the audio now. The Link always measures and steps its own rack (calibTickOwnRack's lease
+gate and startCalibFromBlock's refusal both go); the V2 renders the card from what that Link publishes,
+which is what it already did after a deselect. calib_link_guard's 21t-g (6a) leg is inverted to match, and
+still proves it on the ADDRESSING rather than on an empty rack so "started" cannot be a coincidence.
+
+================================================================================================
+IN-HOST TESTS THIS BUILD IS FOR
+================================================================================================
+
+1. THE KICK, which is the whole point. A Link on a kick, routed to a drum bus, selected in the V2. The
+   kick should go through its fader, its sends and the drum bus exactly as it does unselected - and
+   DESELECTING should change nothing audible either. The acceptance test from stage 1 is green on rendered
+   audio; this is it with your ears and your routing.
+2. SELECT AND DESELECT A LINK WHILE PLAYING. No volume jump, no PDC re-run, no silence, no click. The
+   budget is gone, so the reported latency no longer changes when a Link appears or is addressed.
+3. BUILD A CHAIN ON A LINK AND SAVE WITHOUT SWITCHING RACKS. Reopen. The rack should be there, once. This
+   is the 4 October bug, and the build now reaches the Link when you make it rather than when you leave.
+4. OPEN A PROJECT SAVED BY ship_2026-10-10b OR 09a that had a rack addressed. Nothing doubled, nothing
+   lost. If that project was saved mid-lease its borrowed copy is still handed back, on the Link's own two
+   revisions.
+5. A COMPRESSOR CALIBRATION ON A LINK RACK. The figures are now measured by the Link, on the plugins in the
+   audio path. Worth a look at whether the numbers are the ones you would expect, because until today they
+   were measured on doubly-processed audio.
+6. SOLO A LINK, addressed and not addressed. The sound should not change depending on whether it is
+   selected - it is heard from its own ring either way now. (Whether solo should inject at all is a
+   question in the next round's queue, deliberately not answered here.)
+
+================================================================================================
+DOWNGRADE SAFETY
+================================================================================================
+
+MECHANISED THIS ROUND, and that is new: downgrade_keys_guard (gated, 0.16 s) reads each reference build's
+OWN SOURCE at its commit, takes the state keys it both READ and WROTE - that build's live contract with
+itself - and fails if this tree no longer writes one without a recorded reason. The rule has been argued in
+prose at the end of every round; a removal round is the worst one to rely on that.
+
+It reports GREEN with exactly one deliberate removal, named and reasoned in the guard itself:
+  borrowedRacks (and uid / baseRev / chain, its entry's fields). An older build finds the key ABSENT, which
+  is the case it was always written to handle - it was additive from the start, present only while a borrow
+  was open - and it needs nothing from it, because the Link's own chunk has the rack.
+
+It also found, on its first pass, chainLoadedDescXml: a legacy READER kept for the single-plugin key from
+before chainSlotsXml, which nothing has written for a long time. That is why the comparison is against the
+old build's read+write contract and not just its reads.
+
+The Link's own chunk: all 21 keys both reference builds read are still written. leaseBaseRev among them -
+it is a PASS-THROUGH of whatever the chunk carried now, because writing a live -1 would make every older
+V2's saved copy read "no borrow was open", which is the one value that DROPS it. That is Sean's 4 October
+bug, reintroduced by a deletion, and it is the trap this migration was most likely to fall into.
+
+WHAT THE GUARD CANNOT DO, said plainly: it does not run the old binary, so it proves the SHAPE is still
+fed, not that the old build is happy with the VALUES. A key whose meaning changed while its name stayed
+would pass.
+
+================================================================================================
+SEAN'S THREE LEGS
+================================================================================================
+
+1. A CHAIN BUILT ON A LINK AND SAVED WITHOUT SWITCHING RACKS REOPENS INTACT, NO DOUBLING.
+   borrow_migration_guard (new, gated). Never lost: an older build's blob whose Link says
+   rev == leaseBaseRev is handed back, with the per-slot out gain, pre-trim, bypass and wet. Never doubled:
+   the same blob whose Link MOVED after the borrow began is DROPPED, which is what keeps a deleted rack
+   deleted. Plus the degenerate reading is the safe one, the entry WAITS for its Link so both load orders
+   work, and the two new claims - a save with a rack addressed writes no borrowedRacks key, and the build
+   reached the Link as a command.
+   PROVEN BOTH DIRECTIONS: the previous build's write was restored verbatim, the V2 archive rebuilt, and
+   the leg reported "FAIL (1) ... [present]". A guard for a removal that cannot see the thing it removed is
+   unfalsifiable.
+
+2. ONE UNDO WALKS V2 AND LINK EDITS IN ORDER.
+   global_undo_guard. Every existing leg proved one entry class in isolation; none proved the ORDER, which
+   is what the plan's section 9 promises and is most of the product once every rack edit is a command.
+   Three alternating edits, three undos, strict LIFO across both sides, asserted on each entry's own kind
+   and target rather than on a count.
+
+3. A PROJECT SAVED BY THIS BUILD OPENS IN ship_2026-10-10b AND 09a.
+   downgrade_keys_guard, above. 10-10b's commit is named in its own GREEN.txt (51ef90a3); 09a's folder is
+   untracked, so its commit is DERIVED as the last one before its 01:25 gate (157d1fa9) and the guard says
+   so every run rather than implying a record it does not have.
+
+================================================================================================
+WHAT THE GATE CAUGHT, AND IT WAS A REAL DEFECT
+================================================================================================
+
+calibTick both ADVANCES a loop and RENDERS its card, and I moved both when only advancing should have
+moved: the early return for a Link uid handed back {} instead of loop.card(). On a Link rack mid-hunt the
+card went blank. ui_guard's 21t-d wiring leg - "V2 renders the card from a loop the OTHER host is running"
+- caught it within the hour. The fix is smaller than the defect: a Link rack takes the road a rack whose
+slots have gone already took, so there is no second early return.
+
+My own new assertion was wrong once too, in the instructive direction: "the card still comes back" read
+"not empty", which is a claim about a fixture's measurements rather than about rendering. It went RED on a
+loop that had legitimately measured nothing. It compares the tick against the state now.
+
+Three legs asserted the old owner and are inverted, not loosened: calib_link_guard 21t-g (6a), ui_guard
+21t-i, ui_guard's save-fix block. One fixture (ui_guard R2) was made deterministic: it read "4 edit(s) ...
+(build, build, bypass, remove)" where it expected two, because a build is a command now and an earlier
+leg's build leaves its own unacked push behind under an isolated home where nothing answers. The product
+was telling the truth about a queue the leg did not mean to be measuring.
+
+================================================================================================
+DELIBERATELY NOT DONE
+================================================================================================
+
+THE BORROWED HOST AS AN OBJECT stays, as a non-authoritative mirror. Sean's ruling, 11 October, on a
+recommendation: it is no longer an audio path - it neither plays nor measures and nothing is fed to it -
+but it is still the V2 editor's READ MODEL for a Link rack (slot names, dial maps, master wet, loop state,
+the EQ editors, which rack Save serialises). 119 direct uses and 15 test directories, about ten gated.
+Deleting it is mechanical NOW in a way it was not a week ago, because nothing depends on that mirror being
+authoritative any more: every edit to a Link rack is a command sent when it is made, so the mirror and the
+Link agree by construction rather than by a hand-back. It is item 1 of the next round, and the one new
+piece of behaviour in it is the plugin editor - open_editor exists and the Link honours it, but the V2's
+card still opens its own copy's editor, which is why a hosted plugin's own settings are the one thing that
+still commits at deselect.
+
+THE SOLO PRESS still injects a Link's ring into the V2's output (through-main on a Mix/Master Bus main).
+Not changed, deliberately: solo is a user-facing monitoring feature with its own spec and its own legs, and
+quietly changing what a solo press does is the same class of act as the complaint that started all this.
+What DID change is its source - a soloed Link is heard from its own ring whether or not it is addressed,
+instead of sometimes from the V2's copy, which was the same channel processed twice. Whether it should
+inject at all is a question for Sean in the next round's queue.
+
+================================================================================================
+FOR SEAN
+================================================================================================
+
+1. FOUR TESTS NEITHER GATED NOR EXCLUDED, now ONE decision rather than two. tools/mapfps_test (19 failing
+   pins, registered nowhere) and tools/borrowhost_test (2,700 lines, 48 references to the machinery this
+   round deleted, and already unregistered before it). borrowhost_test's exclusion is now WRITTEN in
+   tools/tests/CMakeLists.txt, which is the state the suite's rule asks for; re-aiming it is a round of its
+   own. latency_impulse_test and solo_legs_test were re-aimed instead, because they were cheap.
+2. THE SOLO QUESTION above.
+3. TWO STORES FOR REFERENCE SETS in the merged tree - the kept preset feature and integration's reference
+   library. Still open from 10 October.
+
+NOTHING INSTALLED. NOTHING PUSHED.
