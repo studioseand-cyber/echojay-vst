@@ -1,0 +1,113 @@
+ship_2026-10-11b - GATED GREEN, 11 Oct 2026. THE RING LEAK ONLY.
+
+Branch feat/08c, HEAD 67e48481. A one-fault round on top of ship_2026-10-11a.
+
+GATE: 69/69. All five stages clean.
+  S1 archives (FORCED delete + relink)  exit 0, 0 errors - SIX archives, all three trees
+  S2 guards (87 targets, full LTO)      exit 0, 0 errors
+  S3 formats (4 bundles)                exit 0, 0 errors
+  S4 ctest -L "fast|plugins", 69 tests  100% passed
+  S5 link_state_guard                   GREEN (both sides)
+
+own_diff: Passed, on the 10 October pin. Nothing in this round touched a built-in's schema or the prompt.
+
+BUNDLES (arm64 first, then x86_64 - all four universal)
+  EchoJay V2.component   0D914006-CE3A-33AE-8E51-5357AFC4A860   B35A4461-DBE1-3C88-992A-DA9CD3732FD7
+  EchoJay V2.vst3        35A18FD1-DF7B-3F8D-8703-039C834D74A2   1A50A7E5-1322-3CEF-A31D-BC1697A81A9A
+  EchoJay Link.component F9E48F14-142E-3B66-B524-34835CE55B2A   294F9051-D03A-3A88-B402-B391CCA893F7
+  EchoJay Link.vst3      737D96E7-F158-388D-9E14-1494600464D2   0009EF9A-53CB-356D-AB30-80C5D88FECF0
+
+================================================================================================
+THE ONE FAULT
+================================================================================================
+
+Three complaints in ship_2026-10-11a were one bug, and the kernel named it:
+
+    AUHostingServiceXPC_arrow[2341] (Metal) failed to open metal library with error: Too many open files
+
+EMFILE in the AU hosting process that runs EchoJay V2 and every EchoJay Link. Once that process cannot open a
+file, nothing in it can:
+
+  * a third-party AU cannot open its bundle -> Logic reports -10875 for EVERY one of them, including plain
+    inserts, because they share that process;
+  * a Link cannot write its rack sidecar -> the V2 says "has not published its rack yet" about Links that are
+    working perfectly;
+  * a chain build stalls on the first bundle it tries to load -> Logic freezes.
+
+Ten minutes from a clean boot to all three. It then crash-looped (48 crashes in one minute, "couldn't find the
+crashing image"), which is why no crash report was ever written and why two earlier diagnoses found nothing.
+
+THE LEAK was mine, from 11 October's stage-3 value ring. openRingForDrain had two faults that compounded:
+
+  * it opened O_RDWR|O_CREAT and deliberately did not initialise - correct in itself, that is the producer's
+    job and doing it here races the producer - so for any rack the V2 had never addressed it CREATED a zeroed
+    file that can never pass ringUsable(). 361 of those were on disk, every one with magic 00000000;
+  * it returned nullptr on the unusable path with the file still OPEN and still MAPPED, because
+    openFileMapped does both before anyone can test what it mapped. Its caller records the descriptor only on
+    success, so every failure dropped a descriptor and a 16 KB mapping on the floor.
+
+And ringTick retried whenever cmdRing_ was null, in a function that runs at 30 Hz. The comment above it read
+"this is attempted quietly and once". It was thirty attempts a second, for the life of the session, per Link.
+Not one EJRing line was ever logged, because the failure path said nothing at all.
+
+TWO WRONG READINGS DISCARDED on the way, recorded so nobody repeats them:
+  * the V2's "borrow budget WANTED ON" log line is still in this build and proves NOTHING about which binary
+    is loaded - I nearly called a stale install on it;
+  * kern.num_vnodes == kern.maxvnodes is the NORMAL full vnode cache on macOS, not exhaustion. The kernel had
+    no complaint about it.
+What settled it was the loaded-image UUIDs in the 14:38 crash report and that Metal line.
+
+THE FIX, three parts
+  1. openFileMapped takes createIfMissing (default true, so every existing caller is unchanged) and the ring's
+     consumer passes false. Absence means "no ring yet", which is correct and common. A caller that refuses to
+     create also refuses to ftruncate, or it would be creating by the back door.
+  2. openRingForDrain releases the mapping AND the descriptor on every path that does not hand them to the
+     caller, and reports errno 0 - a ring not yet laid down is not an error.
+  3. The retry stays, bounded to ~1 Hz. NOT "try once and give up", which is what the V2's producer correctly
+     does: a ring legitimately appears when the V2 first addresses that rack, which can be minutes after the
+     Link started. The failure now says so once per 30 s WITH THE ATTEMPT COUNT, because the difference
+     between "no ring yet" and a leak is exactly that number.
+
+================================================================================================
+THE GUARD, PROVEN BOTH DIRECTIONS
+================================================================================================
+
+ring_leak_guard (new, gated, LINKSIDE), on the real LinkProcessor, 600 ticks = 20 s of a 30 Hz timer:
+
+                      descriptors        mapped regions     open attempts
+  before the fix      604 -> 1204        679 -> 1279        601 in 600 ticks
+  after               3 -> 3             76 -> 76           1 in 600 ticks
+
+Legs: an absent ring is never CREATED; descriptors and mapped regions flat across 600 ticks against an
+unusable ring (a tolerance of 8, not equality - a process opens things for its own reasons, and a leg that
+demands equality fails on an unrelated log rotation); the retry is BOUNDED; and a ring laid down LATER is
+still adopted, which is the leg that stops a future tidy-up turning a bounded retry into no retry at all.
+
+It reads the descriptor count from proc_pidinfo and walks its own vm regions, so neither number is a count of
+lines of something that could be throttled or truncated.
+
+WHY NOTHING CAUGHT THIS BEFORE: the existing ring legs assert that a frame written is a frame applied. None of
+them asked what the MAPPING cost, and none ran for the thousands of ticks a 30 Hz leak needs to matter.
+
+================================================================================================
+HOUSEKEEPING
+================================================================================================
+
+The 361 stray cmd-ring-*.bin files my bug created are removed from
+~/Library/Application Support/EchoJay/link. Each was verified magic 00000000 individually before deletion and
+none with any other magic was touched; zero remain. The full list is in
+docs/ring_leak_removed_files_2026-10-11.txt.
+
+================================================================================================
+RETEST
+================================================================================================
+
+The in-host list in ship_2026-10-11a/GREEN.txt stands unchanged - none of it was ever reached. Start again at
+test 1, the kick through the drum bus.
+
+Worth watching this time: a Link should now log "EJRing: no value ring ... (NORMAL state for a rack no main
+plugin has addressed)" at most once every 30 s, and "mapped the value ring ... after N attempt(s)" when you
+first select it. If a third-party AU fails with -10875 again, the thing to check first is
+`lsof -p <AUHostingService pid> | wc -l`.
+
+NOTHING PUSHED.
