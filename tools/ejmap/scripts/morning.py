@@ -21,7 +21,15 @@ HOME = os.path.expanduser('~')
 SCRATCH_DEFAULT = '/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/9231c63a-2a37-48b6-9847-1c1f92c8caf3/scratchpad'
 OLD_BIN = HOME + '/Desktop/ejmap-dist-10oct-b/ejmap.app/Contents/MacOS/ejmap'   # 00f2ae79, Sean's build tonight
 NAMED = ['Tube-Tech CL 1B', 'Unfiltered Audio Zip', 'bx_opto', 'Mixland Vac Attack', 'dbx-160 (s)', 'DPR-402 (s)', 'SPL IRON', 'Auto-Tune Vocal Compressor']
-NEXT_NIGHT = 'preflight,followup,fixups,reverb_delay,transient_gate,limiter_comp,drafts'
+NEXT_NIGHT = 'preflight,followup,fixups,reverb_delay,transient_gate,drafts'   # runbook Night A (11 Oct); limiter_comp + strips are Night B
+
+def next_steps(run_all, base=NEXT_NIGHT):
+    """The next night's --steps: the base line plus every step the last night left unfinished (started / device_absent),
+    placed after fixups, so a step Sean did not finish is never dropped from the plan (11 Oct: saturation 47/193)."""
+    steps = base.split(',')
+    left = [k for k, v in sorted(run_all.get('steps', {}).items()) if v.get('state') in ('started', 'device_absent') and k not in steps]
+    at = steps.index('fixups') + 1 if 'fixups' in steps else 1
+    return ','.join(steps[:at] + left + steps[at:])
 SIGN = 'Developer ID Application: Sean Donoghue (8BT5F9B887)'
 
 def say(s=''): print(s, flush=True)
@@ -197,7 +205,10 @@ def equality(new_bin, cert, scratch, work):
 # ---------------------------------------------------------------- 5. resume
 def resume(new_bin, cert):
     say(); say('================ RESUME: the next night on the merged folder (dry-run, nothing loaded) ================')
-    r = sh([new_bin, '--run-all', '--jobs', '2', '--steps', NEXT_NIGHT, '--until', '07:00', '--out', cert, '--dry-run'])
+    p = os.path.join(cert, 'run_all.json')
+    steps = next_steps(json.load(open(p)) if os.path.exists(p) else {'steps': {}})
+    say(f'--steps {steps}')
+    r = sh([new_bin, '--run-all', '--jobs', '2', '--steps', steps, '--until', '07:00', '--out', cert, '--dry-run'])
     say('\n'.join(l.replace(cert, '<cert>')[:170] for l in r.stdout.splitlines()))
 
 def main():
