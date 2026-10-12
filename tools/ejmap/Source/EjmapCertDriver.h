@@ -1961,6 +1961,70 @@ inline InertRun runInertCheck (const juce::var& fixture, int thr, float norm, co
     return ir;
 }
 
+// THE REFERENCE CHECK (Kathy, 12 Oct), one implementation for Phase B and the compressor-certification batch: the probe's opening
+// block vs the reference; this Mac's vote; a trusted reference that differs -> the differing controls written and READ BACK (the
+// probe with EJ_PROBE_PRESET on that one call); the result says measure / restore (with the writes) / custom_default
+struct ReferenceCheck { customdefault::Act act = customdefault::Act::measure; juce::String writes, why; juce::var vote, restored; };
+inline ReferenceCheck referenceCheck (const juce::File& probe, const juce::PluginDescription& d, const juce::File& refF, int timeoutMs,
+                                     const std::function<ChildResult (const juce::StringArray&)>& runner = {})   // runner: the suite's fake probe
+{
+    ReferenceCheck rc;
+    const auto ref = customdefault::readReference (juce::JSON::parse (refF.loadFileAsString()));
+    const juce::StringArray probeArgs { probe.getFullPathName(), d.name, d.fileOrIdentifier, juce::String::toHexString (d.uniqueId), "--factory-preset", "open" };
+    const auto openR = runProbeCall (probeArgs, timeoutMs, runner);
+    const auto openingB = customdefault::parseBlock (openR.out);
+    const auto pl = customdefault::plan (ref, openingB);
+    if (const auto vote = customdefault::voteOf (ref, openingB); vote.cast) rc.vote = customdefault::voteVar (vote);
+    rc.act = pl.act; rc.why = pl.why;
+    if (pl.act == customdefault::Act::restore)
+    {
+        juce::StringArray rb { "/usr/bin/env", "EJ_PROBE_PRESET=" + pl.writes }; rb.addArray (probeArgs);
+        const auto back = runner ? runner (rb) : runChild (rb, timeoutMs);
+        juce::Array<juce::var> restored;
+        for (const auto& df : pl.diffs) { auto* o = new juce::DynamicObject(); o->setProperty ("index", df.index); o->setProperty ("control", df.reference.name);
+            o->setProperty ("opened", df.opening.text); o->setProperty ("written", df.reference.text); o->setProperty ("norm", df.reference.norm); restored.add (juce::var (o)); }
+        rc.restored = restored;
+        if (back.cleanExit() && customdefault::restoreConfirmed (ref, customdefault::parseBlock (back.out))) rc.writes = pl.writes;
+        else { rc.act = customdefault::Act::customDefault; rc.why = "custom_default: " + pl.why + "; the read-back did not match the reference"; }
+    }
+    return rc;
+}
+
+// THE REFERENCE CHECK in the compressor-certification batch (Kathy, 12 Oct, item 3): where <cert>/references/<stem>.reference.json exists
+// and no restore is already in force (Phase B's compressor children arrive with EJ_PROBE_PRESET set: checked once, there). custom_default
+// -> a record under <cert>/custom_default/ and the product is not measured; restore -> EJ_PROBE_PRESET set for every probe process of this
+// product (the caller clears it: envSet) and a .restored record; measure -> nothing. The batch is sequential, so the environment is safe.
+inline customdefault::Act certSweepReference (const SweepOptions& opt, const juce::PluginDescription& d, const juce::String& product, bool& envSet,
+                                              const std::function<ChildResult (const juce::StringArray&)>& runner = {})
+{
+    auto say = [] (const juce::String& m) { std::cout << m << std::endl; };
+    const auto refStem = "AudioUnit_" + juce::String::toHexString (d.uniqueId) + "_" + d.version;
+    const auto certDir = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
+    const auto refF = certDir.getChildFile ("references").getChildFile (refStem + ".reference.json");
+    const char* already = std::getenv ("EJ_PROBE_PRESET");
+    if (! refF.existsAsFile() || (already != nullptr && *already != 0)) return customdefault::Act::measure;
+    const auto chk = referenceCheck (opt.probe, d, refF, opt.timeoutMs, runner);
+    if (chk.act == customdefault::Act::measure && chk.vote.isVoid()) return chk.act;
+    auto* note = new juce::DynamicObject(); const juce::var nv (note);
+    note->setProperty ("product", product); note->setProperty ("reference", chk.why);
+    if (! chk.vote.isVoid()) note->setProperty ("reference_vote", chk.vote);
+    if (! chk.restored.isVoid()) note->setProperty ("custom_default_restored", chk.restored);
+    const auto cdDir = certDir.getChildFile ("custom_default"); cdDir.createDirectory();
+    if (chk.act == customdefault::Act::customDefault)
+    {
+        note->setProperty ("outcome", "custom_default"); cdDir.getChildFile (refStem + ".json").replaceWithText (juce::JSON::toString (nv) + "\n");
+        say ("SWEEP: " + product + " is not measured: " + chk.why);
+    }
+    else if (chk.act == customdefault::Act::restore)
+    {
+        setenv ("EJ_PROBE_PRESET", chk.writes.toRawUTF8(), 1); envSet = true;
+        note->setProperty ("outcome", "restored"); cdDir.getChildFile (refStem + ".restored.json").replaceWithText (juce::JSON::toString (nv) + "\n");
+        say ("SWEEP: " + product + " - " + chk.why);
+    }
+    else { note->setProperty ("outcome", "measured"); cdDir.getChildFile (refStem + ".vote.json").replaceWithText (juce::JSON::toString (nv) + "\n"); }   // the vote, kept
+    return chk.act;
+}
+
 inline int runCertSweep (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
@@ -1990,6 +2054,9 @@ inline int runCertSweep (const SweepOptions& opt)
         say ("SWEEP: " + s.product + " is not measurable here: " + why);
         return 4;
     }
+    // THE REFERENCE CHECK in the compressor-certification batch (Kathy, 12 Oct, item 3): certSweepReference, below the shared check
+    struct PresetGuard { bool set = false; ~PresetGuard() { if (set) unsetenv ("EJ_PROBE_PRESET"); } } presetGuard;
+    if (certSweepReference (opt, s.desc, s.product, presetGuard.set) == customdefault::Act::customDefault) return 4;
 
     const juce::String armTag = opt.armLabel.isNotEmpty() ? ".arm-" + opt.armLabel : juce::String();
     auto raw = opt.out.getChildFile ("raw");
@@ -6615,25 +6682,12 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 if (const auto refF = opt.out.getChildFile ("references").getChildFile (pp.stem + ".reference.json"); refF.existsAsFile())
                 {
                     if (phaseb::rowHooks().started) phaseb::rowHooks().started (cat.name, pp.product);   // the opening-block reads load the plugin too: marked and logged like any load
-                    const auto ref = customdefault::readReference (juce::JSON::parse (refF.loadFileAsString()));
-                    const juce::StringArray probeArgs { opt.probe.getFullPathName(), pp.desc.name, pp.desc.fileOrIdentifier, juce::String::toHexString (pp.desc.uniqueId), "--factory-preset", "open" };
-                    const auto openR = runProbeCall (probeArgs, opt.timeoutMs);
-                    const auto openingB = customdefault::parseBlock (openR.out);
-                    const auto pl = customdefault::plan (ref, openingB);
-                    if (const auto vote = customdefault::voteOf (ref, openingB); vote.cast) row->setProperty ("reference_vote", customdefault::voteVar (vote));   // 12 Oct: this Mac's vote on the reference
-                    juce::String refWhy = pl.why;
-                    if (pl.act == customdefault::Act::customDefault) customDefault = true;
-                    else if (pl.act == customdefault::Act::restore)
-                    {
-                        juce::StringArray rb { "/usr/bin/env", "EJ_PROBE_PRESET=" + pl.writes }; rb.addArray (probeArgs);
-                        const auto back = runChild (rb, opt.timeoutMs);
-                        const bool ok = back.cleanExit() && customdefault::restoreConfirmed (ref, customdefault::parseBlock (back.out));
-                        juce::Array<juce::var> restored;
-                        for (const auto& d : pl.diffs) { auto* o = new juce::DynamicObject(); o->setProperty ("index", d.index); o->setProperty ("control", d.reference.name);
-                            o->setProperty ("opened", d.opening.text); o->setProperty ("written", d.reference.text); o->setProperty ("norm", d.reference.norm); restored.add (juce::var (o)); }
-                        row->setProperty ("custom_default_restored", restored);   // the neutral writes on the record
-                        if (ok) restorePreset = pl.writes; else { customDefault = true; refWhy = "custom_default: " + pl.why + "; the read-back did not match the reference"; }
-                    }
+                    const auto chk = referenceCheck (opt.probe, pp.desc, refF, opt.timeoutMs);
+                    if (! chk.vote.isVoid()) row->setProperty ("reference_vote", chk.vote);   // 12 Oct: this Mac's vote on the reference
+                    if (! chk.restored.isVoid()) row->setProperty ("custom_default_restored", chk.restored);   // the neutral writes on the record
+                    const juce::String refWhy = chk.why;
+                    if (chk.act == customdefault::Act::customDefault) customDefault = true;
+                    else if (chk.act == customdefault::Act::restore) restorePreset = chk.writes;
                     row->setProperty ("reference", refWhy);
                     if (customDefault) { outcome = "custom_default"; row->setProperty ("reason", refWhy); row->setProperty ("records", juce::Array<juce::var>()); say ("  " + cat.name + ": " + pp.product + " - " + refWhy); }
                 }

@@ -10018,6 +10018,33 @@ void testCustomDefault()
         check (plan (r, sbcH).act == Act::measure && plan ({}, sbcH).act == Act::measure && plan (r, {}).act == Act::measure
                && back.agreeing == 2 && back.sources.size() == 2 && back.block.size() == sbcS.size() && back.block.at (3).text == sbcS.at (3).text && ejmap::customdefault::trusted (back),
                "customdefault CD-5: Lindell SBC opens as its reference -> measured; no reference or block -> measured as it opens; the reference file round-trips");
+    }    // CD-8 THE COMPRESSOR-CERTIFICATION BATCH (Kathy, 12 Oct, item 3) runs the same check, driven here through a fake probe: MMorph opens
+    // with this Mac's block; the read-back (the env-wrapped call) returns the reference. 2 sources -> restore, EJ_PROBE_PRESET set for the
+    // product and a .restored record; 1 source -> custom_default record, nothing set; a restore already in force -> no probe call at all
+    {
+        const auto seanT = dir.getChildFile ("mmorph.sean.txt").loadFileAsString(), hereT = dir.getChildFile ("mmorph.here.txt").loadFileAsString();
+        const auto seanB = parseBlock (seanT);
+        auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_cd8_" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+        int calls = 0;
+        auto fake = [&] (const juce::StringArray& a) { ++calls; ejmap::cert::ChildResult r; r.kind = ejmap::cert::ChildResult::Kind::exited; r.code = 0; r.out = a[0] == "/usr/bin/env" ? seanT : hereT; return r; };
+        juce::PluginDescription d; d.name = "MMorph"; d.uniqueId = 0x4d4d6f72; d.version = "14.16";
+        ejmap::cert::SweepOptions o; o.out = tmp; o.probe = juce::File ("/nonexistent/probe");
+        const auto stem = "AudioUnit_" + juce::String::toHexString (d.uniqueId) + "_" + d.version;
+        auto writeRef = [&] (int agreeing) { tmp.getChildFile ("references").createDirectory();
+            tmp.getChildFile ("references").getChildFile (stem + ".reference.json").replaceWithText (juce::JSON::toString (referenceVar ("x", seanB, agreeing, { "a" }))); };
+        unsetenv ("EJ_PROBE_PRESET");
+        bool set2 = false; writeRef (2); const auto a2 = ejmap::cert::certSweepReference (o, d, "MMorph", set2, fake);
+        const char* env2 = std::getenv ("EJ_PROBE_PRESET"); const juce::String env2s (env2 != nullptr ? env2 : "");
+        const bool restoredFile = tmp.getChildFile ("custom_default").getChildFile (stem + ".restored.json").existsAsFile();
+        const int callsAfter2 = calls; unsetenv ("EJ_PROBE_PRESET");
+        bool set1 = false; writeRef (1); const auto a1 = ejmap::cert::certSweepReference (o, d, "MMorph", set1, fake);
+        const bool cdFile = tmp.getChildFile ("custom_default").getChildFile (stem + ".json").existsAsFile(), env1 = std::getenv ("EJ_PROBE_PRESET") != nullptr;
+        setenv ("EJ_PROBE_PRESET", "1:0.5", 1); const int before = calls; bool set3 = false;
+        const auto a3 = ejmap::cert::certSweepReference (o, d, "MMorph", set3, fake); const bool noCall = calls == before;
+        unsetenv ("EJ_PROBE_PRESET"); tmp.deleteRecursively();
+        check (a2 == Act::restore && set2 && env2s.isNotEmpty() && env2s.contains ("74:" + juce::String (seanB.at (74).norm, 6)) && restoredFile && callsAfter2 == 2
+               && a1 == Act::customDefault && ! set1 && ! env1 && cdFile && a3 == Act::measure && ! set3 && noCall,
+               "customdefault CD-8: the certification batch - 2 sources -> restore (writes set for the product, recorded); 1 source -> custom_default filed, nothing set; a restore already in force -> not re-checked");
     }
 }
 
