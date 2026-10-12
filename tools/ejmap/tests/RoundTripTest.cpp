@@ -9765,8 +9765,34 @@ void testCertReview()
     }
 }
 
+/** CATEGORISE RELEASE RULE (Kathy, 12 Oct): a level-dependent, FLAT gain beats a short tail (a compressor's release), decided from REAL
+    traces: Lindell 254E and Acme Opticom XLA-3 read here; FilterFreak2 (Sean's 605, level-dependent but not flat) stays for review. */
+void testCategoriseRelease()
+{
+    const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/categorise_release");
+    auto sig = [&] (const juce::String& stem) {
+        auto rd = [&] (const char* tag) { return dir.getChildFile (stem + ".categorise." + tag + ".1.txt").loadFileAsString(); };
+        ejmap::categorise::Signatures s;
+        ejmap::categorise::readResponses (s, ejmap::eq::parseResponse (rd ("resp30")), ejmap::eq::parseResponse (rd ("resp12")));
+        ejmap::categorise::readTail (s, ejmap::reverbdelay::parseTail (rd ("tail")));
+        ejmap::categorise::readHarmonics (s, ejmap::saturation::parseHarmonics (rd ("harm30")), ejmap::saturation::parseHarmonics (rd ("harm6")));
+        ejmap::categorise::readPitch (s, ejmap::pitch::parsePitch (rd ("pitch")), 30.0);
+        return s; };
+    using ejmap::categorise::decide; using ejmap::categorise::categoriesFromWords;
+    const auto l = sig ("AudioUnit_6f457233_1.2.2"), x = sig ("AudioUnit_62485258_1.10.1"), f = sig ("AudioUnit_74673b21_5.4.1");
+    const auto pl = categoriesFromWords ("Lindell 254E", "Plugin Alliance", {}), px = categoriesFromWords ("Acme Opticom XLA-3", "Plugin Alliance", {}), pf = categoriesFromWords ("FilterFreak2", "Soundtoys", {});
+    const auto lNew = decide (l, pl), lOld = decide (l, pl, false), xNew = decide (x, px), xOld = decide (x, px, false), fNew = decide (f, pf);
+    check (l.tailRead && l.rt60s && *l.rt60s > 0.3 && *l.rt60s < 0.5 && l.levelDepDb > 3.0 && l.freqSpanDb < 0.5
+           && lNew.category == "dynamics" && lNew.settled && lOld.category == "reverb" && ! lOld.settled
+           && xNew.category == "dynamics" && xNew.settled && ! xOld.settled
+           && fNew.category == "reverb" && ! fNew.settled && f.freqSpanDb > 3.0 && f.levelDepDb >= 1.0,
+           "categorise CAT-RELEASE: Lindell 254E (RT60 " + juce::String (l.rt60s ? *l.rt60s : -1.0, 2) + " s, " + juce::String (l.levelDepDb, 2) + " dB, span " + juce::String (l.freqSpanDb, 2)
+           + ") and XLA-3 -> dynamics (were reverb, unsettled); FilterFreak2 (span " + juce::String (f.freqSpanDb, 1) + " dB) stays reverb for review");
+}
+
 int main (int, char**)
 {
+    testCategoriseRelease();
     juce::ScopedJuceInitialiser_GUI juceInit;
 
     testSchemaVersionPinned();

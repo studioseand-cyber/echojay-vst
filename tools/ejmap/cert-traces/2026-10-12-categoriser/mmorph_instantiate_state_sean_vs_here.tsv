@@ -1,0 +1,43 @@
+69	0.500000	Gain Out	0.00 dB	0.500000	Gain Out	0.00 dB
+70	0.000000	Swap A and B	Off	0.000000	Swap A and B	Off
+71	0.000000	LR encoding	Off	0.000000	LR encoding	Off
+72	0.000000	Main input only	Off	0.000000	Main input only	Off
+73	1.000000	Follow ratio	On	1.000000	Follow ratio	On
+74	0.583333	Compression (A)	16.7%	0.625000	A - Compression	25.0%
+75	0.349778	Tone (A)	-3.61 dB	0.250000	A - Tone	-6.00 dB
+76	0.427778	Flattening (A)	42.8%	0.250000	A - Flattening	25.0%
+77	0.000000	Flattening threshold (A)	-200.00 dB	0.000000	A - Flattening threshold	-200.00 dB
+78	0.184889	Harmonics (A)	18.5%	0.000000	A - Harmonics	0.00%
+79	0.500000	Harmonics threshold (A)	-100.00 dB	0.500000	A - Harmonics threshold	-100.00 dB
+80	0.111111	Attack (A)	0.15 ms	0.000000	A - Attack	0 ms
+81	0.062482	Release (A)	0.15 ms	0.000000	A - Release	0 ms
+82	0.500000	Gain (A)	0.00 dB	0.500000	A - Gain	0.00 dB
+83	0.129630	Gate (A)	-87.04 dB	0.000000	A - Gate	-100.00 dB
+84	0.000000	Solo (A)	Off	0.000000	A - Solo	Off
+85	0.391019	Compression (B)	-21.8%	0.375000	B - Compression	-25.0%
+86	0.547556	Tone (B)	+1.14 dB	0.500000	B - Tone	0.00 dB
+87	0.348000	Whitening (B)	34.8%	0.000000	B - Whitening	0.00%
+88	0.700000	Whitening threshold (B)	-60.00 dB	0.700000	B - Whitening threshold	-60.00 dB
+89	0.125778	Harmonics (B)	12.6%	0.000000	B - Harmonics	0.00%
+90	0.500000	Harmonics threshold (B)	-100.00 dB	0.500000	B - Harmonics threshold	-100.00 dB
+91	0.111111	Attack (B)	0.15 ms	0.000000	B - Attack	0 ms
+92	0.062482	Release (B)	0.15 ms	0.000000	B - Release	0 ms
+93	0.500000	Gain (B)	0.00 dB	0.500000	B - Gain	0.00 dB
+94	0.014815	Gate (B)	-98.52 dB	0.000000	B - Gate	-100.00 dB
+95	0.000000	Solo (B)	Off	0.000000	B - Solo	Off
+96	0.550222	Compression (Output)	10.0%	0.625000	Output - Compression	25.0%
+97	0.506222	Flattening (Output)	50.6%	0.500000	Output - Flattening	50.0%
+98	0.700000	Flattening threshold (Output)	-60.00 dB	0.700000	Output - Flattening threshold	-60.00 dB
+99	0.111111	Attack (Output)	0.15 ms	0.000000	Output - Attack	0 ms
+100	0.062482	Release (Output)	0.15 ms	0.000000	Output - Release	0 ms
+101	0.300000	Auto-level limit (Output)	+30.00 dB	0.300000	Output - Auto-level limit	+30.00 dB
+102	0.100000	Dry range (Output)	10.0%	0.100000	Output - Dry range	10.0%
+103	0.500000	Buffer size (Spectral settings)	2048	0.500000	Spectral settings - Buffer size	2048
+104	0.492366	Resolution (Spectral settings)	25 ms	0.492366	Spectral settings - Resolution	25 ms
+105	1.000000	M/S processing (Spectral settings)	On	0.000000	Spectral settings - M/S processing	Off
+106	0.500000	Automated value (Modulators - Mod 1)	50.0%	0.500000	Modulators - Mod 1 - Automated value	50.0%
+107	0.500000	Automated value (Modulators - Mod 2)	50.0%	0.500000	Modulators - Mod 2 - Automated value	50.0%
+108	0.500000	Automated value (Modulators - Mod 3)	50.0%	0.500000	Modulators - Mod 3 - Automated value	50.0%
+109	0.500000	Automated value (Modulators - Mod 4)	50.0%	0.500000	Modulators - Mod 4 - Automated value	50.0%
+110	0.000000	previous (Preset trigger)	0.00	0.000000	Preset trigger - previous	0.00
+111	0.000000	next (Preset trigger)	0.00	0.000000	Preset trigger - next	0.00

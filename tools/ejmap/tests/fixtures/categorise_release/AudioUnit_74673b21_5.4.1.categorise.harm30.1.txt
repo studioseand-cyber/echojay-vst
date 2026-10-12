@@ -1,0 +1,46 @@
+probe: "FilterFreak2" | AudioUnit:Effects/aufx,FF2 ,SToy | uid=74673b21 | arch=arm64 | format=AudioUnit
+stage	configure
+policy	sidechain	self-keyed (as EchoJay 04e)	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+
+paramcount	at_create	0	after_prepare	21	after_render	21
+
+response	proto	1	ctl	0	name	Bypass	positions	0	tones	1	lo	997.00	hi	997.00	db	-30.00	hold_s	1.000	discard_s	0.500	shape	flat
+stage	configure
+policy	sidechain	self-keyed (as EchoJay 04e)	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	45
+param	0	0.000000	Bypass	Off
+param	1	0.500000	InputGain	0.0 dB
+param	2	0.500000	OutputGain	0.0 dB
+param	3	1.000000	Mix	100.0 %
+param	4	1.000000	InOutMode	Analog
+param	5	0.447474	Frequency1	440.00 Hz
+param	6	0.000000	Resonance1	0.0 dB
+param	7	0.500000	Gain1	0.0 dB
+param	8	0.000000	Filter1Shape	Lowpass
+param	9	0.000000	Filter1Order	2
+param	10	0.547818	Frequency2	880.00 Hz
+param	11	0.000000	Resonance2	0.0 dB
+param	12	0.500000	Gain2	0.0 dB
+param	13	0.333333	Filter2Shape	Bandpass
+param	14	0.000000	Filter2Order	2
+param	15	0.000000	FilterLink	Off
+param	16	1.000000	FilterRouting	Parallel
+param	17	0.500000	ModulationDepth	0.50
+param	18	0.000000	Trigger	Off
+param	19	0.428571	Tempo	120.0 bpm
+param	20	0.317120	LFO Rate	0.25 Hz
+rpos	0	norm	0.000000	confirm_ms	0.0	landed_by	current	text	Off
+rtone	0	hz	998.000	in_db	-30.000	out_db	-31.251
+rharm	0	order	2	hz	1996.000	in_db	-274.242	out_db	-85.131
+rharm	0	order	3	hz	2994.000	in_db	-219.132	out_db	-108.767
+rharm	0	order	4	hz	3992.000	in_db	-274.243	out_db	-160.320
+rharm	0	order	5	hz	4990.000	in_db	-220.159	out_db	-128.757
+rtotal	0	in_rms_db	-33.010	out_rms_db	-34.261
+rdone	0	tones	1	nonfinite	0
+stage	done

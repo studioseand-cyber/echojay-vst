@@ -34,7 +34,7 @@
 namespace ejmap::categorise
 {
 
-inline constexpr double kLevelDb = 1.0, kFreqDb = 3.0, kThdRiseDb = 6.0, kThdAudibleDb = -50.0, kPitchCents = 15.0, kTailS = 0.25, kReverbS = 1.0, kSidebandDb = -30.0;   // a sideband under -30 dB is the analysis' own floor (-41.6 on a clean unit), never modulation
+inline constexpr double kLevelDb = 1.0, kFreqDb = 3.0, kThdRiseDb = 6.0, kThdAudibleDb = -50.0, kPitchCents = 15.0, kTailS = 0.25, kReverbS = 1.0, kSidebandDb = -30.0, kReleaseTailS = 1.5;   // a sideband under -30 dB is the analysis' own floor (-41.6 on a clean unit), never modulation
 
 inline juce::StringArray tokens (const juce::String& s) { auto t = juce::StringArray::fromTokens (s.toLowerCase(), " -_/()[]:.,", "\"'"); t.removeEmptyStrings(); return t; }
 inline bool hasAny (const juce::StringArray& tk, std::initializer_list<const char*> ws) { for (const auto& t : tk) for (const char* w : ws) if (t == w) return true; return false; }
@@ -109,13 +109,22 @@ inline void readPitch (Signatures& s, const pitch::PitchMeasured& m, double detu
 }
 
 struct Decision { juce::String category, why; bool settled = false; };
-inline Decision decide (const Signatures& s, const juce::StringArray& proposed)
+// releaseRule (12 Oct, Kathy): a compressor's RELEASE after the burst reads as a short tail, and the tail check ran first (Lindell 254E:
+// RT60 0.40 s, the gain moves 3.14 dB, flat to 0.14 dB -> "reverb or delay"). A gain that moves with level AND is flat across the tones
+// (span under kFreqDb: a broadband gain change, not a filter) now wins over a tail shorter than kReleaseTailS. From the data (12 Oct):
+// compressors' tails 0.40 (254E) and 0.66 s (XLA-3), flat (0.14, 0.50 dB); reverbs / delays with a tail never level-dependent over
+// 0.62 dB; the level-dependent tails in Sean's 605 (CLA Effects 34.7 dB span, FilterFreak2 20.6, Absynth 5 MFX 4.95) are NOT flat and
+// stay reverb / delay for review. kReleaseTailS 1.5 s = over twice the longest compressor release seen. false = the rule before 12 Oct
+inline Decision decide (const Signatures& s, const juce::StringArray& proposed, bool releaseRule = true)
 {
     Decision d;
     auto settle = [&] (const char* c, const juce::String& why) { d.category = c; d.why = why; d.settled = true; return d; };
     // a TAIL is time-based: discrete repeats = delay; otherwise the tail alone cannot tell a feedback delay's decay from a reverb's
     // (bx_delay2500 at instantiate read RT60 2.85 s and no repeat), so the words break the tie and say so; no word = unsettled between the two
     if (s.tailRead && s.repeats >= 2 && (! s.rt60s || *s.rt60s < 1.5)) return settle ("delay", juce::String (s.repeats) + " discrete repeat(s) after the burst");
+    if (releaseRule && s.tailRead && s.rt60s && *s.rt60s >= kTailS && *s.rt60s < kReleaseTailS && s.responseRead && s.levelDepDb >= kLevelDb && s.freqSpanDb < kFreqDb)
+        return settle ("dynamics", "the gain moves " + juce::String (s.levelDepDb, 2) + " dB between -30 and -12 dBFS, flat across the tones (span " + juce::String (s.freqSpanDb, 2)
+                       + " dB): the RT60 " + juce::String (*s.rt60s, 2) + " s tail is a release (under " + juce::String (kReleaseTailS, 1) + " s), not a reverb or delay");
     if (s.tailRead && s.rt60s && *s.rt60s >= kTailS)
     {
         const auto tl = "a tail (RT60 " + juce::String (*s.rt60s, 2) + " s, " + juce::String (s.repeats) + " repeat(s) found)";

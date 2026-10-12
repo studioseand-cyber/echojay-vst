@@ -1,0 +1,224 @@
+probe: "FilterFreak2" | AudioUnit:Effects/aufx,FF2 ,SToy | uid=74673b21 | arch=arm64 | format=AudioUnit
+stage	configure
+policy	sidechain	self-keyed (as EchoJay 04e)	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+
+paramcount	at_create	0	after_prepare	21	after_render	21
+
+pitch	proto	1	ctl	0	name	Bypass	positions	1	gen	static	shape	square	note_hz	220.000	cents	30.00	rate_hz	0.500	hold_s	2.000	db	-18.00	note_ms	200.0	gap_ms	100.0
+stage	configure
+policy	sidechain	self-keyed (as EchoJay 04e)	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	45	sr	48000	win	2048	hop	512
+param	0	0.000000	Bypass	Off
+param	1	0.500000	InputGain	0.0 dB
+param	2	0.500000	OutputGain	0.0 dB
+param	3	1.000000	Mix	100.0 %
+param	4	1.000000	InOutMode	Analog
+param	5	0.447474	Frequency1	440.00 Hz
+param	6	0.000000	Resonance1	0.0 dB
+param	7	0.500000	Gain1	0.0 dB
+param	8	0.000000	Filter1Shape	Lowpass
+param	9	0.000000	Filter1Order	2
+param	10	0.547818	Frequency2	880.00 Hz
+param	11	0.000000	Resonance2	0.0 dB
+param	12	0.500000	Gain2	0.0 dB
+param	13	0.333333	Filter2Shape	Bandpass
+param	14	0.000000	Filter2Order	2
+param	15	0.000000	FilterLink	Off
+param	16	1.000000	FilterRouting	Parallel
+param	17	0.500000	ModulationDepth	0.50
+param	18	0.000000	Trigger	Off
+param	19	0.428571	Tempo	120.0 bpm
+param	20	0.317120	LFO Rate	0.25 Hz
+ppos	0	norm	0.000000	confirm_ms	3.0	landed_by	instack	text	Off
+pwin	0	t_ms	21.3	in_cents	30.00	in_conf	0.9999	out_cents	25.80	out_conf	0.9796	out_db	-22.22	in_target	30.00
+pwin	0	t_ms	32.0	in_cents	30.00	in_conf	0.9999	out_cents	32.32	out_conf	1.0000	out_db	-21.99	in_target	30.00
+pwin	0	t_ms	42.7	in_cents	30.00	in_conf	0.9999	out_cents	32.09	out_conf	1.0000	out_db	-21.93	in_target	30.00
+pwin	0	t_ms	53.3	in_cents	30.00	in_conf	0.9999	out_cents	31.87	out_conf	1.0000	out_db	-21.84	in_target	30.00
+pwin	0	t_ms	64.0	in_cents	30.00	in_conf	0.9999	out_cents	31.61	out_conf	1.0000	out_db	-21.75	in_target	30.00
+pwin	0	t_ms	74.7	in_cents	30.00	in_conf	0.9999	out_cents	31.43	out_conf	1.0000	out_db	-21.70	in_target	30.00
+pwin	0	t_ms	85.3	in_cents	30.00	in_conf	0.9999	out_cents	31.27	out_conf	1.0000	out_db	-21.69	in_target	30.00
+pwin	0	t_ms	96.0	in_cents	30.00	in_conf	0.9999	out_cents	31.14	out_conf	1.0000	out_db	-21.67	in_target	30.00
+pwin	0	t_ms	106.7	in_cents	30.00	in_conf	0.9999	out_cents	31.01	out_conf	1.0000	out_db	-21.61	in_target	30.00
+pwin	0	t_ms	117.3	in_cents	30.00	in_conf	0.9999	out_cents	30.90	out_conf	1.0000	out_db	-21.57	in_target	30.00
+pwin	0	t_ms	128.0	in_cents	30.00	in_conf	0.9999	out_cents	30.81	out_conf	1.0000	out_db	-21.57	in_target	30.00
+pwin	0	t_ms	138.7	in_cents	30.00	in_conf	0.9999	out_cents	30.73	out_conf	0.9999	out_db	-21.57	in_target	30.00
+pwin	0	t_ms	149.3	in_cents	30.00	in_conf	0.9999	out_cents	30.65	out_conf	0.9999	out_db	-21.55	in_target	30.00
+pwin	0	t_ms	160.0	in_cents	30.00	in_conf	0.9999	out_cents	30.59	out_conf	0.9999	out_db	-21.50	in_target	30.00
+pwin	0	t_ms	170.7	in_cents	30.00	in_conf	0.9999	out_cents	30.53	out_conf	0.9999	out_db	-21.49	in_target	30.00
+pwin	0	t_ms	181.3	in_cents	30.00	in_conf	0.9999	out_cents	30.48	out_conf	0.9999	out_db	-21.51	in_target	30.00
+pwin	0	t_ms	192.0	in_cents	30.00	in_conf	0.9999	out_cents	30.43	out_conf	0.9999	out_db	-21.51	in_target	30.00
+pwin	0	t_ms	202.7	in_cents	30.00	in_conf	0.9999	out_cents	30.39	out_conf	0.9999	out_db	-21.47	in_target	30.00
+pwin	0	t_ms	213.3	in_cents	30.00	in_conf	0.9999	out_cents	30.36	out_conf	0.9999	out_db	-21.45	in_target	30.00
+pwin	0	t_ms	224.0	in_cents	30.00	in_conf	0.9999	out_cents	30.33	out_conf	0.9999	out_db	-21.46	in_target	30.00
+pwin	0	t_ms	234.7	in_cents	30.00	in_conf	0.9999	out_cents	30.29	out_conf	0.9999	out_db	-21.48	in_target	30.00
+pwin	0	t_ms	245.3	in_cents	30.00	in_conf	0.9999	out_cents	30.26	out_conf	0.9999	out_db	-21.46	in_target	30.00
+pwin	0	t_ms	256.0	in_cents	30.00	in_conf	0.9999	out_cents	30.25	out_conf	0.9999	out_db	-21.43	in_target	30.00
+pwin	0	t_ms	266.7	in_cents	30.00	in_conf	0.9999	out_cents	30.23	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	277.3	in_cents	30.00	in_conf	0.9999	out_cents	30.20	out_conf	0.9999	out_db	-21.45	in_target	30.00
+pwin	0	t_ms	288.0	in_cents	30.00	in_conf	0.9999	out_cents	30.18	out_conf	0.9999	out_db	-21.45	in_target	30.00
+pwin	0	t_ms	298.7	in_cents	30.00	in_conf	0.9999	out_cents	30.17	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	309.3	in_cents	30.00	in_conf	0.9999	out_cents	30.16	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	320.0	in_cents	30.00	in_conf	0.9999	out_cents	30.14	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	330.7	in_cents	30.00	in_conf	0.9999	out_cents	30.12	out_conf	0.9999	out_db	-21.44	in_target	30.00
+pwin	0	t_ms	341.3	in_cents	30.00	in_conf	0.9999	out_cents	30.12	out_conf	0.9999	out_db	-21.43	in_target	30.00
+pwin	0	t_ms	352.0	in_cents	30.00	in_conf	0.9999	out_cents	30.11	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	362.7	in_cents	30.00	in_conf	0.9999	out_cents	30.10	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	373.3	in_cents	30.00	in_conf	0.9999	out_cents	30.09	out_conf	0.9999	out_db	-21.43	in_target	30.00
+pwin	0	t_ms	384.0	in_cents	30.00	in_conf	0.9999	out_cents	30.08	out_conf	0.9999	out_db	-21.43	in_target	30.00
+pwin	0	t_ms	394.7	in_cents	30.00	in_conf	0.9999	out_cents	30.08	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	405.3	in_cents	30.00	in_conf	0.9999	out_cents	30.07	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	416.0	in_cents	30.00	in_conf	0.9999	out_cents	30.06	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	426.7	in_cents	30.00	in_conf	0.9999	out_cents	30.05	out_conf	0.9999	out_db	-21.43	in_target	30.00
+pwin	0	t_ms	437.3	in_cents	30.00	in_conf	0.9999	out_cents	30.06	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	448.0	in_cents	30.00	in_conf	0.9999	out_cents	30.05	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	458.7	in_cents	30.00	in_conf	0.9999	out_cents	30.04	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	469.3	in_cents	30.00	in_conf	0.9999	out_cents	30.04	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	480.0	in_cents	30.00	in_conf	0.9999	out_cents	30.04	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	490.7	in_cents	30.00	in_conf	0.9999	out_cents	30.04	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	501.3	in_cents	30.00	in_conf	0.9999	out_cents	30.03	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	512.0	in_cents	30.00	in_conf	0.9999	out_cents	30.03	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	522.7	in_cents	30.00	in_conf	0.9999	out_cents	30.03	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	533.3	in_cents	30.00	in_conf	0.9999	out_cents	30.02	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	544.0	in_cents	30.00	in_conf	0.9999	out_cents	30.02	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	554.7	in_cents	30.00	in_conf	0.9999	out_cents	30.02	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	565.3	in_cents	30.00	in_conf	0.9999	out_cents	30.02	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	576.0	in_cents	30.00	in_conf	0.9999	out_cents	30.02	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	586.7	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	597.3	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	608.0	in_cents	30.00	in_conf	0.9999	out_cents	30.02	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	618.7	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	629.3	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	640.0	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	650.7	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	661.3	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	672.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	682.7	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	693.3	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	704.0	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	714.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	725.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	736.0	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	746.7	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	757.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	768.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	778.7	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	789.3	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	800.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	810.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	821.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	832.0	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	842.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	853.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	864.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	874.7	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	885.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	896.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	906.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	917.3	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	928.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	938.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	949.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	960.0	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	970.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	981.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	992.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1002.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1013.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1024.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1034.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	1045.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	1056.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	1066.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1077.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1088.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1098.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1109.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1120.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1130.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	1141.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	1152.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	1162.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1173.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	1184.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1194.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1205.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1216.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1226.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	1237.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1248.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	1258.7	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1269.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	1280.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	1290.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	1301.3	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1312.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1322.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1333.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1344.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	1354.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1365.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	1376.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	1386.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	1397.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1408.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1418.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1429.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1440.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	1450.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1461.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	1472.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	1482.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	1493.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1504.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1514.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1525.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1536.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1546.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1557.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	1568.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	1578.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	1589.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1600.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1610.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1621.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1632.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1642.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1653.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	1664.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	1674.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	1685.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1696.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	1706.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1717.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1728.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1738.7	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1749.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1760.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1770.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	1781.3	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1792.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	1802.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	1813.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	1824.0	in_cents	30.00	in_conf	0.9999	out_cents	30.01	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1834.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1845.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1856.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1866.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	1877.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1888.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.39	in_target	30.00
+pwin	0	t_ms	1898.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.42	in_target	30.00
+pwin	0	t_ms	1909.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.40	in_target	30.00
+pwin	0	t_ms	1920.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pwin	0	t_ms	1930.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1941.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1952.0	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.41	in_target	30.00
+pwin	0	t_ms	1962.7	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.38	in_target	30.00
+pwin	0	t_ms	1973.3	in_cents	30.00	in_conf	0.9999	out_cents	30.00	out_conf	0.9999	out_db	-21.37	in_target	30.00
+pdone	0	windows	184
+stage	done
