@@ -9320,6 +9320,10 @@ void testWizardCategories()
     check (flat == juce::StringArray { "wizard", "wizard_eq", "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "multiband", "tuners", "reverb", "delay", "strips" }
            && measureOrder().back() == juce::StringArray { "strips" },
            "wizard WZ-CAT-2: the measuring order is Kathy's, strips last; got " + flat.joinIntoString (" > "));
+    {   // ... and the limiter's compressor pass is its own pass straight after the limiter's (its list needs the limiter rows)
+        int li = -1, lc = -1; for (size_t i = 0; i < measureOrder().size(); ++i) { if (measureOrder()[i].contains ("limiter")) li = (int) i; if (measureOrder()[i].contains ("limitercomp")) lc = (int) i; }
+        check (li >= 0 && lc == li + 1 && measureOrder()[(size_t) li].size() == 1, "wizard WZ-CAT-2b: limitercomp runs as its own pass right after limiter");
+    }
     // WZ-CAT-3 AFTER THE READS: a settled category the cert measures is measured (saturation, reverb, delay, pitch -> tuners); modulation is sent
     const auto sa = afterSignature (true, true, "saturation", {}, "thd"), rv = afterSignature (true, true, "reverb", {}, "tail"), pi = afterSignature (true, true, "pitch", {}, "cents"), mo = afterSignature (true, true, "modulation", {}, "sidebands");
     check (sa.route == Route::measure && sa.category == "saturation" && rv.route == Route::measure && pi.route == Route::measure && phaseBFor (pi.category) == juce::StringArray { "tuners" }

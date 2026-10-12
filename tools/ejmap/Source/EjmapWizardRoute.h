@@ -81,10 +81,11 @@ inline juce::StringArray phaseBFor (const juce::String& c)
 }
 inline bool measurable (const juce::String& c) { return ! phaseBFor (c).isEmpty(); }
 // THE MEASURING ORDER (Kathy, 12 Oct): fastest and most useful first, so a user who stops early has given the most valuable results.
-// Each inner list runs as one Phase B pass (--jobs within it); a stop ends the order there.
+// Each inner list runs as one Phase B pass (--jobs within it); a stop ends the order there. limitercomp is its own pass AFTER limiter
+// (12 Oct): its work list keeps only limiters whose limiter row is ok (phaseb::compressorPassAllowed), so the limiter rows must exist first.
 inline const std::vector<juce::StringArray>& measureOrder()
 {
-    static const std::vector<juce::StringArray> k { { "wizard" }, { "wizard_eq" }, { "deesser" }, { "limiter", "limitercomp" }, { "saturation" },
+    static const std::vector<juce::StringArray> k { { "wizard" }, { "wizard_eq" }, { "deesser" }, { "limiter" }, { "limitercomp" }, { "saturation" },
                                                     { "gate", "transient" }, { "multiband" }, { "tuners" }, { "reverb", "delay" }, { "strips" } };
     return k;
 }
