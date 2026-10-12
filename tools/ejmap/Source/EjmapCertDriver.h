@@ -6603,6 +6603,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 juce::String restorePreset; bool customDefault = false;
                 if (const auto refF = opt.out.getChildFile ("references").getChildFile (pp.stem + ".reference.json"); refF.existsAsFile())
                 {
+                    if (phaseb::rowHooks().started) phaseb::rowHooks().started (cat.name, pp.product);   // the opening-block reads load the plugin too: marked and logged like any load
                     const auto ref = customdefault::readReference (juce::JSON::parse (refF.loadFileAsString()));
                     const juce::StringArray probeArgs { opt.probe.getFullPathName(), pp.desc.name, pp.desc.fileOrIdentifier, juce::String::toHexString (pp.desc.uniqueId), "--factory-preset", "open" };
                     const auto openR = runProbeCall (probeArgs, opt.timeoutMs);
