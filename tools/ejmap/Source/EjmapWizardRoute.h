@@ -62,6 +62,22 @@ inline juce::String routeName (Route r)
     return {};
 }
 struct Decision { Route route = Route::categorise; juce::String category, why; };
+// THE KNOWN MULTIBANDS (Kathy, 12 Oct): the server has no multiband category, and a multiband with none reads as "dynamics" and
+// spends ~10 min in the compressor certification before it refuses (OTT, 591 s). So the wizard ships EJ Map's own list - the 17
+// products Sean's cert found multiband (cert outcomes state "multiband", 8-9 Oct) - by plugin uid (any version): held straight away.
+inline const std::set<juce::String>& knownMultibandUids()
+{
+    static const std::set<juce::String> k { "4e436063", "4e43607d",                                   // C4 (m) / (s)
+                                            "49306063", "4930607d", "49306263", "4930627d",           // C6, C6-SideChain (m) / (s)
+                                            "26a5d6d",                                                // Drawmer 1973
+                                            "697c7f2c",                                               // DynOne3
+                                            "46450463", "4645047d",                                   // LinMB (m) / (s)
+                                            "6f457234", "6f6a7363",                                   // Lindell 354E, Lindell MBC
+                                            "7f56566b", "6155777e",                                   // MO-TT, OTT
+                                            "526d5652", "61444242", "75154755" };                     // Ozone 12 Dynamics, Pro-MB, SSL G3 MultiBusComp
+    return k;
+}
+inline bool isKnownMultiband (const juce::String& uid) { return knownMultibandUids().count (uid.toLowerCase()) > 0; }
 // ALL CATEGORIES (12 Oct): the EJ Map Phase B categories that measure a category - the same modes, outcomes, acceptance and serial lane
 // as the certification. A limiter is measured twice: the limiter mode and the compressor certification (limiter_comp, Kathy 10 Oct).
 inline juce::StringArray phaseBFor (const juce::String& c)
@@ -102,15 +118,17 @@ inline bool draftUsable (const juce::String& phaseBCategory, const juce::var& dr
 }
 // the Tracker's kind for a Phase B category (its per-plugin seconds)
 inline juce::String kindOf (const juce::String& phaseBCategory) { return phaseBCategory == "wizard" ? juce::String ("compressor") : phaseBCategory == "wizard_eq" ? juce::String ("eq") : phaseBCategory; }
-inline Decision route (const Answer& a, const juce::String& nameCategory, const juce::String& outOfScope)
+inline Decision route (const Answer& a, const juce::String& nameCategory, const juce::String& outOfScope, bool knownMultiband = false)
 {
     switch (a.rule)
     {
         case Rule::A: return { Route::skipHave, a.category, "already in the database: " + a.why };
         case Rule::pendingReview: return { Route::skipPending, {}, a.why };
-        case Rule::B: return { Route::quickCheck, a.category, a.why };
-        case Rule::C: break;
+        case Rule::B: case Rule::C: break;
     }
+    // a known multiband: held at once - never quick-checked, signature-read or queued for the compressor certification
+    if (knownMultiband) return { Route::held, "multiband", "held: no server category (a known multiband: EJ Map's list)" };
+    if (a.rule == Rule::B) return { Route::quickCheck, a.category, a.why };
     if (a.category.isNotEmpty())
     {   // the server's names (Sean's 12); an internal label from a local catalogue: multiband -> held, the rest out of scope (never sent)
         if (measurable (a.category)) return { Route::measure, a.category, "the server's category: " + a.category };

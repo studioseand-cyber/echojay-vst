@@ -114,6 +114,11 @@ inline int runWizard (const WizardOptions& wo)
     // NO PLUGIN LEFT BEHIND (12 Oct, EjmapWizardRoute.h): (a) the database first - nothing it settles is loaded; (b) the server's category;
     // (c) the name rules; (d) out of scope by type / words, not loaded; (e) only what is left gets EJ Map's signature reads
     const auto pending = wizroute::loadPending (wo.db);
+    {   // THE REFERENCE STATES (custom defaults, 12 Oct): the server returns each plugin's agreed opening block with /lookup - STUB: the
+        // database folder's references/ - and Phase B checks every plugin against it before measuring (EjmapCustomDefault.h)
+        const auto refs = wo.db.getChildFile ("references"); const auto dst = out.getChildFile ("references");
+        if (refs.isDirectory()) { dst.createDirectory(); for (const auto& f : refs.findChildFiles (juce::File::findFiles, false, "*.reference.json")) f.copyFileTo (dst.getChildFile (f.getFileName())); }
+    }
     auto* state = new juce::DynamicObject(); juce::Array<juce::var> rows; std::map<juce::String, juce::StringArray> queues; std::map<juce::String, int> counts;   // queues: Phase B category -> products
     for (const auto& r : skippedRows) { rows.add (r); ++counts["crashed"]; }
     const auto problemState = [] (const juce::String& st) { return wizprog::isProblemState (st); };
@@ -138,7 +143,7 @@ inline int runWizard (const WizardOptions& wo)
         const auto& ir = plugins[i]; const auto uid = juce::String::toHexString (ir.desc.uniqueId).toLowerCase(); const auto ver = ir.desc.version;
         const auto se = store.count (uid + "|" + ver) ? store.at (uid + "|" + ver) : StoreEntry();
         const auto ans = wizroute::ask (db, pending, catalogue, uid, ver, se.fp, ir.desc.name);
-        const auto d = wizroute::route (ans, wizard::wizardCategory (ir.desc.name, juce::var()), categorise::outOfScope (typeOf (ir.desc), ir.desc.name, {}));
+        const auto d = wizroute::route (ans, wizard::wizardCategory (ir.desc.name, juce::var()), categorise::outOfScope (typeOf (ir.desc), ir.desc.name, {}), wizroute::isKnownMultiband (uid));
         auto* row = new juce::DynamicObject(); row->setProperty ("product", ir.desc.name); row->setProperty ("plugin_id", wizroute::pluginId (uid, ver)); row->setProperty ("map_fp", se.fp);
         row->setProperty ("category", d.category); row->setProperty ("route", wizroute::routeName (d.route)); row->setProperty ("vendor", ir.desc.manufacturerName);
         juce::String st, why = d.why;

@@ -9392,6 +9392,20 @@ void testWizardCategories()
     // left bx_limiter's exported profile behind)
     check (sendCompressorPass ("exported", true) && ! sendCompressorPass ("exported", false) && ! sendCompressorPass ("refused", true) && ! sendCompressorPass ("needs_review", true),
            "wizard WZ-CAT-6: the limiter's compressor profile goes with it only when exported and its tone check passed");
+    // WZ-MB-1 THE KNOWN MULTIBANDS (Kathy, 12 Oct): held at once - never signature-read into the compressor queue, never quick-checked,
+    // even when the server or the name says compressor; A / pending_review still win (nothing to do)
+    {
+        Answer c; Answer cComp; cComp.category = "compressor"; Answer b; b.rule = Rule::B; b.category = "compressor"; Answer aa; aa.rule = Rule::A; Answer pr; pr.rule = Rule::pendingReview;
+        check (route (c, {}, {}, true).route == Route::held && route (cComp, "compressor", {}, true).route == Route::held && route (b, {}, {}, true).route == Route::held
+               && route (aa, {}, {}, true).route == Route::skipHave && route (pr, {}, {}, true).route == Route::skipPending
+               && ! loadsToCategorise (route (c, {}, {}, true)) && route (c, {}, {}, false).route == Route::categorise
+               && isKnownMultiband ("6155777E") && ! isKnownMultiband ("6155777f") && knownMultibandUids().size() == 17,
+               "wizard WZ-MB-1: a known multiband (OTT, any version) is held straight away, never categorised or queued; 17 on the list");
+    }
+    // WZ-CD-1 a custom default the wizard could not restore is its own quiet state, said in the summary
+    check (ejmap::wizard::plainOutcome ("custom_default", {}) == "custom_default" && ! isProblemState ("custom_default")
+           && ejmap::wizard::summaryLine ({ { "custom_default", 2 } }).contains ("2 plugins open with a custom default and were not measured"),
+           "wizard WZ-CD-1: custom_default -> its own state (not an error), named in the summary");
     // WZ-CAT-5 THE PASSES: groups run one after another, --jobs only inside one; a pass is at least its longest plugin. A compressor (pass 0),
     // an EQ (pass 1), a limiter + its compressor pass (pass 2) at --jobs 2 = 340 + 36 + max (340, 368 / 2) = 716 s (the flat sum / 2 said 372)
     {

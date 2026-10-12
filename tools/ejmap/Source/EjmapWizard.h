@@ -173,6 +173,7 @@ inline juce::String plainOutcome (const juce::String& outcome, const juce::Strin
     if (outcome == "silent_output") return "silent";
     if (outcome == "probe_crashed") return "crashed";
     if (outcome == "unhostable" || outcome == "empty_param_list") return "wont_load";
+    if (outcome == "custom_default") return "custom_default";   // 12 Oct: opens differently from its reference and could not be restored
     if (outcome == "ok" && certState == "exported") return "measured";
     return "not_measurable";
 }
@@ -197,6 +198,7 @@ inline juce::String summaryLine (const std::map<juce::String, int>& n, bool sent
     if (get ("needs_category")) parts.add (plural (get ("needs_category"), sent ? "plugin we couldn't identify was sent for review" : "plugin we couldn't identify will be sent for review", sent ? "plugins we couldn't identify were sent for review" : "plugins we couldn't identify will be sent for review"));
     if (get ("other_category")) parts.add (plural (get ("other_category"), sent ? "plugin of a kind we don't measure yet was sent so EchoJay knows it" : "plugin of a kind we don't measure yet will be sent so EchoJay knows it", sent ? "plugins of kinds we don't measure yet were sent so EchoJay knows them" : "plugins of kinds we don't measure yet will be sent so EchoJay knows them"));
     if (get ("out_of_scope")) parts.add (plural (get ("out_of_scope"), sent ? "instrument / meter / utility was listed, not loaded" : "instrument / meter / utility will be listed, not loaded", sent ? "instruments / meters / utilities were listed, not loaded" : "instruments / meters / utilities will be listed, not loaded"));
+    if (get ("custom_default")) parts.add (plural (get ("custom_default"), "plugin opens with a custom default and was not measured", "plugins open with a custom default and were not measured"));
     if (get ("pending_review")) parts.add (plural (get ("pending_review"), "was already sent for review by someone else", "were already sent for review by someone else"));
     if (get ("identifying")) parts.add (juce::String (get ("identifying")) + " being identified");
     return parts.isEmpty() ? juce::String ("nothing to do") : parts.joinIntoString (", ");
