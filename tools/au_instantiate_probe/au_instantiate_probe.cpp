@@ -99,7 +99,11 @@ int main (int argc, char** argv)
     const bool hits       = argc >= 5 && juce::String (argv[4]) == "--hits";         // key=value arguments, probe_dynamics.h (PROTOTYPE)
     const bool ramp       = argc >= 5 && juce::String (argv[4]) == "--ramp";         // key=value arguments, probe_dynamics.h (PROTOTYPE)
     const bool materialM  = argc >= 5 && juce::String (argv[4]) == "--material";     // key=value arguments, probe_material.h (PROTOTYPE, A2)
-    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep || textAtNorms || sweepPitch || burst || response || tail || hits || ramp || materialM;
+    // 12 Oct (Kathy, custom defaults): "--factory-preset [default|N|open]" = the AU's OWN factory preset, no audio ("open": the opening block only). Prints the opening block
+    // (param lines), the unit's factory presets (programs / program lines), then loads preset N (default: the first, 0) and prints
+    // its block as "fparam" lines; "factory none" when the unit publishes no factory preset
+    const bool factoryPreset = argc >= 5 && juce::String (argv[4]) == "--factory-preset";
+    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep || textAtNorms || sweepPitch || burst || response || tail || hits || ramp || materialM || factoryPreset;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
@@ -180,6 +184,25 @@ int main (int argc, char** argv)
         const auto clean = [] (juce::String t) { return t.replace ("\t", " ").replace ("\n", " ").replace ("\r", " "); };
         std::printf ("\n");   // 21 Sep 2026: row 0 starts a line of its own - WaveShell-AU writes a banner to stdout with no trailing newline
         if (renderTest) { ejprobe::runRenderTest (*inst); std::fflush (stdout); std::_Exit (0); }
+        if (factoryPreset)
+        {
+            auto block = [&] (const char* tag) { const auto& pp = inst->getParameters(); for (int i = 0; i < pp.size(); ++i) if (auto* q = pp[i])
+                std::printf ("%s\t%d\t%.6f\t%s\t%s\n", tag, i, q->getValue(), clean (q->getName (128)).toRawUTF8(), clean (q->getCurrentValueAsText()).toRawUTF8()); };
+            block ("param");
+            const int n = inst->getNumPrograms(), cur = inst->getCurrentProgram();
+            std::printf ("programs\t%d\tcurrent_at_open\t%d\n", n, cur);
+            for (int k = 0; k < juce::jmin (n, 64); ++k) std::printf ("program\t%d\t%s\n", k, clean (inst->getProgramName (k)).toRawUTF8());
+            const juce::String which = argc >= 6 ? juce::String (argv[5]) : juce::String ("default");
+            if (which == "open") { std::fflush (stdout); std::_Exit (0); }   // "open": the opening block alone (the custom-default check / read-back)
+            if (n <= 0) { std::printf ("factory\tnone\tthe unit publishes no factory preset\n"); std::fflush (stdout); std::_Exit (0); }
+            const int k = which == "default" ? 0 : juce::jlimit (0, n - 1, which.getIntValue());
+            inst->setCurrentProgram (k);
+            const double t1 = juce::Time::getMillisecondCounterHiRes();   // let the unit apply it (some do on the run loop)
+            while (juce::Time::getMillisecondCounterHiRes() - t1 < 400.0) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+            std::printf ("factory\t%d\t%s\n", k, clean (inst->getProgramName (k)).toRawUTF8());
+            block ("fparam");
+            std::fflush (stdout); std::_Exit (0);
+        }
         if (textAtNorms)
         {
             std::vector<float> ns;

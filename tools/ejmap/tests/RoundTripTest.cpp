@@ -9964,6 +9964,26 @@ void testCustomDefault()
     const auto clean = parseBlock ("probe: x\nstage\tprepare\nparam\t0\t0.250000\tGain\t-6 dB\nparam\t1\t1.000000\tMix\t100%\nstage\tdone\n");
     check (afterWrite.empty() && clean.size() == 2 && clean.at (0).text == "-6 dB" && ! compare ({}, clean).comparable,
            "customdefault CD-3: a block after a write is refused; a clean block parses; no reference = not comparable");
+    // CD-4 THE ACTION (Kathy, item 3) on MMorph's real blocks: a reference only one Mac vouches for is not trusted -> custom_default;
+    // a trusted one (2 Macs agree) -> every differing control written back at the reference's norm; the read-back must then match
+    {
+        const auto seanB = parseBlock (dir.getChildFile ("mmorph.sean.txt").loadFileAsString()), hereB = parseBlock (dir.getChildFile ("mmorph.here.txt").loadFileAsString());
+        ejmap::customdefault::Reference one; one.block = seanB; one.agreeing = 1; Reference two = one; two.agreeing = 2;
+        const auto p1 = plan (one, hereB), p2 = plan (two, hereB);
+        bool w74 = p2.writes.contains ("74:" + juce::String (seanB.at (74).norm, 6)), noOpening = ! p2.writes.contains (juce::String (hereB.at (74).norm, 6));
+        check (p1.act == Act::customDefault && p1.why.contains ("not trusted") && p2.act == Act::restore && (int) p2.diffs.size() == (int) mm.diffs.size() && w74 && noOpening
+               && ! restoreConfirmed (two, hereB) && restoreConfirmed (two, seanB),
+               "customdefault CD-4: MMorph - 1 source -> custom_default; 2 sources -> restore (" + juce::String ((int) p2.diffs.size()) + " writes at the reference's norms); read-back must equal the reference");
+    }
+    // CD-5 the rest: opens as the reference -> measured; no reference / no opening block -> measured as it opens; the file round-trips
+    {
+        const auto sbcS = parseBlock (dir.getChildFile ("lindellsbc.sean.txt").loadFileAsString()), sbcH = parseBlock (dir.getChildFile ("lindellsbc.here.txt").loadFileAsString());
+        ejmap::customdefault::Reference r; r.block = sbcS; r.agreeing = 2;
+        const auto back = ejmap::customdefault::readReference (ejmap::customdefault::referenceVar ("AudioUnit|6f747363|1.0.3", sbcS, 2, { "Sean 11 Oct", "this Mac 12 Oct" }));
+        check (plan (r, sbcH).act == Act::measure && plan ({}, sbcH).act == Act::measure && plan (r, {}).act == Act::measure
+               && back.agreeing == 2 && back.sources.size() == 2 && back.block.size() == sbcS.size() && back.block.at (3).text == sbcS.at (3).text && ejmap::customdefault::trusted (back),
+               "customdefault CD-5: Lindell SBC opens as its reference -> measured; no reference or block -> measured as it opens; the reference file round-trips");
+    }
 }
 
 /** CATEGORISE RELEASE RULE (Kathy, 12 Oct): a level-dependent, FLAT gain beats a short tail (a compressor's release), decided from REAL

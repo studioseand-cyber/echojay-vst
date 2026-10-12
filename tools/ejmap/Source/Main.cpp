@@ -729,6 +729,17 @@ namespace
                 for (int j = i + 2; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--licences") csv = cwdFile (v); else if (k == "--date") date = v; }
                 return a == "--licence-check" ? ejmap::cert::runLicenceCheck (o, csv, date) : ejmap::cert::runLicenceStamp (o, csv, date);
             }
+            if (a == "--factory-read")   // 12 Oct: the AU's own factory preset per named plugin (no audio, no store written)
+            {
+                ejmap::cert::SweepOptions o; juce::StringArray only;
+                for (int j = i + 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
+                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--only") only.add (v); }
+                for (int j = i + 1; j < argc; ++j) if (argAt (argc, argv, j) == "--include-pace") o.includePace = true;
+                if (o.out == juce::File() || only.isEmpty()) { std::cerr << "usage: ejmap --factory-read --only NAME... --out <folder> [--probe P] [--ejmap-ledger L] [--include-pace]" << std::endl; return 2; }
+                if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
+                if (o.ledger == juce::File()) o.ledger = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap");
+                return ejmap::cert::runFactoryRead (o, only);
+            }
             if (a == "--categorise-redecide")   // 12 Oct: re-decide a categorise folder from its raw traces (no loads); old -> new
             {
                 if (i + 1 >= argc) { std::cerr << "usage: ejmap --categorise-redecide <folder with proposed_categories.json + raw/> [--out <report>]" << std::endl; return 2; }

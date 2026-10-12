@@ -77,6 +77,7 @@
 #include "EjmapJobs.h"
 #include "EjmapSleepGuard.h"
 #include "EjmapQuarantine.h"
+#include "EjmapCustomDefault.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -3250,6 +3251,31 @@ inline categorise::Row categoriseOne (const SweepOptions& opt, const InstalledRe
         say ("  " + row.product + ": " + (d.settled ? d.category + " - " : juce::String ("UNSETTLED - ")) + d.why + " (" + juce::String (row.seconds, 0) + " s)");
         return row;
     }
+// THE FACTORY PRESET READ (12 Oct, custom defaults): for each named installed AU, the probe's --factory-preset (the opening block,
+// the unit's factory presets, the first preset's block; no audio) - through the licence gate and PACE rule of the categorise step and
+// the window-watched runner; the trace lands in <out>/raw/<stem>.factory.1.txt. Nothing is written to any store.
+inline int runFactoryRead (const SweepOptions& opt, const juce::StringArray& only)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("FACTORY: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    const auto bundles = componentBundles(); const auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
+    int read = 0, gated = 0, failed = 0;
+    for (const auto& r : installedAudioUnits())
+    {
+        if (! only.contains (r.desc.name)) continue;
+        juce::String why; const bool pace = paceHeld (r.desc, bundles, why);
+        if (const auto gate = licenceGate (opt, r.desc); gate.stop.isNotEmpty() || (pace && ! opt.includePace)) { ++gated; say ("  " + r.desc.name + ": not loaded (" + (gate.stop.isNotEmpty() ? gate.stop : "PACE-wrapped") + ")"); continue; }
+        const auto stem = "AudioUnit_" + r.uidKey.fromLastOccurrenceOf ("|", false, false) + "_" + r.desc.version;
+        const auto x = runProbeCall ({ opt.probe.getFullPathName(), r.desc.name, r.desc.fileOrIdentifier, juce::String::toHexString (r.desc.uniqueId), "--factory-preset", "default" }, opt.timeoutMs);
+        raw.getChildFile (stem + ".factory.1.txt").replaceWithText (x.out, false, false, "\n");
+        if (! x.cleanExit()) { ++failed; say ("  " + r.desc.name + ": " + x.describe()); continue; }
+        ++read; const auto f = x.out.fromFirstOccurrenceOf ("\nfactory\t", false, false).upToFirstOccurrenceOf ("\n", false, false);
+        say ("  " + r.desc.name + ": factory " + (f.isNotEmpty() ? f.replace ("\t", " ") : juce::String ("(no line)")));
+    }
+    say ("FACTORY: " + juce::String (read) + " read, " + juce::String (gated) + " not loaded (licence / PACE), " + juce::String (failed) + " failed -> " + raw.getFullPathName());
+    return 0;
+}
+
 // RE-DECIDE FROM THE TRACES (12 Oct): no plugin is loaded. Every measured row of <folder>/proposed_categories.json is rebuilt from its
 // raw categorise traces (<folder>/raw/<stem>.categorise.<tag>.1.txt, the same parsers), decided with the rule before 12 Oct (which must
 // reproduce the stored answer: the replay's fidelity) and with today's; the changes are listed old -> new.
@@ -6570,12 +6596,41 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             else
             {
                 if (gate.demo) { row->setProperty ("licence", gate.stamp); row->setProperty ("licence_note", gate.note); }
+                // THE OPENING STATE vs THE REFERENCE (Kathy, 12 Oct, custom defaults): only where <out>/references/<stem>.reference.json exists.
+                // Opens as the reference -> measured; opens differently from a TRUSTED reference (2+ Macs agree) -> every differing control
+                // written back, read back, and measured under those writes (the child's --preset: the probe's EJ_PROBE_PRESET under every
+                // process); otherwise, or when the read-back does not match -> filed custom_default, not measured
+                juce::String restorePreset; bool customDefault = false;
+                if (const auto refF = opt.out.getChildFile ("references").getChildFile (pp.stem + ".reference.json"); refF.existsAsFile())
+                {
+                    const auto ref = customdefault::readReference (juce::JSON::parse (refF.loadFileAsString()));
+                    const juce::StringArray probeArgs { opt.probe.getFullPathName(), pp.desc.name, pp.desc.fileOrIdentifier, juce::String::toHexString (pp.desc.uniqueId), "--factory-preset", "open" };
+                    const auto openR = runProbeCall (probeArgs, opt.timeoutMs);
+                    const auto pl = customdefault::plan (ref, customdefault::parseBlock (openR.out));
+                    juce::String refWhy = pl.why;
+                    if (pl.act == customdefault::Act::customDefault) customDefault = true;
+                    else if (pl.act == customdefault::Act::restore)
+                    {
+                        juce::StringArray rb { "/usr/bin/env", "EJ_PROBE_PRESET=" + pl.writes }; rb.addArray (probeArgs);
+                        const auto back = runChild (rb, opt.timeoutMs);
+                        const bool ok = back.cleanExit() && customdefault::restoreConfirmed (ref, customdefault::parseBlock (back.out));
+                        juce::Array<juce::var> restored;
+                        for (const auto& d : pl.diffs) { auto* o = new juce::DynamicObject(); o->setProperty ("index", d.index); o->setProperty ("control", d.reference.name);
+                            o->setProperty ("opened", d.opening.text); o->setProperty ("written", d.reference.text); o->setProperty ("norm", d.reference.norm); restored.add (juce::var (o)); }
+                        row->setProperty ("custom_default_restored", restored);   // the neutral writes on the record
+                        if (ok) restorePreset = pl.writes; else { customDefault = true; refWhy = "custom_default: " + pl.why + "; the read-back did not match the reference"; }
+                    }
+                    row->setProperty ("reference", refWhy);
+                    if (customDefault) { outcome = "custom_default"; row->setProperty ("reason", refWhy); row->setProperty ("records", juce::Array<juce::var>()); say ("  " + cat.name + ": " + pp.product + " - " + refWhy); }
+                }
+                if (! customDefault) {
                 if (cat.name == "timing" && pp.recordFile.isNotEmpty()) { tmp.getChildFile ("fixtures").createDirectory(); juce::File (pp.recordFile).copyFileTo (tmp.getChildFile ("fixtures").getChildFile (juce::File (pp.recordFile).getFileName())); }
                 juce::StringArray args { exe.getFullPathName(), cat.mode, pp.product };
                 if (cat.kindArg.isNotEmpty()) { args.add ("--kind"); args.add (cat.kindArg); }
                 if (cat.name == "wizard") { args.add ("--purpose"); args.add ("contribution"); }
                 if (cat.name == "combined" || cat.name == "material" || cat.name == "frequency" || cat.name == "samplerate" || cat.name == "saturation") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts; a saturator's gain draft) live in the real folder
                 args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName() });
+                if (restorePreset.isNotEmpty()) { args.add ("--preset"); args.add (restorePreset); }   // the custom default restored under every probe process
                 int reused = 0;
                 if (resumeTraces.count (cat.name + "/" + pp.stem))
                 {
@@ -6592,11 +6647,12 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 }
                 if (phaseb::rowHooks().started) phaseb::rowHooks().started (cat.name, pp.product);
                 PWork w; w.cat = &cat; w.pp = pp; w.catDir = catDir; w.tmp = tmp; w.row = row; w.gate = gate; w.args = args; w.reused = reused; return w;
+                }
             }
             row->setProperty ("outcome", outcome); row->setProperty ("seconds", std::round (seconds)); row->setProperty ("at", nowStamp()); row->setProperty ("probe", id.cdhash);
             writeAtomic (rowFile (phasebDir, cat.name, pp.stem), juce::JSON::toString (juce::var (row.get())));   // the DONE marker, whole or absent
             tmp.deleteRecursively();
-            ++c.done; if (outcome == "ok") c.ok++; else if (outcome == "timed_out") c.timedOut++; else if (outcome == "skipped" || outcome == "needs_licence" || outcome == "needs_device" || outcome == "unhostable") c.skipped++; else c.failed++;   // a licence / device stop is not a failure
+            ++c.done; if (outcome == "ok") c.ok++; else if (outcome == "timed_out") c.timedOut++; else if (outcome == "skipped" || outcome == "needs_licence" || outcome == "needs_device" || outcome == "unhostable" || outcome == "custom_default") c.skipped++; else c.failed++;   // a licence / device stop is not a failure
             if (outcome != "skipped") c.seconds.push_back (seconds);
             saveProgress ({});
             say (progressLine (prog, cat.name, pp.product, outcome, seconds));
@@ -6696,7 +6752,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             row->setProperty ("outcome", outcome); row->setProperty ("seconds", std::round (seconds)); row->setProperty ("at", nowStamp()); row->setProperty ("probe", id.cdhash);
             writeAtomic (rowFile (phasebDir, cat.name, pp.stem), juce::JSON::toString (juce::var (row.get())));   // the DONE marker, whole or absent
             tmp.deleteRecursively();
-            ++c.done; if (outcome == "ok") c.ok++; else if (outcome == "timed_out") c.timedOut++; else if (outcome == "skipped" || outcome == "needs_licence" || outcome == "needs_device" || outcome == "unhostable") c.skipped++; else c.failed++;   // a licence / device stop is not a failure
+            ++c.done; if (outcome == "ok") c.ok++; else if (outcome == "timed_out") c.timedOut++; else if (outcome == "skipped" || outcome == "needs_licence" || outcome == "needs_device" || outcome == "unhostable" || outcome == "custom_default") c.skipped++; else c.failed++;   // a licence / device stop is not a failure
             if (outcome != "skipped") c.seconds.push_back (seconds);
             saveProgress ({});
             say (progressLine (prog, cat.name, pp.product, outcome, seconds));
