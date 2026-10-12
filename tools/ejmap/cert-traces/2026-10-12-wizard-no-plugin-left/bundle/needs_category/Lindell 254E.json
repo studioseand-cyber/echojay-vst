@@ -1,0 +1,100 @@
+{
+  "product": "Lindell 254E",
+  "vendor": "Plugin Alliance",
+  "plugin_id": "AudioUnit|6f457233|1.2.2",
+  "map_fp": "1ba7ad6d8695f5024617abe840d84d772132756aa1da00a5eda84f9634de3c76",
+  "map": {
+    "fp": "1ba7ad6d8695f5024617abe840d84d772132756aa1da00a5eda84f9634de3c76",
+    "schema": "ej_param_map/wizard-0",
+    "identity": {
+      "format": "AudioUnit",
+      "uid": "6f457233",
+      "name": "Lindell 254E",
+      "vendor": "Plugin Alliance",
+      "version": "1.2.2",
+      "param_count": 13
+    },
+    "category": "",
+    "params": [
+      {
+        "index": 0,
+        "name": "Mix"
+      },
+      {
+        "index": 1,
+        "name": "HPF"
+      },
+      {
+        "index": 2,
+        "name": "Limit"
+      },
+      {
+        "index": 3,
+        "name": "Compress"
+      },
+      {
+        "index": 4,
+        "name": "Meter"
+      },
+      {
+        "index": 5,
+        "name": "Gain"
+      },
+      {
+        "index": 6,
+        "name": "Ratio"
+      },
+      {
+        "index": 7,
+        "name": "Threshold"
+      },
+      {
+        "index": 8,
+        "name": "Compress Recovery"
+      },
+      {
+        "index": 9,
+        "name": "Limit Level"
+      },
+      {
+        "index": 10,
+        "name": "Limit Recovery"
+      },
+      {
+        "index": 11,
+        "name": "Bypass"
+      },
+      {
+        "index": 12,
+        "name": "Ext SideChain"
+      }
+    ],
+    "source": "the wizard: the parameter list read by the probe (no roles mapped)"
+  },
+  "leaning": "reverb",
+  "signature": {
+    "product": "Lindell 254E",
+    "vendor": "Plugin Alliance",
+    "type": "aufx",
+    "identity": "AudioUnit|6f457233|1.2.2",
+    "proposed_by_words": "",
+    "category": "reverb",
+    "settled": false,
+    "why": "a tail (RT60 0.40 s, 0 repeat(s) found); reverb or delay: review",
+    "measured": true,
+    "signatures": {
+      "level_dependence_db": 3.14,
+      "frequency_span_db": 0.14,
+      "rt60_s": 0.4,
+      "repeats": 0,
+      "thd_db_at_m30": -87.099999999999994,
+      "thd_db_at_m6": -55.899999999999999,
+      "sideband_db": -35.299999999999997,
+      "pitch_move_cents": 0.0,
+      "notes": []
+    },
+    "seconds": 3.0,
+    "reads_ran": true
+  },
+  "why": "a tail (RT60 0.40 s, 0 repeat(s) found); reverb or delay: review"
+}

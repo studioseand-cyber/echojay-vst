@@ -3126,6 +3126,51 @@ inline int runStrip (const SweepOptions& opt)
 // category in the ledger -> out of scope by type / name, a proposal from the words, four probe reads at the instantiate state, the
 // signature decides -> <out>/proposed_categories.json + <out>/category_review.txt. NOTHING is written to categories.json.
 // --only / --limit narrow the set; a licence-bound product (the gate) is not loaded and listed as such.
+// ONE PRODUCT'S CATEGORISE READS (the same reads as --categorise-propose, shared with the wizard since 12 Oct): out of scope by type
+// and words (no load), the words' proposal, the licence gate and PACE (not loaded), then --list-params and the five signature reads
+inline categorise::Row categoriseOne (const SweepOptions& opt, const InstalledRecord& r, const juce::String& kind, const std::map<juce::String, juce::File>& bundles, const juce::File& raw)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+        categorise::Row row; row.product = r.desc.name; row.vendor = r.desc.manufacturerName; row.identity = r.identityKey;
+        row.typeCode = r.desc.fileOrIdentifier.fromFirstOccurrenceOf ("/", false, false).upToFirstOccurrenceOf (",", false, false);
+        row.kind = kind;
+        row.outOfScope = categorise::outOfScope (row.typeCode, row.product, row.kind);
+        if (row.outOfScope.isNotEmpty()) { say ("  " + row.product + ": out of scope (" + row.outOfScope + ")"); return row; }
+        row.proposed = categorise::categoriesFromWords (row.product, row.vendor, row.kind);
+        // the licence gate and PACE: a licence-bound product is not loaded here; the proposal from words stands, unsettled
+        juce::String why; const bool pace = paceHeld (r.desc, bundles, why);
+        if (const auto gate = licenceGate (opt, r.desc); gate.stop.isNotEmpty() || (pace && ! opt.includePace))
+        {
+            row.why = (gate.stop.isNotEmpty() ? gate.stop : "PACE-wrapped (" + why + "): not loaded here (--include-pace loads it)") + "; the words propose " + (row.proposed.isEmpty() ? juce::String ("nothing") : row.proposed.joinIntoString (" / ")) + ": review";
+            row.category = row.proposed.size() == 1 ? row.proposed[0] : juce::String(); say ("  " + row.product + ": " + row.why); return row;
+        }
+        const auto uidHex = r.uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + r.desc.version;
+        auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), r.desc.name, r.desc.fileOrIdentifier, juce::String::toHexString (r.desc.uniqueId) }; args.addArray (extra); const auto x = runProbeCall (args, opt.timeoutMs); raw.getChildFile (stem + ".categorise." + tag + ".1.txt").replaceWithText (x.out, false, false, "\n"); return x; };
+        const auto t1 = juce::Time::getMillisecondCounterHiRes();
+        const auto lp = run ("list-params", { "--list-params" });
+        if (lp.kind == ChildResult::Kind::uiShown) { row.why = "a window at the load (" + lp.describe() + "): not loaded again; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); return row; }
+        if (! lp.cleanExit()) { row.why = "--list-params " + lp.describe() + "; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); return row; }
+        int ctl = -1; for (const auto& [i, lr] : parseListParams (lp.out)) if (lr.automatable && ! lr.meta) { ctl = i; break; }
+        if (ctl < 0) { row.why = "no automatable parameter to hold the probe's position: " + juce::String ("the reads need one; the words propose ") + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); return row; }
+        auto& sg = row.sig; bool window = false;
+        auto guard = [&] (const ChildResult& x) { if (x.kind == ChildResult::Kind::uiShown) window = true; return x; };
+        const auto r30 = guard (run ("resp30", { "--response", "ctl=" + juce::String (ctl), "norms=current", "tones=121", "lo=20", "hi=20000", "db=-30", "hold=1.0", "discard=0.5" }));
+        const auto r12 = window ? ChildResult() : guard (run ("resp12", { "--response", "ctl=" + juce::String (ctl), "norms=current", "tones=121", "lo=20", "hi=20000", "db=-12", "hold=1.0", "discard=0.5" }));
+        categorise::readResponses (sg, eq::parseResponse (r30.cleanExit() ? r30.out : juce::String()), eq::parseResponse (r12.cleanExit() ? r12.out : juce::String()));
+        const auto tl = window ? ChildResult() : guard (run ("tail", { "--tail", "db=-12", "burst_ms=300", "tail_s=3", "hz=997", "win_ms=1" }));
+        categorise::readTail (sg, reverbdelay::parseTail (tl.cleanExit() ? tl.out : juce::String()));
+        const auto h30 = window ? ChildResult() : guard (run ("harm30", { "--response", "ctl=" + juce::String (ctl), "norms=current", "tones=1", "lo=997", "harmonics=5", "db=-30", "hold=1.0", "discard=0.5" }));
+        const auto h6 = window ? ChildResult() : guard (run ("harm6", { "--response", "ctl=" + juce::String (ctl), "norms=current", "tones=1", "lo=997", "harmonics=5", "db=-6", "hold=1.0", "discard=0.5" }));
+        categorise::readHarmonics (sg, saturation::parseHarmonics (h30.cleanExit() ? h30.out : juce::String()), saturation::parseHarmonics (h6.cleanExit() ? h6.out : juce::String()));
+        const auto pt = window ? ChildResult() : guard (run ("pitch", { "--sweep-pitch", "ctl=" + juce::String (ctl), "norms=current", "gen=static", "note=220", "cents=30", "hold=2", "db=-18" }));
+        categorise::readPitch (sg, pitch::parsePitch (pt.cleanExit() ? pt.out : juce::String()), 30.0);
+        row.measured = ! window; row.seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0;
+        if (window) { row.why = "a window appeared during the reads: not loaded again; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); return row; }
+        const auto d = categorise::decide (sg, row.proposed); row.category = d.category; row.why = d.why; row.settled = d.settled;
+        say ("  " + row.product + ": " + (d.settled ? d.category + " - " : juce::String ("UNSETTLED - ")) + d.why + " (" + juce::String (row.seconds, 0) + " s)");
+        return row;
+    }
+
 inline int runCategorisePropose (const SweepOptions& opt, const juce::StringArray& only, int limit)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
@@ -3146,44 +3191,8 @@ inline int runCategorisePropose (const SweepOptions& opt, const juce::StringArra
     std::vector<categorise::Row> rows; const auto t0 = juce::Time::getMillisecondCounterHiRes();
     for (const auto& r : todo)
     {
-        categorise::Row row; row.product = r.desc.name; row.vendor = r.desc.manufacturerName; row.identity = r.identityKey;
-        row.typeCode = r.desc.fileOrIdentifier.fromFirstOccurrenceOf ("/", false, false).upToFirstOccurrenceOf (",", false, false);
-        if (const auto k = in.kindByUid.find (r.uidKey); k != in.kindByUid.end()) row.kind = k->second;
-        row.outOfScope = categorise::outOfScope (row.typeCode, row.product, row.kind);
-        if (row.outOfScope.isNotEmpty()) { say ("  " + row.product + ": out of scope (" + row.outOfScope + ")"); rows.push_back (row); continue; }
-        row.proposed = categorise::categoriesFromWords (row.product, row.vendor, row.kind);
-        // the licence gate and PACE: a licence-bound product is not loaded here; the proposal from words stands, unsettled
-        juce::String why; const bool pace = paceHeld (r.desc, bundles, why);
-        if (const auto gate = licenceGate (opt, r.desc); gate.stop.isNotEmpty() || (pace && ! opt.includePace))
-        {
-            row.why = (gate.stop.isNotEmpty() ? gate.stop : "PACE-wrapped (" + why + "): not loaded here (--include-pace loads it)") + "; the words propose " + (row.proposed.isEmpty() ? juce::String ("nothing") : row.proposed.joinIntoString (" / ")) + ": review";
-            row.category = row.proposed.size() == 1 ? row.proposed[0] : juce::String(); say ("  " + row.product + ": " + row.why); rows.push_back (row); continue;
-        }
-        const auto uidHex = r.uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + r.desc.version;
-        auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), r.desc.name, r.desc.fileOrIdentifier, juce::String::toHexString (r.desc.uniqueId) }; args.addArray (extra); const auto x = runProbeCall (args, opt.timeoutMs); raw.getChildFile (stem + ".categorise." + tag + ".1.txt").replaceWithText (x.out, false, false, "\n"); return x; };
-        const auto t1 = juce::Time::getMillisecondCounterHiRes();
-        const auto lp = run ("list-params", { "--list-params" });
-        if (lp.kind == ChildResult::Kind::uiShown) { row.why = "a window at the load (" + lp.describe() + "): not loaded again; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); rows.push_back (row); continue; }
-        if (! lp.cleanExit()) { row.why = "--list-params " + lp.describe() + "; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); rows.push_back (row); continue; }
-        int ctl = -1; for (const auto& [i, lr] : parseListParams (lp.out)) if (lr.automatable && ! lr.meta) { ctl = i; break; }
-        if (ctl < 0) { row.why = "no automatable parameter to hold the probe's position: " + juce::String ("the reads need one; the words propose ") + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); rows.push_back (row); continue; }
-        auto& sg = row.sig; bool window = false;
-        auto guard = [&] (const ChildResult& x) { if (x.kind == ChildResult::Kind::uiShown) window = true; return x; };
-        const auto r30 = guard (run ("resp30", { "--response", "ctl=" + juce::String (ctl), "norms=current", "tones=121", "lo=20", "hi=20000", "db=-30", "hold=1.0", "discard=0.5" }));
-        const auto r12 = window ? ChildResult() : guard (run ("resp12", { "--response", "ctl=" + juce::String (ctl), "norms=current", "tones=121", "lo=20", "hi=20000", "db=-12", "hold=1.0", "discard=0.5" }));
-        categorise::readResponses (sg, eq::parseResponse (r30.cleanExit() ? r30.out : juce::String()), eq::parseResponse (r12.cleanExit() ? r12.out : juce::String()));
-        const auto tl = window ? ChildResult() : guard (run ("tail", { "--tail", "db=-12", "burst_ms=300", "tail_s=3", "hz=997", "win_ms=1" }));
-        categorise::readTail (sg, reverbdelay::parseTail (tl.cleanExit() ? tl.out : juce::String()));
-        const auto h30 = window ? ChildResult() : guard (run ("harm30", { "--response", "ctl=" + juce::String (ctl), "norms=current", "tones=1", "lo=997", "harmonics=5", "db=-30", "hold=1.0", "discard=0.5" }));
-        const auto h6 = window ? ChildResult() : guard (run ("harm6", { "--response", "ctl=" + juce::String (ctl), "norms=current", "tones=1", "lo=997", "harmonics=5", "db=-6", "hold=1.0", "discard=0.5" }));
-        categorise::readHarmonics (sg, saturation::parseHarmonics (h30.cleanExit() ? h30.out : juce::String()), saturation::parseHarmonics (h6.cleanExit() ? h6.out : juce::String()));
-        const auto pt = window ? ChildResult() : guard (run ("pitch", { "--sweep-pitch", "ctl=" + juce::String (ctl), "norms=current", "gen=static", "note=220", "cents=30", "hold=2", "db=-18" }));
-        categorise::readPitch (sg, pitch::parsePitch (pt.cleanExit() ? pt.out : juce::String()), 30.0);
-        row.measured = ! window; row.seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0;
-        if (window) { row.why = "a window appeared during the reads: not loaded again; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); rows.push_back (row); continue; }
-        const auto d = categorise::decide (sg, row.proposed); row.category = d.category; row.why = d.why; row.settled = d.settled;
-        say ("  " + row.product + ": " + (d.settled ? d.category + " - " : juce::String ("UNSETTLED - ")) + d.why + " (" + juce::String (row.seconds, 0) + " s)");
-        rows.push_back (row);
+        const auto k = in.kindByUid.find (r.uidKey);
+        rows.push_back (categoriseOne (opt, r, k != in.kindByUid.end() ? k->second : juce::String(), bundles, raw));
     }
     juce::Array<juce::var> arr; for (const auto& row : rows) arr.add (categorise::rowVar (row));
     auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_category_proposal/0"); o->setProperty ("status", "PROPOSAL (item F, 7 Oct): nothing written to categories.json; the review sheet lists the unsettled");

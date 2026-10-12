@@ -1,0 +1,872 @@
+{
+  "product": "MChorusMB",
+  "vendor": "MeldaProduction",
+  "plugin_id": "AudioUnit|615d626a|14.16.0",
+  "map_fp": "562be9b6bb920bc218a9b86af20683df88f5e569375150640ee3a87f674bbaa6",
+  "map": {
+    "fp": "562be9b6bb920bc218a9b86af20683df88f5e569375150640ee3a87f674bbaa6",
+    "schema": "ej_param_map/wizard-0",
+    "identity": {
+      "format": "AudioUnit",
+      "uid": "615d626a",
+      "name": "MChorusMB",
+      "vendor": "MeldaProduction",
+      "version": "14.16.0",
+      "param_count": 212
+    },
+    "category": "",
+    "params": [
+      {
+        "index": 0,
+        "name": "Globals -> Dry/wet"
+      },
+      {
+        "index": 1,
+        "name": "Globals -> Saturation"
+      },
+      {
+        "index": 2,
+        "name": "Globals -> Width"
+      },
+      {
+        "index": 3,
+        "name": "Param 4"
+      },
+      {
+        "index": 4,
+        "name": "Param 5"
+      },
+      {
+        "index": 5,
+        "name": "Param 6"
+      },
+      {
+        "index": 6,
+        "name": "Param 7"
+      },
+      {
+        "index": 7,
+        "name": "Param 8"
+      },
+      {
+        "index": 8,
+        "name": "Chorus -> Character"
+      },
+      {
+        "index": 9,
+        "name": "Chorus -> Voices"
+      },
+      {
+        "index": 10,
+        "name": "Chorus -> Rate"
+      },
+      {
+        "index": 11,
+        "name": "Chorus -> Low cut"
+      },
+      {
+        "index": 12,
+        "name": "Param 13"
+      },
+      {
+        "index": 13,
+        "name": "Chorus -> Stereo mode"
+      },
+      {
+        "index": 14,
+        "name": "Chorus -> Shape"
+      },
+      {
+        "index": 15,
+        "name": "Param 16"
+      },
+      {
+        "index": 16,
+        "name": "Param 17"
+      },
+      {
+        "index": 17,
+        "name": "Param 18"
+      },
+      {
+        "index": 18,
+        "name": "Param 19"
+      },
+      {
+        "index": 19,
+        "name": "Param 20"
+      },
+      {
+        "index": 20,
+        "name": "Param 21"
+      },
+      {
+        "index": 21,
+        "name": "Param 22"
+      },
+      {
+        "index": 22,
+        "name": "Param 23"
+      },
+      {
+        "index": 23,
+        "name": "Param 24"
+      },
+      {
+        "index": 24,
+        "name": "Param 25"
+      },
+      {
+        "index": 25,
+        "name": "Param 26"
+      },
+      {
+        "index": 26,
+        "name": "Param 27"
+      },
+      {
+        "index": 27,
+        "name": "Param 28"
+      },
+      {
+        "index": 28,
+        "name": "Param 29"
+      },
+      {
+        "index": 29,
+        "name": "Param 30"
+      },
+      {
+        "index": 30,
+        "name": "Param 31"
+      },
+      {
+        "index": 31,
+        "name": "Param 32"
+      },
+      {
+        "index": 32,
+        "name": "Dry/Wet"
+      },
+      {
+        "index": 33,
+        "name": "Input gain"
+      },
+      {
+        "index": 34,
+        "name": "Output gain"
+      },
+      {
+        "index": 35,
+        "name": "Crossover type"
+      },
+      {
+        "index": 36,
+        "name": "Crossover analog mode"
+      },
+      {
+        "index": 37,
+        "name": "Level crossover slope"
+      },
+      {
+        "index": 38,
+        "name": "Level crossover value"
+      },
+      {
+        "index": 39,
+        "name": "Crossover tone"
+      },
+      {
+        "index": 40,
+        "name": "Crossover smoothing"
+      },
+      {
+        "index": 41,
+        "name": "Crossover transient release"
+      },
+      {
+        "index": 42,
+        "name": "Crossover transient resolution"
+      },
+      {
+        "index": 43,
+        "name": "Crossover spectral resolution"
+      },
+      {
+        "index": 44,
+        "name": "Band gain 1"
+      },
+      {
+        "index": 45,
+        "name": "Band gain 2"
+      },
+      {
+        "index": 46,
+        "name": "Band gain 3"
+      },
+      {
+        "index": 47,
+        "name": "Band gain 4"
+      },
+      {
+        "index": 48,
+        "name": "Band gain 5"
+      },
+      {
+        "index": 49,
+        "name": "Band gain 6"
+      },
+      {
+        "index": 50,
+        "name": "Band limit 1"
+      },
+      {
+        "index": 51,
+        "name": "Band limit 2"
+      },
+      {
+        "index": 52,
+        "name": "Band limit 3"
+      },
+      {
+        "index": 53,
+        "name": "Band limit 4"
+      },
+      {
+        "index": 54,
+        "name": "Band limit 5"
+      },
+      {
+        "index": 55,
+        "name": "Band panorama 1"
+      },
+      {
+        "index": 56,
+        "name": "Band panorama 2"
+      },
+      {
+        "index": 57,
+        "name": "Band panorama 3"
+      },
+      {
+        "index": 58,
+        "name": "Band panorama 4"
+      },
+      {
+        "index": 59,
+        "name": "Band panorama 5"
+      },
+      {
+        "index": 60,
+        "name": "Band panorama 6"
+      },
+      {
+        "index": 61,
+        "name": "Band 1 - Main parameters - Dry/Wet"
+      },
+      {
+        "index": 62,
+        "name": "Band 1 - Main parameters - Rate"
+      },
+      {
+        "index": 63,
+        "name": "Band 1 - Main parameters - Range"
+      },
+      {
+        "index": 64,
+        "name": "Band 1 - Main parameters - Delay"
+      },
+      {
+        "index": 65,
+        "name": "Band 1 - Main parameters - Voices"
+      },
+      {
+        "index": 66,
+        "name": "Band 1 - Main parameters - Saturation"
+      },
+      {
+        "index": 67,
+        "name": "Band 1 - Main parameters - Spread"
+      },
+      {
+        "index": 68,
+        "name": "Band 1 - Main parameters - Spread mode"
+      },
+      {
+        "index": 69,
+        "name": "Band 1 - Main parameters - Feedback"
+      },
+      {
+        "index": 70,
+        "name": "Band 1 - Main parameters - Feedback delay"
+      },
+      {
+        "index": 71,
+        "name": "Band 1 - Advanced parameters - Depth variability"
+      },
+      {
+        "index": 72,
+        "name": "Band 1 - Advanced parameters - Rate variability"
+      },
+      {
+        "index": 73,
+        "name": "Band 1 - Advanced parameters - Range variability"
+      },
+      {
+        "index": 74,
+        "name": "Band 1 - Advanced parameters - Delay variability"
+      },
+      {
+        "index": 75,
+        "name": "Band 1 - Advanced parameters - Min frequency"
+      },
+      {
+        "index": 76,
+        "name": "Band 1 - Advanced parameters - Max frequency"
+      },
+      {
+        "index": 77,
+        "name": "Band 1 - Advanced parameters - Tremolo"
+      },
+      {
+        "index": 78,
+        "name": "Band 1 - Advanced parameters - Voice tremolo"
+      },
+      {
+        "index": 79,
+        "name": "Band 1 - Advanced parameters - Tremolo phase"
+      },
+      {
+        "index": 80,
+        "name": "Band 1 - Advanced parameters - LFO override"
+      },
+      {
+        "index": 81,
+        "name": "Band 1 - Synchronization - Synchronization"
+      },
+      {
+        "index": 82,
+        "name": "Band 1 - Synchronization - Length"
+      },
+      {
+        "index": 83,
+        "name": "Band 1 - Synchronization - Type"
+      },
+      {
+        "index": 84,
+        "name": "Band 1 - Synchronization - Phase"
+      },
+      {
+        "index": 85,
+        "name": "Band 2 - Main parameters - Dry/Wet"
+      },
+      {
+        "index": 86,
+        "name": "Band 2 - Main parameters - Rate"
+      },
+      {
+        "index": 87,
+        "name": "Band 2 - Main parameters - Range"
+      },
+      {
+        "index": 88,
+        "name": "Band 2 - Main parameters - Delay"
+      },
+      {
+        "index": 89,
+        "name": "Band 2 - Main parameters - Voices"
+      },
+      {
+        "index": 90,
+        "name": "Band 2 - Main parameters - Saturation"
+      },
+      {
+        "index": 91,
+        "name": "Band 2 - Main parameters - Spread"
+      },
+      {
+        "index": 92,
+        "name": "Band 2 - Main parameters - Spread mode"
+      },
+      {
+        "index": 93,
+        "name": "Band 2 - Main parameters - Feedback"
+      },
+      {
+        "index": 94,
+        "name": "Band 2 - Main parameters - Feedback delay"
+      },
+      {
+        "index": 95,
+        "name": "Band 2 - Advanced parameters - Depth variability"
+      },
+      {
+        "index": 96,
+        "name": "Band 2 - Advanced parameters - Rate variability"
+      },
+      {
+        "index": 97,
+        "name": "Band 2 - Advanced parameters - Range variability"
+      },
+      {
+        "index": 98,
+        "name": "Band 2 - Advanced parameters - Delay variability"
+      },
+      {
+        "index": 99,
+        "name": "Band 2 - Advanced parameters - Min frequency"
+      },
+      {
+        "index": 100,
+        "name": "Band 2 - Advanced parameters - Max frequency"
+      },
+      {
+        "index": 101,
+        "name": "Band 2 - Advanced parameters - Tremolo"
+      },
+      {
+        "index": 102,
+        "name": "Band 2 - Advanced parameters - Voice tremolo"
+      },
+      {
+        "index": 103,
+        "name": "Band 2 - Advanced parameters - Tremolo phase"
+      },
+      {
+        "index": 104,
+        "name": "Band 2 - Advanced parameters - LFO override"
+      },
+      {
+        "index": 105,
+        "name": "Band 2 - Synchronization - Synchronization"
+      },
+      {
+        "index": 106,
+        "name": "Band 2 - Synchronization - Length"
+      },
+      {
+        "index": 107,
+        "name": "Band 2 - Synchronization - Type"
+      },
+      {
+        "index": 108,
+        "name": "Band 2 - Synchronization - Phase"
+      },
+      {
+        "index": 109,
+        "name": "Band 3 - Main parameters - Dry/Wet"
+      },
+      {
+        "index": 110,
+        "name": "Band 3 - Main parameters - Rate"
+      },
+      {
+        "index": 111,
+        "name": "Band 3 - Main parameters - Range"
+      },
+      {
+        "index": 112,
+        "name": "Band 3 - Main parameters - Delay"
+      },
+      {
+        "index": 113,
+        "name": "Band 3 - Main parameters - Voices"
+      },
+      {
+        "index": 114,
+        "name": "Band 3 - Main parameters - Saturation"
+      },
+      {
+        "index": 115,
+        "name": "Band 3 - Main parameters - Spread"
+      },
+      {
+        "index": 116,
+        "name": "Band 3 - Main parameters - Spread mode"
+      },
+      {
+        "index": 117,
+        "name": "Band 3 - Main parameters - Feedback"
+      },
+      {
+        "index": 118,
+        "name": "Band 3 - Main parameters - Feedback delay"
+      },
+      {
+        "index": 119,
+        "name": "Band 3 - Advanced parameters - Depth variability"
+      },
+      {
+        "index": 120,
+        "name": "Band 3 - Advanced parameters - Rate variability"
+      },
+      {
+        "index": 121,
+        "name": "Band 3 - Advanced parameters - Range variability"
+      },
+      {
+        "index": 122,
+        "name": "Band 3 - Advanced parameters - Delay variability"
+      },
+      {
+        "index": 123,
+        "name": "Band 3 - Advanced parameters - Min frequency"
+      },
+      {
+        "index": 124,
+        "name": "Band 3 - Advanced parameters - Max frequency"
+      },
+      {
+        "index": 125,
+        "name": "Band 3 - Advanced parameters - Tremolo"
+      },
+      {
+        "index": 126,
+        "name": "Band 3 - Advanced parameters - Voice tremolo"
+      },
+      {
+        "index": 127,
+        "name": "Band 3 - Advanced parameters - Tremolo phase"
+      },
+      {
+        "index": 128,
+        "name": "Band 3 - Advanced parameters - LFO override"
+      },
+      {
+        "index": 129,
+        "name": "Band 3 - Synchronization - Synchronization"
+      },
+      {
+        "index": 130,
+        "name": "Band 3 - Synchronization - Length"
+      },
+      {
+        "index": 131,
+        "name": "Band 3 - Synchronization - Type"
+      },
+      {
+        "index": 132,
+        "name": "Band 3 - Synchronization - Phase"
+      },
+      {
+        "index": 133,
+        "name": "Band 4 - Main parameters - Dry/Wet"
+      },
+      {
+        "index": 134,
+        "name": "Band 4 - Main parameters - Rate"
+      },
+      {
+        "index": 135,
+        "name": "Band 4 - Main parameters - Range"
+      },
+      {
+        "index": 136,
+        "name": "Band 4 - Main parameters - Delay"
+      },
+      {
+        "index": 137,
+        "name": "Band 4 - Main parameters - Voices"
+      },
+      {
+        "index": 138,
+        "name": "Band 4 - Main parameters - Saturation"
+      },
+      {
+        "index": 139,
+        "name": "Band 4 - Main parameters - Spread"
+      },
+      {
+        "index": 140,
+        "name": "Band 4 - Main parameters - Spread mode"
+      },
+      {
+        "index": 141,
+        "name": "Band 4 - Main parameters - Feedback"
+      },
+      {
+        "index": 142,
+        "name": "Band 4 - Main parameters - Feedback delay"
+      },
+      {
+        "index": 143,
+        "name": "Band 4 - Advanced parameters - Depth variability"
+      },
+      {
+        "index": 144,
+        "name": "Band 4 - Advanced parameters - Rate variability"
+      },
+      {
+        "index": 145,
+        "name": "Band 4 - Advanced parameters - Range variability"
+      },
+      {
+        "index": 146,
+        "name": "Band 4 - Advanced parameters - Delay variability"
+      },
+      {
+        "index": 147,
+        "name": "Band 4 - Advanced parameters - Min frequency"
+      },
+      {
+        "index": 148,
+        "name": "Band 4 - Advanced parameters - Max frequency"
+      },
+      {
+        "index": 149,
+        "name": "Band 4 - Advanced parameters - Tremolo"
+      },
+      {
+        "index": 150,
+        "name": "Band 4 - Advanced parameters - Voice tremolo"
+      },
+      {
+        "index": 151,
+        "name": "Band 4 - Advanced parameters - Tremolo phase"
+      },
+      {
+        "index": 152,
+        "name": "Band 4 - Advanced parameters - LFO override"
+      },
+      {
+        "index": 153,
+        "name": "Band 4 - Synchronization - Synchronization"
+      },
+      {
+        "index": 154,
+        "name": "Band 4 - Synchronization - Length"
+      },
+      {
+        "index": 155,
+        "name": "Band 4 - Synchronization - Type"
+      },
+      {
+        "index": 156,
+        "name": "Band 4 - Synchronization - Phase"
+      },
+      {
+        "index": 157,
+        "name": "Band 5 - Main parameters - Dry/Wet"
+      },
+      {
+        "index": 158,
+        "name": "Band 5 - Main parameters - Rate"
+      },
+      {
+        "index": 159,
+        "name": "Band 5 - Main parameters - Range"
+      },
+      {
+        "index": 160,
+        "name": "Band 5 - Main parameters - Delay"
+      },
+      {
+        "index": 161,
+        "name": "Band 5 - Main parameters - Voices"
+      },
+      {
+        "index": 162,
+        "name": "Band 5 - Main parameters - Saturation"
+      },
+      {
+        "index": 163,
+        "name": "Band 5 - Main parameters - Spread"
+      },
+      {
+        "index": 164,
+        "name": "Band 5 - Main parameters - Spread mode"
+      },
+      {
+        "index": 165,
+        "name": "Band 5 - Main parameters - Feedback"
+      },
+      {
+        "index": 166,
+        "name": "Band 5 - Main parameters - Feedback delay"
+      },
+      {
+        "index": 167,
+        "name": "Band 5 - Advanced parameters - Depth variability"
+      },
+      {
+        "index": 168,
+        "name": "Band 5 - Advanced parameters - Rate variability"
+      },
+      {
+        "index": 169,
+        "name": "Band 5 - Advanced parameters - Range variability"
+      },
+      {
+        "index": 170,
+        "name": "Band 5 - Advanced parameters - Delay variability"
+      },
+      {
+        "index": 171,
+        "name": "Band 5 - Advanced parameters - Min frequency"
+      },
+      {
+        "index": 172,
+        "name": "Band 5 - Advanced parameters - Max frequency"
+      },
+      {
+        "index": 173,
+        "name": "Band 5 - Advanced parameters - Tremolo"
+      },
+      {
+        "index": 174,
+        "name": "Band 5 - Advanced parameters - Voice tremolo"
+      },
+      {
+        "index": 175,
+        "name": "Band 5 - Advanced parameters - Tremolo phase"
+      },
+      {
+        "index": 176,
+        "name": "Band 5 - Advanced parameters - LFO override"
+      },
+      {
+        "index": 177,
+        "name": "Band 5 - Synchronization - Synchronization"
+      },
+      {
+        "index": 178,
+        "name": "Band 5 - Synchronization - Length"
+      },
+      {
+        "index": 179,
+        "name": "Band 5 - Synchronization - Type"
+      },
+      {
+        "index": 180,
+        "name": "Band 5 - Synchronization - Phase"
+      },
+      {
+        "index": 181,
+        "name": "Band 6 - Main parameters - Dry/Wet"
+      },
+      {
+        "index": 182,
+        "name": "Band 6 - Main parameters - Rate"
+      },
+      {
+        "index": 183,
+        "name": "Band 6 - Main parameters - Range"
+      },
+      {
+        "index": 184,
+        "name": "Band 6 - Main parameters - Delay"
+      },
+      {
+        "index": 185,
+        "name": "Band 6 - Main parameters - Voices"
+      },
+      {
+        "index": 186,
+        "name": "Band 6 - Main parameters - Saturation"
+      },
+      {
+        "index": 187,
+        "name": "Band 6 - Main parameters - Spread"
+      },
+      {
+        "index": 188,
+        "name": "Band 6 - Main parameters - Spread mode"
+      },
+      {
+        "index": 189,
+        "name": "Band 6 - Main parameters - Feedback"
+      },
+      {
+        "index": 190,
+        "name": "Band 6 - Main parameters - Feedback delay"
+      },
+      {
+        "index": 191,
+        "name": "Band 6 - Advanced parameters - Depth variability"
+      },
+      {
+        "index": 192,
+        "name": "Band 6 - Advanced parameters - Rate variability"
+      },
+      {
+        "index": 193,
+        "name": "Band 6 - Advanced parameters - Range variability"
+      },
+      {
+        "index": 194,
+        "name": "Band 6 - Advanced parameters - Delay variability"
+      },
+      {
+        "index": 195,
+        "name": "Band 6 - Advanced parameters - Min frequency"
+      },
+      {
+        "index": 196,
+        "name": "Band 6 - Advanced parameters - Max frequency"
+      },
+      {
+        "index": 197,
+        "name": "Band 6 - Advanced parameters - Tremolo"
+      },
+      {
+        "index": 198,
+        "name": "Band 6 - Advanced parameters - Voice tremolo"
+      },
+      {
+        "index": 199,
+        "name": "Band 6 - Advanced parameters - Tremolo phase"
+      },
+      {
+        "index": 200,
+        "name": "Band 6 - Advanced parameters - LFO override"
+      },
+      {
+        "index": 201,
+        "name": "Band 6 - Synchronization - Synchronization"
+      },
+      {
+        "index": 202,
+        "name": "Band 6 - Synchronization - Length"
+      },
+      {
+        "index": 203,
+        "name": "Band 6 - Synchronization - Type"
+      },
+      {
+        "index": 204,
+        "name": "Band 6 - Synchronization - Phase"
+      },
+      {
+        "index": 205,
+        "name": "Modulators - Mod 1 - Automated value"
+      },
+      {
+        "index": 206,
+        "name": "Modulators - Mod 2 - Automated value"
+      },
+      {
+        "index": 207,
+        "name": "Modulators - Mod 3 - Automated value"
+      },
+      {
+        "index": 208,
+        "name": "Modulators - Mod 4 - Automated value"
+      },
+      {
+        "index": 209,
+        "name": "Preset trigger - previous"
+      },
+      {
+        "index": 210,
+        "name": "Preset trigger - next"
+      },
+      {
+        "index": 211,
+        "name": "Device"
+      }
+    ],
+    "source": "the wizard: the parameter list read by the probe (no roles mapped)"
+  },
+  "category": "modulation",
+  "why": "the server's category (modulation) is not measured by the wizard yet: sent so EchoJay knows it"
+}

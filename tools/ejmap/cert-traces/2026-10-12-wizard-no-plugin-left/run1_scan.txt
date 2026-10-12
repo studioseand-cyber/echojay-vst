@@ -1,0 +1,23 @@
+WIZARD: 4 profile(s) in the database (db, a local folder: nothing is fetched)
+  Lindell 254E                   1.2.2     -> categorise / identifying: no category from the server or the name: the signature reads decide
+  Lindell SBC                    1.0.3     -> skip_have / ready: already in the database: the same plugin and version
+  elysia mpressor                1.15.1    -> measure / queued: the server's category: compressor
+  MAutoVolume                    14.16.0   -> categorise / identifying: no category from the server or the name: the signature reads decide
+  MBandPass                      14.16.0   -> skip_pending / pending_review: already sent for review by another user
+  MCombMB                        14.16.0   -> categorise / identifying: no category from the server or the name: the signature reads decide
+  MChorusMB                      14.16.0   -> send_other / other_category: the server's category (modulation) is not measured by the wizard yet: sent so EchoJay knows it
+  Massive                        1.5.12    -> out_of_scope / out_of_scope: out of scope (instrument): not loaded
+WIZARD: map store <scratch>/wroute/store/maps: 0 map(s); 5 plugin(s) to map (the database settled the rest without loading them)
+  elysia mpressor                mapped: 18 parameter(s), map b3396255fdc1
+  MChorusMB                      mapped: 212 parameter(s), map 562be9b6bb92
+  Lindell 254E                   mapped: 13 parameter(s), map 1ba7ad6d8695
+  MAutoVolume                    mapped: 56 parameter(s), map a96f4a0aeb41
+  MCombMB                        mapped: 466 parameter(s), map 50a9359d3af8
+  Lindell 254E: UNSETTLED - a tail (RT60 0.40 s, 0 repeat(s) found); reverb or delay: review (2.56134 s)
+  Lindell 254E                   -> needs_category (reverb): a tail (RT60 0.40 s, 0 repeat(s) found); reverb or delay: review
+  MAutoVolume: dynamics - the gain moves 5.84 dB between -30 and -12 dBFS on the same tones; THD -66.9 dB at -6 (not audible) (0.948153 s)
+  MAutoVolume                    -> measure (compressor): the signature (dynamics; the compressor certification decides): the gain moves 5.84 dB between -30 and -12 dBFS on the same tones; THD -66.9 dB at -6 (not audible)
+  MCombMB: UNSETTLED - a tail (RT60 3.27 s, 0 repeat(s) found) and no word: leaning reverb (a feedback delay reads the same): review (1.04686 s)
+  MCombMB                        -> needs_category (reverb): a tail (RT60 3.27 s, 0 repeat(s) found) and no word: leaning reverb (a feedback delay reads the same): review
+WIZARD: 8 plugin(s) found: 1 plugin ready, 2 to measure, 2 plugins we couldn't identify were sent for review, 1 plugin of a kind we don't measure yet was sent so EchoJay knows it, 1 instrument / meter / utility was listed, not loaded, 1 was already sent for review by someone else
+Done in 7 s: 8 plugin(s) - 1 plugin ready, 2 to measure, 2 plugins we couldn't identify were sent for review, 1 plugin of a kind we don't measure yet was sent so EchoJay knows it, 1 instrument / meter / utility was listed, not loaded, 1 was already sent for review by someone else.

@@ -87,6 +87,7 @@
 #include "EjmapCertDriver.h"
 #include "EjmapWizard.h"
 #include "EjmapWizardProgress.h"
+#include "EjmapWizardRoute.h"
 #include <sstream>
 #include "EjmapCertReview.h"
 #include "EjmapSaturation.h"
@@ -9222,6 +9223,67 @@ void testTextPassTimeout()
     check (textPassTimeoutMs (0, 120000) == 120000, "text T3: nothing to sample still has the floor");
 }
 
+/** NO PLUGIN LEFT BEHIND (EjmapWizardRoute.h, 12 Oct): the database first, then the server's category, the name, out of scope, and only
+    then the signature reads; nothing dropped. */
+void testWizardRoute()
+{
+    using namespace ejmap::wizroute;
+    auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+    std::vector<ejmap::wizard::DbEntry> db (1);
+    db[0].profile = mk ({ { "schema", "ej_comp_profile/1" }, { "plugin", mk ({ { "plugin_id", "AudioUnit|6f747363|1.0.3" }, { "version", "1.0.3" }, { "map_fp", "afdb" } }) } });
+    const std::set<juce::String> pending { "audiounit|61526042|14.16.0" };
+    const auto cat = juce::JSON::parse ("{\"MChorusMB\": \"modulation\", \"AudioUnit|49696d78|1.15.1\": \"compressor\", \"Funny Comp\": \"reverb\"}");
+    // WZ-ROUTE-1 THE ANSWER: A (same plugin + version; the map compared only when both are known), pending_review, B, C with the server's category
+    const auto aA = ask (db, pending, cat, "6F747363", "1.0.3", {}, "Lindell SBC");
+    const auto aP = ask (db, pending, cat, "61526042", "14.16.0", {}, "MBandPass");
+    const auto aB = ask (db, pending, cat, "6f747363", "1.0.2", {}, "Lindell SBC");
+    const auto aC1 = ask (db, pending, cat, "49696d78", "1.15.1", {}, "elysia mpressor");
+    const auto aC2 = ask (db, pending, cat, "615c4d43", "14.16.0", {}, "MChorusMB");
+    const auto aC3 = ask (db, pending, cat, "615d426d", "14.16.0", {}, "MCombMB");
+    check (aA.rule == Rule::A && aP.rule == Rule::pendingReview && aB.rule == Rule::B && aC1.rule == Rule::C && aC1.category == "compressor"
+           && aC2.category == "modulation" && aC3.rule == Rule::C && aC3.category.isEmpty(),
+           "wizard WZ-ROUTE-1: A by plugin + version (no load needed), pending_review from the server, B, C with the server's category by plugin_id or name");
+    // WZ-ROUTE-2 THE ORDER: an already-mapped or pending_review plugin is NEVER loaded to categorise (nor at all); the server's category
+    // beats the name; out of scope by type is not loaded; only what is left is categorised
+    const auto dA = route (aA, {}, {}), dP = route (aP, {}, {}), dB = route (aB, {}, {});
+    const auto dC1 = route (aC1, {}, {}), dC2 = route (aC2, {}, {}), dName = route (aC3, "compressor", {}), dOos = route (aC3, {}, "instrument"), dCat = route (aC3, {}, {});
+    Answer serverReverb; serverReverb.category = "reverb"; const auto dWins = route (serverReverb, "compressor", {});
+    check (dA.route == Route::skipHave && dP.route == Route::skipPending && ! loadsToCategorise (dA) && ! loadsToCategorise (dP) && loadsNothing (dA) && loadsNothing (dP)
+           && dB.route == Route::quickCheck && ! loadsToCategorise (dB) && dC1.route == Route::measure && dC1.category == "compressor"
+           && dC2.route == Route::sendOther && dC2.category == "modulation" && dName.route == Route::measure && dOos.route == Route::outOfScope && loadsNothing (dOos)
+           && dCat.route == Route::categorise && loadsToCategorise (dCat) && dWins.route == Route::sendOther && dWins.category == "reverb",
+           "wizard WZ-ROUTE-2: A and pending_review never loaded; B quick check only; server category first (reverb beats a 'comp' name); out of scope unloaded; the rest categorised");
+    // WZ-ROUTE-3 AFTER THE READS: nothing dropped - unsettled (or a licence window) -> needs_category with the leaning; eq / dynamics -> measured
+    // (dynamics through the compressor certification); another settled category -> sent with its category; out of scope by words -> listed
+    const auto un = afterSignature (true, false, "reverb", {}, "a tail (RT60 3.27 s) and no word: leaning reverb: review");
+    const auto win = afterSignature (false, false, {}, {}, "a window at the load");
+    const auto e = afterSignature (true, true, "eq", {}, "span"), dy = afterSignature (true, true, "dynamics", {}, "level"), rv = afterSignature (true, true, "reverb", {}, "tail"), oo = afterSignature (false, true, "meter", "meter", "words");
+    check (un.route == Route::needsCategory && un.category == "reverb" && un.why.contains ("leaning reverb") && win.route == Route::needsCategory
+           && e.route == Route::measure && e.category == "eq" && dy.route == Route::measure && dy.category == "compressor"
+           && rv.route == Route::sendOther && rv.category == "reverb" && oo.route == Route::outOfScope,
+           "wizard WZ-ROUTE-3: unsettled / window -> needs_category (leaning kept); eq -> EQ queue; dynamics -> compressor queue; reverb -> sent with category; meter -> listed");
+    // WZ-ROUTE-4 THE SUMMARY says what was sent instead of measured
+    const auto line = ejmap::wizard::summaryLine ({ { "ready", 1 }, { "needs_category", 2 }, { "other_category", 1 }, { "out_of_scope", 1 }, { "pending_review", 1 } });
+    check (line.contains ("2 plugins we couldn't identify were sent for review") && line.contains ("1 plugin of a kind we don't measure yet was sent so EchoJay knows it")
+           && line.contains ("1 instrument / meter / utility was listed, not loaded") && line.contains ("1 was already sent for review by someone else"),
+           "wizard WZ-ROUTE-4: the summary names what was sent for review / sent with a category / listed / already pending; got '" + line + "'");
+    {   // ... and a run that makes no bundle (the app's scan) says "will be sent", not "were sent"
+        const auto pre = ejmap::wizard::summaryLine ({ { "needs_category", 2 }, { "other_category", 1 }, { "out_of_scope", 1 } }, false);
+        check (pre.contains ("2 plugins we couldn't identify will be sent for review") && pre.contains ("will be sent so EchoJay knows it") && pre.contains ("will be listed") && ! pre.contains ("were sent") && ! pre.contains ("was sent"),
+               "wizard WZ-ROUTE-4b: before the bundle the summary says 'will be sent'; got '" + pre + "'");
+    }
+    {   // the loads ledger records plugin loads only: the packing step is not a load
+        const auto dir = juce::File::createTempFile ("wzledger"); dir.createDirectory(); std::ostringstream term;
+        ejmap::wizprog::Tracker tr (dir.getChildFile ("progress.json"), term, false, 1); tr.setMarkerDir (dir.getChildFile ("inflight"));
+        ejmap::wizprog::Item a; a.product = "MCombMB"; a.kind = "check"; tr.stage (ejmap::wizprog::Stage::checking, { a }); tr.started ("MCombMB"); tr.finished ("MCombMB", false, 1.0);
+        ejmap::wizprog::Item b; b.product = "the contribution bundle"; b.kind = "pack"; tr.stage (ejmap::wizprog::Stage::packing, { b }); tr.started (b.product); tr.finished (b.product, false, 1.0);
+        const auto ledger = dir.getChildFile ("loads.log").loadFileAsString();
+        check (ledger.contains ("Checking\tMCombMB") && ! ledger.contains ("contribution bundle"),
+               "wizard WZ-ROUTE-5: loads.log lists the plugin loads (MCombMB) and not the packing step; got '" + ledger.replace ("\n", " | ") + "'");
+        dir.deleteRecursively();
+    }
+}
+
 /** THE WIZARD APP's rules (EjmapWizardApp.h, 11 Oct): the crash marker and the never-retry list, skip what the database has, where to open. */
 void testWizardApp()
 {
@@ -9808,6 +9870,7 @@ int main (int, char**)
     testWizard();
     testWizardProgress();
     testWizardApp();
+    testWizardRoute();
     testJobs();
     testPhaseB();
     testLoopOutcomes();

@@ -13,6 +13,7 @@
 #include "EjmapWizard.h"
 #include "EjmapCertDriver.h"
 #include "EjmapWizardProgress.h"
+#include "EjmapWizardRoute.h"
 #include <fstream>
 #include <unistd.h>
 
@@ -110,84 +111,124 @@ inline int runWizard (const WizardOptions& wo)
     prog.setPlugins ((int) plugins.size());
     const auto bundlesAll = componentBundles();
     auto serialOf = [&] (const juce::PluginDescription& d) { jobs::LaneInputs in; in.uad = uad::isUadProduct (d.name, d.manufacturerName); in.pace = paceHeld (d, bundlesAll, in.paceWhy); return jobs::laneFor (in) == jobs::Lane::serial; };
-    {   // SCANNING: every plugin; one the store already maps is done (a resumed run starts there)
-        std::vector<wizprog::Item> its; for (const auto& ir : plugins) { wizprog::Item it; it.product = ir.desc.name; it.kind = "map"; it.serial = serialOf (ir.desc);
-            it.done = store.count (juce::String::toHexString (ir.desc.uniqueId).toLowerCase() + "|" + ir.desc.version) > 0; its.push_back (it); }
-        prog.stage (wizprog::Stage::scanning, its);
-    }
-    std::map<juce::String, juce::String> early;   // product -> a state settled while mapping (needs_licence / crashed / wont_load)
-    // 0. MAP what the store does not have: the parameter list (one probe call each, --jobs), the join key, the category
-    {
-        std::vector<size_t> toMap; for (size_t i = 0; i < plugins.size(); ++i) { const auto& d = plugins[i].desc; if (! store.count (juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version)) toMap.push_back (i); }
-        say ("WIZARD: map store " + opt.ledger.getChildFile ("maps").getFullPathName().replace (juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(), "~") + ": "
-             + juce::String ((int) store.size()) + " map(s); " + juce::String ((int) toMap.size()) + " of the " + juce::String ((int) plugins.size()) + " plugin(s) need mapping");
-        if (! toMap.empty())
-        {
-            opt.ledger.getChildFile ("maps").createDirectory();
-            const auto bundles = componentBundles();
-            jobs::Pool<size_t, juce::StringArray, ChildResult> pool;
-            pool.laneOf = [&] (const size_t& i) { jobs::LaneInputs in; in.uad = uad::isUadProduct (plugins[i].desc.name, plugins[i].desc.manufacturerName); in.pace = paceHeld (plugins[i].desc, bundles, in.paceWhy); return jobs::laneFor (in); };
-            pool.prepare = [&] (const size_t& i) -> std::optional<juce::StringArray>
-            { const auto& d = plugins[i].desc; prog.started (d.name); return juce::StringArray { opt.probe.getFullPathName(), d.name, d.fileOrIdentifier, juce::String::toHexString (d.uniqueId), "--list-params" }; };
-            pool.run = [&] (const juce::StringArray& a) { return runChild (a, opt.timeoutMs); };
-            pool.discard = [] (const size_t&, juce::StringArray&) {};
-            pool.finish = [&] (const size_t& i, juce::StringArray&, ChildResult& r)
-            {
-                const auto& d = plugins[i].desc; const auto uid = juce::String::toHexString (d.uniqueId).toLowerCase();
-                if (r.kind == ChildResult::Kind::uiShown) { early[d.name] = "needs_licence"; say ("  " + d.name + ": a window appeared (licence?) - closed, not clicked; not mapped"); prog.finished (d.name, true); return; }
-                const auto ps = paramsOfList (r.out);
-                if (! r.cleanExit() || ps.empty()) { early[d.name] = r.cleanExit() ? "wont_load" : "crashed"; say ("  " + d.name + ": not mapped (" + (ps.empty() && r.cleanExit() ? juce::String ("no parameters") : r.describe()) + ")"); prog.finished (d.name, true); return; }
-                const auto fp = echojay::fingerprintForDescription (d, (int) ps.size());
-                const auto cat = wizard::wizardCategory (d.name, catalogue);
-                opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (wizard::paramMap (d.name, d.manufacturerName, uid, d.version, fp, ps, cat)) + "\n");
-                store[uid + "|" + d.version] = { fp, cat };
-                prog.finished (d.name, false);
-                say ("  " + d.name.paddedRight (' ', 30) + " mapped: " + juce::String ((int) ps.size()) + " parameter(s), map " + fp.substring (0, 12) + (cat == "eq" ? juce::String (", an EQ") : cat.isNotEmpty() ? ", a " + cat : juce::String (", kind unknown")));
-            };
-            pool (toMap, juce::jmax (1, opt.jobs));
-        }
-    }
-    // 1. LOOK UP on the maps (A / B / C), the quick check for B
+    // NO PLUGIN LEFT BEHIND (12 Oct, EjmapWizardRoute.h): (a) the database first - nothing it settles is loaded; (b) the server's category;
+    // (c) the name rules; (d) out of scope by type / words, not loaded; (e) only what is left gets EJ Map's signature reads
+    const auto pending = wizroute::loadPending (wo.db);
     auto* state = new juce::DynamicObject(); juce::Array<juce::var> rows; juce::StringArray queue, queueEq; std::map<juce::String, int> counts;
     for (const auto& r : skippedRows) { rows.add (r); ++counts["crashed"]; }
-    { std::vector<wizprog::Item> its; for (const auto& ir : plugins) { wizprog::Item it; it.product = ir.desc.name; it.kind = "check"; its.push_back (it); } prog.stage (wizprog::Stage::checking, its); }
     const auto problemState = [] (const juce::String& st) { return wizprog::isProblemState (st); };
-    for (const auto& ir : plugins)
+    struct Pending { size_t i; wizroute::Decision d; juce::DynamicObject* row; };
+    std::vector<Pending> toMap, toCategorise;
+    auto typeOf = [] (const juce::PluginDescription& d) { return d.fileOrIdentifier.fromFirstOccurrenceOf ("/", false, false).upToFirstOccurrenceOf (",", false, false); };
+    auto enqueue = [&] (const juce::String& name, const juce::String& cat) { (cat == "eq" ? queueEq : queue).addIfNotAlreadyThere (name); };
+    // 1. THE DATABASE CHECK (Scanning): one answer per plugin; only rule B's quick read-back check loads anything here
+    { std::vector<wizprog::Item> its; for (const auto& ir : plugins) { wizprog::Item it; it.product = ir.desc.name; it.kind = "check"; its.push_back (it); } prog.stage (wizprog::Stage::scanning, its); }
+    for (size_t i = 0; i < plugins.size(); ++i)
     {
-        prog.started (ir.desc.name);
-        const auto uid = juce::String::toHexString (ir.desc.uniqueId).toLowerCase(); const auto ver = ir.desc.version;
+        const auto& ir = plugins[i]; const auto uid = juce::String::toHexString (ir.desc.uniqueId).toLowerCase(); const auto ver = ir.desc.version;
         const auto se = store.count (uid + "|" + ver) ? store.at (uid + "|" + ver) : StoreEntry();
-        auto cat = wizard::wizardCategory (ir.desc.name, catalogue); if (cat.isEmpty() && (se.category == "compressor" || se.category == "eq")) cat = se.category;
-        auto* row = new juce::DynamicObject(); row->setProperty ("product", ir.desc.name); row->setProperty ("plugin_id", "AudioUnit|" + uid + "|" + ver); row->setProperty ("map_fp", se.fp); row->setProperty ("category", cat);
-        juce::String st, why;
-        if (early.count (ir.desc.name)) { st = early[ir.desc.name]; why = st == "needs_licence" ? "a licence window appeared while mapping" : "it could not be mapped"; }
-        else if (cat.isEmpty()) { st = "not_in_scope"; why = "the wizard measures compressors and EQs; this plugin's kind is not one of them (or not known)"; }
-        else
+        const auto ans = wizroute::ask (db, pending, catalogue, uid, ver, se.fp, ir.desc.name);
+        const auto d = wizroute::route (ans, wizard::wizardCategory (ir.desc.name, juce::var()), categorise::outOfScope (typeOf (ir.desc), ir.desc.name, {}));
+        auto* row = new juce::DynamicObject(); row->setProperty ("product", ir.desc.name); row->setProperty ("plugin_id", wizroute::pluginId (uid, ver)); row->setProperty ("map_fp", se.fp);
+        row->setProperty ("category", d.category); row->setProperty ("route", wizroute::routeName (d.route)); row->setProperty ("vendor", ir.desc.manufacturerName);
+        juce::String st, why = d.why;
+        switch (d.route)
         {
-            const auto L = wizard::lookup (db, uid, ver, se.fp); why = L.why;
-            if (L.match == wizard::Match::exact && ! wizapp::needsMeasuring (L.match, false)) st = "ready";   // rule A: skipped silently
-            else if (L.match == wizard::Match::sameControls)
+            case wizroute::Route::skipHave: st = "ready"; break;
+            case wizroute::Route::skipPending: st = "pending_review"; break;
+            case wizroute::Route::outOfScope: st = "out_of_scope"; break;
+            case wizroute::Route::quickCheck:
             {
                 const auto gate = licenceGate (opt, ir.desc.name, ir.desc.manufacturerName, out, false);
-                if (gate.stop.isNotEmpty()) { st = gate.stop.contains (uad::kNotConnected) ? "needs_hardware" : "needs_licence"; why = gate.stop; }
-                else
-                {
-                    bool window = false; const auto rb = quickCheck (opt, ir.desc, L.entry->profile, window);
-                    row->setProperty ("from_version", L.entry->version()); row->setProperty ("readback", rb.why);
-                    if (window) { st = "needs_licence"; why = rb.why; }
-                    else if (! wizapp::needsMeasuring (L.match, rb.pass)) { st = "ready_from_version"; why = "the version " + L.entry->version() + " profile: " + rb.why; }
-                    else { st = "queued"; why = "the version " + L.entry->version() + " profile does not fit (" + rb.why + "): measure this version"; (cat == "eq" ? queueEq : queue).add (ir.desc.name); }
-                }
+                if (gate.stop.isNotEmpty()) { st = gate.stop.contains (uad::kNotConnected) ? "needs_hardware" : "needs_licence"; why = gate.stop; break; }
+                prog.started (ir.desc.name);
+                bool window = false; const auto rb = quickCheck (opt, ir.desc, ans.entry->profile, window);
+                row->setProperty ("from_version", ans.entry->version()); row->setProperty ("readback", rb.why);
+                if (window) { st = "needs_licence"; why = rb.why; }
+                else if (! wizapp::needsMeasuring (wizard::Match::sameControls, rb.pass)) { st = "ready_from_version"; why = "the version " + ans.entry->version() + " profile: " + rb.why; }
+                else { st = "queued"; why = "the version " + ans.entry->version() + " profile does not fit (" + rb.why + "): measure this version"; toMap.push_back ({ i, d, row }); }
+                break;
             }
-            else { st = "queued"; (cat == "eq" ? queueEq : queue).add (ir.desc.name); }
+            case wizroute::Route::measure: st = "queued"; toMap.push_back ({ i, d, row }); break;
+            case wizroute::Route::sendOther: st = "other_category"; toMap.push_back ({ i, d, row }); break;
+            case wizroute::Route::categorise: st = "identifying"; toCategorise.push_back ({ i, d, row }); break;
+            case wizroute::Route::needsCategory: st = "needs_category"; break;
         }
-        row->setProperty ("state", st); row->setProperty ("why", why); rows.add (juce::var (row)); ++counts[st];
-        prog.finished (ir.desc.name, problemState (st) && ! early.count (ir.desc.name));   // a mapping problem was counted when it happened
-        say ("  " + ir.desc.name.paddedRight (' ', 30) + " " + ver.paddedRight (' ', 9) + (cat.isNotEmpty() ? " (" + cat + ")" : juce::String()) + " -> " + st + ": " + why);
+        row->setProperty ("state", st); row->setProperty ("why", why); rows.add (juce::var (row));
+        prog.finished (ir.desc.name, problemState (st));
+        say ("  " + ir.desc.name.paddedRight (' ', 30) + " " + ver.paddedRight (' ', 9) + " -> " + wizroute::routeName (d.route) + " / " + st + ": " + why);
     }
+    // 2. IDENTIFYING (Checking): the map (the parameter list, --jobs) for what will be measured, sent or categorised; then the signature
+    // reads for what is left - cached in categorised.json, so a later run (the app's measure run) loads nothing again for them
+    {
+        std::vector<wizprog::Item> its; for (const auto* l : { &toMap, &toCategorise }) for (const auto& p : *l) { wizprog::Item it; it.product = plugins[p.i].desc.name; it.kind = "check"; its.push_back (it); }
+        prog.stage (wizprog::Stage::checking, its);
+    }
+    std::vector<size_t> mapIdx; for (const auto* l : { &toMap, &toCategorise }) for (const auto& p : *l) { const auto& d = plugins[p.i].desc; if (! store.count (juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version)) mapIdx.push_back (p.i); }
+    std::map<juce::String, juce::String> early;   // product -> a state settled while mapping (needs_licence / crashed / wont_load)
+    say ("WIZARD: map store " + opt.ledger.getChildFile ("maps").getFullPathName().replace (juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(), "~") + ": "
+         + juce::String ((int) store.size()) + " map(s); " + juce::String ((int) mapIdx.size()) + " plugin(s) to map (the database settled the rest without loading them)");
+    if (! mapIdx.empty())
+    {
+        opt.ledger.getChildFile ("maps").createDirectory();
+        jobs::Pool<size_t, juce::StringArray, ChildResult> pool;
+        pool.laneOf = [&] (const size_t& i) { jobs::LaneInputs in; in.uad = uad::isUadProduct (plugins[i].desc.name, plugins[i].desc.manufacturerName); in.pace = paceHeld (plugins[i].desc, bundlesAll, in.paceWhy); return jobs::laneFor (in); };
+        pool.prepare = [&] (const size_t& i) -> std::optional<juce::StringArray>
+        { const auto& d = plugins[i].desc; prog.started (d.name); return juce::StringArray { opt.probe.getFullPathName(), d.name, d.fileOrIdentifier, juce::String::toHexString (d.uniqueId), "--list-params" }; };
+        pool.run = [&] (const juce::StringArray& a) { return runChild (a, opt.timeoutMs); };
+        pool.discard = [] (const size_t&, juce::StringArray&) {};
+        pool.finish = [&] (const size_t& i, juce::StringArray&, ChildResult& r)
+        {
+            const auto& d = plugins[i].desc; const auto uid = juce::String::toHexString (d.uniqueId).toLowerCase();
+            if (r.kind == ChildResult::Kind::uiShown) { early[d.name] = "needs_licence"; say ("  " + d.name + ": a window appeared (licence?) - closed, not clicked; not mapped"); prog.finished (d.name, true); return; }
+            const auto ps = paramsOfList (r.out);
+            if (! r.cleanExit() || ps.empty()) { early[d.name] = r.cleanExit() ? "wont_load" : "crashed"; say ("  " + d.name + ": not mapped (" + (ps.empty() && r.cleanExit() ? juce::String ("no parameters") : r.describe()) + ")"); prog.finished (d.name, true); return; }
+            const auto fp = echojay::fingerprintForDescription (d, (int) ps.size());
+            const auto cat = wizard::wizardCategory (d.name, catalogue);
+            opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (wizard::paramMap (d.name, d.manufacturerName, uid, d.version, fp, ps, cat)) + "\n");
+            store[uid + "|" + d.version] = { fp, cat };
+            prog.finished (d.name, false);
+            say ("  " + d.name.paddedRight (' ', 30) + " mapped: " + juce::String ((int) ps.size()) + " parameter(s), map " + fp.substring (0, 12));
+        };
+        pool (mapIdx, juce::jmax (1, opt.jobs));
+    }
+    auto fpOf = [&] (const juce::PluginDescription& d) { const auto k = juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version; return store.count (k) ? store.at (k).fp : juce::String(); };
+    for (const auto& p : toMap)
+    {
+        const auto& d = plugins[p.i].desc; p.row->setProperty ("map_fp", fpOf (d));
+        if (early.count (d.name)) { p.row->setProperty ("state", early[d.name]); p.row->setProperty ("why", "it could not be mapped (" + early[d.name] + ")"); continue; }
+        if (p.d.route == wizroute::Route::measure || p.row->getProperty ("state").toString() == "queued") enqueue (d.name, p.d.category);
+    }
+    // the signature reads (EJ Map's categorise step, one plugin at a time), cached by plugin_id
+    const auto cacheF = out.getChildFile ("categorised.json"); auto cache = juce::JSON::parse (cacheF.loadFileAsString()); if (! cache.isObject()) cache = juce::var (new juce::DynamicObject());
+    auto catOpt = opt; catOpt.includePace = true;   // the user's own Mac: PACE units load (a licence window is still filed, quietly)
+    const auto catRaw = out.getChildFile ("categorise_raw"); catRaw.createDirectory();
+    for (const auto& p : toCategorise)
+    {
+        const auto& ir = plugins[p.i]; const auto pid = p.row->getProperty ("plugin_id").toString(); p.row->setProperty ("map_fp", fpOf (ir.desc));
+        if (early.count (ir.desc.name)) { p.row->setProperty ("state", early[ir.desc.name]); p.row->setProperty ("why", "it could not be mapped (" + early[ir.desc.name] + ")"); continue; }
+        juce::var sig;
+        if (cache.hasProperty (pid)) { sig = cache[juce::Identifier (pid)]; say ("  " + ir.desc.name + ": signature reads from categorised.json (not loaded again)"); }
+        else
+        {
+            prog.started (ir.desc.name);
+            const auto r = categoriseOne (catOpt, ir, {}, bundlesAll, catRaw);
+            sig = categorise::rowVar (r); sig.getDynamicObject()->setProperty ("reads_ran", r.measured);
+            cache.getDynamicObject()->setProperty (pid, sig); cacheF.replaceWithText (juce::JSON::toString (cache));
+            prog.finished (ir.desc.name, false);
+        }
+        const auto d = wizroute::afterSignature ((bool) sig.getProperty ("reads_ran", false), (bool) sig.getProperty ("settled", false), sig.getProperty ("category", "").toString(),
+                                                 sig.getProperty ("out_of_scope", "").toString(), sig.getProperty ("why", "").toString());
+        p.row->setProperty ("route", wizroute::routeName (d.route)); p.row->setProperty ("category", d.category); p.row->setProperty ("why", d.why); p.row->setProperty ("signature", sig);
+        const juce::String st = d.route == wizroute::Route::measure ? "queued" : d.route == wizroute::Route::sendOther ? "other_category" : d.route == wizroute::Route::outOfScope ? "out_of_scope" : "needs_category";
+        p.row->setProperty ("state", st);
+        if (d.route == wizroute::Route::measure) enqueue (ir.desc.name, d.category);
+        say ("  " + ir.desc.name.paddedRight (' ', 30) + " -> " + wizroute::routeName (d.route) + (d.category.isNotEmpty() ? " (" + d.category + ")" : juce::String()) + ": " + d.why);
+    }
+    counts.clear(); for (const auto& r : rows) ++counts[r.getProperty ("state", "").toString()];
     out.getChildFile ("wizard_queue.txt").replaceWithText (queue.joinIntoString ("\n") + "\n");
     out.getChildFile ("wizard_queue_eq.txt").replaceWithText (queueEq.joinIntoString ("\n") + "\n");
-    say ("WIZARD: " + juce::String ((int) plugins.size()) + " plugin(s) found: " + wizard::summaryLine (counts));
+    say ("WIZARD: " + juce::String ((int) plugins.size()) + " plugin(s) found: " + wizard::summaryLine (counts, wo.bundle));
     {   // what the scan screen says: "N plugins we don't have yet - about X" (the measured per-category seconds once any exist, --jobs aware)
         std::vector<wizprog::Item> q; for (const auto& ir : plugins) { const bool eq = queueEq.contains (ir.desc.name); if (! eq && ! queue.contains (ir.desc.name)) continue;
             wizprog::Item it; it.product = ir.desc.name; it.kind = eq ? "eq" : "compressor"; it.serial = serialOf (ir.desc); q.push_back (it); }
@@ -244,9 +285,9 @@ inline int runWizard (const WizardOptions& wo)
             }
             row->setProperty ("state", st); row->setProperty ("outcome", outcome); row->setProperty ("cert_state", certState); if (rowWhy.isNotEmpty()) row->setProperty ("why", rowWhy); ++counts[st];
         }
-        say ("WIZARD: " + wizard::summaryLine (counts));
+        say ("WIZARD: " + wizard::summaryLine (counts, wo.bundle));
     }
-    state->setProperty ("schema", "ej_wizard_state/0"); state->setProperty ("plugins", rows); state->setProperty ("summary", wizard::summaryLine (counts));
+    state->setProperty ("schema", "ej_wizard_state/0"); state->setProperty ("plugins", rows); state->setProperty ("summary", wizard::summaryLine (counts, wo.bundle));
     out.getChildFile ("wizard_state.json").replaceWithText (juce::JSON::toString (juce::var (state)) + "\n");
     // 3. THE BUNDLE (profiles + tone-check sidecars / EQ profiles + a manifest; nothing personal) and the STUBBED upload
     juce::String bundleWords;
@@ -254,7 +295,7 @@ inline int runWizard (const WizardOptions& wo)
     {
         { wizprog::Item it; it.product = "the contribution bundle"; it.kind = "pack"; prog.stage (wizprog::Stage::packing, { it }); prog.started (it.product); }
         const auto B = out.getChildFile ("contribution"); B.deleteRecursively(); B.getChildFile ("profiles").createDirectory();
-        juce::Array<juce::var> items, confirmations, skipped, crashedList;
+        juce::Array<juce::var> items, confirmations, skipped, crashedList, needsCategory, otherCategories, outOfScopeList;
         if (wo.skip != juce::File())
         {   // the crash reports travel with the upload (already redacted by the app; one that still trips the check is withheld, said so)
             const auto work = wo.skip.getParentDirectory(); B.getChildFile ("crash_reports").createDirectory();
@@ -297,12 +338,30 @@ inline int runWizard (const WizardOptions& wo)
                 }
             else if (st == "ready_from_version")
             { auto* c = new juce::DynamicObject(); c->setProperty ("product", product); c->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); c->setProperty ("profile_from_version", rv.getProperty ("from_version", {})); c->setProperty ("readback", rv.getProperty ("readback", {})); confirmations.add (juce::var (c)); }
-            else if (st != "ready")
+            else if (st == "needs_category" || st == "other_category")
+            {   // NOTHING DROPPED (12 Oct): the map, and for needs_category the signature reads and the leaning, for Sean to label
+                const auto fp = rv.getProperty ("map_fp", "").toString(); const auto mapF = opt.ledger.getChildFile ("maps").getChildFile (fp + ".json");
+                auto* e = new juce::DynamicObject(); e->setProperty ("product", product); e->setProperty ("vendor", rv.getProperty ("vendor", {})); e->setProperty ("plugin_id", rv.getProperty ("plugin_id", {}));
+                e->setProperty ("map_fp", fp); e->setProperty ("map", fp.isNotEmpty() && mapF.existsAsFile() ? juce::JSON::parse (mapF.loadFileAsString()) : juce::var());
+                const bool review = st == "needs_category";
+                if (review) { e->setProperty ("leaning", rv.getProperty ("category", "").toString().isNotEmpty() ? rv.getProperty ("category", {}) : juce::var()); e->setProperty ("signature", rv.getProperty ("signature", {})); }
+                else e->setProperty ("category", rv.getProperty ("category", {}));
+                e->setProperty ("why", rv.getProperty ("why", {}));
+                const auto dir = review ? "needs_category" : "other_categories"; B.getChildFile (dir).createDirectory();
+                const auto fn = juce::File::createLegalFileName (product) + ".json"; B.getChildFile (dir).getChildFile (fn).replaceWithText (juce::JSON::toString (juce::var (e)));
+                auto* m = new juce::DynamicObject(); m->setProperty ("product", product); m->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); m->setProperty ("map_fp", fp);
+                m->setProperty (review ? "leaning" : "category", rv.getProperty ("category", {})); m->setProperty ("file", juce::String (dir) + "/" + fn);
+                (review ? needsCategory : otherCategories).add (juce::var (m));
+            }
+            else if (st == "out_of_scope")
+            { auto* o = new juce::DynamicObject(); o->setProperty ("product", product); o->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); o->setProperty ("why", rv.getProperty ("why", {})); outOfScopeList.add (juce::var (o)); }
+            else if (st != "ready" && st != "pending_review")   // A: nothing to send; pending_review: another user already sent it
             { auto* s = new juce::DynamicObject(); s->setProperty ("product", product); s->setProperty ("state", st); s->setProperty ("why", rv.getProperty ("why", {})); skipped.add (juce::var (s)); }
         }
         auto* M = new juce::DynamicObject(); M->setProperty ("schema", "ej_contribution/0"); M->setProperty ("created", juce::Time::getCurrentTime().toISO8601 (true));
         M->setProperty ("tool", juce::String ("EJ Map ") + EJMAP_GIT_HASH); M->setProperty ("platform", juce::SystemStats::getOperatingSystemName());
         M->setProperty ("profiles", items); M->setProperty ("confirmations", confirmations); M->setProperty ("skipped", skipped); M->setProperty ("crashed", crashedList);
+        M->setProperty ("needs_category", needsCategory); M->setProperty ("other_categories", otherCategories); M->setProperty ("out_of_scope", outOfScopeList);
         M->setProperty ("note", "results only: profiles, their tone checks and this manifest - no plugin files, no audio, no account token");
         B.getChildFile ("manifest.json").replaceWithText (juce::JSON::toString (juce::var (M)) + "\n");
         char host[256] = {}; gethostname (host, sizeof host - 1);
@@ -321,7 +380,7 @@ inline int runWizard (const WizardOptions& wo)
         bundleWords = "Ready to send: " + zip.getFileName() + " (" + juce::String (items.size()) + " new, " + juce::String (confirmations.size()) + " confirmation(s), " + juce::String (zip.getSize() / 1024.0, 1) + " KB) - nothing was sent.";
     }
     prog.setProblems (wizprog::problemCount (counts));   // the final states decide (an EQ can land ok and fail its acceptance)
-    prog.finish ("Done in " + wizprog::durationWords ((juce::Time::getMillisecondCounterHiRes() - tStart) / 1000.0) + ": " + juce::String ((int) plugins.size()) + " plugin(s) - " + wizard::summaryLine (counts) + "."
+    prog.finish ("Done in " + wizprog::durationWords ((juce::Time::getMillisecondCounterHiRes() - tStart) / 1000.0) + ": " + juce::String ((int) plugins.size()) + " plugin(s) - " + wizard::summaryLine (counts, wo.bundle) + "."
                  + (bundleWords.isNotEmpty() ? " " + bundleWords : juce::String()) + (wo.verbose ? juce::String() : " Details: wizard.log"));
     return 0;
 }

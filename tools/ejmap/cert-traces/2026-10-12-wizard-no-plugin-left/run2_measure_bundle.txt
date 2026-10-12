@@ -1,0 +1,30 @@
+WIZARD: 4 profile(s) in the database (db, a local folder: nothing is fetched)
+  Lindell 254E                   1.2.2     -> categorise / identifying: no category from the server or the name: the signature reads decide
+  Lindell SBC                    1.0.3     -> skip_have / ready: already in the database: the same plugin and version
+  elysia mpressor                1.15.1    -> measure / queued: the server's category: compressor
+  MAutoVolume                    14.16.0   -> categorise / identifying: no category from the server or the name: the signature reads decide
+  MBandPass                      14.16.0   -> skip_pending / pending_review: already sent for review by another user
+  MCombMB                        14.16.0   -> categorise / identifying: no category from the server or the name: the signature reads decide
+  MChorusMB                      14.16.0   -> send_other / other_category: the server's category (modulation) is not measured by the wizard yet: sent so EchoJay knows it
+  Massive                        1.5.12    -> out_of_scope / out_of_scope: out of scope (instrument): not loaded
+WIZARD: map store <scratch>/wroute/store/maps: 5 map(s); 0 plugin(s) to map (the database settled the rest without loading them)
+  Lindell 254E: signature reads from categorised.json (not loaded again)
+  Lindell 254E                   -> needs_category (reverb): a tail (RT60 0.40 s, 0 repeat(s) found); reverb or delay: review
+  MAutoVolume: signature reads from categorised.json (not loaded again)
+  MAutoVolume                    -> measure (compressor): the signature (dynamics; the compressor certification decides): the gain moves 5.84 dB between -30 and -12 dBFS on the same tones; THD -66.9 dB at -6 (not audible)
+  MCombMB: signature reads from categorised.json (not loaded again)
+  MCombMB                        -> needs_category (reverb): a tail (RT60 3.27 s, 0 repeat(s) found) and no word: leaning reverb (a feedback delay reads the same): review
+WIZARD: 8 plugin(s) found: 1 plugin ready, 2 to measure, 2 plugins we couldn't identify were sent for review, 1 plugin of a kind we don't measure yet was sent so EchoJay knows it, 1 instrument / meter / utility was listed, not loaded, 1 was already sent for review by someone else
+WIZARD: measuring 2 plugin(s), 2 at a time - stop any time; it carries on next time
+PHASEB: 2 product(s) over 2 categories -> <scratch>/wroute/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  wizard       2 product(s), 0 already done; hang guard 30 min (the compressor certification for a plugin the database does not have (the wizard's queue))
+  wizard_eq    0 product(s), 0 already done; hang guard 45 min (the EQ certification for a plugin the database does not have (the wizard's EQ queue))
+PHASEB: --jobs 2: 1 row(s) in parallel, 1 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+  serial lane: wizard: MAutoVolume (PACE / iLok: PACE-wrapped (MAutoVolume.component))
+[wizard 1/2 | all 1/2] elysia mpressor: ok 332.912 s | elapsed 0:05:33 | ETA 0:05:33
+[wizard 2/2 | all 2/2] MAutoVolume: ok 202.739 s | elapsed 0:08:56 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261012T104937, updated 20261012T105833); summary <scratch>/wroute/work/phaseb/summary.json
+WIZARD: 1 plugin ready, 1 newly measured, ready to send, 1 could not be measured, 2 plugins we couldn't identify were sent for review, 1 plugin of a kind we don't measure yet was sent so EchoJay knows it, 1 instrument / meter / utility was listed, not loaded, 1 was already sent for review by someone else
+WIZARD: contribution bundle -> contribution.zip (1 new profile(s), 0 confirmation(s) of another version's profile, 1 skipped with the reason; 15.8 KB; checked: no paths, names or tokens)
+WIZARD: UPLOAD (stubbed): nothing is sent. A real app shows this list and sends only when the user presses Send.
+Done in 8 min 57 s: 8 plugin(s) - 1 plugin ready, 1 newly measured, ready to send, 1 could not be measured, 2 plugins we couldn't identify were sent for review, 1 plugin of a kind we don't measure yet was sent so EchoJay knows it, 1 instrument / meter / utility was listed, not loaded, 1 was already sent for review by someone else. Ready to send: contribution.zip (1 new, 0 confirmation(s), 15.8 KB) - nothing was sent.

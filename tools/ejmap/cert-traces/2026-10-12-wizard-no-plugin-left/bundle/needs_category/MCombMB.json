@@ -1,0 +1,1912 @@
+{
+  "product": "MCombMB",
+  "vendor": "MeldaProduction",
+  "plugin_id": "AudioUnit|615d426d|14.16.0",
+  "map_fp": "50a9359d3af86f76e00de9187ea258ed758bd9b38dec7b6962340aea0cc5ba9d",
+  "map": {
+    "fp": "50a9359d3af86f76e00de9187ea258ed758bd9b38dec7b6962340aea0cc5ba9d",
+    "schema": "ej_param_map/wizard-0",
+    "identity": {
+      "format": "AudioUnit",
+      "uid": "615d426d",
+      "name": "MCombMB",
+      "vendor": "MeldaProduction",
+      "version": "14.16.0",
+      "param_count": 466
+    },
+    "category": "",
+    "params": [
+      {
+        "index": 0,
+        "name": "Globals -> Dry / wet"
+      },
+      {
+        "index": 1,
+        "name": "Globals -> Output"
+      },
+      {
+        "index": 2,
+        "name": "Globals -> Width"
+      },
+      {
+        "index": 3,
+        "name": "Param 4"
+      },
+      {
+        "index": 4,
+        "name": "Param 5"
+      },
+      {
+        "index": 5,
+        "name": "Param 6"
+      },
+      {
+        "index": 6,
+        "name": "Param 7"
+      },
+      {
+        "index": 7,
+        "name": "Globals -> Swap L & R"
+      },
+      {
+        "index": 8,
+        "name": "Cloud -> Character"
+      },
+      {
+        "index": 9,
+        "name": "Cloud -> Max frequency"
+      },
+      {
+        "index": 10,
+        "name": "Cloud -> Feedback"
+      },
+      {
+        "index": 11,
+        "name": "Param 12"
+      },
+      {
+        "index": 12,
+        "name": "Param 13"
+      },
+      {
+        "index": 13,
+        "name": "Param 14"
+      },
+      {
+        "index": 14,
+        "name": "Param 15"
+      },
+      {
+        "index": 15,
+        "name": "Param 16"
+      },
+      {
+        "index": 16,
+        "name": "Param 17"
+      },
+      {
+        "index": 17,
+        "name": "Param 18"
+      },
+      {
+        "index": 18,
+        "name": "Param 19"
+      },
+      {
+        "index": 19,
+        "name": "Param 20"
+      },
+      {
+        "index": 20,
+        "name": "Param 21"
+      },
+      {
+        "index": 21,
+        "name": "Param 22"
+      },
+      {
+        "index": 22,
+        "name": "Param 23"
+      },
+      {
+        "index": 23,
+        "name": "Param 24"
+      },
+      {
+        "index": 24,
+        "name": ""
+      },
+      {
+        "index": 25,
+        "name": ""
+      },
+      {
+        "index": 26,
+        "name": ""
+      },
+      {
+        "index": 27,
+        "name": ""
+      },
+      {
+        "index": 28,
+        "name": "Param 29"
+      },
+      {
+        "index": 29,
+        "name": "Param 30"
+      },
+      {
+        "index": 30,
+        "name": "Param 31"
+      },
+      {
+        "index": 31,
+        "name": "Param 32"
+      },
+      {
+        "index": 32,
+        "name": "Param 33"
+      },
+      {
+        "index": 33,
+        "name": "Param 34"
+      },
+      {
+        "index": 34,
+        "name": "Param 35"
+      },
+      {
+        "index": 35,
+        "name": "Param 36"
+      },
+      {
+        "index": 36,
+        "name": "Param 37"
+      },
+      {
+        "index": 37,
+        "name": "Param 38"
+      },
+      {
+        "index": 38,
+        "name": "Param 39"
+      },
+      {
+        "index": 39,
+        "name": "Param 40"
+      },
+      {
+        "index": 40,
+        "name": "Param 41"
+      },
+      {
+        "index": 41,
+        "name": "Param 42"
+      },
+      {
+        "index": 42,
+        "name": "Param 43"
+      },
+      {
+        "index": 43,
+        "name": "Param 44"
+      },
+      {
+        "index": 44,
+        "name": "Param 45"
+      },
+      {
+        "index": 45,
+        "name": "Param 46"
+      },
+      {
+        "index": 46,
+        "name": "Param 47"
+      },
+      {
+        "index": 47,
+        "name": "Param 48"
+      },
+      {
+        "index": 48,
+        "name": "Param 49"
+      },
+      {
+        "index": 49,
+        "name": "Param 50"
+      },
+      {
+        "index": 50,
+        "name": "Param 51"
+      },
+      {
+        "index": 51,
+        "name": "Param 52"
+      },
+      {
+        "index": 52,
+        "name": "Param 53"
+      },
+      {
+        "index": 53,
+        "name": "Param 54"
+      },
+      {
+        "index": 54,
+        "name": "Param 55"
+      },
+      {
+        "index": 55,
+        "name": "Param 56"
+      },
+      {
+        "index": 56,
+        "name": "Param 57"
+      },
+      {
+        "index": 57,
+        "name": "Param 58"
+      },
+      {
+        "index": 58,
+        "name": "Param 59"
+      },
+      {
+        "index": 59,
+        "name": "Param 60"
+      },
+      {
+        "index": 60,
+        "name": "Param 61"
+      },
+      {
+        "index": 61,
+        "name": "Param 62"
+      },
+      {
+        "index": 62,
+        "name": "Param 63"
+      },
+      {
+        "index": 63,
+        "name": "Param 64"
+      },
+      {
+        "index": 64,
+        "name": "Dry/Wet"
+      },
+      {
+        "index": 65,
+        "name": "Input gain"
+      },
+      {
+        "index": 66,
+        "name": "Output gain"
+      },
+      {
+        "index": 67,
+        "name": "Crossover type"
+      },
+      {
+        "index": 68,
+        "name": "Crossover analog mode"
+      },
+      {
+        "index": 69,
+        "name": "Level crossover slope"
+      },
+      {
+        "index": 70,
+        "name": "Level crossover value"
+      },
+      {
+        "index": 71,
+        "name": "Crossover tone"
+      },
+      {
+        "index": 72,
+        "name": "Crossover smoothing"
+      },
+      {
+        "index": 73,
+        "name": "Crossover transient release"
+      },
+      {
+        "index": 74,
+        "name": "Crossover transient resolution"
+      },
+      {
+        "index": 75,
+        "name": "Crossover spectral resolution"
+      },
+      {
+        "index": 76,
+        "name": "Band gain 1"
+      },
+      {
+        "index": 77,
+        "name": "Band gain 2"
+      },
+      {
+        "index": 78,
+        "name": "Band gain 3"
+      },
+      {
+        "index": 79,
+        "name": "Band gain 4"
+      },
+      {
+        "index": 80,
+        "name": "Band gain 5"
+      },
+      {
+        "index": 81,
+        "name": "Band gain 6"
+      },
+      {
+        "index": 82,
+        "name": "Band limit 1"
+      },
+      {
+        "index": 83,
+        "name": "Band limit 2"
+      },
+      {
+        "index": 84,
+        "name": "Band limit 3"
+      },
+      {
+        "index": 85,
+        "name": "Band limit 4"
+      },
+      {
+        "index": 86,
+        "name": "Band limit 5"
+      },
+      {
+        "index": 87,
+        "name": "Band panorama 1"
+      },
+      {
+        "index": 88,
+        "name": "Band panorama 2"
+      },
+      {
+        "index": 89,
+        "name": "Band panorama 3"
+      },
+      {
+        "index": 90,
+        "name": "Band panorama 4"
+      },
+      {
+        "index": 91,
+        "name": "Band panorama 5"
+      },
+      {
+        "index": 92,
+        "name": "Band panorama 6"
+      },
+      {
+        "index": 93,
+        "name": "Band 1 - Dry/Wet"
+      },
+      {
+        "index": 94,
+        "name": "Band 1 - Output gain"
+      },
+      {
+        "index": 95,
+        "name": "Band 1 - Filter 1 - Filter 1"
+      },
+      {
+        "index": 96,
+        "name": "Band 1 - Filter 1 - Gain"
+      },
+      {
+        "index": 97,
+        "name": "Band 1 - Filter 1 - Frequency"
+      },
+      {
+        "index": 98,
+        "name": "Band 1 - Filter 1 - Feedback"
+      },
+      {
+        "index": 99,
+        "name": "Band 1 - Filter 1 - Panorama"
+      },
+      {
+        "index": 100,
+        "name": "Band 1 - Filter 1 - Min frequency"
+      },
+      {
+        "index": 101,
+        "name": "Band 1 - Filter 1 - Max frequency"
+      },
+      {
+        "index": 102,
+        "name": "Band 1 - Filter 1 - Limiter attack"
+      },
+      {
+        "index": 103,
+        "name": "Band 1 - Filter 1 - Limiter release"
+      },
+      {
+        "index": 104,
+        "name": "Band 1 - Filter 1 - Inv L"
+      },
+      {
+        "index": 105,
+        "name": "Band 1 - Filter 1 - Inv R"
+      },
+      {
+        "index": 106,
+        "name": "Band 1 - Filter 1 - Inv fb L"
+      },
+      {
+        "index": 107,
+        "name": "Band 1 - Filter 1 - Inv fb R"
+      },
+      {
+        "index": 108,
+        "name": "Band 1 - Filter 2 - Filter 2"
+      },
+      {
+        "index": 109,
+        "name": "Band 1 - Filter 2 - Gain"
+      },
+      {
+        "index": 110,
+        "name": "Band 1 - Filter 2 - Frequency"
+      },
+      {
+        "index": 111,
+        "name": "Band 1 - Filter 2 - Feedback"
+      },
+      {
+        "index": 112,
+        "name": "Band 1 - Filter 2 - Panorama"
+      },
+      {
+        "index": 113,
+        "name": "Band 1 - Filter 2 - Min frequency"
+      },
+      {
+        "index": 114,
+        "name": "Band 1 - Filter 2 - Max frequency"
+      },
+      {
+        "index": 115,
+        "name": "Band 1 - Filter 2 - Limiter attack"
+      },
+      {
+        "index": 116,
+        "name": "Band 1 - Filter 2 - Limiter release"
+      },
+      {
+        "index": 117,
+        "name": "Band 1 - Filter 2 - Inv L"
+      },
+      {
+        "index": 118,
+        "name": "Band 1 - Filter 2 - Inv R"
+      },
+      {
+        "index": 119,
+        "name": "Band 1 - Filter 2 - Inv fb L"
+      },
+      {
+        "index": 120,
+        "name": "Band 1 - Filter 2 - Inv fb R"
+      },
+      {
+        "index": 121,
+        "name": "Band 1 - Filter 2 - Serial"
+      },
+      {
+        "index": 122,
+        "name": "Band 1 - Filter 3 - Filter 3"
+      },
+      {
+        "index": 123,
+        "name": "Band 1 - Filter 3 - Gain"
+      },
+      {
+        "index": 124,
+        "name": "Band 1 - Filter 3 - Frequency"
+      },
+      {
+        "index": 125,
+        "name": "Band 1 - Filter 3 - Feedback"
+      },
+      {
+        "index": 126,
+        "name": "Band 1 - Filter 3 - Panorama"
+      },
+      {
+        "index": 127,
+        "name": "Band 1 - Filter 3 - Min frequency"
+      },
+      {
+        "index": 128,
+        "name": "Band 1 - Filter 3 - Max frequency"
+      },
+      {
+        "index": 129,
+        "name": "Band 1 - Filter 3 - Limiter attack"
+      },
+      {
+        "index": 130,
+        "name": "Band 1 - Filter 3 - Limiter release"
+      },
+      {
+        "index": 131,
+        "name": "Band 1 - Filter 3 - Inv L"
+      },
+      {
+        "index": 132,
+        "name": "Band 1 - Filter 3 - Inv R"
+      },
+      {
+        "index": 133,
+        "name": "Band 1 - Filter 3 - Inv fb L"
+      },
+      {
+        "index": 134,
+        "name": "Band 1 - Filter 3 - Inv fb R"
+      },
+      {
+        "index": 135,
+        "name": "Band 1 - Filter 3 - Serial"
+      },
+      {
+        "index": 136,
+        "name": "Band 1 - Filter 4 - Filter 4"
+      },
+      {
+        "index": 137,
+        "name": "Band 1 - Filter 4 - Gain"
+      },
+      {
+        "index": 138,
+        "name": "Band 1 - Filter 4 - Frequency"
+      },
+      {
+        "index": 139,
+        "name": "Band 1 - Filter 4 - Feedback"
+      },
+      {
+        "index": 140,
+        "name": "Band 1 - Filter 4 - Panorama"
+      },
+      {
+        "index": 141,
+        "name": "Band 1 - Filter 4 - Min frequency"
+      },
+      {
+        "index": 142,
+        "name": "Band 1 - Filter 4 - Max frequency"
+      },
+      {
+        "index": 143,
+        "name": "Band 1 - Filter 4 - Limiter attack"
+      },
+      {
+        "index": 144,
+        "name": "Band 1 - Filter 4 - Limiter release"
+      },
+      {
+        "index": 145,
+        "name": "Band 1 - Filter 4 - Inv L"
+      },
+      {
+        "index": 146,
+        "name": "Band 1 - Filter 4 - Inv R"
+      },
+      {
+        "index": 147,
+        "name": "Band 1 - Filter 4 - Inv fb L"
+      },
+      {
+        "index": 148,
+        "name": "Band 1 - Filter 4 - Inv fb R"
+      },
+      {
+        "index": 149,
+        "name": "Band 1 - Filter 4 - Serial"
+      },
+      {
+        "index": 150,
+        "name": "Band 2 - Dry/Wet"
+      },
+      {
+        "index": 151,
+        "name": "Band 2 - Output gain"
+      },
+      {
+        "index": 152,
+        "name": "Band 2 - Filter 1 - Filter 1"
+      },
+      {
+        "index": 153,
+        "name": "Band 2 - Filter 1 - Gain"
+      },
+      {
+        "index": 154,
+        "name": "Band 2 - Filter 1 - Frequency"
+      },
+      {
+        "index": 155,
+        "name": "Band 2 - Filter 1 - Feedback"
+      },
+      {
+        "index": 156,
+        "name": "Band 2 - Filter 1 - Panorama"
+      },
+      {
+        "index": 157,
+        "name": "Band 2 - Filter 1 - Min frequency"
+      },
+      {
+        "index": 158,
+        "name": "Band 2 - Filter 1 - Max frequency"
+      },
+      {
+        "index": 159,
+        "name": "Band 2 - Filter 1 - Limiter attack"
+      },
+      {
+        "index": 160,
+        "name": "Band 2 - Filter 1 - Limiter release"
+      },
+      {
+        "index": 161,
+        "name": "Band 2 - Filter 1 - Inv L"
+      },
+      {
+        "index": 162,
+        "name": "Band 2 - Filter 1 - Inv R"
+      },
+      {
+        "index": 163,
+        "name": "Band 2 - Filter 1 - Inv fb L"
+      },
+      {
+        "index": 164,
+        "name": "Band 2 - Filter 1 - Inv fb R"
+      },
+      {
+        "index": 165,
+        "name": "Band 2 - Filter 2 - Filter 2"
+      },
+      {
+        "index": 166,
+        "name": "Band 2 - Filter 2 - Gain"
+      },
+      {
+        "index": 167,
+        "name": "Band 2 - Filter 2 - Frequency"
+      },
+      {
+        "index": 168,
+        "name": "Band 2 - Filter 2 - Feedback"
+      },
+      {
+        "index": 169,
+        "name": "Band 2 - Filter 2 - Panorama"
+      },
+      {
+        "index": 170,
+        "name": "Band 2 - Filter 2 - Min frequency"
+      },
+      {
+        "index": 171,
+        "name": "Band 2 - Filter 2 - Max frequency"
+      },
+      {
+        "index": 172,
+        "name": "Band 2 - Filter 2 - Limiter attack"
+      },
+      {
+        "index": 173,
+        "name": "Band 2 - Filter 2 - Limiter release"
+      },
+      {
+        "index": 174,
+        "name": "Band 2 - Filter 2 - Inv L"
+      },
+      {
+        "index": 175,
+        "name": "Band 2 - Filter 2 - Inv R"
+      },
+      {
+        "index": 176,
+        "name": "Band 2 - Filter 2 - Inv fb L"
+      },
+      {
+        "index": 177,
+        "name": "Band 2 - Filter 2 - Inv fb R"
+      },
+      {
+        "index": 178,
+        "name": "Band 2 - Filter 2 - Serial"
+      },
+      {
+        "index": 179,
+        "name": "Band 2 - Filter 3 - Filter 3"
+      },
+      {
+        "index": 180,
+        "name": "Band 2 - Filter 3 - Gain"
+      },
+      {
+        "index": 181,
+        "name": "Band 2 - Filter 3 - Frequency"
+      },
+      {
+        "index": 182,
+        "name": "Band 2 - Filter 3 - Feedback"
+      },
+      {
+        "index": 183,
+        "name": "Band 2 - Filter 3 - Panorama"
+      },
+      {
+        "index": 184,
+        "name": "Band 2 - Filter 3 - Min frequency"
+      },
+      {
+        "index": 185,
+        "name": "Band 2 - Filter 3 - Max frequency"
+      },
+      {
+        "index": 186,
+        "name": "Band 2 - Filter 3 - Limiter attack"
+      },
+      {
+        "index": 187,
+        "name": "Band 2 - Filter 3 - Limiter release"
+      },
+      {
+        "index": 188,
+        "name": "Band 2 - Filter 3 - Inv L"
+      },
+      {
+        "index": 189,
+        "name": "Band 2 - Filter 3 - Inv R"
+      },
+      {
+        "index": 190,
+        "name": "Band 2 - Filter 3 - Inv fb L"
+      },
+      {
+        "index": 191,
+        "name": "Band 2 - Filter 3 - Inv fb R"
+      },
+      {
+        "index": 192,
+        "name": "Band 2 - Filter 3 - Serial"
+      },
+      {
+        "index": 193,
+        "name": "Band 2 - Filter 4 - Filter 4"
+      },
+      {
+        "index": 194,
+        "name": "Band 2 - Filter 4 - Gain"
+      },
+      {
+        "index": 195,
+        "name": "Band 2 - Filter 4 - Frequency"
+      },
+      {
+        "index": 196,
+        "name": "Band 2 - Filter 4 - Feedback"
+      },
+      {
+        "index": 197,
+        "name": "Band 2 - Filter 4 - Panorama"
+      },
+      {
+        "index": 198,
+        "name": "Band 2 - Filter 4 - Min frequency"
+      },
+      {
+        "index": 199,
+        "name": "Band 2 - Filter 4 - Max frequency"
+      },
+      {
+        "index": 200,
+        "name": "Band 2 - Filter 4 - Limiter attack"
+      },
+      {
+        "index": 201,
+        "name": "Band 2 - Filter 4 - Limiter release"
+      },
+      {
+        "index": 202,
+        "name": "Band 2 - Filter 4 - Inv L"
+      },
+      {
+        "index": 203,
+        "name": "Band 2 - Filter 4 - Inv R"
+      },
+      {
+        "index": 204,
+        "name": "Band 2 - Filter 4 - Inv fb L"
+      },
+      {
+        "index": 205,
+        "name": "Band 2 - Filter 4 - Inv fb R"
+      },
+      {
+        "index": 206,
+        "name": "Band 2 - Filter 4 - Serial"
+      },
+      {
+        "index": 207,
+        "name": "Band 3 - Dry/Wet"
+      },
+      {
+        "index": 208,
+        "name": "Band 3 - Output gain"
+      },
+      {
+        "index": 209,
+        "name": "Band 3 - Filter 1 - Filter 1"
+      },
+      {
+        "index": 210,
+        "name": "Band 3 - Filter 1 - Gain"
+      },
+      {
+        "index": 211,
+        "name": "Band 3 - Filter 1 - Frequency"
+      },
+      {
+        "index": 212,
+        "name": "Band 3 - Filter 1 - Feedback"
+      },
+      {
+        "index": 213,
+        "name": "Band 3 - Filter 1 - Panorama"
+      },
+      {
+        "index": 214,
+        "name": "Band 3 - Filter 1 - Min frequency"
+      },
+      {
+        "index": 215,
+        "name": "Band 3 - Filter 1 - Max frequency"
+      },
+      {
+        "index": 216,
+        "name": "Band 3 - Filter 1 - Limiter attack"
+      },
+      {
+        "index": 217,
+        "name": "Band 3 - Filter 1 - Limiter release"
+      },
+      {
+        "index": 218,
+        "name": "Band 3 - Filter 1 - Inv L"
+      },
+      {
+        "index": 219,
+        "name": "Band 3 - Filter 1 - Inv R"
+      },
+      {
+        "index": 220,
+        "name": "Band 3 - Filter 1 - Inv fb L"
+      },
+      {
+        "index": 221,
+        "name": "Band 3 - Filter 1 - Inv fb R"
+      },
+      {
+        "index": 222,
+        "name": "Band 3 - Filter 2 - Filter 2"
+      },
+      {
+        "index": 223,
+        "name": "Band 3 - Filter 2 - Gain"
+      },
+      {
+        "index": 224,
+        "name": "Band 3 - Filter 2 - Frequency"
+      },
+      {
+        "index": 225,
+        "name": "Band 3 - Filter 2 - Feedback"
+      },
+      {
+        "index": 226,
+        "name": "Band 3 - Filter 2 - Panorama"
+      },
+      {
+        "index": 227,
+        "name": "Band 3 - Filter 2 - Min frequency"
+      },
+      {
+        "index": 228,
+        "name": "Band 3 - Filter 2 - Max frequency"
+      },
+      {
+        "index": 229,
+        "name": "Band 3 - Filter 2 - Limiter attack"
+      },
+      {
+        "index": 230,
+        "name": "Band 3 - Filter 2 - Limiter release"
+      },
+      {
+        "index": 231,
+        "name": "Band 3 - Filter 2 - Inv L"
+      },
+      {
+        "index": 232,
+        "name": "Band 3 - Filter 2 - Inv R"
+      },
+      {
+        "index": 233,
+        "name": "Band 3 - Filter 2 - Inv fb L"
+      },
+      {
+        "index": 234,
+        "name": "Band 3 - Filter 2 - Inv fb R"
+      },
+      {
+        "index": 235,
+        "name": "Band 3 - Filter 2 - Serial"
+      },
+      {
+        "index": 236,
+        "name": "Band 3 - Filter 3 - Filter 3"
+      },
+      {
+        "index": 237,
+        "name": "Band 3 - Filter 3 - Gain"
+      },
+      {
+        "index": 238,
+        "name": "Band 3 - Filter 3 - Frequency"
+      },
+      {
+        "index": 239,
+        "name": "Band 3 - Filter 3 - Feedback"
+      },
+      {
+        "index": 240,
+        "name": "Band 3 - Filter 3 - Panorama"
+      },
+      {
+        "index": 241,
+        "name": "Band 3 - Filter 3 - Min frequency"
+      },
+      {
+        "index": 242,
+        "name": "Band 3 - Filter 3 - Max frequency"
+      },
+      {
+        "index": 243,
+        "name": "Band 3 - Filter 3 - Limiter attack"
+      },
+      {
+        "index": 244,
+        "name": "Band 3 - Filter 3 - Limiter release"
+      },
+      {
+        "index": 245,
+        "name": "Band 3 - Filter 3 - Inv L"
+      },
+      {
+        "index": 246,
+        "name": "Band 3 - Filter 3 - Inv R"
+      },
+      {
+        "index": 247,
+        "name": "Band 3 - Filter 3 - Inv fb L"
+      },
+      {
+        "index": 248,
+        "name": "Band 3 - Filter 3 - Inv fb R"
+      },
+      {
+        "index": 249,
+        "name": "Band 3 - Filter 3 - Serial"
+      },
+      {
+        "index": 250,
+        "name": "Band 3 - Filter 4 - Filter 4"
+      },
+      {
+        "index": 251,
+        "name": "Band 3 - Filter 4 - Gain"
+      },
+      {
+        "index": 252,
+        "name": "Band 3 - Filter 4 - Frequency"
+      },
+      {
+        "index": 253,
+        "name": "Band 3 - Filter 4 - Feedback"
+      },
+      {
+        "index": 254,
+        "name": "Band 3 - Filter 4 - Panorama"
+      },
+      {
+        "index": 255,
+        "name": "Band 3 - Filter 4 - Min frequency"
+      },
+      {
+        "index": 256,
+        "name": "Band 3 - Filter 4 - Max frequency"
+      },
+      {
+        "index": 257,
+        "name": "Band 3 - Filter 4 - Limiter attack"
+      },
+      {
+        "index": 258,
+        "name": "Band 3 - Filter 4 - Limiter release"
+      },
+      {
+        "index": 259,
+        "name": "Band 3 - Filter 4 - Inv L"
+      },
+      {
+        "index": 260,
+        "name": "Band 3 - Filter 4 - Inv R"
+      },
+      {
+        "index": 261,
+        "name": "Band 3 - Filter 4 - Inv fb L"
+      },
+      {
+        "index": 262,
+        "name": "Band 3 - Filter 4 - Inv fb R"
+      },
+      {
+        "index": 263,
+        "name": "Band 3 - Filter 4 - Serial"
+      },
+      {
+        "index": 264,
+        "name": "Band 4 - Dry/Wet"
+      },
+      {
+        "index": 265,
+        "name": "Band 4 - Output gain"
+      },
+      {
+        "index": 266,
+        "name": "Band 4 - Filter 1 - Filter 1"
+      },
+      {
+        "index": 267,
+        "name": "Band 4 - Filter 1 - Gain"
+      },
+      {
+        "index": 268,
+        "name": "Band 4 - Filter 1 - Frequency"
+      },
+      {
+        "index": 269,
+        "name": "Band 4 - Filter 1 - Feedback"
+      },
+      {
+        "index": 270,
+        "name": "Band 4 - Filter 1 - Panorama"
+      },
+      {
+        "index": 271,
+        "name": "Band 4 - Filter 1 - Min frequency"
+      },
+      {
+        "index": 272,
+        "name": "Band 4 - Filter 1 - Max frequency"
+      },
+      {
+        "index": 273,
+        "name": "Band 4 - Filter 1 - Limiter attack"
+      },
+      {
+        "index": 274,
+        "name": "Band 4 - Filter 1 - Limiter release"
+      },
+      {
+        "index": 275,
+        "name": "Band 4 - Filter 1 - Inv L"
+      },
+      {
+        "index": 276,
+        "name": "Band 4 - Filter 1 - Inv R"
+      },
+      {
+        "index": 277,
+        "name": "Band 4 - Filter 1 - Inv fb L"
+      },
+      {
+        "index": 278,
+        "name": "Band 4 - Filter 1 - Inv fb R"
+      },
+      {
+        "index": 279,
+        "name": "Band 4 - Filter 2 - Filter 2"
+      },
+      {
+        "index": 280,
+        "name": "Band 4 - Filter 2 - Gain"
+      },
+      {
+        "index": 281,
+        "name": "Band 4 - Filter 2 - Frequency"
+      },
+      {
+        "index": 282,
+        "name": "Band 4 - Filter 2 - Feedback"
+      },
+      {
+        "index": 283,
+        "name": "Band 4 - Filter 2 - Panorama"
+      },
+      {
+        "index": 284,
+        "name": "Band 4 - Filter 2 - Min frequency"
+      },
+      {
+        "index": 285,
+        "name": "Band 4 - Filter 2 - Max frequency"
+      },
+      {
+        "index": 286,
+        "name": "Band 4 - Filter 2 - Limiter attack"
+      },
+      {
+        "index": 287,
+        "name": "Band 4 - Filter 2 - Limiter release"
+      },
+      {
+        "index": 288,
+        "name": "Band 4 - Filter 2 - Inv L"
+      },
+      {
+        "index": 289,
+        "name": "Band 4 - Filter 2 - Inv R"
+      },
+      {
+        "index": 290,
+        "name": "Band 4 - Filter 2 - Inv fb L"
+      },
+      {
+        "index": 291,
+        "name": "Band 4 - Filter 2 - Inv fb R"
+      },
+      {
+        "index": 292,
+        "name": "Band 4 - Filter 2 - Serial"
+      },
+      {
+        "index": 293,
+        "name": "Band 4 - Filter 3 - Filter 3"
+      },
+      {
+        "index": 294,
+        "name": "Band 4 - Filter 3 - Gain"
+      },
+      {
+        "index": 295,
+        "name": "Band 4 - Filter 3 - Frequency"
+      },
+      {
+        "index": 296,
+        "name": "Band 4 - Filter 3 - Feedback"
+      },
+      {
+        "index": 297,
+        "name": "Band 4 - Filter 3 - Panorama"
+      },
+      {
+        "index": 298,
+        "name": "Band 4 - Filter 3 - Min frequency"
+      },
+      {
+        "index": 299,
+        "name": "Band 4 - Filter 3 - Max frequency"
+      },
+      {
+        "index": 300,
+        "name": "Band 4 - Filter 3 - Limiter attack"
+      },
+      {
+        "index": 301,
+        "name": "Band 4 - Filter 3 - Limiter release"
+      },
+      {
+        "index": 302,
+        "name": "Band 4 - Filter 3 - Inv L"
+      },
+      {
+        "index": 303,
+        "name": "Band 4 - Filter 3 - Inv R"
+      },
+      {
+        "index": 304,
+        "name": "Band 4 - Filter 3 - Inv fb L"
+      },
+      {
+        "index": 305,
+        "name": "Band 4 - Filter 3 - Inv fb R"
+      },
+      {
+        "index": 306,
+        "name": "Band 4 - Filter 3 - Serial"
+      },
+      {
+        "index": 307,
+        "name": "Band 4 - Filter 4 - Filter 4"
+      },
+      {
+        "index": 308,
+        "name": "Band 4 - Filter 4 - Gain"
+      },
+      {
+        "index": 309,
+        "name": "Band 4 - Filter 4 - Frequency"
+      },
+      {
+        "index": 310,
+        "name": "Band 4 - Filter 4 - Feedback"
+      },
+      {
+        "index": 311,
+        "name": "Band 4 - Filter 4 - Panorama"
+      },
+      {
+        "index": 312,
+        "name": "Band 4 - Filter 4 - Min frequency"
+      },
+      {
+        "index": 313,
+        "name": "Band 4 - Filter 4 - Max frequency"
+      },
+      {
+        "index": 314,
+        "name": "Band 4 - Filter 4 - Limiter attack"
+      },
+      {
+        "index": 315,
+        "name": "Band 4 - Filter 4 - Limiter release"
+      },
+      {
+        "index": 316,
+        "name": "Band 4 - Filter 4 - Inv L"
+      },
+      {
+        "index": 317,
+        "name": "Band 4 - Filter 4 - Inv R"
+      },
+      {
+        "index": 318,
+        "name": "Band 4 - Filter 4 - Inv fb L"
+      },
+      {
+        "index": 319,
+        "name": "Band 4 - Filter 4 - Inv fb R"
+      },
+      {
+        "index": 320,
+        "name": "Band 4 - Filter 4 - Serial"
+      },
+      {
+        "index": 321,
+        "name": "Band 5 - Dry/Wet"
+      },
+      {
+        "index": 322,
+        "name": "Band 5 - Output gain"
+      },
+      {
+        "index": 323,
+        "name": "Band 5 - Filter 1 - Filter 1"
+      },
+      {
+        "index": 324,
+        "name": "Band 5 - Filter 1 - Gain"
+      },
+      {
+        "index": 325,
+        "name": "Band 5 - Filter 1 - Frequency"
+      },
+      {
+        "index": 326,
+        "name": "Band 5 - Filter 1 - Feedback"
+      },
+      {
+        "index": 327,
+        "name": "Band 5 - Filter 1 - Panorama"
+      },
+      {
+        "index": 328,
+        "name": "Band 5 - Filter 1 - Min frequency"
+      },
+      {
+        "index": 329,
+        "name": "Band 5 - Filter 1 - Max frequency"
+      },
+      {
+        "index": 330,
+        "name": "Band 5 - Filter 1 - Limiter attack"
+      },
+      {
+        "index": 331,
+        "name": "Band 5 - Filter 1 - Limiter release"
+      },
+      {
+        "index": 332,
+        "name": "Band 5 - Filter 1 - Inv L"
+      },
+      {
+        "index": 333,
+        "name": "Band 5 - Filter 1 - Inv R"
+      },
+      {
+        "index": 334,
+        "name": "Band 5 - Filter 1 - Inv fb L"
+      },
+      {
+        "index": 335,
+        "name": "Band 5 - Filter 1 - Inv fb R"
+      },
+      {
+        "index": 336,
+        "name": "Band 5 - Filter 2 - Filter 2"
+      },
+      {
+        "index": 337,
+        "name": "Band 5 - Filter 2 - Gain"
+      },
+      {
+        "index": 338,
+        "name": "Band 5 - Filter 2 - Frequency"
+      },
+      {
+        "index": 339,
+        "name": "Band 5 - Filter 2 - Feedback"
+      },
+      {
+        "index": 340,
+        "name": "Band 5 - Filter 2 - Panorama"
+      },
+      {
+        "index": 341,
+        "name": "Band 5 - Filter 2 - Min frequency"
+      },
+      {
+        "index": 342,
+        "name": "Band 5 - Filter 2 - Max frequency"
+      },
+      {
+        "index": 343,
+        "name": "Band 5 - Filter 2 - Limiter attack"
+      },
+      {
+        "index": 344,
+        "name": "Band 5 - Filter 2 - Limiter release"
+      },
+      {
+        "index": 345,
+        "name": "Band 5 - Filter 2 - Inv L"
+      },
+      {
+        "index": 346,
+        "name": "Band 5 - Filter 2 - Inv R"
+      },
+      {
+        "index": 347,
+        "name": "Band 5 - Filter 2 - Inv fb L"
+      },
+      {
+        "index": 348,
+        "name": "Band 5 - Filter 2 - Inv fb R"
+      },
+      {
+        "index": 349,
+        "name": "Band 5 - Filter 2 - Serial"
+      },
+      {
+        "index": 350,
+        "name": "Band 5 - Filter 3 - Filter 3"
+      },
+      {
+        "index": 351,
+        "name": "Band 5 - Filter 3 - Gain"
+      },
+      {
+        "index": 352,
+        "name": "Band 5 - Filter 3 - Frequency"
+      },
+      {
+        "index": 353,
+        "name": "Band 5 - Filter 3 - Feedback"
+      },
+      {
+        "index": 354,
+        "name": "Band 5 - Filter 3 - Panorama"
+      },
+      {
+        "index": 355,
+        "name": "Band 5 - Filter 3 - Min frequency"
+      },
+      {
+        "index": 356,
+        "name": "Band 5 - Filter 3 - Max frequency"
+      },
+      {
+        "index": 357,
+        "name": "Band 5 - Filter 3 - Limiter attack"
+      },
+      {
+        "index": 358,
+        "name": "Band 5 - Filter 3 - Limiter release"
+      },
+      {
+        "index": 359,
+        "name": "Band 5 - Filter 3 - Inv L"
+      },
+      {
+        "index": 360,
+        "name": "Band 5 - Filter 3 - Inv R"
+      },
+      {
+        "index": 361,
+        "name": "Band 5 - Filter 3 - Inv fb L"
+      },
+      {
+        "index": 362,
+        "name": "Band 5 - Filter 3 - Inv fb R"
+      },
+      {
+        "index": 363,
+        "name": "Band 5 - Filter 3 - Serial"
+      },
+      {
+        "index": 364,
+        "name": "Band 5 - Filter 4 - Filter 4"
+      },
+      {
+        "index": 365,
+        "name": "Band 5 - Filter 4 - Gain"
+      },
+      {
+        "index": 366,
+        "name": "Band 5 - Filter 4 - Frequency"
+      },
+      {
+        "index": 367,
+        "name": "Band 5 - Filter 4 - Feedback"
+      },
+      {
+        "index": 368,
+        "name": "Band 5 - Filter 4 - Panorama"
+      },
+      {
+        "index": 369,
+        "name": "Band 5 - Filter 4 - Min frequency"
+      },
+      {
+        "index": 370,
+        "name": "Band 5 - Filter 4 - Max frequency"
+      },
+      {
+        "index": 371,
+        "name": "Band 5 - Filter 4 - Limiter attack"
+      },
+      {
+        "index": 372,
+        "name": "Band 5 - Filter 4 - Limiter release"
+      },
+      {
+        "index": 373,
+        "name": "Band 5 - Filter 4 - Inv L"
+      },
+      {
+        "index": 374,
+        "name": "Band 5 - Filter 4 - Inv R"
+      },
+      {
+        "index": 375,
+        "name": "Band 5 - Filter 4 - Inv fb L"
+      },
+      {
+        "index": 376,
+        "name": "Band 5 - Filter 4 - Inv fb R"
+      },
+      {
+        "index": 377,
+        "name": "Band 5 - Filter 4 - Serial"
+      },
+      {
+        "index": 378,
+        "name": "Band 6 - Dry/Wet"
+      },
+      {
+        "index": 379,
+        "name": "Band 6 - Output gain"
+      },
+      {
+        "index": 380,
+        "name": "Band 6 - Filter 1 - Filter 1"
+      },
+      {
+        "index": 381,
+        "name": "Band 6 - Filter 1 - Gain"
+      },
+      {
+        "index": 382,
+        "name": "Band 6 - Filter 1 - Frequency"
+      },
+      {
+        "index": 383,
+        "name": "Band 6 - Filter 1 - Feedback"
+      },
+      {
+        "index": 384,
+        "name": "Band 6 - Filter 1 - Panorama"
+      },
+      {
+        "index": 385,
+        "name": "Band 6 - Filter 1 - Min frequency"
+      },
+      {
+        "index": 386,
+        "name": "Band 6 - Filter 1 - Max frequency"
+      },
+      {
+        "index": 387,
+        "name": "Band 6 - Filter 1 - Limiter attack"
+      },
+      {
+        "index": 388,
+        "name": "Band 6 - Filter 1 - Limiter release"
+      },
+      {
+        "index": 389,
+        "name": "Band 6 - Filter 1 - Inv L"
+      },
+      {
+        "index": 390,
+        "name": "Band 6 - Filter 1 - Inv R"
+      },
+      {
+        "index": 391,
+        "name": "Band 6 - Filter 1 - Inv fb L"
+      },
+      {
+        "index": 392,
+        "name": "Band 6 - Filter 1 - Inv fb R"
+      },
+      {
+        "index": 393,
+        "name": "Band 6 - Filter 2 - Filter 2"
+      },
+      {
+        "index": 394,
+        "name": "Band 6 - Filter 2 - Gain"
+      },
+      {
+        "index": 395,
+        "name": "Band 6 - Filter 2 - Frequency"
+      },
+      {
+        "index": 396,
+        "name": "Band 6 - Filter 2 - Feedback"
+      },
+      {
+        "index": 397,
+        "name": "Band 6 - Filter 2 - Panorama"
+      },
+      {
+        "index": 398,
+        "name": "Band 6 - Filter 2 - Min frequency"
+      },
+      {
+        "index": 399,
+        "name": "Band 6 - Filter 2 - Max frequency"
+      },
+      {
+        "index": 400,
+        "name": "Band 6 - Filter 2 - Limiter attack"
+      },
+      {
+        "index": 401,
+        "name": "Band 6 - Filter 2 - Limiter release"
+      },
+      {
+        "index": 402,
+        "name": "Band 6 - Filter 2 - Inv L"
+      },
+      {
+        "index": 403,
+        "name": "Band 6 - Filter 2 - Inv R"
+      },
+      {
+        "index": 404,
+        "name": "Band 6 - Filter 2 - Inv fb L"
+      },
+      {
+        "index": 405,
+        "name": "Band 6 - Filter 2 - Inv fb R"
+      },
+      {
+        "index": 406,
+        "name": "Band 6 - Filter 2 - Serial"
+      },
+      {
+        "index": 407,
+        "name": "Band 6 - Filter 3 - Filter 3"
+      },
+      {
+        "index": 408,
+        "name": "Band 6 - Filter 3 - Gain"
+      },
+      {
+        "index": 409,
+        "name": "Band 6 - Filter 3 - Frequency"
+      },
+      {
+        "index": 410,
+        "name": "Band 6 - Filter 3 - Feedback"
+      },
+      {
+        "index": 411,
+        "name": "Band 6 - Filter 3 - Panorama"
+      },
+      {
+        "index": 412,
+        "name": "Band 6 - Filter 3 - Min frequency"
+      },
+      {
+        "index": 413,
+        "name": "Band 6 - Filter 3 - Max frequency"
+      },
+      {
+        "index": 414,
+        "name": "Band 6 - Filter 3 - Limiter attack"
+      },
+      {
+        "index": 415,
+        "name": "Band 6 - Filter 3 - Limiter release"
+      },
+      {
+        "index": 416,
+        "name": "Band 6 - Filter 3 - Inv L"
+      },
+      {
+        "index": 417,
+        "name": "Band 6 - Filter 3 - Inv R"
+      },
+      {
+        "index": 418,
+        "name": "Band 6 - Filter 3 - Inv fb L"
+      },
+      {
+        "index": 419,
+        "name": "Band 6 - Filter 3 - Inv fb R"
+      },
+      {
+        "index": 420,
+        "name": "Band 6 - Filter 3 - Serial"
+      },
+      {
+        "index": 421,
+        "name": "Band 6 - Filter 4 - Filter 4"
+      },
+      {
+        "index": 422,
+        "name": "Band 6 - Filter 4 - Gain"
+      },
+      {
+        "index": 423,
+        "name": "Band 6 - Filter 4 - Frequency"
+      },
+      {
+        "index": 424,
+        "name": "Band 6 - Filter 4 - Feedback"
+      },
+      {
+        "index": 425,
+        "name": "Band 6 - Filter 4 - Panorama"
+      },
+      {
+        "index": 426,
+        "name": "Band 6 - Filter 4 - Min frequency"
+      },
+      {
+        "index": 427,
+        "name": "Band 6 - Filter 4 - Max frequency"
+      },
+      {
+        "index": 428,
+        "name": "Band 6 - Filter 4 - Limiter attack"
+      },
+      {
+        "index": 429,
+        "name": "Band 6 - Filter 4 - Limiter release"
+      },
+      {
+        "index": 430,
+        "name": "Band 6 - Filter 4 - Inv L"
+      },
+      {
+        "index": 431,
+        "name": "Band 6 - Filter 4 - Inv R"
+      },
+      {
+        "index": 432,
+        "name": "Band 6 - Filter 4 - Inv fb L"
+      },
+      {
+        "index": 433,
+        "name": "Band 6 - Filter 4 - Inv fb R"
+      },
+      {
+        "index": 434,
+        "name": "Band 6 - Filter 4 - Serial"
+      },
+      {
+        "index": 435,
+        "name": "Modulators - Mod 1 - Automated value"
+      },
+      {
+        "index": 436,
+        "name": "Modulators - Mod 2 - Automated value"
+      },
+      {
+        "index": 437,
+        "name": "Modulators - Mod 3 - Automated value"
+      },
+      {
+        "index": 438,
+        "name": "Modulators - Mod 4 - Automated value"
+      },
+      {
+        "index": 439,
+        "name": "Preset trigger - previous"
+      },
+      {
+        "index": 440,
+        "name": "Preset trigger - next"
+      },
+      {
+        "index": 441,
+        "name": "Device"
+      },
+      {
+        "index": 442,
+        "name": "Band 1 - Filter 1 - Shift"
+      },
+      {
+        "index": 443,
+        "name": "Band 1 - Filter 2 - Shift"
+      },
+      {
+        "index": 444,
+        "name": "Band 1 - Filter 3 - Shift"
+      },
+      {
+        "index": 445,
+        "name": "Band 1 - Filter 4 - Shift"
+      },
+      {
+        "index": 446,
+        "name": "Band 2 - Filter 1 - Shift"
+      },
+      {
+        "index": 447,
+        "name": "Band 2 - Filter 2 - Shift"
+      },
+      {
+        "index": 448,
+        "name": "Band 2 - Filter 3 - Shift"
+      },
+      {
+        "index": 449,
+        "name": "Band 2 - Filter 4 - Shift"
+      },
+      {
+        "index": 450,
+        "name": "Band 3 - Filter 1 - Shift"
+      },
+      {
+        "index": 451,
+        "name": "Band 3 - Filter 2 - Shift"
+      },
+      {
+        "index": 452,
+        "name": "Band 3 - Filter 3 - Shift"
+      },
+      {
+        "index": 453,
+        "name": "Band 3 - Filter 4 - Shift"
+      },
+      {
+        "index": 454,
+        "name": "Band 4 - Filter 1 - Shift"
+      },
+      {
+        "index": 455,
+        "name": "Band 4 - Filter 2 - Shift"
+      },
+      {
+        "index": 456,
+        "name": "Band 4 - Filter 3 - Shift"
+      },
+      {
+        "index": 457,
+        "name": "Band 4 - Filter 4 - Shift"
+      },
+      {
+        "index": 458,
+        "name": "Band 5 - Filter 1 - Shift"
+      },
+      {
+        "index": 459,
+        "name": "Band 5 - Filter 2 - Shift"
+      },
+      {
+        "index": 460,
+        "name": "Band 5 - Filter 3 - Shift"
+      },
+      {
+        "index": 461,
+        "name": "Band 5 - Filter 4 - Shift"
+      },
+      {
+        "index": 462,
+        "name": "Band 6 - Filter 1 - Shift"
+      },
+      {
+        "index": 463,
+        "name": "Band 6 - Filter 2 - Shift"
+      },
+      {
+        "index": 464,
+        "name": "Band 6 - Filter 3 - Shift"
+      },
+      {
+        "index": 465,
+        "name": "Band 6 - Filter 4 - Shift"
+      }
+    ],
+    "source": "the wizard: the parameter list read by the probe (no roles mapped)"
+  },
+  "leaning": "reverb",
+  "signature": {
+    "product": "MCombMB",
+    "vendor": "MeldaProduction",
+    "type": "aumf",
+    "identity": "AudioUnit|615d426d|14.16.0",
+    "proposed_by_words": "",
+    "category": "reverb",
+    "settled": false,
+    "why": "a tail (RT60 3.27 s, 0 repeat(s) found) and no word: leaning reverb (a feedback delay reads the same): review",
+    "measured": true,
+    "signatures": {
+      "level_dependence_db": 0.0,
+      "frequency_span_db": 7.7,
+      "rt60_s": 3.27,
+      "repeats": 0,
+      "thd_db_at_m30": -84.200000000000003,
+      "thd_db_at_m6": -66.5,
+      "sideband_db": -28.399999999999999,
+      "pitch_move_cents": 0.0,
+      "notes": []
+    },
+    "seconds": 1.0,
+    "reads_ran": true
+  },
+  "why": "a tail (RT60 3.27 s, 0 repeat(s) found) and no word: leaning reverb (a feedback delay reads the same): review"
+}

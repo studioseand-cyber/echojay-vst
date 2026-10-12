@@ -1,0 +1,59 @@
+{
+  "schema": "ej_contribution/0",
+  "created": "2026-10-12T10:58:33.791+01:00",
+  "tool": "EJ Map cbc13dd1-dirty",
+  "platform": "Mac OSX 15.7.5",
+  "profiles": [
+    {
+      "product": "elysia mpressor",
+      "kind": "compressor",
+      "plugin_id": "AudioUnit|49696d78|1.15.1",
+      "map_fp": "b3396255fdc18668cbadcdda4edac425fa4598506b60dbb11788a3eae9ed91d3",
+      "profile": "profiles/elysia_mpressor_1.15.1.json",
+      "tone_check": "profiles/elysia_mpressor_1.15.1.tonecheck.json",
+      "tone_check_g2_pass": true
+    }
+  ],
+  "confirmations": [],
+  "skipped": [
+    {
+      "product": "MAutoVolume",
+      "state": "not_measurable",
+      "why": "stage reference: not licensed suspected (silent, non-finite or not the input's tone at default): intermittent dropouts (not the input's tone at -44, -42, -40, -20, -18 dB, clean between); "
+    }
+  ],
+  "crashed": [],
+  "needs_category": [
+    {
+      "product": "Lindell 254E",
+      "plugin_id": "AudioUnit|6f457233|1.2.2",
+      "map_fp": "1ba7ad6d8695f5024617abe840d84d772132756aa1da00a5eda84f9634de3c76",
+      "leaning": "reverb",
+      "file": "needs_category/Lindell 254E.json"
+    },
+    {
+      "product": "MCombMB",
+      "plugin_id": "AudioUnit|615d426d|14.16.0",
+      "map_fp": "50a9359d3af86f76e00de9187ea258ed758bd9b38dec7b6962340aea0cc5ba9d",
+      "leaning": "reverb",
+      "file": "needs_category/MCombMB.json"
+    }
+  ],
+  "other_categories": [
+    {
+      "product": "MChorusMB",
+      "plugin_id": "AudioUnit|615d626a|14.16.0",
+      "map_fp": "562be9b6bb920bc218a9b86af20683df88f5e569375150640ee3a87f674bbaa6",
+      "category": "modulation",
+      "file": "other_categories/MChorusMB.json"
+    }
+  ],
+  "out_of_scope": [
+    {
+      "product": "Massive",
+      "plugin_id": "AudioUnit|2526939|1.5.12",
+      "why": "out of scope (instrument): not loaded"
+    }
+  ],
+  "note": "results only: profiles, their tone checks and this manifest - no plugin files, no audio, no account token"
+}

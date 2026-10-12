@@ -36,6 +36,12 @@
   pause (SIGINT to the engine's process group) and reopen = carry on. Sign-in / lookup / upload / promo are LOCAL STUBS. Pins WZ-APP-1..3.
   Rehearsal: cert-traces/2026-10-11-wizard-app/.
 
+- NO PLUGIN LEFT BEHIND (12 Oct, `EjmapWizardRoute.h`, spec section 3 + 6.2 / 6.3): the database first (rule A and the new
+  pending_review are never loaded), then the server's category, the name rules, out of scope (not loaded), and only then EJ Map's
+  signature reads (`categoriseOne`, shared with --categorise-propose, cached per plugin_id). Unsettled -> `needs_category` (map + reads +
+  leaning); other categories -> `other_categories` (map + category); out of scope -> listed. `loads.log` records every load. Pins
+  WZ-ROUTE-1..5. Rehearsal: cert-traces/2026-10-12-wizard-no-plugin-left/.
+
 ## Left before it is a real app
 1. **UI**: BUILT as the v1 window app (above). Still open: a Pause button besides closing the window; "overnight" scheduling;
    accessibility (VoiceOver labels on the bar); dark mode; a first-launch explanation of what is measured and why; localisation;
@@ -68,6 +74,11 @@
    the check is withheld). Needs: a lawyer's read of vendor licence terms on publishing measurements of their plugins; the terms the
    user accepts (what is sent, that measurements may be published, the reward's conditions); a privacy notice for the account link and
    the crash reports; data retention / deletion on request; whether crash reports (third-party plugin stacks) may be kept.
+8b. **Categorising on a stranger's Mac**: the signature reads run at the plugin's INSTANTIATE state, so (a) a compressor with a
+   release reads as "a tail" first (Lindell 254E -> "reverb or delay: review", 12 Oct) - the tail rule runs before dynamics; (b) the
+   same plugin can read differently on two Macs (MMorph: eq on Sean's, dynamics here); (c) settled "dynamics" goes to the compressor
+   certification, which then decides (MAutoVolume: refused, Melda demo-mode dropouts). Sean labels needs_category from the reads; a
+   categoriser change is its own task (EJ Map's equality would move).
 9. **Field hardening**: the empty-store path is built and rehearsed; still open - sleep / lid-close handling in "overnight", disk-space
    checks before measuring, and the wizard's maps are parameter lists only (the GUI's role mapping is not run: the dial side must accept
    a map without roles, or the server supplies them).

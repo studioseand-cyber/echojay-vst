@@ -49,6 +49,19 @@ It measures the user's plugins that EchoJay's database does not have yet. It sen
   The engine never loads a plugin on that list again, in any stage. The bundle carries the reports. One that still trips the privacy check is withheld, with a note saying so.
 - **Two at a time.** With `--jobs 2`, two plugins can be in flight when the wizard goes down. Both markers remain and both are skipped. The screen names both. **[Open decision]** Should the second one be re-run alone once, and skipped only if it takes the wizard down again?
 - **Skip what the database has** (pin WZ-APP-2): rule A never measures. Rule B measures only when its quick check failed. Rule C always measures.
+- **No plugin left behind** (12 Oct, `EjmapWizardRoute.h`, pins WZ-ROUTE-1..4). The order per plugin puts the cheap answers first:
+  1. **The database**, with no load. Rule A or pending_review is skipped entirely. Rule B gets only its quick check.
+  2. **The server's category.**
+  3. **The name rules.**
+  4. **Out of scope by type or words**, not loaded.
+  5. **EJ Map's signature reads** (the categorise step's reads, shared code), only for what is left. They are cached per plugin_id, so the app's second engine run loads nothing again. Then:
+     - settled `eq` → the EQ queue;
+     - settled `dynamics` → the compressor queue (the compressor certification decides; a gate or rider comes back "could not be measured" and is still reported);
+     - another settled category → sent with its category;
+     - unsettled, or a licence window → `needs_category`.
+
+  Nothing is dropped silently. The summary says "N plugins we couldn't identify were sent for review", and names what was sent with a category, what was only listed, and what someone else already sent.
+- **The loads ledger:** every load (map, quick check, signature reads, measuring) is written to `<work>/engine/loads.log` (time, stage, plugin). It is the record that rule A and pending_review plugins were never loaded.
 - **Keep awake.** While the engine runs, the app holds an IOKit `PreventUserIdleSystemSleep` assertion named "EchoJay Wizard is measuring your plugins". It is released when the engine ends or is paused.
 - **Nothing personal leaves.** The bundle holds profiles, tone-check sidecars and EQ profiles, a manifest, and the redacted crash reports. Every file is checked for the home path, user name, host name and credential-like fields before packing; a hit refuses the bundle. The account token is never in the bundle.
 
@@ -102,10 +115,10 @@ The token is stored in the macOS Keychain (**the stub writes account.json withou
 
 ### 6.2 Which of these do you already have (the lookup)
 
-`POST /lookup` (authenticated), up to 2000 plugins per call:
+`POST /lookup` (authenticated), up to 2000 plugins per call. It is sent **before anything is loaded** (12 Oct), so `map_fp` and `param_count` are present only when the wizard already mapped the plugin on an earlier run:
 ```json
 { "plugins": [ { "plugin_id": "AudioUnit|6f747363|1.0.3", "name": "Lindell SBC", "manufacturer": "Plugin Alliance",
-                 "version": "1.0.3", "map_fp": "afdb3916…", "param_count": 22 } ] }
+                 "version": "1.0.3", "type": "aufx", "map_fp": "afdb3916…", "param_count": 22 } ] }
 ```
 **200**, one entry per plugin, in order:
 ```json
@@ -113,29 +126,43 @@ The token is stored in the macOS Keychain (**the stub writes account.json withou
   { "plugin_id": "AudioUnit|6f747363|1.0.3", "rule": "A", "category": "compressor" },
   { "plugin_id": "AudioUnit|7e8ca3f4|1.8.1", "rule": "B", "category": "compressor", "from_version": "1.8.0",
     "readback": { "writes": [ { "index": 3, "control": "Threshold", "norm": 0.5, "expect": "-10.0 dB" } ] } },
-  { "plugin_id": "AudioUnit|1ba7ad6d|1.2.2", "rule": "C", "category": "compressor" },
-  { "plugin_id": "AudioUnit|deadbeef|2.0.0", "rule": "out_of_scope", "category": null } ],
+  { "plugin_id": "AudioUnit|49696d78|1.15.1", "rule": "C", "category": "compressor" },
+  { "plugin_id": "AudioUnit|615c4d43|14.16.0", "rule": "C", "category": "modulation" },
+  { "plugin_id": "AudioUnit|615d426d|14.16.0", "rule": "C", "category": null },
+  { "plugin_id": "AudioUnit|61526042|14.16.0", "rule": "pending_review", "category": null, "pending_since": "2026-10-12" } ],
   "categories_version": "2026-10-11" }
 ```
 - `rule`:
-  - **A** = have it; skip.
+  - **A** = have it. Skipped entirely: not loaded, not categorised, nothing uploaded. A matches on plugin_id (uid + version); `map_fp` is compared only when the request carries one.
   - **B** = have another version; the client reads back `readback.writes` (no audio) and measures only if a display differs.
-  - **C** = measure.
-  - **out_of_scope** = not an EchoJay category; skip silently.
-- The server decides A / B / C and the category. The client never decides from its own copy of the database.
-- **Stub:** the engine's `--db` folder (`ej_comp_profile/1` + tone checks, `ej_eq_profile/1`, `categories.json`), with the same rules applied locally.
+  - **C** = not in the database.
+  - **pending_review** (new, 12 Oct) = another user already sent it as `needs_category` and Sean has not labelled it yet. Skipped entirely: not loaded, no signature reads, **not re-sent**.
+- `category` (new, 12 Oct): the **Sean-approved** category whenever the server has one. That includes rule C plugins with no profile yet, and categories the wizard does not measure (`reverb`, `delay`, `modulation`, `pitch`, `saturation`, `deesser`, `gate`, `limiter`, `multiband`, `strip`, `instrument`, `meter`, `utility`…). `null` = the server does not know.
+  - The wizard uses it FIRST. compressor / eq go to the measuring queue. Any other category: the plugin is mapped and sent with its category (6.3 `other_categories`), not measured.
+  - Without a server category, the wizard tries, in order: its name rules (compressor / EQ words); out of scope by AU type or meter / utility words (listed, never loaded); and only then EJ Map's signature reads on the user's Mac.
+- The server decides A / B / C / pending_review and the category. The client never decides from its own copy of the database.
+- **Stub:** the engine's `--db` folder: `ej_comp_profile/1` + tone checks, `ej_eq_profile/1`, `categories.json` (the category, keyed by plugin_id or name) and `pending_review.json` (`[{"plugin_id": …}]`), with the same rules applied locally (`wizroute::ask`).
 
 ### 6.3 Upload
 
 `POST /contributions` (authenticated, `multipart/form-data`), idempotent on `bundle_sha256`:
-- `manifest`: `manifest.json` (`ej_contribution/0`). It contains `profiles[]`, `confirmations[]` (rule B passes), `skipped[]` (plain reasons), `crashed[]` (product, stage, crash_report path), `tool`, `platform` and `created`.
-- `bundle`: `contribution.zip` (the manifest, `profiles/`, `crash_reports/`).
+- `manifest`: `manifest.json` (`ej_contribution/0`). It contains:
+  - `profiles[]`;
+  - `confirmations[]` (rule B passes);
+  - `skipped[]` (plain reasons; never rule A or pending_review);
+  - `crashed[]` (product, stage, crash_report path);
+  - **`needs_category[]`** (new, 12 Oct): `{product, plugin_id, map_fp, leaning, file}` for each plugin the server, the name and the signature reads could not settle. Its file `needs_category/<product>.json` holds the wizard's map (identity + parameter list), EJ Map's signature reads (`level_dependence_db`, `frequency_span_db`, `rt60_s`, `repeats`, THD at -30 / -6, sideband, pitch move, notes), the leaning (a category or null) and the why. Sean labels it; the server then returns it as `pending_review` to other users until the label is in;
+  - **`other_categories[]`** (new): `{product, plugin_id, map_fp, category, file}` for a category the wizard cannot measure yet. The file holds the map and the category;
+  - **`out_of_scope[]`** (new): `{product, plugin_id, why}`. Instruments, MIDI, meters and utilities, listed by identity only (never loaded);
+  - `tool`, `platform` and `created`.
+- `bundle`: `contribution.zip` (the manifest, `profiles/`, `crash_reports/`, `needs_category/`, `other_categories/`).
 - `bundle_sha256`: a hex string.
 
 **200:**
 ```json
 { "receipt_id": "rcpt_…", "genuine": true, "checked_in_ms": 2400,
   "profiles_received": 3, "confirmations_received": 2, "crashed_reported": 1,
+  "needs_category_received": 2, "other_categories_received": 1, "out_of_scope_received": 1,
   "held_for_review": [ { "product": "…", "why": "…" } ] }
 ```
 - **409** `{"error":"duplicate", "receipt_id":"rcpt_…"}` (the same bundle again: return the first receipt).

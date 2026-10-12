@@ -301,6 +301,11 @@ private:
                 const auto rw = juce::JSON::parse (cfg.work.getChildFile ("reward.json").loadFileAsString());
                 title = "Thank you - here's your free month"; bigCode = rw.getProperty ("code", "").toString();
                 text = "Use this code in EchoJay. We've emailed it to you too (" + rw.getProperty ("emailed_to", "").toString() + ").";
+                {   // nothing dropped (12 Oct): say what went for review instead of being measured
+                    const auto m = juce::JSON::parse (engineDir().getChildFile ("contribution/manifest.json").loadFileAsString());
+                    const int nc = m.getProperty ("needs_category", {}).size();
+                    if (nc > 0) text << " " << nc << (nc == 1 ? " plugin we couldn't identify was" : " plugins we couldn't identify were") << " sent for review.";
+                }
                 secondary.setButtonText ("Copy code"); secondary.setVisible (true); primary.setButtonText ("Done"); primary.setVisible (true); break;
             }
         }

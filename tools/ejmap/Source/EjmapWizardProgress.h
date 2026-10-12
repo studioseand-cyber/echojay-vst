@@ -192,6 +192,7 @@ public:
         for (auto& i : items_) if (i.product == product && ! i.done) { i.running = true; startedAt_[product] = juce::Time::getMillisecondCounterHiRes(); }
         if (! current_.contains (product)) current_.add (product);
         if (markers_ != juce::File()) wizapp::markerBegin (markers_, product, stageWord (stage_));
+        if (markers_ != juce::File() && stage_ != Stage::packing) markers_.getSiblingFile ("loads.log").appendText (juce::Time::getCurrentTime().toISO8601 (true) + "\t" + stageWord (stage_) + "\t" + product + "\n");   // every load, for the record
         emitLocked (false);
     }
     void finished (const juce::String& product, bool problem, double seconds = -1.0)

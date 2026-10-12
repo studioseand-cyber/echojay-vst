@@ -176,7 +176,7 @@ inline juce::String plainOutcome (const juce::String& outcome, const juce::Strin
     if (outcome == "ok" && certState == "exported") return "measured";
     return "not_measurable";
 }
-inline juce::String summaryLine (const std::map<juce::String, int>& n)
+inline juce::String summaryLine (const std::map<juce::String, int>& n, bool sent = true)   // sent = false: a run that makes no bundle says 'will be sent'
 {
     auto get = [&] (const char* k) { const auto it = n.find (k); return it == n.end() ? 0 : it->second; };
     auto plural = [] (int k, const char* one, const char* many) { return juce::String (k) + " " + (k == 1 ? one : many); };
@@ -193,6 +193,12 @@ inline juce::String summaryLine (const std::map<juce::String, int>& n)
     if (get ("wont_load")) parts.add (plural (get ("wont_load"), "won't load on this Mac", "won't load on this Mac"));
     if (get ("not_in_scope")) parts.add (plural (get ("not_in_scope"), "is not measured by the wizard yet", "are not measured by the wizard yet"));
     if (get ("not_measurable")) parts.add (plural (get ("not_measurable"), "could not be measured", "could not be measured"));
+    // NOTHING DROPPED (12 Oct): what was sent instead of measured, and what another user already sent
+    if (get ("needs_category")) parts.add (plural (get ("needs_category"), sent ? "plugin we couldn't identify was sent for review" : "plugin we couldn't identify will be sent for review", sent ? "plugins we couldn't identify were sent for review" : "plugins we couldn't identify will be sent for review"));
+    if (get ("other_category")) parts.add (plural (get ("other_category"), sent ? "plugin of a kind we don't measure yet was sent so EchoJay knows it" : "plugin of a kind we don't measure yet will be sent so EchoJay knows it", sent ? "plugins of kinds we don't measure yet were sent so EchoJay knows them" : "plugins of kinds we don't measure yet will be sent so EchoJay knows them"));
+    if (get ("out_of_scope")) parts.add (plural (get ("out_of_scope"), sent ? "instrument / meter / utility was listed, not loaded" : "instrument / meter / utility will be listed, not loaded", sent ? "instruments / meters / utilities were listed, not loaded" : "instruments / meters / utilities will be listed, not loaded"));
+    if (get ("pending_review")) parts.add (plural (get ("pending_review"), "was already sent for review by someone else", "were already sent for review by someone else"));
+    if (get ("identifying")) parts.add (juce::String (get ("identifying")) + " being identified");
     return parts.isEmpty() ? juce::String ("nothing to do") : parts.joinIntoString (", ");
 }
 
