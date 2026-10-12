@@ -1,0 +1,5 @@
+CATEGORISE RE-DECIDE (no loads) over <scratch>/morning-11oct/cert
+rows 605, with reads 358, traces missing 0
+replay fidelity (the rule before 12 Oct reproduces the stored answer): 358 of 358
+changed by the release rule: 0
+

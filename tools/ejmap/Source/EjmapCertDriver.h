@@ -3204,6 +3204,46 @@ inline int runStrip (const SweepOptions& opt)
 // category in the ledger -> out of scope by type / name, a proposal from the words, four probe reads at the instantiate state, the
 // signature decides -> <out>/proposed_categories.json + <out>/category_review.txt. NOTHING is written to categories.json.
 // --only / --limit narrow the set; a licence-bound product (the gate) is not loaded and listed as such.
+// RE-DECIDE FROM THE TRACES (12 Oct): no plugin is loaded. Every measured row of <folder>/proposed_categories.json is rebuilt from its
+// raw categorise traces (<folder>/raw/<stem>.categorise.<tag>.1.txt, the same parsers), decided with the rule before 12 Oct (which must
+// reproduce the stored answer: the replay's fidelity) and with today's; the changes are listed old -> new.
+inline int runCategoriseRedecide (const juce::File& folder, const juce::File& outFile)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto j = juce::JSON::parse (folder.getChildFile ("proposed_categories.json").loadFileAsString());
+    const auto* ps = j.getProperty ("products", {}).getArray(); if (ps == nullptr) { say ("REDECIDE: no proposed_categories.json in " + folder.getFullPathName()); return 2; }
+    const auto raw = folder.getChildFile ("raw");
+    int measured = 0, faithful = 0, unfaithful = 0, changed = 0, missing = 0; juce::StringArray lines, unfaithfulL;
+    for (const auto& p : *ps)
+    {
+        if (! p.hasProperty ("signatures")) continue;   // out of scope, licence-gated, no automatable control: nothing was read
+        ++measured;
+        const auto id = p.getProperty ("identity", "").toString(); const auto stem = "AudioUnit_" + id.fromFirstOccurrenceOf ("|", false, false).upToFirstOccurrenceOf ("|", false, false) + "_" + id.fromLastOccurrenceOf ("|", false, false);
+        auto rd = [&] (const char* tag) { return raw.getChildFile (stem + ".categorise." + tag + ".1.txt").loadFileAsString(); };
+        if (rd ("resp30").isEmpty() && rd ("tail").isEmpty()) { ++missing; continue; }
+        categorise::Signatures sg;
+        categorise::readResponses (sg, eq::parseResponse (rd ("resp30")), eq::parseResponse (rd ("resp12")));
+        categorise::readTail (sg, reverbdelay::parseTail (rd ("tail")));
+        categorise::readHarmonics (sg, saturation::parseHarmonics (rd ("harm30")), saturation::parseHarmonics (rd ("harm6")));
+        categorise::readPitch (sg, pitch::parsePitch (rd ("pitch")), 30.0);
+        const auto proposed = categorise::categoriesFromWords (p.getProperty ("product", "").toString(), p.getProperty ("vendor", "").toString(), p.getProperty ("kind", "").toString());
+        const auto oldD = categorise::decide (sg, proposed, false), newD = categorise::decide (sg, proposed, true);
+        const auto storedCat = p.getProperty ("category", "").toString(); const bool storedSettled = (bool) p.getProperty ("settled", false);
+        if (oldD.category == storedCat && oldD.settled == storedSettled) ++faithful;
+        else { ++unfaithful; unfaithfulL.add ("  " + p.getProperty ("product", "").toString() + ": stored " + storedCat + (storedSettled ? "" : " (unsettled)") + ", replay " + oldD.category + (oldD.settled ? "" : " (unsettled)")); }
+        if (newD.category != oldD.category || newD.settled != oldD.settled)
+        { ++changed; lines.add ("  " + p.getProperty ("product", "").toString() + " [" + id + "]: " + (oldD.category.isEmpty() ? juce::String ("-") : oldD.category) + (oldD.settled ? "" : " (unsettled)") + " -> "
+                                + newD.category + (newD.settled ? "" : " (unsettled)") + " | " + newD.why); }
+    }
+    juce::String rep; rep << "CATEGORISE RE-DECIDE (no loads) over " << folder.getFullPathName() << "\n"
+        << "rows " << (int) ps->size() << ", with reads " << measured << ", traces missing " << missing << "\n"
+        << "replay fidelity (the rule before 12 Oct reproduces the stored answer): " << faithful << " of " << (faithful + unfaithful) << "\n";
+    if (! unfaithfulL.isEmpty()) rep << "NOT REPRODUCED:\n" << unfaithfulL.joinIntoString ("\n") << "\n";
+    rep << "changed by the release rule: " << changed << "\n" << lines.joinIntoString ("\n") << "\n";
+    std::cout << rep; if (outFile != juce::File()) outFile.replaceWithText (rep);
+    return unfaithful == 0 ? 0 : 3;
+}
+
 inline int runCategorisePropose (const SweepOptions& opt, const juce::StringArray& only, int limit)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };

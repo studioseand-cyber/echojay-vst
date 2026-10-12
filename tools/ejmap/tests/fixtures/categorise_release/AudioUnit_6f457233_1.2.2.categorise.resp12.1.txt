@@ -1,0 +1,149 @@
+probe: "Lindell 254E" | AudioUnit:Effects/aufx,LBc3,Brwx | uid=6f457233 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+response	proto	1	ctl	0	name	Mix	positions	0	tones	121	lo	20.00	hi	20000.00	db	-12.00	hold_s	1.000	discard_s	0.500	shape	flat
+stage	configure
+policy	sidechain	self-keyed (as EchoJay 04e)	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Sidechain	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+sidechain	1	Sidechain	2	enabled	self_keyed
+config	main_in	2	main_out	2	latency	0
+param	0	1.000000	Mix	100%
+param	1	0.000000	HPF	20Hz
+param	2	0.000000	Limit	Off
+param	3	1.000000	Compress	Fast
+param	4	0.500000	Meter	Control
+param	5	0.100000	Gain	2dB
+param	6	0.500000	Ratio	3:1
+param	7	0.533333	Threshold	-4dBu
+param	8	1.000000	Compress Recovery	Auto
+param	9	0.500000	Limit Level	8.0dBu
+param	10	1.000000	Limit Recovery	Auto
+param	11	0.000000	Bypass	In
+param	12	0.000000	Ext SideChain	On
+tones_distinct	119	asked	121	span_s	0.500
+rpos	0	norm	1.000000	confirm_ms	0.0	landed_by	current	text	100%
+rtone	0	hz	20.000	in_db	-41.365	out_db	-42.059
+rtone	0	hz	22.000	in_db	-41.365	out_db	-42.055
+rtone	0	hz	24.000	in_db	-41.365	out_db	-42.015
+rtone	0	hz	26.000	in_db	-41.365	out_db	-41.948
+rtone	0	hz	28.000	in_db	-41.365	out_db	-42.040
+rtone	0	hz	30.000	in_db	-41.365	out_db	-42.003
+rtone	0	hz	32.000	in_db	-41.365	out_db	-42.086
+rtone	0	hz	34.000	in_db	-41.365	out_db	-42.086
+rtone	0	hz	36.000	in_db	-41.365	out_db	-41.991
+rtone	0	hz	38.000	in_db	-41.365	out_db	-41.994
+rtone	0	hz	40.000	in_db	-41.365	out_db	-42.077
+rtone	0	hz	42.000	in_db	-41.365	out_db	-42.105
+rtone	0	hz	44.000	in_db	-41.365	out_db	-42.142
+rtone	0	hz	48.000	in_db	-41.365	out_db	-42.113
+rtone	0	hz	50.000	in_db	-41.365	out_db	-42.145
+rtone	0	hz	54.000	in_db	-41.365	out_db	-42.043
+rtone	0	hz	56.000	in_db	-41.365	out_db	-42.121
+rtone	0	hz	60.000	in_db	-41.365	out_db	-42.222
+rtone	0	hz	64.000	in_db	-41.365	out_db	-42.182
+rtone	0	hz	66.000	in_db	-41.365	out_db	-42.130
+rtone	0	hz	70.000	in_db	-41.365	out_db	-42.166
+rtone	0	hz	76.000	in_db	-41.365	out_db	-42.067
+rtone	0	hz	80.000	in_db	-41.365	out_db	-42.112
+rtone	0	hz	84.000	in_db	-41.365	out_db	-42.211
+rtone	0	hz	90.000	in_db	-41.365	out_db	-42.239
+rtone	0	hz	94.000	in_db	-41.365	out_db	-42.157
+rtone	0	hz	100.000	in_db	-41.365	out_db	-42.168
+rtone	0	hz	106.000	in_db	-41.365	out_db	-42.191
+rtone	0	hz	112.000	in_db	-41.365	out_db	-42.182
+rtone	0	hz	120.000	in_db	-41.365	out_db	-42.170
+rtone	0	hz	126.000	in_db	-41.365	out_db	-42.268
+rtone	0	hz	134.000	in_db	-41.365	out_db	-42.278
+rtone	0	hz	142.000	in_db	-41.365	out_db	-42.276
+rtone	0	hz	150.000	in_db	-41.365	out_db	-42.192
+rtone	0	hz	158.000	in_db	-41.365	out_db	-42.223
+rtone	0	hz	168.000	in_db	-41.365	out_db	-42.183
+rtone	0	hz	178.000	in_db	-41.365	out_db	-42.251
+rtone	0	hz	188.000	in_db	-41.365	out_db	-42.163
+rtone	0	hz	200.000	in_db	-41.365	out_db	-42.250
+rtone	0	hz	212.000	in_db	-41.365	out_db	-42.222
+rtone	0	hz	224.000	in_db	-41.365	out_db	-42.261
+rtone	0	hz	238.000	in_db	-41.365	out_db	-42.249
+rtone	0	hz	252.000	in_db	-41.365	out_db	-42.232
+rtone	0	hz	266.000	in_db	-41.365	out_db	-42.208
+rtone	0	hz	282.000	in_db	-41.365	out_db	-42.248
+rtone	0	hz	300.000	in_db	-41.365	out_db	-42.223
+rtone	0	hz	316.000	in_db	-41.365	out_db	-42.230
+rtone	0	hz	336.000	in_db	-41.365	out_db	-42.208
+rtone	0	hz	356.000	in_db	-41.365	out_db	-42.208
+rtone	0	hz	376.000	in_db	-41.365	out_db	-42.248
+rtone	0	hz	400.000	in_db	-41.365	out_db	-42.216
+rtone	0	hz	422.000	in_db	-41.365	out_db	-42.239
+rtone	0	hz	448.000	in_db	-41.365	out_db	-42.253
+rtone	0	hz	474.000	in_db	-41.365	out_db	-42.245
+rtone	0	hz	502.000	in_db	-41.365	out_db	-42.242
+rtone	0	hz	532.000	in_db	-41.365	out_db	-42.243
+rtone	0	hz	564.000	in_db	-41.365	out_db	-42.225
+rtone	0	hz	598.000	in_db	-41.365	out_db	-42.247
+rtone	0	hz	632.000	in_db	-41.365	out_db	-42.245
+rtone	0	hz	670.000	in_db	-41.365	out_db	-42.227
+rtone	0	hz	710.000	in_db	-41.365	out_db	-42.208
+rtone	0	hz	752.000	in_db	-41.365	out_db	-42.224
+rtone	0	hz	796.000	in_db	-41.365	out_db	-42.219
+rtone	0	hz	844.000	in_db	-41.365	out_db	-42.219
+rtone	0	hz	894.000	in_db	-41.365	out_db	-42.228
+rtone	0	hz	946.000	in_db	-41.365	out_db	-42.231
+rtone	0	hz	1002.000	in_db	-41.365	out_db	-42.222
+rtone	0	hz	1062.000	in_db	-41.365	out_db	-42.213
+rtone	0	hz	1124.000	in_db	-41.365	out_db	-42.213
+rtone	0	hz	1192.000	in_db	-41.365	out_db	-42.221
+rtone	0	hz	1262.000	in_db	-41.365	out_db	-42.212
+rtone	0	hz	1336.000	in_db	-41.365	out_db	-42.211
+rtone	0	hz	1416.000	in_db	-41.365	out_db	-42.211
+rtone	0	hz	1500.000	in_db	-41.365	out_db	-42.213
+rtone	0	hz	1588.000	in_db	-41.365	out_db	-42.211
+rtone	0	hz	1682.000	in_db	-41.365	out_db	-42.214
+rtone	0	hz	1782.000	in_db	-41.365	out_db	-42.210
+rtone	0	hz	1888.000	in_db	-41.365	out_db	-42.213
+rtone	0	hz	2000.000	in_db	-41.365	out_db	-42.218
+rtone	0	hz	2118.000	in_db	-41.365	out_db	-42.215
+rtone	0	hz	2244.000	in_db	-41.365	out_db	-42.217
+rtone	0	hz	2378.000	in_db	-41.365	out_db	-42.218
+rtone	0	hz	2518.000	in_db	-41.365	out_db	-42.219
+rtone	0	hz	2668.000	in_db	-41.365	out_db	-42.217
+rtone	0	hz	2826.000	in_db	-41.365	out_db	-42.218
+rtone	0	hz	2992.000	in_db	-41.365	out_db	-42.223
+rtone	0	hz	3170.000	in_db	-41.365	out_db	-42.224
+rtone	0	hz	3358.000	in_db	-41.365	out_db	-42.226
+rtone	0	hz	3556.000	in_db	-41.365	out_db	-42.227
+rtone	0	hz	3768.000	in_db	-41.365	out_db	-42.231
+rtone	0	hz	3990.000	in_db	-41.365	out_db	-42.230
+rtone	0	hz	4226.000	in_db	-41.365	out_db	-42.234
+rtone	0	hz	4478.000	in_db	-41.365	out_db	-42.240
+rtone	0	hz	4742.000	in_db	-41.365	out_db	-42.242
+rtone	0	hz	5024.000	in_db	-41.365	out_db	-42.246
+rtone	0	hz	5322.000	in_db	-41.365	out_db	-42.251
+rtone	0	hz	5636.000	in_db	-41.365	out_db	-42.257
+rtone	0	hz	5970.000	in_db	-41.365	out_db	-42.262
+rtone	0	hz	6324.000	in_db	-41.365	out_db	-42.267
+rtone	0	hz	6700.000	in_db	-41.365	out_db	-42.275
+rtone	0	hz	7096.000	in_db	-41.365	out_db	-42.284
+rtone	0	hz	7516.000	in_db	-41.365	out_db	-42.293
+rtone	0	hz	7962.000	in_db	-41.365	out_db	-42.302
+rtone	0	hz	8434.000	in_db	-41.365	out_db	-42.313
+rtone	0	hz	8934.000	in_db	-41.365	out_db	-42.325
+rtone	0	hz	9464.000	in_db	-41.365	out_db	-42.339
+rtone	0	hz	10024.000	in_db	-41.365	out_db	-42.352
+rtone	0	hz	10618.000	in_db	-41.365	out_db	-42.367
+rtone	0	hz	11246.000	in_db	-41.365	out_db	-42.383
+rtone	0	hz	11914.000	in_db	-41.365	out_db	-42.400
+rtone	0	hz	12620.000	in_db	-41.365	out_db	-42.419
+rtone	0	hz	13366.000	in_db	-41.365	out_db	-42.438
+rtone	0	hz	14158.000	in_db	-41.365	out_db	-42.459
+rtone	0	hz	14998.000	in_db	-41.365	out_db	-42.481
+rtone	0	hz	15886.000	in_db	-41.365	out_db	-42.503
+rtone	0	hz	16828.000	in_db	-41.365	out_db	-42.529
+rtone	0	hz	17826.000	in_db	-41.365	out_db	-42.559
+rtone	0	hz	18882.000	in_db	-41.365	out_db	-42.605
+rtone	0	hz	20000.000	in_db	-41.365	out_db	-42.677
+rtotal	0	in_rms_db	-23.620	out_rms_db	-24.482
+rdone	0	tones	119	nonfinite	0
+stage	done

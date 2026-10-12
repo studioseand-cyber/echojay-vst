@@ -1,0 +1,21 @@
+this Mac, 12 Oct: EJ Map's categorise reads on catalogue-known plugins (old rule's answer)
+compressor AMEK Mastering Compressor          rt60 None   rep 0   levdep 0.0    span 0.01   -> dynamics  u
+compressor Acme Opticom XLA-3                 rt60 0.66   rep 0   levdep 6.11   span 0.5    -> reverb    u
+compressor Bettermaker Bus Compressor DSP     rt60 None   rep 0   levdep 0.01   span 0.0    -> dynamics  u
+compressor Lindell 254E                       rt60 0.4    rep 0   levdep 3.14   span 0.14   -> reverb    u
+delay      ADA STD-1 Stereo Tapped Delay      rt60 None   rep 0   levdep 0.06   span 3.28   -> modulation S
+delay      CLA EchoSphere (m->s)              rt60 1.65   rep 0   levdep 0.0    span 5.31   -> reverb    u
+delay      H-Delay (m->s)                     rt60 None   rep 8   levdep 0.97   span 5.62   -> delay     S
+delay      MDelayMB                           rt60 0.78   rep 0   levdep 0.06   span 12.72  -> reverb    u
+delay      MannyM Delay (m->s)                rt60 None   rep 4   levdep 6.09   span 0.32   -> delay     S
+delay      Reel ADT (m->s)                    rt60 None   rep 0   levdep 2.25   span 8.13   -> modulation S
+delay      Reel ADT Live (m->s)               rt60 None   rep 0   levdep 2.1    span 8.77   -> modulation S
+gate       Unfiltered Audio G8                rt60 None   rep 0   levdep 0.0    span 32.58  -> modulation S
+limiter    MLimiterMB                         rt60 None   rep 0   levdep 0.48   span 0.9    -> saturation S
+limiter    MLimiterX                          rt60 None   rep 0   levdep 0.68   span 0.05   -> None      u
+limiter    MUltraMaximizer                    rt60 None   rep 0   levdep 0.01   span 0.77   -> saturation S
+reverb     Abbey Road Chambers (m->s)         rt60 0.93   rep 0   levdep 0.05   span 17.66  -> reverb    u
+reverb     Abbey Road Plates (m->s)           rt60 1.35   rep 0   levdep 0.62   span 21.96  -> reverb    u
+reverb     H-Reverb (m->s)                    rt60 2.43   rep 0   levdep 0.0    span 25.09  -> reverb    S
+reverb     H-Reverb long (m->s)               rt60 2.43   rep 0   levdep 0.0    span 25.09  -> reverb    S
+reverb     IR-L (m->s)                        rt60 1.59   rep 0   levdep 0.0    span 20.76  -> reverb    u

@@ -1,0 +1,32 @@
+probe: "Acme Opticom XLA-3" | AudioUnit:Effects/aufx,AOCX,Brwx | uid=62485258 | arch=arm64 | format=AudioUnit
+
+response	proto	1	ctl	0	name	Power	positions	0	tones	1	lo	997.00	hi	997.00	db	-30.00	hold_s	1.000	discard_s	0.500	shape	flat
+stage	configure
+policy	sidechain	self-keyed (as EchoJay 04e)	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	32
+param	0	1.000000	Power	On
+param	1	1.000000	Meter Mode	Output
+param	2	0.500000	Response	Normal
+param	3	0.400000	Input Gain	4.0
+param	4	0.400000	Output Gain	4.0
+param	5	1.000000	Mode	In
+param	6	0.000000	Input Pad	Off
+param	7	1.000000	Stereo Link	On
+param	8	1.000000	Level Trim	0.0 dB
+param	9	1.000000	Dry/Wet Mix	100 %
+param	10	0.500000	Noise Level	-90.0 dB
+param	11	0.000000	Bank	A
+param	12	0.000000	VU Meter	
+param	13	0.714090	GR Meter	
+rpos	0	norm	1.000000	confirm_ms	0.0	landed_by	current	text	On
+rtone	0	hz	998.000	in_db	-30.000	out_db	-20.601
+rharm	0	order	2	hz	1996.000	in_db	-274.242	out_db	-86.995
+rharm	0	order	3	hz	2994.000	in_db	-219.132	out_db	-78.929
+rharm	0	order	4	hz	3992.000	in_db	-274.243	out_db	-104.709
+rharm	0	order	5	hz	4990.000	in_db	-220.159	out_db	-94.628
+rtotal	0	in_rms_db	-33.010	out_rms_db	-23.611
+rdone	0	tones	1	nonfinite	0
+stage	done

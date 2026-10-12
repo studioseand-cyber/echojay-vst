@@ -728,6 +728,12 @@ namespace
                 for (int j = i + 2; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--licences") csv = cwdFile (v); else if (k == "--date") date = v; }
                 return a == "--licence-check" ? ejmap::cert::runLicenceCheck (o, csv, date) : ejmap::cert::runLicenceStamp (o, csv, date);
             }
+            if (a == "--categorise-redecide")   // 12 Oct: re-decide a categorise folder from its raw traces (no loads); old -> new
+            {
+                if (i + 1 >= argc) { std::cerr << "usage: ejmap --categorise-redecide <folder with proposed_categories.json + raw/> [--out <report>]" << std::endl; return 2; }
+                juce::File rep; for (int j = i + 2; j + 1 < argc; ++j) if (argAt (argc, argv, j) == "--out") rep = cwdFile (argAt (argc, argv, j + 1));
+                return ejmap::cert::runCategoriseRedecide (cwdFile (argAt (argc, argv, i + 1)), rep);
+            }
             if (a == "--categorise-propose")   // item F (7 Oct): proposals for the uncategorised, nothing written to categories.json
             {
                 ejmap::cert::SweepOptions o; juce::StringArray only; int limit = 0;

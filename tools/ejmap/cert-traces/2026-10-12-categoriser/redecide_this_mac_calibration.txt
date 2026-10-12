@@ -1,0 +1,6 @@
+CATEGORISE RE-DECIDE (no loads) over <scratch>/calib
+rows 20, with reads 20, traces missing 0
+replay fidelity (the rule before 12 Oct reproduces the stored answer): 20 of 20
+changed by the release rule: 2
+  Acme Opticom XLA-3 [AudioUnit|62485258|1.10.1]: reverb (unsettled) -> dynamics | the gain moves 6.11 dB between -30 and -12 dBFS, flat across the tones (span 0.50 dB): the RT60 0.66 s tail is a release (under 1.5 s), not a reverb or delay
+  Lindell 254E [AudioUnit|6f457233|1.2.2]: reverb (unsettled) -> dynamics | the gain moves 3.14 dB between -30 and -12 dBFS, flat across the tones (span 0.14 dB): the RT60 0.40 s tail is a release (under 1.5 s), not a reverb or delay
