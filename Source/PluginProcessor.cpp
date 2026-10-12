@@ -2947,20 +2947,43 @@ void EchoJayProcessor::borrowPollPushAck(int seq, const juce::String& id)
         int e2 = 0; const juce::String d = LinkShm::resolveDir(e2);
         juce::File ack(d + "chain-ack-" + borrowSession_.uid + ".json");
         juce::String st;
-        if (ack.existsAsFile()) { auto v = juce::JSON::parse(ack.loadFileAsString()); if ((int) v.getProperty("seq", 0) == seq) st = v.getProperty("status", juce::var()).toString(); }
+        int ackSlots = -1; juce::String ackWhy;
+        if (ack.existsAsFile())
+        {
+            auto v = juce::JSON::parse(ack.loadFileAsString());
+            if ((int) v.getProperty("seq", 0) == seq)
+            {
+                st = v.getProperty("status", juce::var()).toString();
+                // 11 Oct 2026: the Link now states what its rack holds after the edit, and the reason for a
+                // refusal. Both are READ here rather than left in the file, because "the count is logged on
+                // both sides of the push so a divergence is readable instead of inferred" was the stated
+                // intent at the push site and this is the half that was missing.
+                if (v.getDynamicObject() != nullptr && v.getDynamicObject()->hasProperty("slotsAfter"))
+                    ackSlots = (int) v.getProperty("slotsAfter", -1);
+                ackWhy = v.getProperty("reason", juce::var()).toString();
+            }
+        }
         if (st == "ok")
         {   // ACKED: the op is the Link's now - pop, rebase, write the next
             borrowPendingPushes_.erase(borrowPendingPushes_.begin());
             borrowPushInFlight_ = false;
             borrowRebaseAfterPush();
-            EchoJay_NSLog(("EJLink: push id=" + id + " acked ok - rebased, " + juce::String((int) borrowPendingPushes_.size()) + " pending").toRawUTF8());
+            EchoJay_NSLog(("EJLink: push id=" + id + " acked ok - rebased, " + juce::String((int) borrowPendingPushes_.size()) + " pending"
+                           + (ackSlots >= 0 ? " - the Link's rack now holds " + juce::String(ackSlots) + " slot(s)"
+                                            : juce::String(" - the Link did not state its slot count (older build)"))).toRawUTF8());
             borrowWriteHeadPush();
             return;
         }
         if (st.isNotEmpty())
         {   // failed / stale / partial: stays pending (re-sent at deselect); said on the log once per attempt
             borrowPushInFlight_ = false;
-            EchoJay_NSLog(("EJLink: push id=" + id + " ack=" + st + " - stays PENDING (re-sent at deselect)").toRawUTF8());
+            // THE REASON, ON THE SENDER'S SIDE. This line read "ack=not_applied - stays PENDING" and nothing
+            // else, so the one fact that explained it - the Link refusing a name it could not resolve - sat in
+            // a file nobody printed. Sean's whole report was this line, repeated.
+            EchoJay_NSLog(("EJLink: push id=" + id + " ack=" + st + " - stays PENDING (re-sent at deselect)"
+                           + (ackWhy.isNotEmpty() ? " - the Link said: " + ackWhy : juce::String())
+                           + (ackSlots >= 0 ? " [its rack holds " + juce::String(ackSlots) + " slot(s)]"
+                                            : juce::String())).toRawUTF8());
             return;
         }
         borrowPollPushAck(seq, id);   // no ack yet: keep polling while the session is live

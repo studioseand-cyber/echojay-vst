@@ -407,6 +407,19 @@ ej_add_guard(borrow_migration_guard   SOURCE tools/borrow_migration_guard/harnes
 # presented as -10875 on every third-party AU, Links that "never published", and a frozen chain build. Nothing in
 # the suite asked what a mapping COST, or ran for the thousands of ticks a 30 Hz leak needs to matter.
 ej_add_guard(ring_leak_guard          SOURCE tools/ring_leak_guard/harness.cpp               LABEL fast LINKSIDE)
+# ---- 11 Oct 2026, from Sean's in-host pass on ship_2026-10-11b -------------------------------------------
+# chains_view_guard: the CHAINS column over EIGHT frames, with the timer running between them. The header and
+# the AI|CHAINS switch painted inside `if (assistantVisible)`, which chatReplyControlsAllowed() makes false
+# exactly when the chains list is showing - so choosing CHAINS removed the switch that chooses AI, and the list
+# with it. The flicker was a second authority: timerCallback() restored the chat input whenever it found it
+# hidden, with no chains-mode test, so a layout pass and a tick disagreed every 120 ms. One frame cannot see
+# that, which is why this one asserts on every frame and paints onto a cleared image so "was it drawn" is a
+# pixel question rather than a rect question.
+ej_add_guard(chains_view_guard        SOURCE tools/chains_view_guard/harness.cpp             LABEL fast)
+# settings_toggles_guard: "YOUR PLUGINS" painted under the fourth toggle (the paint cursor stepped past three),
+# and the two dial settings could both be on. The first asserts the heading's PAINTED y against the toggles'
+# real bounds - resized() was correct all along, so nothing about component geometry would have caught it.
+ej_add_guard(settings_toggles_guard   SOURCE tools/settings_toggles_guard/harness.cpp        LABEL fast)
 # ---- 11 Oct 2026: THREE FILES WHOSE SUBJECT THIS ROUND DELETED -------------------------------------------
 # The suite's rule is that every test in the repo is in the gate or carries a written exclusion. These are the
 # exclusion, written rather than left implied, because I am the one who broke them.
@@ -470,7 +483,11 @@ set_tests_properties(calib_link_guard PROPERTIES LABELS "fast" TIMEOUT 900 RUN_S
 # fixture cannot refuse, ack or move a trim.
 # 21t-j (28 Sep 2026): role_snapshot_guard joins them - registration is a full snapshot, proven with a real Link
 # handed another's saved state (a copied insert) and a real V2 reading the row.
-foreach(TWO alias_mirror_guard lease_id_guard level_match_guard role_snapshot_guard)
+# 11 Oct 2026: link_live_edit_guard joins them - Sean's in-host report ("a V2 edit to an addressed Link lands
+# only when the V2 switches away") asks whether the LINK's RENDERED AUDIO changes while the rack is still
+# addressed, and only two real processes with real audio can answer that. A state-only leg would have passed on
+# the broken build: the V2's mirror was always correct.
+foreach(TWO alias_mirror_guard lease_id_guard level_match_guard role_snapshot_guard link_live_edit_guard)
     add_test(NAME ${TWO} COMMAND bash ${CMAKE_SOURCE_DIR}/tools/${TWO}/build_and_run.sh)
     set_tests_properties(${TWO} PROPERTIES LABELS "fast" TIMEOUT 900 RUN_SERIAL TRUE WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endforeach()

@@ -703,6 +703,10 @@ private:
     // A rack-scope lease is addressing us. Named `...Scope_` and not `...Active_` on purpose: the old name was
     // read as "the rack is leased, so it is switched off", which is what it used to mean.
     bool               rackLeaseScope_ = false;
+    // 11 Oct 2026: the last registry-snapshot sentence actually written to the log, so a heartbeat that says
+    // nothing new says nothing at all. See publishRegistrySnapshot for the measurement behind this.
+    juce::String       lastSaidSnapshot_;
+    double             tlLastSaidMs_ = -1.0e9;
     // ---- THE VALUE RING (stage 3, 10 Oct 2026) -----------------------------------------------
     // Mapped on the message thread, read by processBlock through an atomic pointer so the audio thread never
     // touches the mapping itself. nullptr = no ring for this rack yet, and the file channel carries everything,
@@ -791,7 +795,11 @@ private:
                        // "not_applied" and the reason the sequencer produced travels here; the older `detail`
                        // argument is a per-plugin ARRAY and silently dropped a string, which is how the first
                        // cut of this fix lost its own reason.
-                       const juce::String& reason = {});
+                       const juce::String& reason = {},
+                       // 11 Oct 2026: the rack's slot count AFTER the edit, so the sender can compare it with
+                       // the count it expected instead of trusting a status word. -1 = not stated (the repeat
+                       // and level-match acks, which change no structure).
+                       int slotsAfter = -1);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LinkProcessor)
 };

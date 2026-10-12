@@ -369,6 +369,7 @@ struct Rig
 // "add legs until it silently segfaults" is not an acceptable failure mode for the gate's largest guard.
 // NOT ONE ASSERTION CHANGES - only where the frame lives.
 #include <pthread.h>
+#include "../tests/ej_log_window.h"   // reading the rolling log across a rotation
 #if defined(__has_feature)
  #if __has_feature(address_sanitizer)
   #define EJ_UNDER_ASAN 1
@@ -1063,14 +1064,16 @@ static int guardMain()
         const juce::File f (juce::String (echojay::FileLog::instance().currentPath()));
         EchoJay_NSLog ("EJGuard: 21p item 4 marker");
         check (f.existsAsFile(), "V4. the plugin writes its own log at " + f.getParentDirectory().getFullPathName() + "  (RED as it stood: no such file)", f.getFullPathName());
-        const auto text = f.loadFileAsString();
+        // EVERY rolling file, not just the one currentPath() names right now: the writer rotates at
+        // 2 MB and this leg only asks whether the line ever appeared (tools/tests/ej_log_window.h).
+        const auto text = ejtest::logAllText();
         check (text.contains ("EJGuard: 21p item 4 marker"), "V4. ...and every EchoJay_NSLog line lands in it");
         // the loop's own lines reach this file through logLine -> EchoJay_NSLog, which the editor wires
         // (PluginEditor.cpp: "loop.logLine = [](line) { EchoJay_NSLog(line); }"); THIS harness replaces logLine with
         // its own collector, so the leg proves the route rather than re-proving the collector.
         { LoudnessLoop probeLoop (r2.h); probeLoop.logLine = [] (const juce::String& l) { EchoJay_NSLog (l.toRawUTF8()); };
           probeLoop.logLine ("EJLoudness: slot picture: guard route check");
-          const auto after = f.loadFileAsString();
+          const auto after = ejtest::logAllText();
           check (after.contains ("EJLoudness: slot picture: guard route check"), "V4. ...and a loop line routed the way the editor routes it lands in the file", after.substring (juce::jmax (0, after.length() - 120)).replace ("\n", " | ")); }
         check (text.contains ("EJ"), "V4. ...the file is the plugin's own log, not an empty file", juce::String (text.length()) + " bytes");
         check (echojay::FileLog::kFiles == 5 && echojay::FileLog::kMaxBytes == 2L * 1024L * 1024L, "V4. five files of 2 MB", juce::String (echojay::FileLog::kFiles));

@@ -1825,6 +1825,25 @@ private:
     // the sentence a user would use, because "Agent mode" alone says nothing about consequence - and this is
     // the one setting on this page that lets something else move their plugins.
     juce::ToggleButton agentModeToggle { "Let EchoJay make changes itself (off: it proposes and you press Apply)" };
+    // ---- ONE LIST, TWO READERS (11 Oct 2026) ------------------------------------------------------------
+    // resized() places these and paint() walks past them, and until now each counted them for itself: paint()
+    // carried `y += 2 * (fh + 8)` as "the two rows beyond the one label() covered". The agent toggle made four,
+    // nobody stepped the cursor, and "YOUR PLUGINS" painted on top of it - the SECOND time this drifted (aa455ff
+    // added do-not-dial to resized() alone). A count derived from the list cannot drift: adding a fifth toggle
+    // here moves the heading by itself.
+    // The y paint() last drew "YOUR PLUGINS" at. An OBSERVATION of the paint pass, never an input to it; see
+    // the note at the drawText call. -1 until Settings has been painted once.
+    int settingsPluginsHeadingY_ = -1;
+    std::array<juce::ToggleButton*, 4> chainSuggestionToggles()
+    { return { &autoDialToggle, &dialWritesToggle, &echoJayOnlyToggle, &agentModeToggle }; }
+    /** Re-reads both dial ticks from the API, which owns their exclusivity. Called after either is clicked and
+        when the Settings page is shown, so the pair can never be drawn in a state the saved settings do not
+        hold. EchoJay-only is deliberately not in here - it is independent of both. */
+    void syncDialToggles()
+    {
+        autoDialToggle.setToggleState(api.getAutoDialMode(), juce::dontSendNotification);
+        dialWritesToggle.setToggleState(api.getDialWritesBlocked(), juce::dontSendNotification);
+    }
     float uiScale_ = 1.0f;          // current scale factor
     void applyUIScale(float scale);
     void saveUIScale() const;
@@ -2566,7 +2585,6 @@ private:
     // with no members renders no heading, so IMPORTED is invisible on an
     // account that has never been sent a chain.
     void rebuildChainDisplayRows();
-    bool chainSidebarInChainsMode() const;
 
     /** D3.2: the pending-imports dot on the CHAINS segment. AUTHORED BY THE
         SAME right-anchor block in resized() that places the segment itself,

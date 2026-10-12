@@ -798,11 +798,21 @@ public:
     // only means anything on this machine, and keeping it out of the shared
     // profile blob means a web-side settings save can never clobber it.
     bool getAutoDialMode() const { return autoDialMode; }
-    void setAutoDialMode(bool on) { autoDialMode = on; saveSettings(); }
-    // DO NOT DIAL (5 Sep 2026): suggest every value, write none. Independent
-    // of autoDialMode on purpose, and the two are easy to confuse: autoDial
-    // governs WHICH PLUGINS are offered, this governs WHETHER VALUES ARE
-    // WRITTEN. Either can be on without the other.
+    void setAutoDialMode(bool on)
+    {
+        autoDialMode = on;
+        // MUTUALLY EXCLUSIVE (11 Oct 2026 ruling). Both were on together in Sean's Settings, and the pair is
+        // self-contradicting: "only offer me plugins you can dial" and "never dial anything" asks EchoJay to
+        // narrow the list by a capability it has just been told not to use. Enforced HERE, in the one place the
+        // value is set and saved, so the saved state can never hold the contradiction either - a UI-only rule
+        // would leave a settings file that re-created it on the next load.
+        if (on) setDialWritesBlockedQuiet (false);
+        saveSettings();
+    }
+    // DO NOT DIAL (5 Sep 2026): suggest every value, write none. autoDial governs WHICH PLUGINS are offered,
+    // this governs WHETHER VALUES ARE WRITTEN - two different axes, which is why they read as independent.
+    // 11 Oct 2026: they are no longer independent. See setAutoDialMode for why. EchoJay-only is untouched by
+    // this and stays independent of both, by the same ruling.
     // ONLY ECHOJAY PLUGINS (8 Sep 2026): chains are built from EchoJay's own
     // built-in devices and nothing else. Same axis as autoDialMode (WHICH
     // PLUGINS ARE OFFERED), not the same axis as dialWritesBlocked (whether
@@ -845,9 +855,26 @@ public:
     bool getDialWritesBlocked() const { return dialWritesBlocked; }
     void setDialWritesBlocked(bool on)
     {
+        setDialWritesBlockedQuiet (on);
+        if (on) autoDialMode = false;        // the other half of the rule in setAutoDialMode
+        saveSettings();
+    }
+    /** Sets the flag and its mirror WITHOUT saving or touching autoDialMode. Exists so the two exclusive
+        setters can clear each other without recursing into saveSettings twice. */
+    void setDialWritesBlockedQuiet (bool on)
+    {
         dialWritesBlocked = on;
         echojay::setDialWritesBlocked(on);   // the write guards read this
-        saveSettings();
+    }
+    /** THE ONE TIE-BREAK, for a settings file written before the rule existed (or by an older build, which may
+        still write both). "Never dial" wins: it is the choice that does LESS, and narrowing the offered list to
+        dialable plugins is pointless once nothing is going to be dialled. Returns true when it had to act, so
+        the caller can say so. */
+    bool resolveDialExclusivity()
+    {
+        if (! (autoDialMode && dialWritesBlocked)) return false;
+        autoDialMode = false;
+        return true;
     }
 
     // Update plugins list from scanner (merges with existing)

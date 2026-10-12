@@ -1304,14 +1304,25 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     autoDialToggle.setColour(juce::ToggleButton::textColourId, C::text2);
     autoDialToggle.setColour(juce::ToggleButton::tickColourId, C::blue);
     autoDialToggle.setVisible(false);
-    autoDialToggle.onClick = [this] { api.setAutoDialMode(autoDialToggle.getToggleState()); };
+    // EXCLUSIVE WITH do-not-dial (11 Oct 2026). The API owns the rule and the saved state; this re-reads BOTH
+    // ticks from it afterwards rather than setting the other one by hand, so the switch a user sees is always
+    // the state that was actually stored. EchoJay-only is untouched: it stays independent.
+    autoDialToggle.onClick = [this]
+    {
+        api.setAutoDialMode(autoDialToggle.getToggleState());
+        syncDialToggles();
+    };
     addAndMakeVisible(autoDialToggle);
 
     // Do-not-dial toggle (Settings): applies immediately, no Save needed
     dialWritesToggle.setColour(juce::ToggleButton::textColourId, C::text2);
     dialWritesToggle.setColour(juce::ToggleButton::tickColourId, C::blue);
     dialWritesToggle.setVisible(false);
-    dialWritesToggle.onClick = [this] { api.setDialWritesBlocked(dialWritesToggle.getToggleState()); };
+    dialWritesToggle.onClick = [this]
+    {
+        api.setDialWritesBlocked(dialWritesToggle.getToggleState());
+        syncDialToggles();
+    };
     addAndMakeVisible(dialWritesToggle);
 
     echoJayOnlyToggle.setColour(juce::ToggleButton::textColourId, C::text2);
@@ -19839,10 +19850,19 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     // the shipped build. Adding a third row without this line would have
     // doubled it rather than introduced it.
     label("CHAIN SUGGESTIONS");
-    y += 2 * (fh + 8);   // the two rows beyond the one label() already covered
+    // THE SAME LIST resized() PLACES. label() has already advanced past one row, so the walk covers the rest -
+    // whatever the count is. The hardcoded `2 *` that stood here was right for three toggles and silently wrong
+    // for four, which is how "YOUR PLUGINS" came to paint on top of the agent toggle.
+    y += ((int) chainSuggestionToggles().size() - 1) * (fh + 8);
 
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+    // WHERE THIS HEADING ACTUALLY LANDED (11 Oct 2026). Recorded, not authored: paint() is still not a geometry
+    // author and nothing reads this to place anything. It exists because the bug was HERE and not in resized() -
+    // the layout placed four toggles correctly the whole time and the walk above stepped past three - so a leg
+    // asserting on component bounds would have passed on the broken build. This is the one number that was
+    // wrong, so this is the number a guard has to be able to see.
+    settingsPluginsHeadingY_ = y;
     g.drawText("YOUR PLUGINS", x, y, w, 14, juce::Justification::centredLeft);
     y += labelGap + fh + 8;
 
@@ -23135,7 +23155,16 @@ void EchoJayEditor::paint(juce::Graphics& g)
         chatWavePositions.clear();
     }
 
-    if (assistantVisible) {
+    // ---- 11 Oct 2026: THE COLUMN'S CHROME IS NOT THE ASSISTANT'S -------------------------------------
+    // The header strip, the mode label, the AI|CHAINS switch and the channel banner belong to the PANEL
+    // COLUMN, and the column is on screen in BOTH modes. They used to sit inside `if (assistantVisible)`,
+    // which chatReplyControlsAllowed() makes false precisely when the chains list is showing - so choosing
+    // CHAINS removed the very switch you would use to choose AI again, and removed the list with it. The note
+    // at the chains branch below ("The header above still paints, because it carries the mode switch") was
+    // describing an intention the nesting did not carry out.
+    const bool chainsShowing = chainsSidebarShowing();
+    const bool panelColumnVisible = (! visualOnlyMode && chatW > 0) && (assistantVisible || chainsShowing);
+    if (panelColumnVisible) {
     // Chat header — "AI ASSISTANT" bold, usage count right
     g.setColour(C::bg2);
     g.fillRect(chatX, topH, chatW, 32);
@@ -23223,7 +23252,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     //
     // ONE predicate, consulted here and never re-derived, so the paint pass
     // and the layout pass cannot disagree about which mode is showing.
-    if (chainSidebarInChainsMode())
+    if (chainsShowing)
     {
         paintChainSidebar(g, chatX, chatW, topH, chatScroll.getBottom());
         // Hit zones belong to a paint pass that actually ran. Leaving the
@@ -23237,7 +23266,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         for (int i = 0; i < kMaxWavePlayBtns;   ++i) wavePlayOverlays[(size_t)i].setVisible(false);
         for (int i = 0; i < kMaxResultChips;    ++i) resultChipBtns[(size_t)i].setVisible(false);
     }
-    else
+    else if (assistantVisible)
     {
     // Chat messages
     // ONE TOP BOUND TOO: messages are EDITOR-painted, and their painted
@@ -25035,7 +25064,7 @@ void EchoJayEditor::resized()
         const int aaW = 26, aaH = 22;
         const int aaY = topH + (32 - aaH) / 2;
         chatTextSizeBtn.setBounds(cursorRight - aaW, aaY, aaW, aaH);
-        chatTextSizeBtn.setVisible(chatScroll.isVisible() || chainSidebarInChainsMode());
+        chatTextSizeBtn.setVisible(chatScroll.isVisible() || chainsSidebarShowing());
         cursorRight -= aaW + 8;                     // RESERVED, not just used
 
         // AI | CHAINS, immediately left of Aa. Authored unconditionally with
@@ -25593,16 +25622,13 @@ void EchoJayEditor::resized()
 
             // CHAIN SUGGESTIONS: auto-dial toggle (full width, honest label)
             sy += labelGap;
-            autoDialToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
-            // ... and do-not-dial directly beneath it, same width, no gap of
-            // its own: they are two halves of one question about suggestions.
-            dialWritesToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
-            // ... and EchoJay-only beneath both, same width. It belongs with
-            // auto-dial (both govern WHICH PLUGINS are offered) rather than
-            // with do-not-dial, but a stacked column does not have to assert
-            // that and a three-across row would have asserted the opposite.
-            echoJayOnlyToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
-            agentModeToggle.setBounds(sx, sy, sw, fh); sy += fh + 8;
+            // Placed FROM THE LIST, in its order: auto-dial, do-not-dial (two halves of one question about
+            // suggestions, so no gap of its own), EchoJay-only (it belongs with auto-dial - both govern WHICH
+            // PLUGINS are offered - but a stacked column does not have to assert that, where a three-across row
+            // would have asserted the opposite), then agent mode. paint() walks the same list, so the heading
+            // below cannot drift away from these again.
+            for (auto* t : chainSuggestionToggles())
+            { t->setBounds(sx, sy, sw, fh); sy += fh + 8; }
 
             // PLUGINS: scan button + "View all" beside it
             sy += labelGap;
@@ -26843,9 +26869,20 @@ void EchoJayEditor::timerCallback()
                 chatTextSizeBtn.setVisible(false);
             }
         }
+        // ---- 11 Oct 2026: THE SECOND AUTHORITY, AND IT IS A TIMER -------------------------------------
+        // This branch restores the chat input row whenever it finds it hidden. Its trigger is literally
+        // `!chatInput.isVisible()` - "something hid this, put it back" - and it had NO chains-mode test. So
+        // resized() hid the chat furniture for the chains list, this tick put it straight back, the next
+        // resized() hid it again, and so on at timer cadence. That is the flicker, and it is exactly two
+        // authorities toggling one property: a layout pass and a timer, disagreeing every tick.
+        // It is also why the Aa button and the input STAYED on screen while the header, the switch and the
+        // list went: those three are painted (and so died with the dead `assistantVisible` branch), while
+        // these three are components, and the timer kept winning.
+        // The condition gains the ONE predicate. A mode the user chose is not something to be repaired.
         else if (chatContext && !channelPromptVisible && !genrePromptVisible
                  && !visualOnlyMode && !chatInput.isVisible()
-                 && !reviewOverlay.visibleState)
+                 && !reviewOverlay.visibleState
+                 && !chainsSidebarShowing())
         {
             // Messages came back (new day / credits / upgrade): restore the
             // input row the button had replaced — previously it stayed
@@ -32485,7 +32522,7 @@ void EchoJayEditor::presentReplaceAsk(const juce::String& question,
     // Flip THROUGH THE EXISTING SETTER (it runs resized()+repaint() itself
     // and clears nothing). Prefix and shape of the [ask-flip] line are the
     // SHIPPED search contract — keep them byte-stable.
-    if (chainSidebarInChainsMode())
+    if (chainsSidebarShowing())
     {
         EchoJay_NSLog(("EJRecall: [ask-flip] chains list -> AI mode to show"
                        " the replace ask (" + flipContext + ")").toRawUTF8());
@@ -39235,11 +39272,14 @@ void EchoJayEditor::paintChainSidebar(juce::Graphics& g, int chatX, int chatW,
 // True when the chain sidebar is showing the saved-chain list instead of the
 // conversation. The chat body's paint pass consults this ONE place rather
 // than re-deriving the condition, so the two can never disagree.
-bool EchoJayEditor::chainSidebarInChainsMode() const
-{
-    return currentTab == Tab::Chain && processorRef.chainSidebarChainsMode
-        && !compactMode && !visualOnlyMode && !processorRef.chatSidebarCollapsed;
-}
+// chainSidebarInChainsMode() DELETED (11 Oct 2026). It was the SECOND authority on "is the chains list
+// showing", and it differed from chainsSidebarShowing() by exactly one term: reviewOverlay.visibleState. That
+// one missing term is the whole of Sean's bug report. chatReplyControlsAllowed() says "no assistant" when
+// chainsSidebarShowing() is true, and the header, the AI|CHAINS switch and the list all painted inside that
+// dead branch - while the Aa button, whose visibility asked THIS predicate instead, stayed on screen. So the
+// column lost its header and its list and kept one orphaned button, and the only state in which the list could
+// paint at all was the one where the review overlay was covering it. Hence the flicker.
+// Every caller now asks chainsSidebarShowing(), which is the complete conjunction and the one the LAYOUT uses.
 
 // ---- Chain sidebar: AI | Chains -------------------------------------------
 

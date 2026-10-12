@@ -2130,10 +2130,17 @@ void LinkProcessor::publishTrackLevel()
             .replaceWithText (juce::JSON::toString (v, true)))
         return;
     tlLastRmsDb_ = r.loudRmsDbfs; tlLastPeakDb_ = r.loudPeakDbfs; tlLastWriteMs_ = nowMs;
-    EchoJay_NSLog (("EJTrackLevel: published uid=" + instanceUid_
-                    + " rms=" + juce::String (r.loudRmsDbfs, 2)
-                    + " peak=" + juce::String (r.loudPeakDbfs, 2)
-                    + " heard=" + juce::String ((int) r.heardSeconds) + "s").toRawUTF8());
+    // Said at most once every 30 s per Link (16,284 lines of the measured ring). The FILE is still written on
+    // every pass - V2 reads the file, never the log - so nothing downstream loses resolution.
+    if (nowMs - tlLastSaidMs_ >= 30000.0)
+    {
+        tlLastSaidMs_ = nowMs;
+        EchoJay_NSLog (("EJTrackLevel: published uid=" + instanceUid_
+                        + " rms=" + juce::String (r.loudRmsDbfs, 2)
+                        + " peak=" + juce::String (r.loudPeakDbfs, 2)
+                        + " heard=" + juce::String ((int) r.heardSeconds) + "s"
+                        + " (said at most once per 30 s; the file is written every pass)").toRawUTF8());
+    }
 }
 
 void LinkProcessor::updateShmState()
@@ -2538,12 +2545,27 @@ void LinkProcessor::publishRegistrySnapshot (const char* why)
     // THE LINE THAT WAS MISSING. There was no registration line carrying a role at all, so "the role did not
     // reach V2" could not be seen in a log - only inferred from what the strip drew. Every snapshot says what it
     // published and why, so the next copied insert answers the question in one grep.
-    EchoJay_NSLog (("EJLinkState: registry snapshot (" + juce::String (why) + ") uid=" + instanceUid_
+    const juce::String said = "EJLinkState: registry snapshot (" + juce::String (why) + ") uid=" + instanceUid_
                     + " name=\"" + effectiveDisplayName() + "\" role="
                     + juce::String (place == PlacementBus ? "bus" : place == PlacementInsert ? "channel"
                                     : place == PlacementSend ? "send" : "UNSET")
                     + " trim=" + juce::String (gainDb_.load (std::memory_order_relaxed), 2)
-                    + " dB active=" + juce::String ((int) linkOn.load (std::memory_order_acquire))).toRawUTF8());
+                    + " dB active=" + juce::String ((int) linkOn.load (std::memory_order_acquire));
+    // ---- SAID ON CHANGE, NOT ONCE A SECOND (11 Oct 2026) -------------------------------------------------
+    // The publish stays on its heartbeat - the registry must not go stale. The LINE does not. Measured on Sean's
+    // session: 81 Links x 1 line/s was 50,018 of the 70,000 lines in the whole five-file ring, and it pushed the
+    // window in which any bug could be diagnosed down to minutes. A line that repeats itself unchanged 81 times a
+    // second is not evidence, it is what destroys evidence.
+    //
+    // Compared against the WHOLE sentence, so any field moving says so, and the reason is kept: a "heartbeat"
+    // that reports a change the state-changed path missed is exactly the line worth having. Every non-heartbeat
+    // reason is always said, because those mark events, and an event is worth a line even when nothing moved.
+    const bool isHeartbeat = juce::String (why) == "heartbeat";
+    if (! isHeartbeat || said != lastSaidSnapshot_)
+    {
+        lastSaidSnapshot_ = said;
+        EchoJay_NSLog (said.toRawUTF8());
+    }
 }
 
 void LinkProcessor::setPlacement(int p)
@@ -3432,6 +3454,26 @@ void LinkProcessor::pollChainCommand()
             return;
         }
 
+        // ---- 11 Oct 2026: THE LIST THE OPS ARE JUDGED AGAINST -------------------------------------------
+        // An `add` resolves its name through resolveOfferedName -> resolveByName, which answers built-ins from
+        // the compiled registry and EVERYTHING ELSE from `entries_`. On a Link, `entries_` is only ever filled
+        // from the shared chain_entries.xml, and until now the ONE place that loaded it was buildChainFromSpec -
+        // the v:1 chain path. So a v:2 edit naming a third-party plugin was judged against an EMPTY list, the
+        // dry run refused it as "not in the loadable plugin list", and the whole batch aborted - which the
+        // sender reads as `not_applied`, keeps pending, and re-sends at deselect. That is exactly Sean's report:
+        // a chain built on an addressed Link does not arrive until the V2 switches racks, and only built-in
+        // slots ever worked. (buildRecommendable, the other name source, is called from PluginEditor.cpp alone,
+        // so a Link has no feed table at all - the cache is the whole of its knowledge.)
+        //
+        // mtime-gated inside, and reached only when a command has actually arrived, so this is one stat per
+        // command rather than anything on a timer.
+        chainHost.maybeReloadEntriesCache();
+        EchoJay_NSLog (("EJEdit: judging " + juce::String ((int) ops.size()) + " op(s) against "
+                        + juce::String (chainHost.getNumPlugins()) + " loadable entr(ies)"
+                        + (chainHost.getNumPlugins() == 0
+                               ? juce::String (" - EMPTY, so only built-ins can resolve")
+                               : juce::String())).toRawUTF8());
+
         if (onChainAboutToChange) onChainAboutToChange();   // editors close first
         auto self = this;   // processor outlives message-thread callbacks in-session
         juce::Timer::callAfterDelay(80, [self, ops, baseSlots, seq, cmdId]() mutable
@@ -3456,7 +3498,12 @@ void LinkProcessor::pollChainCommand()
                 // edit, and the line above it in Sean's log said the staleness guards had PASSED - so the one word
                 // the reader had contradicted the one before it. An aborted batch is `not_applied`, and the reason
                 // the sequencer already produced travels with it instead of an empty string.
+                // 11 Oct 2026: `applied == results.size()` ALSO HELD FOR 0 == 0, so an edit that ran nothing
+                // and produced not one per-op result acked "ok". That is why this bug reached Sean as "it says
+                // it worked": the sender rebased its mirror on a success the Link had not had. An empty result
+                // set is not a success, it is an edit that never ran.
                 juce::String status = aborted ? "not_applied"
+                                    : results.isEmpty() ? "not_applied"
                                     : (applied == results.size() ? "ok" : "partial");
                 const juce::String why = aborted
                     ? (results.isEmpty() ? juce::String ("the edit was refused before any op ran")
@@ -3465,7 +3512,10 @@ void LinkProcessor::pollChainCommand()
                 // THE REASON IS THE FIFTH ARGUMENT. The fourth is a per-plugin ARRAY and a string handed to it is
                 // dropped without a word - which is how the first cut of this fix acked not_applied with an empty
                 // reason, and the guard caught it.
-                self->writeChainAck(seq, status, results, juce::var(), why);
+                // The resulting SLOT COUNT rides the ack (additive field; an older sender ignores it). The
+                // editor's note at the push site always meant to make a divergence readable "instead of
+                // inferred" - but the sender could only see its own count until now.
+                self->writeChainAck(seq, status, results, juce::var(), why, self->chainHost.getNumSlots());
             });
         });
         return;
@@ -3662,7 +3712,8 @@ void LinkProcessor::startCalibFromBlock(const juce::var& block)
 void LinkProcessor::writeChainAck(int seq, const juce::String& status,
                                   const juce::StringArray& results,
                                   const juce::var& detail,
-                                  const juce::String& reason)
+                                  const juce::String& reason,
+                                  int slotsAfter)
 {
     // PHASE 1b instrumentation: every chain ack says what it answered.
     EchoJay_NSLog(("EJChainAck[" + juce::String(seq) + "] link: status="
@@ -3681,6 +3732,7 @@ void LinkProcessor::writeChainAck(int seq, const juce::String& status,
     if (detail.isArray())
         obj->setProperty("perPluginDetail", detail);
     if (reason.isNotEmpty()) obj->setProperty("reason", reason);   // 21t-j: why, in words, for a refusal
+    if (slotsAfter >= 0) obj->setProperty("slotsAfter", slotsAfter);   // 11 Oct: what this rack holds NOW
 
     juce::File(resolvedDir + "chain-ack-" + id + ".json")
         .replaceWithText(juce::JSON::toString(juce::var(obj), true));

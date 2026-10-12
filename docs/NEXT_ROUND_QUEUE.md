@@ -3,6 +3,39 @@
 Rewritten 11 Oct 2026, after the round that closed item 1 (plan §6's removals) except the mirror object.
 Nothing here is started.
 
+## 0. THE V2's METERS AND GR FOR A BORROWED SLOT — carried over from 11 Oct, explicitly
+
+Sean's bug-1 report had two halves. The first — "every V2 edit to an addressed Link goes to the Link as a
+command immediately" — is **done and proven both directions** by `link_live_edit_guard`. The second —
+"**and the V2's meters and GR read the Link's own processing**" — is **NOT done**, and this is the written
+reason rather than a silence.
+
+Why it is not a one-line follow-on. A dynamics meter is drawn by its own device editor reading its own
+instance: `EedCompressorEditor.cpp:190` calls `proc_.gainReductionDb()` on the processor it is editing. For a
+borrowed slot that processor is the **mirror's** instance, and the mirror is no longer in any audio path — so
+zero GR is, strictly, the correct reading of the object being asked. The fix is not in the editor's arithmetic;
+it is a new source of truth:
+
+  1. the Link publishes **per-slot GR** (and the input/output levels the cards show) in its rack sidecar —
+     additive fields, so an older V2 simply does not see them and behaves as today;
+  2. the dynamics processors gain a **remote override** (`setRemoteGainReductionDb`, cleared when absent) so
+     `gainReductionDb()` answers with the Link's figure while the slot is a mirror;
+  3. the V2 feeds that override per slot off the existing ~30 Hz sidecar read;
+  4. one leg: a Link compressing real audio, a V2 addressing it, and the V2's reading inside a tolerance of
+     the Link's own — asserted on *rendered* audio, the way `link_live_edit_guard` does, never on state.
+
+It touches five device editors (compressor, de-esser, expander, gate, limiter) to be consistent. `EJCalibLoop.h`
+already carries a `lastGr`, which is worth reading first — some of the plumbing may already exist.
+
+It was left out of the 11 Oct round deliberately: it needs a wire field and its own leg, and adding both at the
+end of a long round is how a sixth bug arrives. **Sean's call on priority.**
+
+## 0b. buildNotes in the local result bubble — offered, not taken
+
+B's done frame and one-shot body now carry `buildNotes` (Sean, 11 Oct: "if you'd rather draw those in the local
+result bubble"). Nothing was done with it this round — it was an offer rather than an instruction, and the round
+was already carrying five items. The result bubble is composed in one place, so this should be small.
+
 ## 1. THE BORROWED HOST AS AN OBJECT — the deferred half of the removals
 
 Sean ruled on 11 October, on a recommendation: the mirror stays this round, and comes out next. The round

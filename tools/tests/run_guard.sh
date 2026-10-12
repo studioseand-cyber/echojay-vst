@@ -48,7 +48,12 @@ seal () {  # one line per file/dir: <size> <mtime> <path>
   local d
   for d in "${SEAL_TARGETS[@]}"; do
     if [ -d "$d" ]; then
-      /usr/bin/find "$d" -maxdepth 2 \( -type f -o -type d \) -exec /usr/bin/stat -f '%z %m %N' {} \; 2>/dev/null | LC_ALL=C sort
+      # `-exec ... {} +` , NOT `{} \;` (12 Oct 2026). With \; find spawns ONE stat per file, and
+      # ~/Library/Application Support/EchoJay holds 5,669 files two levels deep - 5,612 of them orphan
+      # rack-*.json left by force-quits. Measured: 12.1 s per seal, two seals per guard, so ~24 s of
+      # overhead on EVERY guard and about half of the suite's wall clock. `+` batches the arguments
+      # into as few stat calls as the arg list allows. The output is identical: it is sorted either way.
+      /usr/bin/find "$d" -maxdepth 2 \( -type f -o -type d \) -exec /usr/bin/stat -f '%z %m %N' {} + 2>/dev/null | LC_ALL=C sort
     else
       echo "ABSENT $d"
     fi

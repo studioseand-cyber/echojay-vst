@@ -156,9 +156,28 @@ int main (int argc, char** argv)
         juce::Array<juce::var> six; for (const char* n : kSix) { auto* o = new juce::DynamicObject(); o->setProperty ("name", n); o->setProperty ("bypassed", false); six.add (juce::var (o)); }
         auto* rack = new juce::DynamicObject(); rack->setProperty ("v", 1); rack->setProperty ("uid", TA::uid (*fresh3)); rack->setProperty ("slots", six);
         juce::File (hostDir() + "rack-" + TA::uid (*fresh3) + ".json").replaceWithText (juce::JSON::toString (juce::var (rack), true));
-        fresh3->setStateInformation (cFinal.mb.getData(), (int) cFinal.mb.getSize()); pumpMs (3000);
-        auto& h = TA::host (*fresh3); const auto names = hostNames (h);
-        check (h.getNumSlots() == cFinal.slots, "G4: a 6-slot rack sidecar for this Link's uid beside the 5-slot chunk: the chunk wins (no sidecar read on load) - already GREEN, kept as a regression leg", juce::String (h.getNumSlots()));
+        // A FIXED 3 s SLEEP IS NOT A WAIT (12 Oct 2026). This was `pumpMs (3000)` and then an immediate
+        // assertion on the slot count. Restoring the chunk instantiates five plugin instances, and 3 s is
+        // plenty on an idle Mac but not on one that has just run seventy guards: in the 11:11 gate the count
+        // read 0 and G3/G4 went RED on the SAME archives that were GREEN ninety minutes earlier - 4 green,
+        // 1 red across five runs, with the red the one inside a gate. The leg was measuring the machine.
+        //
+        // So: wait UNTIL the restore has landed, with a bound, and PRINT how long it took. A bound turns a
+        // slow restore into a readable number instead of a coin toss, and if that number ever climbs toward
+        // the bound it is the product's problem and this line is where it will be seen.
+        auto& h = TA::host (*fresh3);
+        const double tRestore0 = juce::Time::getMillisecondCounterHiRes();
+        double restoreMs = 0.0;
+        fresh3->setStateInformation (cFinal.mb.getData(), (int) cFinal.mb.getSize());
+        for (;;)
+        {
+            pumpMs (100);
+            restoreMs = juce::Time::getMillisecondCounterHiRes() - tRestore0;
+            if (h.getNumSlots() == cFinal.slots || restoreMs >= 30000.0) break;
+        }
+        std::printf ("    the chunk's %d slot(s) were hosted after %.0f ms (bound 30000 ms)\n", cFinal.slots, restoreMs);
+        const auto names = hostNames (h);
+        check (h.getNumSlots() == cFinal.slots, "G4: a 6-slot rack sidecar for this Link's uid beside the 5-slot chunk: the chunk wins (no sidecar read on load) - already GREEN, kept as a regression leg", juce::String (h.getNumSlots()) + " slot(s) after " + juce::String (restoreMs, 0) + " ms");
         check (h.getNumSlots() == cFinal.slots && names == cFinal.names, "G3: a fresh LinkProcessor restored from that chunk hosts exactly the chunk's slots (the object that processes audio)", juce::String (h.getNumSlots()) + " " + names.joinIntoString ("|"));
         check (! names.contains ("EchoJay Limiter"), "G3: the deleted slot's plugin (EchoJay Limiter, slot 3 of 6) is NOT instantiated", names.joinIntoString ("|"));
         juce::AudioBuffer<float> b (2, 512); b.clear(); juce::MidiBuffer m; fresh3->processBlock (b, m);

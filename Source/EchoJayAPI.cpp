@@ -1367,7 +1367,13 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // model is never asked for one, which is exactly why 06b and 06c - which would have printed
     // the raw JSON at the user - stay safe. It is a CAPABILITY, not a preference: it says what
     // the binary can do, so it is hardcoded here and not a setting anyone can get wrong.
-    body += ",\"capabilities\":[\"proposal\"]";
+    // 11 Oct 2026 (B's leveling gate): "leveling" says this build does its own master levelling, so the server
+    // may DROP the EchoJay Level slot from a chain it returns. B gates on appVersion >= 2.26.5 OR this
+    // capability; both are sent, because the two answer different questions. The version says which build this
+    // is and is therefore hostage to any other cohort keyed off it; the capability says what the binary can do,
+    // which is the claim actually being made here. If a future route checks only one of them, it still gets a
+    // true answer.
+    body += ",\"capabilities\":[\"proposal\",\"leveling\"]";
     // THE REQUEST CONTRACT (21s-b, 24 Sep 2026): the chat's stable id and the TARGET CHANNEL identity, on every
     // turn, whichever tab / selector / strip chose the target. Absent rather than empty when unknown, so "no
     // channel" is distinguishable from "a channel whose name is the empty string" - and so the server can tell
@@ -4400,6 +4406,11 @@ void EchoJayAPI::loadSettings()
         // member false: dialling works as it always has until asked not to.
         dialWritesBlocked = (bool) obj->getProperty("dialWritesBlocked");
         echojay::setDialWritesBlocked(dialWritesBlocked);   // mirror at startup
+        // 11 Oct 2026: a file written before the exclusivity rule can hold BOTH. Resolved on load, so the
+        // contradiction never reaches the toggles or the feed, and said once so the change is not silent.
+        if (resolveDialExclusivity())
+            EchoJay_NSLog("EJSettings: the saved settings had both \"only auto-dialable plugins\" and \"never "
+                          "dial\" on - kept \"never dial\" and cleared the other (they are exclusive)");
         // Absent -> false: a settings file written before this existed keeps
         // offering third-party plugins, which is what it was already doing.
         echoJayOnly = (bool) obj->getProperty("echoJayOnly");

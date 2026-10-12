@@ -12,8 +12,10 @@
 //       "apply" means apply what B offered - the proposal's edit array needs no translation;
 //   (3) the block goes BACK on the assistant turn for the wire, so B's server-side yes ships identical
 //       ops - every other block is stripped from history and this one is not;
-//   (4) the chat request body declares capabilities ["proposal"], which is what B gates on: without
-//       it the block is never emitted, and that is why 06b/06c cannot be shown raw JSON;
+//   (4) the chat request body declares the capabilities B gates on - "proposal", without which the
+//       block is never emitted (that is why 06b/06c cannot be shown raw JSON), and "leveling",
+//       without which B keeps sending the EchoJay Level slot - plus the 2.26.5 appVersion that is
+//       B's other route to the same levelling decision;
 //   (5) the narrow client-side yes: the affirmations Sean actually types are taken, and everything
 //       doubtful is REFUSED so the turn goes to the server instead of applying something unasked.
 #include <CoreFoundation/CoreFoundation.h>
@@ -131,10 +133,42 @@ int main()
                lastAssistant.isEmpty() ? "no assistant turn in the body"
                                        : juce::String (lastAssistant.length()) + "b on the wire");
 
-        std::printf ("== (4) the body declares the capability B gates on ==\n");
-        check (body.contains ("\"capabilities\":[\"proposal\"]"),
-               "capabilities [\"proposal\"] rides every chat request - without it B emits no block, "
-               "which is why an older build can never be shown raw JSON");
+        std::printf ("== (4) the body declares the capabilities B gates on ==\n");
+        // Read the array rather than string-matching it: B gates each capability independently, so a
+        // new one must not be able to break an old one's assertion the way "leveling" broke this one
+        // (gate of 11 Oct, the only product-side red of that round).
+        juce::StringArray caps;
+        if (auto* arr = v.getProperty ("capabilities", juce::var()).getArray())
+            for (int i = 0; i < arr->size(); ++i)
+                caps.add ((*arr)[i].toString());
+
+        check (caps.contains ("proposal"),
+               "capabilities carries \"proposal\" on every chat request - without it B emits no block, "
+               "which is why an older build can never be shown raw JSON",
+               caps.isEmpty() ? juce::String ("no capabilities array in the body")
+                              : caps.joinIntoString (", "));
+
+        // 2.26.5: B drops the EchoJay Level slot only for a client at 2.26.5+ OR one declaring this.
+        // Both halves are asserted - the version alone would leave the capability free to regress.
+        check (caps.contains ("leveling"),
+               "and \"leveling\", which is what makes B drop the EchoJay Level slot from a build",
+               caps.joinIntoString (", "));
+
+        // Compared component by component, NOT as text: "2.26.10" sorts BELOW "2.26.5" as a string,
+        // so a lexicographic check here would start failing at the next ten releases.
+        const juce::String appVersion = v.getProperty ("appVersion", juce::var()).toString();
+        auto atLeast = [] (const juce::String& have, int maj, int min, int patch)
+        {
+            juce::StringArray p; p.addTokens (have, ".", "");
+            if (p.size() < 3) return false;
+            const int h[3] = { p[0].getIntValue(), p[1].getIntValue(), p[2].getIntValue() };
+            const int w[3] = { maj, min, patch };
+            for (int i = 0; i < 3; ++i) { if (h[i] != w[i]) return h[i] > w[i]; }
+            return true;
+        };
+        check (atLeast (appVersion, 2, 26, 5),
+               "and the reported appVersion is 2.26.5 or above, B's other route to the same decision",
+               appVersion.isEmpty() ? juce::String ("no appVersion in the body") : appVersion);
     }
 
     std::printf ("== (5) the narrow yes: takes what Sean types, refuses what it should not ==\n");

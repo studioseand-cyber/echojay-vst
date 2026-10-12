@@ -27,6 +27,7 @@
 #include <sstream>
 #include <fstream>
 #include <typeinfo>
+#include "../tests/ej_log_window.h"   // reading the rolling log across a rotation
 
 // The request body as the shipping client builds it (the same pin groups_guard uses).
 struct EchoJayAPIRequestPin { static juce::String body (EchoJayAPI& a, const juce::StringArray& r, const juce::StringArray& c, const juce::String& sys, const juce::String& mb) { return a.buildChatRequestBody (r, c, sys, mb); } };
@@ -1157,15 +1158,20 @@ int main()
                 check (opened && A::inlineEditorOpen (*ed),
                        "21t-e. fixture: a hosted editor is open INLINE in the rack",
                        A::inlineEditorOpen (*ed) ? juce::String ("open") : juce::String ("none"));
-                const auto logBefore = juce::File (juce::String (echojay::FileLog::instance().currentPath())).loadFileAsString();
+                // The window is {path, length, instant} and is read back through logSince, which follows a
+                // rotation. Read as a bare offset into currentPath() this leg went RED in the 12 Oct gate on a
+                // run where the log happened to roll between these two reads - see tools/tests/ej_log_window.h.
+                const auto logMarkE = ejtest::markLog();
                 A::picker (*ed); pumpMs (60);
                 check (! A::inlineEditorOpen (*ed),
                        "21t-e. opening the picker closes it, so the picker cannot draw behind it  (RED as it "
                        "stood: only a popped-OUT editor was handled)");
-                const auto logAfter = juce::File (juce::String (echojay::FileLog::instance().currentPath())).loadFileAsString();
-                check (logAfter.substring (logBefore.length()).contains ("EJPicker: inline hosted editor closed"),
+                juce::String howE;
+                const auto freshE = ejtest::logSince (logMarkE, howE);
+                check (freshE.contains ("EJPicker: inline hosted editor closed"),
                        "21t-e. ...and it says so in the log, so the path is auditable in a real session",
-                       logAfter.substring (logBefore.length()).fromFirstOccurrenceOf ("EJPicker:", true, false).upToFirstOccurrenceOf ("\n", false, false).substring (0, 110));
+                       freshE.fromFirstOccurrenceOf ("EJPicker:", true, false).upToFirstOccurrenceOf ("\n", false, false).substring (0, 110)
+                           + "  [" + howE.trim() + "]");
                 while (own.getNumSlots() > before) own.removeSlot (own.getNumSlots() - 1);
                 A::knownState (*ed, proc);
                 A::refreshPanel (*ed); pumpMs (40);
@@ -1766,8 +1772,9 @@ int main()
             }
             check (proc.calibLoad (luid).active(), "21t-i. fixture: the loop is running on the leased uid");
 
-            const auto logStart = juce::File (juce::String (echojay::FileLog::instance().currentPath()))
-                                     .loadFileAsString().length();
+            // The log window: {path, length, instant}, read back with logSince so a rotation mid-leg
+            // cannot be mistaken for the product going quiet (tools/tests/ej_log_window.h).
+            const auto logMark = ejtest::markLog();
             // THE EDITOR'S OWN TICK, and audio between ticks, exactly as a playing session has it. The loop decides
             // once per 3 s window, so this covers several.
             const int windowsBefore = proc.calibLoad (luid).window;
@@ -1799,16 +1806,17 @@ int main()
                 // what made 14:44 unreadable - a loop nobody is driving must not look like a loop sitting
                 // quietly in band.
                 const auto line = proc.calibLastLogLine();
-                const juce::File cur (juce::String (echojay::FileLog::instance().currentPath()));
-                const auto fresh = cur.loadFileAsString().substring (logStart);
+                juce::String how;
+                const auto fresh = ejtest::logSince (logMark, how);
                 int advancedBy = 0;
                 for (const auto& l : juce::StringArray::fromLines (fresh))
                     if (l.contains ("is advanced BY THAT LINK")) ++advancedBy;
-                std::printf ("    \"advanced BY THAT LINK\" lines in the rolling log file: %d (the file is %s here)\n",
-                             advancedBy, cur.existsAsFile() ? "readable" : "NOT readable");
+                std::printf ("    \"advanced BY THAT LINK\" lines since the mark: %d  [%s%db read]\n",
+                             advancedBy, how.toRawUTF8(), fresh.length());
                 check (advancedBy > 0,
                        "21t-i. ...and names the owner rather than going quiet about it",
-                       juce::String (advancedBy) + " line(s)");
+                       juce::String (advancedBy) + " line(s), " + juce::String (fresh.length())
+                           + "b of log read (" + how.trim() + ")");
                 // THE CARD IS STILL RENDERED. Advancing and rendering were one function, and the first cut of
                 // the removal returned {} for a Link rack - which blanked the card on a rack mid-hunt. The claim
                 // is that the tick renders WHATEVER THE STATE SAYS rather than blanking it, so it is made against
