@@ -8899,6 +8899,23 @@ void testRunAll()
         check (ejmap::phaseb::refileSlept (row ("slept")) && ! ejmap::phaseb::refileSlept (row ("ok")) && ! ejmap::phaseb::refileSlept (row ("needs_licence")) && ! ejmap::phaseb::refileSlept (row ("timed_out")),
                "phaseb PB-SLEPT: a slept row runs again by itself on the next run; no other outcome is re-filed by this rule");
     }
+    // PF-QUAR (Kathy, 12 Oct): a build unzipped from an email keeps com.apple.quarantine; the pre-flight reads the flag itself (a real
+    // file, set and cleared here) and refuses with the fix (xattr -dr on the dist folder, then xattr -lr to check)
+    {
+        const auto dir = juce::File::createTempFile ("pfquar"); dir.createDirectory(); const auto app = dir.getChildFile ("ejmap.app"); app.createDirectory();
+        const auto probe = dir.getChildFile ("EchoJayProbe"); probe.replaceWithText ("x");
+        const char* val = "0083;6720a1b2;Mail;"; setxattr (probe.getFullPathName().toRawUTF8(), "com.apple.quarantine", val, strlen (val), 0, XATTR_NOFOLLOW);
+        const bool seenSet = ejmap::quarantine::flagged (probe), appClean = ! ejmap::quarantine::flagged (app);
+        const auto bad = ejmap::quarantine::judge ({ { "the app", app, false }, { "the probe", probe, seenSet } }, ejmap::quarantine::folderToClear (app));
+        removexattr (probe.getFullPathName().toRawUTF8(), "com.apple.quarantine", XATTR_NOFOLLOW);
+        const bool clearedSeen = ! ejmap::quarantine::flagged (probe);
+        const auto good = ejmap::quarantine::judge ({ { "the app", app, false }, { "the probe", probe, false } }, dir);
+        check (seenSet && appClean && clearedSeen && ! bad.ok && bad.line.contains ("the probe") && ! bad.line.contains ("the app,")
+               && bad.fix.startsWith ("xattr -dr com.apple.quarantine \"" + dir.getFullPathName() + "\"") && bad.fix.contains ("xattr -lr") && bad.fix.contains ("once after unzipping") && bad.fix.contains ("Operation not permitted") && bad.fix.contains ("unzip the email again")
+               && good.ok && good.line.startsWith ("ok"),
+               "preflight PF-QUAR: a real quarantine flag on the probe is read and refused with 'xattr -dr ... <dist folder>' + 'xattr -lr' check; cleared = ok [" + bad.line + " | " + bad.fix + "]");
+        dir.deleteRecursively();
+    }
     // PF-SLEEP (Kathy, 11 Oct): the preflight refuses a Mac that can sleep - battery, or AC with only caffeinate -i and a sleep timer; passes
     // AC + PreventSystemSleep (caffeinate -dimsu) or AC + sleep 0; the refusal names the exact fix
     {
