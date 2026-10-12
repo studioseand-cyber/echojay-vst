@@ -68,6 +68,8 @@ Only the **detection** is built (`EjmapCustomDefault.h`, pins CD-1..3, 3 mutants
 - the read-back does not match, or the reference is not trusted → **`custom_default`**, not measured (counted with the skips, not the failures);
 - no reference file → unchanged, so Sean's next run behaves as today.
 
-**Not covered yet:**
-- The original compressor-certification batch (the sweep loop, outside Phase B) does not run this check. The Phase B compressor paths (`limitercomp`, the wizard's `wizard`) do.
-- A channel strip whose sections add their own `--preset` would replace the restore writes: combining the two is not built.
+**Closed later on 12 Oct (Kathy's decisions + handover):**
+- **The vote** (e6a3cbf4, CD-6): every check casts one. Identical to a single-source reference → measured, and the vote makes it trusted (`makes_trusted`). It differs → `custom_default` (held), and the vote carries this Mac's opening block for a third source. Rows record `reference_vote`. On the wizard, the votes travel in the manifest's `reference_votes[]` and the stub counts them (89e59f5c, WZ-CD-2).
+- **Strips** (e6a3cbf4, CD-7): the restore writes come first, and a section's own write replaces only a control it sets. `preset_merge` on the section says which won, per control.
+- **The compressor-certification batch** (b24085d5, CD-8): `runCertSweep` runs the same check (`certSweepReference`, sharing `referenceCheck` with Phase B). `custom_default` → `<cert>/custom_default/<stem>.json`, not measured (exit 4). Restore → `EJ_PROBE_PRESET` for that product's probes, cleared after, plus `<stem>.restored.json`. A restore already in force (Phase B's children) is not re-checked. No reference file → unchanged.
+- Not re-run live after the b24085d5 refactor: Phase B's prepare now calls `referenceCheck`, which CD-8 drives end to end through a fake probe.
