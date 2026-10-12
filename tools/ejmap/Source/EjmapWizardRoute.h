@@ -18,6 +18,7 @@
 #pragma once
 
 #include "EjmapWizard.h"
+#include "EjmapWizardServer.h"
 #include <juce_core/juce_core.h>
 #include <set>
 
@@ -52,12 +53,12 @@ inline Answer ask (const std::vector<wizard::DbEntry>& db, const std::set<juce::
 }
 
 // --- the route -----------------------------------------------------------------------------------------------------------------------
-enum class Route { skipHave, skipPending, quickCheck, measure, sendOther, outOfScope, categorise, needsCategory };
+enum class Route { skipHave, skipPending, quickCheck, measure, sendOther, outOfScope, categorise, needsCategory, held };   // held (12 Oct): multiband - no server category yet
 inline juce::String routeName (Route r)
 {
     switch (r) { case Route::skipHave: return "skip_have"; case Route::skipPending: return "skip_pending"; case Route::quickCheck: return "quick_check";
                  case Route::measure: return "measure"; case Route::sendOther: return "send_other"; case Route::outOfScope: return "out_of_scope";
-                 case Route::categorise: return "categorise"; case Route::needsCategory: return "needs_category"; }
+                 case Route::categorise: return "categorise"; case Route::needsCategory: return "needs_category"; case Route::held: return "held"; }
     return {};
 }
 struct Decision { Route route = Route::categorise; juce::String category, why; };
@@ -72,7 +73,7 @@ inline juce::StringArray phaseBFor (const juce::String& c)
     if (c == "saturation" || c == "amp_sim") return { "saturation" };
     if (c == "gate") return { "gate" };
     if (c == "transient_shaper" || c == "transient") return { "transient" };
-    if (c == "multiband") return { "multiband" };
+    // multiband: NOT measured by the wizard for now (Kathy, 12 Oct: no server category) - held, listed with its map
     if (c == "pitch" || c == "tuner") return { "tuners" };
     if (c == "reverb") return { "reverb" };
     if (c == "delay") return { "delay" };
@@ -86,11 +87,19 @@ inline bool measurable (const juce::String& c) { return ! phaseBFor (c).isEmpty(
 inline const std::vector<juce::StringArray>& measureOrder()
 {
     static const std::vector<juce::StringArray> k { { "wizard" }, { "wizard_eq" }, { "deesser" }, { "limiter" }, { "limitercomp" }, { "saturation" },
-                                                    { "gate", "transient" }, { "multiband" }, { "tuners" }, { "reverb", "delay" }, { "strips" } };
+                                                    { "gate", "transient" }, { "tuners" }, { "reverb", "delay" }, { "strips" } };
     return k;
 }
 // a limiter's compressor pass (limitercomp) is sent like any compressor: its profile exported AND its tone check passed at g 2
 inline bool sendCompressorPass (const juce::String& certState, bool toneCheckPassed) { return certState == "exported" && toneCheckPassed; }
+// a draft the server can USE (12 Oct: bx_rockrack's saturation draft read "no control with the drive verdict: nothing for the server to
+// use" and was counted measured): a saturation draft needs its drive; the other kinds carry their measured blocks
+inline bool draftUsable (const juce::String& phaseBCategory, const juce::var& draft)
+{
+    if (! draft.isObject()) return false;
+    if (phaseBCategory == "saturation") return ! draft.getProperty ("drive", {}).isVoid();
+    return true;
+}
 // the Tracker's kind for a Phase B category (its per-plugin seconds)
 inline juce::String kindOf (const juce::String& phaseBCategory) { return phaseBCategory == "wizard" ? juce::String ("compressor") : phaseBCategory == "wizard_eq" ? juce::String ("eq") : phaseBCategory; }
 inline Decision route (const Answer& a, const juce::String& nameCategory, const juce::String& outOfScope)
@@ -102,8 +111,13 @@ inline Decision route (const Answer& a, const juce::String& nameCategory, const 
         case Rule::B: return { Route::quickCheck, a.category, a.why };
         case Rule::C: break;
     }
-    if (a.category.isNotEmpty()) return measurable (a.category) ? Decision { Route::measure, a.category, "the server's category: " + a.category }
-                                                                : Decision { Route::sendOther, a.category, "the server's category (" + a.category + ") is not measured by the wizard yet: sent so EchoJay knows it" };
+    if (a.category.isNotEmpty())
+    {   // the server's names (Sean's 12); an internal label from a local catalogue: multiband -> held, the rest out of scope (never sent)
+        if (measurable (a.category)) return { Route::measure, a.category, "the server's category: " + a.category };
+        if (a.category == "multiband") return { Route::held, "multiband", "held: no server category (multiband is not measured by the wizard yet)" };
+        if (wizserver::isServerCategory (a.category)) return { Route::sendOther, a.category, "the server's category (" + a.category + ") is not measured by the wizard yet: sent so EchoJay knows it" };
+        return { Route::outOfScope, a.category, "not an EchoJay category (" + a.category + "): not loaded" };
+    }
     if (nameCategory.isNotEmpty()) return { Route::measure, nameCategory, "its name says " + nameCategory };
     if (outOfScope.isNotEmpty()) return { Route::outOfScope, outOfScope, "out of scope (" + outOfScope + "): not loaded" };
     return { Route::categorise, {}, "no category from the server or the name: the signature reads decide" };
@@ -121,7 +135,8 @@ inline Decision afterSignature (bool readsRan, bool settled, const juce::String&
     if (category == "eq") return { Route::measure, "eq", "the signature: " + why };
     if (category == "dynamics") return { Route::measure, "compressor", "the signature (dynamics; the compressor certification decides): " + why };
     if (measurable (category)) return { Route::measure, category, "the signature: " + why };   // saturation, reverb, delay, pitch (12 Oct: all categories)
-    return { Route::sendOther, category, "the signature (" + category + ", not measured by the wizard yet): " + why };
+    if (wizserver::isServerCategory (category)) return { Route::sendOther, category, "the signature (" + category + ", not measured by the wizard yet): " + why };
+    return { Route::outOfScope, category, "the signature reads " + category + " - not an EchoJay category: " + why };   // modulation: an internal label, never sent
 }
 
 // the summary's words for these live in wizard::summaryLine (needs_category / other_category / out_of_scope / pending_review)

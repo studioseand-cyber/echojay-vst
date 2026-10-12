@@ -96,15 +96,15 @@ The wizard measures every category EJ Map certifies. It uses **EJ Map's own Phas
 | limiter | `limiter`, then `limitercomp` (the compressor certification on a limiter, Kathy 10 Oct) | 28 s + 340 s |
 | saturation, amp_sim | `saturation` | 11 s |
 | gate / transient_shaper | `gate` / `transient` | 17 s / 22 s |
-| multiband | `multiband` | 51 s |
+| multiband | **not measured for now** (no server category): listed in the manifest's `held[]` with its map | - |
 | pitch (tuners) | `tuners` | 111 s |
 | reverb / delay | `reverb` / `delay` | 41 s / 45 s |
 | channel_strip | `strips` (each section through its category) | 1200 s (no measured row yet) |
-| modulation, meters, utilities, instruments | not measured: sent with the category / listed | - |
+| modulation, meters, utilities, instruments | internal labels: out of scope, listed by identity only (never sent as categories) | - |
 
 **The estimates** are the medians of Sean's own "ok" Phase B rows per category (his 4–11 Oct nights). They are replaced by this Mac's measured times as plugins finish.
 
-**The order**: compressors → EQ → de-essers → limiters → saturation → gates / transients → multiband → tuners → reverb / delay → strips. Each group is one Phase B pass (`--jobs` inside it), so a user who stops early has already given the most valuable results. A stop ends the order there; the next run carries on from the rows that landed.
+**The order**: compressors → EQ → de-essers → limiters → (the limiter's compressor pass, only after an ok limiter row) → saturation → gates / transients → tuners → reverb / delay → strips. Each group is one Phase B pass (`--jobs` inside it), so a user who stops early has already given the most valuable results. A stop ends the order there; the next run carries on from the rows that landed.
 
 **Ready to send:**
 - compressor: its certification exported a profile and the tone check passed.
@@ -113,9 +113,33 @@ The wizard measures every category EJ Map certifies. It uses **EJ Map's own Phas
 
 Everything else is reported with the cert's own outcome (needs a licence, passes no sound, crashed, won't load, could not be measured).
 
+## 5b. The server's categories (Sean, 12 Oct) and the boundary table
+
+The server has **12 categories**, lowercase, in Sean's spellings: `compressor, limiter, eq, de-esser, delay, reverb, saturation, gate, transient_shaper, channel_strip, amp_sim, pitch`.
+
+EJ Map keeps its own internal names. The wizard translates **at the server boundary only**, with one table (`wizserver::toServer`, pins WZ-SRV-2 and 2b). `/lookup`'s category is read in the server's names, and each translates to itself.
+
+| internal (EJ Map / wizard) | sent as | how it is measured |
+|---|---|---|
+| compressor, `wizard` | compressor | the compressor certification + tone check |
+| limiter, `limitercomp` | limiter | the limiter mode; then the compressor pass, only after an ok limiter row |
+| eq, `wizard_eq` | eq | the EQ certification |
+| deesser | **de-esser** | the de-esser mode |
+| delay / reverb | delay / reverb | the reverb-delay mode |
+| saturation, when the record read an **amp sim's cabinet response** | **amp_sim** | the saturation mode |
+| saturation, otherwise | saturation | the saturation mode |
+| gate | gate | the dynamics mode (gate) |
+| transient | **transient_shaper** | the dynamics mode (transient) |
+| strips | **channel_strip** | the strip mode (each section through its category) |
+| tuners | **pitch** | the tuner mode |
+| multiband | — (internal) | **not measured by the wizard for now**: listed in `held[]` ("held: no server category") with its map. EJ Map on Sean's Mac is unchanged |
+| modulation, meter, utility, instrument, midi, the signature's "dynamics" | — (internal) | out of scope, listed by identity only. A needs_category leaning that is not one of the 12 is sent as null |
+
+**Validation:** every category an outgoing manifest carries must be one of the 12, or nothing is packed (`wizserver::invalidOutgoing`, pin WZ-SRV-3). That covers `profiles[].kind`, `other_categories[].category`, a non-null `needs_category[].leaning`, and no category at all on `held[]` / `out_of_scope[]`. Draft files keep EJ Map's internal names inside; only the manifest is the boundary.
+
 ## 6. Server endpoints (Sean's side; stubbed in the app)
 
-All are JSON over HTTPS under `https://api.echojay.ai/api/wizard/v1/`. Authenticated calls carry `Authorization: Bearer <token>`. Errors use HTTP status codes with a body of `{"error": "<code>", "message": "<plain words>"}`. Every call must be idempotent where noted, because the app retries after a pause or a crash.
+All are JSON over HTTPS under **`https://www.echojay.ai/api/wizard/v1/`** (Sean, 12 Oct: not api.echojay.ai; `wizserver::baseUrl()`, pin WZ-SRV-1). Authenticated calls carry `Authorization: Bearer <token>`. Errors use HTTP status codes with a body of `{"error": "<code>", "message": "<plain words>"}`. Every call must be idempotent where noted, because the app retries after a pause or a crash.
 
 ### 6.1 Sign in
 
@@ -157,7 +181,7 @@ The token is stored in the macOS Keychain (**the stub writes account.json withou
   - **B** = have another version; the client reads back `readback.writes` (no audio) and measures only if a display differs.
   - **C** = not in the database.
   - **pending_review** (new, 12 Oct) = another user already sent it as `needs_category` and Sean has not labelled it yet. Skipped entirely: not loaded, no signature reads, **not re-sent**.
-- `category` (new, 12 Oct): the **Sean-approved** category whenever the server has one. That includes rule C plugins with no profile yet, and categories the wizard does not measure (`reverb`, `delay`, `modulation`, `pitch`, `saturation`, `deesser`, `gate`, `limiter`, `multiband`, `strip`, `instrument`, `meter`, `utility`…). `null` = the server does not know.
+- `category` (new, 12 Oct): the **Sean-approved** category whenever the server has one, always one of the server's 12 (section 5b): `compressor, limiter, eq, de-esser, delay, reverb, saturation, gate, transient_shaper, channel_strip, amp_sim, pitch`. That includes rule C plugins with no profile yet. `null` = the server does not know.
   - The wizard uses it FIRST. A category EJ Map certifies (section 5) goes to its measuring queue. Any other category (modulation, meter, …): the plugin is mapped and sent with its category (6.3 `other_categories`), not measured.
   - Without a server category, the wizard tries, in order: its name rules (compressor / EQ words); out of scope by AU type or meter / utility words (listed, never loaded); and only then EJ Map's signature reads on the user's Mac.
 - The server decides A / B / C / pending_review and the category. The client never decides from its own copy of the database.
@@ -165,7 +189,16 @@ The token is stored in the macOS Keychain (**the stub writes account.json withou
 
 ### 6.3 Upload
 
-`POST /contributions` (authenticated, `multipart/form-data`), idempotent on `bundle_sha256`:
+**Two paths** (Sean, 12 Oct; `wizserver::uploadPathFor`, pin WZ-SRV-4):
+- **Direct**: the zip + the manifest + 64 KB of multipart headroom fit Vercel's 4.5 MB request body (4,500,000 bytes).
+- **Signed blob**: anything bigger.
+  1. `POST /contributions/upload-url` `{bytes, bundle_sha256}` → `{upload_url, blob_ref, expires}`
+  2. `PUT <upload_url>` with the zip (`Content-Type: application/zip`)
+  3. `POST /contributions/complete` `{blob_ref, bundle_sha256, manifest}` → the same receipt as the direct path
+
+The stub's "signed URL" is a local folder (`<work>/server_stub/signed_blob/`), and its receipts carry `path: direct | signed_blob`.
+
+**Direct:** `POST /contributions` (authenticated, `multipart/form-data`), idempotent on `bundle_sha256`:
 - `manifest`: `manifest.json` (`ej_contribution/0`). It contains:
   - `profiles[]`;
   - `confirmations[]` (rule B passes);
@@ -173,7 +206,8 @@ The token is stored in the macOS Keychain (**the stub writes account.json withou
   - `crashed[]` (product, stage, crash_report path);
   - **`needs_category[]`** (new, 12 Oct): `{product, plugin_id, map_fp, leaning, file}` for each plugin the server, the name and the signature reads could not settle. Its file `needs_category/<product>.json` holds the wizard's map (identity + parameter list), EJ Map's signature reads (`level_dependence_db`, `frequency_span_db`, `rt60_s`, `repeats`, THD at -30 / -6, sideband, pitch move, notes), the leaning (a category or null) and the why. Sean labels it; the server then returns it as `pending_review` to other users until the label is in;
   - **`other_categories[]`** (new): `{product, plugin_id, map_fp, category, file}` for a category the wizard cannot measure yet. The file holds the map and the category;
-  - **`out_of_scope[]`** (new): `{product, plugin_id, why}`. Instruments, MIDI, meters and utilities, listed by identity only (never loaded);
+  - **`out_of_scope[]`** (new): `{product, plugin_id, why}`. Instruments, MIDI, meters, utilities and modulation, listed by identity only (never loaded; the internal label stays local);
+  - **`held[]`** (12 Oct): `{product, plugin_id, map_fp, map, why: "held: no server category"}`. Multibands, until the server has a category for them;
   - `tool`, `platform` and `created`.
 - `bundle`: `contribution.zip` (the manifest, `profiles/`, `crash_reports/`, `needs_category/`, `other_categories/`).
 - `bundle_sha256`: a hex string.
@@ -210,6 +244,14 @@ The token is stored in the macOS Keychain (**the stub writes account.json withou
 The server emails the code (the stub writes `<work>/server_stub/outbox/<account>.txt`).
 
 **Stub:** `EJ-FREE-` + the first 8 hex characters of SHA-256(account_id + "|wizard-v1"), uppercase. One per account in `server_stub/promo_ledger.json`.
+
+## 6b. SERVER-SIDE, awaiting Sean (the client has stubs only)
+
+- **The account → mapper-token bridge:** sign-in returns the account. The server links it to the mapper token its map and profile intake uses. The stub signs any email and password and has no token.
+- **The review / holding area:** an upload lands in holding, then agreement with another version or a second user, then publish. The stub's genuine check is the manifest schema only.
+- **The promo rules + issuing + email:** one code per account, the "nothing new" rule (Kathy: proposed yes), and the email. The stub writes a local ledger and an outbox file.
+
+The app's sign-in, upload-to-review and reward screens work on these stubs.
 
 ## 7. Not in v1
 

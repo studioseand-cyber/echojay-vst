@@ -88,6 +88,7 @@
 #include "EjmapWizard.h"
 #include "EjmapWizardProgress.h"
 #include "EjmapWizardRoute.h"
+#include "EjmapWizardServer.h"
 #include <sstream>
 #include "EjmapCertReview.h"
 #include "EjmapSaturation.h"
@@ -9303,6 +9304,57 @@ void testTextPassTimeout()
     check (textPassTimeoutMs (0, 120000) == 120000, "text T3: nothing to sample still has the floor");
 }
 
+/** THE SERVER BOUNDARY (EjmapWizardServer.h, Sean's review 12 Oct): the base URL, both upload paths, the category table, the refusal. */
+void testWizardServer()
+{
+    using namespace ejmap::wizserver;
+    // WZ-SRV-1 THE BASE URL
+    check (endpoint ("lookup") == "https://www.echojay.ai/api/wizard/v1/lookup" && ! baseUrl().contains ("api.echojay"),
+           "wizard WZ-SRV-1: endpoints live under https://www.echojay.ai/api/wizard/v1/");
+    // WZ-SRV-2 THE CATEGORY TABLE: internal -> Sean's 12, his spellings; internal labels never sent
+    check (toServer ("deesser") == "de-esser" && toServer ("strips") == "channel_strip" && toServer ("transient") == "transient_shaper" && toServer ("tuners") == "pitch"
+           && toServer ("saturation") == "saturation" && toServer ("saturation", true) == "amp_sim" && toServer ("limitercomp") == "limiter" && toServer ("wizard_eq") == "eq"
+           && toServer ("compressor") == "compressor" && toServer ("reverb") == "reverb" && toServer ("delay") == "delay" && toServer ("gate") == "gate"
+           && toServer ("multiband").isEmpty() && toServer ("modulation").isEmpty() && toServer ("meter").isEmpty() && toServer ("utility").isEmpty() && toServer ("instrument").isEmpty()
+           && toServer ("dynamics").isEmpty() && serverCategories().size() == 12,
+           "wizard WZ-SRV-2: deesser->de-esser, strips->channel_strip, transient->transient_shaper, tuners->pitch, a cabinet read -> amp_sim; multiband/modulation/meter/utility/instrument never sent");
+    {   // every server name maps to itself (the /lookup category is read in the same names)
+        bool self = true; for (const auto& c : serverCategories()) if (toServer (c) != c) self = false;
+        check (self, "wizard WZ-SRV-2b: each of the server's 12 names translates to itself");
+    }
+    // WZ-SRV-3 THE REFUSAL: a manifest carrying any other category is not packed
+    auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+    const auto good = mk ({ { "profiles", juce::Array<juce::var> { mk ({ { "product", "a" }, { "kind", "de-esser" } }), mk ({ { "product", "b" }, { "kind", "amp_sim" } }) } },
+                            { "needs_category", juce::Array<juce::var> { mk ({ { "product", "c" }, { "leaning", juce::var() } }), mk ({ { "product", "d" }, { "leaning", "reverb" } }) } },
+                            { "held", juce::Array<juce::var> { mk ({ { "product", "OTT" }, { "why", "held: no server category" } }) } } });
+    const auto bad1 = mk ({ { "profiles", juce::Array<juce::var> { mk ({ { "product", "OTT" }, { "kind", "multiband" } }) } } });
+    const auto bad2 = mk ({ { "profiles", juce::Array<juce::var> { mk ({ { "product", "x" }, { "kind", "deesser" } }) } } });
+    const auto bad3 = mk ({ { "needs_category", juce::Array<juce::var> { mk ({ { "product", "y" }, { "leaning", "modulation" } }) } } });
+    const auto bad4 = mk ({ { "held", juce::Array<juce::var> { mk ({ { "product", "OTT" }, { "category", "multiband" } }) } } });
+    check (invalidOutgoing (good).isEmpty() && invalidOutgoing (bad1).size() == 1 && invalidOutgoing (bad2).size() == 1 && invalidOutgoing (bad3).size() == 1 && invalidOutgoing (bad4).size() == 1,
+           "wizard WZ-SRV-3: only the 12 leave the Mac - 'multiband', EJ Map's 'deesser', a 'modulation' leaning, a category on a held row are all refused");
+    // WZ-SRV-4 THE UPLOAD PATH: up to 4.5 MB (with the multipart headroom) direct, else the signed blob - and both run through the stubs
+    const auto dir = juce::File::createTempFile ("wzsrv"); dir.createDirectory();
+    const auto manifest = dir.getChildFile ("manifest.json"); manifest.replaceWithText ("{\"schema\": \"ej_contribution/0\", \"profiles\": []}");
+    auto zipOf = [&] (const char* name, int bytes) { const auto f = dir.getChildFile (name); juce::MemoryBlock mb ((size_t) bytes, true); f.replaceWithData (mb.getData(), mb.getSize()); return f; };
+    const auto small = zipOf ("small.zip", 1000000), big = zipOf ("big.zip", 5000000);
+    const auto acct = mk ({ { "account_id", "acct_stub_test" }, { "email", "t@example.com" } });
+    const auto rs = stub::upload (dir, small, manifest, acct), rb = stub::upload (dir, big, manifest, acct);
+    check (uploadPathFor (1000000, 1000) == UploadPath::direct && uploadPathFor (5000000, 1000) == UploadPath::signedBlob
+           && uploadPathFor (kDirectBodyMaxBytes - kMultipartHeadroomBytes - 1000, 1000) == UploadPath::direct && uploadPathFor (kDirectBodyMaxBytes - kMultipartHeadroomBytes, 1000) == UploadPath::signedBlob
+           && rs.getProperty ("path", "") == "direct" && (bool) rs.getProperty ("genuine", false) && rs.getProperty ("endpoint", "").toString().endsWith ("/contributions")
+           && rb.getProperty ("path", "") == "signed_blob" && (bool) rb.getProperty ("genuine", false) && rb.getProperty ("blob_ref", "").toString().startsWith ("blob_stub_")
+           && rb.getProperty ("endpoint", "").toString().endsWith ("/contributions/complete") && dir.getChildFile ("server_stub/signed_blob").getNumberOfChildFiles (juce::File::findFiles) == 1
+           && (juce::int64) rb.getProperty ("bytes", 0) == 5000000,
+           "wizard WZ-SRV-4: 1 MB goes direct, 5 MB through the signed blob (upload-url -> PUT -> complete); the boundary is 4.5 MB less the multipart headroom");
+    dir.deleteRecursively();
+    // WZ-SRV-5 A DRAFT THE SERVER CAN USE: a saturation draft without its drive is not sent (bx_rockrack, 12 Oct)
+    const auto noDrive = mk ({ { "drive", juce::var() } }), withDrive = mk ({ { "drive", mk ({ { "control", "Gain" } }) } });
+    check (! ejmap::wizroute::draftUsable ("saturation", noDrive) && ejmap::wizroute::draftUsable ("saturation", withDrive) && ejmap::wizroute::draftUsable ("reverb", noDrive)
+           && ! ejmap::wizroute::draftUsable ("gate", juce::var()),
+           "wizard WZ-SRV-5: a saturation draft with no drive is not measured-to-send; other kinds need a draft object");
+}
+
 /** ALL CATEGORIES IN THE WIZARD (12 Oct): EJ Map's Phase B categories measure every category it can, in Kathy's order. */
 void testWizardCategories()
 {
@@ -9311,13 +9363,13 @@ void testWizardCategories()
     check (phaseBFor ("compressor") == juce::StringArray { "wizard" } && phaseBFor ("eq") == juce::StringArray { "wizard_eq" }
            && phaseBFor ("limiter") == juce::StringArray { "limiter", "limitercomp" } && phaseBFor ("de-esser") == juce::StringArray { "deesser" }
            && phaseBFor ("amp_sim") == juce::StringArray { "saturation" } && phaseBFor ("transient_shaper") == juce::StringArray { "transient" }
-           && phaseBFor ("gate") == juce::StringArray { "gate" } && phaseBFor ("multiband") == juce::StringArray { "multiband" } && phaseBFor ("pitch") == juce::StringArray { "tuners" }
+           && phaseBFor ("gate") == juce::StringArray { "gate" } && phaseBFor ("multiband").isEmpty() && phaseBFor ("pitch") == juce::StringArray { "tuners" }
            && phaseBFor ("reverb") == juce::StringArray { "reverb" } && phaseBFor ("delay") == juce::StringArray { "delay" } && phaseBFor ("channel_strip") == juce::StringArray { "strips" }
            && ! measurable ("modulation") && measurable ("saturation"),
-           "wizard WZ-CAT-1: every cert category reachable; limiter -> limiter + limitercomp; modulation not measured");
+           "wizard WZ-CAT-1: every server category reachable; limiter -> limiter + limitercomp; multiband (held) and modulation not measured");
     // WZ-CAT-2 THE ORDER: compressors, EQ, de-essers, limiters, saturation, gates / transients, multiband, tuners, reverb / delay, strips last
     juce::StringArray flat; for (const auto& g : measureOrder()) flat.addArray (g);
-    check (flat == juce::StringArray { "wizard", "wizard_eq", "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "multiband", "tuners", "reverb", "delay", "strips" }
+    check (flat == juce::StringArray { "wizard", "wizard_eq", "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "tuners", "reverb", "delay", "strips" }
            && measureOrder().back() == juce::StringArray { "strips" },
            "wizard WZ-CAT-2: the measuring order is Kathy's, strips last; got " + flat.joinIntoString (" > "));
     {   // ... and the limiter's compressor pass is its own pass straight after the limiter's (its list needs the limiter rows)
@@ -9327,8 +9379,8 @@ void testWizardCategories()
     // WZ-CAT-3 AFTER THE READS: a settled category the cert measures is measured (saturation, reverb, delay, pitch -> tuners); modulation is sent
     const auto sa = afterSignature (true, true, "saturation", {}, "thd"), rv = afterSignature (true, true, "reverb", {}, "tail"), pi = afterSignature (true, true, "pitch", {}, "cents"), mo = afterSignature (true, true, "modulation", {}, "sidebands");
     check (sa.route == Route::measure && sa.category == "saturation" && rv.route == Route::measure && pi.route == Route::measure && phaseBFor (pi.category) == juce::StringArray { "tuners" }
-           && mo.route == Route::sendOther,
-           "wizard WZ-CAT-3: saturation / reverb / pitch settled by signature are measured; modulation is sent with its category");
+           && mo.route == Route::outOfScope,
+           "wizard WZ-CAT-3: saturation / reverb / pitch settled by signature are measured; modulation is an internal label (out of scope, never sent)");
     // WZ-CAT-4 THE ESTIMATE covers every category from its own figure (Sean's measured medians; strips its stated estimate)
     using namespace ejmap::wizprog;
     std::vector<Item> q; for (const auto* k : { "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "multiband", "tuners", "reverb", "delay", "strips" }) { Item it; it.product = k; it.kind = k; q.push_back (it); }
@@ -9376,7 +9428,7 @@ void testWizardRoute()
     Answer serverReverb; serverReverb.category = "reverb"; const auto dWins = route (serverReverb, "compressor", {});
     check (dA.route == Route::skipHave && dP.route == Route::skipPending && ! loadsToCategorise (dA) && ! loadsToCategorise (dP) && loadsNothing (dA) && loadsNothing (dP)
            && dB.route == Route::quickCheck && ! loadsToCategorise (dB) && dC1.route == Route::measure && dC1.category == "compressor"
-           && dC2.route == Route::sendOther && dC2.category == "modulation" && dName.route == Route::measure && dOos.route == Route::outOfScope && loadsNothing (dOos)
+           && dC2.route == Route::outOfScope && dName.route == Route::measure && dOos.route == Route::outOfScope && loadsNothing (dOos)
            && dCat.route == Route::categorise && loadsToCategorise (dCat) && dWins.route == Route::measure && dWins.category == "reverb",
            "wizard WZ-ROUTE-2: A and pending_review never loaded; B quick check only; server category first (reverb beats a 'comp' name, and since 12 Oct is measured); out of scope unloaded; the rest categorised");
     // WZ-ROUTE-3 AFTER THE READS: nothing dropped - unsettled (or a licence window) -> needs_category with the leaning; eq / dynamics -> measured
@@ -10024,6 +10076,7 @@ int main (int, char**)
     testWizardApp();
     testWizardRoute();
     testWizardCategories();
+    testWizardServer();
     testJobs();
     testPhaseB();
     testLoopOutcomes();

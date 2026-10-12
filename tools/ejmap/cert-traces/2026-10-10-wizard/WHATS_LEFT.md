@@ -47,6 +47,13 @@
   order (compressors first, strips last), one Phase B pass per group. Estimates: Sean's measured medians per category. Bundle: each
   category's cert draft. Pins WZ-CAT-1..4. Rehearsal: cert-traces/2026-10-12-wizard-all-categories/.
 
+- THE SERVER BOUNDARY (12 Oct, Sean's review; `EjmapWizardServer.h`, pins WZ-SRV-1..5): base URL https://www.echojay.ai; uploads
+  over 4.5 MB through the signed blob (upload-url -> PUT -> complete), under it direct (both stubbed and tested); the 12 server
+  categories in Sean's spellings via ONE table at the boundary (de-esser, channel_strip, transient_shaper, pitch, amp_sim from a
+  cabinet read); multiband held (listed with its map, not measured), modulation / meter / utility / instrument never sent;
+  a manifest with any other category is refused before packing; a drive-less saturation draft is not sent.
+- SERVER-SIDE, AWAITING SEAN (stubs only): the account -> mapper-token bridge; the review / holding area; promo rules + issuing + email.
+
 ## Left before it is a real app
 1. **UI**: BUILT as the v1 window app (above). Still open: a Pause button besides closing the window; "overnight" scheduling;
    accessibility (VoiceOver labels on the bar); dark mode; a first-launch explanation of what is measured and why; localisation;

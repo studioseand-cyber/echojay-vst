@@ -22,6 +22,7 @@
 #include "EchoJayLogo.h"
 #include "EjmapWizardApp.h"
 #include "EjmapWizardProgress.h"
+#include "EjmapWizardServer.h"
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <spawn.h>
 #include <signal.h>
@@ -67,53 +68,12 @@ Config parseArgs (const juce::StringArray& a)
     return c;
 }
 
-// --- THE STUBBED SERVER (spec section 6: Sean builds the real endpoints) ---------------------------------------------------------------
+// --- THE STUBBED SERVER: EjmapWizardServer.h (the base URL https://www.echojay.ai, both upload paths, the category table) -----------
 namespace stub
 {
-juce::var signIn (const juce::File& work, const juce::String& email, const juce::String& password)
-{   // POST /api/wizard/v1/sign-in  {email, password} -> {account_id, display_name, token, expires}
-    if (! email.contains ("@") || password.isEmpty()) return {};
-    auto* o = new juce::DynamicObject(); o->setProperty ("account_id", "acct_stub_" + juce::SHA256 (email.toLowerCase().toUTF8()).toHexString().substring (0, 10));
-    o->setProperty ("email", email); o->setProperty ("display_name", email.upToFirstOccurrenceOf ("@", false, false)); o->setProperty ("stub", true);
-    const juce::var v (o);   // ONE owner: a second juce::var (o) after a temporary one would use a deleted object
-    work.getChildFile ("account.json").replaceWithText (juce::JSON::toString (v));
-    return v;
-}
-juce::var upload (const juce::File& work, const juce::File& zip, const juce::File& manifest, const juce::var& account)
-{   // POST /api/wizard/v1/contributions (multipart: manifest.json + bundle.zip) -> {receipt_id, genuine, profiles_accepted, ...}
-    const auto m = juce::JSON::parse (manifest.loadFileAsString());
-    const bool genuine = zip.existsAsFile() && m.getProperty ("schema", "").toString() == "ej_contribution/0";   // the server's check, stubbed: schema only
-    const auto dir = work.getChildFile ("server_stub/uploads"); dir.createDirectory();
-    const auto id = "rcpt_stub_" + juce::String::toHexString (juce::Time::currentTimeMillis());
-    zip.copyFileTo (dir.getChildFile (id + ".zip"));
-    auto* r = new juce::DynamicObject(); r->setProperty ("receipt_id", id); r->setProperty ("account_id", account.getProperty ("account_id", {}));
-    r->setProperty ("genuine", genuine); r->setProperty ("profiles_received", m.getProperty ("profiles", {}).size());
-    r->setProperty ("confirmations_received", m.getProperty ("confirmations", {}).size()); r->setProperty ("crashed_reported", m.getProperty ("crashed", {}).size());
-    const juce::var v (r);
-    dir.getChildFile (id + ".receipt.json").replaceWithText (juce::JSON::toString (v));
-    return v;
-}
-juce::var promo (const juce::File& work, const juce::var& account, const juce::var& receipt)
-{   // POST /api/wizard/v1/promo {account_id, receipt_id} -> {code, issued_now, emailed_to} ; one code per account
-    if (! (bool) receipt.getProperty ("genuine", false)) return {};
-    const int newOnes = (int) receipt.getProperty ("profiles_received", 0);
-    if (newOnes == 0 && ! kRewardWithoutNewProfiles) return {};
-    const auto ledgerF = work.getChildFile ("server_stub/promo_ledger.json"); auto ledger = juce::JSON::parse (ledgerF.loadFileAsString());
-    if (! ledger.isObject()) ledger = juce::var (new juce::DynamicObject());
-    const auto acct = account.getProperty ("account_id", "").toString();
-    auto* o = new juce::DynamicObject();
-    if (ledger.hasProperty (acct)) { o->setProperty ("code", ledger[acct.toRawUTF8()]); o->setProperty ("issued_now", false); }
-    else
-    {
-        const auto code = "EJ-FREE-" + juce::SHA256 ((acct + "|wizard-v1").toUTF8()).toHexString().substring (0, 8).toUpperCase();
-        ledger.getDynamicObject()->setProperty (acct, code); ledgerF.getParentDirectory().createDirectory(); ledgerF.replaceWithText (juce::JSON::toString (ledger));
-        o->setProperty ("code", code); o->setProperty ("issued_now", true);
-        const auto outbox = work.getChildFile ("server_stub/outbox"); outbox.createDirectory();
-        outbox.getChildFile (acct + ".txt").replaceWithText ("To: " + account.getProperty ("email", "").toString() + "\nSubject: Your free EchoJay month\n\nThank you for helping EchoJay learn your plugins. Your code: " + code + "\n");
-    }
-    o->setProperty ("emailed_to", account.getProperty ("email", {}));
-    return juce::var (o);
-}
+inline juce::var signIn (const juce::File& w, const juce::String& e, const juce::String& p) { return wizserver::stub::signIn (w, e, p); }
+inline juce::var upload (const juce::File& w, const juce::File& z, const juce::File& m, const juce::var& a) { return wizserver::stub::upload (w, z, m, a); }
+inline juce::var promo (const juce::File& w, const juce::var& a, const juce::var& r) { return wizserver::stub::promo (w, a, r, kRewardWithoutNewProfiles); }
 } // namespace stub
 
 // --- THE ENGINE: ejmap --wizard in its own process group --------------------------------------------------------------------------------

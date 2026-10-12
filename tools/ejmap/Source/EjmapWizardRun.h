@@ -161,6 +161,7 @@ inline int runWizard (const WizardOptions& wo)
             }
             case wizroute::Route::measure: st = "queued"; toMap.push_back ({ i, d, row }); break;
             case wizroute::Route::sendOther: st = "other_category"; toMap.push_back ({ i, d, row }); break;
+            case wizroute::Route::held: st = "held"; toMap.push_back ({ i, d, row }); break;   // multiband: mapped, listed, not measured
             case wizroute::Route::categorise: st = "identifying"; toCategorise.push_back ({ i, d, row }); break;
             case wizroute::Route::needsCategory: st = "needs_category"; break;
         }
@@ -230,7 +231,8 @@ inline int runWizard (const WizardOptions& wo)
         const auto d = wizroute::afterSignature ((bool) sig.getProperty ("reads_ran", false), (bool) sig.getProperty ("settled", false), sig.getProperty ("category", "").toString(),
                                                  sig.getProperty ("out_of_scope", "").toString(), sig.getProperty ("why", "").toString());
         p.row->setProperty ("route", wizroute::routeName (d.route)); p.row->setProperty ("category", d.category); p.row->setProperty ("why", d.why); p.row->setProperty ("signature", sig);
-        const juce::String st = d.route == wizroute::Route::measure ? "queued" : d.route == wizroute::Route::sendOther ? "other_category" : d.route == wizroute::Route::outOfScope ? "out_of_scope" : "needs_category";
+        const juce::String st = d.route == wizroute::Route::measure ? "queued" : d.route == wizroute::Route::sendOther ? "other_category" : d.route == wizroute::Route::outOfScope ? "out_of_scope"
+                              : d.route == wizroute::Route::held ? "held" : "needs_category";
         p.row->setProperty ("state", st);
         if (d.route == wizroute::Route::measure) enqueue (ir.desc.name, d.category);
         say ("  " + ir.desc.name.paddedRight (' ', 30) + " -> " + wizroute::routeName (d.route) + (d.category.isNotEmpty() ? " (" + d.category + ")" : juce::String()) + ": " + d.why);
@@ -296,8 +298,12 @@ inline int runWizard (const WizardOptions& wo)
                     const auto oc = r.getProperty ("outcome", "").toString(); why = r.getProperty ("reason", "").toString();
                     for (const auto& f : out.getChildFile ("phaseb").getChildFile (pbs[0]).getChildFile ("drafts").findChildFiles (juce::File::findFiles, false, r.getProperty ("_stem", "").toString() + "*.draft.json"))
                         draftsL.add (pbs[0] + "/drafts/" + f.getFileName());
-                    st = oc == "ok" ? (draftsL.isEmpty() ? juce::String ("not_measurable") : juce::String ("measured")) : wizard::plainOutcome (oc, {});
+                    bool usable = false, cabinet = false;
+                    for (const auto& rel : draftsL) { const auto dv = juce::JSON::parse (out.getChildFile ("phaseb").getChildFile (rel).loadFileAsString()); if (wizroute::draftUsable (pbs[0], dv)) usable = true; if (dv.hasProperty ("cabinet_response")) cabinet = true; }
+                    row->setProperty ("cabinet_read", cabinet);   // a saturation row that read an amp sim's cabinet is sent as amp_sim
+                    st = oc == "ok" ? (draftsL.isEmpty() || ! usable ? juce::String ("not_measurable") : juce::String ("measured")) : wizard::plainOutcome (oc, {});
                     if (oc == "ok" && draftsL.isEmpty()) why = "measured, but no " + pbs[0] + " draft could be derived from the record";
+                    else if (oc == "ok" && ! usable) why = "measured, but its " + pbs[0] + " draft carries nothing the server can use (e.g. no drive control)";
                 }
                 for (int k = 1; k < pbs.size(); ++k) { const auto r2 = landedRow (pbs[k], row->getProperty ("product").toString()); row->setProperty ("also_" + pbs[k], r2.isObject() ? r2.getProperty ("outcome", "") : juce::var ("not run")); }
                 if (pbs.contains ("limitercomp") && st == "measured")
@@ -344,7 +350,7 @@ inline int runWizard (const WizardOptions& wo)
     {
         { wizprog::Item it; it.product = "the contribution bundle"; it.kind = "pack"; prog.stage (wizprog::Stage::packing, { it }); prog.started (it.product); }
         const auto B = out.getChildFile ("contribution"); B.deleteRecursively(); B.getChildFile ("profiles").createDirectory();
-        juce::Array<juce::var> items, confirmations, skipped, crashedList, needsCategory, otherCategories, outOfScopeList;
+        juce::Array<juce::var> items, confirmations, skipped, crashedList, needsCategory, otherCategories, outOfScopeList, heldList;
         if (wo.skip != juce::File())
         {   // the crash reports travel with the upload (already redacted by the app; one that still trips the check is withheld, said so)
             const auto work = wo.skip.getParentDirectory(); B.getChildFile ("crash_reports").createDirectory();
@@ -371,8 +377,8 @@ inline int runWizard (const WizardOptions& wo)
                 juce::Array<juce::var> files;
                 for (const auto& rel : juce::StringArray::fromTokens (rv.getProperty ("drafts", "").toString(), ",", ""))
                 { const auto f = out.getChildFile ("phaseb").getChildFile (rel); f.copyFileTo (B.getChildFile ("profiles").getChildFile (f.getFileName())); files.add ("profiles/" + f.getFileName()); }
-                auto* it = new juce::DynamicObject(); it->setProperty ("product", product); it->setProperty ("kind", rv.getProperty ("category", {})); it->setProperty ("plugin_id", rv.getProperty ("plugin_id", {}));
-                it->setProperty ("map_fp", rv.getProperty ("map_fp", {})); it->setProperty ("drafts", files); it->setProperty ("measured_by", rv.getProperty ("phaseb", {})); items.add (juce::var (it));
+                auto* it = new juce::DynamicObject(); it->setProperty ("product", product); it->setProperty ("kind", wizserver::toServer (rv.getProperty ("category", "").toString(), (bool) rv.getProperty ("cabinet_read", false)));
+                it->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); it->setProperty ("map_fp", rv.getProperty ("map_fp", {})); it->setProperty ("drafts", files); items.add (juce::var (it));   // measured_by (EJ Map's internal names) stays local
             }
             else if (st == "measured" && isEq)
             {
@@ -395,32 +401,45 @@ inline int runWizard (const WizardOptions& wo)
                 }
             else if (st == "ready_from_version")
             { auto* c = new juce::DynamicObject(); c->setProperty ("product", product); c->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); c->setProperty ("profile_from_version", rv.getProperty ("from_version", {})); c->setProperty ("readback", rv.getProperty ("readback", {})); confirmations.add (juce::var (c)); }
+            else if (st == "held")
+            {   // multiband (12 Oct): no server category - listed with its map, NO category field
+                const auto fp = rv.getProperty ("map_fp", "").toString(); const auto mapF = opt.ledger.getChildFile ("maps").getChildFile (fp + ".json");
+                auto* h = new juce::DynamicObject(); h->setProperty ("product", product); h->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); h->setProperty ("map_fp", fp);
+                h->setProperty ("map", fp.isNotEmpty() && mapF.existsAsFile() ? juce::JSON::parse (mapF.loadFileAsString()) : juce::var()); h->setProperty ("why", "held: no server category");
+                heldList.add (juce::var (h));
+            }
             else if (st == "needs_category" || st == "other_category")
             {   // NOTHING DROPPED (12 Oct): the map, and for needs_category the signature reads and the leaning, for Sean to label
                 const auto fp = rv.getProperty ("map_fp", "").toString(); const auto mapF = opt.ledger.getChildFile ("maps").getChildFile (fp + ".json");
                 auto* e = new juce::DynamicObject(); e->setProperty ("product", product); e->setProperty ("vendor", rv.getProperty ("vendor", {})); e->setProperty ("plugin_id", rv.getProperty ("plugin_id", {}));
                 e->setProperty ("map_fp", fp); e->setProperty ("map", fp.isNotEmpty() && mapF.existsAsFile() ? juce::JSON::parse (mapF.loadFileAsString()) : juce::var());
                 const bool review = st == "needs_category";
-                if (review) { e->setProperty ("leaning", rv.getProperty ("category", "").toString().isNotEmpty() ? rv.getProperty ("category", {}) : juce::var()); e->setProperty ("signature", rv.getProperty ("signature", {})); }
-                else e->setProperty ("category", rv.getProperty ("category", {}));
+                const auto serverCat = wizserver::toServer (rv.getProperty ("category", "").toString());   // the boundary: Sean's names, or none
+                if (review) { e->setProperty ("leaning", serverCat.isNotEmpty() ? juce::var (serverCat) : juce::var()); e->setProperty ("signature", rv.getProperty ("signature", {})); }
+                else e->setProperty ("category", serverCat);
                 e->setProperty ("why", rv.getProperty ("why", {}));
                 const auto dir = review ? "needs_category" : "other_categories"; B.getChildFile (dir).createDirectory();
                 const auto fn = juce::File::createLegalFileName (product) + ".json"; B.getChildFile (dir).getChildFile (fn).replaceWithText (juce::JSON::toString (juce::var (e)));
                 auto* m = new juce::DynamicObject(); m->setProperty ("product", product); m->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); m->setProperty ("map_fp", fp);
-                m->setProperty (review ? "leaning" : "category", rv.getProperty ("category", {})); m->setProperty ("file", juce::String (dir) + "/" + fn);
+                m->setProperty (review ? "leaning" : "category", serverCat.isNotEmpty() ? juce::var (serverCat) : juce::var()); m->setProperty ("file", juce::String (dir) + "/" + fn);
                 (review ? needsCategory : otherCategories).add (juce::var (m));
             }
             else if (st == "out_of_scope")
-            { auto* o = new juce::DynamicObject(); o->setProperty ("product", product); o->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); o->setProperty ("why", rv.getProperty ("why", {})); outOfScopeList.add (juce::var (o)); }
+            { auto* o = new juce::DynamicObject(); o->setProperty ("product", product); o->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); o->setProperty ("why", "not an EchoJay category: listed, not loaded"); outOfScopeList.add (juce::var (o)); }   // the internal label stays local
             else if (st != "ready" && st != "pending_review")   // A: nothing to send; pending_review: another user already sent it
             { auto* s = new juce::DynamicObject(); s->setProperty ("product", product); s->setProperty ("state", st); s->setProperty ("why", rv.getProperty ("why", {})); skipped.add (juce::var (s)); }
         }
         auto* M = new juce::DynamicObject(); M->setProperty ("schema", "ej_contribution/0"); M->setProperty ("created", juce::Time::getCurrentTime().toISO8601 (true));
         M->setProperty ("tool", juce::String ("EJ Map ") + EJMAP_GIT_HASH); M->setProperty ("platform", juce::SystemStats::getOperatingSystemName());
         M->setProperty ("profiles", items); M->setProperty ("confirmations", confirmations); M->setProperty ("skipped", skipped); M->setProperty ("crashed", crashedList);
-        M->setProperty ("needs_category", needsCategory); M->setProperty ("other_categories", otherCategories); M->setProperty ("out_of_scope", outOfScopeList);
+        M->setProperty ("needs_category", needsCategory); M->setProperty ("other_categories", otherCategories); M->setProperty ("out_of_scope", outOfScopeList); M->setProperty ("held", heldList);
+        const juce::var Mv (M);   // ONE owner of the manifest (a second juce::var (M) after a temporary would use a deleted object)
+        {   // THE BOUNDARY CHECK (12 Oct): every category the manifest carries is one of the server's 12, or nothing is packed
+            const auto bad = wizserver::invalidOutgoing (Mv);
+            if (! bad.isEmpty()) { say ("WIZARD: the bundle is NOT made - categories the server does not have: " + bad.joinIntoString ("; ")); prog.finish ("Stopped: the bundle would carry a category the server does not have (" + bad.joinIntoString ("; ") + "). Nothing was made or sent."); return 3; }
+        }
         M->setProperty ("note", "results only: profiles, their tone checks and this manifest - no plugin files, no audio, no account token");
-        B.getChildFile ("manifest.json").replaceWithText (juce::JSON::toString (juce::var (M)) + "\n");
+        B.getChildFile ("manifest.json").replaceWithText (juce::JSON::toString (Mv) + "\n");
         char host[256] = {}; gethostname (host, sizeof host - 1);
         const auto home = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(); const auto user = juce::SystemStats::getLogonName();
         juce::StringArray problems;
