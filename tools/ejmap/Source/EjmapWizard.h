@@ -177,6 +177,31 @@ inline juce::String plainOutcome (const juce::String& outcome, const juce::Strin
     if (outcome == "ok" && certState == "exported") return "measured";
     return "not_measurable";
 }
+// THE REFERENCE VOTE (Kathy, 12 Oct): every plugin checked against a reference casts one (EjmapCustomDefault.h voteOf); the upload carries
+// it so the server can count the Macs that agree. The entry names the reference by its file (<stem>.reference.json), the plugin, the
+// vote, and - when it disagrees - this Mac's opening block, so a third source can settle it. A row with no vote -> void.
+inline juce::var referenceVoteEntry (const juce::var& row)
+{
+    const auto v = row.getProperty ("reference_vote", {}); const auto stem = row.getProperty ("reference_stem", "").toString();
+    if (! v.isObject() || stem.isEmpty()) return {};
+    auto* o = new juce::DynamicObject(); const juce::var e (o);
+    o->setProperty ("product", row.getProperty ("product", {})); o->setProperty ("plugin_id", row.getProperty ("plugin_id", {}));
+    o->setProperty ("reference", stem + ".reference.json");
+    o->setProperty ("agrees", v.getProperty ("agrees", false)); o->setProperty ("agreeing_before", v.getProperty ("agreeing_before", 0)); o->setProperty ("makes_trusted", v.getProperty ("makes_trusted", false));
+    if (v.hasProperty ("opening_block")) o->setProperty ("opening_block", v.getProperty ("opening_block", {}));
+    o->setProperty ("measured_here", row.getProperty ("state", "").toString() == "measured");
+    return e;
+}
+// a custom_default plugin is HELD (Kathy, 12 Oct): not measured, listed with why, until a third source settles its reference
+inline juce::var heldCustomDefault (const juce::var& row)
+{
+    if (row.getProperty ("state", "").toString() != "custom_default") return {};
+    auto* h = new juce::DynamicObject(); const juce::var e (h);
+    h->setProperty ("product", row.getProperty ("product", {})); h->setProperty ("plugin_id", row.getProperty ("plugin_id", {})); h->setProperty ("map_fp", row.getProperty ("map_fp", {}));
+    h->setProperty ("held_reason", "custom_default");
+    h->setProperty ("why", "held: opens differently from its reference (" + row.getProperty ("why", "").toString() + "); its opening block is in reference_votes");
+    return e;
+}
 inline juce::String summaryLine (const std::map<juce::String, int>& n, bool sent = true)   // sent = false: a run that makes no bundle says 'will be sent'
 {
     auto get = [&] (const char* k) { const auto it = n.find (k); return it == n.end() ? 0 : it->second; };

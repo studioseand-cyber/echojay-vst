@@ -328,12 +328,14 @@ inline int runWizard (const WizardOptions& wo)
                     row->setProperty ("drafts", draftsL.joinIntoString (","));
                 }
                 row->setProperty ("state", st); row->setProperty ("outcome", r.getProperty ("outcome", {})); row->setProperty ("drafts", draftsL.joinIntoString (",")); if (why.isNotEmpty()) row->setProperty ("why", why); ++counts[st];
+                if (r.hasProperty ("reference_vote")) { row->setProperty ("reference_vote", r.getProperty ("reference_vote", {})); row->setProperty ("reference_stem", r.getProperty ("_stem", {})); }   // 12 Oct: this Mac's vote travels
                 continue;
             }
             const bool isEq = row->getProperty ("category").toString() == "eq"; const auto catDir = out.getChildFile (isEq ? "phaseb/wizard_eq" : "phaseb/wizard");
             juce::String outcome, certState, rowWhy, stem;
             for (const auto& f : catDir.findChildFiles (juce::File::findFiles, false, "*.phaseb.json"))
             { const auto r = juce::JSON::parse (f.loadFileAsString()); if (r.getProperty ("product", "").toString() != row->getProperty ("product").toString()) continue;
+              if (r.hasProperty ("reference_vote")) { row->setProperty ("reference_vote", r.getProperty ("reference_vote", {})); row->setProperty ("reference_stem", f.getFileName().replace (".phaseb.json", "")); }   // 12 Oct: this Mac's vote travels
               outcome = r.getProperty ("outcome", "").toString(); rowWhy = r.getProperty ("reason", "").toString(); stem = f.getFileName().replace (".phaseb.json", "");
               if (! isEq) { const auto oc = juce::JSON::parse (catDir.getChildFile ("outcome").getChildFile (stem + ".outcomes.json").loadFileAsString());
                             if (const auto* a = oc.getArray()) for (const auto& o : *a) { certState = o.getProperty ("state", "").toString(); if (rowWhy.isEmpty()) rowWhy = o.getProperty ("reason", "").toString(); } } }
@@ -355,7 +357,7 @@ inline int runWizard (const WizardOptions& wo)
     {
         { wizprog::Item it; it.product = "the contribution bundle"; it.kind = "pack"; prog.stage (wizprog::Stage::packing, { it }); prog.started (it.product); }
         const auto B = out.getChildFile ("contribution"); B.deleteRecursively(); B.getChildFile ("profiles").createDirectory();
-        juce::Array<juce::var> items, confirmations, skipped, crashedList, needsCategory, otherCategories, outOfScopeList, heldList;
+        juce::Array<juce::var> items, confirmations, skipped, crashedList, needsCategory, otherCategories, outOfScopeList, heldList, referenceVotes;
         if (wo.skip != juce::File())
         {   // the crash reports travel with the upload (already redacted by the app; one that still trips the check is withheld, said so)
             const auto work = wo.skip.getParentDirectory(); B.getChildFile ("crash_reports").createDirectory();
@@ -377,6 +379,8 @@ inline int runWizard (const WizardOptions& wo)
         {
             const auto st = rv.getProperty ("state", "").toString(); const auto product = rv.getProperty ("product", "").toString();
             const bool isEq = rv.getProperty ("category", "").toString() == "eq";
+            if (const auto ve = wizard::referenceVoteEntry (rv); ve.isObject()) referenceVotes.add (ve);   // 12 Oct: every vote travels, whatever the row's state
+            if (const auto hc = wizard::heldCustomDefault (rv); hc.isObject()) { heldList.add (hc); continue; }   // custom_default: HELD until a third source settles it
             if (st == "measured" && rv.getProperty ("drafts", "").toString().isNotEmpty())
             {   // ALL CATEGORIES: the category's draft(s), as the certification derives them
                 juce::Array<juce::var> files;
@@ -438,6 +442,7 @@ inline int runWizard (const WizardOptions& wo)
         M->setProperty ("tool", juce::String ("EJ Map ") + EJMAP_GIT_HASH); M->setProperty ("platform", juce::SystemStats::getOperatingSystemName());
         M->setProperty ("profiles", items); M->setProperty ("confirmations", confirmations); M->setProperty ("skipped", skipped); M->setProperty ("crashed", crashedList);
         M->setProperty ("needs_category", needsCategory); M->setProperty ("other_categories", otherCategories); M->setProperty ("out_of_scope", outOfScopeList); M->setProperty ("held", heldList);
+        M->setProperty ("reference_votes", referenceVotes);
         const juce::var Mv (M);   // ONE owner of the manifest (a second juce::var (M) after a temporary would use a deleted object)
         {   // THE BOUNDARY CHECK (12 Oct): every category the manifest carries is one of the server's 12, or nothing is packed
             const auto bad = wizserver::invalidOutgoing (Mv);

@@ -189,7 +189,8 @@ The token is stored in the macOS Keychain (**the stub writes account.json withou
   - Before measuring, the client compares the plugin's opening block with it.
   - Same → measure.
   - Differs from a trusted reference → write every differing control back (recorded as `custom_default_restored`), read back, then measure under those writes.
-  - Otherwise, or if the read-back fails → `custom_default`, not measured (listed in `skipped[]`).
+  - Differs from a reference only one Mac vouches for, or the read-back fails → `custom_default`: not measured, **held** (listed in `held[]` with `held_reason: "custom_default"`) until a third source settles it.
+  - **Every check casts a vote** (Kathy, 12 Oct): identical to the reference = agrees. A plugin identical to a single-source reference is the second source: it is measured, and the upload marks the reference as agreed. A disagreeing vote carries this Mac's opening block, so a third source can settle it. The votes travel in the manifest's `reference_votes[]` (6.3).
   - **Stub:** the database folder's `references/`.
 - **Known multibands** (12 Oct): the client ships EJ Map's list (the 17 products Sean's cert found multiband, by uid). These are held at once, before any category or signature read.
 - **Stub:** the engine's `--db` folder: `ej_comp_profile/1` + tone checks, `ej_eq_profile/1`, `categories.json` (the category, keyed by plugin_id or name) and `pending_review.json` (`[{"plugin_id": …}]`), with the same rules applied locally (`wizroute::ask`).
@@ -214,7 +215,8 @@ The stub's "signed URL" is a local folder (`<work>/server_stub/signed_blob/`), a
   - **`needs_category[]`** (new, 12 Oct): `{product, plugin_id, map_fp, leaning, file}` for each plugin the server, the name and the signature reads could not settle. Its file `needs_category/<product>.json` holds the wizard's map (identity + parameter list), EJ Map's signature reads (`level_dependence_db`, `frequency_span_db`, `rt60_s`, `repeats`, THD at -30 / -6, sideband, pitch move, notes), the leaning (a category or null) and the why. Sean labels it; the server then returns it as `pending_review` to other users until the label is in;
   - **`other_categories[]`** (new): `{product, plugin_id, map_fp, category, file}` for a category the wizard cannot measure yet. The file holds the map and the category;
   - **`out_of_scope[]`** (new): `{product, plugin_id, why}`. Instruments, MIDI, meters, utilities and modulation, listed by identity only (never loaded; the internal label stays local);
-  - **`held[]`** (12 Oct): `{product, plugin_id, map_fp, map, why: "held: no server category"}`. Multibands, until the server has a category for them;
+  - **`held[]`** (12 Oct): `{product, plugin_id, map_fp, map, why: "held: no server category"}`. Multibands, until the server has a category for them. Also `{product, plugin_id, map_fp, held_reason: "custom_default", why}`: a plugin that opened differently from its reference and was not measured;
+  - **`reference_votes[]`** (12 Oct): `{product, plugin_id, reference: "<stem>.reference.json", agrees, agreeing_before, makes_trusted, measured_here, opening_block?}`. One for every plugin checked against a reference, whatever its state. `opening_block` (`[[index, norm, name, text], …]`) is present only when the vote disagrees. The server adds each agreeing vote to the reference's count; at 2 the reference is trusted. It keeps each disagreeing block for a third source;
   - `tool`, `platform` and `created`.
 - `bundle`: `contribution.zip` (the manifest, `profiles/`, `crash_reports/`, `needs_category/`, `other_categories/`).
 - `bundle_sha256`: a hex string.
@@ -224,15 +226,17 @@ The stub's "signed URL" is a local folder (`<work>/server_stub/signed_blob/`), a
 { "receipt_id": "rcpt_…", "genuine": true, "checked_in_ms": 2400,
   "profiles_received": 3, "confirmations_received": 2, "crashed_reported": 1,
   "needs_category_received": 2, "other_categories_received": 1, "out_of_scope_received": 1,
-  "held_for_review": [ { "product": "…", "why": "…" } ] }
+  "held_for_review": [ { "product": "…", "why": "…" } ],
+  "reference_votes_received": 2, "references_now_agreed": [ "AudioUnit_…_1.0.reference.json" ] }
 ```
+`references_now_agreed` names each reference this upload took to 2 agreeing Macs. It names a reference only once: later votes count but are not announced again.
 - **409** `{"error":"duplicate", "receipt_id":"rcpt_…"}` (the same bundle again: return the first receipt).
 - **422** `{"error":"not_genuine", "message":"…"}`.
 - **413** if over 50 MB.
 
 **Genuine** means: the schema is valid; the bundle's own probe cdhash is on the allow-list; each profile's `map_fp` matches its plugin_id and param_count; each tone check passes at g 2; the timestamps are plausible; there are no personal fields. It must take seconds, not a measurement. Publishing is a later, separate step (holding area → agreement → publish).
 
-**Stub:** copies the zip to `<work>/server_stub/uploads/<receipt>.zip`. Genuine = the manifest schema only.
+**Stub:** copies the zip to `<work>/server_stub/uploads/<receipt>.zip`. Genuine = the manifest schema only. Votes: each one is appended to `server_stub/reference_votes.json`. A tally per reference is kept in `server_stub/references/<file>`: `agreeing` (starting from the vote's `agreeing_before`), `trusted`, and the `disagreeing` blocks (`stub::recordVotes`, pin WZ-CD-2).
 
 ### 6.4 Promo code
 
@@ -256,6 +260,7 @@ The server emails the code (the stub writes `<work>/server_stub/outbox/<account>
 
 - **The account → mapper-token bridge:** sign-in returns the account. The server links it to the mapper token its map and profile intake uses. The stub signs any email and password and has no token.
 - **The review / holding area:** an upload lands in holding, then agreement with another version or a second user, then publish. The stub's genuine check is the manifest schema only.
+- **The reference votes** (12 Oct): count the agreeing votes per reference and plugin version, independent Macs only (one vote per account or machine, not per upload). Trust at 2. Keep the disagreeing blocks and settle on a third source. Return the reference in `/lookup`. The stub tallies per upload and does not de-duplicate machines.
 - **The promo rules + issuing + email:** one code per account, the "nothing new" rule (Kathy: proposed yes), and the email. The stub writes a local ledger and an outbox file.
 
 The app's sign-in, upload-to-review and reward screens work on these stubs.

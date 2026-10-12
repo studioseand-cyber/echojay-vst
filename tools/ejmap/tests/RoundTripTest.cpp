@@ -9406,6 +9406,38 @@ void testWizardCategories()
     check (ejmap::wizard::plainOutcome ("custom_default", {}) == "custom_default" && ! isProblemState ("custom_default")
            && ejmap::wizard::summaryLine ({ { "custom_default", 2 } }).contains ("2 plugins open with a custom default and were not measured"),
            "wizard WZ-CD-1: custom_default -> its own state (not an error), named in the summary");
+    // WZ-CD-2 THE VOTE TRAVELS AND IS COUNTED (Kathy, 12 Oct): a plugin identical to a single-source reference is measured and its agreeing
+    // vote makes the reference agreed on the server; one that differs is HELD (custom_default), and its opening block is sent for a third
+    // source. Two uploads on the stub: the first makes A trusted (1 -> 2) and keeps B at 1 with this Mac's block; a second agreeing vote on
+    // A counts (3) but does not announce it again
+    {
+        auto vote = [] (bool agrees, int before) { auto* o = new juce::DynamicObject(); const juce::var v (o); o->setProperty ("agrees", agrees); o->setProperty ("agreeing_before", before);
+            o->setProperty ("makes_trusted", agrees && before == 1); if (! agrees) { juce::Array<juce::var> blk; blk.add (juce::Array<juce::var> { 74, 0.25, "Mix", "25%" }); o->setProperty ("opening_block", blk); } return v; };   // add(): a braced single Array would copy, not nest
+        auto row = [] (const char* product, const char* stem, const char* state, const juce::var& v) { auto* o = new juce::DynamicObject(); const juce::var r (o);
+            o->setProperty ("product", product); o->setProperty ("plugin_id", juce::String ("AudioUnit|") + product); o->setProperty ("state", state);
+            o->setProperty ("why", "custom_default: 1 of 20 control(s) open at another value than the reference"); o->setProperty ("reference_stem", stem); o->setProperty ("reference_vote", v); return r; };
+        const auto rA = row ("A", "AudioUnit_aa_1.0", "measured", vote (true, 1)), rB = row ("B", "AudioUnit_bb_2.0", "custom_default", vote (false, 1));
+        const auto eA = ejmap::wizard::referenceVoteEntry (rA), eB = ejmap::wizard::referenceVoteEntry (rB);
+        const auto hA = ejmap::wizard::heldCustomDefault (rA), hB = ejmap::wizard::heldCustomDefault (rB);
+        auto* M = new juce::DynamicObject(); const juce::var Mv (M); M->setProperty ("schema", "ej_contribution/0"); M->setProperty ("reference_votes", juce::Array<juce::var> { eA, eB });
+        auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_wzcd2_" + juce::String (juce::Random::getSystemRandom().nextInt64())); work.createDirectory();
+        const auto first = ejmap::wizserver::stub::recordVotes (work, Mv);
+        auto* M2 = new juce::DynamicObject(); const juce::var Mv2 (M2); M2->setProperty ("reference_votes", juce::Array<juce::var> { eA });
+        const auto second = ejmap::wizserver::stub::recordVotes (work, Mv2);
+        const auto tA = juce::JSON::parse (work.getChildFile ("server_stub/references/AudioUnit_aa_1.0.reference.json").loadFileAsString());
+        const auto tB = juce::JSON::parse (work.getChildFile ("server_stub/references/AudioUnit_bb_2.0.reference.json").loadFileAsString());
+        const auto log = juce::JSON::parse (work.getChildFile ("server_stub/reference_votes.json").loadFileAsString());
+        work.deleteRecursively();
+        check (eA.getProperty ("reference", "").toString() == "AudioUnit_aa_1.0.reference.json" && (bool) eA.getProperty ("measured_here", false) && ! eA.hasProperty ("opening_block")
+               && eB.getProperty ("opening_block", {}).size() == 1 && ! (bool) eB.getProperty ("agrees", true)
+               && ! hA.isObject() && hB.getProperty ("held_reason", "").toString() == "custom_default" && ! hB.hasProperty ("category")
+               && first == juce::StringArray { "AudioUnit_aa_1.0.reference.json" } && second.isEmpty()
+               && (int) tA.getProperty ("agreeing", 0) == 3 && (bool) tA.getProperty ("trusted", false)
+               && (int) tB.getProperty ("agreeing", 0) == 1 && ! (bool) tB.getProperty ("trusted", true) && tB.getProperty ("disagreeing", {}).size() == 1
+               && log.size() == 3 && ! ejmap::wizserver::invalidOutgoing (juce::var (new juce::DynamicObject())).size()
+               && ! ejmap::wizard::referenceVoteEntry (juce::var (new juce::DynamicObject())).isObject(),
+               "wizard WZ-CD-2: an agreeing vote makes a 1-source reference agreed (said once); a differing plugin is held with its block kept for a third source; every vote logged");
+    }
     // WZ-CAT-5 THE PASSES: groups run one after another, --jobs only inside one; a pass is at least its longest plugin. A compressor (pass 0),
     // an EQ (pass 1), a limiter + its compressor pass (pass 2) at --jobs 2 = 340 + 36 + max (340, 368 / 2) = 716 s (the flat sum / 2 said 372)
     {

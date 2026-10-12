@@ -91,6 +91,34 @@ inline juce::var signIn (const juce::File& work, const juce::String& email, cons
     work.getChildFile ("account.json").replaceWithText (juce::JSON::toString (v));
     return v;
 }
+// THE REFERENCE VOTES (Kathy, 12 Oct), stubbed: the server records every vote (server_stub/reference_votes.json, appended) and keeps a
+// tally per reference (server_stub/references/<file>: agreeing = the count it knew + each agreeing vote; a disagreeing vote's opening
+// block kept for a third source). A reference that reaches 2 agreeing Macs is returned as now agreed (trusted).   [SERVER-SIDE: Sean]
+inline juce::StringArray recordVotes (const juce::File& work, const juce::var& m)
+{
+    juce::StringArray nowAgreed;
+    const auto votes = m.getProperty ("reference_votes", {}); const auto* a = votes.getArray();
+    if (a == nullptr || a->isEmpty()) return nowAgreed;
+    const auto dir = work.getChildFile ("server_stub/references"); dir.createDirectory();
+    const auto logF = work.getChildFile ("server_stub/reference_votes.json"); auto log = juce::JSON::parse (logF.loadFileAsString());
+    juce::Array<juce::var> logA; if (const auto* la = log.getArray()) logA = *la;
+    for (const auto& v : *a)
+    {
+        const auto ref = juce::File::createLegalFileName (v.getProperty ("reference", "").toString()); if (ref.isEmpty()) continue;
+        logA.add (v);
+        const auto tf = dir.getChildFile (ref); auto t = juce::JSON::parse (tf.loadFileAsString());
+        if (! t.isObject()) { auto* o = new juce::DynamicObject(); o->setProperty ("reference", ref); o->setProperty ("agreeing", v.getProperty ("agreeing_before", 0)); o->setProperty ("disagreeing", juce::Array<juce::var>()); t = juce::var (o); }
+        auto* o = t.getDynamicObject(); const int before = (int) o->getProperty ("agreeing");
+        if ((bool) v.getProperty ("agrees", false)) { o->setProperty ("agreeing", before + 1); if (before < 2 && before + 1 >= 2) nowAgreed.addIfNotAlreadyThere (ref); }
+        else { auto d = o->getProperty ("disagreeing"); juce::Array<juce::var> da; if (const auto* x = d.getArray()) da = *x;
+               auto* e = new juce::DynamicObject(); e->setProperty ("product", v.getProperty ("product", {})); e->setProperty ("opening_block", v.getProperty ("opening_block", {})); da.add (juce::var (e));
+               o->setProperty ("disagreeing", da); }
+        o->setProperty ("trusted", (int) o->getProperty ("agreeing") >= 2);
+        tf.replaceWithText (juce::JSON::toString (t));
+    }
+    logF.replaceWithText (juce::JSON::toString (juce::var (logA)));
+    return nowAgreed;
+}
 // the server's genuine check, stubbed: the manifest schema only   [SERVER-SIDE: the review / holding area]
 inline juce::var receiptFor (const juce::File& work, const juce::File& stored, const juce::var& m, const juce::var& account, const juce::String& path)
 {
@@ -101,6 +129,11 @@ inline juce::var receiptFor (const juce::File& work, const juce::File& stored, c
     r->setProperty ("profiles_received", m.getProperty ("profiles", {}).size()); r->setProperty ("confirmations_received", m.getProperty ("confirmations", {}).size());
     r->setProperty ("crashed_reported", m.getProperty ("crashed", {}).size()); r->setProperty ("needs_category_received", m.getProperty ("needs_category", {}).size());
     const juce::var v (r);
+    if (genuine)
+    {   // 12 Oct: the votes are recorded; a reference they make agreed (2 Macs) is said on the receipt
+        juce::Array<juce::var> na; for (const auto& x : recordVotes (work, m)) na.add (x);
+        r->setProperty ("reference_votes_received", m.getProperty ("reference_votes", {}).size()); r->setProperty ("references_now_agreed", na);
+    }
     const auto dir = work.getChildFile ("server_stub/uploads"); dir.createDirectory();
     dir.getChildFile (id + ".receipt.json").replaceWithText (juce::JSON::toString (v));
     return v;
