@@ -9570,6 +9570,27 @@ void testCustomDefault()
                && ! restoreConfirmed (two, hereB) && restoreConfirmed (two, seanB),
                "customdefault CD-4: MMorph - 1 source -> custom_default; 2 sources -> restore (" + juce::String ((int) p2.diffs.size()) + " writes at the reference's norms); read-back must equal the reference");
     }
+    // CD-6 THE VOTE (Kathy, 12 Oct): identical to a single-source reference -> measured AND an agreeing vote that makes it trusted;
+    // different from a single-source reference -> custom_default and a disagreeing vote carrying this Mac's block for a third source
+    {
+        const auto seanB = parseBlock (dir.getChildFile ("mmorph.sean.txt").loadFileAsString()), hereB = parseBlock (dir.getChildFile ("mmorph.here.txt").loadFileAsString());
+        ejmap::customdefault::Reference one; one.block = seanB; one.agreeing = 1;
+        const auto same = voteOf (one, seanB), diff = voteOf (one, hereB);
+        const auto sv = voteVar (same), dv = voteVar (diff);
+        check (plan (one, seanB).act == Act::measure && same.cast && same.agrees && (bool) sv.getProperty ("makes_trusted", false) && ! sv.hasProperty ("opening_block")
+               && plan (one, hereB).act == Act::customDefault && diff.cast && ! diff.agrees && ! (bool) dv.getProperty ("makes_trusted", true)
+               && dv.getProperty ("opening_block", {}).size() == (int) hereB.size(),
+               "customdefault CD-6: identical to a 1-source reference -> measured + a vote that makes it trusted; different -> custom_default + this Mac's block sent");
+    }
+    // CD-7 STRIPS (Kathy, 12 Oct): the restore writes survive a section's own writes; a section write wins only on a control it sets,
+    // and the record says which won
+    {
+        const auto mg = mergePresets ("1:0.5,2:0.25,9:1", "2:1,7:0");
+        auto wonOf = [&] (int idx) { for (const auto& r : mg.record) if ((int) r.getProperty ("index", -1) == idx) return r.getProperty ("won", "").toString(); return juce::String(); };
+        check (mg.preset == "1:0.500000,2:1.000000,7:0.000000,9:1.000000" && wonOf (1) == "restore" && wonOf (2) == "section" && wonOf (9) == "restore" && mg.record.size() == 3
+               && mergePresets ({}, "4:0.5").preset == "4:0.500000" && mergePresets ("4:0.5", {}).preset == "4:0.500000",
+               "customdefault CD-7: restore 1,2,9 + section 2,7 -> 1 and 9 restored, 2 the section's, 7 added; the record says which won");
+    }
     // CD-5 the rest: opens as the reference -> measured; no reference / no opening block -> measured as it opens; the file round-trips
     {
         const auto sbcS = parseBlock (dir.getChildFile ("lindellsbc.sean.txt").loadFileAsString()), sbcH = parseBlock (dir.getChildFile ("lindellsbc.here.txt").loadFileAsString());

@@ -3151,7 +3151,13 @@ inline int runStrip (const SweepOptions& opt)
             const auto secDir = outDir.getChildFile (stem + ".compressor"); secDir.createDirectory();
             if (opt.out.getChildFile ("review_picks.json").existsAsFile()) opt.out.getChildFile ("review_picks.json").copyFileTo (secDir.getChildFile ("review_picks.json"));   // Kathy's picks reach the section's own loop
             juce::StringArray args { exe.getFullPathName(), "--cert-strip-section", opt.product, "--out", secDir.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName(), "--only-controls", strip::indicesOf (sec), "--section", "compressor" };
-            if (! sws.empty()) { args.add ("--preset"); args.add (strip::presetOf (sws)); args.add ("--strip-writes"); args.add (juce::JSON::toString (strip::stripWritesVar (sws), true)); }
+            {   // 12 Oct: the strip's restore writes (custom default) merged with the section's own: a section write wins only on its own controls
+                const auto restoreP = juce::String::fromUTF8 (std::getenv ("EJ_PROBE_PRESET") != nullptr ? std::getenv ("EJ_PROBE_PRESET") : "");
+                const auto mg = customdefault::mergePresets (restoreP, sws.empty() ? juce::String() : strip::presetOf (sws));
+                if (mg.preset.isNotEmpty()) { args.add ("--preset"); args.add (mg.preset); }
+                if (! sws.empty()) { args.add ("--strip-writes"); args.add (juce::JSON::toString (strip::stripWritesVar (sws), true)); }
+                if (restoreP.isNotEmpty()) so->setProperty ("preset_merge", mg.record);
+            }
             juce::StringArray offs; for (const auto& w : od.offWrites) offs.add (w.control + " -> '" + w.set + "'");
             say ("  compressor: the full compressor path over " + juce::String ((int) sec.controls.size()) + " control(s)" + (sec.engage ? " with " + sec.engage->name + " -> '" + sec.engageText + "'" : juce::String()) + (offs.isEmpty() ? juce::String() : "; the other dynamics off: " + offs.joinIntoString (", ")) + " -> " + secDir.getFileName());
             const auto t1 = juce::Time::getMillisecondCounterHiRes();
@@ -3173,7 +3179,12 @@ inline int runStrip (const SweepOptions& opt)
         juce::StringArray args { exe.getFullPathName(), mode, opt.product };
         if (sec.name == "gate") { args.add ("--kind"); args.add ("gate"); }
         args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName(), "--only-controls", strip::indicesOf (sec) });
-        if (! sws.empty()) { args.add ("--preset"); args.add (strip::presetOf (sws)); }
+        {   // 12 Oct: the strip's restore writes merged with the section's own (see the compressor section above)
+            const auto restoreP = juce::String::fromUTF8 (std::getenv ("EJ_PROBE_PRESET") != nullptr ? std::getenv ("EJ_PROBE_PRESET") : "");
+            const auto mg = customdefault::mergePresets (restoreP, sws.empty() ? juce::String() : strip::presetOf (sws));
+            if (mg.preset.isNotEmpty()) { args.add ("--preset"); args.add (mg.preset); }
+            if (restoreP.isNotEmpty()) so->setProperty ("preset_merge", mg.record);
+        }
         { juce::StringArray offs; for (const auto& w : od.offWrites) offs.add (w.control + " -> '" + w.set + "'");
           say ("  " + sec.name + ": " + mode + " over " + juce::String ((int) sec.controls.size()) + " control(s)" + (sec.engage ? " with " + sec.engage->name + " -> '" + sec.engageText + "'" : juce::String ("")) + (offs.isEmpty() ? juce::String() : "; the other dynamics off: " + offs.joinIntoString (", "))); }
         const auto t1 = juce::Time::getMillisecondCounterHiRes();
@@ -6584,7 +6595,9 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                     const auto ref = customdefault::readReference (juce::JSON::parse (refF.loadFileAsString()));
                     const juce::StringArray probeArgs { opt.probe.getFullPathName(), pp.desc.name, pp.desc.fileOrIdentifier, juce::String::toHexString (pp.desc.uniqueId), "--factory-preset", "open" };
                     const auto openR = runProbeCall (probeArgs, opt.timeoutMs);
-                    const auto pl = customdefault::plan (ref, customdefault::parseBlock (openR.out));
+                    const auto openingB = customdefault::parseBlock (openR.out);
+                    const auto pl = customdefault::plan (ref, openingB);
+                    if (const auto vote = customdefault::voteOf (ref, openingB); vote.cast) row->setProperty ("reference_vote", customdefault::voteVar (vote));   // 12 Oct: this Mac's vote on the reference
                     juce::String refWhy = pl.why;
                     if (pl.act == customdefault::Act::customDefault) customDefault = true;
                     else if (pl.act == customdefault::Act::restore)
