@@ -111,6 +111,51 @@ inline Plan plan (const Reference& ref, const Block& opening)
     p.act = Act::restore; p.writes = writesFor (v.diffs); p.why = "opened with a custom default: " + v.why + "; restored to the reference by " + juce::String ((int) v.diffs.size()) + " write(s)";
     return p;
 }
+// THE VOTE (Kathy, 12 Oct, confirmed: trusted = 2+ independent Macs agree). Every plugin checked against a reference casts one: its
+// opening block agrees or not. A plugin that opens IDENTICAL to a single-source reference is the second source - it is measured, and
+// the upload marks the reference as agreed; one that DIFFERS from a single-source reference stays custom_default (held) until a third
+// source settles it, and its own block is sent so that source can. Against a trusted reference the vote is information only.
+struct Vote { bool cast = false, agrees = false; int agreeingBefore = 0; Block opening; };
+inline Vote voteOf (const Reference& ref, const Block& opening)
+{
+    Vote v; if (ref.block.empty() || opening.empty()) return v;
+    const auto c = compare (ref.block, opening); v.cast = c.comparable; v.agrees = c.comparable && ! c.differs; v.agreeingBefore = ref.agreeing;
+    if (! v.agrees) v.opening = opening;
+    return v;
+}
+inline juce::var voteVar (const Vote& v)
+{
+    auto* o = new juce::DynamicObject(); o->setProperty ("agrees", v.agrees); o->setProperty ("agreeing_before", v.agreeingBefore);
+    o->setProperty ("makes_trusted", v.agrees && v.agreeingBefore + 1 >= kTrustedAgreeing && v.agreeingBefore < kTrustedAgreeing);
+    if (! v.agrees) { juce::Array<juce::var> rows; for (const auto& [i, p] : v.opening) rows.add (juce::Array<juce::var> { i, p.norm, p.name, p.text }); o->setProperty ("opening_block", rows); }
+    return juce::var (o);
+}
 // the read-back after the writes: the block must now match the reference, or the plugin is filed custom_default
 inline bool restoreConfirmed (const Reference& ref, const Block& readback) { const auto v = compare (ref.block, readback); return v.comparable && ! v.differs; }
+// --- STRIPS (Kathy, 12 Oct, item 2): the restore writes and a strip section's own writes, merged ----------------------------------------
+// A channel strip's section passes its own writes (engage, noise-off) as the probe's preset; that used to REPLACE the restore writes the
+// strip was given. Merged: the restore writes first; a section write replaces only a control it sets itself; the record says which won.
+struct MergedPreset { juce::String preset; juce::Array<juce::var> record; };
+inline std::map<int, double> parsePreset (const juce::String& p)
+{
+    std::map<int, double> m;
+    for (const auto& t : juce::StringArray::fromTokens (p, ",", "")) if (t.containsChar (':')) m[t.upToFirstOccurrenceOf (":", false, false).getIntValue()] = t.fromFirstOccurrenceOf (":", false, false).getDoubleValue();
+    return m;
+}
+inline MergedPreset mergePresets (const juce::String& restore, const juce::String& section)
+{
+    MergedPreset mp; const auto r = parsePreset (restore), s = parsePreset (section);
+    std::map<int, double> out = r;
+    for (const auto& [i, n] : s) out[i] = n;
+    juce::StringArray parts; for (const auto& [i, n] : out) parts.add (juce::String (i) + ":" + juce::String (n, 6));
+    mp.preset = parts.joinIntoString (",");
+    for (const auto& [i, n] : r)
+    {
+        auto* o = new juce::DynamicObject(); o->setProperty ("index", i); o->setProperty ("restore_norm", n);
+        if (const auto it = s.find (i); it != s.end()) { o->setProperty ("section_norm", it->second); o->setProperty ("won", "section"); }   // the section sets this control itself
+        else o->setProperty ("won", "restore");
+        mp.record.add (juce::var (o));
+    }
+    return mp;
+}
 } // namespace ejmap::customdefault
