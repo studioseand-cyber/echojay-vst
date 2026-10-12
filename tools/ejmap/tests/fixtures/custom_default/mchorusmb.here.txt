@@ -1,0 +1,213 @@
+# MChorusMB 615d626a|14.16.0 - instantiate parameter block (probe 'param' lines)
+param	0	1.000000	Globals -> Dry/wet	100.0%
+param	1	0.200000	Globals -> Saturation	20.0%
+param	2	1.000000	Globals -> Width	100.0%
+param	3	0.500000	Param 4	50.0%
+param	4	0.500000	Param 5	50.0%
+param	5	0.500000	Param 6	50.0%
+param	6	0.500000	Param 7	50.0%
+param	7	0.500000	Param 8	50.0%
+param	8	0.500000	Chorus -> Character	50.0%
+param	9	0.360000	Chorus -> Voices	4
+param	10	0.592010	Chorus -> Rate	0.9000 Hz
+param	11	0.000000	Chorus -> Low cut	Off
+param	12	0.500000	Param 13	50.0%
+param	13	0.833333	Chorus -> Stereo mode	Haas (16 ms)
+param	14	0.384500	Chorus -> Shape	Sine
+param	15	0.500000	Param 16	50.0%
+param	16	0.500000	Param 17	50.0%
+param	17	0.500000	Param 18	50.0%
+param	18	0.500000	Param 19	50.0%
+param	19	0.500000	Param 20	50.0%
+param	20	0.500000	Param 21	50.0%
+param	21	0.500000	Param 22	50.0%
+param	22	0.500000	Param 23	50.0%
+param	23	0.500000	Param 24	50.0%
+param	24	0.500000	Param 25	50.0%
+param	25	0.500000	Param 26	50.0%
+param	26	0.500000	Param 27	50.0%
+param	27	0.500000	Param 28	50.0%
+param	28	0.500000	Param 29	50.0%
+param	29	0.500000	Param 30	50.0%
+param	30	0.500000	Param 31	50.0%
+param	31	0.500000	Param 32	50.0%
+param	32	1.000000	Dry/Wet	100.0%
+param	33	0.500000	Input gain	0.00 dB
+param	34	0.354167	Output gain	-7.00 dB
+param	35	0.000000	Crossover type	Analog
+param	36	0.428571	Crossover analog mode	24dB/oct
+param	37	0.500000	Level crossover slope	50.0%
+param	38	0.000000	Level crossover value	silence
+param	39	0.500000	Crossover tone	0.00 dB
+param	40	0.000000	Crossover smoothing	0.00%
+param	41	0.472871	Crossover transient release	50 ms
+param	42	0.500000	Crossover transient resolution	50 ms
+param	43	0.500000	Crossover spectral resolution	50.0%
+param	44	0.500000	Band gain 1	0.00 dB
+param	45	0.500000	Band gain 2	0.00 dB
+param	46	0.500000	Band gain 3	0.00 dB
+param	47	0.500000	Band gain 4	0.00 dB
+param	48	0.500000	Band gain 5	0.00 dB
+param	49	0.500000	Band gain 6	0.00 dB
+param	50	0.447474	Band limit 1	440.0 Hz
+param	51	0.447474	Band limit 2	440.0 Hz
+param	52	0.447474	Band limit 3	440.0 Hz
+param	53	0.447474	Band limit 4	440.0 Hz
+param	54	0.447474	Band limit 5	440.0 Hz
+param	55	0.500000	Band panorama 1	center
+param	56	0.500000	Band panorama 2	center
+param	57	0.500000	Band panorama 3	center
+param	58	0.500000	Band panorama 4	center
+param	59	0.500000	Band panorama 5	center
+param	60	0.500000	Band panorama 6	center
+param	61	0.500000	Band 1 - Main parameters - Dry/Wet	100% wet, 100% dry
+param	62	0.592005	Band 1 - Main parameters - Rate	0.9000 Hz
+param	63	0.315571	Band 1 - Main parameters - Range	1.1 ms
+param	64	0.228999	Band 1 - Main parameters - Delay	1.4 ms
+param	65	0.333333	Band 1 - Main parameters - Voices	4
+param	66	0.201000	Band 1 - Main parameters - Saturation	20.1%
+param	67	1.000000	Band 1 - Main parameters - Spread	100.0%
+param	68	0.833333	Band 1 - Main parameters - Spread mode	Haas (16 ms)
+param	69	0.500000	Band 1 - Main parameters - Feedback	0.00%
+param	70	0.316228	Band 1 - Main parameters - Feedback delay	10.0 ms
+param	71	0.500000	Band 1 - Advanced parameters - Depth variability	0.00%
+param	72	0.337500	Band 1 - Advanced parameters - Rate variability	-32.5%
+param	73	0.500000	Band 1 - Advanced parameters - Range variability	0.00%
+param	74	0.605000	Band 1 - Advanced parameters - Delay variability	21.0%
+param	75	0.000000	Band 1 - Advanced parameters - Min frequency	Off
+param	76	1.000000	Band 1 - Advanced parameters - Max frequency	Off
+param	77	0.500000	Band 1 - Advanced parameters - Tremolo	0.00%
+param	78	0.500000	Band 1 - Advanced parameters - Voice tremolo	0.00%
+param	79	0.000000	Band 1 - Advanced parameters - Tremolo phase	0° (0%)
+param	80	0.000000	Band 1 - Advanced parameters - LFO override	Off
+param	81	0.000000	Band 1 - Synchronization - Synchronization	Off
+param	82	0.500000	Band 1 - Synchronization - Length	1
+param	83	0.666667	Band 1 - Synchronization - Type	Dotted
+param	84	0.250000	Band 1 - Synchronization - Phase	90° (25.0%)
+param	85	0.500000	Band 2 - Main parameters - Dry/Wet	100% wet, 100% dry
+param	86	0.302936	Band 2 - Main parameters - Rate	0.1000 Hz
+param	87	0.561071	Band 2 - Main parameters - Range	10 ms
+param	88	0.316228	Band 2 - Main parameters - Delay	5.0 ms
+param	89	0.111111	Band 2 - Main parameters - Voices	2
+param	90	0.100000	Band 2 - Main parameters - Saturation	10.0%
+param	91	1.000000	Band 2 - Main parameters - Spread	100.0%
+param	92	0.000000	Band 2 - Main parameters - Spread mode	Panorama
+param	93	0.500000	Band 2 - Main parameters - Feedback	0.00%
+param	94	0.316228	Band 2 - Main parameters - Feedback delay	10.0 ms
+param	95	0.500000	Band 2 - Advanced parameters - Depth variability	0.00%
+param	96	0.750000	Band 2 - Advanced parameters - Rate variability	50.0%
+param	97	0.500000	Band 2 - Advanced parameters - Range variability	0.00%
+param	98	0.500000	Band 2 - Advanced parameters - Delay variability	0.00%
+param	99	0.000000	Band 2 - Advanced parameters - Min frequency	Off
+param	100	1.000000	Band 2 - Advanced parameters - Max frequency	Off
+param	101	0.500000	Band 2 - Advanced parameters - Tremolo	0.00%
+param	102	0.500000	Band 2 - Advanced parameters - Voice tremolo	0.00%
+param	103	0.000000	Band 2 - Advanced parameters - Tremolo phase	0° (0%)
+param	104	0.000000	Band 2 - Advanced parameters - LFO override	Off
+param	105	0.000000	Band 2 - Synchronization - Synchronization	Off
+param	106	0.642857	Band 2 - Synchronization - Length	1 / 4
+param	107	0.000000	Band 2 - Synchronization - Type	Straight
+param	108	0.250000	Band 2 - Synchronization - Phase	90° (25.0%)
+param	109	0.500000	Band 3 - Main parameters - Dry/Wet	100% wet, 100% dry
+param	110	0.302936	Band 3 - Main parameters - Rate	0.1000 Hz
+param	111	0.561071	Band 3 - Main parameters - Range	10 ms
+param	112	0.316228	Band 3 - Main parameters - Delay	5.0 ms
+param	113	0.111111	Band 3 - Main parameters - Voices	2
+param	114	0.100000	Band 3 - Main parameters - Saturation	10.0%
+param	115	1.000000	Band 3 - Main parameters - Spread	100.0%
+param	116	0.000000	Band 3 - Main parameters - Spread mode	Panorama
+param	117	0.500000	Band 3 - Main parameters - Feedback	0.00%
+param	118	0.316228	Band 3 - Main parameters - Feedback delay	10.0 ms
+param	119	0.500000	Band 3 - Advanced parameters - Depth variability	0.00%
+param	120	0.750000	Band 3 - Advanced parameters - Rate variability	50.0%
+param	121	0.500000	Band 3 - Advanced parameters - Range variability	0.00%
+param	122	0.500000	Band 3 - Advanced parameters - Delay variability	0.00%
+param	123	0.000000	Band 3 - Advanced parameters - Min frequency	Off
+param	124	1.000000	Band 3 - Advanced parameters - Max frequency	Off
+param	125	0.500000	Band 3 - Advanced parameters - Tremolo	0.00%
+param	126	0.500000	Band 3 - Advanced parameters - Voice tremolo	0.00%
+param	127	0.000000	Band 3 - Advanced parameters - Tremolo phase	0° (0%)
+param	128	0.000000	Band 3 - Advanced parameters - LFO override	Off
+param	129	0.000000	Band 3 - Synchronization - Synchronization	Off
+param	130	0.642857	Band 3 - Synchronization - Length	1 / 4
+param	131	0.000000	Band 3 - Synchronization - Type	Straight
+param	132	0.250000	Band 3 - Synchronization - Phase	90° (25.0%)
+param	133	0.500000	Band 4 - Main parameters - Dry/Wet	100% wet, 100% dry
+param	134	0.302936	Band 4 - Main parameters - Rate	0.1000 Hz
+param	135	0.561071	Band 4 - Main parameters - Range	10 ms
+param	136	0.316228	Band 4 - Main parameters - Delay	5.0 ms
+param	137	0.111111	Band 4 - Main parameters - Voices	2
+param	138	0.100000	Band 4 - Main parameters - Saturation	10.0%
+param	139	1.000000	Band 4 - Main parameters - Spread	100.0%
+param	140	0.000000	Band 4 - Main parameters - Spread mode	Panorama
+param	141	0.500000	Band 4 - Main parameters - Feedback	0.00%
+param	142	0.316228	Band 4 - Main parameters - Feedback delay	10.0 ms
+param	143	0.500000	Band 4 - Advanced parameters - Depth variability	0.00%
+param	144	0.750000	Band 4 - Advanced parameters - Rate variability	50.0%
+param	145	0.500000	Band 4 - Advanced parameters - Range variability	0.00%
+param	146	0.500000	Band 4 - Advanced parameters - Delay variability	0.00%
+param	147	0.000000	Band 4 - Advanced parameters - Min frequency	Off
+param	148	1.000000	Band 4 - Advanced parameters - Max frequency	Off
+param	149	0.500000	Band 4 - Advanced parameters - Tremolo	0.00%
+param	150	0.500000	Band 4 - Advanced parameters - Voice tremolo	0.00%
+param	151	0.000000	Band 4 - Advanced parameters - Tremolo phase	0° (0%)
+param	152	0.000000	Band 4 - Advanced parameters - LFO override	Off
+param	153	0.000000	Band 4 - Synchronization - Synchronization	Off
+param	154	0.642857	Band 4 - Synchronization - Length	1 / 4
+param	155	0.000000	Band 4 - Synchronization - Type	Straight
+param	156	0.250000	Band 4 - Synchronization - Phase	90° (25.0%)
+param	157	0.500000	Band 5 - Main parameters - Dry/Wet	100% wet, 100% dry
+param	158	0.302936	Band 5 - Main parameters - Rate	0.1000 Hz
+param	159	0.561071	Band 5 - Main parameters - Range	10 ms
+param	160	0.316228	Band 5 - Main parameters - Delay	5.0 ms
+param	161	0.111111	Band 5 - Main parameters - Voices	2
+param	162	0.100000	Band 5 - Main parameters - Saturation	10.0%
+param	163	1.000000	Band 5 - Main parameters - Spread	100.0%
+param	164	0.000000	Band 5 - Main parameters - Spread mode	Panorama
+param	165	0.500000	Band 5 - Main parameters - Feedback	0.00%
+param	166	0.316228	Band 5 - Main parameters - Feedback delay	10.0 ms
+param	167	0.500000	Band 5 - Advanced parameters - Depth variability	0.00%
+param	168	0.750000	Band 5 - Advanced parameters - Rate variability	50.0%
+param	169	0.500000	Band 5 - Advanced parameters - Range variability	0.00%
+param	170	0.500000	Band 5 - Advanced parameters - Delay variability	0.00%
+param	171	0.000000	Band 5 - Advanced parameters - Min frequency	Off
+param	172	1.000000	Band 5 - Advanced parameters - Max frequency	Off
+param	173	0.500000	Band 5 - Advanced parameters - Tremolo	0.00%
+param	174	0.500000	Band 5 - Advanced parameters - Voice tremolo	0.00%
+param	175	0.000000	Band 5 - Advanced parameters - Tremolo phase	0° (0%)
+param	176	0.000000	Band 5 - Advanced parameters - LFO override	Off
+param	177	0.000000	Band 5 - Synchronization - Synchronization	Off
+param	178	0.642857	Band 5 - Synchronization - Length	1 / 4
+param	179	0.000000	Band 5 - Synchronization - Type	Straight
+param	180	0.250000	Band 5 - Synchronization - Phase	90° (25.0%)
+param	181	0.500000	Band 6 - Main parameters - Dry/Wet	100% wet, 100% dry
+param	182	0.302936	Band 6 - Main parameters - Rate	0.1000 Hz
+param	183	0.561071	Band 6 - Main parameters - Range	10 ms
+param	184	0.316228	Band 6 - Main parameters - Delay	5.0 ms
+param	185	0.111111	Band 6 - Main parameters - Voices	2
+param	186	0.100000	Band 6 - Main parameters - Saturation	10.0%
+param	187	1.000000	Band 6 - Main parameters - Spread	100.0%
+param	188	0.000000	Band 6 - Main parameters - Spread mode	Panorama
+param	189	0.500000	Band 6 - Main parameters - Feedback	0.00%
+param	190	0.316228	Band 6 - Main parameters - Feedback delay	10.0 ms
+param	191	0.500000	Band 6 - Advanced parameters - Depth variability	0.00%
+param	192	0.750000	Band 6 - Advanced parameters - Rate variability	50.0%
+param	193	0.500000	Band 6 - Advanced parameters - Range variability	0.00%
+param	194	0.500000	Band 6 - Advanced parameters - Delay variability	0.00%
+param	195	0.000000	Band 6 - Advanced parameters - Min frequency	Off
+param	196	1.000000	Band 6 - Advanced parameters - Max frequency	Off
+param	197	0.500000	Band 6 - Advanced parameters - Tremolo	0.00%
+param	198	0.500000	Band 6 - Advanced parameters - Voice tremolo	0.00%
+param	199	0.000000	Band 6 - Advanced parameters - Tremolo phase	0° (0%)
+param	200	0.000000	Band 6 - Advanced parameters - LFO override	Off
+param	201	0.000000	Band 6 - Synchronization - Synchronization	Off
+param	202	0.642857	Band 6 - Synchronization - Length	1 / 4
+param	203	0.000000	Band 6 - Synchronization - Type	Straight
+param	204	0.250000	Band 6 - Synchronization - Phase	90° (25.0%)
+param	205	0.500000	Modulators - Mod 1 - Automated value	50.0%
+param	206	0.500000	Modulators - Mod 2 - Automated value	50.0%
+param	207	0.500000	Modulators - Mod 3 - Automated value	50.0%
+param	208	0.500000	Modulators - Mod 4 - Automated value	50.0%
+param	209	0.000000	Preset trigger - previous	0.00
+param	210	0.000000	Preset trigger - next	0.00
+param	211	0.000000	Device	1-band chorus
