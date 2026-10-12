@@ -1,0 +1,23 @@
+WIZARD: 4 profile(s) in the database (db, a local folder: nothing is fetched)
+  MMorph                         14.16.0   -> categorise / identifying: no category from the server or the name: the signature reads decide
+  MTurboComp                     14.16.0   -> measure / queued: the server's category: compressor
+WIZARD: map store <scratch>/wref2/store/maps: 0 map(s); 2 plugin(s) to map (the database settled the rest without loading them)
+  MTurboComp                     mapped: 73 parameter(s), map e752f9c7b4a0
+  MMorph                         mapped: 112 parameter(s), map 4404a76ba590
+  MMorph: dynamics - the gain moves 1.69 dB between -30 and -12 dBFS on the same tones; THD -123.2 dB at -6 (not audible) (1.05578 s)
+  MMorph                         -> measure (compressor): the signature (dynamics; the compressor certification decides): the gain moves 1.69 dB between -30 and -12 dBFS on the same tones; THD -123.2 dB at -6 (not audible)
+WIZARD: 2 plugin(s) found: 2 to measure
+WIZARD: measuring 2 plugin measurement(s), 2 at a time - stop any time; it carries on next time
+WIZARD: measuring wizard (2)
+PHASEB: 2 product(s) over 1 category -> <scratch>/wref2/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  wizard       2 product(s), 0 already done; hang guard 30 min (the compressor certification for a plugin the database does not have (the wizard's queue))
+PHASEB: --jobs 2: 0 row(s) in parallel, 2 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+  serial lane: wizard: MMorph (PACE / iLok: PACE-wrapped (MMorph.component))
+  serial lane: wizard: MTurboComp (PACE / iLok: PACE-wrapped (MTurboComp.component))
+[wizard 1/2 | all 1/2] MMorph: needs_licence 951.155 s | elapsed 0:15:52 | ETA 0:15:51
+[wizard 2/2 | all 2/2] MTurboComp: ok 227.33 s | elapsed 0:19:39 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261012T175327, updated 20261012T181307); summary <scratch>/wref2/work/phaseb/summary.json
+WIZARD: 1 needs a licence, 1 could not be measured
+WIZARD: contribution bundle -> contribution.zip (0 new profile(s), 0 confirmation(s) of another version's profile, 2 skipped with the reason; 0.8 KB; checked: no paths, names or tokens)
+WIZARD: UPLOAD (stubbed): nothing is sent. A real app shows this list and sends only when the user presses Send.
+Done in 19 min 42 s: 2 plugin(s) - 1 needs a licence, 1 could not be measured. Ready to send: contribution.zip (0 new, 0 confirmation(s), 0.8 KB) - nothing was sent.

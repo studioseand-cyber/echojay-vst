@@ -1,0 +1,56 @@
+{
+  "product": "MTurboComp",
+  "identity": "AudioUnit|61447441|14.16.0",
+  "category": "wizard",
+  "mode": "--cert-limiter-comp",
+  "custom_default_restored": [
+    {
+      "index": 8,
+      "control": "Param 9",
+      "opened": "20.0%",
+      "written": "50.0%",
+      "norm": 0.5
+    },
+    {
+      "index": 9,
+      "control": "Ratio (Compressor)",
+      "opened": "50.0%",
+      "written": "0.00%",
+      "norm": 0.0
+    },
+    {
+      "index": 10,
+      "control": "Param 11",
+      "opened": "0.00%",
+      "written": "50.0%",
+      "norm": 0.5
+    },
+    {
+      "index": 14,
+      "control": "Attack (Compressor)",
+      "opened": "100.0%",
+      "written": "25.0%",
+      "norm": 0.25
+    },
+    {
+      "index": 64,
+      "control": "Device",
+      "opened": "MSL E",
+      "written": "Meldei 1176",
+      "norm": 0.25
+    }
+  ],
+  "reference": "opened with a custom default: 5 of 73 control(s) open at another value than the reference; restored to the reference by 5 write(s)",
+  "child": "exit 0",
+  "exit_code": 0,
+  "slept_ms": 0.000291585922241,
+  "records": [
+    "record/AudioUnit_61447441_14.16.0.json",
+    "outcome/AudioUnit_61447441_14.16.0.outcomes.json"
+  ],
+  "raw_files": 38,
+  "outcome": "ok",
+  "seconds": 227.0,
+  "at": "20261012T181307",
+  "probe": "c34f073ad94e40ed1746ec1d88865e50250b57a5"
+}

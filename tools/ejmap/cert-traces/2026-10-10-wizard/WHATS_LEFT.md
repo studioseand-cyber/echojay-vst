@@ -54,6 +54,12 @@
   a manifest with any other category is refused before packing; a drive-less saturation draft is not sent.
 - SERVER-SIDE, AWAITING SEAN (stubs only): the account -> mapper-token bridge; the review / holding area; promo rules + issuing + email.
 
+- KNOWN MULTIBANDS + CUSTOM DEFAULTS (12 Oct): the 17 known multibands held at once (WZ-MB-1); a plugin opening differently from its
+  reference is restored by writes (read back) or filed custom_default (cert's Phase B check, carried; WZ-CD-1, CD-4/5). The reference
+  must come from the server (/lookup `reference`); the factory preset is NOT a reference (47% match). Rehearsal:
+  cert-traces/2026-10-12-wizard-custom-defaults/. Open: the original compressor-certification batch (outside Phase B) has no check;
+  a strip's section preset would replace the restore writes; Melda's paid plugins are unlicensed here (demo dropouts).
+
 ## Left before it is a real app
 1. **UI**: BUILT as the v1 window app (above). Still open: a Pause button besides closing the window; "overnight" scheduling;
    accessibility (VoiceOver labels on the bar); dark mode; a first-launch explanation of what is measured and why; localisation;

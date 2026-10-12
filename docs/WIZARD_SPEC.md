@@ -185,6 +185,13 @@ The token is stored in the macOS Keychain (**the stub writes account.json withou
   - The wizard uses it FIRST. A category EJ Map certifies (section 5) goes to its measuring queue. Any other category (modulation, meter, …): the plugin is mapped and sent with its category (6.3 `other_categories`), not measured.
   - Without a server category, the wizard tries, in order: its name rules (compressor / EQ words); out of scope by AU type or meter / utility words (listed, never loaded); and only then EJ Map's signature reads on the user's Mac.
 - The server decides A / B / C / pending_review and the category. The client never decides from its own copy of the database.
+- `reference` (new, 12 Oct): the plugin's agreed **opening state** at this version, when the server has one: `{block: [[index, norm, name, text], …], agreeing: N, sources: […]}`. It is trusted when **2 or more independent Macs** opened identically. The AU's own factory preset was validated and rejected: it matches only 47%.
+  - Before measuring, the client compares the plugin's opening block with it.
+  - Same → measure.
+  - Differs from a trusted reference → write every differing control back (recorded as `custom_default_restored`), read back, then measure under those writes.
+  - Otherwise, or if the read-back fails → `custom_default`, not measured (listed in `skipped[]`).
+  - **Stub:** the database folder's `references/`.
+- **Known multibands** (12 Oct): the client ships EJ Map's list (the 17 products Sean's cert found multiband, by uid). These are held at once, before any category or signature read.
 - **Stub:** the engine's `--db` folder: `ej_comp_profile/1` + tone checks, `ej_eq_profile/1`, `categories.json` (the category, keyed by plugin_id or name) and `pending_review.json` (`[{"plugin_id": …}]`), with the same rules applied locally (`wizroute::ask`).
 
 ### 6.3 Upload

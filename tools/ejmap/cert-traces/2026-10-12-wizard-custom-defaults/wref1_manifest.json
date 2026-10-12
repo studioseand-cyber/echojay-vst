@@ -1,0 +1,125 @@
+{
+  "schema": "ej_contribution/0",
+  "created": "2026-10-12T17:53:25.276+01:00",
+  "tool": "EJ Map 67f4149b",
+  "platform": "Mac OSX 15.7.5",
+  "profiles": [],
+  "confirmations": [],
+  "skipped": [
+    {
+      "product": "MMorph",
+      "state": "custom_default",
+      "why": "custom_default: 20 of 112 control(s) open at another value than the reference; the reference is not trusted (1 source(s), 2 needed)"
+    },
+    {
+      "product": "MTurboComp",
+      "state": "custom_default",
+      "why": "custom_default: 5 of 73 control(s) open at another value than the reference; the reference is not trusted (1 source(s), 2 needed)"
+    }
+  ],
+  "crashed": [],
+  "needs_category": [],
+  "other_categories": [],
+  "out_of_scope": [],
+  "held": [
+    {
+      "product": "OTT",
+      "plugin_id": "AudioUnit|6155777e|1.3.7",
+      "map_fp": "006e8b4af7241beba0beaa5d1a77c17cc2cc5d5317994d703085668bfae138ea",
+      "map": {
+        "fp": "006e8b4af7241beba0beaa5d1a77c17cc2cc5d5317994d703085668bfae138ea",
+        "schema": "ej_param_map/wizard-0",
+        "identity": {
+          "format": "AudioUnit",
+          "uid": "6155777e",
+          "name": "OTT",
+          "vendor": "Xfer Records",
+          "version": "1.3.7",
+          "param_count": 19
+        },
+        "category": "",
+        "params": [
+          {
+            "index": 0,
+            "name": "Depth"
+          },
+          {
+            "index": 1,
+            "name": "Time"
+          },
+          {
+            "index": 2,
+            "name": "In Gain"
+          },
+          {
+            "index": 3,
+            "name": "Out Gain"
+          },
+          {
+            "index": 4,
+            "name": "Clean XOV"
+          },
+          {
+            "index": 5,
+            "name": "Thresh L"
+          },
+          {
+            "index": 6,
+            "name": "Thresh M"
+          },
+          {
+            "index": 7,
+            "name": "Thresh H"
+          },
+          {
+            "index": 8,
+            "name": "Gain L"
+          },
+          {
+            "index": 9,
+            "name": "Gain M"
+          },
+          {
+            "index": 10,
+            "name": "Gain H"
+          },
+          {
+            "index": 11,
+            "name": "Byp Upwd L"
+          },
+          {
+            "index": 12,
+            "name": "Byp Upwd M"
+          },
+          {
+            "index": 13,
+            "name": "Byp Upwd H"
+          },
+          {
+            "index": 14,
+            "name": "Byp Dnwd L"
+          },
+          {
+            "index": 15,
+            "name": "Byp Dnwd M"
+          },
+          {
+            "index": 16,
+            "name": "Byp Dnwd H"
+          },
+          {
+            "index": 17,
+            "name": "Upwd Strgth"
+          },
+          {
+            "index": 18,
+            "name": "Dnwd Strgth"
+          }
+        ],
+        "source": "the wizard: the parameter list read by the probe (no roles mapped)"
+      },
+      "why": "held: no server category"
+    }
+  ],
+  "note": "results only: profiles, their tone checks and this manifest - no plugin files, no audio, no account token"
+}

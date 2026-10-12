@@ -1,0 +1,162 @@
+{
+  "product": "MMorph",
+  "identity": "AudioUnit|615d6e70|14.16.0",
+  "category": "wizard",
+  "mode": "--cert-limiter-comp",
+  "custom_default_restored": [
+    {
+      "index": 1,
+      "control": "Swap A & B",
+      "opened": "50.0%",
+      "written": "0.00%",
+      "norm": 0.0
+    },
+    {
+      "index": 74,
+      "control": "Compression (A)",
+      "opened": "25.0%",
+      "written": "16.7%",
+      "norm": 0.583333
+    },
+    {
+      "index": 75,
+      "control": "Tone (A)",
+      "opened": "-6.00 dB",
+      "written": "-3.61 dB",
+      "norm": 0.349778
+    },
+    {
+      "index": 76,
+      "control": "Flattening (A)",
+      "opened": "25.0%",
+      "written": "42.8%",
+      "norm": 0.427778
+    },
+    {
+      "index": 78,
+      "control": "Harmonics (A)",
+      "opened": "0.00%",
+      "written": "18.5%",
+      "norm": 0.184889
+    },
+    {
+      "index": 80,
+      "control": "Attack (A)",
+      "opened": "0 ms",
+      "written": "0.15 ms",
+      "norm": 0.111111
+    },
+    {
+      "index": 81,
+      "control": "Release (A)",
+      "opened": "0 ms",
+      "written": "0.15 ms",
+      "norm": 0.062482
+    },
+    {
+      "index": 83,
+      "control": "Gate (A)",
+      "opened": "-100.00 dB",
+      "written": "-87.04 dB",
+      "norm": 0.12963
+    },
+    {
+      "index": 85,
+      "control": "Compression (B)",
+      "opened": "-25.0%",
+      "written": "-21.8%",
+      "norm": 0.391019
+    },
+    {
+      "index": 86,
+      "control": "Tone (B)",
+      "opened": "0.00 dB",
+      "written": "+1.14 dB",
+      "norm": 0.547556
+    },
+    {
+      "index": 87,
+      "control": "Whitening (B)",
+      "opened": "0.00%",
+      "written": "34.8%",
+      "norm": 0.348
+    },
+    {
+      "index": 89,
+      "control": "Harmonics (B)",
+      "opened": "0.00%",
+      "written": "12.6%",
+      "norm": 0.125778
+    },
+    {
+      "index": 91,
+      "control": "Attack (B)",
+      "opened": "0 ms",
+      "written": "0.15 ms",
+      "norm": 0.111111
+    },
+    {
+      "index": 92,
+      "control": "Release (B)",
+      "opened": "0 ms",
+      "written": "0.15 ms",
+      "norm": 0.062482
+    },
+    {
+      "index": 94,
+      "control": "Gate (B)",
+      "opened": "-100.00 dB",
+      "written": "-98.52 dB",
+      "norm": 0.014815
+    },
+    {
+      "index": 96,
+      "control": "Compression (Output)",
+      "opened": "25.0%",
+      "written": "10.0%",
+      "norm": 0.550222
+    },
+    {
+      "index": 97,
+      "control": "Flattening (Output)",
+      "opened": "50.0%",
+      "written": "50.6%",
+      "norm": 0.506222
+    },
+    {
+      "index": 99,
+      "control": "Attack (Output)",
+      "opened": "0 ms",
+      "written": "0.15 ms",
+      "norm": 0.111111
+    },
+    {
+      "index": 100,
+      "control": "Release (Output)",
+      "opened": "0 ms",
+      "written": "0.15 ms",
+      "norm": 0.062482
+    },
+    {
+      "index": 105,
+      "control": "M/S processing (Spectral settings)",
+      "opened": "Off",
+      "written": "On",
+      "norm": 1.0
+    }
+  ],
+  "reference": "opened with a custom default: 20 of 112 control(s) open at another value than the reference; restored to the reference by 20 write(s)",
+  "reason": "licence suspected: intermittent dropouts (not the input's tone at -50, -48, -46, -14, -12 dB, clean between); 4 candidate(s), none produced the tone; --retry-licence re-checks it",
+  "child": "exit 6",
+  "exit_code": 6,
+  "slept_ms": 0.000291347503662,
+  "records": [
+    "record/AudioUnit_615d6e70_14.16.0.json",
+    "outcome/AudioUnit_615d6e70_14.16.0.outcomes.json"
+  ],
+  "raw_files": 138,
+  "outcome": "needs_licence",
+  "seconds": 951.0,
+  "at": "20261012T180919",
+  "probe": "c34f073ad94e40ed1746ec1d88865e50250b57a5"
+}

@@ -1,0 +1,26 @@
+{
+  "schema": "ej_contribution/0",
+  "created": "2026-10-12T18:13:07.531+01:00",
+  "tool": "EJ Map 67f4149b",
+  "platform": "Mac OSX 15.7.5",
+  "profiles": [],
+  "confirmations": [],
+  "skipped": [
+    {
+      "product": "MMorph",
+      "state": "needs_licence",
+      "why": "licence suspected: intermittent dropouts (not the input's tone at -50, -48, -46, -14, -12 dB, clean between); 4 candidate(s), none produced the tone; --retry-licence re-checks it"
+    },
+    {
+      "product": "MTurboComp",
+      "state": "not_measurable",
+      "why": "stage reference: not licensed suspected (silent, non-finite or not the input's tone at default): intermittent dropouts (not the input's tone at -34, -32, -26, -24 dB, clean between); "
+    }
+  ],
+  "crashed": [],
+  "needs_category": [],
+  "other_categories": [],
+  "out_of_scope": [],
+  "held": [],
+  "note": "results only: profiles, their tone checks and this manifest - no plugin files, no audio, no account token"
+}
