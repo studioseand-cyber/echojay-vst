@@ -420,6 +420,8 @@ ej_add_guard(chains_view_guard        SOURCE tools/chains_view_guard/harness.cpp
 # and the two dial settings could both be on. The first asserts the heading's PAINTED y against the toggles'
 # real bounds - resized() was correct all along, so nothing about component geometry would have caught it.
 ej_add_guard(settings_toggles_guard   SOURCE tools/settings_toggles_guard/harness.cpp        LABEL fast)
+ej_add_guard(stream_markers_guard      SOURCE tools/stream_markers_guard/harness.cpp        LABEL fast)
+ej_add_guard(calib_landing_guard       SOURCE tools/calib_landing_guard/harness.cpp         LABEL fast)
 # ---- 11 Oct 2026: THREE FILES WHOSE SUBJECT THIS ROUND DELETED -------------------------------------------
 # The suite's rule is that every test in the repo is in the gate or carries a written exclusion. These are the
 # exclusion, written rather than left implied, because I am the one who broke them.

@@ -227,8 +227,46 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
     }
 
     const auto opName = argString (call, "op");
-    const auto target = this->target();
-    sinks_.applyChainOps (target, edits, [done, opName] (bool ok, juce::String sentence)
+
+    // ---- ITEM 6(b), 12 Oct 2026: ACTING ON ANOTHER CHANNEL IS ASK-FIRST -------------------------------------
+    //
+    // This used to apply to this->target() and never read the call's `channel` at all, so "a touch more top end
+    // on the kick" with the V2 on Mix Bus could not reach the kick even once the uid resolved. Routing it is half
+    // the fix; the other half is that it must NOT be silent. Changing a channel the user is not looking at is the
+    // one edit they cannot see happen, so it is gated on an explicit confirmation and the question names the
+    // track in the words Sean asked for.
+    //
+    // The gate fails CLOSED: argFlag returns false for an absent, misspelled or unparseable confirm, so the
+    // worst case is one extra question, never an unasked edit on someone else's channel.
+    const auto asked   = resolveChannelArg (call);
+    const auto current = this->target();
+    juce::String applyTo = current;
+    if (asked.isNotEmpty() && asked != current)
+    {
+        // Resolution already tried uid, exact name and a unique containment match. Still not a known channel
+        // means the model named something that does not exist - say so WITH the list, so the loop stops.
+        juce::String askedName;
+        const auto tracks = src_.tracks ? src_.tracks() : std::vector<TrackRead>();
+        for (const auto& t : tracks) if (t.uid == asked) askedName = t.name;
+        if (askedName.isEmpty())
+        {
+            done (ToolOutcome::failure ("unknown_channel",
+                                        "\"" + asked + "\" is not a channel I can reach." + knownChannelsSentence()));
+            return;
+        }
+        if (! argFlag (call, "confirm"))
+        {
+            done (ToolOutcome::failure ("needs_confirmation",
+                                        "This is on " + askedName + "'s channel, not the one you have open. "
+                                        "Ask the user: \"This is on " + askedName + "'s channel, go ahead?\" - and if "
+                                        "they say yes, repeat this same call with \"confirm\": true. Nothing has been "
+                                        "changed yet."));
+            return;
+        }
+        applyTo = asked;
+    }
+
+    sinks_.applyChainOps (applyTo, edits, [done, opName] (bool ok, juce::String sentence)
     {
         if (! ok)
         {

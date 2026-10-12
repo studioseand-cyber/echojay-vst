@@ -1,0 +1,161 @@
+ship_2026-10-12a - GATED GREEN, 12 Oct 2026. THE FOUR 08c BUGS, THE 2.26.5 CAPABILITY, AND SIX HARNESS FAULTS.
+
+Branch feat/08c, HEAD 113d0993 (the round is in the working tree, not committed - see PUSH at the foot).
+Supersedes ship_2026-10-11b, which was INSTALLED and in which all four bugs below were found in Logic.
+
+GATE: 72/72. All five stages clean, plus a new provenance stage.
+  S1  archives (FORCED delete + relink)   exit 0 - SIX archives, all three trees
+  S2  guards (~87 targets, full LTO)      exit 0, 0 errors
+  S3  formats (4 bundles)                 exit 0, 0 errors
+  S3b archive provenance (NEW)            OK - both build-release archives newer than every file in Source/
+  S4  ctest -L "fast|plugins", 72 tests   100% passed, 2527.70 s
+  S5  link_state_guard                    GREEN (both sides)
+  watchdog over S4 (NEW)                  no guard exceeded 300 s
+
+own_diff: Passed. Nothing in this round touched a built-in's schema or the prompt.
+
+BUNDLES (arm64 first, then x86_64 - all four universal). INSTALLED 12 Oct, all four arm64 UUIDs
+verified against this table after the install, read back from the installed bundles.
+  EchoJay V2.component   411F8DD6-2E05-39FE-9264-36128E853603   2EB59E4E-FC0A-3D2D-9912-7C86541D7B34
+  EchoJay V2.vst3        921D9FD9-01AB-3064-BC3C-526137E91E9A   A70C6C9A-7CFF-31CB-B1C3-02DF9FE8C697
+  EchoJay Link.component 1C62DEC1-3A8C-3F04-A811-D2F846F21714   A7CA34AC-1503-312C-A7AE-9F0D1730220F
+  EchoJay Link.vst3      E83AB424-5D5D-3402-A3BD-8E01A3D37796   ACCAE8F0-BF5A-3105-B809-9FCFC94661AB
+
+================================================================================================
+THE FOUR BUGS
+================================================================================================
+
+1. A V2 EDIT TO AN ADDRESSED LINK DID NOT REACH THE LINK'S AUDIO until the V2 switched racks.
+
+   Sean's reading was that the edits were staged in the borrowed mirror and pushed on release. They
+   were not. Every push was written and acked within 1-3 s, and not one "deselect re-send" line was
+   ever logged. The cause was one line of missing work on the Link side:
+
+     the v:2 editOps path never loaded the shared plugin list. entries_ is filled only by
+     maybeReloadEntriesCache(), whose single caller was buildChainFromSpec - the v:1 path. So any
+     name that is not a compiled-in built-in was judged against an EMPTY list, refused as "not in
+     the loadable plugin list", and aborted the whole batch.
+
+   Captured verbatim from a live run before the fix:
+       EJLink: push id=... ack=not_applied - stays PENDING (re-sent at deselect)
+
+   FIX A: pollChainCommand's v:2 branch calls chainHost.maybeReloadEntriesCache() before judging,
+          and logs how many loadable entries it is judging against.
+   FIX B: the false green that hid it. The status was `applied == results.size()`, which is TRUE
+          for 0 == 0, so a batch that applied NOTHING reported "ok". An empty result set is now
+          "not_applied", and the ack carries slotsAfter so the V2 can print the Link's own figure.
+
+   GATED BY: link_live_edit_guard (NEW, two-sided, 371.05 s) - a real LinkProcessor, a 220 Hz sine,
+   and the RMS of what processBlock leaves in the buffer. With a Link addressed and NO rack switch:
+   +12 dB gain slot built from the V2 -> rendered output +12.00 dB; param changed -> -24.00 dB.
+   Proven both directions: RED with 0 loadable entries, GREEN with 1.
+
+   NOT DONE, deliberately: the second half of the instruction - the V2's meters and GR reading the
+   Link's own processing. It needs a per-slot wire field, a remote override on five device
+   processors, a feed loop and its own leg. It is item 0 in docs/NEXT_ROUND_QUEUE.md with the four
+   steps written out. The V2's meters still read the mirror. Sean's call on priority.
+
+2. THE CHAINS COLUMN WAS BLANK AND FLICKERED.
+
+   Three different spellings of one predicate, and the column's chrome sat inside a branch that was
+   dead whenever CHAINS was showing. All three collapsed to chainsSidebarShowing() and the chrome
+   hoisted out. The flicker's second authority was in timerCallback(), which is what explains the
+   part the first account did not: the header vanishing while Aa and the chat input stayed.
+   GATED BY: chains_view_guard (NEW) - renders over 8 frames with the timer given its chance between
+   them, paints into an image cleared to magenta, and asserts the header and every row rect are
+   authored on EVERY frame.
+
+3. "YOUR PLUGINS" PAINTED UNDER THE FOURTH TOGGLE. The paint cursor was never stepped for the agent
+   toggle. Both resized() and paint() now step from chainSuggestionToggles() itself, so the step
+   cannot drift from the count again.  GATED BY: settings_toggles_guard (NEW).
+
+4. THE TWO DIAL TOGGLES COULD BOTH BE ON. Now mutually exclusive in the UI and in the saved state,
+   with a load-time tie-break (resolveDialExclusivity) for projects already saved with both on.
+   EchoJay-only stays independent and "both off" is still a legal state.  GATED BY the same guard.
+
+ALSO IN THIS ROUND
+  * 2.26.5 + the "leveling" capability. CMakeLists project version 2.26.4 -> 2.26.5 AND the chat body
+    declares capabilities ["proposal","leveling"], so B drops the EchoJay Level slot by either route.
+  * THE LOG, fixed first as a precondition for every other diagnosis. It had no pid, so the V2 and 81
+    Links were indistinguishable, and each process tracked its own byte count and never re-stat'd -
+    so files sailed past the 2 MB cap (echojay-2.log measured at 2,433,420 bytes). Now: pid on every
+    line, one flock'd cross-process rotation rule, periodic re-stat, and the two dominant lines
+    (66,302 of ~70,000) made on-change or rate-limited.
+
+================================================================================================
+SIX HARNESS FAULTS FOUND BY GATING THIS ROUND - and three gates were spent on them
+================================================================================================
+
+Three gates went RED today without the plugin being at fault once. They are recorded here because
+the same mistake produced four of them: A MEASUREMENT TAKEN AT WHATEVER MOMENT IT HAPPENED TO BE
+TAKEN, AND THE ANSWER TREATED AS FINAL. Each produced a confident wrong answer rather than an error.
+
+  (a) ARCHIVE PROVENANCE. S1 only BUILT the archives; it did not delete them. Source/PluginEditor.*
+      was edited at 21:17 after the Link archive was linked at 21:15, and six guards then REFUSED to
+      run ("the Link archive is OLDER than the headers this would compile against"). That was my own
+      mistake - editing Source/ after a build had started.
+      -> S1 now force-deletes all six archives first, and the NEW S3b refuses to run ctest at all if
+         any file in Source/ is newer than either build-release archive, naming the files.
+
+  (b) THE LIVE-STATE SEAL, which cost half of every gate. run_guard.sh fingerprints the real EchoJay
+      folders before and after EVERY guard with `find -exec stat {} \;` - one process per file. With
+      5,669 files under Application Support/EchoJay that is 12.1 s per seal, two per guard, ~24 s on
+      all 70. `{} +` batches it: measured 10.57 s -> 0.061 s, output byte-identical over 6,078 lines.
+      Proven live: slotwet_readback went from 21 s to 0.18 s. The whole gate: 2h10m -> 37m.
+
+  (c) LOG WINDOWS. Three legs marked a byte OFFSET into "the current log file" and re-read it later.
+      FileLog keeps five files and rotates; ui_guard emits ~175,000 lines. When a rotation landed
+      inside a leg, the substring sliced past the whole of the new file and the leg reported that the
+      product had gone SILENT - indistinguishable from the fault it exists to catch. Two separate
+      gates went RED on two different legs of this shape, each passing in the other run purely
+      because the rotation fell elsewhere. The technique was only ever safe because rotation was
+      broken; fixing rotation made the assumption false.
+      -> tools/tests/ej_log_window.h. A window is {path, length, instant}, never a bare offset;
+         logSince() follows however many rotations happened and SAYS through `how` what it had to do,
+         because a leg that fails for the wrong reason costs more than a leg that fails. All three
+         sites in ui_guard route through it, and loudness_loop_guard's two latent ones were hardened
+         before they could cost a third gate.
+
+  (d) A FIXED SLEEP STANDING IN FOR A WAIT. link_state_guard's G3/G4 did `pumpMs (3000)` after
+      setStateInformation and asserted the slot count immediately. The restore instantiates five
+      plugin instances: 422 ms on an idle Mac, 835 ms under gate load, and in the 11:11 gate it
+      exceeded 3000 ms - so the count read 0 and three assertions went RED on the SAME archives that
+      were GREEN ninety minutes earlier. 4 green, 1 red over five runs, the red the one inside a gate.
+      -> a bounded wait (30 s) that PRINTS how long the restore actually took, every run. If that
+         number ever climbs toward the bound it is the product's problem and that line is where it
+         will be seen.
+
+  (e) proposal_guard asserted capabilities == ["proposal"] by matching the literal string, so adding
+      "leveling" broke it. It now PARSES the array and asserts each capability independently, plus
+      appVersion >= 2.26.5 compared component by component ("2.26.10" sorts BELOW "2.26.5" as text,
+      which would have started failing in ten releases).
+      HONEST LIMIT: the two new assertions are proven in the GREEN direction only. A red-direction
+      proof needs an archive built with the capability absent - a relink each way - and doing it
+      would have dirtied the tree mid-ship. First item of the next round, with an in-harness negative
+      case so the predicate is shown to discriminate without a rebuild.
+
+  (f) S5 WAS NOT IN THE GATE AT ALL. link_state_guard is not registered in the CMake tree, so it was
+      never in the ctest count and did not run in the 11 Oct gate. It is now its own stage and the
+      summary requires both S4 and S5 to pass.
+
+UNEXPLAINED, AND NOT FILED AS FLAKY
+  slotwet_readback hung for 3745.88 s in the 11 Oct gate, with ZERO output, and its declared
+  TIMEOUT 900 did not contain it - the overrun is itself a fault, since a hang can eat an hour of a
+  gate. 29 standalone runs since: 28 green, 0 stalls, and the one failure was my own fault (I rewrote
+  run_guard.sh in place while bash was mid-way through reading it). The root cause is NOT known. What
+  is known is that the only thing in its path that scaled with something that grew - ~5,700 process
+  spawns per seal, twice per guard - is now 173x cheaper, and the gate carries a watchdog that
+  samples any guard still alive at 300 s, so a recurrence leaves a stack instead of an hour of silence.
+
+STILL OPEN, NOT TOUCHED: 5,612 orphan rack-*.json in the live link dir (oldest 25 Aug, 5,117 over a
+day old), left by force-quits. They no longer cost the gate anything after (b), but the product still
+stats them on every directory scan. Reported 11 Oct, awaiting Sean's ruling - nothing in the user's
+live state has been deleted.
+
+DOWNGRADE SAFETY: every new state field is additive (slotsAfter on the ack; the dial-exclusivity
+tie-break reads the two existing booleans and writes them back). Nothing the 09a build depends on has
+been removed or renamed, so a project or saved chain written by this build opens sensibly in
+ship_2026-10-09a. Agent mode remains an on/off in Settings pending Sean's sign-off.
+
+PUSH: nothing is committed and nothing is pushed. The round is 9 files under Source/ plus CMakeLists,
+6 harness files, 1 new shared header and 4 new guard directories, on feat/08c at HEAD 113d0993.

@@ -181,12 +181,16 @@ public:
     };
     const Checkpoint* checkpoint (const juce::String& token) const;
 
-private:
+protected:   // ExecutorDo is a subclass and item 6(b) needs the channel resolver, the "channels that
+             // exist" sentence and the read sources to route and gate a cross-channel edit. These were
+             // private, which is why doOp could only ever act on its own target.
     RackRead targetRack() const;
     AnalysisRead targetAnalysis() const;
     LevellingRead targetLevelling() const;
     LevellingRead levellingFor (const juce::String& uid) const;   // "" = own
-    juce::String resolveChannelArg (const ToolCall& call) const;   // "" own | uid
+    juce::String resolveChannelArg (const ToolCall& call) const;
+    // item 6(d): the channels that DO exist, appended to every unknown_channel failure
+    juce::String knownChannelsSentence() const;   // "" own | uid
     static ToolOutcome notPlaying (const juce::String& what);
 
     Sources src_;

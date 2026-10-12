@@ -769,6 +769,9 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     bool  borrowPushInFlight_ = false;
     int   borrowPendingCount() const { return (int) borrowPendingPushes_.size(); }
     void  borrowWriteHeadPush();                                  // writes the head of the queue (if any) and starts its ack poll
+    // item 1 (12 Oct 2026): apply an ACKED set op's settings to the mirror, so the V2's dials read the Link's
+    // own values rather than the mirror's stale ones (Sean's test 9: 8 ms / 150 ms sent, 50 / 50 still shown).
+    void  borrowMirrorFollowAckedOps(const juce::var& editOps);
     void  borrowPollPushAck(int seq, const juce::String& id);     // 250 ms poll; ok -> pop + rebase + write the next
     // deselect/close: re-send the pending ops synchronously (bounded), then continue with `then(allAcked)`
     // R2: 5 s, ruled 25 Sep 2026 - the old 8 s was a wait nobody asked for and the user sat through it at every
@@ -1167,6 +1170,15 @@ public:
         juce::String wavFilePath;
     };
     std::vector<ChatEntry> chatHistory;
+    // ITEM 3 (12 Oct 2026): turns that finished while NO editor was attached. Written by the api hook set in the
+    // constructor, drained by the next editor, which renders them into the transcript and persists them to the
+    // workspace. In memory only and deliberately NOT in getStateInformation: this is about a closed window
+    // inside one session, and writing it into the project chunk would also make it a downgrade-safety question
+    // for no gain - an older build would simply ignore the key, but the turn belongs to this session either way.
+    juce::Array<juce::var> orphanedChatTurns_;
+    /** Hand the waiting turns to a newly constructed editor and forget them. */
+    juce::Array<juce::var> takeOrphanedChatTurns()
+    { auto out = orphanedChatTurns_; orphanedChatTurns_.clearQuick(); return out; }
     // Editor-lifecycle survival (26 Jul bug): Logic recreates the plugin
     // editor on every Link<->EchoJay window switch, so editor-instance
     // state that must survive that boundary lives HERE, like chatHistory.

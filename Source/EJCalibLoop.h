@@ -121,6 +121,24 @@ struct CalibLoop
     int    steps       = 0;            // moves MADE (a window that is not a measurement never advances this)
     int    window      = 0;            // windows SEEN, for the log
     int    inBandRun   = 0;
+    // ---- ITEM 5 (Sean, 12 Oct 2026): THE LOOP MUST NOT WALK AWAY AND LEAVE IT PAST THE TARGET ---------------
+    //
+    // In host, on the V2's own rack (a commercial hip-hop master), a compressor landed at -17.8 dB GR when
+    // about -6 was right. The mechanism is in the endings, not in the arithmetic: the band test at (4) is
+    // correct, but EVERY "Clamped" exit below - step budget spent, control at the end of its range, input out
+    // of headroom - calls endHere() and leaves the control exactly where the last step put it. If the last step
+    // overshot, the overshoot is what the user is left listening to, and the closing line said the band was not
+    // reached without doing anything about it.
+    //
+    // Sean's rule: land within about 2 dB of the stated target, never leave a compressor far past it, report the
+    // measured figure. So the loop now REMEMBERS the best window it ever saw - the control value whose measured
+    // GR was closest to the band - and an ending that did not reach the band returns the control there rather
+    // than abandoning it at the last probe. The best-seen is a value the loop MEASURED, not an extrapolation.
+    float  bestCtl     = std::numeric_limits<float>::quiet_NaN();   // the control value that produced bestGr
+    float  bestGr      = std::numeric_limits<float>::quiet_NaN();   // its measured GR
+    float  bestMiss    = std::numeric_limits<float>::infinity();    // how far outside the band that window was
+    // How far past the band the loop may LEAVE a compressor. Sean's "within about 2 dB of the stated target".
+    static constexpr float kMaxLeftOutsideDb = 2.0f;
     int    phraseIdx   = -1;           // which closing question was used last: never the same one twice running
     float  lastGr      = std::numeric_limits<float>::quiet_NaN();
     double noSignalMs  = 0.0;
@@ -1008,6 +1026,7 @@ struct CalibLoop
         value = c.startDb;
         preDb = (actuator == Actuator::Drive) ? c.startDb : 0.0f;   // a named control leaves the staging alone
         steps = 0; window = 0; inBandRun = 0; noSignalMs = 0.0; staleRun = 0; judgedAny = false;
+        bestCtl = bestGr = std::numeric_limits<float>::quiet_NaN(); bestMiss = std::numeric_limits<float>::infinity();   // item 5
         lastGr = std::numeric_limits<float>::quiet_NaN();
         // 5 Oct 2026 (Sean's item 3): A LOOP OPENS AWAITING A FRESH WINDOW, ANCHORED WHERE THE HOST SAYS THE CLOCK
         // WAS. begin() resets both of the slot's legs - the host logs "no window from before this can enter a
@@ -1043,6 +1062,7 @@ struct CalibLoop
         minDb = -60.0f; maxDb = 12.0f;
         preDb = openingDrive; value = openingDrive;
         steps = 0; window = 0; inBandRun = 0; noSignalMs = 0.0; staleRun = 0; judgedAny = false;
+        bestCtl = bestGr = std::numeric_limits<float>::quiet_NaN(); bestMiss = std::numeric_limits<float>::infinity();   // item 5
         lastGr = std::numeric_limits<float>::quiet_NaN();
         // 5 Oct 2026 (Sean's item 3): A LOOP OPENS AWAITING A FRESH WINDOW, ANCHORED WHERE THE HOST SAYS THE CLOCK
         // WAS. begin() resets both of the slot's legs - the host logs "no window from before this can enter a
@@ -1103,6 +1123,8 @@ struct CalibLoop
         if (haveBand) { lo = juce::jmin (bandLo, bandHi); hi = juce::jmax (bandLo, bandHi); }
         if (newStepDb > 0.0f) stepDb = newStepDb;
         steps = 0; inBandRun = 0; awaitFresh = true; closingOwed = false; heardAtWriteS = -1.0f;
+        // item 5: bestCtl/bestGr are NOT cleared here - a retarget is one more step in the same hunt, and a
+        // window measured before it is still a measurement of this rack. They clear on a fresh start/reset only.
         state = State::Listening;
         if (mode != Mode::Passive) return;
         const float nowMid = 0.5f * (lo + hi);
@@ -1169,8 +1191,25 @@ struct CalibLoop
         things happened, because "it stopped" is not actionable and these two have opposite answers: no audio is
         the user's to fix, nothing dialled is ours. Logged with the window count either way, so a pass that ended
         early and a pass that ran its full cap are told apart in the log. */
-    void endBecauseStuck (Step& s, bool frozen)
+    /** ITEM 5's SECOND HALF (12 Oct 2026). The stuck endings must put it back too, and this was found by the
+        guard rather than reasoned out: calib_landing_guard fed byte-identical overshoot windows, which is what a
+        stalled transport looks like, and the loop ended HERE rather than at a Clamped exit - with the control
+        still parked at the last overshooting probe.
+
+        "The readings stopped changing" is no better a reason to leave a compressor at 17.8 dB than "the step
+        budget ran out". Both are endings that did not reach the band, so both return the control to the closest
+        setting the loop actually measured. `w` is the window being ended on; the caller has it. */
+    void endBecauseStuck (Step& s, bool frozen, const Window* w = nullptr)
     {
+        if (w != nullptr)
+        {
+            const auto put = revertIfLeftPastBand (*w, s);
+            if (put.isNotEmpty())
+            {
+                closingOwedText = closingMessage() + put;
+                closingOwed = true;
+            }
+        }
         if (frozen)
             askOwed = "No audio reaching " + plugin + " - press play on the loudest part and tap Listen.";
         else
@@ -1271,7 +1310,7 @@ struct CalibLoop
         // WHICH ENDING IS HONEST depends on whether this pass ever had a sample at all: a pass that never got
         // one has an audio problem, which is the user's to fix; a pass that had samples and still went nowhere is
         // ours. The cap does not guess - it asks.
-        if (window > kMaxWindows) { endBecauseStuck (s, /*frozen*/ ! judgedAny); s.card = card(); return s; }
+        if (window > kMaxWindows) { endBecauseStuck (s, /*frozen*/ ! judgedAny, &w); s.card = card(); return s; }
         if (w.heardSeconds > 0.0f) slotHeardS = w.heardSeconds;
         if (std::isfinite (w.inShortTermP90Db)) lastInP90Db = w.inShortTermP90Db;   // item 4, log only
         if (std::isfinite (w.outShortTermP90Db))  lastOutP90Db      = w.outShortTermP90Db;    // 6 Oct, log only
@@ -1314,7 +1353,7 @@ struct CalibLoop
         {
             // 06d item 9: refusing the window is right; refusing it for ever is not. A run of them means the
             // readings have stopped changing, which is a fact about the audio and not about this loop.
-            if (++staleRun >= kStaleRunEnd) { endBecauseStuck (s, /*frozen*/ true); s.card = card(); return s; }
+            if (++staleRun >= kStaleRunEnd) { endBecauseStuck (s, /*frozen*/ true, &w); s.card = card(); return s; }
             s.card = card();
             s.logLine = log (w.heardSeconds > lastHeardS + 1.0e-3f ? "stale-window (part)" : "stale-window");
             return s;
@@ -1395,6 +1434,14 @@ struct CalibLoop
         // CL 1B's Threshold from -1 to -6 dB in six steps. The flag has to be read where the stepping is, not only
         // where the purpose is set. Measure and report, never write.
         if (holdOnly || mode == Mode::Passive) return measureAndAsk (w, s);
+
+        // ITEM 5: REMEMBER THE BEST WINDOW, on every judged window and before anything decides to move. `value`
+        // is the control that produced THIS window (both actuators keep it as "one current value"), so the pair
+        // is a measurement and its cause. Ties keep the EARLIER one: fewer steps to get back to it.
+        {
+            const float miss = w.grDb < lo ? (lo - w.grDb) : (w.grDb > hi ? (w.grDb - hi) : 0.0f);
+            if (miss < bestMiss) { bestMiss = miss; bestGr = w.grDb; bestCtl = value; }
+        }
 
         // (4) IN THE BAND, twice running, ends it.
         if (w.grDb >= lo && w.grDb <= hi)
@@ -1493,8 +1540,10 @@ struct CalibLoop
             if (steps >= effMaxSteps() || wantP < minDb - 1.0e-4f || wantP > maxDb + 1.0e-4f)
             {
                 state = State::Clamped; closingOwed = true;
-                s.finished = true; s.closing = closingMessage();
-                s.card = card(); s.logLine = log ("clamped");
+                s.finished = true;
+                const auto put = revertIfLeftPastBand (w, s);   // item 5: never leave it far past the aim
+                s.closing = closingMessage() + put;
+                s.card = card(); s.logLine = log (put.isEmpty() ? "clamped" : "clamped - reverted to best measured");
                 endHere();
                 return s;
             }
@@ -1519,16 +1568,20 @@ struct CalibLoop
             // Stopped by HEADROOM, not by the budget: a different sentence, because it is a different fact and
             // the user can act on it (turn the source down, or accept less compression).
             state = State::Clamped; closingOwed = true; headroomStopped = true;
-            s.finished = true; s.closing = closingMessage();
-            s.card = card(); s.logLine = log ("clamped");
+            s.finished = true;
+            const auto put = revertIfLeftPastBand (w, s);
+            s.closing = closingMessage() + put;
+            s.card = card(); s.logLine = log (put.isEmpty() ? "clamped" : "clamped - reverted to best measured");
             endHere();
             return s;
         }
         if (steps >= effMaxSteps() || std::abs (want) > kDriveLimit + 1.0e-4f || (up && want > upperLimit + 1.0e-4f))
         {
             state = State::Clamped; closingOwed = true;
-            s.finished = true; s.closing = closingMessage();
-            s.card = card(); s.logLine = log ("clamped");
+            s.finished = true;
+            const auto put = revertIfLeftPastBand (w, s);
+            s.closing = closingMessage() + put;
+            s.card = card(); s.logLine = log (put.isEmpty() ? "clamped" : "clamped - reverted to best measured");
             endHere();
             return s;
         }
@@ -1537,6 +1590,36 @@ struct CalibLoop
         s.writeDrive = true; s.newPre = preDb; s.newPost = -preDb;
         s.card = card(); s.logLine = log ("listening");
         return s;
+    }
+
+    /** ITEM 5: THE ENDING THAT DID NOT REACH THE BAND PUTS THE CONTROL BACK.
+        Called from every Clamped exit. If the window we are ending on sits further outside the band than
+        kMaxLeftOutsideDb, and some earlier window sat closer, the control returns to THAT value and the write
+        rides out on this same Step. Returns the sentence describing what it did, or "" when it left things
+        alone - which is the right answer when the ending was already close enough, or when no better window was
+        ever measured (reverting to a value we never measured would be a guess, and a guess is what this whole
+        loop exists to avoid). */
+    juce::String revertIfLeftPastBand (const Window& w, Step& s)
+    {
+        const float miss = w.grDb < lo ? (lo - w.grDb) : (w.grDb > hi ? (w.grDb - hi) : 0.0f);
+        if (miss <= kMaxLeftOutsideDb) return {};                       // close enough to leave
+        if (! std::isfinite (bestCtl) || ! (bestMiss < miss)) return {}; // nothing measurably better to go back to
+
+        const float from = value;
+        value = bestCtl;
+        if (writesNamedParam())
+        {
+            s.writeParams = true; s.paramNames = params; s.paramValue = value;
+        }
+        else
+        {
+            preDb = value;
+            s.writeDrive = true; s.newPre = preDb; s.newPost = -preDb;
+        }
+        return " It was " + juce::String (w.grDb, 1) + " dB of reduction, past the "
+             + juce::String (lo, 1) + "-" + juce::String (hi, 1) + " dB aim, so I put it back to the closest "
+             + "setting I actually measured: " + juce::String (bestGr, 1) + " dB at "
+             + juce::String (bestCtl, 1) + " (from " + juce::String (from, 1) + ").";
     }
 
     /** ONE judged window in measure-and-ask. Nothing here decides to move the knob: either a comparative already

@@ -1824,7 +1824,12 @@ private:
     // today's behaviour: chat plus Apply, nothing changed without a press. The label says what ON means in
     // the sentence a user would use, because "Agent mode" alone says nothing about consequence - and this is
     // the one setting on this page that lets something else move their plugins.
-    juce::ToggleButton agentModeToggle { "Let EchoJay make changes itself (off: it proposes and you press Apply)" };
+    // THE OFF LABEL WAS WRONG (Sean, 12 Oct 2026, item 7). "off: it proposes and you press Apply" described a
+    // behaviour the build does not have: with agent mode OFF, a dial you ASK for is written immediately, and it
+    // is only ADDING or REMOVING a plugin that waits for Apply. The label now states today's behaviour, because
+    // a switch whose label overstates the restriction is worse than one with no label - it teaches the user a
+    // rule they will then see broken.
+    juce::ToggleButton agentModeToggle { "Let EchoJay make changes itself (off: EchoJay dials settings you ask for, and asks before adding or removing plugins)" };
     // ---- ONE LIST, TWO READERS (11 Oct 2026) ------------------------------------------------------------
     // resized() places these and paint() walks past them, and until now each counted them for itself: paint()
     // carried `y += 2 * (fh + 8)` as "the two rows beyond the one label() covered". The agent toggle made four,
@@ -1833,6 +1838,27 @@ private:
     // here moves the heading by itself.
     // The y paint() last drew "YOUR PLUGINS" at. An OBSERVATION of the paint pass, never an input to it; see
     // the note at the drawText call. -1 until Settings has been painted once.
+    // ---- ITEM 4 (12 Oct 2026): DIALS QUEUED WHILE A RACK IS CONNECTING -------------------------------------
+    // A dial applied while the rack was still connecting used to retire its card with "Not applied: Connecting
+    // to rack...", which threw away something the user had asked for over a state that resolves by itself in a
+    // second or two. The request is held here and re-tried by pumpPendingLinkApplies() on the existing timer.
+    // BOUNDED on purpose: an unbounded wait makes "nothing happened" unexplainable, so the card retires with
+    // the blocking state named once the bound passes.
+    struct PendingLinkApply
+    {
+        juce::String key, chatId, uid, lastWhy;
+        int    msgIdx  = -1;
+        double queuedMs = 0.0;
+    };
+    std::vector<PendingLinkApply> pendingLinkApplies_;
+    static constexpr double kPendingApplyMs = 20000.0;
+    void pumpPendingLinkApplies();
+    // item 3: the one-shot drain of turns that finished with no window open
+    /** item 2: "OUT -2.4 dB . level match" for the rack in view, or "" when nothing can be said. */
+    juce::String rackOutGainCaption() const;
+    void drainOrphanedChatTurns();
+    bool orphansDrained_ = false;
+
     int settingsPluginsHeadingY_ = -1;
     std::array<juce::ToggleButton*, 4> chainSuggestionToggles()
     { return { &autoDialToggle, &dialWritesToggle, &echoJayOnlyToggle, &agentModeToggle }; }
@@ -2271,6 +2297,15 @@ private:
     // defines the slot numbers the model writes), so the picker lives on
     // the input row, not on the apply step. Session state, never persisted.
     juce::TextButton chatTargetBtn { "This channel" };
+    // ---- ITEM 11 (Sean, 12 Oct 2026): AGENT MODE IN THE INPUT BAR ------------------------------------------
+    // The same setting as the Settings switch, and deliberately the same STORE: agentModeFlagFile(). Two
+    // controls over one flag file cannot drift, which is why neither of them keeps a bool of its own - both
+    // read agentModeOn() and both write setAgentModeOn(). lastAgentChip_ exists only so the timer can notice a
+    // change made by the OTHER control (or by a harness, or by another instance) and repaint without the window
+    // being closed and reopened.
+    juce::TextButton agentChipBtn { "Agent: Off" };
+    bool lastAgentChip_ = false;
+    void syncAgentChip (bool force = false);
     bool rehydratedFromStore_ = false;  // one-shot onLoaded re-hydrate
     // Chat composer container (single rounded box: text area on top, a
     // control row inside the bottom — target pill left, model LABEL +
@@ -3086,6 +3121,14 @@ private:
         // can see is that tips now wait 700ms rather than 600ms.
 
         juce::String statusText;
+
+        /** ITEM 2 (Sean, 12 Oct 2026): THE RACK'S OUT GAIN AND WHAT SET IT, on the strip.
+            "I can't see whether levelling worked." The figure existed in three places (the loop's
+            currentGainDb, a Link's registry gainDb, the slot's own outGainDb) and was shown in none of them,
+            so a landing was invisible unless you went looking in the log. Set by the editor on its timer -
+            same idiom as statusText - and painted in the strip band, left of the master knob. Empty = there is
+            nothing to say, which is NOT the same as 0.0 dB and must not be drawn as "OUT 0.0 dB". */
+        juce::String rackOutCaption;
 
         /** REMOTE MODE: the panel is showing another Link's rack, read from
             its sidecar rather than from the local ChainHost. Stage 1 carries
@@ -4008,6 +4051,18 @@ private:
                 g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
                 g.drawText("SUGGESTED SETTINGS", (int)sb.getX() + 10, (int)sb.getY() + 5,
                            200, 12, juce::Justification::centredLeft);
+            }
+
+            // ITEM 2: the rack OUT caption, in the strip band and right-aligned so it sits beside the master
+            // knob without taking width from the slots. Drawn only when it has something to say.
+            if (rackOutCaption.isNotEmpty())
+            {
+                const int capW = 210;
+                const int capX = juce::jmax(kRackSelW, getWidth() - kMasterW - capW - 6);
+                g.setColour(C::text2);
+                g.setFont(juce::Font(juce::FontOptions(10.5f)));
+                g.drawText(rackOutCaption, capX, getHeight() - kStripH + 2, capW, 12,
+                           juce::Justification::centredRight, true);
             }
 
             // Display-area messages

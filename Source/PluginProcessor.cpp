@@ -284,6 +284,32 @@ EchoJayProcessor::EchoJayProcessor()
     // while another instance is mid-chat must not cancel that chat.
     echojay::net::liveProcessors().fetch_add (1);
     chainHost.setKeyFeedOwnerId ((uint64_t) (uintptr_t) this);
+    // ---- ITEM 3 (12 Oct 2026): CATCH A TURN THAT FINISHES AFTER THE WINDOW CLOSED -------------------------
+    //
+    // The editor's reply callbacks all begin `if (safeThis == nullptr) return;` and the appends that persist a
+    // turn sit below that line, so closing the V2 window with a question in flight discarded the answer. `api`
+    // is OURS and outlives every editor, so the turn is caught here instead.
+    //
+    // WHILE AN EDITOR IS ATTACHED THIS DOES NOTHING. That is deliberate: the live editor's own path already
+    // appends to chatHistory, to chatRoles/chatContents and to the workspace, and a second append here would
+    // double every turn in the transcript. getActiveEditor() is the same fact the editor's SafePointer is
+    // testing, read from the side that survives.
+    api.onChatTurnFinalised = [this] (const juce::String& chatId, const juce::String& reply, bool success)
+    {
+        if (getActiveEditor() != nullptr) return;          // a live window persists it, as it always has
+        if (! success || reply.trim().isEmpty()) return;    // nothing worth keeping
+        chatHistory.push_back ({ "assistant", reply });
+        chatRoles.add ("assistant");
+        chatContents.add (reply);
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("chatId", chatId);
+        o->setProperty ("reply",  reply);
+        o->setProperty ("atMs",   (double) juce::Time::currentTimeMillis());
+        orphanedChatTurns_.add (juce::var (o));
+        EchoJay_NSLog (("EJChat: a turn finished with NO editor attached - kept for the next window ("
+                        + juce::String (reply.length()) + "b, chat " + chatId + ", "
+                        + juce::String (orphanedChatTurns_.size()) + " waiting)").toRawUTF8());
+    };
     // 21n item 3: the plugin-wide undo history - dispatcher, status line, the local rack's hooks, the loop's writes
     undoHistory_.apply  = [this](echojay::UndoEntry& e, bool toBefore) { return applyUndoEntry(e, toBefore); };
     undoHistory_.status = [this](const juce::String& s) { lastUndoStatus_ = s; EchoJay_NSLog(("EJUndo: " + s).toRawUTF8()); };
@@ -2965,6 +2991,19 @@ void EchoJayProcessor::borrowPollPushAck(int seq, const juce::String& id)
         }
         if (st == "ok")
         {   // ACKED: the op is the Link's now - pop, rebase, write the next
+            // ---- ITEM 1 (Sean, 12 Oct 2026): THE MIRROR FOLLOWS THE ACKED COMMAND ----------------------------
+            //
+            // Sean's test 9: the chat set attack 8 ms / release 150 ms on an addressed Link, the Link took them,
+            // and the V2 went on showing 50 / 50. Nothing was broken in the send - the ack above says the Link
+            // applied it. The V2's device editor reads the processor it is EDITING, which for a borrowed slot is
+            // the mirror's instance, and the mirror was never told. So the figures on screen were a truthful
+            // reading of the wrong object.
+            //
+            // The mirror is the V2 editor's read model until it is removed (queue item 1), so while it exists it
+            // has to follow every command the Link has CONFIRMED. Done here, on the ack, and never on the send:
+            // a refused op must not move the display, or the screen would show settings the Link rejected -
+            // which is the same class of lie in the other direction.
+            borrowMirrorFollowAckedOps(borrowPendingPushes_.front().editOps);
             borrowPendingPushes_.erase(borrowPendingPushes_.begin());
             borrowPushInFlight_ = false;
             borrowRebaseAfterPush();
@@ -2988,6 +3027,42 @@ void EchoJayProcessor::borrowPollPushAck(int seq, const juce::String& id)
         }
         borrowPollPushAck(seq, id);   // no ack yet: keep polling while the session is live
     });
+}
+
+// ITEM 1: apply an ACKED command's settings to the mirror, so what the V2 draws is what the Link holds.
+//
+// Only `set` ops are followed here, and deliberately: add / remove / move / replace already rebase the mirror
+// through borrowRebaseAfterPush(), which re-reads the Link's own rack. A `set` carries no structural change, so
+// the rebase has nothing to notice - which is exactly why the parameter figures were the thing left stale.
+//
+// THE WIRE IS 1-BASED AND THE STRUCTS ARE 0-BASED (the standing rule in this transport). These ops are the WIRE
+// var, so one comes off the slot index here. An op with no slot, or a slot outside the mirror, is skipped rather
+// than clamped: writing a confirmed setting onto the WRONG slot would be worse than leaving the display stale.
+void EchoJayProcessor::borrowMirrorFollowAckedOps(const juce::var& editOps)
+{
+    if (borrowHost_ == nullptr) return;
+    const auto* arr = editOps.getArray();
+    if (arr == nullptr) return;
+    int followed = 0, skipped = 0;
+    for (const auto& opVar : *arr)
+    {
+        auto* o = opVar.getDynamicObject();
+        if (o == nullptr) continue;
+        if (o->getProperty ("op").toString() != "set") continue;
+        if (! o->hasProperty ("slot")) { ++skipped; continue; }
+        const int slot0 = (int) o->getProperty ("slot") - 1;
+        if (slot0 < 0 || slot0 >= borrowHost_->getNumSlots()) { ++skipped; continue; }
+        const auto structured = o->getProperty ("settings_structured");
+        if (structured.isVoid()) { ++skipped; continue; }
+        borrowHost_->setSlotStructuredSettings (slot0, structured);   // re-dials through applyStructuredIfReady
+        ++followed;
+    }
+    if (followed > 0 || skipped > 0)
+        EchoJay_NSLog (("EJLink: mirror followed " + juce::String (followed) + " acked set op(s)"
+                        + (skipped > 0 ? ", skipped " + juce::String (skipped)
+                                       + " with no slot or no settings (left stale rather than written to the "
+                                         "wrong slot)" : juce::String())
+                        + " - the V2's dials now read what the Link holds").toRawUTF8());
 }
 
 void EchoJayProcessor::borrowFlushPendingThen(std::function<void(bool)> then, int maxWaitMs)

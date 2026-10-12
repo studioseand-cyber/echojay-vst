@@ -117,7 +117,19 @@ public:
 
 private:
     struct Marker { const char* type; juce::String open, close; bool consumed = false; };
-    static constexpr int kNumMarkers = 5;
+    // ---- ITEM 8 (Sean, 12 Oct 2026): THIS SET MUST BE THE WHOLE SET -----------------------------------------
+    //
+    // "The chat briefly showed backend text mid-stream before the reply settled." It did, and this array is why.
+    // The extractors on the FINAL reply knew seven block types; this incremental set knew FIVE. The two it did
+    // not know - PROPOSAL (added 7 Oct) and LEVEL_MATCH - therefore streamed into the visible bubble as ordinary
+    // prose, marker and JSON payload and all, and were only removed when the settled reply replaced the text.
+    // So the raw internal block WAS painted, every time one of those two rode a streamed turn.
+    //
+    // A block type added to the extractors and not to this array leaks by DEFAULT, which is the wrong default:
+    // the cost of forgetting is raw JSON in front of the user. tools/stream_markers_guard asserts that every
+    // <<<ECHOJAY_*>>> marker defined anywhere in Source/ appears here, so the next block type cannot be added
+    // to one list only.
+    static constexpr int kNumMarkers = 7;
     Marker markers[kNumMarkers] =
     {
         // Longer chain-family siblings FIRST is not required for correctness
@@ -130,6 +142,11 @@ private:
         { "chain",        "<<<ECHOJAY_CHAIN>>>",        "<<<END_CHAIN>>>" },
         { "gain",         "<<<ECHOJAY_GAIN>>>",         "<<<END_GAIN>>>" },
         { "ask",          "<<<ECHOJAY_ASK>>>",          "<<<END_ASK>>>" },
+        // 12 Oct 2026, item 8: the two that were missing. Their payloads are not decomposed (no onSlot) and no
+        // caller has to handle the new onBlock types - the settled reply is still where both are acted on. What
+        // changes is that neither is ever PAINTED.
+        { "proposal",     "<<<ECHOJAY_PROPOSAL>>>",     "<<<END_PROPOSAL>>>" },
+        { "level_match",  "<<<ECHOJAY_LEVEL_MATCH>>>",  "<<<END_LEVEL_MATCH>>>" },
     };
 
     juce::String pending;           // unemitted tail (prose mode)

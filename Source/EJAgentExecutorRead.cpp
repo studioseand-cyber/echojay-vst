@@ -58,11 +58,52 @@ namespace
 // =============================================================================
 ExecutorRead::ExecutorRead (Sources s) : src_ (std::move (s)) {}
 
+// ITEM 6(a), 12 Oct 2026. THIS RETURNED THE MODEL'S RAW STRING, WHICH IS WHY THE KICK COULD NOT BE REACHED.
+// Sean asked for "a touch more top end on the kick" with the V2 on Mix Bus. The start context already sends every
+// Link's real uid AND its track name (tracksVar), but the model answered with "88_7even Kick_2_01" - a NAME-shaped
+// string - and this function handed it straight to the registry, which refused it: `no Link with uid "..." is in
+// the registry`. Nothing anywhere resolved a name to a uid.
+//
+// So: uid first (exact, and that must stay first - a uid is unambiguous), then the track name, case-insensitively,
+// then a containment match in EITHER direction so "kick" finds "88_7even Kick_2" and "88_7even Kick_2_01" finds
+// "88_7even Kick_2". A containment match is only accepted when it is UNIQUE; two candidates mean the executor
+// hands the string back unresolved and the caller's failure lists the tracks, because quietly picking one of two
+// channels is how an agent edits the wrong thing.
 juce::String ExecutorRead::resolveChannelArg (const ToolCall& call) const
 {
     const auto ch = argString (call, "channel").trim();
     if (ch.isEmpty() || ch == "self") return target_;
-    return ch;
+
+    const auto tracks = src_.tracks ? src_.tracks() : std::vector<TrackRead>();
+    for (const auto& t : tracks) if (t.uid == ch) return t.uid;                       // a uid, exactly
+
+    const auto want = ch.toLowerCase();
+    for (const auto& t : tracks) if (t.name.toLowerCase() == want) return t.uid;       // a name, exactly
+
+    juce::String hit; int hits = 0;
+    for (const auto& t : tracks)
+    {
+        const auto have = t.name.toLowerCase();
+        if (have.isEmpty()) continue;
+        if (have.contains (want) || want.contains (have)) { hit = t.uid; ++hits; }
+    }
+    if (hits == 1) return hit;
+    return ch;   // unresolved, or ambiguous: the failure path names the tracks
+}
+
+// ITEM 6(d): A READ FAILURE HAS TO BE READABLE ENOUGH TO STOP THE LOOP. The agent retried for six rounds against
+// `no Link with uid "..." is in the registry`, because that sentence does not say what WOULD work. Every
+// unknown_channel failure now carries the channels that exist, so the next turn can either name one or stop.
+juce::String ExecutorRead::knownChannelsSentence() const
+{
+    const auto tracks = src_.tracks ? src_.tracks() : std::vector<TrackRead>();
+    if (tracks.empty()) return " No Links are in the registry at all, so no other channel can be addressed - "
+                               "work on this channel or stop.";
+    juce::StringArray rows;
+    for (const auto& t : tracks) rows.add ("\"" + t.name + "\" (uid " + t.uid + ")");
+    return " The channels that exist are: " + rows.joinIntoString ("; ")
+         + ". Name one of those, by uid or by its exact name, or stop - this list is complete and will not change "
+           "by retrying.";
 }
 
 RackRead ExecutorRead::targetRack() const
@@ -319,7 +360,7 @@ void ExecutorRead::look (const ToolCall& call, Done done)
     if (what == "rack" || what == "get_rack")
     {
         RackRead r = uid.isNotEmpty() ? (src_.linkRack ? src_.linkRack (uid) : RackRead()) : (src_.ownRack ? src_.ownRack() : RackRead());
-        if (! r.valid) { done (ToolOutcome::failure ("unknown_channel", r.why.isNotEmpty() ? r.why : "no rack can be read for \"" + uid + "\"")); return; }
+        if (! r.valid) { done (ToolOutcome::failure ("unknown_channel", (r.why.isNotEmpty() ? r.why : "no rack can be read for \"" + uid + "\"") + knownChannelsSentence())); return; }
         done (ToolOutcome::success (rackVar (r, levellingFor (uid))));
         return;
     }
@@ -343,7 +384,7 @@ void ExecutorRead::look (const ToolCall& call, Done done)
             {
                 bool found = false;
                 for (const auto& t : tracks) if (t.uid == uid) { name = t.name; kind = "channel"; found = true; }
-                if (! found) { done (ToolOutcome::failure ("unknown_channel", "no Link with uid \"" + uid + "\" is in the registry")); return; }
+                if (! found) { done (ToolOutcome::failure ("unknown_channel", "no Link with uid \"" + uid + "\" is in the registry." + knownChannelsSentence())); return; }
             }
         }
         done (ToolOutcome::success (channelVar (name, kind, uid, tracks, src_.projectName ? src_.projectName() : juce::String())));
@@ -363,7 +404,7 @@ void ExecutorRead::look (const ToolCall& call, Done done)
     if (what == "levels")
     {
         RackRead r = uid.isNotEmpty() ? (src_.linkRack ? src_.linkRack (uid) : RackRead()) : (src_.ownRack ? src_.ownRack() : RackRead());
-        if (! r.valid) { done (ToolOutcome::failure ("unknown_channel", r.why)); return; }
+        if (! r.valid) { done (ToolOutcome::failure ("unknown_channel", r.why + knownChannelsSentence())); return; }
         echojay::LevelTally::Snapshot in, out;
         if (uid.isEmpty()) { if (src_.chainInLoop) in = src_.chainInLoop(); if (src_.chainOut) out = src_.chainOut(); }
         done (ToolOutcome::success (levelsVar (r, in, out)));
@@ -372,7 +413,9 @@ void ExecutorRead::look (const ToolCall& call, Done done)
     if (what == "inventory")
     {
         const auto names = src_.inventory ? src_.inventory() : juce::StringArray();
-        if (names.isEmpty()) { done (ToolOutcome::failure ("inventory_unavailable", "the installed plugin list is not bound in this build")); return; }
+        if (names.isEmpty()) { done (ToolOutcome::failure ("inventory_unavailable",
+            "the installed plugin list is empty: no plugin scan has completed on this machine yet, so there is "
+            "nothing to choose from. This will not change by retrying - work with EchoJay's own devices or stop.")); return; }
         done (ToolOutcome::success (inventoryVar (names)));
         return;
     }
@@ -427,7 +470,7 @@ void ExecutorRead::check (const ToolCall& call, Done done)
     if (what == "gr")
     {
         const auto r = targetRack();
-        if (! r.valid) { done (ToolOutcome::failure ("unknown_channel", r.why)); return; }
+        if (! r.valid) { done (ToolOutcome::failure ("unknown_channel", r.why + knownChannelsSentence())); return; }
         if (slotArg < 1 || slotArg > (int) r.slots.size()) { done (ToolOutcome::failure ("unknown_slot", "slot " + juce::String (slotArg) + " is not on the rack (1.." + juce::String ((int) r.slots.size()) + ")")); return; }
         const auto& s = r.slots[(size_t) slotArg - 1];
         if (! s.pictureValid || ! s.grKnown) { done (notPlaying ("gain reduction on slot " + juce::String (slotArg))); return; }
@@ -440,7 +483,7 @@ void ExecutorRead::check (const ToolCall& call, Done done)
     if (what == "true_peak")
     {
         const auto r = targetRack();
-        if (! r.valid) { done (ToolOutcome::failure ("unknown_channel", r.why)); return; }
+        if (! r.valid) { done (ToolOutcome::failure ("unknown_channel", r.why + knownChannelsSentence())); return; }
         if (r.slots.empty()) { done (ToolOutcome::failure ("empty_rack", "the rack has no slots")); return; }
         const int n = slotArg >= 1 && slotArg <= (int) r.slots.size() ? slotArg : (int) r.slots.size();
         const auto& s = r.slots[(size_t) n - 1];
@@ -722,6 +765,20 @@ Sources bindToProcessor (EchoJayProcessor& proc)
             out.push_back (t);
         }
         return out;
+    };
+    // ITEM 6(c), 12 Oct 2026: THE INVENTORY WAS NEVER BOUND. `Sources::inventory` was declared, documented
+    // ("left for the ..."), and never assigned here - so look(inventory) answered "the installed plugin list is
+    // not bound in this build" on every build that has ever shipped, and the agent could not see what Sean owns.
+    // maybeReloadEntriesCache() first, for the same reason the Link's v:2 path needed it: entries_ is filled from
+    // the shared chain_entries.xml and is EMPTY until something asks for it, so an unprimed list would read as
+    // "nothing installed" rather than "not read yet".
+    s.inventory = [p]
+    {
+        auto& host = p->getChainHost();
+        host.maybeReloadEntriesCache();
+        juce::StringArray names;
+        for (const auto& d : host.getFilteredPlugins ({})) names.addIfNotAlreadyThere (d.name);
+        return names;
     };
     s.linkRack = [p] (const juce::String& uid)
     {

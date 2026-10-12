@@ -1813,6 +1813,27 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chatTargetBtn.setColour(juce::TextButton::textColourOnId,  juce::Colour(0xff7FE3F2));
     chatTargetBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
     chatTargetBtn.onClick = [this] { showChatTargetMenu(); };
+
+    // ---- ITEM 11: the agent chip, one click, same flag file as Settings --------------------------------------
+    agentChipBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0x00000000));
+    agentChipBtn.setColour (juce::TextButton::textColourOnId,  juce::Colour (0xff7FE3F2));
+    agentChipBtn.setColour (juce::TextButton::textColourOffId, C::text2);
+    agentChipBtn.onClick = [this]
+    {
+        const bool turningOff = agentModeOn();
+        setAgentModeOn (! turningOff);
+        // SWITCHING IT OFF STOPS WHAT IS RUNNING, as Sean asked. ExecutorDo already re-checks agentModeOn() on
+        // every op, so nothing FURTHER would be applied either way - but leaving the turn spinning after the
+        // user has withdrawn permission is not a clean stop, so the run ends the same way Stop ends it.
+        if (turningOff && agentClient_ != nullptr && agentClient_->isActive())
+        {
+            agentClient_->stop();
+            EchoJay_NSLog ("EJAgent: agent mode switched OFF mid-turn - the running turn was stopped, nothing further applied");
+        }
+        syncAgentChip (true);
+    };
+    addChildComponent (agentChipBtn);
+    syncAgentChip (true);
     // No restore from processor state: the router selection is transient
     // by design (RESET, not sticky) — every main chat opens untargeted.
     addChildComponent(chatTargetBtn);
@@ -25978,6 +25999,13 @@ int EchoJayEditor::measureChatContentHeight()
 void EchoJayEditor::timerCallback()
 {
     processorRef.serviceCaptureStop();   // the transport-stop capture end, off the audio thread (8 Sep 2026)
+    pumpPendingLinkApplies();            // item 4 (12 Oct 2026): dials queued while the rack was connecting
+    drainOrphanedChatTurns();            // item 3 (12 Oct 2026): a turn that landed while the window was shut
+    syncAgentChip();                     // item 11: the chip follows the flag file, however it changed
+    {   // item 2: the strip's OUT caption, change-detected so the strip only repaints when the words move
+        const auto cap = rackOutGainCaption();
+        if (cap != chainListPanel.rackOutCaption) { chainListPanel.rackOutCaption = cap; chainListPanel.repaint(); }
+    }
 
     // 21t-i (27 Sep 2026): THE LOOP IS ADVANCED HERE, and until now nothing advanced it at all.
     // calibTickAndPost was written, guarded and never called - the same gap the TRIGGER had before 21t-h, one step
@@ -31436,6 +31464,143 @@ void EchoJayEditor::retireLinkEditCard(const juce::String& editDataKey,
     repaint();
 }
 
+// ITEM 11: ONE function owns the chip's text, its tooltip and the Settings toggle's tick, so the two controls
+// cannot disagree. Called on a click, and from the timer whenever the flag file has changed underneath us -
+// which is what makes "no need to close and reopen the window" true for a change made anywhere else.
+void EchoJayEditor::syncAgentChip (bool force)
+{
+    const bool on = agentModeOn();
+    if (! force && on == lastAgentChip_) return;
+    lastAgentChip_ = on;
+    agentChipBtn.setButtonText (on ? "Agent: On" : "Agent: Off");
+    agentChipBtn.setToggleState (on, juce::dontSendNotification);
+    // The hover sentence is the SAME sentence as the Settings label, by construction: one wording for one
+    // setting. Item 7's correction therefore reaches both at once.
+    agentChipBtn.setTooltip (on ? "On: EchoJay makes changes itself."
+                                : "Off: EchoJay dials settings you ask for, and asks before adding or removing plugins.");
+    agentModeToggle.setToggleState (on, juce::dontSendNotification);
+    agentChipBtn.repaint();
+}
+
+// ---- ITEM 2 (12 Oct 2026): THE RACK'S OUT GAIN AND WHAT SET IT -------------------------------------------
+//
+// Sean: "Right now I can't see whether levelling worked." The figure was never hidden on purpose - it simply
+// had no caption anywhere, so the only way to know a landing had happened was the log.
+//
+// WHAT THIS WILL AND WILL NOT CLAIM. The gain is read from the loop's own stage for the rack in view, which is
+// the object that actually wrote it, and the provenance words are the loop's own (option + stage). When the
+// loop has never been armed for this rack there is NOTHING here that knows who set the gain - a Link's OUT
+// fader can be moved by hand, by the V2, or by a levelling run in a previous session, and the Link's level
+// record (EJLevelRecord) carries measurements only, no option and no landed gain. In that case the figure is
+// shown WITHOUT a provenance clause rather than with a guessed one, and when there is no figure at all the
+// caption is EMPTY - never "OUT 0.0 dB", which would be a positive claim that the rack is at unity.
+juce::String EchoJayEditor::rackOutGainCaption() const
+{
+    auto& loop = processorRef.loudnessLoop();
+    const juce::String viewUid = chainViewUid();
+
+    if (loop.everArmed())
+    {
+        const float db = loop.currentGainDb();
+        // The stage names itself ("the rack's OUT gain" / the final limiter's input), which is also the one
+        // fact that tells the user WHERE the gain went - Sean's master-levelling case puts it on the limiter IN
+        // with no Level slot in the rack at all.
+        const auto stage = loop.stageName();
+        const bool onLimiter = stage.containsIgnoreCase ("limiter");
+        const auto word = loop.loudnessOption();
+        juce::String how = word == "keep" || word == "match" ? "level match"
+                         : word == "dynamic"                 ? "dynamic"
+                         : word.isNotEmpty()                 ? "level target"
+                                                             : juce::String();
+        juce::String out = (onLimiter ? juce::String ("LIMITER IN ") : juce::String ("OUT "))
+                         + juce::String (db >= 0.0f ? "+" : "") + juce::String (db, 1) + " dB";
+        if (how.isNotEmpty()) out << juce::String::fromUTF8 (" \xc2\xb7 ") << how;
+        return out;
+    }
+
+    // No loop on this rack: show the gain that IS set, if we can read one, and say nothing about who set it.
+    if (viewUid.isNotEmpty())
+    {
+        for (const auto& l : processorRef.getLinkSlotInfos())
+            if (l.uid == viewUid)
+            {
+                if (std::abs (l.gainDb) < 0.05f) return {};        // unity: nothing worth a caption
+                return juce::String ("OUT ") + (l.gainDb >= 0.0f ? "+" : "")
+                     + juce::String (l.gainDb, 1) + " dB";
+            }
+    }
+    return {};
+}
+
+// ITEM 3: the turns that finished with no window open. The processor has already put them in chatHistory, so the
+// transcript shows them the moment this editor was built; what is left is the SERVER copy, which only an editor
+// can write (the workspace is editor-owned). Done from the timer rather than the constructor because the
+// workspace needs a chat id, and at construction there may not be one yet.
+//
+// Drained ONCE and then forgotten - takeOrphanedChatTurns() clears the processor's list - so a turn cannot be
+// appended twice however many times this runs.
+void EchoJayEditor::drainOrphanedChatTurns()
+{
+    if (orphansDrained_) return;
+    if (processorRef.orphanedChatTurns_.isEmpty()) { orphansDrained_ = true; return; }
+    if (currentChatId.isEmpty()) return;                       // not yet - try again on the next tick
+
+    const auto turns = processorRef.takeOrphanedChatTurns();
+    orphansDrained_ = true;
+    for (const auto& t : turns)
+    {
+        if (auto* o = t.getDynamicObject())
+        {
+            const auto chatId = o->getProperty ("chatId").toString();
+            const auto reply  = o->getProperty ("reply").toString();
+            if (reply.trim().isEmpty()) continue;
+            workspace.appendMessageToChat (chatId.isNotEmpty() ? chatId : currentChatId,
+                                           "assistant", reply, {}, {}, {}, {}, {}, {}, {});
+            EchoJay_NSLog (("EJChat: persisted a turn that finished while the window was shut ("
+                            + juce::String (reply.length()) + "b, chat "
+                            + (chatId.isNotEmpty() ? chatId : currentChatId) + ")").toRawUTF8());
+        }
+    }
+}
+
+// ITEM 4: the queue's one pump. Runs on the editor's existing timer - no new timer, and no work at all when the
+// queue is empty, which is the normal case. Each entry either applies (the gate opened), retires with the state
+// that was still blocking it (the bound expired), or waits.
+void EchoJayEditor::pumpPendingLinkApplies()
+{
+    if (pendingLinkApplies_.empty()) return;
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    std::vector<PendingLinkApply> keep;
+    for (auto& q : pendingLinkApplies_)
+    {
+        bool connected = false;
+        for (const auto& e : processorRef.getLinkDisplayList())
+            if (e.info.uid == q.uid) { connected = e.info.connected; break; }
+
+        if (connected && ! chainEditGateRefusesFor(q.uid))
+        {
+            EchoJay_NSLog(("EJChat: queued apply now READY for " + q.uid + " after "
+                           + juce::String((int)(now - q.queuedMs)) + " ms - applying").toRawUTF8());
+            // Cleared from the queue BEFORE the call: applyChainEditToLink re-queues on refusal, and an entry
+            // still in the list at that moment would be treated as "already queued" and never retried again.
+            const int idx = q.msgIdx;
+            applyChainEditToLink(idx);
+            continue;
+        }
+        if (now - q.queuedMs >= kPendingApplyMs)
+        {
+            EchoJay_NSLog(("EJChat: queued apply EXPIRED for " + q.uid + " after "
+                           + juce::String((int)(now - q.queuedMs)) + " ms - " + q.lastWhy).toRawUTF8());
+            retireLinkEditCard(q.key, q.chatId,
+                "Not applied: " + q.lastWhy + juce::String::fromUTF8(" \xe2\x80\x94 the rack did not become ready within ")
+                    + juce::String((int)(kPendingApplyMs / 1000.0)) + " s, so nothing was changed.", {}, {}, {});
+            continue;
+        }
+        keep.push_back(q);
+    }
+    pendingLinkApplies_.swap(keep);
+}
+
 void EchoJayEditor::applyChainEditToLink(int msgIdx)
 {
     if (msgIdx < 0 || msgIdx >= (int)chatMessages.size()) return;
@@ -31452,18 +31617,35 @@ void EchoJayEditor::applyChainEditToLink(int msgIdx)
     for (const auto& e : processorRef.getLinkDisplayList())
         if (e.info.uid == uid) { label = e.displayName; connected = e.info.connected; break; }
 
-    if (chainEditGateRefusesFor(uid))
-    {   // COMMIT 2 (17 Sep 2026): the selected rack is not held yet — same line as the overlay
-        retireLinkEditCard(key, chatIdAtApply,
-            "Not applied: " + chainLockStateText(processorRef.rackLockState(), processorRef.borrowHostIfActiveFor(uid) != nullptr), {}, {}, {});
-        return;
-    }
-
-    if (!connected)
+    // ---- ITEM 4, 12 Oct 2026: A DIAL SENT WHILE RECONNECTING IS QUEUED, NOT DROPPED ------------------------
+    //
+    // Both of these used to RETIRE the card: the user asked for a change, saw "Not applied: Connecting to
+    // rack...", and the request was gone. But "connecting" and "not connected right now" are both states that
+    // RESOLVE on their own, usually within a second or two of selecting a rack - so the one thing that should
+    // not happen is throwing the request away. It is held and re-tried as the gate opens.
+    //
+    // THE QUEUE IS BOUNDED, because a wait with no end is how "nothing happened" becomes unexplainable: after
+    // kPendingApplyMs the card retires with the state that was still blocking it, named. Queueing is announced
+    // in the card, so a user who sees nothing move knows it is waiting rather than lost.
+    if (chainEditGateRefusesFor(uid) || ! connected)
     {
-        retireLinkEditCard(key, chatIdAtApply,
-            "Not applied: \"" + label + "\" is not connected right now - "
-            "nothing was changed.", {}, {}, {});
+        const auto why = chainEditGateRefusesFor(uid)
+                           ? chainLockStateText(processorRef.rackLockState(), processorRef.borrowHostIfActiveFor(uid) != nullptr)
+                           : juce::String("\"") + label + "\" is not connected yet";
+        bool already = false;
+        for (auto& q : pendingLinkApplies_) if (q.key == key && q.chatId == chatIdAtApply) { already = true; q.lastWhy = why; }
+        if (! already)
+        {
+            PendingLinkApply q;
+            q.key = key; q.chatId = chatIdAtApply; q.uid = uid; q.msgIdx = msgIdx;
+            q.queuedMs = juce::Time::getMillisecondCounterHiRes();
+            q.lastWhy = why;
+            pendingLinkApplies_.push_back(q);
+            EchoJay_NSLog(("EJChat: apply QUEUED for " + uid + " - " + why
+                           + " (will apply when the rack is ready; bound "
+                           + juce::String((int)(kPendingApplyMs / 1000.0)) + " s)").toRawUTF8());
+        }
+        setChainSaveStatus(why + juce::String::fromUTF8(" \xe2\x80\x94 queued; this will apply as soon as the rack is ready."));
         return;
     }
 
@@ -32264,6 +32446,23 @@ void EchoJayEditor::layoutChatBox(juce::Rectangle<int> box)
         chatTargetBtn.setBounds(r.removeFromLeft(pw).withSizeKeepingCentre(pw, 20));
     }
     chatTargetBtn.setVisible(pill && chatInput.isVisible());
+
+    // ITEM 11: the agent chip sits in this same row, and unlike the target pill it is shown whenever the
+    // composer is - it is a setting, not a router, so hiding it when a banner shows would hide the state at
+    // exactly the moments an agent turn is most likely.
+    {
+        const juce::Font af (juce::FontOptions (12.5f));
+        const int aw = juce::jlimit (72, juce::jmax (72, r.getWidth() - 70),
+                                     af.getStringWidth (agentChipBtn.getButtonText()) + 22);
+        if (r.getWidth() > aw + 8)
+        {
+            r.removeFromLeft (6);
+            agentChipBtn.setBounds (r.removeFromLeft (aw).withSizeKeepingCentre (aw, 20));
+            agentChipBtn.setVisible (chatInput.isVisible());
+        }
+        else
+            agentChipBtn.setVisible (false);   // no room: the composer wins
+    }
 
     // Model LABEL (never a selector — routing is tier+turnType): dim text
     // right-aligned beside Send, no chevron, mouse-transparent.

@@ -28,6 +28,27 @@
 #include <fstream>
 
 namespace {
+// ---- THE TWO PREDICATES SECTION (4) ASSERTS, FACTORED OUT (12 Oct 2026, item 10) ------------------------
+// They are shared with section (4b) below, which drives them over KNOWN-BAD inputs. The whole point of (4b)
+// is that it exercises THESE functions and not a copy: a negative case against a re-typed predicate proves
+// only that the copy discriminates.
+juce::StringArray capsOf (const juce::var& body)
+{
+    juce::StringArray caps;
+    if (auto* arr = body.getProperty ("capabilities", juce::var()).getArray())
+        for (int i = 0; i < arr->size(); ++i) caps.add ((*arr)[i].toString());
+    return caps;
+}
+// Component by component, NOT as text: "2.26.10" sorts BELOW "2.26.5" as a string.
+bool atLeastVersion (const juce::String& have, int maj, int min, int patch)
+{
+    juce::StringArray p; p.addTokens (have, ".", "");
+    if (p.size() < 3) return false;
+    const int h[3] = { p[0].getIntValue(), p[1].getIntValue(), p[2].getIntValue() };
+    const int w[3] = { maj, min, patch };
+    for (int i = 0; i < 3; ++i) { if (h[i] != w[i]) return h[i] > w[i]; }
+    return true;
+}
 int failures = 0;
 void check (bool ok, const juce::String& w, const juce::String& d = {})
 {
@@ -137,10 +158,7 @@ int main()
         // Read the array rather than string-matching it: B gates each capability independently, so a
         // new one must not be able to break an old one's assertion the way "leveling" broke this one
         // (gate of 11 Oct, the only product-side red of that round).
-        juce::StringArray caps;
-        if (auto* arr = v.getProperty ("capabilities", juce::var()).getArray())
-            for (int i = 0; i < arr->size(); ++i)
-                caps.add ((*arr)[i].toString());
+        const auto caps = capsOf (v);
 
         check (caps.contains ("proposal"),
                "capabilities carries \"proposal\" on every chat request - without it B emits no block, "
@@ -157,18 +175,52 @@ int main()
         // Compared component by component, NOT as text: "2.26.10" sorts BELOW "2.26.5" as a string,
         // so a lexicographic check here would start failing at the next ten releases.
         const juce::String appVersion = v.getProperty ("appVersion", juce::var()).toString();
-        auto atLeast = [] (const juce::String& have, int maj, int min, int patch)
-        {
-            juce::StringArray p; p.addTokens (have, ".", "");
-            if (p.size() < 3) return false;
-            const int h[3] = { p[0].getIntValue(), p[1].getIntValue(), p[2].getIntValue() };
-            const int w[3] = { maj, min, patch };
-            for (int i = 0; i < 3; ++i) { if (h[i] != w[i]) return h[i] > w[i]; }
-            return true;
-        };
-        check (atLeast (appVersion, 2, 26, 5),
+        check (atLeastVersion (appVersion, 2, 26, 5),
                "and the reported appVersion is 2.26.5 or above, B's other route to the same decision",
                appVersion.isEmpty() ? juce::String ("no appVersion in the body") : appVersion);
+    }
+
+    // =========================================================================================================
+    //  (4b) THE RED DIRECTION - item 10, owed from the 12 Oct gate
+    // =========================================================================================================
+    // Section (4) passes on this build. That alone does not establish that it WOULD fail on a build that had
+    // stopped declaring the capability: a check that cannot fail is indistinguishable from one that always
+    // passes, and the 11 Oct gate caught this guard asserting the literal string ["proposal"], which broke the
+    // moment a second capability was added. A full red-direction proof needs an archive built with the
+    // capability absent - a relink each way - so the predicate is driven over synthetic bodies instead. It is
+    // the SAME predicate the live check uses, called here with inputs this build cannot produce.
+    std::printf ("== (4b) the same predicates, driven over inputs that MUST be refused ==\n");
+    {
+        auto bodyWith = [] (const juce::String& capsJson, const juce::String& ver)
+        {
+            return juce::JSON::parse ("{" + (capsJson.isEmpty() ? juce::String() : "\"capabilities\":" + capsJson + ",")
+                                      + "\"appVersion\":\"" + ver + "\"}");
+        };
+        const auto good    = bodyWith ("[\"proposal\",\"leveling\"]", "2.26.5");
+        const auto noLevel = bodyWith ("[\"proposal\"]",              "2.26.5");
+        const auto noCaps  = bodyWith ("",                            "2.26.5");
+        const auto oldVer  = bodyWith ("[\"proposal\",\"leveling\"]", "2.26.4");
+
+        check (capsOf (good).contains ("proposal") && capsOf (good).contains ("leveling"),
+               "(4b) the predicate ACCEPTS a body carrying both capabilities", capsOf (good).joinIntoString (", "));
+        check (! capsOf (noLevel).contains ("leveling"),
+               "(4b) ...and REFUSES one that dropped \"leveling\" - this is the failure the live check would show "
+               "if B's levelling gate stopped being declared", capsOf (noLevel).joinIntoString (", "));
+        check (! capsOf (noCaps).contains ("proposal"),
+               "(4b) ...and REFUSES a body with no capabilities array at all (the 06b/06c case)",
+               juce::String (capsOf (noCaps).size()) + " capability/ies");
+
+        check (! atLeastVersion (oldVer.getProperty ("appVersion", juce::var()).toString(), 2, 26, 5),
+               "(4b) the version predicate REFUSES 2.26.4, which is the build B still sends the Level slot to",
+               oldVer.getProperty ("appVersion", juce::var()).toString());
+        check (atLeastVersion ("2.26.5", 2, 26, 5) && atLeastVersion ("2.27.0", 2, 26, 5),
+               "(4b) ...accepts 2.26.5 and 2.27.0");
+        // THE TRAP THE NUMERIC COMPARE EXISTS FOR. As text, "2.26.10" < "2.26.5", so a string compare would
+        // start refusing valid builds at the tenth patch release. Asserted so nobody "simplifies" it back.
+        check (atLeastVersion ("2.26.10", 2, 26, 5),
+               "(4b) ...and accepts 2.26.10, which a TEXT comparison would have refused");
+        check (! atLeastVersion ("2.26", 2, 26, 5) && ! atLeastVersion ("", 2, 26, 5),
+               "(4b) ...and refuses a malformed or empty version rather than reading it as new enough");
     }
 
     std::printf ("== (5) the narrow yes: takes what Sean types, refuses what it should not ==\n");

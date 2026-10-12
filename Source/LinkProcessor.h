@@ -705,6 +705,25 @@ private:
     bool               rackLeaseScope_ = false;
     // 11 Oct 2026: the last registry-snapshot sentence actually written to the log, so a heartbeat that says
     // nothing new says nothing at all. See publishRegistrySnapshot for the measurement behind this.
+    // ---- THE ASYNC LIVENESS TOKEN (12 Oct 2026) -------------------------------------------------------------
+    //
+    // FOUND BY ring_leak_guard CRASHING, 4 runs in 20, and the crash report named it exactly:
+    //     juce::AudioProcessor::updateHostDisplay(ChangeDetails const&)
+    //     LinkProcessor::updateShmState()
+    //     juce::MessageQueue::runLoopSourceCallback(void*)
+    //     EXC_BAD_ACCESS  KERN_INVALID_ADDRESS  (possible pointer authentication failure)
+    //
+    // Five MessageManager::callAsync sites in this class captured a RAW `this`. A message queued from
+    // prepareToPlay or setStateInformation runs LATER, on the message thread, and nothing guaranteed this
+    // object still existed by then - so removing a Link from a track, or a host tearing down while one was in
+    // flight, called into freed memory. It is intermittent because it depends only on whether the queue drains
+    // before or after the destructor, which is why it had been passing on luck: at ~20% it passed three gates
+    // in a row before it was ever seen.
+    //
+    // Same idiom EchoJayProcessor already uses, for exactly this reason. Reset FIRST in the destructor, so it
+    // expires before any member teardown begins rather than part-way through it.
+    std::shared_ptr<bool> aliveToken_ { std::make_shared<bool> (true) };
+
     juce::String       lastSaidSnapshot_;
     double             tlLastSaidMs_ = -1.0e9;
     // ---- THE VALUE RING (stage 3, 10 Oct 2026) -----------------------------------------------

@@ -255,6 +255,21 @@ inline juce::String argString (const ToolCall& c, const char* key)
     if (auto* o = c.args.getDynamicObject()) return o->getProperty (key).toString();
     return {};
 }
+// A FLAG, read the way a model actually sends one: true/false, 1/0, or the words. Item 6(b) needs it for the
+// cross-channel confirmation, and a flag that only understood JSON true would read a model's "true" as absent -
+// which on a confirmation gate fails in the UNSAFE direction (acting unasked), so all three spellings count.
+inline bool argFlag (const ToolCall& c, const char* key)
+{
+    if (auto* o = c.args.getDynamicObject())
+    {
+        const auto v = o->getProperty (key);
+        if (v.isBool()) return (bool) v;
+        if (v.isInt() || v.isInt64() || v.isDouble()) return ((double) v) != 0.0;
+        const auto t = v.toString().trim().toLowerCase();
+        return t == "true" || t == "yes" || t == "1";
+    }
+    return false;
+}
 inline double argNumber (const ToolCall& c, const char* key, double fallback)
 {
     if (auto* o = c.args.getDynamicObject())

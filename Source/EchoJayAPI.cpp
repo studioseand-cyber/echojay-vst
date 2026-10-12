@@ -1767,6 +1767,9 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
                 }
                 
                 saveSettings(); // persist usage count to disk
+                // item 3: the turn is finalised for PERSISTENCE before the caller's callback, which may be a
+                // dead editor's lambda that returns immediately.
+                notifyChatTurnFinalised(reply, true);
                 onComplete(reply, true);
                 return;
             }
@@ -2320,6 +2323,11 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                                     + " chainBlock=" + obj->getProperty ("chainBlock").toString()
                                     + " stopReason=" + obj->getProperty ("stopReason").toString()).toRawUTF8());
                 }
+                // item 3: persistence first, and from HERE - this object belongs to the processor, so it is
+                // still alive when the editor that started the turn is not. `reply` on the done frame is the
+                // settled prose; thinking deltas are never part of it (ChatStreamEvents says so).
+                if (auto* obj = doneFrame.getDynamicObject())
+                    notifyChatTurnFinalised (obj->getProperty ("reply").toString(), true);
                 if (ev->onDone) ev->onDone (doneFrame);
             });
             return;

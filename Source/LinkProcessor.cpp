@@ -137,6 +137,10 @@ LinkProcessor::LinkProcessor()
 
 LinkProcessor::~LinkProcessor()
 {
+    // FIRST, before stopTimer and before any member is torn down: expire the async token so a message already
+    // queued against this object returns instead of running. See aliveToken_ in the header for the crash this
+    // closes (ring_leak_guard, 4 crashes in 20 runs, updateShmState reached from the message queue).
+    aliveToken_.reset();
     stopTimer();
     // Audio thread guaranteed stopped before destructor
     releaseRegistrySlot();
@@ -2242,7 +2246,8 @@ void LinkProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     //  (b) a sample-rate change reopens the ring with the new rate.
     // updateShmState() is idempotent — if already open it compares the
     // wanted path against shmOpenedKey and skips the reopen.
-    juce::MessageManager::callAsync([this] { updateShmState(); });
+    juce::MessageManager::callAsync([this, alive = std::weak_ptr<bool> (aliveToken_)]
+                                   { if (! alive.expired()) updateShmState(); });
 }
 
 bool LinkProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -3941,8 +3946,9 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
         // stale ON toggle writing itself back into the processor is a
         // re-activation path. Message thread deferred: setStateInformation's
         // calling thread is host-defined.
-        juce::MessageManager::callAsync([this]
+        juce::MessageManager::callAsync([this, alive = std::weak_ptr<bool> (aliveToken_)]
         {
+            if (alive.expired()) return;
             updateShmState();
             if (onLinkStateChanged) onLinkStateChanged();
         });
@@ -3967,8 +3973,9 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             // Restore on the message thread — sequential async instantiation;
             // missing plugins become named empty slots, the rest still load.
             auto chainVar = obj->getProperty("chain");
-            juce::MessageManager::callAsync([this, chainVar]
+            juce::MessageManager::callAsync([this, chainVar, alive = std::weak_ptr<bool> (aliveToken_)]
             {
+                if (alive.expired()) return;
                 restoreChainFromVar(chainVar);
             });
         }
@@ -3977,7 +3984,8 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
     // run (some hosts call it before setStateInformation), this triggers
     // registration immediately. If prepareToPlay comes later, the prepareToPlay
     // callAsync above will also call updateShmState — both are idempotent.
-    juce::MessageManager::callAsync([this] { updateShmState(); });
+    juce::MessageManager::callAsync([this, alive = std::weak_ptr<bool> (aliveToken_)]
+                                   { if (! alive.expired()) updateShmState(); });
     // 21t-j (28 Sep 2026 ruling): A RESTORED ROLE IS PUBLISHED. This function had stored placement_ in memory and
     // published nothing, so a copied insert (and a reopened session, which restores through this same function)
     // carried its role only inside the plugin. The snapshot goes out from here too, from the state this restore

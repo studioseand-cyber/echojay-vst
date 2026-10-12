@@ -1,0 +1,264 @@
+ship_2026-10-12b - GATED GREEN, 12 Oct 2026. THE 12-OCT IN-HOST ROUND: ELEVEN ITEMS, AND THE CRASH THE GATE FOUND.
+
+Branch feat/08c, HEAD 1a570bf5 at build time (this round is in the working tree - see PUSH at the foot).
+Supersedes ship_2026-10-12a, which was INSTALLED and against which Sean ran the in-host round below.
+
+GATE: 74/74. All stages clean. 74 tests, up from 72 - two new guards.
+  S1  archives (FORCED delete + relink)   exit 0 - SIX archives, all three trees
+  S2  guards (~87 targets, full LTO)      exit 0, 0 errors
+  S3  formats (4 bundles)                 exit 0, 0 errors
+  S3b archive provenance                  OK - both build-release archives newer than every file in Source/
+  S4  ctest -L "fast|plugins", 74 tests   100% passed, 2399.56 s (fast 2202.89 s / plugins 196.59 s)
+  S5  link_state_guard                    GREEN (both sides), the restore wait 836 ms against its 30 s bound
+  watchdog over S4                        no guard exceeded 300 s, no stall sample written
+
+own_diff: Passed. Nothing in this round touched a built-in's schema or the prompt.
+
+BUNDLES (arm64 first, then x86_64 - all four universal). INSTALLED 12 Oct, all four arm64 UUIDs
+verified against this table after the install, read back from the installed bundles.
+  EchoJay V2.component   8C770B9B-088C-3813-AF0F-D2BF24357312   10208323-2694-3F04-BF55-85A4E72E1069
+  EchoJay V2.vst3        D4C09B93-F1CF-3971-89E9-CF2CE56DC8F3   EB8A7932-0201-3EEE-B2C8-0B87AC76059F
+  EchoJay Link.component 3B798F60-2344-3E48-AB98-4235155F53AF   2EAB3301-EA9A-314A-9A64-367EE145433E
+  EchoJay Link.vst3      33DBAE4F-5C07-34FD-B261-51C8BB5E7CDA   5E744212-3D3A-3E8F-9D78-9EE9B786D0DC
+
+All four differ from 12a: LinkProcessor.cpp/.h changed, so both plugins relinked.
+
+================================================================================================
+THE ONE THING TO READ FIRST: A CRASH THAT WAS SHIPPING IN 12a AND EVERY BUILD BEFORE IT
+================================================================================================
+
+ring_leak_guard went SIGSEGV 4 times in 20 runs. It had been passing at ~80% through three
+gates, which is to say it had been FAILING at ~20% and nobody - me included - had looked.
+
+The crash report named updateHostDisplay <- LinkProcessor::updateShmState() <-
+MessageQueue::runLoopSourceCallback, EXC_BAD_ACCESS with a possible PAC failure. Four sites in
+LinkProcessor did this:
+
+    juce::MessageManager::callAsync ([this] { ... });
+
+A raw `this`, with no liveness check, queued from paths including prepareToPlay and
+setStateInformation. If the Link is destroyed before the message runs - remove a Link from a
+track, close a project, switch a rack while one is in flight - the callback runs on freed memory.
+In a harness that is a SIGSEGV one run in five. In Logic it is a crash when you delete a Link.
+
+Fixed with the alive-token idiom EchoJayProcessor already used:
+
+    std::shared_ptr<bool> aliveToken_ { std::make_shared<bool> (true) };   // LinkProcessor.h
+
+    LinkProcessor::~LinkProcessor()
+    {
+        aliveToken_.reset();        // FIRST statement, before stopTimer()
+        ...
+    }
+
+and every one of the four sites now captures `alive = std::weak_ptr<bool> (aliveToken_)` and
+returns early when it has expired. `grep -c "callAsync(\[this\]" Source/LinkProcessor.cpp` is 0.
+
+Verified 20/20 green after the fix, 0 crashes. This is the only item in this round that Sean did
+not ask for; it is here because the gate found it and it is a user-visible crash.
+
+================================================================================================
+SEAN'S ELEVEN ITEMS
+================================================================================================
+
+1. V2 DISPLAYS AND MEASUREMENTS ON AN ADDRESSED LINK - SPLIT, HALF DONE, HALF WRITTEN DOWN.
+
+   Done: THE PARAMETER VALUES SHOWN. Test 9's symptom - chat said attack 8 ms / release 150 ms,
+   the V2 still showed 50 / 50 - was that the borrowed mirror was never told what the Link had
+   accepted. The V2 pushes editOps, the Link applies them, and the mirror kept the old values, so
+   every dial and readout drew the stale number. EchoJayProcessor::borrowMirrorFollowAckedOps()
+   now walks the acked ops and calls setSlotStructuredSettings on the mirror's host for each one.
+
+   It is driven from borrowPollPushAck ON THE ACK, st == "ok", before the queue pop - never on the
+   send. A mirror updated on the send would show values the Link may have refused, which is the
+   same bug facing the other way.
+
+   DEFERRED, with the design written into docs/NEXT_ROUND_QUEUE.md as item 0a: the GR meters, the
+   EQ analyser and waveform, and the calibration/landing loop on a Link. The reason is structural,
+   not effort. LinkMeterFrame is 128 bytes, there is a static_assert on it, the size IS the mapping
+   stride (kRegSize), and the pad is fully spent down to the last byte (short90Code). It cannot
+   grow, so remote GR cannot travel on it. publishRackSidecar is the wrong transport too: it is
+   gated on the rack PICTURE changing, so it never fires at meter rate. The replacement is a
+   separate versioned shm region plus setRemoteGainReductionDb on the five dynamics processors.
+   That is a round, and doing a third of it would have shipped a meter that is right sometimes.
+
+2. THE RACK OUT GAIN, AND WHAT SET IT, ON THE RACK STRIP.
+
+   EchoJayEditor::rackOutGainCaption() builds "OUT -2.4 dB · level match" (or "LIMITER IN ...")
+   from loop.currentGainDb(), loop.stageName() and loop.loudnessOption(), and returns {} at unity
+   so the strip is not cluttered when there is nothing to say. Drawn in the strip band from
+   chainListPanel.rackOutCaption, refreshed from timerCallback only when the string changes.
+
+   For an addressed Link it falls back to the Link's registry gainDb, which carries the figure but
+   NOT the provenance - so a Link reads "OUT -2.4 dB" with no "· level match". B's record needs to
+   carry option/target/landed before the second half can be shown; that is in item 0a.
+
+3. THE CONVERSATION SURVIVES CLOSING AND REOPENING THE V2 WINDOW.
+
+   A question in flight lost both the question and the answer, because the reply arrived at an
+   editor that no longer existed and there was nowhere to put it. Chat history is replayed from
+   the processor on editor recreate, so the fix is to make sure the finished turn reaches the
+   processor even with no editor open:
+
+     EchoJayAPI::onChatTurnFinalised   - one chokepoint, fired at sendChat's success completion
+                                         and in streamChat's done dispatch
+     EchoJayProcessor::orphanedChatTurns_ / takeOrphanedChatTurns()
+                                       - the hook no-ops while getActiveEditor() != nullptr
+     EchoJayEditor::drainOrphanedChatTurns()
+                                       - pumped from timerCallback on the new editor
+
+   This is also the prerequisite for the agent-into-chat work (item 0 below), which is why it was
+   kept in this round rather than deferred with it.
+
+4. A DIAL SENT WHILE RECONNECTING IS QUEUED, NOT DROPPED.
+
+   "Not applied: Connecting to rack..." now holds the edit instead of discarding it.
+   EchoJayEditor::pendingLinkApplies_ (PendingLinkApply, kPendingApplyMs = 20000.0) holds it and
+   pumpPendingLinkApplies() applies it once the rack is connected. Twenty seconds, then it is
+   dropped and said so - an edit applied two minutes after you turned the dial is its own bug.
+
+5. COMPRESSOR LANDING MUST HIT THE STATED TARGET - AND REPORT THE FIGURE.
+
+   Sean's case: a compressor reached -17.8 dB GR when about -6 was right. The loop was not
+   mis-measuring. It was giving up correctly and then LEAVING THE COMPRESSOR WHERE IT GAVE UP -
+   every Clamped exit returned with no write, at the last probe it happened to try, which on a
+   commercial master is the most crushed setting it reached.
+
+   EJCalibLoop now tracks the best window it actually measured (bestCtl / bestGr / bestMiss) and
+   revertIfLeftPastBand() puts the control back there when the ending is more than
+   kMaxLeftOutsideDb = 2.0 dB outside the band. Wired into all three Clamped exits AND into
+   endBecauseStuck, which had no revert either. A miss inside 2 dB writes nothing - the landing
+   stands. A run that REACHED the band never reverts; there is nothing to put back.
+
+   The product's own sentence, from the guard:
+     "It was 17.8 dB of reduction, past the 5.0-7.0 dB aim, so I put it back to the closest
+      setting I actually measured: 4.1 dB at 2.0 (from 6.0)."
+
+6. THE AGENT EXECUTOR - ALL FOUR PARTS.
+
+   (a) Start context sends every Link's real uid with its track name, and resolveChannelArg()
+       resolves uid -> exact name -> unique containment match, returning the raw string when it
+       is ambiguous rather than guessing. Sean's failure - "no Link with uid '88_7even Kick_2_01'
+       is in the registry" - was a track NAME being looked up as a uid.
+
+   (c) THE PLUGIN INVENTORY HAD NEVER WORKED ON ANY SHIPPED BUILD. Sources::inventory was
+       declared, documented, and never assigned, so every build answered "not bound in this
+       build". Now bound in bindToProcessor from getFilteredPlugins({}).
+
+   (b) Acting on another track stays ask-first. doOp compares the asked channel against the open
+       one and, without "confirm": true, returns needs_confirmation: "This is on the kick's
+       channel, not the one you have open. ... Nothing has been changed yet." Then it applies to
+       THAT Link, not the one in front of you. argFlag() in EJAgentProtocol.h accepts bool,
+       number and "true"/"yes"/"1", and fails closed.
+
+   (d) Read failures now carry knownChannelsSentence() on all five unknown_channel returns, so
+       the model is told what it CAN reach. Sean's loop retried six rounds against an error that
+       never said what would work.
+
+7. THE AGENT-OFF LABEL NOW DESCRIBES TODAY'S BEHAVIOUR.
+   "Off: EchoJay dials settings you ask for, and asks before adding or removing plugins."
+
+8. RAW BACKEND TEXT IN THE CHAT MID-STREAM - FOUND, WITH A MECHANISM, NOT A GUESS.
+
+   Two parsers read one wire format. The extractors that run on the settled reply knew seven block
+   types; EJStreamBlockParser, which decides what is PAINTED while the reply streams, knew five.
+   <<<ECHOJAY_PROPOSAL>>> and <<<ECHOJAY_LEVEL_MATCH>>> were therefore painted into the bubble as
+   prose until the settled reply replaced them. That is exactly what Sean saw.
+
+   kNumMarkers 5 -> 7, both markers added. And because forgetting this leaks raw JSON to a user,
+   tools/stream_markers_guard sweeps every <<<ECHOJAY_*>>> in Source/ and REFUSES unless each one
+   is listed in EJStreamBlockParser.h with its <<<END_*>>>, asserting kNumMarkers equals the count.
+
+9. THE ORPHAN rack-*.json FILES - MOVED, NOT DELETED. MEASURED COUNT: 5,841.
+
+   ~/Documents/EchoJay-link-orphans-2026-10-12/ - 5,841 files, all of them rack-*.json, nothing
+   else. Sean counted 5,612; the extra 229 accumulated between his count and the move.
+   ~/Library/Application Support/EchoJay/link/ now has 0 rack-*.json.
+
+   The first attempt put the backup INSIDE ~/Library/Application Support/EchoJay/, which left all
+   5,841 files in every guard's seal fingerprint - the files were moved and the cost was not.
+   Relocated to a sibling of the sealed folder; the sealed set went 6,078 -> 471 files.
+
+10. THE proposal_guard RED-DIRECTION PROOF.
+
+   The old assertion was a literal string, body.contains("\"capabilities\":[\"proposal\"]"), which
+   went red the moment "leveling" was added - a true refusal of a correct body. Section (4b) now
+   parses the array and asserts each capability independently, over: both caps (accept),
+   ["proposal"] only (refuse leveling), no capabilities key (refuse), "2.26.4" (refuse),
+   "2.26.5"/"2.27.0" (accept), "2.26.10" (ACCEPT), "2.26" and "" (refuse).
+
+   "2.26.10" is in there deliberately. My first version check was
+   juce::String::compare("2.26.5") >= 0, which refuses 2.26.10 because as text it sorts below
+   2.26.5. atLeastVersion() compares component by component, and the case is asserted so nobody
+   simplifies it back.
+
+11. THE AGENT CHIP IN THE CHAT INPUT BAR.
+
+   "Agent: On" / "Agent: Off" beside "This channel" and "Oracle 2.7", one click to toggle, the
+   SAME flag file as the Settings switch so either updates both at once. syncAgentChip() runs from
+   timerCallback, so it is live with no window reopen. Hover carries item 6's one-line
+   explanation. Switching it off while a turn is running stops that turn cleanly, as Stop does,
+   and nothing further is applied.
+
+================================================================================================
+DEFERRED BY RULING, AND WHY - docs/NEXT_ROUND_QUEUE.md
+================================================================================================
+
+ITEM 0, NEXT ROUND'S FIRST ITEM: THE AGENT INTO THE CHAT.
+
+Sean's instruction was "If this is too big to gate safely with items 0 to 9, do it as the first
+item of the next round and tell me. Don't half-do it." It is too big, and this is me telling him.
+
+It is not drawing work. Each agent turn becoming an assistant message means the chat's MESSAGE
+MODEL changes: a turn needs to hold a collapsible tool-step list, inline buttons, a plan card with
+per-line Apply/Skip, a status line, and error lines, and all of it has to survive window close and
+reopen through the same replay path item 3 just built. Landing a third of that gives a transcript
+that loses half of a turn on reopen, which is worse than the panel it replaces. The panel above
+the chat stays in 12b and is removed in the same change that replaces it.
+
+ITEM 0a: the rest of item 1 - the new versioned shm region and setRemoteGainReductionDb on the
+five dynamics processors, the EQ analyser and waveform, the calib/landing loop on a Link (first
+step: confirm in a log whether the Link ticks the loop for a `controlled` slot, before any code),
+and "what set it" for a Link's OUT gain once B's record carries option/target/landed.
+
+================================================================================================
+THE HARNESS FAULTS IN THIS ROUND, INCLUDING MY OWN
+================================================================================================
+
+stream_markers_guard matched its own prose. The sweep took any text between <<< and >>>, and
+picked the literal <<<ECHOJAY_*>>> out of a comment I had written about this very rule. Marker
+names are now validated as [A-Z0-9_]+.
+
+calib_landing_guard: I was wrong twice before it was right, and the record should say so.
+
+  First I blamed the stale-run detector and added a wobble to the fed windows. The window count
+  did not change - 13 before, 13 after - which proved the hypothesis wrong. The real cause is that
+  EJCalibLoop deliberately does not judge the four windows after a write (awaitFresh holds one,
+  freshWanted three), and my leg was asserting on window 2 and window 13. Rewritten to drive the
+  loop to a STATE with a bound (feedUntilFinished) instead of counting windows.
+
+  Then it still failed one assertion, because I had asserted the revert would return to the
+  OPENING drive of 0.0 when it correctly returned to +2.0 - the control that produced the best
+  measured window. The leg now asserts the PROPERTY: the ending must carry a write, that write
+  must differ from the drive it gave up on, and the closing must say "closest setting I actually
+  measured". A test that re-derives the loop's arithmetic is a second implementation to maintain.
+
+  The wrong hypothesis did surface a real second gap: endBecauseStuck had no revert either. A run
+  that gives up because the readings stopped changing has no more business leaving a compressor at
+  17.8 dB than one that ran out of steps. It reverts now.
+
+================================================================================================
+PUSH
+================================================================================================
+
+This round is committed on feat/08c as a0da8a34 and NOT pushed.
+
+feat/08c does not exist on origin - origin has only main, at 8df130d7. The push therefore
+CREATES the branch and moves nothing that is already there: 1,640 commits of branch history
+land under a new ref, and origin/main is untouched. origin/main is not an ancestor of this
+branch, so this is a new line of work, not a fast-forward of main.
+
+    git push -u origin feat/08c
+
+NOT merged, by standing instruction: feat/stream-refusal-fallback.
+echojay-saas was not touched. B owns the pending-proposal work.

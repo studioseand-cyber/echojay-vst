@@ -419,6 +419,26 @@ public:
     void setTurnIdentity(const juce::String& chatId, const juce::String& channel)
     { turnChatId_ = chatId.trim(); turnChannel_ = channel.trim(); }
     juce::String turnChatId() const { return turnChatId_; }
+    // ---- ITEM 3 (12 Oct 2026): A TURN FINISHED WITH THE WINDOW SHUT MUST NOT VANISH ------------------------
+    //
+    // Sean, in host: "A question in flight lost both the question and the answer." The mechanism is not subtle -
+    // every chat reply callback in the editor opens with `if (safeThis == nullptr) return;`, and the appends that
+    // PERSIST the turn (processor chatHistory, workspace.appendMessageToChat) sit BELOW that line. Close the V2
+    // window with a question in flight and the reply arrives into a dead editor, so persistence never runs.
+    //
+    // This API object is owned by the PROCESSOR (PluginProcessor.h: `EchoJayAPI api;`), so it outlives the editor
+    // and is the one place a finished turn can be caught no matter what happened to the window. The processor
+    // sets this in its constructor; it fires on EVERY finished chat turn, streamed or not, BEFORE the caller's
+    // own callback, and the processor decides what to do with it (it does nothing at all while an editor is
+    // attached, so a live window keeps persisting exactly as it always has - no double append).
+    std::function<void (const juce::String& chatId, const juce::String& reply, bool success)> onChatTurnFinalised;
+    // Fired from both completion paths. Never throws into the transport: a persistence fault must not turn a
+    // delivered reply into a failed one.
+    void notifyChatTurnFinalised (const juce::String& reply, bool success)
+    {
+        if (! onChatTurnFinalised) return;
+        try { onChatTurnFinalised (turnChatId_, reply, success); } catch (...) {}
+    }
     juce::String turnChannel() const { return turnChannel_; }
     void setSelectedGroupId(const juce::String& id) { selectedGroupId_ = id; }
     juce::String selectedGroupId() const { return selectedGroupId_; }
