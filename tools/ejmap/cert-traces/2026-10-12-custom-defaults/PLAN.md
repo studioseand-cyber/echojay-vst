@@ -44,3 +44,30 @@ Only the **detection** is built (`EjmapCustomDefault.h`, pins CD-1..3, 3 mutants
 1. Restore by writes and measure, or always refuse (`custom_default`) when a plugin opens differently?
 2. The source of truth for factory: build the probe's factory-preset read (recommended), or rely on a clean-account read?
 3. Treat name-format differences as no difference (as built)?
+
+## Kathy's decisions (12 Oct, later) and the results
+
+**2. The factory preset was built, validated and rejected as the reference.**
+- `ejmap --factory-read --only …` runs the probe's `--factory-preset [default|N|open]`: the opening block, the unit's factory presets, then preset N's block, with no audio.
+- **Validated** on the 289 plugins that open identically on both Macs (`factory_validation.txt`):
+
+| result | count |
+|---|---|
+| publish no factory preset | 91 |
+| first preset equals the opening state | **93 of 198 = 47%** (32% of all 289) |
+| first preset is a sound preset that differs | 105 |
+
+- Even init-named presets are not reliable: Lindell SBC's own "Default" differs from its opening state in 7 of 22 controls.
+- That is far below the 95% bar, so it is **not used as the reference**.
+
+**What is used instead:** the opening block that **independent Macs agree on**. It is trusted at 2 or more sources (`kTrustedAgreeing`). Here that means Sean's traces plus this Mac, which give 290 trusted references now. More come as contributors open the same plugin and version. One source, or sources that disagree, is not trusted.
+
+**3. The action is built (Phase B prepare, cert and the wizard; pins CD-4/5).** It applies wherever `<out>/references/<stem>.reference.json` exists:
+- opens as the reference → measured;
+- differs from a **trusted** reference → every differing control is written back at the reference's norm, read back through the probe (the writes are passed as `EJ_PROBE_PRESET` on that one call), then measured with the same writes as the child's `--preset` under every probe process. The row records `custom_default_restored` (control, opened, written);
+- the read-back does not match, or the reference is not trusted → **`custom_default`**, not measured (counted with the skips, not the failures);
+- no reference file → unchanged, so Sean's next run behaves as today.
+
+**Not covered yet:**
+- The original compressor-certification batch (the sweep loop, outside Phase B) does not run this check. The Phase B compressor paths (`limitercomp`, the wizard's `wizard`) do.
+- A channel strip whose sections add their own `--preset` would replace the restore writes: combining the two is not built.
