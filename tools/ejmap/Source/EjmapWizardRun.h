@@ -114,13 +114,23 @@ inline int runWizard (const WizardOptions& wo)
     // NO PLUGIN LEFT BEHIND (12 Oct, EjmapWizardRoute.h): (a) the database first - nothing it settles is loaded; (b) the server's category;
     // (c) the name rules; (d) out of scope by type / words, not loaded; (e) only what is left gets EJ Map's signature reads
     const auto pending = wizroute::loadPending (wo.db);
-    auto* state = new juce::DynamicObject(); juce::Array<juce::var> rows; juce::StringArray queue, queueEq; std::map<juce::String, int> counts;
+    auto* state = new juce::DynamicObject(); juce::Array<juce::var> rows; std::map<juce::String, juce::StringArray> queues; std::map<juce::String, int> counts;   // queues: Phase B category -> products
     for (const auto& r : skippedRows) { rows.add (r); ++counts["crashed"]; }
     const auto problemState = [] (const juce::String& st) { return wizprog::isProblemState (st); };
     struct Pending { size_t i; wizroute::Decision d; juce::DynamicObject* row; };
     std::vector<Pending> toMap, toCategorise;
     auto typeOf = [] (const juce::PluginDescription& d) { return d.fileOrIdentifier.fromFirstOccurrenceOf ("/", false, false).upToFirstOccurrenceOf (",", false, false); };
-    auto enqueue = [&] (const juce::String& name, const juce::String& cat) { (cat == "eq" ? queueEq : queue).addIfNotAlreadyThere (name); };
+    auto enqueue = [&] (const juce::String& name, const juce::String& cat) { for (const auto& pb : wizroute::phaseBFor (cat)) queues[pb].addIfNotAlreadyThere (name); };
+    auto queueFile = [&] (const juce::String& pb) { return out.getChildFile (pb == "wizard" ? juce::String ("wizard_queue.txt") : pb == "wizard_eq" ? juce::String ("wizard_queue_eq.txt") : "wizard_queue_" + pb + ".txt"); };
+    auto queuedAnywhere = [&] { for (const auto& [pb, l] : queues) if (! l.isEmpty()) return true; return false; };
+    // the measuring items, in the measuring order (Kathy, 12 Oct): one per product and Phase B category (a limiter has two)
+    auto measureItems = [&] { std::vector<wizprog::Item> q; int gi = 0; for (const auto& grp : wizroute::measureOrder()) { for (const auto& pb : grp) if (queues.count (pb)) for (const auto& n : queues[pb])
+        for (const auto& ir : plugins) if (ir.desc.name == n) { wizprog::Item it; it.product = n; it.kind = wizroute::kindOf (pb); it.serial = serialOf (ir.desc); it.group = gi; q.push_back (it); break; }
+        ++gi; } return q; };
+    auto landedRow = [&] (const juce::String& pb, const juce::String& product) -> juce::var {
+        for (const auto& f : out.getChildFile ("phaseb").getChildFile (pb).findChildFiles (juce::File::findFiles, false, "*.phaseb.json"))
+        { auto r = juce::JSON::parse (f.loadFileAsString()); if (r.getProperty ("product", "").toString() == product) { r.getDynamicObject()->setProperty ("_stem", f.getFileName().replace (".phaseb.json", "")); return r; } }
+        return {}; };
     // 1. THE DATABASE CHECK (Scanning): one answer per plugin; only rule B's quick read-back check loads anything here
     { std::vector<wizprog::Item> its; for (const auto& ir : plugins) { wizprog::Item it; it.product = ir.desc.name; it.kind = "check"; its.push_back (it); } prog.stage (wizprog::Stage::scanning, its); }
     for (size_t i = 0; i < plugins.size(); ++i)
@@ -226,39 +236,44 @@ inline int runWizard (const WizardOptions& wo)
         say ("  " + ir.desc.name.paddedRight (' ', 30) + " -> " + wizroute::routeName (d.route) + (d.category.isNotEmpty() ? " (" + d.category + ")" : juce::String()) + ": " + d.why);
     }
     counts.clear(); for (const auto& r : rows) ++counts[r.getProperty ("state", "").toString()];
-    out.getChildFile ("wizard_queue.txt").replaceWithText (queue.joinIntoString ("\n") + "\n");
-    out.getChildFile ("wizard_queue_eq.txt").replaceWithText (queueEq.joinIntoString ("\n") + "\n");
+    for (const auto& grp : wizroute::measureOrder()) for (const auto& pb : grp) queueFile (pb).replaceWithText ((queues.count (pb) ? queues[pb].joinIntoString ("\n") : juce::String()) + "\n");
+    for (auto& rv : rows) { juce::StringArray pbs; for (const auto& [pb, l] : queues) if (l.contains (rv.getProperty ("product", "").toString())) pbs.add (pb); if (! pbs.isEmpty()) rv.getDynamicObject()->setProperty ("phaseb", pbs.joinIntoString (",")); }
     say ("WIZARD: " + juce::String ((int) plugins.size()) + " plugin(s) found: " + wizard::summaryLine (counts, wo.bundle));
     {   // what the scan screen says: "N plugins we don't have yet - about X" (the measured per-category seconds once any exist, --jobs aware)
-        std::vector<wizprog::Item> q; for (const auto& ir : plugins) { const bool eq = queueEq.contains (ir.desc.name); if (! eq && ! queue.contains (ir.desc.name)) continue;
-            wizprog::Item it; it.product = ir.desc.name; it.kind = eq ? "eq" : "compressor"; it.serial = serialOf (ir.desc); q.push_back (it); }
-        wizprog::Times tq; for (const auto* c : { "wizard", "wizard_eq" }) for (const auto& f : out.getChildFile ("phaseb").getChildFile (c).findChildFiles (juce::File::findFiles, false, "*.phaseb.json"))
-        { const auto r = juce::JSON::parse (f.loadFileAsString()); if (r.getProperty ("outcome", "").toString() == "ok") tq.add (juce::String (c) == "wizard_eq" ? "eq" : "compressor", (double) r.getProperty ("seconds", 0.0)); }
-        state->setProperty ("to_measure", (int) q.size()); state->setProperty ("to_measure_eta_s", std::round (wizprog::stageSecondsLeft (q, tq, opt.jobs)));
+        const auto q = measureItems(); juce::StringArray distinct; for (const auto& it : q) distinct.addIfNotAlreadyThere (it.product);
+        wizprog::Times tq; for (const auto& grp : wizroute::measureOrder()) for (const auto& pb : grp) for (const auto& f : out.getChildFile ("phaseb").getChildFile (pb).findChildFiles (juce::File::findFiles, false, "*.phaseb.json"))
+        { const auto r = juce::JSON::parse (f.loadFileAsString()); if (r.getProperty ("outcome", "").toString() == "ok") tq.add (wizroute::kindOf (pb), (double) r.getProperty ("seconds", 0.0)); }
+        state->setProperty ("to_measure", distinct.size()); state->setProperty ("to_measure_eta_s", std::round (wizprog::stageSecondsLeft (q, tq, opt.jobs)));
     }
     // 2. MEASURE THE QUEUES (Phase B: --jobs, resumable, every outcome; the tone check / the EQ acceptance)
-    if (wo.measure && (! queue.isEmpty() || ! queueEq.isEmpty()))
+    if (wo.measure && queuedAnywhere())
     {
-        say ("WIZARD: measuring " + juce::String (queue.size() + queueEq.size()) + " plugin(s)" + (opt.jobs > 1 ? ", " + juce::String (opt.jobs) + " at a time" : juce::String()) + " - stop any time; it carries on next time");
+        say ("WIZARD: measuring " + juce::String ((int) measureItems().size()) + " plugin measurement(s)" + (opt.jobs > 1 ? ", " + juce::String (opt.jobs) + " at a time" : juce::String()) + " - stop any time; it carries on next time");
         {   // MEASURING: the two queues; a plugin whose Phase B row is already on disk is done (resume) and its seconds are a measured time
-            std::map<juce::String, juce::String> landed; std::map<juce::String, double> landedSeconds;
-            for (const auto* c : { "wizard", "wizard_eq" }) for (const auto& f : out.getChildFile ("phaseb").getChildFile (c).findChildFiles (juce::File::findFiles, false, "*.phaseb.json"))
-            { const auto r = juce::JSON::parse (f.loadFileAsString()); const auto p = r.getProperty ("product", "").toString(); landed[p] = r.getProperty ("outcome", "").toString(); landedSeconds[p] = (double) r.getProperty ("seconds", 0.0); }
-            std::vector<wizprog::Item> q;
-            for (const auto& ir : plugins)
-            {
-                const bool eq = queueEq.contains (ir.desc.name); if (! eq && ! queue.contains (ir.desc.name)) continue;
-                wizprog::Item it; it.product = ir.desc.name; it.kind = eq ? "eq" : "compressor"; it.serial = serialOf (ir.desc); q.push_back (it);
-            }
-            const auto its = wizprog::resumeItems (q, landed);
-            for (const auto& it : its) if (it.done) { if (it.problem) prog.addProblems (1); else prog.seedTime (it.kind, landedSeconds[it.product]); }
+            auto its = measureItems();   // RESUME: an item whose Phase B row already landed is done; its seconds are a measured time
+            for (auto& it : its) for (const auto& grp : wizroute::measureOrder()) for (const auto& pb : grp) if (wizroute::kindOf (pb) == it.kind)
+                if (const auto r = landedRow (pb, it.product); r.isObject()) { it.done = true; it.problem = r.getProperty ("outcome", "").toString() != "ok";
+                    if (it.problem) prog.addProblems (1); else prog.seedTime (it.kind, (double) r.getProperty ("seconds", 0.0)); }
             prog.stage (wizprog::Stage::measuring, its);
-            phaseb::rowHooks().started = [&] (const juce::String&, const juce::String& product) { prog.started (product); };
-            phaseb::rowHooks().finished = [&] (const juce::String&, const juce::String& product, const juce::String& outcome, double seconds) { prog.finished (product, outcome != "ok", seconds); };
+            phaseb::rowHooks().started = [&] (const juce::String& cat, const juce::String& product) { prog.started (product, wizroute::kindOf (cat)); };
+            phaseb::rowHooks().finished = [&] (const juce::String& cat, const juce::String& product, const juce::String& outcome, double seconds) { prog.finished (product, outcome != "ok", seconds, wizroute::kindOf (cat)); };
             prog.startTicker();
         }
-        const int pbCode = runPhaseBAll (opt, { "wizard", "wizard_eq" }, {}, {});
+        // THE MEASURING ORDER: one Phase B pass per group, most valuable first; a stop (130) ends the order there
+        auto optW = opt; optW.wizardQueues = true; int pbCode = 0;
+        for (const auto& grp : wizroute::measureOrder())
+        {
+            juce::StringArray run; for (const auto& pb : grp) if (queues.count (pb) && ! queues[pb].isEmpty()) run.add (pb);
+            if (run.isEmpty()) continue;
+            say ("WIZARD: measuring " + run.joinIntoString (" + ") + " (" + juce::String ((int) [&] { int n = 0; for (const auto& pb : run) n += queues[pb].size(); return n; }()) + ")");
+            pbCode = runPhaseBAll (optW, run, {}, {});
+            if (wizprog::measureStopped (pbCode)) break;
+        }
         prog.stopTicker(); phaseb::rowHooks() = {};
+        {   // the drafts for the categories beyond compressor / EQ (their cert derive step, the same rules)
+            juce::StringArray cats; for (const auto& [pb, l] : queues) if (! l.isEmpty() && pb != "wizard" && pb != "wizard_eq") cats.add (pb);
+            if (! cats.isEmpty() && ! wizprog::measureStopped (pbCode)) runPhaseBDrafts (optW, cats);
+        }
         if (wizprog::measureStopped (pbCode))
         {   // the user stopped it: no bundle, no "Done" - the rows that landed stay, the same command carries on
             const auto [measured, toMeasure] = prog.stageDone();
@@ -270,6 +285,40 @@ inline int runWizard (const WizardOptions& wo)
         for (auto& rv : rows)
         {
             auto* row = rv.getDynamicObject(); if (row->getProperty ("state").toString() != "queued") { ++counts[row->getProperty ("state").toString()]; continue; }
+            const auto pbs = juce::StringArray::fromTokens (row->getProperty ("phaseb").toString(), ",", "");
+            if (! pbs.isEmpty() && pbs[0] != "wizard" && pbs[0] != "wizard_eq")
+            {   // ALL CATEGORIES: measured when the category's own row is ok and its draft was derived; a limiter's compressor pass is said beside
+                const auto r = landedRow (pbs[0], row->getProperty ("product").toString());
+                juce::String st, why; juce::StringArray draftsL;
+                if (! r.isObject()) st = "measuring";
+                else
+                {
+                    const auto oc = r.getProperty ("outcome", "").toString(); why = r.getProperty ("reason", "").toString();
+                    for (const auto& f : out.getChildFile ("phaseb").getChildFile (pbs[0]).getChildFile ("drafts").findChildFiles (juce::File::findFiles, false, r.getProperty ("_stem", "").toString() + "*.draft.json"))
+                        draftsL.add (pbs[0] + "/drafts/" + f.getFileName());
+                    st = oc == "ok" ? (draftsL.isEmpty() ? juce::String ("not_measurable") : juce::String ("measured")) : wizard::plainOutcome (oc, {});
+                    if (oc == "ok" && draftsL.isEmpty()) why = "measured, but no " + pbs[0] + " draft could be derived from the record";
+                }
+                for (int k = 1; k < pbs.size(); ++k) { const auto r2 = landedRow (pbs[k], row->getProperty ("product").toString()); row->setProperty ("also_" + pbs[k], r2.isObject() ? r2.getProperty ("outcome", "") : juce::var ("not run")); }
+                if (pbs.contains ("limitercomp") && st == "measured")
+                {   // the limiter's compressor pass: its exported profile + tone check travel with the limiter draft (sent like any compressor)
+                    const auto r2 = landedRow ("limitercomp", row->getProperty ("product").toString()); const auto stem2 = r2.getProperty ("_stem", "").toString();
+                    juce::String cs; const auto ocV = juce::JSON::parse (out.getChildFile ("phaseb/limitercomp/outcome").getChildFile (stem2 + ".outcomes.json").loadFileAsString());   // held: getArray() on a temporary dangles
+                    if (const auto* a = ocV.getArray()) for (const auto& o : *a) cs = o.getProperty ("state", "").toString();
+                    for (const auto& f : out.getChildFile ("phaseb/limitercomp/profiles").findChildFiles (juce::File::findFiles, false, "*.json"))
+                    {
+                        if (f.getFileName().endsWith (".tonecheck.json")) continue;
+                        if (juce::JSON::parse (f.loadFileAsString()).getProperty ("plugin", {}).getProperty ("plugin_id", "").toString() != row->getProperty ("plugin_id").toString()) continue;
+                        const auto tc = f.getSiblingFile (f.getFileNameWithoutExtension() + ".tonecheck.json");
+                        const bool pass = (bool) juce::JSON::parse (tc.loadFileAsString()).getProperty ("pass_within_0_5_db", false);
+                        row->setProperty ("compressor_pass", cs + (pass ? ", tone check passed" : ", tone check did not pass"));
+                        if (wizroute::sendCompressorPass (cs, pass)) draftsL.add ("limitercomp/profiles/" + f.getFileName()), draftsL.add ("limitercomp/profiles/" + tc.getFileName());
+                    }
+                    row->setProperty ("drafts", draftsL.joinIntoString (","));
+                }
+                row->setProperty ("state", st); row->setProperty ("outcome", r.getProperty ("outcome", {})); row->setProperty ("drafts", draftsL.joinIntoString (",")); if (why.isNotEmpty()) row->setProperty ("why", why); ++counts[st];
+                continue;
+            }
             const bool isEq = row->getProperty ("category").toString() == "eq"; const auto catDir = out.getChildFile (isEq ? "phaseb/wizard_eq" : "phaseb/wizard");
             juce::String outcome, certState, rowWhy, stem;
             for (const auto& f : catDir.findChildFiles (juce::File::findFiles, false, "*.phaseb.json"))
@@ -317,7 +366,15 @@ inline int runWizard (const WizardOptions& wo)
         {
             const auto st = rv.getProperty ("state", "").toString(); const auto product = rv.getProperty ("product", "").toString();
             const bool isEq = rv.getProperty ("category", "").toString() == "eq";
-            if (st == "measured" && isEq)
+            if (st == "measured" && rv.getProperty ("drafts", "").toString().isNotEmpty())
+            {   // ALL CATEGORIES: the category's draft(s), as the certification derives them
+                juce::Array<juce::var> files;
+                for (const auto& rel : juce::StringArray::fromTokens (rv.getProperty ("drafts", "").toString(), ",", ""))
+                { const auto f = out.getChildFile ("phaseb").getChildFile (rel); f.copyFileTo (B.getChildFile ("profiles").getChildFile (f.getFileName())); files.add ("profiles/" + f.getFileName()); }
+                auto* it = new juce::DynamicObject(); it->setProperty ("product", product); it->setProperty ("kind", rv.getProperty ("category", {})); it->setProperty ("plugin_id", rv.getProperty ("plugin_id", {}));
+                it->setProperty ("map_fp", rv.getProperty ("map_fp", {})); it->setProperty ("drafts", files); it->setProperty ("measured_by", rv.getProperty ("phaseb", {})); items.add (juce::var (it));
+            }
+            else if (st == "measured" && isEq)
             {
                 const auto f = out.getChildFile ("phaseb/wizard_eq").getChildFile (rv.getProperty ("eq_draft", "").toString());
                 f.copyFileTo (B.getChildFile ("profiles").getChildFile (f.getFileName()));

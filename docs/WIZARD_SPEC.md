@@ -17,7 +17,7 @@ It measures the user's plugins that EchoJay's database does not have yet. It sen
 | 1 | **Welcome + sign in** | "Help EchoJay learn your plugins", email + password, **Sign in** | Sign-in (6.1) links the results and the reward to the account |
 | 2 | **Scan** | "Checking your plugins", a Logic start-up style bar, each plugin's name as it is checked, "n of N" | Every installed plugin is mapped and checked against the database (6.2). Anything already there is skipped silently, with no list and no ticks. That means rule A (same plugin, version and map), or rule B (another version) whose quick read-back check passes |
 | 2b | **Scan done** | "N plugins we don't have yet", "About X. You can keep working or leave it running - closing the window pauses it.", **Start** | X comes from the measured per-category times (--jobs aware). If N = 0: "We already know all your plugins", **Continue** (the confirmations still go up) |
-| 3 | **Measuring** | "Measuring", the bar, the current plugin's name, "about X left" | Only plugins useful to the database are measured (EchoJay's categories: compressors and EQs today). Licence windows, silent output, crashes and time-outs are skipped quietly and logged, never shown as errors. The Mac is kept awake. Closing the window pauses; reopening carries on |
+| 3 | **Measuring** | "Measuring", the bar, the current plugin's name, "about X left" | Only plugins useful to the database are measured: every category EJ Map certifies (12 Oct), in the order of section 5. Licence windows, silent output, crashes and time-outs are skipped quietly and logged, never shown as errors. The Mac is kept awake. Closing the window pauses; reopening carries on |
 | - | **Crash recovery** (on the next launch) | "Welcome back. The wizard closed while checking <plugin> - we've skipped it and carried on.", **Carry on** | The plugin goes on the never-retry list. Its crash report travels with the upload |
 | 4 | **Upload** | "Sending your results", a short bar | The contribution bundle is sent automatically (6.3) |
 | 5 | **Reward** | "Thank you - here's your free month", the code, **Copy code**, "We've emailed it to you too", **Done** | The server checks the bundle is genuine (seconds), then issues the code (6.4). One code per account |
@@ -84,14 +84,34 @@ EchoJay Wizard.app/Contents/MacOS/
 - To assemble: `tools/ejmap/wizard_app/assemble.sh <build dir> <out>` copies the app, the engine and the signed probe into the bundle, signs the engine ad hoc, and re-seals the bundle ad hoc **without** `--deep` (so the probe keeps its signature).
 - Rehearsal-only flags: `--auto` (no hands), `--auto-close-after S` (the close button), `--snapshots DIR` (a PNG of every screen), `--only NAME`, `--db`, `--store`, `--reports`.
 
-## 5. Categories
+## 5. Categories (12 Oct: all of EJ Map's)
 
-The wizard measures what the database can use: compressors and EQs. A plugin's category comes first from the server's catalogue (the lookup's `categories`); failing that, only from compressor / EQ words in its name. Everything else is "not in scope" and is skipped silently. Adding a category means:
-- publishing its profiles;
-- defining its lookup and read-back writes;
-- making its acceptance the send gate.
+The wizard measures every category EJ Map certifies. It uses **EJ Map's own Phase B category** for each: the same mode, outcomes, acceptance writes and serial lane (UAD, licence-governed, PACE, past trouble) as the certification. Only the work list differs: it comes from the wizard's queue (`<work>/engine/wizard_queue_<category>.txt`), not from the cert catalogue.
 
-See WHATS_LEFT.md.
+| category (server / signature) | measured by (Phase B) | starting estimate per plugin |
+|---|---|---|
+| compressor (and signature "dynamics") | `wizard`: the compressor certification + tone check | 340 s |
+| eq | `wizard_eq` | 36 s |
+| de-esser | `deesser` | 18 s |
+| limiter | `limiter`, then `limitercomp` (the compressor certification on a limiter, Kathy 10 Oct) | 28 s + 340 s |
+| saturation, amp_sim | `saturation` | 11 s |
+| gate / transient_shaper | `gate` / `transient` | 17 s / 22 s |
+| multiband | `multiband` | 51 s |
+| pitch (tuners) | `tuners` | 111 s |
+| reverb / delay | `reverb` / `delay` | 41 s / 45 s |
+| channel_strip | `strips` (each section through its category) | 1200 s (no measured row yet) |
+| modulation, meters, utilities, instruments | not measured: sent with the category / listed | - |
+
+**The estimates** are the medians of Sean's own "ok" Phase B rows per category (his 4–11 Oct nights). They are replaced by this Mac's measured times as plugins finish.
+
+**The order**: compressors → EQ → de-essers → limiters → saturation → gates / transients → multiband → tuners → reverb / delay → strips. Each group is one Phase B pass (`--jobs` inside it), so a user who stops early has already given the most valuable results. A stop ends the order there; the next run carries on from the rows that landed.
+
+**Ready to send:**
+- compressor: its certification exported a profile and the tone check passed.
+- EQ: a band measured and every acceptance write that ran passed.
+- every other category: the category's row is `ok` and its cert draft was derived (`--phaseb-drafts`, the same rules). The draft (or drafts) goes into `profiles/` with `kind` and `measured_by`. A limiter also records its compressor pass's outcome beside it.
+
+Everything else is reported with the cert's own outcome (needs a licence, passes no sound, crashed, won't load, could not be measured).
 
 ## 6. Server endpoints (Sean's side; stubbed in the app)
 
@@ -138,7 +158,7 @@ The token is stored in the macOS Keychain (**the stub writes account.json withou
   - **C** = not in the database.
   - **pending_review** (new, 12 Oct) = another user already sent it as `needs_category` and Sean has not labelled it yet. Skipped entirely: not loaded, no signature reads, **not re-sent**.
 - `category` (new, 12 Oct): the **Sean-approved** category whenever the server has one. That includes rule C plugins with no profile yet, and categories the wizard does not measure (`reverb`, `delay`, `modulation`, `pitch`, `saturation`, `deesser`, `gate`, `limiter`, `multiband`, `strip`, `instrument`, `meter`, `utility`…). `null` = the server does not know.
-  - The wizard uses it FIRST. compressor / eq go to the measuring queue. Any other category: the plugin is mapped and sent with its category (6.3 `other_categories`), not measured.
+  - The wizard uses it FIRST. A category EJ Map certifies (section 5) goes to its measuring queue. Any other category (modulation, meter, …): the plugin is mapped and sent with its category (6.3 `other_categories`), not measured.
   - Without a server category, the wizard tries, in order: its name rules (compressor / EQ words); out of scope by AU type or meter / utility words (listed, never loaded); and only then EJ Map's signature reads on the user's Mac.
 - The server decides A / B / C / pending_review and the category. The client never decides from its own copy of the database.
 - **Stub:** the engine's `--db` folder: `ej_comp_profile/1` + tone checks, `ej_eq_profile/1`, `categories.json` (the category, keyed by plugin_id or name) and `pending_review.json` (`[{"plugin_id": …}]`), with the same rules applied locally (`wizroute::ask`).

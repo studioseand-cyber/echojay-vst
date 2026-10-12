@@ -1,0 +1,15 @@
+{
+ "Lindell SBC": "compressor",
+ "elysia mpressor": "compressor",
+ "MFreeformEqualizer": "eq",
+ "SPL De-Esser Dual-Band": "de-esser",
+ "bx_limiter": "limiter",
+ "bx_rockrack V3 Player": "amp_sim",
+ "Unfiltered Audio G8": "gate",
+ "spiff": "transient_shaper",
+ "OTT": "multiband",
+ "bx_crispytuner": "pitch",
+ "bx_rooMS": "reverb",
+ "ADA STD-1 Stereo Tapped Delay": "delay",
+ "Lindell 50 Channel": "channel_strip"
+}

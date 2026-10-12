@@ -61,7 +61,37 @@ inline juce::String routeName (Route r)
     return {};
 }
 struct Decision { Route route = Route::categorise; juce::String category, why; };
-inline bool measurable (const juce::String& c) { return c == "compressor" || c == "eq"; }
+// ALL CATEGORIES (12 Oct): the EJ Map Phase B categories that measure a category - the same modes, outcomes, acceptance and serial lane
+// as the certification. A limiter is measured twice: the limiter mode and the compressor certification (limiter_comp, Kathy 10 Oct).
+inline juce::StringArray phaseBFor (const juce::String& c)
+{
+    if (c == "compressor") return { "wizard" };
+    if (c == "eq") return { "wizard_eq" };
+    if (c == "limiter") return { "limiter", "limitercomp" };
+    if (c == "de-esser" || c == "deesser") return { "deesser" };
+    if (c == "saturation" || c == "amp_sim") return { "saturation" };
+    if (c == "gate") return { "gate" };
+    if (c == "transient_shaper" || c == "transient") return { "transient" };
+    if (c == "multiband") return { "multiband" };
+    if (c == "pitch" || c == "tuner") return { "tuners" };
+    if (c == "reverb") return { "reverb" };
+    if (c == "delay") return { "delay" };
+    if (c == "channel_strip" || c == "strip") return { "strips" };
+    return {};   // modulation, meters, utilities, ...: not measured (sent with the category)
+}
+inline bool measurable (const juce::String& c) { return ! phaseBFor (c).isEmpty(); }
+// THE MEASURING ORDER (Kathy, 12 Oct): fastest and most useful first, so a user who stops early has given the most valuable results.
+// Each inner list runs as one Phase B pass (--jobs within it); a stop ends the order there.
+inline const std::vector<juce::StringArray>& measureOrder()
+{
+    static const std::vector<juce::StringArray> k { { "wizard" }, { "wizard_eq" }, { "deesser" }, { "limiter", "limitercomp" }, { "saturation" },
+                                                    { "gate", "transient" }, { "multiband" }, { "tuners" }, { "reverb", "delay" }, { "strips" } };
+    return k;
+}
+// a limiter's compressor pass (limitercomp) is sent like any compressor: its profile exported AND its tone check passed at g 2
+inline bool sendCompressorPass (const juce::String& certState, bool toneCheckPassed) { return certState == "exported" && toneCheckPassed; }
+// the Tracker's kind for a Phase B category (its per-plugin seconds)
+inline juce::String kindOf (const juce::String& phaseBCategory) { return phaseBCategory == "wizard" ? juce::String ("compressor") : phaseBCategory == "wizard_eq" ? juce::String ("eq") : phaseBCategory; }
 inline Decision route (const Answer& a, const juce::String& nameCategory, const juce::String& outOfScope)
 {
     switch (a.rule)
@@ -89,6 +119,7 @@ inline Decision afterSignature (bool readsRan, bool settled, const juce::String&
     if (! readsRan || ! settled) return { Route::needsCategory, category, why };   // a licence window or no signature: Sean labels it from the map + reads
     if (category == "eq") return { Route::measure, "eq", "the signature: " + why };
     if (category == "dynamics") return { Route::measure, "compressor", "the signature (dynamics; the compressor certification decides): " + why };
+    if (measurable (category)) return { Route::measure, category, "the signature: " + why };   // saturation, reverb, delay, pitch (12 Oct: all categories)
     return { Route::sendOther, category, "the signature (" + category + ", not measured by the wizard yet): " + why };
 }
 

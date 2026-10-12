@@ -9223,6 +9223,48 @@ void testTextPassTimeout()
     check (textPassTimeoutMs (0, 120000) == 120000, "text T3: nothing to sample still has the floor");
 }
 
+/** ALL CATEGORIES IN THE WIZARD (12 Oct): EJ Map's Phase B categories measure every category it can, in Kathy's order. */
+void testWizardCategories()
+{
+    using namespace ejmap::wizroute;
+    // WZ-CAT-1 THE MAPPING: the cert's own categories; a limiter twice (limiter + the compressor certification); modulation not measured
+    check (phaseBFor ("compressor") == juce::StringArray { "wizard" } && phaseBFor ("eq") == juce::StringArray { "wizard_eq" }
+           && phaseBFor ("limiter") == juce::StringArray { "limiter", "limitercomp" } && phaseBFor ("de-esser") == juce::StringArray { "deesser" }
+           && phaseBFor ("amp_sim") == juce::StringArray { "saturation" } && phaseBFor ("transient_shaper") == juce::StringArray { "transient" }
+           && phaseBFor ("gate") == juce::StringArray { "gate" } && phaseBFor ("multiband") == juce::StringArray { "multiband" } && phaseBFor ("pitch") == juce::StringArray { "tuners" }
+           && phaseBFor ("reverb") == juce::StringArray { "reverb" } && phaseBFor ("delay") == juce::StringArray { "delay" } && phaseBFor ("channel_strip") == juce::StringArray { "strips" }
+           && ! measurable ("modulation") && measurable ("saturation"),
+           "wizard WZ-CAT-1: every cert category reachable; limiter -> limiter + limitercomp; modulation not measured");
+    // WZ-CAT-2 THE ORDER: compressors, EQ, de-essers, limiters, saturation, gates / transients, multiband, tuners, reverb / delay, strips last
+    juce::StringArray flat; for (const auto& g : measureOrder()) flat.addArray (g);
+    check (flat == juce::StringArray { "wizard", "wizard_eq", "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "multiband", "tuners", "reverb", "delay", "strips" }
+           && measureOrder().back() == juce::StringArray { "strips" },
+           "wizard WZ-CAT-2: the measuring order is Kathy's, strips last; got " + flat.joinIntoString (" > "));
+    // WZ-CAT-3 AFTER THE READS: a settled category the cert measures is measured (saturation, reverb, delay, pitch -> tuners); modulation is sent
+    const auto sa = afterSignature (true, true, "saturation", {}, "thd"), rv = afterSignature (true, true, "reverb", {}, "tail"), pi = afterSignature (true, true, "pitch", {}, "cents"), mo = afterSignature (true, true, "modulation", {}, "sidebands");
+    check (sa.route == Route::measure && sa.category == "saturation" && rv.route == Route::measure && pi.route == Route::measure && phaseBFor (pi.category) == juce::StringArray { "tuners" }
+           && mo.route == Route::sendOther,
+           "wizard WZ-CAT-3: saturation / reverb / pitch settled by signature are measured; modulation is sent with its category");
+    // WZ-CAT-4 THE ESTIMATE covers every category from its own figure (Sean's measured medians; strips its stated estimate)
+    using namespace ejmap::wizprog;
+    std::vector<Item> q; for (const auto* k : { "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "multiband", "tuners", "reverb", "delay", "strips" }) { Item it; it.product = k; it.kind = k; q.push_back (it); }
+    Times t; const double eta = stageSecondsLeft (q, t, 1);
+    check (std::abs (eta - (18 + 28 + 340 + 11 + 17 + 22 + 51 + 111 + 41 + 45 + 1200)) < 1e-9 && defaultSeconds ("strips") == 1200.0 && defaultSeconds ("deesser") == 18.0,
+           "wizard WZ-CAT-4: the estimate sums each category's own figure (" + juce::String (eta, 0) + " s for one of each)");
+    // WZ-CAT-6 a limiter's compressor pass is sent like any compressor: exported AND the tone check passed (the 12 Oct rehearsal's bundle
+    // left bx_limiter's exported profile behind)
+    check (sendCompressorPass ("exported", true) && ! sendCompressorPass ("exported", false) && ! sendCompressorPass ("refused", true) && ! sendCompressorPass ("needs_review", true),
+           "wizard WZ-CAT-6: the limiter's compressor profile goes with it only when exported and its tone check passed");
+    // WZ-CAT-5 THE PASSES: groups run one after another, --jobs only inside one; a pass is at least its longest plugin. A compressor (pass 0),
+    // an EQ (pass 1), a limiter + its compressor pass (pass 2) at --jobs 2 = 340 + 36 + max (340, 368 / 2) = 716 s (the flat sum / 2 said 372)
+    {
+        std::vector<Item> g; auto add = [&] (const char* p, const char* k, int grp) { Item it; it.product = p; it.kind = k; it.group = grp; g.push_back (it); };
+        add ("A", "compressor", 0); add ("B", "eq", 1); add ("C", "limiter", 2); add ("C", "limitercomp", 2);
+        const double left = stageSecondsLeft (g, t, 2);
+        check (std::abs (left - 716.0) < 1e-9, "wizard WZ-CAT-5: the time left sums pass by pass (716 s), not the flat sum over jobs; got " + juce::String (left, 1));
+    }
+}
+
 /** NO PLUGIN LEFT BEHIND (EjmapWizardRoute.h, 12 Oct): the database first, then the server's category, the name, out of scope, and only
     then the signature reads; nothing dropped. */
 void testWizardRoute()
@@ -9251,8 +9293,8 @@ void testWizardRoute()
     check (dA.route == Route::skipHave && dP.route == Route::skipPending && ! loadsToCategorise (dA) && ! loadsToCategorise (dP) && loadsNothing (dA) && loadsNothing (dP)
            && dB.route == Route::quickCheck && ! loadsToCategorise (dB) && dC1.route == Route::measure && dC1.category == "compressor"
            && dC2.route == Route::sendOther && dC2.category == "modulation" && dName.route == Route::measure && dOos.route == Route::outOfScope && loadsNothing (dOos)
-           && dCat.route == Route::categorise && loadsToCategorise (dCat) && dWins.route == Route::sendOther && dWins.category == "reverb",
-           "wizard WZ-ROUTE-2: A and pending_review never loaded; B quick check only; server category first (reverb beats a 'comp' name); out of scope unloaded; the rest categorised");
+           && dCat.route == Route::categorise && loadsToCategorise (dCat) && dWins.route == Route::measure && dWins.category == "reverb",
+           "wizard WZ-ROUTE-2: A and pending_review never loaded; B quick check only; server category first (reverb beats a 'comp' name, and since 12 Oct is measured); out of scope unloaded; the rest categorised");
     // WZ-ROUTE-3 AFTER THE READS: nothing dropped - unsettled (or a licence window) -> needs_category with the leaning; eq / dynamics -> measured
     // (dynamics through the compressor certification); another settled category -> sent with its category; out of scope by words -> listed
     const auto un = afterSignature (true, false, "reverb", {}, "a tail (RT60 3.27 s) and no word: leaning reverb: review");
@@ -9260,8 +9302,8 @@ void testWizardRoute()
     const auto e = afterSignature (true, true, "eq", {}, "span"), dy = afterSignature (true, true, "dynamics", {}, "level"), rv = afterSignature (true, true, "reverb", {}, "tail"), oo = afterSignature (false, true, "meter", "meter", "words");
     check (un.route == Route::needsCategory && un.category == "reverb" && un.why.contains ("leaning reverb") && win.route == Route::needsCategory
            && e.route == Route::measure && e.category == "eq" && dy.route == Route::measure && dy.category == "compressor"
-           && rv.route == Route::sendOther && rv.category == "reverb" && oo.route == Route::outOfScope,
-           "wizard WZ-ROUTE-3: unsettled / window -> needs_category (leaning kept); eq -> EQ queue; dynamics -> compressor queue; reverb -> sent with category; meter -> listed");
+           && rv.route == Route::measure && rv.category == "reverb" && oo.route == Route::outOfScope,
+           "wizard WZ-ROUTE-3: unsettled / window -> needs_category (leaning kept); eq -> EQ queue; dynamics -> compressor queue; reverb -> measured (12 Oct); meter -> listed");
     // WZ-ROUTE-4 THE SUMMARY says what was sent instead of measured
     const auto line = ejmap::wizard::summaryLine ({ { "ready", 1 }, { "needs_category", 2 }, { "other_category", 1 }, { "out_of_scope", 1 }, { "pending_review", 1 } });
     check (line.contains ("2 plugins we couldn't identify were sent for review") && line.contains ("1 plugin of a kind we don't measure yet was sent so EchoJay knows it")
@@ -9897,6 +9939,7 @@ int main (int, char**)
     testWizardProgress();
     testWizardApp();
     testWizardRoute();
+    testWizardCategories();
     testJobs();
     testPhaseB();
     testLoopOutcomes();

@@ -63,6 +63,11 @@ inline juce::String stageWord (Stage s)
 inline double defaultSeconds (const juce::String& kind)
 {
     if (kind == "map") return 4.0; if (kind == "check") return 6.0; if (kind == "eq") return 36.0; if (kind == "pack") return 2.0;
+    // 12 Oct, all categories: the median seconds of Sean's "ok" Phase B rows per category (his 4-11 Oct nights); limitercomp is the
+    // compressor path; strips: no row yet - the category's stated estimate
+    if (kind == "deesser") return 18.0; if (kind == "limiter") return 28.0; if (kind == "limitercomp") return 340.0; if (kind == "saturation") return 11.0;
+    if (kind == "gate") return 17.0; if (kind == "transient") return 22.0; if (kind == "multiband") return 51.0; if (kind == "tuners") return 111.0;
+    if (kind == "reverb") return 41.0; if (kind == "delay") return 45.0; if (kind == "strips") return 1200.0;
     return 340.0;   // a compressor: the full path + the tone check
 }
 struct Times
@@ -78,7 +83,7 @@ struct Times
     bool isMeasured (const juce::String& kind) const { const auto it = measured.find (kind); return it != measured.end() && ! it->second.empty(); }
 };
 
-struct Item { juce::String product, kind; bool done = false, running = false, problem = false, serial = false; double ranS = 0.0; };   // ranS: seconds a running item has run
+struct Item { juce::String product, kind; bool done = false, running = false, problem = false, serial = false; double ranS = 0.0; int group = -1; };   // ranS: seconds a running item has run; group: its Phase B pass (-1: one pass)
 
 // RESUME: a queue item whose row already landed (product -> its outcome) starts done; a landed row that is not "ok" is a problem
 inline std::vector<Item> resumeItems (std::vector<Item> queue, const std::map<juce::String, juce::String>& landed)
@@ -112,16 +117,24 @@ inline double stoppedPercent (Stage s, std::vector<Item> items, const Times& t)
 }
 // seconds left in THIS stage: parallel work / jobs + the serial lane; a running plugin counts what it has left of its expected time
 // (never under a tenth of it: a slow plugin past its figure is not 'done any second')
+// THE PASSES (12 Oct, all categories): the wizard measures one category group after another, --jobs only inside a pass, so the time left
+// is the sum over passes of (parallel work / jobs + the serial lane) - a pass with one plugin cannot use two jobs
 inline double stageSecondsLeft (const std::vector<Item>& items, const Times& t, int jobs)
 {
-    double par = 0.0, ser = 0.0;
+    std::map<int, std::pair<double, double>> byGroup;   // group -> (parallel, serial)
     for (const auto& i : items)
     {
         if (i.done) continue;
         const double e = t.perItem (i.kind); const double s = i.running ? juce::jmax (0.1 * e, e - i.ranS) : e;
-        (i.serial ? ser : par) += s;
+        auto& g = byGroup[i.group]; (i.serial ? g.second : g.first) += s;
     }
-    return par / (double) juce::jmax (1, jobs) + ser;
+    double left = 0.0;
+    for (const auto& [grp, ps] : byGroup)
+    {   // a pass's parallel work spreads over at most as many jobs as it has plugins: its time is at least its longest plugin
+        double longest = 0.0; for (const auto& i : items) if (! i.done && i.group == grp && ! i.serial) longest = juce::jmax (longest, i.running ? juce::jmax (0.1 * t.perItem (i.kind), t.perItem (i.kind) - i.ranS) : t.perItem (i.kind));
+        left += (grp < 0 ? ps.first / (double) juce::jmax (1, jobs) : juce::jmax (longest, ps.first / (double) juce::jmax (1, jobs))) + ps.second;
+    }
+    return left;
 }
 // seconds left overall; -1 = not known yet (the measuring queue is decided by checking)
 inline double etaSeconds (Stage s, const std::vector<Item>& items, const Times& t, int jobs, bool queueKnown, const std::vector<Item>& queue)
@@ -186,22 +199,23 @@ public:
     }
     void setQueue (std::vector<Item> q) { std::lock_guard<std::mutex> g (m_); queue_ = std::move (q); queueKnown_ = true; }
     void seedTime (const juce::String& kind, double s) { std::lock_guard<std::mutex> g (m_); times_.add (kind, s); }
-    void started (const juce::String& product)
+    void started (const juce::String& product, const juce::String& kind = {})   // kind: which of a product's items (a limiter has two)
     {
         std::lock_guard<std::mutex> g (m_);
-        for (auto& i : items_) if (i.product == product && ! i.done) { i.running = true; startedAt_[product] = juce::Time::getMillisecondCounterHiRes(); }
+        for (auto& i : items_) if (i.product == product && ! i.done && ! i.running && (kind.isEmpty() || i.kind == kind)) { i.running = true; startedAt_[product + "|" + i.kind] = juce::Time::getMillisecondCounterHiRes(); break; }
         if (! current_.contains (product)) current_.add (product);
         if (markers_ != juce::File()) wizapp::markerBegin (markers_, product, stageWord (stage_));
         if (markers_ != juce::File() && stage_ != Stage::packing) markers_.getSiblingFile ("loads.log").appendText (juce::Time::getCurrentTime().toISO8601 (true) + "\t" + stageWord (stage_) + "\t" + product + "\n");   // every load, for the record
         emitLocked (false);
     }
-    void finished (const juce::String& product, bool problem, double seconds = -1.0)
+    void finished (const juce::String& product, bool problem, double seconds = -1.0, const juce::String& kind = {})
     {
         std::lock_guard<std::mutex> g (m_);
-        for (auto& i : items_) if (i.product == product && ! i.done)
+        for (auto& i : items_) if (i.product == product && ! i.done && (kind.isEmpty() || i.kind == kind))
         {
             i.done = true; i.running = false; i.problem = problem;
-            double s = seconds; if (s < 0.0 && startedAt_.count (product)) s = (juce::Time::getMillisecondCounterHiRes() - startedAt_[product]) / 1000.0;
+            const auto key = product + "|" + i.kind;
+            double s = seconds; if (s < 0.0 && startedAt_.count (key)) s = (juce::Time::getMillisecondCounterHiRes() - startedAt_[key]) / 1000.0;
             if (! problem && s > 0.0) times_.add (i.kind, s);
             if (problem) ++problems_;
             break;
@@ -211,7 +225,7 @@ public:
         emitLocked (true);
     }
     void ranFor (const juce::String& product, double s)   // the clock as if the plugin started s seconds ago (pins; a window app's restore)
-    { std::lock_guard<std::mutex> g (m_); startedAt_[product] = juce::Time::getMillisecondCounterHiRes() - s * 1000.0; emitLocked (false); }
+    { std::lock_guard<std::mutex> g (m_); for (const auto& i : items_) if (i.product == product) startedAt_[product + "|" + i.kind] = juce::Time::getMillisecondCounterHiRes() - s * 1000.0; emitLocked (false); }
     void addProblems (int n) { std::lock_guard<std::mutex> g (m_); problems_ += n; }
     void setProblems (int n) { std::lock_guard<std::mutex> g (m_); problems_ = n; }
     void finish (const juce::String& summary, bool stopped = false)   // stopped: the bar and the file keep where it stopped ("Stopped", not 100%)
@@ -251,7 +265,7 @@ private:
     void emitLocked (bool event, bool writeFile = true)
     {
         const double nowMs = juce::Time::getMillisecondCounterHiRes();
-        for (auto& i : items_) if (i.running && startedAt_.count (i.product)) i.ranS = (nowMs - startedAt_[i.product]) / 1000.0;
+        for (auto& i : items_) if (i.running && startedAt_.count (i.product + "|" + i.kind)) i.ranS = (nowMs - startedAt_[i.product + "|" + i.kind]) / 1000.0;
         const double pct = percent (stage_, items_, times_, lastPct_);
         const double eta = etaSeconds (stage_, items_, times_, jobs_, queueKnown_, queue_);
         const auto line = lineLocked (pct, eta);
@@ -279,7 +293,7 @@ private:
         o->setProperty ("elapsed_s", std::round (elapsed)); o->setProperty ("eta_s", eta < 0.0 ? juce::var() : juce::var (std::round (eta)));
         o->setProperty ("eta_words", stage_ == Stage::done ? juce::String ("finished") : stopped_ ? juce::String ("stopped") : etaWords (eta)); o->setProperty ("jobs", jobs_);
         auto* tm = new juce::DynamicObject();
-        for (const auto* k : { "map", "check", "compressor", "eq" }) { auto* e = new juce::DynamicObject(); e->setProperty ("seconds", std::round (times_.perItem (k) * 10.0) / 10.0); e->setProperty ("source", times_.isMeasured (k) ? "measured" : "starting figure"); tm->setProperty (k, juce::var (e)); }
+        for (const auto* k : { "map", "check", "compressor", "eq", "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "multiband", "tuners", "reverb", "delay", "strips" }) { auto* e = new juce::DynamicObject(); e->setProperty ("seconds", std::round (times_.perItem (k) * 10.0) / 10.0); e->setProperty ("source", times_.isMeasured (k) ? "measured" : "starting figure"); tm->setProperty (k, juce::var (e)); }
         o->setProperty ("seconds_per_plugin", juce::var (tm));
         o->setProperty ("line", line); if (summary_.isNotEmpty()) o->setProperty ("summary", summary_);
         o->setProperty ("updated", juce::Time::getCurrentTime().toISO8601 (true));

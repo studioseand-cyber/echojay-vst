@@ -1,0 +1,14 @@
+manifest.json
+profiles/
+profiles/elysia_mpressor_1.15.1.json
+profiles/bx_limiter_1.15.2.tonecheck.json
+profiles/AudioUnit_417f6370_3.9.1.saturation_profile.draft.json
+profiles/AudioUnit_6f466163_1.0.3.strip_profile.draft.json
+profiles/AudioUnit_6155777e_1.3.7.multiband_profile.draft.json
+profiles/elysia_mpressor_1.15.1.tonecheck.json
+profiles/AudioUnit_7d606b6a_1.3.2.transient_profile.draft.json
+profiles/AudioUnit_62434544_1.5.1.space_profile.draft.json
+profiles/bx_limiter_1.15.2.json
+profiles/AudioUnit_417f7d6d_1.15.2.limiter_ceiling.draft.json
+profiles/AudioUnit_77727f61_1.1.0.tuner_profile.draft.json
+profiles/AudioUnit_417f636d_1.9.1.space_profile.draft.json

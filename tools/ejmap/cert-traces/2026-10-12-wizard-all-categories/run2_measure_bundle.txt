@@ -1,0 +1,100 @@
+WIZARD: 4 profile(s) in the database (db, a local folder: nothing is fetched)
+  ADA STD-1 Stereo Tapped Delay  1.5.1     -> measure / queued: the server's category: delay
+  Lindell 50 Channel             1.0.3     -> measure / queued: the server's category: channel_strip
+  Lindell SBC                    1.0.3     -> skip_have / ready: already in the database: the same plugin and version
+  SPL De-Esser Dual-Band         1.15.1    -> measure / queued: the server's category: de-esser
+  spiff                          1.3.2     -> measure / queued: the server's category: transient_shaper
+  bx_crispytuner                 1.1.0     -> measure / queued: the server's category: pitch
+  OTT                            1.3.7     -> measure / queued: the server's category: multiband
+  bx_limiter                     1.15.2    -> measure / queued: the server's category: limiter
+  bx_rooMS                       1.9.1     -> measure / queued: the server's category: reverb
+  bx_rockrack V3 Player          3.9.1     -> measure / queued: the server's category: amp_sim
+  elysia mpressor                1.15.1    -> measure / queued: the server's category: compressor
+  Unfiltered Audio G8            1.6.2     -> measure / queued: the server's category: gate
+  MFreeformEqualizer             14.16.0   -> measure / queued: the server's category: eq
+WIZARD: map store <scratch>/wcat/store/maps: 12 map(s); 0 plugin(s) to map (the database settled the rest without loading them)
+WIZARD: 13 plugin(s) found: 1 plugin ready, 12 to measure
+WIZARD: measuring 13 plugin measurement(s), 2 at a time - stop any time; it carries on next time
+WIZARD: measuring wizard (1)
+PHASEB: 1 product(s) over 1 category -> <scratch>/wcat/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  wizard       1 product(s), 0 already done; hang guard 30 min (the compressor certification for a plugin the database does not have (the wizard's queue))
+PHASEB: --jobs 2: 1 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[wizard 1/1 | all 1/1] elysia mpressor: ok 330.491 s | elapsed 0:05:31 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261012T131903, updated 20261012T132434); summary <scratch>/wcat/work/phaseb/summary.json
+WIZARD: measuring wizard_eq (1)
+PHASEB: 1 product(s) over 1 category -> <scratch>/wcat/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  wizard_eq    1 product(s), 0 already done; hang guard 45 min (the EQ certification for a plugin the database does not have (the wizard's EQ queue))
+PHASEB: --jobs 2: 0 row(s) in parallel, 1 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+  serial lane: wizard_eq: MFreeformEqualizer (PACE / iLok: PACE-wrapped (MFreeformEqualizer.component))
+[wizard_eq 1/1 | all 2/2] MFreeformEqualizer: ok 4.03485 s | elapsed 0:05:35 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261012T131903, updated 20261012T132438); summary <scratch>/wcat/work/phaseb/summary.json
+WIZARD: measuring deesser (1)
+PHASEB: 1 product(s) over 1 category -> <scratch>/wcat/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  deesser      1 product(s), 0 already done; hang guard 15 min (three ladders (noise primary, 6.5 kHz, 997 Hz), up to six responses, two acceptance processes, the pool: ~3-5 min)
+PHASEB: --jobs 2: 1 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[deesser 1/1 | all 3/3] SPL De-Esser Dual-Band: ok 2.97405 s | elapsed 0:05:38 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261012T131903, updated 20261012T132441); summary <scratch>/wcat/work/phaseb/summary.json
+WIZARD: measuring limiter + limitercomp (2)
+PHASEB: 2 product(s) over 2 categories -> <scratch>/wcat/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  limiter      1 product(s), 0 already done; hang guard 10 min (five ceilings x two oversampling states + the pool's drive test: ~2-3 min)
+  limitercomp  1 product(s), 0 already done; hang guard 30 min (the compressor certification on a limiter: the profile sweep (31 levels x up to 16 positions), the detector, the tone check)
+PHASEB: --jobs 2: 2 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[limiter 1/1 | all 4/5] bx_limiter: ok 8.00493 s | elapsed 0:05:46 | ETA 0:00:06
+[limitercomp 1/1 | all 5/5] bx_limiter: ok 351.174 s | elapsed 0:11:29 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261012T131903, updated 20261012T133033); summary <scratch>/wcat/work/phaseb/summary.json
+WIZARD: measuring saturation (1)
+PHASEB: 1 product(s) over 1 category -> <scratch>/wcat/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  saturation   1 product(s), 0 already done; hang guard 20 min (three levels per drive control + the pool + the output curve + three acceptance writes (+ an amp sim's cabinet response): ~3-7 min (Saphira's twelve drives: 7))
+PHASEB: --jobs 2: 1 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[saturation 1/1 | all 6/6] bx_rockrack V3 Player: ok 2.25952 s | elapsed 0:11:31 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261012T131903, updated 20261012T133035); summary <scratch>/wcat/work/phaseb/summary.json
+WIZARD: measuring gate + transient (2)
+PHASEB: 2 product(s) over 2 categories -> <scratch>/wcat/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  transient    1 product(s), 0 already done; hang guard 30 min (every control's end pair + 7 per role on 9.6 s of hits and held tone + 4 acceptance writes: ~5-15 min)
+  gate         1 product(s), 0 already done; hang guard 30 min (every control's ramp pair + 7 threshold and 7 range ramps + a burst + 3 acceptance ramps: ~5-15 min)
+PHASEB: --jobs 2: 1 row(s) in parallel, 1 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+  serial lane: transient: spiff (PACE / iLok: PACE-wrapped (spiff.component))
+[transient 1/1 | all 7/8] spiff: ok 325.537 s | elapsed 0:16:58 | ETA 0:00:08
+[gate 1/1 | all 8/8] Unfiltered Audio G8: probe_crashed 86.1711 s | elapsed 0:18:26 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261012T131903, updated 20261012T133731); summary <scratch>/wcat/work/phaseb/summary.json
+WIZARD: measuring multiband (1)
+PHASEB: 1 product(s) over 1 category -> <scratch>/wcat/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  multiband    1 product(s), 0 already done; hang guard 25 min (a pairing response per threshold, a ladder per band, 25-30 vocal responses: ~4-8 min measured)
+PHASEB: --jobs 2: 1 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[multiband 1/1 | all 9/9] OTT: ok 19.3342 s | elapsed 0:18:46 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261012T131903, updated 20261012T133750); summary <scratch>/wcat/work/phaseb/summary.json
+WIZARD: measuring tuners (1)
+PHASEB: 1 product(s) over 1 category -> <scratch>/wcat/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  tuners       1 product(s), 0 already done; hang guard 30 min (strength + speed sweeps per strength control, flex ladder, humanize (three runs), key/scale grids: ~5-15 min)
+PHASEB: --jobs 2: 1 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[tuners 1/1 | all 10/10] bx_crispytuner: ok 129.106 s | elapsed 0:20:55 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261012T131903, updated 20261012T134000); summary <scratch>/wcat/work/phaseb/summary.json
+WIZARD: measuring reverb + delay (2)
+PHASEB: 2 product(s) over 2 categories -> <scratch>/wcat/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  reverb       1 product(s), 0 already done; hang guard 60 min (every control's end pair, 11 mix, 7 time, 7 pink + 7 sine decay tails to 35 dB down or 20 s, 8 acceptance writes: ~10-25 min)
+  delay        1 product(s), 0 already done; hang guard 60 min (every control's end pair, 11 mix, 7 time, 7 feedback, each note value at 120 bpm + 2 tempos, 8 acceptance writes: ~8-20 min)
+PHASEB: --jobs 2: 2 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[delay 1/1 | all 11/12] ADA STD-1 Stereo Tapped Delay: ok 42.925 s | elapsed 0:21:38 | ETA 0:00:43
+[reverb 1/1 | all 12/12] bx_rooMS: ok 139.244 s | elapsed 0:23:15 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261012T131903, updated 20261012T134221); summary <scratch>/wcat/work/phaseb/summary.json
+WIZARD: measuring strips (1)
+PHASEB: 1 product(s) over 1 category -> <scratch>/wcat/work/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+  strips       1 product(s), 0 already done; hang guard 40 min (a section per mode (eq ~6-12 min, gate ~5, saturation ~4): ~15-25 min)
+PHASEB: --jobs 2: 1 row(s) in parallel, 0 in the serial lane (UAD / licence / PACE / past window-licence-timeout-unhostable-silent-crash)
+[strips 1/1 | all 13/13] Lindell 50 Channel: ok 380.172 s | elapsed 0:29:36 | ETA 0:00:00
+PHASEB: done - PHASE B PROGRESS (started 20261012T131903, updated 20261012T134842); summary <scratch>/wcat/work/phaseb/summary.json
+DRAFTS tuners     1 draft(s) from 1 record(s) -> <scratch>/wcat/work/phaseb/tuners/drafts
+DRAFTS multiband  1 draft(s) from 1 record(s) -> <scratch>/wcat/work/phaseb/multiband/drafts
+DRAFTS limiter    1 draft(s) from 1 record(s) -> <scratch>/wcat/work/phaseb/limiter/drafts
+DRAFTS deesser     no records under <scratch>/wcat/work/phaseb/deesser/deesser
+DRAFTS saturation 1 draft(s) from 1 record(s) -> <scratch>/wcat/work/phaseb/saturation/drafts
+DRAFTS reverb     1 draft(s) from 1 record(s) -> <scratch>/wcat/work/phaseb/reverb/drafts
+DRAFTS delay      1 draft(s) from 1 record(s) -> <scratch>/wcat/work/phaseb/delay/drafts
+DRAFTS transient  1 draft(s) from 1 record(s) -> <scratch>/wcat/work/phaseb/transient/drafts
+DRAFTS gate       1 draft(s) from 1 record(s) -> <scratch>/wcat/work/phaseb/gate/drafts
+DRAFTS strips     1 draft(s) from 1 record(s) -> <scratch>/wcat/work/phaseb/strips/drafts
+DRAFTS: 9 written from 9 record(s), 0 refused; nothing loaded, nothing measured, nothing under cert/profiles touched
+WIZARD: 1 plugin ready, 9 newly measured, ready to send, 1 crashed (we moved on), 2 could not be measured
+WIZARD: contribution bundle -> contribution.zip (9 new profile(s), 0 confirmation(s) of another version's profile, 3 skipped with the reason; 29.8 KB; checked: no paths, names or tokens)
+WIZARD: UPLOAD (stubbed): nothing is sent. A real app shows this list and sends only when the user presses Send.
+Done in 29 min 41 s: 13 plugin(s) - 1 plugin ready, 9 newly measured, ready to send, 1 crashed (we moved on), 2 could not be measured. Ready to send: contribution.zip (9 new, 0 confirmation(s), 29.8 KB) - nothing was sent.

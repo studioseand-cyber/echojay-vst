@@ -42,6 +42,11 @@
   leaning); other categories -> `other_categories` (map + category); out of scope -> listed. `loads.log` records every load. Pins
   WZ-ROUTE-1..5. Rehearsal: cert-traces/2026-10-12-wizard-no-plugin-left/.
 
+- ALL CATEGORIES (12 Oct): limiter (+ limitercomp), de-esser, saturation / amp sims, gate, transient, multiband, tuners, reverb, delay
+  and strips through EJ Map's own Phase B categories on the wizard's per-category queues (`SweepOptions::wizardQueues`), in Kathy's
+  order (compressors first, strips last), one Phase B pass per group. Estimates: Sean's measured medians per category. Bundle: each
+  category's cert draft. Pins WZ-CAT-1..4. Rehearsal: cert-traces/2026-10-12-wizard-all-categories/.
+
 ## Left before it is a real app
 1. **UI**: BUILT as the v1 window app (above). Still open: a Pause button besides closing the window; "overnight" scheduling;
    accessibility (VoiceOver labels on the bar); dark mode; a first-launch explanation of what is measured and why; localisation;
@@ -54,10 +59,9 @@
    publish; the reward ledger. Client side once they exist: replace the four stubs, retry / resume of an interrupted upload.
 3. **The real database lookup**: "what's missing" on the server (plan section 8) instead of a local folder; the server, not the client,
    decides A / B / C, and records B confirmations and live-check misses.
-4. **Categories beyond compressors and EQs**: de-esser / saturation / reverb / delay / transient / gate / limiter / tuner / multiband /
-   strips need their profiles published and their lookups defined (the EQ pattern: the profile's written controls for the B check, the
-   category's acceptance as the send gate). And a category for a plugin neither the catalogue nor its name places: today "not measured
-   by the wizard yet" - the measurement categoriser (--categorise-propose) could decide it on the user's Mac.
+4. **Categories**: BUILT for every category EJ Map certifies (above). Left: the publish side per category (the server must accept
+   each draft kind and its acceptance as the send gate); strips need their sections, which the wizard's role-less maps may not give
+   (see the rehearsal); limitercomp doubles a limiter's time - keep it, or only when the limiter mode passes?
 5. **Licence handling for strangers**: the user's own licences.csv does not exist - the wizard relies on window / PACE detection and the
    serial lane; a "skip anything that asks for a licence" default and a plain explanation screen.
 6. **Signing + notarisation**: today the app and the engine are signed AD HOC by assemble.sh (only the probe carries the Developer

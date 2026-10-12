@@ -1492,6 +1492,7 @@ struct FollowUpProjection
 struct SweepOptions
 {
     juce::File fixtures, probe, out, ledger = defaultEjmapLedger();
+    bool wizardQueues = false;   // the wizard (12 Oct): Phase B categories take their work list from <out>/wizard_queue_<category>.txt
     juce::String product, hostVersion, armLabel;
     bool resumeTraces = false;   // 9 Oct: --resume-traces (the Phase B parent, a timed-out gain row): a complete trace already in raw/ is reused
     std::vector<std::pair<int, float>> extraSets;    // a DIAGNOSTIC arm: a non-swept control moved on purpose
@@ -6315,6 +6316,12 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 const auto product = row.getProperty ("product", "").toString();
                 for (const auto& ir : installed) if (ir.desc.name == product) { PhaseBProduct pp; pp.product = product; pp.stem = stemFor (ir.desc); pp.category = cat.name; pp.desc = ir.desc; pp.recordFile = latestRecordFor (opt.out.getChildFile ("fixtures"), product).getFullPathName(); list.push_back (pp); break; }
             }
+        }
+        else if (opt.wizardQueues && cat.name != "wizard" && cat.name != "wizard_eq")
+        {   // ALL CATEGORIES IN THE WIZARD (12 Oct): EJ Map's own category (its mode, outcomes, acceptance and serial lane, unchanged) on the
+            // wizard's queue for it - one installed product name per line; the catalogue discovery below is not used
+            for (const auto& line : juce::StringArray::fromLines (opt.out.getChildFile ("wizard_queue_" + cat.name + ".txt").loadFileAsString()))
+                for (const auto& ir : installed) if (line.trim().isNotEmpty() && ir.desc.name == line.trim()) { PhaseBProduct pp; pp.product = ir.desc.name; pp.stem = stemFor (ir.desc); pp.category = cat.name; pp.desc = ir.desc; list.push_back (pp); break; }
         }
         else if (cat.name == "wizard" || cat.name == "wizard_eq")
         {   // the wizard's queues: one installed product name per line (compressors / EQs)
