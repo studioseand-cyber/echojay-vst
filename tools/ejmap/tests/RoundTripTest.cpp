@@ -84,6 +84,7 @@
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include <functional>
+#include "EjmapCustomDefault.h"
 #include "EjmapCertDriver.h"
 #include "EjmapWizard.h"
 #include "EjmapWizardProgress.h"
@@ -9943,6 +9944,28 @@ void testCertReview()
     }
 }
 
+/** CUSTOM DEFAULTS, the detection (EjmapCustomDefault.h, 12 Oct): real parameter blocks from Sean's Mac and this one, same versions. */
+void testCustomDefault()
+{
+    using namespace ejmap::customdefault;
+    const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/custom_default");
+    auto v = [&] (const char* stem) { return compare (parseBlock (dir.getChildFile (juce::String (stem) + ".sean.txt").loadFileAsString()),
+                                                       parseBlock (dir.getChildFile (juce::String (stem) + ".here.txt").loadFileAsString())); };
+    const auto mm = v ("mmorph"), tc = v ("mturbocomp"), pq = v ("proq3"), mc = v ("mc77"), ch = v ("mchorusmb"), sbc = v ("lindellsbc");
+    bool has74 = false; for (const auto& d : mm.diffs) if (d.index == 74) has74 = true;
+    // CD-1 the real ones: MMorph (its spectral compression, tone, harmonics, whitening, M/S) and MTurboComp open at other values
+    check (mm.comparable && mm.differs && mm.diffs.size() >= 15 && has74 && tc.differs && tc.diffs.size() >= 4,
+           "customdefault CD-1: MMorph (" + juce::String ((int) mm.diffs.size()) + " controls) and MTurboComp (" + juce::String ((int) tc.diffs.size()) + ") open differently on the two Macs");
+    // CD-2 not a difference: a view toggle (Pro-Q 3), a meter (MC 77), the same displayed value (MChorusMB), names only; identical (Lindell SBC)
+    check (pq.comparable && ! pq.differs && mc.comparable && ! mc.differs && ch.comparable && ! ch.differs && ch.namesDiffer > 0 && sbc.comparable && ! sbc.differs && sbc.namesDiffer == 0,
+           "customdefault CD-2: Pro-Q 3's analyzer toggle, MC 77's VU meter, MChorusMB's 'Sine' / 'Sine' and renamed controls are not differences; Lindell SBC identical");
+    // CD-3 the opening state only: a block printed after a write is not the instantiate state; no block = not comparable
+    const auto afterWrite = parseBlock ("set\t1\t0.5\nparam\t0\t0.250000\tGain\t-6 dB\n");
+    const auto clean = parseBlock ("probe: x\nstage\tprepare\nparam\t0\t0.250000\tGain\t-6 dB\nparam\t1\t1.000000\tMix\t100%\nstage\tdone\n");
+    check (afterWrite.empty() && clean.size() == 2 && clean.at (0).text == "-6 dB" && ! compare ({}, clean).comparable,
+           "customdefault CD-3: a block after a write is refused; a clean block parses; no reference = not comparable");
+}
+
 /** CATEGORISE RELEASE RULE (Kathy, 12 Oct): a level-dependent, FLAT gain beats a short tail (a compressor's release), decided from REAL
     traces: Lindell 254E and Acme Opticom XLA-3 read here; FilterFreak2 (Sean's 605, level-dependent but not flat) stays for review. */
 void testCategoriseRelease()
@@ -9971,6 +9994,7 @@ void testCategoriseRelease()
 int main (int, char**)
 {
     testCategoriseRelease();
+    testCustomDefault();
     juce::ScopedJuceInitialiser_GUI juceInit;
 
     testSchemaVersionPinned();

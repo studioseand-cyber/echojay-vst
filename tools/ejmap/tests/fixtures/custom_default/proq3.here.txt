@@ -1,0 +1,359 @@
+# Pro-Q 3 61453c50|3.2.3 - instantiate parameter block (probe 'param' lines)
+param	0	0.000000	Band 1 Used	0
+param	1	1.000000	Band 1 Enabled	1
+param	2	0.575188	Band 1 Frequency	1000.0 Hz
+param	3	0.500000	Band 1 Gain	0.00 dB
+param	4	0.500000	Band 1 Dynamic Range	0.00 dB
+param	5	1.000000	Band 1 Dynamics Enabled	1
+param	6	1.000000	Band 1 Threshold	Auto
+param	7	0.500000	Band 1 Q	1.000
+param	8	0.000000	Band 1 Shape	0
+param	9	0.111111	Band 1 Slope	1
+param	10	0.500000	Band 1 Stereo Placement	2
+param	11	0.071429	Band 1 Speakers	1
+param	12	0.000000	Band 1 Solo	0
+param	13	0.000000	Band 1 External Side Chain	0
+param	14	0.000000	Band 2 Used	0
+param	15	1.000000	Band 2 Enabled	1
+param	16	0.575188	Band 2 Frequency	1000.0 Hz
+param	17	0.500000	Band 2 Gain	0.00 dB
+param	18	0.500000	Band 2 Dynamic Range	0.00 dB
+param	19	1.000000	Band 2 Dynamics Enabled	1
+param	20	1.000000	Band 2 Threshold	Auto
+param	21	0.500000	Band 2 Q	1.000
+param	22	0.000000	Band 2 Shape	0
+param	23	0.111111	Band 2 Slope	1
+param	24	0.500000	Band 2 Stereo Placement	2
+param	25	0.071429	Band 2 Speakers	1
+param	26	0.000000	Band 2 Solo	0
+param	27	0.000000	Band 2 External Side Chain	0
+param	28	0.000000	Band 3 Used	0
+param	29	1.000000	Band 3 Enabled	1
+param	30	0.575188	Band 3 Frequency	1000.0 Hz
+param	31	0.500000	Band 3 Gain	0.00 dB
+param	32	0.500000	Band 3 Dynamic Range	0.00 dB
+param	33	1.000000	Band 3 Dynamics Enabled	1
+param	34	1.000000	Band 3 Threshold	Auto
+param	35	0.500000	Band 3 Q	1.000
+param	36	0.000000	Band 3 Shape	0
+param	37	0.111111	Band 3 Slope	1
+param	38	0.500000	Band 3 Stereo Placement	2
+param	39	0.071429	Band 3 Speakers	1
+param	40	0.000000	Band 3 Solo	0
+param	41	0.000000	Band 3 External Side Chain	0
+param	42	0.000000	Band 4 Used	0
+param	43	1.000000	Band 4 Enabled	1
+param	44	0.575188	Band 4 Frequency	1000.0 Hz
+param	45	0.500000	Band 4 Gain	0.00 dB
+param	46	0.500000	Band 4 Dynamic Range	0.00 dB
+param	47	1.000000	Band 4 Dynamics Enabled	1
+param	48	1.000000	Band 4 Threshold	Auto
+param	49	0.500000	Band 4 Q	1.000
+param	50	0.000000	Band 4 Shape	0
+param	51	0.111111	Band 4 Slope	1
+param	52	0.500000	Band 4 Stereo Placement	2
+param	53	0.071429	Band 4 Speakers	1
+param	54	0.000000	Band 4 Solo	0
+param	55	0.000000	Band 4 External Side Chain	0
+param	56	0.000000	Band 5 Used	0
+param	57	1.000000	Band 5 Enabled	1
+param	58	0.575188	Band 5 Frequency	1000.0 Hz
+param	59	0.500000	Band 5 Gain	0.00 dB
+param	60	0.500000	Band 5 Dynamic Range	0.00 dB
+param	61	1.000000	Band 5 Dynamics Enabled	1
+param	62	1.000000	Band 5 Threshold	Auto
+param	63	0.500000	Band 5 Q	1.000
+param	64	0.000000	Band 5 Shape	0
+param	65	0.111111	Band 5 Slope	1
+param	66	0.500000	Band 5 Stereo Placement	2
+param	67	0.071429	Band 5 Speakers	1
+param	68	0.000000	Band 5 Solo	0
+param	69	0.000000	Band 5 External Side Chain	0
+param	70	0.000000	Band 6 Used	0
+param	71	1.000000	Band 6 Enabled	1
+param	72	0.575188	Band 6 Frequency	1000.0 Hz
+param	73	0.500000	Band 6 Gain	0.00 dB
+param	74	0.500000	Band 6 Dynamic Range	0.00 dB
+param	75	1.000000	Band 6 Dynamics Enabled	1
+param	76	1.000000	Band 6 Threshold	Auto
+param	77	0.500000	Band 6 Q	1.000
+param	78	0.000000	Band 6 Shape	0
+param	79	0.111111	Band 6 Slope	1
+param	80	0.500000	Band 6 Stereo Placement	2
+param	81	0.071429	Band 6 Speakers	1
+param	82	0.000000	Band 6 Solo	0
+param	83	0.000000	Band 6 External Side Chain	0
+param	84	0.000000	Band 7 Used	0
+param	85	1.000000	Band 7 Enabled	1
+param	86	0.575188	Band 7 Frequency	1000.0 Hz
+param	87	0.500000	Band 7 Gain	0.00 dB
+param	88	0.500000	Band 7 Dynamic Range	0.00 dB
+param	89	1.000000	Band 7 Dynamics Enabled	1
+param	90	1.000000	Band 7 Threshold	Auto
+param	91	0.500000	Band 7 Q	1.000
+param	92	0.000000	Band 7 Shape	0
+param	93	0.111111	Band 7 Slope	1
+param	94	0.500000	Band 7 Stereo Placement	2
+param	95	0.071429	Band 7 Speakers	1
+param	96	0.000000	Band 7 Solo	0
+param	97	0.000000	Band 7 External Side Chain	0
+param	98	0.000000	Band 8 Used	0
+param	99	1.000000	Band 8 Enabled	1
+param	100	0.575188	Band 8 Frequency	1000.0 Hz
+param	101	0.500000	Band 8 Gain	0.00 dB
+param	102	0.500000	Band 8 Dynamic Range	0.00 dB
+param	103	1.000000	Band 8 Dynamics Enabled	1
+param	104	1.000000	Band 8 Threshold	Auto
+param	105	0.500000	Band 8 Q	1.000
+param	106	0.000000	Band 8 Shape	0
+param	107	0.111111	Band 8 Slope	1
+param	108	0.500000	Band 8 Stereo Placement	2
+param	109	0.071429	Band 8 Speakers	1
+param	110	0.000000	Band 8 Solo	0
+param	111	0.000000	Band 8 External Side Chain	0
+param	112	0.000000	Band 9 Used	0
+param	113	1.000000	Band 9 Enabled	1
+param	114	0.575188	Band 9 Frequency	1000.0 Hz
+param	115	0.500000	Band 9 Gain	0.00 dB
+param	116	0.500000	Band 9 Dynamic Range	0.00 dB
+param	117	1.000000	Band 9 Dynamics Enabled	1
+param	118	1.000000	Band 9 Threshold	Auto
+param	119	0.500000	Band 9 Q	1.000
+param	120	0.000000	Band 9 Shape	0
+param	121	0.111111	Band 9 Slope	1
+param	122	0.500000	Band 9 Stereo Placement	2
+param	123	0.071429	Band 9 Speakers	1
+param	124	0.000000	Band 9 Solo	0
+param	125	0.000000	Band 9 External Side Chain	0
+param	126	0.000000	Band 10 Used	0
+param	127	1.000000	Band 10 Enabled	1
+param	128	0.575188	Band 10 Frequency	1000.0 Hz
+param	129	0.500000	Band 10 Gain	0.00 dB
+param	130	0.500000	Band 10 Dynamic Range	0.00 dB
+param	131	1.000000	Band 10 Dynamics Enabled	1
+param	132	1.000000	Band 10 Threshold	Auto
+param	133	0.500000	Band 10 Q	1.000
+param	134	0.000000	Band 10 Shape	0
+param	135	0.111111	Band 10 Slope	1
+param	136	0.500000	Band 10 Stereo Placement	2
+param	137	0.071429	Band 10 Speakers	1
+param	138	0.000000	Band 10 Solo	0
+param	139	0.000000	Band 10 External Side Chain	0
+param	140	0.000000	Band 11 Used	0
+param	141	1.000000	Band 11 Enabled	1
+param	142	0.575188	Band 11 Frequency	1000.0 Hz
+param	143	0.500000	Band 11 Gain	0.00 dB
+param	144	0.500000	Band 11 Dynamic Range	0.00 dB
+param	145	1.000000	Band 11 Dynamics Enabled	1
+param	146	1.000000	Band 11 Threshold	Auto
+param	147	0.500000	Band 11 Q	1.000
+param	148	0.000000	Band 11 Shape	0
+param	149	0.111111	Band 11 Slope	1
+param	150	0.500000	Band 11 Stereo Placement	2
+param	151	0.071429	Band 11 Speakers	1
+param	152	0.000000	Band 11 Solo	0
+param	153	0.000000	Band 11 External Side Chain	0
+param	154	0.000000	Band 12 Used	0
+param	155	1.000000	Band 12 Enabled	1
+param	156	0.575188	Band 12 Frequency	1000.0 Hz
+param	157	0.500000	Band 12 Gain	0.00 dB
+param	158	0.500000	Band 12 Dynamic Range	0.00 dB
+param	159	1.000000	Band 12 Dynamics Enabled	1
+param	160	1.000000	Band 12 Threshold	Auto
+param	161	0.500000	Band 12 Q	1.000
+param	162	0.000000	Band 12 Shape	0
+param	163	0.111111	Band 12 Slope	1
+param	164	0.500000	Band 12 Stereo Placement	2
+param	165	0.071429	Band 12 Speakers	1
+param	166	0.000000	Band 12 Solo	0
+param	167	0.000000	Band 12 External Side Chain	0
+param	168	0.000000	Band 13 Used	0
+param	169	1.000000	Band 13 Enabled	1
+param	170	0.575188	Band 13 Frequency	1000.0 Hz
+param	171	0.500000	Band 13 Gain	0.00 dB
+param	172	0.500000	Band 13 Dynamic Range	0.00 dB
+param	173	1.000000	Band 13 Dynamics Enabled	1
+param	174	1.000000	Band 13 Threshold	Auto
+param	175	0.500000	Band 13 Q	1.000
+param	176	0.000000	Band 13 Shape	0
+param	177	0.111111	Band 13 Slope	1
+param	178	0.500000	Band 13 Stereo Placement	2
+param	179	0.071429	Band 13 Speakers	1
+param	180	0.000000	Band 13 Solo	0
+param	181	0.000000	Band 13 External Side Chain	0
+param	182	0.000000	Band 14 Used	0
+param	183	1.000000	Band 14 Enabled	1
+param	184	0.575188	Band 14 Frequency	1000.0 Hz
+param	185	0.500000	Band 14 Gain	0.00 dB
+param	186	0.500000	Band 14 Dynamic Range	0.00 dB
+param	187	1.000000	Band 14 Dynamics Enabled	1
+param	188	1.000000	Band 14 Threshold	Auto
+param	189	0.500000	Band 14 Q	1.000
+param	190	0.000000	Band 14 Shape	0
+param	191	0.111111	Band 14 Slope	1
+param	192	0.500000	Band 14 Stereo Placement	2
+param	193	0.071429	Band 14 Speakers	1
+param	194	0.000000	Band 14 Solo	0
+param	195	0.000000	Band 14 External Side Chain	0
+param	196	0.000000	Band 15 Used	0
+param	197	1.000000	Band 15 Enabled	1
+param	198	0.575188	Band 15 Frequency	1000.0 Hz
+param	199	0.500000	Band 15 Gain	0.00 dB
+param	200	0.500000	Band 15 Dynamic Range	0.00 dB
+param	201	1.000000	Band 15 Dynamics Enabled	1
+param	202	1.000000	Band 15 Threshold	Auto
+param	203	0.500000	Band 15 Q	1.000
+param	204	0.000000	Band 15 Shape	0
+param	205	0.111111	Band 15 Slope	1
+param	206	0.500000	Band 15 Stereo Placement	2
+param	207	0.071429	Band 15 Speakers	1
+param	208	0.000000	Band 15 Solo	0
+param	209	0.000000	Band 15 External Side Chain	0
+param	210	0.000000	Band 16 Used	0
+param	211	1.000000	Band 16 Enabled	1
+param	212	0.575188	Band 16 Frequency	1000.0 Hz
+param	213	0.500000	Band 16 Gain	0.00 dB
+param	214	0.500000	Band 16 Dynamic Range	0.00 dB
+param	215	1.000000	Band 16 Dynamics Enabled	1
+param	216	1.000000	Band 16 Threshold	Auto
+param	217	0.500000	Band 16 Q	1.000
+param	218	0.000000	Band 16 Shape	0
+param	219	0.111111	Band 16 Slope	1
+param	220	0.500000	Band 16 Stereo Placement	2
+param	221	0.071429	Band 16 Speakers	1
+param	222	0.000000	Band 16 Solo	0
+param	223	0.000000	Band 16 External Side Chain	0
+param	224	0.000000	Band 17 Used	0
+param	225	1.000000	Band 17 Enabled	1
+param	226	0.575188	Band 17 Frequency	1000.0 Hz
+param	227	0.500000	Band 17 Gain	0.00 dB
+param	228	0.500000	Band 17 Dynamic Range	0.00 dB
+param	229	1.000000	Band 17 Dynamics Enabled	1
+param	230	1.000000	Band 17 Threshold	Auto
+param	231	0.500000	Band 17 Q	1.000
+param	232	0.000000	Band 17 Shape	0
+param	233	0.111111	Band 17 Slope	1
+param	234	0.500000	Band 17 Stereo Placement	2
+param	235	0.071429	Band 17 Speakers	1
+param	236	0.000000	Band 17 Solo	0
+param	237	0.000000	Band 17 External Side Chain	0
+param	238	0.000000	Band 18 Used	0
+param	239	1.000000	Band 18 Enabled	1
+param	240	0.575188	Band 18 Frequency	1000.0 Hz
+param	241	0.500000	Band 18 Gain	0.00 dB
+param	242	0.500000	Band 18 Dynamic Range	0.00 dB
+param	243	1.000000	Band 18 Dynamics Enabled	1
+param	244	1.000000	Band 18 Threshold	Auto
+param	245	0.500000	Band 18 Q	1.000
+param	246	0.000000	Band 18 Shape	0
+param	247	0.111111	Band 18 Slope	1
+param	248	0.500000	Band 18 Stereo Placement	2
+param	249	0.071429	Band 18 Speakers	1
+param	250	0.000000	Band 18 Solo	0
+param	251	0.000000	Band 18 External Side Chain	0
+param	252	0.000000	Band 19 Used	0
+param	253	1.000000	Band 19 Enabled	1
+param	254	0.575188	Band 19 Frequency	1000.0 Hz
+param	255	0.500000	Band 19 Gain	0.00 dB
+param	256	0.500000	Band 19 Dynamic Range	0.00 dB
+param	257	1.000000	Band 19 Dynamics Enabled	1
+param	258	1.000000	Band 19 Threshold	Auto
+param	259	0.500000	Band 19 Q	1.000
+param	260	0.000000	Band 19 Shape	0
+param	261	0.111111	Band 19 Slope	1
+param	262	0.500000	Band 19 Stereo Placement	2
+param	263	0.071429	Band 19 Speakers	1
+param	264	0.000000	Band 19 Solo	0
+param	265	0.000000	Band 19 External Side Chain	0
+param	266	0.000000	Band 20 Used	0
+param	267	1.000000	Band 20 Enabled	1
+param	268	0.575188	Band 20 Frequency	1000.0 Hz
+param	269	0.500000	Band 20 Gain	0.00 dB
+param	270	0.500000	Band 20 Dynamic Range	0.00 dB
+param	271	1.000000	Band 20 Dynamics Enabled	1
+param	272	1.000000	Band 20 Threshold	Auto
+param	273	0.500000	Band 20 Q	1.000
+param	274	0.000000	Band 20 Shape	0
+param	275	0.111111	Band 20 Slope	1
+param	276	0.500000	Band 20 Stereo Placement	2
+param	277	0.071429	Band 20 Speakers	1
+param	278	0.000000	Band 20 Solo	0
+param	279	0.000000	Band 20 External Side Chain	0
+param	280	0.000000	Band 21 Used	0
+param	281	1.000000	Band 21 Enabled	1
+param	282	0.575188	Band 21 Frequency	1000.0 Hz
+param	283	0.500000	Band 21 Gain	0.00 dB
+param	284	0.500000	Band 21 Dynamic Range	0.00 dB
+param	285	1.000000	Band 21 Dynamics Enabled	1
+param	286	1.000000	Band 21 Threshold	Auto
+param	287	0.500000	Band 21 Q	1.000
+param	288	0.000000	Band 21 Shape	0
+param	289	0.111111	Band 21 Slope	1
+param	290	0.500000	Band 21 Stereo Placement	2
+param	291	0.071429	Band 21 Speakers	1
+param	292	0.000000	Band 21 Solo	0
+param	293	0.000000	Band 21 External Side Chain	0
+param	294	0.000000	Band 22 Used	0
+param	295	1.000000	Band 22 Enabled	1
+param	296	0.575188	Band 22 Frequency	1000.0 Hz
+param	297	0.500000	Band 22 Gain	0.00 dB
+param	298	0.500000	Band 22 Dynamic Range	0.00 dB
+param	299	1.000000	Band 22 Dynamics Enabled	1
+param	300	1.000000	Band 22 Threshold	Auto
+param	301	0.500000	Band 22 Q	1.000
+param	302	0.000000	Band 22 Shape	0
+param	303	0.111111	Band 22 Slope	1
+param	304	0.500000	Band 22 Stereo Placement	2
+param	305	0.071429	Band 22 Speakers	1
+param	306	0.000000	Band 22 Solo	0
+param	307	0.000000	Band 22 External Side Chain	0
+param	308	0.000000	Band 23 Used	0
+param	309	1.000000	Band 23 Enabled	1
+param	310	0.575188	Band 23 Frequency	1000.0 Hz
+param	311	0.500000	Band 23 Gain	0.00 dB
+param	312	0.500000	Band 23 Dynamic Range	0.00 dB
+param	313	1.000000	Band 23 Dynamics Enabled	1
+param	314	1.000000	Band 23 Threshold	Auto
+param	315	0.500000	Band 23 Q	1.000
+param	316	0.000000	Band 23 Shape	0
+param	317	0.111111	Band 23 Slope	1
+param	318	0.500000	Band 23 Stereo Placement	2
+param	319	0.071429	Band 23 Speakers	1
+param	320	0.000000	Band 23 Solo	0
+param	321	0.000000	Band 23 External Side Chain	0
+param	322	0.000000	Band 24 Used	0
+param	323	1.000000	Band 24 Enabled	1
+param	324	0.575188	Band 24 Frequency	1000.0 Hz
+param	325	0.500000	Band 24 Gain	0.00 dB
+param	326	0.500000	Band 24 Dynamic Range	0.00 dB
+param	327	1.000000	Band 24 Dynamics Enabled	1
+param	328	1.000000	Band 24 Threshold	Auto
+param	329	0.500000	Band 24 Q	1.000
+param	330	0.000000	Band 24 Shape	0
+param	331	0.111111	Band 24 Slope	1
+param	332	0.500000	Band 24 Stereo Placement	2
+param	333	0.071429	Band 24 Speakers	1
+param	334	0.000000	Band 24 Solo	0
+param	335	0.000000	Band 24 External Side Chain	0
+param	336	0.000000	Processing Mode	0
+param	337	0.250000	Processing Resolution	1
+param	338	0.500000	Gain Scale	100.0%
+param	339	0.500000	Output Level	0.00 dB
+param	340	0.500000	Output Pan	Left: 0 dB / Right: 0 dB
+param	341	0.000000	Output Pan Mode	0
+param	342	0.000000	Bypass	0
+param	343	0.000000	Output Invert Phase	0
+param	344	0.000000	Auto Gain	0
+param	345	1.000000	Analyzer Show Pre-Processing	1
+param	346	1.000000	Analyzer Show Post-Processing	1
+param	347	0.000015	Analyzer External Spectrum	-1
+param	348	0.500000	Analyzer Range	1
+param	349	0.666667	Analyzer Resolution	2
+param	350	0.500000	Analyzer Speed	2
+param	351	0.750000	Analyzer Tilt	3
+param	352	0.000000	Analyzer Freeze	0
+param	353	1.000000	Analyzer Show Collisions	1
+param	354	1.000000	Spectrum Grab	1
+param	355	0.666667	Display Range	2
+param	356	0.000000	Receive Midi	0
+param	357	0.500000	Solo Gain	0.000

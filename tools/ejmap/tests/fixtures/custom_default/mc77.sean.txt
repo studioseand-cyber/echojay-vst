@@ -1,0 +1,38 @@
+# Purple Audio MC 77 73462d29|1.5.1 - instantiate parameter block (probe 'param' lines)
+param	0	1.000000	Power	On
+param	1	0.000000	M/S	Off
+param	2	0.000000	Monomaker Freq	Off
+param	3	0.500000	Stereowidth	100 %
+param	4	0.000000	SC HP Freq 	Off
+param	5	0.500000	Headroom	0.0 dB
+param	6	1.000000	Mix	100 %
+param	7	0.000000	Bank	A
+param	8	0.000000	SCLink	Off
+param	9	0.500000	Link	Std
+param	10	0.000000	IO-Link	Off
+param	11	0.000000	Insert	Off
+param	12	0.000000	TMT Channel	1
+param	13	0.000000	Stereo Mode	Analog
+param	14	0.000000	Monitoring 	Stereo
+param	15	0.375000	Input L	-30.0 dB
+param	16	0.434000	Output L	-27.2 dB
+param	17	0.402000	Attack L	+3.2
+param	18	0.700000	Release L	5.2
+param	19	0.066667	Ratio L	Ratio 4
+param	20	1.000000	Meter Mode L	GR
+param	21	0.000000	Meter IO L	OUT
+param	22	0.000000	Bypass L	Off
+param	23	1.000000	Power L	On
+param	24	0.375000	Input R	-30.0 dB
+param	25	0.434000	Output R	-27.2 dB
+param	26	0.402000	Attack R	+3.2
+param	27	0.700000	Release R	5.2
+param	28	0.066667	Ratio R	Ratio 4
+param	29	1.000000	Meter Mode R	GR
+param	30	0.000000	Meter IO R	OUT
+param	31	0.000000	Bypass R	Off
+param	32	1.000000	Power R	On
+param	33	0.009207	VU Meter L	+0.03273
+param	34	0.660461	VU Meter R	+0.63244
+param	35	inf	GR Meter L	+oo
+param	36	inf	GR Meter R	+oo
