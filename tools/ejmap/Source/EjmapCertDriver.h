@@ -76,6 +76,7 @@
 #include "EjmapPhaseB.h"
 #include "EjmapJobs.h"
 #include "EjmapSleepGuard.h"
+#include "EjmapQuarantine.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -2803,6 +2804,15 @@ inline int runPreflight (const SweepOptions& opt, const juce::File& executable)
     const auto sg = sleepguard::judge (runChild ({ "/usr/bin/pmset", "-g", "ps" }, 10000).out, runChild ({ "/usr/bin/pmset", "-g", "assertions" }, 10000).out, runChild ({ "/usr/bin/pmset", "-g" }, 10000).out);
     std::cout << "  sleep      : " << sg.line << std::endl;
     if (! sg.ok) { std::cout << "  FIX        : " << sg.fix << std::endl << "PRE-FLIGHT: REFUSED - the Mac can sleep; nothing was started" << std::endl; return 3; }
+    {   // 12 Oct: a build unzipped from an email keeps the download's quarantine flag; macOS kills it (or its probe) at launch
+        const auto exe = executable;
+        const auto bundle = exe.getFullPathName().contains (".app/Contents/MacOS/") ? exe.getParentDirectory().getParentDirectory().getParentDirectory() : exe;
+        std::vector<quarantine::Checked> qc { { "the app", bundle, quarantine::flagged (bundle) }, { "its executable", exe, quarantine::flagged (exe) },
+                                             { "the probe", opt.probe, quarantine::flagged (opt.probe) } };
+        const auto qv = quarantine::judge (qc, quarantine::folderToClear (bundle));
+        std::cout << "  quarantine : " << qv.line << std::endl;
+        if (! qv.ok) { std::cout << "  FIX        : " << qv.fix << std::endl << "PRE-FLIGHT: REFUSED - the build is quarantined; nothing was started" << std::endl; return 3; }
+    }
     return id.ok ? 0 : 3;
 }
 

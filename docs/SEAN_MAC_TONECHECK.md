@@ -4,6 +4,20 @@ You ran 5ab8352b last night (its preflight log), so none of 00f2ae79's re-checks
 saturation rows "slept"). The new build fixes both: slept rows run again by themselves, and the preflight refuses to start a Mac that
 can sleep.
 
+**Step 0, once per new build (12 Oct): clear the email's quarantine flag.** Builds sent by email must have this done once after
+unzipping - macOS marks every file that came from an email as "downloaded" and stops the app at launch (that is why the 11-12 Oct
+night did not start; the signature was fine). In Terminal, with the path of the folder you unzipped:
+
+```
+xattr -dr com.apple.quarantine ~/Desktop/<the unzipped ejmap-dist folder>
+xattr -lr ~/Desktop/<the unzipped ejmap-dist folder> | grep quarantine      # must print NOTHING
+```
+
+If the first command prints "Operation not permitted": macOS has already tried to open that copy and now protects it. Delete the
+folder, unzip the email again, and run the two commands **before opening anything**. (Your cert folder, `~/Library/ejmap/cert`,
+is not in the build folder - deleting the build folder loses nothing.) If you install into /Applications, run them on the app there
+too. The preflight now checks this as well and refuses with the same fix if a flag is left.
+
 **Step 1, every night: run the line and read the preflight's FIRST line.** It must say `EJ Map pre-flight - build <commit>` with the
 commit Kathy gave you for this build. Anything else: stop, you are on the wrong app. If it prints `sleep : REFUSED`, do what its FIX
 line says (start with `caffeinate -dimsu`, keep the charger in, System Settings > Energy > "Prevent automatic sleeping when the

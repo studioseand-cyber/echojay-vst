@@ -22,6 +22,9 @@ ditto "$APP" "$DST"
 cp "$PROBE" "$DST/Contents/MacOS/EchoJayProbe"
 chmod 755 "$DST/Contents/MacOS/EchoJayProbe"
 # the probe first (a nested executable signs before the bundle that holds it), then the app
+# 12 Oct: files copied in from the build tree can carry a download's quarantine flag (JUCE's RecentFilesMenuTemplate.nib did, tagged
+# by Chrome, inside the 11 Oct dist): strip it before signing so the build leaves this Mac clean
+xattr -dr com.apple.quarantine "$DST" 2>/dev/null || true
 codesign -f -s "$ID" --timestamp --options runtime --entitlements "$ENT" "$DST/Contents/MacOS/EchoJayProbe"
 codesign -f -s "$ID" --timestamp --options runtime --entitlements "$ENT" "$DST"
 codesign --verify --strict --deep "$DST"
