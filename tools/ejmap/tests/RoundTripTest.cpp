@@ -8899,6 +8899,13 @@ void testRunAll()
         check (ejmap::phaseb::refileSlept (row ("slept")) && ! ejmap::phaseb::refileSlept (row ("ok")) && ! ejmap::phaseb::refileSlept (row ("needs_licence")) && ! ejmap::phaseb::refileSlept (row ("timed_out")),
                "phaseb PB-SLEPT: a slept row runs again by itself on the next run; no other outcome is re-filed by this rule");
     }
+    // PB-LIMCOMP (Kathy, 12 Oct): the limiter's compressor pass runs only when the limiter mode's row is ok
+    {
+        auto row = [] (const char* oc) { auto* o = new juce::DynamicObject(); o->setProperty ("outcome", oc); return juce::var (o); };
+        check (ejmap::phaseb::compressorPassAllowed (row ("ok")) && ! ejmap::phaseb::compressorPassAllowed (row ("needs_licence")) && ! ejmap::phaseb::compressorPassAllowed (row ("failed"))
+               && ! ejmap::phaseb::compressorPassAllowed (row ("timed_out")) && ! ejmap::phaseb::compressorPassAllowed (row ("silent_output")) && ! ejmap::phaseb::compressorPassAllowed (juce::var()),
+               "phaseb PB-LIMCOMP: limitercomp only after an ok limiter row (not after a licence / failure / time-out / silence, nor before the limiter ran)");
+    }
     // PF-QUAR (Kathy, 12 Oct): a build unzipped from an email keeps com.apple.quarantine; the pre-flight reads the flag itself (a real
     // file, set and cleared here) and refuses with the fix (xattr -dr on the dist folder, then xattr -lr to check)
     {
