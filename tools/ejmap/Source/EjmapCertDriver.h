@@ -6429,6 +6429,13 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
         if (! onlyProducts.isEmpty()) { std::vector<PhaseBProduct> f; for (const auto& pp : list) if (onlyProducts.contains (pp.product)) f.push_back (pp); list = f; }
         if (phaseb::existingRowsOnly (cat, redo))
         { std::vector<PhaseBProduct> f; for (const auto& pp : list) if (isDone (phasebDir, cat.name, pp.stem)) f.push_back (pp); list = f; }   // 9 Oct: existing rows only (named by --category or not)
+        if (cat.name == "limitercomp")
+        {   // 12 Oct: the compressor pass only after the limiter mode's row is ok (phaseb/limiter/<stem>.phaseb.json)
+            std::vector<PhaseBProduct> f; juce::StringArray held;
+            for (const auto& pp : list) { if (phaseb::compressorPassAllowed (juce::JSON::parse (rowFile (phasebDir, "limiter", pp.stem).loadFileAsString()))) f.push_back (pp); else held.add (pp.product); }
+            if (! held.isEmpty()) say ("PHASEB: limitercomp: " + juce::String (held.size()) + " limiter(s) held back - the limiter mode's row is not ok (or not run yet): " + held.joinIntoString (", "));
+            list = f;
+        }
         std::sort (list.begin(), list.end(), [] (const PhaseBProduct& a, const PhaseBProduct& b) { return a.product.compareIgnoreCase (b.product) < 0; });
         if (cat.name == "samplerate" && onlyProducts.isEmpty()) { std::vector<PhaseBProduct> f; for (int i : samplerate::spreadOf ((int) list.size())) f.push_back (list[(size_t) i]); list = f; }   // A4: a spread of ten, evenly over the sorted list
         work[cat.name] = list;
