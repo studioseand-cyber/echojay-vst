@@ -9525,6 +9525,50 @@ void testWizardCategories()
                && ! ejmap::wizard::referenceVoteEntry (juce::var (new juce::DynamicObject())).isObject(),
                "wizard WZ-CD-2: an agreeing vote makes a 1-source reference agreed (said once); a differing plugin is held with its block kept for a third source; every vote logged");
     }
+    // WZ-DEMO-1 (Kathy, 13 Oct, beta item 2): a demo is found by its dropouts on a steady tone - the real 45 s traces from this Mac: Melda's
+    // MTurboComp and MFreeformEqualizer (demos) drop 23 dB and come back; elysia mpressor, bx_rooMS (a reverb) and ADA STD-1 (a delay) never
+    // do. Silent output is not judged here; a fall that never comes back is not a dropout
+    {
+        const auto dd = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/demo_check");
+        auto v = [&] (const char* n) { return ejmap::wizard::demoDropouts (dd.getChildFile (juce::String (n) + ".burst.txt").loadFileAsString()); };
+        const auto tc = v ("MTurboComp"), fe = v ("MFreeformEqualizer"), mp = v ("elysia_mpressor"), rm = v ("bx_rooMS"), ad = v ("ADA_STD-1_Stereo_Tapped_Delay");
+        juce::String silent, stop; for (int k = 0; k < 900; ++k) { const double t = 1000.0 + k * 50.0;
+            silent << "bwin\tt_ms\t" << t << "\tseg\tloud\tin_db\t-18.0\tout_db\t-276.0\n";
+            stop << "bwin\tt_ms\t" << t << "\tseg\tloud\tin_db\t-18.0\tout_db\t" << (t > 30000.0 ? -60.0 : -21.0) << "\n"; }
+        const auto si = ejmap::wizard::demoDropouts (silent), st = ejmap::wizard::demoDropouts (stop);
+        check (tc.judged && tc.demo && tc.dropouts >= 1 && tc.depthDb > 20.0 && fe.demo && mp.judged && ! mp.demo && rm.judged && ! rm.demo && ad.judged && ! ad.demo
+               && ! si.judged && ! si.demo && st.judged && ! st.demo && ejmap::wizard::demoProbeArgs().contains ("hold=60") && tc.why.contains ("(23 dB, first at 25 s)") && ejmap::wizard::plainOutcome ("demo", {}) == "demo"
+               && ejmap::wizard::summaryLine ({ { "demo", 2 } }).contains ("2 plugins are demo versions and were skipped"),
+               "wizard WZ-DEMO-1: MTurboComp (" + tc.why + ") and MFreeformEqualizer are demos; mpressor, bx_rooMS, ADA STD-1 are not; silence is not judged; a fall that stays down is not a dropout");
+    }
+    // WZ-DEMO-2 the check through the wizard's step with a fake probe: a demo and a clean plugin judged; the second call reads the cache
+    {
+        auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_demo_" + juce::String (juce::Random::getSystemRandom().nextInt64())); work.createDirectory();
+        const auto dd = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/demo_check");
+        std::vector<juce::PluginDescription> ds; for (auto [n, u] : { std::pair<const char*, int> { "MTurboComp", 1 }, { "elysia mpressor", 2 } }) { juce::PluginDescription d; d.name = n; d.uniqueId = u; d.version = "1.0"; ds.push_back (d); }
+        int calls = 0;
+        auto fake = [&] (const juce::StringArray& a) { ++calls; ejmap::cert::ChildResult r; r.kind = ejmap::cert::ChildResult::Kind::exited; r.code = 0;
+            r.out = dd.getChildFile (a[1] == "MTurboComp" ? "MTurboComp.burst.txt" : "elysia_mpressor.burst.txt").loadFileAsString(); return r; };
+        ejmap::cert::wizardStop() = 0;
+        const auto v1 = ejmap::cert::demoCheckForWizard (ds, 2, fake, juce::File ("/nonexistent/probe"), work.getChildFile ("demo_checks.json"));
+        const int after1 = calls;
+        const auto v2 = ejmap::cert::demoCheckForWizard (ds, 2, fake, juce::File ("/nonexistent/probe"), work.getChildFile ("demo_checks.json"));
+        work.deleteRecursively();
+        check (v1.at ("MTurboComp").demo && ! v1.at ("elysia mpressor").demo && after1 == 2 && calls == 2 && v2.at ("MTurboComp").demo && ! v2.at ("elysia mpressor").demo,
+               "wizard WZ-DEMO-2: the wizard's demo step files MTurboComp a demo, mpressor not; the measuring run reads demo_checks.json (no second render)");
+    }
+    // WZ-DISK (beta item 2): the free-disk floor - 3 GB to start, 1 GB to keep going; the words say what it needs; the rehearsal override
+    {
+        using namespace ejmap::wizapp;
+        auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_free_" + juce::String (juce::Random::getSystemRandom().nextInt64()) + ".txt");
+        f.replaceWithText ("1500"); setenv ("EJ_WIZARD_FAKE_FREE_FILE", f.getFullPathName().toRawUTF8(), 1);
+        const auto fb = freeBytes (juce::File ("/tmp"));
+        unsetenv ("EJ_WIZARD_FAKE_FREE_FILE"); f.deleteFile();
+        const auto start = diskVerdict (fb, true), during = diskVerdict (fb, false), low = diskVerdict ((juce::int64) 500 * 1024 * 1024, false);
+        check (fb == (juce::int64) 1500 * 1024 * 1024 && ! start.ok && start.words.contains ("needs 3.0 GB") && start.words.contains ("has 1.5 GB") && during.ok && ! low.ok && low.words.startsWith ("Stopped")
+               && low.words.contains ("carries on") && diskVerdict (kStartFloorBytes, true).ok && freeBytes (juce::File ("/tmp")) > 0,
+               "wizard WZ-DISK: 1.5 GB free refuses to start (needs 3.0 GB) but lets a run carry on; 0.5 GB stops it cleanly, in plain words");
+    }
     // WZ-STOP-1 (Kathy, 13 Oct, beta item 1): the window after the engine ends - a scan that STOPPED (130, or any other end) is never a
     // finished scan (it used to be marked scanned and shown as results); the same words on both screens
     {

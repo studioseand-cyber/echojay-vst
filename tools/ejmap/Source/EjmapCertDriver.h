@@ -6670,7 +6670,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     phasebStop() = 0; std::signal (SIGINT, [] (int) { phasebStop() = 1; }); std::signal (SIGTERM, [] (int) { phasebStop() = 1; });
     jobs::Pool<PItem, PWork, PResult> pool;
     pool.laneOf = [] (const PItem& it) { return it.lane; };
-    pool.stopped = [] { return phasebStop() != 0; };
+    pool.stopped = [] { return phasebStop() != 0 || (phaseb::extraStop() && phaseb::extraStop()()); };
     pool.lowMemory = [] { return jobs::memoryLow (jobs::freeMemoryBytes()); };
     pool.prepare = [&] (const PItem& item) -> std::optional<PWork>
     {
@@ -6852,7 +6852,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     };
     pool (items, juce::jmax (1, opt.jobs));
     std::signal (SIGINT, SIG_DFL); std::signal (SIGTERM, SIG_DFL);
-    if (phasebStop() != 0) { saveProgress ({}); say ("PHASEB: stopped (07:00 / Ctrl-C): no new child started; the rows that were running run again on the resume"); return 130; }
+    if (phasebStop() != 0 || (phaseb::extraStop() && phaseb::extraStop()())) { saveProgress ({}); say ("PHASEB: stopped (07:00 / Ctrl-C / the caller's stop): no new child started; the rows that were running run again on the resume"); return 130; }
     saveProgress ({});
     // THE SUMMARY: every row, by category
     { auto* sm = new juce::DynamicObject(); auto* cats = new juce::DynamicObject();

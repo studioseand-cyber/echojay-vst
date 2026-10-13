@@ -131,6 +131,25 @@ inline juce::String screenName (Screen s)
     return {};
 }
 struct Where { bool signedIn = false, scanned = false, measureStarted = false, measureDone = false, uploaded = false, rewarded = false; int crashed = 0; };
+// FREE DISK (Kathy, 13 Oct, beta item 2): a wizard run writes ~5 MB per plugin (13 plugins: ~70 MB; a 500-plugin Mac ~2.5 GB). It does
+// not start below kStartFloorBytes and stops cleanly (as a stop: it carries on next time) below kRunFloorBytes. Rehearsals: the file
+// named by EJ_WIZARD_FAKE_FREE_FILE (one number, MB) stands in for the volume's free space.
+inline constexpr juce::int64 kStartFloorBytes = (juce::int64) 3 * 1024 * 1024 * 1024, kRunFloorBytes = (juce::int64) 1 * 1024 * 1024 * 1024;
+inline juce::int64 freeBytes (const juce::File& onVolume)
+{
+    if (const char* f = std::getenv ("EJ_WIZARD_FAKE_FREE_FILE"); f != nullptr && *f) { const juce::File ff (f); if (ff.existsAsFile()) return (juce::int64) (ff.loadFileAsString().trim().getDoubleValue() * 1024.0 * 1024.0); }
+    auto d = onVolume; while (! d.exists() && d.getParentDirectory() != d) d = d.getParentDirectory();
+    return d.getBytesFreeOnVolume();
+}
+inline juce::String gb (juce::int64 b) { return juce::String ((double) b / (1024.0 * 1024.0 * 1024.0), 1) + " GB"; }
+struct DiskVerdict { bool ok = true; juce::String words; };
+inline DiskVerdict diskVerdict (juce::int64 free, bool starting)
+{
+    const auto floor = starting ? kStartFloorBytes : kRunFloorBytes;
+    if (free >= floor) return {};
+    return { false, starting ? "Not enough free disk space to start: the wizard needs " + gb (kStartFloorBytes) + " free and this Mac has " + gb (free) + ". Free some space and open it again."
+                             : "Stopped - your Mac is running out of disk space (" + gb (free) + " free, the wizard stops below " + gb (kRunFloorBytes) + "). Free some space and open it again: it carries on where it stopped." };
+}
 // THE STOP (Kathy, 13 Oct, beta item 1): the same words whether it stopped while checking or while measuring
 inline juce::String stoppedNote() { return "Stopped - it carries on next time"; }
 // what the window does when the engine ends: a scan that ran to its end -> its results; a measuring run that did -> the upload; a

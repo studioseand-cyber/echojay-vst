@@ -163,6 +163,48 @@ inline juce::StringArray personalProblems (const juce::String& text, const juce:
     return p;
 }
 
+// ---------------------------------------------------------------- 3b. A DEMO VERSION (Kathy, 13 Oct, beta item 2: a stranger's Mac)
+// A stranger's Mac has no licence file, so a demo is found by what it does: before a plugin is measured, one steady 997 Hz tone at
+// -18 dBFS runs through it at its opening state for kDemoHoldS (offline: ~1 s of rendering), read in 50 ms windows. A DROPOUT is the
+// output falling more than kDemoDipDb below its own median while the input holds, and then coming back - the demo's periodic mute.
+// Measured here 13 Oct: Melda's MTurboComp, MLimiterX and MFreeformEqualizer (demos) dip 23 dB from 19-25 s in; 11 licensed plugins of
+// every measured category (compressor, de-esser, limiter, amp sim, gate, transient, multiband, tuner, delay, reverb, strip) never do.
+// A demo is not measured and not sent. Output silent throughout is not judged here (silent_output's business); the first 3 s settle.
+inline constexpr double kDemoHoldS = 60.0, kDemoDipDb = 20.0, kDemoSettleMs = 3000.0;
+inline juce::StringArray demoProbeArgs() { return { "--burst", "quiet=-60", "loud=-18", "pre=1.0", "hold=" + juce::String (juce::roundToInt (kDemoHoldS)), "post=0.5", "hz=997", "win_ms=50" }; }
+struct DemoVerdict { bool judged = false, demo = false; int dropouts = 0; double firstS = 0.0, depthDb = 0.0; juce::String why; };
+inline DemoVerdict demoDropouts (const juce::String& trace)
+{
+    DemoVerdict v; std::vector<std::pair<double, std::pair<double, double>>> w;   // t_ms -> (in, out), the loud segment after the settle
+    for (const auto& l : juce::StringArray::fromLines (trace))
+    {
+        if (! l.startsWith ("bwin\t")) continue;
+        const auto f = juce::StringArray::fromTokens (l, "\t", "");
+        auto val = [&] (const char* k) { const int i = f.indexOf (k); return i >= 0 && i + 1 < f.size() ? f[i + 1] : juce::String(); };
+        if (val ("seg") != "loud") continue;
+        const double t = val ("t_ms").getDoubleValue(); if (t < kDemoSettleMs) continue;
+        w.push_back ({ t, { val ("in_db").getDoubleValue(), val ("out_db").getDoubleValue() } });
+    }
+    if (w.size() < 20) { v.why = "no steady-tone reading to judge"; return v; }
+    auto median = [] (std::vector<double> x) { std::sort (x.begin(), x.end()); return x[x.size() / 2]; };
+    std::vector<double> ins, outs; for (const auto& [t, io] : w) { ins.push_back (io.first); outs.push_back (io.second); }
+    const double mi = median (ins), mo = median (outs);
+    if (mo < -100.0) { v.why = "silent output: not judged here"; return v; }
+    v.judged = true;
+    bool inDip = false; double deepest = 0.0;
+    for (const auto& [t, io] : w)
+    {
+        const bool steadyIn = std::abs (io.first - mi) <= 1.0, dip = steadyIn && io.second < mo - kDemoDipDb;
+        if (dip && ! inDip) { inDip = true; if (v.dropouts == 0) v.firstS = t / 1000.0; }
+        if (dip) deepest = juce::jmin (deepest, io.second - mo);
+        if (! dip && inDip && io.second >= mo - 3.0) { inDip = false; ++v.dropouts; }   // it came back: a dropout, not a stop
+    }
+    v.depthDb = -deepest; v.demo = v.dropouts >= 1;
+    v.why = v.demo ? "a demo version: its output drops out " + juce::String (v.dropouts) + " time(s) on a steady tone (" + juce::String (juce::roundToInt (v.depthDb)) + " dB, first at " + juce::String (juce::roundToInt (v.firstS)) + " s) - not measured, not sent"
+                   : "no dropout on a steady tone over " + juce::String (juce::roundToInt (kDemoHoldS)) + " s";
+    return v;
+}
+
 // ---------------------------------------------------------------- 4. the plain-words summary
 // state per plugin: ready (A), ready_from_version (B passed), queued, measuring, measured (ready to send), needs_licence, needs_hardware,
 // silent, crashed, wont_load, not_measurable (failed / nothing to measure / needs review)
@@ -173,7 +215,8 @@ inline juce::String plainOutcome (const juce::String& outcome, const juce::Strin
     if (outcome == "silent_output") return "silent";
     if (outcome == "probe_crashed") return "crashed";
     if (outcome == "unhostable" || outcome == "empty_param_list") return "wont_load";
-    if (outcome == "custom_default") return "custom_default";   // 12 Oct: opens differently from its reference and could not be restored
+    if (outcome == "custom_default") return "custom_default";
+    if (outcome == "demo") return "demo";   // 13 Oct: a demo version, found by its dropouts - skipped quietly   // 12 Oct: opens differently from its reference and could not be restored
     if (outcome == "ok" && certState == "exported") return "measured";
     return "not_measurable";
 }
@@ -223,6 +266,7 @@ inline juce::String summaryLine (const std::map<juce::String, int>& n, bool sent
     if (get ("needs_category")) parts.add (plural (get ("needs_category"), sent ? "plugin we couldn't identify was sent for review" : "plugin we couldn't identify will be sent for review", sent ? "plugins we couldn't identify were sent for review" : "plugins we couldn't identify will be sent for review"));
     if (get ("other_category")) parts.add (plural (get ("other_category"), sent ? "plugin of a kind we don't measure yet was sent so EchoJay knows it" : "plugin of a kind we don't measure yet will be sent so EchoJay knows it", sent ? "plugins of kinds we don't measure yet were sent so EchoJay knows them" : "plugins of kinds we don't measure yet will be sent so EchoJay knows them"));
     if (get ("out_of_scope")) parts.add (plural (get ("out_of_scope"), sent ? "instrument / meter / utility was listed, not loaded" : "instrument / meter / utility will be listed, not loaded", sent ? "instruments / meters / utilities were listed, not loaded" : "instruments / meters / utilities will be listed, not loaded"));
+    if (get ("demo")) parts.add (plural (get ("demo"), "plugin is a demo version and was skipped", "plugins are demo versions and were skipped"));
     if (get ("custom_default")) parts.add (plural (get ("custom_default"), "plugin opens with a custom default and was not measured", "plugins open with a custom default and were not measured"));
     if (get ("pending_review")) parts.add (plural (get ("pending_review"), "was already sent for review by someone else", "were already sent for review by someone else"));
     if (get ("identifying")) parts.add (juce::String (get ("identifying")) + " being identified");

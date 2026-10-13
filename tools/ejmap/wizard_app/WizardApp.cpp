@@ -223,6 +223,8 @@ private:
     }
     void startEngine (bool measure)
     {
+        if (const auto dv = wizapp::diskVerdict (wizapp::freeBytes (cfg.work), true); ! dv.ok)   // 13 Oct: never start below the floor
+        { title = "Not enough disk space"; text = dv.words; showBar = false; logLine ("refused to start: " + dv.words); repaint(); return; }
         engineDir().createDirectory(); engineDir().getChildFile ("progress.json").deleteFile();   // the last run's "Done 100%" must not flash on the new screen
         if (! engine.start (cfg.engine, engineArgs (measure), cfg.work.getChildFile ("engine_output.txt"), measure ? "measure" : "scan"))
         { title = "Something went wrong"; text = "The measuring engine could not start (" + cfg.engine.getFullPathName() + ")."; repaint(); return; }
@@ -358,7 +360,11 @@ private:
             {
                 case wizapp::AfterEngine::scanDone: setState ("scanned", true); show (Screen::scanDone); break;
                 case wizapp::AfterEngine::upload:   setState ("measure_done", true); show (Screen::upload); break;
-                case wizapp::AfterEngine::stopped:  title = "Stopped"; text = wizapp::stoppedNote() + " - open the wizard again to carry on."; showBar = false; repaint(); break;
+                case wizapp::AfterEngine::stopped:
+                {   // the engine's own words when it said why (a low disk); else the stop note
+                    const auto sum = juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString()).getProperty ("summary", "").toString();
+                    title = "Stopped"; text = sum.containsIgnoreCase ("disk space") ? sum : wizapp::stoppedNote() + " - open the wizard again to carry on."; showBar = false; repaint(); break;
+                }
             }
         }
     }

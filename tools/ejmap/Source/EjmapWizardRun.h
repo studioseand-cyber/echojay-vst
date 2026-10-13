@@ -108,9 +108,47 @@ inline void mapForWizard (const std::vector<juce::PluginDescription>& ds, int jo
     pool (idx, juce::jmax (1, jobs));
 }
 
+// THE DEMO CHECK (beta item 2): every plugin about to be measured gets one steady tone (wizard::demoDropouts); cached by plugin_id in
+// <out>/demo_checks.json so the measuring run does not render it again. `runner` is the probe (the suite's fake).
+inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std::vector<juce::PluginDescription>& ds, int jobs, const std::function<ChildResult (const juce::StringArray&)>& runner,
+                                                                        const juce::File& probe, const juce::File& cacheFile)
+{
+    std::map<juce::String, wizard::DemoVerdict> out; auto cache = juce::JSON::parse (cacheFile.loadFileAsString()); if (! cache.isObject()) cache = juce::var (new juce::DynamicObject());
+    auto pidOf = [] (const juce::PluginDescription& d) { return "AudioUnit|" + juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version; };
+    std::vector<size_t> todo;
+    for (size_t i = 0; i < ds.size(); ++i)
+    {
+        const auto c = cache.getProperty (pidOf (ds[i]), {});
+        if (c.isObject()) { wizard::DemoVerdict v; v.judged = (bool) c.getProperty ("judged", false); v.demo = (bool) c.getProperty ("demo", false); v.why = c.getProperty ("why", "").toString(); out[ds[i].name] = v; }
+        else todo.push_back (i);
+    }
+    std::mutex m;
+    jobs::Pool<size_t, juce::StringArray, ChildResult> pool;
+    pool.laneOf = [] (const size_t&) { return jobs::Lane::parallel; };
+    pool.stopped = [] { return wizardStop() != 0; };
+    pool.prepare = [&] (const size_t& i) -> std::optional<juce::StringArray> { juce::StringArray a { probe.getFullPathName(), ds[i].name, ds[i].fileOrIdentifier, juce::String::toHexString (ds[i].uniqueId) }; a.addArray (wizard::demoProbeArgs()); return a; };
+    pool.run = [&] (const juce::StringArray& a) { return runner (a); };
+    pool.discard = [] (const size_t&, juce::StringArray&) {};
+    pool.finish = [&] (const size_t& i, juce::StringArray&, ChildResult& r)
+    {
+        const auto v = r.cleanExit() ? wizard::demoDropouts (r.out) : wizard::DemoVerdict();   // a probe that failed here is the measurement's business, not a demo
+        std::lock_guard<std::mutex> g (m); out[ds[i].name] = v;
+        if (r.cleanExit()) { auto* o = new juce::DynamicObject(); o->setProperty ("judged", v.judged); o->setProperty ("demo", v.demo); o->setProperty ("why", v.why); cache.getDynamicObject()->setProperty (pidOf (ds[i]), juce::var (o)); }
+    };
+    pool (todo, juce::jmax (1, jobs));
+    cacheFile.replaceWithText (juce::JSON::toString (cache));
+    return out;
+}
+
 inline int runWizard (const WizardOptions& wo)
 {
     installWizardStop();
+    {   // 13 Oct (beta item 2): never start below the free-disk floor - said in plain words, nothing loaded
+        const auto dv = wizapp::diskVerdict (wizapp::freeBytes (wo.opt.out), true);
+        if (! dv.ok) { std::cout << "WIZARD: " << dv.words << std::endl; wo.opt.out.createDirectory();
+                       auto* p = new juce::DynamicObject(); p->setProperty ("stage", "Stopped"); p->setProperty ("summary", dv.words); p->setProperty ("disk_low", true);
+                       wo.opt.out.getChildFile ("progress.json").replaceWithText (juce::JSON::toString (juce::var (p))); return 6; }
+    }
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto& opt = wo.opt; const auto out = opt.out; out.createDirectory();
     // THE PROGRESS (11 Oct): the terminal shows one live line + a final summary; every detail line goes to wizard.log (--verbose: as before,
@@ -283,6 +321,22 @@ inline int runWizard (const WizardOptions& wo)
         if (d.route == wizroute::Route::measure) enqueue (ir.desc.name, d.category);
         say ("  " + ir.desc.name.paddedRight (' ', 30) + " -> " + wizroute::routeName (d.route) + (d.category.isNotEmpty() ? " (" + d.category + ")" : juce::String()) + ": " + d.why);
     }
+    {   // THE DEMO CHECK (beta item 2): a plugin about to be measured whose output drops out on a steady tone is a demo - not measured, not sent
+        juce::StringArray queued; for (const auto& [pb, l] : queues) for (const auto& n : l) queued.addIfNotAlreadyThere (n);
+        std::vector<juce::PluginDescription> qd; for (const auto& ir : plugins) if (queued.contains (ir.desc.name)) qd.push_back (ir.desc);
+        if (! qd.empty())
+        {
+            const auto verdicts = demoCheckForWizard (qd, opt.jobs, [&] (const juce::StringArray& a) { return runChild (a, opt.timeoutMs); }, opt.probe, out.getChildFile ("demo_checks.json"));
+            if (wizardStop() != 0) return stoppedInScan ("checking for demo versions");
+            for (const auto& [name, v] : verdicts)
+            {
+                if (! v.demo) continue;
+                for (auto& [pb, l] : queues) l.removeString (name);
+                for (auto& rv : rows) if (rv.getProperty ("product", "").toString() == name) { rv.getDynamicObject()->setProperty ("state", "demo"); rv.getDynamicObject()->setProperty ("why", v.why); }
+                say ("  " + name.paddedRight (' ', 30) + " -> skipped: " + v.why);
+            }
+        }
+    }
     counts.clear(); for (const auto& r : rows) ++counts[r.getProperty ("state", "").toString()];
     for (const auto& grp : wizroute::measureOrder()) for (const auto& pb : grp) queueFile (pb).replaceWithText ((queues.count (pb) ? queues[pb].joinIntoString ("\n") : juce::String()) + "\n");
     for (auto& rv : rows) { juce::StringArray pbs; for (const auto& [pb, l] : queues) if (l.contains (rv.getProperty ("product", "").toString())) pbs.add (pb); if (! pbs.isEmpty()) rv.getDynamicObject()->setProperty ("phaseb", pbs.joinIntoString (",")); }
@@ -309,15 +363,23 @@ inline int runWizard (const WizardOptions& wo)
         }
         // THE MEASURING ORDER: one Phase B pass per group, most valuable first; a stop (130) ends the order there
         auto optW = opt; optW.wizardQueues = true; int pbCode = 0;
+        // 13 Oct (beta item 2): the measuring stops cleanly when the disk runs low - checked at most every 10 s, a stop like Ctrl-C
+        bool diskStopped = false; double lastDiskCheck = -1.0e9;
+        phaseb::extraStop() = [&] {
+            const double now = juce::Time::getMillisecondCounterHiRes();
+            if (! diskStopped && now - lastDiskCheck >= 10000.0) { lastDiskCheck = now; if (! wizapp::diskVerdict (wizapp::freeBytes (out), false).ok) { diskStopped = true; say ("WIZARD: the disk is running low - stopping cleanly"); } }
+            return diskStopped; };
         for (const auto& grp : wizroute::measureOrder())
         {
             juce::StringArray run; for (const auto& pb : grp) if (queues.count (pb) && ! queues[pb].isEmpty()) run.add (pb);
             if (run.isEmpty()) continue;
             say ("WIZARD: measuring " + run.joinIntoString (" + ") + " (" + juce::String ((int) [&] { int n = 0; for (const auto& pb : run) n += queues[pb].size(); return n; }()) + ")");
             pbCode = runPhaseBAll (optW, run, {}, {});
+            std::signal (SIGINT, [] (int) { wizardStop() = 1; }); std::signal (SIGTERM, [] (int) { wizardStop() = 1; });   // Phase B restores the defaults on its way out
+            if (wizardStop() != 0) pbCode = 130;
             if (wizprog::measureStopped (pbCode)) break;
         }
-        prog.stopTicker(); phaseb::rowHooks() = {};
+        prog.stopTicker(); phaseb::rowHooks() = {}; phaseb::extraStop() = {};
         {   // the drafts for the categories beyond compressor / EQ (their cert derive step, the same rules)
             juce::StringArray cats; for (const auto& [pb, l] : queues) if (! l.isEmpty() && pb != "wizard" && pb != "wizard_eq") cats.add (pb);
             if (! cats.isEmpty() && ! wizprog::measureStopped (pbCode)) runPhaseBDrafts (optW, cats);
@@ -326,7 +388,7 @@ inline int runWizard (const WizardOptions& wo)
         {   // the user stopped it: no bundle, no "Done" - the rows that landed stay, the same command carries on
             const auto [measured, toMeasure] = prog.stageDone();
             say ("WIZARD: stopped while measuring (" + juce::String (measured) + " of " + juce::String (toMeasure) + " landed): no bundle; the same command carries on");
-            prog.finish (wizprog::stoppedWords (prog.stoppedAt(), measured, toMeasure, prog.running()), true);
+            prog.finish (diskStopped ? wizapp::diskVerdict (wizapp::freeBytes (out), false).words : wizprog::stoppedWords (prog.stoppedAt(), measured, toMeasure, prog.running()), true);
             return 130;
         }
         counts.clear();

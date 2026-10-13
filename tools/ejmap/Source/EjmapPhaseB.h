@@ -29,6 +29,9 @@ namespace ejmap::phaseb
 struct RowHooks { std::function<void (const juce::String& cat, const juce::String& product)> started;
                   std::function<void (const juce::String& cat, const juce::String& product, const juce::String& outcome, double seconds)> finished; };
 inline RowHooks& rowHooks() { static RowHooks h; return h; }
+// a caller's extra stop (13 Oct, the wizard's low-disk stop): unset = never; set = the pool stops starting rows once it says so, and the
+// rows in flight are discarded as for a Ctrl-C (they run again on the resume)
+inline std::function<bool()>& extraStop() { static std::function<bool()> f; return f; }
 
 
 // THE CATEGORIES in priority order. mode = the ejmap command; ledger = the categories.json names that feed it (empty = from
