@@ -9236,10 +9236,10 @@ void testMultibandStageThresholds()
                    && ! resume.contains ("--redo") && resume.contains ("frequency"),
                    "runall RA-GAPS: the drafts' step (gain-cal, timing) then the passes (combined, material, frequency), every night after samplerate; a resume drops the redo");
         }
-        // PB-GUARD-2 the parent follows a RE-declaration: base 1 s, the child declares 3 s and then 6 s, exits at ~4 s - read once, it dies at 3 s
+        // PB-GUARD-2 the parent follows a RE-declaration: base 1 s, the child declares 3 s and then 30 s (13 Oct: wide, so a loaded Mac cannot fail it), exits at ~4 s - read once, it dies at 3 s
         {
-            const auto r = ejmap::cert::runChild ({ "/bin/sh", "-c", "printf 'GUARD\\t3\\n'; sleep 0.5; printf 'GUARD\\t6\\n'; sleep 3.5; echo finished" }, 1000);
-            check (r.cleanExit() && r.out.contains ("finished"), "phaseb PB-GUARD-2: a child that re-declares its guard mid-run (3 s, then 6 s) runs to its end under a 1 s base (" + r.describe() + ")");
+            const auto r = ejmap::cert::runChild ({ "/bin/sh", "-c", "printf 'GUARD\\t3\\n'; sleep 0.5; printf 'GUARD\\t30\\n'; sleep 3.5; echo finished" }, 1000);
+            check (r.cleanExit() && r.out.contains ("finished"), "phaseb PB-GUARD-2: a child that re-declares its guard mid-run (3 s, then 30 s) runs to its end under a 1 s base (" + r.describe() + ")");
         }
         const auto* ga = categoryNamed ("gainall");
         check (rowIsUnfinished (mk ({ { "outcome", "timed_out" } })) && rowIsUnfinished (mk ({ { "outcome", "failed" } })) && ! rowIsUnfinished (mk ({ { "outcome", "needs_licence" } })) && ! rowIsUnfinished (mk ({ { "outcome", "unhostable" } }))

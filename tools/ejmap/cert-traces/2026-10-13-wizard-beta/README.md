@@ -29,4 +29,4 @@ All runs used the SIGNED apps (`assemble.sh --sign`; the app, its engine and its
 - the beta address is admin@signaturestudiosonline.com;
 - the disk refusal has **Quit**.
 
-`screens/07_beta_results_saved_final.png` and `08_beta_disk_refused_quit.png` come from the rebuilt signed beta. The send-ready folder is `~/Desktop/EchoJay-Wizard-Beta-2026-10-13/`: the .dmg, sha256 starting f74c6647d5b62887, plus the tester README.
+`screens/07_beta_results_saved_final.png` and `08_beta_disk_refused_quit.png` come from the rebuilt signed beta. The send-ready folder is `~/Desktop/EchoJay-Wizard-Beta-2026-10-13/`: the .dmg, sha256 starting fa3fad647a129509 (rebuilt at 52f877d4 with Kathy's consent edits; `screens/03` and `10` show both consent texts), plus the tester README.
