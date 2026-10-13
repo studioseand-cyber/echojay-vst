@@ -311,7 +311,7 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
                 break;
             }
         }
-        if (! guardRead && now - lastGuardScan >= 1000.0)
+        if (now - lastGuardScan >= 1000.0)   // 13 Oct: every second - a mode re-declares as it measures; the last declaration stands
         { lastGuardScan = now; if (const auto g = phaseb::declaredGuardS (collected.toString())) { guardRead = true; effTimeoutMs = (int) std::lround (1000.0 * phaseb::effectiveGuardS (timeoutMs / 1000.0, *g)); } }
         if (timeoutPassed (t0, now, effTimeoutMs))
         {
@@ -2026,6 +2026,8 @@ inline customdefault::Act certSweepReference (const SweepOptions& opt, const juc
 inline int runCertSweep (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const double sweepT0 = juce::Time::getMillisecondCounterHiRes();   // 13 Oct: the candidate guard's clock (the child's own start)
+    auto sweepElapsedS = [sweepT0] { return (juce::Time::getMillisecondCounterHiRes() - sweepT0) / 1000.0; };
     const SleepGuard sleepGuard ("EJ Map certification sweep");
     if (! opt.out.createDirectory()) { say ("SWEEP: cannot create " + opt.out.getFullPathName()); return 2; }
     const auto id = checkProbe (opt.probe, {}, {});
@@ -2396,8 +2398,14 @@ inline int runCertSweep (const SweepOptions& opt)
         if (r1) order.push_back (plan.candidates[(size_t) *r1]);
         for (int i = 0; i < (int) plan.candidates.size(); ++i) if (! r1 || i != *r1) order.push_back (plan.candidates[(size_t) i]);
         if (r1) std::cout << "  RULE 1: '" << plan.candidates[(size_t) *r1].name << "' carries the compressor stage word alone" << (sweep::stripSectionFlag() == "compressor" ? " (through the strip's compressor section word)" : "") << " - swept first; the rest only if it does not certify" << std::endl;
+        // THE CANDIDATE GUARD (13 Oct): declared to the parent before the first candidate and after each, from the measured pace
+        const double guardT0 = juce::Time::getMillisecondCounterHiRes();
+        if (const auto g0 = phaseb::candidatesGuardS ((int) order.size(), 0, sweepElapsedS())) std::cout << "GUARD\t" << juce::String (*g0, 0) << std::endl;
         for (size_t k = 0; k < order.size(); ++k)
         {
+            if (k > 0) if (const auto g = phaseb::candidatesGuardS ((int) order.size(), (int) k, sweepElapsedS()))
+            { std::cout << "GUARD\t" << juce::String (*g, 0) << std::endl;
+              std::cout << "  guard: " << (int) k << " of " << (int) order.size() << " candidate(s) in " << juce::String ((juce::Time::getMillisecondCounterHiRes() - guardT0) / 60000.0, 1) << " min; declared " << juce::String (*g / 60.0, 0) << " min" << std::endl; }
             const auto& c = order[k];
             if (windowSeen || overBudget()) break;
             auto q = plan.forCandidate (c);
