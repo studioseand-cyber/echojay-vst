@@ -139,12 +139,16 @@ struct Where { bool signedIn = false, consented = false, scanned = false, measur
 struct Copy { juce::String title, text, primary, secondary; };
 inline juce::String consentText (Mode m)
 {
-    return juce::String ("The wizard measures how your audio plugins respond to test tones and sends EchoJay the results: each plugin's name, maker, ")
-         + "version, its list of controls and the measurements. It never sends audio, your files, your projects, your name, your computer's name or "
-         + "folder paths. "
-         + (m == Mode::beta ? "In this beta the results are saved as one file on your Desktop for you to email to us; nothing is sent by the app."
-                            : "The results go to EchoJay's servers, linked to your EchoJay account, and are used only to teach EchoJay how plugins behave. "
-                              "To make sure each Mac takes part once, the wizard also sends a one-way code made from this Mac's hardware ID - never the ID itself.");   // 13 Oct (Kathy): the release names the hashed ID; the beta sends nothing
+    // Kathy, 13 Oct (consent edits): the beta SAVES the results for the user to send; both say they become part of the shared plugin map
+    return (m == Mode::beta ? juce::String ("The wizard measures how your audio plugins respond to test tones and saves the results for you to send to EchoJay: ")
+                            : juce::String ("The wizard measures how your audio plugins respond to test tones and sends EchoJay the results: "))
+         + "each plugin's name, maker, version, its list of controls and the measurements. It never sends audio, your files, your projects, your name, "
+         + "your computer's name or folder paths. "
+         + (m == Mode::beta ? "If you send it, the results become part of EchoJay's shared plugin map. "
+                              "In this beta the results are saved as one file on your Desktop for you to email to us; nothing is sent by the app."
+                            : "The results go to EchoJay's servers, linked to your EchoJay account, and become part of EchoJay's shared plugin map, used to help "
+                              "EchoJay control plugins for everyone who uses it. "
+                              "To make sure each Mac takes part once, the wizard also sends a one-way code made from this Mac's hardware ID - never the ID itself.");   // the release names the hashed ID; the beta sends nothing
 }
 inline juce::String consentTick() { return "I agree"; }
 // the low-disk refusal (13 Oct, Kathy): the words and a Quit button - nothing has started

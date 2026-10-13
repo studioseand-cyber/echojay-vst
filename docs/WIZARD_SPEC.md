@@ -36,13 +36,21 @@ It measures the user's plugins that EchoJay's database does not have yet. It sen
   - The address is the build constant `EJ_WIZARD_BETA_EMAIL`: **admin@signaturestudiosonline.com** (Kathy, 13 Oct).
 - **Once only is not enforced in the beta.** It has no server, and the stub only records an accepted upload, which the beta never makes.
 
-### 2b. The consent (wording for Kathy to approve)
+### 2b. The consent (Kathy's edits, 13 Oct)
 
-> The wizard measures how your audio plugins respond to test tones and sends EchoJay the results: each plugin's name, maker, version, its list of controls and the measurements. It never sends audio, your files, your projects, your name, your computer's name or folder paths. The results go to EchoJay's servers, linked to your EchoJay account, and are used only to teach EchoJay how plugins behave. To make sure each Mac takes part once, the wizard also sends a one-way code made from this Mac's hardware ID - never the ID itself.
+**Release build:**
+
+> The wizard measures how your audio plugins respond to test tones and sends EchoJay the results: each plugin's name, maker, version, its list of controls and the measurements. It never sends audio, your files, your projects, your name, your computer's name or folder paths. The results go to EchoJay's servers, linked to your EchoJay account, and become part of EchoJay's shared plugin map, used to help EchoJay control plugins for everyone who uses it. To make sure each Mac takes part once, the wizard also sends a one-way code made from this Mac's hardware ID - never the ID itself.
 >
 > ☐ I agree
 
-In the beta the last sentence reads: "In this beta the results are saved as one file on your Desktop for you to email to us; nothing is sent by the app." (`wizapp::consentText`, pin WZ-FLOW-1.)
+**Beta build:**
+
+> The wizard measures how your audio plugins respond to test tones and saves the results for you to send to EchoJay: each plugin's name, maker, version, its list of controls and the measurements. It never sends audio, your files, your projects, your name, your computer's name or folder paths. If you send it, the results become part of EchoJay's shared plugin map. In this beta the results are saved as one file on your Desktop for you to email to us; nothing is sent by the app.
+>
+> ☐ I agree
+
+(`wizapp::consentText`; pin WZ-FLOW-1 holds both texts word for word.)
 
 What it says is true of the bundle as built:
 - **Profiles and drafts:** maps of control names, ranges and measured figures.
