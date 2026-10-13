@@ -131,6 +131,16 @@ inline juce::String screenName (Screen s)
     return {};
 }
 struct Where { bool signedIn = false, scanned = false, measureStarted = false, measureDone = false, uploaded = false, rewarded = false; int crashed = 0; };
+// THE STOP (Kathy, 13 Oct, beta item 1): the same words whether it stopped while checking or while measuring
+inline juce::String stoppedNote() { return "Stopped - it carries on next time"; }
+// what the window does when the engine ends: a scan that ran to its end -> its results; a measuring run that did -> the upload; a
+// STOPPED one (130, or any other end) never counts as finished - the scan is not marked done, and the next launch carries on
+enum class AfterEngine { scanDone, upload, stopped };
+inline AfterEngine afterEngine (Screen s, int code)
+{
+    if (code == 0) return s == Screen::scan ? AfterEngine::scanDone : AfterEngine::upload;
+    return AfterEngine::stopped;
+}
 inline Screen openOn (const Where& w)
 {
     if (! w.signedIn) return Screen::welcome;

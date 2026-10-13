@@ -90,6 +90,7 @@
 #include "EjmapWizardProgress.h"
 #include "EjmapWizardRoute.h"
 #include "EjmapWizardServer.h"
+#include "EjmapWizardRun.h"   // 13 Oct: the scan's stop (mapForWizard, wizardStop)
 #include <sstream>
 #include "EjmapCertReview.h"
 #include "EjmapSaturation.h"
@@ -9523,6 +9524,35 @@ void testWizardCategories()
                && log.size() == 3 && ! ejmap::wizserver::invalidOutgoing (juce::var (new juce::DynamicObject())).size()
                && ! ejmap::wizard::referenceVoteEntry (juce::var (new juce::DynamicObject())).isObject(),
                "wizard WZ-CD-2: an agreeing vote makes a 1-source reference agreed (said once); a differing plugin is held with its block kept for a third source; every vote logged");
+    }
+    // WZ-STOP-1 (Kathy, 13 Oct, beta item 1): the window after the engine ends - a scan that STOPPED (130, or any other end) is never a
+    // finished scan (it used to be marked scanned and shown as results); the same words on both screens
+    {
+        using namespace ejmap::wizapp;
+        check (afterEngine (Screen::scan, 0) == AfterEngine::scanDone && afterEngine (Screen::scan, 130) == AfterEngine::stopped && afterEngine (Screen::scan, 2) == AfterEngine::stopped
+               && afterEngine (Screen::measuring, 0) == AfterEngine::upload && afterEngine (Screen::measuring, 130) == AfterEngine::stopped && stoppedNote() == "Stopped - it carries on next time",
+               "wizard WZ-STOP-1: a stopped scan is not a finished scan; 'Stopped - it carries on next time' for scan and measuring alike");
+    }
+    // WZ-STOP-2 the stop while Checking, through the real mapping step with a fake probe: the stop arrives while plugin 2 of 4 is in flight
+    // (its probe dies with the signal) - plugin 1 is kept, plugin 2 is discarded (never filed crashed), 3 and 4 never start; after the
+    // stopped finish no marker is left, so the next launch's crash recovery puts nobody on the never-retry list
+    {
+        auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_stop_" + juce::String (juce::Random::getSystemRandom().nextInt64())); work.createDirectory();
+        std::ostringstream term; ejmap::wizprog::Tracker tr (work.getChildFile ("progress.json"), term, false, 1); tr.setMarkerDir (work.getChildFile ("engine/inflight"));
+        std::vector<juce::PluginDescription> ds; for (const char* n : { "Alpha", "Bravo", "Charlie", "Delta" }) { juce::PluginDescription d; d.name = n; d.uniqueId = 0x41424344; d.fileOrIdentifier = "AudioUnit:Effects/aufx,ABCD,EJMP"; ds.push_back (d); }
+        { std::vector<ejmap::wizprog::Item> its; for (const auto& d : ds) { ejmap::wizprog::Item it; it.product = d.name; it.kind = "check"; its.push_back (it); } tr.stage (ejmap::wizprog::Stage::checking, its); }
+        ejmap::cert::wizardStop() = 0; int calls = 0; juce::StringArray kept;
+        auto fake = [&] (const juce::StringArray& a) { ++calls; ejmap::cert::ChildResult r;
+            if (a[1] == "Bravo") { ejmap::cert::wizardStop() = 1; r.kind = ejmap::cert::ChildResult::Kind::signaled; r.code = SIGINT; return r; }   // killed with the group
+            r.kind = ejmap::cert::ChildResult::Kind::exited; r.code = 0; r.out = "param\t0\t0.5\tGain\t0 dB\n"; return r; };
+        ejmap::cert::mapForWizard (ds, 1, fake, {}, tr, juce::File ("/nonexistent/probe"), [&] (const juce::PluginDescription& d, ejmap::cert::ChildResult&) { kept.add (d.name); tr.finished (d.name, false); });
+        const bool markerLeftBeforeFinish = ! ejmap::wizapp::leftoverMarkers (work.getChildFile ("engine/inflight")).empty();
+        tr.finish (ejmap::cert::scanStoppedWords (1, 4), true);
+        const auto crashed = ejmap::wizapp::recover (work, work.getChildFile ("engine/inflight"), work.getChildFile ("reports"), "/Users/x", "x", "h");
+        const bool skipEmpty = ! work.getChildFile ("skip.json").existsAsFile() || juce::JSON::parse (work.getChildFile ("skip.json").loadFileAsString()).size() == 0;
+        ejmap::cert::wizardStop() = 0; work.deleteRecursively();
+        check (kept == juce::StringArray { "Alpha" } && calls == 2 && markerLeftBeforeFinish && crashed.empty() && skipEmpty && ejmap::cert::scanStoppedWords (1, 4).startsWith ("Stopped - it carries on next time"),
+               "wizard WZ-STOP-2: a stop while checking keeps what finished (Alpha), discards the plugin in flight (Bravo, never 'crashed'), starts no more (" + juce::String (calls) + " probe calls), and leaves no marker for the next launch to blacklist");
     }
     // WZ-REF-SEED (Kathy, 13 Oct): the mock DB carries the 290 agreed references (2 Macs, the 12 Oct census), each trusted and named
     // after its plugin; the seed copies them into the STUB db and never over a file already there (a vote may have moved it on)

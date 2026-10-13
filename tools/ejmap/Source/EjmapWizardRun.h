@@ -15,6 +15,11 @@
 #include "EjmapWizardProgress.h"
 #include "EjmapWizardRoute.h"
 #include <fstream>
+#include <atomic>
+#include <csignal>
+#ifndef EJMAP_GIT_HASH
+#define EJMAP_GIT_HASH "unknown"   // the suite includes this header; the ejmap target defines the real one
+#endif
 #include <unistd.h>
 
 namespace ejmap::cert
@@ -74,8 +79,38 @@ inline wizard::Readback quickCheck (const SweepOptions& opt, const juce::PluginD
     return wizard::readback (writes, names, observed);
 }
 
+// THE STOP DURING THE SCAN (Kathy, 13 Oct, beta item 1): closing the window or Ctrl-C while Scanning / Checking stops as cleanly as a stop
+// while measuring. Until today the engine had no handler there: SIGINT killed it and its probes outright, the crash markers stayed, and
+// the next launch put every plugin in flight on the never-retry list. Now SIGINT / SIGTERM set this flag; the mapping pool discards what
+// was in flight (never filed crashed / wont_load); a signature read cut short is not cached; the run finishes "Stopped" (markers cleared)
+// and exits 130, the measuring stop's code. Maps and signature reads already done stay, so the next run carries on.
+inline std::atomic<int>& wizardStop() { static std::atomic<int> f { 0 }; return f; }
+inline void installWizardStop() { wizardStop() = 0; std::signal (SIGINT, [] (int) { wizardStop() = 1; }); std::signal (SIGTERM, [] (int) { wizardStop() = 1; }); }
+inline juce::String scanStoppedWords (int checked, int total)
+{
+    return "Stopped - it carries on next time: " + juce::String (checked) + " of " + juce::String (total) + " plugin(s) checked; nothing was skipped for good, nothing packed or sent.";
+}
+// the mapping step (Checking): every plugin's parameter list, --jobs at a time; `runner` is the probe (the suite's fake); `finished` is called
+// for each one that ran to its end - never for one in flight when the stop came (that one is discarded and runs again next time)
+inline void mapForWizard (const std::vector<juce::PluginDescription>& ds, int jobs, const std::function<ChildResult (const juce::StringArray&)>& runner,
+                          const std::function<jobs::Lane (const juce::PluginDescription&)>& laneOf, wizprog::Tracker& prog, const juce::File& probe,
+                          const std::function<void (const juce::PluginDescription&, ChildResult&)>& finished)
+{
+    std::vector<size_t> idx; for (size_t i = 0; i < ds.size(); ++i) idx.push_back (i);
+    jobs::Pool<size_t, juce::StringArray, ChildResult> pool;
+    pool.laneOf = [&] (const size_t& i) { return laneOf ? laneOf (ds[i]) : jobs::Lane::parallel; };
+    pool.stopped = [] { return wizardStop() != 0; };
+    pool.prepare = [&] (const size_t& i) -> std::optional<juce::StringArray>
+    { const auto& d = ds[i]; prog.started (d.name); return juce::StringArray { probe.getFullPathName(), d.name, d.fileOrIdentifier, juce::String::toHexString (d.uniqueId), "--list-params" }; };   // after a stop the pool starts nothing more (its own stopped())
+    pool.run = [&] (const juce::StringArray& a) { return runner (a); };
+    pool.discard = [] (const size_t&, juce::StringArray&) {};   // stopped: no state, no map; the marker goes with the stopped finish
+    pool.finish = [&] (const size_t& i, juce::StringArray&, ChildResult& r) { finished (ds[i], r); };
+    pool (idx, juce::jmax (1, jobs));
+}
+
 inline int runWizard (const WizardOptions& wo)
 {
+    installWizardStop();
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto& opt = wo.opt; const auto out = opt.out; out.createDirectory();
     // THE PROGRESS (11 Oct): the terminal shows one live line + a final summary; every detail line goes to wizard.log (--verbose: as before,
@@ -187,15 +222,12 @@ inline int runWizard (const WizardOptions& wo)
     if (! mapIdx.empty())
     {
         opt.ledger.getChildFile ("maps").createDirectory();
-        jobs::Pool<size_t, juce::StringArray, ChildResult> pool;
-        pool.laneOf = [&] (const size_t& i) { jobs::LaneInputs in; in.uad = uad::isUadProduct (plugins[i].desc.name, plugins[i].desc.manufacturerName); in.pace = paceHeld (plugins[i].desc, bundlesAll, in.paceWhy); return jobs::laneFor (in); };
-        pool.prepare = [&] (const size_t& i) -> std::optional<juce::StringArray>
-        { const auto& d = plugins[i].desc; prog.started (d.name); return juce::StringArray { opt.probe.getFullPathName(), d.name, d.fileOrIdentifier, juce::String::toHexString (d.uniqueId), "--list-params" }; };
-        pool.run = [&] (const juce::StringArray& a) { return runChild (a, opt.timeoutMs); };
-        pool.discard = [] (const size_t&, juce::StringArray&) {};
-        pool.finish = [&] (const size_t& i, juce::StringArray&, ChildResult& r)
+        std::vector<juce::PluginDescription> mapDs; for (auto i : mapIdx) mapDs.push_back (plugins[i].desc);
+        auto laneOfD = [&] (const juce::PluginDescription& d) { jobs::LaneInputs in; in.uad = uad::isUadProduct (d.name, d.manufacturerName); in.pace = paceHeld (d, bundlesAll, in.paceWhy); return jobs::laneFor (in); };
+        mapForWizard (mapDs, opt.jobs, [&] (const juce::StringArray& a) { return runChild (a, opt.timeoutMs); }, laneOfD, prog, opt.probe,
+                      [&] (const juce::PluginDescription& d, ChildResult& r)
         {
-            const auto& d = plugins[i].desc; const auto uid = juce::String::toHexString (d.uniqueId).toLowerCase();
+            const auto uid = juce::String::toHexString (d.uniqueId).toLowerCase();
             if (r.kind == ChildResult::Kind::uiShown) { early[d.name] = "needs_licence"; say ("  " + d.name + ": a window appeared (licence?) - closed, not clicked; not mapped"); prog.finished (d.name, true); return; }
             const auto ps = paramsOfList (r.out);
             if (! r.cleanExit() || ps.empty()) { early[d.name] = r.cleanExit() ? "wont_load" : "crashed"; say ("  " + d.name + ": not mapped (" + (ps.empty() && r.cleanExit() ? juce::String ("no parameters") : r.describe()) + ")"); prog.finished (d.name, true); return; }
@@ -205,9 +237,16 @@ inline int runWizard (const WizardOptions& wo)
             store[uid + "|" + d.version] = { fp, cat };
             prog.finished (d.name, false);
             say ("  " + d.name.paddedRight (' ', 30) + " mapped: " + juce::String ((int) ps.size()) + " parameter(s), map " + fp.substring (0, 12));
-        };
-        pool (mapIdx, juce::jmax (1, opt.jobs));
+        });
     }
+    auto stoppedInScan = [&] (const juce::String& where)
+    {   // 13 Oct: a stop while Scanning / Checking - the maps and signature reads that finished stay; nothing is filed for what was in flight
+        const auto [done, total] = prog.stageDone();
+        say ("WIZARD: stopped while " + where + " (" + juce::String (done) + " of " + juce::String (total) + " checked): nothing filed for the plugin(s) in flight; the next run carries on");
+        prog.finish (scanStoppedWords (done, total), true);
+        return 130;
+    };
+    if (wizardStop() != 0) return stoppedInScan ("mapping");
     auto fpOf = [&] (const juce::PluginDescription& d) { const auto k = juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version; return store.count (k) ? store.at (k).fp : juce::String(); };
     for (const auto& p : toMap)
     {
@@ -221,6 +260,7 @@ inline int runWizard (const WizardOptions& wo)
     const auto catRaw = out.getChildFile ("categorise_raw"); catRaw.createDirectory();
     for (const auto& p : toCategorise)
     {
+        if (wizardStop() != 0) return stoppedInScan ("reading signatures");
         const auto& ir = plugins[p.i]; const auto pid = p.row->getProperty ("plugin_id").toString(); p.row->setProperty ("map_fp", fpOf (ir.desc));
         if (early.count (ir.desc.name)) { p.row->setProperty ("state", early[ir.desc.name]); p.row->setProperty ("why", "it could not be mapped (" + early[ir.desc.name] + ")"); continue; }
         juce::var sig;
@@ -229,6 +269,7 @@ inline int runWizard (const WizardOptions& wo)
         {
             prog.started (ir.desc.name);
             const auto r = categoriseOne (catOpt, ir, {}, bundlesAll, catRaw);
+            if (wizardStop() != 0) return stoppedInScan ("reading signatures");   // a read cut short by the stop is never cached
             sig = categorise::rowVar (r); sig.getDynamicObject()->setProperty ("reads_ran", r.measured);
             cache.getDynamicObject()->setProperty (pid, sig); cacheF.replaceWithText (juce::JSON::toString (cache));
             prog.finished (ir.desc.name, false);

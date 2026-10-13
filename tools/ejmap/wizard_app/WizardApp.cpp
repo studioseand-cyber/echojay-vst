@@ -26,6 +26,8 @@
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <spawn.h>
 #include <signal.h>
+#include <atomic>
+#include <csignal>
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -107,6 +109,9 @@ struct Engine
     void pause() { if (pid > 0) kill (-pid, SIGINT); }   // Phase B's clean stop: no new plugin, the in-flight ones run again next time
 };
 
+// --- CTRL-C (Kathy, 13 Oct): the app launched from a Terminal - SIGINT takes the close button's path (the engine is in its own group)
+inline std::atomic<int>& appInterrupted() { static std::atomic<int> f { 0 }; return f; }
+
 // --- KEEP THE MAC AWAKE while the engine runs ----------------------------------------------------------------------------------------
 struct KeepAwake
 {
@@ -154,7 +159,7 @@ public:
     bool requestQuit()
     {
         if (! engine.running()) return true;
-        if (! quitting) { quitting = true; engine.pause(); pauseNote = "Pausing - it carries on where it left off next time you open the wizard"; logLine ("close: engine paused (SIGINT)"); repaint(); }
+        if (! quitting) { quitting = true; engine.pause(); pauseNote = wizapp::stoppedNote(); logLine ("close: engine stopped (SIGINT) on " + wizapp::screenName (screen)); repaint(); }
         return false;
     }
 
@@ -323,6 +328,7 @@ private:
 
     void timerCallback() override
     {
+        if (appInterrupted() != 0 && ! quitting) { appInterrupted() = 0; logLine ("Ctrl-C: the same stop as the close button"); juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
         if (screen == Screen::scan || screen == Screen::measuring) pollEngine();
         if (screen == Screen::upload) tickUpload();
         if (cfg.autoMode && ! quitting) autoAdvance();
@@ -348,9 +354,12 @@ private:
         {
             awake.hold (false); logLine ("engine ended: " + juce::String (*code) + ", keep-awake released");
             if (quitting) { juce::JUCEApplication::getInstance()->quit(); return; }
-            if (screen == Screen::scan) { setState ("scanned", true); show (Screen::scanDone); }
-            else if (*code == 0) { setState ("measure_done", true); show (Screen::upload); }
-            else { title = "Paused"; text = "It stopped before the end. Open the wizard again to carry on."; showBar = false; repaint(); }
+            switch (wizapp::afterEngine (screen, *code))
+            {
+                case wizapp::AfterEngine::scanDone: setState ("scanned", true); show (Screen::scanDone); break;
+                case wizapp::AfterEngine::upload:   setState ("measure_done", true); show (Screen::upload); break;
+                case wizapp::AfterEngine::stopped:  title = "Stopped"; text = wizapp::stoppedNote() + " - open the wizard again to carry on."; showBar = false; repaint(); break;
+            }
         }
     }
     void tickUpload()
@@ -395,7 +404,11 @@ public:
     const juce::String getApplicationName() override { return "EchoJay Wizard"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
     bool moreThanOneInstanceAllowed() override { return false; }
-    void initialise (const juce::String&) override { window = std::make_unique<WizardWindow> (parseArgs (getCommandLineParameterArray())); }
+    void initialise (const juce::String&) override
+    {
+        std::signal (SIGINT, [] (int) { appInterrupted() = 1; }); std::signal (SIGTERM, [] (int) { appInterrupted() = 1; });
+        window = std::make_unique<WizardWindow> (parseArgs (getCommandLineParameterArray()));
+    }
     void shutdown() override { window.reset(); }
     void systemRequestedQuit() override { if (window == nullptr || window->content == nullptr || window->content->requestQuit()) quit(); }
 private:
