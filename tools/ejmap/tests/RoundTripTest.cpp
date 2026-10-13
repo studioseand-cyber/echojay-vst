@@ -9525,6 +9525,16 @@ void testWizardCategories()
                && ! ejmap::wizard::referenceVoteEntry (juce::var (new juce::DynamicObject())).isObject(),
                "wizard WZ-CD-2: an agreeing vote makes a 1-source reference agreed (said once); a differing plugin is held with its block kept for a third source; every vote logged");
     }
+    // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
+    // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files
+    {
+        const auto src = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto cm = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/CMakeLists.txt").loadFileAsString();
+        const bool readBoth = src.contains ("class WizardApplication") && cm.contains ("juce_add_gui_app(ejmap-wizard-beta");   // the control
+        check (readBoth && src.contains ("getApplicationName() override { return JUCE_APPLICATION_NAME_STRING; }") && ! src.contains ("getApplicationName() override { return \"EchoJay Wizard\"")
+               && cm.contains ("JUCE_APPLICATION_NAME_STRING=\"EchoJay Wizard\"") && cm.contains ("JUCE_APPLICATION_NAME_STRING=\"EchoJay Wizard Beta\""),
+               "wizard WZ-NAME: the app's name is its build's (EchoJay Wizard / EchoJay Wizard Beta), so both can run (read both files: " + juce::String ((int) readBoth) + ")");
+    }
     // WZ-FLOW-1 (Kathy, 13 Oct, beta items 3 / 4): consent before anything is scanned, in both builds; the beta build has no sign-in, saves
     // the results as one file after measuring (no upload, no promo); the normal build uploads
     {

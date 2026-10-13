@@ -484,7 +484,7 @@ public:
 class WizardApplication : public juce::JUCEApplication
 {
 public:
-    const juce::String getApplicationName() override { return "EchoJay Wizard"; }
+    const juce::String getApplicationName() override { return JUCE_APPLICATION_NAME_STRING; }   // 13 Oct: each build its own name - the one-instance guard is keyed on it
     const juce::String getApplicationVersion() override { return "0.1.0"; }
     bool moreThanOneInstanceAllowed() override { return false; }
     void initialise (const juce::String&) override
