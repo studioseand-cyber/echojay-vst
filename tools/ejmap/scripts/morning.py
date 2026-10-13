@@ -25,7 +25,8 @@ SCRATCH_DEFAULT = '/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-
 # THE BASELINE (Kathy, 13 Oct: repointed from 00f2ae79 to b287aef3, Sean's build). Its derive-only outputs are cached under their OWN
 # name (equality_<hash>): a cache made by another baseline is never read as this one's. 'expect' = the only draft classes the equality may
 # explain against it (classify_drafts.py --expect); everything since b287aef3 changes no derive-only output, so none.
-BASELINE = {'hash': 'b287aef3', 'bin': HOME + '/Desktop/ejmap-dist-11oct-b287aef3/ejmap.app/Contents/MacOS/ejmap', 'expect': ''}
+BASELINE = {'hash': 'b287aef3', 'bin': HOME + '/Desktop/ejmap-dist-11oct-b287aef3/ejmap.app/Contents/MacOS/ejmap', 'expect': '',
+            'expect_sets': 'not_written'}   # 13 Oct (d26db00f): compressor profiles may drop exactly the controls their not_written lists
 OLD_BIN = BASELINE['bin']
 def baseline_cache(scratch, b=BASELINE): return os.path.join(scratch, 'equality_' + b['hash'])
 def binary_is(path, h):
@@ -224,8 +225,8 @@ def equality(new_bin, cert, scratch, work):
             shutil.copytree(os.path.join(src, s), os.path.join(R, s, 'old'), symlinks=True); sh([OLD_BIN, '--cert-tonecheck-all', '--derive-only', '--out', os.path.join(R, s, 'old')])
         shutil.copytree(os.path.join(src, s), os.path.join(R, s, 'new'), symlinks=True)
         sh([new_bin, '--cert-tonecheck-all', '--derive-only', '--out', os.path.join(R, s, 'new')])
-        c = sh(['python3', os.path.join(WT, 'tools/ejmap/cert-traces/2026-10-07-equality/compare.py'), os.path.join(R, s)]).stdout
-        lines = [l for l in c.splitlines() if 'rows' in l or 'differ' in l]
+        c = sh(['python3', os.path.join(WT, 'tools/ejmap/cert-traces/2026-10-07-equality/compare.py'), os.path.join(R, s), '--expect', BASELINE['expect_sets']]).stdout
+        lines = [l for l in c.splitlines() if 'rows' in l or 'differ' in l or 'explained' in l]
         say(f'== compressor set {s}'); [say('  ' + l.strip()) for l in lines]
         if any(re.search(r'differ [1-9]|diffs [1-9]', l) for l in lines): stop.append(f'compressor set {s} differs')
     D = os.path.join(R, 'drafts'); os.makedirs(D)
