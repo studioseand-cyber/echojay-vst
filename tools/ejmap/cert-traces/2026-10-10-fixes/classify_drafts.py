@@ -1,5 +1,9 @@
 import json,glob,os,collections,sys
 R=sys.argv[1]
+# --expect (13 Oct): the classes this baseline may explain. 'status' = v0.1 -> v0.2 (50a39e1b), 'limiter' = the one-profile change
+# (5185311f / 7ee67720); both are IN b287aef3, so against it --expect '' explains nothing. No --expect = both (vs 00f2ae79, as before).
+EXPECT={'status','limiter'}
+if '--expect' in sys.argv: EXPECT=set(x for x in sys.argv[sys.argv.index('--expect')+1].split(',') if x)
 def load(side): return {os.path.relpath(f,f'{R}/{side}'):json.load(open(f)) for f in glob.glob(f'{R}/{side}/phaseb/*/drafts/*.json')}
 o,n=load('old'),load('new')
 print('drafts old',len(o),'new',len(n),'only-old',len(set(o)-set(n)),'only-new',len(set(n)-set(o)))
@@ -17,9 +21,9 @@ for k in sorted(set(o)&set(n)):
     a,b=o[k],n[k]
     if a==b: c['identical']+=1; continue
     cat=k.split('/')[1]; reasons=[]
-    a2=fix(a)
+    a2=fix(a) if 'status' in EXPECT else a
     if a2!=a: reasons.append('status v0.2 (50a39e1b)')
-    if cat=='limiter':
+    if cat=='limiter' and 'limiter' in EXPECT:
         # EXPECTED 2 (5185311f, worded by 7ee67720): vs 00f2ae79 a limiter draft gains compressor_profile null + exactly one appended
         # note naming why it is the block alone (Sean's folder: no limiter has a compressor profile yet)
         nb=b.get('notes') or []; na=a2.get('notes') or []

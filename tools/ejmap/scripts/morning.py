@@ -8,7 +8,10 @@ THE MORNING SCRIPT (Kathy, 10 Oct). One command:
 2. REPORT  run-all steps; the follow-up re-checks (every tone check by build, and CL 1B, Zip, bx_opto + the five v2 units at g 2/4/5/6
            with build); fixups; EQ progress; the zip's rows by outcome; rows the next build would file silent_output / probe_crashed.
 3. CUT     (--cut only) build HEAD (ejmap + EchoJayProbe, -j4), sign the probe, package to ~/Desktop/ejmap-dist-<date>-<hash>, preflight.
-4. EQUALITY vs 00f2ae79 (the packaged cut, or the build tree without --cut): the four compressor sets derive-only, and --phaseb-drafts
+   --folder <Sean's full cert folder> (13 Oct) instead of --zip: copied as it is, never merged over cert 2 / 3 (a full folder has
+           already deleted what its run deleted); "this run" = rows at or after the first step the baseline build started, and the
+           tone checks stamped with it.
+4. EQUALITY vs the BASELINE (b287aef3 from 13 Oct, Kathy; was 00f2ae79) (the packaged cut, or the build tree without --cut): the four compressor sets derive-only, and --phaseb-drafts
            over the merged folder classified by classify_drafts.py. ANY unexplained difference -> STOP (exit 3).
 5. RESUME  --run-all --dry-run of the next night's line on the merged folder with the new binary: the plan it would run.
 
@@ -19,9 +22,40 @@ import argparse, collections, glob, gzip, json, os, re, shutil, subprocess, sys,
 WT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 HOME = os.path.expanduser('~')
 SCRATCH_DEFAULT = '/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/9231c63a-2a37-48b6-9847-1c1f92c8caf3/scratchpad'
-OLD_BIN = HOME + '/Desktop/ejmap-dist-10oct-b/ejmap.app/Contents/MacOS/ejmap'   # 00f2ae79, Sean's build tonight
+# THE BASELINE (Kathy, 13 Oct: repointed from 00f2ae79 to b287aef3, Sean's build). Its derive-only outputs are cached under their OWN
+# name (equality_<hash>): a cache made by another baseline is never read as this one's. 'expect' = the only draft classes the equality may
+# explain against it (classify_drafts.py --expect); everything since b287aef3 changes no derive-only output, so none.
+BASELINE = {'hash': 'b287aef3', 'bin': HOME + '/Desktop/ejmap-dist-11oct-b287aef3/ejmap.app/Contents/MacOS/ejmap', 'expect': ''}
+OLD_BIN = BASELINE['bin']
+def baseline_cache(scratch, b=BASELINE): return os.path.join(scratch, 'equality_' + b['hash'])
+def binary_is(path, h):
+    """The baseline binary must carry its own hash (a renamed or replaced dist is not the baseline)."""
+    try: return h.encode() in open(path, 'rb').read()
+    except OSError: return False
 NAMED = ['Tube-Tech CL 1B', 'Unfiltered Audio Zip', 'bx_opto', 'Mixland Vac Attack', 'dbx-160 (s)', 'DPR-402 (s)', 'SPL IRON', 'Auto-Tune Vocal Compressor']
 NEXT_NIGHT = 'preflight,followup,fixups,reverb_delay,transient_gate,drafts'   # runbook Night A (11 Oct); limiter_comp + strips are Night B
+
+def copy_folder(folder, out):
+    """--folder: Sean's FULL cert folder, copied as it is (never merged over cert 2 / 3: it has already deleted what its run deleted)."""
+    if os.path.exists(out): sys.exit(f'MORNING: {out} exists - give a fresh --work folder')
+    os.makedirs(out); dst = os.path.join(out, 'cert'); shutil.copytree(folder, dst, symlinks=True)
+    return dst
+def this_run(cert, h):
+    """In a full folder, what THIS run made: every Phase B row at or after the first step build h started, and the tone checks stamped h."""
+    p = os.path.join(cert, 'run_all.json'); st = json.load(open(p)) if os.path.exists(p) else {'steps': {}}
+    starts = [v.get('started_at', '') for v in st.get('steps', {}).values() if v.get('build') == h and v.get('started_at')]
+    since = min(starts) if starts else None
+    out = set()
+    if since:
+        for f in glob.glob(os.path.join(cert, 'phaseb', '*', '*.phaseb.json')):
+            try: at = json.load(open(f)).get('at', '')
+            except Exception: continue
+            if at >= since: out.add(os.path.relpath(f, cert))
+    for f in glob.glob(os.path.join(cert, 'profiles', '*.tonecheck.json')):
+        try:
+            if json.load(open(f)).get('build') == h: out.add(os.path.relpath(f, cert))
+        except Exception: pass
+    return out, since
 
 def next_steps(run_all, base=NEXT_NIGHT):
     """The next night's --steps: the base line plus every step the last night left unfinished (started / device_absent),
@@ -173,19 +207,20 @@ def cut(desk_name):
 
 # ---------------------------------------------------------------- 4. equality
 def equality(new_bin, cert, scratch, work):
-    say(); say('================ EQUALITY vs 00f2ae79 ================')
+    say(); say(f"================ EQUALITY vs {BASELINE['hash']} (Sean's build) ================")
+    if not binary_is(OLD_BIN, BASELINE['hash']): sys.exit(f"MORNING: the baseline binary {OLD_BIN} does not carry {BASELINE['hash']} - STOP")
     # the four sets: kept in the worktree's ignored build-ejmap/equality-baseline/src (survives a reboot), else the session scratch
     src = os.path.join(WT, 'build-ejmap', 'equality-baseline', 'src')
     if not os.path.isdir(src): src = os.path.join(scratch, 'equality', 'src')
     if not os.path.isdir(src): sys.exit('MORNING: the four equality sets are missing (build-ejmap/equality-baseline/src) - STOP')
-    old = os.path.join(scratch, 'equality19')
+    old = baseline_cache(scratch)   # never equality19 (00f2ae79's outputs)
     R = os.path.join(work, 'equality'); os.makedirs(R)
     stop = []
     for s in ('current', 'seanzip', 'cert_sc', 'cert_tc35'):
         os.makedirs(os.path.join(R, s))
         pk = os.path.join(old, 'pk_' + s, 'new')
         if os.path.isdir(pk): os.symlink(pk, os.path.join(R, s, 'old'))
-        else:   # 00f2ae79's derive-only outputs, regenerated with the packaged 00f2ae79
+        else:   # the baseline's derive-only outputs, made with the packaged baseline
             shutil.copytree(os.path.join(src, s), os.path.join(R, s, 'old'), symlinks=True); sh([OLD_BIN, '--cert-tonecheck-all', '--derive-only', '--out', os.path.join(R, s, 'old')])
         shutil.copytree(os.path.join(src, s), os.path.join(R, s, 'new'), symlinks=True)
         sh([new_bin, '--cert-tonecheck-all', '--derive-only', '--out', os.path.join(R, s, 'new')])
@@ -196,7 +231,7 @@ def equality(new_bin, cert, scratch, work):
     D = os.path.join(R, 'drafts'); os.makedirs(D)
     shutil.copytree(cert, os.path.join(D, 'old'), symlinks=True); shutil.copytree(cert, os.path.join(D, 'new'), symlinks=True)
     sh([OLD_BIN, '--phaseb-drafts', '--out', os.path.join(D, 'old')]); sh([new_bin, '--phaseb-drafts', '--out', os.path.join(D, 'new')])
-    c = sh(['python3', os.path.join(WT, 'tools/ejmap/cert-traces/2026-10-10-fixes/classify_drafts.py'), D]).stdout
+    c = sh(['python3', os.path.join(WT, 'tools/ejmap/cert-traces/2026-10-10-fixes/classify_drafts.py'), D, '--expect', BASELINE['expect']]).stdout
     say('== drafts over the merged folder (classified):'); [say('  ' + l) for l in c.splitlines()]
     m = re.search(r'UNEXPLAINED: (\d+)', c)
     if not m or int(m.group(1)) > 0: stop.append('drafts: unexplained differences')
@@ -213,15 +248,20 @@ def resume(new_bin, cert):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--zip', required=True, help="Sean's --zip --since zip")
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument('--zip', help="Sean's --zip --since zip (merged over cert 2 + cert 3)")
+    src.add_argument('--folder', help="Sean's FULL cert folder (13 Oct: ~/Downloads/cert 5), copied as it is")
     ap.add_argument('--cert2', default=HOME + '/Downloads/cert 2'); ap.add_argument('--cert3', default=HOME + '/Downloads/cert 3')
-    ap.add_argument('--scratch', default=SCRATCH_DEFAULT, help='holds equality/src (the four sets) and equality19 (00f2ae79 outputs)')
+    ap.add_argument('--scratch', default=SCRATCH_DEFAULT, help='holds equality/src (the four sets) and equality_<baseline hash> (the outputs of the baseline, when cached)')
     ap.add_argument('--work', default=None, help='a fresh folder for this morning (default: <scratch>/morning-<time>)')
     ap.add_argument('--cut', action='store_true', help='build, sign, package and preflight HEAD; equality on the packaged binary')
     ap.add_argument('--dist-name', default='ejmap-dist-' + time.strftime('%d%b').lower())
     a = ap.parse_args()
     work = a.work or os.path.join(a.scratch, 'morning-' + time.strftime('%Y%m%d-%H%M%S'))
-    cert, from_zip = merge(a.zip, a.cert2, a.cert3, work)
+    if a.folder:
+        cert = copy_folder(a.folder, work); from_zip, since = this_run(cert, BASELINE['hash'])
+        say(f"COPY: {a.folder} (full folder, not merged) -> {cert}; this run = {len(from_zip)} file(s) since {since} (build {BASELINE['hash']})")
+    else: cert, from_zip = merge(a.zip, a.cert2, a.cert3, work)
     report(cert, from_zip)
     if a.cut: new_bin, h = cut(a.dist_name)
     else:
