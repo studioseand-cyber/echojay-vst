@@ -42,6 +42,9 @@ inline const std::vector<Step>& steps()
         { "followup",         "plain",    { "--cert-tonecheck-all" },                               2400.0,  "the compressor follow-up" },
         { "gain_timing",      "redo",     { "gaincal,timing" },                                     3000.0,  "gain and timing for every certified compressor" },
         { "uad",              "selector", { "uad" },                                                600.0,   "UAD rows the Satellite admits" },
+        // 13 Oct (Kathy): rows the licence file refused that it now admits (the UAD EQs once their lines are in) - every run, nothing to do
+        // until the file changes
+        { "licensed_now",     "selector", { "licensed_now" },                                       1800.0,  "rows the licence file filed needs_licence that it now admits (~5-25 min each; none until the file changes)", false, true },
         // 10 Oct (Sean's night): 9 rows took 2 h+ (EchoBoy 42 min, EchoBoy Jr 35, Little PrimalTap 37 - delays under the 7 Oct reverb / delay
         // mode, role tests twice, tails to 20 s): slow, not stuck; the estimate follows
         { "no_pool",          "selector", { "no_pool" },                                            10800.0, "the Soundtoys / 2C empty-list rows (~40 min per delay or reverb)" },
@@ -75,6 +78,9 @@ inline const std::vector<Step>& steps()
         { "transient_gate",   "redo",     { "transient,gate" },                                     1900.0,  "transient shapers and gates (role tests twice: x1.3-1.65 rehearsed, 8 Oct)" },
         // 10 Oct (Kathy's ruling): limiters through the compressor certification - after transient_gate, before no_pool in the night lines
         { "limiter_comp",     "redo",     { "limitercomp" },                                        20100.0, "limiters through the compressor certification (their drafts: compressor profile + ceiling block)" },
+        // 13 Oct (Kathy): limiter_comp's rows that timed out or failed (Sean's five: L360 6->6 / 5->5, Spherix 10->10 / 12->12, MLimiterMB -
+        // slow, not stuck) run again under the candidate guard; existing rows only (an opt-in category reached by --redo unfinished)
+        { "limiter_comp_unfinished", "gaps", { "--phaseb-all", "--redo", "unfinished", "--category", "limitercomp" },   36000.0, "limiter_comp's timed-out rows under the candidate guard (one candidate per channel / band: ~0.6-5 h each)" },
         { "nothing_nominated","selector", { "nothing_nominated" },                                  16200.0, "rows the lexicon nominated nothing for" },
         { "strips",           "redo",     { "strips" },                                             50400.0, "channel strips, every section drafted" },
         { "drafts",           "plain",    { "--phaseb-drafts" },                                    5.0,     "every draft from the records on disk", false, true } };

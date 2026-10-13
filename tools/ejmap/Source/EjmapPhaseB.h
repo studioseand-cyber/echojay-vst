@@ -101,7 +101,14 @@ inline void gzipInto (const juce::File& src, const juce::File& dstDir)
 inline bool rowIsNothingNominated (const juce::var& row) { return row.getProperty ("outcome", "").toString() == "ok" && (row.getProperty ("records", {}).size() == 0 || (bool) row.getProperty ("nothing_measured", false) || (int) row.getProperty ("exit_code", 0) == 4); }   // exit 4 = the mode measured nothing: Sean's b0258a7b rows carry no flag, only the code
 // a selector reaches an OPT-IN category's EXISTING rows (9 Oct: --redo no_pool must reach gain-all's 2C rows) - never starts that
 // category's rows that were never run (a no_pool redo on a folder without gain-all must not begin the whole gain-all set)
-inline bool selectorReachesOptIn (const juce::StringArray& redo) { return redo.contains ("no_pool") || redo.contains ("unfinished"); }
+inline bool selectorReachesOptIn (const juce::StringArray& redo) { return redo.contains ("no_pool") || redo.contains ("unfinished") || redo.contains ("licensed_now"); }
+// --redo licensed_now (Kathy, 13 Oct: "the UAD EQs once his licence file has the UAD lines - they run only if licensed"): a row the
+// LICENCE FILE filed needs_licence (unmatched / unowned / expired / demo ended) that the file as it is NOW admits (owned, or a demo
+// running) runs again; a row the scan or a licence window filed stays an answer, and so does one the file still refuses
+inline bool rowIsLicensedNow (const juce::var& row, bool fileAdmitsNow)
+{
+    return fileAdmitsNow && row.getProperty ("outcome", "").toString() == "needs_licence" && row.getProperty ("reason", "").toString().startsWith ("licence file:");
+}
 // ...and when a selector (not a redo of the category itself) is what brings an opt-in category in - with or without --category - the
 // category's list is its EXISTING rows (9 Oct, the fix-up night: --redo multiband,unfinished --category gainall must re-run gain-all's
 // eight unfinished rows and start none of the products that never had a gain-all row)
