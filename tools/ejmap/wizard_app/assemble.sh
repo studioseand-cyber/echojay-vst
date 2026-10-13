@@ -24,6 +24,11 @@ cp "$B/tools/ejmap/ejmap_artefacts/RelWithDebInfo/ejmap.app/Contents/MacOS/ejmap
 cp "$B/EchoJayProbe_artefacts/RelWithDebInfo/EchoJayProbe" "$M/EchoJayProbe"
 chmod 755 "$M/ejmap" "$M/EchoJayProbe"
 R="$A/Contents/Resources"; mkdir -p "$R/mock_db"
+# 13 Oct (Kathy): the app icon - the iconutil-built .icns (every size rendered at its own pixels: wizard_app/icon/make_icon.swift) replaces
+# JUCE's conversion of the 1024 px PNG (ICON_BIG); the beta carries the BETA ribbon
+if [ "$BETA" = 1 ]; then ICNS="$HERE/icon/WizardBeta.icns"; else ICNS="$HERE/icon/Wizard.icns"; fi
+[ -f "$ICNS" ] || { echo "assemble: no icon at $ICNS (run wizard_app/icon/make_icon.swift)"; exit 2; }
+cp "$ICNS" "$R/Icon.icns"
 cp -R "$HERE/mock_db/references" "$R/mock_db/"   # 13 Oct: the mock DB's 290 agreed references (stub only)
 xattr -dr com.apple.quarantine "$A" 2>/dev/null || true   # a build-tree file can carry a download's flag (12 Oct): leave this Mac clean
 if [ -n "$ID" ]; then

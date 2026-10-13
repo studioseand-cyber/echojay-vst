@@ -9525,6 +9525,25 @@ void testWizardCategories()
                && ! ejmap::wizard::referenceVoteEntry (juce::var (new juce::DynamicObject())).isObject(),
                "wizard WZ-CD-2: an agreeing vote makes a 1-source reference agreed (said once); a differing plugin is held with its block kept for a third source; every vote logged");
     }
+    // WZ-ICON (Kathy, 13 Oct): both builds carry the EchoJay icon - an iconutil .icns with every size (16..1024, ten images) - set for both
+    // targets (ICON_BIG) and installed by assemble.sh, the beta its own (the BETA ribbon). A file / text pin with its control
+    {
+        const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/icon");
+        auto icnsSizes = [] (const juce::File& f) { juce::MemoryBlock mb; f.loadFileAsData (mb); const auto* d = (const juce::uint8*) mb.getData();
+            if (mb.getSize() < 8 || std::memcmp (d, "icns", 4) != 0) return -1; int n = 0;
+            for (size_t o = 8; o + 8 <= mb.getSize();) { const juce::uint32 len = (juce::uint32) d[o + 4] << 24 | (juce::uint32) d[o + 5] << 16 | (juce::uint32) d[o + 6] << 8 | d[o + 7];
+                const juce::String type (juce::CharPointer_ASCII ((const char*) juce::String::fromUTF8 ((const char*) d + o, 4).toRawUTF8()));
+                if (type.startsWith ("ic") || type.startsWith ("is") || type.startsWith ("il") || type.startsWith ("it")) ++n; if (len < 8) break; o += len; }
+            return n; };
+        const auto cm = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/CMakeLists.txt").loadFileAsString();
+        const auto as = dir.getSiblingFile ("assemble.sh").loadFileAsString();
+        const bool read = cm.contains ("juce_add_gui_app(ejmap-wizard-beta") && as.contains ("codesign");   // the control
+        const int nr = icnsSizes (dir.getChildFile ("Wizard.icns")), nb = icnsSizes (dir.getChildFile ("WizardBeta.icns"));
+        check (read && nr >= 10 && nb >= 10 && dir.getChildFile ("Wizard_1024.png").existsAsFile() && dir.getChildFile ("make_icon.swift").existsAsFile()
+               && cm.contains ("ICON_BIG                \"${CMAKE_CURRENT_SOURCE_DIR}/wizard_app/icon/Wizard_1024.png\"") && cm.contains ("wizard_app/icon/WizardBeta_1024.png")
+               && as.contains ("ICNS=\"$HERE/icon/WizardBeta.icns\"") && as.contains ("cp \"$ICNS\" \"$R/Icon.icns\""),
+               "wizard WZ-ICON: Wizard.icns (" + juce::String (nr) + " images) and WizardBeta.icns (" + juce::String (nb) + ") set for both targets and installed by assemble.sh (read: " + juce::String ((int) read) + ")");
+    }
     // WZ-SCANBAR (Kathy, 13 Oct: the beta on her Mac showed the bar at ~67% with "15 of 1285"): the scan screen's bar is the Checking stage's
     // own n of N, never the overall percent (Scanning 0-10, Checking 10-15 overall: overall / 15 = 0.68 the moment Checking began)
     {

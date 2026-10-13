@@ -116,6 +116,7 @@ juce_add_gui_app(ejmap-wizard
     COMPANY_NAME            "EchoJay"
     BUNDLE_ID               "ai.echojay.wizard"
     VERSION                 "0.1.0"
+    ICON_BIG                "${CMAKE_CURRENT_SOURCE_DIR}/wizard_app/icon/Wizard_1024.png"
     MICROPHONE_PERMISSION_ENABLED FALSE
     HARDENED_RUNTIME_ENABLED TRUE)
 target_sources(ejmap-wizard PRIVATE wizard_app/WizardApp.cpp)
@@ -134,6 +135,7 @@ juce_add_gui_app(ejmap-wizard-beta
     COMPANY_NAME            "EchoJay"
     BUNDLE_ID               "ai.echojay.wizard.beta"
     VERSION                 "0.1.0"
+    ICON_BIG                "${CMAKE_CURRENT_SOURCE_DIR}/wizard_app/icon/WizardBeta_1024.png"
     MICROPHONE_PERMISSION_ENABLED FALSE
     HARDENED_RUNTIME_ENABLED TRUE)
 target_sources(ejmap-wizard-beta PRIVATE wizard_app/WizardApp.cpp)
