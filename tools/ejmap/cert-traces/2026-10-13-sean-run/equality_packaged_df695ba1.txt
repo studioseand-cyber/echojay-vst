@@ -1,0 +1,40 @@
+EQUALITY on the PACKAGED cut ~/Desktop/ejmap-dist-13oct-df695ba1/ejmap.app/Contents/MacOS/ejmap (the preflight refused on battery: run by hand, the same functions as --cut)
+
+================ EQUALITY vs b287aef3 (Sean's build) ================
+== compressor set current
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 82 old / 82 new, only-old [], only-new [], differ 0
+  explained 5 not_written (d26db00f)
+  controls: 45 old / 45 new, only-old [], only-new [], differ 0
+== compressor set seanzip
+  rows 181 181 state/reason diffs 0 []
+  fixtures: 245 old / 245 new, only-old [], only-new [], differ 0
+  profiles: 45 old / 45 new, only-old [], only-new [], differ 0
+  explained 1 not_written (d26db00f)
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+== compressor set cert_sc
+  rows 90 90 state/reason diffs 0 []
+  fixtures: 19 old / 19 new, only-old [], only-new [], differ 0
+  profiles: 7 old / 7 new, only-old [], only-new [], differ 0
+  explained 1 not_written (d26db00f)
+  controls: 2 old / 2 new, only-old [], only-new [], differ 0
+== compressor set cert_tc35
+  rows 87 87 state/reason diffs 0 []
+  fixtures: 14 old / 14 new, only-old [], only-new [], differ 0
+  profiles: 4 old / 4 new, only-old [], only-new [], differ 0
+  explained 1 not_written (d26db00f)
+  controls: 0 old / 0 new, only-old [], only-new [], differ 0
+== drafts over the merged folder (classified):
+  drafts old 1307 new 1307 only-old 0 only-new 0
+     1307  identical
+  UNEXPLAINED: 0
+EQUALITY: every difference named (df695ba1, packaged); nothing unexplained
+
+================ RESUME: the next night on the merged folder (dry-run, nothing loaded) ================
+--steps preflight,followup,fixups,reverb_delay,transient_gate,drafts
+RUN-ALL: 86 tone check(s) made by another build than df695ba1: the follow-up runs again (stale checks first)
+RUN-ALL: 3 step(s) to run, 24 done or skipped; ETA 0:40:10; stops at 07:00 14 Oct; state <cert>/run_all.json
+  preflight                --cert-preflight   (~0:00:05, the app, the probe beside it and its signature)
+  followup                 --cert-tonecheck-all --out <cert>   (~0:40:00, the compressor follow-up)
+  drafts                   --phaseb-drafts --out <cert>   (~0:00:05, every draft from the records on disk)
