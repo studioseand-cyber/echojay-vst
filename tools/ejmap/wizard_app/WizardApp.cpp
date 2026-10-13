@@ -412,7 +412,7 @@ private:
         juce::String cur; if (const auto* a = p.getProperty ("current", {}).getArray()) if (! a->isEmpty()) cur = (*a)[0].toString();
         if (screen == Screen::scan)
         {   // the Logic-style bar: the scan is the engine's Scanning + Checking (0..15 of its bar)
-            barValue = juce::jlimit (0.0, 1.0, pct / 15.0); barLeft = cur.isNotEmpty() ? cur : stage == "Checking" ? "Checking" : "Looking for plugins";
+            barValue = wizapp::scanBarValue (p); barLeft = cur.isNotEmpty() ? cur : stage == "Checking" ? "Checking" : "Looking for plugins";
             const auto sc = p.getProperty ("stage_counts", {}); barRight = sc.isObject() ? juce::String ((int) sc.getProperty ("done", 0)) + " of " + juce::String ((int) sc.getProperty ("total", 0)) : juce::String();
         }
         else

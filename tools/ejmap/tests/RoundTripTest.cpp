@@ -9525,6 +9525,33 @@ void testWizardCategories()
                && ! ejmap::wizard::referenceVoteEntry (juce::var (new juce::DynamicObject())).isObject(),
                "wizard WZ-CD-2: an agreeing vote makes a 1-source reference agreed (said once); a differing plugin is held with its block kept for a third source; every vote logged");
     }
+    // WZ-SCANBAR (Kathy, 13 Oct: the beta on her Mac showed the bar at ~67% with "15 of 1285"): the scan screen's bar is the Checking stage's
+    // own n of N, never the overall percent (Scanning 0-10, Checking 10-15 overall: overall / 15 = 0.68 the moment Checking began)
+    {
+        auto prog = [] (int idx, double pct, int done, int total) { auto* o = new juce::DynamicObject(); o->setProperty ("stage_index", idx); o->setProperty ("percent", pct);
+            auto* c = new juce::DynamicObject(); c->setProperty ("done", done); c->setProperty ("total", total); o->setProperty ("stage_counts", juce::var (c)); return juce::var (o); };
+        const double kathy = ejmap::wizapp::scanBarValue (prog (1, 10.2, 15, 1285)), stopped = ejmap::wizapp::scanBarValue (prog (1, 10.2, 42, 1285));
+        check (std::abs (kathy - 15.0 / 1285.0) < 1e-9 && kathy < 0.02 && std::abs (stopped - 42.0 / 1285.0) < 1e-9 && ejmap::wizapp::scanBarValue (prog (0, 6.0, 500, 1376)) == 0.0
+               && ejmap::wizapp::scanBarValue (prog (2, 40.0, 3, 11)) == 1.0 && ejmap::wizapp::scanBarValue (prog (1, 12.0, 0, 0)) == 0.0,
+               "wizard WZ-SCANBAR: '15 of 1285' draws " + juce::String (kathy * 100.0, 1) + "% (it drew 68%); Scanning 0, past Checking full, no items 0");
+    }
+    // WZ-SCANBAR-2 a resumed scan starts at its true done share: what needs nothing (its map already stored) is done from the first frame,
+    // with no time recorded and no problem counted; a fresh scan starts at 0
+    {
+        const auto dir = juce::File::createTempFile ("wzscan"); dir.createDirectory(); std::ostringstream term;
+        ejmap::wizprog::Tracker tr (dir.getChildFile ("progress.json"), term, false, 2);
+        std::vector<ejmap::wizprog::Item> its; for (const char* n : { "A", "B", "C", "D" }) { ejmap::wizprog::Item it; it.product = n; it.kind = "check"; its.push_back (it); }
+        tr.stage (ejmap::wizprog::Stage::checking, its);
+        const auto fresh = juce::JSON::parse (dir.getChildFile ("progress.json").loadFileAsString());
+        tr.alreadyDone ("A"); tr.alreadyDone ("B"); tr.alreadyDone ("B");
+        const auto resumed = juce::JSON::parse (dir.getChildFile ("progress.json").loadFileAsString());
+        tr.started ("C"); tr.finished ("C", false, 3.0);
+        const auto later = juce::JSON::parse (dir.getChildFile ("progress.json").loadFileAsString());
+        dir.deleteRecursively();
+        check (ejmap::wizapp::scanBarValue (fresh) == 0.0 && std::abs (ejmap::wizapp::scanBarValue (resumed) - 0.5) < 1e-9 && std::abs (ejmap::wizapp::scanBarValue (later) - 0.75) < 1e-9
+               && (int) resumed.getProperty ("problems", -1) == 0 && resumed.getProperty ("seconds_per_plugin", {}).getProperty ("check", {}).getProperty ("source", "").toString() == "starting figure",
+               "wizard WZ-SCANBAR-2: a fresh scan draws 0; a resumed one with 2 of 4 already mapped draws 50% from the first frame (no time, no problem), then 75%");
+    }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files
     {

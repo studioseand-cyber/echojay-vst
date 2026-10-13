@@ -224,6 +224,14 @@ public:
         if (markers_ != juce::File()) wizapp::markerEnd (markers_, product);
         emitLocked (true);
     }
+    // 13 Oct (the scan bar): an item with nothing left to do when its stage begins (a resumed scan: the map is already in the store) counts
+    // as done from the first frame - no time recorded, no problem - so the stage's "n of N" starts at its true share
+    void alreadyDone (const juce::String& product)
+    {
+        std::lock_guard<std::mutex> g (m_);
+        for (auto& i : items_) if (i.product == product && ! i.done) { i.done = true; i.running = false; break; }
+        emitLocked (true);
+    }
     void ranFor (const juce::String& product, double s)   // the clock as if the plugin started s seconds ago (pins; a window app's restore)
     { std::lock_guard<std::mutex> g (m_); for (const auto& i : items_) if (i.product == product) startedAt_[product + "|" + i.kind] = juce::Time::getMillisecondCounterHiRes() - s * 1000.0; emitLocked (false); }
     void addProblems (int n) { std::lock_guard<std::mutex> g (m_); problems_ += n; }

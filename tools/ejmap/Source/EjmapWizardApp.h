@@ -196,6 +196,18 @@ inline DiskVerdict diskVerdict (juce::int64 free, bool starting)
     return { false, starting ? "Not enough free disk space to start: the wizard needs " + gb (kStartFloorBytes) + " free and this Mac has " + gb (free) + ". Free some space and open it again."
                              : "Stopped - your Mac is running out of disk space (" + gb (free) + " free, the wizard stops below " + gb (kRunFloorBytes) + "). Free some space and open it again: it carries on where it stopped." };
 }
+// THE SCAN SCREEN'S BAR (Kathy, 13 Oct: the bar at ~67% while the text said "15 of 1285"): its own progress - the Checking stage's
+// n of N - never the engine's overall percent. The overall bar gives Scanning 0-10 and Checking only 10-15, so overall / 15 put the bar
+// at two-thirds the moment Checking began. Scanning (listing what is installed, seconds) is 0; past Checking (or a stop after it) is 1.
+inline double scanBarValue (const juce::var& progress)
+{
+    const int idx = (int) progress.getProperty ("stage_index", 0);
+    if (idx <= 0) return 0.0;
+    if (idx >= 2) return 1.0;
+    const auto sc = progress.getProperty ("stage_counts", {});
+    const int total = (int) sc.getProperty ("total", 0), done = (int) sc.getProperty ("done", 0);
+    return total > 0 ? juce::jlimit (0.0, 1.0, (double) done / (double) total) : 0.0;
+}
 // THE STOP (Kathy, 13 Oct, beta item 1): the same words whether it stopped while checking or while measuring
 inline juce::String stoppedNote() { return "Stopped - it carries on next time"; }
 // what the window does when the engine ends: a scan that ran to its end -> its results; a measuring run that did -> the upload; a

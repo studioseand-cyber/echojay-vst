@@ -253,6 +253,13 @@ inline int runWizard (const WizardOptions& wo)
         std::vector<wizprog::Item> its; for (const auto* l : { &toMap, &toCategorise }) for (const auto& p : *l) { wizprog::Item it; it.product = plugins[p.i].desc.name; it.kind = "check"; its.push_back (it); }
         prog.stage (wizprog::Stage::checking, its);
     }
+    {   // 13 Oct (the scan bar): what a resumed scan already has counts as done from the first frame - its map in the store, and for a plugin
+        // whose category the signature reads settle, its reads in categorised.json
+        const auto cached = juce::JSON::parse (out.getChildFile ("categorised.json").loadFileAsString());
+        auto have = [&] (const juce::PluginDescription& d) { return store.count (juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version) > 0; };
+        for (const auto& p : toMap) if (have (plugins[p.i].desc)) prog.alreadyDone (plugins[p.i].desc.name);
+        for (const auto& p : toCategorise) if (have (plugins[p.i].desc) && cached.hasProperty (p.row->getProperty ("plugin_id").toString())) prog.alreadyDone (plugins[p.i].desc.name);
+    }
     std::vector<size_t> mapIdx; for (const auto* l : { &toMap, &toCategorise }) for (const auto& p : *l) { const auto& d = plugins[p.i].desc; if (! store.count (juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version)) mapIdx.push_back (p.i); }
     std::map<juce::String, juce::String> early;   // product -> a state settled while mapping (needs_licence / crashed / wont_load)
     say ("WIZARD: map store " + opt.ledger.getChildFile ("maps").getFullPathName().replace (juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(), "~") + ": "
