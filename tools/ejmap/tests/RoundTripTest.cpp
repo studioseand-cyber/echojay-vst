@@ -9540,6 +9540,46 @@ void testCertReview()
 }
 
 /** CUSTOM DEFAULTS, the detection (EjmapCustomDefault.h, 12 Oct): real parameter blocks from Sean's Mac and this one, same versions. */
+/** SEAN'S b287aef3 TONE-CHECK FAILURES (Kathy, 13 Oct, item 2), pinned on his own records. */
+void testToneCheck13Oct()
+{
+    const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/tonecheck_13oct");
+    const auto amek = juce::JSON::parse (dir.getChildFile ("amek.record.json").loadFileAsString()), spl = juce::JSON::parse (dir.getChildFile ("spliron.record.json").loadFileAsString());
+    auto unaddr = [] (const juce::var& rec) { std::set<int> out; if (const auto* cs = rec.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if (ejmap::profile::unaddressableUnlabelled (c, rec.getProperty ("controls", {}))) out.insert ((int) c.getProperty ("index", -1)); return out; };
+    const auto ua = unaddr (amek), us = unaddr (spl);
+    // TC-1 the rule on the real control lists: AMEK's 24 'M' + F / P / R / S + 3 unnamed (59, among them [57], the one whose write breaks
+    // Param Link) and SPL IRON's 4 unnamed [40..43]; never a named, labelled control (Threshold 1 [20], Parallel Mix 1 [27], Input L [17])
+    auto mk = [] (const char* name, const char* unit, std::initializer_list<std::pair<const char*, const char*>> at, int idx) { auto* o = new juce::DynamicObject(); o->setProperty ("name", name); o->setProperty ("index", idx); if (unit) o->setProperty ("unit", unit);
+        auto* d = new juce::DynamicObject(); for (const auto& [k, x] : at) d->setProperty (k, x); o->setProperty ("displayAt", juce::var (d)); return juce::var (o); };
+    juce::Array<juce::var> two { mk ("Mix", "%", { { "0.000", "0 %" }, { "0.500", "50 %" }, { "1.000", "100 %" } }, 1), mk ("Mix", "%", { { "0.000", "0 %" }, { "0.500", "50 %" }, { "1.000", "100 %" } }, 2),
+                             mk ("", "dB", { { "0.000", "-10 dB" }, { "0.500", "0 dB" }, { "1.000", "10 dB" } }, 3), mk ("Gain", nullptr, { { "0.000", "0.00000" }, { "0.500", "+0.50000" }, { "1.000", "+1.00000" } }, 4) };
+    const juce::var tv (two);
+    check (ua.size() == 59 && ua.count (57) && ua.count (113) && ua.count (114) && ua.count (115) && ! ua.count (20) && ! ua.count (27) && ! ua.count (39)
+           && us == std::set<int> { 40, 41, 42, 43 } && ! us.count (17) && ! us.count (22)
+           && ! ejmap::profile::unaddressableUnlabelled (two[0], tv) && ! ejmap::profile::unaddressableUnlabelled (two[2], tv) && ! ejmap::profile::unaddressableUnlabelled (two[3], tv),
+           "tonecheck TC-1: unaddressable AND unlabelled - AMEK " + juce::String ((int) ua.size()) + " (incl. 'M' [57]), SPL IRON " + juce::String ((int) us.size()) + " [40..43]; a shared name with labels, an unnamed control with labels, a named echo control: all kept");
+    // TC-1b through the export: neither profile writes them as neutrals; each is listed in not_written with its index
+    auto exp = [] (const juce::var& rec) { const auto pick = rec.getProperty ("thresholdSweep", {}).isObject() ? juce::String() : rec.getProperty ("pickedCandidate", {}).getProperty ("name", "").toString();
+        juce::String why; auto v = pick.isEmpty() ? rec : ejmap::profile::candidateAsSingle (rec, pick, why); return ejmap::profile::exportCompProfile (v.isVoid() ? rec : v); };
+    const auto ea = exp (amek), es = exp (spl);
+    auto idxs = [] (const juce::var& arr) { std::set<int> o; if (const auto* a = arr.getArray()) for (const auto& x : *a) o.insert ((int) x.getProperty ("index", -1)); return o; };
+    const auto na = idxs (ea.profile.getProperty ("neutral", {})), ns = idxs (es.profile.getProperty ("neutral", {}));
+    const auto wa = idxs (ea.profile.getProperty ("not_written", {})), ws = idxs (es.profile.getProperty ("not_written", {}));
+    bool noneWritten = true; for (int i : ua) if (na.count (i)) noneWritten = false; for (int i : us) if (ns.count (i)) noneWritten = false;
+    check (ea.ok && es.ok && noneWritten && wa == ua && ws == us && na.size() == 54 && ns.size() == 32 && na.count (27) && ns.count (17),
+           "tonecheck TC-1b: the exported AMEK (neutral " + juce::String ((int) na.size()) + ") and SPL IRON (neutral " + juce::String ((int) ns.size()) + ") never write them; not_written lists each by index (" + juce::String ((int) wa.size()) + " / " + juce::String ((int) ws.size()) + ")");
+    // TC-2 MAGNUM-K: at L -18.40 the 0.95 detent lies under its shallowest point (1 dB at -15.31) - the pick stands (condition 3) but has
+    // NO expectation (it read 1.0; the sweep's traces read ~0.5 there, the check 0.49); the L rule moves to a level the curve answers
+    {
+        const auto mg = juce::JSON::parse (dir.getChildFile ("magnumk.profile.json").loadFileAsString());
+        const auto at = ejmap::profile::pickPosition (mg, -18.40, 2.0);
+        const auto tl = ejmap::profile::toneLevelFor (mg, 2.0);
+        check (at.ok && at.atControlLimit && at.expectationBelowCurve && at.note.contains ("no expectation")
+               && tl.ok && ! tl.pick.expectationBelowCurve && std::abs (tl.L - (-18.40)) > 0.5 && tl.pick.expectedGrDb >= 1.0,
+               "tonecheck TC-2: MAGNUM-K at -18.40 has no expectation (under the detent's 1 dB point); the L rule tests at " + juce::String (tl.L, 2) + " (pick " + juce::String (tl.pick.norm, 3) + ", expects " + juce::String (tl.pick.expectedGrDb, 2) + ")");
+    }
+}
+
 void testCustomDefault()
 {
     using namespace ejmap::customdefault;
@@ -9657,6 +9697,7 @@ void testCategoriseRelease()
 int main (int, char**)
 {
     testCategoriseRelease();
+    testToneCheck13Oct();
     testCustomDefault();
     juce::ScopedJuceInitialiser_GUI juceInit;
 

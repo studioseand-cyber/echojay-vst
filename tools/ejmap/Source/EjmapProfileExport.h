@@ -266,6 +266,38 @@ inline bool isReadoutOrMeter (const juce::var& c)
     return false;
 }
 
+// NOT A SETTING THE SERVER CAN WRITE (13 Oct; Sean's b287aef3 follow-up): a control the server cannot address by name - its name empty,
+// or shared with another control of the unit - that also carries no label of its own (the label pass read an empty text at every
+// sampled value, or text that only echoes the value itself with no unit). AMEK Mastering Compressor's 24 'M' / 'F' / 'P' / 'R' / 'S'
+// and 3 unnamed ('0.00000' / '+0.50000' / '+1.00000'), SPL IRON's 4 unnamed (empty text, values the unit moves itself). Writing them
+// was never a measurement condition (the sweeps never wrote them) and broke both tone checks: AMEK's 'M' [57] at its own instantiate
+// 0.0 stops Param Link mirroring Threshold 1 onto channel 2 (per-channel 0.31 / 2.79 dB; without the 59: 2.01, channels within 0.04);
+// SPL IRON's [42] never lands (the probe refuses; without the 4: 2.02). Name-addressed and labelled controls are untouched.
+inline bool labelIsOwnValue (const juce::var& c)
+{
+    const auto* da = c.getProperty ("displayAt", {}).getDynamicObject();
+    if (da == nullptr || da->getProperties().isEmpty()) return false;
+    bool allEmpty = true; for (const auto& kv : da->getProperties()) if (kv.value.toString().trim().isNotEmpty()) allEmpty = false;
+    if (allEmpty) return true;
+    if (c.getProperty ("unit", {}).toString().isNotEmpty()) return false;
+    for (const auto& kv : da->getProperties())
+    {
+        const auto t = kv.value.toString().trim().removeCharacters ("+");
+        if (! t.containsOnly ("-0123456789.") || t.isEmpty()) return false;
+        if (std::abs (t.getDoubleValue() - kv.name.toString().getDoubleValue()) > 1.0e-4) return false;
+    }
+    return true;
+}
+inline bool unaddressableUnlabelled (const juce::var& c, const juce::var& controls)
+{
+    const auto name = c.getProperty ("name", "").toString().trim();
+    bool shared = false;
+    if (name.isNotEmpty())
+        if (const auto* cs = controls.getArray())
+            for (const auto& o : *cs) if (o.getProperty ("index", -1) != c.getProperty ("index", -2) && o.getProperty ("name", "").toString().trim() == name) { shared = true; break; }
+    return (name.isEmpty() || shared) && labelIsOwnValue (c);
+}
+
 inline juce::String controlName (const juce::var& f, int index)
 {
     return sweep::findControl (f, index).getProperty ("name", "").toString();
@@ -577,7 +609,7 @@ inline Export exportCompProfile (const juce::var& f)
         // sample - with set text and norm. Until today only the preconditions were listed, so the profile held only on a
         // fresh instance: Gain, Attack, Release, Select Attack Release and Sidechain were all measurement conditions on
         // CL 1B and none was named. A control with no instantiate value in the record cannot be listed: refuse.
-        juce::Array<juce::var> neutral;
+        juce::Array<juce::var> neutral, notWritten;
         std::map<int, juce::var> pre;
         if (const auto* pa = sweepVar.getProperty ("preconditions", {}).getArray())
             for (const auto& x : *pa) pre[(int) x.getProperty ("index", -1)] = x;
@@ -595,6 +627,12 @@ inline Export exportCompProfile (const juce::var& f)
                 const auto name = c.getProperty ("name", "").toString();
                 if (idx == plan.thr || idx == plan.ratioIndex || idx == pairIdx || engaged.count (idx) || nt.contains (name) || linkedTwins.contains (name)) continue;
                 if (isReadoutOrMeter (c)) continue;
+                if (unaddressableUnlabelled (c, f.getProperty ("controls", {})))
+                {   // 13 Oct: never a neutral write (AMEK 'M', SPL IRON's unnamed) - said on the profile, by index
+                    auto* x = new juce::DynamicObject(); x->setProperty ("index", idx); x->setProperty ("control", name);
+                    x->setProperty ("why", name.isEmpty() ? "no name and no label of its own: not a setting the server can write" : "a name shared by other controls and no label of its own: not a setting the server can write");
+                    notWritten.add (juce::var (x)); continue;
+                }
                 auto* o = new juce::DynamicObject();
                 o->setProperty ("control", name);
                 o->setProperty ("index", idx);   // (ruled 6 Oct, AMEK: 24 readouts all named "M" - a neutral is written by its index, the name is for reading)
@@ -626,6 +664,7 @@ inline Export exportCompProfile (const juce::var& f)
                 neutral.add (juce::var (o));
             }
         P->setProperty ("neutral", neutral);
+        if (! notWritten.isEmpty()) P->setProperty ("not_written", notWritten);
     }
     {
         auto* a = new juce::DynamicObject();
@@ -906,7 +945,7 @@ inline std::optional<double> inAtGr (const juce::var& point, double g)
 // points 1..kGrTargetMax (a level at its 5 dB point reports 5). Past its deepest point the figure is that deepest level, flagged
 // extrapolated; below its shallowest point, that shallowest level, flagged the same way. A position with fewer than one
 // numeric point has no reverse read.
-struct GrAtLevel { bool ok = false; double gr = 0.0; bool extrapolated = false; int lo = 0, hi = 0; };
+struct GrAtLevel { bool ok = false; double gr = 0.0; bool extrapolated = false, belowShallowest = false; int lo = 0, hi = 0; };   // belowShallowest (13 Oct): L under the position's first measured point
 inline GrAtLevel grAtLevel (const juce::var& point, double L)
 {
     GrAtLevel r;
@@ -916,7 +955,7 @@ inline GrAtLevel grAtLevel (const juce::var& point, double L)
     if (pts.empty()) return r;
     r.ok = true;
     if (L >= pts.back().second)  { r.gr = pts.back().first;  r.lo = r.hi = pts.back().first;  r.extrapolated = L > pts.back().second + 1e-9;  return r; }
-    if (L <= pts.front().second) { r.gr = pts.front().first; r.lo = r.hi = pts.front().first; r.extrapolated = L < pts.front().second - 1e-9; return r; }
+    if (L <= pts.front().second) { r.gr = pts.front().first; r.lo = r.hi = pts.front().first; r.extrapolated = L < pts.front().second - 1e-9; r.belowShallowest = r.extrapolated; return r; }
     for (size_t k = 0; k + 1 < pts.size(); ++k)
         if (pts[k].second <= L && L <= pts[k + 1].second)
         {
@@ -931,6 +970,7 @@ struct Pick
     bool ok = false; juce::String refused; double norm = 0.0;
     double expectedGrDb = 0.0;                 // g; the GR the chosen DETENT gives at L for a stepped pick (reverse read); the deepest measured level when the deep-null rule fell back
     bool expectedExtrapolated = false;         // the stepped reverse read ran past the detent's deepest (or shallowest) point
+    bool expectationBelowCurve = false;        // 13 Oct: L lies under the detent's shallowest measured point - no expectation (MAGNUM-K)
     int i0 = -1, i1 = -1; double inAtG0 = 0, inAtG1 = 0; bool stepped = false;
     bool atControlLimit = false;               // stepped (Sean's condition 3): L lies past the last detent on that side; the end detent answers, never an estimate
     bool filledAcrossNorm = false;             // the pick used a position whose value at g was interpolated across the norm axis
@@ -1043,6 +1083,17 @@ inline Pick pickPosition (const juce::var& profile, double L, double g)
     if (p.stepped && ! pts[best].filled)
         if (const auto rr = grAtLevel (curve[p.i0], L); rr.ok)
         {
+            // 13 Oct (MAGNUM-K, Sean's b287aef3 follow-up): L UNDER the detent's shallowest measured point means it gives LESS than that
+            // point's GR there - the curve holds no figure below it, so its level is an upper bound, never an expectation (MAGNUM-K's
+            // 0.95 detent: 1 dB point -15.31, L -18.40 -> "expects 1.0", the sweep's own traces read ~0.5 there, the check read 0.49).
+            // The pick stands (Sean's condition 3: that detent answers); its EXPECTATION does not - flagged, so the L rule moves on to the next
+            // level, where the detent's curve answers, and a caller's L is never judged against it.
+            if (rr.belowShallowest)
+            {
+                p.expectationBelowCurve = true;
+                p.note << (p.note.isEmpty() ? "" : "; ") << "no expectation: the nearest detent gives less than " << juce::String (rr.gr, 0) << " dB at L " << juce::String (L, 2) << " (L lies under its shallowest measured point, " << juce::String (rr.lo) << " dB; the curve holds no figure below it)";
+                p.ok = true; return p;
+            }
             p.expectedGrDb = rr.gr; p.expectedExtrapolated = rr.extrapolated;
             p.note << (p.note.isEmpty() ? "" : "; ") << "stepped: the nearest detent gives " << juce::String (rr.gr, 2) << " dB at L (reverse read between its " << rr.lo << " and " << rr.hi << " dB points" << (rr.extrapolated ? ", extrapolated past its deepest point" : "") << "), and that is the expectation";
         }
@@ -1097,9 +1148,9 @@ inline ToneLevel toneLevelFor (const juce::var& profile, double g, std::optional
         // an L 9 dB below every 9 dB point). So for the L rule a continuous pick counts only when bracketed (or exactly on a
         // point); the next candidate is a position's own point and is bracketed by construction. A stepped pick's expectation
         // is its detent's reverse read, so it stands.
-        const bool onCurve = pk.ok && (pk.stepped || pk.i1 >= 0 || std::abs (L - pk.inAtG0) < 1e-6);
+        const bool onCurve = pk.ok && ! pk.expectationBelowCurve && (pk.stepped || pk.i1 >= 0 || std::abs (L - pk.inAtG0) < 1e-6);
         if (onCurve) { tl.ok = true; tl.L = L; tl.gapDb = L - tl.Lref; tl.pick = pk; tl.clampDb = pk.clampDb; return tl; }
-        lastRefusal = pk.ok ? "L " + juce::String (L, 2) + " is outside the positions' " + juce::String (g, 1) + " dB points (the pick would be the nearest position, not one that gives " + juce::String (g, 1) + " dB there)" : pk.refused;
+        lastRefusal = pk.ok && pk.expectationBelowCurve ? "L " + juce::String (L, 2) + ": the detent's curve holds no figure there (under its shallowest point)" : pk.ok ? "L " + juce::String (L, 2) + " is outside the positions' " + juce::String (g, 1) + " dB points (the pick would be the nearest position, not one that gives " + juce::String (g, 1) + " dB there)" : pk.refused;
     }
     tl.reason = "no L within the measured range gives a valid pick on the curve (" + juce::String (tl.tried) + " L tried from L_ref " + juce::String (tl.Lref, 2) + "; last: " + lastRefusal + ")";
     return tl;
