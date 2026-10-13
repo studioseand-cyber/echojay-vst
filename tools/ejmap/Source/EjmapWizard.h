@@ -27,7 +27,9 @@ namespace ejmap::wizard
 // ---------------------------------------------------------------- the mock database
 // indexOnly (13 Oct, the beta snapshot): an "already mapped" entry from <db>/mapped.json - another category's measured Phase B draft, by
 // plugin id + version + map fp (when known) and its category, without the draft itself: it can answer rule A, never rule B (no writes)
-struct DbEntry { juce::var profile, tonecheck; juce::String file, cat; bool indexOnly = false; juce::String uid() const; juce::String version() const; juce::String mapFp() const;
+// pass (13 Oct, limiters): the Phase B pass an entry covers - "limiter" (the limiter draft) and "limitercomp" (a limiter's compressor pass,
+// <db>/limitercomp/) are looked up separately; "" for a compressor / EQ profile and the other categories' drafts
+struct DbEntry { juce::var profile, tonecheck; juce::String file, cat, pass; bool indexOnly = false; juce::String uid() const; juce::String version() const; juce::String mapFp() const;
                  juce::String category() const { if (cat.isNotEmpty()) return cat; return profile.getProperty ("schema", "").toString().startsWith ("ej_eq_profile") ? "eq" : "compressor"; } };
 inline juce::String uidOfPluginId (const juce::String& pid) { return pid.fromFirstOccurrenceOf ("|", false, false).upToFirstOccurrenceOf ("|", false, false).toLowerCase(); }
 inline juce::String DbEntry::uid() const { return uidOfPluginId (profile.getProperty ("plugin", {}).getProperty ("plugin_id", "").toString()); }
@@ -36,13 +38,15 @@ inline juce::String DbEntry::mapFp() const { return profile.getProperty ("plugin
 inline std::vector<DbEntry> loadDb (const juce::File& folder)
 {
     std::vector<DbEntry> db;
-    for (const auto& f : folder.findChildFiles (juce::File::findFiles, false, "*.json"))
+    auto files = folder.findChildFiles (juce::File::findFiles, false, "*.json"); files.addArray (folder.getChildFile ("limitercomp").findChildFiles (juce::File::findFiles, false, "*.json"));
+    for (const auto& f : files)
     {
         if (f.getFileName().endsWith (".tonecheck.json")) continue;
         DbEntry e; e.profile = juce::JSON::parse (f.loadFileAsString()); e.file = f.getFileName();
         const auto schema = e.profile.getProperty ("schema", "").toString();
         if (! schema.startsWith ("ej_comp_profile") && ! schema.startsWith ("ej_eq_profile")) continue;   // the two categories the wizard measures
         const auto tc = f.getSiblingFile (f.getFileNameWithoutExtension() + ".tonecheck.json"); if (tc.existsAsFile()) e.tonecheck = juce::JSON::parse (tc.loadFileAsString());
+        if (f.getParentDirectory().getFileName() == "limitercomp") { e.pass = "limitercomp"; e.cat = "limiter"; }   // a limiter's compressor pass
         db.push_back (e);
     }
     // <db>/mapped.json (ej_wizard_mapped/1): {"entries": [{"plugin_id", "version", "map_fp" (or null), "category", ...}]}
@@ -51,6 +55,7 @@ inline std::vector<DbEntry> loadDb (const juce::File& folder)
         for (const auto& x : *a)
         {
             DbEntry e; e.indexOnly = true; e.file = "mapped.json"; e.cat = x.getProperty ("category", "").toString();
+            if (x.getProperty ("measured", "").toString() == "limiter") e.pass = "limiter";
             auto* pl = new juce::DynamicObject(); pl->setProperty ("plugin_id", x.getProperty ("plugin_id", "")); pl->setProperty ("version", x.getProperty ("version", ""));
             pl->setProperty ("map_fp", x.getProperty ("map_fp", {}).isString() ? x.getProperty ("map_fp", "") : juce::var ("")); pl->setProperty ("name", x.getProperty ("product", ""));
             auto* pr = new juce::DynamicObject(); pr->setProperty ("plugin", juce::var (pl)); e.profile = juce::var (pr);
@@ -258,6 +263,8 @@ inline juce::var heldCustomDefault (const juce::var& row)
     h->setProperty ("why", "held: opens differently from its reference (" + row.getProperty ("why", "").toString() + "); its opening block is in reference_votes");
     return e;
 }
+// FINISH NOW (Kathy, 13 Oct): a plugin still waiting when the user finished - listed, not measured
+inline constexpr const char* kNotReachedWhy = "not measured: the wizard was finished before it got to it";
 inline juce::String summaryLine (const std::map<juce::String, int>& n, bool sent = true)   // sent = false: a run that makes no bundle says 'will be sent'
 {
     auto get = [&] (const char* k) { const auto it = n.find (k); return it == n.end() ? 0 : it->second; };
@@ -282,6 +289,7 @@ inline juce::String summaryLine (const std::map<juce::String, int>& n, bool sent
     if (get ("demo")) parts.add (plural (get ("demo"), "plugin is a demo version and was skipped", "plugins are demo versions and were skipped"));
     if (get ("custom_default")) parts.add (plural (get ("custom_default"), "plugin opens with a custom default and was not measured", "plugins open with a custom default and were not measured"));
     if (get ("pending_review")) parts.add (plural (get ("pending_review"), "was already sent for review by someone else", "were already sent for review by someone else"));
+    if (get ("not_reached")) parts.add (plural (get ("not_reached"), "plugin was not reached before you finished", "plugins were not reached before you finished"));
     if (get ("identifying")) parts.add (juce::String (get ("identifying")) + " being identified");
     return parts.isEmpty() ? juce::String ("nothing to do") : parts.joinIntoString (", ");
 }

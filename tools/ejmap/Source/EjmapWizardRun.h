@@ -200,7 +200,9 @@ inline int runWizard (const WizardOptions& wo)
     struct Pending { size_t i; wizroute::Decision d; juce::DynamicObject* row; };
     std::vector<Pending> toMap, toCategorise;
     auto typeOf = [] (const juce::PluginDescription& d) { return d.fileOrIdentifier.fromFirstOccurrenceOf ("/", false, false).upToFirstOccurrenceOf (",", false, false); };
-    auto enqueue = [&] (const juce::String& name, const juce::String& cat) { for (const auto& pb : wizroute::phaseBFor (cat)) queues[pb].addIfNotAlreadyThere (name); };
+    std::set<juce::String> limiterKnown;   // 13 Oct: limiters whose limiter pass the database holds (their compressor pass alone is queued)
+    auto enqueue = [&] (const juce::String& name, const juce::String& cat, const juce::StringArray& passes = {}, bool limKnown = false)
+    { for (const auto& pb : passes.isEmpty() ? wizroute::phaseBFor (cat) : passes) queues[pb].addIfNotAlreadyThere (name); if (limKnown) limiterKnown.insert (name); };
     auto queueFile = [&] (const juce::String& pb) { return out.getChildFile (pb == "wizard" ? juce::String ("wizard_queue.txt") : pb == "wizard_eq" ? juce::String ("wizard_queue_eq.txt") : "wizard_queue_" + pb + ".txt"); };
     auto queuedAnywhere = [&] { for (const auto& [pb, l] : queues) if (! l.isEmpty()) return true; return false; };
     // the measuring items, in the measuring order (Kathy, 12 Oct): one per product and Phase B category (a limiter has two)
@@ -211,6 +213,7 @@ inline int runWizard (const WizardOptions& wo)
         for (const auto& f : out.getChildFile ("phaseb").getChildFile (pb).findChildFiles (juce::File::findFiles, false, "*.phaseb.json"))
         { auto r = juce::JSON::parse (f.loadFileAsString()); if (r.getProperty ("product", "").toString() == product) { r.getDynamicObject()->setProperty ("_stem", f.getFileName().replace (".phaseb.json", "")); return r; } }
         return {}; };
+    std::vector<wizprog::Item> planItems;
     // 1. THE DATABASE CHECK (Scanning): one answer per plugin; only rule B's quick read-back check loads anything here
     { std::vector<wizprog::Item> its; for (const auto& ir : plugins) { wizprog::Item it; it.product = ir.desc.name; it.kind = "check"; its.push_back (it); } prog.stage (wizprog::Stage::scanning, its); }
     for (size_t i = 0; i < plugins.size(); ++i)
@@ -247,6 +250,13 @@ inline int runWizard (const WizardOptions& wo)
             case wizroute::Route::needsCategory: st = "needs_category"; break;
         }
         row->setProperty ("state", st); row->setProperty ("why", why); rows.add (juce::var (row));
+        if (wo.plan && (d.route == wizroute::Route::measure || d.route == wizroute::Route::quickCheck))
+        {   // THE PLAN's estimate (13 Oct): the same items and per-category seconds the scan-done screen uses (a quick check counted as a measure)
+            for (const auto& pb : d.passes.isEmpty() ? wizroute::phaseBFor (d.category) : d.passes)
+            { wizprog::Item it; it.product = ir.desc.name; it.kind = wizroute::kindOf (pb); it.serial = serialOf (ir.desc);
+              for (int g = 0; g < (int) wizroute::measureOrder().size(); ++g) if (wizroute::measureOrder()[(size_t) g].contains (pb)) it.group = g;
+              planItems.push_back (it); }
+        }
         prog.finished (ir.desc.name, problemState (st));
         say ("  " + ir.desc.name.paddedRight (' ', 30) + " " + ver.paddedRight (' ', 9) + " -> " + wizroute::routeName (d.route) + " / " + st + ": " + why);
     }
@@ -257,6 +267,9 @@ inline int runWizard (const WizardOptions& wo)
             for (int k = 0; k <= (int) wizroute::Route::held; ++k) if (wizroute::routeName ((wizroute::Route) k) == rt) ++byWord[wizroute::planWord ((wizroute::Route) k)]; }
         auto* p = new juce::DynamicObject(); const juce::var pv (p); auto* w = new juce::DynamicObject(); auto* ro = new juce::DynamicObject();
         for (const auto& [k, n] : byWord) w->setProperty (k, n); for (const auto& [k, n] : byRoute) ro->setProperty (k, n);
+        { std::set<juce::String> distinct; for (const auto& it : planItems) distinct.insert (it.product);
+          p->setProperty ("to_measure", (int) distinct.size()); p->setProperty ("measurements", (int) planItems.size()); p->setProperty ("jobs", opt.jobs);
+          p->setProperty ("to_measure_eta_s", std::round (wizprog::stageSecondsLeft (planItems, wizprog::Times(), opt.jobs))); }
         p->setProperty ("schema", "ej_wizard_plan/1"); p->setProperty ("plugins", rows.size()); p->setProperty ("by_word", juce::var (w)); p->setProperty ("by_route", juce::var (ro)); p->setProperty ("rows", rows);
         out.getChildFile ("plan.json").replaceWithText (juce::JSON::toString (pv));
         juce::String line = "WIZARD PLAN: " + juce::String (rows.size()) + " plugin(s):"; for (const auto& [k, n] : byWord) line << " " << k << " " << n;
@@ -313,7 +326,7 @@ inline int runWizard (const WizardOptions& wo)
     {
         const auto& d = plugins[p.i].desc; p.row->setProperty ("map_fp", fpOf (d));
         if (early.count (d.name)) { p.row->setProperty ("state", early[d.name]); p.row->setProperty ("why", "it could not be mapped (" + early[d.name] + ")"); continue; }
-        if (p.d.route == wizroute::Route::measure || p.row->getProperty ("state").toString() == "queued") enqueue (d.name, p.d.category);
+        if (p.d.route == wizroute::Route::measure || p.row->getProperty ("state").toString() == "queued") enqueue (d.name, p.d.category, p.d.passes, p.d.limiterKnown);
     }
     // the signature reads (EJ Map's categorise step, one plugin at a time), cached by plugin_id
     const auto cacheF = out.getChildFile ("categorised.json"); auto cache = juce::JSON::parse (cacheF.loadFileAsString()); if (! cache.isObject()) cache = juce::var (new juce::DynamicObject());
@@ -381,19 +394,37 @@ inline int runWizard (const WizardOptions& wo)
                     if (it.problem) prog.addProblems (1); else prog.seedTime (it.kind, (double) r.getProperty ("seconds", 0.0)); }
             prog.stage (wizprog::Stage::measuring, its);
             phaseb::rowHooks().started = [&] (const juce::String& cat, const juce::String& product) { prog.started (product, wizroute::kindOf (cat)); };
-            phaseb::rowHooks().finished = [&] (const juce::String& cat, const juce::String& product, const juce::String& outcome, double seconds) { prog.finished (product, outcome != "ok", seconds, wizroute::kindOf (cat)); };
+            phaseb::rowHooks().finished = [&] (const juce::String& cat, const juce::String& product, const juce::String& outcome, double seconds)
+            {   // 13 Oct: a row that landed ok but gave no result (a refused compressor, a failed EQ acceptance) is not "measured so far"
+                juce::String certState; bool eqOk = false;
+                if (outcome == "ok" && (cat == "wizard" || cat == "limitercomp" || cat == "wizard_eq"))
+                    if (const auto r = landedRow (cat, product); r.isObject())
+                    {
+                        const auto stem = r.getProperty ("_stem", "").toString(); const auto dir = out.getChildFile ("phaseb").getChildFile (cat);
+                        if (cat == "wizard_eq") { juce::String w; eqOk = wizard::eqAccepted (juce::JSON::parse (dir.getChildFile ("drafts").getChildFile (stem + ".eq_profile.draft.json").loadFileAsString()), w); }
+                        else { const auto oc = juce::JSON::parse (dir.getChildFile ("outcome").getChildFile (stem + ".outcomes.json").loadFileAsString());
+                               if (const auto* a = oc.getArray()) for (const auto& o : *a) certState = o.getProperty ("state", "").toString(); }
+                    }
+                prog.finished (product, ! wizroute::landedMeasured (cat, outcome, certState, eqOk), seconds, wizroute::kindOf (cat));
+            };
             prog.startTicker();
         }
+        // FINISH NOW (Kathy, 13 Oct): the app writes <out>/finish_requested, then stops the engine like a pause; a request left from an
+        // earlier run never counts
+        out.getChildFile (wizapp::kFinishRequestFile).deleteFile();
         // THE MEASURING ORDER: one Phase B pass per group, most valuable first; a stop (130) ends the order there
-        auto optW = opt; optW.wizardQueues = true; int pbCode = 0;
+        auto optW = opt; optW.wizardQueues = true; optW.limiterPassKnown = limiterKnown; int pbCode = 0;
         // 13 Oct (beta item 2): the measuring stops cleanly when the disk runs low - checked at most every 10 s, a stop like Ctrl-C
         bool diskStopped = false; double lastDiskCheck = -1.0e9;
         phaseb::extraStop() = [&] {
             const double now = juce::Time::getMillisecondCounterHiRes();
             if (! diskStopped && now - lastDiskCheck >= 10000.0) { lastDiskCheck = now; if (! wizapp::diskVerdict (wizapp::freeBytes (out), false).ok) { diskStopped = true; say ("WIZARD: the disk is running low - stopping cleanly"); } }
-            return diskStopped; };
+            return diskStopped || wizardStop() != 0; };   // 13 Oct: a stop that lands before Phase B installs its own handler
         for (const auto& grp : wizroute::measureOrder())
         {
+            // 13 Oct (the finish rehearsal): a stop between two passes was seen only after the NEXT whole pass ran (the gate ran 4.5 min
+            // after Finish now) - it is checked before each pass starts
+            if (wizardStop() != 0) { pbCode = 130; break; }
             juce::StringArray run; for (const auto& pb : grp) if (queues.count (pb) && ! queues[pb].isEmpty()) run.add (pb);
             if (run.isEmpty()) continue;
             say ("WIZARD: measuring " + run.joinIntoString (" + ") + " (" + juce::String ((int) [&] { int n = 0; for (const auto& pb : run) n += queues[pb].size(); return n; }()) + ")");
@@ -403,6 +434,13 @@ inline int runWizard (const WizardOptions& wo)
             if (wizprog::measureStopped (pbCode)) break;
         }
         prog.stopTicker(); phaseb::rowHooks() = {}; phaseb::extraStop() = {};
+        const bool finishing = wizapp::finishAfterStop (pbCode, out.getChildFile (wizapp::kFinishRequestFile).existsAsFile(), diskStopped);
+        if (finishing)
+        {   // the in-flight plugins were discarded by Phase B's stop (no row lands, their temp folders thrown away); pack what landed
+            out.getChildFile (wizapp::kFinishRequestFile).deleteFile(); wizardStop() = 0; pbCode = 0;
+            const auto [measured, toMeasure] = prog.stageDone();
+            say ("WIZARD: finish now - " + juce::String (measured) + " of " + juce::String (toMeasure) + " landed; the plugins in flight were discarded; packing what is done");
+        }
         {   // the drafts for the categories beyond compressor / EQ (their cert derive step, the same rules)
             juce::StringArray cats; for (const auto& [pb, l] : queues) if (! l.isEmpty() && pb != "wizard" && pb != "wizard_eq") cats.add (pb);
             if (! cats.isEmpty() && ! wizprog::measureStopped (pbCode)) runPhaseBDrafts (optW, cats);
@@ -419,11 +457,35 @@ inline int runWizard (const WizardOptions& wo)
         {
             auto* row = rv.getDynamicObject(); if (row->getProperty ("state").toString() != "queued") { ++counts[row->getProperty ("state").toString()]; continue; }
             const auto pbs = juce::StringArray::fromTokens (row->getProperty ("phaseb").toString(), ",", "");
+            if (pbs.size() == 1 && pbs[0] == "limitercomp")
+            {   // 13 Oct (limiters): the database holds the limiter pass; this Mac ran its compressor pass alone - sent like any compressor
+                const auto r = landedRow ("limitercomp", row->getProperty ("product").toString()); juce::String st = "measuring", why; juce::StringArray draftsL;
+                if (r.isObject())
+                {
+                    const auto stem = r.getProperty ("_stem", "").toString(); juce::String cs;
+                    const auto ocV = juce::JSON::parse (out.getChildFile ("phaseb/limitercomp/outcome").getChildFile (stem + ".outcomes.json").loadFileAsString());
+                    if (const auto* a = ocV.getArray()) for (const auto& o : *a) { cs = o.getProperty ("state", "").toString(); why = o.getProperty ("reason", "").toString(); }
+                    bool pass = false;
+                    for (const auto& f : out.getChildFile ("phaseb/limitercomp/profiles").findChildFiles (juce::File::findFiles, false, "*.json"))
+                    {
+                        if (f.getFileName().endsWith (".tonecheck.json")) continue;
+                        if (juce::JSON::parse (f.loadFileAsString()).getProperty ("plugin", {}).getProperty ("plugin_id", "").toString() != row->getProperty ("plugin_id").toString()) continue;
+                        const auto tc = f.getSiblingFile (f.getFileNameWithoutExtension() + ".tonecheck.json");
+                        pass = (bool) juce::JSON::parse (tc.loadFileAsString()).getProperty ("pass_within_0_5_db", false);
+                        if (wizroute::sendCompressorPass (cs, pass)) { draftsL.add ("limitercomp/profiles/" + f.getFileName()); draftsL.add ("limitercomp/profiles/" + tc.getFileName()); }
+                    }
+                    st = wizroute::sendCompressorPass (cs, pass) ? juce::String ("measured") : wizard::plainOutcome (r.getProperty ("outcome", "").toString(), cs);
+                    row->setProperty ("compressor_pass", cs + (pass ? ", tone check passed" : ", tone check did not pass"));
+                }
+                if (st == "measuring" && finishing) { st = "not_reached"; why = wizard::kNotReachedWhy; }
+                row->setProperty ("state", st); row->setProperty ("drafts", draftsL.joinIntoString (",")); if (why.isNotEmpty()) row->setProperty ("why", why); ++counts[st];
+                continue;
+            }
             if (! pbs.isEmpty() && pbs[0] != "wizard" && pbs[0] != "wizard_eq")
             {   // ALL CATEGORIES: measured when the category's own row is ok and its draft was derived; a limiter's compressor pass is said beside
                 const auto r = landedRow (pbs[0], row->getProperty ("product").toString());
                 juce::String st, why; juce::StringArray draftsL;
-                if (! r.isObject()) st = "measuring";
+                if (! r.isObject()) { st = finishing ? "not_reached" : "measuring"; if (finishing) why = wizard::kNotReachedWhy; }
                 else
                 {
                     const auto oc = r.getProperty ("outcome", "").toString(); why = r.getProperty ("reason", "").toString();
@@ -465,7 +527,8 @@ inline int runWizard (const WizardOptions& wo)
               outcome = r.getProperty ("outcome", "").toString(); rowWhy = r.getProperty ("reason", "").toString(); stem = f.getFileName().replace (".phaseb.json", "");
               if (! isEq) { const auto oc = juce::JSON::parse (catDir.getChildFile ("outcome").getChildFile (stem + ".outcomes.json").loadFileAsString());
                             if (const auto* a = oc.getArray()) for (const auto& o : *a) { certState = o.getProperty ("state", "").toString(); if (rowWhy.isEmpty()) rowWhy = o.getProperty ("reason", "").toString(); } } }
-            juce::String st = outcome.isEmpty() ? juce::String ("measuring") : wizard::plainOutcome (outcome, isEq ? juce::String ("exported") : certState);
+            juce::String st = outcome.isEmpty() ? juce::String (finishing ? "not_reached" : "measuring") : wizard::plainOutcome (outcome, isEq ? juce::String ("exported") : certState);
+            if (st == "not_reached") rowWhy = wizard::kNotReachedWhy;
             if (isEq && st == "measured")
             {   // an EQ is ready to send when its acceptance passed
                 juce::String why; const auto draft = juce::JSON::parse (catDir.getChildFile ("drafts").getChildFile (stem + ".eq_profile.draft.json").loadFileAsString());

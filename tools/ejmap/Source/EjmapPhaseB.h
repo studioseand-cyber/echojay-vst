@@ -120,7 +120,8 @@ inline bool existingRowsOnly (const Category& c, const juce::StringArray& redo);
 // an opt-in category runs only when named: by --category, or by --redo (its rows are then made and run)
 // THE LIMITER'S COMPRESSOR PASS (Kathy, 12 Oct): limitercomp runs on a limiter only when the limiter mode's row is ok - a limiter the
 // limiter mode could not measure (a licence, a window, silence, a crash, a time-out, not run yet) is not given the 6-minute compressor path
-inline bool compressorPassAllowed (const juce::var& limiterRow) { return limiterRow.isObject() && limiterRow.getProperty ("outcome", "").toString() == "ok"; }
+// limiterKnownElsewhere (the wizard, 13 Oct): the database already holds this limiter's limiter pass - its compressor pass runs on its own
+inline bool compressorPassAllowed (const juce::var& limiterRow, bool limiterKnownElsewhere = false) { return limiterKnownElsewhere || (limiterRow.isObject() && limiterRow.getProperty ("outcome", "").toString() == "ok"); }
 inline bool categoryRuns (const Category& c, const juce::StringArray& onlyCategories, const juce::StringArray& redo)
 {
     if (! onlyCategories.isEmpty()) return onlyCategories.contains (c.name);

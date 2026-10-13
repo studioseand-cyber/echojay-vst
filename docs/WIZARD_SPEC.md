@@ -61,6 +61,12 @@ What it says is true of the bundle as built:
 
 ## 3. Behaviour rules
 
+**3b. Finish now (Kathy, 13 Oct).** The Measuring screen shows "N measured so far" (a landing that gave a result: a compressor exported, an EQ accepted, another category's ok row - `wizroute::landedMeasured`) and a **Finish now** button, live once the engine is measuring. Finish writes `engine/finish_requested`, then stops the engine as a pause does; the in-flight plugins are discarded (Phase B's stop: no row lands), the engine sees the request, derives the drafts for what landed, files what it never reached as `not_reached`, packs, and ends 0, so the app goes to its finish screen (beta: the results file; release: the upload, whose reward still counts only the accepted results against the minimum). Closing the window while measuring asks: "Finish and save what's done" / "Pause - carry on later" (or keep measuring); Ctrl-C pauses without asking. A disk stop never finishes. A stop between two measuring passes ends the order at once (WZ-FIN-3). Pins WZ-FIN-1..3.
+
+**3c. The time line (Kathy, 13 Oct).** When the scan's estimate (the per-category seconds, measured once any exist, --jobs aware) is 4 hours or more, the scan-done screen says: "N plugins to measure - about X if left running. The most useful ones go first, so you can press Finish now whenever you like." (`wizapp::scanDoneTimeLine`, pin WZ-TIME-1).
+
+**3d. Limiters (Kathy, 13 Oct).** The database holds a limiter's two passes separately (the limiter draft in mapped.json, the compressor pass in `limitercomp/`); a limiter with only one gets the other pass, and the database's limiter pass lets the compressor pass run without a limiter row of the Mac's own (`SweepOptions::limiterPassKnown`). Pin WZ-LIM-1.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

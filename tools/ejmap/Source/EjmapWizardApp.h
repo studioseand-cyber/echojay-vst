@@ -174,9 +174,9 @@ inline Copy scanDoneCopy (Mode m, const Eligibility& e, const juce::String& etaW
 {
     const auto n = juce::String (e.count) + (e.count == 1 ? " plugin" : " plugins");
     if (m == Mode::beta)
-        return e.count > 0 ? Copy { "You have " + n + " we don't have yet", "Thank you for helping map them. " + etaWords + " Closing the window pauses it.", "Start", {} }
+        return e.count > 0 ? Copy { "You have " + n + " we don't have yet", "Thank you for helping map them. " + etaWords, "Start", {} }
                            : Copy { "Thanks - your plugins are already mapped", "There's nothing to measure right now.", "Done", {} };
-    if (e.eligible) return { "You have " + n + " we don't have yet", "Help map them and get a free month. " + etaWords + " Closing the window pauses it.", "Start", {} };
+    if (e.eligible) return { "You have " + n + " we don't have yet", "Help map them and get a free month. " + etaWords, "Start", {} };
     return { "Thanks - your plugins are already mapped", "So there's nothing to do right now.", "Done", e.count > 0 ? "Contribute anyway (no reward)" : juce::String() };
 }
 // after measuring: the upload (normal) or the saved file (beta: no upload, no promo)
@@ -215,6 +215,40 @@ inline double scanBarValue (const juce::var& progress)
     return total > 0 ? juce::jlimit (0.0, 1.0, (double) done / (double) total) : 0.0;
 }
 // THE STOP (Kathy, 13 Oct, beta item 1): the same words whether it stopped while checking or while measuring
+// FINISH NOW (Kathy, 13 Oct): the app writes this file in the engine's folder, then stops it as a pause does; the engine, seeing it after
+// the stop, packs what landed instead of ending as stopped. A disk stop never finishes (there may be no room to pack)
+inline constexpr const char* kFinishRequestFile = "finish_requested";
+inline bool finishAfterStop (int phasebCode, bool finishRequested, bool diskStopped) { return phasebCode == 130 && finishRequested && ! diskStopped; }
+// "N measured so far" (the Measuring screen): what landed without a problem
+inline int measuredSoFar (const juce::var& progress)
+{
+    if (progress.getProperty ("stage", "").toString() != "Measuring") return 0;
+    const auto sc = progress.getProperty ("stage_counts", {});
+    return juce::jmax (0, (int) sc.getProperty ("done", 0) - (int) progress.getProperty ("problems", 0));
+}
+inline juce::String measuredSoFarWords (int n) { return n == 1 ? juce::String ("1 measured so far") : juce::String (n) + " measured so far"; }
+// the Finish now button is live only once the engine is measuring (a finish while it still lists / reads signatures would pack nothing)
+inline bool finishAvailable (const juce::var& progress) { return progress.getProperty ("stage", "").toString() == "Measuring"; }
+// closing the window while measuring: the choice (Kathy, 13 Oct)
+enum class CloseChoice { finish, pause };
+inline juce::StringArray closeChoiceButtons() { return { "Finish and save what's done", "Pause - carry on later" }; }
+// THE TIME LINE on the scan-done screen (Kathy, 13 Oct): a long estimate said plainly, with the way out
+inline constexpr double kLongEstimateS = 4.0 * 3600.0;
+// the estimate in words a person reads: minutes, hours, then days past 36 h
+inline juce::String etaPhrase (double s)
+{
+    if (s < 0.0) return "time unknown";
+    if (s < 3600.0) return "about " + juce::String (juce::jmax (1, (int) std::ceil (s / 60.0))) + " min";
+    if (s < 36.0 * 3600.0) { const int h = juce::roundToInt (s / 3600.0); return "about " + juce::String (h) + (h == 1 ? " hour" : " hours"); }
+    return "about " + juce::String (juce::roundToInt (s / 86400.0)) + " days";
+}
+inline juce::String scanDoneTimeLine (int toMeasure, double etaS, const juce::String& etaPhrase)
+{
+    if (etaS >= kLongEstimateS)
+        return juce::String (toMeasure) + (toMeasure == 1 ? " plugin" : " plugins") + " to measure - " + etaPhrase + " if left running. "
+             + "The most useful ones go first, so you can press Finish now whenever you like.";
+    return "About " + etaPhrase.replace ("about ", "") + ".";   // a short one stays as it was
+}
 inline juce::String stoppedNote() { return "Stopped - it carries on next time"; }
 // what the window does when the engine ends: a scan that ran to its end -> its results; a measuring run that did -> the upload; a
 // STOPPED one (130, or any other end) never counts as finished - the scan is not marked done, and the next launch carries on

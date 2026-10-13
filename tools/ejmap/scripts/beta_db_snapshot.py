@@ -3,9 +3,10 @@
 
 A read-only snapshot of what Sean's cert folder knows, shipped inside the beta app so the wizard skips what EchoJay already has:
 
-  <out>/*.json             every EXPORTED compressor profile (+ its tone check), every limiter's compressor pass that was exported with
-                           its tone check passed, every EQ draft whose Phase B row is ok (ej_eq_profile/1) - full files, so rule B's
+  <out>/*.json             every EXPORTED compressor profile (+ its tone check), every EQ draft whose Phase B row is ok (ej_eq_profile/1) - full files, so rule B's
                            quick read-back check has the writes to check
+  <out>/limitercomp/       every limiter's compressor pass exported with its tone check passed - a pass of its own: a limiter whose
+                           limiter draft is here but not this still gets its compressor pass (Kathy, 13 Oct), and the other way round
   <out>/mapped.json        every other MEASURED Phase B draft as "already mapped" by plugin id + version + map fp (null when the cert
                            never recorded one): a draft counts when its file exists, its Phase B row's outcome is ok, and it is usable
                            (a saturation draft needs its drive - wizroute::draftUsable)
@@ -65,7 +66,7 @@ def usable(cat, d):
 def main(cert, out):
     if os.path.exists(out) and os.listdir(out):
         sys.exit(f"snapshot: {out} is not empty - give a fresh folder")
-    os.makedirs(out, exist_ok=True)
+    os.makedirs(os.path.join(out, "limitercomp"), exist_ok=True)
     counts = collections.Counter()
     written = {}
 
@@ -103,7 +104,7 @@ def main(cert, out):
             if not (os.path.isfile(tc) and load(tc).get("pass_within_0_5_db") is True):
                 counts["limitercomp_tonecheck_not_passed"] += 1
                 continue
-            put("limitercomp_" + os.path.basename(prof), prof); put("limitercomp_" + os.path.basename(tc), tc)
+            put("limitercomp/" + os.path.basename(prof), prof); put("limitercomp/" + os.path.basename(tc), tc)
             have.setdefault(load(prof)["plugin"]["plugin_id"], ("profile", "limiter")); counts["limitercomp_profiles"] += 1
     # 3. the Phase B drafts: measured = the draft + an ok row + usable
     mapped = []

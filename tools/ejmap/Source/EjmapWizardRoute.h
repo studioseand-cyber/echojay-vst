@@ -26,7 +26,9 @@ namespace ejmap::wizroute
 {
 // --- the /lookup answer (STUB: the mock database folder) ---------------------------------------------------------------------------
 enum class Rule { A, B, C, pendingReview };
-struct Answer { Rule rule = Rule::C; juce::String category, why; const wizard::DbEntry* entry = nullptr; };
+// passes (13 Oct, limiters): when not empty, the only Phase B passes still to run (a limiter the database has half of); limiterKnown:
+// the database holds its limiter pass, so its compressor pass may run without a limiter row of this Mac's own
+struct Answer { Rule rule = Rule::C; juce::String category, why; const wizard::DbEntry* entry = nullptr; juce::StringArray passes; bool limiterKnown = false; };
 inline juce::String pluginId (const juce::String& uid, const juce::String& version) { return "AudioUnit|" + uid.toLowerCase() + "|" + version; }
 // <db>/pending_review.json: [{"plugin_id": "AudioUnit|uid|version", "product": ...}] - what other users already sent as needs_category
 inline std::set<juce::String> loadPending (const juce::File& db)
@@ -41,11 +43,24 @@ inline juce::String serverCategory (const juce::var& catalogue, const juce::Stri
     const auto byId = catalogue.getProperty (juce::Identifier (pid), {}).toString(); if (byId.isNotEmpty()) return byId;
     return catalogue.getProperty (juce::Identifier (name), {}).toString();
 }
+inline juce::StringArray phaseBFor (const juce::String& c);
 inline Answer ask (const std::vector<wizard::DbEntry>& db, const std::set<juce::String>& pending, const juce::var& catalogue,
                    const juce::String& uid, const juce::String& version, const juce::String& mapFp, const juce::String& name)
 {
     Answer a; const auto pid = pluginId (uid, version);
     const auto L = wizard::lookup (db, uid, version, mapFp);
+    if (L.match == wizard::Match::exact && L.entry->category() == "limiter")
+    {   // THE LIMITER'S TWO PASSES COUNT SEPARATELY (Kathy, 13 Oct): the limiter pass and its compressor pass, each looked up on its own
+        juce::StringArray have;
+        for (const auto& e : db)
+            if (e.uid() == uid.toLowerCase() && e.version() == version && (mapFp.isEmpty() || e.mapFp().isEmpty() || e.mapFp() == mapFp) && e.pass.isNotEmpty()) have.addIfNotAlreadyThere (e.pass);
+        juce::StringArray missing; for (const auto& pb : phaseBFor ("limiter")) if (! have.contains (pb)) missing.add (pb);
+        if (! missing.isEmpty())
+        {
+            a.rule = Rule::C; a.category = "limiter"; a.passes = missing; a.limiterKnown = have.contains ("limiter");
+            a.why = "the database has its " + have.joinIntoString (" and ") + " pass; still to measure: " + missing.joinIntoString (" and "); return a;
+        }
+    }
     if (L.match == wizard::Match::exact) { a.rule = Rule::A; a.entry = L.entry; a.category = L.entry->category(); a.why = L.why; return a; }
     if (pending.count (pid.toLowerCase())) { a.rule = Rule::pendingReview; a.why = "already sent for review by another user"; return a; }
     if (L.match == wizard::Match::sameControls) { a.rule = Rule::B; a.entry = L.entry; a.category = L.entry->category(); a.why = L.why; return a; }
@@ -61,7 +76,7 @@ inline juce::String routeName (Route r)
                  case Route::categorise: return "categorise"; case Route::needsCategory: return "needs_category"; case Route::held: return "held"; }
     return {};
 }
-struct Decision { Route route = Route::categorise; juce::String category, why; };
+struct Decision { Route route = Route::categorise; juce::String category, why; juce::StringArray passes; bool limiterKnown = false; };   // passes: see Answer
 // THE KNOWN MULTIBANDS (Kathy, 12 Oct): the server has no multiband category, and a multiband with none reads as "dynamics" and
 // spends ~10 min in the compressor certification before it refuses (OTT, 591 s). So the wizard ships EJ Map's own list - the 17
 // products Sean's cert found multiband (cert outcomes state "multiband", 8-9 Oct) - by plugin uid (any version): held straight away.
@@ -135,6 +150,16 @@ inline bool draftUsable (const juce::String& phaseBCategory, const juce::var& dr
     if (phaseBCategory == "saturation") return ! draft.getProperty ("drive", {}).isVoid();
     return true;
 }
+// "N measured so far" (Kathy, 13 Oct; the rehearsal counted OneKnob Pumper, an ok row the certification then refused as a ducker): a landed
+// row counts as measured only when it gave a result - a compressor (or a limiter's compressor pass) its profile exported, an EQ its
+// acceptance passed, any other category an ok row (its draft is derived after the measuring; the final summary decides)
+inline bool landedMeasured (const juce::String& pb, const juce::String& outcome, const juce::String& certState, bool eqAccepted)
+{
+    if (outcome != "ok") return false;
+    if (pb == "wizard" || pb == "limitercomp") return certState == "exported";
+    if (pb == "wizard_eq") return eqAccepted;
+    return true;
+}
 // the Tracker's kind for a Phase B category (its per-plugin seconds)
 inline juce::String kindOf (const juce::String& phaseBCategory) { return phaseBCategory == "wizard" ? juce::String ("compressor") : phaseBCategory == "wizard_eq" ? juce::String ("eq") : phaseBCategory; }
 inline Decision route (const Answer& a, const juce::String& nameCategory, const juce::String& outOfScope, bool knownMultiband = false)
@@ -150,6 +175,7 @@ inline Decision route (const Answer& a, const juce::String& nameCategory, const 
     if (a.rule == Rule::B) return { Route::quickCheck, a.category, a.why };
     if (a.category.isNotEmpty())
     {   // the server's names (Sean's 12); an internal label from a local catalogue: multiband -> held, the rest out of scope (never sent)
+        if (! a.passes.isEmpty()) return { Route::measure, a.category, a.why, a.passes, a.limiterKnown };   // a limiter the database has half of
         if (measurable (a.category)) return { Route::measure, a.category, "the server's category: " + a.category };
         if (a.category == "multiband") return { Route::held, "multiband", "held: no server category (multiband is not measured by the wizard yet)" };
         if (wizserver::isServerCategory (a.category)) return { Route::sendOther, a.category, "the server's category (" + a.category + ") is not measured by the wizard yet: sent so EchoJay knows it" };

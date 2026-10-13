@@ -9629,6 +9629,77 @@ void testWizardCategories()
                && loadsNothing ({ Route::skipHave, {}, {} }) && loadsNothing ({ Route::outOfScope, {}, {} }) && loadsToCategorise ({ Route::categorise, {}, {} }),
                "wizard WZ-PLAN-1: skip = the routes that load nothing, measure = queued or quick check, sound_test = the signature reads");
     }
+    // WZ-LIM-1 A LIMITER'S TWO PASSES COUNT SEPARATELY (Kathy, 13 Oct): with the limiter draft alone in the database (Invisible Limiter G3)
+    // only its compressor pass is queued, and the database's limiter pass lets that pass run without a limiter row of this Mac's own; with
+    // both (kHs Limiter) nothing runs; with the compressor pass alone, only the limiter pass (a synthetic database: cert 5 has none)
+    {
+        using namespace ejmap::wizroute;
+        const auto snap = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/beta_db");
+        const auto db = ejmap::wizard::loadDb (snap); const std::set<juce::String> none; const auto cat = juce::JSON::parse (snap.getChildFile ("categories.json").loadFileAsString());
+        int lcN = 0, limN = 0; for (const auto& e : db) { if (e.pass == "limitercomp") ++lcN; if (e.pass == "limiter") ++limN; }
+        const auto half = ask (db, none, cat, "38284a4d", "1.18.9", {}, "Invisible Limiter G3");
+        const auto whole = ask (db, none, cat, "2a6d427f", "2.1.0", {}, "kHs Limiter");
+        const auto dHalf = route (half, {}, {});
+        std::vector<ejmap::wizard::DbEntry> onlyComp (1); onlyComp[0] = *whole.entry; onlyComp[0].pass = "limitercomp"; onlyComp[0].cat = "limiter";
+        for (const auto& e : db) if (e.uid() == "2a6d427f" && e.pass == "limitercomp") onlyComp[0] = e;
+        const auto other = ask (onlyComp, none, cat, "2a6d427f", "2.1.0", {}, "kHs Limiter");
+        check (lcN == 26 && limN == 39
+               && half.rule == Rule::C && half.passes == juce::StringArray { "limitercomp" } && half.limiterKnown
+               && dHalf.route == Route::measure && dHalf.passes == juce::StringArray { "limitercomp" } && dHalf.limiterKnown
+               && whole.rule == Rule::A && route (whole, {}, {}).route == Route::skipHave
+               && other.rule == Rule::C && other.passes == juce::StringArray { "limiter" } && ! other.limiterKnown
+               && ejmap::phaseb::compressorPassAllowed (juce::var(), true) && ! ejmap::phaseb::compressorPassAllowed (juce::var(), false),
+               "wizard WZ-LIM-1: limiter draft only -> its compressor pass alone, let through by the database's limiter pass; both -> skip; compressor pass only -> the limiter pass ("
+               + juce::String (limN) + " limiter / " + juce::String (lcN) + " compressor passes in the snapshot)");
+    }
+    // WZ-FIN-1 FINISH NOW (Kathy, 13 Oct): a stop after the app's finish request packs (a disk stop never does); "N measured so far" is what
+    // landed without a problem while measuring; the button is live only while measuring; the close choice; unreached plugins said plainly.
+    // Text pins (with a control) that the engine clears an old request before measuring and marks what it never reached
+    {
+        using namespace ejmap::wizapp;
+        auto prog = [] (const char* stage, int done, int problems) { auto* o = new juce::DynamicObject(); o->setProperty ("stage", stage); auto* c = new juce::DynamicObject(); c->setProperty ("done", done); c->setProperty ("total", 40);
+                                                                      o->setProperty ("stage_counts", juce::var (c)); o->setProperty ("problems", problems); return juce::var (o); };
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const bool read = run.contains ("inline int runWizard") && app.contains ("class WizardApplication");   // the control
+        check (read && finishAfterStop (130, true, false) && ! finishAfterStop (130, false, false) && ! finishAfterStop (130, true, true) && ! finishAfterStop (0, true, false)
+               && measuredSoFar (prog ("Measuring", 7, 2)) == 5 && measuredSoFar (prog ("Checking", 7, 0)) == 0 && measuredSoFarWords (5) == "5 measured so far" && measuredSoFarWords (1) == "1 measured so far"
+               && finishAvailable (prog ("Measuring", 0, 0)) && ! finishAvailable (prog ("Checking", 3, 0))
+               && closeChoiceButtons() == juce::StringArray { "Finish and save what's done", "Pause - carry on later" }
+               && ejmap::wizard::summaryLine ({ { "not_reached", 3 } }).contains ("3 plugins were not reached before you finished")
+               && run.contains ("out.getChildFile (wizapp::kFinishRequestFile).deleteFile();\n        // THE MEASURING ORDER")
+               && run.contains ("st = finishing ? \"not_reached\" : \"measuring\"") && run.contains ("juce::String (finishing ? \"not_reached\" : \"measuring\")")
+               && app.contains ("secondary.setButtonText (\"Finish now\")") && app.contains ("engineDir().getChildFile (wizapp::kFinishRequestFile).replaceWithText"),
+               "wizard WZ-FIN-1: finish = a stop with the request (never a disk stop); 'N measured so far'; the button only while measuring; close asks finish / pause; unreached said (read: " + juce::String ((int) read) + ")");
+    }
+    // WZ-FIN-2 "measured so far" counts results, not landings (the 13 Oct finish rehearsal: OneKnob Pumper landed ok, refused as a ducker,
+    // and the screen said "1 measured so far" for a bundle with no profile)
+    {
+        using namespace ejmap::wizroute;
+        check (landedMeasured ("wizard", "ok", "exported", false) && ! landedMeasured ("wizard", "ok", "refused", false) && ! landedMeasured ("wizard", "failed", "exported", false)
+               && landedMeasured ("limitercomp", "ok", "exported", false) && ! landedMeasured ("limitercomp", "ok", "needs_review", false)
+               && landedMeasured ("wizard_eq", "ok", {}, true) && ! landedMeasured ("wizard_eq", "ok", {}, false) && landedMeasured ("deesser", "ok", {}, false) && ! landedMeasured ("deesser", "silent_output", {}, false),
+               "wizard WZ-FIN-2: a refused compressor or a failed EQ acceptance is not 'measured so far'; another category's ok row is");
+    }
+    // WZ-FIN-3 a stop (pause or Finish now) between two measuring passes ends the order at once (the 13 Oct rehearsal: Finish now landed as
+    // the de-esser pass ended, and the gate pass then ran 4.5 min before the stop was read). Text pin with a control
+    {
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const bool read = run.contains ("inline int runWizard");   // the control
+        const auto loop = run.fromFirstOccurrenceOf ("for (const auto& grp : wizroute::measureOrder())\n        {", false, false).upToFirstOccurrenceOf ("pbCode = runPhaseBAll", false, false);
+        check (read && loop.contains ("if (wizardStop() != 0) { pbCode = 130; break; }") && run.contains ("return diskStopped || wizardStop() != 0; };"),
+               "wizard WZ-FIN-3: the stop is read before each measuring pass and by Phase B's own stop test (read: " + juce::String ((int) read) + ")");
+    }
+    // WZ-TIME-1 THE SCAN-DONE TIME LINE (Kathy, 13 Oct): a long estimate said plainly with the way out; a short one as before
+    {
+        using namespace ejmap::wizapp;
+        const double threeDays = 3.0 * 86400.0 + 3000.0;
+        check (scanDoneTimeLine (618, threeDays, etaPhrase (threeDays)) == "618 plugins to measure - about 3 days if left running. The most useful ones go first, so you can press Finish now whenever you like."
+               && scanDoneTimeLine (12, 1200.0, etaPhrase (1200.0)) == "About 20 min." && etaPhrase (5.0 * 3600.0) == "about 5 hours" && etaPhrase (36.0 * 3600.0) == "about 2 days"
+               && scanDoneTimeLine (40, kLongEstimateS, etaPhrase (kLongEstimateS)).startsWith ("40 plugins to measure - about 4 hours if left running.")
+               && ! scanDoneCopy (Mode::beta, { false, true, 625, 5 }, "x").text.contains ("pauses") && ! scanDoneCopy (Mode::normal, { false, true, 625, 5 }, "x").text.contains ("pauses"),
+               "wizard WZ-TIME-1: '618 plugins to measure - about 3 days if left running. The most useful ones go first...'; under 4 h stays 'About 20 min.'");
+    }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files
     {

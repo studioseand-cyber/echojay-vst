@@ -1560,6 +1560,7 @@ struct SweepOptions
 {
     juce::File fixtures, probe, out, ledger = defaultEjmapLedger();
     bool wizardQueues = false;   // the wizard (12 Oct): Phase B categories take their work list from <out>/wizard_queue_<category>.txt
+    std::set<juce::String> limiterPassKnown;   // the wizard (13 Oct): products whose limiter pass the database holds - their compressor pass is not held back
     juce::String product, hostVersion, armLabel;
     bool resumeTraces = false;   // 9 Oct: --resume-traces (the Phase B parent, a timed-out gain row): a complete trace already in raw/ is reused
     std::vector<std::pair<int, float>> extraSets;    // a DIAGNOSTIC arm: a non-swept control moved on purpose
@@ -6581,7 +6582,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
         if (cat.name == "limitercomp")
         {   // 12 Oct: the compressor pass only after the limiter mode's row is ok (phaseb/limiter/<stem>.phaseb.json)
             std::vector<PhaseBProduct> f; juce::StringArray held;
-            for (const auto& pp : list) { if (phaseb::compressorPassAllowed (juce::JSON::parse (rowFile (phasebDir, "limiter", pp.stem).loadFileAsString()))) f.push_back (pp); else held.add (pp.product); }
+            for (const auto& pp : list) { if (phaseb::compressorPassAllowed (juce::JSON::parse (rowFile (phasebDir, "limiter", pp.stem).loadFileAsString()), opt.limiterPassKnown.count (pp.product) > 0)) f.push_back (pp); else held.add (pp.product); }
             if (! held.isEmpty()) say ("PHASEB: limitercomp: " + juce::String (held.size()) + " limiter(s) held back - the limiter mode's row is not ok (or not run yet): " + held.joinIntoString (", "));
             list = f;
         }
