@@ -1,0 +1,21 @@
+EJ MAP - PUBLISHED COMPRESSOR PROFILES v2 (13 Oct 2026). 1 profile(s); each with its tone-check sidecar.
+Source: Sean's cert folder ~/Downloads/cert 5 (13 Oct; his full folder, b287aef3, all 9 run-all steps). Candidates: the eight Kathy named for v2.
+Criteria (Kathy, 13 Oct): tone check spec v1.7 made by b287aef3 and PASS within 0.5 dB at g 2, 4, 5 and 6; every deep level run and passed (none nulled); and no flag from the accuracy passes:
+  frequency (frequency_dependent: GR moves > 1 dB across 100 / 997 / 5000 Hz), material (median miss > 1 dB on vocal, drums or mix), combined (GR miss > 0.5 dB),
+  make-up (clamped by > 0.5 dB, or the output miss net of GR > 0.5 dB). A product the accuracy passes never measured is held: no record is not 'no flag'.
+The accuracy records are those in cert 5 (made 11 Oct, before b287aef3); the tone checks are b287aef3's. Profiles are Sean's b287aef3 exports, unmodified.
+
+product | version | map_fp | g2 GR dB | g4 | g5 | g6 | deep levels passed / nulled | checked (build, date)
+dbx-160 (s) | 15.0.70 | bcc14e11e2c49665ec97a1ad23ceaf2523f5200a31970e8ad9322ac91707f79b | 1.95 PASS | 3.99 PASS | 4.98 PASS | 6.02 PASS | 9 / 0 | b287aef3, 20261012
+
+HELD from v2 (7), with the reason:
+- Mixland Vac Attack 1.0.1: material mix median miss +1.24 dB
+- DPR-402 (s) 15.0.70: material mix median miss +1.15 dB; combined GR miss +1.17 dB
+- Auto-Tune Vocal Compressor 1.5.0: no combined record (its combined row of 11 Oct measured nothing: child exit 4 in 1 s, nothing_measured); material vocal median miss +1.53 dB; material mix median miss +1.19 dB
+- VBC FG-Red 1.3.5: material vocal median miss +1.83 dB
+- VBC FG-Grey 1.3.5: no frequency record (accuracy pass not run on it); no material record (accuracy pass not run on it); no combined record (accuracy pass not run on it)
+- VBC FG-MU 1.3.5: g 6 cannot be checked - the unit does not reach 6 dB (its profile: 'deep null 6 dB - not reached by -3.01 dBFS' at every position; g 4 and 5 pass); no frequency record (accuracy pass not run on it); no material record (accuracy pass not run on it); no combined record (accuracy pass not run on it)
+- VBC Rack 1.3.5: no frequency record (accuracy pass not run on it); no material record (accuracy pass not run on it); no combined record (accuracy pass not run on it)
+
+Note for Kathy: the 11 Oct v1 analysis (cert-traces/2026-10-11-accuracy/ACCURACY_37.md) did not hold on a material flag alone ('material is a model limit').
+Under that rule Mixland Vac Attack and VBC FG-Red would be clean; under today's criterion (material listed) they are held.

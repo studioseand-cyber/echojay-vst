@@ -1,0 +1,438 @@
+[
+ {
+  "product": "Mixland Vac Attack",
+  "version": "1.0.1",
+  "profile": "Mixland_Vac_Attack_1.0.1.json",
+  "tonecheck": "Mixland_Vac_Attack_1.0.1.tonecheck.json",
+  "build": "b287aef3",
+  "measuredAt": "20261012T201302.944+0100",
+  "cells": {
+   "2": [
+    1.97,
+    true
+   ],
+   "4": [
+    3.96,
+    true
+   ],
+   "5": [
+    4.97,
+    true
+   ],
+   "6": [
+    5.99,
+    true
+   ],
+   "7": [
+    6.99,
+    true
+   ],
+   "8": [
+    7.95,
+    true
+   ],
+   "9": [
+    9.02,
+    true
+   ],
+   "10": [
+    10.0,
+    true
+   ],
+   "11": [
+    11.01,
+    true
+   ],
+   "12": [
+    11.99,
+    true
+   ]
+  },
+  "passes": "FMCS",
+  "clean": false,
+  "why": [
+   "material mix median miss +1.24 dB"
+  ],
+  "acc_at": {
+   "frequency": "20261011T012406",
+   "material": "20261011T011626",
+   "combined": "20261011T010858"
+  }
+ },
+ {
+  "product": "dbx-160 (s)",
+  "version": "15.0.70",
+  "profile": "dbx-160_(s)_15.0.70.json",
+  "tonecheck": "dbx-160_(s)_15.0.70.tonecheck.json",
+  "build": "b287aef3",
+  "measuredAt": "20261012T201922.362+0100",
+  "cells": {
+   "2": [
+    1.95,
+    true
+   ],
+   "4": [
+    3.99,
+    true
+   ],
+   "5": [
+    4.98,
+    true
+   ],
+   "6": [
+    6.02,
+    true
+   ],
+   "7": [
+    7.0,
+    true
+   ],
+   "8": [
+    7.98,
+    true
+   ],
+   "9": [
+    9.03,
+    true
+   ],
+   "10": [
+    10.01,
+    true
+   ],
+   "11": [
+    10.98,
+    true
+   ],
+   "12": [
+    12.02,
+    true
+   ]
+  },
+  "passes": "FMC",
+  "clean": true,
+  "why": [],
+  "acc_at": {
+   "frequency": "20261011T012138",
+   "material": "20261011T011451",
+   "combined": "20261011T010643"
+  }
+ },
+ {
+  "product": "DPR-402 (s)",
+  "version": "15.0.70",
+  "profile": "DPR-402_(s)_15.0.70.json",
+  "tonecheck": "DPR-402_(s)_15.0.70.tonecheck.json",
+  "build": "b287aef3",
+  "measuredAt": "20261012T202145.359+0100",
+  "cells": {
+   "2": [
+    1.91,
+    true
+   ],
+   "4": [
+    3.97,
+    true
+   ],
+   "5": [
+    4.97,
+    true
+   ],
+   "6": [
+    5.94,
+    true
+   ],
+   "7": [
+    6.99,
+    true
+   ],
+   "8": [
+    8.02,
+    true
+   ],
+   "9": [
+    8.99,
+    true
+   ],
+   "10": [
+    10.07,
+    true
+   ],
+   "11": [
+    10.94,
+    true
+   ],
+   "12": [
+    11.94,
+    true
+   ]
+  },
+  "passes": "FMC",
+  "clean": false,
+  "why": [
+   "material mix median miss +1.15 dB",
+   "combined GR miss +1.17 dB"
+  ],
+  "acc_at": {
+   "frequency": "20261011T012153",
+   "material": "20261011T011501",
+   "combined": "20261011T010658"
+  }
+ },
+ {
+  "product": "Auto-Tune Vocal Compressor",
+  "version": "1.5.0",
+  "profile": "Auto-Tune_Vocal_Compressor_1.5.0.json",
+  "tonecheck": "Auto-Tune_Vocal_Compressor_1.5.0.tonecheck.json",
+  "build": "b287aef3",
+  "measuredAt": "20261012T195628.111+0100",
+  "cells": {
+   "2": [
+    1.99,
+    true
+   ],
+   "4": [
+    4.02,
+    true
+   ],
+   "5": [
+    5.02,
+    true
+   ],
+   "6": [
+    6.01,
+    true
+   ],
+   "7": [
+    7.01,
+    true
+   ],
+   "8": [
+    8.01,
+    true
+   ],
+   "9": [
+    9.01,
+    true
+   ],
+   "10": [
+    10.01,
+    true
+   ],
+   "11": [
+    11.01,
+    true
+   ],
+   "12": [
+    12.01,
+    true
+   ]
+  },
+  "passes": "FM",
+  "clean": false,
+  "why": [
+   "no combined record (accuracy pass not run on it)",
+   "material vocal median miss +1.53 dB",
+   "material mix median miss +1.19 dB"
+  ],
+  "acc_at": {
+   "frequency": "20261011T012006",
+   "material": "20261011T011353",
+   "combined": null
+  }
+ },
+ {
+  "product": "VBC FG-Red",
+  "version": "1.3.5",
+  "profile": "VBC_FG-Red_1.3.5.json",
+  "tonecheck": "VBC_FG-Red_1.3.5.tonecheck.json",
+  "build": "b287aef3",
+  "measuredAt": "20261012T195846.289+0100",
+  "cells": {
+   "2": [
+    1.99,
+    true
+   ],
+   "4": [
+    4.01,
+    true
+   ],
+   "5": [
+    5.0,
+    true
+   ],
+   "6": [
+    5.99,
+    true
+   ],
+   "7": [
+    6.98,
+    true
+   ],
+   "8": [
+    7.98,
+    true
+   ],
+   "9": [
+    8.99,
+    true
+   ],
+   "10": [
+    9.99,
+    true
+   ],
+   "11": [
+    11.0,
+    true
+   ],
+   "12": [
+    12.01,
+    true
+   ]
+  },
+  "passes": "FMC",
+  "clean": false,
+  "why": [
+   "material vocal median miss +1.83 dB"
+  ],
+  "acc_at": {
+   "frequency": "20261011T012740",
+   "material": "20261011T011844",
+   "combined": "20261011T011238"
+  }
+ },
+ {
+  "product": "VBC FG-Grey",
+  "version": "1.3.5",
+  "profile": "VBC_FG-Grey_1.3.5.json",
+  "tonecheck": "VBC_FG-Grey_1.3.5.tonecheck.json",
+  "build": "b287aef3",
+  "measuredAt": "20261012T203415.146+0100",
+  "cells": {
+   "2": [
+    1.99,
+    true
+   ],
+   "4": [
+    4.01,
+    true
+   ],
+   "5": [
+    5.0,
+    true
+   ],
+   "6": [
+    5.99,
+    true
+   ],
+   "7": [
+    6.97,
+    true
+   ],
+   "8": [
+    8.01,
+    true
+   ],
+   "9": [
+    8.99,
+    true
+   ],
+   "10": [
+    9.97,
+    true
+   ],
+   "11": [
+    11.03,
+    true
+   ],
+   "12": [
+    12.01,
+    true
+   ]
+  },
+  "passes": "",
+  "clean": false,
+  "why": [
+   "no frequency record (accuracy pass not run on it)",
+   "no material record (accuracy pass not run on it)",
+   "no combined record (accuracy pass not run on it)"
+  ],
+  "acc_at": {
+   "frequency": null,
+   "material": null,
+   "combined": null
+  }
+ },
+ {
+  "product": "VBC FG-MU",
+  "version": "1.3.5",
+  "profile": "VBC_FG-MU_1.3.5.json",
+  "tonecheck": "VBC_FG-MU_1.3.5.tonecheck.json",
+  "build": "b287aef3",
+  "measuredAt": "20261012T202350.425+0100",
+  "cells": {
+   "2": [
+    1.99,
+    true
+   ],
+   "4": [
+    4.0,
+    true
+   ],
+   "5": [
+    5.0,
+    true
+   ]
+  },
+  "passes": "",
+  "clean": false,
+  "why": [
+   "g 6 missing",
+   "no frequency record (accuracy pass not run on it)",
+   "no material record (accuracy pass not run on it)",
+   "no combined record (accuracy pass not run on it)"
+  ],
+  "acc_at": {
+   "frequency": null,
+   "material": null,
+   "combined": null
+  }
+ },
+ {
+  "product": "VBC Rack",
+  "version": "1.3.5",
+  "profile": "VBC_Rack_1.3.5.json",
+  "tonecheck": "VBC_Rack_1.3.5.tonecheck.json",
+  "build": "b287aef3",
+  "measuredAt": "20261012T201426.664+0100",
+  "cells": {
+   "2": [
+    2.0,
+    true
+   ],
+   "4": [
+    4.0,
+    true
+   ],
+   "5": [
+    5.0,
+    true
+   ],
+   "6": [
+    5.99,
+    true
+   ]
+  },
+  "passes": "",
+  "clean": false,
+  "why": [
+   "no frequency record (accuracy pass not run on it)",
+   "no material record (accuracy pass not run on it)",
+   "no combined record (accuracy pass not run on it)"
+  ],
+  "acc_at": {
+   "frequency": null,
+   "material": null,
+   "combined": null
+  }
+ }
+]
