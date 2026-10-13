@@ -251,14 +251,18 @@ calib_landing_guard: I was wrong twice before it was right, and the record shoul
 PUSH
 ================================================================================================
 
-This round is committed on feat/08c as a0da8a34 and NOT pushed.
+This round is committed as 24906d74 and is PUSHED.
 
-feat/08c does not exist on origin - origin has only main, at 8df130d7. The push therefore
-CREATES the branch and moves nothing that is already there: 1,640 commits of branch history
-land under a new ref, and origin/main is untouched. origin/main is not an ancestor of this
-branch, so this is a new line of work, not a fast-forward of main.
+The release branch is release/v2-agent, not feat/08c. origin/release/v2-agent points at
+24906d74 - the same commit - so 12b is on origin and nothing is outstanding.
 
-    git push -u origin feat/08c
+    git push origin HEAD:release/v2-agent
+
+CORRECTION, 13 Oct. The two PUSH sections above this one were both wrong, and the second was
+wrong in a way worth recording. It said "feat/08c does not exist on origin - origin has only
+main". That came from `git ls-remote --heads origin | grep -E "08c|main$"`, a filter that can
+only return the two things I already expected. origin has 50 branches, release/v2-agent among
+them. A grep written from a hypothesis is not a check of that hypothesis.
 
 NOT merged, by standing instruction: feat/stream-refusal-fallback.
 echojay-saas was not touched. B owns the pending-proposal work.
