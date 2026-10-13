@@ -9192,6 +9192,30 @@ void testMultibandStageThresholds()
                    && timingGuardS (10, 5, 8, 0, 300.0) == 300.0 + 5 * 30.0 * kGuardMargin + kGuardTailS,
                    "phaseb TIMING-GUARD: the timing mode declares from its planned bursts at the measured pace - Auto-Tune VC's row at the cut is covered (" + juce::String (atCut / 60.0, 0) + " min against ~" + juce::String (whole / 60.0, 0) + " min whole)");
         }
+        // PB-LIC (Kathy, 13 Oct): --redo licensed_now re-runs a row the LICENCE FILE refused only when the file now admits it - Sean's
+        // "UAD Maag EQ4 MS" (unmatched on 13 Oct): refused with his file, admitted once a line names it as owned; a row the scan filed
+        // needs_licence, or one the file still refuses, stays
+        {
+            auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_lic_" + juce::String (juce::Random::getSystemRandom().nextInt64())); tmp.createDirectory();
+            tmp.getChildFile ("licences.csv").replaceWithText ("vendor,product,state,demo_end,note\nUAD-2,Topline Vocal Tune,unowned,,listed as UPDATE SOFTWARE\n");
+            const bool before = ejmap::cert::licenceFileAdmits (tmp, "UAD Maag EQ4 MS", "Universal Audio (UADx)");
+            tmp.getChildFile ("licences.csv").replaceWithText ("vendor,product,state,demo_end,note\nUAD-2,Topline Vocal Tune,unowned,,listed as UPDATE SOFTWARE\nUAD-2,Maag EQ4 MS,owned,,\n");
+            const bool after = ejmap::cert::licenceFileAdmits (tmp, "UAD Maag EQ4 MS", "Universal Audio (UADx)");
+            tmp.deleteRecursively();
+            const auto fileRow = mk ({ { "outcome", "needs_licence" }, { "reason", "licence file: unmatched: no line's product, note or the explicit table names it: on licence_review.txt, not loaded until reviewed" } });
+            const auto scanRow = mk ({ { "outcome", "needs_licence" }, { "reason", "a licence window at load (PACE)" } });
+            check (! before && after && rowIsLicensedNow (fileRow, after) && ! rowIsLicensedNow (fileRow, before) && ! rowIsLicensedNow (scanRow, true) && ! rowIsLicensedNow (mk ({ { "outcome", "ok" } }), true)
+                   && selectorReachesOptIn ({ "licensed_now" }) && ejmap::runall::stepNamed ("licensed_now") != nullptr && ejmap::runall::stepNamed ("licensed_now")->everyRun,
+                   "phaseb PB-LIC: a licence-file refusal re-runs once the file admits it (Maag EQ4 MS: refused " + juce::String ((int) ! before) + ", admitted " + juce::String ((int) after) + "); a scan / window refusal stays; the step runs every night");
+        }
+        // RA-LCU: limiter_comp's timed-out rows: --redo unfinished on limitercomp's EXISTING rows only (never a limiter without a row)
+        {
+            const auto* u = ejmap::runall::stepNamed ("limiter_comp_unfinished");
+            const auto* lc = categoryNamed ("limitercomp");
+            check (u != nullptr && ! u->everyRun && ejmap::runall::argsFor (*u, false, "/c", {}).joinIntoString (" ") == "--phaseb-all --redo unfinished --category limitercomp --out /c"
+                   && lc != nullptr && existingRowsOnly (*lc, { "unfinished" }) && rowToRedo (mk ({ { "outcome", "timed_out" } }), "limitercomp", { "unfinished" }) && ! rowToRedo (mk ({ { "outcome", "ok" } }), "limitercomp", { "unfinished" }),
+                   "runall RA-LCU: limiter_comp_unfinished re-runs limitercomp's timed-out / failed rows only, once");
+        }
         // RA-GAPS: the run-all step is planned on EVERY run, after the accuracy steps, with --jobs; a resume never re-deletes
         {
             const auto* g = ejmap::runall::stepNamed ("accuracy_gaps"); const auto* gd = ejmap::runall::stepNamed ("accuracy_gaps_drafts");

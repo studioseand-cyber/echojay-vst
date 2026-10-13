@@ -3117,6 +3117,14 @@ inline LicenceGate licenceGate (const SweepOptions& opt, const juce::String& pro
     if (v.demo) { g.demo = true; g.stamp = licence::stampVar (v); licenceStampVar() = g.stamp; licenceStampLine() = "licence\tstate\tdemo\texpires\t" + v.expires + "\tproduct\t" + m.line->product; }
     return g;
 }
+// 13 Oct (--redo licensed_now): does the licence file AS IT IS NOW admit this product (owned, or a demo running)? Outside the file: no
+inline bool licenceFileAdmits (const juce::File& certRoot, const juce::String& product, const juce::String& manufacturer)
+{
+    const auto lines = licenceLinesOf (certRoot); if (lines.empty()) return false;
+    juce::StringArray siblings; for (const auto& r : installedAudioUnits()) siblings.add (r.desc.name);
+    const auto v = licence::verdictFor (licence::matchPlugin (product, manufacturer, lines, siblings), runDateIso());
+    return ! v.outsideFile && v.load;
+}
 inline LicenceGate licenceGate (const SweepOptions& opt, const juce::PluginDescription& desc) { return licenceGate (opt, desc.name, desc.manufacturerName, opt.certRoot != juce::File() ? opt.certRoot : opt.out, opt.retryLicence); }
 
 // CHANNEL STRIPS (Kathy's NEXT BUILD item E, 7 Oct; the rules in EjmapStrip.h): the strip's controls in sections, each section's
@@ -6569,7 +6577,8 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     if (! redo.isEmpty())
         for (const auto& cat : categories()) if (work.count (cat.name))
             for (const auto& pp : work[cat.name])
-                if (isDone (phasebDir, cat.name, pp.stem) && rowToRedo (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()), cat.name, redo, (redo.contains ("no_pool") || redo.contains ("accuracy_gaps")) ? phasebDir.getChildFile (cat.name).getChildFile ("logs").getChildFile (pp.stem + ".log.txt").loadFileAsString() : juce::String()))
+                if (isDone (phasebDir, cat.name, pp.stem) && (rowToRedo (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()), cat.name, redo, (redo.contains ("no_pool") || redo.contains ("accuracy_gaps")) ? phasebDir.getChildFile (cat.name).getChildFile ("logs").getChildFile (pp.stem + ".log.txt").loadFileAsString() : juce::String())
+                    || (redo.contains ("licensed_now") && phaseb::rowIsLicensedNow (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()), licenceFileAdmits (opt.out, pp.product, pp.desc.manufacturerName)))))
                 { if (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()).getProperty ("outcome", "").toString() == "timed_out" && (cat.name == "gaincal" || cat.name == "gainall")) resumeTraces.insert (cat.name + "/" + pp.stem);
                   rowFile (phasebDir, cat.name, pp.stem).deleteFile(); ++redone; }
     if (! redo.isEmpty()) say ("PHASEB: --redo " + redo.joinIntoString (",") + ": " + juce::String (redone) + " finished row(s) run again");

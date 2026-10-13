@@ -105,6 +105,15 @@ def gcells(d):
     return '  '.join(c(g) for g in (2.0, 4.0, 5.0, 6.0))
 
 TIMEKEY = None
+def row_traces(raw_dir, stem, row):
+    """13 Oct (G8): the traces of THIS row's run only - a category's raw folder keeps older runs' files under the same stem (G8's 6 Oct
+    dynamics.c0.n0.00, its crash trace from before the crash-position rule, flagged a row that b287aef3 filed ok). A trace counts when it
+    was written no earlier than the row's start (its 'at' minus its seconds, 2 min slack); a row without 'at' keeps every trace."""
+    fs = [g for g in glob.glob(os.path.join(raw_dir, stem + '.*.txt.gz')) if '.list-params.' not in os.path.basename(g) and '.text-at' not in os.path.basename(g)]
+    at = row.get('at', '')
+    try: start = time.mktime(time.strptime(at[:15], '%Y%m%dT%H%M%S')) - float(row.get('seconds', 0) or 0) - 120
+    except Exception: return fs
+    return [g for g in fs if os.path.getmtime(g) >= start]
 def silent_or_crashed(traces):
     """The next build's two filings, as Python ports of phaseb::outputSilence and phaseb::traceEnded (the census rules)."""
     judged = silent = 0; cut = []
@@ -177,9 +186,8 @@ def report(cert, from_zip):
         if not z or r.get('outcome') not in ('ok', 'failed', 'slept'): continue
         cat = rel.split('/')[1]; stem = os.path.basename(rel).replace('.phaseb.json', '')
         traces = []
-        for g in glob.glob(os.path.join(cert, 'phaseb', cat, 'raw', stem + '.*.txt.gz')):
+        for g in row_traces(os.path.join(cert, 'phaseb', cat, 'raw'), stem, r):
             n = os.path.basename(g)
-            if '.list-params.' in n or '.text-at' in n: continue
             try: traces.append((n, gzip.open(g, 'rt', errors='replace').read()))
             except Exception: pass
         sil, cut = silent_or_crashed(traces)

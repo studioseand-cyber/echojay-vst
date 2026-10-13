@@ -53,3 +53,19 @@ w = out('--expect', 'not_written'); n0 = out()
 assert 'profiles: 3 old / 3 new' in w and 'differ 2' in w and 'explained 1 not_written' in w, w
 assert 'differ 3' in n0 and 'explained' not in n0, n0
 print('MORNING-SETS: 3 checks, 0 failures')
+
+# MORNING-TRACES (13 Oct, G8): only the row's own run is judged - an older run's unended trace under the same stem is not this row's
+import gzip as _gz
+RW = os.path.join(T, 'raw'); os.makedirs(RW)
+def tr(name, text, when):
+    p = os.path.join(RW, name); f = _gz.open(p, 'wt'); f.write(text); f.close(); os.utime(p, (when, when))
+import time
+row_at = time.mktime(time.strptime('20261013T014640', '%Y%m%dT%H%M%S'))
+tr('S.dynamics.c0.n0.00.1.txt.gz', 'bwin\t1\n', row_at - 7 * 86400)                  # 6 Oct: a crash trace of an older run
+tr('S.dynamics.g0.000.1.txt.gz', 'x\nstage\tdone\n', row_at - 30)                   # this run's, complete
+got = [os.path.basename(g) for g in m.row_traces(RW, 'S', {'at': '20261013T014640', 'seconds': 101.0})]
+assert got == ['S.dynamics.g0.000.1.txt.gz'], got
+assert len(m.row_traces(RW, 'S', {})) == 2                                           # no 'at': every trace, as before
+tr('S.dynamics.g0.167.1.txt.gz', 'bwin\t1\n', row_at - 20)                          # this run's, unended: still judged
+assert sorted(os.path.basename(g) for g in m.row_traces(RW, 'S', {'at': '20261013T014640', 'seconds': 101.0})) == ['S.dynamics.g0.000.1.txt.gz', 'S.dynamics.g0.167.1.txt.gz']
+print('MORNING-TRACES: 3 checks, 0 failures')
