@@ -48,7 +48,7 @@ The causes:
 - **Slow processes:** 6 to 12 channels per process.
 - **Running in pairs:** at `--jobs 2` the twins ran side by side.
 
-| row | traces in the 30 min | s / trace | candidates started | to finish (est.) |
+| row | traces in the 30 min | s / trace | candidates started | whole row (est.) |
 |---|---|---|---|---|
 | L360 (6->6) | 104 | 17.3 | 3 of 6 | ~1.0 h |
 | L360 (5->5) | 128 | 14.1 | 3 of 5 | ~0.8 h |
@@ -60,3 +60,11 @@ For comparison, the 34 ok rows run at a median of 5.9 s per trace; the longest t
 
 ## 4. Publish v2
 `check_v2.py` produced the result (`v2_check.json`, `PUBLISH_LIST_v2.txt`), packaged as `~/Desktop/EJMAP_PUBLISH_COMPRESSORS_v2.zip`. **Clean: dbx-160 (s) only.** The other seven are held, each with its reason in the list.
+
+## 5. The cut: df695ba1 (`~/Desktop/ejmap-dist-13oct-df695ba1`)
+- **Packaged:** built and signed (app and probe both team 8BT5F9B887); no quarantine flag (`xattr -lr`).
+- **Preflight: REFUSED, only on this Mac's power** ("on battery: the Mac can sleep", the b287aef3 sleep guard). The sleep check returns before the quarantine line is printed, so that line has not been seen on this dist. **Re-run it on AC power:** `~/Desktop/ejmap-dist-13oct-df695ba1/ejmap.app/Contents/MacOS/ejmap --cert-preflight`.
+- **Equality** (on the packaged binary, the same functions as `--cut`; `equality_packaged_df695ba1.txt`): every difference is named and 0 are unexplained.
+  - compressor sets: 5 profiles not_written (d26db00f); AMEK, DSM V3, Millennia, SPL IRON and bx_opto in 'current', bx_opto in the other three;
+  - drafts: 1307 identical.
+- **Next night on this build (dry-run):** followup (the 86 checks re-run, about 40 min) and drafts.

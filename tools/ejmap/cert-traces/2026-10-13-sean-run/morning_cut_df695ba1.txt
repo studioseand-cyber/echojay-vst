@@ -1,0 +1,82 @@
+COPY: ~/Downloads/cert 5 (full folder, not merged) -> <scratch>/morning-13oct-cut/cert; this run = 639 file(s) since 20261012T195540 (build b287aef3)
+
+================ THE MORNING REPORT ================
+RUN-ALL STEPS (state, build that finished it):
+   categorise       done     build (none: before the build stamp) runs 1  finished 20261011T010316
+   combined         done     build (none: before the build stamp) runs 1  finished 20261011T011255
+   deesser          done     build (none: before the build stamp) runs 1  finished 20261008T215822
+   drafts           done     build b287aef3               runs 1  finished 20261013T085743
+   eq               done     build (none: before the build stamp) runs 2  finished 20261011T014151
+   fixups           done     build b287aef3               runs 1  finished 20261012T205944
+   followup         done     build b287aef3               runs 4  finished 20261012T203837
+   frequency        done     build (none: before the build stamp) runs 1  finished 20261011T012757
+   gain_all         done     build (none: before the build stamp) runs 1  finished 20261009T083255
+   gain_timing      done     build (none: before the build stamp) runs 1  finished 20261010T045112
+   licence_check    done     build (none: before the build stamp) runs 1  finished 20261009T144335
+   licence_stamp    done     build (none: before the build stamp) runs 1  finished 20261009T144336
+   limiter          done     build (none: before the build stamp) runs 1  finished 20261008T214954
+   limiter_comp     done     build b287aef3               runs 1  finished 20261013T054147
+   material         done     build (none: before the build stamp) runs 1  finished 20261011T011854
+   multiband        done     build (none: before the build stamp) runs 1  finished 20261008T212403
+   no_pool          done     build (none: before the build stamp) runs 2  finished 20261011T003243
+   preflight        done     build b287aef3               runs 7  finished 20261012T195541
+   reverb_delay     done     build b287aef3               runs 1  finished 20261013T011922
+   samplerate       done     build (none: before the build stamp) runs 1  finished 20261011T012934
+   saturation       done     build b287aef3               runs 3  finished 20261012T220303
+   strips           done     build b287aef3               runs 1  finished 20261013T085739
+   transient_gate   done     build b287aef3               runs 1  finished 20261013T014641
+   tuners           done     build (none: before the build stamp) runs 1  finished 20261011T014150
+   uad              done     build (none: before the build stamp) runs 1  finished 20261010T045135
+   uad_preflight    done     build (none: before the build stamp) runs 1  finished 20261009T144338
+
+FOLLOW-UP RE-CHECKS: 86 tone check(s) in the folder; by build: b287aef3 86
+   in this zip: 86 re-checked; passing g 2: 83, failing: 3
+   Tube-Tech CL 1B                g2 2.00 PASS  g4 4.03 PASS  g5 5.01 PASS  g6 6.00 PASS   build b287aef3  20261012T200905  NEW in zip
+   Unfiltered Audio Zip           g2 1.98 PASS  g4 3.99 PASS  g5 5.02 PASS  g6 6.02 PASS   build b287aef3  20261012T202729  NEW in zip
+   bx_opto                        g2 1.98 PASS  g4 3.99 PASS  g5 5.00 PASS  g6 5.97 PASS   build b287aef3  20261012T200404  NEW in zip
+   Mixland Vac Attack             g2 1.97 PASS  g4 3.96 PASS  g5 4.97 PASS  g6 5.99 PASS   build b287aef3  20261012T201302  NEW in zip
+   dbx-160 (s)                    g2 1.95 PASS  g4 3.99 PASS  g5 4.98 PASS  g6 6.02 PASS   build b287aef3  20261012T201922  NEW in zip
+   DPR-402 (s)                    g2 1.91 PASS  g4 3.97 PASS  g5 4.97 PASS  g6 5.94 PASS   build b287aef3  20261012T202145  NEW in zip
+   SPL IRON                       g2 -  g4 -  g5 -  g6 -   build b287aef3  20261012T202838  NEW in zip
+   Auto-Tune Vocal Compressor     g2 1.99 PASS  g4 4.02 PASS  g5 5.02 PASS  g6 6.01 PASS   build b287aef3  20261012T195628  NEW in zip
+
+ROWS IN THIS ZIP, by category and outcome:
+   delay        ok 32, needs_licence 5, silent_output 1
+   eq           needs_licence 27, ok 17
+   gainall      ok 6, empty_param_list 1, unhostable 1
+   gaincal      ok 3
+   gate         ok 8
+   limitercomp  ok 34, needs_licence 5, timed_out 5, silent_output 2
+   multiband    ok 17
+   reverb       ok 90, needs_licence 8, silent_output 1, empty_param_list 1
+   saturation   ok 115, needs_licence 39, silent_output 3, failed 1
+   strips       ok 92, needs_licence 13, silent_output 1
+   timing       ok 3
+   transient    ok 17, needs_licence 1
+   tuners       needs_licence 4
+
+FIXUPS: step done (build b287aef3); multiband rows in zip 17, gain-all rows in zip 8
+EQ: 175 row(s) in the folder (ok 147, needs_licence 27, skipped 1); step done; last progress: [eq 126/175 | all 1316/1365] TDR SlickEQ M: ok 86.3803 s | elapsed 21:02:35 | ETA 0:21:14
+
+NEW SILENT / CRASHED (what the next build would file, judged on the zip rows' traces):
+   probe_crashed  gate       Unfiltered Audio G8  (1 trace(s): AudioUnit_737a5876_1.6.2.dynamics.c0.n0.00.1.txt.gz)
+CUT: HEAD df695ba1: building ejmap + EchoJayProbe (-j4)
+PACKAGED ~/Desktop/ejmap-dist-13oct-df695ba1/ejmap.app
+    TeamIdentifier=8BT5F9B887
+    TeamIdentifier=8BT5F9B887
+CUT: preflight exit 3
+MORNING: the packaged preflight failed - STOP
+EJ Map pre-flight - build df695ba1
+  executable : ~/Desktop/ejmap-dist-13oct-df695ba1/ejmap.app/Contents/MacOS/ejmap
+  app signed : team 8BT5F9B887 (Developer ID Application: Sean Donoghue (8BT5F9B887))
+  probe      : ~/Desktop/ejmap-dist-13oct-df695ba1/ejmap.app/Contents/MacOS/EchoJayProbe  (beside the executable: the default)
+  probe sig  : team 8BT5F9B887, cdhash c34f073ad94e40ed1746ec1d88865e50250b57a5
+  cert root  : ~/Library/ejmap/cert  (default)
+  store      : ~/Library/ejmap/cert/fixtures
+  ledger     : ~/Library/ejmap
+  iLok       : ABSENT
+  power      : Now drawing from 'Battery Power'
+  sleep      : REFUSED - on battery: the Mac can sleep (caffeinate -s holds on AC power only; a lid-close on battery sleeps regardless)
+  FIX        : start the run as   caffeinate -dimsu "$BIN" --run-all ...   (not caffeinate -i), keep the Mac on its charger, and set System Settings > Energy > "Prevent automatic sleeping when the display is off" ON
+PRE-FLIGHT: REFUSED - the Mac can sleep; nothing was started
+
