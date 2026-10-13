@@ -4162,8 +4162,10 @@ inline int runTiming (const SweepOptions& opt)
     say ("TIMING: " + opt.product + " " + desc.version + ": amount [" + juce::String (plan.thr) + "] " + plan.thrName + " at norm " + juce::String ((double) norms[best], 3) + " (1 dB point " + juce::String (bestOne, 2) + " dBFS peak); burst " + juce::String (quiet, 1) + " -> " + juce::String (loud, 1));
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("timing"); outDir.createDirectory();
     const auto stem = recordFile.getFileNameWithoutExtension();
+    const double timingT0 = juce::Time::getMillisecondCounterHiRes(); int burstsDone = 0;   // 13 Oct: the declared guard's clock and count
     auto burstAt = [&] (const juce::String& tag, const juce::StringArray& extraSets, double holdS, double postS, double hz, double winMs) -> std::pair<timing::Timing, ChildResult>
     {
+        ++burstsDone;
         juce::StringArray all = sets; all.addArray (extraSets);
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--burst", "quiet=" + juce::String (quiet, 2), "loud=" + juce::String (loud, 2),
                                  "pre=1.0", "hold=" + juce::String (holdS, 2), "post=" + juce::String (postS, 2), "hz=" + juce::String (hz, 0), "win_ms=" + juce::String (winMs, 0), "set=" + all.joinIntoString (",") };
@@ -4185,6 +4187,10 @@ inline int runTiming (const SweepOptions& opt)
     const auto cl = roles::classify (named, roles::Category::compressor);
     juce::Array<juce::var> controls; int measured = 0;
     std::map<juce::String, juce::Array<juce::var>> timePositionsFor; std::map<juce::String, std::pair<juce::String, bool>> timeControlFor;
+    int timingRoles = 0; { std::set<juce::String> rs; for (const auto& r : cl.controls) if (r.role == "attack" || r.role == "release") rs.insert (r.role); timingRoles = (int) rs.size(); }
+    auto declareTimingGuard = [&] (int positionsLeft, int rolePositions) {
+        const int rolesAfter = juce::jmax (0, timingRoles - (int) timeControlFor.size());
+        std::cout << "GUARD\t" << juce::String (phaseb::timingGuardS (burstsDone, positionsLeft, rolePositions, rolesAfter, (juce::Time::getMillisecondCounterHiRes() - timingT0) / 1000.0), 0) << std::endl; };
     for (const auto& r : cl.controls)
     {
         if (r.role != "attack" && r.role != "release") continue;
@@ -4219,6 +4225,7 @@ inline int runTiming (const SweepOptions& opt)
         timing::Timing firstT, lastT;   // the role's two ends (the first and last positions measured): the signature reads them
         for (int k = 0; k < cn.size(); ++k)
         {
+            declareTimingGuard (cn.size() - k, cn.size());   // 13 Oct: before every position, from the pace so far
             const auto label = textAt (cn[k]);
             const double holdS = r.role == "attack" ? timing::segmentFor (label, timing::kDefaultHoldS) : timing::kDefaultHoldS;
             const double postS = r.role == "release" ? timing::segmentFor (label, timing::kDefaultPostS) : timing::kDefaultHoldS;
@@ -6562,7 +6569,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     if (! redo.isEmpty())
         for (const auto& cat : categories()) if (work.count (cat.name))
             for (const auto& pp : work[cat.name])
-                if (isDone (phasebDir, cat.name, pp.stem) && rowToRedo (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()), cat.name, redo, redo.contains ("no_pool") ? phasebDir.getChildFile (cat.name).getChildFile ("logs").getChildFile (pp.stem + ".log.txt").loadFileAsString() : juce::String()))
+                if (isDone (phasebDir, cat.name, pp.stem) && rowToRedo (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()), cat.name, redo, (redo.contains ("no_pool") || redo.contains ("accuracy_gaps")) ? phasebDir.getChildFile (cat.name).getChildFile ("logs").getChildFile (pp.stem + ".log.txt").loadFileAsString() : juce::String()))
                 { if (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()).getProperty ("outcome", "").toString() == "timed_out" && (cat.name == "gaincal" || cat.name == "gainall")) resumeTraces.insert (cat.name + "/" + pp.stem);
                   rowFile (phasebDir, cat.name, pp.stem).deleteFile(); ++redone; }
     if (! redo.isEmpty()) say ("PHASEB: --redo " + redo.joinIntoString (",") + ": " + juce::String (redone) + " finished row(s) run again");
