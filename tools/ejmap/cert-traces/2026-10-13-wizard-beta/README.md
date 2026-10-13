@@ -24,4 +24,9 @@ All runs used the SIGNED apps (`assemble.sh --sign`; the app, its engine and its
 - **Both builds returned the literal name "EchoJay Wizard".** JUCE's one-instance guard is keyed on it, so the second app to start quit silently. Each build now uses its own name (pin WZ-NAME).
 - **"Already taken part" was only asked after the scan.** The scan loads every plugin to map it. The once-only answer depends only on the account and the Mac, so the app now asks right after consent (`afterConsent`, in pin WZ-ELIG-1).
 
-**Small and not done:** the disk-refusal screen has no button; the user closes the window.
+**Kathy's decisions, the same evening** (91d0efeb):
+- the release consent names the hashed ID;
+- the beta address is admin@signaturestudiosonline.com;
+- the disk refusal has **Quit**.
+
+`screens/07_beta_results_saved_final.png` and `08_beta_disk_refused_quit.png` come from the rebuilt signed beta. The send-ready folder is `~/Desktop/EchoJay-Wizard-Beta-2026-10-13/`: the .dmg, sha256 starting f74c6647d5b62887, plus the tester README.
