@@ -1,0 +1,1 @@
+WIZARD: Not enough free disk space to start: the wizard needs 3.0 GB free and this Mac has 2.0 GB. Free some space and open it again.

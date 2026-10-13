@@ -1,0 +1,18 @@
+2026-10-13T17:06:44.904+01:00 open (normal): welcome
+2026-10-13T17:06:44.905+01:00 screen: welcome
+2026-10-13T17:06:47.467+01:00 signed in (STUB): acct_stub_44116402e5
+2026-10-13T17:06:47.467+01:00 screen: consent
+2026-10-13T17:06:50.095+01:00 consent: I agree (2026-10-13T17:06:50.095+01:00)
+2026-10-13T17:06:50.097+01:00 engine started: scan (pid 85674), keep-awake held
+2026-10-13T17:06:50.097+01:00 screen: scan
+2026-10-13T17:07:04.339+01:00 engine ended: 0, keep-awake released
+2026-10-13T17:07:04.342+01:00 lookup (STUB): {"already_contributed": false, "count": 10, "minimum": 5, "eligible": true, "endpoint": "https://www.echojay.ai/api/wizard/v1/lookup"}
+2026-10-13T17:07:04.343+01:00 screen: scan_done
+2026-10-13T17:07:07.167+01:00 engine started: measure (pid 85751), keep-awake held
+2026-10-13T17:07:07.168+01:00 screen: measuring
+2026-10-13T17:37:12.841+01:00 engine ended: 0, keep-awake released
+2026-10-13T17:37:12.843+01:00 screen: upload
+2026-10-13T17:37:16.450+01:00 uploaded (STUB): {"receipt_id": "rcpt_stub_1a136201bd0", "account_id": "acct_stub_44116402e5", "genuine": true, "path": "direct", "bytes": 36494, "profiles_received": 8, "confirmations_received": 0, "crashed_reported": 0, "needs_category_received": 0, "reference_votes_received": 8, "references_now_agreed": [], "accepted_new": 8, "reward_minimum": 5, "reward_eligible": true, "reward_message": "", "endpoint": "https://www.echojay.ai/api/wizard/v1/contributions"}
+2026-10-13T17:37:16.455+01:00 promo (STUB): {"code": "EJ-FREE-9465A7A5", "issued_now": true, "emailed_to": "acct.a@example.com"}
+2026-10-13T17:37:16.456+01:00 screen: reward
+2026-10-13T17:37:18.436+01:00 code copied

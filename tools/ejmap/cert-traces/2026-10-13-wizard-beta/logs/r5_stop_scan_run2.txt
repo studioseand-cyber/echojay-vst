@@ -1,0 +1,30 @@
+EJ Map wizard - every detail goes to <scratch>/rehearse13/r5_stop_scan/engine/wizard.log
+[--------------------]   0%  Scanning 1 of 13 - working out the time
+[--------------------]   0%  Scanning 2 of 13 - working out the time
+[--------------------]   1%  Scanning 3 of 13 - working out the time
+[--------------------]   2%  Scanning 4 of 13 - working out the time
+[#-------------------]   3%  Scanning 5 of 13 - working out the time
+[#-------------------]   3%  Scanning 6 of 13 - working out the time
+[#-------------------]   4%  Scanning 7 of 13 - working out the time
+[#-------------------]   5%  Scanning 8 of 13 - working out the time
+[#-------------------]   6%  Scanning 9 of 13 - working out the time
+[#-------------------]   6%  Scanning 10 of 13 - working out the time
+[##------------------]   7%  Scanning 11 of 13 - working out the time
+[##------------------]   8%  Scanning 12 of 13 - working out the time
+[##------------------]   9%  Scanning 13 of 13 - working out the time
+[##------------------]  10%  Scanning 13 of 13 - working out the time
+[##------------------]  10%  Checking 1 of 12 - working out the time
+[##------------------]  10%  Checking 1 of 12 - spiff - working out the time
+[##------------------]  10%  Checking 2 of 12 - working out the time
+[##------------------]  10%  Checking 2 of 12 - bx_crispytuner - working out the time
+[##------------------]  10%  Checking 3 of 12 - bx_crispytuner - working out the time
+[##------------------]  11%  Checking 4 of 12 - bx_limiter - working out the time
+[##------------------]  11%  Checking 5 of 12 - bx_rooMS - working out the time
+[##------------------]  12%  Checking 6 of 12 - bx_rockrack V3 Player - working out the time
+[###-----------------]  12%  Checking 7 of 12 - elysia mpressor - working out the time
+[###-----------------]  13%  Checking 8 of 12 - Unfiltered Audio G8 - working out the time
+[###-----------------]  13%  Checking 9 of 12 - working out the time
+[###-----------------]  13%  Checking 9 of 12 - MFreeformEqualizer - working out the time
+[###-----------------]  13%  Checking 10 of 12 - working out the time
+[####################] 100%  Done
+Done in 13 s: 13 plugin(s) - 1 plugin ready, 10 to measure, 1 plugin is a demo version and was skipped. Details: wizard.log

@@ -1,0 +1,14 @@
+2026-10-13T16:35:33.482+01:00 open (beta): welcome
+2026-10-13T16:35:33.482+01:00 screen: welcome
+2026-10-13T16:35:36.014+01:00 screen: consent
+2026-10-13T16:35:38.614+01:00 consent: I agree (2026-10-13T16:35:38.614+01:00)
+2026-10-13T16:35:38.621+01:00 engine started: scan (pid 79200), keep-awake held
+2026-10-13T16:35:38.621+01:00 screen: scan
+2026-10-13T16:35:53.738+01:00 engine ended: 0, keep-awake released
+2026-10-13T16:35:53.741+01:00 lookup (STUB): {"already_contributed": false, "count": 10, "minimum": 5, "eligible": true, "endpoint": "https://www.echojay.ai/api/wizard/v1/lookup"}
+2026-10-13T16:35:53.742+01:00 screen: scan_done
+2026-10-13T16:35:56.527+01:00 engine started: measure (pid 79283), keep-awake held
+2026-10-13T16:35:56.527+01:00 screen: measuring
+2026-10-13T17:05:45.200+01:00 engine ended: 0, keep-awake released
+2026-10-13T17:05:45.214+01:00 saved: <scratch>/rehearse13/r1_beta/desktop/EchoJay-Wizard-results-2026-10-13.zip
+2026-10-13T17:05:45.215+01:00 screen: beta_saved

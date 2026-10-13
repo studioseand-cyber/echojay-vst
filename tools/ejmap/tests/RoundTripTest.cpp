@@ -9562,6 +9562,7 @@ void testWizardCategories()
                && cn.title == "Thanks - your plugins are already mapped" && cn.text == "So there's nothing to do right now." && cn.primary == "Done" && cn.secondary == "Contribute anyway (no reward)"
                && c0.secondary.isEmpty() && ! cb.text.contains ("free month") && cb.primary == "Start"
                && afterScan (al) == Screen::alreadyDone && afterScan (el) == Screen::scanDone && alreadyDoneCopy().title == "You've already taken part - thank you"
+               && afterConsent (al) == Screen::alreadyDone && afterConsent (none) == Screen::scan
                && afterUpload (rc (true), code) == Screen::reward && afterUpload (rc (false), code) == Screen::noCode && afterUpload (rc (true), juce::var()) == Screen::noCode,
                "wizard WZ-ELIG-1: the eligible / not-eligible / already-taken-part words; contribute anyway only when there is something to measure; the code only on the server's grant");
     }

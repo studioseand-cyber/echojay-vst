@@ -1,0 +1,7 @@
+2026-10-13T17:44:20.458+01:00 open (normal): welcome
+2026-10-13T17:44:20.458+01:00 screen: welcome
+2026-10-13T17:44:22.995+01:00 signed in (STUB): acct_stub_31eae62282
+2026-10-13T17:44:22.995+01:00 screen: consent
+2026-10-13T17:44:25.601+01:00 consent: I agree (2026-10-13T17:44:25.601+01:00)
+2026-10-13T17:44:25.601+01:00 lookup before the scan (STUB): already_contributed 1
+2026-10-13T17:44:25.602+01:00 screen: already_done

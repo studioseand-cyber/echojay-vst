@@ -1,0 +1,6 @@
+WIZARD: stopped while mapping (3 of 12 checked): nothing filed for the plugin(s) in flight; the next run carries on
+PHASEB: 1 product(s) over 1 category -> <scratch>/rehearse13/r6_disk/engine/phaseb  (resumable; Ctrl-C any time; a product's result lands only when it is complete)
+WIZARD: the disk is running low - stopping cleanly
+  wizard: elysia mpressor - stopped with the run: no row, it runs again on the resume
+PHASEB: stopped (07:00 / Ctrl-C / the caller's stop): no new child started; the rows that were running run again on the resume
+WIZARD: stopped while measuring (0 of 6 landed): no bundle; the same command carries on

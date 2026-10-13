@@ -1,0 +1,12 @@
+2026-10-13T17:45:00.588+01:00 open (normal): welcome
+2026-10-13T17:45:00.589+01:00 screen: welcome
+2026-10-13T17:45:03.136+01:00 signed in (STUB): acct_stub_279fe838e9
+2026-10-13T17:45:03.136+01:00 screen: consent
+2026-10-13T17:45:05.780+01:00 consent: I agree (2026-10-13T17:45:05.780+01:00)
+2026-10-13T17:45:05.780+01:00 lookup before the scan (STUB): already_contributed 0
+2026-10-13T17:45:05.782+01:00 engine started: scan (pid 92817), keep-awake held
+2026-10-13T17:45:05.782+01:00 screen: scan
+2026-10-13T17:45:12.826+01:00 engine ended: 0, keep-awake released
+2026-10-13T17:45:12.827+01:00 lookup (STUB): {"already_contributed": false, "count": 3, "minimum": 5, "eligible": false, "endpoint": "https://www.echojay.ai/api/wizard/v1/lookup"}
+2026-10-13T17:45:12.827+01:00 screen: scan_done
+2026-10-13T17:45:15.644+01:00 not eligible / nothing to measure: done, nothing runs

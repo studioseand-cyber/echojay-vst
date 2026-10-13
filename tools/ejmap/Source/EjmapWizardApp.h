@@ -152,6 +152,9 @@ struct Eligibility { bool already = false, eligible = false; int count = 0, mini
 inline Eligibility eligibilityOf (const juce::var& v)
 { Eligibility e; e.already = (bool) v.getProperty ("already_contributed", false); e.eligible = (bool) v.getProperty ("eligible", false); e.count = (int) v.getProperty ("count", 0); e.minimum = (int) v.getProperty ("minimum", 5); return e; }
 inline Screen afterScan (const Eligibility& e) { return e.already ? Screen::alreadyDone : Screen::scanDone; }
+// once only needs no scan: the account and the Mac decide it, so /lookup is asked right after consent and an account or Mac that has
+// already taken part loads nothing at all (13 Oct, rehearsal)
+inline Screen afterConsent (const Eligibility& e) { return e.already ? Screen::alreadyDone : Screen::scan; }
 struct Copy { juce::String title, text, primary, secondary; };
 inline Copy alreadyDoneCopy() { return { "You've already taken part - thank you", "This account or this Mac has already contributed its results, so there's nothing to run.", "Done", {} }; }
 inline Copy scanDoneCopy (Mode m, const Eligibility& e, const juce::String& etaWords)

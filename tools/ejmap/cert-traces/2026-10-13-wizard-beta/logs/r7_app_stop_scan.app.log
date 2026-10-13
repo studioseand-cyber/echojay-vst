@@ -1,0 +1,11 @@
+2026-10-13T17:45:30.576+01:00 open (normal): welcome
+2026-10-13T17:45:30.577+01:00 screen: welcome
+2026-10-13T17:45:33.158+01:00 signed in (STUB): acct_stub_3fdc4ff7e0
+2026-10-13T17:45:33.159+01:00 screen: consent
+2026-10-13T17:45:35.799+01:00 consent: I agree (2026-10-13T17:45:35.799+01:00)
+2026-10-13T17:45:35.799+01:00 lookup before the scan (STUB): already_contributed 0
+2026-10-13T17:45:35.800+01:00 engine started: scan (pid 92994), keep-awake held
+2026-10-13T17:45:35.800+01:00 screen: scan
+2026-10-13T17:45:38.541+01:00 Ctrl-C: the same stop as the close button
+2026-10-13T17:45:38.541+01:00 close: engine stopped (SIGINT) on scan
+2026-10-13T17:45:38.800+01:00 engine ended: 130, keep-awake released

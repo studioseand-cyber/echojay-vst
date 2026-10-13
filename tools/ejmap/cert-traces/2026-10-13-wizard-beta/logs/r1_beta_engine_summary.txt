@@ -1,0 +1,6 @@
+  MFreeformEqualizer             -> skipped: a demo version: its output drops out 2 time(s) on a steady tone (24 dB, first at 16 s) - not measured, not sent
+WIZARD: 13 plugin(s) found: 1 plugin ready, 10 to measure, 1 plugin is a demo version and was skipped
+  MFreeformEqualizer             -> skipped: a demo version: its output drops out 2 time(s) on a steady tone (24 dB, first at 16 s) - not measured, not sent
+WIZARD: 13 plugin(s) found: 1 plugin ready, 10 to measure, 1 plugin is a demo version and was skipped
+WIZARD: 1 plugin ready, 8 newly measured, ready to send, 2 could not be measured, 1 plugin is a demo version and was skipped
+WIZARD: contribution bundle -> contribution.zip (8 new profile(s), 0 confirmation(s) of another version's profile, 3 skipped with the reason; 35.6 KB; checked: no paths, names or tokens)

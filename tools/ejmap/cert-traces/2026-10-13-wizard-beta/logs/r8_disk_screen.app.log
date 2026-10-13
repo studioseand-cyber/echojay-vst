@@ -1,0 +1,9 @@
+2026-10-13T17:45:50.323+01:00 open (normal): welcome
+2026-10-13T17:45:50.324+01:00 screen: welcome
+2026-10-13T17:45:52.903+01:00 signed in (STUB): acct_stub_528ccb903f
+2026-10-13T17:45:52.903+01:00 screen: consent
+2026-10-13T17:45:55.526+01:00 consent: I agree (2026-10-13T17:45:55.526+01:00)
+2026-10-13T17:45:55.526+01:00 lookup before the scan (STUB): already_contributed 0
+2026-10-13T17:45:55.526+01:00 refused to start: Not enough free disk space to start: the wizard needs 3.0 GB free and this Mac has 2.0 GB. Free some space and open it again.
+2026-10-13T17:45:55.526+01:00 screen: scan
+2026-10-13T17:46:02.409+01:00 Ctrl-C: the same stop as the close button

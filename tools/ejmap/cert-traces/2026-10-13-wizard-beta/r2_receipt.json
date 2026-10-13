@@ -1,0 +1,18 @@
+{
+  "receipt_id": "rcpt_stub_1a136201bd0",
+  "account_id": "acct_stub_44116402e5",
+  "genuine": true,
+  "path": "direct",
+  "bytes": 36494,
+  "profiles_received": 8,
+  "confirmations_received": 0,
+  "crashed_reported": 0,
+  "needs_category_received": 0,
+  "reference_votes_received": 8,
+  "references_now_agreed": [],
+  "accepted_new": 8,
+  "reward_minimum": 5,
+  "reward_eligible": true,
+  "reward_message": "",
+  "endpoint": "https://www.echojay.ai/api/wizard/v1/contributions"
+}

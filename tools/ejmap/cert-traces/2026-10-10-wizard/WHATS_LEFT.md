@@ -69,45 +69,75 @@
   266 full blocks, 24 Melda with the controls both Macs show); the app copies them into its stub db at start, never over a file a vote
   moved (WZ-REF-SEED). Mock DB only: no cert folder gets them; Melda's 6 that differ stay held (Kathy).
 
-## Left before it is a real app
-1. **UI**: BUILT as the v1 window app (above). Still open: a Pause button besides closing the window; "overnight" scheduling;
-   accessibility (VoiceOver labels on the bar); dark mode; a first-launch explanation of what is measured and why; localisation;
-   the ETA's starting figures should come from the server for a stranger's first run; two plugins in flight when the wizard goes
-   down are BOTH skipped today (spec section 3: re-run the second alone once? Kathy to decide).
-2. **Sean's endpoints** (exact requests / responses in WIZARD_SPEC.md section 6): sign-in (`POST /sign-in`, token -> Keychain),
-   the lookup (`POST /lookup`: the server decides A / B / C / out_of_scope and the category), the upload (`POST /contributions`,
-   multipart manifest + zip, idempotent on the bundle's sha256, a genuine check in seconds), the promo (`POST /promo`, one code per
-   account, emailed). Server side beyond the endpoints: the holding area, agreement with another version or a second user, then
-   publish; the reward ledger. Client side once they exist: replace the four stubs, retry / resume of an interrupted upload.
-3. **The real database lookup**: "what's missing" on the server (plan section 8) instead of a local folder; the server, not the client,
-   decides A / B / C, and records B confirmations and live-check misses.
-4. **Categories**: BUILT for every category EJ Map certifies (above). Left: the publish side per category (the server must accept
-   each draft kind and its acceptance as the send gate); strips need their sections, which the wizard's role-less maps may not give
-   (see the rehearsal); limitercomp doubles a limiter's time - keep it, or only when the limiter mode passes?
-5. **Licence handling for strangers**: the user's own licences.csv does not exist - the wizard relies on window / PACE detection and the
-   serial lane; a "skip anything that asks for a licence" default and a plain explanation screen.
-6. **Signing + notarisation**: today the app and the engine are signed AD HOC by assemble.sh (only the probe carries the Developer
-   ID). For download: Developer ID on the app, the engine and the probe (hardened runtime, the probe's entitlements kept), then
-   notarise and staple the app (and a DMG). The engine loads no plugin itself (the probe does), so it needs no library-validation
-   exception; the probe already has its entitlements. A first-run Accessibility prompt (the licence-window watch) needs explaining.
-   Auto-update (Sparkle or the website) is not designed.
-7. **Windows**: the window is JUCE and would build there, but everything under it is Mac-only today: AUs (a VST3 probe is needed,
-   and VST3 identity is instance-only - see the P15 note), the licence-window watch, the IOKit keep-awake (SetThreadExecutionState),
-   the process-group pause (a Job object + CTRL_BREAK), the crash-report search (WER LocalDumps), the app bundle. Or Mac-only first
-   (plan section 9).
-8. **Legal / privacy**: what the bundle carries is listed in the spec (profiles, tone checks, EQ profiles, a manifest with the OS
-   version and the probe's cdhash, REDACTED crash reports - home path, user, host and /Users/ paths replaced; a report that still trips
-   the check is withheld). Needs: a lawyer's read of vendor licence terms on publishing measurements of their plugins; the terms the
-   user accepts (what is sent, that measurements may be published, the reward's conditions); a privacy notice for the account link and
-   the crash reports; data retention / deletion on request; whether crash reports (third-party plugin stacks) may be kept.
-8b. **Categorising on a stranger's Mac**: the signature reads run at the plugin's INSTANTIATE state, so (a) a compressor with a
-   release reads as "a tail" first (Lindell 254E -> "reverb or delay: review", 12 Oct) - the tail rule runs before dynamics; (b) the
-   same plugin can read differently on two Macs (MMorph: eq on Sean's, dynamics here); (c) settled "dynamics" goes to the compressor
-   certification, which then decides (MAutoVolume: refused, Melda demo-mode dropouts). Sean labels needs_category from the reads; a
-   categoriser change is its own task (EJ Map's equality would move).
-9. **Field hardening**: the empty-store path is built and rehearsed; still open - sleep / lid-close handling in "overnight", disk-space
-   checks before measuring, and the wizard's maps are parameter lists only (the GUI's role mapping is not run: the dial side must accept
-   a map without roles, or the server supplies them).
-10. **Run as the user, in the user's real home**: plugins find their activation under the user's home folder. Rehearsing with HOME pointed
-   at an empty folder made every Plugin Alliance unit pass digital silence (4 of 4 filed silent_output, not sent - the filing worked). A
-   sandboxed or relocated app would do the same: the app must keep the user's real home and Application Support visible to the probe.
+## Done for the beta (13 Oct)
+- **Stop:** clean in every stage. "Stopped - it carries on next time" after a close or Ctrl-C while scanning, checking or measuring. Nothing in flight is filed as crashed, and no marker is left.
+- **A stranger's Mac:**
+  - demo versions are found by their dropouts and skipped;
+  - licence and iLok windows are closed, never clicked;
+  - a 3 GB floor to start and a clean stop below 1 GB.
+- **Consent screen** with a required "I agree".
+- **The beta build:** the results as one file, "Show in Finder", "Email this file to ...", no sign-in, no promo.
+- **Eligibility** decided by the server: shown at the scan, granted on ACCEPTED results.
+- **Once only** per account AND per Mac.
+- **Packaging:** the app, engine and probe signed with Developer ID 8BT5F9B887, plus a .dmg. **Not notarised**; testers do the quarantine step in README_BETA.md.
+- **Rehearsed end to end:** cert-traces/2026-10-13-wizard-beta/.
+
+## What is left: three lists
+
+### Ours (EJ Map / the wizard)
+1. **Notarise and staple** the app and the .dmg the day Apple's agreement is accepted (`docs/NOTARISATION_SETUP.md`); then the quarantine step goes. Auto-update (Sparkle or the website) is not designed.
+2. **Replace the stubs** once Sean's endpoints exist: sign-in (token into the Keychain), /lookup (with eligibility, already_contributed and references), /contributions (both paths, retry / resume of an interrupted upload), /promo. Send the device hash with /lookup and /contributions.
+3. **UI:**
+   - a Pause button besides closing the window;
+   - "overnight" scheduling;
+   - VoiceOver labels on the bar, and dark mode;
+   - localisation;
+   - the ETA's starting figures from the server for a first run;
+   - two plugins in flight when the wizard goes down are BOTH skipped today.
+4. **Demo detection beyond Melda:** measured on Melda's demos only. Other vendors may mute differently (noise, beeps, a gap after more than 60 s). Widen it from the first testers' results.
+5. **Categorising on a stranger's Mac:** the signature reads run at the instantiate state.
+   - A compressor with a long release can read as a tail.
+   - The same plugin can read differently on two Macs.
+   - A categoriser change is its own task (EJ Map's equality would move).
+6. **Strips and maps:** the wizard's maps are parameter lists only (no roles); a strip's sections may not resolve. The dial side must accept a role-less map, or the server supplies roles.
+7. **Run in the user's real home:** a relocated or sandboxed app makes Plugin Alliance units silent (rehearsed). Keep the user's real home visible to the probe.
+8. **Windows:** everything under the window is Mac-only today:
+   - AUs, the licence-window watch, the keep-awake, the process-group stop, the crash-report search, the bundle;
+   - VST3 identity is instance-only.
+9. **What only another Mac can test** (README_BETA.md):
+   - licence and iLok windows;
+   - no store and no licence file;
+   - other vendors' demos;
+   - the quarantine step on a real download;
+   - real low disk;
+   - Intel.
+
+### Sean's (the server)
+1. **Endpoints** (WIZARD_SPEC.md 6): `POST /sign-in` (and the account to mapper-token bridge), `POST /lookup`, `POST /contributions` (direct up to 4.5 MB, else signed blob), `POST /promo`.
+2. **Eligibility** (6.5): the NEW CONTRIBUTABLE count with `reward_minimum` (configurable, default 5), and `eligible` / `count` / `minimum` in /lookup.
+3. **The grant on ACCEPTED results:** recompute from the bundle, with no duplicates and nothing already known; below the minimum, no code and a plain message.
+4. **Once only** (`once_only`, configurable): `already_contributed` per account AND per device hash, recorded on an ACCEPTED upload only.
+5. **Abuse limits:**
+   - one reward per account and per Mac;
+   - idempotent uploads on bundle_sha256;
+   - never the client's count.
+6. **Reference votes:**
+   - one per machine or account;
+   - trust at 2;
+   - keep the disagreeing blocks;
+   - return `reference` in /lookup.
+7. **The review / holding area,** then agreement, then publish; the per-category publish side (each draft kind and its acceptance as the send gate).
+8. **Promo issuing and the email.**
+9. **The Apple Developer Program agreement** on his account (the notarisation 403).
+
+### Kathy's (decisions and text)
+1. **Approve the consent wording** (WIZARD_SPEC.md 2b), and decide whether it names the device hash (proposed: yes for the release, no for the beta).
+2. **Confirm the beta address** (`EJ_WIZARD_BETA_EMAIL`, today `beta@echojay.ai`).
+3. **The reward minimum** (default 5) and once-only (default on) - both server configuration.
+4. **Legal and privacy:**
+   - a lawyer's read of vendor licence terms on publishing measurements;
+   - the user's terms: what is sent, that measurements may be published, the reward's conditions;
+   - a privacy notice for the account link, the device hash and the crash reports;
+   - retention and deletion on request.
+5. **Who gets the beta,** and how their results files are collected.
+6. **Two plugins in flight when the wizard goes down:** re-run the second alone once?

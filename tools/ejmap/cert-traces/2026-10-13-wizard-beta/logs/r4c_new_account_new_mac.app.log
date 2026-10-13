@@ -1,0 +1,22 @@
+2026-10-13T17:44:28.800+01:00 open (normal): welcome
+2026-10-13T17:44:28.800+01:00 screen: welcome
+2026-10-13T17:44:31.333+01:00 signed in (STUB): acct_stub_cc0c2ee8d5
+2026-10-13T17:44:31.333+01:00 screen: consent
+2026-10-13T17:44:33.954+01:00 consent: I agree (2026-10-13T17:44:33.954+01:00)
+2026-10-13T17:44:33.954+01:00 lookup before the scan (STUB): already_contributed 0
+2026-10-13T17:44:33.960+01:00 engine started: scan (pid 92697), keep-awake held
+2026-10-13T17:44:33.960+01:00 screen: scan
+2026-10-13T17:44:46.279+01:00 engine ended: 0, keep-awake released
+2026-10-13T17:44:46.282+01:00 lookup (STUB): {"already_contributed": false, "count": 8, "minimum": 5, "eligible": true, "endpoint": "https://www.echojay.ai/api/wizard/v1/lookup"}
+2026-10-13T17:44:46.282+01:00 screen: scan_done
+2026-10-13T17:44:49.076+01:00 engine started: measure (pid 92757), keep-awake held
+2026-10-13T17:44:49.077+01:00 screen: measuring
+2026-10-13T17:44:54.133+01:00 rehearsal: the close button
+2026-10-13T17:44:54.135+01:00 close: engine stopped (SIGINT) on measuring
+2026-10-13T17:44:54.642+01:00 engine ended: 130, keep-awake released
+2026-10-13T17:44:54.793+01:00 open (normal): measuring
+2026-10-13T17:44:54.795+01:00 engine started: measure (pid 92781), keep-awake held
+2026-10-13T17:44:54.795+01:00 screen: measuring
+2026-10-13T17:44:59.865+01:00 rehearsal: the close button
+2026-10-13T17:44:59.867+01:00 close: engine stopped (SIGINT) on measuring
+2026-10-13T17:45:00.374+01:00 engine ended: 130, keep-awake released

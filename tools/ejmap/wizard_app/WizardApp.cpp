@@ -343,7 +343,14 @@ private:
             }
             case Screen::consent:
                 if (! agree.getToggleState()) return;   // the tick is required
-                setState ("consented", true); logLine ("consent: I agree (" + juce::Time::getCurrentTime().toISO8601 (true) + ")"); show (Screen::scan); break;
+                setState ("consented", true); logLine ("consent: I agree (" + juce::Time::getCurrentTime().toISO8601 (true) + ")");
+                {   // /lookup before anything loads: an account or a Mac that has already taken part runs nothing (STUB)
+                    if (account.isVoid()) account = juce::JSON::parse (cfg.work.getChildFile ("account.json").loadFileAsString());
+                    const auto early = stub::lookup (cfg.work, account, device, juce::var());
+                    logLine ("lookup before the scan (STUB): already_contributed " + juce::String ((int) (bool) early.getProperty ("already_contributed", false)));
+                    show (wizapp::afterConsent (wizapp::eligibilityOf (early)));
+                }
+                break;
             case Screen::scanDone:
             {
                 const auto el = wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString()));

@@ -1,0 +1,279 @@
+{
+  "schema": "ej_contribution/0",
+  "created": "2026-10-13T17:05:44.951+01:00",
+  "tool": "EJ Map e4f63457-dirty",
+  "platform": "Mac OSX 15.7.5",
+  "profiles": [
+    {
+      "product": "ADA STD-1 Stereo Tapped Delay",
+      "kind": "delay",
+      "plugin_id": "AudioUnit|62434544|1.5.1",
+      "map_fp": "8286be6400db2c3c41569810b4febcd3c2dd7980e88d1765a026bb019b4d6726",
+      "drafts": [
+        "profiles/AudioUnit_62434544_1.5.1.space_profile.draft.json"
+      ]
+    },
+    {
+      "product": "Lindell 50 Channel",
+      "kind": "channel_strip",
+      "plugin_id": "AudioUnit|6f466163|1.0.3",
+      "map_fp": "c28afe43dcf175f6bc3ac10c9e881f2153f61d354a6dd9125a76f46e795305fb",
+      "drafts": [
+        "profiles/AudioUnit_6f466163_1.0.3.strip_profile.draft.json"
+      ]
+    },
+    {
+      "product": "spiff",
+      "kind": "transient_shaper",
+      "plugin_id": "AudioUnit|7d606b6a|1.3.2",
+      "map_fp": "8f6aa6109bfb23860645f947617acc8fe1c601df7e62296b2367339e3e9da90e",
+      "drafts": [
+        "profiles/AudioUnit_7d606b6a_1.3.2.transient_profile.draft.json"
+      ]
+    },
+    {
+      "product": "bx_crispytuner",
+      "kind": "pitch",
+      "plugin_id": "AudioUnit|77727f61|1.1.0",
+      "map_fp": "785ce749276e7b2d15e7de74fde2ea2b7f804cadcc4ae6d753b53e1bac6cf0b4",
+      "drafts": [
+        "profiles/AudioUnit_77727f61_1.1.0.tuner_profile.draft.json"
+      ]
+    },
+    {
+      "product": "bx_limiter",
+      "kind": "limiter",
+      "plugin_id": "AudioUnit|417f7d6d|1.15.2",
+      "map_fp": "7a9cd5cc8f7177f96b91754c08486aa632c0e06c79e5bc645b6b49b93762acb1",
+      "drafts": [
+        "profiles/AudioUnit_417f7d6d_1.15.2.limiter_ceiling.draft.json",
+        "profiles/bx_limiter_1.15.2.json",
+        "profiles/bx_limiter_1.15.2.tonecheck.json"
+      ]
+    },
+    {
+      "product": "bx_rooMS",
+      "kind": "reverb",
+      "plugin_id": "AudioUnit|417f636d|1.9.1",
+      "map_fp": "5ce23a8755a2af9e07fe37e3c62bdf603ffa066c008ce54982552a37a0617d7e",
+      "drafts": [
+        "profiles/AudioUnit_417f636d_1.9.1.space_profile.draft.json"
+      ]
+    },
+    {
+      "product": "elysia mpressor",
+      "kind": "compressor",
+      "plugin_id": "AudioUnit|49696d78|1.15.1",
+      "map_fp": "b3396255fdc18668cbadcdda4edac425fa4598506b60dbb11788a3eae9ed91d3",
+      "profile": "profiles/elysia_mpressor_1.15.1.json",
+      "tone_check": "profiles/elysia_mpressor_1.15.1.tonecheck.json",
+      "tone_check_g2_pass": true
+    },
+    {
+      "product": "Unfiltered Audio G8",
+      "kind": "gate",
+      "plugin_id": "AudioUnit|737a5876|1.6.2",
+      "map_fp": "0ad4b825250b197a609107667d58adc1a20f1d976eda3d93f73d72b11e0b27c4",
+      "drafts": [
+        "profiles/AudioUnit_737a5876_1.6.2.gate_profile.draft.json"
+      ]
+    }
+  ],
+  "confirmations": [],
+  "skipped": [
+    {
+      "product": "SPL De-Esser Dual-Band",
+      "state": "not_measurable",
+      "why": "measured, but no deesser draft could be derived from the record"
+    },
+    {
+      "product": "bx_rockrack V3 Player",
+      "state": "not_measurable",
+      "why": "measured, but its saturation draft carries nothing the server can use (e.g. no drive control)"
+    },
+    {
+      "product": "MFreeformEqualizer",
+      "state": "demo",
+      "why": "a demo version: its output drops out 2 time(s) on a steady tone (24 dB, first at 16 s) - not measured, not sent"
+    }
+  ],
+  "crashed": [],
+  "needs_category": [],
+  "other_categories": [],
+  "out_of_scope": [],
+  "held": [
+    {
+      "product": "OTT",
+      "plugin_id": "AudioUnit|6155777e|1.3.7",
+      "map_fp": "006e8b4af7241beba0beaa5d1a77c17cc2cc5d5317994d703085668bfae138ea",
+      "map": {
+        "fp": "006e8b4af7241beba0beaa5d1a77c17cc2cc5d5317994d703085668bfae138ea",
+        "schema": "ej_param_map/wizard-0",
+        "identity": {
+          "format": "AudioUnit",
+          "uid": "6155777e",
+          "name": "OTT",
+          "vendor": "Xfer Records",
+          "version": "1.3.7",
+          "param_count": 19
+        },
+        "category": "",
+        "params": [
+          {
+            "index": 0,
+            "name": "Depth"
+          },
+          {
+            "index": 1,
+            "name": "Time"
+          },
+          {
+            "index": 2,
+            "name": "In Gain"
+          },
+          {
+            "index": 3,
+            "name": "Out Gain"
+          },
+          {
+            "index": 4,
+            "name": "Clean XOV"
+          },
+          {
+            "index": 5,
+            "name": "Thresh L"
+          },
+          {
+            "index": 6,
+            "name": "Thresh M"
+          },
+          {
+            "index": 7,
+            "name": "Thresh H"
+          },
+          {
+            "index": 8,
+            "name": "Gain L"
+          },
+          {
+            "index": 9,
+            "name": "Gain M"
+          },
+          {
+            "index": 10,
+            "name": "Gain H"
+          },
+          {
+            "index": 11,
+            "name": "Byp Upwd L"
+          },
+          {
+            "index": 12,
+            "name": "Byp Upwd M"
+          },
+          {
+            "index": 13,
+            "name": "Byp Upwd H"
+          },
+          {
+            "index": 14,
+            "name": "Byp Dnwd L"
+          },
+          {
+            "index": 15,
+            "name": "Byp Dnwd M"
+          },
+          {
+            "index": 16,
+            "name": "Byp Dnwd H"
+          },
+          {
+            "index": 17,
+            "name": "Upwd Strgth"
+          },
+          {
+            "index": 18,
+            "name": "Dnwd Strgth"
+          }
+        ],
+        "source": "the wizard: the parameter list read by the probe (no roles mapped)"
+      },
+      "why": "held: no server category"
+    }
+  ],
+  "reference_votes": [
+    {
+      "product": "ADA STD-1 Stereo Tapped Delay",
+      "plugin_id": "AudioUnit|62434544|1.5.1",
+      "reference": "AudioUnit_62434544_1.5.1.reference.json",
+      "agrees": true,
+      "agreeing_before": 2,
+      "makes_trusted": false,
+      "measured_here": true
+    },
+    {
+      "product": "SPL De-Esser Dual-Band",
+      "plugin_id": "AudioUnit|61756e7b|1.15.1",
+      "reference": "AudioUnit_61756e7b_1.15.1.reference.json",
+      "agrees": true,
+      "agreeing_before": 2,
+      "makes_trusted": false,
+      "measured_here": false
+    },
+    {
+      "product": "bx_crispytuner",
+      "plugin_id": "AudioUnit|77727f61|1.1.0",
+      "reference": "AudioUnit_77727f61_1.1.0.reference.json",
+      "agrees": true,
+      "agreeing_before": 2,
+      "makes_trusted": false,
+      "measured_here": true
+    },
+    {
+      "product": "bx_limiter",
+      "plugin_id": "AudioUnit|417f7d6d|1.15.2",
+      "reference": "AudioUnit_417f7d6d_1.15.2.reference.json",
+      "agrees": true,
+      "agreeing_before": 2,
+      "makes_trusted": false,
+      "measured_here": true
+    },
+    {
+      "product": "bx_rooMS",
+      "plugin_id": "AudioUnit|417f636d|1.9.1",
+      "reference": "AudioUnit_417f636d_1.9.1.reference.json",
+      "agrees": true,
+      "agreeing_before": 2,
+      "makes_trusted": false,
+      "measured_here": true
+    },
+    {
+      "product": "bx_rockrack V3 Player",
+      "plugin_id": "AudioUnit|417f6370|3.9.1",
+      "reference": "AudioUnit_417f6370_3.9.1.reference.json",
+      "agrees": true,
+      "agreeing_before": 2,
+      "makes_trusted": false,
+      "measured_here": false
+    },
+    {
+      "product": "elysia mpressor",
+      "plugin_id": "AudioUnit|49696d78|1.15.1",
+      "reference": "AudioUnit_49696d78_1.15.1.reference.json",
+      "agrees": true,
+      "agreeing_before": 2,
+      "makes_trusted": false,
+      "measured_here": true
+    },
+    {
+      "product": "Unfiltered Audio G8",
+      "plugin_id": "AudioUnit|737a5876|1.6.2",
+      "reference": "AudioUnit_737a5876_1.6.2.reference.json",
+      "agrees": true,
+      "agreeing_before": 2,
+      "makes_trusted": false,
+      "measured_here": true
+    }
+  ],
+  "note": "results only: profiles, their tone checks and this manifest - no plugin files, no audio, no account token"
+}
