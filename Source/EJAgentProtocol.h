@@ -270,6 +270,13 @@ inline bool argFlag (const ToolCall& c, const char* key)
     }
     return false;
 }
+// Was the flag SENT at all? argFlag answers "is it true", which cannot distinguish "absolute: false" from
+// "no absolute argument" - and item 10 needs that distinction to pick the right default per argument.
+inline bool argFlagPresent (const ToolCall& c, const char* key)
+{
+    if (auto* o = c.args.getDynamicObject()) return o->hasProperty (key);
+    return false;
+}
 inline double argNumber (const ToolCall& c, const char* key, double fallback)
 {
     if (auto* o = c.args.getDynamicObject())

@@ -697,6 +697,18 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     // lease). Used by the editor's Link-tab edit path and by the borrowed-rack push above. Returns the seq or -1.
     int  writeChainEditCommand(const juce::String& linkUid, const juce::var& editOps, const juce::var& baseSlots,
                                const juce::String& sourceNote, const juce::String& leaseId);
+    // ---- ITEM 1 (Sean, 13 Oct 2026): "SENT" IS NOT "APPLIED" --------------------------------------------
+    // The agent's apply sink reported success on `seq >= 0`, which is the return of a FILE WRITE. Sean
+    // approved a build for the Kick, was told it landed, and the Kick's Link had nothing on it - then the
+    // agent read the empty rack for 18 rounds. A command written is a command written; whether the Link took
+    // it is in chain-ack-<uid>.json, which this build already wrote and only the borrow path ever read.
+    //
+    // Bounded, and the bound is reported in the sentence: a caller that gets `false` is told whether the Link
+    // refused it (with the Link's own reason) or never answered, because those need different next moves.
+    // slotsAfter is -1 when the Link is an older build that does not state it.
+    void awaitChainAck(const juce::String& linkUid, int seq,
+                       std::function<void(bool ok, juce::String sentence, int slotsAfter)> cb,
+                       int maxWaitMs = 8000);
     // ---- THE VALUE RING, PRODUCER SIDE (remote control stage 3, 10 Oct 2026) ----------------------------
     // The FILE above is for decisions; this is for values. The rule that picks the channel is one question -
     // does the next one supersede this one? A drag has no meaningful ack because the next frame supersedes it,
@@ -856,6 +868,15 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     void               calibStore(const juce::String& uid, const echojay::CalibLoop& loop);
     double             calibStallLogMs_ = 0.0;   // 21t-i: rate limit for the "cannot be advanced" line
     void borrowEditorClosed();
+    // ---- ITEM 5 (Sean, 13 Oct 2026): THE WORKING TARGET SURVIVES THE WINDOW ---------------------------
+    // Reopening the V2 showed "Released - Aitch_4_01 owns its rack again" and the V2's own empty rack. The
+    // release is correct and deliberate (ruling 4: a close commits like a deselect and never strands a
+    // lock) - what was missing is that nothing remembered WHICH rack you had been working on, so the
+    // reopened window could only show its own. Kept on the PROCESSOR because it has to outlive the editor,
+    // which is the whole point, and written into the saved state as an additive field so it also survives
+    // a project reopen. Empty = this instance's own rack, the same meaning it has everywhere else.
+    juce::String lastWorkingUid() const { return lastWorkingUid_; }
+    void setLastWorkingUid (const juce::String& uid) { lastWorkingUid_ = uid; }
     // §3f pin, restored in §5a-R terms (26 Aug 2026 ping-pong): while a
     // session is LIVE its uid is authoritative — a chat activation may
     // move the VIEW, never the session. Only a USER-initiated selection
@@ -884,6 +905,34 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
         const juce::String& viewUid, int slot);
     // Session-scoped surfaces, rendered by the panel until superseded —
     // banners must not be losable by navigating away (§5a-R honesty rule).
+    // ---- ITEM 4 (Sean, 13 Oct 2026): A TURN IN FLIGHT BELONGS TO THE PROCESSOR -------------------------
+    // The editor's destructor called activeChatStream_->cancel(), which killed the socket - so closing the
+    // window mid-reply threw the turn away, on a Link rack and on the V2's own rack alike. 12b's
+    // onChatTurnFinalised hook was built to catch exactly this and could never fire, because the stream was
+    // destroyed before it could finish: I had built the catcher and left the thing that drops it.
+    //
+    // The editor now HANDS the live handle over instead of cancelling it. Every stream callback is already
+    // guarded by a SafePointer to the editor and no-ops when it is gone, so nothing paints into a dead
+    // window; the socket simply runs to completion, api.notifyChatTurnFinalised fires with no editor
+    // attached, and the reply lands in orphanedChatTurns_ for the next window to drain.
+    //
+    // A vector because a second turn can be started and closed before the first finishes. They are dropped
+    // when finished or when the processor dies - whichever comes first - and the processor outliving its
+    // editor is the normal case, not the exception.
+    std::vector<std::shared_ptr<ChatStreamHandle>> parkedChatStreams_;
+    // The chat ids of the turns that were in the air when their window closed. Needed because the
+    // onChatTurnFinalised hook keeps a reply only when NO editor is attached - and a user who closes the
+    // window and reopens it before the answer arrives has an editor attached again, which would have
+    // dropped the reply for the second time, by the very rule written to save it. A parked turn's chat id
+    // is therefore kept and the hook honours it whether a window is open or not.
+    juce::StringArray parkedChatIds_;
+    /** Take over a chat stream from a dying editor so the turn can finish (item 4). */
+    void parkChatStream (std::shared_ptr<ChatStreamHandle> h);
+    /** Was this chat's turn parked by a closing window? (item 4) */
+    bool chatTurnWasParked (const juce::String& chatId) const { return parkedChatIds_.contains (chatId); }
+    void clearParkedChatId (const juce::String& chatId) { parkedChatIds_.removeString (chatId); }
+
+    juce::String lastWorkingUid_;      // item 5: the rack the editor was working on when it last closed
     juce::String borrowStickyBanner_;
     bool borrowBannerIsStatus_ = false;
     int  borrowInjDiagDivider_ = 0;

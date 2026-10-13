@@ -2954,12 +2954,19 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // setting is process-global and idempotent; the logo shares the benefit.
     juce::ImageCache::setCacheTimeout(30 * 60 * 1000);
 
-    // ---- HOOK E2 (agent mode, Session A2): the client, the panel, and nothing when the flag is off --------
-    // CONSTRUCTED ONLY UNDER THE DEV FLAG. A2's section 2 builds them unconditionally; doing that would put a
-    // timer, a listener and a component into every release editor for a path that cannot run, and "off = byte
-    // identical to today" is the promise this round made about every new path. With the flag off these three
-    // unique_ptrs stay null and every hook below is a null check.
-    if (agentModeOn())
+    // ---- HOOK E2 (agent mode): the client, the panel, and the executor - ALWAYS CONSTRUCTED --------------
+    //
+    // ITEM 6 (Sean, 13 Oct 2026): THIS IS WHY THE CHIP NEEDED A REOPEN. The block was `if (agentModeOn())`,
+    // so the executor, the client and the panel existed only when the flag happened to be ON at the moment
+    // this editor was built. agentModeOn() itself has always read the flag file live, and so does every gate
+    // below it - but a live gate in front of a null pointer is still a dead switch. The chip wrote the flag
+    // correctly, both surfaces agreed about it, and nothing could act on it until the window was rebuilt.
+    //
+    // So they are built unconditionally and the SWITCH stays where it belongs: on behaviour. Nothing here
+    // starts a request, opens a socket or shows a component - the panel is addChildComponent (not visible
+    // until laid out), the client's timer only runs during a session, and both the send site and ExecutorDo
+    // re-check agentModeOn() on every single call. Off is still off; it is now off in one place instead of
+    // two, and the one place is read live.
     {
         // ---- A'S EXECUTOR (10 Oct 2026): the read half A2 wrote, with the mutating half on top ----------
         // ExecutorDo SUBCLASSES ExecutorRead, so every read path, every checkpoint and the start context are
@@ -2971,17 +2978,84 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // ONE OP VOCABULARY. The executor translates a `do` into the chain channel's own `edit` array and
             // sends it through the path the editor already uses for a Link, so an agent's change takes exactly
             // the route a user's Apply takes - including the staleness guard and the ack.
+            //
+            // ---- ITEM 1 (Sean, 13 Oct 2026): THIS SINK USED TO REPORT A FILE WRITE AS A LANDING -----------
+            //
+            // It was `cb (seq >= 0, "sent to the rack")`. seq >= 0 means writeChainEditCommand wrote a JSON
+            // file. It says nothing about whether the Link read it, accepted it, or exists. Sean approved a
+            // build for the Kick, the agent reported it applied, the Kick's Link had nothing on it, and the
+            // agent then read the empty rack for 18 rounds - every one of those rounds downstream of this
+            // sentence being false.
+            //
+            // And the V2's OWN rack never went anywhere at all: writeChainEditCommand refuses an empty uid,
+            // so every agent `do` on the open rack returned -1 and "that rack would not take the change".
+            // Two separate silent failures behind one line.
             sinks.applyChainOps = [this] (const juce::String& uid, const juce::var& ops,
                                           std::function<void (bool, juce::String)> cb)
             {
+                // ---- THE V2'S OWN RACK: applied in-process, through the same applier a user's Apply uses --
+                if (uid.isEmpty())
+                {
+                    auto parsed = ChainHost::parseChainEditOps (juce::JSON::toString (ops, true));
+                    if (parsed.empty()) { if (cb) cb (false, "that change carried no operation this rack understands"); return; }
+                    processorRef.getChainHost().applyChainEdits (
+                        std::move (parsed), /*expectedRevision*/ -1, /*baseSlots*/ {},
+                        [cb] (const juce::StringArray& results, int appliedCount, bool abortedBeforeStart)
+                        {
+                            if (! cb) return;
+                            if (abortedBeforeStart || appliedCount <= 0)
+                                cb (false, results.isEmpty() ? juce::String ("the rack refused the change")
+                                                             : results.joinIntoString ("; "));
+                            else
+                                cb (true, results.joinIntoString ("; "));
+                        });
+                    return;
+                }
+                // ---- A LINK: written, then WAITED FOR, then reported ------------------------------------
                 const int seq = processorRef.writeChainEditCommand (uid, ops, juce::var(), "agent", {});
-                if (cb) cb (seq >= 0, seq >= 0 ? juce::String ("sent to the rack")
-                                               : juce::String ("that rack would not take the change"));
+                if (seq < 0) { if (cb) cb (false, "that rack would not take the change"); return; }
+                processorRef.awaitChainAck (uid, seq, [cb] (bool ok, juce::String sentence, int)
+                {
+                    if (cb) cb (ok, sentence);
+                });
             };
             // READ LIVE, both of them. A user who turns agent mode off mid-round means it, and a cached
             // answer would let the rest of the round through.
             sinks.agentModeOn = [] { return agentModeOn(); };
             sinks.echoJayOnly = [this] { return api.getEchoJayOnly(); };
+            // ---- ITEM 10 (Sean, 13 Oct 2026): THE RACK'S OUT GAIN ------------------------------------------
+            // Two different controls behind one op, because "the rack's OUT" is a different object on each
+            // side: this instance's bus gain, or the Link's mixer-strip GAIN. Both are the control the
+            // levelling loop's `rack_out` stage already writes, so an agent's change and a levelling landing
+            // move the SAME gain - which is what makes the OUT caption able to describe either of them.
+            sinks.setRackOutDb = [this] (const juce::String& uid, double db, bool absolute,
+                                         std::function<void (bool, juce::String)> cb)
+            {
+                const auto say = [] (double v) { return (v >= 0.0 ? juce::String ("+") : juce::String())
+                                                      + juce::String (v, 1) + " dB"; };
+                if (uid.isEmpty())
+                {
+                    const double now = (double) processorRef.getBusGainDb();
+                    const double next = juce::jlimit (-24.0, 24.0, absolute ? db : now + db);
+                    processorRef.setBusGainDb ((float) next);
+                    if (cb) cb (true, "the rack's OUT is now " + say (next)
+                                      + (absolute ? juce::String() : " (was " + say (now) + ")"));
+                    return;
+                }
+                // A LINK: the registry row carries its current gain, so a delta has something to be a delta
+                // of. Without the row there is no reading to add to, and a delta cannot be honoured - said
+                // plainly rather than silently treated as absolute, which would jump the fader.
+                double now = 0.0; bool found = false;
+                for (const auto& li : processorRef.getLinkSlotInfos())
+                    if (li.uid == uid) { now = (double) li.gainDb; found = true; break; }
+                // No row means no address AND no reading - so neither an absolute set nor a delta can be
+                // honoured, and refusing says so once instead of jumping the fader from an assumed 0 dB.
+                if (! found) { if (cb) cb (false, "that Link is not in the registry, so its OUT cannot be set"); return; }
+                const double next = juce::jlimit (-24.0, 24.0, absolute ? db : now + db);
+                processorRef.writeLinkCtrlCommand (uid, "gainDb", juce::var (next));
+                if (cb) cb (true, "that Link's OUT is now " + say (next)
+                                  + (absolute ? juce::String() : " (was " + say (now) + ")"));
+            };
             sinks.undoOne = [this] (const juce::String&, std::function<void (bool, juce::String)> cb)
             {
                 // ONE UNDO BUTTON FOR EVERYTHING. The plugin-wide history already walks local and remote
@@ -3009,7 +3083,45 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             if (role == "user") appendLocalUserBubble (text);
             else                appendLocalResultBubble (text);
         };
-        EchoJay_NSLog ("EJAgent: agent mode ON (dev flag) - client and card constructed");
+        EchoJay_NSLog (("EJAgent: client, panel and executor constructed (agent mode is currently "
+                        + juce::String (agentModeOn() ? "ON" : "OFF")
+                        + "; the switch gates behaviour, not construction - item 6, 13 Oct 2026)").toRawUTF8());
+    }
+
+    // ---- ITEM 5 (Sean, 13 Oct 2026): GO BACK TO THE RACK YOU WERE ON -------------------------------------
+    //
+    // Deferred by one message-loop turn rather than done here: handleBorrowSelectionChange engages a borrow
+    // session and sets a rack lock, and doing either from inside the constructor would have this editor
+    // claiming a lease before it is a fully built component (resized() has not run, the panels have no
+    // bounds). One hop is enough and costs nothing a user can see.
+    //
+    // It restores ONLY a Link that is still live. A remembered uid whose Link has gone - a deleted track, a
+    // closed project - must not be re-addressed, and silently falling back to the local rack is the correct
+    // behaviour rather than an error: the rack you were on genuinely is not there.
+    if (const auto want = processorRef.lastWorkingUid(); want.isNotEmpty())
+    {
+        juce::Component::SafePointer<EchoJayEditor> safe (this);
+        juce::Timer::callAfterDelay (0, [safe, want]
+        {
+            if (safe == nullptr) return;
+            if (! safe->linkUidLive (want))
+            {
+                EchoJay_NSLog (("EJRackView: item 5 - the remembered rack " + want
+                                + " is not live, staying on the local rack").toRawUTF8());
+                return;
+            }
+            safe->viewRackPinned_ = true;
+            safe->viewRackUid_    = want;
+            // userInitiated = true, DELIBERATELY: this is the user's own last selection being resumed, and
+            // the programmatic path is view-only (decideSelection returns ViewOnly), which would restore the
+            // picture without re-addressing the Link - the half-fix that looks right until you turn a dial.
+            safe->handleBorrowSelectionChange (want, true);
+            safe->chatTargetBtn.setButtonText (safe->chatTargetLabel());
+            safe->refreshChannelBannerCache();
+            safe->resized();
+            safe->repaint();
+            EchoJay_NSLog (("EJRackView: item 5 - restored the working rack " + want).toRawUTF8());
+        });
     }
 
     startTimerHz(20);
@@ -3033,20 +3145,34 @@ EchoJayEditor::~EchoJayEditor() {
     // pointer to us other than through this std::function.
     processorRef.onDashUnreadChanged = nullptr;
 
-    // Step-4 teardown: a live chat stream must not outlive its UI. This is
-    // spec 2.2's third hazard closed at the owner: the socket and worker
-    // die via the handle's cancel (the read unblocks and the loop abandons,
-    // which closes the stream), and every queued delta callback no-ops via
-    // the cancelled check on both sides of the callAsync hop.
-    // HOOK E6 (agent mode): the agent's socket dies with its UI, for the same reason and in the same place as
-    // the chat stream below. The panel is destroyed before the client by declaration order (see E1).
-    if (agentClient_ != nullptr) agentClient_->stop();
-
+    // ---- ITEM 4 (Sean, 13 Oct 2026): THE TURN IS HANDED OVER, NOT KILLED --------------------------------
+    //
+    // This block used to read `activeChatStream_->cancel()`, under a comment arguing that a live stream must
+    // not outlive its UI. The hazard that comment names is real - a delta must never paint into a
+    // half-destroyed editor - but cancelling the SOCKET is not what prevents it, and never was. Every
+    // callback on this stream is guarded by a SafePointer to this editor and returns immediately when it is
+    // gone; that is what closes the hazard. Cancelling additionally threw away the user's reply, which is
+    // the bug Sean reported: close the window mid-answer and the answer never existed.
+    //
+    // So the handle goes to the processor and the turn finishes there. The processor's onChatTurnFinalised
+    // hook - which I added in 12b for exactly this case and which could never fire, because this line
+    // destroyed the stream first - then keeps the reply for the next window to drain.
     if (activeChatStream_ != nullptr)
     {
-        activeChatStream_->cancel();
+        processorRef.parkChatStream (activeChatStream_);
         activeChatStream_ = nullptr;
     }
+
+    // HOOK E6 (agent mode): an agent RUN still stops here, and this is a limit worth stating rather than
+    // hiding. An agent turn is not one request: it is rounds of tool calls executed against THIS editor's
+    // executor, whose sinks reach this editor's panels. Parking the socket would leave a session making
+    // decisions with nothing to act on. Making an agent run survive the window means moving the client and
+    // the executor onto the processor, which is the same move as putting the agent into the chat - item 0,
+    // next round, whole. Until then it stops cleanly, which is the honest behaviour, and the user is told.
+    if (agentClient_ != nullptr && agentClient_->isActive())
+        EchoJay_NSLog ("EJAgent: an agent run was stopped by the window closing - item 0 moves the session to "
+                       "the processor so it can survive (13 Oct 2026)");
+    if (agentClient_ != nullptr) agentClient_->stop();
 
     // Codec preview must never outlive its UI (25 Jul 2026): if the editor
     // closes while codec mode is engaged, the processor would keep replacing
@@ -12910,6 +13036,7 @@ void EchoJayEditor::handleBorrowSelectionChange(const juce::String& newUid,
             break;
     }
     p.pendingAutoEngage_ = newUid;
+    p.setLastWorkingUid(newUid);   // item 5: remembered for the next time this window opens
     p.setRackLockWant(newUid);   // the lock belongs to the session being started, not to the view
     borrowSelectionTick();
 }
@@ -23332,8 +23459,9 @@ void EchoJayEditor::paint(juce::Graphics& g)
         static constexpr int kCaptureMsgH = 56;
 
         juce::AttributedString as;
-        as.append(displayedText(msg), juce::Font(juce::FontOptions(chatMsgFontSize)),
-                  chatBubbleTextColour(isUser, msg.dialWarning, C::text, C::text2));   // hurdle 1 item 3
+        // item 3b: markdown, through the one renderer the measure pass also calls
+        echojay::appendChatMarkdown(as, displayedText(msg), chatMsgFontSize,
+                           chatBubbleTextColour(isUser, msg.dialWarning, C::text, C::text2));   // hurdle 1 item 3
         // ~1.4x effective line height so paragraphs breathe. MUST match the
         // height-measure pass in resized() or the scroll range drifts.
         as.setLineSpacing(chatMsgFontSize * 0.35f);
@@ -25959,7 +26087,7 @@ int EchoJayEditor::measureChatContentHeight()
         else
         {
             juce::AttributedString as;
-            as.append(displayedText(msg), juce::Font(juce::FontOptions(chatMsgFontSize2)), C::text);
+            echojay::appendChatMarkdown(as, displayedText(msg), chatMsgFontSize2, C::text);   // item 3b: SAME renderer as paint
             as.setLineSpacing(chatMsgFontSize2 * 0.35f); // MUST match paint pass
             juce::TextLayout layout;
             layout.createLayout(as, (float)(maxBW - 20));
@@ -35044,6 +35172,24 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
                                     const juce::String& displayLabel,
                                     const juce::String& turnTypeOverride)
 {
+    // ---- ITEM 7 (Sean, 13 Oct 2026): THE COMPOSER EMPTIES WHEN THE MESSAGE IS TAKEN -----------------------
+    //
+    // The box was cleared in FIVE places - one per branch that happened to reach a network send - so every
+    // branch that handled the message locally and returned left the text sitting there. Agent mode was the
+    // visible one (it returns at the interceptTyped / start pair below, long before any clear), and the
+    // loudness-verb and staged-"yes" paths had their own clears bolted on for the same reason at different
+    // times. A user cannot tell "sent" from "not sent" when their words are still in the box.
+    //
+    // Cleared ONCE, here, at the single door every typed send comes through, and before any handler can
+    // return: from this line on the message is this function's responsibility, and the composer showing it
+    // would be a lie about whose hands it is in.
+    //
+    // SAFE AGAINST THE OBVIOUS HAZARD: `msg` is a const reference, so clearing the editor here would be a
+    // dangling read if any caller passed chatInput's own text by reference. Checked, all eight call sites -
+    // the two send buttons take `auto t = chatInput.getText().trim()` (a copy), the scan hold re-enters with
+    // its own captured copy, and the rest pass constructed strings. None reads the box.
+    chatInput.clear();
+
     if (handleLoudnessVerb(msg)) return;   // ruling G: local first, no network
     // 06d test 5: a yes to the last reply's STAGED PROPOSAL is applied here - the whole point of
     // B attaching the ops is that "yes" needs no second model call. Same rule as above: local

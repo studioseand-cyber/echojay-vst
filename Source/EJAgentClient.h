@@ -61,7 +61,8 @@ public:
         juce::String id;
         echojay::agent::ToolCall call;
         juce::String label;        // describeCall(call) - the server's summary when it sent one
-        juce::String detail;       // the landed line / the error message / "undone"
+        juce::String detail;       // the landed line / the USER's error line / "undone"  (item 3: never the model's)
+        juce::String modelDetail;  // item 3: the full text that went to the model, kept for the collapsed view
         juce::String undoToken;    // a do that landed
         juce::var    result;       // the compact result that went (or will go) to the server
         Status status = Status::Pending;

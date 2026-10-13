@@ -45,10 +45,40 @@ struct ToolOutcome
     juce::String undoToken;              // a `do` that landed and can be undone on its own; "" otherwise
     juce::String landedLine;             // optional: what the checklist row says once done ("EQ: bell 300 Hz -2 dB")
 
+    /** ---- ITEM 3 (Sean, 13 Oct 2026): TOOL ERRORS ARE NOT USER TEXT -------------------------------------
+        Sean saw, in red, in his chat: "repeat this same call with confirm: true", followed by a dump of
+        every channel and uid on the session. Both are mine, both are CORRECT - they are instructions to a
+        model that has to decide what to do next, and item 6(d) added the channel list on purpose so a loop
+        would stop. The mistake was that one string had two audiences and I only designed for one of them.
+
+        So `errorMessage` stays exactly as it is - the model's text, as detailed as it needs to be - and
+        `userMessage` is the one plain line a person reads. Empty means "the first sentence of errorMessage
+        will do", which is true of most failures and keeps every existing call site honest rather than
+        silently showing a human a model's instructions. */
+    juce::String userMessage;
+
+    /** The one line to show a person. Never the imperative clauses, never a list of uids. */
+    juce::String forTheUser() const
+    {
+        if (userMessage.isNotEmpty()) return userMessage;
+        // The first sentence, and nothing after it: every multi-audience message this build produces puts
+        // the plain statement first and the model's instructions after, so this is a safe default rather
+        // than a guess at parsing. Capped, so a single long sentence cannot become a wall either.
+        auto first = errorMessage.upToFirstOccurrenceOf (". ", false, false).trim();
+        if (first.isEmpty()) first = errorCode.isNotEmpty() ? errorCode : juce::String ("that step did not work");
+        if (first.length() > 160) first = first.substring (0, 157).trim() + "...";
+        return first.endsWithChar ('.') || first.endsWithChar ('?') ? first : first + ".";
+    }
+
     static ToolOutcome success (juce::var result, const juce::String& undoToken = {}, const juce::String& landedLine = {})
     { ToolOutcome o; o.ok = true; o.result = std::move (result); o.undoToken = undoToken; o.landedLine = landedLine; return o; }
     static ToolOutcome failure (const juce::String& code, const juce::String& message)
     { ToolOutcome o; o.ok = false; o.errorCode = code; o.errorMessage = message; return o; }
+    /** A failure with both audiences written for deliberately: `message` to the model, `userLine` to the
+        person. Used wherever the model's text carries an instruction or a list. */
+    static ToolOutcome failureFor (const juce::String& code, const juce::String& message,
+                                   const juce::String& userLine)
+    { ToolOutcome o; o.ok = false; o.errorCode = code; o.errorMessage = message; o.userMessage = userLine; return o; }
 };
 
 struct PlaybackReading
@@ -66,6 +96,13 @@ class ToolExecutor
 public:
     virtual ~ToolExecutor() = default;
     using Done = std::function<void (ToolOutcome)>;
+
+    // ---- ITEM 2 (Sean, 13 Oct 2026): A PLAN LINE HAS TO SAY WHOSE CHANNEL IT IS ON --------------------
+    // Sean pressed Apply on the plan and the executor then refused with the cross-channel ask - two presses
+    // for one decision, the second one asking about a track the card had never named. The card can only name
+    // it if something can turn the call's `channel` argument into a track NAME, and only the executor holds
+    // the registry. "" means "the channel you already have open", which needs no words.
+    virtual juce::String describeOtherChannel (const ToolCall& call) { juce::ignoreUnused (call); return {}; }
 
     // The opening read sent as `context` on /api/agent/start: channel (role,
     // name, uid), the rack in one line per slot, the inventory shortlist.

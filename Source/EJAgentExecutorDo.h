@@ -62,6 +62,23 @@ struct DoSinks
     /** Undo one step / back to a checkpoint, on whichever rack the step belongs to.
         Returns (ok, sentence). */
     std::function<void (const juce::String& token, std::function<void (bool, juce::String)>)> undoOne;
+
+    /** ---- ITEM 10 (Sean, 13 Oct 2026): THE RACK'S OUT GAIN, AS ITS OWN OP ----------------------------
+        Sean asked to turn the vocal rack output down 2 dB and the server dialled the EchoJay EQ's
+        output_db - a plugin's output inside the rack, not the rack's. It had no choice: there was no op
+        that meant "the rack's OUT", so the nearest thing with the word "output" in it won.
+
+        It is NOT a chain-channel edit op, which is why it needs a sink of its own. The rack OUT is the
+        gain the levelling loop's `rack_out` stage writes, and that is a different control on each side:
+        the V2's own bus gain (setBusGainDb) on this instance, and the Link's mixer-strip GAIN
+        (writeLinkCtrlCommand "gainDb") on a Link. Sending it as an `edit` op would reach neither - the
+        rack editor's op list has no name for it, and the one place a name was invented ("link_gain", in
+        the ring's fallback table) is not in the Link's accepted list either.
+
+        absolute: true  -> db IS the new gain.      absolute: false -> db is a DELTA on the current gain.
+        A delta is what a user asking for "down 2 dB" means, so that is what the op defaults to. */
+    std::function<void (const juce::String& targetUid, double db, bool absolute,
+                        std::function<void (bool, juce::String)>)> setRackOutDb;
 };
 
 class ExecutorDo : public ExecutorRead
@@ -82,6 +99,12 @@ private:
     /** Translate one `do` op into the chain channel's `edit` array, or fail with the
         sentence the model should see. Returns an empty var on refusal. */
     juce::var translate (const ToolCall& call, juce::String& refusal) const;
+    // ITEM 1 (13 Oct 2026): the slot floor a structural op must read back, or -1 when the op does not change
+    // the rack's shape. Public on purpose - the guard drives it directly, so the rule is checkable without
+    // standing up a rack.
+public:
+    int structuralWantSlots (const ToolCall& call, const juce::String& opName) const;
+private:
 
     DoSinks sinks_;
 };

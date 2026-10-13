@@ -102,6 +102,9 @@ private:
     void timerCallback() override;
 
     EJAgentClient& client_;
+    // ITEM 3 (13 Oct 2026): which failed rows have had their "Details" opened, by step id. By id and not by
+    // index, because the row list is rebuilt on every change and an index would move under the user.
+    juce::StringArray expandedRows_;
     juce::Viewport viewport_;
     Content content_ { *this };
     juce::TextButton stopBtn_ { "Stop" }, approveAllBtn_ { "Apply all" }, applyBtn_ { "Apply" }, declineBtn_ { "Skip all" },

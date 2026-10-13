@@ -138,6 +138,7 @@ class ExecutorRead : public ToolExecutor
 {
 public:
     explicit ExecutorRead (Sources s);
+    ~ExecutorRead() override { aliveToken_.reset(); }
 
     // The session's channel: "" = this instance's own rack, else a Link uid (the active chat's). Set at start.
     void setTarget (const juce::String& linkUid) { target_ = linkUid; }
@@ -151,6 +152,7 @@ public:
     void beginPlaybackWindow() override;
     PlaybackReading readPlayback() override;
     juce::String captureCheckpoint (const juce::String& label) override;
+    juce::String describeOtherChannel (const ToolCall& call) override;   // item 2: the track name, or "" for self
     void undoStep (const juce::String& undoToken, Done done) override;
     void undoToCheckpoint (const juce::String& checkpoint, Done done) override;
 
@@ -163,6 +165,16 @@ public:
     static juce::var analysisVar (const AnalysisRead& a);
     static juce::var levelsVar (const RackRead& r, const echojay::LevelTally::Snapshot& in, const echojay::LevelTally::Snapshot& out);
     static juce::var inventoryVar (const juce::StringArray& names);
+    // ITEM 9 (13 Oct 2026): the paged, filtered inventory. Parameter names for B's tool schema:
+    //   match  (string, optional)  every space-separated token must appear in the name, case-insensitive
+    //   offset (int,    optional, default 0)
+    //   limit  (int,    optional, default kInventoryPage, capped at kInventoryPageMax)
+    // and the result carries total / offset / limit / returned / hasMore / names, with `count` keeping its
+    // pre-paging meaning (== total, the whole list) and `truncated` keeping its (names are only a slice).
+    static juce::var inventoryPage (const juce::StringArray& all, const juce::String& match,
+                                    int offset, int limit);
+    static constexpr int kInventoryPage    = 60;
+    static constexpr int kInventoryPageMax = 200;
     // THE 8 KB GATE: trims `names`-style arrays and long strings until the JSON fits, marking truncated:true.
     static juce::var fitUnder8K (juce::var v);
     static int jsonBytes (const juce::var& v);
@@ -192,6 +204,25 @@ protected:   // ExecutorDo is a subclass and item 6(b) needs the channel resolve
     // item 6(d): the channels that DO exist, appended to every unknown_channel failure
     juce::String knownChannelsSentence() const;   // "" own | uid
     static ToolOutcome notPlaying (const juce::String& what);
+    // ---- ITEM 8 (Sean, 13 Oct 2026): ONE SENTENCE FOR "NOT FROM A LINK YET" --------------------------
+    // Every measurement read used targetRack() and a slot number, so a GR read aimed at another track came
+    // back as "slot 2 is not on the rack (1..0)" - a true statement about the wrong rack, and the sentence
+    // Sean's agent then retried eighteen times. The measurement half of item 1 is deferred to 0a, so the
+    // honest answer is that it cannot be read, said once, in words that close the subject.
+    static ToolOutcome notFromALink (const juce::String& what);
+    // True when the rack this call would MEASURE is a Link: either the call names another channel that
+    // resolves to a uid, or this session is itself addressing one. Both are Links, and neither can be
+    // measured until 0a lands the transport - so both get the same sentence rather than a slot error.
+    bool measuringALink (const ToolCall& call) const;
+
+    // ---- ITEM 1 (13 Oct 2026): THIS EXECUTOR OUTLIVES NOTHING ----------------------------------------
+    // doOp's apply now waits for the Link's ack before it reports, so its completion runs LATER - possibly
+    // after the editor that owns this executor has gone. That is the exact shape of the LinkProcessor crash
+    // the gate caught on 12 Oct (four callAsync([this]...) with no liveness check), so the same idiom is
+    // here before the first late callback can exist rather than after a crash report names it.
+    // Reset as the destructor's FIRST statement; every deferred lambda captures the weak half.
+    std::shared_ptr<bool> aliveToken_ { std::make_shared<bool> (true) };
+    std::weak_ptr<bool>   alive() const { return aliveToken_; }
 
     Sources src_;
     juce::String target_;

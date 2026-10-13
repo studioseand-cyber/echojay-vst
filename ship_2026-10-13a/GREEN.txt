@@ -1,0 +1,154 @@
+ship_2026-10-13a  -  EchoJay V2 + EchoJay Link  -  13 Oct 2026
+Round 08e: Sean's eleven in-host failures on ship_2026-10-12b, all eleven mine.
+
+=====================================================================
+BUNDLES  (verified by reading the UUID back out of the INSTALLED file)
+=====================================================================
+                          arm64                                  x86_64
+EchoJay V2.component      7C7D7512-8965-349D-A535-924ACF5F1C4E   C0B05822-F5BC-3A7F-8232-04A17AF9DC22
+EchoJay V2.vst3           7ED272C4-74E9-323D-BA2D-BC23376400BF   E4AA27AF-9AF4-3F9B-B004-58494BA62820
+EchoJay Link.component    5921EBB8-0521-3794-BF68-79A63257DC76   857A3CC3-4278-3444-8C47-D1825BBAFD79
+EchoJay Link.vst3         4A7E5BB6-1594-37FF-BBF5-D520C462AC70   623B0553-FE86-340A-81A8-F3F63B7C13F7
+
+All four arm64 UUIDs were read back from ~/Library/Audio/Plug-Ins after the install and compared against
+this table: four MATCH. Every bundle binary is also NEWER than the newest tracked source (source 13:20:24,
+bundles 14:36:04) - checked by mtime, not by reading a build log's prose.
+
+=====================================================================
+GATE
+=====================================================================
+GATE8 GREEN, 13 Oct 14:35:47 (started 13:20:40, 75 minutes).
+  S1  OK   forced delete of six archives across three trees, then relink (nine headers changed this round)
+  S2  OK   ~87 guard targets, full LTO
+  S3  OK   the four bundles
+  S3b OK   archive provenance: the guards' link line is newer than every header
+  S4  OK   ctest -L "fast|plugins"  ->  100% tests passed out of 76   (watchdog armed, no guard exceeded 300 s)
+  S5  OK   link_state_guard, standalone two-sided
+
+GATE7 before it went RED on one leg, and the red was worth having - see THE RED, below.
+
+=====================================================================
+THE ELEVEN
+=====================================================================
+1. LINK TARGET RESOLUTION.  Three faults, not one.
+   (a) Nothing normalised the channel argument, so `channel: "uid bb411b8240"` - the spelling a model most
+       naturally produces after reading "uid bb411b8240" out of the start context - was the one spelling that
+       could not resolve. normaliseChannelArg strips a leading uid/id/track/channel/link label, but only with
+       a separator after it, so a track really called "linkwood texture" is not stripped.
+   (b) "sent" was being reported as "applied". The apply sink returned cb(seq >= 0, ...) and seq is the return
+       of a FILE WRITE. That is why the Kick build was reported as landed with nothing on the Kick, and all 18
+       of those rounds were downstream of that one false sentence. There is now a bounded ack wait, and the
+       executor RE-READS the target rack and refuses with both figures if the slots are not there.
+   (c) For the V2's own rack (empty uid) writeChainEditCommand refuses outright, so every agent `do` on the
+       open rack had always returned -1. The own rack now applies in-process through ChainHost.
+2. ONE OK, NOT TWO.  A plan step names its target track ("on 88_7even Kick_2_01"), and pressing Apply records
+   confirm:true for that channel, so the executor does not ask again. A DECLINED line records no confirmation.
+3. TOOL ERRORS ARE NOT USER TEXT.  ToolOutcome carries two audiences: userMessage (one plain sentence, no uid,
+   no instruction) and errorMessage (the model's detail). A failed row gets a "Details" toggle. Agent replies
+   render **bold**, *italic*, _italic_ and `code` through the new EJChatMarkdown.h.
+4. A TURN SURVIVES CLOSING THE WINDOW.  The CHAT half is done: the editor hands its live stream to the
+   processor instead of cancelling it, the parked chat id makes the keep-rule survive a reopen, and the reply
+   is shown or saved. The AGENT half is NOT done and is deferred as queue item 0b, honestly: an agent turn is
+   rounds of tool calls run against the EDITOR's executor, so parking its socket would leave a session making
+   decisions with nothing to act on. That is item 0's move. Until then the run stops cleanly and says so.
+5. REOPEN RETURNS TO THE LINK YOU WERE ON.  lastWorkingUid is persisted (additive state key) and restored on
+   reopen, gated on the Link still being live.
+6. AGENT CHIP TAKES EFFECT IMMEDIATELY.  The cause was CONSTRUCTION, not liveness: the executor, client and
+   panel were built inside `if (agentModeOn())`, so a live gate sat in front of null pointers. Construction is
+   now unconditional and the switch is behaviour only. The chip and the Settings switch follow each other.
+7. INPUT BOX CLEARS ON SEND.  chatInput.clear() at the top of sendChatMessage - both modes.
+8. GR ON A LINK, UNTIL 0a.  A GR/analyser read aimed at another track's Link returns not_available_on_link
+   with retryable:false - never "slot not on rack". Exact wording in docs/FOR_B_2026-10-13.md.
+9. INVENTORY.  look(inventory) takes match / offset / limit and returns total / offset / limit / returned /
+   hasMore / match / names, with `count` and `truncated` keeping their old meanings. Names for B in
+   docs/FOR_B_2026-10-13.md.
+10. RACK OUT.  A set_rack_out op (db / delta / absolute / channel / confirm) goes to the rack-out sink and
+    never to the chain-op path, for the local rack and for a Link. The OUT caption is bottom-right of the rack
+    strip band, beside the master knob (PluginEditor.h:4059, built by rackOutGainCaption() at
+    PluginEditor.cpp:31625). It was invisible because it is EMPTY unless the loudness loop has armed or a Link
+    reports a non-unity OUT - and on a Link the loop had never armed, which is item 11.
+11. BUILD LEFT THE VOCAL LOUDER.  A post-build level match EXISTS and nothing ever called it.
+    LoudnessLoop::armFromChain() had exactly ONE caller in the whole product - the V2 editor's own-rack build.
+    The Link's loop is fully wired (resolveStage on its OUT gain, aimIsTarget, isPlaying, logLine, all bound in
+    the constructor) and no code path ever armed it. Confirmed from Sean's own logs: ZERO EJLoudness lines
+    across the three logs covering the 12b session. Armed now at the Link's Assistant-build callback, on the
+    BUILD path only - a Restore must not re-level a rack the user has since set by hand, and that is a leg.
+    Same shape as 12 Oct's plugin inventory: declared, wired, documented, never called.
+
+=====================================================================
+GUARDS
+=====================================================================
+agent_round13_guard   NEW, 70 assertions   items 1, 2, 3, 8, 9, 10 + the markdown renderer
+agent_client_guard    extended, 106 ok     item 2's Apply-counts-as-confirm, and that a decline does not
+link_build_level_guard NEW                 item 11, a real LinkProcessor and a real chain-cmd on disk
+agent_executor_read_guard  66 ok           pre-existing; it caught THE RED, below
+
+All three proven in BOTH directions by disabling each fix, confirming red, restoring, and diffing the source
+byte-identical.
+
+Items 4, 5, 6 and 7 have NO dedicated guard this round. Stated plainly rather than implied: they are editor
+lifecycle and UI-state behaviour, and the harnesses in this tree cannot open an editor. Item 4's chat half is
+exercised only by the existing orphaned-turn path.
+
+TWO FALSE RESULTS CAUGHT IN MY OWN GUARDS WHILE WRITING THEM
+  - A FALSE GREEN: the first fixture used the uid "lnk_kick" for a track called "Kick", so "uid lnk_kick"
+    resolved by CONTAINMENT even with the label-stripping deleted, and every item-1 leg passed for the wrong
+    reason. Opaque hex uids now, as the registry really holds them. The red direction then reproduced Sean's
+    exact error text.
+  - A REAL BUG in my own renderer, found by the red run: "gain **down" rendered as "gain down", because the
+    bold rule correctly declined and the italic rule then ate both stars. The ** case is now decided in one
+    branch that never falls through.
+
+=====================================================================
+THE RED  (gate7, and why it mattered)
+=====================================================================
+GATE7 went RED with 1 of 76: agent_executor_read_guard, leg G7a, which asserts that a 400-plugin inventory
+comes back under 8 KB with truncated:true and "count still 400".
+
+My item 9 paging had redefined `count` as the length of the PAGE. The old inventoryVar set count = names.size()
+BEFORE fitUnder8K halved the array, so `count` has always meant HOW MANY ARE INSTALLED, with `truncated`
+saying the names were only a slice. look(list_tracks) uses `count` the same way. Worse, the comment I had
+written next to the change asserted the opposite - "kept meaning what it has always meant ... the length of
+`names`" - a compatibility claim I never checked, in the one place where a wrong claim is most reassuring. The
+same claim was in docs/FOR_B_2026-10-13.md twice.
+
+Had it shipped, B's server reading `count` to answer "how many plugins do I have" would have begun saying 60
+instead of 1,598, with no error anywhere.
+
+Fixed three ways:
+  - `count` is the total again; `returned` is the only field that means the page length; `truncated` is set
+    whenever hasMore is.
+  - returned / hasMore / truncated are derived AFTER the 8 KB trim, from the array that actually survived it -
+    a value computed before the trim would be a lie about the very field the agent uses to decide whether to
+    ask for the next page.
+  - FOUR new legs in agent_round13_guard assert the compatibility fact, so the two guards cannot drift apart.
+    Red direction proven: with count set back to the page length, G7a fails exactly as the gate saw it and two
+    of the new legs go red ("[60]", truncated missing). Source restored byte-identical.
+
+THE LESSON, written down because it is the third of its kind this week: a comment that reassures is not a
+check. "Unchanged in meaning" was a claim about code I had not read. Two minutes of `git show HEAD:` would
+have settled it, and an existing guard had to do it instead.
+
+=====================================================================
+DOWNGRADE SAFETY
+=====================================================================
+A project or chain saved by this build opens sensibly in ship_2026-10-09a:
+  - the one new state key, lastWorkingUid, is ADDITIVE and restores to empty when absent
+  - nothing the old build reads was removed or renamed
+  - the inventory result's `count` and `truncated` keep their pre-paging meanings, so an older server reading
+    them is not silently given a different number
+
+=====================================================================
+PUSH
+=====================================================================
+The release branch is release/v2-agent, NOT feat/08c.
+  git push origin HEAD:release/v2-agent
+Not pushed by me: Sean approves the push.
+
+=====================================================================
+NOT IN THIS ROUND  (docs/NEXT_ROUND_QUEUE.md)
+=====================================================================
+item 0   the agent into the chat, whole
+item 0a  GR meters via a new versioned shm region, the EQ analyser and waveform, the calib loop on a Link,
+         Link OUT provenance
+item 0b  an agent RUN surviving the window - part of item 0's move (see item 4 above)

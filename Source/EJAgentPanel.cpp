@@ -137,8 +137,17 @@ EJAgentPanel::Layout EJAgentPanel::computeLayout (int width, int maxHeight) cons
             r.label  = s.label.isNotEmpty() ? s.label : juce::String ("step");
             r.detail = s.detail;
             int kind = 0;
+            // ---- ITEM 3 (13 Oct 2026): THE DETAIL IS REACHABLE, NOT SHOWN -----------------------------
+            // s.detail is now the one plain line. The model's full text - the imperatives and the channel
+            // list that Sean saw in red - lives on s.modelDetail and is only drawn when the user asks for
+            // it by name. Expanded rows are remembered by step id, so a relayout does not collapse them.
+            const bool expanded = expandedRows_.contains (s.id);
+            if (expanded && s.modelDetail.isNotEmpty() && s.modelDetail != s.detail)
+                r.detail = s.detail + "\n" + s.modelDetail;
             if (s.status == Step::Status::AwaitingApproval && st == State::AwaitingApproval) { r.rightButtonW = Metrics::toggleW; kind = 2; }
             else if (undoNow && s.canUndo())                                                  { r.rightButtonW = Metrics::undoW;   kind = 1; }
+            else if (s.status == Step::Status::Failed && s.modelDetail.isNotEmpty()
+                     && s.modelDetail != s.detail)                                            { r.rightButtonW = Metrics::undoW;   kind = 3; }
             out.rows.push_back (r);
             out.rowIds.push_back (s.id);
             out.rowButtonKind.push_back (kind);
@@ -330,6 +339,21 @@ void EJAgentPanel::placeButtons()
             b.setButtonText ("Undo");
             b.setTooltip ("Undo this step only");
             b.onClick = [this, id] { client_.undoStep (id); };
+        }
+        else if (kind == 3)
+        {
+            // ITEM 3: the collapsed detail. One word, and it says which way it goes.
+            styleSecondary (b);
+            const bool open = expandedRows_.contains (id);
+            b.setButtonText (open ? "Less" : "Details");
+            b.setTooltip (open ? "Hide what the agent was told" : "Show what the agent was told");
+            b.onClick = [this, id]
+            {
+                if (expandedRows_.contains (id)) expandedRows_.removeString (id);
+                else                             expandedRows_.add (id);
+                if (onLayoutNeeded) onLayoutNeeded();
+                repaint();
+            };
         }
         else
         {

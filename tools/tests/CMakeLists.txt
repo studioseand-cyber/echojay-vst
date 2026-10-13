@@ -301,6 +301,10 @@ ej_add_guard(ui_guard                 SOURCE tools/ui_round_guard/ui_guard.cpp  
 ej_add_guard(agent_client_guard       SOURCE tools/agent_client_guard/harness.cpp             LABEL fast)
 # A2's read-only executor (look / check / checkpoint / the playback window), first compiled 10 Oct
 ej_add_guard(agent_executor_read_guard SOURCE tools/agent_executor_read_guard/harness.cpp      LABEL fast)
+# Sean's 13 Oct in-host round: the executor items (1, 2, 3, 8, 9, 10) plus the chat's markdown renderer, each
+# leg red on the code as it stood. Item 1's target resolution was the root cause of every agent failure on
+# another track, so its legs lead.
+ej_add_guard(agent_round13_guard      SOURCE tools/agent_round13_guard/harness.cpp            LABEL fast)
 ej_add_guard(history_guard            SOURCE tools/ui_round_guard/history_guard.cpp           LABEL fast)
 ej_add_guard(classify_body_guard      SOURCE tools/classify_body_guard/harness.cpp            LABEL fast)
 ej_add_guard(shm_layout_guard         SOURCE tools/shm_layout_guard/harness.cpp               LABEL fast)
@@ -480,6 +484,12 @@ set_tests_properties(downgrade_keys_guard PROPERTIES LABELS "fast" TIMEOUT 120 W
 # 21t-d: one process, but the same shape - a real LinkProcessor against the Link archive, so it lives here.
 add_test(NAME calib_link_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/calib_link_guard/build_and_run.sh)
 set_tests_properties(calib_link_guard PROPERTIES LABELS "fast" TIMEOUT 900 RUN_SERIAL TRUE WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# item 11 (Sean, 13 Oct 2026): a build onto a Link must arm that Link's volume match. armFromChain had ONE
+# caller in the product - the V2's own-rack build - so a chain built onto a Link armed nothing, and Sean's
+# vocal rack came out louder than its input. Same single-process shape as calib_link_guard, and RUN_SERIAL for
+# the same reason: a real LinkProcessor takes a registry slot.
+add_test(NAME link_build_level_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/link_build_level_guard/build_and_run.sh)
+set_tests_properties(link_build_level_guard PROPERTIES LABELS "fast" TIMEOUT 900 RUN_SERIAL TRUE WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # 21t-j (28 Sep 2026): the Apply path in two processes - three real Links and a real V2. Ruled to be the guard for
 # test 4 ("a card with three deltas, Apply, trims read back moved, card text counts them"), because a registry
 # fixture cannot refuse, ack or move a trim.

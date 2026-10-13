@@ -128,8 +128,15 @@ LinkProcessor::LinkProcessor()
         };
         return st;
     };
-    // A Link is a CHANNEL or a BUS. Only a mix bus or master hits a target (Sean, 9 Oct), and a Link is neither,
-    // so it volume-matches unless the chain's own `option` says otherwise - which armFromChain honours.
+    // A Link is a CHANNEL or a BUS. Only a mix bus or master hits a target (Sean, 9 Oct), and a Link is
+    // neither, so it volume-matches.
+    //
+    // 13 Oct 2026, CORRECTING THIS COMMENT: it used to end "unless the chain's own `option` says otherwise -
+    // which armFromChain honours". armFromChain would honour it, but the option never arrives: the build
+    // command carries `calibration` and not the `leveling` block, and nothing on this side reads one. So a
+    // Link ALWAYS volume-matches today. That is the right outcome for every Link under the 9 Oct ruling, so
+    // it changes no behaviour - but the comment described a path that does not exist, and until item 11 below
+    // nothing called armFromChain on a Link at all, so neither half could be caught by using it.
     loudnessLoop_.aimIsTarget = [] { return false; };
     loudnessLoop_.isPlaying   = [this] { return transportPlaying_.load (std::memory_order_relaxed); };
     loudnessLoop_.logLine     = [] (const juce::String& l) { EchoJay_NSLog (l.toRawUTF8()); };
@@ -3619,6 +3626,31 @@ void LinkProcessor::pollChainCommand()
         // AFTER the ack, and only when the chain actually landed: a slot index in the block means nothing until
         // the build that created it has applied.
         if (failures == 0) startCalibFromBlock(calibBlock);
+
+        // ---- ITEM 11 (Sean, 13 Oct 2026): ARM THE LEVELLING LOOP. NOTHING EVER DID. ----------------------
+        //
+        // Sean: after the vocal build the rack was louder than its input, every slot trim at +0.0, and the
+        // Kramer PIE's own output gain was the cause. He expected a build to leave the rack at the same
+        // loudness. A post-build volume match DOES exist and is fully wired on this side - resolveStage
+        // points at this Link's OUT gain, aimIsTarget says a Link never hits a target, isPlaying and logLine
+        // are bound in the constructor - and `armFromChain()` had exactly ONE caller in the whole product:
+        // EchoJayEditor::armLoudnessLoopIfTargeted(), which runs when the V2 builds ITS OWN rack.
+        //
+        // So a chain built onto a Link armed nothing. The loop was not failing to land the level; it was
+        // never asked. Same shape as the plugin inventory on 12 Oct: declared, wired, documented, never
+        // called - and like that one it looked fine from every side except the one that matters.
+        //
+        // Arming it here and not on the Restore path above is the whole of the care needed: reopening a
+        // project must not re-level a rack the user has since set by hand, and Restore is how that arrives.
+        if (failures == 0)
+        {
+            if (loudnessLoop_.armFromChain())
+                EchoJay_NSLog(("EJLoudness: Link armed after a build - " + loudnessLoop_.aimWords()
+                               + ", stage " + loudnessLoop_.stageName() + " at "
+                               + juce::String(loudnessLoop_.currentGainDb(), 1) + " dB").toRawUTF8());
+            else
+                EchoJay_NSLog("EJLoudness: Link NOT armed after a build - see the aim/arm line above for why");
+        }
     });
 }
 

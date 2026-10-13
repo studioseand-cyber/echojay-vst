@@ -7,6 +7,7 @@
 #include "EJAgentClient.h"    // HOOK E1 (agent mode, Session A2)
 #include "EJAgentPanel.h"
 #include "EJAgentExecutorDo.h"   // agent mode: A2's read half plus the mutating half
+#include "EJChatMarkdown.h"      // item 3b (13 Oct 2026): the chat's inline markdown, shared by paint + measure
 #include "PluginProcessor.h"
 #include "EJReferenceRows.h"   // the browser's pane rule: header-inline, pinned
 #include "EJReferenceBar.h"    // the reference bar's geometry and stepping: pinned
@@ -4279,7 +4280,7 @@ private:
     // THE single source of the chat scroll extent: summed message heights,
     // consumed by BOTH the timer and resized() so the scroll range is never a
     // second guess (fixes the sidebar "can't scroll up to a long reply" bug).
-    int  measureChatContentHeight();
+    int  measureChatContentHeight();   // item 3b: the markdown renderer lives in Source/EJChatMarkdown.h
     int  editCardHeight(const ChatMsg& msg) const;
     // MISDIAL REPORT v1: the popup. A free text box ALWAYS, and a control
     // picker only when rows survived the fp comparison. Picking a control files

@@ -427,6 +427,10 @@ void EJAgentClient::onFrame (int generation, Frame f)
             s.call = f.call;
             s.id = f.call.id.isNotEmpty() ? f.call.id : "tc_local_" + juce::String ((int) steps_.size() + 1);
             s.label = describeCall (f.call);
+            // ITEM 2: the card names the track. Appended rather than built into describeCall because only the
+            // executor can turn a uid into a name, and describeCall is a pure function the guards rely on.
+            if (const auto other = executor_.describeOtherChannel (f.call); other.isNotEmpty())
+                s.label += " - on " + other;
             s.round = round_;
             s.approved = true;
             s.status = f.call.askFirst() ? Step::Status::AwaitingApproval : Step::Status::Pending;
@@ -453,6 +457,11 @@ void EJAgentClient::onFrame (int generation, Frame f)
                     s = &steps_.back();
                 }
                 if (item.summary.isNotEmpty()) s->label = item.summary;
+                // ITEM 2 again, for the card's own wording: the server's summary wins on the WORDS, but the
+                // track is not the server's to omit - a line the user approves must say what it acts on.
+                if (const auto other = executor_.describeOtherChannel (s->call);
+                    other.isNotEmpty() && ! s->label.containsIgnoreCase (other))
+                    s->label += " - on " + other;
                 if (item.why.isNotEmpty())     s->call.why = item.why;
                 s->call.approval = "ask_first";
                 if (s->status == Step::Status::Pending) s->status = Step::Status::AwaitingApproval;
@@ -654,7 +663,13 @@ void EJAgentClient::completeStep (int generation, const juce::String& id, ToolOu
     else
     {
         s->status = Step::Status::Failed;
-        s->detail = o.errorMessage.isNotEmpty() ? o.errorMessage : o.errorCode;
+        // ---- ITEM 3 (Sean, 13 Oct 2026) ------------------------------------------------------------------
+        // This line was `s->detail = o.errorMessage`, and the panel paints detail in red. o.errorMessage is
+        // written FOR THE MODEL - it carries imperatives ("repeat this same call with confirm: true") and, by
+        // item 6(d)'s design, the full list of channels and uids. All of it went straight to the user.
+        // The model's copy still travels untouched on s->result below; the user gets one plain line.
+        s->detail      = o.forTheUser();
+        s->modelDetail = o.errorMessage.isNotEmpty() ? o.errorMessage : o.errorCode;
         s->result = juce::var();
         if (s->isDo()) roundDoFailed_ = true;
         log ("step " + id + " FAILED code=" + o.errorCode + " \"" + o.errorMessage + "\"");
@@ -767,6 +782,22 @@ void EJAgentClient::submitPlan()
     if (state_ != State::AwaitingApproval) return;
     int yes = 0, no = 0;
     for (const auto& s : steps_) if (s.round == round_ && s.status == Step::Status::AwaitingApproval) (s.approved ? yes : no)++;
+    // ---- ITEM 2 (Sean, 13 Oct 2026): ONE OK, NOT TWO ----------------------------------------------------
+    //
+    // Sean pressed Apply on the plan and the executor refused with "This is on the kick's channel, go ahead?".
+    // Both gates are right on their own: the card asks the user, and doOp refuses a cross-channel edit without
+    // confirm:true. Nobody connected them, so the user's press was thrown away and the same question was asked
+    // again, in worse words, by a layer below.
+    //
+    // The press IS the confirmation, and it is recorded on the call here - at the moment the decision becomes
+    // final - rather than inside doOp, because doOp must keep failing closed for a call that NO user approved.
+    // A declined line gets nothing, so a later re-run of it still has to ask.
+    for (auto& s : steps_)
+    {
+        if (s.round != round_ || s.status != Step::Status::AwaitingApproval || ! s.approved) continue;
+        if (auto* o = s.call.args.getDynamicObject()) o->setProperty ("confirm", true);
+        else { auto* o2 = new juce::DynamicObject(); o2->setProperty ("confirm", true); s.call.args = juce::var (o2); }
+    }
     planSubmitted_ = true;
     log ("plan submitted approved=" + juce::String (yes) + " declined=" + juce::String (no));
     setState (State::Executing);

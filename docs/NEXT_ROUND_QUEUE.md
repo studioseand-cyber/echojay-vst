@@ -1,6 +1,31 @@
 # Next round — the queue, in order
 
 Rewritten 12 Oct 2026, after the round that took Sean's items 1-11.
+Amended 13 Oct 2026, after Sean's in-host results on ship_2026-10-12b (eleven failures, all mine, all fixed
+this round except the two already deferred — item 0 below and item 0a — plus ONE NEW deferral recorded as
+item 0b: an agent RUN surviving the window, which is part of item 0's move and cannot be done before it).
+
+## 0b. AN AGENT RUN MUST SURVIVE THE WINDOW CLOSING — part of item 0, 13 Oct 2026
+
+Sean's item 4 on 12b was "a turn survives closing the window", for normal chat AND for an agent run.
+
+**The chat half is DONE** (13 Oct): the editor hands its live `ChatStreamHandle` to the processor instead of
+cancelling it, the socket runs to completion, and `onChatTurnFinalised` keeps the reply for the next window to
+drain — including the case where the user reopens before the reply lands, which the first version of that hook
+would have dropped a second time.
+
+**The agent half is NOT, and it belongs here rather than in a half-fix.** An agent turn is not one request. It
+is rounds of tool calls run against the *editor's* `ExecutorDo`, whose sinks reach this editor's panels and
+whose `agentClient_` is an editor member destroyed with it. Parking the socket the way the chat stream is
+parked would leave a session making decisions with nothing to act on — worse than stopping, because it would
+look like it was still working.
+
+Making it survive means moving `EJAgentClient` and `ExecutorDo` onto the processor, with the panel (or, after
+item 0, the transcript) attaching as a listener. That is the same move item 0 makes. So: **item 0 does both**,
+and until then the run stops cleanly when the window closes and says so in the log.
+
+What already helps: the executor's sources are processor-bound already (`bindToProcessor`), and `ExecutorRead`
+now carries an alive token, so a deferred completion cannot touch a dead executor.
 
 ## 0. THE AGENT IN THE CHAT, NOT IN A BOX ABOVE IT — Sean's ruling, 12 Oct 2026
 
@@ -89,7 +114,7 @@ It is not dropped - it is restated with what this round learned, which the old t
 the transport it assumed (a field on `LinkMeterFrame`) is NOT available, because that struct is 128 bytes,
 fully spent, and its size is the mapping stride. 0a carries the replacement design.
 
-## 0b. buildNotes in the local result bubble — offered, not taken
+## 0c. buildNotes in the local result bubble — offered, not taken
 
 B's done frame and one-shot body now carry `buildNotes` (Sean, 11 Oct: "if you'd rather draw those in the local
 result bubble"). Nothing was done with it this round — it was an offer rather than an instruction, and the round

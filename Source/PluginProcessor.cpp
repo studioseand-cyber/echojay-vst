@@ -296,7 +296,13 @@ EchoJayProcessor::EchoJayProcessor()
     // testing, read from the side that survives.
     api.onChatTurnFinalised = [this] (const juce::String& chatId, const juce::String& reply, bool success)
     {
-        if (getActiveEditor() != nullptr) return;          // a live window persists it, as it always has
+        // ITEM 4 (13 Oct 2026): "no editor attached" is not the whole test. A user who closes the window
+        // mid-answer and reopens it BEFORE the answer lands has an editor attached again, and this line
+        // would then drop the reply a second time - by the rule written to save it. A turn whose window
+        // closed is the processor's to keep, whether or not a new window has since opened.
+        const bool wasParked = parkedChatIds_.contains (chatId);
+        if (getActiveEditor() != nullptr && ! wasParked) return;   // a live window persists its own, as it always has
+        if (wasParked) parkedChatIds_.removeString (chatId);
         if (! success || reply.trim().isEmpty()) return;    // nothing worth keeping
         chatHistory.push_back ({ "assistant", reply });
         chatRoles.add ("assistant");
@@ -2865,6 +2871,88 @@ int EchoJayProcessor::writeChainEditCommand(const juce::String& linkUid, const j
     return seq;
 }
 
+// ---- ITEM 1 (Sean, 13 Oct 2026): WAIT FOR THE LINK TO SAY IT TOOK IT ------------------------------------
+//
+// One poll, shared, so no caller has to re-learn the ack file's shape. The borrow path keeps its own poll
+// because it also rebases a queue; this is the plain question "did seq land?" for callers that just need the
+// answer before they claim anything to a user.
+// ---- ITEM 4 (Sean, 13 Oct 2026) ---------------------------------------------------------------------------
+void EchoJayProcessor::parkChatStream (std::shared_ptr<ChatStreamHandle> h)
+{
+    if (h == nullptr || h->isCancelled()) return;
+    // Finished handles are swept here rather than on a timer: the only way a new one arrives is a window
+    // closing mid-turn, which is also the only moment the list can grow, so sweeping on arrival keeps it at
+    // the true number of turns still in the air with no timer and no thread to reason about.
+    parkedChatStreams_.erase (std::remove_if (parkedChatStreams_.begin(), parkedChatStreams_.end(),
+                                              [] (const std::shared_ptr<ChatStreamHandle>& p)
+                                              { return p == nullptr || p->isCancelled(); }),
+                              parkedChatStreams_.end());
+    parkedChatStreams_.push_back (std::move (h));
+    if (const auto id = api.turnChatId(); id.isNotEmpty()) parkedChatIds_.addIfNotAlreadyThere (id);
+    EchoJay_NSLog (("EJChat: a streaming turn was handed to the processor as its window closed - it will "
+                    "finish and be kept for the next window (" + juce::String ((int) parkedChatStreams_.size())
+                    + " in flight)").toRawUTF8());
+}
+
+void EchoJayProcessor::awaitChainAck(const juce::String& linkUid, int seq,
+                                     std::function<void(bool, juce::String, int)> cb, int maxWaitMs)
+{
+    if (! cb) return;
+    if (linkUid.isEmpty() || seq < 0) { cb(false, "there was nothing to acknowledge", -1); return; }
+
+    struct Poll
+    {
+        juce::String uid; int seq; int waitedMs; int maxMs;
+        std::function<void(bool, juce::String, int)> cb;
+        std::weak_ptr<bool> alive;
+    };
+    auto poll = std::make_shared<Poll>(Poll { linkUid, seq, 0, juce::jmax(250, maxWaitMs), std::move(cb), aliveToken_ });
+
+    // A shared_ptr held by the lambda and re-captured each tick: the chain of callAfterDelay owns it, and the
+    // alive token stops a tick that outlives this processor from touching it.
+    auto step = std::make_shared<std::function<void()>>();
+    *step = [this, poll, step]
+    {
+        if (poll->alive.expired()) return;
+        int e = 0; const juce::String d = LinkShm::resolveDir(e);
+        const juce::File ack(d + "chain-ack-" + poll->uid + ".json");
+        if (ack.existsAsFile())
+        {
+            const auto v = juce::JSON::parse(ack.loadFileAsString());
+            if ((int) v.getProperty("seq", -1) == poll->seq)
+            {
+                const auto st  = v.getProperty("status", juce::var()).toString();
+                const auto why = v.getProperty("reason", juce::var()).toString();
+                int slots = -1;
+                if (auto* o = v.getDynamicObject()) if (o->hasProperty("slotsAfter")) slots = (int) v.getProperty("slotsAfter", -1);
+                if (st == "ok")
+                {
+                    poll->cb(true, slots >= 0 ? "the rack took it and now holds " + juce::String(slots) + " slot(s)"
+                                              : juce::String("the rack took it"), slots);
+                    return;
+                }
+                if (st.isNotEmpty())
+                {
+                    // THE LINK'S OWN REASON, unparaphrased. It is the only account of why, and a caller that
+                    // reports "it failed" without it sends the next round out blind.
+                    poll->cb(false, "the rack refused it (" + st + ")"
+                                    + (why.isNotEmpty() ? ": " + why : juce::String()), slots);
+                    return;
+                }
+            }
+        }
+        poll->waitedMs += 100;
+        if (poll->waitedMs >= poll->maxMs)
+        {
+            poll->cb(false, "the rack never acknowledged it within " + juce::String(poll->maxMs / 1000) + " s - "
+                            "it may be gone, or its track may be disabled", -1);
+            return;
+        }
+        juce::Timer::callAfterDelay(100, [step] { (*step)(); });
+    };
+    juce::Timer::callAfterDelay(100, [step] { (*step)(); });
+}
+
 int EchoJayProcessor::borrowPushStructuralEdit(const juce::String& op, int slot0, int to0, bool on, const juce::String& name,
                                                 const juce::StringArray& baseSlotsBefore, int countBefore)
 {
@@ -5417,6 +5505,10 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     state->setProperty("capableLinkSeen", capableLinkSeen_.load(std::memory_order_relaxed));   // hurdle 1 item 4
     state->setProperty("channelTypePromptDismissed", channelTypePromptDismissed);
     state->setProperty("channelChosen", channelChosen);   // 21r item 7: asked once per instance, ever
+    // ITEM 5 (13 Oct 2026): the rack the window was working on. ADDITIVE and nothing depends on it - an
+    // older build ignores the key, and this build treats an absent key exactly as it treats an empty one
+    // (stay on the local rack), so a project written here still opens sensibly in ship_2026-10-09a.
+    state->setProperty("lastWorkingUid", lastWorkingUid_);
     {   // 21m rename alias: uid -> alias, session state
         auto* al = new juce::DynamicObject();
         for (const auto& [u, a] : linkAliases_) if (a.isNotEmpty()) al->setProperty(u, a);
@@ -5756,6 +5848,10 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             channelChosen = obj->hasProperty("channelChosen")
                               ? (bool)obj->getProperty("channelChosen")
                               : (channelTypePromptDismissed || channelType != ChannelType::FullMix);
+            // ITEM 5 (13 Oct 2026): absent and empty mean the same thing - the local rack - so a state from
+            // any older build restores exactly as it does today. The editor checks the Link is still live
+            // before it addresses anything, so a stale uid here is harmless.
+            lastWorkingUid_ = obj->getProperty("lastWorkingUid").toString();
             if (auto* ga = obj->getProperty("linkGroups").getArray())   // 21n item 4
             {
                 groupRepairArmed_ = true; groupRepairTicks_ = 0;   // 21t-k item 1b: armed by a load, run once

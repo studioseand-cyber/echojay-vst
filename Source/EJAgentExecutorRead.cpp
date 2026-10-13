@@ -69,26 +69,72 @@ ExecutorRead::ExecutorRead (Sources s) : src_ (std::move (s)) {}
 // "88_7even Kick_2". A containment match is only accepted when it is UNIQUE; two candidates mean the executor
 // hands the string back unresolved and the caller's failure lists the tracks, because quietly picking one of two
 // channels is how an agent edits the wrong thing.
+// ---- ITEM 1 (Sean, 13 Oct 2026): THE LABEL IS NOT PART OF THE UID -------------------------------------------
+//
+// The agent sent  channel: "uid bb411b8240"  and the registry holds  bb411b8240, so resolution failed and the
+// whole round failed with it: `no Link with uid "uid bb411b8240" is in the registry`. The uid was RIGHT. The
+// word in front of it was the problem, and I had written a resolver that compared the argument to the registry
+// with no normalisation at all - so the one spelling a model most naturally produces, having just read "uid
+// bb411b8240" out of the start context, was the one spelling that could not work.
+//
+// Normalised before any comparison, and the normalisation is tried ALONGSIDE the raw string rather than instead
+// of it, so a track genuinely named "uid something" still resolves by its name.
+juce::String normaliseChannelArg (const juce::String& in)
+{
+    auto s = in.trim().unquoted().trim();
+    for (const char* lab : { "uid", "id", "track", "channel", "link" })
+    {
+        const juce::String l (lab);
+        if (! s.startsWithIgnoreCase (l) || s.length() <= l.length()) continue;
+        // The label counts only when a SEPARATOR follows it, so "linkwood" is not stripped to "wood".
+        const auto sep = s[l.length()];
+        if (sep != ':' && sep != '=' && ! juce::CharacterFunctions::isWhitespace (sep)) continue;
+        const auto rest = s.substring (l.length() + 1).trim().unquoted().trim();
+        if (rest.isNotEmpty()) return rest;
+    }
+    return s;
+}
+
 juce::String ExecutorRead::resolveChannelArg (const ToolCall& call) const
 {
-    const auto ch = argString (call, "channel").trim();
-    if (ch.isEmpty() || ch == "self") return target_;
+    const auto raw = argString (call, "channel").trim();
+    if (raw.isEmpty() || raw == "self") return target_;
 
     const auto tracks = src_.tracks ? src_.tracks() : std::vector<TrackRead>();
-    for (const auto& t : tracks) if (t.uid == ch) return t.uid;                       // a uid, exactly
 
-    const auto want = ch.toLowerCase();
-    for (const auto& t : tracks) if (t.name.toLowerCase() == want) return t.uid;       // a name, exactly
+    // Every spelling that means the same channel, in one list, tried most-exact first. The RAW string comes
+    // first at every stage so a stripped label can never beat a real match on the whole argument.
+    juce::StringArray forms;
+    forms.addIfNotAlreadyThere (raw);
+    forms.addIfNotAlreadyThere (normaliseChannelArg (raw));
 
-    juce::String hit; int hits = 0;
-    for (const auto& t : tracks)
+    for (const auto& f : forms)
+        for (const auto& t : tracks) if (t.uid == f) return t.uid;                    // a uid, exactly
+    for (const auto& f : forms)
+        for (const auto& t : tracks) if (t.name == f) return t.uid;                    // a name, exactly, case kept
+
+    // case-insensitive name, then a unique containment match, over every form
+    for (const auto& f : forms)
     {
-        const auto have = t.name.toLowerCase();
-        if (have.isEmpty()) continue;
-        if (have.contains (want) || want.contains (have)) { hit = t.uid; ++hits; }
+        const auto want = f.toLowerCase();
+        for (const auto& t : tracks) if (t.name.toLowerCase() == want) return t.uid;
     }
-    if (hits == 1) return hit;
-    return ch;   // unresolved, or ambiguous: the failure path names the tracks
+    for (const auto& f : forms)
+    {
+        const auto want = f.toLowerCase();
+        juce::String hit; int hits = 0;
+        for (const auto& t : tracks)
+        {
+            const auto have = t.name.toLowerCase();
+            if (have.isEmpty()) continue;
+            if (have.contains (want) || want.contains (have)) { hit = t.uid; ++hits; }
+        }
+        if (hits == 1) return hit;
+    }
+    // Unresolved or ambiguous. The RAW argument goes back, not my normalised form, so the failure quotes the
+    // model exactly what it sent - a sentence that silently reports a different string than the one that was
+    // tried is how a loop spends six rounds on a typo it cannot see.
+    return raw;
 }
 
 // ITEM 6(d): A READ FAILURE HAS TO BE READABLE ENOUGH TO STOP THE LOOP. The agent retried for six rounds against
@@ -104,6 +150,20 @@ juce::String ExecutorRead::knownChannelsSentence() const
     return " The channels that exist are: " + rows.joinIntoString ("; ")
          + ". Name one of those, by uid or by its exact name, or stop - this list is complete and will not change "
            "by retrying.";
+}
+
+// ---- ITEM 2 (Sean, 13 Oct 2026) ---------------------------------------------------------------------------
+// The name of the channel this call acts on WHEN IT IS NOT THE OPEN ONE, so the plan card can say "on
+// 88_7even Kick_2_01" and the user's Apply is a decision about a named track rather than a blank cheque.
+// Returns "" for the open channel, and "" for a channel that does not resolve - an unresolved target is not
+// something to put in front of a user as if it were a destination.
+juce::String ExecutorRead::describeOtherChannel (const ToolCall& call)
+{
+    const auto asked = resolveChannelArg (call);
+    if (asked.isEmpty() || asked == target_) return {};
+    const auto tracks = src_.tracks ? src_.tracks() : std::vector<TrackRead>();
+    for (const auto& t : tracks) if (t.uid == asked) return t.name.isNotEmpty() ? t.name : t.uid;
+    return {};
 }
 
 RackRead ExecutorRead::targetRack() const
@@ -146,6 +206,31 @@ ToolOutcome ExecutorRead::notPlaying (const juce::String& what)
     auto o = ToolOutcome::failure ("not_playing", "No audio has been heard for " + what + " yet.");
     auto* e = new juce::DynamicObject();
     e->setProperty ("hint", "ask the user to play the loudest section, then wait_for_playback");
+    o.result = juce::var (e);
+    return o;
+}
+
+// ---- ITEM 8 (Sean, 13 Oct 2026) ---------------------------------------------------------------------------
+// THE EXACT WORDING, in one place, so B can teach the agent not to plan it and the two never drift apart.
+// `retryable:false` and the hint are the part that matters as much as the sentence: Sean's loop spent eighteen
+// rounds on "slot 2 is not on the rack (1..0)" because that error reads like a mistake worth correcting. This
+// one reads like a fact, and says what to do instead.
+bool ExecutorRead::measuringALink (const ToolCall& call) const
+{
+    const auto asked = resolveChannelArg (call);
+    return asked.isNotEmpty();      // "" is this instance's own rack; anything else is a Link uid
+}
+
+ToolOutcome ExecutorRead::notFromALink (const juce::String& what)
+{
+    auto o = ToolOutcome::failureFor ("not_available_on_link",
+                                   what + " cannot be read from a Link yet - only from the rack this EchoJay "
+                                   "window has open. This will not work on a retry.",
+                                   what + " cannot be read from a Link yet.");
+    auto* e = new juce::DynamicObject();
+    e->setProperty ("retryable", false);
+    e->setProperty ("hint", "do not plan a measurement on another track's Link: either work from what look(rack) "
+                            "reports, or ask the user to open that track's own EchoJay window and measure there");
     o.result = juce::var (e);
     return o;
 }
@@ -309,14 +394,77 @@ juce::var ExecutorRead::levelsVar (const RackRead& r, const echojay::LevelTally:
     return fitUnder8K (juce::var (o));
 }
 
+// ---- ITEM 9 (Sean, 13 Oct 2026): THE INVENTORY WAS A WINDOW WITH NO WAY TO MOVE IT ------------------------
+//
+// Sean asked "what compressors do I have" and got Acme, Abbey Road... - the alphabetical first slice of 1,598
+// plugins. The cause was the 8 KB result rule meeting a list that cannot fit in it: fitUnder8K halved `names`
+// until the JSON fitted and set truncated:true, which is honest, but `count` then reported the TRIMMED size
+// and there was no filter and no offset. So the agent could see that it had been cut off and had no way to ask
+// for the rest, and no way to ask for compressors specifically.
+//
+// Three parameters and three figures, and `total` is now the count of what MATCHED, before trimming, which is
+// the number an agent needs to know whether it has covered the list.
 juce::var ExecutorRead::inventoryVar (const juce::StringArray& names)
 {
-    auto* o = new juce::DynamicObject();
-    o->setProperty ("count", names.size());
+    return inventoryPage (names, {}, 0, kInventoryPage);
+}
+
+juce::var ExecutorRead::inventoryPage (const juce::StringArray& all, const juce::String& match,
+                                       int offset, int limit)
+{
+    juce::StringArray hit;
+    if (match.isEmpty()) hit = all;
+    else
+    {
+        // Every token must appear somewhere in the name, case-insensitively: "fab comp" finds
+        // "FabFilter Pro-C 2" only if both words are in it. Substring rather than prefix because a model asks
+        // for "compressor" and the name says "Pro-C 2 Compressor".
+        juce::StringArray want; want.addTokens (match.toLowerCase(), " ", "");
+        want.removeEmptyStrings();
+        for (const auto& n : all)
+        {
+            const auto low = n.toLowerCase();
+            bool allIn = true;
+            for (const auto& w : want) if (! low.contains (w)) { allIn = false; break; }
+            if (allIn) hit.add (n);
+        }
+    }
+
+    const int total = hit.size();
+    const int off   = juce::jlimit (0, juce::jmax (0, total), offset);
+    const int lim    = juce::jlimit (1, kInventoryPageMax, limit <= 0 ? kInventoryPage : limit);
+
     juce::Array<juce::var> arr;
-    for (const auto& n : names) arr.add (n);
+    int returned = 0;
+    for (int i = off; i < total && returned < lim; ++i, ++returned) arr.add (hit[i]);
+
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("total",  total);            // how many MATCHED, before any paging or trimming
+    o->setProperty ("offset", off);
+    o->setProperty ("limit",  lim);
+    if (match.isNotEmpty()) o->setProperty ("match", match);
     o->setProperty ("names", juce::var (arr));
-    return fitUnder8K (juce::var (o));
+
+    // `count` is NOT the page length. Before paging existed this function set count = names.size() BEFORE
+    // fitUnder8K halved the array, so every caller that has ever read `count` read the number of plugins
+    // INSTALLED, with `truncated` saying the names were only a slice of it. look(list_tracks) uses `count` the
+    // same way. So count stays the total: a server that reads it to answer "how many do I have" keeps getting
+    // the honest answer, and `returned` is the new field for the length of this page.
+    auto v = fitUnder8K (juce::var (o));
+
+    // Derived AFTER the trim, from the array that actually survived it - fitUnder8K may halve `names` again on
+    // a page of very long names, and a `returned`/`hasMore` computed before that would be a lie about the very
+    // thing the agent uses to decide whether to ask for the next page.
+    const int kept = (v.getProperty ("names", {}).getArray() != nullptr)
+                   ? v.getProperty ("names", {}).getArray()->size() : 0;
+    if (auto* vo = v.getDynamicObject())
+    {
+        vo->setProperty ("returned", kept);
+        vo->setProperty ("count",    total);
+        vo->setProperty ("hasMore",  off + kept < total);
+        if (off + kept < total) vo->setProperty ("truncated", true);   // its old meaning: you are not seeing all of it
+    }
+    return v;
 }
 
 // =============================================================================
@@ -360,7 +508,8 @@ void ExecutorRead::look (const ToolCall& call, Done done)
     if (what == "rack" || what == "get_rack")
     {
         RackRead r = uid.isNotEmpty() ? (src_.linkRack ? src_.linkRack (uid) : RackRead()) : (src_.ownRack ? src_.ownRack() : RackRead());
-        if (! r.valid) { done (ToolOutcome::failure ("unknown_channel", (r.why.isNotEmpty() ? r.why : "no rack can be read for \"" + uid + "\"") + knownChannelsSentence())); return; }
+        if (! r.valid) { done (ToolOutcome::failureFor ("unknown_channel", (r.why.isNotEmpty() ? r.why : "no rack can be read for \"" + uid + "\"") + knownChannelsSentence(),
+                                                        "I could not read that rack.")); return; }
         done (ToolOutcome::success (rackVar (r, levellingFor (uid))));
         return;
     }
@@ -384,7 +533,8 @@ void ExecutorRead::look (const ToolCall& call, Done done)
             {
                 bool found = false;
                 for (const auto& t : tracks) if (t.uid == uid) { name = t.name; kind = "channel"; found = true; }
-                if (! found) { done (ToolOutcome::failure ("unknown_channel", "no Link with uid \"" + uid + "\" is in the registry." + knownChannelsSentence())); return; }
+                if (! found) { done (ToolOutcome::failureFor ("unknown_channel", "no Link with uid \"" + uid + "\" is in the registry." + knownChannelsSentence(),
+                                                              "I could not find that channel.")); return; }
             }
         }
         done (ToolOutcome::success (channelVar (name, kind, uid, tracks, src_.projectName ? src_.projectName() : juce::String())));
@@ -404,7 +554,8 @@ void ExecutorRead::look (const ToolCall& call, Done done)
     if (what == "levels")
     {
         RackRead r = uid.isNotEmpty() ? (src_.linkRack ? src_.linkRack (uid) : RackRead()) : (src_.ownRack ? src_.ownRack() : RackRead());
-        if (! r.valid) { done (ToolOutcome::failure ("unknown_channel", r.why + knownChannelsSentence())); return; }
+        if (! r.valid) { done (ToolOutcome::failureFor ("unknown_channel", r.why + knownChannelsSentence(),
+                                                        "I could not read that rack.")); return; }
         echojay::LevelTally::Snapshot in, out;
         if (uid.isEmpty()) { if (src_.chainInLoop) in = src_.chainInLoop(); if (src_.chainOut) out = src_.chainOut(); }
         done (ToolOutcome::success (levelsVar (r, in, out)));
@@ -416,7 +567,20 @@ void ExecutorRead::look (const ToolCall& call, Done done)
         if (names.isEmpty()) { done (ToolOutcome::failure ("inventory_unavailable",
             "the installed plugin list is empty: no plugin scan has completed on this machine yet, so there is "
             "nothing to choose from. This will not change by retrying - work with EchoJay's own devices or stop.")); return; }
-        done (ToolOutcome::success (inventoryVar (names)));
+        // ITEM 9: `match`, `offset`, `limit` - the exact names in docs/CONTRACT_LINK_COMMANDS.md for B.
+        // `name` and `q` are accepted as spellings of `match` because a model that has not read the schema
+        // reaches for those, and silently ignoring a filter it believed it sent is the failure this item is.
+        juce::String match = argString (call, "match");
+        if (match.isEmpty()) match = argString (call, "name");
+        if (match.isEmpty()) match = argString (call, "q");
+        // argNumber's fallback doubles as "absent": offset 0 and limit kInventoryPage are the defaults, so a
+        // missing argument and an argument that says the default are the same request.
+        const int offset = (int) argNumber (call, "offset", 0.0);
+        const int limit  = (int) argNumber (call, "limit",  (double) kInventoryPage);
+        auto page = inventoryPage (names, match.trim(), offset, limit);
+        // A filter that matched nothing is a RESULT, not a failure - "you have no de-essers" is an answer the
+        // agent can act on, and a failure here would send it round again on the same question.
+        done (ToolOutcome::success (page));
         return;
     }
     if (what == "maps" || what == "saved_chains")
@@ -469,8 +633,12 @@ void ExecutorRead::check (const ToolCall& call, Done done)
     }
     if (what == "gr")
     {
+        // ITEM 8: BEFORE the rack, before the slot. The old order asked "is slot 2 on the rack I have open?"
+        // about a slot the plan meant on a different rack, and answered truthfully about the wrong thing.
+        if (measuringALink (call)) { done (notFromALink ("Gain reduction")); return; }
         const auto r = targetRack();
-        if (! r.valid) { done (ToolOutcome::failure ("unknown_channel", r.why + knownChannelsSentence())); return; }
+        if (! r.valid) { done (ToolOutcome::failureFor ("unknown_channel", r.why + knownChannelsSentence(),
+                                                        "I could not read that rack.")); return; }
         if (slotArg < 1 || slotArg > (int) r.slots.size()) { done (ToolOutcome::failure ("unknown_slot", "slot " + juce::String (slotArg) + " is not on the rack (1.." + juce::String ((int) r.slots.size()) + ")")); return; }
         const auto& s = r.slots[(size_t) slotArg - 1];
         if (! s.pictureValid || ! s.grKnown) { done (notPlaying ("gain reduction on slot " + juce::String (slotArg))); return; }
@@ -482,8 +650,10 @@ void ExecutorRead::check (const ToolCall& call, Done done)
     }
     if (what == "true_peak")
     {
+        if (measuringALink (call)) { done (notFromALink ("A true-peak reading")); return; }
         const auto r = targetRack();
-        if (! r.valid) { done (ToolOutcome::failure ("unknown_channel", r.why + knownChannelsSentence())); return; }
+        if (! r.valid) { done (ToolOutcome::failureFor ("unknown_channel", r.why + knownChannelsSentence(),
+                                                        "I could not read that rack.")); return; }
         if (r.slots.empty()) { done (ToolOutcome::failure ("empty_rack", "the rack has no slots")); return; }
         const int n = slotArg >= 1 && slotArg <= (int) r.slots.size() ? slotArg : (int) r.slots.size();
         const auto& s = r.slots[(size_t) n - 1];
@@ -499,6 +669,7 @@ void ExecutorRead::check (const ToolCall& call, Done done)
     }
     if (what == "spectrum")
     {
+        if (measuringALink (call)) { done (notFromALink ("The analyser's spectrum")); return; }
         const auto a = targetAnalysis();
         if (! a.valid || ! a.haveBands) { done (notPlaying ("a spectrum reading")); return; }
         auto v = analysisVar (a);

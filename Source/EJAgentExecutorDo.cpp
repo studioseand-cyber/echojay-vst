@@ -190,7 +190,12 @@ juce::var ExecutorDo::translate (const ToolCall& call, juce::String& refusal) co
     {
         // NAMED, not a generic failure. A model that sent an op this build does not have should be told which
         // op it was, or it will try the same one again.
-        refusal = "\"" + op + "\" is not an operation this build can do";
+        // ITEM 10: set_rack_out is handled in doOp before translate runs, so it never reaches here - but it
+        // is NAMED in the refusal, because a model told "that is not an operation this build can do" with no
+        // list will try the next word it can think of (which is how output_db on the EQ got dialled).
+        refusal = "\"" + op + "\" is not an operation this build can do. It knows: build, add, remove, replace, "
+                  "move, set, set_wet, set_io, set_master_wet, set_pre_gain, set_rack_out, bypass, set_level, "
+                  "open_editor.";
         return {};
     }
 
@@ -213,6 +218,56 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
     if (! sinks_.applyChainOps)
     {
         done (ToolOutcome::failure ("not_in_phase", "this build has no way to send that change to a rack"));
+        return;
+    }
+
+    // ---- ITEM 10 (Sean, 13 Oct 2026): THE RACK OUT IS NOT AN EDIT OP ------------------------------------
+    // Taken before translate, because translate's whole output is a chain-channel `edit` array and the rack
+    // OUT does not live on that channel. The cross-channel gate below applies to it just the same, so the
+    // resolution and the confirmation are shared rather than re-implemented here.
+    const auto opEarly = argString (call, "op").trim().toLowerCase();
+    if (opEarly == "set_rack_out" || opEarly == "rack_out" || opEarly == "set_rack_output")
+    {
+        if (! sinks_.setRackOutDb)
+        { done (ToolOutcome::failure ("not_in_phase", "this build cannot set the rack's out gain")); return; }
+        bool haveDb = false, haveDelta = false;
+        const double db    = argNum (call, "db",    haveDb);
+        const double delta = argNum (call, "delta", haveDelta);
+        if (! haveDb && ! haveDelta)
+        { done (ToolOutcome::failure ("bad_request", "a set_rack_out needs db (the new gain) or delta (a change in dB)")); return; }
+        // `absolute` is explicit when given; otherwise a `delta` argument means relative and a `db` argument
+        // means absolute, which is what each word says.
+        const bool absolute = argFlagPresent (call, "absolute") ? argFlag (call, "absolute") : haveDb;
+        const double value  = haveDb ? db : delta;
+
+        const auto askedOut = resolveChannelArg (call);
+        juce::String outTo = this->target();
+        if (askedOut.isNotEmpty() && askedOut != outTo)
+        {
+            juce::String nm;
+            const auto tracks = src_.tracks ? src_.tracks() : std::vector<TrackRead>();
+            for (const auto& t : tracks) if (t.uid == askedOut) nm = t.name;
+            if (nm.isEmpty())
+            { done (ToolOutcome::failureFor ("unknown_channel", "\"" + askedOut + "\" is not a channel I can reach." + knownChannelsSentence(),
+                                             "I could not find a channel called \"" + askedOut + "\".")); return; }
+            if (! argFlag (call, "confirm"))
+            { done (ToolOutcome::failureFor ("needs_confirmation",
+                                          "This is on " + nm + "'s channel, not the one you have open. Ask the user: "
+                                          "\"This is on " + nm + "'s channel, go ahead?\" - and if they say yes, repeat "
+                                          "this same call with \"confirm\": true. Nothing has been changed yet.",
+                                          "This is on " + nm + "'s channel, not the one you have open.")); return; }
+            outTo = askedOut;
+        }
+        sinks_.setRackOutDb (outTo, value, absolute, [done] (bool ok, juce::String sentence)
+        {
+            if (! ok) { done (ToolOutcome::failure ("not_applied", sentence.isNotEmpty() ? sentence
+                                                                 : juce::String ("the rack's out gain was not changed"))); return; }
+            auto* r = new juce::DynamicObject();
+            r->setProperty ("applied", true);
+            r->setProperty ("op", "set_rack_out");
+            done (ToolOutcome::success (juce::var (r),
+                                        "set_rack_out:" + juce::String (juce::Time::currentTimeMillis()), sentence));
+        });
         return;
     }
 
@@ -250,23 +305,38 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
         for (const auto& t : tracks) if (t.uid == asked) askedName = t.name;
         if (askedName.isEmpty())
         {
-            done (ToolOutcome::failure ("unknown_channel",
-                                        "\"" + asked + "\" is not a channel I can reach." + knownChannelsSentence()));
+            done (ToolOutcome::failureFor ("unknown_channel",
+                                        "\"" + asked + "\" is not a channel I can reach." + knownChannelsSentence(),
+                                        "I could not find a channel called \"" + asked + "\"."));
             return;
         }
         if (! argFlag (call, "confirm"))
         {
-            done (ToolOutcome::failure ("needs_confirmation",
+            // ITEM 3: the model is told how to proceed; the user is asked a question. Same gate, two audiences.
+            done (ToolOutcome::failureFor ("needs_confirmation",
                                         "This is on " + askedName + "'s channel, not the one you have open. "
                                         "Ask the user: \"This is on " + askedName + "'s channel, go ahead?\" - and if "
                                         "they say yes, repeat this same call with \"confirm\": true. Nothing has been "
-                                        "changed yet."));
+                                        "changed yet.",
+                                        "This is on " + askedName + "'s channel, not the one you have open."));
             return;
         }
         applyTo = asked;
     }
 
-    sinks_.applyChainOps (applyTo, edits, [done, opName] (bool ok, juce::String sentence)
+    // ---- ITEM 1 (Sean, 13 Oct 2026): A LANDING IS WHAT A READBACK SHOWS, NOT WHAT A SEND RETURNED -------
+    //
+    // Sean approved a build for the Kick, was told it applied, and the Kick's Link had nothing on it. The
+    // agent then read that empty rack for 18 rounds ("slot 2 is not on the rack (1..0)"). The sink's half of
+    // this is fixed where it is written; this is the other half, and it belongs HERE because it is the half a
+    // guard can drive: the readback goes through src_, so a fake source proves the refusal without a Link.
+    //
+    // The rule is Sean's: a build never reports success unless a readback shows the slots on the target rack.
+    // Applied to every STRUCTURAL op, because "the op was acked but the rack is empty" is not special to
+    // build - it is what a rack that threw the batch away looks like from here, whatever put it there.
+    const int wantSlots = structuralWantSlots (call, opName);
+    const auto aliveW   = this->alive();
+    sinks_.applyChainOps (applyTo, edits, [this, aliveW, done, opName, applyTo, wantSlots] (bool ok, juce::String sentence)
     {
         if (! ok)
         {
@@ -274,6 +344,37 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
                                         sentence.isNotEmpty() ? sentence
                                                               : juce::String ("that change was not applied")));
             return;
+        }
+        // The ack can arrive after the editor that owns this executor has closed. Checked before src_ is
+        // touched, for the reason recorded at aliveToken_'s declaration.
+        if (aliveW.expired())
+        {
+            done (ToolOutcome::success (juce::var (new juce::DynamicObject()), {}, sentence));
+            return;
+        }
+        if (wantSlots >= 0)
+        {
+            const auto back = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
+                                                   : (src_.ownRack  ? src_.ownRack()          : RackRead());
+            const int have = back.valid ? (int) back.slots.size() : -1;
+            if (! back.valid || have < wantSlots)
+            {
+                // LOUD, AND IT SAYS WHAT IT SAW. The point is that the next round must not plan against a rack
+                // that is not there, so the sentence carries the figure the readback actually returned.
+                done (ToolOutcome::failureFor ("not_applied",
+                                            "the rack acknowledged the change (" + sentence + ") but a read-back of "
+                                            + (applyTo.isNotEmpty() ? "that Link" : juce::String ("this rack"))
+                                            + " shows " + (have < 0 ? juce::String ("a rack that cannot be read")
+                                                                    : juce::String (have) + " slot(s)")
+                                            + " where " + juce::String (wantSlots) + " were expected, so the change did "
+                                            "NOT land. Do not plan against this rack until a look confirms what is on it.",
+                                            "That change did not land - the rack still shows "
+                                            + (have < 0 ? juce::String ("nothing I can read")
+                                                        : juce::String (have) + " slot(s)") + "."));
+                return;
+            }
+            sentence = sentence.isNotEmpty() ? sentence + "; read back " + juce::String (have) + " slot(s) on the rack"
+                                             : "read back " + juce::String (have) + " slot(s) on the rack";
         }
         auto* r = new juce::DynamicObject();
         r->setProperty ("applied", true);
@@ -283,6 +384,22 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
         done (ToolOutcome::success (juce::var (r), /*undoToken*/ opName + ":" + juce::String (juce::Time::currentTimeMillis()),
                                     sentence));
     });
+}
+
+// How many slots the target must hold after this op for it to have landed, or -1 when the op does not change
+// the rack's shape and there is nothing to count. Deliberately a FLOOR, not an equality, for every op but
+// build: an add puts one more slot on whatever was there, and this executor does not get to assume it knew the
+// count beforehand (it may not have looked). build is the exception because the chain block IS the whole rack.
+int ExecutorDo::structuralWantSlots (const ToolCall& call, const juce::String& opName) const
+{
+    if (opName == "build")
+    {
+        const auto chain = argVar (call, "chain");
+        if (auto* arr = chain.getArray()) return juce::jmax (1, arr->size());
+        return 1;
+    }
+    if (opName == "add" || opName == "replace") return 1;   // at least something is on the rack afterwards
+    return -1;
 }
 
 void ExecutorDo::undoStep (const juce::String& token, Done done)

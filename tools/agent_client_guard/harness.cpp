@@ -83,6 +83,12 @@ struct FakeExecutor : ToolExecutor
     std::vector<juce::String> undoneTokens;
     juce::String undoneCheckpoint;
 
+    // ITEM 2 (13 Oct 2026): the client asks the executor to name a cross-channel target so the plan card can
+    // say "on 88_7even Kick_2_01". The fake answers for one uid, which is all the label legs need.
+    juce::String otherChannelName = "88_7even Kick_2_01";
+    juce::String describeOtherChannel (const ToolCall& c) override
+    { return argString (c, "channel") == "bb411b8240" ? otherChannelName : juce::String(); }
+
     juce::var startContext() override { auto* o = new juce::DynamicObject(); o->setProperty ("executor", "fake"); return juce::var (o); }
     void look  (const ToolCall& c, Done done) override { calls.push_back ({ "look", c.id }); auto* o = new juce::DynamicObject(); o->setProperty ("slots", 3); done (ToolOutcome::success (juce::var (o))); }
     void check (const ToolCall& c, Done done) override { calls.push_back ({ "check", c.id }); auto* o = new juce::DynamicObject(); o->setProperty ("outLufs", -12.1); done (ToolOutcome::success (juce::var (o))); }
@@ -563,6 +569,72 @@ int main()
         }
         r.client.dismiss();
         check (! panel.shouldShow(), "L8 after dismiss the panel asks to be hidden");
+    }
+
+    // ---------------------------------------------------------------- M
+    // ITEM 2 (Sean, 13 Oct 2026): ONE OK, NOT TWO.
+    //
+    // Sean pressed Apply on the plan and the executor then refused with "This is on the kick's channel, go
+    // ahead?". Both gates were right in isolation and nothing connected them, so the press was discarded and
+    // the same question came back from a layer below, in worse words. These legs assert the connection: the
+    // card NAMES the track, and approving a line records the confirmation ON THAT LINE's call.
+    {
+        std::printf ("\n-- M: item 2, the plan names the track and Apply confirms it --\n");
+        Rig r;
+        r.client.start ("a touch more top end on the kick");
+        r.round (1);
+        r.tool ("{\"id\":\"s1\",\"name\":\"do\",\"approval\":\"ask_first\",\"summary\":\"EQ: high shelf +1.5 dB\","
+                "\"args\":{\"op\":\"set\",\"slot\":2,\"channel\":\"bb411b8240\"}}");
+        r.tool ("{\"id\":\"s2\",\"name\":\"do\",\"approval\":\"ask_first\",\"summary\":\"EQ: low cut 40 Hz\","
+                "\"args\":{\"op\":\"set\",\"slot\":1}}");
+        r.plan ("{\"round\":1,\"heading\":\"Top end on the kick\",\"items\":["
+                "{\"id\":\"s1\",\"summary\":\"EQ: high shelf +1.5 dB\"},"
+                "{\"id\":\"s2\",\"summary\":\"EQ: low cut 40 Hz\"}]}");
+
+        r.await ({ "s1", "s2" });   // the await is what raises the card: submitPlan only runs from AwaitingApproval
+        pumpMs (20);
+        check (r.client.state() == EJAgentClient::State::AwaitingApproval, "M0 the card is up");
+        const auto lines = r.client.planLines();
+        check (lines.size() == 2, "M1 both lines are on the card", juce::String ((int) lines.size()));
+        if (lines.size() == 2)
+        {
+            check (lines[0]->label.contains ("88_7even Kick_2_01"),
+                   "M2 the cross-channel line NAMES the track  (RED as it stood: the card said only \"EQ: high "
+                   "shelf +1.5 dB\", so Apply was a decision about an unnamed channel)", lines[0]->label);
+            check (! lines[1]->label.contains ("88_7even Kick_2_01") && ! lines[1]->label.contains (" - on "),
+                   "M3 a line on the channel already open says nothing about a channel", lines[1]->label);
+        }
+        // Apply all: every approved line's call carries the confirmation afterwards.
+        r.client.approveAll();
+        pumpMs (20);
+        bool s1Confirmed = false, s2Confirmed = false;
+        for (const auto& st : r.client.steps())
+        {
+            const bool c = argFlag (st.call, "confirm");
+            if (st.id == "s1") s1Confirmed = c;
+            if (st.id == "s2") s2Confirmed = c;
+        }
+        check (s1Confirmed, "M4 approving a line records confirm:true on ITS call, so the executor does not ask "
+                            "again  (RED as it stood: nothing was recorded and doOp refused)");
+        juce::ignoreUnused (s2Confirmed);
+    }
+    {
+        // THE GATE STILL FAILS CLOSED. A line the user DECLINED must not carry a confirmation - otherwise the
+        // fix would have turned one press into blanket permission, which is the opposite of what it is for.
+        std::printf ("-- M5: a declined line carries no confirmation --\n");
+        Rig r;
+        r.client.start ("two changes");
+        r.round (1);
+        r.tool ("{\"id\":\"d1\",\"name\":\"do\",\"approval\":\"ask_first\",\"summary\":\"one\","
+                "\"args\":{\"op\":\"set\",\"slot\":1,\"channel\":\"bb411b8240\"}}");
+        r.plan ("{\"round\":1,\"heading\":\"h\",\"items\":[{\"id\":\"d1\",\"summary\":\"one\"}]}");
+        r.await ({ "d1" });
+        pumpMs (20);
+        r.client.declineAll();
+        pumpMs (20);
+        bool confirmed = false;
+        for (const auto& st : r.client.steps()) if (st.id == "d1") confirmed = argFlag (st.call, "confirm");
+        check (! confirmed, "M5 a DECLINED line is not confirmed - the press is permission for what was pressed");
     }
 
     std::printf ("\n==== agent_client_guard: %s (%d ok, %d failed) ====\n", failures == 0 ? "GREEN" : "RED", passes, failures);
