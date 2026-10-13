@@ -77,3 +77,34 @@ For comparison, the 34 ok rows run at a median of 5.9 s per trace; the longest t
   - compressor sets: 5 profiles not_written (d26db00f); AMEK, DSM V3, Millennia, SPL IRON and bx_opto in 'current', bx_opto in the other three;
   - drafts: 1307 identical.
 - **Next night on this build (dry-run):** followup (the 86 checks re-run, about 40 min) and drafts.
+
+## 6. The re-cut: b7aa304c (`~/Desktop/ejmap-dist-13oct-b7aa304c`; supersedes df695ba1)
+It carries the follow-up's items 2, 3 and 5:
+- the candidate guard;
+- the accuracy-gap steps and the timing guard;
+- `licensed_now` and `limiter_comp_unfinished`;
+- the morning report's own-traces fix.
+
+`morning.py --folder cert 5 --cut` ran end to end on AC (`morning_cut_b7aa304c.txt`):
+- **Packaged and signed:** team 8BT5F9B887.
+- **Preflight exit 0** (`preflight_b7aa304c_ac.txt`): sleep ok (AC, sleep 0), quarantine ok (the app, its executable and the probe), and `xattr -lr` shows no flag.
+- **Equality vs b287aef3:** every difference is named and 0 are unexplained.
+  - compressor sets: the same 5 `not_written` profiles (d26db00f) and nothing else; nothing else in the follow-up changes derive-only output;
+  - drafts: 1307 identical.
+- **Resume dry-run:** the night line below.
+
+### Sean's next line (on b7aa304c)
+```
+caffeinate -dimsu "$BIN" --run-all --jobs 2 --steps preflight,followup,licensed_now,accuracy_gaps_drafts,accuracy_gaps,limiter_comp_unfinished,drafts --until 07:00
+```
+
+| step | what | serial | at --jobs 2 |
+|---|---|---|---|
+| followup | the 86 tone checks re-checked (the 3 fixed: AMEK, SPL IRON, MAGNUM-K) | 0:40 | 0:40 |
+| licensed_now | the licence file's refusals it now admits (the UAD EQs once their lines are in) | 0:30 | 0 until the file changes |
+| accuracy_gaps_drafts | Auto-Tune VC gain-cal + timing | 1:15 | ~1:00 |
+| accuracy_gaps | combined 4, material 3, frequency 3 (Auto-Tune VC, the 3 VBCs) | 0:15 | ~0:08 |
+| limiter_comp_unfinished | L360 6->6 / 5->5, Spherix 10->10 / 12->12, MLimiterMB | 12:50 | ~6:40 (Spherix 12->12 alone ~5:20) |
+| **total** | | **15:30** | **~8.5 h** |
+
+G8 is not in the line. b287aef3 filed it ok on 13 Oct with its crash position recorded; the morning report's flag came from a 6 Oct trace of an older run.

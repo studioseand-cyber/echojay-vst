@@ -1,0 +1,12 @@
+EJ Map pre-flight - build b7aa304c
+  executable : ~/Desktop/ejmap-dist-13oct-b7aa304c/ejmap.app/Contents/MacOS/ejmap
+  app signed : team 8BT5F9B887 (Developer ID Application: Sean Donoghue (8BT5F9B887))
+  probe      : ~/Desktop/ejmap-dist-13oct-b7aa304c/ejmap.app/Contents/MacOS/EchoJayProbe  (beside the executable: the default)
+  probe sig  : team 8BT5F9B887, cdhash c34f073ad94e40ed1746ec1d88865e50250b57a5
+  cert root  : ~/Library/ejmap/cert  (default)
+  store      : ~/Library/ejmap/cert/fixtures
+  ledger     : ~/Library/ejmap
+  iLok       : ABSENT
+  power      : Now drawing from 'AC Power'
+  sleep      : ok - on AC power, the system sleep timer is off (sleep 0)
+  quarantine : ok - no quarantine flag (the app, its executable, the probe)
