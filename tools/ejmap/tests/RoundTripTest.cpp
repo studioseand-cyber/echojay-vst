@@ -9438,6 +9438,31 @@ void testWizardCategories()
                && ! ejmap::wizard::referenceVoteEntry (juce::var (new juce::DynamicObject())).isObject(),
                "wizard WZ-CD-2: an agreeing vote makes a 1-source reference agreed (said once); a differing plugin is held with its block kept for a third source; every vote logged");
     }
+    // WZ-REF-SEED (Kathy, 13 Oct): the mock DB carries the 290 agreed references (2 Macs, the 12 Oct census), each trusted and named
+    // after its plugin; the seed copies them into the STUB db and never over a file already there (a vote may have moved it on)
+    {
+        const auto bundled = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/mock_db/references");
+        int n = 0, trustedN = 0, named = 0, partial = 0;
+        for (const auto& f : bundled.findChildFiles (juce::File::findFiles, false, "*.reference.json"))
+        {
+            const auto v = juce::JSON::parse (f.loadFileAsString()); ++n;
+            const auto r = ejmap::customdefault::readReference (v);
+            if (ejmap::customdefault::trusted (r) && r.agreeing == 2 && v.getProperty ("schema", "").toString() == "ej_instantiate_reference/0") ++trustedN;
+            const auto id = juce::StringArray::fromTokens (v.getProperty ("plugin_id", "").toString(), "|", "");
+            if (id.size() == 3 && f.getFileName() == "AudioUnit_" + id[1] + "_" + id[2] + ".reference.json") ++named;
+            if (v.hasProperty ("note")) ++partial;
+        }
+        auto db = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_seed_" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+        db.getChildFile ("references").createDirectory();
+        const auto someName = bundled.findChildFiles (juce::File::findFiles, false, "*.reference.json")[0].getFileName();
+        db.getChildFile ("references").getChildFile (someName).replaceWithText ("{\"agreeing\": 3}");   // moved on by a vote
+        const auto s1 = ejmap::wizserver::stub::seedMockReferences (bundled, db), s2 = ejmap::wizserver::stub::seedMockReferences (bundled, db);
+        const auto none = ejmap::wizserver::stub::seedMockReferences (bundled.getChildFile ("absent"), db);
+        const bool kept = db.getChildFile ("references").getChildFile (someName).loadFileAsString().contains ("\"agreeing\": 3");
+        db.deleteRecursively();
+        check (n == 290 && trustedN == 290 && named == 290 && partial == 24 && s1.copied == 289 && s1.kept == 1 && s2.copied == 0 && s2.kept == 290 && none.copied == 0 && kept,
+               "wizard WZ-REF-SEED: 290 agreed references (" + juce::String (trustedN) + " trusted, " + juce::String (named) + " named by plugin, " + juce::String (partial) + " common-controls-only); seeded " + juce::String (s1.copied) + ", a vote-moved file kept, a second seed copies nothing");
+    }
     // WZ-CAT-5 THE PASSES: groups run one after another, --jobs only inside one; a pass is at least its longest plugin. A compressor (pass 0),
     // an EQ (pass 1), a limiter + its compressor pass (pass 2) at --jobs 2 = 340 + 36 + max (340, 368 / 2) = 716 s (the flat sum / 2 said 372)
     {

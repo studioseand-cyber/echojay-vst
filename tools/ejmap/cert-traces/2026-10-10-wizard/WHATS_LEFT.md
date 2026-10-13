@@ -65,6 +65,9 @@
   reference as now agreed); a differing plugin is HELD (`held[]`, held_reason custom_default) with its opening block in its vote for a
   third source. The stub tallies votes per upload (server_stub/reference_votes.json + references/<file>); WZ-CD-2, 4 mutants red.
   SERVER-SIDE: de-duplicate votes per machine / account (the stub does not).
+  13 Oct (Kathy): the MOCK DB carries the 290 agreed references (wizard_app/mock_db/references; the 12 Oct census: Sean's Mac + Kathy's,
+  266 full blocks, 24 Melda with the controls both Macs show); the app copies them into its stub db at start, never over a file a vote
+  moved (WZ-REF-SEED). Mock DB only: no cert folder gets them; Melda's 6 that differ stay held (Kathy).
 
 ## Left before it is a real app
 1. **UI**: BUILT as the v1 window app (above). Still open: a Pause button besides closing the window; "overnight" scheduling;

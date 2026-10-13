@@ -65,6 +65,10 @@ Config parseArgs (const juce::StringArray& a)
     }
     if (c.db == juce::File()) c.db = c.work.getChildFile ("server_stub/db");             // STUB: the server's "which do you already have"
     if (c.store == juce::File()) c.store = c.work.getChildFile ("store");                // the wizard's own map store (never ~/Library/ejmap)
+    {   // 13 Oct: the mock DB's 290 agreed references, from the app's Resources (assemble.sh), into the STUB db only
+        const auto res = juce::File::getSpecialLocation (juce::File::currentApplicationFile).getChildFile ("Contents/Resources/mock_db/references");
+        wizserver::stub::seedMockReferences (res, c.db);
+    }
     return c;
 }
 

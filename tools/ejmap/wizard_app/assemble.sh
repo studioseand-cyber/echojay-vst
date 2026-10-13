@@ -12,6 +12,8 @@ cp "$B/tools/ejmap/ejmap_artefacts/RelWithDebInfo/ejmap.app/Contents/MacOS/ejmap
 cp "$B/EchoJayProbe_artefacts/RelWithDebInfo/EchoJayProbe" "$M/EchoJayProbe"
 SIG="$(codesign -dv "$M/EchoJayProbe" 2>&1 || true)"
 [[ "$SIG" == *"TeamIdentifier=8BT5F9B887"* ]] || { echo "assemble: the probe is not Developer ID signed - re-sign it first"; exit 3; }
+R="$OUT/EchoJay Wizard.app/Contents/Resources"; mkdir -p "$R/mock_db"
+cp -R "$(dirname "$0")/mock_db/references" "$R/mock_db/"   # 13 Oct: the mock DB's 290 agreed references (stub only)
 codesign -f -s - "$M/ejmap"                       # out of its own bundle the engine carries no signature: ad hoc
 codesign -f -s - "$OUT/EchoJay Wizard.app" 2>/dev/null
 codesign --verify "$OUT/EchoJay Wizard.app" && echo "assemble: $OUT/EchoJay Wizard.app (engine + probe inside; probe signed by team 8BT5F9B887)"

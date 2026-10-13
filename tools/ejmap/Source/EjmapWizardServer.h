@@ -119,6 +119,23 @@ inline juce::StringArray recordVotes (const juce::File& work, const juce::var& m
     logF.replaceWithText (juce::JSON::toString (juce::var (logA)));
     return nowAgreed;
 }
+// THE MOCK DB'S AGREED REFERENCES (Kathy, 13 Oct: "seed the 290 agreed references into the wizard's mock DB only"): the opening
+// blocks Sean's Mac and Kathy's agreed on at one version (the 12 Oct census; 24 Melda with different parameter counts carry the
+// controls both show). The app ships them in its Resources (wizard_app/mock_db/references) and copies each into the stub DB's
+// references/ when that file is not there yet - never over one, which a vote may have moved on. Never in a cert folder.
+struct Seeded { int copied = 0, kept = 0; };
+inline Seeded seedMockReferences (const juce::File& bundled, const juce::File& db)
+{
+    Seeded s; if (! bundled.isDirectory()) return s;
+    const auto dst = db.getChildFile ("references"); dst.createDirectory();
+    for (const auto& f : bundled.findChildFiles (juce::File::findFiles, false, "*.reference.json"))
+    {
+        const auto t = dst.getChildFile (f.getFileName());
+        if (t.existsAsFile()) { ++s.kept; continue; }
+        if (f.copyFileTo (t)) ++s.copied;
+    }
+    return s;
+}
 // the server's genuine check, stubbed: the manifest schema only   [SERVER-SIDE: the review / holding area]
 inline juce::var receiptFor (const juce::File& work, const juce::File& stored, const juce::var& m, const juce::var& account, const juce::String& path)
 {

@@ -1,0 +1,1 @@
+{"schema": "ej_instantiate_reference/0", "plugin_id": "AudioUnit|417f6370|3.9.1", "product": "bx_rockrack V3 Player", "agreeing": 2, "sources": ["Sean's Mac (his cert traces: the opening block before any write)", "Kathy's Mac (categorise read, 12 Oct)"], "block": [[0, 1.0, "Power", "On"], [1, 0.420698, "Master Out", "-3.0 dB"], [2, 0.44, "Preset", "Edgy Strat Chords"]]}

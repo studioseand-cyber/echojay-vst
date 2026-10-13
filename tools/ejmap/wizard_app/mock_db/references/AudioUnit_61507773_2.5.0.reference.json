@@ -1,0 +1,1 @@
+{"schema": "ej_instantiate_reference/0", "plugin_id": "AudioUnit|61507773|2.5.0", "product": "Auto-Key", "agreeing": 2, "sources": ["Sean's Mac (his cert traces: the opening block before any write)", "Kathy's Mac (categorise read, 12 Oct)"], "block": [[0, 0.0, "Master Bypass", "Off"], [1, 0.0, "Send", "Off"], [2, 0.0, "Key/Scale", "Chromatic"]]}
