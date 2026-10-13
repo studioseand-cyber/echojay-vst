@@ -127,6 +127,24 @@ target_link_libraries(ejmap-wizard PRIVATE juce::juce_gui_basics juce::juce_cryp
 if(APPLE)
     target_link_libraries(ejmap-wizard PRIVATE "-framework IOKit")
 endif()
+# THE BETA BUILD (Kathy, 13 Oct, beta item 4): the same app with EJ_WIZARD_BETA - no sign-in, the results saved as one file to email,
+# no upload, no promo. Its own name and bundle id, so a tester can have both.
+juce_add_gui_app(ejmap-wizard-beta
+    PRODUCT_NAME            "EchoJay Wizard Beta"
+    COMPANY_NAME            "EchoJay"
+    BUNDLE_ID               "ai.echojay.wizard.beta"
+    VERSION                 "0.1.0"
+    MICROPHONE_PERMISSION_ENABLED FALSE
+    HARDENED_RUNTIME_ENABLED TRUE)
+target_sources(ejmap-wizard-beta PRIVATE wizard_app/WizardApp.cpp)
+target_compile_definitions(ejmap-wizard-beta PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 EJ_WIZARD_BETA=1
+    JUCE_APPLICATION_NAME_STRING="EchoJay Wizard Beta" JUCE_APPLICATION_VERSION_STRING="0.1.0")
+target_include_directories(ejmap-wizard-beta PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source ${CMAKE_CURRENT_SOURCE_DIR}/../../Source)
+target_link_libraries(ejmap-wizard-beta PRIVATE juce::juce_gui_basics juce::juce_cryptography
+    juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+if(APPLE)
+    target_link_libraries(ejmap-wizard-beta PRIVATE "-framework IOKit")
+endif()
 
 #==============================================================================
 # Round-trip test: the drift guard.

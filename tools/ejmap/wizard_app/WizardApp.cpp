@@ -24,6 +24,7 @@
 #include "EjmapWizardProgress.h"
 #include "EjmapWizardServer.h"
 #include <IOKit/pwr_mgt/IOPMLib.h>
+#include <IOKit/IOKitLib.h>
 #include <spawn.h>
 #include <signal.h>
 #include <atomic>
@@ -39,7 +40,16 @@ namespace
 using namespace ejmap;
 using Screen = wizapp::Screen;
 
-constexpr bool kRewardWithoutNewProfiles = true;   // [Kathy to decide] a code even when nothing new was needed - proposed yes
+// THE BUILD'S MODE (Kathy, 13 Oct, beta item 4): the beta build (target ejmap-wizard-beta, EJ_WIZARD_BETA) saves the results as one file
+// to email instead of uploading; no sign-in, no promo. The normal build keeps the stubbed server.
+#if EJ_WIZARD_BETA
+constexpr auto kMode = wizapp::Mode::beta;
+#else
+constexpr auto kMode = wizapp::Mode::normal;
+#endif
+#ifndef EJ_WIZARD_BETA_EMAIL
+#define EJ_WIZARD_BETA_EMAIL "beta@echojay.ai"   // [Kathy to confirm the address]
+#endif
 
 struct Config
 {
@@ -78,8 +88,9 @@ Config parseArgs (const juce::StringArray& a)
 namespace stub
 {
 inline juce::var signIn (const juce::File& w, const juce::String& e, const juce::String& p) { return wizserver::stub::signIn (w, e, p); }
-inline juce::var upload (const juce::File& w, const juce::File& z, const juce::File& m, const juce::var& a) { return wizserver::stub::upload (w, z, m, a); }
-inline juce::var promo (const juce::File& w, const juce::var& a, const juce::var& r) { return wizserver::stub::promo (w, a, r, kRewardWithoutNewProfiles); }
+inline juce::var upload (const juce::File& w, const juce::File& z, const juce::File& m, const juce::var& a, const juce::String& dev) { return wizserver::stub::upload (w, z, m, a, dev); }
+inline juce::var promo (const juce::File& w, const juce::var& a, const juce::var& r) { return wizserver::stub::promo (w, a, r); }
+inline juce::var lookup (const juce::File& w, const juce::var& a, const juce::String& dev, const juce::var& state) { return wizserver::stub::lookupEligibility (w, a.getProperty ("account_id", "").toString(), dev, state); }
 } // namespace stub
 
 // --- THE ENGINE: ejmap --wizard in its own process group --------------------------------------------------------------------------------
@@ -108,6 +119,16 @@ struct Engine
     }
     void pause() { if (pid > 0) kill (-pid, SIGINT); }   // Phase B's clean stop: no new plugin, the in-flight ones run again next time
 };
+
+// --- THE MAC'S DEVICE HASH (items 7 / 8): the hardware UUID (IOPlatformUUID), salted and hashed (wizserver::deviceHashOf) - the raw UUID
+// never leaves the Mac. EJ_WIZARD_FAKE_DEVICE stands in for it in rehearsals (a "second Mac").
+inline juce::String platformUuid()
+{
+    if (const char* f = std::getenv ("EJ_WIZARD_FAKE_DEVICE"); f != nullptr && *f) return f;
+    juce::String out; io_service_t svc = IOServiceGetMatchingService (kIOMainPortDefault, IOServiceMatching ("IOPlatformExpertDevice"));
+    if (svc) { if (CFTypeRef u = IORegistryEntryCreateCFProperty (svc, CFSTR ("IOPlatformUUID"), kCFAllocatorDefault, 0)) { char b[128] = {}; if (CFStringGetCString ((CFStringRef) u, b, sizeof b, kCFStringEncodingUTF8)) out = b; CFRelease (u); } IOObjectRelease (svc); }
+    return out;
+}
 
 // --- CTRL-C (Kathy, 13 Oct): the app launched from a Terminal - SIGINT takes the close button's path (the engine is in its own group)
 inline std::atomic<int>& appInterrupted() { static std::atomic<int> f { 0 }; return f; }
@@ -141,6 +162,9 @@ public:
           e->setColour (juce::CaretComponent::caretColourId, ink); }
         email.setTextToShowWhenEmpty ("Email", juce::Colours::grey); password.setTextToShowWhenEmpty ("Password", juce::Colours::grey); password.setPasswordCharacter ((juce::juce_wchar) 0x2022);
         primary.onClick = [this] { onPrimary(); }; secondary.onClick = [this] { onSecondary(); };
+        addChildComponent (agree); agree.setButtonText (wizapp::consentTick()); agree.setColour (juce::ToggleButton::textColourId, ink); agree.setColour (juce::ToggleButton::tickColourId, accent);
+        agree.setColour (juce::ToggleButton::tickDisabledColourId, juce::Colour (0xff8a90a0)); agree.onClick = [this] { primary.setEnabled (agree.getToggleState()); };
+        device = wizserver::deviceHashOf (platformUuid());
         setSize (640, 460);
         // WHERE TO OPEN: from the files alone (a crash first)
         crashed = wizapp::recover (cfg.work, engineDir().getChildFile ("inflight"), cfg.reports, juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(),
@@ -149,8 +173,9 @@ public:
         w.signedIn = cfg.work.getChildFile ("account.json").existsAsFile(); w.scanned = (bool) st.getProperty ("scanned", false);
         w.measureStarted = (bool) st.getProperty ("measure_started", false); w.measureDone = (bool) st.getProperty ("measure_done", false);
         w.uploaded = (bool) st.getProperty ("uploaded", false); w.rewarded = cfg.work.getChildFile ("reward.json").existsAsFile(); w.crashed = (int) crashed.size();
-        logLine ("open: " + wizapp::screenName (wizapp::openOn (w)) + (crashed.empty() ? juce::String() : " (" + juce::String ((int) crashed.size()) + " plugin(s) put on the never-retry list)"));
-        show (wizapp::openOn (w));
+        w.consented = (bool) st.getProperty ("consented", false); w.saved = (bool) st.getProperty ("saved", false);
+        logLine ("open (" + juce::String (kMode == wizapp::Mode::beta ? "beta" : "normal") + "): " + wizapp::screenName (wizapp::openOn (w, kMode)) + (crashed.empty() ? juce::String() : " (" + juce::String ((int) crashed.size()) + " plugin(s) put on the never-retry list)"));
+        show (wizapp::openOn (w, kMode));
         startTimer (250);
     }
     ~WizardComponent() override { stopTimer(); awake.hold (false); }
@@ -174,7 +199,7 @@ public:
         g.setColour (ink); g.setFont (juce::FontOptions (24.0f, juce::Font::bold));
         g.drawFittedText (title, body.removeFromTop (40), juce::Justification::centred, 2);
         g.setColour (juce::Colour (0xff4a5163)); g.setFont (juce::FontOptions (15.5f));
-        g.drawFittedText (text, body.removeFromTop (64).reduced (10, 0), juce::Justification::centredTop, 3);
+        g.drawFittedText (text, body.removeFromTop (screen == Screen::consent ? 150 : 64).reduced (10, 0), juce::Justification::centredTop, screen == Screen::consent ? 9 : 3);
         if (showBar)
         {
             const auto bar = juce::Rectangle<float> (70.0f, 268.0f, (float) getWidth() - 140.0f, 10.0f);
@@ -197,11 +222,12 @@ public:
         primary.setBounds (getWidth() / 2 - 110, getHeight() - 70, 220, 40);
         secondary.setBounds (getWidth() / 2 - 110, getHeight() - 116, 220, 36);
         email.setBounds (getWidth() / 2 - 160, 250, 320, 38); password.setBounds (getWidth() / 2 - 160, 296, 320, 38);
+        agree.setBounds (getWidth() / 2 - 60, getHeight() - 118, 160, 30);
     }
 
 private:
     Config cfg; Engine engine; KeepAwake awake;
-    juce::Image logo; juce::TextButton primary, secondary; juce::TextEditor email, password;
+    juce::Image logo; juce::TextButton primary, secondary; juce::TextEditor email, password; juce::ToggleButton agree; juce::String device; juce::File savedFile; juce::var eligibility;
     const juce::Colour accent { 0xff3d5afe }, ink { 0xff141824 };
     Screen screen = Screen::welcome; juce::String title, text, barLeft, barRight, bigCode, pauseNote; bool showBar = false; double barValue = 0.0;
     std::vector<wizapp::Crashed> crashed; bool quitting = false; int autoTicks = 0, snapN = 0; double lastSnapQuarter = -1.0;
@@ -234,25 +260,31 @@ private:
     void show (Screen s)
     {
         screen = s; showBar = false; bigCode = {}; pauseNote = {}; primary.setVisible (false); secondary.setVisible (false); email.setVisible (false); password.setVisible (false);
+        agree.setVisible (false); primary.setEnabled (true);
         autoTicks = 0; lastSnapQuarter = -1.0;
+        auto copy = [&] (const wizapp::Copy& c) { title = c.title; text = c.text; primary.setButtonText (c.primary); primary.setVisible (c.primary.isNotEmpty());
+                                                  secondary.setButtonText (c.secondary); secondary.setVisible (c.secondary.isNotEmpty()); };
         switch (s)
         {
             case Screen::welcome:
                 title = "Help EchoJay learn your plugins";
+                if (kMode == wizapp::Mode::beta) { text = "Thank you for testing the EchoJay Wizard. It measures the plugins on this Mac that EchoJay doesn't know yet."; primary.setButtonText ("Continue"); primary.setVisible (true); break; }
                 text = "Sign in with your EchoJay account. What we measure is linked to your account - and so is your reward: a free month.";
                 email.setVisible (true); password.setVisible (true); primary.setButtonText ("Sign in"); primary.setVisible (true); break;
+            case Screen::consent:
+                title = "Before we start"; text = wizapp::consentText (kMode);
+                agree.setToggleState (false, juce::dontSendNotification); agree.setVisible (true); primary.setButtonText ("Continue"); primary.setVisible (true); primary.setEnabled (false); break;
             case Screen::scan:
                 title = "Checking your plugins"; text = "We're looking at each plugin on this Mac and checking it against what EchoJay already knows.";
                 showBar = true; barValue = 0.0; barLeft = "Starting"; barRight = {}; startEngine (false); break;
+            case Screen::alreadyDone: copy (wizapp::alreadyDoneCopy()); break;
             case Screen::scanDone:
             {
                 const auto ws = juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString());
-                const int n = (int) ws.getProperty ("to_measure", 0); const double eta = (double) ws.getProperty ("to_measure_eta_s", 0.0);
-                if (n == 0) { title = "We already know all your plugins"; text = "Nothing new to measure on this Mac. We'll send what we confirmed."; primary.setButtonText ("Continue"); }
-                else { title = juce::String (n) + (n == 1 ? " plugin we don't have yet" : " plugins we don't have yet");
-                       text = "About " + wizprog::etaWords (eta).replace (" left", "").replace ("about ", "") + ". You can keep working or leave it running - closing the window pauses it.";
-                       primary.setButtonText ("Start"); }
-                primary.setVisible (true); break;
+                const double eta = (double) ws.getProperty ("to_measure_eta_s", 0.0);
+                const auto el = wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString()));
+                copy (wizapp::scanDoneCopy (kMode, el, "About " + wizprog::etaWords (eta).replace (" left", "").replace ("about ", "") + "."));
+                break;
             }
             case Screen::crashRecovered:
             {
@@ -279,6 +311,19 @@ private:
                 }
                 secondary.setButtonText ("Copy code"); secondary.setVisible (true); primary.setButtonText ("Done"); primary.setVisible (true); break;
             }
+            case Screen::noCode:
+            {
+                const auto rc = juce::JSON::parse (cfg.work.getChildFile ("receipt.json").loadFileAsString());
+                title = "Thank you - your results arrived"; text = rc.getProperty ("reward_message", "").toString();
+                primary.setButtonText ("Done"); primary.setVisible (true); break;
+            }
+            case Screen::betaSaved:
+            {
+                savedFile = juce::File (appState().getProperty ("saved_file", "").toString());
+                title = "Thank you - your results are ready";
+                text = "Saved as " + savedFile.getFileName() + " on your Desktop. Email this file to " + juce::String (EJ_WIZARD_BETA_EMAIL) + ".";
+                secondary.setButtonText ("Show in Finder"); secondary.setVisible (true); primary.setButtonText ("Done"); primary.setVisible (true); break;
+            }
         }
         logLine ("screen: " + wizapp::screenName (s));
         resized(); repaint();
@@ -291,28 +336,43 @@ private:
         {
             case Screen::welcome:
             {
+                if (kMode == wizapp::Mode::beta) { show (Screen::consent); break; }
                 account = stub::signIn (cfg.work, email.getText().trim(), password.getText());
                 if (account.isVoid()) { text = "Please enter your EchoJay email and password."; repaint(); return; }
-                logLine ("signed in (STUB): " + account.getProperty ("account_id", "").toString()); show (Screen::scan); break;
+                logLine ("signed in (STUB): " + account.getProperty ("account_id", "").toString()); show (Screen::consent); break;
             }
+            case Screen::consent:
+                if (! agree.getToggleState()) return;   // the tick is required
+                setState ("consented", true); logLine ("consent: I agree (" + juce::Time::getCurrentTime().toISO8601 (true) + ")"); show (Screen::scan); break;
             case Screen::scanDone:
             {
-                const auto ws = juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString());
-                if ((int) ws.getProperty ("to_measure", 0) == 0) { setState ("measure_started", true); setState ("measure_done", true); startBundleOnly(); }
-                else show (Screen::measuring);
-                break;
+                const auto el = wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString()));
+                if (el.count == 0 || (kMode == wizapp::Mode::normal && ! el.eligible)) { logLine ("not eligible / nothing to measure: done, nothing runs"); juce::JUCEApplication::getInstance()->systemRequestedQuit(); break; }
+                show (Screen::measuring); break;
             }
             case Screen::crashRecovered:
             {
                 crashed.clear(); const auto st = appState();
                 show ((bool) st.getProperty ("measure_started", false) ? Screen::measuring : Screen::scan); break;
             }
-            case Screen::reward: juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
+            case Screen::alreadyDone: case Screen::reward: case Screen::noCode: case Screen::betaSaved: juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
             default: break;
         }
     }
-    void onSecondary() { if (screen == Screen::reward) { juce::SystemClipboard::copyTextToClipboard (bigCode); secondary.setButtonText ("Copied"); logLine ("code copied"); } }
-    void startBundleOnly() { show (Screen::measuring); }   // nothing to measure: the engine still makes the bundle (confirmations)
+    void onSecondary()
+    {
+        if (screen == Screen::reward) { juce::SystemClipboard::copyTextToClipboard (bigCode); secondary.setButtonText ("Copied"); logLine ("code copied"); }
+        if (screen == Screen::betaSaved && savedFile.existsAsFile()) { savedFile.revealToUser(); logLine ("shown in Finder: " + savedFile.getFileName()); }
+        if (screen == Screen::scanDone) { logLine ("contribute anyway (no reward)"); show (Screen::measuring); }
+    }
+    void saveBetaResults()
+    {   // the contribution bundle as ONE file on the Desktop (never overwritten: -2, -3 ...)
+        const auto desk = juce::File::getSpecialLocation (juce::File::userDesktopDirectory);
+        auto f = desk.getChildFile (wizapp::resultsFileName (juce::Time::getCurrentTime()));
+        for (int k = 2; f.existsAsFile(); ++k) f = desk.getChildFile (f.getFileNameWithoutExtension().upToLastOccurrenceOf ("-results-", true, false) + juce::Time::getCurrentTime().formatted ("%Y-%m-%d") + "-" + juce::String (k) + ".zip");
+        if (engineDir().getChildFile ("contribution.zip").copyFileTo (f)) { auto st = appState(); st.getDynamicObject()->setProperty ("saved_file", f.getFullPathName()); cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (st)); setState ("saved", true); logLine ("saved: " + f.getFullPathName()); }
+        else logLine ("could not save the results file");
+    }
 
     void snap (const juce::String& why)
     {
@@ -358,8 +418,18 @@ private:
             if (quitting) { juce::JUCEApplication::getInstance()->quit(); return; }
             switch (wizapp::afterEngine (screen, *code))
             {
-                case wizapp::AfterEngine::scanDone: setState ("scanned", true); show (Screen::scanDone); break;
-                case wizapp::AfterEngine::upload:   setState ("measure_done", true); show (Screen::upload); break;
+                case wizapp::AfterEngine::scanDone:
+                {   // /lookup's answer (STUB): already taken part -> nothing runs; else eligibility for the results screen
+                    setState ("scanned", true);
+                    if (account.isVoid()) account = juce::JSON::parse (cfg.work.getChildFile ("account.json").loadFileAsString());
+                    eligibility = stub::lookup (cfg.work, account, device, juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString()));
+                    cfg.work.getChildFile ("eligibility.json").replaceWithText (juce::JSON::toString (eligibility)); logLine ("lookup (STUB): " + juce::JSON::toString (eligibility, true));
+                    show (wizapp::afterScan (wizapp::eligibilityOf (eligibility))); break;
+                }
+                case wizapp::AfterEngine::upload:
+                    setState ("measure_done", true);
+                    if (wizapp::afterMeasure (kMode) == Screen::betaSaved) saveBetaResults();
+                    show (wizapp::afterMeasure (kMode)); break;
                 case wizapp::AfterEngine::stopped:
                 {   // the engine's own words when it said why (a low disk); else the stop note
                     const auto sum = juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString()).getProperty ("summary", "").toString();
@@ -374,17 +444,23 @@ private:
         barValue = juce::jlimit (0.0, 1.0, t); barLeft = barValue < 1.0 ? "Sending" : "Checking it arrived"; repaint(); snapAtQuarters();
         if (t < 1.3 || receipt.isObject()) return;
         if (account.isVoid()) account = juce::JSON::parse (cfg.work.getChildFile ("account.json").loadFileAsString());
-        receipt = stub::upload (cfg.work, engineDir().getChildFile ("contribution.zip"), engineDir().getChildFile ("contribution/manifest.json"), account);
+        receipt = stub::upload (cfg.work, engineDir().getChildFile ("contribution.zip"), engineDir().getChildFile ("contribution/manifest.json"), account, device);
+        cfg.work.getChildFile ("receipt.json").replaceWithText (juce::JSON::toString (receipt));
         setState ("uploaded", true); logLine ("uploaded (STUB): " + juce::JSON::toString (receipt, true));
-        const auto pr = stub::promo (cfg.work, account, receipt);
-        if (pr.isObject()) { cfg.work.getChildFile ("reward.json").replaceWithText (juce::JSON::toString (pr)); logLine ("promo (STUB): " + juce::JSON::toString (pr, true)); show (Screen::reward); }
-        else { title = "Thank you"; text = "Your results arrived. (No code this time.)"; showBar = false; repaint(); }
+        const auto pr = stub::promo (cfg.work, account, receipt);   // the server grants on the ACCEPTED results, never the client's count
+        if (pr.isObject()) { cfg.work.getChildFile ("reward.json").replaceWithText (juce::JSON::toString (pr)); logLine ("promo (STUB): " + juce::JSON::toString (pr, true)); }
+        show (wizapp::afterUpload (receipt, pr));
     }
     void autoAdvance()
     {   // rehearsals only: no hands
         ++autoTicks;
-        if (screen == Screen::welcome && autoTicks == 6) { email.setText ("rehearsal@example.com"); password.setText ("stub-password"); repaint(); snap ("filled"); }
+        if (screen == Screen::welcome && autoTicks == 6) { const char* e = std::getenv ("EJ_WIZARD_AUTO_EMAIL"); email.setText (e != nullptr && *e ? e : "rehearsal@example.com"); password.setText ("stub-password"); repaint(); snap ("filled"); }
         if (screen == Screen::welcome && autoTicks == 10) onPrimary();
+        if (screen == Screen::consent && autoTicks == 6) { snap ("unticked"); agree.setToggleState (true, juce::sendNotification); repaint(); }
+        if (screen == Screen::consent && autoTicks == 10) { snap ("ticked"); onPrimary(); }
+        if (screen == Screen::scanDone && std::getenv ("EJ_WIZARD_AUTO_ANYWAY") != nullptr && autoTicks == 12 && secondary.isVisible()) { onSecondary(); return; }
+        if ((screen == Screen::alreadyDone || screen == Screen::noCode || screen == Screen::betaSaved) && autoTicks == 12) onPrimary();
+        if (screen == Screen::reward && autoTicks == 16) onPrimary();
         if ((screen == Screen::scanDone || screen == Screen::crashRecovered) && autoTicks == 12) onPrimary();
         if (screen == Screen::reward && autoTicks == 8) { onSecondary(); snap ("copied"); }
         if (screen == Screen::measuring && cfg.autoCloseAfterS > 0.0 && autoTicks * 0.25 >= cfg.autoCloseAfterS)

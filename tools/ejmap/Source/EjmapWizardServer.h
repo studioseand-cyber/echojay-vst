@@ -78,6 +78,13 @@ inline juce::StringArray invalidOutgoing (const juce::var& manifest)
     return bad;
 }
 
+// THE DEVICE HASH (items 7 / 8): what the app sends to identify a Mac without identifying it - SHA-256 of a fixed app salt and the Mac's
+// hardware UUID (IOPlatformUUID). The raw UUID never leaves the Mac; the salt makes the hash useless to anyone matching other apps' IDs.
+inline juce::String deviceHashOf (const juce::String& platformUuid)
+{
+    if (platformUuid.trim().isEmpty()) return {};
+    return juce::SHA256 (("echojay-wizard-device-v1|" + platformUuid.trim().toUpperCase()).toUTF8()).toHexString();
+}
 // --- 4. the stubs (Sean's endpoints; nothing leaves the Mac) -----------------------------------------------------------------------------
 namespace stub
 {
@@ -136,8 +143,72 @@ inline Seeded seedMockReferences (const juce::File& bundled, const juce::File& d
     }
     return s;
 }
+// --- ELIGIBILITY AND ONCE ONLY (Kathy, 13 Oct, beta items 7 and 8) - the SERVER decides; the app only shows it --------------------------
+// config (server-configurable): reward_minimum (default 5) and once_only (default true: one completed contribution per account AND per
+// Mac; false would allow repeat contributions, and a repeat never earns a second reward). Stub: <work>/server_stub/config.json.
+inline juce::var serverConfig (const juce::File& work)
+{
+    auto c = juce::JSON::parse (work.getChildFile ("server_stub/config.json").loadFileAsString());
+    auto* o = new juce::DynamicObject(); const juce::var v (o);
+    o->setProperty ("reward_minimum", c.isObject() && c.hasProperty ("reward_minimum") ? (int) c.getProperty ("reward_minimum", 5) : 5);
+    o->setProperty ("once_only", c.isObject() && c.hasProperty ("once_only") ? (bool) c.getProperty ("once_only", true) : true);
+    return v;
+}
+// who has taken part: an account or a Mac (its device hash) with an ACCEPTED upload - <work>/server_stub/participation.json
+inline juce::var participation (const juce::File& work)
+{
+    auto p = juce::JSON::parse (work.getChildFile ("server_stub/participation.json").loadFileAsString());
+    if (! p.isObject()) { auto* o = new juce::DynamicObject(); o->setProperty ("accounts", juce::Array<juce::var>()); o->setProperty ("devices", juce::Array<juce::var>()); p = juce::var (o); }
+    return p;
+}
+inline bool listed (const juce::var& arr, const juce::String& x) { if (x.isEmpty()) return false; if (const auto* a = arr.getArray()) for (const auto& e : *a) if (e.toString() == x) return true; return false; }
+inline bool alreadyContributed (const juce::File& work, const juce::String& accountId, const juce::String& device)
+{
+    if (! (bool) serverConfig (work).getProperty ("once_only", true)) return false;
+    const auto p = participation (work);
+    return listed (p.getProperty ("accounts", {}), accountId) || listed (p.getProperty ("devices", {}), device);
+}
+// /lookup's eligibility: NEW CONTRIBUTABLE plugins = rule C (to be measured: state "queued" - not pending_review, held, out of scope,
+// licence-blocked or a demo); eligible when the count reaches the minimum and neither the account nor the Mac has taken part
+inline juce::var lookupEligibility (const juce::File& work, const juce::String& accountId, const juce::String& device, const juce::var& wizardState)
+{
+    int n = 0; if (const auto* a = wizardState.getProperty ("plugins", {}).getArray()) for (const auto& r : *a) if (r.getProperty ("state", "").toString() == "queued") ++n;
+    const int minimum = (int) serverConfig (work).getProperty ("reward_minimum", 5);
+    const bool already = alreadyContributed (work, accountId, device);
+    auto* o = new juce::DynamicObject(); const juce::var v (o);
+    o->setProperty ("already_contributed", already); o->setProperty ("count", n); o->setProperty ("minimum", minimum); o->setProperty ("eligible", ! already && n >= minimum);
+    o->setProperty ("endpoint", endpoint ("lookup"));
+    return v;
+}
+// the accepted count, from the BUNDLE itself (never the client's count): each profile item whose evidence is in the zip - a compressor's
+// tone check passed within 0.5 dB, an EQ's acceptance, a draft that is there - counted once per plugin_id, and not if the server already
+// knows the plugin (its database, or an earlier accepted upload)
+inline int acceptedNew (const juce::File& work, const juce::File& storedZip, const juce::var& m, juce::StringArray& acceptedIds)
+{
+    juce::ZipFile z (storedZip);
+    auto entryText = [&] (const juce::String& name) -> juce::String {
+        for (int i = 0; i < z.getNumEntries(); ++i) if (const auto* e = z.getEntry (i); e != nullptr && e->filename.endsWith (name))
+        { std::unique_ptr<juce::InputStream> in (z.createStreamForEntry (i)); return in ? in->readEntireStreamAsString() : juce::String(); }
+        return {}; };
+    juce::StringArray known; for (const auto& f : work.getChildFile ("server_stub/db").findChildFiles (juce::File::findFiles, false, "*.json"))
+        if (const auto p = juce::JSON::parse (f.loadFileAsString()); p.isObject()) known.add (p.getProperty ("plugin", {}).getProperty ("plugin_id", "").toString());
+    const auto acceptedBefore = juce::JSON::parse (work.getChildFile ("server_stub/accepted_plugins.json").loadFileAsString());   // held: getArray() on a temporary dangles
+    if (const auto* a = acceptedBefore.getArray()) for (const auto& x : *a) known.add (x.toString());
+    if (const auto* items = m.getProperty ("profiles", {}).getArray())
+        for (const auto& it : *items)
+        {
+            const auto id = it.getProperty ("plugin_id", "").toString();
+            if (id.isEmpty() || known.contains (id) || acceptedIds.contains (id)) continue;
+            bool ok = false;
+            if (it.hasProperty ("tone_check")) ok = (bool) juce::JSON::parse (entryText (it.getProperty ("tone_check", "").toString())).getProperty ("pass_within_0_5_db", false);
+            else if (it.hasProperty ("acceptance")) ok = entryText (it.getProperty ("profile", "").toString()).isNotEmpty() && it.getProperty ("acceptance", "").toString().isNotEmpty();
+            else if (const auto* ds = it.getProperty ("drafts", {}).getArray()) { ok = ! ds->isEmpty(); for (const auto& d : *ds) if (entryText (d.toString()).isEmpty()) ok = false; }
+            if (ok) acceptedIds.add (id);
+        }
+    return acceptedIds.size();
+}
 // the server's genuine check, stubbed: the manifest schema only   [SERVER-SIDE: the review / holding area]
-inline juce::var receiptFor (const juce::File& work, const juce::File& stored, const juce::var& m, const juce::var& account, const juce::String& path)
+inline juce::var receiptFor (const juce::File& work, const juce::File& stored, const juce::var& m, const juce::var& account, const juce::String& path, const juce::String& device = {})
 {
     const bool genuine = stored.existsAsFile() && m.getProperty ("schema", "").toString() == "ej_contribution/0";
     const auto id = "rcpt_stub_" + juce::String::toHexString (juce::Time::currentTimeMillis());
@@ -150,20 +221,36 @@ inline juce::var receiptFor (const juce::File& work, const juce::File& stored, c
     {   // 12 Oct: the votes are recorded; a reference they make agreed (2 Macs) is said on the receipt
         juce::Array<juce::var> na; for (const auto& x : recordVotes (work, m)) na.add (x);
         r->setProperty ("reference_votes_received", m.getProperty ("reference_votes", {}).size()); r->setProperty ("references_now_agreed", na);
+        // 13 Oct (items 7 / 8): the accepted count decides the reward; an accepted upload COMPLETES the account's and the Mac's go
+        const auto acct = account.getProperty ("account_id", "").toString();
+        const bool before = alreadyContributed (work, acct, device);
+        juce::StringArray ids; const int accepted = acceptedNew (work, stored, m, ids);
+        const int minimum = (int) serverConfig (work).getProperty ("reward_minimum", 5);
+        r->setProperty ("accepted_new", accepted); r->setProperty ("reward_minimum", minimum);
+        r->setProperty ("reward_eligible", ! before && accepted >= minimum);
+        r->setProperty ("reward_message", before ? juce::String ("Thank you - this account or this Mac has already taken part, so there is no new code.")
+                                       : accepted >= minimum ? juce::String() : "Thank you - your results arrived. The free month needs at least " + juce::String (minimum) + " new plugins that pass our checks; this time there " + (accepted == 1 ? "was 1." : "were " + juce::String (accepted) + "."));
+        auto acc = juce::JSON::parse (work.getChildFile ("server_stub/accepted_plugins.json").loadFileAsString()); juce::Array<juce::var> al; if (const auto* a = acc.getArray()) al = *a;
+        for (const auto& id : ids) al.add (id);
+        work.getChildFile ("server_stub/accepted_plugins.json").replaceWithText (juce::JSON::toString (juce::var (al)));
+        auto p = participation (work);
+        auto add = [&] (const char* k, const juce::String& x) { if (x.isEmpty() || listed (p.getProperty (k, {}), x)) return; auto arr = p.getProperty (k, {}); arr.append (x); p.getDynamicObject()->setProperty (k, arr); };
+        add ("accounts", acct); add ("devices", device);
+        work.getChildFile ("server_stub/participation.json").replaceWithText (juce::JSON::toString (p));
     }
     const auto dir = work.getChildFile ("server_stub/uploads"); dir.createDirectory();
     dir.getChildFile (id + ".receipt.json").replaceWithText (juce::JSON::toString (v));
     return v;
 }
 // the upload, both paths: direct (POST /contributions, multipart) up to 4.5 MB; else the signed blob (upload-url -> PUT -> complete)
-inline juce::var upload (const juce::File& work, const juce::File& zip, const juce::File& manifest, const juce::var& account)
+inline juce::var upload (const juce::File& work, const juce::File& zip, const juce::File& manifest, const juce::var& account, const juce::String& device = {})
 {
     const auto m = juce::JSON::parse (manifest.loadFileAsString());
     if (uploadPathFor (zip.getSize(), manifest.getSize()) == UploadPath::direct)
     {   // POST <base>/api/wizard/v1/contributions (multipart: manifest + bundle)
         const auto dir = work.getChildFile ("server_stub/uploads"); dir.createDirectory();
         const auto stored = dir.getChildFile ("direct_" + juce::String::toHexString (juce::Time::currentTimeMillis()) + ".zip"); zip.copyFileTo (stored);
-        auto r = receiptFor (work, stored, m, account, "direct"); r.getDynamicObject()->setProperty ("endpoint", endpoint ("contributions")); return r;
+        auto r = receiptFor (work, stored, m, account, "direct", device); r.getDynamicObject()->setProperty ("endpoint", endpoint ("contributions")); return r;
     }
     // 1) POST /contributions/upload-url {bytes, bundle_sha256} -> {upload_url, blob_ref, expires}: the stub's "signed URL" is a local folder
     const auto blobRef = "blob_stub_" + juce::SHA256 (zip).toHexString().substring (0, 16);
@@ -172,15 +259,16 @@ inline juce::var upload (const juce::File& work, const juce::File& zip, const ju
     // 2) PUT the zip to upload_url
     if (! zip.copyFileTo (target)) return {};
     // 3) POST /contributions/complete {blob_ref, manifest} -> the receipt
-    auto r = receiptFor (work, target, m, account, "signed_blob");
+    auto r = receiptFor (work, target, m, account, "signed_blob", device);
     r.getDynamicObject()->setProperty ("blob_ref", blobRef); r.getDynamicObject()->setProperty ("upload_url", "file://" + target.getFullPathName());
     r.getDynamicObject()->setProperty ("endpoint", endpoint ("contributions/complete"));
     return r;
 }
-inline juce::var promo (const juce::File& work, const juce::var& account, const juce::var& receipt, bool rewardWithoutNewProfiles)
+inline juce::var promo (const juce::File& work, const juce::var& account, const juce::var& receipt)
 {   // POST /promo {receipt_id} -> {code, issued_now, emailed_to}; one code per account   [SERVER-SIDE: promo rules + issuing + email]
-    if (! (bool) receipt.getProperty ("genuine", false)) return {};
-    if ((int) receipt.getProperty ("profiles_received", 0) == 0 && ! rewardWithoutNewProfiles) return {};
+    // 13 Oct (item 7, replacing "a code even when nothing new"): only a receipt the server judged reward_eligible (accepted new >= minimum,
+    // the account and the Mac not rewarded before) gets a code
+    if (! (bool) receipt.getProperty ("genuine", false) || ! (bool) receipt.getProperty ("reward_eligible", false)) return {};
     const auto ledgerF = work.getChildFile ("server_stub/promo_ledger.json"); auto ledger = juce::JSON::parse (ledgerF.loadFileAsString());
     if (! ledger.isObject()) ledger = juce::var (new juce::DynamicObject());
     const auto acct = account.getProperty ("account_id", "").toString();

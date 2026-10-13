@@ -123,14 +123,50 @@ inline bool needsMeasuring (wizard::Match m, bool quickCheckPassed)
 }
 
 // --- 3. where the app opens ----------------------------------------------------------------------------------------------------------
-enum class Screen { welcome, scan, scanDone, crashRecovered, measuring, upload, reward };
+// 13 Oct (beta items 3, 4, 7, 8): consent before scanning; the beta build (no sign-in, the results saved as one file, no promo); the
+// server's eligibility and once-only answers. Mode is a build flag (EJ_WIZARD_BETA); every rule below takes it, so both are pinned.
+enum class Mode { normal, beta };
+enum class Screen { welcome, consent, scan, alreadyDone, scanDone, crashRecovered, measuring, upload, reward, noCode, betaSaved };
 inline juce::String screenName (Screen s)
 {
-    switch (s) { case Screen::welcome: return "welcome"; case Screen::scan: return "scan"; case Screen::scanDone: return "scan_done";
-                 case Screen::crashRecovered: return "crash_recovered"; case Screen::measuring: return "measuring"; case Screen::upload: return "upload"; case Screen::reward: return "reward"; }
+    switch (s) { case Screen::welcome: return "welcome"; case Screen::consent: return "consent"; case Screen::scan: return "scan"; case Screen::alreadyDone: return "already_done";
+                 case Screen::scanDone: return "scan_done"; case Screen::crashRecovered: return "crash_recovered"; case Screen::measuring: return "measuring";
+                 case Screen::upload: return "upload"; case Screen::reward: return "reward"; case Screen::noCode: return "no_code"; case Screen::betaSaved: return "beta_saved"; }
     return {};
 }
-struct Where { bool signedIn = false, scanned = false, measureStarted = false, measureDone = false, uploaded = false, rewarded = false; int crashed = 0; };
+struct Where { bool signedIn = false, consented = false, scanned = false, measureStarted = false, measureDone = false, uploaded = false, rewarded = false, saved = false; int crashed = 0; };
+// THE CONSENT (item 3; the wording is Kathy's to approve - docs/WIZARD_SPEC.md section 2b): one paragraph, and a tick that must be set
+inline juce::String consentText (Mode m)
+{
+    return juce::String ("The wizard measures how your audio plugins respond to test tones and sends EchoJay the results: each plugin's name, maker, ")
+         + "version, its list of controls and the measurements. It never sends audio, your files, your projects, your name, your computer's name or "
+         + "folder paths. "
+         + (m == Mode::beta ? "In this beta the results are saved as one file on your Desktop for you to email to us; nothing is sent by the app."
+                            : "The results go to EchoJay's servers, linked to your EchoJay account, and are used only to teach EchoJay how plugins behave.");
+}
+inline juce::String consentTick() { return "I agree"; }
+// the results file (item 4, beta): one zip on the Desktop
+inline juce::String resultsFileName (const juce::Time& t) { return "EchoJay-Wizard-results-" + t.formatted ("%Y-%m-%d") + ".zip"; }
+// AFTER THE SCAN (items 7 / 8): the server's answer decides - already taken part -> nothing runs; else the results with eligibility
+struct Eligibility { bool already = false, eligible = false; int count = 0, minimum = 5; };
+inline Eligibility eligibilityOf (const juce::var& v)
+{ Eligibility e; e.already = (bool) v.getProperty ("already_contributed", false); e.eligible = (bool) v.getProperty ("eligible", false); e.count = (int) v.getProperty ("count", 0); e.minimum = (int) v.getProperty ("minimum", 5); return e; }
+inline Screen afterScan (const Eligibility& e) { return e.already ? Screen::alreadyDone : Screen::scanDone; }
+struct Copy { juce::String title, text, primary, secondary; };
+inline Copy alreadyDoneCopy() { return { "You've already taken part - thank you", "This account or this Mac has already contributed its results, so there's nothing to run.", "Done", {} }; }
+inline Copy scanDoneCopy (Mode m, const Eligibility& e, const juce::String& etaWords)
+{
+    const auto n = juce::String (e.count) + (e.count == 1 ? " plugin" : " plugins");
+    if (m == Mode::beta)
+        return e.count > 0 ? Copy { "You have " + n + " we don't have yet", "Thank you for helping map them. " + etaWords + " Closing the window pauses it.", "Start", {} }
+                           : Copy { "Thanks - your plugins are already mapped", "There's nothing to measure right now.", "Done", {} };
+    if (e.eligible) return { "You have " + n + " we don't have yet", "Help map them and get a free month. " + etaWords + " Closing the window pauses it.", "Start", {} };
+    return { "Thanks - your plugins are already mapped", "So there's nothing to do right now.", "Done", e.count > 0 ? "Contribute anyway (no reward)" : juce::String() };
+}
+// after measuring: the upload (normal) or the saved file (beta: no upload, no promo)
+inline Screen afterMeasure (Mode m) { return m == Mode::beta ? Screen::betaSaved : Screen::upload; }
+// after the upload (normal): the code only when the server granted it on the ACCEPTED results; else its plain message
+inline Screen afterUpload (const juce::var& receipt, const juce::var& promo) { return (bool) receipt.getProperty ("reward_eligible", false) && promo.isObject() ? Screen::reward : Screen::noCode; }
 // FREE DISK (Kathy, 13 Oct, beta item 2): a wizard run writes ~5 MB per plugin (13 plugins: ~70 MB; a 500-plugin Mac ~2.5 GB). It does
 // not start below kStartFloorBytes and stops cleanly (as a stop: it carries on next time) below kRunFloorBytes. Rehearsals: the file
 // named by EJ_WIZARD_FAKE_FREE_FILE (one number, MB) stands in for the volume's free space.
@@ -160,13 +196,16 @@ inline AfterEngine afterEngine (Screen s, int code)
     if (code == 0) return s == Screen::scan ? AfterEngine::scanDone : AfterEngine::upload;
     return AfterEngine::stopped;
 }
-inline Screen openOn (const Where& w)
+inline Screen openOn (const Where& w, Mode m = Mode::normal)
 {
-    if (! w.signedIn) return Screen::welcome;
+    if (m == Mode::normal && ! w.signedIn) return Screen::welcome;
+    if (m == Mode::beta && ! w.consented && ! w.scanned && ! w.measureStarted) return Screen::welcome;   // the beta's own welcome, then consent
+    if (! w.consented && ! w.scanned && ! w.measureStarted) return Screen::consent;   // 13 Oct: consent before anything is scanned
     if (w.rewarded) return Screen::reward;
     if (w.crashed > 0) return Screen::crashRecovered;             // a crash is said before anything carries on
+    if (m == Mode::beta && w.saved) return Screen::betaSaved;
     if (w.uploaded) return Screen::reward;
-    if (w.measureDone) return Screen::upload;
+    if (w.measureDone) return afterMeasure (m);
     if (w.measureStarted) return Screen::measuring;                // closed or stopped mid-measure: carry on
     if (w.scanned) return Screen::scanDone;
     return Screen::scan;

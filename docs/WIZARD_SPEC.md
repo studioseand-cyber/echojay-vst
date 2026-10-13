@@ -10,21 +10,62 @@ It has a very simple wizard look: a plain white window, the EchoJay logo, and on
 
 It measures the user's plugins that EchoJay's database does not have yet. It sends the results to EchoJay and rewards the user with a free month.
 
-## 2. The screens
+## 2. The screens (13 Oct: consent, eligibility, once only, the beta build)
+
+**Normal build** (stubbed server):
 
 | # | screen | what the user sees | what happens |
 |---|---|---|---|
 | 1 | **Welcome + sign in** | "Help EchoJay learn your plugins", email + password, **Sign in** | Sign-in (6.1) links the results and the reward to the account |
-| 2 | **Scan** | "Checking your plugins", a Logic start-up style bar, each plugin's name as it is checked, "n of N" | Every installed plugin is mapped and checked against the database (6.2). Anything already there is skipped silently, with no list and no ticks. That means rule A (same plugin, version and map), or rule B (another version) whose quick read-back check passes |
-| 2b | **Scan done** | "N plugins we don't have yet", "About X. You can keep working or leave it running - closing the window pauses it.", **Start** | X comes from the measured per-category times (--jobs aware). If N = 0: "We already know all your plugins", **Continue** (the confirmations still go up) |
-| 3 | **Measuring** | "Measuring", the bar, the current plugin's name, "about X left" | Only plugins useful to the database are measured: every category EJ Map certifies (12 Oct), in the order of section 5. Licence windows, silent output, crashes and time-outs are skipped quietly and logged, never shown as errors. The Mac is kept awake. Closing the window pauses; reopening carries on |
+| 2 | **Consent** | "Before we start", the paragraph in 2b, an **I agree** tick, **Continue** | Continue stays disabled until the tick is set. The consent and its time go in the app's log. Nothing is scanned before it |
+| 3 | **Scan** | "Checking your plugins", a Logic start-up style bar, each plugin's name as it is checked, "n of N" | Every installed plugin is mapped and checked against the database (6.2). A demo version is found here (3b) and skipped |
+| - | **Already taken part** | "You've already taken part - thank you", **Done** | When `/lookup` returns `already_contributed: true` (6.5). Nothing runs |
+| 3b | **Scan done: eligible** | "You have N plugins we don't have yet", "Help map them and get a free month. About X.", **Start** | When `/lookup` returns `eligible: true` (6.5) |
+| 3b | **Scan done: not eligible** | "Thanks - your plugins are already mapped", "So there's nothing to do right now.", **Done**, and **Contribute anyway (no reward)** when there is anything to measure | Done quits; nothing runs. Contribute anyway measures and uploads with no reward and no promo screen |
+| 4 | **Measuring** | "Measuring", the bar, the current plugin's name, "about X left" | As before. Closing the window or Ctrl-C: "Stopped - it carries on next time" (3a) |
 | - | **Crash recovery** (on the next launch) | "Welcome back. The wizard closed while checking <plugin> - we've skipped it and carried on.", **Carry on** | The plugin goes on the never-retry list. Its crash report travels with the upload |
-| 4 | **Upload** | "Sending your results", a short bar | The contribution bundle is sent automatically (6.3) |
-| 5 | **Reward** | "Thank you - here's your free month", the code, **Copy code**, "We've emailed it to you too", **Done** | The server checks the bundle is genuine (seconds), then issues the code (6.4). One code per account |
+| 5 | **Upload** | "Sending your results", a short bar | The contribution bundle is sent automatically (6.3) |
+| 6 | **Reward** | "Thank you - here's your free month", the code, **Copy code**, **Done** | Only when the server granted it on the ACCEPTED results (6.4, 6.5) |
+| 6 | **No code** | "Thank you - your results arrived", the server's plain message (e.g. "The free month needs at least 5 new plugins that pass our checks; this time there were 3."), **Done** | When the receipt's `reward_eligible` is false |
 
-**[Kathy to decide]** A code even when nothing new was needed (everything was already in the database). **Proposed: yes**, because the confirmations are still useful. In the app this is `kRewardWithoutNewProfiles = true`, and the promo stub honours it.
+**Beta build** (target `ejmap-wizard-beta`, `EJ_WIZARD_BETA`):
+- **No sign-in and no promo.** The order is Welcome ("Thank you for testing the EchoJay Wizard", **Continue**), Consent, Scan, Scan done, Measuring, **Results saved**.
+- **Scan done** in beta says "You have N plugins we don't have yet - Thank you for helping map them", with no reward. If there is nothing to measure: "Thanks - your plugins are already mapped".
+- **Results saved:** "Thank you - your results are ready", "Saved as EchoJay-Wizard-results-<YYYY-MM-DD>.zip on your Desktop. Email this file to <beta address>.", **Show in Finder**, **Done**.
+  - The file is the contribution bundle, unchanged. A second file the same day gets -2, -3 and so on; nothing is overwritten.
+  - The address is the build constant `EJ_WIZARD_BETA_EMAIL`, today `beta@echojay.ai`. **[Kathy to confirm]**
+- **Once only is not enforced in the beta.** It has no server, and the stub only records an accepted upload, which the beta never makes.
+
+### 2b. The consent (wording for Kathy to approve)
+
+> The wizard measures how your audio plugins respond to test tones and sends EchoJay the results: each plugin's name, maker, version, its list of controls and the measurements. It never sends audio, your files, your projects, your name, your computer's name or folder paths. The results go to EchoJay's servers, linked to your EchoJay account, and are used only to teach EchoJay how plugins behave.
+>
+> ☐ I agree
+
+In the beta the last sentence reads: "In this beta the results are saved as one file on your Desktop for you to email to us; nothing is sent by the app." (`wizapp::consentText`, pin WZ-FLOW-1.)
+
+What it says is true of the bundle as built:
+- **Profiles and drafts:** maps of control names, ranges and measured figures.
+- **Crash reports:** redacted of the home folder, user name and computer name. One that still contains any of these is withheld.
+- **No credentials, no paths:** the bundle check refuses to pack if any appear (section 3).
+- **The device hash** (6.5) is a one-way hash, not a personal detail.
+- **[Kathy to decide]** whether the paragraph should also name the device hash. Proposed: yes for the release ("and a one-way code for this Mac, so each Mac takes part once"), no for the beta, which sends nothing.
 
 ## 3. Behaviour rules
+
+**3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
+- What finished stays: maps, signature reads, demo checks, measured rows.
+- What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.
+- A stopped scan is not a finished scan (pins WZ-STOP-1/2).
+
+**3b. A stranger's Mac (13 Oct).**
+- **No licence file:** a demo is found by what it does. Before measuring, each plugin gets a steady 997 Hz tone at -18 dBFS for 60 s, rendered offline in about 1 s.
+  - Output that drops 20 dB below its own median and comes back is a demo's mute. That plugin is filed `demo`: not measured, not sent ("N plugins are demo versions and were skipped").
+  - Measured here: three Melda demos drop out from 19-25 s in; 11 licensed plugins of every measured category never do.
+- **Licence and iLok windows** are closed by the window watch, never clicked, and the plugin is filed needs_licence, quietly.
+- **Disk:**
+  - It refuses to start below 3 GB free, and says what it needs (a run writes about 5 MB per plugin).
+  - It stops cleanly below 1 GB while measuring, in plain words, and carries on next time.
 
 - **Where it opens.** The app keeps no session. The files in its work folder say where the user was, and it opens there (`wizapp::openOn`, pin WZ-APP-3):
   - not signed in → Welcome
@@ -255,6 +296,47 @@ The stub's "signed URL" is a local folder (`<work>/server_stub/signed_blob/`), a
 The server emails the code (the stub writes `<work>/server_stub/outbox/<account>.txt`).
 
 **Stub:** `EJ-FREE-` + the first 8 hex characters of SHA-256(account_id + "|wizard-v1"), uppercase. One per account in `server_stub/promo_ledger.json`.
+
+### 6.5 Eligibility, once only and the reward (Kathy, 13 Oct) - the server decides, the app only shows it
+
+**`/lookup` adds** `{"eligible": bool, "count": N, "minimum": M, "already_contributed": bool}`.
+- **The count:** NEW CONTRIBUTABLE plugins, which means:
+  - rule C (to be measured);
+  - not `pending_review`;
+  - a server category the wizard measures (not held multiband, not out of scope);
+  - not licence-blocked and not a demo.
+- **Eligible:** `count >= minimum` and not `already_contributed`.
+- **The minimum:** server-configurable, default 5.
+- **Stub:** `stub::lookupEligibility`, counting the scan's `queued` rows (pins WZ-ELIG-2).
+
+**`/contributions` decides the grant on the ACCEPTED results, never on the queue or the client's count.** The receipt carries `accepted_new`, `reward_minimum`, `reward_eligible` and, when no code is granted, `reward_message`.
+- **What counts:** each profile whose evidence is in the bundle:
+  - a compressor's tone check passed within 0.5 dB;
+  - an EQ's acceptance;
+  - a draft that is present.
+- **What doesn't count:** a duplicate plugin_id in the upload, or a plugin the server already knows (its database, or an earlier accepted upload).
+- **Below the minimum:** no code, and a plain message.
+- **Stub:** it opens the stored zip and ignores any count in the manifest (pin WZ-ELIG-3).
+
+**`/promo`** issues only for a receipt with `reward_eligible: true`. This replaces "a code even when nothing new". **Contribute anyway** uploads with no reward.
+
+**Once only** (server-configurable `once_only`, default true): one COMPLETED contribution per account AND per Mac.
+- **Completed** = an upload the server accepted.
+- **The same run:** a paused, crashed or resumed run is the same run and may finish. Lookups alone record nothing, so a scan that was not eligible does not use the go.
+- **A second run** is refused at `/lookup` with `already_contributed: true`, which shows "You've already taken part - thank you", and nothing runs. That applies to a second run on the same account (any Mac), and on the same Mac with a new account.
+- **Pins:** WZ-ONCE-1 and WZ-DEV.
+- **Later:** `once_only: false` would allow repeat contributions. A repeat never earns a second reward, because the reward needs new accepted plugins and the account or Mac not rewarded before.
+
+**Abuse limits (for Sean):**
+- **One reward per account AND per Mac:** the server records both on the accepted upload.
+- **The device hash** = SHA-256 of a fixed app salt (`echojay-wizard-device-v1|`) and the Mac's hardware UUID (`IOPlatformUUID`, upper-cased).
+  - The raw UUID never leaves the Mac.
+  - The salt makes the hash useless for matching other apps' identifiers.
+  - It stays the same across reinstalls and accounts on that Mac.
+  - It is sent with `/lookup` and `/contributions` as `device`.
+- **Idempotent uploads** on `bundle_sha256`: the same bundle again returns the first receipt and grants nothing new.
+- **The server never trusts the client's count:** it recomputes from the bundle and its own database.
+- **Server-side only:** the minimum, `once_only`, and the accepted-count rule are configuration on the server; the app has no copy of them.
 
 ## 6b. SERVER-SIDE, awaiting Sean (the client has stubs only)
 

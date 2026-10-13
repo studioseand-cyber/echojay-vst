@@ -9525,6 +9525,110 @@ void testWizardCategories()
                && ! ejmap::wizard::referenceVoteEntry (juce::var (new juce::DynamicObject())).isObject(),
                "wizard WZ-CD-2: an agreeing vote makes a 1-source reference agreed (said once); a differing plugin is held with its block kept for a third source; every vote logged");
     }
+    // WZ-FLOW-1 (Kathy, 13 Oct, beta items 3 / 4): consent before anything is scanned, in both builds; the beta build has no sign-in, saves
+    // the results as one file after measuring (no upload, no promo); the normal build uploads
+    {
+        using namespace ejmap::wizapp;
+        Where fresh, signedIn, consented, measuredB, savedB; signedIn.signedIn = true; consented = signedIn; consented.consented = true;
+        measuredB.consented = measuredB.scanned = measuredB.measureStarted = measuredB.measureDone = true; savedB = measuredB; savedB.saved = true;
+        Where betaConsented; betaConsented.consented = true;
+        const auto ct = consentText (Mode::normal), cb = consentText (Mode::beta);
+        check (openOn (fresh, Mode::normal) == Screen::welcome && openOn (signedIn, Mode::normal) == Screen::consent && openOn (consented, Mode::normal) == Screen::scan
+               && openOn (fresh, Mode::beta) == Screen::welcome && openOn (betaConsented, Mode::beta) == Screen::scan && openOn (measuredB, Mode::beta) == Screen::betaSaved && openOn (savedB, Mode::beta) == Screen::betaSaved
+               && openOn (measuredB, Mode::normal) == Screen::welcome && afterMeasure (Mode::normal) == Screen::upload && afterMeasure (Mode::beta) == Screen::betaSaved
+               && ct.contains ("never sends audio") && ct.contains ("folder paths") && ct.contains ("linked to your EchoJay account") && cb.contains ("saved as one file on your Desktop") && ! cb.contains ("account")
+               && consentTick() == "I agree" && resultsFileName (juce::Time (2026, 9, 13, 10, 0)) == "EchoJay-Wizard-results-2026-10-13.zip",
+               "wizard WZ-FLOW-1: normal = sign in -> consent -> scan -> upload; beta = welcome -> consent -> scan -> the results file (EchoJay-Wizard-results-<date>.zip); the consent says what is and is not sent");
+    }
+    // WZ-ELIG-1 (item 7, the client): the app only SHOWS the server's answer - eligible: N new, a free month; not eligible: already mapped,
+    // with "Contribute anyway (no reward)"; the beta never mentions a reward; the code screen only on the server's grant
+    {
+        using namespace ejmap::wizapp;
+        Eligibility el; el.eligible = true; el.count = 7; Eligibility ne; ne.count = 2; Eligibility none; Eligibility al; al.already = true;
+        const auto ce = scanDoneCopy (Mode::normal, el, "About 30 min."), cn = scanDoneCopy (Mode::normal, ne, "About 5 min."), c0 = scanDoneCopy (Mode::normal, none, ""), cb = scanDoneCopy (Mode::beta, el, "About 30 min.");
+        auto rc = [] (bool ok) { auto* o = new juce::DynamicObject(); o->setProperty ("reward_eligible", ok); return juce::var (o); };
+        const juce::var code (new juce::DynamicObject());
+        check (ce.title == "You have 7 plugins we don't have yet" && ce.text.contains ("Help map them and get a free month") && ce.primary == "Start" && ce.secondary.isEmpty()
+               && cn.title == "Thanks - your plugins are already mapped" && cn.text == "So there's nothing to do right now." && cn.primary == "Done" && cn.secondary == "Contribute anyway (no reward)"
+               && c0.secondary.isEmpty() && ! cb.text.contains ("free month") && cb.primary == "Start"
+               && afterScan (al) == Screen::alreadyDone && afterScan (el) == Screen::scanDone && alreadyDoneCopy().title == "You've already taken part - thank you"
+               && afterUpload (rc (true), code) == Screen::reward && afterUpload (rc (false), code) == Screen::noCode && afterUpload (rc (true), juce::var()) == Screen::noCode,
+               "wizard WZ-ELIG-1: the eligible / not-eligible / already-taken-part words; contribute anyway only when there is something to measure; the code only on the server's grant");
+    }
+    // WZ-ELIG-2 (item 7, the server's /lookup): NEW CONTRIBUTABLE = rule C to measure ("queued"), never pending_review / held / out of scope
+    // / licence-blocked / a demo; eligible at the minimum (server-configurable, default 5)
+    {
+        auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_elig_" + juce::String (juce::Random::getSystemRandom().nextInt64())); work.createDirectory();
+        auto stateWith = [] (int queued) { juce::Array<juce::var> rows;
+            for (const char* st : { "pending_review", "held", "out_of_scope", "needs_licence", "demo", "ready", "needs_category" }) { auto* o = new juce::DynamicObject(); o->setProperty ("state", st); rows.add (juce::var (o)); }
+            for (int k = 0; k < queued; ++k) { auto* o = new juce::DynamicObject(); o->setProperty ("state", "queued"); rows.add (juce::var (o)); }
+            auto* s = new juce::DynamicObject(); s->setProperty ("plugins", rows); return juce::var (s); };
+        const auto e5 = ejmap::wizserver::stub::lookupEligibility (work, "acct_a", "dev_a", stateWith (5)), e4 = ejmap::wizserver::stub::lookupEligibility (work, "acct_a", "dev_a", stateWith (4));
+        work.getChildFile ("server_stub").createDirectory(); work.getChildFile ("server_stub/config.json").replaceWithText ("{\"reward_minimum\": 3}");
+        const auto e3 = ejmap::wizserver::stub::lookupEligibility (work, "acct_a", "dev_a", stateWith (3));
+        work.deleteRecursively();
+        check ((int) e5.getProperty ("count", 0) == 5 && (bool) e5.getProperty ("eligible", false) && (int) e5.getProperty ("minimum", 0) == 5 && ! (bool) e4.getProperty ("eligible", true)
+               && (int) e4.getProperty ("count", 0) == 4 && (bool) e3.getProperty ("eligible", false) && (int) e3.getProperty ("minimum", 0) == 3 && ! (bool) e5.getProperty ("already_contributed", true),
+               "wizard WZ-ELIG-2: only rule-C plugins to measure count (5 of 12 rows); eligible at 5, not at 4; the minimum is the server's (3 when configured)");
+    }
+    // WZ-ELIG-3 (item 7, the server's /contributions): the grant counts ACCEPTED new profiles from the bundle - a compressor whose tone check
+    // passed (one that failed does not), an EQ with its acceptance, a draft that is there; a duplicate and an already-known plugin do not count;
+    // the client's own count is never read. Below the minimum: no code, a plain message
+    {
+        auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_acc_" + juce::String (juce::Random::getSystemRandom().nextInt64())); work.createDirectory();
+        work.getChildFile ("server_stub/db").createDirectory(); work.getChildFile ("server_stub/db/known.json").replaceWithText ("{\"schema\": \"ej_comp_profile/1\", \"plugin\": {\"plugin_id\": \"AudioUnit|kn|1\"}}");
+        auto item = [] (const char* id, const char* tc, const char* acc, const char* draft) { auto* o = new juce::DynamicObject(); o->setProperty ("plugin_id", id);
+            if (tc) { o->setProperty ("tone_check", tc); o->setProperty ("profile", "profiles/x.json"); } if (acc) { o->setProperty ("acceptance", acc); o->setProperty ("profile", "profiles/eq.json"); }
+            if (draft) o->setProperty ("drafts", juce::Array<juce::var> { juce::var (draft) }); return juce::var (o); };
+        juce::Array<juce::var> items { item ("AudioUnit|c1|1", "profiles/c1.tonecheck.json", nullptr, nullptr), item ("AudioUnit|c2|1", "profiles/c2.tonecheck.json", nullptr, nullptr),
+                                       item ("AudioUnit|c1|1", "profiles/c1.tonecheck.json", nullptr, nullptr), item ("AudioUnit|kn|1", "profiles/c1.tonecheck.json", nullptr, nullptr),
+                                       item ("AudioUnit|e1|1", nullptr, "accepted: 6 bands within 0.5 dB", nullptr), item ("AudioUnit|s1|1", nullptr, nullptr, "profiles/s1.saturation_profile.draft.json") };
+        auto* M = new juce::DynamicObject(); const juce::var Mv (M); M->setProperty ("schema", "ej_contribution/0"); M->setProperty ("profiles", items); M->setProperty ("client_count", 999);
+        const auto src = work.getChildFile ("b"); src.getChildFile ("profiles").createDirectory();
+        src.getChildFile ("manifest.json").replaceWithText (juce::JSON::toString (Mv)); src.getChildFile ("profiles/c1.tonecheck.json").replaceWithText ("{\"pass_within_0_5_db\": true}");
+        src.getChildFile ("profiles/c2.tonecheck.json").replaceWithText ("{\"pass_within_0_5_db\": false}"); src.getChildFile ("profiles/eq.json").replaceWithText ("{}"); src.getChildFile ("profiles/s1.saturation_profile.draft.json").replaceWithText ("{}");
+        auto zipOf = [&] (const juce::File& z) { juce::ZipFile::Builder zb; for (const auto& f : src.findChildFiles (juce::File::findFiles, true)) zb.addFile (f, 6, f.getRelativePathFrom (src));
+            juce::FileOutputStream os (z); os.setPosition (0); os.truncate(); zb.writeToStream (os, nullptr); };
+        const auto z1 = work.getChildFile ("u1.zip"); zipOf (z1);
+        const auto acct = juce::JSON::parse ("{\"account_id\": \"acct_a\", \"email\": \"a@example.com\"}");
+        const auto r1 = ejmap::wizserver::stub::upload (work, z1, src.getChildFile ("manifest.json"), acct, "dev_a");
+        const auto p1 = ejmap::wizserver::stub::promo (work, acct, r1);
+        work.getChildFile ("server_stub/config.json").replaceWithText ("{\"reward_minimum\": 3, \"once_only\": false}");
+        const auto acctB = juce::JSON::parse ("{\"account_id\": \"acct_b\", \"email\": \"b@example.com\"}");
+        const auto r2 = ejmap::wizserver::stub::upload (work, z1, src.getChildFile ("manifest.json"), acctB, "dev_b");   // the same plugins again: now already known
+        work.deleteRecursively();
+        check ((int) r1.getProperty ("accepted_new", -1) == 3 && (int) r1.getProperty ("reward_minimum", 0) == 5 && ! (bool) r1.getProperty ("reward_eligible", true) && p1.isVoid()
+               && r1.getProperty ("reward_message", "").toString().contains ("at least 5 new plugins") && r1.getProperty ("reward_message", "").toString().contains ("were 3")
+               && (int) r2.getProperty ("accepted_new", -1) == 0 && ! (bool) r2.getProperty ("reward_eligible", true),
+               "wizard WZ-ELIG-3: c1 (passed), e1 (accepted), s1 (draft) count = 3 - not c2 (failed), not the duplicate, not the known plugin, never the client's 999; 3 < 5: no code; sent again, 0 new");
+    }
+    // WZ-ONCE-1 (Kathy, 13 Oct, item 8): one completed contribution per account AND per Mac - completed = an ACCEPTED upload. A second run on
+    // the same account, or on the same Mac with a new account, is refused at /lookup; a run before its upload (paused / resumed) is allowed;
+    // a scan that was not eligible (lookup only) does not use the go; server-configurable (once_only false lifts it)
+    {
+        auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_once_" + juce::String (juce::Random::getSystemRandom().nextInt64())); work.createDirectory();
+        using namespace ejmap::wizserver::stub;
+        auto st = [] { auto* s = new juce::DynamicObject(); s->setProperty ("plugins", juce::Array<juce::var>()); return juce::var (s); };
+        auto already = [&] (const char* a, const char* d) { return (bool) lookupEligibility (work, a, d, st()).getProperty ("already_contributed", false); };
+        const bool beforeAny = already ("acct_a", "dev_a");                      // a fresh run, and a resumed one before its upload
+        const bool notEligibleScanUsesNothing = ! already ("acct_a", "dev_a");   // lookups alone record nothing
+        const auto src = work.getChildFile ("b"); src.createDirectory(); src.getChildFile ("manifest.json").replaceWithText ("{\"schema\": \"ej_contribution/0\", \"profiles\": []}");
+        juce::ZipFile::Builder zb; zb.addFile (src.getChildFile ("manifest.json"), 6, "manifest.json"); const auto z = work.getChildFile ("u.zip"); { juce::FileOutputStream os (z); zb.writeToStream (os, nullptr); }
+        upload (work, z, src.getChildFile ("manifest.json"), juce::JSON::parse ("{\"account_id\": \"acct_a\"}"), "dev_a");   // accepted: the go is used
+        const bool sameAccountOtherMac = already ("acct_a", "dev_z"), sameMacNewAccount = already ("acct_n", "dev_a"), newBoth = already ("acct_n", "dev_n");
+        work.getChildFile ("server_stub/config.json").replaceWithText ("{\"once_only\": false}");
+        const bool lifted = already ("acct_a", "dev_a");
+        work.deleteRecursively();
+        check (! beforeAny && notEligibleScanUsesNothing && sameAccountOtherMac && sameMacNewAccount && ! newBoth && ! lifted,
+               "wizard WZ-ONCE-1: after an accepted upload the same account (on any Mac) and the same Mac (with any account) are refused; a new account on a new Mac is not; before the upload (a resumed run) it is allowed; once_only false lifts it");
+    }
+    // WZ-DEV the device hash: salted SHA-256 of the hardware UUID - 64 hex, stable, never the UUID itself, nothing for an empty UUID
+    {
+        const auto h = ejmap::wizserver::deviceHashOf ("1234ABCD-0000-1111-2222-333344445555"), h2 = ejmap::wizserver::deviceHashOf ("1234abcd-0000-1111-2222-333344445555");
+        check (h.length() == 64 && h == h2 && ! h.containsIgnoreCase ("1234ABCD") && h != ejmap::wizserver::deviceHashOf ("other") && ejmap::wizserver::deviceHashOf ("").isEmpty()
+               && h != juce::SHA256 (juce::String ("1234ABCD-0000-1111-2222-333344445555").toUTF8()).toHexString(),
+               "wizard WZ-DEV: the device hash is salted SHA-256 of the hardware UUID (stable, case-insensitive), never the UUID");
+    }
     // WZ-DEMO-1 (Kathy, 13 Oct, beta item 2): a demo is found by its dropouts on a steady tone - the real 45 s traces from this Mac: Melda's
     // MTurboComp and MFreeformEqualizer (demos) drop 23 dB and come back; elysia mpressor, bx_rooMS (a reverb) and ADA STD-1 (a delay) never
     // do. Silent output is not judged here; a fall that never comes back is not a dropout
@@ -9737,7 +9841,7 @@ void testWizardApp()
     }
     // WZ-APP-3 WHERE THE APP OPENS: from the files alone - a crash is said before anything carries on, a stopped measure carries on
     {
-        auto w = [] (bool si, bool sc, bool ms, bool md, bool up, bool rw, int cr) { Where x; x.signedIn = si; x.scanned = sc; x.measureStarted = ms; x.measureDone = md; x.uploaded = up; x.rewarded = rw; x.crashed = cr; return openOn (x); };
+        auto w = [] (bool si, bool sc, bool ms, bool md, bool up, bool rw, int cr) { Where x; x.signedIn = si; x.consented = true; x.scanned = sc; x.measureStarted = ms; x.measureDone = md; x.uploaded = up; x.rewarded = rw; x.crashed = cr; return openOn (x); };
         check (w (false, true, true, false, false, false, 1) == Screen::welcome && w (true, false, false, false, false, false, 0) == Screen::scan
                && w (true, true, false, false, false, false, 0) == Screen::scanDone && w (true, true, true, false, false, false, 0) == Screen::measuring
                && w (true, true, true, false, false, false, 1) == Screen::crashRecovered && w (true, true, true, true, false, false, 0) == Screen::upload
