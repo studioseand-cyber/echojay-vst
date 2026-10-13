@@ -367,7 +367,8 @@ private:
     }
     void saveBetaResults()
     {   // the contribution bundle as ONE file on the Desktop (never overwritten: -2, -3 ...)
-        const auto desk = juce::File::getSpecialLocation (juce::File::userDesktopDirectory);
+        const char* rd = std::getenv ("EJ_WIZARD_RESULTS_DIR");   // rehearsals only: never the tester's Desktop
+        const auto desk = rd != nullptr && *rd ? juce::File (rd) : juce::File::getSpecialLocation (juce::File::userDesktopDirectory); desk.createDirectory();
         auto f = desk.getChildFile (wizapp::resultsFileName (juce::Time::getCurrentTime()));
         for (int k = 2; f.existsAsFile(); ++k) f = desk.getChildFile (f.getFileNameWithoutExtension().upToLastOccurrenceOf ("-results-", true, false) + juce::Time::getCurrentTime().formatted ("%Y-%m-%d") + "-" + juce::String (k) + ".zip");
         if (engineDir().getChildFile ("contribution.zip").copyFileTo (f)) { auto st = appState(); st.getDynamicObject()->setProperty ("saved_file", f.getFullPathName()); cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (st)); setState ("saved", true); logLine ("saved: " + f.getFullPathName()); }
