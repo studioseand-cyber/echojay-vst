@@ -136,15 +136,19 @@ inline juce::String screenName (Screen s)
 }
 struct Where { bool signedIn = false, consented = false, scanned = false, measureStarted = false, measureDone = false, uploaded = false, rewarded = false, saved = false; int crashed = 0; };
 // THE CONSENT (item 3; the wording is Kathy's to approve - docs/WIZARD_SPEC.md section 2b): one paragraph, and a tick that must be set
+struct Copy { juce::String title, text, primary, secondary; };
 inline juce::String consentText (Mode m)
 {
     return juce::String ("The wizard measures how your audio plugins respond to test tones and sends EchoJay the results: each plugin's name, maker, ")
          + "version, its list of controls and the measurements. It never sends audio, your files, your projects, your name, your computer's name or "
          + "folder paths. "
          + (m == Mode::beta ? "In this beta the results are saved as one file on your Desktop for you to email to us; nothing is sent by the app."
-                            : "The results go to EchoJay's servers, linked to your EchoJay account, and are used only to teach EchoJay how plugins behave.");
+                            : "The results go to EchoJay's servers, linked to your EchoJay account, and are used only to teach EchoJay how plugins behave. "
+                              "To make sure each Mac takes part once, the wizard also sends a one-way code made from this Mac's hardware ID - never the ID itself.");   // 13 Oct (Kathy): the release names the hashed ID; the beta sends nothing
 }
 inline juce::String consentTick() { return "I agree"; }
+// the low-disk refusal (13 Oct, Kathy): the words and a Quit button - nothing has started
+inline Copy diskRefusedCopy (const juce::String& words) { return { "Not enough disk space", words, "Quit", {} }; }
 // the results file (item 4, beta): one zip on the Desktop
 inline juce::String resultsFileName (const juce::Time& t) { return "EchoJay-Wizard-results-" + t.formatted ("%Y-%m-%d") + ".zip"; }
 // AFTER THE SCAN (items 7 / 8): the server's answer decides - already taken part -> nothing runs; else the results with eligibility
@@ -155,7 +159,6 @@ inline Screen afterScan (const Eligibility& e) { return e.already ? Screen::alre
 // once only needs no scan: the account and the Mac decide it, so /lookup is asked right after consent and an account or Mac that has
 // already taken part loads nothing at all (13 Oct, rehearsal)
 inline Screen afterConsent (const Eligibility& e) { return e.already ? Screen::alreadyDone : Screen::scan; }
-struct Copy { juce::String title, text, primary, secondary; };
 inline Copy alreadyDoneCopy() { return { "You've already taken part - thank you", "This account or this Mac has already contributed its results, so there's nothing to run.", "Done", {} }; }
 inline Copy scanDoneCopy (Mode m, const Eligibility& e, const juce::String& etaWords)
 {

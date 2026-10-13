@@ -9535,6 +9535,16 @@ void testWizardCategories()
                && cm.contains ("JUCE_APPLICATION_NAME_STRING=\"EchoJay Wizard\"") && cm.contains ("JUCE_APPLICATION_NAME_STRING=\"EchoJay Wizard Beta\""),
                "wizard WZ-NAME: the app's name is its build's (EchoJay Wizard / EchoJay Wizard Beta), so both can run (read both files: " + juce::String ((int) readBoth) + ")");
     }
+    // WZ-BETA-ADDR (Kathy, 13 Oct): the beta's address is admin@signaturestudiosonline.com, in the finish screen and the tester README
+    {
+        const auto src = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto rd = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/README_BETA.md").loadFileAsString();
+        const bool read = src.contains ("class WizardApplication") && rd.contains ("What a tester does");   // the control
+        check (read && src.contains ("#define EJ_WIZARD_BETA_EMAIL \"admin@signaturestudiosonline.com\"") && src.contains ("Email this file to \" + juce::String (EJ_WIZARD_BETA_EMAIL)")
+               && rd.contains ("admin@signaturestudiosonline.com") && ! src.contains ("beta@echojay.ai") && ! rd.contains ("beta@echojay.ai")
+               && src.contains ("wizapp::diskRefusedCopy (dv.words)") && src.contains ("if (diskRefused) {"),
+               "wizard WZ-BETA-ADDR: the beta finish screen and README name admin@signaturestudiosonline.com; the low-disk refusal uses its Quit copy (read: " + juce::String ((int) read) + ")");
+    }
     // WZ-FLOW-1 (Kathy, 13 Oct, beta items 3 / 4): consent before anything is scanned, in both builds; the beta build has no sign-in, saves
     // the results as one file after measuring (no upload, no promo); the normal build uploads
     {
@@ -9547,6 +9557,8 @@ void testWizardCategories()
                && openOn (fresh, Mode::beta) == Screen::welcome && openOn (betaConsented, Mode::beta) == Screen::scan && openOn (measuredB, Mode::beta) == Screen::betaSaved && openOn (savedB, Mode::beta) == Screen::betaSaved
                && openOn (measuredB, Mode::normal) == Screen::welcome && afterMeasure (Mode::normal) == Screen::upload && afterMeasure (Mode::beta) == Screen::betaSaved
                && ct.contains ("never sends audio") && ct.contains ("folder paths") && ct.contains ("linked to your EchoJay account") && cb.contains ("saved as one file on your Desktop") && ! cb.contains ("account")
+               && ct.contains ("a one-way code made from this Mac's hardware ID - never the ID itself") && ! cb.containsIgnoreCase ("hardware")
+               && diskRefusedCopy ("x").primary == "Quit" && diskRefusedCopy ("x").title == "Not enough disk space" && diskRefusedCopy ("x").text == "x"
                && consentTick() == "I agree" && resultsFileName (juce::Time (2026, 9, 13, 10, 0)) == "EchoJay-Wizard-results-2026-10-13.zip",
                "wizard WZ-FLOW-1: normal = sign in -> consent -> scan -> upload; beta = welcome -> consent -> scan -> the results file (EchoJay-Wizard-results-<date>.zip); the consent says what is and is not sent");
     }

@@ -33,12 +33,12 @@ It measures the user's plugins that EchoJay's database does not have yet. It sen
 - **Scan done** in beta says "You have N plugins we don't have yet - Thank you for helping map them", with no reward. If there is nothing to measure: "Thanks - your plugins are already mapped".
 - **Results saved:** "Thank you - your results are ready", "Saved as EchoJay-Wizard-results-<YYYY-MM-DD>.zip on your Desktop. Email this file to <beta address>.", **Show in Finder**, **Done**.
   - The file is the contribution bundle, unchanged. A second file the same day gets -2, -3 and so on; nothing is overwritten.
-  - The address is the build constant `EJ_WIZARD_BETA_EMAIL`, today `beta@echojay.ai`. **[Kathy to confirm]**
+  - The address is the build constant `EJ_WIZARD_BETA_EMAIL`: **admin@signaturestudiosonline.com** (Kathy, 13 Oct).
 - **Once only is not enforced in the beta.** It has no server, and the stub only records an accepted upload, which the beta never makes.
 
 ### 2b. The consent (wording for Kathy to approve)
 
-> The wizard measures how your audio plugins respond to test tones and sends EchoJay the results: each plugin's name, maker, version, its list of controls and the measurements. It never sends audio, your files, your projects, your name, your computer's name or folder paths. The results go to EchoJay's servers, linked to your EchoJay account, and are used only to teach EchoJay how plugins behave.
+> The wizard measures how your audio plugins respond to test tones and sends EchoJay the results: each plugin's name, maker, version, its list of controls and the measurements. It never sends audio, your files, your projects, your name, your computer's name or folder paths. The results go to EchoJay's servers, linked to your EchoJay account, and are used only to teach EchoJay how plugins behave. To make sure each Mac takes part once, the wizard also sends a one-way code made from this Mac's hardware ID - never the ID itself.
 >
 > ☐ I agree
 
@@ -49,7 +49,7 @@ What it says is true of the bundle as built:
 - **Crash reports:** redacted of the home folder, user name and computer name. One that still contains any of these is withheld.
 - **No credentials, no paths:** the bundle check refuses to pack if any appear (section 3).
 - **The device hash** (6.5) is a one-way hash, not a personal detail.
-- **[Kathy to decide]** whether the paragraph should also name the device hash. Proposed: yes for the release ("and a one-way code for this Mac, so each Mac takes part once"), no for the beta, which sends nothing.
+- **The device hash (Kathy, 13 Oct):** the release paragraph names it in one plain sentence (above); the beta's does not, because it sends nothing.
 
 ## 3. Behaviour rules
 
@@ -64,7 +64,7 @@ What it says is true of the bundle as built:
   - Measured here: three Melda demos drop out from 19-25 s in; 11 licensed plugins of every measured category never do.
 - **Licence and iLok windows** are closed by the window watch, never clicked, and the plugin is filed needs_licence, quietly.
 - **Disk:**
-  - It refuses to start below 3 GB free, and says what it needs (a run writes about 5 MB per plugin).
+  - It refuses to start below 3 GB free, says what it needs (a run writes about 5 MB per plugin), and offers **Quit**.
   - It stops cleanly below 1 GB while measuring, in plain words, and carries on next time.
 
 - **Where it opens.** The app keeps no session. The files in its work folder say where the user was, and it opens there (`wizapp::openOn`, pin WZ-APP-3):
@@ -306,7 +306,7 @@ The server emails the code (the stub writes `<work>/server_stub/outbox/<account>
   - a server category the wizard measures (not held multiband, not out of scope);
   - not licence-blocked and not a demo.
 - **Eligible:** `count >= minimum` and not `already_contributed`.
-- **The minimum:** server-configurable, default 5.
+- **The minimum:** server-configurable, default 5 (confirmed by Kathy, 13 Oct).
 - **Stub:** `stub::lookupEligibility`, counting the scan's `queued` rows (pins WZ-ELIG-2).
 
 **`/contributions` decides the grant on the ACCEPTED results, never on the queue or the client's count.** The receipt carries `accepted_new`, `reward_minimum`, `reward_eligible` and, when no code is granted, `reward_message`.
@@ -320,7 +320,7 @@ The server emails the code (the stub writes `<work>/server_stub/outbox/<account>
 
 **`/promo`** issues only for a receipt with `reward_eligible: true`. This replaces "a code even when nothing new". **Contribute anyway** uploads with no reward.
 
-**Once only** (server-configurable `once_only`, default true): one COMPLETED contribution per account AND per Mac.
+**Once only** (server-configurable `once_only`, default true - confirmed ON by Kathy, 13 Oct): one COMPLETED contribution per account AND per Mac.
 - **Completed** = an upload the server accepted.
 - **The same run:** a paused, crashed or resumed run is the same run and may finish. Lookups alone record nothing, so a scan that was not eligible does not use the go.
 - **A second run** is refused at `/lookup` with `already_contributed: true`, which shows "You've already taken part - thank you", and nothing runs. That applies to a second run on the same account (any Mac), and on the same Mac with a new account.

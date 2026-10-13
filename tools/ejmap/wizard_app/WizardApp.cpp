@@ -48,7 +48,7 @@ constexpr auto kMode = wizapp::Mode::beta;
 constexpr auto kMode = wizapp::Mode::normal;
 #endif
 #ifndef EJ_WIZARD_BETA_EMAIL
-#define EJ_WIZARD_BETA_EMAIL "beta@echojay.ai"   // [Kathy to confirm the address]
+#define EJ_WIZARD_BETA_EMAIL "admin@signaturestudiosonline.com"   // Kathy, 13 Oct
 #endif
 
 struct Config
@@ -227,7 +227,7 @@ public:
 
 private:
     Config cfg; Engine engine; KeepAwake awake;
-    juce::Image logo; juce::TextButton primary, secondary; juce::TextEditor email, password; juce::ToggleButton agree; juce::String device; juce::File savedFile; juce::var eligibility;
+    juce::Image logo; juce::TextButton primary, secondary; juce::TextEditor email, password; juce::ToggleButton agree; bool diskRefused = false; juce::String device; juce::File savedFile; juce::var eligibility;
     const juce::Colour accent { 0xff3d5afe }, ink { 0xff141824 };
     Screen screen = Screen::welcome; juce::String title, text, barLeft, barRight, bigCode, pauseNote; bool showBar = false; double barValue = 0.0;
     std::vector<wizapp::Crashed> crashed; bool quitting = false; int autoTicks = 0, snapN = 0; double lastSnapQuarter = -1.0;
@@ -250,7 +250,8 @@ private:
     void startEngine (bool measure)
     {
         if (const auto dv = wizapp::diskVerdict (wizapp::freeBytes (cfg.work), true); ! dv.ok)   // 13 Oct: never start below the floor
-        { title = "Not enough disk space"; text = dv.words; showBar = false; logLine ("refused to start: " + dv.words); repaint(); return; }
+        { const auto c = wizapp::diskRefusedCopy (dv.words); title = c.title; text = c.text; showBar = false; primary.setButtonText (c.primary); primary.setVisible (true); diskRefused = true;
+          logLine ("refused to start: " + dv.words); resized(); repaint(); return; }
         engineDir().createDirectory(); engineDir().getChildFile ("progress.json").deleteFile();   // the last run's "Done 100%" must not flash on the new screen
         if (! engine.start (cfg.engine, engineArgs (measure), cfg.work.getChildFile ("engine_output.txt"), measure ? "measure" : "scan"))
         { title = "Something went wrong"; text = "The measuring engine could not start (" + cfg.engine.getFullPathName() + ")."; repaint(); return; }
@@ -332,6 +333,7 @@ private:
 
     void onPrimary()
     {
+        if (diskRefused) { logLine ("quit (not enough disk space)"); juce::JUCEApplication::getInstance()->systemRequestedQuit(); return; }
         switch (screen)
         {
             case Screen::welcome:

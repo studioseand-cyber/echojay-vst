@@ -44,7 +44,7 @@ If step 2 says **"Operation not permitted"**, macOS has already tried to open th
 
 **4. Send the results.** At the end it says "Your results are ready" and saves **EchoJay-Wizard-results-<date>.zip** on your Desktop.
 - **Show in Finder** points at the file.
-- Email that one file to the address on the screen.
+- Email that one file to **admin@signaturestudiosonline.com** (the address is on the screen too).
 - The file holds plugin names, versions, controls and measurements: no audio, no files of yours, nothing personal.
 
 ## What only another Mac can test (not this one)
