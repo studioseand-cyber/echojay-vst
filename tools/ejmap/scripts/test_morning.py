@@ -2,10 +2,10 @@
 import os, sys; sys.path.insert(0, os.path.dirname(__file__)); import morning as m
 ra = {'steps': {'eq': {'state': 'done'}, 'saturation': {'state': 'started'}, 'uad': {'state': 'device_absent'}, 'tuners': {'state': 'done'}}}
 got = m.next_steps(ra)
-want = 'preflight,followup,fixups,saturation,uad,reverb_delay,transient_gate,drafts'
+want = 'preflight,saturation,uad,followup,licensed_now,accuracy_gaps_drafts,accuracy_gaps,limiter_comp_unfinished,drafts'   # 13 Oct: no fixups in the base line - the unfinished go after preflight
 assert got == want, got
 assert m.next_steps({'steps': {}}) == m.NEXT_NIGHT
-assert m.next_steps({'steps': {'reverb_delay': {'state': 'started'}}}) == m.NEXT_NIGHT   # already listed: not twice
+assert m.next_steps({'steps': {'accuracy_gaps': {'state': 'started'}}}) == m.NEXT_NIGHT   # already listed: not twice
 print('MORNING-NEXT: 3 checks, 0 failures')
 
 # MORNING-BASE (Kathy, 13 Oct): the baseline is b287aef3; its cache is its own (never equality19, 00f2ae79's); a binary is the baseline
