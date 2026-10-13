@@ -63,9 +63,9 @@ inline const std::vector<Step>& steps()
         // phaseb::rowIsAccuracyGap). TWO steps, in order: combined composes from the gain and time DRAFTS, and the --jobs pool runs rows of
         // one step side by side with no same-product rule - so the drafts' step finishes first, as gain_timing comes before combined
         { "accuracy_gaps_drafts", "gaps", { "--phaseb-all", "--redo", "accuracy_gaps", "--category", "gaincal", "--category", "timing" },
-                                                                                                    600.0,   "gain-cal and timing for an exported compressor that has none, or timed out (~10 min each)", false, true },
+                                                                                                    4500.0,  "gain-cal and timing for an exported compressor that has none, or timed out (Sean's 13 Oct folder: Auto-Tune VC, ~15 min gain-cal + ~60 min timing)", false, true },
         { "accuracy_gaps",    "gaps",     { "--phaseb-all", "--redo", "accuracy_gaps", "--category", "combined", "--category", "material", "--category", "frequency" },
-                                                                                                    300.0,   "combined, material and frequency for an exported compressor that has none (~2 min each)", false, true },
+                                                                                                    900.0,   "combined, material and frequency for an exported compressor that has none (Sean's 13 Oct folder: 10 rows, ~1-2 min each)", false, true },
         { "tuners",           "redo",     { "tuners" },                                             1800.0,  "tuners (humanize, flex)" },
         { "limiter",          "redo",     { "limiter" },                                            1500.0,  "limiters (ceiling + 6 dB, BS.1770 true peak)" },
         { "deesser",          "redo",     { "deesser" },                                            600.0,   "de-essers (the noise ladder)" },
@@ -80,7 +80,7 @@ inline const std::vector<Step>& steps()
         { "limiter_comp",     "redo",     { "limitercomp" },                                        20100.0, "limiters through the compressor certification (their drafts: compressor profile + ceiling block)" },
         // 13 Oct (Kathy): limiter_comp's rows that timed out or failed (Sean's five: L360 6->6 / 5->5, Spherix 10->10 / 12->12, MLimiterMB -
         // slow, not stuck) run again under the candidate guard; existing rows only (an opt-in category reached by --redo unfinished)
-        { "limiter_comp_unfinished", "gaps", { "--phaseb-all", "--redo", "unfinished", "--category", "limitercomp" },   36000.0, "limiter_comp's timed-out rows under the candidate guard (one candidate per channel / band: ~0.6-5 h each)" },
+        { "limiter_comp_unfinished", "gaps", { "--phaseb-all", "--redo", "unfinished", "--category", "limitercomp" },   46200.0, "limiter_comp's timed-out rows under the candidate guard (serial sum of Sean's five at their own pace: L360 1.5 + 1.3, Spherix 3.7 + 5.3, MLimiterMB 1.0 h)" },
         { "nothing_nominated","selector", { "nothing_nominated" },                                  16200.0, "rows the lexicon nominated nothing for" },
         { "strips",           "redo",     { "strips" },                                             50400.0, "channel strips, every section drafted" },
         { "drafts",           "plain",    { "--phaseb-drafts" },                                    5.0,     "every draft from the records on disk", false, true } };

@@ -34,7 +34,7 @@ def binary_is(path, h):
     try: return h.encode() in open(path, 'rb').read()
     except OSError: return False
 NAMED = ['Tube-Tech CL 1B', 'Unfiltered Audio Zip', 'bx_opto', 'Mixland Vac Attack', 'dbx-160 (s)', 'DPR-402 (s)', 'SPL IRON', 'Auto-Tune Vocal Compressor']
-NEXT_NIGHT = 'preflight,followup,fixups,reverb_delay,transient_gate,drafts'   # runbook Night A (11 Oct); limiter_comp + strips are Night B
+NEXT_NIGHT = 'preflight,followup,licensed_now,accuracy_gaps_drafts,accuracy_gaps,limiter_comp_unfinished,drafts'   # 13 Oct (Kathy): the night after cert 5
 
 def copy_folder(folder, out):
     """--folder: Sean's FULL cert folder, copied as it is (never merged over cert 2 / 3: it has already deleted what its run deleted)."""
