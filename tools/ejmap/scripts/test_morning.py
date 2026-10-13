@@ -33,3 +33,23 @@ got, since = m.this_run(C, 'b287aef3')
 assert since == '20261012T195541' and got == {'phaseb/eq/edge.phaseb.json', 'phaseb/eq/new.phaseb.json', 'profiles/a.tonecheck.json'}, (since, got)
 assert m.this_run(C, 'ffffffff')[0] == set()
 print('MORNING-BASE / MORNING-FOLDER: 13 checks, 0 failures')
+
+# MORNING-SETS (13 Oct, d26db00f): a profile that drops EXACTLY its not_written controls is explained, only when the baseline expects
+# it; one that also changes anything else, or drops a control it does not list, stays a difference (STOP)
+assert m.BASELINE['expect_sets'] == 'not_written'
+cmp = os.path.join(os.path.dirname(__file__), '..', 'cert-traces', '2026-10-07-equality', 'compare.py')
+def mkset(root, old, new):
+    for side, profs in (('old', old), ('new', new)):
+        for d in ('profiles', 'fixtures', 'controls'): os.makedirs(os.path.join(root, side, d), exist_ok=True)
+        json.dump([{'product': 'x', 'state': 'exported', 'reason': ''}], open(os.path.join(root, side, 'outcomes.json'), 'w'))
+        for n, p in profs.items(): json.dump(p, open(os.path.join(root, side, 'profiles', n), 'w'))
+base = {'neutral': [{'index': 1, 'control': 'Mix'}, {'index': 57, 'control': 'M'}], 'amount': {'control': 'T'}}
+good = {'neutral': [{'index': 1, 'control': 'Mix'}], 'amount': {'control': 'T'}, 'not_written': [{'index': 57, 'control': 'M'}]}
+bad1 = dict(good, amount={'control': 'U'})                                          # something else changed too
+bad2 = dict(good, not_written=[{'index': 57, 'control': 'M'}, {'index': 99, 'control': ''}])   # lists a control the old profile never wrote
+S = os.path.join(T, 'sets'); mkset(S, {'a.json': base, 'b.json': base, 'c.json': base}, {'a.json': good, 'b.json': bad1, 'c.json': bad2})
+out = lambda *a: subprocess.run(['python3', cmp, S] + list(a), capture_output=True, text=True).stdout
+w = out('--expect', 'not_written'); n0 = out()
+assert 'profiles: 3 old / 3 new' in w and 'differ 2' in w and 'explained 1 not_written' in w, w
+assert 'differ 3' in n0 and 'explained' not in n0, n0
+print('MORNING-SETS: 3 checks, 0 failures')
