@@ -1,21 +1,20 @@
-EJ MAP - PUBLISHED COMPRESSOR PROFILES v2 (13 Oct 2026). 1 profile(s); each with its tone-check sidecar.
-Source: Sean's cert folder ~/Downloads/cert 5 (13 Oct; his full folder, b287aef3, all 9 run-all steps). Candidates: the eight Kathy named for v2.
-Criteria (Kathy, 13 Oct): tone check spec v1.7 made by b287aef3 and PASS within 0.5 dB at g 2, 4, 5 and 6; every deep level run and passed (none nulled); and no flag from the accuracy passes:
-  frequency (frequency_dependent: GR moves > 1 dB across 100 / 997 / 5000 Hz), material (median miss > 1 dB on vocal, drums or mix), combined (GR miss > 0.5 dB),
-  make-up (clamped by > 0.5 dB, or the output miss net of GR > 0.5 dB). A product the accuracy passes never measured is held: no record is not 'no flag'.
-The accuracy records are those in cert 5 (made 11 Oct, before b287aef3); the tone checks are b287aef3's. Profiles are Sean's b287aef3 exports, unmodified.
+EJ MAP - PUBLISHED COMPRESSOR PROFILES v2 (13 Oct 2026). 4 profiles; each with its tone-check sidecar.
+Source: Sean's cert folder ~/Downloads/cert 5 (13 Oct; his full folder, b287aef3). Candidates: the eight Kathy named for v2.
+Rule (Kathy, 13 Oct: v2 = v1's rule): tone check spec v1.7 by b287aef3 PASS within 0.5 dB at g 2, 4, 5 and 6 with every deep level run and
+passed; HOLD only for a frequency flag (frequency_dependent: GR moves > 1 dB across 100 / 997 / 5000 Hz) or an output-level flag (make-up
+clamped by > 0.5 dB, or the output miss net of GR > 0.5 dB), or when an accuracy record is missing. A material flag alone, or a combined flag
+whose timing positions v1 already refuses, is not a hold. Accuracy records: cert 5's (11 Oct); profiles: Sean's b287aef3 exports, unmodified.
 
-product | version | map_fp | g2 GR dB | g4 | g5 | g6 | deep levels passed / nulled | checked (build, date)
-dbx-160 (s) | 15.0.70 | bcc14e11e2c49665ec97a1ad23ceaf2523f5200a31970e8ad9322ac91707f79b | 1.95 PASS | 3.99 PASS | 4.98 PASS | 6.02 PASS | 9 / 0 | b287aef3, 20261012
+product | version | map_fp | g2 GR dB | g4 | g5 | g6 | deep levels passed / nulled | checked (build, date) | accuracy flags (not holds)
+dbx-160 (s) | 15.0.70 | bcc14e11e2c49665ec97a1ad23ceaf2523f5200a31970e8ad9322ac91707f79b | 1.95 PASS | 3.99 PASS | 4.98 PASS | 6.02 PASS | 9 / 0 | b287aef3, 20261012 | no flag
+Mixland Vac Attack | 1.0.1 | ff0867188e6ac6e2dc2256a923b8514978db52e4473aa04e73748de269ecf346 | 1.97 PASS | 3.96 PASS | 4.97 PASS | 5.99 PASS | 9 / 0 | b287aef3, 20261012 | material mix median miss +1.24 dB (material only: a model limit, not a hold under the v1 rule)
+VBC FG-Red | 1.3.5 | e9c66cd27c08619d8e1dc3768389e5f5a0a231d0dfa24d895d0e22de5ca1292b | 1.99 PASS | 4.01 PASS | 5.0 PASS | 5.99 PASS | 9 / 0 | b287aef3, 20261012 | material vocal median miss +1.83 dB (material only: not a hold under the v1 rule)
+DPR-402 (s) | 15.0.70 | 86924eb9f84d63ea881e7becb8408abd55e4bf5b441938e526cb7315bf6e89c1 | 1.91 PASS | 3.97 PASS | 4.97 PASS | 5.94 PASS | 9 / 0 | b287aef3, 20261012 | material mix +1.15 dB; combined GR +1.17 dB from attack '100 msec' (GR shift -2.27) and release '5 msec' (-1.27): timing positions v1 already refuses, as for DPR-402 (m); output net of GR +0.04 dB (no make-up flag)
 
-HELD from v2 (7), with the reason:
-- Mixland Vac Attack 1.0.1: material mix median miss +1.24 dB
-- DPR-402 (s) 15.0.70: material mix median miss +1.15 dB; combined GR miss +1.17 dB
-- Auto-Tune Vocal Compressor 1.5.0: no combined record (its combined row of 11 Oct measured nothing: child exit 4 in 1 s, nothing_measured); material vocal median miss +1.53 dB; material mix median miss +1.19 dB
-- VBC FG-Red 1.3.5: material vocal median miss +1.83 dB
-- VBC FG-Grey 1.3.5: no frequency record (accuracy pass not run on it); no material record (accuracy pass not run on it); no combined record (accuracy pass not run on it)
-- VBC FG-MU 1.3.5: g 6 cannot be checked - the unit does not reach 6 dB (its profile: 'deep null 6 dB - not reached by -3.01 dBFS' at every position; g 4 and 5 pass); no frequency record (accuracy pass not run on it); no material record (accuracy pass not run on it); no combined record (accuracy pass not run on it)
-- VBC Rack 1.3.5: no frequency record (accuracy pass not run on it); no material record (accuracy pass not run on it); no combined record (accuracy pass not run on it)
+HELD from v2 (4):
+- Auto-Tune Vocal Compressor 1.5.0: its combined pass recorded nothing (the row of 11 Oct: child exit 4 in 1 s, nothing_measured), so its output level is unchecked; material vocal +1.53 / mix +1.19 dB are not holds by themselves
+- VBC FG-Grey 1.3.5: the accuracy passes (frequency, material, combined) never ran on it - no record is not "no flag"
+- VBC FG-MU 1.3.5: the accuracy passes never ran on it; and g 6 cannot be checked (the unit does not reach 6 dB: 'deep null 6 dB - not reached by -3.01 dBFS' at every position; g 2 / 4 / 5 pass)
+- VBC Rack 1.3.5: the accuracy passes never ran on it
 
-Note for Kathy: the 11 Oct v1 analysis (cert-traces/2026-10-11-accuracy/ACCURACY_37.md) did not hold on a material flag alone ('material is a model limit').
-Under that rule Mixland Vac Attack and VBC FG-Red would be clean; under today's criterion (material listed) they are held.
+They get the accuracy passes on Sean's next run (the new build's run-all runs them on any exported compressor without a record).

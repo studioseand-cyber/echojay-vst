@@ -59,7 +59,16 @@ The causes:
 For comparison, the 34 ok rows run at a median of 5.9 s per trace; the longest took 1292 s.
 
 ## 4. Publish v2
-`check_v2.py` produced the result (`v2_check.json`, `PUBLISH_LIST_v2.txt`), packaged as `~/Desktop/EJMAP_PUBLISH_COMPRESSORS_v2.zip`. **Clean: dbx-160 (s) only.** The other seven are held, each with its reason in the list.
+`check_v2.py` produced the first result (dbx-160 (s) only; material counted as a hold).
+
+**Repackaged (follow-up): v2 uses v1's rule.** A product is held only for a frequency flag, an output-level (make-up) flag, or a missing accuracy record. A material flag alone, or a combined flag whose timing positions v1 already refuses, is not a hold.
+- **`EJMAP_PUBLISH_COMPRESSORS_v2.zip`:** dbx-160 (s), Mixland Vac Attack, VBC FG-Red, DPR-402 (s).
+- **DPR-402 (s):** its combined +1.17 dB comes from attack '100 msec' (-2.27) and release '5 msec' (-1.27), positions v1 refuses, as for (m). Its output net of GR is +0.04 dB.
+- **Held:**
+  - Auto-Tune Vocal Compressor: its combined pass composed nothing because its gain-cal / timing timed out.
+  - VBC FG-Grey / FG-MU / Rack: the accuracy passes never ran on them.
+
+`PUBLISH_LIST_v2.txt` gives each reason.
 
 ## 5. The cut: df695ba1 (`~/Desktop/ejmap-dist-13oct-df695ba1`)
 - **Packaged:** built and signed (app and probe both team 8BT5F9B887); no quarantine flag (`xattr -lr`).
