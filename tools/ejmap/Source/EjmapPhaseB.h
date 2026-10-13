@@ -207,12 +207,27 @@ inline bool refileSlept (const juce::var& row) { return row.getProperty ("outcom
 inline bool rowIsUnfinished (const juce::var& row) { const auto oc = row.getProperty ("outcome", "").toString(); return oc == "timed_out" || oc == "failed"; }
 // THE DECLARED GUARD (9 Oct, gain-all's five timeouts: PrimalTap, LISA, Auto-Tune Vocal EQ, Vocal Reverb, EchoBoy were still measuring at
 // 10 min): a mode that knows its plan prints "GUARD<TAB><seconds>"; the parent's hang guard becomes the larger of the category's and the
-// declared one, never above kMaxDeclaredGuardS - a real hang is still caught, a long plan is not cut
-inline constexpr double kMaxDeclaredGuardS = 4.0 * 3600.0;
+// declared one, never above kMaxDeclaredGuardS - a real hang is still caught (inside the child every probe process has its own
+// timeout), a long plan is not cut. 13 Oct: a mode may RE-DECLARE as it measures - the LAST declaration stands; the cap is 8 h (Spherix
+// Limiter 12->12 needs ~4.2 h at --jobs 2, past the old 4 h).
+inline constexpr double kMaxDeclaredGuardS = 8.0 * 3600.0;
 inline std::optional<double> declaredGuardS (const juce::String& out)
 {
-    for (const auto& line : juce::StringArray::fromLines (out)) if (line.startsWith ("GUARD\t")) { const double v = line.fromFirstOccurrenceOf ("\t", false, false).getDoubleValue(); if (v > 0.0) return v; }
-    return std::nullopt;
+    std::optional<double> last;
+    for (const auto& line : juce::StringArray::fromLines (out)) if (line.startsWith ("GUARD\t")) { const double v = line.fromFirstOccurrenceOf ("\t", false, false).getDoubleValue(); if (v > 0.0) last = v; }
+    return last;
+}
+// THE CANDIDATE GUARD (Kathy, 13 Oct; limiter_comp's five timed_out rows, every probe process complete): a sweep with one threshold per
+// channel / band runs one full sweep per candidate - L360 6->6 six, Spherix 12->12 twelve - at 9-32 s a trace, so the category's 30 min
+// cut them a third of the way in. Declared before the first candidate (kGuardPerCandidateS each) and again after every candidate from
+// the MEASURED pace: elapsed + the remaining candidates at the mean so far x kGuardMargin, plus the tail (detector, tone check).
+// One candidate or none: nothing declared (the category's guard stands).
+inline constexpr double kGuardPerCandidateS = 900.0, kGuardTailS = 1200.0, kGuardMargin = 1.5;
+inline std::optional<double> candidatesGuardS (int total, int done, double elapsedS)
+{
+    if (total <= 1) return std::nullopt;
+    const double per = done > 0 ? elapsedS / done : kGuardPerCandidateS;
+    return elapsedS + juce::jmax (0, total - done) * per * kGuardMargin + kGuardTailS;
 }
 inline double effectiveGuardS (double baseS, std::optional<double> declared) { return declared ? juce::jlimit (baseS, juce::jmax (baseS, kMaxDeclaredGuardS), *declared) : baseS; }
 // the gain mode's declaration: every planned probe process at kGuardPerProcessS (PrimalTap's 28 traces took ~20 s each, the plugin's

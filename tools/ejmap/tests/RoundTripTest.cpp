@@ -9153,7 +9153,34 @@ void testMultibandStageThresholds()
         check (g && *g == 1860.0 && effectiveGuardS (600.0, 1860.0) == 1860.0 && effectiveGuardS (600.0, 300.0) == 600.0 && effectiveGuardS (600.0, 1.0e9) == kMaxDeclaredGuardS
                && effectiveGuardS (600.0, std::nullopt) == 600.0 && gainGuardS (28) == 180.0 + 60.0 * 28 && ! declaredGuardS ("no guard here\n")
                && traceComplete ("sweep\nstage\tdone\n") && ! traceComplete ("sweep\npos\t3\n"),
-               "ga G1: a declared guard (PrimalTap's 28 processes -> 31 min) replaces the 10 min one, never shorter, never above 4 h; only a COMPLETE trace is reused");
+               "ga G1: a declared guard (PrimalTap's 28 processes -> 31 min) replaces the 10 min one, never shorter, never above the cap (8 h since 13 Oct); only a COMPLETE trace is reused");
+        // PB-GUARD (Kathy, 13 Oct): limiter_comp's five timed_out rows - one candidate per channel / band. The guard scales with the
+        // candidate count, then with the measured pace; the LAST declaration stands. Each row's pace from Sean's traces (seconds per
+        // candidate = 1800 / candidates done at the cut): the guard declared after the candidates it reached covers the whole row
+        {
+            struct Row { const char* name; int cands; double perCandS; };
+            const Row rows[] { { "L360 (6->6)", 6, 1800.0 / 2.5 }, { "L360 (5->5)", 5, 1800.0 / 2.5 }, { "Spherix (10->10)", 10, 1800.0 / 1.5 }, { "Spherix (12->12)", 12, 1800.0 / 1.2 }, { "MLimiterMB", 7, 1800.0 / 5.5 } };
+            bool covers = true; juce::String said;
+            for (const auto& r : rows)
+            {
+                const double whole = r.cands * r.perCandS + kGuardTailS;                  // the row run to its end at the pace it ran at
+                for (int k = 1; k <= r.cands; ++k)
+                {
+                    const auto g = candidatesGuardS (r.cands, k, k * r.perCandS);
+                    if (! g || effectiveGuardS (1800.0, g) < whole || effectiveGuardS (1800.0, g) >= kMaxDeclaredGuardS) covers = false;
+                }
+                said << r.name << " " << juce::String (whole / 3600.0, 1) << " h; ";
+            }
+            const auto two = declaredGuardS ("GUARD\t5400\n  sweeping x\nGUARD\t9000\n");
+            check (covers && ! candidatesGuardS (1, 0, 0.0) && ! candidatesGuardS (0, 0, 0.0) && *candidatesGuardS (12, 0, 30.0) == 30.0 + 12 * kGuardPerCandidateS * kGuardMargin + kGuardTailS
+                   && *candidatesGuardS (6, 3, 1800.0) == 1800.0 + 3 * 600.0 * kGuardMargin + kGuardTailS && two && *two == 9000.0 && kMaxDeclaredGuardS == 8.0 * 3600.0,
+                   "phaseb PB-GUARD: the guard scales with candidates and the measured pace (" + said + "each covered after every candidate, under the 8 h cap); one candidate declares nothing; the last GUARD stands");
+        }
+        // PB-GUARD-2 the parent follows a RE-declaration: base 1 s, the child declares 3 s and then 6 s, exits at ~4 s - read once, it dies at 3 s
+        {
+            const auto r = ejmap::cert::runChild ({ "/bin/sh", "-c", "printf 'GUARD\\t3\\n'; sleep 0.5; printf 'GUARD\\t6\\n'; sleep 3.5; echo finished" }, 1000);
+            check (r.cleanExit() && r.out.contains ("finished"), "phaseb PB-GUARD-2: a child that re-declares its guard mid-run (3 s, then 6 s) runs to its end under a 1 s base (" + r.describe() + ")");
+        }
         const auto* ga = categoryNamed ("gainall");
         check (rowIsUnfinished (mk ({ { "outcome", "timed_out" } })) && rowIsUnfinished (mk ({ { "outcome", "failed" } })) && ! rowIsUnfinished (mk ({ { "outcome", "needs_licence" } })) && ! rowIsUnfinished (mk ({ { "outcome", "unhostable" } }))
                && rowToRedo (mk ({ { "outcome", "timed_out" } }), "gainall", { "unfinished" }) && ! rowToRedo (mk ({ { "outcome", "ok" } }), "gainall", { "unfinished" })
