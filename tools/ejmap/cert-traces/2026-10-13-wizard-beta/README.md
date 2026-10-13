@@ -30,3 +30,15 @@ All runs used the SIGNED apps (`assemble.sh --sign`; the app, its engine and its
 - the disk refusal has **Quit**.
 
 `screens/07_beta_results_saved_final.png` and `08_beta_disk_refused_quit.png` come from the rebuilt signed beta. The send-ready folder is `~/Desktop/EchoJay-Wizard-Beta-2026-10-13/`: the .dmg, sha256 starting fa3fad647a129509 (rebuilt at 52f877d4 with Kathy's consent edits; `screens/03` and `10` show both consent texts), plus the tester README.
+
+## The scan bar and the icon (13 Oct, evening)
+**The scan bar.** Kathy's beta run (a fresh default work folder, 1285 to check) drew the bar at about 67% with "15 of 1285".
+- **The cause:** the scan screen drew the engine's OVERALL percent divided by 15. Checking is only 10-15% of the overall bar, so the bar sat at 0.68 the moment Checking began.
+- **The fix (024c3485):** the bar is the Checking stage's own n of N, and a resumed scan starts at its true share.
+- **Checked:** on a fresh folder the first frame is empty, "Looking for plugins" (`screens/16`); "7 of 12" draws 58% (`17`).
+
+**The icon (f2dce27a).** The EchoJay mark is redrawn as vectors, white on the ink rounded square; the beta adds a BETA ribbon. It is an iconutil .icns with 10 sizes (`wizard_app/icon/`).
+- **Checked:** Finder resolves it for the app on the mounted DMG (`screens/18`, from NSWorkspace).
+- **No window screenshot:** a screenshot of the DMG window itself was refused, because this process has no Screen Recording permission.
+
+**The DMG** in `~/Desktop/EchoJay-Wizard-Beta-2026-10-13/` was rebuilt at f2dce27a (sha256 starting 8b5a0d43647f9bed).
