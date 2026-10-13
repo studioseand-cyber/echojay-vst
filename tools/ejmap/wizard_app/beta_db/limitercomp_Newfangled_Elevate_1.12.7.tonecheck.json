@@ -1,0 +1,1281 @@
+{
+  "product": "Newfangled Elevate",
+  "map_fp": "53a612ab17c4293e983abaccaf0666e3c09a067c4dd2b5ecc0dcbbe31bf08f63",
+  "L_rms_dbfs": -13.621355999999999,
+  "L_peak_dbfs": -10.611056043360186,
+  "g_db": 2.0,
+  "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.52 = -13.62 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 15 positions' in_at_gr[2.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+  "gr_per_channel_db": [
+    2.0,
+    2.0
+  ],
+  "L_ref_dbfs": -13.621355999999999,
+  "L_gap_db": 0.0,
+  "pick": {
+    "norm": 0.7210697059675,
+    "point": 14,
+    "point_next": 13,
+    "in_at_g": -14.210000000000001,
+    "stepped": false,
+    "pick_one_db": -14.821355999999998,
+    "clamp_db": 12.0,
+    "expected_gr_db": 2.0,
+    "filled_across_norm": false,
+    "fell_back_to_measured": false
+  },
+  "writes": [
+    {
+      "control": "Gain",
+      "index": 0,
+      "norm": 0.166667,
+      "set": "2.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Parameter Page",
+      "index": 1,
+      "norm": 0.0,
+      "set": "Master Parameters",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "EQ Active",
+      "index": 2,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Clipper Shape Active",
+      "index": 3,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Output Level Control Select",
+      "index": 4,
+      "norm": 1.0,
+      "set": "Automatic",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Speed",
+      "index": 5,
+      "norm": 0.316228,
+      "set": "1.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Adaptive Transient",
+      "index": 6,
+      "norm": 0.5,
+      "set": "50.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Transient Emphasis Active",
+      "index": 7,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Adaptive Gain Active",
+      "index": 8,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Draw Curve",
+      "index": 9,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 1",
+      "index": 10,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 2",
+      "index": 11,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 3",
+      "index": 12,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 4",
+      "index": 13,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 5",
+      "index": 14,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 6",
+      "index": 15,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 7",
+      "index": 16,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 8",
+      "index": 17,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 9",
+      "index": 18,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 10",
+      "index": 19,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 1",
+      "index": 20,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 2",
+      "index": 21,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 3",
+      "index": 22,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 4",
+      "index": 23,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 5",
+      "index": 24,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 6",
+      "index": 25,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 7",
+      "index": 26,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 8",
+      "index": 27,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 9",
+      "index": 28,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 10",
+      "index": 29,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gain Lock",
+      "index": 30,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Transient Emphasis",
+      "index": 31,
+      "norm": 0.5,
+      "set": "50.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Adaptive Transient Active",
+      "index": 33,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Output Level",
+      "index": 35,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Adaptive Gain",
+      "index": 36,
+      "norm": 0.5,
+      "set": "6.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Active",
+      "index": 37,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Dither",
+      "index": 38,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Output Level Compensation",
+      "index": 39,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 11",
+      "index": 40,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 12",
+      "index": 41,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 13",
+      "index": 42,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 14",
+      "index": 43,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 15",
+      "index": 44,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 16",
+      "index": 45,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 17",
+      "index": 46,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 18",
+      "index": 47,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 19",
+      "index": 48,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 20",
+      "index": 49,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 21",
+      "index": 50,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 22",
+      "index": 51,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 23",
+      "index": 52,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 24",
+      "index": 53,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 25",
+      "index": 54,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Gain 26",
+      "index": 55,
+      "norm": 0.5,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 11",
+      "index": 56,
+      "norm": 0.100649,
+      "set": "2012.98",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 12",
+      "index": 57,
+      "norm": 0.120329,
+      "set": "2406.58",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 13",
+      "index": 58,
+      "norm": 0.142863,
+      "set": "2857.27",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 14",
+      "index": 59,
+      "norm": 0.168667,
+      "set": "3373.35",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 15",
+      "index": 60,
+      "norm": 0.198215,
+      "set": "3964.30",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 16",
+      "index": 61,
+      "norm": 0.232049,
+      "set": "4640.99",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 17",
+      "index": 62,
+      "norm": 0.270792,
+      "set": "5415.84",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 18",
+      "index": 63,
+      "norm": 0.315156,
+      "set": "6303.12",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 19",
+      "index": 64,
+      "norm": 0.365956,
+      "set": "7319.11",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 20",
+      "index": 65,
+      "norm": 0.424125,
+      "set": "8482.50",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 21",
+      "index": 66,
+      "norm": 0.490734,
+      "set": "9814.68",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 22",
+      "index": 67,
+      "norm": 0.567006,
+      "set": "11340.12",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 23",
+      "index": 68,
+      "norm": 0.654343,
+      "set": "13086.87",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 24",
+      "index": 69,
+      "norm": 0.754352,
+      "set": "15087.04",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 25",
+      "index": 70,
+      "norm": 0.868869,
+      "set": "17377.38",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 26",
+      "index": 71,
+      "norm": 1.0,
+      "set": "20000.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Number of Filters",
+      "index": 72,
+      "norm": 1.0,
+      "set": "26 Band",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Ceiling",
+      "index": 74,
+      "norm": 0.95103,
+      "set": "-0.10",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 11",
+      "index": 75,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 12",
+      "index": 76,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 13",
+      "index": 77,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 14",
+      "index": 78,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 15",
+      "index": 79,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 16",
+      "index": 80,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 17",
+      "index": 81,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 18",
+      "index": 82,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 19",
+      "index": 83,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 20",
+      "index": 84,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 21",
+      "index": 85,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 22",
+      "index": 86,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 23",
+      "index": 87,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 24",
+      "index": 88,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 25",
+      "index": 89,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Solo 26",
+      "index": 90,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Use OpenGL",
+      "index": 92,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Clipper Shape",
+      "index": 93,
+      "norm": 0.0,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Show Meters",
+      "index": 94,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 1",
+      "index": 95,
+      "norm": 0.0,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 2",
+      "index": 96,
+      "norm": 0.005077,
+      "set": "101.55",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 3",
+      "index": 97,
+      "norm": 0.010892,
+      "set": "217.84",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 4",
+      "index": 98,
+      "norm": 0.01755,
+      "set": "351.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 5",
+      "index": 99,
+      "norm": 0.025174,
+      "set": "503.48",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 6",
+      "index": 100,
+      "norm": 0.033904,
+      "set": "678.07",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 7",
+      "index": 101,
+      "norm": 0.0439,
+      "set": "878.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 8",
+      "index": 102,
+      "norm": 0.055346,
+      "set": "1106.93",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 9",
+      "index": 103,
+      "norm": 0.068454,
+      "set": "1369.08",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Center Freq 10",
+      "index": 104,
+      "norm": 0.083463,
+      "set": "1669.26",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Adaptive Speed Active",
+      "index": 105,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Clipper Drive Active",
+      "index": 106,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "UI Scale",
+      "index": 107,
+      "norm": 0.207429,
+      "set": "1.23",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 1",
+      "index": 108,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 2",
+      "index": 109,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 3",
+      "index": 110,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 4",
+      "index": 111,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 5",
+      "index": 112,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 6",
+      "index": 113,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 7",
+      "index": 114,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 8",
+      "index": 115,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 9",
+      "index": 116,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 10",
+      "index": 117,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "True Peak",
+      "index": 120,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Animation Brightness",
+      "index": 121,
+      "norm": 1.0,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Match Level",
+      "index": 122,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Color Scheme",
+      "index": 123,
+      "norm": 0.5,
+      "set": "MODERN",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Clipper Drive",
+      "index": 124,
+      "norm": 0.0,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Transient EQ Active",
+      "index": 125,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gain Active",
+      "index": 126,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Adaptive Speed",
+      "index": 127,
+      "norm": 1.0,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 11",
+      "index": 128,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 12",
+      "index": 129,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 13",
+      "index": 130,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 14",
+      "index": 131,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 15",
+      "index": 132,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 16",
+      "index": 133,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 17",
+      "index": 134,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 18",
+      "index": 135,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 19",
+      "index": 136,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 20",
+      "index": 137,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 21",
+      "index": 138,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 22",
+      "index": 139,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 23",
+      "index": 140,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 24",
+      "index": 141,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 25",
+      "index": 142,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band Transient 26",
+      "index": 143,
+      "norm": 0.5,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Delta",
+      "index": 144,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Clipper Detail Active",
+      "index": 145,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Clipper Detail",
+      "index": 146,
+      "norm": 1.0,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    }
+  ],
+  "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+  "quiet_check_ok": true,
+  "gr_measured_db": 2.0,
+  "pass_within_0_5_db": true,
+  "probe": "e6614a35487966f7bd80a97312d50c869d6d7108",
+  "measuredAt": "20261013T045027.842+0100",
+  "ratio_norm_source": "no ratio control in the profile (fixed ratio): nothing written",
+  "spec": "v1.7",
+  "build": "b287aef3",
+  "deep_levels": [
+    {
+      "g_db": 4.0,
+      "ran": true,
+      "gr_measured_db": 3.99,
+      "L_rms_dbfs": -13.621355999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.52 = -13.62 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 14 positions' in_at_gr[4.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        3.99,
+        3.99
+      ],
+      "L_ref_dbfs": -13.621355999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.762736838065,
+        "point": 15,
+        "point_next": 14,
+        "in_at_g": -13.81,
+        "stepped": false,
+        "pick_one_db": -16.644936499999996,
+        "clamp_db": 6.023580499999998,
+        "expected_gr_db": 4.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 5.0,
+      "ran": true,
+      "gr_measured_db": 4.99,
+      "L_rms_dbfs": -13.621355999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.52 = -13.62 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 14 positions' in_at_gr[5.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        4.99,
+        4.99
+      ],
+      "L_ref_dbfs": -13.621355999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.7835700809675,
+        "point": 16,
+        "point_next": 15,
+        "in_at_g": -14.41,
+        "stepped": false,
+        "pick_one_db": -17.672065749999998,
+        "clamp_db": 7.050709749999999,
+        "expected_gr_db": 5.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 6.0,
+      "ran": true,
+      "gr_measured_db": 6.0,
+      "L_rms_dbfs": -13.621355999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.52 = -13.62 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 13 positions' in_at_gr[6.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        6.0,
+        6.0
+      ],
+      "L_ref_dbfs": -13.621355999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.8044032059675,
+        "point": 17,
+        "point_next": 16,
+        "in_at_g": -15.01,
+        "stepped": false,
+        "pick_one_db": -18.721356,
+        "clamp_db": 8.100000000000001,
+        "expected_gr_db": 6.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 7.0,
+      "ran": true,
+      "gr_measured_db": 7.0,
+      "L_rms_dbfs": -13.621355999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.52 = -13.62 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 12 positions' in_at_gr[7.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        7.0,
+        7.0
+      ],
+      "L_ref_dbfs": -13.621355999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.8252363309675,
+        "point": 17,
+        "point_next": 16,
+        "in_at_g": -14.01,
+        "stepped": false,
+        "pick_one_db": -19.721356,
+        "clamp_db": 9.100000000000001,
+        "expected_gr_db": 7.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 8.0,
+      "ran": true,
+      "gr_measured_db": 7.99,
+      "L_rms_dbfs": -13.621355999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.52 = -13.62 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 12 positions' in_at_gr[8.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        7.99,
+        7.99
+      ],
+      "L_ref_dbfs": -13.621355999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.846069838065,
+        "point": 18,
+        "point_next": 17,
+        "in_at_g": -14.609999999999999,
+        "stepped": false,
+        "pick_one_db": -20.759565749999997,
+        "clamp_db": 10.138209749999998,
+        "expected_gr_db": 8.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 9.0,
+      "ran": true,
+      "gr_measured_db": 8.99,
+      "L_rms_dbfs": -13.621355999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.52 = -13.62 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 11 positions' in_at_gr[9.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        8.99,
+        8.99
+      ],
+      "L_ref_dbfs": -13.621355999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.8669035809675,
+        "point": 19,
+        "point_next": 18,
+        "in_at_g": -15.210000000000001,
+        "stepped": false,
+        "pick_one_db": -21.821355999999998,
+        "clamp_db": 11.199999999999999,
+        "expected_gr_db": 9.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 10.0,
+      "ran": true,
+      "gr_measured_db": 9.99,
+      "L_rms_dbfs": -13.621355999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.52 = -13.62 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 10 positions' in_at_gr[10.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        9.99,
+        9.99
+      ],
+      "L_ref_dbfs": -13.621355999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.8877367059675,
+        "point": 19,
+        "point_next": 18,
+        "in_at_g": -14.210000000000001,
+        "stepped": false,
+        "pick_one_db": -22.821355999999998,
+        "clamp_db": 12.199999999999999,
+        "expected_gr_db": 10.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 11.0,
+      "ran": true,
+      "gr_measured_db": 10.99,
+      "L_rms_dbfs": -13.621355999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.52 = -13.62 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 10 positions' in_at_gr[11.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        10.99,
+        10.99
+      ],
+      "L_ref_dbfs": -13.621355999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.9085698309675,
+        "point": 20,
+        "point_next": 19,
+        "in_at_g": -14.81,
+        "stepped": false,
+        "pick_one_db": -23.769936499999996,
+        "clamp_db": 13.148580499999998,
+        "expected_gr_db": 11.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 12.0,
+      "ran": true,
+      "gr_measured_db": 11.99,
+      "L_rms_dbfs": -13.621355999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.52 = -13.62 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 9 positions' in_at_gr[12.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        11.99,
+        11.99
+      ],
+      "L_ref_dbfs": -13.621355999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.9294029559675,
+        "point": 20,
+        "point_next": 19,
+        "in_at_g": -13.81,
+        "stepped": false,
+        "pick_one_db": -24.644936499999996,
+        "clamp_db": 14.023580499999998,
+        "expected_gr_db": 12.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    }
+  ],
+  "deep_levels_nulled": [],
+  "limiter_compressor": true,
+  "not_for_publication": true
+}

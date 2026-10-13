@@ -1,0 +1,215 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "PuigTec MEQ5 (s)",
+    "manufacturer": "Waves",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|5a4b047d|15.0.70",
+    "version": "15.0.70",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-09",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "measured [1] LM Peak",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "LM Peak",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "1.8",
+          "gain_db": 0.85
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "3.7",
+          "gain_db": 2.1
+        },
+        {
+          "norm": 0.5,
+          "display": "5.5",
+          "gain_db": 3.49
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "7.3",
+          "gain_db": 5.11
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "9.2",
+          "gain_db": 7.38
+        },
+        {
+          "norm": 1.0,
+          "display": "11.0",
+          "gain_db": 10.77
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.01
+    },
+    {
+      "name": "measured [3] Mid Dip",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Mid Dip",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "1.8",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "3.7",
+          "gain_db": -2.58
+        },
+        {
+          "norm": 0.5,
+          "display": "5.5",
+          "gain_db": -6.02
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "7.3",
+          "gain_db": -9.34
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "9.2",
+          "gain_db": -10.66
+        },
+        {
+          "norm": 1.0,
+          "display": "11.0",
+          "gain_db": -11.039999999999999
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [5] HM Peak",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "HM Peak",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "1.8",
+          "gain_db": 0.5
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "3.7",
+          "gain_db": 1.78
+        },
+        {
+          "norm": 0.5,
+          "display": "5.5",
+          "gain_db": 3.04
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "7.3",
+          "gain_db": 4.43
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "9.2",
+          "gain_db": 6.43
+        },
+        {
+          "norm": 1.0,
+          "display": "11.0",
+          "gain_db": 8.75
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "LM Frequency",
+      "set": "500Hz",
+      "norm": 0.5
+    },
+    {
+      "control": "Mid Frequency",
+      "set": "1.5KHz",
+      "norm": 0.5
+    },
+    {
+      "control": "HM Frequency",
+      "set": "3KHz",
+      "norm": 0.5
+    },
+    {
+      "control": "Gain",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "Mains",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "OnOff",
+      "set": "On",
+      "norm": 1.0
+    }
+  ],
+  "notes": [
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

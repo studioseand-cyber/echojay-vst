@@ -1,0 +1,53 @@
+{
+ "already_mapped_plugin_ids": 678,
+ "by_kind": {
+  "draft": 422,
+  "profile": 256
+ },
+ "categories_by_source": {
+  "outcomes": 153,
+  "phaseb/deesser": 22,
+  "phaseb/delay": 38,
+  "phaseb/eq": 175,
+  "phaseb/gate": 8,
+  "phaseb/limiter": 46,
+  "phaseb/multiband": 17,
+  "phaseb/reverb": 100,
+  "phaseb/saturation": 193,
+  "phaseb/strips": 106,
+  "phaseb/transient": 18,
+  "phaseb/tuners": 10,
+  "signature": 332
+ },
+ "category_conflicts": [],
+ "counts": {
+  "categories_by_id": 1218,
+  "categories_by_name": 1207,
+  "compressor_profiles": 83,
+  "draft_not_ok_delay": 1,
+  "draft_not_ok_eq": 2,
+  "draft_not_ok_reverb": 2,
+  "draft_not_ok_saturation": 3,
+  "draft_not_ok_strips": 1,
+  "draft_not_ok_tuners": 1,
+  "draft_unusable_saturation": 23,
+  "drafts_deesser": 20,
+  "drafts_delay": 32,
+  "drafts_gate": 8,
+  "drafts_limiter": 39,
+  "drafts_multiband": 17,
+  "drafts_reverb": 90,
+  "drafts_saturation": 127,
+  "drafts_strips": 92,
+  "drafts_transient": 17,
+  "drafts_tuners": 6,
+  "eq_profiles": 147,
+  "limitercomp_profiles": 26,
+  "multiband_uids": 17,
+  "references": 290
+ },
+ "read_only": true,
+ "rule": "already mapped = an exported profile (compressor, limiter's compressor pass with its tone check passed), an EQ draft or another category's Phase B draft with an ok row (saturation: with its drive); keyed by plugin id + version, and map fp where the cert recorded one",
+ "schema": "ej_wizard_db_snapshot/1",
+ "source": "cert 5 (Sean's cert folder, read-only)"
+}

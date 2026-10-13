@@ -1,0 +1,4037 @@
+{
+ "entries": [
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|12196669|11.8.0",
+   "product": "UAD Ampex ATR-102",
+   "source": "Phase B draft (saturation)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|15616509|11.8.0",
+   "product": "UAD Bermuda Triangle",
+   "source": "Phase B draft (saturation)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|1561650f|11.8.0",
+   "product": "UAD Raw",
+   "source": "Phase B draft (saturation)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|18246535|14.16.0",
+   "product": "MReverbMB",
+   "source": "Phase B draft (reverb)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|2520b04|1.3.3",
+   "product": "Raum",
+   "source": "Phase B draft (reverb)",
+   "version": "1.3.3"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|2520b60|1.4.5",
+   "product": "Transient Master",
+   "source": "Phase B draft (transient)",
+   "version": "1.4.5"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|26a5d6d|2.5.62",
+   "product": "Drawmer 1973",
+   "source": "Phase B draft (multiband)",
+   "version": "2.5.62"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|28414649|11.8.0",
+   "product": "UAD Marshall Plexi Classic",
+   "source": "Phase B draft (saturation)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|28424649|11.8.0",
+   "product": "UAD Oxford SuprEsser DS",
+   "source": "Phase B draft (deesser)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "e70523bdc01530b69e20ab8650068df364f51ac69cb125713bc2e7036a5e3845",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|2a6d427f|2.1.0",
+   "product": "kHs Limiter",
+   "source": "Phase B draft (limiter)",
+   "version": "2.1.0"
+  },
+  {
+   "category": "gate",
+   "map_fp": null,
+   "measured": "gate",
+   "plugin_id": "AudioUnit|2a6d497f|2.1.0",
+   "product": "kHs Gate",
+   "source": "Phase B draft (gate)",
+   "version": "2.1.0"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|2a6d4a67|2.1.0",
+   "product": "kHs Delay",
+   "source": "Phase B draft (delay)",
+   "version": "2.1.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|2a6d4a7f|2.1.0",
+   "product": "kHs Distortion",
+   "source": "Phase B draft (saturation)",
+   "version": "2.1.0"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|2a6d5a79|2.1.0",
+   "product": "kHs Transient Shaper",
+   "source": "Phase B draft (transient)",
+   "version": "2.1.0"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|2a6d5c7d|2.1.0",
+   "product": "kHs Reverb",
+   "source": "Phase B draft (reverb)",
+   "version": "2.1.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|2a6d5e6f|2.1.0",
+   "product": "kHs Phase Distortion",
+   "source": "Phase B draft (saturation)",
+   "version": "2.1.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|2a784f7f|2.1.0",
+   "product": "Faturator",
+   "source": "Phase B draft (saturation)",
+   "version": "2.1.0"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|3116669|11.8.0",
+   "product": "UAD DreamVerb",
+   "source": "Phase B draft (reverb)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "limiter",
+   "map_fp": null,
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|38284a4d|1.18.9",
+   "product": "Invisible Limiter G3",
+   "source": "Phase B draft (limiter)",
+   "version": "1.18.9"
+  },
+  {
+   "category": "limiter",
+   "map_fp": null,
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|40271a44|1.3.9",
+   "product": "APB L-18 Limiter",
+   "source": "Phase B draft (limiter)",
+   "version": "1.3.9"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|40566176|15.0.70",
+   "product": "JJP-Cymb-Perc (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4056617d|15.0.70",
+   "product": "JJP-Cymb-Perc (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|40566276|15.0.70",
+   "product": "JJP-Strings-Keys (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4056627d|15.0.70",
+   "product": "JJP-Strings-Keys (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|40566776|15.0.70",
+   "product": "JJP-Vocals (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4056677d|15.0.70",
+   "product": "JJP-Vocals (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|40567363|15.0.70",
+   "product": "JJP-Bass (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|40567376|15.0.70",
+   "product": "JJP-Bass (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4056737d|15.0.70",
+   "product": "JJP-Bass (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|40567563|15.0.70",
+   "product": "JJP-Drums (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|40567576|15.0.70",
+   "product": "JJP-Drums (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4056757d|15.0.70",
+   "product": "JJP-Drums (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|40567676|15.0.70",
+   "product": "JJP-Guitars (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4056767d|15.0.70",
+   "product": "JJP-Guitars (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|415a6b62|1.1.11",
+   "product": "Unfiltered Audio lo-fi-af",
+   "source": "Phase B draft (saturation)",
+   "version": "1.1.11"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|415a7872|1.1.0",
+   "product": "Unfiltered Audio Tails",
+   "source": "Phase B draft (reverb)",
+   "version": "1.1.0"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|415e6d62|1.0.1",
+   "product": "smartDeess",
+   "source": "Phase B draft (deesser)",
+   "version": "1.0.1"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|41647c6d|1.5.1",
+   "product": "bx_console Focusrite SC",
+   "source": "Phase B draft (strips)",
+   "version": "1.5.1"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|4166669|11.8.0",
+   "product": "UAD Precision De-Esser",
+   "source": "Phase B draft (deesser)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|41667775|1.3.1",
+   "product": "bx_console AMEK 9099",
+   "source": "Phase B draft (strips)",
+   "version": "1.3.1"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4166777d|1.0.0",
+   "product": "bx_console AMEK 200",
+   "source": "Phase B draft (strips)",
+   "version": "1.0.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|41724674|2.5.62",
+   "product": "Saturation Knob",
+   "source": "Phase B draft (saturation)",
+   "version": "2.5.62"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|41747674|1.4.1",
+   "product": "bx_console SSL 9000 J",
+   "source": "Phase B draft (strips)",
+   "version": "1.4.1"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|41747d65|1.7.1",
+   "product": "bx_console SSL 4000 E",
+   "source": "Phase B draft (strips)",
+   "version": "1.7.1"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|41747d67|1.7.1",
+   "product": "bx_console SSL 4000 G",
+   "source": "Phase B draft (strips)",
+   "version": "1.7.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|417a6521|2.4.1",
+   "product": "Unfiltered Audio Indent 2",
+   "source": "Phase B draft (saturation)",
+   "version": "2.4.1"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|417a6557|1.3.1",
+   "product": "Unfiltered Audio Instant Delay",
+   "source": "Phase B draft (delay)",
+   "version": "1.3.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|417a6821|2.4.1",
+   "product": "Unfiltered Audio Dent 2",
+   "source": "Phase B draft (saturation)",
+   "version": "2.4.1"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|417a7f21|1.4.3",
+   "product": "Unfiltered Audio Sandman Pro",
+   "source": "Phase B draft (delay)",
+   "version": "1.4.3"
+  },
+  {
+   "category": "limiter",
+   "map_fp": null,
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|417f2274|1.0.1",
+   "product": "bx_clipper",
+   "source": "Phase B draft (limiter)",
+   "version": "1.0.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|417f6333|3.9.1",
+   "product": "bx_rockrack V3",
+   "source": "Phase B draft (saturation)",
+   "version": "3.9.1"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|417f636d|1.9.1",
+   "product": "bx_rooMS",
+   "source": "Phase B draft (reverb)",
+   "version": "1.9.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|417f6879|1.3.1",
+   "product": "bx_rockergain100",
+   "source": "Phase B draft (saturation)",
+   "version": "1.3.1"
+  },
+  {
+   "category": "limiter",
+   "map_fp": null,
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|417f6e6e|1.2.1",
+   "product": "bx_limiter True Peak",
+   "source": "Phase B draft (limiter)",
+   "version": "1.2.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|417f7364|1.11.1",
+   "product": "bx_bassdude",
+   "source": "Phase B draft (saturation)",
+   "version": "1.11.1"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|417f756c|1.8.1",
+   "product": "bx_delay2500",
+   "source": "Phase B draft (delay)",
+   "version": "1.8.1"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|417f7950|1.9.1",
+   "product": "bx_console N",
+   "source": "Phase B draft (strips)",
+   "version": "1.9.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|417f7c64|1.12.1",
+   "product": "bx_megadual",
+   "source": "Phase B draft (saturation)",
+   "version": "1.12.1"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "7a9cd5cc8f7177f96b91754c08486aa632c0e06c79e5bc645b6b49b93762acb1",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|417f7d6d|1.15.2",
+   "product": "bx_limiter",
+   "source": "Phase B draft (limiter)",
+   "version": "1.15.2"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|42447e63|15.0.72",
+   "product": "H-Delay (s)",
+   "source": "Phase B draft (delay)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|42447e68|15.0.72",
+   "product": "H-Delay (m->s)",
+   "source": "Phase B draft (delay)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|42447e7d|15.0.72",
+   "product": "H-Delay (m)",
+   "source": "Phase B draft (delay)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|42546218|15.0.70",
+   "product": "H-Reverb (6->6)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4254621b|15.0.70",
+   "product": "H-Reverb (5->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|42546263|15.0.70",
+   "product": "H-Reverb (m)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|42546274|15.0.70",
+   "product": "H-Reverb (1->6)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|42546276|15.0.70",
+   "product": "H-Reverb (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|42546277|15.0.70",
+   "product": "H-Reverb (1->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4254627a|15.0.70",
+   "product": "H-Reverb (2->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4254627b|15.0.70",
+   "product": "H-Reverb (2->6)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4254627d|15.0.70",
+   "product": "H-Reverb (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|42546718|15.0.70",
+   "product": "H-Reverb long (6->6)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4254671b|15.0.70",
+   "product": "H-Reverb long (5->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|42546763|15.0.70",
+   "product": "H-Reverb long (m)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|42546774|15.0.70",
+   "product": "H-Reverb long (1->6)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|42546776|15.0.70",
+   "product": "H-Reverb long (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|42546777|15.0.70",
+   "product": "H-Reverb long (1->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4254677a|15.0.70",
+   "product": "H-Reverb long (2->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4254677b|15.0.70",
+   "product": "H-Reverb long (2->6)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4254677d|15.0.70",
+   "product": "H-Reverb long (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|454d6663|15.0.70",
+   "product": "OneKnob Wetter (m)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|454d6676|15.0.70",
+   "product": "OneKnob Wetter (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|454d667d|15.0.70",
+   "product": "OneKnob Wetter (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|454d7563|15.0.70",
+   "product": "OneKnob Driver (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|454d757d|15.0.70",
+   "product": "OneKnob Driver (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "66168576597a1df1359546bfd7143050544f791c6094fd869d5972f2042d9b46",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|455c3e57|1.18.9",
+   "product": "Invisible Limiter LL",
+   "source": "Phase B draft (limiter)",
+   "version": "1.18.9"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4626669|11.8.0",
+   "product": "UAD Oxide Tape",
+   "source": "Phase B draft (saturation)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "5f715a860494b3cf54e2828eb2daa3e706667efe6089e5d633e9c978e608feb5",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|46347c63|15.0.70",
+   "product": "L2 (m)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "91463d56c6de5035eed9160f7ec78f18dd017dae294df12d929f98049b5f5b3e",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|46347c7d|15.0.70",
+   "product": "L2 (s)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "f64b6dc80645eba2e70fe2c8678d2eed5b4dbff40a4cf1bd16f5699b21077b68",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|46356063|15.0.70",
+   "product": "L316 (m)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "b7f7334bf426d4576c78656bf5689c48c9f1184d3f8e23719609cd6d2a278014",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|4635607d|15.0.70",
+   "product": "L316 (s)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "972e8cbaeebcb9446b68ff214696a759525bafcd20235abd66e8bd299ecc9133",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|46356163|15.0.70",
+   "product": "L3 MultiMaximizer (m)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "815d24df74db0117c132a81d96aa28cbd7acdb08ef1e938bbf445cdb53ce138a",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|4635617d|15.0.70",
+   "product": "L3 MultiMaximizer (s)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "a06cdd95d9f8c17634751076f5be349c5b910cb4e23bd123af71cca18bbfd645",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|46357663|15.0.70",
+   "product": "L3 UltraMaximizer (m)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "a18a0a23735759815c81bb9276ed4f82b47dad28d2786b654e85d357022d086d",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|4635767d|15.0.70",
+   "product": "L3 UltraMaximizer (s)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": null,
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|46357c18|15.0.70",
+   "product": "L360 (6->6)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": null,
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|46357c1b|15.0.70",
+   "product": "L360 (5->5)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "cec63a4005e5404180bb1427ab6c829841913dd8520e23abb1c7e558ea51b6aa",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|46377263|15.0.70",
+   "product": "L1 limiter (m)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "1c298540273c7744ed415b40d40e7312be7d63dbe410bfd1ed8df620015f6223",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|4637727d|15.0.70",
+   "product": "L1 limiter (s)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|46406963|15.0.72",
+   "product": "Lofi Space (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|46406968|15.0.72",
+   "product": "Lofi Space (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4640697d|15.0.72",
+   "product": "Lofi Space (m)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|46407663|15.0.72",
+   "product": "Retro Fi (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|46407668|15.0.72",
+   "product": "Retro Fi (m->s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4640767d|15.0.72",
+   "product": "Retro Fi (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|46450463|15.0.70",
+   "product": "LinMB (m)",
+   "source": "Phase B draft (multiband)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|4645047d|15.0.70",
+   "product": "LinMB (s)",
+   "source": "Phase B draft (multiband)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": null,
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|46457f6d|15.0.70",
+   "product": "Spherix Limiter (12->12)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": null,
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|46457f6f|15.0.70",
+   "product": "Spherix Limiter (10->10)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "4c4d5cb723f84c54885b8a7a520d58c2e4f327c09a322982ae9b8676978d9f95",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|464f7c1f|15.0.70",
+   "product": "L1+ Ultramaximizer (s)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|47456263|15.0.70",
+   "product": "Magma Channel Strip (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4745627d|15.0.70",
+   "product": "Magma Channel Strip (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|474b6263|15.0.70",
+   "product": "MannyM TripleD (m)",
+   "source": "Phase B draft (deesser)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|474b627d|15.0.70",
+   "product": "MannyM TripleD (s)",
+   "source": "Phase B draft (deesser)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|474b6363|15.0.70",
+   "product": "MannyM Reverb (m)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|474b6376|15.0.70",
+   "product": "MannyM Reverb (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|474b637d|15.0.70",
+   "product": "MannyM Reverb (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|474b6563|15.0.70",
+   "product": "MannyM Distortion (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|474b657d|15.0.70",
+   "product": "MannyM Distortion (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|474b7576|15.0.72",
+   "product": "MannyM Delay (m->s)",
+   "source": "Phase B draft (delay)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|474b757d|15.0.72",
+   "product": "MannyM Delay (s)",
+   "source": "Phase B draft (delay)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|47520363|15.0.70",
+   "product": "SuperTap 2-Taps (m)",
+   "source": "Phase B draft (delay)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|47520376|15.0.70",
+   "product": "SuperTap 2-Taps (m->s)",
+   "source": "Phase B draft (delay)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|4752037d|15.0.70",
+   "product": "SuperTap 2-Taps (s)",
+   "source": "Phase B draft (delay)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|47520763|15.0.70",
+   "product": "SuperTap 6-Taps (m)",
+   "source": "Phase B draft (delay)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|47520776|15.0.70",
+   "product": "SuperTap 6-Taps (m->s)",
+   "source": "Phase B draft (delay)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|4752077d|15.0.70",
+   "product": "SuperTap 6-Taps (s)",
+   "source": "Phase B draft (delay)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|47556376|15.0.70",
+   "product": "Magma Springs (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|47556863|15.0.70",
+   "product": "Magma Springs (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4755687d|15.0.70",
+   "product": "Magma Springs (m)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|47756340|1.4.1",
+   "product": "Unfiltered Audio Sandman",
+   "source": "Phase B draft (delay)",
+   "version": "1.4.1"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|48506763|15.0.70",
+   "product": "Butch Vig Vocals (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4850677d|15.0.70",
+   "product": "Butch Vig Vocals (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|48527763|15.0.70",
+   "product": "Magma Lil Tube (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4852777d|15.0.70",
+   "product": "Magma Lil Tube (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|49306063|15.0.70",
+   "product": "C6 (m)",
+   "source": "Phase B draft (multiband)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|4930607d|15.0.70",
+   "product": "C6 (s)",
+   "source": "Phase B draft (multiband)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|49306263|15.0.70",
+   "product": "C6-SideChain (m)",
+   "source": "Phase B draft (multiband)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|4930627d|15.0.70",
+   "product": "C6-SideChain (s)",
+   "source": "Phase B draft (multiband)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|49367463|15.0.70",
+   "product": "IR-L (m)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|49367476|15.0.70",
+   "product": "IR-L (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4936747d|15.0.70",
+   "product": "IR-L efficient (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4936777d|15.0.70",
+   "product": "IR-L full (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|49416576|15.0.70",
+   "product": "CLA Guitars (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4941657d|15.0.70",
+   "product": "CLA Guitars (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|49426376|15.0.70",
+   "product": "CLA Drums (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4942637d|15.0.70",
+   "product": "CLA Drums (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|49447076|15.0.70",
+   "product": "CLA Bass (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4944707d|15.0.70",
+   "product": "CLA Bass (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|494a6963|15.0.70",
+   "product": "CLA MixHub (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|494a697d|15.0.70",
+   "product": "CLA MixHub (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|494b7663|15.0.70",
+   "product": "CLA MixHub Lite (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|494b767d|15.0.70",
+   "product": "CLA MixHub Lite (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|494f7463|15.0.70",
+   "product": "IRLive (m)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|494f7476|15.0.70",
+   "product": "IRLive (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|494f747d|15.0.70",
+   "product": "IRLive (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|49506018|15.0.70",
+   "product": "IR360 eff discrete (6->6)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4950601b|15.0.70",
+   "product": "IR360 eff discrete (5->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|49506077|15.0.70",
+   "product": "IR360 discrete (1->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4950607a|15.0.70",
+   "product": "IR360 eff discrete (2->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|49507418|15.0.70",
+   "product": "IR360 sound field (6->6)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4950741b|15.0.70",
+   "product": "IR360 sound field (5->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|49507463|15.0.70",
+   "product": "IR1 (m)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|49507476|15.0.70",
+   "product": "IR1 (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|49507477|15.0.70",
+   "product": "IR360 sound field (1->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4950747a|15.0.70",
+   "product": "IR360 eff s.field (2->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4950747d|15.0.70",
+   "product": "IR1 efficient (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4950777a|15.0.70",
+   "product": "IR360 sound field (2->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4950777d|15.0.70",
+   "product": "IR1 full (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|49507e76|15.0.70",
+   "product": "CLA Vocals (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|49507e7d|15.0.70",
+   "product": "CLA Vocals (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|49537f76|15.0.70",
+   "product": "CLA Unplugged (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|49537f7d|15.0.70",
+   "product": "CLA Unplugged (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|4a6f737b|1.10.1",
+   "product": "elysia nvelope",
+   "source": "Phase B draft (transient)",
+   "version": "1.10.1"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "53a612ab17c4293e983abaccaf0666e3c09a067c4dd2b5ecc0dcbbe31bf08f63",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|4a7c6726|1.12.7",
+   "product": "Newfangled Elevate",
+   "source": "Phase B draft (limiter)",
+   "version": "1.12.7"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4b456963|15.0.74",
+   "product": "Scheps Omni Channel 2 (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.74"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4b45697d|15.0.74",
+   "product": "Scheps Omni Channel 2 (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.74"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4b547e63|15.0.70",
+   "product": "Abbey Road Saturator (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4b547e7d|15.0.70",
+   "product": "Abbey Road Saturator (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4b567963|15.0.70",
+   "product": "Aphex Vintage Exciter (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4b56797d|15.0.70",
+   "product": "Aphex Vintage Exciter (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|4b683637|14.16.0",
+   "product": "MDelayMB",
+   "source": "Phase B draft (delay)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4c527776|15.0.72",
+   "product": "Space Rider (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|4c52777d|15.0.72",
+   "product": "Space Rider (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4d47087d|15.0.74",
+   "product": "GTR Amp 2Cab (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.74"
+  },
+  {
+   "category": "gate",
+   "map_fp": null,
+   "measured": "gate",
+   "plugin_id": "AudioUnit|4d476563|15.0.70",
+   "product": "C1 gate (m)",
+   "source": "Phase B draft (gate)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "gate",
+   "map_fp": null,
+   "measured": "gate",
+   "plugin_id": "AudioUnit|4d47657d|15.0.70",
+   "product": "C1 gate (s)",
+   "source": "Phase B draft (gate)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4d477763|15.0.74",
+   "product": "GTR Amp (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.74"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4d477768|15.0.74",
+   "product": "GTR Amp (m->s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.74"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4d47777d|15.0.74",
+   "product": "GTR Amp (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.74"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4d506963|15.0.74",
+   "product": "GTR Solo Tool Rack (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.74"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4d506968|15.0.74",
+   "product": "GTR Solo Tool Rack (m->s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.74"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4d546163|15.0.70",
+   "product": "Maserati GRP (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4d54617d|15.0.70",
+   "product": "Maserati GRP (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4d547c63|15.0.70",
+   "product": "GW ToneCentric (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4d547c7d|15.0.70",
+   "product": "GW ToneCentric (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|4e436063|15.0.70",
+   "product": "C4 (m)",
+   "source": "Phase B draft (multiband)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|4e43607d|15.0.70",
+   "product": "C4 (s)",
+   "source": "Phase B draft (multiband)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|4e557063|15.0.70",
+   "product": "DeEsser (m)",
+   "source": "Phase B draft (deesser)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|4e55707d|15.0.70",
+   "product": "DeEsser (s)",
+   "source": "Phase B draft (deesser)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4e5e0863|15.0.70",
+   "product": "MDMX Fuzz (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4e5e087d|15.0.70",
+   "product": "MDMX Fuzz (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4e5e0963|15.0.70",
+   "product": "MDMX OverDrive (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4e5e097d|15.0.70",
+   "product": "MDMX OverDrive (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4e5e0b63|15.0.70",
+   "product": "Berzerk Distortion (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4e5e0b7d|15.0.70",
+   "product": "Berzerk Distortion (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4e5e0e63|15.0.70",
+   "product": "MDMX Screamer (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4e5e0e7d|15.0.70",
+   "product": "MDMX Screamer (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4f4d6776|15.0.70",
+   "product": "EKramer VC (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4f4d677d|15.0.70",
+   "product": "EKramer VC (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4f4d7363|15.0.70",
+   "product": "EKramer BA (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4f4d737d|15.0.70",
+   "product": "EKramer BA (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4f4d7563|15.0.70",
+   "product": "EKramer DR (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4f4d757d|15.0.70",
+   "product": "EKramer DR (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4f4d7676|15.0.70",
+   "product": "EKramer GT (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|4f4d767d|15.0.70",
+   "product": "EKramer GT (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|4f556176|15.0.72",
+   "product": "CLA EchoSphere (m->s)",
+   "source": "Phase B draft (delay)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|4f55617d|15.0.72",
+   "product": "CLA EchoSphere (s)",
+   "source": "Phase B draft (delay)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4f6b7724|1.9.1",
+   "product": "elysia karacter mix",
+   "source": "Phase B draft (saturation)",
+   "version": "1.9.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|4f6b7727|1.9.1",
+   "product": "elysia karacter master",
+   "source": "Phase B draft (saturation)",
+   "version": "1.9.1"
+  },
+  {
+   "category": "limiter",
+   "map_fp": null,
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|526d4845|12.0.0",
+   "product": "Ozone 12 Maximizer",
+   "source": "Phase B draft (limiter)",
+   "version": "12.0.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|526d4850|12.0.0",
+   "product": "Ozone 12 Exciter",
+   "source": "Phase B draft (saturation)",
+   "version": "12.0.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|526d485c|12.0.0",
+   "product": "Ozone 12 Vintage Tape",
+   "source": "Phase B draft (saturation)",
+   "version": "12.0.0"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "42ba1e7956171b7d102ccb0af1fc76e41cba321ee15c29f2861167dea4c86eef",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|526d485e|12.0.0",
+   "product": "Ozone 12 Vintage Limiter",
+   "source": "Phase B draft (limiter)",
+   "version": "12.0.0"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|526d5652|12.0.0",
+   "product": "Ozone 12 Dynamics",
+   "source": "Phase B draft (multiband)",
+   "version": "12.0.0"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|526d5d41|12.0.0",
+   "product": "Ozone 12 Impact",
+   "source": "Phase B draft (transient)",
+   "version": "12.0.0"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|57146c39|1.2.2",
+   "product": "Repeater",
+   "source": "Phase B draft (delay)",
+   "version": "1.2.2"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|58350663|15.0.70",
+   "product": "Abbey Road REDD.37.51 (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5835067d|15.0.70",
+   "product": "Abbey Road REDD.37.51 (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "33a6280d398ef2712cb299aafeac24e7a42057dbc0b592dea53df958532c1aa5",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|58356163|15.0.70",
+   "product": "L3-LL Multi (m)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "c353ef9f0814b6241ed9c67da2eaf5b8c05a5059db486ab733c651dcc22a0000",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|5835617d|15.0.70",
+   "product": "L3-LL Multi (s)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|58356218|15.0.70",
+   "product": "R360 (6->6)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|5835621b|15.0.70",
+   "product": "R360 (5->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|58356274|15.0.70",
+   "product": "R360 (1->6)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|58356277|15.0.70",
+   "product": "R360 (1->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|5835627a|15.0.70",
+   "product": "R360 (2->5)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|5835627b|15.0.70",
+   "product": "R360 (2->6)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "c709e1c5ccfb4ae9c89eb9ad385b76b8ded7b8fcc1a66e11bc4b5da57cdb3232",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|58357663|15.0.70",
+   "product": "L3-LL Ultra (m)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "51e4f0e35e660a4652fe5cca0fe1120eae87b3d19d01b8bded9f072b119c1f0d",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|5835767d|15.0.70",
+   "product": "L3-LL Ultra (s)",
+   "source": "Phase B draft (limiter)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|58426263|15.0.70",
+   "product": "RDeEsser (m)",
+   "source": "Phase B draft (deesser)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|5842627d|15.0.70",
+   "product": "RDeEsser (s)",
+   "source": "Phase B draft (deesser)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|58437563|15.0.70",
+   "product": "Abbey Road REDD.17 (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5843757d|15.0.70",
+   "product": "Abbey Road REDD.17 (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|58486563|15.0.70",
+   "product": "RChannel (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|58486576|15.0.70",
+   "product": "RChannel (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5848657d|15.0.70",
+   "product": "RChannel (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|58547776|15.0.70",
+   "product": "RVerb (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|5854777d|15.0.70",
+   "product": "RVerb (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|59457663|15.0.70",
+   "product": "SSLGChannel (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5945767d|15.0.70",
+   "product": "SSLGChannel (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|59457963|15.0.70",
+   "product": "SSLChannel (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5945797d|15.0.70",
+   "product": "SSLChannel (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|594b6263|15.0.72",
+   "product": "NLS Buss (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|594b627d|15.0.72",
+   "product": "NLS Buss (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|594f7363|15.0.70",
+   "product": "Sibilance (m)",
+   "source": "Phase B draft (deesser)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|594f737d|15.0.70",
+   "product": "Sibilance (s)",
+   "source": "Phase B draft (deesser)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|59527063|15.0.70",
+   "product": "AudioTrack (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5952707d|15.0.70",
+   "product": "AudioTrack (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|59527463|15.0.72",
+   "product": "Abbey Road Chambers (m)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|59527476|15.0.72",
+   "product": "Abbey Road Chambers (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|5952747d|15.0.72",
+   "product": "Abbey Road Chambers (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|59550863|15.0.70",
+   "product": "SSL EV2 Channel (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5955087d|15.0.70",
+   "product": "SSL EV2 Channel (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|59557263|15.0.72",
+   "product": "NLS Channel (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5955727d|15.0.72",
+   "product": "NLS Channel (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|5a4a6563|15.0.70",
+   "product": "Abbey Road Plates (m)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|5a4a6576|15.0.70",
+   "product": "Abbey Road Plates (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|5a4a657d|15.0.70",
+   "product": "Abbey Road Plates (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5a527763|15.0.70",
+   "product": "Magma BB Tubes (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5a52777d|15.0.70",
+   "product": "Magma BB Tubes (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5a546263|15.0.70",
+   "product": "Saphira (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5a54627d|15.0.70",
+   "product": "Saphira (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5a556c68|15.0.70",
+   "product": "PRS V9 (m->s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5a556c7d|15.0.70",
+   "product": "PRS V9 (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5a557b68|15.0.70",
+   "product": "PRS Archon (m->s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5a557b7d|15.0.70",
+   "product": "PRS Archon (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5a557e68|15.0.70",
+   "product": "PRS Dallas (m->s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5a557e7d|15.0.70",
+   "product": "PRS Dallas (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "gate",
+   "map_fp": null,
+   "measured": "gate",
+   "plugin_id": "AudioUnit|5c5e6163|15.0.70",
+   "product": "PSE (m)",
+   "source": "Phase B draft (gate)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "gate",
+   "map_fp": null,
+   "measured": "gate",
+   "plugin_id": "AudioUnit|5c5e617d|15.0.70",
+   "product": "PSE (s)",
+   "source": "Phase B draft (gate)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5c646326|1.12.7",
+   "product": "Newfangled Saturate",
+   "source": "Phase B draft (saturation)",
+   "version": "1.12.7"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5e350663|15.0.72",
+   "product": "Abbey Road J37 Tape (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5e35067d|15.0.72",
+   "product": "Abbey Road J37 Tape (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e410463|15.0.70",
+   "product": "Abbey Road EMI TG12345 Channel (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e41047d|15.0.70",
+   "product": "Abbey Road EMI TG12345 Channel (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e416e63|15.0.72",
+   "product": "Abbey Road TG Mastering (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e416e7d|15.0.72",
+   "product": "Abbey Road TG Mastering (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e417663|15.0.72",
+   "product": "Abbey Road TG Mastering Live (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e41767d|15.0.72",
+   "product": "Abbey Road TG Mastering Live (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.72"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5e476163|15.0.70",
+   "product": "Kramer Tape (m)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5e47617d|15.0.70",
+   "product": "Kramer Tape (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e486263|15.0.70",
+   "product": "Maserati DRM (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e48627d|15.0.70",
+   "product": "Maserati DRM (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e486376|15.0.70",
+   "product": "Maserati GTi (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e48637d|15.0.70",
+   "product": "Maserati GTi (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e486776|15.0.70",
+   "product": "Maserati VX1 (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e48677d|15.0.70",
+   "product": "Maserati VX1 (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e487076|15.0.70",
+   "product": "Maserati ACG (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e48707d|15.0.70",
+   "product": "Maserati ACG (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e487363|15.0.70",
+   "product": "Maserati B72 (m)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e487376|15.0.70",
+   "product": "Maserati B72 (m->s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|5e48737d|15.0.70",
+   "product": "Maserati B72 (s)",
+   "source": "Phase B draft (strips)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5e487976|15.0.70",
+   "product": "Maserati HMX (m->s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|5e48797d|15.0.70",
+   "product": "Maserati HMX (s)",
+   "source": "Phase B draft (saturation)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|5e50057d|15.0.70",
+   "product": "TrueVerb (s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|5e506263|15.0.70",
+   "product": "TrueVerb (m)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|5e507c76|15.0.70",
+   "product": "TrueVerb (m->s)",
+   "source": "Phase B draft (reverb)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|5e556a63|15.0.70",
+   "product": "Smack Attack (s)",
+   "source": "Phase B draft (transient)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|5e556a7d|15.0.70",
+   "product": "Smack Attack (m)",
+   "source": "Phase B draft (transient)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|5e5e0563|15.0.70",
+   "product": "TransX Multi (m)",
+   "source": "Phase B draft (transient)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|5e5e057d|15.0.70",
+   "product": "TransX Multi (s)",
+   "source": "Phase B draft (transient)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|5e5e6663|15.0.70",
+   "product": "TransX Wide (m)",
+   "source": "Phase B draft (transient)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|5e5e667d|15.0.70",
+   "product": "TransX Wide (s)",
+   "source": "Phase B draft (transient)",
+   "version": "15.0.70"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|5f7e7226|1.12.7",
+   "product": "Newfangled Punctuate",
+   "source": "Phase B draft (transient)",
+   "version": "1.12.7"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|604f2039|1.11.1",
+   "product": "Chandler GAV19T",
+   "source": "Phase B draft (saturation)",
+   "version": "1.11.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|60604d21|5.4.1",
+   "product": "Radiator",
+   "source": "Phase B draft (saturation)",
+   "version": "5.4.1"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|610e7b78|4.2.2",
+   "product": "TB_Sibalance_v4",
+   "source": "Phase B draft (deesser)",
+   "version": "4.2.2"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|612e4d58|1.1.6",
+   "product": "Eiosis E2Deesser",
+   "source": "Phase B draft (deesser)",
+   "version": "1.1.6"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|61362a2e|1.4.1",
+   "product": "Friedman BE100",
+   "source": "Phase B draft (saturation)",
+   "version": "1.4.1"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|6136669|11.8.0",
+   "product": "UAD EMT 140",
+   "source": "Phase B draft (reverb)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|61444242|1.3.1",
+   "product": "Pro-MB",
+   "source": "Phase B draft (multiband)",
+   "version": "1.3.1"
+  },
+  {
+   "category": "gate",
+   "map_fp": null,
+   "measured": "gate",
+   "plugin_id": "AudioUnit|61444852|1.4.0",
+   "product": "Pro-G",
+   "source": "Phase B draft (gate)",
+   "version": "1.4.0"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|61445c52|1.3.0",
+   "product": "Pro-DS",
+   "source": "Phase B draft (deesser)",
+   "version": "1.3.0"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|61447363|14.16.0",
+   "product": "MTransient",
+   "source": "Phase B draft (transient)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|61454045|2.0.1",
+   "product": "Harrison 32 Bus",
+   "source": "Phase B draft (strips)",
+   "version": "2.0.1"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|61465145|5.0.0",
+   "product": "Harrison De-Esser",
+   "source": "Phase B draft (deesser)",
+   "version": "5.0.0"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|61465150|2.0.1",
+   "product": "Harrison Drum Flow",
+   "source": "Phase B draft (strips)",
+   "version": "2.0.1"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|61465750|3.0.1",
+   "product": "Harrison Bass Flow",
+   "source": "Phase B draft (strips)",
+   "version": "3.0.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|61473d41|2.1.1",
+   "product": "Saturn 2",
+   "source": "Phase B draft (saturation)",
+   "version": "2.1.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|61476044|14.16.0",
+   "product": "MWaveFolder",
+   "source": "Phase B draft (saturation)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "pitch",
+   "map_fp": "9330d9cf666b77468bdbbd363750a15b429672796fb77967c836cf5b931e2766",
+   "measured": "tuners",
+   "plugin_id": "AudioUnit|614f7369|10.5.0",
+   "product": "Auto-Tune Access",
+   "source": "Phase B draft (tuners)",
+   "version": "10.5.0"
+  },
+  {
+   "category": "limiter",
+   "map_fp": null,
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|6151642b|14.16.0",
+   "product": "MLimiterMB",
+   "source": "Phase B draft (limiter)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|61516436|14.16.0",
+   "product": "MSaturator",
+   "source": "Phase B draft (saturation)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|6151643b|14.16.0",
+   "product": "MWaveShaper",
+   "source": "Phase B draft (saturation)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|61516470|14.16.0",
+   "product": "MReverb",
+   "source": "Phase B draft (reverb)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "limiter",
+   "map_fp": null,
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|6151657b|14.16.0",
+   "product": "MLimiterX",
+   "source": "Phase B draft (limiter)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|61516c72|14.16.0",
+   "product": "MAmp",
+   "source": "Phase B draft (saturation)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "limiter",
+   "map_fp": null,
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|61516c7a|14.16.0",
+   "product": "MUltraMaximizer",
+   "source": "Phase B draft (limiter)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|61526844|14.16.0",
+   "product": "MBitFun",
+   "source": "Phase B draft (saturation)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|6155777e|1.3.7",
+   "product": "OTT",
+   "source": "Phase B draft (multiband)",
+   "version": "1.3.7"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "81a737304e39922343dfacf4393078136a9976cf76e422ec4cad031606c7806b",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|61583d50|2.2.4",
+   "product": "Pro-L 2",
+   "source": "Phase B draft (limiter)",
+   "version": "2.2.4"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|615d424d|14.16.0",
+   "product": "MConvolutionMB",
+   "source": "Phase B draft (reverb)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|615d434e|14.16.0",
+   "product": "MSaturatorMB",
+   "source": "Phase B draft (saturation)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|615d7570|14.16.0",
+   "product": "MTransientMB",
+   "source": "Phase B draft (transient)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|615f584a|1.2.1",
+   "product": "Friedman Buxom Betty",
+   "source": "Phase B draft (saturation)",
+   "version": "1.2.1"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|61645367|14.16.0",
+   "product": "MTurboReverb",
+   "source": "Phase B draft (reverb)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|6164536f|14.16.0",
+   "product": "MTurboReverbMB",
+   "source": "Phase B draft (reverb)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|61686c60|6.6.14",
+   "product": "SSL Native FlexVerb",
+   "source": "Phase B draft (reverb)",
+   "version": "6.6.14"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|61686e65|6.6.10",
+   "product": "SSL Native Drumstrip",
+   "source": "Phase B draft (strips)",
+   "version": "6.6.10"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|61687265|6.6.2",
+   "product": "SSL Native X-Saturator v6",
+   "source": "Phase B draft (saturation)",
+   "version": "6.6.2"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|61687c04|6.6.6",
+   "product": "SSL Native Vocalstrip 2",
+   "source": "Phase B draft (strips)",
+   "version": "6.6.6"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|61746871|14.16.0",
+   "product": "MDistortionMB",
+   "source": "Phase B draft (saturation)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|61754355|1.0.1",
+   "product": "CamelCrusher",
+   "source": "Phase B draft (saturation)",
+   "version": "1.0.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|61754b75|1.3.0",
+   "product": "NEOLD BIG AL",
+   "source": "Phase B draft (saturation)",
+   "version": "1.3.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|61755e70|1.0.0",
+   "product": "NEOLD WUNDERLICH",
+   "source": "Phase B draft (saturation)",
+   "version": "1.0.0"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|61756e78|1.15.1",
+   "product": "SPL De-Esser",
+   "source": "Phase B draft (deesser)",
+   "version": "1.15.1"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|61756e7b|1.15.1",
+   "product": "SPL De-Esser Dual-Band",
+   "source": "Phase B draft (deesser)",
+   "version": "1.15.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|61757e1d|1.18.1",
+   "product": "SPL TwinTube",
+   "source": "Phase B draft (saturation)",
+   "version": "1.18.1"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|6176669|11.8.0",
+   "product": "UAD Cooper Time Cube",
+   "source": "Phase B draft (delay)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|61776527|1.2.3",
+   "product": "Lustrous Plates",
+   "source": "Phase B draft (reverb)",
+   "version": "1.2.3"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|617d5664|14.16.0",
+   "product": "MWaveFolderMB",
+   "source": "Phase B draft (saturation)",
+   "version": "14.16.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|617d5671|17.1.0",
+   "product": "MWaveShaperMB",
+   "source": "Phase B draft (saturation)",
+   "version": "17.1.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|617f6710|4.0.23",
+   "product": "MB MixHead",
+   "source": "Phase B draft (saturation)",
+   "version": "4.0.23"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|62434544|1.5.1",
+   "product": "ADA STD-1 Stereo Tapped Delay",
+   "source": "Phase B draft (delay)",
+   "version": "1.5.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|624a2035|1.5.1",
+   "product": "Ampeg B15N",
+   "source": "Phase B draft (saturation)",
+   "version": "1.5.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|624a4233|1.5.1",
+   "product": "Ampeg SVT3Pro",
+   "source": "Phase B draft (saturation)",
+   "version": "1.5.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|624a4734|1.5.1",
+   "product": "Ampeg V4B",
+   "source": "Phase B draft (saturation)",
+   "version": "1.5.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|624a4752|1.5.1",
+   "product": "Ampeg SVTVR",
+   "source": "Phase B draft (saturation)",
+   "version": "1.5.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|624a4c5d|1.5.1",
+   "product": "Ampeg SVTVR Classic",
+   "source": "Phase B draft (saturation)",
+   "version": "1.5.1"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|6275223f|5.4.1",
+   "product": "PrimalTap",
+   "source": "Phase B draft (delay)",
+   "version": "5.4.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|644c222e|1.3.1",
+   "product": "Gallien Krueger 800RB",
+   "source": "Phase B draft (saturation)",
+   "version": "1.3.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|644d6f6c|1.2.6",
+   "product": "Virtual Tape Machines",
+   "source": "Phase B draft (saturation)",
+   "version": "1.2.6"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|64547a4d|2.12.10",
+   "product": "Virtual Mix Rack",
+   "source": "Phase B draft (strips)",
+   "version": "2.12.10"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|64627860|1.1.4",
+   "product": "SSL Fusion Vintage Drive",
+   "source": "Phase B draft (saturation)",
+   "version": "1.1.4"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|646a414f|1.1.6",
+   "product": "VerbSuite Classics",
+   "source": "Phase B draft (reverb)",
+   "version": "1.1.6"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|65482f2e|1.3.1",
+   "product": "Fuchs Overdrive Supreme 50",
+   "source": "Phase B draft (saturation)",
+   "version": "1.3.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|65535357|1.3.1",
+   "product": "Fuchs Train II",
+   "source": "Phase B draft (saturation)",
+   "version": "1.3.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|65767473|1.5.6",
+   "product": "Spectre",
+   "source": "Phase B draft (saturation)",
+   "version": "1.5.6"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|66302735|1.11.1",
+   "product": "ENGL E765 RT",
+   "source": "Phase B draft (saturation)",
+   "version": "1.11.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|66312536|1.12.1",
+   "product": "ENGL E646 VS",
+   "source": "Phase B draft (saturation)",
+   "version": "1.12.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|66312b2e|1.3.1",
+   "product": "ENGL Savage 120",
+   "source": "Phase B draft (saturation)",
+   "version": "1.3.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|66747970|1.1.3",
+   "product": "SSL Fusion Transformer",
+   "source": "Phase B draft (saturation)",
+   "version": "1.1.3"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|67542e2e|1.4.1",
+   "product": "Friedman DS40",
+   "source": "Phase B draft (saturation)",
+   "version": "1.4.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|675d4768|1.5.1",
+   "product": "Diezel VH4",
+   "source": "Phase B draft (saturation)",
+   "version": "1.5.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|675d5952|1.5.1",
+   "product": "Diezel Herbert",
+   "source": "Phase B draft (saturation)",
+   "version": "1.5.1"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|6768746c|1.0.1",
+   "product": "Quantum",
+   "source": "Phase B draft (transient)",
+   "version": "1.0.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|6868463f|1.0.1",
+   "product": "ADPTR Hype",
+   "source": "Phase B draft (saturation)",
+   "version": "1.0.1"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "d89524b951bb4c37167c69e352797aefe906e748273c179308347a80ddd1d71a",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|6951474b|1.19.0",
+   "product": "Limitless",
+   "source": "Phase B draft (limiter)",
+   "version": "1.19.0"
+  },
+  {
+   "category": "limiter",
+   "map_fp": null,
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|69747d15|1.18.9",
+   "product": "Invisible Limiter G2",
+   "source": "Phase B draft (limiter)",
+   "version": "1.18.9"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "68483c8f9dda219f515001ab6dbe18f7c37308e59c61e91e32cc9a5acb806b84",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|69747d4b|1.18.9",
+   "product": "Invisible Limiter",
+   "source": "Phase B draft (limiter)",
+   "version": "1.18.9"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|697c7f2c|3.12.3",
+   "product": "DynOne3",
+   "source": "Phase B draft (multiband)",
+   "version": "3.12.3"
+  },
+  {
+   "category": "gate",
+   "map_fp": null,
+   "measured": "gate",
+   "plugin_id": "AudioUnit|6a616b62|1.0.30",
+   "product": "SSL X-Gate",
+   "source": "Phase B draft (gate)",
+   "version": "1.0.30"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|6a626f7a|1.1.6",
+   "product": "SSL X-Delay",
+   "source": "Phase B draft (delay)",
+   "version": "1.1.6"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|6a636979|6.6.10",
+   "product": "SSL Native X-Echo",
+   "source": "Phase B draft (delay)",
+   "version": "6.6.10"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "8f9b2474c314d2b56ba479c6c4f055cdbc3a3b312247ee9108704d5345f96839",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|6a6a6762|1.0.8",
+   "product": "SSL X-Limit",
+   "source": "Phase B draft (limiter)",
+   "version": "1.0.8"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|6a7d6e6f|2.5.2",
+   "product": "ValhallaDelay",
+   "source": "Phase B draft (delay)",
+   "version": "2.5.2"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|6c515f50|1.1.1",
+   "product": "THE OVEN",
+   "source": "Phase B draft (saturation)",
+   "version": "1.1.1"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|6f273d77|1.1.7",
+   "product": "KNOCK",
+   "source": "Phase B draft (transient)",
+   "version": "1.1.7"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|6f3f2163|1.0.6",
+   "product": "Lindell 80 Channel",
+   "source": "Phase B draft (strips)",
+   "version": "1.0.6"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|6f444231|1.2.2",
+   "product": "Lindell ChannelX",
+   "source": "Phase B draft (strips)",
+   "version": "1.2.2"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|6f457234|1.0.4",
+   "product": "Lindell 354E",
+   "source": "Phase B draft (multiband)",
+   "version": "1.0.4"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|6f466163|1.0.3",
+   "product": "Lindell 50 Channel",
+   "source": "Phase B draft (strips)",
+   "version": "1.0.3"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|6f4f5463|1.0.0",
+   "product": "Lindell 69 Channel",
+   "source": "Phase B draft (strips)",
+   "version": "1.0.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|6f53492c|1.1.1",
+   "product": "Looptrotter SA2RATE2",
+   "source": "Phase B draft (saturation)",
+   "version": "1.1.1"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|6f636231|1.0.2",
+   "product": "Lindell 902 De-esser",
+   "source": "Phase B draft (deesser)",
+   "version": "1.0.2"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|6f6a7363|1.0.3",
+   "product": "Lindell MBC",
+   "source": "Phase B draft (multiband)",
+   "version": "1.0.3"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|704f495b|1.2.1",
+   "product": "Suhr SE100",
+   "source": "Phase B draft (saturation)",
+   "version": "1.2.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|704f4a4a|1.2.1",
+   "product": "Suhr PT100",
+   "source": "Phase B draft (saturation)",
+   "version": "1.2.1"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "dd5c1a15ba23fa30bd8148d1bf5c4081a87c9d4a07f01fd1ecec7b34fbbe7b9d",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|71146669|11.8.0",
+   "product": "UAD Precision Limiter",
+   "source": "Phase B draft (limiter)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|72106669|11.8.0",
+   "product": "UAD Precision Delay Mod",
+   "source": "Phase B draft (delay)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|72636669|11.8.0",
+   "product": "UAD Pure Plate",
+   "source": "Phase B draft (reverb)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|73106669|11.8.0",
+   "product": "UAD Precision Reflection Engine",
+   "source": "Phase B draft (reverb)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "gate",
+   "map_fp": null,
+   "measured": "gate",
+   "plugin_id": "AudioUnit|737a5876|1.6.2",
+   "product": "Unfiltered Audio G8",
+   "source": "Phase B draft (gate)",
+   "version": "1.6.2"
+  },
+  {
+   "category": "limiter",
+   "map_fp": "776b8a7f551a14ed58c9fd58efad5f8d5c1f3123f3ea893fa059b3abe9c567ba",
+   "measured": "limiter",
+   "plugin_id": "AudioUnit|745e7a2d|1.0.5",
+   "product": "FG-X 2",
+   "source": "Phase B draft (limiter)",
+   "version": "1.0.5"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|75106669|11.8.0",
+   "product": "UAD RealVerb-Pro",
+   "source": "Phase B draft (reverb)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|75114649|11.8.0",
+   "product": "UAD AMS RMX16",
+   "source": "Phase B draft (reverb)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|75116669|11.8.0",
+   "product": "UAD Precision Delay Mod L",
+   "source": "Phase B draft (delay)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|75154755|1.0.12",
+   "product": "SSL G3 MultiBusComp",
+   "source": "Phase B draft (multiband)",
+   "version": "1.0.12"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|75535942|1.1.4",
+   "product": "SSL Guitarstrip",
+   "source": "Phase B draft (strips)",
+   "version": "1.1.4"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|75545c33|1.10.1",
+   "product": "Vertigo VSM-3",
+   "source": "Phase B draft (saturation)",
+   "version": "1.10.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|7648660d|4.5.0",
+   "product": "AVOX WARM",
+   "source": "Phase B draft (saturation)",
+   "version": "4.5.0"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|76637965|1.1.6",
+   "product": "SSL DeEss",
+   "source": "Phase B draft (deesser)",
+   "version": "1.1.6"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|76644a21|5.4.1",
+   "product": "Decapitator",
+   "source": "Phase B draft (saturation)",
+   "version": "5.4.1"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|76696468|1.5.0",
+   "product": "Vocal Reverb",
+   "source": "Phase B draft (reverb)",
+   "version": "1.5.0"
+  },
+  {
+   "category": "pitch",
+   "map_fp": "39b94e88ec796ce08f78cc32612cbece99cccf6d766860be9440f1a364f62565",
+   "measured": "tuners",
+   "plugin_id": "AudioUnit|76720177|10.5.0",
+   "product": "Auto-Tune Pro",
+   "source": "Phase B draft (tuners)",
+   "version": "10.5.0"
+  },
+  {
+   "category": "pitch",
+   "map_fp": "696fa3c119ecd89f2225f227f7b4f052da46ff839a4d393afd7e20557165c102",
+   "measured": "tuners",
+   "plugin_id": "AudioUnit|7672410a|9.5.0",
+   "product": "Auto-Tune Artist",
+   "source": "Phase B draft (tuners)",
+   "version": "9.5.0"
+  },
+  {
+   "category": "pitch",
+   "map_fp": "dc2fa6dc643bb0d6dd4e13417960f936d5bafaa1c0ff02625dd0f0923cbd3d41",
+   "measured": "tuners",
+   "plugin_id": "AudioUnit|76765336|9.5.0",
+   "product": "Auto-Tune EFX",
+   "source": "Phase B draft (tuners)",
+   "version": "9.5.0"
+  },
+  {
+   "category": "pitch",
+   "map_fp": "d80e6a4e3f3f9d46f2380703209126dcaf13140bc715050b4ee14262953b8517",
+   "measured": "tuners",
+   "plugin_id": "AudioUnit|767e7472|10.5.0",
+   "product": "Auto-Tune EFX+",
+   "source": "Phase B draft (tuners)",
+   "version": "10.5.0"
+  },
+  {
+   "category": "de-esser",
+   "map_fp": null,
+   "measured": "deesser",
+   "plugin_id": "AudioUnit|767f6178|1.5.0",
+   "product": "Vocal De-Esser",
+   "source": "Phase B draft (deesser)",
+   "version": "1.5.0"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|77106669|11.8.0",
+   "product": "UAD CS-1",
+   "source": "Phase B draft (strips)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|77124649|11.8.0",
+   "product": "UAD Softube Bass Amp Room 8x10",
+   "source": "Phase B draft (saturation)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|77624b21|5.4.1",
+   "product": "EchoBoy Jr",
+   "source": "Phase B draft (delay)",
+   "version": "5.4.1"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|77632921|5.4.1",
+   "product": "EchoBoy",
+   "source": "Phase B draft (delay)",
+   "version": "5.4.1"
+  },
+  {
+   "category": "pitch",
+   "map_fp": "785ce749276e7b2d15e7de74fde2ea2b7f804cadcc4ae6d753b53e1bac6cf0b4",
+   "measured": "tuners",
+   "plugin_id": "AudioUnit|77727f61|1.1.0",
+   "product": "bx_crispytuner",
+   "source": "Phase B draft (tuners)",
+   "version": "1.1.0"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|78184649|11.8.0",
+   "product": "UAD Oxford Envolution",
+   "source": "Phase B draft (transient)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|78546a25|4.0.5",
+   "product": "ValhallaVintageVerb",
+   "source": "Phase B draft (reverb)",
+   "version": "4.0.5"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|78636669|11.8.0",
+   "product": "UAD TS Overdrive",
+   "source": "Phase B draft (saturation)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|79104649|11.8.0",
+   "product": "UAD Oxford Inflator",
+   "source": "Phase B draft (saturation)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|79124649|11.8.0",
+   "product": "UAD Softube Amp Room Half-Stack",
+   "source": "Phase B draft (saturation)",
+   "version": "11.8.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|79776d7c|1.0.0",
+   "product": "Heatwave",
+   "source": "Phase B draft (saturation)",
+   "version": "1.0.0"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|7a7d7b6f|1.1.0",
+   "product": "Kiive Tape Face",
+   "source": "Phase B draft (saturation)",
+   "version": "1.1.0"
+  },
+  {
+   "category": "channel_strip",
+   "map_fp": null,
+   "measured": "strips",
+   "plugin_id": "AudioUnit|7c657904|2.4.10",
+   "product": "SSL Native Channel Strip 2",
+   "source": "Phase B draft (strips)",
+   "version": "2.4.10"
+  },
+  {
+   "category": "transient_shaper",
+   "map_fp": null,
+   "measured": "transient",
+   "plugin_id": "AudioUnit|7d606b6a|1.3.2",
+   "product": "spiff",
+   "source": "Phase B draft (transient)",
+   "version": "1.3.2"
+  },
+  {
+   "category": "reverb",
+   "map_fp": null,
+   "measured": "reverb",
+   "plugin_id": "AudioUnit|7e714539|5.4.1",
+   "product": "Little Plate",
+   "source": "Phase B draft (reverb)",
+   "version": "5.4.1"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|7e715d21|5.4.1",
+   "product": "Little PrimalTap",
+   "source": "Phase B draft (delay)",
+   "version": "5.4.1"
+  },
+  {
+   "category": "saturation",
+   "map_fp": null,
+   "measured": "saturation",
+   "plugin_id": "AudioUnit|7e734d21|5.4.1",
+   "product": "Little Radiator",
+   "source": "Phase B draft (saturation)",
+   "version": "5.4.1"
+  },
+  {
+   "category": "multiband",
+   "map_fp": null,
+   "measured": "multiband",
+   "plugin_id": "AudioUnit|7f56566b|1.1.8",
+   "product": "MO-TT",
+   "source": "Phase B draft (multiband)",
+   "version": "1.1.8"
+  },
+  {
+   "category": "delay",
+   "map_fp": null,
+   "measured": "delay",
+   "plugin_id": "AudioUnit|b626669|11.8.0",
+   "product": "UAD Galaxy Tape Echo",
+   "source": "Phase B draft (delay)",
+   "version": "11.8.0"
+  }
+ ],
+ "schema": "ej_wizard_mapped/1"
+}

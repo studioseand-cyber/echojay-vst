@@ -134,6 +134,12 @@ inline juce::String screenName (Screen s)
                  case Screen::upload: return "upload"; case Screen::reward: return "reward"; case Screen::noCode: return "no_code"; case Screen::betaSaved: return "beta_saved"; }
     return {};
 }
+// THE WORK FOLDERS (Kathy, 13 Oct): the beta and the release never share one - "Application Support/EchoJay Wizard Beta" vs "EchoJay Wizard"
+inline juce::String workFolderName (Mode m) { return m == Mode::beta ? "EchoJay Wizard Beta" : "EchoJay Wizard"; }
+// THE DATABASE (Kathy, 13 Oct): the beta reads the read-only snapshot of Sean's cert 5 inside its own signed bundle (Contents/Resources/
+// beta_db, wizard_app/beta_db - scripts/beta_db_snapshot.py); the release keeps the stubbed server's folder in its work folder
+inline juce::File databaseFolder (Mode m, const juce::File& appBundle, const juce::File& work)
+{ return m == Mode::beta ? appBundle.getChildFile ("Contents/Resources/beta_db") : work.getChildFile ("server_stub/db"); }
 struct Where { bool signedIn = false, consented = false, scanned = false, measureStarted = false, measureDone = false, uploaded = false, rewarded = false, saved = false; int crashed = 0; };
 // THE CONSENT (item 3; the wording is Kathy's to approve - docs/WIZARD_SPEC.md section 2b): one paragraph, and a tick that must be set
 struct Copy { juce::String title, text, primary, secondary; };

@@ -9571,6 +9571,64 @@ void testWizardCategories()
                && (int) resumed.getProperty ("problems", -1) == 0 && resumed.getProperty ("seconds_per_plugin", {}).getProperty ("check", {}).getProperty ("source", "").toString() == "starting figure",
                "wizard WZ-SCANBAR-2: a fresh scan draws 0; a resumed one with 2 of 4 already mapped draws 50% from the first frame (no time, no problem), then 75%");
     }
+    // WZ-SNAP-1 THE BETA DATABASE SNAPSHOT (Kathy, 13 Oct): the lookup against the committed snapshot of Sean's cert 5 (wizard_app/beta_db).
+    // Exported profiles + EQ drafts answer A and B; another category's measured draft answers A by id + version (+ fp when known) and never
+    // B; a draft whose row was not ok, or a saturation draft with no drive, is not "already mapped"; the categories and multibands load
+    {
+        using namespace ejmap::wizroute;
+        const auto snap = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/beta_db");
+        const auto man = juce::JSON::parse (snap.getChildFile ("snapshot.json").loadFileAsString());
+        const auto db = ejmap::wizard::loadDb (snap);
+        int prof = 0, idx = 0; for (const auto& e : db) (e.indexOnly ? idx : prof)++;
+        const bool read = (int) man.getProperty ("already_mapped_plugin_ids", 0) == 678 && db.size() > 600;   // the control: it read the snapshot
+        const std::set<juce::String> none; const auto cat = juce::JSON::parse (snap.getChildFile ("categories.json").loadFileAsString());
+        const juce::String claFp = "28cea481d7e9e0dca7bcdeee05913a043f71ba76e63c2894d3273ca3b9c70c19";
+        const auto cla = ask (db, none, cat, "46470363", "15.0.70", claFp, "CLA-2A (m)");          // an exported compressor profile, fp known
+        const auto claFresh = ask (db, none, cat, "46470363", "15.0.70", {}, "CLA-2A (m)");       // a fresh Mac: no fp yet -> by id + version
+        const auto claOtherFp = ask (db, none, cat, "46470363", "15.0.70", "ffff", "CLA-2A (m)"); // another map: not A, the profile's B check
+        const auto claOld = ask (db, none, cat, "46470363", "15.0.60", {}, "CLA-2A (m)");         // another version: B
+        const auto tap = ask (db, none, cat, "47520763", "15.0.70", {}, "SuperTap 6-Taps (m)");   // a delay draft (index only, no fp)
+        const auto tapOld = ask (db, none, cat, "47520763", "15.0.60", {}, "SuperTap 6-Taps (m)"); // index only never gives B: C with its category
+        const auto eqd = ask (db, none, cat, "4f577d63", "15.0.70", {}, "H-EQ-Light (m)");        // an EQ draft as a profile
+        const auto eqLic = ask (db, none, cat, "36114649", "11.8.0", {}, "UAD Tube-Tech PE 1C");  // its draft's row was needs_licence: not mapped
+        const auto satNoDrive = ask (db, none, cat, "2a6d4c68", "2.1.0", {}, "kHs Bitcrush");     // a saturation draft with no drive: not mapped
+        const auto util = ask (db, none, cat, "4447636b", "15.0.70", {}, "Abbey Road Studio 3 (6->2)");   // a settled utility
+        const auto mb = loadMultiband (snap);
+        check (read && prof == 256 && idx == 448
+               && cla.rule == Rule::A && claFresh.rule == Rule::A && claOtherFp.rule == Rule::B && claOld.rule == Rule::B && cla.category == "compressor"
+               && tap.rule == Rule::A && tap.category == "delay" && route (tap, {}, {}).route == Route::skipHave
+               && tapOld.rule == Rule::C && tapOld.category == "delay" && route (tapOld, {}, {}).route == Route::measure
+               && eqd.rule == Rule::A && eqd.category == "eq"
+               && eqLic.rule == Rule::C && eqLic.category == "eq" && satNoDrive.rule == Rule::C && satNoDrive.category == "saturation"
+               && util.rule == Rule::C && route (util, {}, {}).route == Route::outOfScope
+               && mb.size() == 17 && std::all_of (knownMultibandUids().begin(), knownMultibandUids().end(), [&] (const juce::String& u) { return mb.count (u) > 0; })
+               && isMultiband ({ "0badf00d" }, "0BADF00D") && ! isMultiband ({}, "0badf00d"),
+               "wizard WZ-SNAP-1: the beta snapshot (read " + juce::String ((int) read) + "): " + juce::String (prof) + " profiles + " + juce::String (idx)
+               + " mapped drafts; A by id + version (+ fp), B only from a profile, not-ok / drive-less drafts not mapped, categories + 17 multibands");
+    }
+    // WZ-WORK-1 THE WORK FOLDERS (Kathy, 13 Oct): beta and release never share one; the beta's database is the snapshot in its own bundle.
+    // Text pins with a control: the app builds its folder from the rule, and assemble.sh ships the snapshot in the beta only
+    {
+        using namespace ejmap::wizapp;
+        const juce::File app ("/Applications/EchoJay Wizard Beta.app"), work ("/tmp/w");
+        const auto src = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto as = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/assemble.sh").loadFileAsString();
+        const bool read = src.contains ("class WizardApplication") && as.contains ("codesign");   // the control
+        check (read && workFolderName (Mode::beta) == "EchoJay Wizard Beta" && workFolderName (Mode::normal) == "EchoJay Wizard"
+               && databaseFolder (Mode::beta, app, work) == app.getChildFile ("Contents/Resources/beta_db") && databaseFolder (Mode::normal, app, work) == work.getChildFile ("server_stub/db")
+               && src.contains ("homeChild (\"Library/Application Support/\" + wizapp::workFolderName (kMode))") && src.contains ("wizapp::databaseFolder (kMode, app, c.work)")
+               && src.contains ("if (! c.db.isAChildOf (app))") && as.contains ("ditto \"$HERE/beta_db\" \"$R/beta_db\""),
+               "wizard WZ-WORK-1: 'EchoJay Wizard Beta' vs 'EchoJay Wizard'; the beta reads Contents/Resources/beta_db and never seeds into its bundle (read: " + juce::String ((int) read) + ")");
+    }
+    // WZ-PLAN-1 the plan's words: skip loads nothing; measure = queued or rule B's read-back first; sound-test = the signature reads
+    {
+        using namespace ejmap::wizroute;
+        check (planWord (Route::skipHave) == "skip" && planWord (Route::skipPending) == "skip" && planWord (Route::outOfScope) == "skip"
+               && planWord (Route::measure) == "measure" && planWord (Route::quickCheck) == "measure" && planWord (Route::categorise) == "sound_test"
+               && planWord (Route::held) == "map_only" && planWord (Route::sendOther) == "map_only" && planWord (Route::needsCategory) == "needs_category"
+               && loadsNothing ({ Route::skipHave, {}, {} }) && loadsNothing ({ Route::outOfScope, {}, {} }) && loadsToCategorise ({ Route::categorise, {}, {} }),
+               "wizard WZ-PLAN-1: skip = the routes that load nothing, measure = queued or quick check, sound_test = the signature reads");
+    }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files
     {

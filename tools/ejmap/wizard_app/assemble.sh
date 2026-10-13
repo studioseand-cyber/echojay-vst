@@ -30,6 +30,10 @@ if [ "$BETA" = 1 ]; then ICNS="$HERE/icon/WizardBeta.icns"; else ICNS="$HERE/ico
 [ -f "$ICNS" ] || { echo "assemble: no icon at $ICNS (run wizard_app/icon/make_icon.swift)"; exit 2; }
 cp "$ICNS" "$R/Icon.icns"
 cp -R "$HERE/mock_db/references" "$R/mock_db/"   # 13 Oct: the mock DB's 290 agreed references (stub only)
+if [ "$BETA" = 1 ]; then   # 13 Oct (Kathy): the beta's read-only database - the snapshot of Sean's cert 5 (scripts/beta_db_snapshot.py)
+    [ -f "$HERE/beta_db/snapshot.json" ] || { echo "assemble: no beta database at $HERE/beta_db (run scripts/beta_db_snapshot.py)"; exit 2; }
+    rm -rf "$R/beta_db"; ditto "$HERE/beta_db" "$R/beta_db"
+fi
 xattr -dr com.apple.quarantine "$A" 2>/dev/null || true   # a build-tree file can carry a download's flag (12 Oct): leave this Mac clean
 if [ -n "$ID" ]; then
     codesign -f -s "$ID" --timestamp --options runtime --entitlements "$ENT" "$M/EchoJayProbe"

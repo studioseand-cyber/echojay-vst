@@ -1,0 +1,595 @@
+{
+  "product": "L316 (s)",
+  "map_fp": "b7f7334bf426d4576c78656bf5689c48c9f1184d3f8e23719609cd6d2a278014",
+  "L_rms_dbfs": -9.485991,
+  "L_peak_dbfs": -6.475691043360188,
+  "g_db": 2.0,
+  "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.97 = -9.49 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 14 positions' in_at_gr[2.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+  "gr_per_channel_db": [
+    2.02,
+    2.02
+  ],
+  "L_ref_dbfs": -9.485991,
+  "L_gap_db": 0.0,
+  "pick": {
+    "norm": 0.717466791997,
+    "point": 10,
+    "point_next": 11,
+    "in_at_g": -11.01,
+    "stepped": false,
+    "pick_one_db": -10.485991,
+    "clamp_db": 12.0,
+    "expected_gr_db": 2.0,
+    "filled_across_norm": false,
+    "fell_back_to_measured": false
+  },
+  "writes": [
+    {
+      "control": "Ceiling",
+      "index": 1,
+      "norm": 1.0,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Release",
+      "index": 2,
+      "norm": 0.5,
+      "set": "1.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Release Character",
+      "index": 3,
+      "norm": 0.0,
+      "set": "Default",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Separation",
+      "index": 4,
+      "norm": 0.5,
+      "set": "Medium",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Quantize",
+      "index": 5,
+      "norm": 0.0,
+      "set": "24 Bits",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Dither",
+      "index": 6,
+      "norm": 0.5,
+      "set": "Type1",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Shaping",
+      "index": 7,
+      "norm": 0.666667,
+      "set": "Normal",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band1 On/Off",
+      "index": 8,
+      "norm": 0.0,
+      "set": "",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band1 Type",
+      "index": 9,
+      "norm": 1.0,
+      "set": "Lo-Shelf",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band1 Gain",
+      "index": 10,
+      "norm": 0.5,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band1 Priority",
+      "index": 11,
+      "norm": 0.5,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band1 Frq",
+      "index": 12,
+      "norm": 0.257095,
+      "set": "100",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band1 Q",
+      "index": 13,
+      "norm": 0.5,
+      "set": "1.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band2 On/Off",
+      "index": 14,
+      "norm": 0.0,
+      "set": "",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band2 Type",
+      "index": 15,
+      "norm": 0.0,
+      "set": "Bell",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band2 Gain",
+      "index": 16,
+      "norm": 0.5,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band2 Priority",
+      "index": 17,
+      "norm": 0.5,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band2 Frq",
+      "index": 18,
+      "norm": 0.353095,
+      "set": "200",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band2 Q",
+      "index": 19,
+      "norm": 0.5,
+      "set": "1.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band3 On/Off",
+      "index": 20,
+      "norm": 0.0,
+      "set": "",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band3 Type",
+      "index": 21,
+      "norm": 0.0,
+      "set": "Bell",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band3 Gain",
+      "index": 22,
+      "norm": 0.5,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band3 Priority",
+      "index": 23,
+      "norm": 0.5,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band3 Frq",
+      "index": 24,
+      "norm": 0.449095,
+      "set": "400",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band3 Q",
+      "index": 25,
+      "norm": 0.5,
+      "set": "1.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band4 On/Off",
+      "index": 26,
+      "norm": 0.0,
+      "set": "",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band4 Type",
+      "index": 27,
+      "norm": 0.0,
+      "set": "Bell",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band4 Gain",
+      "index": 28,
+      "norm": 0.5,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band4 Priority",
+      "index": 29,
+      "norm": 0.5,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band4 Frq",
+      "index": 30,
+      "norm": 0.545095,
+      "set": "800",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band4 Q",
+      "index": 31,
+      "norm": 0.5,
+      "set": "1.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band5 On/Off",
+      "index": 32,
+      "norm": 0.0,
+      "set": "",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band5 Type",
+      "index": 33,
+      "norm": 0.0,
+      "set": "Bell",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band5 Gain",
+      "index": 34,
+      "norm": 0.5,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band5 Priority",
+      "index": 35,
+      "norm": 0.5,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band5 Frq",
+      "index": 36,
+      "norm": 0.641095,
+      "set": "1600",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band5 Q",
+      "index": 37,
+      "norm": 0.5,
+      "set": "1.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band6 On/Off",
+      "index": 38,
+      "norm": 0.0,
+      "set": "",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band6 Type",
+      "index": 39,
+      "norm": 1.0,
+      "set": "Hi-Shelf",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band6 Gain",
+      "index": 40,
+      "norm": 0.5,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band6 Priority",
+      "index": 41,
+      "norm": 0.5,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band6 Frq",
+      "index": 42,
+      "norm": 0.737095,
+      "set": "3200",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Band6 Q",
+      "index": 43,
+      "norm": 0.5,
+      "set": "1.00",
+      "why": "neutral[] from the profile"
+    }
+  ],
+  "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+  "quiet_check_ok": true,
+  "gr_measured_db": 2.02,
+  "pass_within_0_5_db": true,
+  "probe": "e6614a35487966f7bd80a97312d50c869d6d7108",
+  "measuredAt": "20261013T032112.543+0100",
+  "ratio_norm_source": "no ratio control in the profile (fixed ratio): nothing written",
+  "spec": "v1.7",
+  "build": "b287aef3",
+  "deep_levels": [
+    {
+      "g_db": 4.0,
+      "ran": true,
+      "gr_measured_db": 4.01,
+      "L_rms_dbfs": -9.485991,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.97 = -9.49 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 13 positions' in_at_gr[4.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        4.01,
+        4.01
+      ],
+      "L_ref_dbfs": -9.485991,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.6508005540015,
+        "point": 9,
+        "point_next": 10,
+        "in_at_g": -11.01,
+        "stepped": false,
+        "pick_one_db": -12.485991,
+        "clamp_db": 6.0,
+        "expected_gr_db": 4.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 5.0,
+      "ran": true,
+      "gr_measured_db": 5.01,
+      "L_rms_dbfs": -9.485991,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.97 = -9.49 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 13 positions' in_at_gr[5.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        5.01,
+        5.01
+      ],
+      "L_ref_dbfs": -9.485991,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.6174670540015,
+        "point": 9,
+        "point_next": 10,
+        "in_at_g": -10.01,
+        "stepped": false,
+        "pick_one_db": -13.485991,
+        "clamp_db": 7.0,
+        "expected_gr_db": 5.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 6.0,
+      "ran": true,
+      "gr_measured_db": 6.01,
+      "L_rms_dbfs": -9.485991,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.97 = -9.49 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 12 positions' in_at_gr[6.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        6.01,
+        6.01
+      ],
+      "L_ref_dbfs": -9.485991,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.5841335540015,
+        "point": 8,
+        "point_next": 9,
+        "in_at_g": -11.01,
+        "stepped": false,
+        "pick_one_db": -14.485991,
+        "clamp_db": 8.0,
+        "expected_gr_db": 6.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 7.0,
+      "ran": true,
+      "gr_measured_db": 7.02,
+      "L_rms_dbfs": -9.485991,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.97 = -9.49 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 12 positions' in_at_gr[7.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        7.02,
+        7.02
+      ],
+      "L_ref_dbfs": -9.485991,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.5508000540015,
+        "point": 8,
+        "point_next": 9,
+        "in_at_g": -10.01,
+        "stepped": false,
+        "pick_one_db": -15.485991000000002,
+        "clamp_db": 9.000000000000002,
+        "expected_gr_db": 7.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 8.0,
+      "ran": true,
+      "gr_measured_db": 8.01,
+      "L_rms_dbfs": -9.485991,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.97 = -9.49 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 11 positions' in_at_gr[8.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        8.01,
+        8.01
+      ],
+      "L_ref_dbfs": -9.485991,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.517466791997,
+        "point": 7,
+        "point_next": 8,
+        "in_at_g": -11.01,
+        "stepped": false,
+        "pick_one_db": -16.485991000000002,
+        "clamp_db": 10.000000000000002,
+        "expected_gr_db": 8.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 9.0,
+      "ran": true,
+      "gr_measured_db": 9.01,
+      "L_rms_dbfs": -9.485991,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.97 = -9.49 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 11 positions' in_at_gr[9.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        9.01,
+        9.01
+      ],
+      "L_ref_dbfs": -9.485991,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.484133791997,
+        "point": 7,
+        "point_next": 8,
+        "in_at_g": -10.01,
+        "stepped": false,
+        "pick_one_db": -17.485991000000002,
+        "clamp_db": 11.000000000000002,
+        "expected_gr_db": 9.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 10.0,
+      "ran": true,
+      "gr_measured_db": 10.02,
+      "L_rms_dbfs": -9.485991,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.97 = -9.49 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 10 positions' in_at_gr[10.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        10.02,
+        10.02
+      ],
+      "L_ref_dbfs": -9.485991,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.4508005540015,
+        "point": 6,
+        "point_next": 7,
+        "in_at_g": -11.01,
+        "stepped": false,
+        "pick_one_db": -18.485991000000002,
+        "clamp_db": 12.000000000000002,
+        "expected_gr_db": 10.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 11.0,
+      "ran": true,
+      "gr_measured_db": 11.02,
+      "L_rms_dbfs": -9.485991,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.97 = -9.49 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 10 positions' in_at_gr[11.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        11.02,
+        11.02
+      ],
+      "L_ref_dbfs": -9.485991,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.4174670540015,
+        "point": 6,
+        "point_next": 7,
+        "in_at_g": -10.01,
+        "stepped": false,
+        "pick_one_db": -19.485991000000002,
+        "clamp_db": 13.000000000000002,
+        "expected_gr_db": 11.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 12.0,
+      "ran": true,
+      "gr_measured_db": 12.01,
+      "L_rms_dbfs": -9.485991,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.97 = -9.49 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 9 positions' in_at_gr[12.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        12.01,
+        12.01
+      ],
+      "L_ref_dbfs": -9.485991,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.3841335540015,
+        "point": 5,
+        "point_next": 6,
+        "in_at_g": -11.01,
+        "stepped": false,
+        "pick_one_db": -20.485991000000002,
+        "clamp_db": 14.000000000000002,
+        "expected_gr_db": 12.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    }
+  ],
+  "deep_levels_nulled": [],
+  "limiter_compressor": true,
+  "not_for_publication": true
+}

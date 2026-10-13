@@ -1,0 +1,349 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "GEQ Classic (m)",
+    "manufacturer": "Waves",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|4d577c63|15.0.70",
+    "version": "15.0.70",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-09",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "Bell",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Bell Gain",
+      "freq_control": "Bell Freq",
+      "q_control": "Bell Q",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-18.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-12.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-6.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "6.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "12.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "18.0",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "63",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "200",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "632",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "2000",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "6325",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.250",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "0.940",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "3.536",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "13.296",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "50.000",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "Scale",
+      "set": "6.0",
+      "norm": 0.0
+    },
+    {
+      "control": "25Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "31Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "40Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "50Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "63Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "80Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "100Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "125Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "160Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "200Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "250Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "315Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "400Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "500Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "630Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "800Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "1Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "1.25Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "1.6Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "2Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "2.5Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "3.15Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "4Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "5Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "6.3Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "8Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "10Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "12.5Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "16Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "20Khz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "Q",
+      "set": "1.000",
+      "norm": 0.5
+    },
+    {
+      "control": "MasterG",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "HiPass OnOff",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "HiPass",
+      "set": "20",
+      "norm": 0.0
+    },
+    {
+      "control": "LoPass OnOff",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "LoPass",
+      "set": "20000",
+      "norm": 1.0
+    },
+    {
+      "control": "Bell OnOff",
+      "set": "Off",
+      "norm": 0.0
+    }
+  ],
+  "notes": [
+    "Band 'Bell': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

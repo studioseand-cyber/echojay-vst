@@ -25,7 +25,7 @@
 namespace ejmap::cert
 {
 
-struct WizardOptions { SweepOptions opt; juce::File db, skip; juce::StringArray only; bool measure = false, bundle = false, verbose = false; };   // skip: the app's never-retry list (skip.json)
+struct WizardOptions { SweepOptions opt; juce::File db, skip; juce::StringArray only; bool measure = false, bundle = false, verbose = false, plan = false; };   // plan: the database step only, nothing loaded (plan.json)   // skip: the app's never-retry list (skip.json)
 
 // the map store (read): (uid|version) -> { fp, category }
 struct StoreEntry { juce::String fp, category; };
@@ -167,7 +167,9 @@ inline int runWizard (const WizardOptions& wo)
     const double tStart = juce::Time::getMillisecondCounterHiRes();
     const auto db = wizard::loadDb (wo.db);
     const auto catalogue = juce::JSON::parse (wo.db.getChildFile ("categories.json").loadFileAsString());
-    say ("WIZARD: " + juce::String ((int) db.size()) + " profile(s) in the database (" + wo.db.getFileName() + ", a local folder: nothing is fetched)");
+    const auto dbMultiband = wizroute::loadMultiband (wo.db);
+    {   int idx = 0; for (const auto& e : db) idx += e.indexOnly ? 1 : 0;
+        say ("WIZARD: " + juce::String ((int) db.size() - idx) + " profile(s) and " + juce::String (idx) + " mapped draft(s) in the database (" + wo.db.getFileName() + ", a local folder: nothing is fetched)"); }
     // THE NEVER-RETRY LIST (the app's crash recovery): a plugin the wizard went down with is not loaded again, by any stage
     const auto skipped = wo.skip != juce::File() ? wizapp::skipList (wo.skip.getParentDirectory()) : juce::StringArray();
     std::vector<InstalledRecord> plugins; juce::Array<juce::var> skippedRows;
@@ -216,7 +218,7 @@ inline int runWizard (const WizardOptions& wo)
         const auto& ir = plugins[i]; const auto uid = juce::String::toHexString (ir.desc.uniqueId).toLowerCase(); const auto ver = ir.desc.version;
         const auto se = store.count (uid + "|" + ver) ? store.at (uid + "|" + ver) : StoreEntry();
         const auto ans = wizroute::ask (db, pending, catalogue, uid, ver, se.fp, ir.desc.name);
-        const auto d = wizroute::route (ans, wizard::wizardCategory (ir.desc.name, juce::var()), categorise::outOfScope (typeOf (ir.desc), ir.desc.name, {}), wizroute::isKnownMultiband (uid));
+        const auto d = wizroute::route (ans, wizard::wizardCategory (ir.desc.name, juce::var()), categorise::outOfScope (typeOf (ir.desc), ir.desc.name, {}), wizroute::isMultiband (dbMultiband, uid));
         auto* row = new juce::DynamicObject(); row->setProperty ("product", ir.desc.name); row->setProperty ("plugin_id", wizroute::pluginId (uid, ver)); row->setProperty ("map_fp", se.fp);
         row->setProperty ("category", d.category); row->setProperty ("route", wizroute::routeName (d.route)); row->setProperty ("vendor", ir.desc.manufacturerName);
         juce::String st, why = d.why;
@@ -227,6 +229,7 @@ inline int runWizard (const WizardOptions& wo)
             case wizroute::Route::outOfScope: st = "out_of_scope"; break;
             case wizroute::Route::quickCheck:
             {
+                if (wo.plan) { st = "quick_check"; why = "(plan: not run) " + why; break; }
                 const auto gate = licenceGate (opt, ir.desc.name, ir.desc.manufacturerName, out, false);
                 if (gate.stop.isNotEmpty()) { st = gate.stop.contains (uad::kNotConnected) ? "needs_hardware" : "needs_licence"; why = gate.stop; break; }
                 prog.started (ir.desc.name);
@@ -246,6 +249,19 @@ inline int runWizard (const WizardOptions& wo)
         row->setProperty ("state", st); row->setProperty ("why", why); rows.add (juce::var (row));
         prog.finished (ir.desc.name, problemState (st));
         say ("  " + ir.desc.name.paddedRight (' ', 30) + " " + ver.paddedRight (' ', 9) + " -> " + wizroute::routeName (d.route) + " / " + st + ": " + why);
+    }
+    if (wo.plan)
+    {   // THE PLAN (13 Oct): the database step's answer for every plugin, nothing loaded; counts by plan word and by route
+        std::map<juce::String, int> byWord, byRoute;
+        for (const auto& r : rows) { const auto rt = r.getProperty ("route", "").toString(); ++byRoute[rt];
+            for (int k = 0; k <= (int) wizroute::Route::held; ++k) if (wizroute::routeName ((wizroute::Route) k) == rt) ++byWord[wizroute::planWord ((wizroute::Route) k)]; }
+        auto* p = new juce::DynamicObject(); const juce::var pv (p); auto* w = new juce::DynamicObject(); auto* ro = new juce::DynamicObject();
+        for (const auto& [k, n] : byWord) w->setProperty (k, n); for (const auto& [k, n] : byRoute) ro->setProperty (k, n);
+        p->setProperty ("schema", "ej_wizard_plan/1"); p->setProperty ("plugins", rows.size()); p->setProperty ("by_word", juce::var (w)); p->setProperty ("by_route", juce::var (ro)); p->setProperty ("rows", rows);
+        out.getChildFile ("plan.json").replaceWithText (juce::JSON::toString (pv));
+        juce::String line = "WIZARD PLAN: " + juce::String (rows.size()) + " plugin(s):"; for (const auto& [k, n] : byWord) line << " " << k << " " << n;
+        term << line << std::endl; say (line);
+        return 0;
     }
     // 2. IDENTIFYING (Checking): the map (the parameter list, --jobs) for what will be measured, sent or categorised; then the signature
     // reads for what is left - cached in categorised.json, so a later run (the app's measure run) loads nothing again for them

@@ -1,0 +1,184 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "UAD Pultec HLF-3C",
+    "manufacturer": "Universal Audio",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|12616669|11.8.0",
+    "version": "11.8.0",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-12",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "measured [0] Low Cut",
+      "shape": "low_shelf",
+      "verdict": "not_static",
+      "reason": "the gain sweep reads 101.9 dB at a position: this control moves something other than gain",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Low Cut",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "Off",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.100000001490116,
+          "display": "50 CPS",
+          "gain_db": -39.420000000000002
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "80 CPS",
+          "gain_db": -50.090000000000003
+        },
+        {
+          "norm": 0.300000011920929,
+          "display": "100 CPS",
+          "gain_db": -55.590000000000003
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "150 CPS",
+          "gain_db": -68.420000000000002
+        },
+        {
+          "norm": 0.5,
+          "display": "250 CPS",
+          "gain_db": -83.560000000000002
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "500 CPS",
+          "gain_db": -101.920000000000002
+        },
+        {
+          "norm": 0.699999988079071,
+          "display": "750 CPS",
+          "gain_db": -96.670000000000002
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "1000 CPS",
+          "gain_db": -94.980000000000004
+        },
+        {
+          "norm": 0.899999976158142,
+          "display": "1500 CPS",
+          "gain_db": -93.819999999999993
+        },
+        {
+          "norm": 1.0,
+          "display": "2000 CPS",
+          "gain_db": -93.109999999999999
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.02
+    },
+    {
+      "name": "measured [1] High Cut",
+      "shape": "high_shelf",
+      "verdict": "not_static",
+      "reason": "the gain sweep reads 49.7 dB at a position: this control moves something other than gain",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "High Cut",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "1.5 KCS",
+          "gain_db": -49.68
+        },
+        {
+          "norm": 0.100000001490116,
+          "display": "2 KCS",
+          "gain_db": -47.829999999999998
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "3 KCS",
+          "gain_db": -45.020000000000003
+        },
+        {
+          "norm": 0.300000011920929,
+          "display": "4 KCS",
+          "gain_db": -41.899999999999999
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "5 KCS",
+          "gain_db": -37.990000000000002
+        },
+        {
+          "norm": 0.5,
+          "display": "6 KCS",
+          "gain_db": -34.729999999999997
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "8 KCS",
+          "gain_db": -28.870000000000001
+        },
+        {
+          "norm": 0.699999988079071,
+          "display": "10 KCS",
+          "gain_db": -23.43
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "12 KCS",
+          "gain_db": -19.420000000000002
+        },
+        {
+          "norm": 0.899999976158142,
+          "display": "15 KCS",
+          "gain_db": -15.34
+        },
+        {
+          "norm": 1.0,
+          "display": "Off",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "Enable",
+      "set": "In",
+      "norm": 1.0
+    }
+  ],
+  "notes": [
+    "Band 'measured [0] Low Cut': not_static (the gain sweep reads 101.9 dB at a position: this control moves something other than gain): not usable by the server",
+    "Band 'measured [1] High Cut': not_static (the gain sweep reads 49.7 dB at a position: this control moves something other than gain): not usable by the server",
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

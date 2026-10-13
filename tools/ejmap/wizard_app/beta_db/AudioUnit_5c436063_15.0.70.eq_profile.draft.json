@@ -1,0 +1,209 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "VEQ4 (m)",
+    "manufacturer": "Waves",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|5c436063|15.0.70",
+    "version": "15.0.70",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-10",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "measured [7] HPF",
+      "shape": "low_shelf",
+      "verdict": "not_static",
+      "reason": "the gain sweep reads 71.3 dB at a position: this control moves something other than gain",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "HPF",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "OFF",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "27 Hz",
+          "gain_db": -23.989999999999998
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "47 Hz",
+          "gain_db": -34.229999999999997
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "82 Hz",
+          "gain_db": -44.590000000000003
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "150Hz",
+          "gain_db": -55.729999999999997
+        },
+        {
+          "norm": 1.0,
+          "display": "270Hz",
+          "gain_db": -71.290000000000006
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [8] LPF",
+      "shape": "high_shelf",
+      "verdict": "not_static",
+      "reason": "the gain sweep reads 77.8 dB at a position: this control moves something other than gain",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "LPF",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "3.9 kHz",
+          "gain_db": -77.810000000000002
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "5.6 kHz",
+          "gain_db": -74.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "8.2 kHz",
+          "gain_db": -66.689999999999998
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "12.0 kHz",
+          "gain_db": -57.350000000000001
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "18.0 kHz",
+          "gain_db": -50.539999999999999
+        },
+        {
+          "norm": 1.0,
+          "display": "OFF",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "Phase",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ",
+      "set": "In",
+      "norm": 1.0
+    },
+    {
+      "control": "LF Bell",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "HF Bell",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "HMHQ",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "LMHQ",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "Analog",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "LFF",
+      "set": "OFF",
+      "norm": 0.0
+    },
+    {
+      "control": "LFG",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "LMFF",
+      "set": "OFF",
+      "norm": 0.0
+    },
+    {
+      "control": "LMFG",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "HMFF",
+      "set": "OFF",
+      "norm": 0.0
+    },
+    {
+      "control": "HMFG",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "HFF",
+      "set": "OFF",
+      "norm": 0.0
+    },
+    {
+      "control": "HFG",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "Output",
+      "set": "0.0 dB",
+      "norm": 0.5
+    }
+  ],
+  "notes": [
+    "Band 'measured [7] HPF': not_static (the gain sweep reads 71.3 dB at a position: this control moves something other than gain): not usable by the server",
+    "Band 'measured [8] LPF': not_static (the gain sweep reads 77.8 dB at a position: this control moves something other than gain): not usable by the server",
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

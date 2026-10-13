@@ -1,0 +1,469 @@
+{
+  "product": "Pro-L 2",
+  "map_fp": "81a737304e39922343dfacf4393078136a9976cf76e422ec4cad031606c7806b",
+  "L_rms_dbfs": -10.221166999999999,
+  "L_peak_dbfs": -7.210867043360187,
+  "g_db": 2.0,
+  "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.89 = -10.22 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 15 positions' in_at_gr[2.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+  "gr_per_channel_db": [
+    2.02,
+    2.02
+  ],
+  "L_ref_dbfs": -10.221166999999999,
+  "L_gap_db": 0.0,
+  "pick": {
+    "norm": 0.307038829611,
+    "point": 5,
+    "point_next": 4,
+    "in_at_g": -11.01,
+    "stepped": false,
+    "pick_one_db": -11.221166999999999,
+    "clamp_db": 12.0,
+    "expected_gr_db": 2.0,
+    "filled_across_norm": false,
+    "fell_back_to_measured": false
+  },
+  "writes": [
+    {
+      "control": "Style",
+      "index": 1,
+      "norm": 0.714286,
+      "set": "5",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Lookahead",
+      "index": 2,
+      "norm": 0.036,
+      "set": "0.180 ms",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Attack",
+      "index": 3,
+      "norm": 0.407224,
+      "set": "275.0 ms",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Release",
+      "index": 4,
+      "norm": 0.387798,
+      "set": "400.0 ms",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Channel Link Transients",
+      "index": 5,
+      "norm": 0.375,
+      "set": "75%",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Channel Link Release",
+      "index": 6,
+      "norm": 0.5,
+      "set": "100%",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Channel Link Center",
+      "index": 7,
+      "norm": 0.0,
+      "set": "0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Channel Link LFE",
+      "index": 8,
+      "norm": 0.0,
+      "set": "0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Oversampling",
+      "index": 9,
+      "norm": 0.0,
+      "set": "0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "True Peak Limiting",
+      "index": 10,
+      "norm": 1.0,
+      "set": "1",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Dithering",
+      "index": 11,
+      "norm": 0.0,
+      "set": "0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Noise Shaping",
+      "index": 12,
+      "norm": 0.666667,
+      "set": "2",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Filter DC Offset",
+      "index": 13,
+      "norm": 0.0,
+      "set": "0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Side Chain Triggering",
+      "index": 14,
+      "norm": 0.0,
+      "set": "0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Unity Gain",
+      "index": 15,
+      "norm": 0.0,
+      "set": "0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Audition Limiting",
+      "index": 16,
+      "norm": 0.0,
+      "set": "0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Output Level",
+      "index": 18,
+      "norm": 1.0,
+      "set": "0.00 dBTP",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Lock Output",
+      "index": 19,
+      "norm": 1.0,
+      "set": "1",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Receive Midi",
+      "index": 20,
+      "norm": 0.0,
+      "set": "0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Show Advanced",
+      "index": 21,
+      "norm": 1.0,
+      "set": "1",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "True Peak Metering",
+      "index": 22,
+      "norm": 1.0,
+      "set": "1",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Loudness Time Scale",
+      "index": 25,
+      "norm": 0.5,
+      "set": "1",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Loudness Integrated Peak Time Scale",
+      "index": 29,
+      "norm": 0.0,
+      "set": "0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Loudness Recording",
+      "index": 30,
+      "norm": 1.0,
+      "set": "1",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Loudness Auto-Reset",
+      "index": 31,
+      "norm": 0.0,
+      "set": "0",
+      "why": "neutral[] from the profile"
+    }
+  ],
+  "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+  "quiet_check_ok": true,
+  "gr_measured_db": 2.02,
+  "pass_within_0_5_db": true,
+  "probe": "e6614a35487966f7bd80a97312d50c869d6d7108",
+  "measuredAt": "20261013T050201.789+0100",
+  "ratio_norm_source": "no ratio control in the profile (fixed ratio): nothing written",
+  "spec": "v1.7",
+  "build": "b287aef3",
+  "deep_levels": [
+    {
+      "g_db": 4.0,
+      "ran": true,
+      "gr_measured_db": 4.02,
+      "L_rms_dbfs": -10.221166999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.89 = -10.22 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 14 positions' in_at_gr[4.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        4.02,
+        4.02
+      ],
+      "L_ref_dbfs": -10.221166999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.3737054351945,
+        "point": 6,
+        "point_next": 5,
+        "in_at_g": -11.01,
+        "stepped": false,
+        "pick_one_db": -13.221166999999999,
+        "clamp_db": 6.0,
+        "expected_gr_db": 4.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 5.0,
+      "ran": true,
+      "gr_measured_db": 5.02,
+      "L_rms_dbfs": -10.221166999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.89 = -10.22 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 13 positions' in_at_gr[5.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        5.02,
+        5.02
+      ],
+      "L_ref_dbfs": -10.221166999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.4070389351945,
+        "point": 7,
+        "point_next": 6,
+        "in_at_g": -12.01,
+        "stepped": false,
+        "pick_one_db": -14.221166999999999,
+        "clamp_db": 7.0,
+        "expected_gr_db": 5.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 6.0,
+      "ran": true,
+      "gr_measured_db": 6.02,
+      "L_rms_dbfs": -10.221166999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.89 = -10.22 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 13 positions' in_at_gr[6.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        6.02,
+        6.02
+      ],
+      "L_ref_dbfs": -10.221166999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.4403724351945,
+        "point": 7,
+        "point_next": 6,
+        "in_at_g": -11.01,
+        "stepped": false,
+        "pick_one_db": -15.221167000000001,
+        "clamp_db": 8.000000000000002,
+        "expected_gr_db": 6.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 7.0,
+      "ran": true,
+      "gr_measured_db": 7.01,
+      "L_rms_dbfs": -10.221166999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.89 = -10.22 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 12 positions' in_at_gr[7.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        7.01,
+        7.01
+      ],
+      "L_ref_dbfs": -10.221166999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.473705829611,
+        "point": 8,
+        "point_next": 7,
+        "in_at_g": -12.01,
+        "stepped": false,
+        "pick_one_db": -16.221167000000001,
+        "clamp_db": 9.000000000000002,
+        "expected_gr_db": 7.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 8.0,
+      "ran": true,
+      "gr_measured_db": 8.01,
+      "L_rms_dbfs": -10.221166999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.89 = -10.22 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 12 positions' in_at_gr[8.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        8.01,
+        8.01
+      ],
+      "L_ref_dbfs": -10.221166999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.507038829611,
+        "point": 8,
+        "point_next": 7,
+        "in_at_g": -11.01,
+        "stepped": false,
+        "pick_one_db": -17.221167000000001,
+        "clamp_db": 10.000000000000002,
+        "expected_gr_db": 8.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 9.0,
+      "ran": true,
+      "gr_measured_db": 9.01,
+      "L_rms_dbfs": -10.221166999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.89 = -10.22 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 11 positions' in_at_gr[9.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        9.01,
+        9.01
+      ],
+      "L_ref_dbfs": -10.221166999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.5403719351945,
+        "point": 9,
+        "point_next": 8,
+        "in_at_g": -12.01,
+        "stepped": false,
+        "pick_one_db": -18.221167000000001,
+        "clamp_db": 11.000000000000002,
+        "expected_gr_db": 9.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 10.0,
+      "ran": true,
+      "gr_measured_db": 10.01,
+      "L_rms_dbfs": -10.221166999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.89 = -10.22 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 11 positions' in_at_gr[10.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        10.01,
+        10.01
+      ],
+      "L_ref_dbfs": -10.221166999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.5737054351945,
+        "point": 9,
+        "point_next": 8,
+        "in_at_g": -11.01,
+        "stepped": false,
+        "pick_one_db": -19.221167000000001,
+        "clamp_db": 12.000000000000002,
+        "expected_gr_db": 10.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 11.0,
+      "ran": true,
+      "gr_measured_db": 11.01,
+      "L_rms_dbfs": -10.221166999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.89 = -10.22 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 10 positions' in_at_gr[11.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        11.01,
+        11.01
+      ],
+      "L_ref_dbfs": -10.221166999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.6070389351945,
+        "point": 10,
+        "point_next": 9,
+        "in_at_g": -12.01,
+        "stepped": false,
+        "pick_one_db": -20.221167000000001,
+        "clamp_db": 13.000000000000002,
+        "expected_gr_db": 11.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 12.0,
+      "ran": true,
+      "gr_measured_db": 12.01,
+      "L_rms_dbfs": -10.221166999999999,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.89 = -10.22 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 10 positions' in_at_gr[12.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        12.01,
+        12.01
+      ],
+      "L_ref_dbfs": -10.221166999999999,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.6403724351945,
+        "point": 10,
+        "point_next": 9,
+        "in_at_g": -11.01,
+        "stepped": false,
+        "pick_one_db": -21.221167000000001,
+        "clamp_db": 14.000000000000002,
+        "expected_gr_db": 12.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null
+    }
+  ],
+  "deep_levels_nulled": [],
+  "limiter_compressor": true,
+  "not_for_publication": true
+}

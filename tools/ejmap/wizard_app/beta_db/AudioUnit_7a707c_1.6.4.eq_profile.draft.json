@@ -1,0 +1,3188 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "TBTECH Kirchhoff-EQ",
+    "manufacturer": "Plugin Alliance",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|7a707c|1.6.4",
+    "version": "1.6.4",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-09",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "measured [2] Master Vol.",
+      "shape": "low_shelf",
+      "verdict": "not_static",
+      "reason": "the gain sweep reads 36.0 dB at a position: this control moves something other than gain",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Master Vol.",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "",
+          "gain_db": null,
+          "why": "fewer than 8 tones compared"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "",
+          "gain_db": -28.239999999999998
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "",
+          "gain_db": -14.119999999999999
+        },
+        {
+          "norm": 0.5,
+          "display": "",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "",
+          "gain_db": 12.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "",
+          "gain_db": 24.0
+        },
+        {
+          "norm": 1.0,
+          "display": "",
+          "gain_db": 36.0
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "Bypass",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Invert Phase",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Gain Scale",
+      "set": "",
+      "norm": 0.75
+    },
+    {
+      "control": "Enable Auto Gain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Pan",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band1 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band1 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band1 Type",
+      "set": "",
+      "norm": 0.042254
+    },
+    {
+      "control": "Band1 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band1 Freq.",
+      "set": "",
+      "norm": 0.234568
+    },
+    {
+      "control": "Band1 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band1 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band1 Stereo Placement",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band1 Speakers Type",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band1 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band1 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band1 Dyn. Threshold",
+      "set": "",
+      "norm": 0.583333
+    },
+    {
+      "control": "Band1 Dyn. Below Ratio",
+      "set": "",
+      "norm": 0.35
+    },
+    {
+      "control": "Band1 Dyn. Below Range",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band1 Dyn. Above Ratio",
+      "set": "",
+      "norm": 0.35
+    },
+    {
+      "control": "Band1 Dyn. Above Range",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band1 Dyn. Attack",
+      "set": "",
+      "norm": 0.398604
+    },
+    {
+      "control": "Band1 Dyn. Release",
+      "set": "",
+      "norm": 0.436283
+    },
+    {
+      "control": "Band1 Dyn. Onsets Mix",
+      "set": "",
+      "norm": 0.1
+    },
+    {
+      "control": "Band1 Dyn. Rela. Mix",
+      "set": "",
+      "norm": 0.89
+    },
+    {
+      "control": "Band1 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band1 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band1 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band1 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band1 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band1 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band1 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band1 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band2 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band2 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band2 Type",
+      "set": "",
+      "norm": 0.042254
+    },
+    {
+      "control": "Band2 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band2 Freq.",
+      "set": "",
+      "norm": 0.249695
+    },
+    {
+      "control": "Band2 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band2 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band2 Stereo Placement",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band2 Speakers Type",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band2 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band2 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band2 Dyn. Threshold",
+      "set": "",
+      "norm": 0.583333
+    },
+    {
+      "control": "Band2 Dyn. Below Ratio",
+      "set": "",
+      "norm": 0.35
+    },
+    {
+      "control": "Band2 Dyn. Below Range",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band2 Dyn. Above Ratio",
+      "set": "",
+      "norm": 0.35
+    },
+    {
+      "control": "Band2 Dyn. Above Range",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band2 Dyn. Attack",
+      "set": "",
+      "norm": 0.398604
+    },
+    {
+      "control": "Band2 Dyn. Release",
+      "set": "",
+      "norm": 0.436283
+    },
+    {
+      "control": "Band2 Dyn. Onsets Mix",
+      "set": "",
+      "norm": 0.1
+    },
+    {
+      "control": "Band2 Dyn. Rela. Mix",
+      "set": "",
+      "norm": 0.89
+    },
+    {
+      "control": "Band2 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band2 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band2 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band2 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band2 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band2 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band2 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band2 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band3 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band3 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band3 Type",
+      "set": "",
+      "norm": 0.042254
+    },
+    {
+      "control": "Band3 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band3 Freq.",
+      "set": "",
+      "norm": 0.264822
+    },
+    {
+      "control": "Band3 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band3 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band3 Stereo Placement",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band3 Speakers Type",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band3 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band3 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band3 Dyn. Threshold",
+      "set": "",
+      "norm": 0.583333
+    },
+    {
+      "control": "Band3 Dyn. Below Ratio",
+      "set": "",
+      "norm": 0.35
+    },
+    {
+      "control": "Band3 Dyn. Below Range",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band3 Dyn. Above Ratio",
+      "set": "",
+      "norm": 0.35
+    },
+    {
+      "control": "Band3 Dyn. Above Range",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band3 Dyn. Attack",
+      "set": "",
+      "norm": 0.398604
+    },
+    {
+      "control": "Band3 Dyn. Release",
+      "set": "",
+      "norm": 0.436283
+    },
+    {
+      "control": "Band3 Dyn. Onsets Mix",
+      "set": "",
+      "norm": 0.1
+    },
+    {
+      "control": "Band3 Dyn. Rela. Mix",
+      "set": "",
+      "norm": 0.89
+    },
+    {
+      "control": "Band3 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band3 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band3 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band3 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band3 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band3 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band3 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band3 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band4 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band4 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band4 Type",
+      "set": "",
+      "norm": 0.042254
+    },
+    {
+      "control": "Band4 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band4 Freq.",
+      "set": "",
+      "norm": 0.279949
+    },
+    {
+      "control": "Band4 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band4 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band4 Stereo Placement",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band4 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band4 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band4 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band4 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band4 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band4 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band4 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band4 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band4 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band4 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band5 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band5 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band5 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band5 Freq.",
+      "set": "",
+      "norm": 0.295077
+    },
+    {
+      "control": "Band5 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band5 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band5 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band5 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band5 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band5 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band5 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band5 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band5 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band5 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band5 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band5 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band6 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band6 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band6 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band6 Freq.",
+      "set": "",
+      "norm": 0.310204
+    },
+    {
+      "control": "Band6 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band6 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band6 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band6 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band6 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band6 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band6 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band6 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band6 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band6 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band6 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band6 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band7 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band7 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band7 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band7 Freq.",
+      "set": "",
+      "norm": 0.325331
+    },
+    {
+      "control": "Band7 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band7 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band7 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band7 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band7 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band7 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band7 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band7 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band7 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band7 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band7 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band7 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band8 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band8 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band8 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band8 Freq.",
+      "set": "",
+      "norm": 0.340459
+    },
+    {
+      "control": "Band8 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band8 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band8 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band8 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band8 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band8 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band8 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band8 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band8 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band8 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band8 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band8 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band9 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band9 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band9 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band9 Freq.",
+      "set": "",
+      "norm": 0.355586
+    },
+    {
+      "control": "Band9 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band9 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band9 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band9 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band9 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band9 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band9 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band9 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band9 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band9 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band9 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band9 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band10 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band10 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band10 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band10 Freq.",
+      "set": "",
+      "norm": 0.370713
+    },
+    {
+      "control": "Band10 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band10 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band10 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band10 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band10 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band10 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band10 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band10 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band10 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band10 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band10 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band10 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band11 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band11 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band11 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band11 Freq.",
+      "set": "",
+      "norm": 0.38584
+    },
+    {
+      "control": "Band11 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band11 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band11 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band11 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band11 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band11 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band11 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band11 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band11 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band11 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band11 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band11 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band12 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band12 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band12 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band12 Freq.",
+      "set": "",
+      "norm": 0.400968
+    },
+    {
+      "control": "Band12 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band12 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band12 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band12 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band12 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band12 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band12 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band12 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band12 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band12 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band12 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band12 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band13 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band13 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band13 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band13 Freq.",
+      "set": "",
+      "norm": 0.416095
+    },
+    {
+      "control": "Band13 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band13 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band13 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band13 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band13 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band13 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band13 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band13 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band13 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band13 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band13 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band13 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band14 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band14 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band14 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band14 Freq.",
+      "set": "",
+      "norm": 0.431222
+    },
+    {
+      "control": "Band14 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band14 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band14 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band14 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band14 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band14 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band14 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band14 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band14 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band14 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band14 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band14 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band15 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band15 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band15 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band15 Freq.",
+      "set": "",
+      "norm": 0.446349
+    },
+    {
+      "control": "Band15 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band15 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band15 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band15 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band15 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band15 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band15 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band15 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band15 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band15 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band15 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band15 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band16 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band16 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band16 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band16 Freq.",
+      "set": "",
+      "norm": 0.461477
+    },
+    {
+      "control": "Band16 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band16 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band16 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band16 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band16 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band16 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band16 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band16 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band16 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band16 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band16 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band16 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band17 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band17 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band17 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band17 Freq.",
+      "set": "",
+      "norm": 0.476604
+    },
+    {
+      "control": "Band17 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band17 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band17 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band17 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band17 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band17 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band17 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band17 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band17 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band17 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band17 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band17 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band18 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band18 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band18 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band18 Freq.",
+      "set": "",
+      "norm": 0.491731
+    },
+    {
+      "control": "Band18 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band18 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band18 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band18 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band18 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band18 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band18 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band18 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band18 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band18 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band18 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band18 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band19 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band19 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band19 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band19 Freq.",
+      "set": "",
+      "norm": 0.506858
+    },
+    {
+      "control": "Band19 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band19 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band19 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band19 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band19 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band19 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band19 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band19 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band19 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band19 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band19 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band19 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band20 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band20 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band20 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band20 Freq.",
+      "set": "",
+      "norm": 0.521986
+    },
+    {
+      "control": "Band20 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band20 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band20 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band20 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band20 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band20 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band20 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band20 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band20 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band20 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band20 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band20 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band21 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band21 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band21 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band21 Freq.",
+      "set": "",
+      "norm": 0.537113
+    },
+    {
+      "control": "Band21 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band21 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band21 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band21 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band21 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band21 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band21 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band21 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band21 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band21 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band21 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band21 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band22 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band22 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band22 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band22 Freq.",
+      "set": "",
+      "norm": 0.55224
+    },
+    {
+      "control": "Band22 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band22 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band22 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band22 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band22 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band22 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band22 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band22 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band22 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band22 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band22 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band22 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band23 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band23 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band23 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band23 Freq.",
+      "set": "",
+      "norm": 0.567367
+    },
+    {
+      "control": "Band23 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band23 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band23 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band23 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band23 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band23 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band23 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band23 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band23 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band23 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band23 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band23 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band24 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band24 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band24 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band24 Freq.",
+      "set": "",
+      "norm": 0.582495
+    },
+    {
+      "control": "Band24 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band24 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band24 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band24 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band24 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band24 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band24 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band24 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band24 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band24 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band24 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band24 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band25 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band25 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band25 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band25 Freq.",
+      "set": "",
+      "norm": 0.597622
+    },
+    {
+      "control": "Band25 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band25 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band25 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band25 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band25 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band25 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band25 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band25 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band25 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band25 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band25 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band25 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band26 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band26 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band26 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band26 Freq.",
+      "set": "",
+      "norm": 0.612749
+    },
+    {
+      "control": "Band26 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band26 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band26 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band26 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band26 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band26 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band26 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band26 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band26 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band26 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band26 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band26 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band27 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band27 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band27 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band27 Freq.",
+      "set": "",
+      "norm": 0.627876
+    },
+    {
+      "control": "Band27 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band27 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band27 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band27 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band27 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band27 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band27 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band27 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band27 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band27 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band27 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band27 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band28 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band28 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band28 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band28 Freq.",
+      "set": "",
+      "norm": 0.643004
+    },
+    {
+      "control": "Band28 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band28 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band28 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band28 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band28 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band28 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band28 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band28 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band28 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band28 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band28 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band28 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band29 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band29 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band29 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band29 Freq.",
+      "set": "",
+      "norm": 0.658131
+    },
+    {
+      "control": "Band29 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band29 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band29 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band29 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band29 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band29 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band29 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band29 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band29 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band29 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band29 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band29 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band30 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band30 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band30 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band30 Freq.",
+      "set": "",
+      "norm": 0.673258
+    },
+    {
+      "control": "Band30 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band30 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band30 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band30 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band30 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band30 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band30 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band30 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band30 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band30 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band30 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band30 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band31 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band31 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band31 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band31 Freq.",
+      "set": "",
+      "norm": 0.688386
+    },
+    {
+      "control": "Band31 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band31 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band31 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band31 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band31 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band31 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band31 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band31 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band31 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band31 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band31 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band31 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band32 Used",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band32 Enabled",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band32 Slope",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band32 Freq.",
+      "set": "",
+      "norm": 0.703513
+    },
+    {
+      "control": "Band32 Gain",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band32 Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band32 Pan/Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band32 Dyn. On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band32 Dyn. Det. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band32 Dyn. Rela. Use SideChain",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band32 Det. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band32 Dyn. Det. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band32 Dyn. Det. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band32 Rela. Free Mode On",
+      "set": "",
+      "norm": 0.0
+    },
+    {
+      "control": "Band32 Dyn. Rela. Freq.",
+      "set": "",
+      "norm": 0.575188
+    },
+    {
+      "control": "Band32 Dyn. Rela. Q",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Width",
+      "set": "",
+      "norm": 0.5
+    },
+    {
+      "control": "Band1 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band1 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band2 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band2 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band3 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band3 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band4 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band4 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band5 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band5 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band6 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band6 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band7 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band7 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band8 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band8 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band9 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band9 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band10 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band10 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band11 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band11 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band12 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band12 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band13 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band13 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band14 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band14 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band15 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band15 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band16 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band16 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band17 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band17 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band18 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band18 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band19 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band19 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band20 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band20 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band21 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band21 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band22 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band22 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band23 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band23 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band24 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band24 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band25 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band25 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band26 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band26 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band27 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band27 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band28 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band28 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band29 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band29 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band30 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band30 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band31 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band31 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band32 Dyn. Above On",
+      "set": "",
+      "norm": 1.0
+    },
+    {
+      "control": "Band32 Dyn. Below On",
+      "set": "",
+      "norm": 1.0
+    }
+  ],
+  "notes": [
+    "Band 'measured [2] Master Vol.': not_static (the gain sweep reads 36.0 dB at a position: this control moves something other than gain): not usable by the server",
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

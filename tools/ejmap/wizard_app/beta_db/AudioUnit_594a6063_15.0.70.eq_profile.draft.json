@@ -1,0 +1,933 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "SSLEQ (m)",
+    "manufacturer": "Waves",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|594a6063|15.0.70",
+    "version": "15.0.70",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-09",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "HF",
+      "shape": "high_shelf",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "HF Gain",
+      "freq_control": "HF Frq",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-17.00",
+          "gain_db": -20.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-11.33",
+          "gain_db": -7.42
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-5.67",
+          "gain_db": -2.64
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "5.67",
+          "gain_db": 2.92
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "11.33",
+          "gain_db": 13.970000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "17.00",
+          "gain_db": 19.460000000000001
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "1.50",
+          "corner_hz": 353.600000000000023
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "1.92",
+          "corner_hz": 428.399999999999977
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "4.67",
+          "corner_hz": 927.200000000000045
+        },
+        {
+          "norm": 0.5,
+          "display": "8.00",
+          "corner_hz": 1633.5
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "10.44",
+          "corner_hz": 2143.599999999999909
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "14.33",
+          "corner_hz": 2663.099999999999909
+        },
+        {
+          "norm": 1.0,
+          "display": "16.00",
+          "corner_hz": 2891.5
+        },
+        {
+          "norm": 0.416667014360428,
+          "display": "6.33",
+          "corner_hz": 1269.799999999999955
+        },
+        {
+          "norm": 0.083333000540733,
+          "display": "1.71",
+          "corner_hz": 391.100000000000023
+        },
+        {
+          "norm": 0.583333015441895,
+          "display": "9.11",
+          "corner_hz": 1881.900000000000091
+        },
+        {
+          "norm": 0.916666984558105,
+          "display": "15.17",
+          "corner_hz": 2777.400000000000091
+        },
+        {
+          "norm": 0.75,
+          "display": "12.67",
+          "corner_hz": 2440.0
+        },
+        {
+          "norm": 0.25,
+          "display": "3.00",
+          "corner_hz": 622.100000000000023
+        }
+      ],
+      "q_map": [],
+      "level_dependent_db": 0.0,
+      "acceptance": [
+        {
+          "target_db": 3.0,
+          "target_hz": 712.399999999999977,
+          "written": {
+            "gain_norm": 0.667813181877136,
+            "gain_display": "5.67 .. 11.33",
+            "promised_db": 3.0,
+            "freq_norm": 0.27831244468689,
+            "freq_display": "3.00 .. 4.67"
+          },
+          "ran": true,
+          "measured_gain_db": 3.74,
+          "measured_figure_hz": 725.399999999999977,
+          "measured_shape": "high_shelf",
+          "gain_miss_db": 0.74,
+          "figure_off_pct": 1.8,
+          "pass": false,
+          "why": "gain MISSES by 0.74 dB; figure 725.424 Hz is 1.8 % off the target"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 712.399999999999977,
+          "written": {
+            "gain_norm": 0.320676147937775,
+            "gain_display": "-11.33 .. -5.67",
+            "promised_db": -3.0,
+            "freq_norm": 0.27831244468689,
+            "freq_display": "3.00 .. 4.67"
+          },
+          "ran": true,
+          "measured_gain_db": -3.51,
+          "measured_figure_hz": 736.200000000000045,
+          "measured_shape": "high_shelf",
+          "gain_miss_db": -0.51,
+          "figure_off_pct": 3.3,
+          "pass": false,
+          "why": "gain MISSES by 0.51 dB; figure 736.194 Hz is 3.3 % off the target"
+        },
+        {
+          "target_db": 3.0,
+          "target_hz": 1435.299999999999955,
+          "written": {
+            "gain_norm": 0.667813181877136,
+            "gain_display": "5.67 .. 11.33",
+            "promised_db": 3.0,
+            "freq_norm": 0.457186251878738,
+            "freq_display": "6.33 .. 8.00"
+          },
+          "ran": true,
+          "measured_gain_db": 3.12,
+          "measured_figure_hz": 1445.099999999999909,
+          "measured_shape": "high_shelf",
+          "gain_miss_db": 0.12,
+          "figure_off_pct": 0.7,
+          "pass": true,
+          "why": "gain within 0.12 dB; figure 1445.1 Hz is 0.7 % off the target"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 1435.299999999999955,
+          "written": {
+            "gain_norm": 0.320676147937775,
+            "gain_display": "-11.33 .. -5.67",
+            "promised_db": -3.0,
+            "freq_norm": 0.457186251878738,
+            "freq_display": "6.33 .. 8.00"
+          },
+          "ran": true,
+          "measured_gain_db": -2.99,
+          "measured_figure_hz": 1423.900000000000091,
+          "measured_shape": "high_shelf",
+          "gain_miss_db": 0.01,
+          "figure_off_pct": -0.8,
+          "pass": true,
+          "why": "gain within 0.01 dB; figure 1423.9 Hz is -0.8 % off the target"
+        }
+      ]
+    },
+    {
+      "name": "HMF",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "HMF Gain",
+      "freq_control": "HMF Frq",
+      "q_control": "HMF Q",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-20.00",
+          "gain_db": -20.870000000000001
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-13.33",
+          "gain_db": -11.33
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-6.67",
+          "gain_db": -5.8
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "6.67",
+          "gain_db": 6.1
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "13.33",
+          "gain_db": 15.789999999999999
+        },
+        {
+          "norm": 1.0,
+          "display": "20.00",
+          "gain_db": 20.879999999999999
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "0.60",
+          "centre_hz": 630.700000000000045
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "0.77",
+          "centre_hz": 785.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "1.42",
+          "centre_hz": 1377.5
+        },
+        {
+          "norm": 0.5,
+          "display": "3.00",
+          "centre_hz": 2812.199999999999818
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.67",
+          "centre_hz": 3725.5
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "6.17",
+          "centre_hz": 4554.699999999999818
+        },
+        {
+          "norm": 1.0,
+          "display": "7.00",
+          "centre_hz": 5002.5
+        },
+        {
+          "norm": 0.416667014360428,
+          "display": "2.17",
+          "centre_hz": 2058.099999999999909
+        },
+        {
+          "norm": 0.083333000540733,
+          "display": "0.68",
+          "centre_hz": 703.700000000000045
+        },
+        {
+          "norm": 0.583333015441895,
+          "display": "3.83",
+          "centre_hz": 3263.199999999999818
+        },
+        {
+          "norm": 0.916666984558105,
+          "display": "6.58",
+          "centre_hz": 4779.699999999999818
+        },
+        {
+          "norm": 0.75,
+          "display": "5.50",
+          "centre_hz": 4183.199999999999818
+        },
+        {
+          "norm": 0.25,
+          "display": "1.03",
+          "centre_hz": 1022.0
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "3.50",
+          "bandwidth_oct_at_6db": 2.327,
+          "bandwidth_oct_at_3db": null
+        },
+        {
+          "norm": 0.25,
+          "display": "2.25",
+          "bandwidth_oct_at_6db": 2.624,
+          "bandwidth_oct_at_3db": null
+        },
+        {
+          "norm": 0.5,
+          "display": "1.50",
+          "bandwidth_oct_at_6db": 2.788,
+          "bandwidth_oct_at_3db": null
+        },
+        {
+          "norm": 0.75,
+          "display": "0.88",
+          "bandwidth_oct_at_6db": 3.656,
+          "bandwidth_oct_at_3db": null
+        },
+        {
+          "norm": 1.0,
+          "display": "0.10",
+          "bandwidth_oct_at_6db": 4.439,
+          "bandwidth_oct_at_3db": null
+        }
+      ],
+      "level_dependent_db": 0.0,
+      "acceptance": [
+        {
+          "target_db": 3.0,
+          "target_hz": 1257.799999999999955,
+          "written": {
+            "gain_norm": 0.581913650035858,
+            "gain_display": "0.00 .. 6.67",
+            "promised_db": 3.0,
+            "freq_norm": 0.307966113090515,
+            "freq_display": "1.03 .. 1.42"
+          },
+          "ran": true,
+          "measured_gain_db": 3.98,
+          "measured_figure_hz": 1265.099999999999909,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.98,
+          "figure_off_pct": 0.6,
+          "pass": false,
+          "why": "gain MISSES by 0.98 dB; figure 1265.14 Hz is 0.6 % off the target"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 1257.799999999999955,
+          "written": {
+            "gain_norm": 0.413718551397324,
+            "gain_display": "-6.67 .. 0.00",
+            "promised_db": -3.0,
+            "freq_norm": 0.307966113090515,
+            "freq_display": "1.03 .. 1.42"
+          },
+          "ran": true,
+          "measured_gain_db": -2.7,
+          "measured_figure_hz": 1261.0,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.3,
+          "figure_off_pct": 0.3,
+          "pass": true,
+          "why": "gain within 0.30 dB; figure 1261.02 Hz is 0.3 % off the target"
+        },
+        {
+          "target_db": 3.0,
+          "target_hz": 2508.5,
+          "written": {
+            "gain_norm": 0.581913650035858,
+            "gain_display": "0.00 .. 6.67",
+            "promised_db": 3.0,
+            "freq_norm": 0.469490230083466,
+            "freq_display": "2.17 .. 3.00"
+          },
+          "ran": true,
+          "measured_gain_db": 3.67,
+          "measured_figure_hz": 2522.5,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.67,
+          "figure_off_pct": 0.6,
+          "pass": false,
+          "why": "gain MISSES by 0.67 dB; figure 2522.51 Hz is 0.6 % off the target"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 2508.5,
+          "written": {
+            "gain_norm": 0.413718551397324,
+            "gain_display": "-6.67 .. 0.00",
+            "promised_db": -3.0,
+            "freq_norm": 0.469490230083466,
+            "freq_display": "2.17 .. 3.00"
+          },
+          "ran": true,
+          "measured_gain_db": -2.58,
+          "measured_figure_hz": 2501.5,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.42,
+          "figure_off_pct": -0.3,
+          "pass": true,
+          "why": "gain within 0.42 dB; figure 2501.51 Hz is -0.3 % off the target"
+        }
+      ]
+    },
+    {
+      "name": "LF",
+      "shape": "low_shelf",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "LF Gain",
+      "freq_control": "LF Frq",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-17.00",
+          "gain_db": -18.920000000000002
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-11.33",
+          "gain_db": -8.08
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-5.67",
+          "gain_db": -3.31
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "5.67",
+          "gain_db": 3.52
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "11.33",
+          "gain_db": 13.44
+        },
+        {
+          "norm": 1.0,
+          "display": "17.00",
+          "gain_db": 18.539999999999999
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "30",
+          "corner_hz": 124.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "47",
+          "corner_hz": 164.800000000000011
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "94",
+          "corner_hz": 373.699999999999989
+        },
+        {
+          "norm": 0.5,
+          "display": "200",
+          "corner_hz": 521.5
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "307",
+          "corner_hz": 645.799999999999955
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "379",
+          "corner_hz": 744.5
+        },
+        {
+          "norm": 1.0,
+          "display": "450",
+          "corner_hz": 846.0
+        },
+        {
+          "norm": 0.416667014360428,
+          "display": "144",
+          "corner_hz": 463.399999999999977
+        },
+        {
+          "norm": 0.083333000540733,
+          "display": "38",
+          "corner_hz": 141.900000000000006
+        },
+        {
+          "norm": 0.583333015441895,
+          "display": "256",
+          "corner_hz": 584.0
+        },
+        {
+          "norm": 0.916666984558105,
+          "display": "414",
+          "corner_hz": 794.0
+        },
+        {
+          "norm": 0.75,
+          "display": "343",
+          "corner_hz": 694.5
+        },
+        {
+          "norm": 0.25,
+          "display": "67",
+          "corner_hz": 230.300000000000011
+        },
+        {
+          "norm": 0.208333000540733,
+          "display": "53",
+          "corner_hz": 182.099999999999994
+        },
+        {
+          "norm": 0.291667014360428,
+          "display": "81",
+          "corner_hz": 293.899999999999977
+        },
+        {
+          "norm": 0.229166999459267,
+          "display": "60",
+          "corner_hz": 204.599999999999994
+        },
+        {
+          "norm": 0.1875,
+          "display": "49",
+          "corner_hz": 170.400000000000006
+        }
+      ],
+      "q_map": [],
+      "level_dependent_db": 0.0,
+      "acceptance": [
+        {
+          "target_db": 3.0,
+          "target_hz": 235.199999999999989,
+          "written": {
+            "gain_norm": 0.642247796058655,
+            "gain_display": "0.00 .. 5.67",
+            "promised_db": 3.0,
+            "freq_norm": 0.253618240356445,
+            "freq_display": "67 .. 81"
+          },
+          "ran": true,
+          "measured_gain_db": 3.08,
+          "measured_figure_hz": 237.599999999999994,
+          "measured_shape": "low_shelf",
+          "gain_miss_db": 0.08,
+          "figure_off_pct": 1.0,
+          "pass": true,
+          "why": "gain within 0.08 dB; figure 237.58 Hz is 1.0 % off the target"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 235.199999999999989,
+          "written": {
+            "gain_norm": 0.348713755607605,
+            "gain_display": "-5.67 .. 0.00",
+            "promised_db": -3.0,
+            "freq_norm": 0.253618240356445,
+            "freq_display": "67 .. 81"
+          },
+          "ran": true,
+          "measured_gain_db": -2.94,
+          "measured_figure_hz": 283.300000000000011,
+          "measured_shape": "low_shelf",
+          "gain_miss_db": 0.06,
+          "figure_off_pct": 20.399999999999999,
+          "pass": false,
+          "why": "gain within 0.06 dB; figure 283.262 Hz is 20.4 % off the target (over the bar)"
+        },
+        {
+          "target_db": 3.0,
+          "target_hz": 446.100000000000023,
+          "written": {
+            "gain_norm": 0.642247796058655,
+            "gain_display": "0.00 .. 5.67",
+            "promised_db": 3.0,
+            "freq_norm": 0.401951164007187,
+            "freq_display": "94 .. 144"
+          },
+          "ran": true,
+          "measured_gain_db": 3.09,
+          "measured_figure_hz": 457.600000000000023,
+          "measured_shape": "low_shelf",
+          "gain_miss_db": 0.09,
+          "figure_off_pct": 2.6,
+          "pass": true,
+          "why": "gain within 0.09 dB; figure 457.554 Hz is 2.6 % off the target"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 446.100000000000023,
+          "written": {
+            "gain_norm": 0.348713755607605,
+            "gain_display": "-5.67 .. 0.00",
+            "promised_db": -3.0,
+            "freq_norm": 0.401951164007187,
+            "freq_display": "94 .. 144"
+          },
+          "ran": true,
+          "measured_gain_db": -2.94,
+          "measured_figure_hz": 483.300000000000011,
+          "measured_shape": "low_shelf",
+          "gain_miss_db": 0.06,
+          "figure_off_pct": 8.300000000000001,
+          "pass": false,
+          "why": "gain within 0.06 dB; figure 483.321 Hz is 8.3 % off the target (over the bar)"
+        }
+      ]
+    },
+    {
+      "name": "LMF",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "LMF Gain",
+      "freq_control": "LMF Frq",
+      "q_control": "LMF Q",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-20.00",
+          "gain_db": -21.34
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-13.33",
+          "gain_db": -11.35
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-6.67",
+          "gain_db": -5.76
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "6.67",
+          "gain_db": 8.07
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "13.33",
+          "gain_db": 16.699999999999999
+        },
+        {
+          "norm": 1.0,
+          "display": "20.00",
+          "gain_db": 21.469999999999999
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "0.20",
+          "centre_hz": 203.900000000000006
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "0.28",
+          "centre_hz": 273.300000000000011
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "0.74",
+          "centre_hz": 673.200000000000045
+        },
+        {
+          "norm": 0.5,
+          "display": "1.00",
+          "centre_hz": 898.799999999999955
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.56",
+          "centre_hz": 1173.200000000000045
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "2.08",
+          "centre_hz": 1427.599999999999909
+        },
+        {
+          "norm": 1.0,
+          "display": "2.50",
+          "centre_hz": 1632.299999999999955
+        },
+        {
+          "norm": 0.416667014360428,
+          "display": "0.89",
+          "centre_hz": 803.700000000000045
+        },
+        {
+          "norm": 0.083333000540733,
+          "display": "0.24",
+          "centre_hz": 238.5
+        },
+        {
+          "norm": 0.583333015441895,
+          "display": "1.28",
+          "centre_hz": 1036.0
+        },
+        {
+          "norm": 0.916666984558105,
+          "display": "2.29",
+          "centre_hz": 1530.700000000000045
+        },
+        {
+          "norm": 0.75,
+          "display": "1.83",
+          "centre_hz": 1305.799999999999955
+        },
+        {
+          "norm": 0.25,
+          "display": "0.47",
+          "centre_hz": 438.399999999999977
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "3.50",
+          "bandwidth_oct_at_6db": 1.92,
+          "bandwidth_oct_at_3db": null
+        },
+        {
+          "norm": 0.25,
+          "display": "2.25",
+          "bandwidth_oct_at_6db": 2.174,
+          "bandwidth_oct_at_3db": null
+        },
+        {
+          "norm": 0.5,
+          "display": "1.50",
+          "bandwidth_oct_at_6db": 2.319,
+          "bandwidth_oct_at_3db": null
+        },
+        {
+          "norm": 0.75,
+          "display": "0.88",
+          "bandwidth_oct_at_6db": 3.23,
+          "bandwidth_oct_at_3db": null
+        },
+        {
+          "norm": 1.0,
+          "display": "0.10",
+          "bandwidth_oct_at_6db": 4.095,
+          "bandwidth_oct_at_3db": null
+        }
+      ],
+      "level_dependent_db": 0.0,
+      "acceptance": [
+        {
+          "target_db": 3.0,
+          "target_hz": 407.899999999999977,
+          "written": {
+            "gain_norm": 0.561965644359589,
+            "gain_display": "0.00 .. 6.67",
+            "promised_db": 3.0,
+            "freq_norm": 0.2373066842556,
+            "freq_display": "0.28 .. 0.47"
+          },
+          "ran": true,
+          "measured_gain_db": 3.98,
+          "measured_figure_hz": 395.399999999999977,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.98,
+          "figure_off_pct": -3.1,
+          "pass": false,
+          "why": "gain MISSES by 0.98 dB; figure 395.409 Hz is -3.1 % off the target"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 407.899999999999977,
+          "written": {
+            "gain_norm": 0.413224399089813,
+            "gain_display": "-6.67 .. 0.00",
+            "promised_db": -3.0,
+            "freq_norm": 0.2373066842556,
+            "freq_display": "0.28 .. 0.47"
+          },
+          "ran": true,
+          "measured_gain_db": -2.55,
+          "measured_figure_hz": 395.399999999999977,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.45,
+          "figure_off_pct": -3.1,
+          "pass": true,
+          "why": "gain within 0.45 dB; figure 395.409 Hz is -3.1 % off the target"
+        },
+        {
+          "target_db": 3.0,
+          "target_hz": 816.0,
+          "written": {
+            "gain_norm": 0.561965644359589,
+            "gain_display": "0.00 .. 6.67",
+            "promised_db": 3.0,
+            "freq_norm": 0.427954107522964,
+            "freq_display": "0.89 .. 1.00"
+          },
+          "ran": true,
+          "measured_gain_db": 3.59,
+          "measured_figure_hz": 813.299999999999955,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.59,
+          "figure_off_pct": -0.3,
+          "pass": false,
+          "why": "gain MISSES by 0.59 dB; figure 813.322 Hz is -0.3 % off the target"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 816.0,
+          "written": {
+            "gain_norm": 0.413224399089813,
+            "gain_display": "-6.67 .. 0.00",
+            "promised_db": -3.0,
+            "freq_norm": 0.427954107522964,
+            "freq_display": "0.89 .. 1.00"
+          },
+          "ran": true,
+          "measured_gain_db": -2.38,
+          "measured_figure_hz": 816.600000000000023,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.62,
+          "figure_off_pct": 0.1,
+          "pass": false,
+          "why": "gain MISSES by 0.62 dB; figure 816.622 Hz is 0.1 % off the target"
+        }
+      ]
+    }
+  ],
+  "default_bands": {
+    "low": "LF",
+    "low_mid": "LF",
+    "high_mid": "HMF",
+    "high": "HMF"
+  },
+  "neutral": [
+    {
+      "control": "HP On/Off",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "LMF Div3",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "HMF Mul3",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "Gain",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "HP Frq",
+      "set": "16",
+      "norm": 0.0
+    },
+    {
+      "control": "Analog",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ IN",
+      "set": "In",
+      "norm": 1.0
+    },
+    {
+      "control": "Phase Rev",
+      "set": "+",
+      "norm": 0.0
+    }
+  ],
+  "notes": [
+    "Band 'HF': 2 of 4 acceptance write(s) failed (section 7): listed on the band",
+    "Band 'HMF': 2 of 4 acceptance write(s) failed (section 7): listed on the band",
+    "Band 'LF': 2 of 4 acceptance write(s) failed (section 7): listed on the band",
+    "Band 'LMF': 3 of 4 acceptance write(s) failed (section 7): listed on the band"
+  ]
+}

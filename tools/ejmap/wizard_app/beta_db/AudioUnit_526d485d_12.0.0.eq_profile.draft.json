@@ -1,0 +1,2234 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "Ozone 12 Equalizer",
+    "manufacturer": "iZotope",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|526d485d|12.0.0",
+    "version": "12.0.0",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-09",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "EQ: Aux 1",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Aux Gain 1",
+      "freq_control": "EQ: Aux Frequency 1",
+      "q_control": "EQ: Aux Q 1",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Aux 2",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Aux Gain 2",
+      "freq_control": "EQ: Aux Frequency 2",
+      "q_control": "EQ: Aux Q 2",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Aux 3",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Aux Gain 3",
+      "freq_control": "EQ: Aux Frequency 3",
+      "q_control": "EQ: Aux Q 3",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Aux 4",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Aux Gain 4",
+      "freq_control": "EQ: Aux Frequency 4",
+      "q_control": "EQ: Aux Q 4",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Aux 5",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Aux Gain 5",
+      "freq_control": "EQ: Aux Frequency 5",
+      "q_control": "EQ: Aux Q 5",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Aux 6",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Aux Gain 6",
+      "freq_control": "EQ: Aux Frequency 6",
+      "q_control": "EQ: Aux Q 6",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Aux 7",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Aux Gain 7",
+      "freq_control": "EQ: Aux Frequency 7",
+      "q_control": "EQ: Aux Q 7",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Aux 8",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Aux Gain 8",
+      "freq_control": "EQ: Aux Frequency 8",
+      "q_control": "EQ: Aux Q 8",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Stereo Main 1",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Stereo/Main Gain 1",
+      "freq_control": "EQ: Stereo/Main Frequency 1",
+      "q_control": "EQ: Stereo/Main Q 1",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Stereo Main 2",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Stereo/Main Gain 2",
+      "freq_control": "EQ: Stereo/Main Frequency 2",
+      "q_control": "EQ: Stereo/Main Q 2",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Stereo Main 3",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Stereo/Main Gain 3",
+      "freq_control": "EQ: Stereo/Main Frequency 3",
+      "q_control": "EQ: Stereo/Main Q 3",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Stereo Main 4",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Stereo/Main Gain 4",
+      "freq_control": "EQ: Stereo/Main Frequency 4",
+      "q_control": "EQ: Stereo/Main Q 4",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Stereo Main 5",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Stereo/Main Gain 5",
+      "freq_control": "EQ: Stereo/Main Frequency 5",
+      "q_control": "EQ: Stereo/Main Q 5",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Stereo Main 6",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Stereo/Main Gain 6",
+      "freq_control": "EQ: Stereo/Main Frequency 6",
+      "q_control": "EQ: Stereo/Main Q 6",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Stereo Main 7",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Stereo/Main Gain 7",
+      "freq_control": "EQ: Stereo/Main Frequency 7",
+      "q_control": "EQ: Stereo/Main Q 7",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "EQ: Stereo Main 8",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ: Stereo/Main Gain 8",
+      "freq_control": "EQ: Stereo/Main Frequency 8",
+      "q_control": "EQ: Stereo/Main Q 8",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-30",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-22.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-15",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "-7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1.43051e-05",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "7.49999",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "15",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "3350.01",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "6679.99",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "10010",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "13340",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "16670",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "0.2",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "3.15",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "6.1",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.75,
+          "display": "9.05",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "GAIN: Input L (Locked)",
+      "set": "-3.57628e-06",
+      "norm": 0.935065
+    },
+    {
+      "control": "GAIN: Input L (Unlocked)",
+      "set": "-3.57628e-06",
+      "norm": 0.935065
+    },
+    {
+      "control": "GAIN: Input R (Unlocked)",
+      "set": "-3.57628e-06",
+      "norm": 0.935065
+    },
+    {
+      "control": "GAIN: Output L (Locked)",
+      "set": "-3.57628e-06",
+      "norm": 0.935065
+    },
+    {
+      "control": "GAIN: Output L (Unlocked)",
+      "set": "-3.57628e-06",
+      "norm": 0.935065
+    },
+    {
+      "control": "GAIN: Output R (Unlocked)",
+      "set": "-3.57628e-06",
+      "norm": 0.935065
+    },
+    {
+      "control": "Global Bypass",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Bypass",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Global Amount",
+      "set": "100",
+      "norm": 0.5
+    },
+    {
+      "control": "EQ: Stereo/Main Phase 1",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Stereo/Main Phase 2",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Stereo/Main Phase 3",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Stereo/Main Phase 4",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Stereo/Main Phase 5",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Stereo/Main Phase 6",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Stereo/Main Phase 7",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Stereo/Main Phase 8",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Stereo/Main Enable 1",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Stereo/Main Enable 2",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Stereo/Main Enable 3",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Stereo/Main Enable 4",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Stereo/Main Enable 5",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Stereo/Main Enable 6",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Stereo/Main Enable 7",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Stereo/Main Enable 8",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Stereo/Main Bypass",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Aux Phase 1",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Aux Phase 2",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Aux Phase 3",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Aux Phase 4",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Aux Phase 5",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Aux Phase 6",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Aux Phase 7",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Aux Phase 8",
+      "set": "0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ: Aux Enable 1",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Aux Enable 2",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Aux Enable 3",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Aux Enable 4",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Aux Enable 5",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Aux Enable 6",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Aux Enable 7",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Aux Enable 8",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ: Aux Bypass",
+      "set": "Off",
+      "norm": 0.0
+    }
+  ],
+  "notes": [
+    "Band 'EQ: Aux 1': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Aux 2': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Aux 3': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Aux 4': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Aux 5': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Aux 6': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Aux 7': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Aux 8': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Stereo Main 1': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Stereo Main 2': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Stereo Main 3': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Stereo Main 4': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Stereo Main 5': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Stereo Main 6': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Stereo Main 7': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'EQ: Stereo Main 8': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

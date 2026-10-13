@@ -1,0 +1,368 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "UAD Manley Massive Passive MST",
+    "manufacturer": "Universal Audio",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|73196669|11.8.0",
+    "version": "11.8.0",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-12",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "measured [20] Ch1LoPass",
+      "shape": "high_shelf",
+      "verdict": "stepped",
+      "reason": "frequency or gain only at detents",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Ch1LoPass",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "OFF",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "52 kHz",
+          "gain_db": -0.68
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "40 kHz",
+          "gain_db": -1.31
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "27 kHz",
+          "gain_db": -1.34
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "20 kHz",
+          "gain_db": -7.88
+        },
+        {
+          "norm": 1.0,
+          "display": "15 kHz",
+          "gain_db": -16.350000000000001
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [21] Ch1HiPass",
+      "shape": "low_shelf",
+      "verdict": "not_static",
+      "reason": "the gain sweep reads 36.0 dB at a position: this control moves something other than gain",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Ch1HiPass",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "OFF",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "12 Hz",
+          "gain_db": -7.45
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "16 Hz",
+          "gain_db": -15.1
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "23 Hz",
+          "gain_db": -25.579999999999998
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "30 Hz",
+          "gain_db": -31.829999999999998
+        },
+        {
+          "norm": 1.0,
+          "display": "39 Hz",
+          "gain_db": -35.960000000000001
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "Ch1LoEnable",
+      "set": "OUT",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch1LoShape",
+      "set": "SHELF",
+      "norm": 1.0
+    },
+    {
+      "control": "Ch1LoGain",
+      "set": "0.00 dB",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch1LoBW",
+      "set": "1.00",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch1LoFreq",
+      "set": "150 Hz",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch1LoMidEnable",
+      "set": "OUT",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch1LoMidShape",
+      "set": "BELL",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch1LoMidGain",
+      "set": "0.00 dB",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch1LoMidBW",
+      "set": "1.00",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch1LoMidFreq",
+      "set": "560 Hz",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch1HiMidEnable",
+      "set": "OUT",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch1HiMidShape",
+      "set": "BELL",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch1HiMidGain",
+      "set": "0.00 dB",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch1HiMidBW",
+      "set": "1.00",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch1HiMidFreq",
+      "set": "1.5 kHz",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch1HiEnable",
+      "set": "OUT",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch1HiShape",
+      "set": "SHELF",
+      "norm": 1.0
+    },
+    {
+      "control": "Ch1HiGain",
+      "set": "0.00 dB",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch1HiBW",
+      "set": "1.00",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch1HiFreq",
+      "set": "3.9 kHz",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch1GAIN",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch1ENABLE",
+      "set": "IN",
+      "norm": 1.0
+    },
+    {
+      "control": "Ch2LoEnable",
+      "set": "BOOST",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch2LoShape",
+      "set": "SHELF",
+      "norm": 1.0
+    },
+    {
+      "control": "Ch2LoGain",
+      "set": "11.00 dB",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch2LoBW",
+      "set": "3.00",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch2LoFreq",
+      "set": "1 kHz",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch2LoMidEnable",
+      "set": "BOOST",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch2LoMidShape",
+      "set": "SHELF",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch2LoMidGain",
+      "set": "11.00 dB",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch2LoMidBW",
+      "set": "3.00",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch2LoMidFreq",
+      "set": "3.9 kHz",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch2HiMidEnable",
+      "set": "BOOST",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch2HiMidShape",
+      "set": "SHELF",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch2HiMidGain",
+      "set": "11.00 dB",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch2HiMidBW",
+      "set": "3.00",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch2HiMidFreq",
+      "set": "10 kHz",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch2HiEnable",
+      "set": "BOOST",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch2HiShape",
+      "set": "SHELF",
+      "norm": 1.0
+    },
+    {
+      "control": "Ch2HiGain",
+      "set": "11.00 dB",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch2HiBW",
+      "set": "3.00",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch2HiFreq",
+      "set": "27 kHz",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch2LoPass",
+      "set": "15 kHz",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch2HiPass",
+      "set": "39 Hz",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch2GAIN",
+      "set": "2.50 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "Ch2ENABLE",
+      "set": "IN",
+      "norm": 1.0
+    },
+    {
+      "control": "CtrlLink",
+      "set": "LINKED",
+      "norm": 1.0
+    },
+    {
+      "control": "Power",
+      "set": "ON",
+      "norm": 1.0
+    }
+  ],
+  "notes": [
+    "Band 'measured [21] Ch1HiPass': not_static (the gain sweep reads 36.0 dB at a position: this control moves something other than gain): not usable by the server",
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

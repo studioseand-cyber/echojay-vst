@@ -1,0 +1,631 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "Lindell TE-100",
+    "manufacturer": "Plugin Alliance",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|77426031|1.1.3",
+    "version": "1.1.3",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-09",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "High",
+      "shape": "high_shelf",
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "High Boost Gain",
+      "freq_control": "High Boost Freq",
+      "q_control": "High Boost Slope",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.025000000372529,
+          "display": "0.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.050000000745058,
+          "display": "1.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.075000002980232,
+          "display": "1.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.100000001490116,
+          "display": "2.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.125,
+          "display": "2.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.150000005960464,
+          "display": "3.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.174999997019768,
+          "display": "3.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "4.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.224999994039536,
+          "display": "4.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.25,
+          "display": "5.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.275000005960464,
+          "display": "5.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.300000011920929,
+          "display": "6.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.324999988079071,
+          "display": "6.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.349999994039536,
+          "display": "7.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.375,
+          "display": "7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "8.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.425000011920929,
+          "display": "8.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.449999988079071,
+          "display": "9.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.474999994039536,
+          "display": "9.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "10.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.524999976158142,
+          "display": "10.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.550000011920929,
+          "display": "11.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.574999988079071,
+          "display": "11.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "12.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.625,
+          "display": "12.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.649999976158142,
+          "display": "13.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.675000011920929,
+          "display": "13.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.699999988079071,
+          "display": "14.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.725000023841858,
+          "display": "14.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.75,
+          "display": "15.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.774999976158142,
+          "display": "15.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "16.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.824999988079071,
+          "display": "16.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.850000023841858,
+          "display": "17.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.875,
+          "display": "17.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.899999976158142,
+          "display": "18.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.925000011920929,
+          "display": "18.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.949999988079071,
+          "display": "19.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.975000023841858,
+          "display": "19.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "20.0",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "2.5kHz",
+          "corner_hz": 3877.0
+        },
+        {
+          "norm": 0.25,
+          "display": "4kHz",
+          "corner_hz": 5814.399999999999636
+        },
+        {
+          "norm": 0.5,
+          "display": "6.5kHz",
+          "corner_hz": 8287.0
+        },
+        {
+          "norm": 0.75,
+          "display": "10kHz",
+          "corner_hz": 15.1
+        },
+        {
+          "norm": 1.0,
+          "display": "Lin",
+          "why": "the largest deviation is 0.01 dB"
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "6",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is -0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.01 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "Low",
+      "shape": "low_shelf",
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Low Boost Gain",
+      "freq_control": "Low Boost Freq",
+      "q_control": "Low Boost Slope",
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.025000000372529,
+          "display": "0.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.050000000745058,
+          "display": "1.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.075000002980232,
+          "display": "1.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.100000001490116,
+          "display": "2.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.125,
+          "display": "2.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.150000005960464,
+          "display": "3.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.174999997019768,
+          "display": "3.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "4.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.224999994039536,
+          "display": "4.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.25,
+          "display": "5.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.275000005960464,
+          "display": "5.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.300000011920929,
+          "display": "6.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.324999988079071,
+          "display": "6.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.349999994039536,
+          "display": "7.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.375,
+          "display": "7.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "8.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.425000011920929,
+          "display": "8.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.449999988079071,
+          "display": "9.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.474999994039536,
+          "display": "9.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "10.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.524999976158142,
+          "display": "10.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.550000011920929,
+          "display": "11.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.574999988079071,
+          "display": "11.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "12.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.625,
+          "display": "12.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.649999976158142,
+          "display": "13.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.675000011920929,
+          "display": "13.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.699999988079071,
+          "display": "14.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.725000023841858,
+          "display": "14.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.75,
+          "display": "15.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.774999976158142,
+          "display": "15.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "16.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.824999988079071,
+          "display": "16.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.850000023841858,
+          "display": "17.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.875,
+          "display": "17.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.899999976158142,
+          "display": "18.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.925000011920929,
+          "display": "18.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.949999988079071,
+          "display": "19.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.975000023841858,
+          "display": "19.5",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "20.0",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "Lin",
+          "why": "the largest deviation is -0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "85Hz",
+          "corner_hz": 71.200000000000003
+        },
+        {
+          "norm": 0.5,
+          "display": "170Hz",
+          "corner_hz": 127.599999999999994
+        },
+        {
+          "norm": 0.75,
+          "display": "340Hz",
+          "centre_hz": 41.600000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "680Hz",
+          "centre_hz": 63.0
+        }
+      ],
+      "q_map": [
+        {
+          "norm": 0.0,
+          "display": "6",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "12",
+          "bandwidth_oct_at_6db": null,
+          "bandwidth_oct_at_3db": null,
+          "why": "the largest deviation is 0.01 dB"
+        }
+      ],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "Low Atten. Gain",
+      "set": "0.0",
+      "norm": 1.0
+    },
+    {
+      "control": "Low Band Lower Freq",
+      "set": "60Hz",
+      "norm": 0.0
+    },
+    {
+      "control": "Low Band Upper Freq",
+      "set": "300Hz",
+      "norm": 0.0
+    },
+    {
+      "control": "Low Band Mode",
+      "set": "Lin",
+      "norm": 0.5
+    },
+    {
+      "control": "Low Band Gain",
+      "set": "0.0",
+      "norm": 0.0
+    },
+    {
+      "control": "High Band Lower Freq",
+      "set": "600Hz",
+      "norm": 0.0
+    },
+    {
+      "control": "High Band Upper Freq",
+      "set": "2.4kHz",
+      "norm": 0.0
+    },
+    {
+      "control": "High Band Mode",
+      "set": "Lin",
+      "norm": 0.5
+    },
+    {
+      "control": "High Band Gain",
+      "set": "0.0",
+      "norm": 0.0
+    },
+    {
+      "control": "High Atten. Gain",
+      "set": "0.0",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ",
+      "set": "In",
+      "norm": 1.0
+    },
+    {
+      "control": "In",
+      "set": "In",
+      "norm": 1.0
+    },
+    {
+      "control": "In Level",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "Out Level",
+      "set": "0.0",
+      "norm": 0.5
+    }
+  ],
+  "notes": [
+    "Band 'High': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'Low': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

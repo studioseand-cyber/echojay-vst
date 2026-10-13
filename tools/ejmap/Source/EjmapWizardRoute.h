@@ -78,6 +78,25 @@ inline const std::set<juce::String>& knownMultibandUids()
     return k;
 }
 inline bool isKnownMultiband (const juce::String& uid) { return knownMultibandUids().count (uid.toLowerCase()) > 0; }
+// the database's multiband list (13 Oct, the beta snapshot: <db>/multiband.json {"uids": [...]}) - added to the built-in list, never replacing it
+inline std::set<juce::String> loadMultiband (const juce::File& db)
+{
+    std::set<juce::String> s; const auto v = juce::JSON::parse (db.getChildFile ("multiband.json").loadFileAsString());
+    if (const auto* a = v.getProperty ("uids", {}).getArray()) for (const auto& u : *a) s.insert (u.toString().toLowerCase());
+    return s;
+}
+inline bool isMultiband (const std::set<juce::String>& fromDb, const juce::String& uid) { return isKnownMultiband (uid) || fromDb.count (uid.toLowerCase()) > 0; }
+// THE PLAN (13 Oct): what the database step decides, in three words - skip (nothing loads), measure (queued, or rule B's quick read-back
+// first), sound-test (EJ Map's signature reads: test tones through the plugin to find its category); held / sent-other load for the map only
+inline juce::String planWord (Route r)
+{
+    switch (r) { case Route::skipHave: case Route::skipPending: case Route::outOfScope: return "skip";
+                 case Route::measure: case Route::quickCheck: return "measure";
+                 case Route::categorise: return "sound_test";
+                 case Route::held: case Route::sendOther: return "map_only";
+                 case Route::needsCategory: return "needs_category"; }
+    return {};
+}
 // ALL CATEGORIES (12 Oct): the EJ Map Phase B categories that measure a category - the same modes, outcomes, acceptance and serial lane
 // as the certification. A limiter is measured twice: the limiter mode and the compressor certification (limiter_comp, Kathy 10 Oct).
 inline juce::StringArray phaseBFor (const juce::String& c)

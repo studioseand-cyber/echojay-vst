@@ -1,0 +1,208 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "bx_dynEQ V2 Mono",
+    "manufacturer": "Plugin Alliance",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|4776236d|2.16.1",
+    "version": "2.16.1",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-09",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "EQ",
+      "shape": null,
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ Boost/Cut",
+      "freq_control": "EQ Frequency",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "boost",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "cut",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "20 Hz",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "63 Hz",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "200 Hz",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.5,
+          "display": "632 Hz",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "2000 Hz",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "6325 Hz",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 1.0,
+          "display": "20000 Hz",
+          "why": "the largest deviation is 0.00 dB"
+        }
+      ],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "Master Bypass",
+      "set": "off",
+      "norm": 0.0
+    },
+    {
+      "control": "Preset",
+      "set": "dynEQ",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ Bypass",
+      "set": "off",
+      "norm": 0.0
+    },
+    {
+      "control": "In Gain",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "Out Gain",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "EQ Attack",
+      "set": "0.05 ms",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ Release",
+      "set": "50 ms",
+      "norm": 0.032688
+    },
+    {
+      "control": "EQ Threshold",
+      "set": "off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ Key Fq",
+      "set": "222 Hz",
+      "norm": 0.348441
+    },
+    {
+      "control": "EQ Type",
+      "set": "Peak 0.7",
+      "norm": 0.347826
+    },
+    {
+      "control": "EQ Key Type",
+      "set": "Peak 0.7",
+      "norm": 0.347826
+    },
+    {
+      "control": "EQ Factor",
+      "set": "0.5",
+      "norm": 0.222222
+    },
+    {
+      "control": "EQ Max. Gain",
+      "set": "8.0 dB",
+      "norm": 0.658333
+    },
+    {
+      "control": "EQ Key Solo",
+      "set": "off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ Noise Solo",
+      "set": "off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ Link Frequencies",
+      "set": "on",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ Link Types",
+      "set": "on",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ Sidechain",
+      "set": "Int",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ Inverse Mode",
+      "set": "off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQ Max. Gain X2",
+      "set": "off",
+      "norm": 0.0
+    },
+    {
+      "control": "Input",
+      "set": "-oo dB",
+      "norm": 0.0
+    },
+    {
+      "control": "Output",
+      "set": "-oo dB",
+      "norm": 0.0
+    }
+  ],
+  "notes": [
+    "Band 'EQ': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

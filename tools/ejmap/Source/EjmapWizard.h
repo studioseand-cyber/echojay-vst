@@ -25,8 +25,10 @@ namespace ejmap::wizard
 {
 
 // ---------------------------------------------------------------- the mock database
-struct DbEntry { juce::var profile, tonecheck; juce::String file; juce::String uid() const; juce::String version() const; juce::String mapFp() const;
-                 juce::String category() const { return profile.getProperty ("schema", "").toString().startsWith ("ej_eq_profile") ? "eq" : "compressor"; } };
+// indexOnly (13 Oct, the beta snapshot): an "already mapped" entry from <db>/mapped.json - another category's measured Phase B draft, by
+// plugin id + version + map fp (when known) and its category, without the draft itself: it can answer rule A, never rule B (no writes)
+struct DbEntry { juce::var profile, tonecheck; juce::String file, cat; bool indexOnly = false; juce::String uid() const; juce::String version() const; juce::String mapFp() const;
+                 juce::String category() const { if (cat.isNotEmpty()) return cat; return profile.getProperty ("schema", "").toString().startsWith ("ej_eq_profile") ? "eq" : "compressor"; } };
 inline juce::String uidOfPluginId (const juce::String& pid) { return pid.fromFirstOccurrenceOf ("|", false, false).upToFirstOccurrenceOf ("|", false, false).toLowerCase(); }
 inline juce::String DbEntry::uid() const { return uidOfPluginId (profile.getProperty ("plugin", {}).getProperty ("plugin_id", "").toString()); }
 inline juce::String DbEntry::version() const { return profile.getProperty ("plugin", {}).getProperty ("version", "").toString(); }
@@ -43,6 +45,17 @@ inline std::vector<DbEntry> loadDb (const juce::File& folder)
         const auto tc = f.getSiblingFile (f.getFileNameWithoutExtension() + ".tonecheck.json"); if (tc.existsAsFile()) e.tonecheck = juce::JSON::parse (tc.loadFileAsString());
         db.push_back (e);
     }
+    // <db>/mapped.json (ej_wizard_mapped/1): {"entries": [{"plugin_id", "version", "map_fp" (or null), "category", ...}]}
+    const auto m = juce::JSON::parse (folder.getChildFile ("mapped.json").loadFileAsString());
+    if (const auto* a = m.getProperty ("entries", {}).getArray())
+        for (const auto& x : *a)
+        {
+            DbEntry e; e.indexOnly = true; e.file = "mapped.json"; e.cat = x.getProperty ("category", "").toString();
+            auto* pl = new juce::DynamicObject(); pl->setProperty ("plugin_id", x.getProperty ("plugin_id", "")); pl->setProperty ("version", x.getProperty ("version", ""));
+            pl->setProperty ("map_fp", x.getProperty ("map_fp", {}).isString() ? x.getProperty ("map_fp", "") : juce::var ("")); pl->setProperty ("name", x.getProperty ("product", ""));
+            auto* pr = new juce::DynamicObject(); pr->setProperty ("plugin", juce::var (pl)); e.profile = juce::var (pr);
+            if (e.uid().isNotEmpty() && e.version().isNotEmpty()) db.push_back (e);
+        }
     return db;
 }
 
@@ -58,7 +71,7 @@ inline Lookup lookup (const std::vector<DbEntry>& db, const juce::String& uid, c
         const bool sameVersion = e.version() == version;
         const bool fpKnown = mapFp.isNotEmpty() && e.mapFp().isNotEmpty();
         if (sameVersion && (! fpKnown || e.mapFp() == mapFp)) { L.match = Match::exact; L.entry = &e; L.why = "the same plugin and version" + juce::String (fpKnown ? " and map" : ""); return L; }
-        if (other == nullptr) other = &e;
+        if (other == nullptr && ! e.indexOnly) other = &e;   // rule B checks a profile's writes: an index entry has none
     }
     if (other != nullptr) { L.match = Match::sameControls; L.entry = other; L.why = "a profile from version " + other->version() + (other->version() == version ? " (another map)" : "") + ": check its controls"; return L; }
     L.why = "no profile for this plugin yet"; return L;

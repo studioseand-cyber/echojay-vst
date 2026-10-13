@@ -1,0 +1,226 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "UAD Neve 1073 Legacy",
+    "manufacturer": "Universal Audio",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|75156669|11.8.0",
+    "version": "11.8.0",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-12",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "Lo",
+      "shape": "low_shelf",
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Lo Gain",
+      "freq_control": "Lo Freq",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-17.7 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-9.9 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.6 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.0 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.4 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "14.2 dB",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "Off",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.25,
+          "display": "35 Hz",
+          "corner_hz": 111.400000000000006
+        },
+        {
+          "norm": 0.5,
+          "display": "60 Hz",
+          "corner_hz": 173.199999999999989
+        },
+        {
+          "norm": 0.75,
+          "display": "110 Hz",
+          "corner_hz": 262.300000000000011
+        },
+        {
+          "norm": 1.0,
+          "display": "220 Hz",
+          "corner_hz": 423.699999999999989
+        }
+      ],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "Mid",
+      "shape": "peak",
+      "verdict": "flat",
+      "reason": "flat at every gain position (and no switch the engage search tried moved it)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Mid Gain",
+      "freq_control": "Mid Freq",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-18.1 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-9.0 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.0 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.1 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "9.3 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "19.2 dB",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "Off",
+          "why": "the largest deviation is 0.00 dB"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "0.36 kHz",
+          "centre_hz": 347.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "0.7 kHz",
+          "centre_hz": 720.5
+        },
+        {
+          "norm": 0.5,
+          "display": "1.6 kHz",
+          "centre_hz": 1540.5
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "3.2 kHz",
+          "centre_hz": 3171.599999999999909
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "4.8 kHz",
+          "centre_hz": 5065.199999999999818
+        },
+        {
+          "norm": 1.0,
+          "display": "7.2 kHz",
+          "centre_hz": 6940.5
+        }
+      ],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "Input Gain",
+      "set": "-0.2 dB",
+      "norm": 0.655884
+    },
+    {
+      "control": "Hi Gain",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "HP Filt",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Phase",
+      "set": "Normal",
+      "norm": 0.0
+    },
+    {
+      "control": "EQL",
+      "set": "In",
+      "norm": 1.0
+    }
+  ],
+  "notes": [
+    "Band 'Lo': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "Band 'Mid': flat (flat at every gain position (and no switch the engage search tried moved it)): not usable by the server",
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

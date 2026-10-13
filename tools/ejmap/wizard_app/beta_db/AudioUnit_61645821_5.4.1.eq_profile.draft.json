@@ -1,0 +1,217 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "Sie-Q",
+    "manufacturer": "Soundtoys",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|61645821|5.4.1",
+    "version": "5.4.1",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-09",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "Mid",
+      "shape": "peak",
+      "verdict": "stepped",
+      "reason": "frequency or gain only at detents",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Mid Gain",
+      "freq_control": "Mid Frequency",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-8.0 dB",
+          "gain_db": -8.050000000000001
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-5.3 dB",
+          "gain_db": -5.3
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-2.7 dB",
+          "gain_db": -2.75
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "2.7 dB",
+          "gain_db": 2.75
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "5.3 dB",
+          "gain_db": 5.45
+        },
+        {
+          "norm": 1.0,
+          "display": "8.0 dB",
+          "gain_db": 8.140000000000001
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "0.7 kHz",
+          "centre_hz": 714.100000000000023
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "1.0 kHz",
+          "centre_hz": 1014.700000000000045
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "1.5 kHz",
+          "centre_hz": 1516.700000000000045
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "2.3 kHz",
+          "centre_hz": 2289.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "3.5 kHz",
+          "centre_hz": 3552.400000000000091
+        },
+        {
+          "norm": 1.0,
+          "display": "5.6 kHz",
+          "centre_hz": 5568.600000000000364
+        }
+      ],
+      "q_map": [],
+      "level_dependent_db": 0.0,
+      "acceptance": [
+        {
+          "target_db": 3.0,
+          "target_hz": 1516.700000000000045,
+          "written": {
+            "gain_norm": 0.681986927986145,
+            "gain_display": "2.7 dB .. 5.3 dB",
+            "promised_db": 3.0,
+            "freq_norm": 0.400000005960464,
+            "freq_display": "1.5 kHz",
+            "detent_hz": 1516.700000000000045
+          },
+          "ran": true,
+          "measured_gain_db": 2.95,
+          "measured_figure_hz": 1564.0,
+          "measured_shape": "peak",
+          "gain_miss_db": -0.05,
+          "figure_off_pct": 3.1,
+          "pass": false,
+          "why": "gain within 0.05 dB; figure 1564.04 Hz is 3.1 % off the detent (over the bar)"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 1516.700000000000045,
+          "written": {
+            "gain_norm": 0.317136615514755,
+            "gain_display": "-5.3 dB .. -2.7 dB",
+            "promised_db": -3.0,
+            "freq_norm": 0.400000005960464,
+            "freq_display": "1.5 kHz",
+            "detent_hz": 1516.700000000000045
+          },
+          "ran": true,
+          "measured_gain_db": -2.85,
+          "measured_figure_hz": 1513.200000000000045,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.15,
+          "figure_off_pct": -0.2,
+          "pass": true,
+          "why": "gain within 0.15 dB; figure 1513.2 Hz is -0.2 % off the detent"
+        },
+        {
+          "target_db": 3.0,
+          "target_hz": 2289.0,
+          "written": {
+            "gain_norm": 0.681986927986145,
+            "gain_display": "2.7 dB .. 5.3 dB",
+            "promised_db": 3.0,
+            "freq_norm": 0.600000023841858,
+            "freq_display": "2.3 kHz",
+            "detent_hz": 2289.0
+          },
+          "ran": true,
+          "measured_gain_db": 3.0,
+          "measured_figure_hz": 2329.0,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.0,
+          "figure_off_pct": 1.7,
+          "pass": false,
+          "why": "gain within 0.00 dB; figure 2328.96 Hz is 1.7 % off the detent (over the bar)"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 2289.0,
+          "written": {
+            "gain_norm": 0.317136615514755,
+            "gain_display": "-5.3 dB .. -2.7 dB",
+            "promised_db": -3.0,
+            "freq_norm": 0.600000023841858,
+            "freq_display": "2.3 kHz",
+            "detent_hz": 2289.0
+          },
+          "ran": true,
+          "measured_gain_db": -2.95,
+          "measured_figure_hz": 2356.0,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.05,
+          "figure_off_pct": 2.9,
+          "pass": false,
+          "why": "gain within 0.05 dB; figure 2356 Hz is 2.9 % off the detent (over the bar)"
+        }
+      ]
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": "Mid",
+    "high_mid": "Mid",
+    "high": "Mid"
+  },
+  "neutral": [
+    {
+      "control": "Bypass",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Low Gain",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "High Gain",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "Drive",
+      "set": "0.0 dB",
+      "norm": 0.5
+    }
+  ],
+  "notes": [
+    "Band 'Mid': 3 of 4 acceptance write(s) failed (section 7): listed on the band",
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)"
+  ]
+}

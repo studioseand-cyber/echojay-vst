@@ -1,0 +1,983 @@
+{
+  "schema": "ej_comp_profile/1",
+  "plugin": {
+    "name": "CLA-2A (s)",
+    "manufacturer": "Waves",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|4647037d|15.0.70",
+    "version": "15.0.70",
+    "map_fp": "41be419e3e4e86ae650db2ae8ce875320406fae16cf93e40be79b0b4d7a15ceb"
+  },
+  "measured": {
+    "tool": "EJ Maps 0.1.0 (feat/ejmap-cert)",
+    "date": "2026-10-03",
+    "sample_rate": 48000,
+    "signal": "sine 997 Hz, stepped",
+    "level_ref": "sine_rms_dbfs",
+    "steps_dbfs": [
+      -63.009999999999998,
+      -3.01,
+      2.0
+    ],
+    "hold_ms": 2500,
+    "read_window_ms": 300,
+    "host": "out_of_process",
+    "reference_ratio": null,
+    "sidechain": "enabled_silent",
+    "extra_input_buses": []
+  },
+  "topology": "threshold",
+  "engage": [],
+  "never_touch": [],
+  "neutral": [
+    {
+      "control": "Gain",
+      "index": 0,
+      "set": "40.00",
+      "norm": 0.535,
+      "source": "instantiate"
+    },
+    {
+      "control": "Comp/Limiter",
+      "index": 2,
+      "set": "Comp",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Hi Freq",
+      "index": 3,
+      "set": "50.0",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "Analog",
+      "index": 4,
+      "set": "Off",
+      "norm": 1.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Mix",
+      "index": 6,
+      "set": "100.0",
+      "norm": 1.0,
+      "role": "from_trace",
+      "source": "precondition"
+    },
+    {
+      "control": "Trim",
+      "index": 7,
+      "set": "0.0",
+      "norm": 0.5,
+      "source": "instantiate"
+    }
+  ],
+  "amount": {
+    "control": "Peak Reduction",
+    "curve": [
+      {
+        "norm": 0.0,
+        "display": "0.00",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.066667,
+        "display": "14.48",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.133333,
+        "display": "24.20",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.2,
+        "display": "30.72",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.266667,
+        "display": "35.12",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.333333,
+        "display": "38.04",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.4,
+        "display": "40.00",
+        "eff_threshold_dbfs": -3.81,
+        "in_at_gr_dbfs": {
+          "1": -3.81,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.466667,
+        "display": "41.44",
+        "eff_threshold_dbfs": -6.61,
+        "in_at_gr_dbfs": {
+          "1": -6.61,
+          "2": -4.91,
+          "3": -3.51,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.5,
+        "display": "42.36",
+        "eff_threshold_dbfs": -8.41,
+        "in_at_gr_dbfs": {
+          "1": -8.41,
+          "2": -6.71,
+          "3": -5.31,
+          "4": -3.91,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.533333,
+        "display": "43.40",
+        "eff_threshold_dbfs": -10.41,
+        "in_at_gr_dbfs": {
+          "1": -10.41,
+          "2": -8.710000000000001,
+          "3": -7.31,
+          "4": -5.91,
+          "5": -4.61,
+          "6": -3.31,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.566666,
+        "display": "44.64",
+        "eff_threshold_dbfs": -12.81,
+        "in_at_gr_dbfs": {
+          "1": -12.81,
+          "2": -11.210000000000001,
+          "3": -9.81,
+          "4": -8.41,
+          "5": -7.01,
+          "6": -5.71,
+          "7": -4.41,
+          "8": -3.01,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.6,
+        "display": "46.00",
+        "eff_threshold_dbfs": -15.710000000000001,
+        "in_at_gr_dbfs": {
+          "1": -15.710000000000001,
+          "2": -14.01,
+          "3": -12.609999999999999,
+          "4": -11.210000000000001,
+          "5": -9.81,
+          "6": -8.51,
+          "7": -7.21,
+          "8": -5.81,
+          "9": -4.51,
+          "10": -3.11,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.622222,
+        "display": "47.16",
+        "eff_threshold_dbfs": -17.91,
+        "in_at_gr_dbfs": {
+          "1": -17.91,
+          "2": -16.109999999999999,
+          "3": -14.710000000000001,
+          "4": -13.31,
+          "5": -12.01,
+          "6": -10.609999999999999,
+          "7": -9.31,
+          "8": -7.91,
+          "9": -6.61,
+          "10": -5.21,
+          "11": -3.91,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.644445,
+        "display": "48.36",
+        "eff_threshold_dbfs": -20.210000000000001,
+        "in_at_gr_dbfs": {
+          "1": -20.210000000000001,
+          "2": -18.510000000000002,
+          "3": -17.010000000000002,
+          "4": -15.710000000000001,
+          "5": -14.31,
+          "6": -13.01,
+          "7": -11.609999999999999,
+          "8": -10.31,
+          "9": -8.91,
+          "10": -7.61,
+          "11": -6.31,
+          "12": -5.01
+        }
+      },
+      {
+        "norm": 0.666667,
+        "display": "49.72",
+        "eff_threshold_dbfs": -22.809999999999999,
+        "in_at_gr_dbfs": {
+          "1": -22.809999999999999,
+          "2": -21.109999999999999,
+          "3": -19.710000000000001,
+          "4": -18.309999999999999,
+          "5": -17.010000000000002,
+          "6": -15.609999999999999,
+          "7": -14.31,
+          "8": -13.01,
+          "9": -11.609999999999999,
+          "10": -10.31,
+          "11": -8.91,
+          "12": -7.61
+        }
+      },
+      {
+        "norm": 0.7,
+        "display": "52.00",
+        "eff_threshold_dbfs": -24.609999999999999,
+        "in_at_gr_dbfs": {
+          "1": -24.609999999999999,
+          "2": -22.91,
+          "3": -21.510000000000002,
+          "4": -20.109999999999999,
+          "5": -18.710000000000001,
+          "6": -17.41,
+          "7": -16.109999999999999,
+          "8": -14.710000000000001,
+          "9": -13.41,
+          "10": -12.01,
+          "11": -10.710000000000001,
+          "12": -9.41
+        }
+      },
+      {
+        "norm": 0.733333,
+        "display": "54.68",
+        "eff_threshold_dbfs": -26.309999999999999,
+        "in_at_gr_dbfs": {
+          "1": -26.309999999999999,
+          "2": -24.609999999999999,
+          "3": -23.109999999999999,
+          "4": -21.809999999999999,
+          "5": -20.41,
+          "6": -19.109999999999999,
+          "7": -17.710000000000001,
+          "8": -16.41,
+          "9": -15.01,
+          "10": -13.710000000000001,
+          "11": -12.41,
+          "12": -11.109999999999999
+        }
+      },
+      {
+        "norm": 0.766667,
+        "display": "57.76",
+        "eff_threshold_dbfs": -28.210000000000001,
+        "in_at_gr_dbfs": {
+          "1": -28.210000000000001,
+          "2": -26.510000000000002,
+          "3": -25.010000000000002,
+          "4": -23.710000000000001,
+          "5": -22.309999999999999,
+          "6": -21.010000000000002,
+          "7": -19.609999999999999,
+          "8": -18.309999999999999,
+          "9": -17.010000000000002,
+          "10": -15.609999999999999,
+          "11": -14.31,
+          "12": -13.01
+        }
+      },
+      {
+        "norm": 0.8,
+        "display": "61.40",
+        "eff_threshold_dbfs": -30.510000000000002,
+        "in_at_gr_dbfs": {
+          "1": -30.510000000000002,
+          "2": -28.710000000000001,
+          "3": -27.309999999999999,
+          "4": -25.91,
+          "5": -24.609999999999999,
+          "6": -23.210000000000001,
+          "7": -21.91,
+          "8": -20.609999999999999,
+          "9": -19.210000000000001,
+          "10": -17.91,
+          "11": -16.510000000000002,
+          "12": -15.210000000000001
+        }
+      },
+      {
+        "norm": 0.833333,
+        "display": "65.64",
+        "eff_threshold_dbfs": -33.009999999999998,
+        "in_at_gr_dbfs": {
+          "1": -33.009999999999998,
+          "2": -31.41,
+          "3": -29.91,
+          "4": -28.510000000000002,
+          "5": -27.210000000000001,
+          "6": -25.91,
+          "7": -24.510000000000002,
+          "8": -23.210000000000001,
+          "9": -21.809999999999999,
+          "10": -20.510000000000002,
+          "11": -19.210000000000001,
+          "12": -17.91
+        }
+      },
+      {
+        "norm": 0.866667,
+        "display": "70.56",
+        "eff_threshold_dbfs": -36.109999999999999,
+        "in_at_gr_dbfs": {
+          "1": -36.109999999999999,
+          "2": -34.409999999999997,
+          "3": -33.009999999999998,
+          "4": -31.609999999999999,
+          "5": -30.210000000000001,
+          "6": -28.91,
+          "7": -27.609999999999999,
+          "8": -26.210000000000001,
+          "9": -24.91,
+          "10": -23.510000000000002,
+          "11": -22.210000000000001,
+          "12": -20.91
+        }
+      },
+      {
+        "norm": 0.883333,
+        "display": "73.32",
+        "eff_threshold_dbfs": -37.909999999999997,
+        "in_at_gr_dbfs": {
+          "1": -37.909999999999997,
+          "2": -36.109999999999999,
+          "3": -34.710000000000001,
+          "4": -33.310000000000002,
+          "5": -31.91,
+          "6": -30.609999999999999,
+          "7": -29.309999999999999,
+          "8": -27.91,
+          "9": -26.609999999999999,
+          "10": -25.210000000000001,
+          "11": -23.91,
+          "12": -22.609999999999999
+        }
+      },
+      {
+        "norm": 0.9,
+        "display": "76.32",
+        "eff_threshold_dbfs": -39.310000000000002,
+        "in_at_gr_dbfs": {
+          "1": -39.310000000000002,
+          "2": -37.609999999999999,
+          "3": -36.109999999999999,
+          "4": -34.710000000000001,
+          "5": -33.409999999999997,
+          "6": -32.109999999999999,
+          "7": -30.710000000000001,
+          "8": -29.41,
+          "9": -28.010000000000002,
+          "10": -26.710000000000001,
+          "11": -25.41,
+          "12": -24.109999999999999
+        }
+      },
+      {
+        "norm": 0.933333,
+        "display": "83.04",
+        "eff_threshold_dbfs": -41.509999999999998,
+        "in_at_gr_dbfs": {
+          "1": -41.509999999999998,
+          "2": -39.810000000000002,
+          "3": -38.310000000000002,
+          "4": -36.909999999999997,
+          "5": -35.509999999999998,
+          "6": -34.210000000000001,
+          "7": -32.909999999999997,
+          "8": -31.510000000000002,
+          "9": -30.210000000000001,
+          "10": -28.809999999999999,
+          "11": -27.510000000000002,
+          "12": -26.210000000000001
+        }
+      },
+      {
+        "norm": 0.966666,
+        "display": "90.88",
+        "eff_threshold_dbfs": -44.009999999999998,
+        "in_at_gr_dbfs": {
+          "1": -44.009999999999998,
+          "2": -42.210000000000001,
+          "3": -40.810000000000002,
+          "4": -39.409999999999997,
+          "5": -38.109999999999999,
+          "6": -36.710000000000001,
+          "7": -35.409999999999997,
+          "8": -34.009999999999998,
+          "9": -32.710000000000001,
+          "10": -31.309999999999999,
+          "11": -30.010000000000002,
+          "12": -28.710000000000001
+        }
+      },
+      {
+        "norm": 1.0,
+        "display": "100.00",
+        "eff_threshold_dbfs": -46.810000000000002,
+        "in_at_gr_dbfs": {
+          "1": -46.810000000000002,
+          "2": -45.109999999999999,
+          "3": -43.710000000000001,
+          "4": -42.310000000000002,
+          "5": -41.009999999999998,
+          "6": -39.609999999999999,
+          "7": -38.310000000000002,
+          "8": -37.009999999999998,
+          "9": -35.609999999999999,
+          "10": -34.310000000000002,
+          "11": -32.909999999999997,
+          "12": -31.609999999999999
+        }
+      }
+    ],
+    "stepped": false
+  },
+  "ratio": {
+    "control": null,
+    "curve": [],
+    "fixed": {
+      "measured_ratio": 3.84,
+      "knee_db": null
+    },
+    "knee_db": null
+  },
+  "static_gain_db": 8.449999999999999,
+  "detector_f": 0.63,
+  "detector_f_raw": 0.63,
+  "detector_f_source": "measured",
+  "quality": {
+    "point_error_db": 0.09,
+    "deep_point_error_db": 0.03,
+    "method": "hold 2.5 s vs 5 s",
+    "points_compared": 58,
+    "shape_disagreements": 0,
+    "monotonic_within_positions": true,
+    "monotonic_across_positions": true,
+    "violations": []
+  },
+  "level_coupling": null,
+  "fit": {
+    "max_error_db": 0.24,
+    "points": 141,
+    "model": "threshold per position from the 1 dB crossing; ratio 4.0, knee 6.0 dB, grid-searched; nothing tuned",
+    "error_vs_2db_target": 0.12,
+    "measured_point_quality": {
+      "non_monotonic_straddles": 0,
+      "widest_gap_db": 2.0,
+      "points_with_1db": 20
+    }
+  },
+  "notes": [
+    "levels converted from peak dBFS (EJ Map's convention) to sine RMS by -3.01 dB (a full-scale 997 Hz sine exports as -3.01)",
+    "tone 997 Hz",
+    "guards passed: tone_frac (0 readings refused as not the tone), level dependence (not a gain law), quiet-reference 6 dB self-check (26 of 26 positions), ascending-only levels in each fresh process, still-moving rule",
+    "deep points 4..12 (v1.7, to 12 since v1.10): deep_point_error_db 0.03 dB over 141 surviving deep points, informational; deep points nulled by the hold-doubling test (over 0.5 dB): none",
+    "deep null 4 dB - not reached by -3.01 dBFS: positions 0.4000, 0.4667",
+    "deep null 4 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000, 0.2667, 0.3333",
+    "deep null 5 dB - not reached by -3.01 dBFS: positions 0.4000, 0.4667, 0.5000",
+    "deep null 5 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000, 0.2667, 0.3333",
+    "deep null 6 dB - not reached by -3.01 dBFS: positions 0.4000, 0.4667, 0.5000",
+    "deep null 6 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000, 0.2667, 0.3333",
+    "deep null 7 dB - not reached by -3.01 dBFS: positions 0.4000, 0.4667, 0.5000, 0.5333",
+    "deep null 7 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000, 0.2667, 0.3333",
+    "deep null 8 dB - not reached by -3.01 dBFS: positions 0.4000, 0.4667, 0.5000, 0.5333",
+    "deep null 8 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000, 0.2667, 0.3333",
+    "deep null 9 dB - not reached by -3.01 dBFS: positions 0.4000, 0.4667, 0.5000, 0.5333, 0.5667",
+    "deep null 9 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000, 0.2667, 0.3333",
+    "deep null 10 dB - not reached by -3.01 dBFS: positions 0.4000, 0.4667, 0.5000, 0.5333, 0.5667",
+    "deep null 10 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000, 0.2667, 0.3333",
+    "deep null 11 dB - not reached by -3.01 dBFS: positions 0.4000, 0.4667, 0.5000, 0.5333, 0.5667, 0.6000",
+    "deep null 11 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000, 0.2667, 0.3333",
+    "deep null 12 dB - not reached by -3.01 dBFS: positions 0.4000, 0.4667, 0.5000, 0.5333, 0.5667, 0.6000, 0.6222",
+    "deep null 12 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000, 0.2667, 0.3333",
+    "deep 4 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.5000, 0.5333, 0.5667",
+    "deep 5 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.5333, 0.5667",
+    "deep 6 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.5333, 0.5667, 0.6000",
+    "deep 7 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.5667, 0.6000",
+    "deep 8 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.5667, 0.6000, 0.6222",
+    "deep 9 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.6000, 0.6222, 0.6444",
+    "deep 10 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.6000, 0.6222, 0.6444",
+    "deep 11 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.6222, 0.6444, 0.6667",
+    "deep 12 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.6444, 0.6667",
+    "ratio.curve[0].measured_ratio is implied from level dependence (the GR-vs-level slope at the ratio the sweep ran at), not a ratio sweep; knee_db null: no knee was measured",
+    "neutral lists every control except the amount, the ratio, readouts/meters, the engage writes and never_touch, at the value it was measured at (source: precondition or instantiate)",
+    "profile sweep, 31 levels ascending per fresh process, quiet reference per position",
+    "compressed as instantiated, no engage write needed"
+  ],
+  "tone_check": {
+    "product": "CLA-2A (s)",
+    "map_fp": "41be419e3e4e86ae650db2ae8ce875320406fae16cf93e40be79b0b4d7a15ceb",
+    "L_rms_dbfs": -12.610488999999999,
+    "L_peak_dbfs": -9.600189043360187,
+    "g_db": 2.0,
+    "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.63 = -12.61 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 19 positions' in_at_gr[2.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+    "gr_per_channel_db": [
+      1.92,
+      1.92
+    ],
+    "L_ref_dbfs": -12.610488999999999,
+    "L_gap_db": 0.0,
+    "pick": {
+      "norm": 0.583338821545,
+      "point": 11,
+      "point_next": 10,
+      "in_at_g": -14.01,
+      "stepped": false,
+      "pick_one_db": -14.260506464285713,
+      "clamp_db": 12.0,
+      "expected_gr_db": 2.0,
+      "filled_across_norm": false,
+      "fell_back_to_measured": false
+    },
+    "writes": [
+      {
+        "control": "Gain",
+        "index": 0,
+        "norm": 0.535,
+        "set": "40.00",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp/Limiter",
+        "index": 2,
+        "norm": 0.0,
+        "set": "Comp",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Hi Freq",
+        "index": 3,
+        "norm": 0.5,
+        "set": "50.0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Analog",
+        "index": 4,
+        "norm": 1.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Mix",
+        "index": 6,
+        "norm": 1.0,
+        "set": "100.0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Trim",
+        "index": 7,
+        "norm": 0.5,
+        "set": "0.0",
+        "why": "neutral[] from the profile"
+      }
+    ],
+    "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+    "quiet_check_ok": true,
+    "gr_measured_db": 1.92,
+    "pass_within_0_5_db": true,
+    "probe": "e6614a35487966f7bd80a97312d50c869d6d7108",
+    "measuredAt": "20261012T202546.435+0100",
+    "ratio_norm_source": "no ratio control in the profile (fixed ratio): nothing written",
+    "spec": "v1.7",
+    "build": "b287aef3",
+    "deep_levels": [
+      {
+        "g_db": 4.0,
+        "ran": true,
+        "gr_measured_db": 3.97,
+        "L_rms_dbfs": -12.610488999999999,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.63 = -12.61 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 18 positions' in_at_gr[4.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          3.97,
+          3.97
+        ],
+        "L_ref_dbfs": -12.610488999999999,
+        "L_gap_db": 0.0,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 0.614819841218095,
+          "point": 12,
+          "point_next": 11,
+          "in_at_g": -13.31,
+          "stepped": false,
+          "pick_one_db": -17.177178952380952,
+          "clamp_db": 7.566689952380953,
+          "expected_gr_db": 4.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      },
+      {
+        "g_db": 5.0,
+        "ran": true,
+        "gr_measured_db": 4.97,
+        "L_rms_dbfs": -12.610488999999999,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.63 = -12.61 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 17 positions' in_at_gr[5.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          4.97,
+          4.97
+        ],
+        "L_ref_dbfs": -12.610488999999999,
+        "L_gap_db": 0.0,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 0.62802402915087,
+          "point": 13,
+          "point_next": 12,
+          "in_at_g": -14.31,
+          "stepped": false,
+          "pick_one_db": -18.510489,
+          "clamp_db": 8.9,
+          "expected_gr_db": 5.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      },
+      {
+        "g_db": 6.0,
+        "ran": true,
+        "gr_measured_db": 5.97,
+        "L_rms_dbfs": -12.610488999999999,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.63 = -12.61 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 17 positions' in_at_gr[6.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          5.97,
+          5.97
+        ],
+        "L_ref_dbfs": -12.610488999999999,
+        "L_gap_db": 0.0,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 0.640745694602917,
+          "point": 13,
+          "point_next": 12,
+          "in_at_g": -13.01,
+          "stepped": false,
+          "pick_one_db": -19.827135291666668,
+          "clamp_db": 10.216646291666668,
+          "expected_gr_db": 6.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      },
+      {
+        "g_db": 7.0,
+        "ran": true,
+        "gr_measured_db": 6.97,
+        "L_rms_dbfs": -12.610488999999999,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.63 = -12.61 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 16 positions' in_at_gr[7.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          6.97,
+          6.97
+        ],
+        "L_ref_dbfs": -12.610488999999999,
+        "L_gap_db": 0.0,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 0.652679395021482,
+          "point": 14,
+          "point_next": 13,
+          "in_at_g": -14.31,
+          "stepped": false,
+          "pick_one_db": -21.173433851851851,
+          "clamp_db": 11.562944851851851,
+          "expected_gr_db": 7.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      },
+      {
+        "g_db": 8.0,
+        "ran": true,
+        "gr_measured_db": 7.97,
+        "L_rms_dbfs": -12.610488999999999,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.63 = -12.61 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 16 positions' in_at_gr[8.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          7.97,
+          7.97
+        ],
+        "L_ref_dbfs": -12.610488999999999,
+        "L_gap_db": 0.0,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 0.663378876502963,
+          "point": 14,
+          "point_next": 13,
+          "in_at_g": -13.01,
+          "stepped": false,
+          "pick_one_db": -22.425285703703704,
+          "clamp_db": 12.814796703703704,
+          "expected_gr_db": 8.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      },
+      {
+        "g_db": 9.0,
+        "ran": true,
+        "gr_measured_db": 9.1,
+        "L_rms_dbfs": -12.610488999999999,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.63 = -12.61 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 15 positions' in_at_gr[9.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          9.1,
+          9.1
+        ],
+        "L_ref_dbfs": -12.610488999999999,
+        "L_gap_db": 0.0,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 0.685194388798333,
+          "point": 15,
+          "point_next": 14,
+          "in_at_g": -13.41,
+          "stepped": false,
+          "pick_one_db": -23.810488999999997,
+          "clamp_db": 14.199999999999998,
+          "expected_gr_db": 9.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      },
+      {
+        "g_db": 10.0,
+        "ran": true,
+        "gr_measured_db": 9.98,
+        "L_rms_dbfs": -12.610488999999999,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.63 = -12.61 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 15 positions' in_at_gr[10.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          9.98,
+          9.98
+        ],
+        "L_ref_dbfs": -12.610488999999999,
+        "L_gap_db": 0.0,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 0.711774176374706,
+          "point": 16,
+          "point_next": 15,
+          "in_at_g": -13.710000000000001,
+          "stepped": false,
+          "pick_one_db": -25.210488999999999,
+          "clamp_db": 15.6,
+          "expected_gr_db": 10.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      },
+      {
+        "g_db": 11.0,
+        "ran": true,
+        "gr_measured_db": 10.960000000000001,
+        "L_rms_dbfs": -12.610488999999999,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.63 = -12.61 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 14 positions' in_at_gr[11.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          10.960000000000001,
+          10.960000000000001
+        ],
+        "L_ref_dbfs": -12.610488999999999,
+        "L_gap_db": 0.0,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 0.736850421224211,
+          "point": 17,
+          "point_next": 16,
+          "in_at_g": -14.31,
+          "stepped": false,
+          "pick_one_db": -26.510489,
+          "clamp_db": 16.899999999999999,
+          "expected_gr_db": 11.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      },
+      {
+        "g_db": 12.0,
+        "ran": true,
+        "gr_measured_db": 11.970000000000001,
+        "L_rms_dbfs": -12.610488999999999,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.63 = -12.61 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 13 positions' in_at_gr[12.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          11.970000000000001,
+          11.970000000000001
+        ],
+        "L_ref_dbfs": -12.610488999999999,
+        "L_gap_db": 0.0,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 0.759657894908421,
+          "point": 17,
+          "point_next": 16,
+          "in_at_g": -13.01,
+          "stepped": false,
+          "pick_one_db": -27.810489,
+          "clamp_db": 18.200000000000003,
+          "expected_gr_db": 12.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      }
+    ],
+    "deep_levels_nulled": []
+  }
+}

@@ -1,0 +1,163 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "elysia niveau filter",
+    "manufacturer": "Plugin Alliance",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|4a6f797f|1.16.1",
+    "version": "1.16.1",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-09",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "EQ",
+      "shape": "peak",
+      "verdict": "not_static",
+      "reason": "the gain is not monotonic in its control (a reversal of 24.96 dB)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "EQ Gain",
+      "freq_control": "EQ Freq",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "6.0 dB",
+          "gain_db": -29.219999999999999
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "4.8 dB",
+          "gain_db": -11.380000000000001
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "2.3 dB",
+          "gain_db": -3.22
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "2.3 dB",
+          "gain_db": -3.22
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "4.8 dB",
+          "gain_db": -11.300000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "6.0 dB",
+          "gain_db": -24.960000000000001
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "26.0 Hz",
+          "centre_hz": 19240.099999999998545
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "34.7 Hz",
+          "centre_hz": 19243.400000000001455
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "77.3 Hz",
+          "centre_hz": 19257.700000000000728
+        },
+        {
+          "norm": 0.5,
+          "display": "230.0 Hz",
+          "centre_hz": 19321.799999999999272
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "376.7 Hz",
+          "centre_hz": 19424.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "800.0 Hz",
+          "centre_hz": 20170.5
+        },
+        {
+          "norm": 1.0,
+          "display": "2200.0 Hz",
+          "centre_hz": 20598.900000000001455
+        },
+        {
+          "norm": 0.416667014360428,
+          "display": "154.2 Hz",
+          "centre_hz": 19285.799999999999272
+        },
+        {
+          "norm": 0.083333000540733,
+          "display": "27.8 Hz",
+          "centre_hz": 19240.700000000000728
+        },
+        {
+          "norm": 0.583333015441895,
+          "display": "293.3 Hz",
+          "centre_hz": 19359.700000000000728
+        },
+        {
+          "norm": 0.916666984558105,
+          "display": "1375.0 Hz",
+          "centre_hz": 20448.5
+        },
+        {
+          "norm": 0.75,
+          "display": "512.5 Hz",
+          "centre_hz": 19570.900000000001455
+        },
+        {
+          "norm": 0.25,
+          "display": "48.0 Hz",
+          "centre_hz": 19248.0
+        }
+      ],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "Active",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "EQ Freq x10",
+      "set": "Off",
+      "norm": 0.0
+    }
+  ],
+  "notes": [
+    "Band 'EQ': not_static (the gain is not monotonic in its control (a reversal of 24.96 dB)): not usable by the server",
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

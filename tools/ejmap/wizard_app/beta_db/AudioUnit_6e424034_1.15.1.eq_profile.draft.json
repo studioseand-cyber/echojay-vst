@@ -1,0 +1,196 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "Maag EQ4",
+    "manufacturer": "Plugin Alliance",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|6e424034|1.15.1",
+    "version": "1.15.1",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-09",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "measured [1] Sub",
+      "shape": "low_shelf",
+      "verdict": "stepped",
+      "reason": "frequency or gain only at detents",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Sub",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-5.0",
+          "gain_db": -4.67
+        },
+        {
+          "norm": 0.050000000745058,
+          "display": "-4.5",
+          "gain_db": -4.67
+        },
+        {
+          "norm": 0.100000001490116,
+          "display": "-4.0",
+          "gain_db": -4.66
+        },
+        {
+          "norm": 0.150000005960464,
+          "display": "-3.5",
+          "gain_db": -4.55
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-3.0",
+          "gain_db": -4.34
+        },
+        {
+          "norm": 0.25,
+          "display": "-2.5",
+          "gain_db": -4.08
+        },
+        {
+          "norm": 0.300000011920929,
+          "display": "-2.0",
+          "gain_db": -3.68
+        },
+        {
+          "norm": 0.349999994039536,
+          "display": "-1.5",
+          "gain_db": -3.03
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-1.0",
+          "gain_db": -1.77
+        },
+        {
+          "norm": 0.449999988079071,
+          "display": "-0.5",
+          "gain_db": -0.97
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.550000011920929,
+          "display": "+0.5",
+          "gain_db": 0.83
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "+1.0",
+          "gain_db": 1.89
+        },
+        {
+          "norm": 0.649999976158142,
+          "display": "+1.5",
+          "gain_db": 3.4
+        },
+        {
+          "norm": 0.699999988079071,
+          "display": "+2.0",
+          "gain_db": 5.54
+        },
+        {
+          "norm": 0.75,
+          "display": "+2.5",
+          "gain_db": 10.15
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "+3.0",
+          "gain_db": 11.380000000000001
+        },
+        {
+          "norm": 0.850000023841858,
+          "display": "+3.5",
+          "gain_db": 13.24
+        },
+        {
+          "norm": 0.899999976158142,
+          "display": "+4.0",
+          "gain_db": 15.65
+        },
+        {
+          "norm": 0.949999988079071,
+          "display": "+4.5",
+          "gain_db": 18.300000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "+5.0",
+          "gain_db": 18.440000000000001
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "In/Out",
+      "set": "In",
+      "norm": 1.0
+    },
+    {
+      "control": "40 Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "160 Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "650 Hz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "2.5 kHz",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "Air Gain",
+      "set": "0.0",
+      "norm": 0.0
+    },
+    {
+      "control": "Air Band",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Level Trim",
+      "set": "0.0 dB",
+      "norm": 1.0
+    }
+  ],
+  "notes": [
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

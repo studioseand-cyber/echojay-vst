@@ -1,0 +1,1945 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "Newfangled EQuivocate",
+    "manufacturer": "Newfangled Audio",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|4a616726|1.12.7",
+    "version": "1.12.7",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-09",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "measured [3] Band Gain 1",
+      "shape": "low_shelf",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 1",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -11.039999999999999
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -7.47
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.77
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.83
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.69
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.57
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [4] Band Gain 2",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 2",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -11.52
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -7.68
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.84
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.84
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.68
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.52
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [5] Band Gain 3",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 3",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -11.52
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -7.68
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.84
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.84
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.68
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.52
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [6] Band Gain 4",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 4",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -11.6
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -7.72
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.86
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.85
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.7
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.539999999999999
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [7] Band Gain 5",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 5",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -10.880000000000001
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -7.35
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.71
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.76
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.54
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.35
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [8] Band Gain 6",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 6",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -11.619999999999999
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -7.73
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.86
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.85
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.7
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.539999999999999
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [9] Band Gain 7",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 7",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -11.460000000000001
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -7.65
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.83
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.83
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.67
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.5
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [10] Band Gain 8",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 8",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -11.24
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -7.54
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.78
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.81
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.62
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.449999999999999
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [11] Band Gain 9",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 9",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -8.779999999999999
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -6.18
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.23
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.43
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.0
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 10.67
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [12] Band Gain 10",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 10",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -10.75
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -7.28
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.68
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.74
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.52
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.32
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [47] Band Gain 11",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 11",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -9.52
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -6.61
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.41
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.56
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.21
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 10.94
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [48] Band Gain 12",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 12",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -9.67
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -6.69
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.44
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.58
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.25
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 10.99
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [49] Band Gain 13",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 13",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -8.58
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -6.07
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.18
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.4
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 6.94
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 10.59
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [50] Band Gain 14",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 14",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -9.4
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -6.54
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.38
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.54
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.18
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 10.890000000000001
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [51] Band Gain 15",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 15",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -10.51
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -7.15
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.63
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.71
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.46
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.25
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [52] Band Gain 16",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 16",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -9.74
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -6.73
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.46
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.59
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.27
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.01
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [53] Band Gain 17",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 17",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -7.92
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -5.67
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.01
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.27
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 6.73
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 10.32
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [54] Band Gain 18",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 18",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -11.210000000000001
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -7.52
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.78
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.8
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.61
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.44
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [55] Band Gain 19",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 19",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -9.09
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -6.36
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.31
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.48
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.09
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 10.779999999999999
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [56] Band Gain 20",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 20",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -8.94
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -6.28
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.27
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.46
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.05
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 10.73
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [57] Band Gain 21",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 21",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -9.699999999999999
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -6.71
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.45
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.59
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.26
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.0
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [58] Band Gain 22",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 22",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -8.52
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -6.03
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.16
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.39
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 6.93
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 10.57
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [59] Band Gain 23",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 23",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -9.81
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -6.77
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.48
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.6
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.29
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.029999999999999
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [60] Band Gain 24",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 24",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -8.699999999999999
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -6.13
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.21
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.42
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 6.98
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 10.640000000000001
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [61] Band Gain 25",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 25",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -9.44
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -6.56
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.39
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.54
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.19
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 10.91
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [62] Band Gain 26",
+      "shape": "high_shelf",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Band Gain 26",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.00",
+          "gain_db": -11.76
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.00",
+          "gain_db": -7.84
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.00",
+          "gain_db": -3.92
+        },
+        {
+          "norm": 0.5,
+          "display": "0.00",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.00",
+          "gain_db": 3.92
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.00",
+          "gain_db": 7.84
+        },
+        {
+          "norm": 1.0,
+          "display": "12.00",
+          "gain_db": 11.76
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "Output Level Control Select",
+      "set": "Automatic",
+      "norm": 1.0
+    },
+    {
+      "control": "Range",
+      "set": "12.00",
+      "norm": 0.75
+    },
+    {
+      "control": "Draw Curve",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Legacy Gain 1",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 2",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 3",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 4",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 5",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 6",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 7",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 8",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 9",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 10",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Band Solo 1",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 2",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 3",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 4",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 5",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 6",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 7",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 8",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 9",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 10",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Output Meter Enable",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Match EQ Active",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Match EQ Amount",
+      "set": "100.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 1",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 2",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 3",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 4",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 5",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 6",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 7",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 8",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 9",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 10",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Active",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Output Level Compensation",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Legacy Gain 11",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 12",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 13",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 14",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 15",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 16",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 17",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 18",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 19",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 20",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 21",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 22",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 23",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 24",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 25",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Legacy Gain 26",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Band Center Freq 11",
+      "set": "2012.98",
+      "norm": 0.100649
+    },
+    {
+      "control": "Band Center Freq 12",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 13",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 14",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 15",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 16",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 17",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 18",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 19",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 20",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 21",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 22",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 23",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 24",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 25",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 26",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Number of Filters",
+      "set": "26 Band",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Solo 11",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 12",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 13",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 14",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 15",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 16",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 17",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 18",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 19",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 20",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 21",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 22",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 23",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 24",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 25",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Solo 26",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Use OpenGL",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Output Level",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Input Level",
+      "set": "0.00",
+      "norm": 0.5
+    },
+    {
+      "control": "Input Meter Enable",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Show Meters",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 1",
+      "set": "0.00",
+      "norm": 0.0
+    },
+    {
+      "control": "Band Center Freq 2",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 3",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 4",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 5",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 6",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 7",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 8",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 9",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Band Center Freq 10",
+      "set": "20000.00",
+      "norm": 1.0
+    },
+    {
+      "control": "UI Scale",
+      "set": "1.31",
+      "norm": 0.231915
+    },
+    {
+      "control": "Animation Brightness",
+      "set": "100.00",
+      "norm": 1.0
+    },
+    {
+      "control": "Color Scheme",
+      "set": "MODERN",
+      "norm": 0.5
+    },
+    {
+      "control": "Enable Band 11",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 12",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 13",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 14",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 15",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 16",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 17",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 18",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 19",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 20",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 21",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 22",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 23",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 24",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 25",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Enable Band 26",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Delta",
+      "set": "Off",
+      "norm": 0.0
+    }
+  ],
+  "notes": [
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

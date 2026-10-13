@@ -1,0 +1,841 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "UAD bx_digital V2",
+    "manufacturer": "Universal Audio",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|74104649|11.8.0",
+    "version": "11.8.0",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-12",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "measured [11] In Gain",
+      "shape": "low_shelf",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "In Gain",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-oo",
+          "gain_db": null,
+          "why": "fewer than 8 tones compared"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-19.1",
+          "gain_db": -19.09
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-7.0",
+          "gain_db": -7.04
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "5.0",
+          "gain_db": 5.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.9",
+          "gain_db": 8.869999999999999
+        },
+        {
+          "norm": 1.0,
+          "display": "12.0",
+          "gain_db": 12.039999999999999
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [13] Out Gain",
+      "shape": "low_shelf",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Out Gain",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-oo",
+          "gain_db": null,
+          "why": "fewer than 8 tones compared"
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-19.1",
+          "gain_db": -19.09
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-7.0",
+          "gain_db": -7.04
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "5.0",
+          "gain_db": 5.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.9",
+          "gain_db": 8.869999999999999
+        },
+        {
+          "norm": 1.0,
+          "display": "12.0",
+          "gain_db": 12.039999999999999
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [38] 1 HP",
+      "shape": "low_shelf",
+      "verdict": "not_static",
+      "reason": "the gain sweep reads 67.3 dB at a position: this control moves something other than gain",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "1 HP",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "off",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "64",
+          "gain_db": -16.260000000000002
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "206",
+          "gain_db": -26.309999999999999
+        },
+        {
+          "norm": 0.5,
+          "display": "663",
+          "gain_db": -36.439999999999998
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "2.13",
+          "gain_db": -46.590000000000003
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "6.85",
+          "gain_db": -56.890000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "22.00",
+          "gain_db": -67.299999999999997
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [39] 1 Lf G",
+      "shape": "low_shelf",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "1 Lf G",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.0",
+          "gain_db": -11.960000000000001
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.0",
+          "gain_db": -7.97
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.0",
+          "gain_db": -3.98
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.0",
+          "gain_db": 3.98
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.0",
+          "gain_db": 7.97
+        },
+        {
+          "norm": 1.0,
+          "display": "12.0",
+          "gain_db": 11.960000000000001
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [42] 1 Lmf G",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "1 Lmf G",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.0",
+          "gain_db": -12.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.0",
+          "gain_db": -8.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.0",
+          "gain_db": -4.0
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.0",
+          "gain_db": 4.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.0",
+          "gain_db": 8.0
+        },
+        {
+          "norm": 1.0,
+          "display": "12.0",
+          "gain_db": 12.0
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [45] 1 Mf G",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "1 Mf G",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.0",
+          "gain_db": -12.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.0",
+          "gain_db": -8.0
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.0",
+          "gain_db": -4.0
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.0",
+          "gain_db": 4.0
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.0",
+          "gain_db": 8.0
+        },
+        {
+          "norm": 1.0,
+          "display": "12.0",
+          "gain_db": 12.0
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [48] 1 Hmf G",
+      "shape": "peak",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "1 Hmf G",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.0",
+          "gain_db": -11.949999999999999
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.0",
+          "gain_db": -7.95
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.0",
+          "gain_db": -3.97
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.0",
+          "gain_db": 3.97
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.0",
+          "gain_db": 7.95
+        },
+        {
+          "norm": 1.0,
+          "display": "12.0",
+          "gain_db": 11.949999999999999
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [51] 1 Hf G",
+      "shape": "high_shelf",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "1 Hf G",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12.0",
+          "gain_db": -11.1
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "-8.0",
+          "gain_db": -7.2
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "-4.0",
+          "gain_db": -3.44
+        },
+        {
+          "norm": 0.5,
+          "display": "0.0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "4.0",
+          "gain_db": 3.44
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.0",
+          "gain_db": 7.2
+        },
+        {
+          "norm": 1.0,
+          "display": "12.0",
+          "gain_db": 11.1
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "measured [54] 1 LP",
+      "shape": "high_shelf",
+      "verdict": "not_static",
+      "reason": "the gain sweep reads 61.6 dB at a position: this control moves something other than gain",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "1 LP",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "20",
+          "gain_db": -61.57
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "64",
+          "gain_db": -51.43
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "206",
+          "gain_db": -41.299999999999997
+        },
+        {
+          "norm": 0.5,
+          "display": "663",
+          "gain_db": -31.16
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "2.13",
+          "gain_db": -21.050000000000001
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "6.85",
+          "gain_db": -11.220000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "off",
+          "gain_db": 0.0
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "Bypass",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Preset",
+      "set": "A",
+      "norm": 0.0
+    },
+    {
+      "control": "Modus",
+      "set": "M/S Mst.",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch1 Solo",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Ch2 Solo",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "SwpIn",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "EQOn",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "Balance",
+      "set": "C",
+      "norm": 0.5
+    },
+    {
+      "control": "St.Width",
+      "set": "100",
+      "norm": 0.5
+    },
+    {
+      "control": "M Pan",
+      "set": "C",
+      "norm": 0.5
+    },
+    {
+      "control": "S Pan",
+      "set": "C",
+      "norm": 0.5
+    },
+    {
+      "control": "1 HP On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "1 LP On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "2 HP On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "2 LP On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "1 Lf On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "1 Lmf On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "1 Mf On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "1 Hmf On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "1 Hf On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "1 BS On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "1 PS On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "1 Dsr On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "2 Lf On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "2 Lmf On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "2 Mf On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "2 Hmf On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "2 Hf On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "2 BS On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "2 PS On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "2 Dsr On",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "MMkOn",
+      "set": "On",
+      "norm": 1.0
+    },
+    {
+      "control": "1 Lf Q",
+      "set": "Lo-Shelv",
+      "norm": 0.0
+    },
+    {
+      "control": "1 Lf F",
+      "set": "100",
+      "norm": 0.349485
+    },
+    {
+      "control": "1 Lmf Q",
+      "set": "1.0",
+      "norm": 0.307762
+    },
+    {
+      "control": "1 Lmf F",
+      "set": "315",
+      "norm": 0.59864
+    },
+    {
+      "control": "1 Mf Q",
+      "set": "2.0",
+      "norm": 0.484946
+    },
+    {
+      "control": "1 Mf F",
+      "set": "3.15",
+      "norm": 0.722459
+    },
+    {
+      "control": "1 Hmf Q",
+      "set": "3.0",
+      "norm": 0.588592
+    },
+    {
+      "control": "1 Hmf F",
+      "set": "5.80",
+      "norm": 0.667314
+    },
+    {
+      "control": "1 Hf Q",
+      "set": "Hi-Shelv",
+      "norm": 0.0
+    },
+    {
+      "control": "1 Hf F",
+      "set": "12.00",
+      "norm": 0.848743
+    },
+    {
+      "control": "2 HP",
+      "set": "off",
+      "norm": 0.0
+    },
+    {
+      "control": "2 Lf G",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "2 Lf Q",
+      "set": "1.0",
+      "norm": 0.319759
+    },
+    {
+      "control": "2 Lf F",
+      "set": "80",
+      "norm": 0.30103
+    },
+    {
+      "control": "2 Lmf G",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "2 Lmf Q",
+      "set": "1.5",
+      "norm": 0.411408
+    },
+    {
+      "control": "2 Lmf F",
+      "set": "160",
+      "norm": 0.451545
+    },
+    {
+      "control": "2 Mf G",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "2 Mf Q",
+      "set": "2.0",
+      "norm": 0.484946
+    },
+    {
+      "control": "2 Mf F",
+      "set": "450",
+      "norm": 0.444593
+    },
+    {
+      "control": "2 Hmf G",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "2 Hmf Q",
+      "set": "2.5",
+      "norm": 0.541986
+    },
+    {
+      "control": "2 Hmf F",
+      "set": "2.00",
+      "norm": 0.401623
+    },
+    {
+      "control": "2 Hf G",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "2 Hf Q",
+      "set": "1.0",
+      "norm": 0.319759
+    },
+    {
+      "control": "2 Hf F",
+      "set": "6.00",
+      "norm": 0.675774
+    },
+    {
+      "control": "2 LP",
+      "set": "off",
+      "norm": 1.0
+    },
+    {
+      "control": "1BShift",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "1PShift",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "2BShift",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "2PShift",
+      "set": "0.0",
+      "norm": 0.5
+    },
+    {
+      "control": "MonoMkr",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "1 Dsr Th",
+      "set": "0.0",
+      "norm": 0.0
+    },
+    {
+      "control": "1 Dsr Fq",
+      "set": "6.00",
+      "norm": 0.5
+    },
+    {
+      "control": "1DsrSolo",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "2 Dsr Th",
+      "set": "0.0",
+      "norm": 0.0
+    },
+    {
+      "control": "2 Dsr Fq",
+      "set": "6.00",
+      "norm": 0.5
+    },
+    {
+      "control": "2DsrSolo",
+      "set": "Off",
+      "norm": 0.0
+    }
+  ],
+  "notes": [
+    "Band 'measured [38] 1 HP': not_static (the gain sweep reads 67.3 dB at a position: this control moves something other than gain): not usable by the server",
+    "Band 'measured [54] 1 LP': not_static (the gain sweep reads 61.6 dB at a position: this control moves something other than gain): not usable by the server",
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

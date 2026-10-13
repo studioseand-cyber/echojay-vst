@@ -1,0 +1,215 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "Ozone 12 Stabilizer",
+    "manufacturer": "iZotope",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|526d5d5b|12.0.0",
+    "version": "12.0.0",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-09",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "measured [9] STBL: Stereo/Main Amount",
+      "shape": "high_shelf",
+      "verdict": "measured",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "STBL: Stereo/Main Amount",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "0",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "16.6667",
+          "gain_db": -1.42
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "33.3333",
+          "gain_db": -2.95
+        },
+        {
+          "norm": 0.5,
+          "display": "50",
+          "gain_db": -4.63
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "66.6667",
+          "gain_db": -6.5
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "83.3333",
+          "gain_db": -8.58
+        },
+        {
+          "norm": 1.0,
+          "display": "100",
+          "gain_db": -10.960000000000001
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "GAIN: Input L (Locked)",
+      "set": "-3.57628e-06",
+      "norm": 0.935065
+    },
+    {
+      "control": "GAIN: Input L (Unlocked)",
+      "set": "-3.57628e-06",
+      "norm": 0.935065
+    },
+    {
+      "control": "GAIN: Input R (Unlocked)",
+      "set": "-3.57628e-06",
+      "norm": 0.935065
+    },
+    {
+      "control": "GAIN: Output L (Locked)",
+      "set": "-3.57628e-06",
+      "norm": 0.935065
+    },
+    {
+      "control": "GAIN: Output L (Unlocked)",
+      "set": "-3.57628e-06",
+      "norm": 0.935065
+    },
+    {
+      "control": "GAIN: Output R (Unlocked)",
+      "set": "-3.57628e-06",
+      "norm": 0.935065
+    },
+    {
+      "control": "Global Bypass",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "STBL: Bypass",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "STBL: Tame Transients On/Off",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "STBL: Stereo/Main Speed (Shape Mode)",
+      "set": "50",
+      "norm": 0.5
+    },
+    {
+      "control": "STBL: Stereo/Main Smoothing",
+      "set": "50",
+      "norm": 0.5
+    },
+    {
+      "control": "STBL: Stereo/Main Sensitivity",
+      "set": "30",
+      "norm": 0.3
+    },
+    {
+      "control": "STBL: Stereo/Main Speed (Cut Mode)",
+      "set": "100",
+      "norm": 1.0
+    },
+    {
+      "control": "STBL: Stereo/Main Low Amount",
+      "set": "100",
+      "norm": 1.0
+    },
+    {
+      "control": "STBL: Stereo/Main Mid Amount",
+      "set": "100",
+      "norm": 1.0
+    },
+    {
+      "control": "STBL: Stereo/Main High Amount",
+      "set": "100",
+      "norm": 1.0
+    },
+    {
+      "control": "STBL: Stereo/Main Bypass",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "STBL: Aux Amount",
+      "set": "0",
+      "norm": 0.0
+    },
+    {
+      "control": "STBL: Aux Speed (Shape Mode)",
+      "set": "50",
+      "norm": 0.5
+    },
+    {
+      "control": "STBL: Aux Smoothing",
+      "set": "50",
+      "norm": 0.5
+    },
+    {
+      "control": "STBL: Aux Sensitivity",
+      "set": "30",
+      "norm": 0.3
+    },
+    {
+      "control": "STBL: Aux Speed (Cut Mode)",
+      "set": "100",
+      "norm": 1.0
+    },
+    {
+      "control": "STBL: Aux Low Amount",
+      "set": "100",
+      "norm": 1.0
+    },
+    {
+      "control": "STBL: Aux Mid Amount",
+      "set": "100",
+      "norm": 1.0
+    },
+    {
+      "control": "STBL: Aux High Amount",
+      "set": "100",
+      "norm": 1.0
+    },
+    {
+      "control": "STBL: Aux Bypass",
+      "set": "Off",
+      "norm": 0.0
+    }
+  ],
+  "notes": [
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

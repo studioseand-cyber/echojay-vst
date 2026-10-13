@@ -1,0 +1,524 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "API-550A (m)",
+    "manufacturer": "Waves",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|4b337063|15.0.70",
+    "version": "15.0.70",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-09",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "High",
+      "shape": "high_shelf",
+      "verdict": "not_static",
+      "reason": "the gain is not monotonic in its control (a reversal of 10.79 dB)",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "High Gain",
+      "freq_control": "High Freq",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12 dB",
+          "gain_db": -13.02
+        },
+        {
+          "norm": 0.100000001490116,
+          "display": "-9 dB",
+          "gain_db": -10.01
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-6 dB",
+          "gain_db": -6.42
+        },
+        {
+          "norm": 0.300000011920929,
+          "display": "-4 dB",
+          "gain_db": -4.11
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-2 dB",
+          "gain_db": -2.26
+        },
+        {
+          "norm": 0.5,
+          "display": "0 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "+2 dB",
+          "gain_db": 1.91
+        },
+        {
+          "norm": 0.699999988079071,
+          "display": "+4 dB",
+          "gain_db": 3.73
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "+6 dB",
+          "gain_db": -7.06
+        },
+        {
+          "norm": 0.899999976158142,
+          "display": "+9 dB",
+          "gain_db": 9.09
+        },
+        {
+          "norm": 1.0,
+          "display": "+12 dB",
+          "gain_db": 12.58
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "5.0kHz",
+          "corner_hz": 22688.599999999998545
+        },
+        {
+          "norm": 0.25,
+          "display": "7.0kHz",
+          "centre_hz": 14250.299999999999272
+        },
+        {
+          "norm": 0.5,
+          "display": "10.0kHz",
+          "centre_hz": 16171.600000000000364
+        },
+        {
+          "norm": 0.75,
+          "display": "12.5kHz",
+          "centre_hz": 16563.799999999999272
+        },
+        {
+          "norm": 1.0,
+          "display": "15.0kHz",
+          "centre_hz": 18363.900000000001455
+        }
+      ],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    },
+    {
+      "name": "Low",
+      "shape": "low_shelf",
+      "verdict": "stepped",
+      "reason": "frequency or gain only at detents",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Low Gain",
+      "freq_control": "Low Freq",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12 dB",
+          "gain_db": -15.720000000000001
+        },
+        {
+          "norm": 0.100000001490116,
+          "display": "-9 dB",
+          "gain_db": -11.59
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-6 dB",
+          "gain_db": -7.95
+        },
+        {
+          "norm": 0.300000011920929,
+          "display": "-4 dB",
+          "gain_db": -6.35
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-2 dB",
+          "gain_db": -4.09
+        },
+        {
+          "norm": 0.5,
+          "display": "0 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "+2 dB",
+          "gain_db": 1.91
+        },
+        {
+          "norm": 0.699999988079071,
+          "display": "+4 dB",
+          "gain_db": 3.88
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "+6 dB",
+          "gain_db": 5.99
+        },
+        {
+          "norm": 0.899999976158142,
+          "display": "+9 dB",
+          "gain_db": 9.17
+        },
+        {
+          "norm": 1.0,
+          "display": "+12 dB",
+          "gain_db": 12.609999999999999
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "50.0Hz",
+          "corner_hz": 192.5
+        },
+        {
+          "norm": 0.25,
+          "display": "100.0Hz",
+          "corner_hz": 387.5
+        },
+        {
+          "norm": 0.5,
+          "display": "200.0Hz",
+          "corner_hz": 812.0
+        },
+        {
+          "norm": 0.75,
+          "display": "300.0Hz",
+          "corner_hz": 1151.5
+        },
+        {
+          "norm": 1.0,
+          "display": "400.0Hz",
+          "corner_hz": 1742.099999999999909
+        }
+      ],
+      "q_map": [],
+      "level_dependent_db": 0.0,
+      "acceptance": [
+        {
+          "target_db": 3.0,
+          "target_hz": 387.5,
+          "written": {
+            "gain_norm": 0.699999988079071,
+            "gain_display": "+4 dB",
+            "promised_db": 3.88,
+            "freq_norm": 0.25,
+            "freq_display": "100.0Hz",
+            "detent_hz": 387.5
+          },
+          "ran": true,
+          "measured_gain_db": 3.98,
+          "measured_figure_hz": 443.699999999999989,
+          "measured_shape": "low_shelf",
+          "gain_miss_db": 0.09,
+          "figure_off_pct": 14.5,
+          "pass": false,
+          "why": "gain within 0.09 dB; figure 443.675 Hz is 14.5 % off the detent (over the bar)"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 387.5,
+          "written": {
+            "gain_norm": 0.400000005960464,
+            "gain_display": "-2 dB",
+            "promised_db": -4.09,
+            "freq_norm": 0.25,
+            "freq_display": "100.0Hz",
+            "detent_hz": 387.5
+          },
+          "ran": true,
+          "measured_gain_db": -2.15,
+          "measured_figure_hz": 610.100000000000023,
+          "measured_shape": "low_shelf",
+          "gain_miss_db": 1.95,
+          "figure_off_pct": 57.399999999999999,
+          "pass": false,
+          "why": "gain MISSES by 1.95 dB; figure 610.078 Hz is 57.4 % off the detent (over the bar)"
+        },
+        {
+          "target_db": 3.0,
+          "target_hz": 812.0,
+          "written": {
+            "gain_norm": 0.699999988079071,
+            "gain_display": "+4 dB",
+            "promised_db": 3.88,
+            "freq_norm": 0.5,
+            "freq_display": "200.0Hz",
+            "detent_hz": 812.0
+          },
+          "ran": true,
+          "measured_gain_db": 4.03,
+          "measured_figure_hz": 916.399999999999977,
+          "measured_shape": "low_shelf",
+          "gain_miss_db": 0.15,
+          "figure_off_pct": 12.9,
+          "pass": false,
+          "why": "gain within 0.15 dB; figure 916.389 Hz is 12.9 % off the detent (over the bar)"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 812.0,
+          "written": {
+            "gain_norm": 0.400000005960464,
+            "gain_display": "-2 dB",
+            "promised_db": -4.09,
+            "freq_norm": 0.5,
+            "freq_display": "200.0Hz",
+            "detent_hz": 812.0
+          },
+          "ran": true,
+          "measured_gain_db": -2.1,
+          "measured_figure_hz": 1347.299999999999955,
+          "measured_shape": "low_shelf",
+          "gain_miss_db": 1.99,
+          "figure_off_pct": 65.900000000000006,
+          "pass": false,
+          "why": "gain MISSES by 1.99 dB; figure 1347.25 Hz is 65.9 % off the detent (over the bar)"
+        }
+      ]
+    },
+    {
+      "name": "Mid",
+      "shape": "peak",
+      "verdict": "stepped",
+      "reason": "frequency or gain only at detents",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "Mid Gain",
+      "freq_control": "Mid Freq",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "-12 dB",
+          "gain_db": -11.859999999999999
+        },
+        {
+          "norm": 0.100000001490116,
+          "display": "-9 dB",
+          "gain_db": -8.880000000000001
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-6 dB",
+          "gain_db": -6.02
+        },
+        {
+          "norm": 0.300000011920929,
+          "display": "-4 dB",
+          "gain_db": -4.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-2 dB",
+          "gain_db": -2.03
+        },
+        {
+          "norm": 0.5,
+          "display": "0 dB",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "+2 dB",
+          "gain_db": 2.03
+        },
+        {
+          "norm": 0.699999988079071,
+          "display": "+4 dB",
+          "gain_db": 4.03
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "+6 dB",
+          "gain_db": 6.04
+        },
+        {
+          "norm": 0.899999976158142,
+          "display": "+9 dB",
+          "gain_db": 8.880000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "+12 dB",
+          "gain_db": 11.82
+        }
+      ],
+      "freq_map": [
+        {
+          "norm": 0.0,
+          "display": "0.4kHz",
+          "centre_hz": 390.399999999999977
+        },
+        {
+          "norm": 0.25,
+          "display": "0.8kHz",
+          "centre_hz": 791.700000000000045
+        },
+        {
+          "norm": 0.5,
+          "display": "1.5kHz",
+          "centre_hz": 1500.200000000000045
+        },
+        {
+          "norm": 0.75,
+          "display": "3.0kHz",
+          "centre_hz": 3061.099999999999909
+        },
+        {
+          "norm": 1.0,
+          "display": "5.0kHz",
+          "centre_hz": 5120.899999999999636
+        }
+      ],
+      "q_map": [],
+      "level_dependent_db": 0.0,
+      "acceptance": [
+        {
+          "target_db": 3.0,
+          "target_hz": 791.700000000000045,
+          "written": {
+            "gain_norm": 0.600000023841858,
+            "gain_display": "+2 dB",
+            "promised_db": 2.03,
+            "freq_norm": 0.25,
+            "freq_display": "0.8kHz",
+            "detent_hz": 791.700000000000045
+          },
+          "ran": true,
+          "measured_gain_db": 2.04,
+          "measured_figure_hz": 813.299999999999955,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.01,
+          "figure_off_pct": 2.7,
+          "pass": false,
+          "why": "gain within 0.01 dB; figure 813.322 Hz is 2.7 % off the detent (over the bar)"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 791.700000000000045,
+          "written": {
+            "gain_norm": 0.400000005960464,
+            "gain_display": "-2 dB",
+            "promised_db": -2.03,
+            "freq_norm": 0.25,
+            "freq_display": "0.8kHz",
+            "detent_hz": 791.700000000000045
+          },
+          "ran": true,
+          "measured_gain_db": -1.97,
+          "measured_figure_hz": 760.399999999999977,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.06,
+          "figure_off_pct": -4.0,
+          "pass": false,
+          "why": "gain within 0.06 dB; figure 760.387 Hz is -4.0 % off the detent (over the bar)"
+        },
+        {
+          "target_db": 3.0,
+          "target_hz": 3061.099999999999909,
+          "written": {
+            "gain_norm": 0.600000023841858,
+            "gain_display": "+2 dB",
+            "promised_db": 2.03,
+            "freq_norm": 0.75,
+            "freq_display": "3.0kHz",
+            "detent_hz": 3061.099999999999909
+          },
+          "ran": true,
+          "measured_gain_db": 2.04,
+          "measured_figure_hz": 3233.199999999999818,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.01,
+          "figure_off_pct": 5.6,
+          "pass": false,
+          "why": "gain within 0.01 dB; figure 3233.15 Hz is 5.6 % off the detent (over the bar)"
+        },
+        {
+          "target_db": -3.0,
+          "target_hz": 3061.099999999999909,
+          "written": {
+            "gain_norm": 0.400000005960464,
+            "gain_display": "-2 dB",
+            "promised_db": -2.03,
+            "freq_norm": 0.75,
+            "freq_display": "3.0kHz",
+            "detent_hz": 3061.099999999999909
+          },
+          "ran": true,
+          "measured_gain_db": -2.03,
+          "measured_figure_hz": 3196.0,
+          "measured_shape": "peak",
+          "gain_miss_db": 0.0,
+          "figure_off_pct": 4.4,
+          "pass": false,
+          "why": "gain within 0.00 dB; figure 3196.01 Hz is 4.4 % off the detent (over the bar)"
+        }
+      ]
+    }
+  ],
+  "default_bands": {
+    "low": "Low",
+    "low_mid": "Low",
+    "high_mid": "Mid",
+    "high": "Mid"
+  },
+  "neutral": [
+    {
+      "control": "Filter",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "LF-Type",
+      "set": "Shelf",
+      "norm": 0.0
+    },
+    {
+      "control": "In",
+      "set": "In",
+      "norm": 1.0
+    },
+    {
+      "control": "HF-Type",
+      "set": "Shelf",
+      "norm": 0.0
+    },
+    {
+      "control": "Polarity",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "Analog",
+      "set": "Off",
+      "norm": 0.0
+    },
+    {
+      "control": "Output",
+      "set": "0.0",
+      "norm": 0.5
+    }
+  ],
+  "notes": [
+    "Band 'High': not_static (the gain is not monotonic in its control (a reversal of 10.79 dB)): not usable by the server",
+    "Band 'Low': 4 of 4 acceptance write(s) failed (section 7): listed on the band",
+    "Band 'Mid': 4 of 4 acceptance write(s) failed (section 7): listed on the band"
+  ]
+}

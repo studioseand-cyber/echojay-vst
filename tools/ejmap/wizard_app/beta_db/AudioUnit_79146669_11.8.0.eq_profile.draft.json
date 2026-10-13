@@ -1,0 +1,262 @@
+{
+  "schema": "ej_eq_profile/1",
+  "spec": "EQ_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against EQ_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "UAD Precision Equalizer",
+    "manufacturer": "Universal Audio",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|79146669|11.8.0",
+    "version": "11.8.0",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-12",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "bands": [
+    {
+      "name": "measured [32] LowCut",
+      "shape": "low_shelf",
+      "verdict": "not_static",
+      "reason": "the gain sweep reads 60.1 dB at a position: this control moves something other than gain",
+      "proportional_q": null,
+      "engage": null,
+      "gain_control": "LowCut",
+      "freq_control": "(none)",
+      "q_control": null,
+      "gain_map": [
+        {
+          "norm": 0.0,
+          "display": "Off",
+          "gain_db": 0.0
+        },
+        {
+          "norm": 0.142857000231743,
+          "display": " 10 Hz",
+          "gain_db": -9.029999999999999
+        },
+        {
+          "norm": 0.285714000463486,
+          "display": " 20 Hz",
+          "gain_db": -20.969999999999999
+        },
+        {
+          "norm": 0.428570985794067,
+          "display": " 30 Hz",
+          "gain_db": -30.0
+        },
+        {
+          "norm": 0.571429014205933,
+          "display": " 40 Hz",
+          "gain_db": -36.909999999999997
+        },
+        {
+          "norm": 0.714286029338837,
+          "display": " 60 Hz",
+          "gain_db": -47.049999999999997
+        },
+        {
+          "norm": 0.857142984867096,
+          "display": " 80 Hz",
+          "gain_db": -54.390000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "100 Hz",
+          "gain_db": -60.130000000000003
+        }
+      ],
+      "freq_map": [],
+      "q_map": [],
+      "level_dependent_db": 0.0
+    }
+  ],
+  "default_bands": {
+    "low": null,
+    "low_mid": null,
+    "high_mid": null,
+    "high": null
+  },
+  "neutral": [
+    {
+      "control": "ALo1BW",
+      "set": "4",
+      "norm": 0.2
+    },
+    {
+      "control": "ALo1F",
+      "set": "104 Hz",
+      "norm": 0.5
+    },
+    {
+      "control": "ALo1G",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "ALo1En",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "ALo2BW",
+      "set": "4",
+      "norm": 0.2
+    },
+    {
+      "control": "ALo2F",
+      "set": "104 Hz",
+      "norm": 0.5
+    },
+    {
+      "control": "ALo2G",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "ALo2En",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "AHi1BW",
+      "set": "4",
+      "norm": 0.2
+    },
+    {
+      "control": "AHi1F",
+      "set": "4.10 k",
+      "norm": 0.5
+    },
+    {
+      "control": "AHi1G",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "AHi1En",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "AHi2BW",
+      "set": "4",
+      "norm": 0.2
+    },
+    {
+      "control": "AHi2F",
+      "set": "4.10 k",
+      "norm": 0.5
+    },
+    {
+      "control": "AHi2G",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "AHi2En",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "BLo1BW",
+      "set": "4",
+      "norm": 0.2
+    },
+    {
+      "control": "BLo1F",
+      "set": "104 Hz",
+      "norm": 0.5
+    },
+    {
+      "control": "BLo1G",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "BLo1En",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "BLo2BW",
+      "set": "4",
+      "norm": 0.2
+    },
+    {
+      "control": "BLo2F",
+      "set": "104 Hz",
+      "norm": 0.5
+    },
+    {
+      "control": "BLo2G",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "BLo2En",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "BHi1BW",
+      "set": "4",
+      "norm": 0.2
+    },
+    {
+      "control": "BHi1F",
+      "set": "4.10 k",
+      "norm": 0.5
+    },
+    {
+      "control": "BHi1G",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "BHi1En",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "BHi2BW",
+      "set": "4",
+      "norm": 0.2
+    },
+    {
+      "control": "BHi2F",
+      "set": "4.10 k",
+      "norm": 0.5
+    },
+    {
+      "control": "BHi2G",
+      "set": "0.0 dB",
+      "norm": 0.5
+    },
+    {
+      "control": "BHi2En",
+      "set": "Out",
+      "norm": 0.0
+    },
+    {
+      "control": "LRCtrl",
+      "set": "A",
+      "norm": 0.0
+    },
+    {
+      "control": "Power",
+      "set": "On",
+      "norm": 1.0
+    }
+  ],
+  "notes": [
+    "Band 'measured [32] LowCut': not_static (the gain sweep reads 60.1 dB at a position: this control moves something other than gain): not usable by the server",
+    "default_bands.low: no usable band's measured range reaches 100 Hz (within 1 octave)",
+    "default_bands.low_mid: no usable band's measured range reaches 400 Hz (within 1 octave)",
+    "default_bands.high_mid: no usable band's measured range reaches 2500 Hz (within 1 octave)",
+    "default_bands.high: no usable band's measured range reaches 10000 Hz (within 1 octave)"
+  ]
+}

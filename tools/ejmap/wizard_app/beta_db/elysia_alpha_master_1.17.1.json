@@ -1,0 +1,1216 @@
+{
+  "schema": "ej_comp_profile/1",
+  "plugin": {
+    "name": "elysia alpha master",
+    "manufacturer": "Plugin Alliance",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|45756f39|1.17.1",
+    "version": "1.17.1",
+    "map_fp": "989304492b719ad305cb2143be43985469a54d24ea491e28c63e52fe05d586a2"
+  },
+  "measured": {
+    "tool": "EJ Maps 0.1.0 (feat/ejmap-cert)",
+    "date": "2026-10-03",
+    "sample_rate": 48000,
+    "signal": "sine 997 Hz, stepped",
+    "level_ref": "sine_rms_dbfs",
+    "steps_dbfs": [
+      -63.009999999999998,
+      -3.01,
+      2.0
+    ],
+    "hold_ms": 2500,
+    "read_window_ms": 300,
+    "host": "out_of_process",
+    "reference_ratio": null,
+    "sidechain": "enabled_silent",
+    "extra_input_buses": []
+  },
+  "topology": "threshold",
+  "engage": [],
+  "never_touch": [],
+  "neutral": [
+    {
+      "control": "Active",
+      "index": 0,
+      "set": "On",
+      "norm": 1.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "MS Mode",
+      "index": 1,
+      "set": "On",
+      "norm": 1.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Link",
+      "index": 2,
+      "set": "On",
+      "norm": 1.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Feed Forward 1",
+      "index": 4,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Attack 1",
+      "index": 5,
+      "set": "26.0 ms",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "Attack Auto Fast 1",
+      "index": 6,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Release 1",
+      "index": 7,
+      "set": "359.2 ms",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "Release Auto Fast 1",
+      "index": 8,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Ratio 1",
+      "index": 9,
+      "set": "1.5",
+      "norm": 0.363636,
+      "source": "instantiate"
+    },
+    {
+      "control": "EQ Gain 1",
+      "index": 10,
+      "set": "0.0 dB",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "EQ On 1",
+      "index": 11,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "EQ Freq 1",
+      "index": 12,
+      "set": "155.0 Hz",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "EQ Freq x10 1",
+      "index": 13,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "SC Gain 1",
+      "index": 14,
+      "set": "0.0 dB",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "SC On 1",
+      "index": 15,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "SC Freq 1",
+      "index": 16,
+      "set": "310.0 Hz",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "Direct 1",
+      "index": 17,
+      "set": "On",
+      "norm": 1.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Mix 1",
+      "index": 18,
+      "set": "100.0 %",
+      "norm": 0.9375,
+      "role": "from_trace",
+      "source": "precondition"
+    },
+    {
+      "control": "Compressed 1",
+      "index": 19,
+      "set": "On",
+      "norm": 1.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gain 1",
+      "index": 20,
+      "set": "0.0 dB",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Warm 1",
+      "index": 21,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Soft Clip 1",
+      "index": 22,
+      "set": "25.0 dB",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Soft Clip On 1",
+      "index": 23,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Feed Forward 2",
+      "index": 25,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Attack 2",
+      "index": 26,
+      "set": "26.0 ms",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "Attack Auto Fast 2",
+      "index": 27,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Release 2",
+      "index": 28,
+      "set": "359.2 ms",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "Release Auto Fast 2",
+      "index": 29,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Ratio 2",
+      "index": 30,
+      "set": "1.5",
+      "norm": 0.363636,
+      "source": "instantiate"
+    },
+    {
+      "control": "EQ Gain 2",
+      "index": 31,
+      "set": "0.0 dB",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "EQ On 2",
+      "index": 32,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "EQ Freq 2",
+      "index": 33,
+      "set": "155.0 Hz",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "EQ Freq x10 2",
+      "index": 34,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "SC Gain 2",
+      "index": 35,
+      "set": "0.0 dB",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "SC On 2",
+      "index": 36,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "SC Freq 2",
+      "index": 37,
+      "set": "310.0 Hz",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "Direct 2",
+      "index": 38,
+      "set": "On",
+      "norm": 1.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Mix 2",
+      "index": 39,
+      "set": "100.0 %",
+      "norm": 0.9375,
+      "role": "from_trace",
+      "source": "precondition"
+    },
+    {
+      "control": "Compressed 2",
+      "index": 40,
+      "set": "On",
+      "norm": 1.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gain 2",
+      "index": 41,
+      "set": "0.0 dB",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Warm 2",
+      "index": 42,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Soft Clip 2",
+      "index": 43,
+      "set": "25.0 dB",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Soft Clip On 2",
+      "index": 44,
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    }
+  ],
+  "amount": {
+    "control": "Threshold 1",
+    "curve": [
+      {
+        "norm": 0.0,
+        "display": "+20.0 dB",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.066667,
+        "display": "+18.5 dB",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.133333,
+        "display": "+16.6 dB",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.2,
+        "display": "+14.2 dB",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.266667,
+        "display": "+11.3 dB",
+        "eff_threshold_dbfs": -5.81,
+        "in_at_gr_dbfs": {
+          "1": -5.81,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.333333,
+        "display": "+9.0 dB",
+        "eff_threshold_dbfs": -8.01,
+        "in_at_gr_dbfs": {
+          "1": -8.01,
+          "2": -3.41,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.4,
+        "display": "+6.4 dB",
+        "eff_threshold_dbfs": -10.710000000000001,
+        "in_at_gr_dbfs": {
+          "1": -10.710000000000001,
+          "2": -5.91,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.433334,
+        "display": "+4.9 dB",
+        "eff_threshold_dbfs": -12.109999999999999,
+        "in_at_gr_dbfs": {
+          "1": -12.109999999999999,
+          "2": -7.41,
+          "3": -3.31,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.466667,
+        "display": "+3.5 dB",
+        "eff_threshold_dbfs": -13.51,
+        "in_at_gr_dbfs": {
+          "1": -13.51,
+          "2": -8.91,
+          "3": -4.81,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.533333,
+        "display": "+0.5 dB",
+        "eff_threshold_dbfs": -16.510000000000002,
+        "in_at_gr_dbfs": {
+          "1": -16.510000000000002,
+          "2": -11.81,
+          "3": -7.71,
+          "4": -3.91,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.6,
+        "display": "-1.8 dB",
+        "eff_threshold_dbfs": -18.809999999999999,
+        "in_at_gr_dbfs": {
+          "1": -18.809999999999999,
+          "2": -14.210000000000001,
+          "3": -10.109999999999999,
+          "4": -6.31,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.666667,
+        "display": "-4.0 dB",
+        "eff_threshold_dbfs": -21.010000000000002,
+        "in_at_gr_dbfs": {
+          "1": -21.010000000000002,
+          "2": -16.41,
+          "3": -12.210000000000001,
+          "4": -8.51,
+          "5": -5.01,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.733333,
+        "display": "-6.2 dB",
+        "eff_threshold_dbfs": -23.309999999999999,
+        "in_at_gr_dbfs": {
+          "1": -23.309999999999999,
+          "2": -18.510000000000002,
+          "3": -14.51,
+          "4": -10.710000000000001,
+          "5": -7.21,
+          "6": -3.91,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.8,
+        "display": "-8.4 dB",
+        "eff_threshold_dbfs": -25.41,
+        "in_at_gr_dbfs": {
+          "1": -25.41,
+          "2": -20.809999999999999,
+          "3": -16.609999999999999,
+          "4": -12.91,
+          "5": -9.41,
+          "6": -6.11,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.866667,
+        "display": "-10.6 dB",
+        "eff_threshold_dbfs": -27.609999999999999,
+        "in_at_gr_dbfs": {
+          "1": -27.609999999999999,
+          "2": -23.010000000000002,
+          "3": -18.809999999999999,
+          "4": -15.109999999999999,
+          "5": -11.609999999999999,
+          "6": -8.31,
+          "7": -5.21,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.933333,
+        "display": "-12.3 dB",
+        "eff_threshold_dbfs": -29.309999999999999,
+        "in_at_gr_dbfs": {
+          "1": -29.309999999999999,
+          "2": -24.609999999999999,
+          "3": -20.510000000000002,
+          "4": -16.710000000000001,
+          "5": -13.31,
+          "6": -10.01,
+          "7": -6.81,
+          "8": -3.71,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 1.0,
+        "display": "-13.0 dB",
+        "eff_threshold_dbfs": -30.010000000000002,
+        "in_at_gr_dbfs": {
+          "1": -30.010000000000002,
+          "2": -25.309999999999999,
+          "3": -21.309999999999999,
+          "4": -17.510000000000002,
+          "5": -14.01,
+          "6": -10.710000000000001,
+          "7": -7.51,
+          "8": -4.51,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      }
+    ],
+    "stepped": false
+  },
+  "ratio": {
+    "control": null,
+    "curve": [],
+    "fixed": {
+      "measured_ratio": 1.33,
+      "knee_db": null
+    },
+    "knee_db": null
+  },
+  "static_gain_db": 0.0,
+  "detector_f": 0.25,
+  "detector_f_raw": 0.25,
+  "detector_f_source": "measured",
+  "quality": {
+    "point_error_db": 0.02,
+    "deep_point_error_db": 0.01,
+    "method": "hold 2.5 s vs 5 s",
+    "points_compared": 35,
+    "shape_disagreements": 0,
+    "monotonic_within_positions": true,
+    "monotonic_across_positions": true,
+    "violations": []
+  },
+  "level_coupling": null,
+  "fit": {
+    "max_error_db": 1.36,
+    "points": 125,
+    "model": "threshold per position from the 1 dB crossing; ratio 1.5, knee 12.0 dB, grid-searched; nothing tuned",
+    "error_vs_2db_target": 0.68,
+    "measured_point_quality": {
+      "non_monotonic_straddles": 0,
+      "widest_gap_db": 2.0,
+      "points_with_1db": 13
+    }
+  },
+  "notes": [
+    "levels converted from peak dBFS (EJ Map's convention) to sine RMS by -3.01 dB (a full-scale 997 Hz sine exports as -3.01)",
+    "tone 997 Hz",
+    "guards passed: tone_frac (0 readings refused as not the tone), level dependence (not a gain law), quiet-reference 6 dB self-check (17 of 17 positions), ascending-only levels in each fresh process, still-moving rule",
+    "amount control decided by the measured rule 'linked_pair': pick Threshold 1; twin Threshold 2 at instantiate (in neutral); linked pair 'Threshold' (measured, not by label): both certified; their 2 dB curves agree within 0.00 dB over 12 common positions; in the first's own sweep both output channels agree within 0.00 dB over 1190 readings. 'Threshold 1' is the amount; 'Threshold 2' and every link/mode control stay at their instantiate values (neutral); defaults reference with every control at its instantiate value: GR not measured - below the 1 dB sense bar",
+    "deep points 4..12 (v1.7, to 12 since v1.10): deep_point_error_db 0.01 dB over 24 surviving deep points, informational; deep points nulled by the hold-doubling test (over 0.5 dB): none",
+    "deep null 4 dB - not reached by -3.01 dBFS: positions 0.2667, 0.3333, 0.4000, 0.4333, 0.4667",
+    "deep null 4 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000",
+    "deep null 5 dB - not reached by -3.01 dBFS: positions 0.2667, 0.3333, 0.4000, 0.4333, 0.4667, 0.5333, 0.6000",
+    "deep null 5 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000",
+    "deep null 6 dB - not reached by -3.01 dBFS: positions 0.2667, 0.3333, 0.4000, 0.4333, 0.4667, 0.5333, 0.6000, 0.6667",
+    "deep null 6 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000",
+    "deep null 7 dB - not reached by -3.01 dBFS: positions 0.2667, 0.3333, 0.4000, 0.4333, 0.4667, 0.5333, 0.6000, 0.6667, 0.7333, 0.8000",
+    "deep null 7 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000",
+    "deep null 8 dB - not reached by -3.01 dBFS: positions 0.2667, 0.3333, 0.4000, 0.4333, 0.4667, 0.5333, 0.6000, 0.6667, 0.7333, 0.8000, 0.8667",
+    "deep null 8 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000",
+    "deep null 9 dB - not reached by -3.01 dBFS: positions 0.2667, 0.3333, 0.4000, 0.4333, 0.4667, 0.5333, 0.6000, 0.6667, 0.7333, 0.8000, 0.8667, 0.9333, 1.0000",
+    "deep null 9 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000",
+    "deep null 10 dB - not reached by -3.01 dBFS: positions 0.2667, 0.3333, 0.4000, 0.4333, 0.4667, 0.5333, 0.6000, 0.6667, 0.7333, 0.8000, 0.8667, 0.9333, 1.0000",
+    "deep null 10 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000",
+    "deep null 11 dB - not reached by -3.01 dBFS: positions 0.2667, 0.3333, 0.4000, 0.4333, 0.4667, 0.5333, 0.6000, 0.6667, 0.7333, 0.8000, 0.8667, 0.9333, 1.0000",
+    "deep null 11 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000",
+    "deep null 12 dB - not reached by -3.01 dBFS: positions 0.2667, 0.3333, 0.4000, 0.4333, 0.4667, 0.5333, 0.6000, 0.6667, 0.7333, 0.8000, 0.8667, 0.9333, 1.0000",
+    "deep null 12 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333, 0.2000",
+    "deep 4 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.5333, 0.6000, 0.6667",
+    "deep 5 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.6667, 0.7333",
+    "deep 6 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.7333, 0.8000, 0.8667",
+    "deep 7 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.8667, 0.9333, 1.0000",
+    "deep 8 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.9333, 1.0000",
+    "ratio.curve[0].measured_ratio is implied from level dependence (the GR-vs-level slope at the ratio the sweep ran at), not a ratio sweep; knee_db null: no knee was measured",
+    "neutral lists every control except the amount, the ratio, readouts/meters, the engage writes and never_touch, at the value it was measured at (source: precondition or instantiate)",
+    "profile sweep, 31 levels ascending per fresh process, quiet reference per position",
+    "compressed as instantiated, no engage write needed"
+  ],
+  "tone_check": {
+    "product": "elysia alpha master",
+    "map_fp": "989304492b719ad305cb2143be43985469a54d24ea491e28c63e52fe05d586a2",
+    "L_rms_dbfs": -16.102574999999998,
+    "L_peak_dbfs": -13.092275043360186,
+    "g_db": 2.0,
+    "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.25 = -16.10 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 12 positions' in_at_gr[2.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+    "gr_per_channel_db": [
+      2.0,
+      2.0
+    ],
+    "L_ref_dbfs": -16.102574999999998,
+    "L_gap_db": 0.0,
+    "pick": {
+      "norm": 0.657351044329545,
+      "point": 11,
+      "point_next": 10,
+      "in_at_g": -16.41,
+      "stepped": false,
+      "pick_one_db": -20.702575,
+      "clamp_db": 12.0,
+      "expected_gr_db": 2.0,
+      "filled_across_norm": false,
+      "fell_back_to_measured": false
+    },
+    "writes": [
+      {
+        "control": "Active",
+        "index": 0,
+        "norm": 1.0,
+        "set": "On",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "MS Mode",
+        "index": 1,
+        "norm": 1.0,
+        "set": "On",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Link",
+        "index": 2,
+        "norm": 1.0,
+        "set": "On",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Feed Forward 1",
+        "index": 4,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Attack 1",
+        "index": 5,
+        "norm": 0.5,
+        "set": "26.0 ms",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Attack Auto Fast 1",
+        "index": 6,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Release 1",
+        "index": 7,
+        "norm": 0.5,
+        "set": "359.2 ms",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Release Auto Fast 1",
+        "index": 8,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Ratio 1",
+        "index": 9,
+        "norm": 0.363636,
+        "set": "1.5",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "EQ Gain 1",
+        "index": 10,
+        "norm": 0.5,
+        "set": "0.0 dB",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "EQ On 1",
+        "index": 11,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "EQ Freq 1",
+        "index": 12,
+        "norm": 0.5,
+        "set": "155.0 Hz",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "EQ Freq x10 1",
+        "index": 13,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "SC Gain 1",
+        "index": 14,
+        "norm": 0.5,
+        "set": "0.0 dB",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "SC On 1",
+        "index": 15,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "SC Freq 1",
+        "index": 16,
+        "norm": 0.5,
+        "set": "310.0 Hz",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Direct 1",
+        "index": 17,
+        "norm": 1.0,
+        "set": "On",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Mix 1",
+        "index": 18,
+        "norm": 0.9375,
+        "set": "100.0 %",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Compressed 1",
+        "index": 19,
+        "norm": 1.0,
+        "set": "On",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gain 1",
+        "index": 20,
+        "norm": 0.0,
+        "set": "0.0 dB",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Warm 1",
+        "index": 21,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Soft Clip 1",
+        "index": 22,
+        "norm": 0.0,
+        "set": "25.0 dB",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Soft Clip On 1",
+        "index": 23,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Feed Forward 2",
+        "index": 25,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Attack 2",
+        "index": 26,
+        "norm": 0.5,
+        "set": "26.0 ms",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Attack Auto Fast 2",
+        "index": 27,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Release 2",
+        "index": 28,
+        "norm": 0.5,
+        "set": "359.2 ms",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Release Auto Fast 2",
+        "index": 29,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Ratio 2",
+        "index": 30,
+        "norm": 0.363636,
+        "set": "1.5",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "EQ Gain 2",
+        "index": 31,
+        "norm": 0.5,
+        "set": "0.0 dB",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "EQ On 2",
+        "index": 32,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "EQ Freq 2",
+        "index": 33,
+        "norm": 0.5,
+        "set": "155.0 Hz",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "EQ Freq x10 2",
+        "index": 34,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "SC Gain 2",
+        "index": 35,
+        "norm": 0.5,
+        "set": "0.0 dB",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "SC On 2",
+        "index": 36,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "SC Freq 2",
+        "index": 37,
+        "norm": 0.5,
+        "set": "310.0 Hz",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Direct 2",
+        "index": 38,
+        "norm": 1.0,
+        "set": "On",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Mix 2",
+        "index": 39,
+        "norm": 0.9375,
+        "set": "100.0 %",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Compressed 2",
+        "index": 40,
+        "norm": 1.0,
+        "set": "On",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gain 2",
+        "index": 41,
+        "norm": 0.0,
+        "set": "0.0 dB",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Warm 2",
+        "index": 42,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Soft Clip 2",
+        "index": 43,
+        "norm": 0.0,
+        "set": "25.0 dB",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Soft Clip On 2",
+        "index": 44,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      }
+    ],
+    "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+    "quiet_check_ok": true,
+    "gr_measured_db": 2.0,
+    "pass_within_0_5_db": true,
+    "probe": "e6614a35487966f7bd80a97312d50c869d6d7108",
+    "measuredAt": "20261012T203151.385+0100",
+    "ratio_norm_source": "no ratio control in the profile (fixed ratio): nothing written",
+    "spec": "v1.7",
+    "build": "b287aef3",
+    "deep_levels": [
+      {
+        "g_db": 4.0,
+        "ran": true,
+        "gr_measured_db": 4.1,
+        "L_rms_dbfs": -16.102574999999998,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.25 = -16.10 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 8 positions' in_at_gr[4.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          4.1,
+          4.1
+        ],
+        "L_ref_dbfs": -16.102574999999998,
+        "L_gap_db": 0.0,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 0.90802387809375,
+          "point": 15,
+          "point_next": 14,
+          "in_at_g": -16.710000000000001,
+          "stepped": false,
+          "pick_one_db": -28.664610937499997,
+          "clamp_db": 15.562035937499999,
+          "expected_gr_db": 4.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      },
+      {
+        "g_db": 5.0,
+        "ran": true,
+        "gr_measured_db": 5.0,
+        "L_rms_dbfs": -14.01,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.25 = -16.10 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 6 positions' in_at_gr[5.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          5.0,
+          5.0
+        ],
+        "L_ref_dbfs": -16.102574999999998,
+        "L_gap_db": 2.09,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 1.0,
+          "point": 16,
+          "point_next": 15,
+          "in_at_g": -14.01,
+          "stepped": false,
+          "pick_one_db": -30.010000000000002,
+          "clamp_db": 19.0,
+          "expected_gr_db": 5.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      },
+      {
+        "g_db": 6.0,
+        "ran": true,
+        "gr_measured_db": 5.99,
+        "L_rms_dbfs": -10.710000000000001,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.25 = -16.10 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 5 positions' in_at_gr[6.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          5.99,
+          5.99
+        ],
+        "L_ref_dbfs": -16.102574999999998,
+        "L_gap_db": 5.39,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 1.0,
+          "point": 16,
+          "point_next": 15,
+          "in_at_g": -10.710000000000001,
+          "stepped": false,
+          "pick_one_db": -30.010000000000002,
+          "clamp_db": 22.300000000000001,
+          "expected_gr_db": 6.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      },
+      {
+        "g_db": 7.0,
+        "ran": true,
+        "gr_measured_db": 7.01,
+        "L_rms_dbfs": -7.51,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.25 = -16.10 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 3 positions' in_at_gr[7.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          7.01,
+          7.01
+        ],
+        "L_ref_dbfs": -16.102574999999998,
+        "L_gap_db": 8.59,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 1.0,
+          "point": 16,
+          "point_next": 15,
+          "in_at_g": -7.51,
+          "stepped": false,
+          "pick_one_db": -30.010000000000002,
+          "clamp_db": 25.5,
+          "expected_gr_db": 7.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      },
+      {
+        "g_db": 8.0,
+        "ran": true,
+        "gr_measured_db": 7.99,
+        "L_rms_dbfs": -4.51,
+        "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.25 = -16.10 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 2 positions' in_at_gr[8.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+        "gr_per_channel_db": [
+          7.99,
+          7.99
+        ],
+        "L_ref_dbfs": -16.102574999999998,
+        "L_gap_db": 11.59,
+        "quiet_check_ok": true,
+        "pass_within_0_5_db": true,
+        "pick": {
+          "norm": 1.0,
+          "point": 16,
+          "point_next": 15,
+          "in_at_g": -4.51,
+          "stepped": false,
+          "pick_one_db": -30.010000000000002,
+          "clamp_db": 28.5,
+          "expected_gr_db": 8.0,
+          "filled_across_norm": false,
+          "fell_back_to_measured": false
+        },
+        "null_reason": null
+      }
+    ],
+    "deep_levels_nulled": []
+  }
+}

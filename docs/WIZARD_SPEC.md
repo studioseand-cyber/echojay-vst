@@ -129,7 +129,7 @@ EchoJay Wizard.app/Contents/MacOS/
 - Engine calls:
   - scan: `ejmap --wizard --db <db> --out <work>/engine --ejmap-ledger <work>/store --jobs N --skip <work>/skip.json`
   - measure: the same plus `--measure --bundle`
-- The work folder is `~/Library/Application Support/EchoJay Wizard/`, or `--work` for rehearsals. It holds `account.json`, `app_state.json`, `skip.json`, `crash_reports/`, `engine/`, `store/` (the wizard's own maps; it never writes `~/Library/ejmap`) and `app.log`.
+- The work folder is `~/Library/Application Support/EchoJay Wizard/` (the beta: `EchoJay Wizard Beta/`, never shared - 13 Oct), or `--work` for rehearsals. The beta reads its database from the read-only snapshot of Sean's cert 5 in its own bundle (`Contents/Resources/beta_db`, built by `tools/ejmap/scripts/beta_db_snapshot.py`); the release keeps the stub's `server_stub/db`. It holds `account.json`, `app_state.json`, `skip.json`, `crash_reports/`, `engine/`, `store/` (the wizard's own maps; it never writes `~/Library/ejmap`) and `app.log`.
 - To assemble: `tools/ejmap/wizard_app/assemble.sh <build dir> <out>` copies the app, the engine and the signed probe into the bundle, signs the engine ad hoc, and re-seals the bundle ad hoc **without** `--deep` (so the probe keeps its signature).
 - Rehearsal-only flags: `--auto` (no hands), `--auto-close-after S` (the close button), `--snapshots DIR` (a PNG of every screen), `--only NAME`, `--db`, `--store`, `--reports`.
 

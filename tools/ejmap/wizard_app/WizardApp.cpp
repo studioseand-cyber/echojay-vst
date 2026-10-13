@@ -62,7 +62,7 @@ juce::File homeChild (const juce::String& p) { return juce::File::getSpecialLoca
 Config parseArgs (const juce::StringArray& a)
 {
     Config c;
-    c.work = homeChild ("Library/Application Support/EchoJay Wizard");
+    c.work = homeChild ("Library/Application Support/" + wizapp::workFolderName (kMode));   // 13 Oct: beta and release apart
     c.engine = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("ejmap");
     c.reports = homeChild ("Library/Logs/DiagnosticReports");
     for (int i = 0; i < a.size(); ++i)
@@ -75,9 +75,11 @@ Config parseArgs (const juce::StringArray& a)
         else if (k == "--auto") c.autoMode = true;
         else if (k == "--auto-close-after") { c.autoCloseAfterS = v.getDoubleValue(); ++i; }   // rehearsals: the close button, pressed after N s of measuring
     }
-    if (c.db == juce::File()) c.db = c.work.getChildFile ("server_stub/db");             // STUB: the server's "which do you already have"
+    const auto app = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
+    if (c.db == juce::File()) c.db = wizapp::databaseFolder (kMode, app, c.work);       // beta: the bundled snapshot (read-only); release: the STUB
     if (c.store == juce::File()) c.store = c.work.getChildFile ("store");                // the wizard's own map store (never ~/Library/ejmap)
-    {   // 13 Oct: the mock DB's 290 agreed references, from the app's Resources (assemble.sh), into the STUB db only
+    if (! c.db.isAChildOf (app))
+    {   // 13 Oct: the mock DB's 290 agreed references, from the app's Resources (assemble.sh), into the STUB db only (never into the bundle)
         const auto res = juce::File::getSpecialLocation (juce::File::currentApplicationFile).getChildFile ("Contents/Resources/mock_db/references");
         wizserver::stub::seedMockReferences (res, c.db);
     }
