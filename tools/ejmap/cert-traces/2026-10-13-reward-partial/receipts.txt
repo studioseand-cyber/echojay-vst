@@ -1,0 +1,6 @@
+B checkpoint 1 / 4 accepted 1 (+1) no code | 
+B checkpoint 1 / 4 accepted 1 (+0) no code | 
+B checkpoint 3 / 4 accepted 3 (+2) no code | 
+B checkpoint 4 / 4 accepted 4 (+1) no code | 
+B finished 4 / 4 accepted 4 (+0) code | 
+C sent_early 1 / 4 accepted 1 (+1) no code | Thank you - your results arrived. The free month needs the full run, so there's no code this time.
