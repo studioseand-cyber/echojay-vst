@@ -25,7 +25,7 @@
 namespace ejmap::cert
 {
 
-struct WizardOptions { SweepOptions opt; juce::File db, skip; juce::StringArray only; bool measure = false, bundle = false, verbose = false, plan = false; };   // plan: the database step only, nothing loaded (plan.json)   // skip: the app's never-retry list (skip.json)
+struct WizardOptions { SweepOptions opt; juce::File db, skip; juce::StringArray only; bool measure = false, bundle = false, verbose = false, plan = false; juce::String runId; double checkpointMinutes = 60.0; };   // runId / checkpointMinutes: 13 Oct, partial uploads   // plan: the database step only, nothing loaded (plan.json)   // skip: the app's never-retry list (skip.json)
 
 // the map store (read): (uid|version) -> { fp, category }
 struct StoreEntry { juce::String fp, category; };
@@ -383,75 +383,10 @@ inline int runWizard (const WizardOptions& wo)
         { const auto r = juce::JSON::parse (f.loadFileAsString()); if (r.getProperty ("outcome", "").toString() == "ok") tq.add (wizroute::kindOf (pb), (double) r.getProperty ("seconds", 0.0)); }
         state->setProperty ("to_measure", distinct.size()); state->setProperty ("to_measure_eta_s", std::round (wizprog::stageSecondsLeft (q, tq, opt.jobs)));
     }
-    // 2. MEASURE THE QUEUES (Phase B: --jobs, resumable, every outcome; the tone check / the EQ acceptance)
-    if (wo.measure && queuedAnywhere())
+    juce::String bundleWords; bool sentEarly = false;   // sentEarly: Send what's done (the finish request)
+    // THE STATES (13 Oct: a lambda, so a checkpoint can settle a COPY of the rows mid-run): each queued row from what landed on disk
+    auto settle = [&] (juce::Array<juce::var>& rows, std::map<juce::String, int>& counts, bool finishing)
     {
-        say ("WIZARD: measuring " + juce::String ((int) measureItems().size()) + " plugin measurement(s)" + (opt.jobs > 1 ? ", " + juce::String (opt.jobs) + " at a time" : juce::String()) + " - stop any time; it carries on next time");
-        {   // MEASURING: the two queues; a plugin whose Phase B row is already on disk is done (resume) and its seconds are a measured time
-            auto its = measureItems();   // RESUME: an item whose Phase B row already landed is done; its seconds are a measured time
-            for (auto& it : its) for (const auto& grp : wizroute::measureOrder()) for (const auto& pb : grp) if (wizroute::kindOf (pb) == it.kind)
-                if (const auto r = landedRow (pb, it.product); r.isObject()) { it.done = true; it.problem = r.getProperty ("outcome", "").toString() != "ok";
-                    if (it.problem) prog.addProblems (1); else prog.seedTime (it.kind, (double) r.getProperty ("seconds", 0.0)); }
-            prog.stage (wizprog::Stage::measuring, its);
-            phaseb::rowHooks().started = [&] (const juce::String& cat, const juce::String& product) { prog.started (product, wizroute::kindOf (cat)); };
-            phaseb::rowHooks().finished = [&] (const juce::String& cat, const juce::String& product, const juce::String& outcome, double seconds)
-            {   // 13 Oct: a row that landed ok but gave no result (a refused compressor, a failed EQ acceptance) is not "measured so far"
-                juce::String certState; bool eqOk = false;
-                if (outcome == "ok" && (cat == "wizard" || cat == "limitercomp" || cat == "wizard_eq"))
-                    if (const auto r = landedRow (cat, product); r.isObject())
-                    {
-                        const auto stem = r.getProperty ("_stem", "").toString(); const auto dir = out.getChildFile ("phaseb").getChildFile (cat);
-                        if (cat == "wizard_eq") { juce::String w; eqOk = wizard::eqAccepted (juce::JSON::parse (dir.getChildFile ("drafts").getChildFile (stem + ".eq_profile.draft.json").loadFileAsString()), w); }
-                        else { const auto oc = juce::JSON::parse (dir.getChildFile ("outcome").getChildFile (stem + ".outcomes.json").loadFileAsString());
-                               if (const auto* a = oc.getArray()) for (const auto& o : *a) certState = o.getProperty ("state", "").toString(); }
-                    }
-                prog.finished (product, ! wizroute::landedMeasured (cat, outcome, certState, eqOk), seconds, wizroute::kindOf (cat));
-            };
-            prog.startTicker();
-        }
-        // FINISH NOW (Kathy, 13 Oct): the app writes <out>/finish_requested, then stops the engine like a pause; a request left from an
-        // earlier run never counts
-        out.getChildFile (wizapp::kFinishRequestFile).deleteFile();
-        // THE MEASURING ORDER: one Phase B pass per group, most valuable first; a stop (130) ends the order there
-        auto optW = opt; optW.wizardQueues = true; optW.limiterPassKnown = limiterKnown; int pbCode = 0;
-        // 13 Oct (beta item 2): the measuring stops cleanly when the disk runs low - checked at most every 10 s, a stop like Ctrl-C
-        bool diskStopped = false; double lastDiskCheck = -1.0e9;
-        phaseb::extraStop() = [&] {
-            const double now = juce::Time::getMillisecondCounterHiRes();
-            if (! diskStopped && now - lastDiskCheck >= 10000.0) { lastDiskCheck = now; if (! wizapp::diskVerdict (wizapp::freeBytes (out), false).ok) { diskStopped = true; say ("WIZARD: the disk is running low - stopping cleanly"); } }
-            return diskStopped || wizardStop() != 0; };   // 13 Oct: a stop that lands before Phase B installs its own handler
-        for (const auto& grp : wizroute::measureOrder())
-        {
-            // 13 Oct (the finish rehearsal): a stop between two passes was seen only after the NEXT whole pass ran (the gate ran 4.5 min
-            // after Finish now) - it is checked before each pass starts
-            if (wizardStop() != 0) { pbCode = 130; break; }
-            juce::StringArray run; for (const auto& pb : grp) if (queues.count (pb) && ! queues[pb].isEmpty()) run.add (pb);
-            if (run.isEmpty()) continue;
-            say ("WIZARD: measuring " + run.joinIntoString (" + ") + " (" + juce::String ((int) [&] { int n = 0; for (const auto& pb : run) n += queues[pb].size(); return n; }()) + ")");
-            pbCode = runPhaseBAll (optW, run, {}, {});
-            std::signal (SIGINT, [] (int) { wizardStop() = 1; }); std::signal (SIGTERM, [] (int) { wizardStop() = 1; });   // Phase B restores the defaults on its way out
-            if (wizardStop() != 0) pbCode = 130;
-            if (wizprog::measureStopped (pbCode)) break;
-        }
-        prog.stopTicker(); phaseb::rowHooks() = {}; phaseb::extraStop() = {};
-        const bool finishing = wizapp::finishAfterStop (pbCode, out.getChildFile (wizapp::kFinishRequestFile).existsAsFile(), diskStopped);
-        if (finishing)
-        {   // the in-flight plugins were discarded by Phase B's stop (no row lands, their temp folders thrown away); pack what landed
-            out.getChildFile (wizapp::kFinishRequestFile).deleteFile(); wizardStop() = 0; pbCode = 0;
-            const auto [measured, toMeasure] = prog.stageDone();
-            say ("WIZARD: finish now - " + juce::String (measured) + " of " + juce::String (toMeasure) + " landed; the plugins in flight were discarded; packing what is done");
-        }
-        {   // the drafts for the categories beyond compressor / EQ (their cert derive step, the same rules)
-            juce::StringArray cats; for (const auto& [pb, l] : queues) if (! l.isEmpty() && pb != "wizard" && pb != "wizard_eq") cats.add (pb);
-            if (! cats.isEmpty() && ! wizprog::measureStopped (pbCode)) runPhaseBDrafts (optW, cats);
-        }
-        if (wizprog::measureStopped (pbCode))
-        {   // the user stopped it: no bundle, no "Done" - the rows that landed stay, the same command carries on
-            const auto [measured, toMeasure] = prog.stageDone();
-            say ("WIZARD: stopped while measuring (" + juce::String (measured) + " of " + juce::String (toMeasure) + " landed): no bundle; the same command carries on");
-            prog.finish (diskStopped ? wizapp::diskVerdict (wizapp::freeBytes (out), false).words : wizprog::stoppedWords (prog.stoppedAt(), measured, toMeasure, prog.running()), true);
-            return 130;
-        }
         counts.clear();
         for (auto& rv : rows)
         {
@@ -536,15 +471,12 @@ inline int runWizard (const WizardOptions& wo)
             }
             row->setProperty ("state", st); row->setProperty ("outcome", outcome); row->setProperty ("cert_state", certState); if (rowWhy.isNotEmpty()) row->setProperty ("why", rowWhy); ++counts[st];
         }
-        say ("WIZARD: " + wizard::summaryLine (counts, wo.bundle));
-    }
-    state->setProperty ("schema", "ej_wizard_state/0"); state->setProperty ("plugins", rows); state->setProperty ("summary", wizard::summaryLine (counts, wo.bundle));
-    out.getChildFile ("wizard_state.json").replaceWithText (juce::JSON::toString (juce::var (state)) + "\n");
-    // 3. THE BUNDLE (profiles + tone-check sidecars / EQ profiles + a manifest; nothing personal) and the STUBBED upload
-    juce::String bundleWords;
-    if (wo.bundle)
+    };
+    // THE BUNDLE (13 Oct: a lambda - the end, Send what's done, and the quiet checkpoints all pack the same way); 3 = refused (personal / category)
+    int checkpointSeq = 0;
+    auto pack = [&] (const juce::Array<juce::var>& rows, const juce::String& runKind, bool quiet) -> int
     {
-        { wizprog::Item it; it.product = "the contribution bundle"; it.kind = "pack"; prog.stage (wizprog::Stage::packing, { it }); prog.started (it.product); }
+        if (! quiet) { wizprog::Item it; it.product = "the contribution bundle"; it.kind = "pack"; prog.stage (wizprog::Stage::packing, { it }); prog.started (it.product); }
         const auto B = out.getChildFile ("contribution"); B.deleteRecursively(); B.getChildFile ("profiles").createDirectory();
         juce::Array<juce::var> items, confirmations, skipped, crashedList, needsCategory, otherCategories, outOfScopeList, heldList, referenceVotes;
         if (wo.skip != juce::File())
@@ -592,7 +524,7 @@ inline int runWizard (const WizardOptions& wo)
                     const auto p = juce::JSON::parse (f.loadFileAsString()); if (p.getProperty ("plugin", {}).getProperty ("plugin_id", "").toString() != rv.getProperty ("plugin_id", "").toString()) continue;
                     const auto tc = f.getSiblingFile (f.getFileNameWithoutExtension() + ".tonecheck.json");
                     const auto tcv = juce::JSON::parse (tc.loadFileAsString());
-                    if (! (bool) tcv.getProperty ("pass_within_0_5_db", false)) { auto* s = new juce::DynamicObject(); s->setProperty ("product", product); s->setProperty ("why", "measured, but its tone check did not pass: not sent"); skipped.add (juce::var (s)); continue; }
+                    if (! (bool) tcv.getProperty ("pass_within_0_5_db", false)) { auto* s = new juce::DynamicObject(); s->setProperty ("product", product); s->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); s->setProperty ("why", "measured, but its tone check did not pass: not sent"); skipped.add (juce::var (s)); continue; }
                     f.copyFileTo (B.getChildFile ("profiles").getChildFile (f.getFileName())); tc.copyFileTo (B.getChildFile ("profiles").getChildFile (tc.getFileName()));
                     auto* it = new juce::DynamicObject(); it->setProperty ("product", product); it->setProperty ("kind", "compressor"); it->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); it->setProperty ("map_fp", p.getProperty ("plugin", {}).getProperty ("map_fp", {}));
                     it->setProperty ("profile", "profiles/" + f.getFileName()); it->setProperty ("tone_check", "profiles/" + tc.getFileName()); it->setProperty ("tone_check_g2_pass", true); items.add (juce::var (it));
@@ -625,17 +557,30 @@ inline int runWizard (const WizardOptions& wo)
             else if (st == "out_of_scope")
             { auto* o = new juce::DynamicObject(); o->setProperty ("product", product); o->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); o->setProperty ("why", "not an EchoJay category: listed, not loaded"); outOfScopeList.add (juce::var (o)); }   // the internal label stays local
             else if (st != "ready" && st != "pending_review")   // A: nothing to send; pending_review: another user already sent it
-            { auto* s = new juce::DynamicObject(); s->setProperty ("product", product); s->setProperty ("state", st); s->setProperty ("why", rv.getProperty ("why", {})); skipped.add (juce::var (s)); }
+            { auto* s = new juce::DynamicObject(); s->setProperty ("product", product); s->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); s->setProperty ("state", st); s->setProperty ("why", rv.getProperty ("why", {})); skipped.add (juce::var (s)); }
         }
         auto* M = new juce::DynamicObject(); M->setProperty ("schema", "ej_contribution/0"); M->setProperty ("created", juce::Time::getCurrentTime().toISO8601 (true));
         M->setProperty ("tool", juce::String ("EJ Map ") + EJMAP_GIT_HASH); M->setProperty ("platform", juce::SystemStats::getOperatingSystemName());
         M->setProperty ("profiles", items); M->setProperty ("confirmations", confirmations); M->setProperty ("skipped", skipped); M->setProperty ("crashed", crashedList);
         M->setProperty ("needs_category", needsCategory); M->setProperty ("other_categories", otherCategories); M->setProperty ("out_of_scope", outOfScopeList); M->setProperty ("held", heldList);
+        {   // THE RUN (13 Oct, partial uploads): the run id, what this upload is (checkpoint / sent_early / finished), the run's queue and every
+            // queued plugin's state now - the server merges by run id + plugin and decides the reward from the merged run, never from this
+            auto* R = new juce::DynamicObject(); R->setProperty ("run_id", wo.runId); R->setProperty ("kind", runKind); M->setProperty ("run", juce::var (R));
+            juce::Array<juce::var> queue, outcomes;
+            for (const auto& rv : rows)
+            {
+                if (rv.getProperty ("phaseb", "").toString().isEmpty()) continue;
+                queue.add (rv.getProperty ("plugin_id", {}));
+                auto* o = new juce::DynamicObject(); o->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); o->setProperty ("product", rv.getProperty ("product", {}));
+                o->setProperty ("state", rv.getProperty ("state", {})); outcomes.add (juce::var (o));
+            }
+            M->setProperty ("queue", queue); M->setProperty ("outcomes", outcomes);
+        }
         M->setProperty ("reference_votes", referenceVotes);
         const juce::var Mv (M);   // ONE owner of the manifest (a second juce::var (M) after a temporary would use a deleted object)
         {   // THE BOUNDARY CHECK (12 Oct): every category the manifest carries is one of the server's 12, or nothing is packed
             const auto bad = wizserver::invalidOutgoing (Mv);
-            if (! bad.isEmpty()) { say ("WIZARD: the bundle is NOT made - categories the server does not have: " + bad.joinIntoString ("; ")); prog.finish ("Stopped: the bundle would carry a category the server does not have (" + bad.joinIntoString ("; ") + "). Nothing was made or sent."); return 3; }
+            if (! bad.isEmpty()) { say ("WIZARD: the bundle is NOT made - categories the server does not have: " + bad.joinIntoString ("; ")); if (! quiet) prog.finish ("Stopped: the bundle would carry a category the server does not have (" + bad.joinIntoString ("; ") + "). Nothing was made or sent."); return 3; }
         }
         M->setProperty ("note", "results only: profiles, their tone checks and this manifest - no plugin files, no audio, no account token");
         B.getChildFile ("manifest.json").replaceWithText (juce::JSON::toString (Mv) + "\n");
@@ -645,14 +590,117 @@ inline int runWizard (const WizardOptions& wo)
         for (const auto& f : B.findChildFiles (juce::File::findFiles, true))
             for (const auto& p : wizard::personalProblems (f.loadFileAsString(), home, user, juce::String (host).upToFirstOccurrenceOf (".", false, false)))
                 problems.add (f.getRelativePathFrom (B) + ": " + p);
-        if (! problems.isEmpty()) { say ("WIZARD: the bundle is NOT made - it would carry: " + problems.joinIntoString ("; ")); prog.finish ("Stopped: the bundle would carry something personal (" + problems.joinIntoString ("; ") + "). Nothing was made or sent."); return 3; }
-        const auto zip = out.getChildFile ("contribution.zip"); zip.deleteFile();
-        juce::ChildProcess z; z.start (juce::StringArray { "/bin/sh", "-c", "cd \"" + B.getFullPathName() + "\" && /usr/bin/zip -qr \"" + zip.getFullPathName() + "\" ." }); z.waitForProcessToFinish (60000);
+        if (! problems.isEmpty()) { say ("WIZARD: the bundle is NOT made - it would carry: " + problems.joinIntoString ("; ")); if (! quiet) prog.finish ("Stopped: the bundle would carry something personal (" + problems.joinIntoString ("; ") + "). Nothing was made or sent."); return 3; }
+        // 13 Oct (partial uploads): the zip and its manifest land by rename, then checkpoint.json names them - the app may read them while
+        // the engine still measures
+        const auto zip = out.getChildFile ("contribution.zip"); const auto zipTmp = out.getChildFile ("contribution.zip.tmp"); zipTmp.deleteFile();
+        juce::ChildProcess z; z.start (juce::StringArray { "/bin/sh", "-c", "cd \"" + B.getFullPathName() + "\" && /usr/bin/zip -qr \"" + zipTmp.getFullPathName() + "\" ." }); z.waitForProcessToFinish (60000);
+        zipTmp.moveFileTo (zip);
+        { const auto mt = out.getChildFile ("contribution.manifest.json.tmp"); mt.replaceWithText (juce::JSON::toString (Mv) + "\n"); mt.moveFileTo (out.getChildFile ("contribution.manifest.json")); }
+        {   auto* c = new juce::DynamicObject(); c->setProperty ("seq", ++checkpointSeq); c->setProperty ("kind", runKind); c->setProperty ("run_id", wo.runId);
+            c->setProperty ("zip", "contribution.zip"); c->setProperty ("manifest", "contribution.manifest.json"); c->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));
+            const auto ct = out.getChildFile ("checkpoint.json.tmp"); ct.replaceWithText (juce::JSON::toString (juce::var (c))); ct.moveFileTo (out.getChildFile ("checkpoint.json")); }
         say ("WIZARD: contribution bundle -> " + zip.getFileName() + " (" + juce::String (items.size()) + " new profile(s), " + juce::String (confirmations.size()) + " confirmation(s) of another version's profile, "
              + juce::String (skipped.size()) + " skipped with the reason; " + juce::String (zip.getSize() / 1024.0, 1) + " KB; checked: no paths, names or tokens)");
         say ("WIZARD: UPLOAD (stubbed): nothing is sent. A real app shows this list and sends only when the user presses Send.");
-        prog.finished ("the contribution bundle", false);
+        if (! quiet) prog.finished ("the contribution bundle", false);
         bundleWords = "Ready to send: " + zip.getFileName() + " (" + juce::String (items.size()) + " new, " + juce::String (confirmations.size()) + " confirmation(s), " + juce::String (zip.getSize() / 1024.0, 1) + " KB) - nothing was sent.";
+        return 0;
+    };
+    // A CHECKPOINT (13 Oct): the drafts for what landed, the states settled on a COPY of the rows (the run's own rows stay queued), packed quietly
+    auto checkpoint = [&] (const juce::String& why)
+    {
+        if (! wo.bundle) return;
+        juce::StringArray cats; for (const auto& [pb, l] : queues) if (! l.isEmpty() && pb != "wizard" && pb != "wizard_eq") cats.add (pb);
+        auto optD = opt; optD.wizardQueues = true; if (! cats.isEmpty()) runPhaseBDrafts (optD, cats);
+        auto copyV = juce::JSON::parse (juce::JSON::toString (juce::var (rows))); juce::Array<juce::var> copy; if (const auto* a = copyV.getArray()) copy = *a;
+        std::map<juce::String, int> c2; settle (copy, c2, false);
+        const int rc = pack (copy, "checkpoint", true);
+        say ("WIZARD: checkpoint (" + why + "): " + (rc == 0 ? "packed - " + wizard::summaryLine (c2, false) : juce::String ("NOT packed (refused)")));
+    };
+    // 2. MEASURE THE QUEUES (Phase B: --jobs, resumable, every outcome; the tone check / the EQ acceptance)
+    if (wo.measure && queuedAnywhere())
+    {
+        say ("WIZARD: measuring " + juce::String ((int) measureItems().size()) + " plugin measurement(s)" + (opt.jobs > 1 ? ", " + juce::String (opt.jobs) + " at a time" : juce::String()) + " - stop any time; it carries on next time");
+        double lastCheckpointMs = juce::Time::getMillisecondCounterHiRes();   // 13 Oct: the quiet checkpoints count from the start of measuring
+        {   // MEASURING: the two queues; a plugin whose Phase B row is already on disk is done (resume) and its seconds are a measured time
+            auto its = measureItems();   // RESUME: an item whose Phase B row already landed is done; its seconds are a measured time
+            for (auto& it : its) for (const auto& grp : wizroute::measureOrder()) for (const auto& pb : grp) if (wizroute::kindOf (pb) == it.kind)
+                if (const auto r = landedRow (pb, it.product); r.isObject()) { it.done = true; it.problem = r.getProperty ("outcome", "").toString() != "ok";
+                    if (it.problem) prog.addProblems (1); else prog.seedTime (it.kind, (double) r.getProperty ("seconds", 0.0)); }
+            prog.stage (wizprog::Stage::measuring, its);
+            phaseb::rowHooks().started = [&] (const juce::String& cat, const juce::String& product) { prog.started (product, wizroute::kindOf (cat)); };
+            phaseb::rowHooks().finished = [&] (const juce::String& cat, const juce::String& product, const juce::String& outcome, double seconds)
+            {   // 13 Oct: a row that landed ok but gave no result (a refused compressor, a failed EQ acceptance) is not "measured so far"
+                juce::String certState; bool eqOk = false;
+                if (outcome == "ok" && (cat == "wizard" || cat == "limitercomp" || cat == "wizard_eq"))
+                    if (const auto r = landedRow (cat, product); r.isObject())
+                    {
+                        const auto stem = r.getProperty ("_stem", "").toString(); const auto dir = out.getChildFile ("phaseb").getChildFile (cat);
+                        if (cat == "wizard_eq") { juce::String w; eqOk = wizard::eqAccepted (juce::JSON::parse (dir.getChildFile ("drafts").getChildFile (stem + ".eq_profile.draft.json").loadFileAsString()), w); }
+                        else { const auto oc = juce::JSON::parse (dir.getChildFile ("outcome").getChildFile (stem + ".outcomes.json").loadFileAsString());
+                               if (const auto* a = oc.getArray()) for (const auto& o : *a) certState = o.getProperty ("state", "").toString(); }
+                    }
+                prog.finished (product, ! wizroute::landedMeasured (cat, outcome, certState, eqOk), seconds, wizroute::kindOf (cat));
+                const double now = juce::Time::getMillisecondCounterHiRes();   // 13 Oct: the quiet checkpoint, every ~60 min while measuring
+                if (wizapp::checkpointDue (lastCheckpointMs, now, wo.checkpointMinutes)) { lastCheckpointMs = now; checkpoint ("every " + juce::String (wo.checkpointMinutes) + " min"); }
+            };
+            prog.startTicker();
+        }
+        // FINISH NOW (Kathy, 13 Oct): the app writes <out>/finish_requested, then stops the engine like a pause; a request left from an
+        // earlier run never counts
+        out.getChildFile (wizapp::kFinishRequestFile).deleteFile();
+        // THE MEASURING ORDER: one Phase B pass per group, most valuable first; a stop (130) ends the order there
+        auto optW = opt; optW.wizardQueues = true; optW.limiterPassKnown = limiterKnown; int pbCode = 0;
+        // 13 Oct (beta item 2): the measuring stops cleanly when the disk runs low - checked at most every 10 s, a stop like Ctrl-C
+        bool diskStopped = false; double lastDiskCheck = -1.0e9;
+        phaseb::extraStop() = [&] {
+            const double now = juce::Time::getMillisecondCounterHiRes();
+            if (! diskStopped && now - lastDiskCheck >= 10000.0) { lastDiskCheck = now; if (! wizapp::diskVerdict (wizapp::freeBytes (out), false).ok) { diskStopped = true; say ("WIZARD: the disk is running low - stopping cleanly"); } }
+            return diskStopped || wizardStop() != 0; };   // 13 Oct: a stop that lands before Phase B installs its own handler
+        for (const auto& grp : wizroute::measureOrder())
+        {
+            // 13 Oct (the finish rehearsal): a stop between two passes was seen only after the NEXT whole pass ran (the gate ran 4.5 min
+            // after Finish now) - it is checked before each pass starts
+            if (wizardStop() != 0) { pbCode = 130; break; }
+            juce::StringArray run; for (const auto& pb : grp) if (queues.count (pb) && ! queues[pb].isEmpty()) run.add (pb);
+            if (run.isEmpty()) continue;
+            say ("WIZARD: measuring " + run.joinIntoString (" + ") + " (" + juce::String ((int) [&] { int n = 0; for (const auto& pb : run) n += queues[pb].size(); return n; }()) + ")");
+            pbCode = runPhaseBAll (optW, run, {}, {});
+            std::signal (SIGINT, [] (int) { wizardStop() = 1; }); std::signal (SIGTERM, [] (int) { wizardStop() = 1; });   // Phase B restores the defaults on its way out
+            if (wizardStop() != 0) pbCode = 130;
+            if (wizprog::measureStopped (pbCode)) break;
+        }
+        prog.stopTicker(); phaseb::rowHooks() = {}; phaseb::extraStop() = {};
+        const bool finishing = wizapp::finishAfterStop (pbCode, out.getChildFile (wizapp::kFinishRequestFile).existsAsFile(), diskStopped);
+        sentEarly = finishing;
+        if (finishing)
+        {   // the in-flight plugins were discarded by Phase B's stop (no row lands, their temp folders thrown away); pack what landed
+            out.getChildFile (wizapp::kFinishRequestFile).deleteFile(); wizardStop() = 0; pbCode = 0;
+            const auto [measured, toMeasure] = prog.stageDone();
+            say ("WIZARD: finish now - " + juce::String (measured) + " of " + juce::String (toMeasure) + " landed; the plugins in flight were discarded; packing what is done");
+        }
+        {   // the drafts for the categories beyond compressor / EQ (their cert derive step, the same rules)
+            juce::StringArray cats; for (const auto& [pb, l] : queues) if (! l.isEmpty() && pb != "wizard" && pb != "wizard_eq") cats.add (pb);
+            if (! cats.isEmpty() && ! wizprog::measureStopped (pbCode)) runPhaseBDrafts (optW, cats);
+        }
+        if (wizprog::measureStopped (pbCode))
+        {   // the user stopped it: no bundle, no "Done" - the rows that landed stay, the same command carries on
+            const auto [measured, toMeasure] = prog.stageDone();
+            if (! diskStopped) checkpoint ("the pause");   // 13 Oct: a pause sends / saves what is done (a disk stop: no room to pack)
+            say ("WIZARD: stopped while measuring (" + juce::String (measured) + " of " + juce::String (toMeasure) + " landed): checkpoint packed; the same command carries on");
+            prog.finish (diskStopped ? wizapp::diskVerdict (wizapp::freeBytes (out), false).words : wizprog::stoppedWords (prog.stoppedAt(), measured, toMeasure, prog.running()), true);
+            return 130;
+        }
+        settle (rows, counts, finishing);
+        say ("WIZARD: " + wizard::summaryLine (counts, wo.bundle));
+    }
+    state->setProperty ("schema", "ej_wizard_state/0"); state->setProperty ("plugins", rows); state->setProperty ("summary", wizard::summaryLine (counts, wo.bundle));
+    out.getChildFile ("wizard_state.json").replaceWithText (juce::JSON::toString (juce::var (state)) + "\n");
+    // 3. THE BUNDLE (profiles + tone-check sidecars / EQ profiles + a manifest; nothing personal) and the STUBBED upload
+    if (wo.bundle)
+    {
+        if (const int rc = pack (rows, sentEarly ? juce::String ("sent_early") : juce::String ("finished"), false); rc != 0) return rc;
     }
     prog.setProblems (wizprog::problemCount (counts));   // the final states decide (an EQ can land ok and fail its acceptance)
     prog.finish ("Done in " + wizprog::durationWords ((juce::Time::getMillisecondCounterHiRes() - tStart) / 1000.0) + ": " + juce::String ((int) plugins.size()) + " plugin(s) - " + wizard::summaryLine (counts, wo.bundle) + "."

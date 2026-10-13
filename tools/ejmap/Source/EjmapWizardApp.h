@@ -16,6 +16,7 @@
 
 #include "EjmapWizard.h"
 #include <juce_core/juce_core.h>
+#include <functional>
 
 namespace ejmap::wizapp
 {
@@ -126,12 +127,12 @@ inline bool needsMeasuring (wizard::Match m, bool quickCheckPassed)
 // 13 Oct (beta items 3, 4, 7, 8): consent before scanning; the beta build (no sign-in, the results saved as one file, no promo); the
 // server's eligibility and once-only answers. Mode is a build flag (EJ_WIZARD_BETA); every rule below takes it, so both are pinned.
 enum class Mode { normal, beta };
-enum class Screen { welcome, consent, scan, alreadyDone, scanDone, crashRecovered, measuring, upload, reward, noCode, betaSaved };
+enum class Screen { welcome, consent, scan, alreadyDone, scanDone, crashRecovered, measuring, upload, reward, noCode, betaSaved, paused };   // paused: 13 Oct
 inline juce::String screenName (Screen s)
 {
     switch (s) { case Screen::welcome: return "welcome"; case Screen::consent: return "consent"; case Screen::scan: return "scan"; case Screen::alreadyDone: return "already_done";
                  case Screen::scanDone: return "scan_done"; case Screen::crashRecovered: return "crash_recovered"; case Screen::measuring: return "measuring";
-                 case Screen::upload: return "upload"; case Screen::reward: return "reward"; case Screen::noCode: return "no_code"; case Screen::betaSaved: return "beta_saved"; }
+                 case Screen::upload: return "upload"; case Screen::reward: return "reward"; case Screen::noCode: return "no_code"; case Screen::betaSaved: return "beta_saved"; case Screen::paused: return "paused"; }
     return {};
 }
 // THE WORK FOLDERS (Kathy, 13 Oct): the beta and the release never share one - "Application Support/EchoJay Wizard Beta" vs "EchoJay Wizard"
@@ -170,14 +171,19 @@ inline Screen afterScan (const Eligibility& e) { return e.already ? Screen::alre
 // already taken part loads nothing at all (13 Oct, rehearsal)
 inline Screen afterConsent (const Eligibility& e) { return e.already ? Screen::alreadyDone : Screen::scan; }
 inline Copy alreadyDoneCopy() { return { "You've already taken part - thank you", "This account or this Mac has already contributed its results, so there's nothing to run.", "Done", {} }; }
-inline Copy scanDoneCopy (Mode m, const Eligibility& e, const juce::String& etaWords)
+// 13 Oct (Kathy, the reward rule): the count and the real time, and what earns the month - the whole run; pausing is always fine.
+// etaPhrase: wizapp::etaPhrase of the scan's per-category estimate ("about 27 hours")
+inline Copy scanDoneCopy (Mode m, const Eligibility& e, const juce::String& etaPhrase)
 {
     const auto n = juce::String (e.count) + (e.count == 1 ? " plugin" : " plugins");
+    const auto line = n + " to measure - " + etaPhrase + ".";
     if (m == Mode::beta)
-        return e.count > 0 ? Copy { "You have " + n + " we don't have yet", "Thank you for helping map them. " + etaWords, "Start", {} }
+        return e.count > 0 ? Copy { "You have " + n + " we don't have yet", line + " You can pause and carry on any time - and even if you stop early, email the file on your Desktop.", "Start", {} }
                            : Copy { "Thanks - your plugins are already mapped", "There's nothing to measure right now.", "Done", {} };
-    if (e.eligible) return { "You have " + n + " we don't have yet", "Help map them and get a free month. " + etaWords, "Start", {} };
-    return { "Thanks - your plugins are already mapped", "So there's nothing to do right now.", "Done", e.count > 0 ? "Contribute anyway (no reward)" : juce::String() };
+    if (e.eligible) return { "You have " + n + " we don't have yet", line + " Finish them all to get your free month; you can pause and carry on any time.", "Start", {} };
+    // below the qualify minimum (Kathy, 13 Oct): no reward; when there is something new, say how much and that they may still contribute
+    if (e.count > 0) return { "Thanks - your plugins are already mapped", "You have " + n + " we don't have yet - the free month needs " + juce::String (e.minimum) + " or more. You can still contribute them.", "Done", "Contribute anyway (no reward)" };
+    return { "Thanks - your plugins are already mapped", "So there's nothing to do right now.", "Done", {} };
 }
 // after measuring: the upload (normal) or the saved file (beta: no upload, no promo)
 inline Screen afterMeasure (Mode m) { return m == Mode::beta ? Screen::betaSaved : Screen::upload; }
@@ -227,13 +233,8 @@ inline int measuredSoFar (const juce::var& progress)
     return juce::jmax (0, (int) sc.getProperty ("done", 0) - (int) progress.getProperty ("problems", 0));
 }
 inline juce::String measuredSoFarWords (int n) { return n == 1 ? juce::String ("1 measured so far") : juce::String (n) + " measured so far"; }
-// the Finish now button is live only once the engine is measuring (a finish while it still lists / reads signatures would pack nothing)
+// the Send-what's-done button is live only once the engine is measuring (a finish while it still lists / reads signatures would pack nothing)
 inline bool finishAvailable (const juce::var& progress) { return progress.getProperty ("stage", "").toString() == "Measuring"; }
-// closing the window while measuring: the choice (Kathy, 13 Oct)
-enum class CloseChoice { finish, pause };
-inline juce::StringArray closeChoiceButtons() { return { "Finish and save what's done", "Pause - carry on later" }; }
-// THE TIME LINE on the scan-done screen (Kathy, 13 Oct): a long estimate said plainly, with the way out
-inline constexpr double kLongEstimateS = 4.0 * 3600.0;
 // the estimate in words a person reads: minutes, hours, then days past 36 h
 inline juce::String etaPhrase (double s)
 {
@@ -242,12 +243,61 @@ inline juce::String etaPhrase (double s)
     if (s < 36.0 * 3600.0) { const int h = juce::roundToInt (s / 3600.0); return "about " + juce::String (h) + (h == 1 ? " hour" : " hours"); }
     return "about " + juce::String (juce::roundToInt (s / 86400.0)) + " days";
 }
-inline juce::String scanDoneTimeLine (int toMeasure, double etaS, const juce::String& etaPhrase)
+// THE QUIET CHECKPOINT (Kathy, 13 Oct): every ~60 min while measuring, what is done is packed (release: uploaded; beta: the Desktop file)
+// a checkpoint the app has not handled yet: its time stamp differs from the last one handled (kept in app_state across launches)
+inline bool isNewCheckpoint (const juce::String& at, const juce::String& lastHandledAt) { return at.isNotEmpty() && at != lastHandledAt; }
+inline bool checkpointDue (double lastMs, double nowMs, double minutes) { return minutes > 0.0 && nowMs - lastMs >= minutes * 60000.0; }
+// THE MEASURING CHOICES (Kathy, 13 Oct): on the Measuring screen and when the window is closed - pause (the default) or send what's done.
+// The release says what sending early costs; the beta (no reward) says the Desktop file is always there
+struct Choices { juce::String pause, send, line; };
+inline Choices measuringChoices (Mode m)
 {
-    if (etaS >= kLongEstimateS)
-        return juce::String (toMeasure) + (toMeasure == 1 ? " plugin" : " plugins") + " to measure - " + etaPhrase + " if left running. "
-             + "The most useful ones go first, so you can press Finish now whenever you like.";
-    return "About " + etaPhrase.replace ("about ", "") + ".";   // a short one stays as it was
+    if (m == Mode::beta) return { "Pause - carry on later", "Finish and save what's done", "Even if you stop early, email the file on your Desktop." };
+    return { "Pause - carry on later", "Send what's done (no free month)", "The free month needs the full run - you can carry on later instead." };
+}
+// JOBS BY MAC (Kathy, 13 Oct): 2 by default; 4 on a Mac with 8+ performance cores AND enough free memory at launch (the serial lane is
+// unchanged: UAD / licence / PACE / history rows still run one at a time). The estimates use the chosen number
+inline constexpr double kJobs4MinFreeBytes = 4.0 * 1024.0 * 1024.0 * 1024.0;
+inline int jobsFor (int performanceCores, double freeBytes) { return performanceCores >= 8 && freeBytes >= kJobs4MinFreeBytes ? 4 : 2; }
+// THE OUTBOX (Kathy, 13 Oct: offline) - an upload that could not be sent is kept in <work>/outbox (zip + manifest, numbered) and sent on the
+// next launch or the next try, oldest first; a send that fails stops the drain (the order is kept)
+inline juce::File outboxDir (const juce::File& work) { return work.getChildFile ("outbox"); }
+inline juce::File outboxPut (const juce::File& work, const juce::File& zip, const juce::File& manifest, const juce::String& kind)
+{
+    const auto d = outboxDir (work); d.createDirectory();
+    int n = 1; for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.zip")) n = juce::jmax (n, f.getFileNameWithoutExtension().upToFirstOccurrenceOf ("_", false, false).getIntValue() + 1);
+    const auto stem = juce::String (n).paddedLeft ('0', 4) + "_" + kind;
+    zip.copyFileTo (d.getChildFile (stem + ".zip")); manifest.copyFileTo (d.getChildFile (stem + ".manifest.json"));
+    return d.getChildFile (stem + ".zip");
+}
+// send(zip, manifest) -> true when the server answered; returns how many were sent
+inline int outboxDrain (const juce::File& work, const std::function<bool (const juce::File&, const juce::File&)>& send)
+{
+    auto files = outboxDir (work).findChildFiles (juce::File::findFiles, false, "*.zip");
+    std::sort (files.begin(), files.end(), [] (const juce::File& a, const juce::File& b) { return a.getFileName() < b.getFileName(); });
+    int sent = 0;
+    for (const auto& z : files)
+    {
+        const auto m = z.getSiblingFile (z.getFileNameWithoutExtension() + ".manifest.json");
+        if (! send (z, m)) break;
+        z.deleteFile(); m.deleteFile(); ++sent;
+    }
+    return sent;
+}
+// THE BETA'S ONE FILE (Kathy, 13 Oct): the Desktop results file is REWRITTEN on every pause / close / hourly checkpoint / finish - the same
+// file each time (its name chosen once, kept in app_state "saved_file"), so a tester who stopped early always has one file to email
+inline juce::File betaResultsTarget (const juce::String& savedPath, const juce::File& desk, const juce::Time& now)
+{
+    if (savedPath.isNotEmpty()) return juce::File (savedPath);
+    auto f = desk.getChildFile (resultsFileName (now));
+    for (int k = 2; f.existsAsFile(); ++k) f = desk.getChildFile ("EchoJay-Wizard-results-" + now.formatted ("%Y-%m-%d") + "-" + juce::String (k) + ".zip");
+    return f;
+}
+inline bool rewriteResultsFile (const juce::File& src, const juce::File& target)
+{
+    if (! src.existsAsFile()) return false;
+    const auto tmp = target.getSiblingFile ("." + target.getFileName() + ".tmp");
+    return src.copyFileTo (tmp) && tmp.moveFileTo (target);
 }
 inline juce::String stoppedNote() { return "Stopped - it carries on next time"; }
 // what the window does when the engine ends: a scan that ran to its end -> its results; a measuring run that did -> the upload; a

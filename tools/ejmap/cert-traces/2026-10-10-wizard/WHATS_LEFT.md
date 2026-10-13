@@ -1,5 +1,20 @@
 # The wizard: what is built (feat/ejmap-wizard, 10 Oct) and what is left before it is a real app
 
+## 13 Oct (c): before the beta goes out - built
+- Jobs by Mac (2; 4 with 8+ performance cores and 4 GB free), the estimate at the chosen jobs.
+- Limiters: the limiter pass and its compressor pass looked up separately (beta_db/limitercomp/).
+- The reward rule (server decides): qualify 25 at scan; the code only for a FINISHED run, complete on the merged run, accepted >= 25; one per account and Mac.
+- Pause / Send what's done on the Measuring screen and on close; "N measured so far"; a Paused screen.
+- Partial uploads: a checkpoint on a pause, a close and every ~60 min; run id + queue + outcomes in each manifest; the stub merges per run + plugin; offline outbox.
+- Beta: the one Desktop file rewritten at every checkpoint; the finish screen and README say "even if you stop early, email the file on your Desktop".
+
+## Left (13 Oct c)
+- SERVER (Sean): /contributions partial uploads + the run merge (WIZARD_SPEC 6.6), the earn rule, qualify_minimum 25, the outbox-safe idempotency.
+- The close question (pause / send) is snapped in a rehearsal (`--auto-ask-close`), but a person has not clicked it.
+- The hourly checkpoint was rehearsed with `--checkpoint-minutes 1`; a real 60-minute interval has not been watched.
+- Notarisation (Apple's agreement).
+
+
 ## Built (CLI, pinned, rehearsed here: 5 compressors + 3 EQs; and on an EMPTY map store)
 - `ejmap --wizard --db <profiles folder> --out <work> [--only NAME]... [--jobs N] [--measure] [--bundle]`
 - NO MAP STORE NEEDED (10 Oct late): plugins the store lacks are mapped by the wizard itself - the probe's parameter list (--jobs, the

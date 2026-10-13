@@ -146,11 +146,16 @@ inline Seeded seedMockReferences (const juce::File& bundled, const juce::File& d
 // --- ELIGIBILITY AND ONCE ONLY (Kathy, 13 Oct, beta items 7 and 8) - the SERVER decides; the app only shows it --------------------------
 // config (server-configurable): reward_minimum (default 5) and once_only (default true: one completed contribution per account AND per
 // Mac; false would allow repeat contributions, and a repeat never earns a second reward). Stub: <work>/server_stub/config.json.
+inline constexpr int kQualifyMinimumDefault = 25;
 inline juce::var serverConfig (const juce::File& work)
 {
     auto c = juce::JSON::parse (work.getChildFile ("server_stub/config.json").loadFileAsString());
     auto* o = new juce::DynamicObject(); const juce::var v (o);
-    o->setProperty ("reward_minimum", c.isObject() && c.hasProperty ("reward_minimum") ? (int) c.getProperty ("reward_minimum", 5) : 5);
+    // 13 Oct (Kathy): qualify_minimum (default 25) - at scan time the eligible new plugins must reach it, and the finished run's accepted
+    // results must still reach it (the safety floor). An older config's reward_minimum is read as the same number
+    const int q = c.isObject() && c.hasProperty ("qualify_minimum") ? (int) c.getProperty ("qualify_minimum", kQualifyMinimumDefault)
+                : c.isObject() && c.hasProperty ("reward_minimum") ? (int) c.getProperty ("reward_minimum", kQualifyMinimumDefault) : kQualifyMinimumDefault;
+    o->setProperty ("qualify_minimum", q); o->setProperty ("reward_minimum", q);
     o->setProperty ("once_only", c.isObject() && c.hasProperty ("once_only") ? (bool) c.getProperty ("once_only", true) : true);
     return v;
 }
@@ -173,7 +178,7 @@ inline bool alreadyContributed (const juce::File& work, const juce::String& acco
 inline juce::var lookupEligibility (const juce::File& work, const juce::String& accountId, const juce::String& device, const juce::var& wizardState)
 {
     int n = 0; if (const auto* a = wizardState.getProperty ("plugins", {}).getArray()) for (const auto& r : *a) if (r.getProperty ("state", "").toString() == "queued") ++n;
-    const int minimum = (int) serverConfig (work).getProperty ("reward_minimum", 5);
+    const int minimum = (int) serverConfig (work).getProperty ("qualify_minimum", kQualifyMinimumDefault);
     const bool already = alreadyContributed (work, accountId, device);
     auto* o = new juce::DynamicObject(); const juce::var v (o);
     o->setProperty ("already_contributed", already); o->setProperty ("count", n); o->setProperty ("minimum", minimum); o->setProperty ("eligible", ! already && n >= minimum);
@@ -207,6 +212,61 @@ inline int acceptedNew (const juce::File& work, const juce::File& storedZip, con
         }
     return acceptedIds.size();
 }
+// --- THE RUN (Kathy, 13 Oct: partial uploads) - [SERVER-SIDE: Sean] -----------------------------------------------------------------------
+// Every upload carries run {run_id, kind: checkpoint | sent_early | finished}, the run's queue and each queued plugin's state. The server
+// keeps ONE merged record per run id: plugin_id -> {state, accepted}. Merging is idempotent (the same upload twice changes nothing) and
+// never double-counts: a plugin is accepted once per run, a final state is never replaced by a non-final one, measured beats any other.
+// Pausing across days is the same run (the same run id). Only a FINISHED upload is judged for the code, on the merged run.
+inline bool isFinalState (const juce::String& st)
+{   // a final outcome: measured, or skipped for licence / hardware / crash / demo / silent / timeout / won't load / not measurable / custom default
+    static const juce::StringArray k { "measured", "not_measurable", "needs_licence", "needs_hardware", "crashed", "demo", "silent", "wont_load", "custom_default", "timed_out" };
+    return k.contains (st);
+}
+inline juce::var newRun (const juce::String& runId)
+{ auto* o = new juce::DynamicObject(); o->setProperty ("run_id", runId); o->setProperty ("plugins", juce::var (new juce::DynamicObject())); o->setProperty ("queue", juce::Array<juce::var>()); o->setProperty ("uploads", 0); return juce::var (o); }
+// merge one upload's manifest; acceptedNow: the plugin_ids whose evidence in THIS upload's zip passed (acceptedNew)
+inline void mergeRun (juce::var& run, const juce::var& m, const juce::StringArray& acceptedNow)
+{
+    auto* plugins = run.getProperty ("plugins", {}).getDynamicObject();
+    auto queue = run.getProperty ("queue", {}); juce::StringArray q; if (const auto* a = queue.getArray()) for (const auto& x : *a) q.add (x.toString());
+    if (const auto* a = m.getProperty ("queue", {}).getArray()) for (const auto& x : *a) q.addIfNotAlreadyThere (x.toString());
+    juce::Array<juce::var> qa; for (const auto& x : q) qa.add (x); run.getDynamicObject()->setProperty ("queue", qa);
+    auto put = [&] (const juce::String& pid, const juce::String& st, bool accepted)
+    {
+        if (pid.isEmpty()) return;
+        const juce::Identifier id (pid); auto cur = plugins->getProperty (id);
+        if (! cur.isObject()) { auto* o = new juce::DynamicObject(); o->setProperty ("state", ""); o->setProperty ("accepted", false); cur = juce::var (o); plugins->setProperty (id, cur); }
+        auto* c = cur.getDynamicObject(); const auto was = c->getProperty ("state").toString();
+        // measured is never replaced; a final state replaces a non-final one (or a later final); a non-final state only fills a gap
+        if (was != "measured" && (st == "measured" || isFinalState (st) || (! isFinalState (was) && st.isNotEmpty()))) c->setProperty ("state", st);
+        if (accepted) c->setProperty ("accepted", true);
+    };
+    if (const auto* a = m.getProperty ("outcomes", {}).getArray()) for (const auto& o : *a) put (o.getProperty ("plugin_id", "").toString(), o.getProperty ("state", "").toString(), false);
+    for (const auto& pid : acceptedNow) put (pid, "measured", true);
+    run.getDynamicObject()->setProperty ("uploads", (int) run.getProperty ("uploads", 0) + 1);
+}
+struct RunTally { int queued = 0, final_ = 0, accepted = 0; };
+inline RunTally tallyRun (const juce::var& run)
+{
+    RunTally t; const auto plugins = run.getProperty ("plugins", {});
+    if (const auto* a = run.getProperty ("queue", {}).getArray())
+        for (const auto& x : *a) { ++t.queued; if (isFinalState (plugins.getProperty (juce::Identifier (x.toString()), {}).getProperty ("state", "").toString())) ++t.final_; }
+    if (auto* d = plugins.getDynamicObject()) for (const auto& nv : d->getProperties()) if ((bool) nv.value.getProperty ("accepted", false)) ++t.accepted;
+    return t;
+}
+// THE REWARD (Kathy, 13 Oct): a code only for a FINISHED upload whose merged run is complete (every queued plugin has a final outcome) and
+// whose accepted results still reach the qualify minimum, for an account and a Mac that have not taken part before. Words for every "no".
+struct RewardDecision { bool eligible = false; juce::String message; };
+inline RewardDecision rewardFor (const juce::String& kind, const RunTally& t, int minimum, bool before)
+{
+    if (before) return { false, "Thank you - this account or this Mac has already taken part, so there is no new code." };
+    if (kind == "checkpoint") return { false, {} };   // a partial upload never earns on its own (and says nothing)
+    if (kind == "sent_early") return { false, "Thank you - your results arrived. The free month needs the full run, so there's no code this time." };
+    if (kind != "finished") return { false, "Thank you - your results arrived." };
+    if (t.final_ < t.queued) return { false, "Thank you - your results arrived. The free month needs the full run: " + juce::String (t.final_) + " of " + juce::String (t.queued) + " plugins have a result so far." };
+    if (t.accepted < minimum) return { false, "Thank you - your results arrived. The free month needs at least " + juce::String (minimum) + " new plugins that pass our checks; this time there " + (t.accepted == 1 ? juce::String ("was 1.") : "were " + juce::String (t.accepted) + ".") };
+    return { true, {} };
+}
 // the server's genuine check, stubbed: the manifest schema only   [SERVER-SIDE: the review / holding area]
 inline juce::var receiptFor (const juce::File& work, const juce::File& stored, const juce::var& m, const juce::var& account, const juce::String& path, const juce::String& device = {})
 {
@@ -221,22 +281,34 @@ inline juce::var receiptFor (const juce::File& work, const juce::File& stored, c
     {   // 12 Oct: the votes are recorded; a reference they make agreed (2 Macs) is said on the receipt
         juce::Array<juce::var> na; for (const auto& x : recordVotes (work, m)) na.add (x);
         r->setProperty ("reference_votes_received", m.getProperty ("reference_votes", {}).size()); r->setProperty ("references_now_agreed", na);
-        // 13 Oct (items 7 / 8): the accepted count decides the reward; an accepted upload COMPLETES the account's and the Mac's go
+        // 13 Oct (Kathy): the upload merges into its RUN (server_stub/runs/<run_id>.json); a final upload (sent_early / finished) completes the
+        // account's and the Mac's go; the code is judged on the merged run (rewardFor). An upload with no run is its own finished run (older apps)
         const auto acct = account.getProperty ("account_id", "").toString();
         const bool before = alreadyContributed (work, acct, device);
-        juce::StringArray ids; const int accepted = acceptedNew (work, stored, m, ids);
-        const int minimum = (int) serverConfig (work).getProperty ("reward_minimum", 5);
-        r->setProperty ("accepted_new", accepted); r->setProperty ("reward_minimum", minimum);
-        r->setProperty ("reward_eligible", ! before && accepted >= minimum);
-        r->setProperty ("reward_message", before ? juce::String ("Thank you - this account or this Mac has already taken part, so there is no new code.")
-                                       : accepted >= minimum ? juce::String() : "Thank you - your results arrived. The free month needs at least " + juce::String (minimum) + " new plugins that pass our checks; this time there " + (accepted == 1 ? "was 1." : "were " + juce::String (accepted) + "."));
-        auto acc = juce::JSON::parse (work.getChildFile ("server_stub/accepted_plugins.json").loadFileAsString()); juce::Array<juce::var> al; if (const auto* a = acc.getArray()) al = *a;
-        for (const auto& id : ids) al.add (id);
-        work.getChildFile ("server_stub/accepted_plugins.json").replaceWithText (juce::JSON::toString (juce::var (al)));
-        auto p = participation (work);
-        auto add = [&] (const char* k, const juce::String& x) { if (x.isEmpty() || listed (p.getProperty (k, {}), x)) return; auto arr = p.getProperty (k, {}); arr.append (x); p.getDynamicObject()->setProperty (k, arr); };
-        add ("accounts", acct); add ("devices", device);
-        work.getChildFile ("server_stub/participation.json").replaceWithText (juce::JSON::toString (p));
+        const auto runV = m.getProperty ("run", {}); const auto runId = runV.getProperty ("run_id", "").toString().isNotEmpty() ? runV.getProperty ("run_id", "").toString() : "run_" + id;
+        const auto kind = runV.isObject() ? runV.getProperty ("kind", "finished").toString() : juce::String ("finished");
+        const auto runsDir = work.getChildFile ("server_stub/runs"); runsDir.createDirectory();
+        const auto runF = runsDir.getChildFile (juce::File::createLegalFileName (runId) + ".json");
+        auto run = juce::JSON::parse (runF.loadFileAsString()); if (! run.isObject()) run = newRun (runId);
+        juce::StringArray ids; if (const auto* a = run.getProperty ("plugins", {}).getDynamicObject()) for (const auto& nv : a->getProperties()) if ((bool) nv.value.getProperty ("accepted", false)) ids.add (nv.name.toString());
+        const int before_n = ids.size(); acceptedNew (work, stored, m, ids);   // known: the server's db + other runs' accepted plugins; this run's already-accepted never twice
+        juce::StringArray fresh; for (int i = before_n; i < ids.size(); ++i) fresh.add (ids[i]);
+        mergeRun (run, m, fresh); runF.replaceWithText (juce::JSON::toString (run));
+        const auto t = tallyRun (run); const int minimum = (int) serverConfig (work).getProperty ("qualify_minimum", kQualifyMinimumDefault);
+        const auto rd = rewardFor (kind, t, minimum, before);
+        r->setProperty ("run_id", runId); r->setProperty ("kind", kind); r->setProperty ("run_queued", t.queued); r->setProperty ("run_final", t.final_);
+        r->setProperty ("accepted_new", t.accepted); r->setProperty ("accepted_this_upload", fresh.size()); r->setProperty ("reward_minimum", minimum);
+        r->setProperty ("reward_eligible", rd.eligible); r->setProperty ("reward_message", rd.message);
+        if (kind == "sent_early" || kind == "finished")
+        {   // the run is over: its accepted plugins become known to the server; the account and the Mac have taken part
+            auto acc = juce::JSON::parse (work.getChildFile ("server_stub/accepted_plugins.json").loadFileAsString()); juce::Array<juce::var> al; if (const auto* a = acc.getArray()) al = *a;
+            for (const auto& x : ids) if (! al.contains (x)) al.add (x);
+            work.getChildFile ("server_stub/accepted_plugins.json").replaceWithText (juce::JSON::toString (juce::var (al)));
+            auto p = participation (work);
+            auto add = [&] (const char* k, const juce::String& x) { if (x.isEmpty() || listed (p.getProperty (k, {}), x)) return; auto arr = p.getProperty (k, {}); arr.append (x); p.getDynamicObject()->setProperty (k, arr); };
+            add ("accounts", acct); add ("devices", device);
+            work.getChildFile ("server_stub/participation.json").replaceWithText (juce::JSON::toString (p));
+        }
     }
     const auto dir = work.getChildFile ("server_stub/uploads"); dir.createDirectory();
     dir.getChildFile (id + ".receipt.json").replaceWithText (juce::JSON::toString (v));
@@ -245,6 +317,8 @@ inline juce::var receiptFor (const juce::File& work, const juce::File& stored, c
 // the upload, both paths: direct (POST /contributions, multipart) up to 4.5 MB; else the signed blob (upload-url -> PUT -> complete)
 inline juce::var upload (const juce::File& work, const juce::File& zip, const juce::File& manifest, const juce::var& account, const juce::String& device = {})
 {
+    // rehearsals: EJ_WIZARD_OFFLINE_FILE names a file whose presence means "no network" - the send fails (void), the app keeps it in its outbox
+    if (const char* off = std::getenv ("EJ_WIZARD_OFFLINE_FILE"); off != nullptr && *off && juce::File (off).existsAsFile()) return {};
     const auto m = juce::JSON::parse (manifest.loadFileAsString());
     if (uploadPathFor (zip.getSize(), manifest.getSize()) == UploadPath::direct)
     {   // POST <base>/api/wizard/v1/contributions (multipart: manifest + bundle)

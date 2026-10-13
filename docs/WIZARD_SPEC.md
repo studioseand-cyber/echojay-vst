@@ -61,9 +61,17 @@ What it says is true of the bundle as built:
 
 ## 3. Behaviour rules
 
-**3b. Finish now (Kathy, 13 Oct).** The Measuring screen shows "N measured so far" (a landing that gave a result: a compressor exported, an EQ accepted, another category's ok row - `wizroute::landedMeasured`) and a **Finish now** button, live once the engine is measuring. Finish writes `engine/finish_requested`, then stops the engine as a pause does; the in-flight plugins are discarded (Phase B's stop: no row lands), the engine sees the request, derives the drafts for what landed, files what it never reached as `not_reached`, packs, and ends 0, so the app goes to its finish screen (beta: the results file; release: the upload, whose reward still counts only the accepted results against the minimum). Closing the window while measuring asks: "Finish and save what's done" / "Pause - carry on later" (or keep measuring); Ctrl-C pauses without asking. A disk stop never finishes. A stop between two measuring passes ends the order at once (WZ-FIN-3). Pins WZ-FIN-1..3.
+**3b. Pause / Send what's done (Kathy, 13 Oct; replaces "Finish now").** The Measuring screen shows "N measured so far" (a landing that gave a result - `wizroute::landedMeasured`) and two choices:
+- **Pause - carry on later** (the default): the engine's clean stop. The plugins in flight are discarded, a checkpoint is packed, and the app shows **Paused** ("Carry on" / "Quit"). The next open carries on the same run.
+- **Send what's done (no free month)**, with the line "The free month needs the full run - you can carry on later instead." The app writes `engine/finish_requested`, then stops the engine. The engine derives drafts for what landed, files the rest `not_reached`, and packs a `sent_early` bundle; the app uploads it, and the run is over (the go is used, no code). The beta says "Finish and save what's done" / "Even if you stop early, email the file on your Desktop."
+- **Closing the window while measuring** asks the same two (Return = pause, Escape = keep measuring). Ctrl-C pauses without asking. A disk stop never sends.
+- A stop between two measuring passes ends the order at once (WZ-FIN-3). Pins WZ-FIN-1..3, WZ-CHOICE-1.
 
-**3c. The time line (Kathy, 13 Oct).** When the scan's estimate (the per-category seconds, measured once any exist, --jobs aware) is 4 hours or more, the scan-done screen says: "N plugins to measure - about X if left running. The most useful ones go first, so you can press Finish now whenever you like." (`wizapp::scanDoneTimeLine`, pin WZ-TIME-1).
+**3c. The scan-done words (Kathy, 13 Oct).** Release, qualified: "N plugins to measure - about X. Finish them all to get your free month; you can pause and carry on any time." Beta: "N plugins to measure - about X. You can pause and carry on any time - and even if you stop early, email the file on your Desktop." X is the scan's per-category estimate at the chosen jobs (`wizapp::etaPhrase`: minutes, hours, days past 36 h). Below the qualify minimum: "Thanks - your plugins are already mapped" (no reward; "Contribute anyway (no reward)"). Pin WZ-TIME-1.
+
+**3e. Jobs by Mac (Kathy, 13 Oct).** The app chooses `--jobs` at launch: 2, or 4 on a Mac with 8+ performance cores (`hw.perflevel0.physicalcpu`; an Intel Mac's physical cores) AND 4 GB free (free + inactive + purgeable). The serial lane is unchanged. The estimates use the chosen number. `--jobs N` overrides. Pin WZ-JOBS-1.
+
+**3f. Checkpoints (Kathy, 13 Oct).** While measuring, what is done is packed quietly every ~60 min (`--checkpoint-minutes`), on a pause and on a close: `engine/contribution.zip` + `contribution.manifest.json`, then `engine/checkpoint.json` `{seq, kind, run_id}`, each landing by rename. Release: the app uploads each `checkpoint` quietly, and keeps it in `<work>/outbox` when offline (sent oldest-first on the next launch or try). Beta: the app REWRITES its one Desktop file (`app_state.saved_file`), so a tester who stopped early always has a file to email. Pins WZ-CKPT-1, WZ-OUTBOX-1, WZ-BETAFILE-1.
 
 **3d. Limiters (Kathy, 13 Oct).** The database holds a limiter's two passes separately (the limiter draft in mapped.json, the compressor pass in `limitercomp/`); a limiter with only one gets the other pass, and the database's limiter pass lets the compressor pass run without a limiter row of the Mac's own (`SweepOptions::limiterPassKnown`). Pin WZ-LIM-1.
 
@@ -320,7 +328,7 @@ The server emails the code (the stub writes `<work>/server_stub/outbox/<account>
   - a server category the wizard measures (not held multiband, not out of scope);
   - not licence-blocked and not a demo.
 - **Eligible:** `count >= minimum` and not `already_contributed`.
-- **The minimum:** server-configurable, default 5 (confirmed by Kathy, 13 Oct).
+- **The minimum:** server-configurable `qualify_minimum`, default **25** (Kathy, 13 Oct; was 5). An older config's `reward_minimum` is read as the same number.
 - **Stub:** `stub::lookupEligibility`, counting the scan's `queued` rows (pins WZ-ELIG-2).
 
 **`/contributions` decides the grant on the ACCEPTED results, never on the queue or the client's count.** The receipt carries `accepted_new`, `reward_minimum`, `reward_eligible` and, when no code is granted, `reward_message`.
@@ -331,6 +339,8 @@ The server emails the code (the stub writes `<work>/server_stub/outbox/<account>
 - **What doesn't count:** a duplicate plugin_id in the upload, or a plugin the server already knows (its database, or an earlier accepted upload).
 - **Below the minimum:** no code, and a plain message.
 - **Stub:** it opens the stored zip and ignores any count in the manifest (pin WZ-ELIG-3).
+
+**EARN (Kathy, 13 Oct): the code only when the run FINISHES.** Every plugin in the run's queue must have a final outcome in the MERGED run (6.6): measured, or skipped for licence / hardware / crash / demo / silent / timeout / won't load / not measurable / custom default. The safety floor: the run's accepted results must still be `>= qualify_minimum`, else no code and a plain message. A `sent_early` or `checkpoint` upload never earns. Pins WZ-REWARD-1..8.
 
 **`/promo`** issues only for a receipt with `reward_eligible: true`. This replaces "a code even when nothing new". **Contribute anyway** uploads with no reward.
 
@@ -352,11 +362,30 @@ The server emails the code (the stub writes `<work>/server_stub/outbox/<account>
 - **The server never trusts the client's count:** it recomputes from the bundle and its own database.
 - **Server-side only:** the minimum, `once_only`, and the accepted-count rule are configuration on the server; the app has no copy of them.
 
+### 6.6 Partial uploads and the run merge (Kathy, 13 Oct) - for Sean
+
+`/contributions` (both paths) takes partial uploads. The manifest gains:
+- `run`: `{"run_id": "run_<16 hex>", "kind": "checkpoint" | "sent_early" | "finished"}`. The run id is made when measuring first starts and kept in `app_state.json`, so a pause, a close, a crash and a resume days later are the SAME run.
+- `queue`: every plugin_id the run set out to measure (fixed at scan time).
+- `outcomes`: `[{plugin_id, product, state}]` for every queued plugin, as of this upload (`measured`, `not_measurable`, `needs_licence`, ..., or `measuring` / `not_reached` while unfinished).
+- `skipped[]` entries now carry `plugin_id`.
+
+**The merge (server):** one record per run id: `plugin_id -> {state, accepted}`, plus the union of the queues.
+- **Idempotent and never double-counted:** a plugin is accepted once per run (its evidence in ANY of the run's zips); re-sending the same upload changes nothing; overlapping checkpoints add only what is new (`accepted_this_upload`).
+- **States:** `measured` is never replaced; a final state replaces a non-final one; a non-final state only fills a gap. So a later checkpoint that still lists an earlier-measured plugin as `measuring` cannot undo it.
+- **Known plugins:** acceptance excludes plugins the server already knows (its database, or other runs' accepted plugins); a run's own accepted plugins become "known" only when the run is over.
+- **When the run is over** (`sent_early` or `finished`): its accepted plugins join the server's known set, and the account and the Mac have used their go. A `checkpoint` never uses the go.
+- **The reward** is judged only on a `finished` upload, on the merged run: complete (every queued plugin final) and accepted `>= qualify_minimum`, and the account / Mac not rewarded before. Partial uploads never earn a code on their own.
+- **Receipt fields:** `run_id`, `kind`, `run_queued`, `run_final`, `accepted_new` (the run's total), `accepted_this_upload`, `reward_minimum`, `reward_eligible`, `reward_message`.
+- **Offline:** the app keeps a failed upload in its outbox and sends it, in order, on the next launch or try. Because the merge is idempotent, a retry is always safe.
+- **Stub:** `server_stub/runs/<run_id>.json`; `wizserver::mergeRun` / `tallyRun` / `rewardFor`.
+
 ## 6b. SERVER-SIDE, awaiting Sean (the client has stubs only)
 
 - **The account → mapper-token bridge:** sign-in returns the account. The server links it to the mapper token its map and profile intake uses. The stub signs any email and password and has no token.
 - **The review / holding area:** an upload lands in holding, then agreement with another version or a second user, then publish. The stub's genuine check is the manifest schema only.
 - **The reference votes** (12 Oct): count the agreeing votes per reference and plugin version, independent Macs only (one vote per account or machine, not per upload). Trust at 2. Keep the disagreeing blocks and settle on a third source. Return the reference in `/lookup`. The stub tallies per upload and does not de-duplicate machines.
+- **The run merge (6.6)** and the earn rule: the stub keeps one JSON per run; the server needs the same per run id + plugin, idempotent.
 - **The promo rules + issuing + email:** one code per account, the "nothing new" rule (Kathy: proposed yes), and the email. The stub writes a local ledger and an outbox file.
 
 The app's sign-in, upload-to-review and reward screens work on these stubs.

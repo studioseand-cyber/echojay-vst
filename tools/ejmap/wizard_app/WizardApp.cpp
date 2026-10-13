@@ -15,7 +15,8 @@
     "EchoJay Wizard" [--work DIR] [--db DIR] [--store DIR] [--engine PATH] [--jobs N] [--only NAME]... [--snapshots DIR] [--auto]
   --auto (rehearsals only): fills the stub sign-in and presses each step's button after a pause, so a run needs no hands;
   --auto-close-after S: presses the close button S seconds into measuring (the pause path, as a user closing the window).
-  --auto-finish-at N: presses Finish now once N plugins are measured so far (13 Oct: a finish part-way, with one in flight).
+  --auto-send-at N / --auto-pause-at N: presses Send what's done / Pause once N plugins are measured so far (13 Oct).
+  --checkpoint-minutes M: the quiet checkpoint's interval (default 60).
   --snapshots: every screen (and the bars at each quarter) saved as a PNG of the window's content.
 */
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -27,6 +28,8 @@
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <IOKit/IOKitLib.h>
 #include <spawn.h>
+#include <sys/sysctl.h>
+#include <mach/mach.h>
 #include <signal.h>
 #include <atomic>
 #include <csignal>
@@ -55,9 +58,23 @@ constexpr auto kMode = wizapp::Mode::normal;
 struct Config
 {
     juce::File work, db, store, engine, snapshots, reports;
-    int jobs = 2; juce::StringArray only; bool autoMode = false; double autoCloseAfterS = 0.0; int autoFinishAt = 0;
+    int jobs = 0; juce::StringArray only; bool autoMode = false; double autoCloseAfterS = 0.0, checkpointMinutes = 60.0; int autoSendAt = 0, autoPauseAt = 0; bool autoAskClose = false;   // jobs 0: chosen by the Mac (13 Oct)
 };
 
+// THE MAC (13 Oct, jobs by Mac): performance cores (Apple silicon's perflevel0; an Intel Mac's physical cores) and the memory free now
+inline int performanceCores()
+{
+    int n = 0; size_t sz = sizeof n;
+    if (sysctlbyname ("hw.perflevel0.physicalcpu", &n, &sz, nullptr, 0) == 0 && n > 0) return n;
+    sz = sizeof n; if (sysctlbyname ("hw.physicalcpu", &n, &sz, nullptr, 0) == 0) return n;
+    return 1;
+}
+inline double availableMemoryBytes()
+{
+    vm_statistics64_data_t st {}; mach_msg_type_number_t cnt = HOST_VM_INFO64_COUNT; vm_size_t page = 0;
+    if (host_page_size (mach_host_self(), &page) != KERN_SUCCESS || host_statistics64 (mach_host_self(), HOST_VM_INFO64, (host_info64_t) &st, &cnt) != KERN_SUCCESS) return -1.0;
+    return (double) (st.free_count + st.inactive_count + st.purgeable_count) * (double) page;
+}
 juce::File homeChild (const juce::String& p) { return juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile (p); }
 
 Config parseArgs (const juce::StringArray& a)
@@ -74,9 +91,13 @@ Config parseArgs (const juce::StringArray& a)
         else if (k == "--snapshots") c.snapshots = file(); else if (k == "--reports") c.reports = file();
         else if (k == "--jobs") { c.jobs = juce::jlimit (1, 8, v.getIntValue()); ++i; } else if (k == "--only") { c.only.add (v); ++i; }
         else if (k == "--auto") c.autoMode = true;
-        else if (k == "--auto-finish-at") { c.autoFinishAt = v.getIntValue(); ++i; }   // rehearsals: Finish now once N are measured so far
+        else if (k == "--auto-send-at") { c.autoSendAt = v.getIntValue(); ++i; }     // rehearsals: Send what's done once N are measured so far
+        else if (k == "--auto-pause-at") { c.autoPauseAt = v.getIntValue(); ++i; }   // rehearsals: Pause once N are measured so far (then quits)
+        else if (k == "--auto-ask-close") c.autoAskClose = true;   // rehearsals: open the close question once while measuring, snap it, keep measuring
+        else if (k == "--checkpoint-minutes") { c.checkpointMinutes = v.getDoubleValue(); ++i; }   // rehearsals: the quiet checkpoint's interval
         else if (k == "--auto-close-after") { c.autoCloseAfterS = v.getDoubleValue(); ++i; }   // rehearsals: the close button, pressed after N s of measuring
     }
+    if (c.jobs <= 0) c.jobs = wizapp::jobsFor (performanceCores(), availableMemoryBytes());   // 13 Oct: jobs by Mac
     const auto app = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
     if (c.db == juce::File()) c.db = wizapp::databaseFolder (kMode, app, c.work);       // beta: the bundled snapshot (read-only); release: the STUB
     if (c.store == juce::File()) c.store = c.work.getChildFile ("store");                // the wizard's own map store (never ~/Library/ejmap)
@@ -179,6 +200,12 @@ public:
         w.uploaded = (bool) st.getProperty ("uploaded", false); w.rewarded = cfg.work.getChildFile ("reward.json").existsAsFile(); w.crashed = (int) crashed.size();
         w.consented = (bool) st.getProperty ("consented", false); w.saved = (bool) st.getProperty ("saved", false);
         logLine ("open (" + juce::String (kMode == wizapp::Mode::beta ? "beta" : "normal") + "): " + wizapp::screenName (wizapp::openOn (w, kMode)) + (crashed.empty() ? juce::String() : " (" + juce::String ((int) crashed.size()) + " plugin(s) put on the never-retry list)"));
+        if (const int n = drainOutbox(); n > 0)
+        {   // 13 Oct: what an offline run kept is sent now; a finished run's code arrives with it
+            logLine ("launch: " + juce::String (n) + " kept upload(s) sent");
+            w.uploaded = (bool) appState().getProperty ("uploaded", false); w.rewarded = cfg.work.getChildFile ("reward.json").existsAsFile();
+        }
+        logLine ("jobs: " + juce::String (cfg.jobs) + " (" + juce::String (performanceCores()) + " performance cores, " + juce::String (availableMemoryBytes() / 1073741824.0, 1) + " GB free)");
         show (wizapp::openOn (w, kMode));
         startTimer (250);
     }
@@ -188,17 +215,20 @@ public:
     bool requestQuit (bool askFirst = true)
     {
         if (! engine.running()) return true;
-        if (askFirst && ! quitting && ! finishing && screen == Screen::measuring && closeAsk == nullptr && ! cfg.autoMode)
-        {   // FINISH NOW (Kathy, 13 Oct): closing while measuring asks - finish and save what's done, or pause and carry on later
-            const auto b = wizapp::closeChoiceButtons();
-            closeAsk = std::make_unique<juce::AlertWindow> ("Stop measuring?", soFar + ". Finish now and save what's done, or pause and carry on later.", juce::MessageBoxIconType::NoIcon, this);
-            closeAsk->addButton (b[0], 1); closeAsk->addButton (b[1], 2); closeAsk->addButton ("Keep measuring", 0);
+        if (askFirst && ! quitting && ! finishing && ! pausing && screen == Screen::measuring && closeAsk == nullptr && (! cfg.autoMode || forceAsk))
+        {   // 13 Oct (Kathy): closing while measuring asks - pause (the default) or send what's done; Escape keeps measuring
+            const auto ch = wizapp::measuringChoices (kMode);
+            closeAsk = std::make_unique<juce::AlertWindow> ("Stop measuring for now?", soFar + ". " + ch.line, juce::MessageBoxIconType::NoIcon, this);
+            closeAsk->addButton (ch.pause, 1, juce::KeyPress (juce::KeyPress::returnKey)); closeAsk->addButton (ch.send, 2); closeAsk->addButton ("Keep measuring", 0, juce::KeyPress (juce::KeyPress::escapeKey));
             closeAsk->enterModalState (true, juce::ModalCallbackFunction::create ([safe = juce::Component::SafePointer<WizardComponent> (this)] (int r)
             { if (safe == nullptr) return; safe->closeAsk.reset();
-              if (r == 1) safe->finishNow ("the close button: finish");
-              else if (r == 2) { safe->logLine ("close: pause chosen"); if (safe->requestQuit (false)) juce::JUCEApplication::getInstance()->quit(); } }));
+              if (r == 1) safe->pauseNow ("the close button: pause", true);
+              else if (r == 2) safe->finishNow ("the close button: send what's done"); }));
+            if (cfg.snapshots != juce::File()) juce::Timer::callAfterDelay (500, [safe = juce::Component::SafePointer<WizardComponent> (this)] { if (safe != nullptr && safe->closeAsk != nullptr) safe->snapWindow (*safe->closeAsk, "close_question"); });
             return false;
         }
+        if (quitting) return false;
+        if (screen == Screen::measuring && ! finishing) { pauseNow ("quit", true); return false; }   // a pause: its checkpoint is packed, then the app quits
         if (! quitting) { quitting = true; engine.pause(); pauseNote = wizapp::stoppedNote(); logLine ("close: engine stopped (SIGINT) on " + wizapp::screenName (screen)); repaint(); }
         return false;
     }
@@ -231,6 +261,8 @@ public:
             g.setColour (ink); g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 24.0f, juce::Font::bold)); g.drawText (bigCode, box, juce::Justification::centred);
         }
         if (screen == Screen::measuring && soFar.isNotEmpty()) { g.setColour (ink); g.setFont (juce::FontOptions (15.0f, juce::Font::bold)); g.drawText (soFar, juce::Rectangle<int> (70, 216, getWidth() - 140, 24), juce::Justification::centred); }
+        if (screen == Screen::measuring && choiceLine.isNotEmpty() && ! finishing && ! pausing)
+        { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.0f)); g.drawFittedText (choiceLine, juce::Rectangle<int> (40, getHeight() - 150, getWidth() - 80, 20), juce::Justification::centred, 1); }
         if (pauseNote.isNotEmpty()) { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.0f)); g.drawFittedText (pauseNote, juce::Rectangle<int> (40, getHeight() - 92, getWidth() - 80, 20), juce::Justification::centred, 1); }
     }
     void resized() override
@@ -246,21 +278,29 @@ private:
     juce::Image logo; juce::TextButton primary, secondary; juce::TextEditor email, password; juce::ToggleButton agree; bool diskRefused = false; juce::String device; juce::File savedFile; juce::var eligibility;
     const juce::Colour accent { 0xff3d5afe }, ink { 0xff141824 };
     Screen screen = Screen::welcome; juce::String title, text, barLeft, barRight, bigCode, pauseNote; bool showBar = false; double barValue = 0.0;
-    std::vector<wizapp::Crashed> crashed; bool quitting = false, finishing = false; juce::String soFar; std::unique_ptr<juce::AlertWindow> closeAsk; int autoTicks = 0, snapN = 0; double lastSnapQuarter = -1.0;
+    std::vector<wizapp::Crashed> crashed; bool quitting = false, finishing = false, pausing = false, quitAfterPause = false, forceAsk = false, lastSendKept = false; juce::String soFar, choiceLine; int lastCheckpointSeq = 0; std::unique_ptr<juce::AlertWindow> closeAsk; int autoTicks = 0, snapN = 0; double lastSnapQuarter = -1.0;
     double uploadT0 = 0.0; juce::var account, receipt; const juce::String launchTag = juce::Time::getCurrentTime().formatted ("%H%M%S");
 
     juce::File engineDir() const { return cfg.work.getChildFile ("engine"); }
+    // THE RUN ID (13 Oct): made once, when measuring first starts; a pause and a resume days later are the same run
+    juce::String runId()
+    {
+        auto id = appState().getProperty ("run_id", "").toString();
+        if (id.isEmpty()) { id = "run_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()); auto st = appState(); st.getDynamicObject()->setProperty ("run_id", id);
+                            cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (st)); logLine ("run id: " + id); }
+        return id;
+    }
     static juce::String hostName() { char h[256] = {}; gethostname (h, sizeof h - 1); return juce::String (h).upToFirstOccurrenceOf (".", false, false); }
     juce::var appState() const { const auto v = juce::JSON::parse (cfg.work.getChildFile ("app_state.json").loadFileAsString()); return v.isObject() ? v : juce::var (new juce::DynamicObject()); }
     void setState (const char* k, bool v) { auto s = appState(); s.getDynamicObject()->setProperty (k, v); cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (s)); }
     void logLine (const juce::String& s) { cfg.work.getChildFile ("app.log").appendText (juce::Time::getCurrentTime().toISO8601 (true) + " " + s + "\n"); }
 
-    juce::StringArray engineArgs (bool measure) const
+    juce::StringArray engineArgs (bool measure)
     {
         juce::StringArray a { "--wizard", "--db", cfg.db.getFullPathName(), "--out", engineDir().getFullPathName(), "--ejmap-ledger", cfg.store.getFullPathName(),
                               "--jobs", juce::String (cfg.jobs), "--skip", cfg.work.getChildFile ("skip.json").getFullPathName() };
         for (const auto& o : cfg.only) { a.add ("--only"); a.add (o); }
-        if (measure) { a.add ("--measure"); a.add ("--bundle"); }
+        if (measure) { a.add ("--measure"); a.add ("--bundle"); a.add ("--run-id"); a.add (runId()); a.add ("--checkpoint-minutes"); a.add (juce::String (cfg.checkpointMinutes)); }
         return a;
     }
     void startEngine (bool measure)
@@ -268,7 +308,8 @@ private:
         if (const auto dv = wizapp::diskVerdict (wizapp::freeBytes (cfg.work), true); ! dv.ok)   // 13 Oct: never start below the floor
         { const auto c = wizapp::diskRefusedCopy (dv.words); title = c.title; text = c.text; showBar = false; primary.setButtonText (c.primary); primary.setVisible (true); diskRefused = true;
           logLine ("refused to start: " + dv.words); resized(); repaint(); return; }
-        engineDir().createDirectory(); engineDir().getChildFile ("progress.json").deleteFile();   // the last run's "Done 100%" must not flash on the new screen
+        engineDir().createDirectory(); engineDir().getChildFile ("progress.json").deleteFile();
+        engineDir().getChildFile ("checkpoint.json").deleteFile();   // 13 Oct: the last launch's checkpoint was handled then (or is in the outbox)   // the last run's "Done 100%" must not flash on the new screen
         if (! engine.start (cfg.engine, engineArgs (measure), cfg.work.getChildFile ("engine_output.txt"), measure ? "measure" : "scan"))
         { title = "Something went wrong"; text = "The measuring engine could not start (" + cfg.engine.getFullPathName() + ")."; repaint(); return; }
         awake.hold (true); logLine ("engine started: " + engine.mode + " (pid " + juce::String (engine.pid) + "), keep-awake held");
@@ -277,7 +318,7 @@ private:
     void show (Screen s)
     {
         screen = s; showBar = false; bigCode = {}; pauseNote = {}; primary.setVisible (false); secondary.setVisible (false); email.setVisible (false); password.setVisible (false);
-        agree.setVisible (false); primary.setEnabled (true);
+        agree.setVisible (false); primary.setEnabled (true); secondary.setEnabled (true);
         autoTicks = 0; lastSnapQuarter = -1.0;
         auto copy = [&] (const wizapp::Copy& c) { title = c.title; text = c.text; primary.setButtonText (c.primary); primary.setVisible (c.primary.isNotEmpty());
                                                   secondary.setButtonText (c.secondary); secondary.setVisible (c.secondary.isNotEmpty()); };
@@ -300,7 +341,8 @@ private:
                 const auto ws = juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString());
                 const double eta = (double) ws.getProperty ("to_measure_eta_s", 0.0);   // the per-category estimate (measured seconds once any exist, --jobs aware)
                 const auto el = wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString()));
-                copy (wizapp::scanDoneCopy (kMode, el, wizapp::scanDoneTimeLine ((int) ws.getProperty ("to_measure", el.count), eta, wizapp::etaPhrase (eta))));
+                copy (wizapp::scanDoneCopy (kMode, el, wizapp::etaPhrase (eta)));
+                logLine ("scan done: " + juce::String (el.count) + " to measure, estimate " + juce::String (eta, 0) + " s at --jobs " + juce::String (cfg.jobs));
                 break;
             }
             case Screen::crashRecovered:
@@ -311,10 +353,19 @@ private:
                 primary.setButtonText ("Carry on"); primary.setVisible (true); break;
             }
             case Screen::measuring:
-                title = "Measuring"; text = "Each plugin takes a few minutes. Leave it running - the Mac stays awake. Press Finish now whenever you like: what's measured so far is kept.";
-                showBar = true; barValue = 0.0; barLeft = "Getting ready"; barRight = {}; setState ("measure_started", true); finishing = false;
-                secondary.setButtonText ("Finish now"); secondary.setVisible (true); secondary.setEnabled (false); soFar = wizapp::measuredSoFarWords (0);
+            {
+                const auto ch = wizapp::measuringChoices (kMode);
+                title = "Measuring"; text = "Each plugin takes a few minutes. Leave it running - the Mac stays awake. You can pause and carry on any time.";
+                showBar = true; barValue = 0.0; barLeft = "Getting ready"; barRight = {}; setState ("measure_started", true); finishing = false; pausing = false;
+                primary.setButtonText (ch.pause); primary.setVisible (true); secondary.setButtonText (ch.send); secondary.setVisible (true); secondary.setEnabled (false);
+                choiceLine = ch.line; soFar = wizapp::measuredSoFarWords (0);
                 startEngine (true); break;
+            }
+            case Screen::paused:
+                title = "Paused"; text = kMode == wizapp::Mode::beta ? "It carries on where it stopped - open the wizard any time. Your results so far are in the file on your Desktop: even if you stop early, email it."
+                                                                     : lastSendKept ? "It carries on where it stopped - open the wizard any time. You're offline: what's measured so far is saved and will be sent when you're back online. The free month comes when the full run is done."
+                                                                                    : "It carries on where it stopped - open the wizard any time. What's measured so far has been sent; the free month comes when the full run is done.";
+                primary.setButtonText ("Carry on"); primary.setVisible (true); secondary.setButtonText ("Quit"); secondary.setVisible (true); break;
             case Screen::upload:
                 title = "Sending your results"; text = "Just the measurements - no audio, no plugin files, nothing personal.";
                 showBar = true; barValue = 0.0; barLeft = "Sending"; barRight = {}; uploadT0 = juce::Time::getMillisecondCounterHiRes(); break;
@@ -333,14 +384,14 @@ private:
             case Screen::noCode:
             {
                 const auto rc = juce::JSON::parse (cfg.work.getChildFile ("receipt.json").loadFileAsString());
-                title = "Thank you - your results arrived"; text = rc.getProperty ("reward_message", "").toString();
+                title = "Thank you - your results arrived"; text = rc.getProperty ("reward_message", "").toString().replace ("Thank you - your results arrived. ", "");   // the title says it
                 primary.setButtonText ("Done"); primary.setVisible (true); break;
             }
             case Screen::betaSaved:
             {
                 savedFile = juce::File (appState().getProperty ("saved_file", "").toString());
                 title = "Thank you - your results are ready";
-                text = "Saved as " + savedFile.getFileName() + " on your Desktop. Email this file to " + juce::String (EJ_WIZARD_BETA_EMAIL) + ".";
+                text = "Saved as " + savedFile.getFileName() + " on your Desktop. Email this file to " + juce::String (EJ_WIZARD_BETA_EMAIL) + " - even if you stop early, email the file on your Desktop.";
                 secondary.setButtonText ("Show in Finder"); secondary.setVisible (true); primary.setButtonText ("Done"); primary.setVisible (true); break;
             }
         }
@@ -383,6 +434,8 @@ private:
                 show ((bool) st.getProperty ("measure_started", false) ? Screen::measuring : Screen::scan); break;
             }
             case Screen::alreadyDone: case Screen::reward: case Screen::noCode: case Screen::betaSaved: juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
+            case Screen::measuring: pauseNow ("the Pause button", false); break;
+            case Screen::paused: logLine ("carry on"); show (Screen::measuring); break;
             default: break;
         }
     }
@@ -391,27 +444,81 @@ private:
         if (screen == Screen::reward) { juce::SystemClipboard::copyTextToClipboard (bigCode); secondary.setButtonText ("Copied"); logLine ("code copied"); }
         if (screen == Screen::betaSaved && savedFile.existsAsFile()) { savedFile.revealToUser(); logLine ("shown in Finder: " + savedFile.getFileName()); }
         if (screen == Screen::scanDone) { logLine ("contribute anyway (no reward)"); show (Screen::measuring); }
-        if (screen == Screen::measuring && secondary.isEnabled()) finishNow ("the Finish now button");
+        if (screen == Screen::measuring && secondary.isEnabled()) finishNow ("the Send what's done button");
+        if (screen == Screen::paused) { logLine ("quit while paused"); juce::JUCEApplication::getInstance()->quit(); }
     }
     void finishNow (const juce::String& from)
     {   // FINISH NOW (Kathy, 13 Oct): the request file, then the pause's clean stop - the engine packs what landed and ends 0
         if (finishing || ! engine.running()) return;
         if (! secondary.isEnabled() && from != "rehearsal")   // the close question before measuring began: nothing to pack - a pause
-        { logLine ("finish asked before measuring began: paused instead"); if (requestQuit (false)) juce::JUCEApplication::getInstance()->quit(); return; }
+        { logLine ("send asked before measuring began: paused instead"); pauseNow ("send before measuring", true); return; }
         finishing = true; engineDir().getChildFile (wizapp::kFinishRequestFile).replaceWithText ("finish\n"); engine.pause();
-        secondary.setEnabled (false); secondary.setButtonText ("Finishing..."); barLeft = "Finishing - saving what's measured"; barRight = {};
+        secondary.setEnabled (false); primary.setEnabled (false); secondary.setButtonText ("Sending..."); barLeft = kMode == wizapp::Mode::beta ? "Saving what's measured" : "Sending what's measured"; barRight = {};
         logLine ("finish now (" + from + "): " + soFar + "; engine stopped (SIGINT) to pack"); repaint();
     }
+    void pauseNow (const juce::String& from, bool quitAfter)
+    {   // PAUSE (13 Oct): the engine's clean stop - in-flight plugins discarded, a checkpoint packed - then the Paused screen (or quit)
+        if (pausing || finishing || ! engine.running()) { if (quitAfter && ! engine.running()) juce::JUCEApplication::getInstance()->quit(); return; }
+        pausing = true; quitAfterPause = quitAfter; engine.pause(); primary.setEnabled (false); secondary.setEnabled (false);
+        barLeft = "Pausing - saving what's done"; barRight = {}; pauseNote = wizapp::stoppedNote();
+        logLine ("pause (" + from + "): " + soFar + "; engine stopped (SIGINT), a checkpoint follows"); repaint();
+    }
+    // A CHECKPOINT the engine packed (engine/checkpoint.json): beta - the Desktop file rewritten; release - a quiet partial upload (kept in the
+    // outbox when offline). A final pack (sent_early / finished) goes through the upload screen instead
+    void handleCheckpoint()
+    {
+        const auto cp = juce::JSON::parse (engineDir().getChildFile ("checkpoint.json").loadFileAsString());
+        // 13 Oct (rehearsal B): a checkpoint is known by its time stamp, remembered across launches - an engine's numbering restarts at 1,
+        // and a stale checkpoint.json from the last launch was sent again while the new engine's first one was skipped
+        const int seq = (int) cp.getProperty ("seq", 0); const auto at = cp.getProperty ("at", "").toString();
+        if (seq <= 0 || at.isEmpty() || ! wizapp::isNewCheckpoint (at, appState().getProperty ("last_checkpoint_at", "").toString())) return;
+        { auto st = appState(); st.getDynamicObject()->setProperty ("last_checkpoint_at", at); cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (st)); }
+        lastCheckpointSeq = seq; const auto kind = cp.getProperty ("kind", "").toString();
+        const auto zip = engineDir().getChildFile ("contribution.zip"), man = engineDir().getChildFile ("contribution.manifest.json");
+        if (kMode == wizapp::Mode::beta) { saveBetaResults(); logLine ("checkpoint " + juce::String (seq) + " (" + kind + "): the Desktop file rewritten"); return; }
+        if (kind != "checkpoint") return;
+        sendOrKeep (zip, man, kind);
+    }
+    void sendOrKeep (const juce::File& zip, const juce::File& man, const juce::String& kind)
+    {
+        if (account.isVoid()) account = juce::JSON::parse (cfg.work.getChildFile ("account.json").loadFileAsString());
+        drainOutbox();   // what was kept goes first: the server merges in order
+        const auto r = stub::upload (cfg.work, zip, man, account, device);
+        lastSendKept = ! r.isObject();
+        if (r.isObject()) logLine ("partial upload (" + kind + ", STUB): merged into " + r.getProperty ("run_id", "").toString() + ", " + juce::String ((int) r.getProperty ("run_final", 0)) + " of " + juce::String ((int) r.getProperty ("run_queued", 0)) + " with a result");
+        else { const auto kept = wizapp::outboxPut (cfg.work, zip, man, kind); logLine ("offline: " + kind + " kept for later (" + kept.getFileName() + ")"); }
+    }
+    int drainOutbox()
+    {
+        if (kMode == wizapp::Mode::beta) return 0;
+        if (account.isVoid()) account = juce::JSON::parse (cfg.work.getChildFile ("account.json").loadFileAsString());
+        const int n = wizapp::outboxDrain (cfg.work, [&] (const juce::File& z, const juce::File& m)
+        {
+            const auto r = stub::upload (cfg.work, z, m, account, device); if (! r.isObject()) return false;
+            logLine ("outbox: sent " + z.getFileName() + " (" + r.getProperty ("kind", "").toString() + ")");
+            if ((bool) r.getProperty ("reward_eligible", false))
+            { cfg.work.getChildFile ("receipt.json").replaceWithText (juce::JSON::toString (r)); setState ("uploaded", true);
+              if (const auto pr = stub::promo (cfg.work, account, r); pr.isObject()) cfg.work.getChildFile ("reward.json").replaceWithText (juce::JSON::toString (pr)); }
+            return true;
+        });
+        return n;
+    }
+    void snapWindow (juce::Component& c, const juce::String& why)
+    {
+        if (cfg.snapshots == juce::File()) return;
+        const auto img = c.createComponentSnapshot (c.getLocalBounds(), true, 2.0f);
+        const auto f = cfg.snapshots.getChildFile (launchTag + "_" + juce::String (++snapN).paddedLeft ('0', 2) + "_" + why + ".png");
+        juce::FileOutputStream os (f); if (os.openedOk()) { os.setPosition (0); os.truncate(); juce::PNGImageFormat().writeImageToStream (img, os); }
+    }
     void saveBetaResults()
-    {   // the contribution bundle as ONE file on the Desktop (never overwritten: -2, -3 ...)
+    {   // THE ONE FILE (13 Oct): the same Desktop file rewritten each time (pause / close / hourly / finish)
         const char* rd = std::getenv ("EJ_WIZARD_RESULTS_DIR");   // rehearsals only: never the tester's Desktop
         const auto desk = rd != nullptr && *rd ? juce::File (rd) : juce::File::getSpecialLocation (juce::File::userDesktopDirectory); desk.createDirectory();
-        auto f = desk.getChildFile (wizapp::resultsFileName (juce::Time::getCurrentTime()));
-        for (int k = 2; f.existsAsFile(); ++k) f = desk.getChildFile (f.getFileNameWithoutExtension().upToLastOccurrenceOf ("-results-", true, false) + juce::Time::getCurrentTime().formatted ("%Y-%m-%d") + "-" + juce::String (k) + ".zip");
-        if (engineDir().getChildFile ("contribution.zip").copyFileTo (f)) { auto st = appState(); st.getDynamicObject()->setProperty ("saved_file", f.getFullPathName()); cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (st)); setState ("saved", true); logLine ("saved: " + f.getFullPathName()); }
+        const auto f = wizapp::betaResultsTarget (appState().getProperty ("saved_file", "").toString(), desk, juce::Time::getCurrentTime());
+        if (wizapp::rewriteResultsFile (engineDir().getChildFile ("contribution.zip"), f))
+        { auto st = appState(); st.getDynamicObject()->setProperty ("saved_file", f.getFullPathName()); cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (st)); logLine ("saved: " + f.getFullPathName()); }
         else logLine ("could not save the results file");
     }
-
     void snap (const juce::String& why)
     {
         if (cfg.snapshots == juce::File()) return;
@@ -445,8 +552,10 @@ private:
         }
         else
         {   // measuring: the engine's Measuring band (15..97) is the bar; its rescan is "getting ready"
-            if (! finishing) { soFar = wizapp::measuredSoFarWords (wizapp::measuredSoFar (p)); secondary.setEnabled (wizapp::finishAvailable (p)); }
-            if (finishing && stage != "Packing" && stage != "Done") { barLeft = "Finishing - saving what's measured"; barRight = {}; }
+            if (! finishing && ! pausing) { soFar = wizapp::measuredSoFarWords (wizapp::measuredSoFar (p)); secondary.setEnabled (wizapp::finishAvailable (p)); }
+            handleCheckpoint();   // 13 Oct: the hourly checkpoint, as soon as the engine has packed it
+            if (pausing) { barLeft = "Pausing - saving what's done"; barRight = {}; }
+            else if (finishing && stage != "Packing" && stage != "Done") { barLeft = kMode == wizapp::Mode::beta ? "Saving what's measured" : "Sending what's measured"; barRight = {}; }
             else if (stage == "Measuring") { barValue = juce::jlimit (0.0, 1.0, (pct - 15.0) / 82.0); barLeft = cur.isNotEmpty() ? cur : "Measuring"; barRight = p.getProperty ("eta_words", "").toString(); }
             else if (stage == "Packing" || stage == "Done") { barValue = 1.0; barLeft = "Packing your results"; barRight = {}; }
             else { barValue = 0.0; barLeft = "Getting ready"; barRight = {}; }
@@ -455,7 +564,14 @@ private:
         if (const auto code = engine.poll())
         {
             awake.hold (false); logLine ("engine ended: " + juce::String (*code) + ", keep-awake released");
+            if (screen == Screen::measuring) handleCheckpoint();   // the pause's checkpoint (packed just before the engine ended)
             if (quitting) { juce::JUCEApplication::getInstance()->quit(); return; }
+            if (pausing && *code != 0)
+            {   // PAUSED (13 Oct): what is done went with the checkpoint; the same run carries on next time
+                pausing = false; logLine ("paused: " + soFar);
+                if (quitAfterPause) { juce::JUCEApplication::getInstance()->quit(); return; }
+                show (Screen::paused); return;
+            }
             switch (wizapp::afterEngine (screen, *code))
             {
                 case wizapp::AfterEngine::scanDone:
@@ -468,7 +584,7 @@ private:
                 }
                 case wizapp::AfterEngine::upload:
                     setState ("measure_done", true);
-                    if (wizapp::afterMeasure (kMode) == Screen::betaSaved) saveBetaResults();
+                    if (wizapp::afterMeasure (kMode) == Screen::betaSaved) { saveBetaResults(); setState ("saved", true); }
                     show (wizapp::afterMeasure (kMode)); break;
                 case wizapp::AfterEngine::stopped:
                 {   // the engine's own words when it said why (a low disk); else the stop note
@@ -484,7 +600,15 @@ private:
         barValue = juce::jlimit (0.0, 1.0, t); barLeft = barValue < 1.0 ? "Sending" : "Checking it arrived"; repaint(); snapAtQuarters();
         if (t < 1.3 || receipt.isObject()) return;
         if (account.isVoid()) account = juce::JSON::parse (cfg.work.getChildFile ("account.json").loadFileAsString());
+        drainOutbox();
         receipt = stub::upload (cfg.work, engineDir().getChildFile ("contribution.zip"), engineDir().getChildFile ("contribution/manifest.json"), account, device);
+        if (! receipt.isObject())
+        {   // OFFLINE (13 Oct): kept, sent on the next launch; the code (if earned) comes then
+            wizapp::outboxPut (cfg.work, engineDir().getChildFile ("contribution.zip"), engineDir().getChildFile ("contribution/manifest.json"), "final");
+            setState ("uploaded", true); logLine ("offline: the final upload is kept for the next launch");
+            title = "You're offline"; text = "Your results are saved on this Mac and will be sent the next time you open the wizard while online.";
+            showBar = false; primary.setButtonText ("Done"); primary.setVisible (true); screen = Screen::noCode; repaint(); return;
+        }
         cfg.work.getChildFile ("receipt.json").replaceWithText (juce::JSON::toString (receipt));
         setState ("uploaded", true); logLine ("uploaded (STUB): " + juce::JSON::toString (receipt, true));
         const auto pr = stub::promo (cfg.work, account, receipt);   // the server grants on the ACCEPTED results, never the client's count
@@ -503,9 +627,18 @@ private:
         if (screen == Screen::reward && autoTicks == 16) onPrimary();
         if ((screen == Screen::scanDone || screen == Screen::crashRecovered) && autoTicks == 12) onPrimary();
         if (screen == Screen::reward && autoTicks == 8) { onSecondary(); snap ("copied"); }
-        if (screen == Screen::measuring && cfg.autoFinishAt > 0 && secondary.isEnabled()
-            && wizapp::measuredSoFar (juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString())) >= cfg.autoFinishAt)
-        { cfg.autoFinishAt = 0; snap ("before_finish"); finishNow ("rehearsal"); snap ("finishing"); }
+        if (screen == Screen::measuring && (cfg.autoSendAt > 0 || cfg.autoPauseAt > 0) && secondary.isEnabled())
+        {
+            const int n = wizapp::measuredSoFar (juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString()));
+            if (cfg.autoSendAt > 0 && n >= cfg.autoSendAt) { cfg.autoSendAt = 0; snap ("before_send"); finishNow ("rehearsal"); snap ("sending"); }
+            if (cfg.autoPauseAt > 0 && n >= cfg.autoPauseAt) { cfg.autoPauseAt = 0; snap ("before_pause"); pauseNow ("rehearsal", false); snap ("pausing"); }
+        }
+        if (screen == Screen::measuring && cfg.autoAskClose && secondary.isEnabled())
+        {   // the close question, shown and snapped, then Escape (keep measuring)
+            cfg.autoAskClose = false; forceAsk = true; requestQuit (true); forceAsk = false;
+            juce::Timer::callAfterDelay (1500, [safe = juce::Component::SafePointer<WizardComponent> (this)] { if (safe != nullptr && safe->closeAsk != nullptr) { safe->logLine ("rehearsal: the close question, kept measuring"); safe->closeAsk->exitModalState (0); } });
+        }
+        if (screen == Screen::paused && autoTicks == 8) { logLine ("rehearsal: quit while paused"); juce::JUCEApplication::getInstance()->quit(); }
         if (screen == Screen::measuring && cfg.autoCloseAfterS > 0.0 && autoTicks * 0.25 >= cfg.autoCloseAfterS)
         { cfg.autoCloseAfterS = 0.0; logLine ("rehearsal: the close button"); juce::JUCEApplication::getInstance()->systemRequestedQuit(); snap ("closing"); }
     }

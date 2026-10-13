@@ -9665,11 +9665,10 @@ void testWizardCategories()
         check (read && finishAfterStop (130, true, false) && ! finishAfterStop (130, false, false) && ! finishAfterStop (130, true, true) && ! finishAfterStop (0, true, false)
                && measuredSoFar (prog ("Measuring", 7, 2)) == 5 && measuredSoFar (prog ("Checking", 7, 0)) == 0 && measuredSoFarWords (5) == "5 measured so far" && measuredSoFarWords (1) == "1 measured so far"
                && finishAvailable (prog ("Measuring", 0, 0)) && ! finishAvailable (prog ("Checking", 3, 0))
-               && closeChoiceButtons() == juce::StringArray { "Finish and save what's done", "Pause - carry on later" }
                && ejmap::wizard::summaryLine ({ { "not_reached", 3 } }).contains ("3 plugins were not reached before you finished")
                && run.contains ("out.getChildFile (wizapp::kFinishRequestFile).deleteFile();\n        // THE MEASURING ORDER")
                && run.contains ("st = finishing ? \"not_reached\" : \"measuring\"") && run.contains ("juce::String (finishing ? \"not_reached\" : \"measuring\")")
-               && app.contains ("secondary.setButtonText (\"Finish now\")") && app.contains ("engineDir().getChildFile (wizapp::kFinishRequestFile).replaceWithText"),
+               && app.contains ("secondary.setButtonText (ch.send)") && app.contains ("engineDir().getChildFile (wizapp::kFinishRequestFile).replaceWithText"),
                "wizard WZ-FIN-1: finish = a stop with the request (never a disk stop); 'N measured so far'; the button only while measuring; close asks finish / pause; unreached said (read: " + juce::String ((int) read) + ")");
     }
     // WZ-FIN-2 "measured so far" counts results, not landings (the 13 Oct finish rehearsal: OneKnob Pumper landed ok, refused as a ducker,
@@ -9690,15 +9689,156 @@ void testWizardCategories()
         check (read && loop.contains ("if (wizardStop() != 0) { pbCode = 130; break; }") && run.contains ("return diskStopped || wizardStop() != 0; };"),
                "wizard WZ-FIN-3: the stop is read before each measuring pass and by Phase B's own stop test (read: " + juce::String ((int) read) + ")");
     }
-    // WZ-TIME-1 THE SCAN-DONE TIME LINE (Kathy, 13 Oct): a long estimate said plainly with the way out; a short one as before
+    // WZ-TIME-1 THE SCAN-DONE WORDS (Kathy, 13 Oct): the count, the real time, and what earns the month; the beta says the Desktop file
     {
         using namespace ejmap::wizapp;
-        const double threeDays = 3.0 * 86400.0 + 3000.0;
-        check (scanDoneTimeLine (618, threeDays, etaPhrase (threeDays)) == "618 plugins to measure - about 3 days if left running. The most useful ones go first, so you can press Finish now whenever you like."
-               && scanDoneTimeLine (12, 1200.0, etaPhrase (1200.0)) == "About 20 min." && etaPhrase (5.0 * 3600.0) == "about 5 hours" && etaPhrase (36.0 * 3600.0) == "about 2 days"
-               && scanDoneTimeLine (40, kLongEstimateS, etaPhrase (kLongEstimateS)).startsWith ("40 plugins to measure - about 4 hours if left running.")
-               && ! scanDoneCopy (Mode::beta, { false, true, 625, 5 }, "x").text.contains ("pauses") && ! scanDoneCopy (Mode::normal, { false, true, 625, 5 }, "x").text.contains ("pauses"),
-               "wizard WZ-TIME-1: '618 plugins to measure - about 3 days if left running. The most useful ones go first...'; under 4 h stays 'About 20 min.'");
+        Eligibility el; el.eligible = true; el.count = 625;
+        const double t = 98513.0;
+        check (scanDoneCopy (Mode::normal, el, etaPhrase (t)).text == "625 plugins to measure - about 27 hours. Finish them all to get your free month; you can pause and carry on any time."
+               && scanDoneCopy (Mode::beta, el, etaPhrase (t)).text == "625 plugins to measure - about 27 hours. You can pause and carry on any time - and even if you stop early, email the file on your Desktop."
+               && etaPhrase (1200.0) == "about 20 min" && etaPhrase (5.0 * 3600.0) == "about 5 hours" && etaPhrase (36.0 * 3600.0) == "about 2 days"
+               && ! scanDoneCopy (Mode::beta, el, "x").text.contains ("pauses it") && ! scanDoneCopy (Mode::normal, el, "x").text.contains ("pauses it"),
+               "wizard WZ-TIME-1: '625 plugins to measure - about 27 hours. Finish them all to get your free month; you can pause and carry on any time.'");
+    }
+    // WZ-REWARD (Kathy, 13 Oct): THE SERVER DECIDES, on the MERGED RUN. Each case is a fresh server (its own stub folder); the uploads are real
+    // zips whose drafts are the evidence (acceptedNew), merged by run id + plugin; the qualify minimum is the default 25
+    {
+        using namespace ejmap::wizserver::stub;
+        auto ids = [] (int from, int to) { juce::StringArray a; for (int k = from; k < to; ++k) a.add ("AudioUnit|p" + juce::String (k) + "|1"); return a; };
+        const auto queue25 = ids (0, 25);
+        // one upload: measured -> a draft in the zip; others -> their state; kind / run id in the manifest (as the engine packs it)
+        auto upload1 = [&] (const juce::File& work, const juce::String& runId, const juce::String& kind, const juce::StringArray& measured, const std::map<juce::String, juce::String>& others,
+                            const juce::String& acct, const juce::String& dev) -> juce::var
+        {
+            const auto src = work.getChildFile ("src_" + juce::String (juce::Random::getSystemRandom().nextInt64())); src.getChildFile ("profiles").createDirectory();
+            juce::Array<juce::var> items, outcomes, queue;
+            for (const auto& q : queue25) queue.add (q);
+            for (const auto& q : queue25)
+            {
+                auto* o = new juce::DynamicObject(); o->setProperty ("plugin_id", q);
+                o->setProperty ("state", measured.contains (q) ? juce::String ("measured") : others.count (q) ? others.at (q) : juce::String ("measuring")); outcomes.add (juce::var (o));
+            }
+            for (const auto& q : measured)
+            {
+                const auto fn = "profiles/" + q.replace ("|", "_") + ".deesser_block.draft.json"; src.getChildFile (fn).replaceWithText ("{}");
+                auto* it = new juce::DynamicObject(); it->setProperty ("plugin_id", q); it->setProperty ("kind", "de-esser"); it->setProperty ("drafts", juce::Array<juce::var> { juce::var (fn) }); items.add (juce::var (it));
+            }
+            auto* R = new juce::DynamicObject(); R->setProperty ("run_id", runId); R->setProperty ("kind", kind);
+            auto* M = new juce::DynamicObject(); const juce::var Mv (M); M->setProperty ("schema", "ej_contribution/0"); M->setProperty ("profiles", items); M->setProperty ("run", juce::var (R));
+            M->setProperty ("queue", queue); M->setProperty ("outcomes", outcomes);
+            src.getChildFile ("manifest.json").replaceWithText (juce::JSON::toString (Mv));
+            const auto z = work.getChildFile (src.getFileName() + ".zip");
+            { juce::ZipFile::Builder zb; for (const auto& f : src.findChildFiles (juce::File::findFiles, true)) zb.addFile (f, 6, f.getRelativePathFrom (src));
+              juce::FileOutputStream os (z); os.setPosition (0); os.truncate(); zb.writeToStream (os, nullptr); }
+            return upload (work, z, src.getChildFile ("manifest.json"), juce::JSON::parse ("{\"account_id\": \"" + acct + "\", \"email\": \"t@example.com\"}"), dev);
+        };
+        auto fresh = [] { auto w = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_reward_" + juce::String (juce::Random::getSystemRandom().nextInt64())); w.createDirectory(); return w; };
+        auto code = [] (const juce::File& w, const juce::var& r) { return promo (w, juce::JSON::parse ("{\"account_id\": \"a\", \"email\": \"t@example.com\"}"), r).isObject(); };
+        auto el = [&] (int n) { const auto w = fresh(); juce::Array<juce::var> rows; for (int k = 0; k < n; ++k) { auto* o = new juce::DynamicObject(); o->setProperty ("state", "queued"); rows.add (juce::var (o)); }
+                                auto* st = new juce::DynamicObject(); st->setProperty ("plugins", rows); const auto e = lookupEligibility (w, "a", "d", juce::var (st)); w.deleteRecursively(); return (bool) e.getProperty ("eligible", false); };
+        // WZ-REWARD-1 qualify: 24 = no, 25 = yes
+        check (! el (24) && el (25), "wizard WZ-REWARD-1: qualify at scan - 24 eligible new plugins: no; 25: yes (server default 25)");
+        // WZ-REWARD-2 25 + finished = code
+        { const auto w = fresh(); const auto r = upload1 (w, "run_A", "finished", queue25, {}, "a", "d"); const bool c = code (w, r);
+          check ((bool) r.getProperty ("reward_eligible", false) && c && (int) r.getProperty ("accepted_new", 0) == 25 && alreadyContributed (w, "a", "d"),
+                 "wizard WZ-REWARD-2: 25 measured, the run finished -> the code; the account and the Mac have taken part"); w.deleteRecursively(); }
+        // WZ-REWARD-3 25 + Send what's done = no code (the go is used)
+        { const auto w = fresh(); const auto r = upload1 (w, "run_B", "sent_early", queue25, {}, "a", "d");
+          check (! (bool) r.getProperty ("reward_eligible", true) && ! code (w, r) && r.getProperty ("reward_message", "").toString().contains ("needs the full run") && alreadyContributed (w, "a", "d"),
+                 "wizard WZ-REWARD-3: Send what's done with 25 measured -> no code, 'the free month needs the full run'; the go is used"); w.deleteRecursively(); }
+        // WZ-REWARD-4 finished but accepted < 25 = no code (one needs a licence: the run is complete, 24 accepted)
+        { const auto w = fresh(); const auto r = upload1 (w, "run_C", "finished", ids (0, 24), { { "AudioUnit|p24|1", "needs_licence" } }, "a", "d");
+          check (! (bool) r.getProperty ("reward_eligible", true) && ! code (w, r) && (int) r.getProperty ("run_final", 0) == 25 && r.getProperty ("reward_message", "").toString().contains ("at least 25"),
+                 "wizard WZ-REWARD-4: finished and complete, but 24 accepted -> no code, a plain message (the safety floor)"); w.deleteRecursively(); }
+        // WZ-REWARD-5 a run paused and resumed across days, then finished = code (day 1: a checkpoint of 10; day 2: the other 15, finished)
+        { const auto w = fresh(); const auto r1 = upload1 (w, "run_D", "checkpoint", ids (0, 10), {}, "a", "d"); const bool mid = alreadyContributed (w, "a", "d");
+          const auto r2 = upload1 (w, "run_D", "finished", ids (10, 25), {}, "a", "d");
+          check (! (bool) r1.getProperty ("reward_eligible", true) && ! mid && (bool) r2.getProperty ("reward_eligible", false) && (int) r2.getProperty ("accepted_new", 0) == 25 && code (w, r2),
+                 "wizard WZ-REWARD-5: day 1 checkpoint (10), day 2 the other 15 finished - one run: 25 accepted, the code; the checkpoint used nothing"); w.deleteRecursively(); }
+        // WZ-REWARD-6 two partials (overlapping) then finished = merged once, code
+        { const auto w = fresh(); upload1 (w, "run_E", "checkpoint", ids (0, 10), {}, "a", "d"); const auto r2 = upload1 (w, "run_E", "checkpoint", ids (0, 15), {}, "a", "d");
+          const auto r3 = upload1 (w, "run_E", "finished", queue25, {}, "a", "d");
+          check ((int) r2.getProperty ("accepted_new", 0) == 15 && (int) r2.getProperty ("accepted_this_upload", -1) == 5 && (int) r3.getProperty ("accepted_new", 0) == 25
+                 && (int) r3.getProperty ("accepted_this_upload", -1) == 10 && (bool) r3.getProperty ("reward_eligible", false) && code (w, r3),
+                 "wizard WZ-REWARD-6: checkpoints 10 then 15 (overlapping), then all 25 finished -> 25 accepted, never 50; the code"); w.deleteRecursively(); }
+        // WZ-REWARD-6b the merge's state rule, direct: measured is never replaced (a later "crashed" for it changes nothing); a final state replaces
+        // a non-final one; a non-final state never replaces a final one
+        {
+            auto run = newRun ("run_M");
+            auto man = [] (const char* pid, const char* st) { return juce::JSON::parse (juce::String ("{\"queue\": [\"") + pid + "\"], \"outcomes\": [{\"plugin_id\": \"" + pid + "\", \"state\": \"" + st + "\"}]}"); };
+            mergeRun (run, man ("P0", "measured"), {}); mergeRun (run, man ("P0", "crashed"), {});
+            mergeRun (run, man ("P1", "measuring"), {}); mergeRun (run, man ("P1", "needs_licence"), {}); mergeRun (run, man ("P1", "measuring"), {});
+            auto st = [&] (const char* pid) { return run.getProperty ("plugins", {}).getProperty (pid, {}).getProperty ("state", "").toString(); };
+            check (st ("P0") == "measured" && st ("P1") == "needs_licence" && tallyRun (run).queued == 2 && tallyRun (run).final_ == 2,
+                   "wizard WZ-REWARD-6b: measured then crashed stays measured; measuring -> needs_licence -> measuring stays needs_licence");
+        }
+        // WZ-REWARD-7 partials only = no code (even when they cover the whole queue), and the go is not used
+        { const auto w = fresh(); upload1 (w, "run_F", "checkpoint", ids (0, 20), {}, "a", "d"); const auto r = upload1 (w, "run_F", "checkpoint", queue25, {}, "a", "d");
+          check (! (bool) r.getProperty ("reward_eligible", true) && ! code (w, r) && (int) r.getProperty ("accepted_new", 0) == 25 && ! alreadyContributed (w, "a", "d"),
+                 "wizard WZ-REWARD-7: checkpoints alone (all 25) -> no code, the account and the Mac have not used their go"); w.deleteRecursively(); }
+        // WZ-REWARD-8 finished but the merged run is incomplete (5 still measuring) = no code
+        { const auto w = fresh(); const auto r = upload1 (w, "run_G", "finished", ids (0, 20), {}, "a", "d");
+          check (! (bool) r.getProperty ("reward_eligible", true) && r.getProperty ("reward_message", "").toString().contains ("20 of 25"),
+                 "wizard WZ-REWARD-8: 'finished' with 5 never reached -> no code ('20 of 25 plugins have a result') - the client's word is not trusted"); w.deleteRecursively(); }
+        // WZ-OUTBOX-1 offline: a partial kept in the outbox, sent on the next launch (the drain), merged into its run
+        {
+            const auto w = fresh(); const auto off = w.getChildFile ("offline.flag"); off.replaceWithText ("1"); ::setenv ("EJ_WIZARD_OFFLINE_FILE", off.getFullPathName().toRawUTF8(), 1);
+            const auto rOff = upload1 (w, "run_H", "checkpoint", ids (0, 5), {}, "a", "d");
+            // the app's path: the failed send goes to the outbox (the zip the stub would have sent: rebuild one)
+            const auto src = w.getChildFile ("o"); src.getChildFile ("profiles").createDirectory(); src.getChildFile ("profiles/x.deesser_block.draft.json").replaceWithText ("{}");
+            src.getChildFile ("manifest.json").replaceWithText ("{\"schema\": \"ej_contribution/0\", \"run\": {\"run_id\": \"run_H\", \"kind\": \"checkpoint\"}, \"queue\": [\"AudioUnit|x|1\"], \"outcomes\": [{\"plugin_id\": \"AudioUnit|x|1\", \"state\": \"measured\"}], \"profiles\": [{\"plugin_id\": \"AudioUnit|x|1\", \"drafts\": [\"profiles/x.deesser_block.draft.json\"]}]}");
+            const auto z = w.getChildFile ("o.zip"); { juce::ZipFile::Builder zb; for (const auto& f : src.findChildFiles (juce::File::findFiles, true)) zb.addFile (f, 6, f.getRelativePathFrom (src));
+                                                       juce::FileOutputStream os (z); os.setPosition (0); os.truncate(); zb.writeToStream (os, nullptr); }
+            ejmap::wizapp::outboxPut (w, z, src.getChildFile ("manifest.json"), "checkpoint");
+            auto send = [&] (const juce::File& zz, const juce::File& mm) { return upload (w, zz, mm, juce::JSON::parse ("{\"account_id\": \"a\"}"), "d").isObject(); };
+            const int whileOff = ejmap::wizapp::outboxDrain (w, send);
+            off.deleteFile();
+            const int nextLaunch = ejmap::wizapp::outboxDrain (w, send);
+            const auto run = juce::JSON::parse (w.getChildFile ("server_stub/runs/run_H.json").loadFileAsString());
+            ::unsetenv ("EJ_WIZARD_OFFLINE_FILE");
+            check (rOff.isVoid() && whileOff == 0 && nextLaunch == 1 && ejmap::wizapp::outboxDir (w).findChildFiles (juce::File::findFiles, false, "*.zip").isEmpty()
+                   && (bool) run.getProperty ("plugins", {}).getProperty ("AudioUnit|x|1", {}).getProperty ("accepted", false),
+                   "wizard WZ-OUTBOX-1: offline -> the send fails and the partial is kept; the next launch sends it, merged into its run");
+            w.deleteRecursively();
+        }
+        // WZ-BETAFILE-1 the beta's one Desktop file is REWRITTEN on a pause / checkpoint - the same name, the latest contents, no -2 copy
+        {
+            const auto w = fresh(); const auto desk = w.getChildFile ("Desktop"); desk.createDirectory(); const auto src = w.getChildFile ("c.zip");
+            const juce::Time t (2026, 9, 13, 21, 0);
+            src.replaceWithText ("pause 1"); const auto f1 = ejmap::wizapp::betaResultsTarget ({}, desk, t); const bool ok1 = ejmap::wizapp::rewriteResultsFile (src, f1);
+            src.replaceWithText ("pause 2, more measured"); const auto f2 = ejmap::wizapp::betaResultsTarget (f1.getFullPathName(), desk, t); const bool ok2 = ejmap::wizapp::rewriteResultsFile (src, f2);
+            check (ok1 && ok2 && f1 == f2 && f2.loadFileAsString() == "pause 2, more measured" && desk.findChildFiles (juce::File::findFiles, false).size() == 1
+                   && f1.getFileName() == "EchoJay-Wizard-results-2026-10-13.zip",
+                   "wizard WZ-BETAFILE-1: the second pause rewrites the same Desktop file (latest contents, one file)");
+            w.deleteRecursively();
+        }
+        // WZ-JOBS-1 jobs by Mac: 4 only with 8+ performance cores AND 4 GB free; else 2
+        {
+            using ejmap::wizapp::jobsFor; const double GB = 1073741824.0;
+            check (jobsFor (8, 6.0 * GB) == 4 && jobsFor (10, 4.0 * GB) == 4 && jobsFor (8, 3.9 * GB) == 2 && jobsFor (6, 12.0 * GB) == 2 && jobsFor (8, -1.0) == 2,
+                   "wizard WZ-JOBS-1: 8 P-cores + 6 GB free -> 4; 3.9 GB free -> 2; 6 P-cores -> 2; unreadable memory -> 2");
+        }
+        // WZ-CKPT-1 the engine packs a checkpoint on a pause and every ~60 min, each upload carries the run, its queue and outcomes; the app
+        // uploads a checkpoint quietly (release) / rewrites the Desktop file (beta). Text pins with a control
+        {
+            const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+            const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+            const bool read = run.contains ("inline int runWizard") && app.contains ("class WizardApplication");
+            check (read && run.contains ("if (! diskStopped) checkpoint (\"the pause\");") && run.contains ("if (wizapp::checkpointDue (lastCheckpointMs, now, wo.checkpointMinutes))")
+                   && run.contains ("R->setProperty (\"run_id\", wo.runId); R->setProperty (\"kind\", runKind);") && run.contains ("M->setProperty (\"queue\", queue); M->setProperty (\"outcomes\", outcomes);")
+                   && app.contains ("if (kMode == wizapp::Mode::beta) { saveBetaResults ();") == false && app.contains ("if (kMode == wizapp::Mode::beta) { saveBetaResults(); logLine (\"checkpoint \"")
+                   && app.contains ("sendOrKeep (zip, man, kind);") && app.contains ("engineDir().getChildFile (\"checkpoint.json\").deleteFile();")
+                   && ejmap::wizapp::isNewCheckpoint ("2026-10-13T22:48", "2026-10-13T22:45") && ! ejmap::wizapp::isNewCheckpoint ("2026-10-13T22:45", "2026-10-13T22:45") && ! ejmap::wizapp::isNewCheckpoint ({}, {}) && ejmap::wizapp::checkpointDue (0.0, 3600000.0, 60.0) && ! ejmap::wizapp::checkpointDue (0.0, 3599000.0, 60.0),
+                   "wizard WZ-CKPT-1: a pause and every 60 min pack a checkpoint with the run id, queue and outcomes; release uploads it, beta rewrites the file (read: " + juce::String ((int) read) + ")");
+        }
+        // WZ-CHOICE-1 the Measuring screen's two choices and the line (release / beta)
+        {
+            using namespace ejmap::wizapp;
+            const auto r = measuringChoices (Mode::normal), b = measuringChoices (Mode::beta);
+            check (r.pause == "Pause - carry on later" && r.send == "Send what's done (no free month)" && r.line == "The free month needs the full run - you can carry on later instead."
+                   && b.pause == "Pause - carry on later" && ! b.send.contains ("free month") && b.line.contains ("even if you stop early, email the file on your Desktop") == false && b.line.containsIgnoreCase ("even if you stop early, email the file on your Desktop"),
+                   "wizard WZ-CHOICE-1: 'Pause - carry on later' (default) / 'Send what's done (no free month)' + 'The free month needs the full run - you can carry on later instead.'; the beta's own words");
+        }
     }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files
@@ -9743,12 +9883,13 @@ void testWizardCategories()
     // with "Contribute anyway (no reward)"; the beta never mentions a reward; the code screen only on the server's grant
     {
         using namespace ejmap::wizapp;
-        Eligibility el; el.eligible = true; el.count = 7; Eligibility ne; ne.count = 2; Eligibility none; Eligibility al; al.already = true;
-        const auto ce = scanDoneCopy (Mode::normal, el, "About 30 min."), cn = scanDoneCopy (Mode::normal, ne, "About 5 min."), c0 = scanDoneCopy (Mode::normal, none, ""), cb = scanDoneCopy (Mode::beta, el, "About 30 min.");
+        Eligibility el; el.eligible = true; el.count = 7; Eligibility ne; ne.count = 2; ne.minimum = 25; Eligibility none; Eligibility al; al.already = true;
+        const auto ce = scanDoneCopy (Mode::normal, el, "about 30 min"), cn = scanDoneCopy (Mode::normal, ne, "about 5 min"), c0 = scanDoneCopy (Mode::normal, none, ""), cb = scanDoneCopy (Mode::beta, el, "about 30 min");
         auto rc = [] (bool ok) { auto* o = new juce::DynamicObject(); o->setProperty ("reward_eligible", ok); return juce::var (o); };
         const juce::var code (new juce::DynamicObject());
-        check (ce.title == "You have 7 plugins we don't have yet" && ce.text.contains ("Help map them and get a free month") && ce.primary == "Start" && ce.secondary.isEmpty()
-               && cn.title == "Thanks - your plugins are already mapped" && cn.text == "So there's nothing to do right now." && cn.primary == "Done" && cn.secondary == "Contribute anyway (no reward)"
+        check (ce.title == "You have 7 plugins we don't have yet" && ce.text == "7 plugins to measure - about 30 min. Finish them all to get your free month; you can pause and carry on any time." && ce.primary == "Start" && ce.secondary.isEmpty()
+               && cn.title == "Thanks - your plugins are already mapped" && cn.text == "You have 2 plugins we don't have yet - the free month needs 25 or more. You can still contribute them." && cn.primary == "Done" && cn.secondary == "Contribute anyway (no reward)"
+               && c0.text == "So there's nothing to do right now."
                && c0.secondary.isEmpty() && ! cb.text.contains ("free month") && cb.primary == "Start"
                && afterScan (al) == Screen::alreadyDone && afterScan (el) == Screen::scanDone && alreadyDoneCopy().title == "You've already taken part - thank you"
                && afterConsent (al) == Screen::alreadyDone && afterConsent (none) == Screen::scan
@@ -9763,13 +9904,13 @@ void testWizardCategories()
             for (const char* st : { "pending_review", "held", "out_of_scope", "needs_licence", "demo", "ready", "needs_category" }) { auto* o = new juce::DynamicObject(); o->setProperty ("state", st); rows.add (juce::var (o)); }
             for (int k = 0; k < queued; ++k) { auto* o = new juce::DynamicObject(); o->setProperty ("state", "queued"); rows.add (juce::var (o)); }
             auto* s = new juce::DynamicObject(); s->setProperty ("plugins", rows); return juce::var (s); };
-        const auto e5 = ejmap::wizserver::stub::lookupEligibility (work, "acct_a", "dev_a", stateWith (5)), e4 = ejmap::wizserver::stub::lookupEligibility (work, "acct_a", "dev_a", stateWith (4));
+        const auto e5 = ejmap::wizserver::stub::lookupEligibility (work, "acct_a", "dev_a", stateWith (25)), e4 = ejmap::wizserver::stub::lookupEligibility (work, "acct_a", "dev_a", stateWith (24));
         work.getChildFile ("server_stub").createDirectory(); work.getChildFile ("server_stub/config.json").replaceWithText ("{\"reward_minimum\": 3}");
         const auto e3 = ejmap::wizserver::stub::lookupEligibility (work, "acct_a", "dev_a", stateWith (3));
         work.deleteRecursively();
-        check ((int) e5.getProperty ("count", 0) == 5 && (bool) e5.getProperty ("eligible", false) && (int) e5.getProperty ("minimum", 0) == 5 && ! (bool) e4.getProperty ("eligible", true)
-               && (int) e4.getProperty ("count", 0) == 4 && (bool) e3.getProperty ("eligible", false) && (int) e3.getProperty ("minimum", 0) == 3 && ! (bool) e5.getProperty ("already_contributed", true),
-               "wizard WZ-ELIG-2: only rule-C plugins to measure count (5 of 12 rows); eligible at 5, not at 4; the minimum is the server's (3 when configured)");
+        check ((int) e5.getProperty ("count", 0) == 25 && (bool) e5.getProperty ("eligible", false) && (int) e5.getProperty ("minimum", 0) == 25 && ! (bool) e4.getProperty ("eligible", true)
+               && (int) e4.getProperty ("count", 0) == 24 && (bool) e3.getProperty ("eligible", false) && (int) e3.getProperty ("minimum", 0) == 3 && ! (bool) e5.getProperty ("already_contributed", true),
+               "wizard WZ-ELIG-2 (QUALIFY): only rule-C plugins to measure count; eligible at 25, not at 24 (the 13 Oct default); the minimum is the server's (3 when configured)");
     }
     // WZ-ELIG-3 (item 7, the server's /contributions): the grant counts ACCEPTED new profiles from the bundle - a compressor whose tone check
     // passed (one that failed does not), an EQ with its acceptance, a draft that is there; a duplicate and an already-known plugin do not count;
@@ -9797,10 +9938,10 @@ void testWizardCategories()
         const auto acctB = juce::JSON::parse ("{\"account_id\": \"acct_b\", \"email\": \"b@example.com\"}");
         const auto r2 = ejmap::wizserver::stub::upload (work, z1, src.getChildFile ("manifest.json"), acctB, "dev_b");   // the same plugins again: now already known
         work.deleteRecursively();
-        check ((int) r1.getProperty ("accepted_new", -1) == 3 && (int) r1.getProperty ("reward_minimum", 0) == 5 && ! (bool) r1.getProperty ("reward_eligible", true) && p1.isVoid()
-               && r1.getProperty ("reward_message", "").toString().contains ("at least 5 new plugins") && r1.getProperty ("reward_message", "").toString().contains ("were 3")
+        check ((int) r1.getProperty ("accepted_new", -1) == 3 && (int) r1.getProperty ("reward_minimum", 0) == 25 && ! (bool) r1.getProperty ("reward_eligible", true) && p1.isVoid()
+               && r1.getProperty ("reward_message", "").toString().contains ("at least 25 new plugins") && r1.getProperty ("reward_message", "").toString().contains ("were 3")
                && (int) r2.getProperty ("accepted_new", -1) == 0 && ! (bool) r2.getProperty ("reward_eligible", true),
-               "wizard WZ-ELIG-3: c1 (passed), e1 (accepted), s1 (draft) count = 3 - not c2 (failed), not the duplicate, not the known plugin, never the client's 999; 3 < 5: no code; sent again, 0 new");
+               "wizard WZ-ELIG-3: c1 (passed), e1 (accepted), s1 (draft) count = 3 - not c2 (failed), not the duplicate, not the known plugin, never the client's 999; 3 < 25: no code; sent again, 0 new");
     }
     // WZ-ONCE-1 (Kathy, 13 Oct, item 8): one completed contribution per account AND per Mac - completed = an ACCEPTED upload. A second run on
     // the same account, or on the same Mac with a new account, is refused at /lookup; a run before its upload (paused / resumed) is allowed;

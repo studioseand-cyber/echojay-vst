@@ -39,7 +39,7 @@ If step 2 says **"Operation not permitted"**, macOS has already tried to open th
 
 **3. Run it.** Open **EchoJay Wizard Beta** from Applications.
 - **The order:** read the short consent paragraph, tick **I agree**, and press Continue. The wizard then checks your plugins and measures the ones EchoJay doesn't know yet.
-- **Leave it running, or finish when you like.** The Mac stays awake. The most useful plugins go first, so you can press **Finish now** at any time: what's measured so far is saved as the results file. Closing the window asks whether to finish and save what's done, or pause and carry on later.
+- **Leave it running, or pause.** The Mac stays awake. **Pause - carry on later** stops it; opening the wizard again carries on. Every pause (and every hour) rewrites the results file on your Desktop, so **even if you stop early, email the file on your Desktop**. **Finish and save what's done** ends the run early.
 - **Free space:** it needs at least 3 GB free.
 
 **4. Send the results.** At the end it says "Your results are ready" and saves **EchoJay-Wizard-results-<date>.zip** on your Desktop.
