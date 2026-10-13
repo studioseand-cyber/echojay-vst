@@ -55,6 +55,14 @@ inline const std::vector<Step>& steps()
         { "material",         "redo",     { "material" },                                           4200.0,  "real material" },
         { "frequency",        "redo",     { "frequency" },                                          4200.0,  "three frequencies" },
         { "samplerate",       "redo",     { "samplerate" },                                         480.0,   "three sample rates on a spread of ten" },
+        // 13 Oct (Kathy): every exported compressor gets the accuracy passes - planned on EVERY run, cheap when nothing is missing (missing
+        // rows only, plus gain-cal / timing rows that timed out and combined rows that composed nothing for a missing draft:
+        // phaseb::rowIsAccuracyGap). TWO steps, in order: combined composes from the gain and time DRAFTS, and the --jobs pool runs rows of
+        // one step side by side with no same-product rule - so the drafts' step finishes first, as gain_timing comes before combined
+        { "accuracy_gaps_drafts", "gaps", { "--phaseb-all", "--redo", "accuracy_gaps", "--category", "gaincal", "--category", "timing" },
+                                                                                                    600.0,   "gain-cal and timing for an exported compressor that has none, or timed out (~10 min each)", false, true },
+        { "accuracy_gaps",    "gaps",     { "--phaseb-all", "--redo", "accuracy_gaps", "--category", "combined", "--category", "material", "--category", "frequency" },
+                                                                                                    300.0,   "combined, material and frequency for an exported compressor that has none (~2 min each)", false, true },
         { "tuners",           "redo",     { "tuners" },                                             1800.0,  "tuners (humanize, flex)" },
         { "limiter",          "redo",     { "limiter" },                                            1500.0,  "limiters (ceiling + 6 dB, BS.1770 true peak)" },
         { "deesser",          "redo",     { "deesser" },                                            600.0,   "de-essers (the noise ladder)" },
@@ -85,7 +93,7 @@ inline juce::StringArray argsFor (const Step& s, bool resume, const juce::String
         else { a.add ("--redo"); a.add (s.args[0]); }
     }
     else if (s.kind == "selector") { a.add ("--phaseb-all"); if (! resume) { a.add ("--redo"); a.add (s.args[0]); } }
-    else if (s.kind == "fixup" && resume) { for (int i = 0; i < s.args.size(); ++i) { if (s.args[i] == "--redo") { ++i; continue; } a.add (s.args[i]); } }   // a resume never re-deletes what the first start redid
+    else if ((s.kind == "fixup" || s.kind == "gaps") && resume) { for (int i = 0; i < s.args.size(); ++i) { if (s.args[i] == "--redo") { ++i; continue; } a.add (s.args[i]); } }   // a resume never re-deletes what the first start redid
     else for (const auto& x : s.args) a.add (x == "{cert}" ? certPath : x);
     const bool phaseb = a.contains ("--phaseb-all"), categorise = a.contains ("--categorise-propose");
     if (phaseb || categorise) for (const auto& p : only) { a.add ("--only"); a.add (p); }
@@ -151,7 +159,7 @@ inline juce::String stepResult (int code, bool takesPaths, const juce::String& n
 }
 // --jobs N (10 Oct) reaches the Phase B steps only (rows in parallel inside a step); the follow-up, categorise, the licence steps,
 // preflight and drafts stay serial
-inline bool takesJobs (const Step& s) { return s.kind == "redo" || s.kind == "selector" || s.kind == "fixup"; }
+inline bool takesJobs (const Step& s) { return s.kind == "redo" || s.kind == "selector" || s.kind == "fixup" || s.kind == "gaps"; }
 inline bool isResume (const State& st, const juce::String& step) { return st.count (step) && (st.at (step).state == "started" || st.at (step).state == "failed"); }
 
 // THE DEADLINE: "07:00" -> the next 07:00 after `now` (today's if still ahead, else tomorrow's); empty -> none

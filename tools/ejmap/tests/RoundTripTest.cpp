@@ -9176,6 +9176,41 @@ void testMultibandStageThresholds()
                    && *candidatesGuardS (6, 3, 1800.0) == 1800.0 + 3 * 600.0 * kGuardMargin + kGuardTailS && two && *two == 9000.0 && kMaxDeclaredGuardS == 8.0 * 3600.0,
                    "phaseb PB-GUARD: the guard scales with candidates and the measured pace (" + said + "each covered after every candidate, under the 8 h cap); one candidate declares nothing; the last GUARD stands");
         }
+        // PB-GAPS (Kathy, 13 Oct, item 3): --redo accuracy_gaps re-runs a gain-cal / timing row that timed out or failed and a combined row
+        // that composed nothing (Auto-Tune VC: its drafts were missing), never an answered material / frequency row, never a limiter's
+        // time-out; it is NOT an existing-rows-only selector, so a compressor exported after the passes ran (the VBCs) gets new rows
+        {
+            auto row = [&] (const char* oc, int exitCode, bool nothing) { return mk ({ { "outcome", oc }, { "exit_code", exitCode }, { "nothing_measured", nothing }, { "records", juce::Array<juce::var>() } }); };
+            const juce::StringArray gaps { "accuracy_gaps" };
+            const auto okRec = mk ({ { "outcome", "ok" }, { "exit_code", 0 }, { "records", juce::Array<juce::var> { juce::var (1) } } });
+            const auto* comb = categoryNamed ("combined");
+            check (rowToRedo (row ("timed_out", 0, false), "gaincal", gaps) && rowToRedo (row ("timed_out", 0, false), "timing", gaps) && rowToRedo (row ("failed", 0, false), "timing", gaps)
+                   && rowToRedo (row ("ok", 4, true), "combined", gaps, "COMBINED: Auto-Tune Vocal Compressor: nothing to compose - missing time draft AudioUnit_7663717a_1.5.0.timing.json (run --redo timing first)")
+                   && ! rowToRedo (row ("ok", 4, true), "combined", gaps, "COMBINED: EMO-D5 (m): no tone level / pick at g 4.0: no position carries 4.0 dB") && ! rowToRedo (okRec, "combined", gaps) && ! rowToRedo (okRec, "material", gaps) && ! rowToRedo (okRec, "frequency", gaps)
+                   && ! rowToRedo (row ("timed_out", 0, false), "limitercomp", gaps) && ! rowToRedo (row ("needs_licence", 0, false), "gaincal", gaps)
+                   && comb != nullptr && ! existingRowsOnly (*comb, gaps) && categoryRuns (*comb, { "combined" }, gaps),
+                   "phaseb PB-GAPS: accuracy_gaps re-runs timed-out gain-cal / timing and composed-nothing combined rows, starts missing rows, leaves answers alone");
+            // TIMING-GUARD: Auto-Tune VC's timing row - 39 bursts in 1200 s (30.8 s each), attack at 29 of 33 positions, release to come
+            const double per = 1200.0 / 39.0, whole = (39 + 4 + 33) * per + kGuardTailS;
+            const double atCut = timingGuardS (39, 4, 33, 1, 1200.0), atStart = timingGuardS (0, 33, 33, 1, 0.0);
+            check (atCut >= 1200.0 + (4 + 33) * per && atCut >= whole && effectiveGuardS (1200.0, atCut) == atCut && atStart == (33 * 2) * kTimingBurstGuessS * kGuardMargin + kGuardTailS
+                   && timingGuardS (10, 5, 8, 0, 300.0) == 300.0 + 5 * 30.0 * kGuardMargin + kGuardTailS,
+                   "phaseb TIMING-GUARD: the timing mode declares from its planned bursts at the measured pace - Auto-Tune VC's row at the cut is covered (" + juce::String (atCut / 60.0, 0) + " min against ~" + juce::String (whole / 60.0, 0) + " min whole)");
+        }
+        // RA-GAPS: the run-all step is planned on EVERY run, after the accuracy steps, with --jobs; a resume never re-deletes
+        {
+            const auto* g = ejmap::runall::stepNamed ("accuracy_gaps"); const auto* gd = ejmap::runall::stepNamed ("accuracy_gaps_drafts");
+            int iS = -1, iG = -1, iD = -1, i = 0; for (const auto& st : ejmap::runall::steps()) { if (st.name == "samplerate") iS = i; if (st.name == "accuracy_gaps") iG = i; if (st.name == "accuracy_gaps_drafts") iD = i; ++i; }
+            ejmap::runall::State done; ejmap::runall::StepState ds; ds.state = "done"; done["accuracy_gaps"] = ds;
+            bool planned = false; for (const auto* x : ejmap::runall::plan (done, { "accuracy_gaps" }, {})) if (x->name == "accuracy_gaps") planned = true;
+            const auto first = ejmap::runall::argsFor (*g, false, "/c", {}), resume = ejmap::runall::argsFor (*g, true, "/c", {});
+            const auto firstD = ejmap::runall::argsFor (*gd, false, "/c", {});
+            check (g != nullptr && gd != nullptr && g->everyRun && gd->everyRun && iD == iS + 1 && iG == iD + 1 && planned && ejmap::runall::takesJobs (*g)
+                   && firstD.joinIntoString (" ") == "--phaseb-all --redo accuracy_gaps --category gaincal --category timing --out /c"
+                   && first.joinIntoString (" ") == "--phaseb-all --redo accuracy_gaps --category combined --category material --category frequency --out /c"
+                   && ! resume.contains ("--redo") && resume.contains ("frequency"),
+                   "runall RA-GAPS: the drafts' step (gain-cal, timing) then the passes (combined, material, frequency), every night after samplerate; a resume drops the redo");
+        }
         // PB-GUARD-2 the parent follows a RE-declaration: base 1 s, the child declares 3 s and then 6 s, exits at ~4 s - read once, it dies at 3 s
         {
             const auto r = ejmap::cert::runChild ({ "/bin/sh", "-c", "printf 'GUARD\\t3\\n'; sleep 0.5; printf 'GUARD\\t6\\n'; sleep 3.5; echo finished" }, 1000);

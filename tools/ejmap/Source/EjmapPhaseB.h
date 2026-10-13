@@ -229,6 +229,16 @@ inline std::optional<double> candidatesGuardS (int total, int done, double elaps
     const double per = done > 0 ? elapsedS / done : kGuardPerCandidateS;
     return elapsedS + juce::jmax (0, total - done) * per * kGuardMargin + kGuardTailS;
 }
+// THE TIMING MODE'S GUARD (13 Oct, item 3): Auto-Tune Vocal Compressor's timing row was cut at 20 min with its attack control 29 of up
+// to 33 positions in (~30 s a burst, the release role still to come). Declared from the planned bursts at the measured pace: the bursts
+// done, this role's positions LEFT, and this role's full count for each role still to come; before any burst, kTimingBurstGuessS each.
+inline constexpr double kTimingBurstGuessS = 60.0;
+inline double timingGuardS (int doneBursts, int positionsLeft, int rolePositions, int rolesAfter, double elapsedS)   // positionsLeft in this role; rolePositions = its full count, the estimate for each role still to come
+{
+    const int total = doneBursts + juce::jmax (0, positionsLeft) + juce::jmax (0, rolePositions) * juce::jmax (0, rolesAfter);
+    const double per = doneBursts > 0 ? elapsedS / doneBursts : kTimingBurstGuessS;
+    return elapsedS + juce::jmax (0, total - doneBursts) * per * kGuardMargin + kGuardTailS;
+}
 inline double effectiveGuardS (double baseS, std::optional<double> declared) { return declared ? juce::jlimit (baseS, juce::jmax (baseS, kMaxDeclaredGuardS), *declared) : baseS; }
 // the gain mode's declaration: every planned probe process at kGuardPerProcessS (PrimalTap's 28 traces took ~20 s each, the plugin's
 // load dominating) plus the text pass
@@ -280,9 +290,23 @@ inline juce::String unhostableReason (const juce::String& out)
     return {};
 }
 inline bool existingRowsOnly (const Category& c, const juce::StringArray& redo) { return c.optIn && ! redo.contains (c.name) && selectorReachesOptIn (redo); }
+// THE ACCURACY GAPS (Kathy, 13 Oct): every exported compressor gets the accuracy passes - a product exported AFTER the combined /
+// material / frequency steps ran (the three VBCs: their tone checks failed on 11 Oct) has no row, and one whose gain-cal or timing timed
+// out (Auto-Tune Vocal Compressor, 10 Oct) has no draft, so its combined pass composed nothing. --redo accuracy_gaps with the five
+// categories: missing rows run as always (it is NOT an existing-rows-only selector), plus a gain-cal / timing row that timed out or
+// failed, and a combined row that measured nothing (its drafts may exist now). Material and frequency rows that ran are answers.
+// combined: only a row that composed nothing because a DRAFT WAS MISSING ("nothing to compose - missing time draft ... gain draft"); a
+// unit with no position at g 4 (EMO-D5, Solid Dynamics) composed nothing as an answer and is not run again every night
+inline bool rowIsAccuracyGap (const juce::var& row, const juce::String& category, const juce::String& logText = {})
+{
+    if (category == "gaincal" || category == "timing") return rowIsUnfinished (row);
+    if (category == "combined") return rowIsNothingNominated (row) && logText.contains ("nothing to compose") && logText.contains ("missing");
+    return false;
+}
 inline bool rowToRedo (const juce::var& row, const juce::String& category, const juce::StringArray& redo, const juce::String& logText = {})
 {
     if (redo.contains (category)) return true;
+    if (redo.contains ("accuracy_gaps") && rowIsAccuracyGap (row, category, logText)) return true;
     if (redo.contains ("unfinished") && rowIsUnfinished (row)) return true;
     if (redo.contains ("uad") && rowIsUadRedo (row)) return true;
     if (redo.contains ("no_pool") && rowIsNoPool (row, logText)) return true;
