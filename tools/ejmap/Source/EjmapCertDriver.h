@@ -7705,6 +7705,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
         lr.Lpeak = lr.Lrms + profile::kPeakToSineRmsDb;
         const double Lpeak = lr.Lpeak;
         if (! lr.pick.ok) { lr.why = "section 6 picks nothing at " + juce::String (gg, 1) + " dB: " + lr.pick.refused; say ("TONE: " + product + " - " + lr.why); return lr; }
+        if (lr.pick.expectationBelowCurve) { lr.noValidL = true; lr.why = "no expectation at L " + juce::String (lr.Lrms, 2) + ": " + lr.pick.note; say ("TONE: " + product + " - " + lr.why); return lr; }   // 13 Oct (MAGNUM-K)
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
                                  "--sweep", "thr=" + juce::String (plan.thr), "norms=" + juce::String (lr.pick.norm, 6),
                                  "levels=" + toneLevels + juce::String (Lpeak, 4), "hz=997", "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
