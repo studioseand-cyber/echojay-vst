@@ -119,12 +119,14 @@ What it says is true of the bundle as built:
 
 **3k. The near-match tolerance (Kathy, 14 Oct; the wizard's read-back only - the certification's accuracy rules are unchanged).**
 - **Numbers:** two readings match if both parse as a number in the SAME unit and differ by at most 0.5% of the larger, or one step of the coarser last shown digit, whichever is larger.
+  - **The hard ceiling (Kathy, 14 Oct):** never more than 1% of the larger, whatever the last-digit step says. So 10 vs 11 (9.1%) and 42 vs 41 (2.4%) fail; 100 vs 101 passes; 50 vs 51 fails.
 - **Text:** text, enums and ratios like 4:1 must match exactly, and units must match.
 - **The result:** if every control matches, the plugin routes as already mapped and is recorded `matched_with_tolerance`. Every near-match (control, norm, ours, theirs) travels in the upload / results file (`confirmations[].near_matches`) and in `quick_checks.json`, for the audit.
 - **This Mac, 123 hostable read-back checks:**
-  - 66 exact, **37 within tolerance**, 20 still measured (mostly a control the profile writes is missing).
-  - 956 near-matches in all. Four go past 0.5%, all "HF Freq 42 vs 41" on H-EQ / H-EQ-Light (2.38%), which the one-step rule allows because the display is whole numbers.
-- Pin WZ-NEAR-1.
+  - With the ceiling: 66 exact, **33 within tolerance**, 24 still measured (mostly a control the profile writes is missing).
+  - Before the ceiling it was 66 / 37 / 20. The four that moved are H-EQ (m/s) and H-EQ-Light (m/s): "HF Freq 42 vs 41" (2.38%) was allowed only by the one-step rule and now fails, so they measure. EMO-D5 and Q4 still pass.
+  - This Mac's plan: 522 -> 526 to measure; the estimate moves by about 1 minute (25.28 -> 25.30 h at 2 jobs).
+- Pin WZ-NEAR-1 (with the ceiling: 10/11 and 42/41 fail, 100/101 passes, 50/51 fails; mutant: no ceiling goes red).
 
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.

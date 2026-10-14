@@ -10066,13 +10066,15 @@ void testWizardCategories()
         const bool read = run.contains ("inline int runWizard");   // the control
         check (read && nearMatch ("14996", "15000") && nearMatch ("1925", "1924") && ! nearMatch ("100", "102") && ! nearMatch ("15 kHz", "15000 Hz") && ! nearMatch ("15 kHz", "15 Hz")
                && nearMatch ("-3.0 dB", "-3.01 dB") && ! nearMatch ("-3.0 dB", "-3.0 %") && ! nearMatch ("4:1", "4.1:1") && ! nearMatch ("Opto", "VCA")
-               && nearMatch ("10", "11") && ! nearMatch ("10.0", "11.0") && nearMatch ("1.25", "1.26")
+               && ! nearMatch ("10", "11") && ! nearMatch ("10.0", "11.0") && nearMatch ("1.25", "1.26")   // 10 vs 11: 9.1%, over the 1% ceiling
+               && ! nearMatch ("42", "41") && nearMatch ("200", "201") && ! nearMatch ("200", "203")   // H-EQ HF Freq 42/41 (2.4%) fails; 0.5% passes, 1.5% fails
+               && nearMatch ("100", "101") && ! nearMatch ("50", "51")   // a whole-number step of 1: within 1% of 101 passes, over 1% of 51 fails (the ceiling)
                && emo.pass && emo.near.size() == 1 && emo.why.contains ("1 within tolerance") && q4.pass && q4.near.size() == 1
                && ! far.pass && ! unitMis.pass && ! textMis.pass && exact.pass && exact.near.empty()
                && v.size() == 1 && v[0].getProperty ("ours", "").toString() == "14996" && v[0].getProperty ("theirs", "").toString() == "15000" && v[0].getProperty ("control", "").toString() == "Gate LPF Freq"
                && run.contains ("if (rb.pass && ! rb.near.empty()) { row->setProperty (\"matched_with_tolerance\", true); row->setProperty (\"near_matches\", nearV); }")
                && run.contains ("if ((bool) rv.getProperty (\"matched_with_tolerance\", false)) { c->setProperty (\"matched_with_tolerance\", true); c->setProperty (\"near_matches\", rv.getProperty (\"near_matches\", {})); }"),
-               "wizard WZ-NEAR-1: 14996/15000 and 1925/1924 pass (recorded), 2% fails, a unit mismatch fails, text must match; the audit list travels (read: " + juce::String ((int) read) + ")");
+               "wizard WZ-NEAR-1: 14996/15000 and 1925/1924 pass (recorded), 2% fails, the 1% ceiling (10/11, 42/41 fail), a unit mismatch fails, text must match; the audit list travels (read: " + juce::String ((int) read) + ")");
     }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files

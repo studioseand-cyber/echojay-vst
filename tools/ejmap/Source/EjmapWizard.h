@@ -110,7 +110,7 @@ inline std::vector<Write> writesOf (const juce::var& profile)
 // observed: control index -> norm (rounded to 1e-4) -> the display read back; names: control name -> index (the live plugin's list)
 // NEAR-MATCH TOLERANCE (Kathy, 14 Oct; the WIZARD's read-back only - the certification's accuracy rules are untouched): two readings
 // match when both parse as a number in the SAME unit and differ by no more than 0.5% (of the larger) or one step of the last shown digit
-// (the coarser of the two), whichever is larger. Text / enum values (and ratios like 4:1) still match exactly; units must match.
+// (the coarser of the two), whichever is larger - and never by more than 1% of the larger (the ceiling, 14 Oct). Text / enum values (and ratios like 4:1) still match exactly; units must match.
 struct NumReading { bool ok = false; double value = 0.0; juce::String unit; int decimals = 0; };
 inline NumReading parseNumeric (const juce::String& raw)
 {
@@ -136,7 +136,9 @@ inline bool nearMatch (const juce::String& ours, const juce::String& theirs)
     const auto a = parseNumeric (ours), b = parseNumeric (theirs);
     if (! a.ok || ! b.ok || a.unit != b.unit) return false;
     const double step = std::pow (10.0, -(double) juce::jmin (a.decimals, b.decimals));
-    const double allowed = juce::jmax (0.005 * juce::jmax (std::abs (a.value), std::abs (b.value)), step);
+    const double larger = juce::jmax (std::abs (a.value), std::abs (b.value));
+    // the hard ceiling (Kathy, 14 Oct): never more than 1% of the larger, whatever the last-digit step says (42 vs 41 is 2.4%: no match)
+    const double allowed = juce::jmin (juce::jmax (0.005 * larger, step), 0.01 * larger);
     return std::abs (a.value - b.value) <= allowed + 1e-12;
 }
 struct NearMatchRec { juce::String control, norm, ours, theirs; };
