@@ -188,4 +188,25 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
     - **Not counted as a saving:** skipping the hold-doubled repeat (about 2 h). It is the trust gate (ruled 2 Oct).
 - **DMGs at 224a9016:** Test sha f097e7c24d2aad68, Beta sha cef12a16209edfaa. Both signed and verify VALID; the probe is unchanged and already Developer ID signed.
 
+## 14 Oct addendum 9: faster measuring (wizard 7648fef1 + 774fe72e; cert 26b3cbaf, pushed)
+- **The cheap test (14 Oct, this Mac):** a bridged (x86_64-only) AU costs 3.7-3.9 s for EVERY new instance in an arm64 process, because macOS starts its bridge host again each time. With one idle instance held open, each new one costs 0.035-0.09 s. Run as x86_64 in-process: the library load is 3.5 s, an instance 0.025-0.07 s. Native townhouse: 0.37 s then 0.27 s.
+- **The warm probe** (WIZARD_SPEC 3l, pin WZ-SERVE-1 / cert PROBE-SERVE-1):
+  - The probe's `--serve` runs a pass in one process: an idle keeper instance, plus a NEW instance per call.
+  - `runChild` sends calls to it under `EJ_PROBE_SERVE=1`.
+  - It is the wizard's default (`--no-probe-serve` turns it off). EJ Map's `--phaseb-all` only uses it with `--probe-serve`.
+  - Mutants red: the answer keeping the newline, the load output kept, never served, the load death kept warm, no restart on any path. Two single-path restart mutants survive, because the restart has three independent paths.
+- **A/B (this Mac, one job):**
+  - H-Reverb 1218 -> 141 s, H-EQ 408 -> 86 s, CLA-2A 497 -> 226 s, townhouse 256 -> 252 s; 2443 -> 770 s in all.
+  - Classified equality, 0 unexplained:
+    - H-Reverb and H-EQ are identical.
+    - CLA-2A's records and level readings are identical; a per-window field differs <= 0.0006 dB, exactly as between two one-shot runs.
+    - townhouse varies run to run by the same amount both ways (RMS 0.0032 dB old/old and warm/warm; 0.0032-0.0039 old/warm).
+    - The rest are clocks, timestamps and paths.
+  - Shipped engine check: H-EQ (m) with the Test app's bundled engine and probe, `--serve` seen, 91 s, records identical to the old way.
+- **Jobs:** a job peaked at 29-89 MB old and 39-146 MB warm (top, every ~9 s). Reserved at 300 MB: 4 jobs need 1.5 GB + 4 x 300 MB = 2.7 GB free (was 4 GB). This Mac had 3.1-4.1 GB free today, so it gets 4. Pin WZ-JOBS-1.
+- **The bar:** `beta_db/expected_work.json` (scripts/expected_work.py, from Sean's cert 5, read only) weighs each plugin by Sean's seconds, or the kind's median, and the Tracker learns this Mac's ratio. Pin WZ-BAR-1.
+- **No time on screen:** confirmed. The engine's "under a minute left" is in its log and progress.json line only; WZ-NOTIME-1 now pins that the app never reads it.
+- **This Mac's measuring:** about 27.5 h at 2 jobs before -> **about 16.3 h at 2 jobs / 12.1 h at 4** (calibrated on the A/B). Compressors are now the largest part (about 14 h of work: rendering under the bridge). The UAD serial lane is unchanged (7.3 h).
+- **DMGs at 774fe72e:** Test sha 99dd8ced44e9ab95, Beta sha 16921f7b8de7528f. Both signed and verify VALID; the probe is re-signed after its rebuild.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
