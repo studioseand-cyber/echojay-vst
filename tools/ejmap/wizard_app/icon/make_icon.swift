@@ -1,7 +1,7 @@
 // THE WIZARD'S APP ICON (Kathy, 13 Oct): macOS style - a rounded square in EchoJay's ink, the EchoJay mark (the "o" with its arc,
 // cropped from the welcome screen's logo, Source/EchoJayLogo.h) in white, centred; the beta adds a "BETA" ribbon in the top-right corner.
 // Every size of the iconset is RENDERED at its own pixel size (no downscaling), then `iconutil -c icns` builds the .icns.
-//   swift make_icon.swift <logo.png> <out dir> [--beta]   ->  <out dir>/<name>.iconset/*.png, <out dir>/<name>.icns, <out dir>/<name>_1024.png
+//   swift make_icon.swift <logo.png> <out dir> [--beta | --test]   (14 Oct: --test, an orange "TEST" ribbon, for EchoJay Wizard Test)   ->  <out dir>/<name>.iconset/*.png, <out dir>/<name>.icns, <out dir>/<name>_1024.png
 // The wordmark is too wide to read at 16-32 px, so the icon carries the mark alone.
 import Foundation
 import CoreGraphics
@@ -10,10 +10,12 @@ import ImageIO
 import UniformTypeIdentifiers
 
 let args = CommandLine.arguments
-guard args.count >= 3 else { print("usage: make_icon.swift <logo.png> <out dir> [--beta]"); exit(2) }
-let beta = args.contains("--beta")
+guard args.count >= 3 else { print("usage: make_icon.swift <logo.png> <out dir> [--beta | --test]"); exit(2) }
+let test = args.contains("--test")
+let beta = args.contains("--beta") || test   // the test build wears the same ribbon, in its own colour and word
+let ribbonWord = test ? "TEST" : "BETA"
 let outDir = URL(fileURLWithPath: args[2], isDirectory: true)
-let name = beta ? "WizardBeta" : "Wizard"
+let name = test ? "WizardTest" : beta ? "WizardBeta" : "Wizard"
 
 guard let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: args[1]) as CFURL, nil), let logo = CGImageSourceCreateImageAtIndex(src, 0, nil)
 else { print("cannot read the logo"); exit(2) }
@@ -132,10 +134,10 @@ func render (_ px: Int) -> CGImage {
         ctx.saveGState(); ctx.addPath(path); ctx.clip()
         let band = side * 0.17, c = CGPoint(x: tile.maxX - side * 0.20, y: tile.maxY - side * 0.20)
         ctx.translateBy(x: c.x, y: c.y); ctx.rotate(by: -.pi / 4)
-        ctx.setFillColor(accent); ctx.fill(CGRect(x: -side, y: -band / 2, width: side * 2, height: band))
+        ctx.setFillColor(test ? CGColor(red: 0.96, green: 0.45, blue: 0.10, alpha: 1) : accent); ctx.fill(CGRect(x: -side, y: -band / 2, width: side * 2, height: band))
         if px >= 64 {   // the word only where it can be read; at 16 / 32 px the blue corner alone tells them apart
             let font = CTFontCreateWithName("Helvetica-Bold" as CFString, band * 0.62, nil)
-            let attr = NSAttributedString(string: "BETA", attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font,
+            let attr = NSAttributedString(string: ribbonWord, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font,
                                                                       NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(red: 1, green: 1, blue: 1, alpha: 1)])
             let line = CTLineCreateWithAttributedString(attr), b = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
             ctx.textPosition = CGPoint(x: -b.width / 2 - b.minX, y: -b.height / 2 - b.minY); CTLineDraw(line, ctx)

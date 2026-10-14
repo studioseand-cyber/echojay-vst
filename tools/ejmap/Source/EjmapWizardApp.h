@@ -136,7 +136,44 @@ inline juce::String screenName (Screen s)
     return {};
 }
 // THE WORK FOLDERS (Kathy, 13 Oct): the beta and the release never share one - "Application Support/EchoJay Wizard Beta" vs "EchoJay Wizard"
-inline juce::String workFolderName (Mode m) { return m == Mode::beta ? "EchoJay Wizard Beta" : "EchoJay Wizard"; }
+inline juce::String workFolderName (Mode m, bool test = false) { return test ? "EchoJay Wizard Test" : m == Mode::beta ? "EchoJay Wizard Beta" : "EchoJay Wizard"; }
+// THE TEST BUILD (Kathy, 14 Oct: "EchoJay Wizard Test"): the RELEASE flow with the stub server inside the app, seeded with the beta
+// snapshot, a banner on every screen, its own folder and icon, an editable server config and a Reset test button. Nothing leaves the Mac
+inline juce::String testBanner() { return "TEST VERSION - nothing leaves this Mac"; }
+// Reset test is offered wherever nothing runs (14 Oct rehearsal: after a finish the app reopens on the reward screen, never the welcome)
+inline bool resetTestShownOn (Screen s) { return s != Screen::scan && s != Screen::measuring && s != Screen::upload; }
+// the stub server's database seeded from the bundled snapshot: every file the stub db lacks is copied (subfolders too); nothing is replaced
+inline int seedTestServer (const juce::File& bundledDb, const juce::File& stubDb)
+{
+    int copied = 0; if (! bundledDb.isDirectory()) return 0;
+    for (const auto& f : bundledDb.findChildFiles (juce::File::findFiles, true))
+    {
+        const auto t = stubDb.getChildFile (f.getRelativePathFrom (bundledDb));
+        if (t.existsAsFile()) continue;
+        t.getParentDirectory().createDirectory(); if (f.copyFileTo (t)) ++copied;
+    }
+    return copied;
+}
+// the server's settings, a plain file Kathy edits: <work>/server_stub/config.json (written once with the defaults; a reset keeps it)
+inline juce::String defaultTestConfig()
+{
+    return "{\n  \"qualify_minimum\": 25,\n  \"once_only\": true,\n"
+           "  \"_help\": \"qualify_minimum: new plugins needed at scan time, and accepted results needed for the free month. once_only: one completed contribution per account and per Mac. Edit, save, reopen the wizard.\"\n}\n";
+}
+inline bool ensureTestConfig (const juce::File& work)
+{
+    const auto f = work.getChildFile ("server_stub/config.json"); if (f.existsAsFile()) return false;
+    f.getParentDirectory().createDirectory(); return f.replaceWithText (defaultTestConfig());
+}
+// RESET TEST: the work folder cleared - the stub server's accounts / devices / promo ledger / runs / uploads, the app's state, the
+// engine's work and the map store - keeping only the server's config.json; then the snapshot is seeded again by the next launch / open
+inline int resetTest (const juce::File& work)
+{
+    const auto cfg = work.getChildFile ("server_stub/config.json"); const auto keep = cfg.loadFileAsString(); const bool had = cfg.existsAsFile();
+    int removed = 0; for (const auto& c : work.findChildFiles (juce::File::findFilesAndDirectories, false)) { if (c.isDirectory() ? c.deleteRecursively() : c.deleteFile()) ++removed; }
+    if (had) { cfg.getParentDirectory().createDirectory(); cfg.replaceWithText (keep); }
+    return removed;
+}
 // THE DATABASE (Kathy, 13 Oct): the beta reads the read-only snapshot of Sean's cert 5 inside its own signed bundle (Contents/Resources/
 // beta_db, wizard_app/beta_db - scripts/beta_db_snapshot.py); the release keeps the stubbed server's folder in its work folder
 inline juce::File databaseFolder (Mode m, const juce::File& appBundle, const juce::File& work)

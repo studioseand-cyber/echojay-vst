@@ -148,6 +148,26 @@ if(APPLE)
     target_link_libraries(ejmap-wizard-beta PRIVATE "-framework IOKit")
 endif()
 
+# THE TEST BUILD (Kathy, 14 Oct): the RELEASE flow (sign-in, upload, promo) with the stub server inside the app, seeded with the beta
+# snapshot - a TEST banner on every screen, its own name, bundle id, folder and icon ribbon, an editable server config, Reset test.
+juce_add_gui_app(ejmap-wizard-test
+    PRODUCT_NAME            "EchoJay Wizard Test"
+    COMPANY_NAME            "EchoJay"
+    BUNDLE_ID               "ai.echojay.wizard.test"
+    VERSION                 "0.1.0"
+    ICON_BIG                "${CMAKE_CURRENT_SOURCE_DIR}/wizard_app/icon/WizardTest_1024.png"
+    MICROPHONE_PERMISSION_ENABLED FALSE
+    HARDENED_RUNTIME_ENABLED TRUE)
+target_sources(ejmap-wizard-test PRIVATE wizard_app/WizardApp.cpp)
+target_compile_definitions(ejmap-wizard-test PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 EJ_WIZARD_TEST=1
+    JUCE_APPLICATION_NAME_STRING="EchoJay Wizard Test" JUCE_APPLICATION_VERSION_STRING="0.1.0")
+target_include_directories(ejmap-wizard-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source ${CMAKE_CURRENT_SOURCE_DIR}/../../Source)
+target_link_libraries(ejmap-wizard-test PRIVATE juce::juce_gui_basics juce::juce_cryptography
+    juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+if(APPLE)
+    target_link_libraries(ejmap-wizard-test PRIVATE "-framework IOKit")
+endif()
+
 #==============================================================================
 # Round-trip test: the drift guard.
 #

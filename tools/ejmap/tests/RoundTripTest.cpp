@@ -9616,7 +9616,7 @@ void testWizardCategories()
         const bool read = src.contains ("class WizardApplication") && as.contains ("codesign");   // the control
         check (read && workFolderName (Mode::beta) == "EchoJay Wizard Beta" && workFolderName (Mode::normal) == "EchoJay Wizard"
                && databaseFolder (Mode::beta, app, work) == app.getChildFile ("Contents/Resources/beta_db") && databaseFolder (Mode::normal, app, work) == work.getChildFile ("server_stub/db")
-               && src.contains ("homeChild (\"Library/Application Support/\" + wizapp::workFolderName (kMode))") && src.contains ("wizapp::databaseFolder (kMode, app, c.work)")
+               && src.contains ("homeChild (\"Library/Application Support/\" + wizapp::workFolderName (kMode, kTest))") && src.contains ("wizapp::databaseFolder (kMode, app, c.work)")
                && src.contains ("if (! c.db.isAChildOf (app))") && as.contains ("ditto \"$HERE/beta_db\" \"$R/beta_db\""),
                "wizard WZ-WORK-1: 'EchoJay Wizard Beta' vs 'EchoJay Wizard'; the beta reads Contents/Resources/beta_db and never seeds into its bundle (read: " + juce::String ((int) read) + ")");
     }
@@ -9881,6 +9881,41 @@ void testWizardCategories()
                        return g1 == juce::StringArray { "A", "B" } && g2 == juce::StringArray { "L" } && gone.size() == 3 && q["deesser"] == juce::StringArray { "A" } && q["limiter"].isEmpty() && q["limitercomp"].isEmpty(); }()
                && run.contains ("const auto names = wizroute::demoNamesForGroup (grp, queues);") && run.contains ("const auto gone = wizroute::dropDemos (queues, demos);"),
                "wizard WZ-DEMO-2: the demo check costs 4.5 s in the estimate (2 plugins: +9 s), 'measured so far' skips it, the scan never runs it, the measuring loop runs it before each pass (read: " + juce::String ((int) read) + ")");
+    }
+    // WZ-TEST-1 THE TEST BUILD (Kathy, 14 Oct): its own folder, the banner, the stub server seeded from the snapshot (nothing replaced), the
+    // editable config (qualify 25 by default), Reset test clears the accounts / devices / rewards / runs and the app's state but keeps the
+    // config; text pins (with a control) that the target, its icon and assemble.sh --test exist
+    {
+        using namespace ejmap::wizapp;
+        auto w = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_test_" + juce::String (juce::Random::getSystemRandom().nextInt64())); w.createDirectory();
+        const auto snap = w.getChildFile ("snap"); snap.getChildFile ("limitercomp").createDirectory(); snap.getChildFile ("references").createDirectory();
+        snap.getChildFile ("mapped.json").replaceWithText ("{\"entries\": []}"); snap.getChildFile ("limitercomp/a.json").replaceWithText ("{}"); snap.getChildFile ("references/r.reference.json").replaceWithText ("{}");
+        const auto work = w.getChildFile ("work"); const auto db = work.getChildFile ("server_stub/db"); db.createDirectory(); db.getChildFile ("mapped.json").replaceWithText ("{\"entries\": [\"mine\"]}");
+        const int c1 = seedTestServer (snap, db), c2 = seedTestServer (snap, db);
+        const bool kept = db.getChildFile ("mapped.json").loadFileAsString().contains ("mine");
+        const bool wrote = ensureTestConfig (work), wroteAgain = ensureTestConfig (work);
+        const auto cfgV = juce::JSON::parse (work.getChildFile ("server_stub/config.json").loadFileAsString());
+        work.getChildFile ("server_stub/config.json").replaceWithText ("{\"qualify_minimum\": 2}");   // Kathy's edit
+        for (const char* f : { "server_stub/participation.json", "server_stub/promo_ledger.json", "server_stub/runs/run_x.json", "account.json", "app_state.json", "engine/progress.json", "store/maps/m.json" })
+        { work.getChildFile (f).getParentDirectory().createDirectory(); work.getChildFile (f).replaceWithText ("{}"); }
+        resetTest (work);
+        const auto left = work.findChildFiles (juce::File::findFiles, true);
+        const bool onlyConfig = left.size() == 1 && left[0].getFileName() == "config.json" && left[0].loadFileAsString().contains ("\"qualify_minimum\": 2");
+        w.deleteRecursively();
+        const auto cm = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/CMakeLists.txt").loadFileAsString();
+        const auto as = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/assemble.sh").loadFileAsString();
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const bool read = cm.contains ("juce_add_gui_app(ejmap-wizard-beta") && app.contains ("class WizardApplication");   // the control
+        check (read && workFolderName (Mode::normal, true) == "EchoJay Wizard Test" && workFolderName (Mode::normal) == "EchoJay Wizard" && workFolderName (Mode::beta) == "EchoJay Wizard Beta"
+               && testBanner() == "TEST VERSION - nothing leaves this Mac"
+               && c1 == 2 && c2 == 0 && kept && wrote && ! wroteAgain && (int) cfgV.getProperty ("qualify_minimum", 0) == 25 && (bool) cfgV.getProperty ("once_only", false) && onlyConfig
+               && cm.contains ("juce_add_gui_app(ejmap-wizard-test") && cm.contains ("EJ_WIZARD_TEST=1") && cm.contains ("wizard_app/icon/WizardTest_1024.png")
+               && as.contains ("NAME=\"EchoJay Wizard Test\"; TGT=\"ejmap-wizard-test\"") && as.contains ("ICNS=\"$HERE/icon/WizardTest.icns\"")
+               && app.contains ("wizapp::workFolderName (kMode, kTest)") && app.contains ("if (kTest) seedTestBuild (c);") && app.contains ("resetTestButton.setVisible (kTest && wizapp::resetTestShownOn (s));")
+               && resetTestShownOn (Screen::welcome) && resetTestShownOn (Screen::reward) && resetTestShownOn (Screen::alreadyDone) && resetTestShownOn (Screen::paused)
+               && ! resetTestShownOn (Screen::measuring) && ! resetTestShownOn (Screen::scan) && ! resetTestShownOn (Screen::upload)
+               && juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/icon/WizardTest.icns").existsAsFile(),
+               "wizard WZ-TEST-1: 'EchoJay Wizard Test' folder, the banner, the snapshot seeded once (2 files, the stub's own kept), config qualify 25 written once, Reset test keeps only Kathy's config (read: " + juce::String ((int) read) + ")");
     }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files

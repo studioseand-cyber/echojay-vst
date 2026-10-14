@@ -51,6 +51,13 @@ constexpr auto kMode = wizapp::Mode::beta;
 #else
 constexpr auto kMode = wizapp::Mode::normal;
 #endif
+// THE TEST BUILD (Kathy, 14 Oct, target ejmap-wizard-test, EJ_WIZARD_TEST): the release flow with the stub server inside, seeded with the
+// beta snapshot; a banner on every screen; its own folder, icon, editable server config and a Reset test button
+#if EJ_WIZARD_TEST
+constexpr bool kTest = true;
+#else
+constexpr bool kTest = false;
+#endif
 #ifndef EJ_WIZARD_BETA_EMAIL
 #define EJ_WIZARD_BETA_EMAIL "admin@signaturestudiosonline.com"   // Kathy, 13 Oct
 #endif
@@ -58,9 +65,15 @@ constexpr auto kMode = wizapp::Mode::normal;
 struct Config
 {
     juce::File work, db, store, engine, snapshots, reports;
-    int jobs = 0; juce::StringArray only; bool autoMode = false; double autoCloseAfterS = 0.0, checkpointMinutes = 60.0; int autoSendAt = 0, autoPauseAt = 0; bool autoAskClose = false;   // jobs 0: chosen by the Mac (13 Oct)
+    int jobs = 0; juce::StringArray only; bool autoMode = false; double autoCloseAfterS = 0.0, checkpointMinutes = 60.0; int autoSendAt = 0, autoPauseAt = 0; bool autoAskClose = false, autoResetTest = false;   // jobs 0: chosen by the Mac (13 Oct)
 };
 
+// THE TEST BUILD's server: the stub db seeded from the bundled snapshot (Contents/Resources/beta_db), the editable config written once
+inline void seedTestBuild (const Config& c)
+{
+    const auto snap = juce::File::getSpecialLocation (juce::File::currentApplicationFile).getChildFile ("Contents/Resources/beta_db");
+    wizapp::seedTestServer (snap, c.db); wizapp::ensureTestConfig (c.work);
+}
 // THE MAC (13 Oct, jobs by Mac): performance cores (Apple silicon's perflevel0; an Intel Mac's physical cores) and the memory free now
 inline int performanceCores()
 {
@@ -80,7 +93,7 @@ juce::File homeChild (const juce::String& p) { return juce::File::getSpecialLoca
 Config parseArgs (const juce::StringArray& a)
 {
     Config c;
-    c.work = homeChild ("Library/Application Support/" + wizapp::workFolderName (kMode));   // 13 Oct: beta and release apart
+    c.work = homeChild ("Library/Application Support/" + wizapp::workFolderName (kMode, kTest));   // 13 Oct: beta and release apart; 14 Oct: the test build
     c.engine = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("ejmap");
     c.reports = homeChild ("Library/Logs/DiagnosticReports");
     for (int i = 0; i < a.size(); ++i)
@@ -93,7 +106,8 @@ Config parseArgs (const juce::StringArray& a)
         else if (k == "--auto") c.autoMode = true;
         else if (k == "--auto-send-at") { c.autoSendAt = v.getIntValue(); ++i; }     // rehearsals: Send what's done once N are measured so far
         else if (k == "--auto-pause-at") { c.autoPauseAt = v.getIntValue(); ++i; }   // rehearsals: Pause once N are measured so far (then quits)
-        else if (k == "--auto-ask-close") c.autoAskClose = true;   // rehearsals: open the close question once while measuring, snap it, keep measuring
+        else if (k == "--auto-ask-close") c.autoAskClose = true;
+        else if (k == "--auto-reset-test") c.autoResetTest = true;   // rehearsals (test build): press Reset test once, snap the welcome screen, quit   // rehearsals: open the close question once while measuring, snap it, keep measuring
         else if (k == "--checkpoint-minutes") { c.checkpointMinutes = v.getDoubleValue(); ++i; }   // rehearsals: the quiet checkpoint's interval
         else if (k == "--auto-close-after") { c.autoCloseAfterS = v.getDoubleValue(); ++i; }   // rehearsals: the close button, pressed after N s of measuring
     }
@@ -106,6 +120,7 @@ Config parseArgs (const juce::StringArray& a)
         const auto res = juce::File::getSpecialLocation (juce::File::currentApplicationFile).getChildFile ("Contents/Resources/mock_db/references");
         wizserver::stub::seedMockReferences (res, c.db);
     }
+    if (kTest) seedTestBuild (c);
     return c;
 }
 
@@ -187,6 +202,8 @@ public:
           e->setColour (juce::CaretComponent::caretColourId, ink); }
         email.setTextToShowWhenEmpty ("Email", juce::Colours::grey); password.setTextToShowWhenEmpty ("Password", juce::Colours::grey); password.setPasswordCharacter ((juce::juce_wchar) 0x2022);
         primary.onClick = [this] { onPrimary(); }; secondary.onClick = [this] { onSecondary(); };
+        addChildComponent (resetTestButton); resetTestButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xffe9ecf2)); resetTestButton.setColour (juce::TextButton::textColourOffId, ink);
+        resetTestButton.onClick = [this] { resetTestNow(); };
         addChildComponent (agree); agree.setButtonText (wizapp::consentTick()); agree.setColour (juce::ToggleButton::textColourId, ink); agree.setColour (juce::ToggleButton::tickColourId, accent);
         agree.setColour (juce::ToggleButton::tickDisabledColourId, juce::Colour (0xff8a90a0)); agree.onClick = [this] { primary.setEnabled (agree.getToggleState()); };
         device = wizserver::deviceHashOf (platformUuid());
@@ -236,6 +253,12 @@ public:
     void paint (juce::Graphics& g) override
     {
         g.fillAll (juce::Colours::white);
+        if (kTest)
+        {   // the TEST banner, on every screen
+            g.setColour (juce::Colour (0xfff5731a)); g.fillRect (0, 0, getWidth(), 22);
+            g.setColour (juce::Colours::white); g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
+            g.drawText (wizapp::testBanner(), juce::Rectangle<int> (0, 0, getWidth(), 22), juce::Justification::centred);
+        }
         const auto r = getLocalBounds().reduced (40, 28);
         if (logo.isValid())   // the logo is white on transparent (made for the plugin's dark UI): drawn in ink through its alpha
         { const float w = 210.0f, h = w * (float) logo.getHeight() / (float) logo.getWidth(); g.setColour (ink);
@@ -271,14 +294,15 @@ public:
         secondary.setBounds (getWidth() / 2 - 110, getHeight() - 116, 220, 36);
         email.setBounds (getWidth() / 2 - 160, 250, 320, 38); password.setBounds (getWidth() / 2 - 160, 296, 320, 38);
         agree.setBounds (getWidth() / 2 - 60, getHeight() - 118, 160, 30);
+        resetTestButton.setBounds (14, getHeight() - 40, 96, 26);
     }
 
 private:
     Config cfg; Engine engine; KeepAwake awake;
-    juce::Image logo; juce::TextButton primary, secondary; juce::TextEditor email, password; juce::ToggleButton agree; bool diskRefused = false; juce::String device; juce::File savedFile; juce::var eligibility;
+    juce::Image logo; juce::TextButton primary, secondary, resetTestButton { "Reset test" }; juce::TextEditor email, password; juce::ToggleButton agree; bool diskRefused = false; juce::String device; juce::File savedFile; juce::var eligibility;
     const juce::Colour accent { 0xff3d5afe }, ink { 0xff141824 };
     Screen screen = Screen::welcome; juce::String title, text, barLeft, barRight, bigCode, pauseNote; bool showBar = false; double barValue = 0.0;
-    std::vector<wizapp::Crashed> crashed; bool quitting = false, finishing = false, pausing = false, quitAfterPause = false, forceAsk = false, lastSendKept = false; juce::String soFar, choiceLine; int lastCheckpointSeq = 0; std::unique_ptr<juce::AlertWindow> closeAsk; int autoTicks = 0, snapN = 0; double lastSnapQuarter = -1.0;
+    std::vector<wizapp::Crashed> crashed; bool quitting = false, finishing = false, pausing = false, quitAfterPause = false, forceAsk = false, lastSendKept = false; juce::String soFar, choiceLine; int lastCheckpointSeq = 0; std::unique_ptr<juce::AlertWindow> closeAsk; int autoTicks = 0, snapN = 0, resetTicks = 0; double lastSnapQuarter = -1.0;
     double uploadT0 = 0.0; juce::var account, receipt; const juce::String launchTag = juce::Time::getCurrentTime().formatted ("%H%M%S");
 
     juce::File engineDir() const { return cfg.work.getChildFile ("engine"); }
@@ -318,7 +342,7 @@ private:
     void show (Screen s)
     {
         screen = s; showBar = false; bigCode = {}; pauseNote = {}; primary.setVisible (false); secondary.setVisible (false); email.setVisible (false); password.setVisible (false);
-        agree.setVisible (false); primary.setEnabled (true); secondary.setEnabled (true);
+        agree.setVisible (false); primary.setEnabled (true); secondary.setEnabled (true); resetTestButton.setVisible (kTest && wizapp::resetTestShownOn (s));
         autoTicks = 0; lastSnapQuarter = -1.0;
         auto copy = [&] (const wizapp::Copy& c) { title = c.title; text = c.text; primary.setButtonText (c.primary); primary.setVisible (c.primary.isNotEmpty());
                                                   secondary.setButtonText (c.secondary); secondary.setVisible (c.secondary.isNotEmpty()); };
@@ -454,6 +478,15 @@ private:
         secondary.setEnabled (false); primary.setEnabled (false); secondary.setButtonText ("Sending..."); barLeft = kMode == wizapp::Mode::beta ? "Saving what's measured" : "Sending what's measured"; barRight = {};
         logLine ("finish now (" + from + "): " + soFar + "; engine stopped (SIGINT) to pack"); repaint();
     }
+    void resetTestNow()
+    {   // RESET TEST (Kathy, 14 Oct): the stub server's account / device / reward records and the whole work folder, keeping config.json;
+        // the snapshot seeded again - so once-only and the reward can be tried again
+        if (! kTest || engine.running()) return;
+        const int n = wizapp::resetTest (cfg.work); cfg.work.createDirectory(); seedTestBuild (cfg);
+        account = juce::var(); receipt = juce::var(); crashed.clear(); lastSendKept = false; lastCheckpointSeq = 0; email.clear(); password.clear();
+        logLine ("reset test: " + juce::String (n) + " item(s) cleared, config.json kept, the snapshot seeded again");
+        show (Screen::welcome);
+    }
     void pauseNow (const juce::String& from, bool quitAfter)
     {   // PAUSE (13 Oct): the engine's clean stop - in-flight plugins discarded, a checkpoint packed - then the Paused screen (or quit)
         if (pausing || finishing || ! engine.running()) { if (quitAfter && ! engine.running()) juce::JUCEApplication::getInstance()->quit(); return; }
@@ -537,6 +570,9 @@ private:
         if (screen == Screen::scan || screen == Screen::measuring) pollEngine();
         if (screen == Screen::upload) tickUpload();
         if (cfg.autoMode && ! quitting) autoAdvance();
+        if (cfg.autoResetTest && resetTestButton.isVisible() && ++resetTicks == 6)
+        {   cfg.autoResetTest = false; snap ("before_reset"); resetTestNow(); snap ("after_reset");
+            juce::Timer::callAfterDelay (1500, [] { juce::JUCEApplication::getInstance()->quit(); }); }
     }
     void pollEngine()
     {
@@ -645,7 +681,7 @@ private:
 class WizardWindow : public juce::DocumentWindow
 {
 public:
-    explicit WizardWindow (Config c) : juce::DocumentWindow ("EchoJay Wizard", juce::Colours::white, juce::DocumentWindow::closeButton | juce::DocumentWindow::minimiseButton)
+    explicit WizardWindow (Config c) : juce::DocumentWindow (JUCE_APPLICATION_NAME_STRING, juce::Colours::white, juce::DocumentWindow::closeButton | juce::DocumentWindow::minimiseButton)
     {
         setUsingNativeTitleBar (true); content = new WizardComponent (std::move (c)); setContentOwned (content, true);
         setResizable (false, false); centreWithSize (getWidth(), getHeight()); setVisible (true);
