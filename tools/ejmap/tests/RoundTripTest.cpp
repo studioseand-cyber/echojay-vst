@@ -10076,6 +10076,66 @@ void testWizardCategories()
                && run.contains ("if ((bool) rv.getProperty (\"matched_with_tolerance\", false)) { c->setProperty (\"matched_with_tolerance\", true); c->setProperty (\"near_matches\", rv.getProperty (\"near_matches\", {})); }"),
                "wizard WZ-NEAR-1: 14996/15000 and 1925/1924 pass (recorded), 2% fails, the 1% ceiling (10/11, 42/41 fail), a unit mismatch fails, text must match; the audit list travels (read: " + juce::String ((int) read) + ")");
     }
+    // WZ-SERVE-1 THE WARM PROBE (Kathy, 14 Oct): a measuring child's probe calls go to ONE probe process per plugin, a NEW instance per call
+    // (the 29 Sep fresh-state rule). A stand-in probe (a script named EchoJayProbe speaking --serve) proves the plumbing: the answer is
+    // exactly what the request printed (not the load output before "ejprobe-ready", not the sentinel), the exit code is the sentinel's,
+    // calls share the process, EJ_PROBE_PRESET travels with each call, a process that died after answering is replaced for the next call,
+    // a process that dies before it is ready sends that plugin one-shot, and without EJ_PROBE_SERVE nothing is served. The sentinel and
+    // ready strings are the probe's own (text pin with a control)
+    {
+        using namespace ejmap::cert;
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejserve_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
+        dir.createDirectory();
+        const auto fake = dir.getChildFile ("EchoJayProbe");
+        fake.replaceWithText ("#!/bin/sh\n"
+                              "if [ \"$1\" = \"--serve\" ]; then\n"
+                              "  [ -n \"$EJ_FAKE_NOREADY\" ] && exit 9\n"
+                              "  echo 'library load noise'\n"
+                              "  printf '\\nejprobe-ready\\tkeeper\\theld\\n'\n"
+                              "  while IFS= read -r line; do\n"
+                              "    printf 'probe: served %s\\n' \"$$\"\n"
+                              "    case \"$line\" in *PRESET_X*) echo 'preset seen';; esac\n"
+                              "    case \"$line\" in *--refuse*) printf 'refused no\\n\\nejprobe-served\\t3\\n';; *) printf 'answer\\n\\nejprobe-served\\t0\\n';; esac\n"
+                              "    case \"$line\" in *--die-after*) exit 0;; esac\n"
+                              "  done\n"
+                              "  exit 0\n"
+                              "fi\n"
+                              "printf 'probe: oneshot\\nanswer\\n'\n"
+                              "exit 0\n", false, false, "\n");
+        fake.setExecutePermission (true);
+        const juce::StringArray a { fake.getFullPathName(), "Fake", "AudioUnit:Effects/aufx,FAKE,Test", "1", "--list-params" };
+        auto with = [&] (juce::String mode) { auto x = a; x.set (4, mode); return x; };
+        const WatchOptions nw { false };
+        setenv ("EJ_PROBE_SERVE", "1", 1);
+        const auto r1 = runChild (a, 10000, nw);
+        setenv ("EJ_PROBE_PRESET", "PRESET_X", 1); const auto r2 = runChild (a, 10000, nw); unsetenv ("EJ_PROBE_PRESET");
+        const auto r3 = runChild (with ("--refuse"), 10000, nw);
+        const auto r4 = runChild (with ("--die-after"), 10000, nw);   // answers, then the process ends (a teardown death)
+        const auto r5 = runChild (a, 10000, nw);                      // a new process, nothing lost
+        auto b = a; b.set (1, "Fake2"); setenv ("EJ_FAKE_NOREADY", "1", 1);
+        const auto r6 = runChild (b, 10000, nw);                      // dies before ready: this plugin runs one-shot
+        const auto r6b = runChild (b, 10000, nw);
+        unsetenv ("EJ_FAKE_NOREADY"); unsetenv ("EJ_PROBE_SERVE");
+        const auto r7 = runChild (a, 10000, nw);                      // not served
+        probeserve::server().stop (false);
+        dir.deleteRecursively();
+        const auto served = [] (const ChildResult& r) { return "probe: served " + juce::String (r.pid) + "\nanswer\n"; };
+        const auto probeSrc = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/au_instantiate_probe.cpp").loadFileAsString();
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const bool read = probeSrc.contains ("int main (int argc, char** argv)") && drv.contains ("namespace probeserve");   // the control
+        const auto endRun = probeSrc.fromFirstOccurrenceOf ("static int endRun (int code, bool serving)", false, false).upToFirstOccurrenceOf ("static int runRequest", false, false);
+        check (read && r1.cleanExit() && r1.out == served (r1) && ! r1.out.contains ("library load noise") && ! r1.out.contains ("ejprobe")
+               && r2.pid == r1.pid && r2.out.contains ("preset seen") && ! r1.out.contains ("preset seen")
+               && r3.kind == ChildResult::Kind::exited && r3.code == 3 && r3.out.contains ("refused no") && r3.pid == r1.pid
+               && r4.cleanExit() && r4.pid == r1.pid && r5.cleanExit() && r5.pid != r4.pid && r5.out == served (r5)
+               && r6.cleanExit() && r6.out == "probe: oneshot\nanswer\n" && r6b.out == "probe: oneshot\nanswer\n"
+               && r7.cleanExit() && r7.out == "probe: oneshot\nanswer\n"
+               && probeSrc.contains ("kServedSentinel = \"ejprobe-served\"") && drv.contains ("kSentinel = \"ejprobe-served\"") && probeSrc.contains ("\\nejprobe-ready\\tkeeper")
+               && endRun.indexOf ("kServedSentinel") > 0 && endRun.indexOf ("_Exit (code)") < endRun.indexOf ("kServedSentinel")   // the answer before any teardown
+               && probeSrc.contains ("ejprobe::sidechainPolicy() = ejprobe::kSidechainDefault;")   // per request: no policy left from the last
+               && drv.contains ("if (opt.probeServe) { args.insert (0, \"EJ_PROBE_SERVE=1\"); args.insert (0, \"/usr/bin/env\"); }"),
+               "wizard WZ-SERVE-1: the warm probe - exact answers, the sentinel's code, one process per plugin, the preset per call, a teardown death replaced, a load death one-shot, off without EJ_PROBE_SERVE (pids " + juce::String (r1.pid) + "/" + juce::String (r5.pid) + "/" + juce::String (r7.pid) + "; read: " + juce::String ((int) read) + ")");
+    }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files
     {

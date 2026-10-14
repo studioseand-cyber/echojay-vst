@@ -769,10 +769,10 @@ namespace
             }
             if (a == "--wizard")   // the user-side wizard (feat/ejmap-wizard): scan, look up (A/B/C), quick check, measure, bundle; upload stubbed
             {
-                ejmap::cert::WizardOptions w; w.opt.hostVersion = EJMAP_VERSION;
+                ejmap::cert::WizardOptions w; w.opt.hostVersion = EJMAP_VERSION; w.opt.probeServe = true;   // the warm probe: the wizard's default (14 Oct)
                 for (int j = 1; j < argc; ++j) { const auto k = argAt (argc, argv, j); const auto v = j + 1 < argc ? argAt (argc, argv, j + 1) : juce::String();
                     if (k == "--db") w.db = cwdFile (v); else if (k == "--out") w.opt.out = cwdFile (v); else if (k == "--probe") w.opt.probe = cwdFile (v); else if (k == "--ejmap-ledger") w.opt.ledger = cwdFile (v);
-                    else if (k == "--only") w.only.add (v); else if (k == "--jobs") w.opt.jobs = juce::jlimit (1, 8, v.getIntValue()); else if (k == "--measure") w.measure = true; else if (k == "--bundle") w.bundle = true; else if (k == "--verbose") w.verbose = true; else if (k == "--plan") w.plan = true; else if (k == "--run-id") w.runId = v; else if (k == "--checkpoint-minutes") w.checkpointMinutes = v.getDoubleValue(); else if (k == "--skip") w.skip = cwdFile (v); }
+                    else if (k == "--only") w.only.add (v); else if (k == "--jobs") w.opt.jobs = juce::jlimit (1, 8, v.getIntValue()); else if (k == "--measure") w.measure = true; else if (k == "--no-probe-serve") w.opt.probeServe = false; else if (k == "--bundle") w.bundle = true; else if (k == "--verbose") w.verbose = true; else if (k == "--plan") w.plan = true; else if (k == "--run-id") w.runId = v; else if (k == "--checkpoint-minutes") w.checkpointMinutes = v.getDoubleValue(); else if (k == "--skip") w.skip = cwdFile (v); }
                 if (w.db == juce::File() || w.opt.out == juce::File()) { std::cerr << "usage: ejmap --wizard --db <profiles folder> --out <work folder> [--only NAME]... [--jobs N] [--measure] [--bundle] [--verbose]" << std::endl; return 2; }
                 if (w.opt.probe == juce::File()) w.opt.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
                 if (w.opt.ledger == juce::File()) w.opt.ledger = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap");
@@ -887,6 +887,7 @@ namespace
                 { juce::StringArray all; for (int j = 1; j < argc; ++j) all.add (argAt (argc, argv, j));
                   if (const auto why = ejmap::phaseb::refusedPhaseBFlag (all); why.isNotEmpty()) { std::cerr << why << std::endl; return 2; } }
                 ejmap::cert::SweepOptions o; juce::StringArray cats, only, redo;
+                for (int j = 1; j < argc; ++j) if (argAt (argc, argv, j) == "--probe-serve") o.probeServe = true;   // 14 Oct: the warm probe (off unless asked; the wizard's default)
                 for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
                     if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--category") cats.add (v); else if (k == "--only") only.add (v);
                     else if (k == "--redo") { for (const auto& r : juce::StringArray::fromTokens (v, ",", "")) if (r.trim().isNotEmpty()) redo.add (r.trim()); }

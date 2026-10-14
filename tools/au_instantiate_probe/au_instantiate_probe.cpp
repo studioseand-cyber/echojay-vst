@@ -27,12 +27,30 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <csignal>
+#include <iostream>
+#include <string>
 
-int main (int argc, char** argv)
+// THE WARM PROBE (Kathy, 14 Oct): "--serve <name> <identifier> <uidHex>" keeps ONE process for a plugin pass and runs each request
+// (one JSON line on stdin: {"argv": [...], "env": {...}}) exactly as a fresh process would - a NEW plugin instance per request,
+// created, measured and destroyed, so the 29 Sep fresh-state rule holds per position. What a one-shot run would _Exit with ends the
+// request instead: its output, then "\nejprobe-served\t<code>" (printed BEFORE the instance is torn down, so a death in a third-party
+// teardown cannot take the answer with it). The process keeps one idle "keeper" instance of the plugin open: on this Mac a bridged
+// (x86_64-only) AU costs ~3.8 s per NEW instance because the bridge host process starts again each time, 0.035-0.09 s while one
+// instance holds it open (14 Oct timing: CLA-2A, H-Reverb, H-EQ). The keeper is never prepared, written or rendered.
+static constexpr const char* kServedSentinel = "ejprobe-served";
+static int endRun (int code, bool serving)
 {
-    juce::ScopedJuceInitialiser_GUI juceInit;
-    if (! ejprobe::takeSidechainPolicyArg (argc, argv)) { std::printf ("refused sidechain= must be unconnected, silent or self\n"); std::fflush (stdout); std::_Exit (3); }
-    if (argc >= 2 && juce::String (argv[1]) == "--pitch-selftest") { const int rc = ejprobe::runPitchSelfTest(); std::fflush (stdout); std::_Exit (rc); }
+    std::fflush (stdout);
+    if (! serving) std::_Exit (code);   // one-shot: as before - a third-party AU's teardown is not this mode's subject
+    std::printf ("\n%s\t%d\n", kServedSentinel, code); std::fflush (stdout);
+    return code;
+}
+
+static int runRequest (int argc, char** argv, bool serving)
+{
+    ejprobe::sidechainPolicy() = ejprobe::kSidechainDefault;   // per request: a policy is an argument, never left from the last one
+    if (! ejprobe::takeSidechainPolicyArg (argc, argv)) { std::printf ("refused sidechain= must be unconnected, silent or self\n"); return endRun (3, serving); }
     juce::AudioPluginFormatManager fm;
     juce::addDefaultFormatsToManager (fm);   // the HEADLESS module's registration (as ChainHost)
 
@@ -140,8 +158,8 @@ int main (int argc, char** argv)
     }
     if (listMode)
     {
-        if (! done)          { std::printf ("refused timeout after %d ms\n", boundMs); std::fflush (stdout); std::_Exit (3); }
-        if (inst == nullptr) { std::printf ("refused %s\n", err.replace ("\n", " ").toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+        if (! done)          { std::printf ("refused timeout after %d ms\n", boundMs); return endRun (3, serving); }
+        if (inst == nullptr) { std::printf ("refused %s\n", err.replace ("\n", " ").toRawUTF8()); return endRun (3, serving); }
         // THE PRESET (Kathy's NEXT BUILD item E, channel strips, 7 Oct): EJ_PROBE_PRESET="i:norm,i:norm" is written before any mode runs -
         // a strip's section engage switch (Rule 1) rides under every probe process of that section; each write is confirmed and printed
         // (`preset`), so a trace always says what was in force. Absent: nothing changes.
@@ -151,7 +169,7 @@ int main (int argc, char** argv)
             for (auto& t : juce::StringArray::fromTokens (juce::String::fromUTF8 (preset), ",", ""))
             {
                 const int idx = t.upToFirstOccurrenceOf (":", false, false).getIntValue(); const float norm = (float) t.fromFirstOccurrenceOf (":", false, false).getDoubleValue();
-                if (! juce::isPositiveAndBelow (idx, ps0.size()) || ps0[idx] == nullptr) { std::printf ("refused preset: no parameter %d\n", idx); std::fflush (stdout); std::_Exit (3); }
+                if (! juce::isPositiveAndBelow (idx, ps0.size()) || ps0[idx] == nullptr) { std::printf ("refused preset: no parameter %d\n", idx); return endRun (3, serving); }
                 ps0[idx]->setValueNotifyingHost (norm);
                 const auto l = ejprobe::landWrite (*ps0[idx], norm, nullptr);
                 std::printf ("preset\t%d\t%.6f\tgetValue\t%.6f\tlanded_by\t%s\ttext\t%s\n", idx, norm, l.read, l.ms >= 0 ? l.by : "unlanded", ps0[idx]->getCurrentValueAsText().replace ("\t", " ").toRawUTF8());
@@ -184,7 +202,7 @@ int main (int argc, char** argv)
         const auto& ps = inst->getParameters();
         const auto clean = [] (juce::String t) { return t.replace ("\t", " ").replace ("\n", " ").replace ("\r", " "); };
         std::printf ("\n");   // 21 Sep 2026: row 0 starts a line of its own - WaveShell-AU writes a banner to stdout with no trailing newline
-        if (renderTest) { ejprobe::runRenderTest (*inst); std::fflush (stdout); std::_Exit (0); }
+        if (renderTest) { ejprobe::runRenderTest (*inst); return endRun (0, serving); }
         if (factoryPreset)
         {
             auto block = [&] (const char* tag) { const auto& pp = inst->getParameters(); for (int i = 0; i < pp.size(); ++i) if (auto* q = pp[i])
@@ -194,21 +212,21 @@ int main (int argc, char** argv)
             std::printf ("programs\t%d\tcurrent_at_open\t%d\n", n, cur);
             for (int k = 0; k < juce::jmin (n, 64); ++k) std::printf ("program\t%d\t%s\n", k, clean (inst->getProgramName (k)).toRawUTF8());
             const juce::String which = argc >= 6 ? juce::String (argv[5]) : juce::String ("default");
-            if (which == "open") { std::fflush (stdout); std::_Exit (0); }   // "open": the opening block alone (the custom-default check / read-back)
-            if (n <= 0) { std::printf ("factory\tnone\tthe unit publishes no factory preset\n"); std::fflush (stdout); std::_Exit (0); }
+            if (which == "open") { return endRun (0, serving); }   // "open": the opening block alone (the custom-default check / read-back)
+            if (n <= 0) { std::printf ("factory\tnone\tthe unit publishes no factory preset\n"); return endRun (0, serving); }
             const int k = which == "default" ? 0 : juce::jlimit (0, n - 1, which.getIntValue());
             inst->setCurrentProgram (k);
             const double t1 = juce::Time::getMillisecondCounterHiRes();   // let the unit apply it (some do on the run loop)
             while (juce::Time::getMillisecondCounterHiRes() - t1 < 400.0) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
             std::printf ("factory\t%d\t%s\n", k, clean (inst->getProgramName (k)).toRawUTF8());
             block ("fparam");
-            std::fflush (stdout); std::_Exit (0);
+            return endRun (0, serving);
         }
         if (textAtNormsMulti)
         {
             ejprobe::configureAndPrepare (*inst, {});
             ejprobe::runTextAtNormsMulti (*inst, juce::String::fromUTF8 (argv[5]));
-            std::fflush (stdout); std::_Exit (0);
+            return endRun (0, serving);
         }
         if (textAtNorms)
         {
@@ -216,69 +234,69 @@ int main (int argc, char** argv)
             for (auto& t : juce::StringArray::fromTokens (juce::String::fromUTF8 (argv[6]), ",", "")) ns.push_back ((float) t.getDoubleValue());
             ejprobe::configureAndPrepare (*inst, {});
             ejprobe::runTextAtNorms (*inst, atoi (argv[5]), ns);
-            std::fflush (stdout); std::_Exit (0);
+            return endRun (0, serving);
         }
         if (response)
         {
             ejprobe::ResponseSpec spec; juce::String why;
-            if (! ejprobe::parseResponseArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+            if (! ejprobe::parseResponseArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); return endRun (3, serving); }
             ejprobe::runResponse (*inst, spec);
-            std::fflush (stdout); std::_Exit (0);
+            return endRun (0, serving);
         }
         if (hits)
         {
             ejprobe::HitsSpec spec; juce::String why;
-            if (! ejprobe::parseHitsArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+            if (! ejprobe::parseHitsArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); return endRun (3, serving); }
             ejprobe::runHits (*inst, spec);
-            std::fflush (stdout); std::_Exit (0);
+            return endRun (0, serving);
         }
         if (ramp)
         {
             ejprobe::RampSpec spec; juce::String why;
-            if (! ejprobe::parseRampArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+            if (! ejprobe::parseRampArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); return endRun (3, serving); }
             ejprobe::runRamp (*inst, spec);
-            std::fflush (stdout); std::_Exit (0);
+            return endRun (0, serving);
         }
         if (tail)
         {
             ejprobe::TailSpec spec; juce::String why;
-            if (! ejprobe::parseTailArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+            if (! ejprobe::parseTailArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); return endRun (3, serving); }
             ejprobe::runTail (*inst, spec);
-            std::fflush (stdout); std::_Exit (0);
+            return endRun (0, serving);
         }
         if (materialM)
         {
             ejprobe::MaterialSpec spec; juce::String why;
-            if (! ejprobe::parseMaterialArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+            if (! ejprobe::parseMaterialArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); return endRun (3, serving); }
             ejprobe::runMaterial (*inst, spec);
-            std::fflush (stdout); std::_Exit (0);
+            return endRun (0, serving);
         }
         if (burst)
         {
             ejprobe::BurstSpec spec; juce::String why;
-            if (! ejprobe::parseBurstArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+            if (! ejprobe::parseBurstArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); return endRun (3, serving); }
             ejprobe::runBurst (*inst, spec);
-            std::fflush (stdout); std::_Exit (0);
+            return endRun (0, serving);
         }
         if (sweepPitch)
         {
             ejprobe::PitchSpec spec; juce::String why;
-            if (! ejprobe::parsePitchArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+            if (! ejprobe::parsePitchArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); return endRun (3, serving); }
             ejprobe::runPitchSweep (*inst, spec);
-            std::fflush (stdout); std::_Exit (0);
+            return endRun (0, serving);
         }
         if (sweep)
         {
             ejprobe::SweepSpec spec; juce::String why;
-            if (! ejprobe::parseSweepArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+            if (! ejprobe::parseSweepArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); return endRun (3, serving); }
             ejprobe::runSweep (*inst, spec);
-            std::fflush (stdout); std::_Exit (0);
+            return endRun (0, serving);
         }
         if (writeTest)
         {
             ejprobe::runWriteTest (*inst, atoi (argv[5]), (float) atof (argv[6]), (float) atof (argv[7]),
                                    juce::String::fromUTF8 (argv[8]));
-            std::fflush (stdout); std::_Exit (0);
+            return endRun (0, serving);
         }
         // ONE sweep, shared by --sample-text (one control) and --sample-stepped (every control). Returns the number
         // of distinct texts, or 0 when the control is not a named one. THE TEXT IS READ AT 256 CHARACTERS
@@ -322,8 +340,8 @@ int main (int argc, char** argv)
             // instantiation - the controls a mode needs, not the whole unit. "all" and a single index are unchanged.
             const bool everyone = juce::String (argv[5]) == "all";
             std::vector<int> wanted; if (! everyone) for (const auto& t : juce::StringArray::fromTokens (juce::String (argv[5]), ",", "")) if (t.trim().isNotEmpty()) wanted.push_back (t.trim().getIntValue());
-            if (! everyone && wanted.empty()) { std::printf ("refused no parameter index given\n"); std::fflush (stdout); std::_Exit (3); }
-            if (! everyone) for (int w : wanted) if (w < 0 || w >= ps.size()) { std::printf ("refused no parameter at index %d (%d parameters)\n", w, ps.size()); std::fflush (stdout); std::_Exit (3); }
+            if (! everyone && wanted.empty()) { std::printf ("refused no parameter index given\n"); return endRun (3, serving); }
+            if (! everyone) for (int w : wanted) if (w < 0 || w >= ps.size()) { std::printf ("refused no parameter at index %d (%d parameters)\n", w, ps.size()); return endRun (3, serving); }
             for (int pi = 0; pi < ps.size(); ++pi)
             {
                 if (! everyone && std::find (wanted.begin(), wanted.end(), pi) == wanted.end()) continue;
@@ -346,20 +364,18 @@ int main (int argc, char** argv)
                 }
                 q->setValueNotifyingHost (before);   // put it back: this mode reads, it does not set
             }
-            std::fflush (stdout);
-            std::_Exit (0);
+            return endRun (0, serving);
         }
         if (sampleText)
         {
             const int idx = atoi (argv[5]);
             auto* q = idx >= 0 && idx < ps.size() ? ps[idx] : nullptr;
-            if (q == nullptr) { std::printf ("refused no parameter at index %d (%d parameters)\n", idx, ps.size()); std::fflush (stdout); std::_Exit (3); }
+            if (q == nullptr) { std::printf ("refused no parameter at index %d (%d parameters)\n", idx, ps.size()); return endRun (3, serving); }
             std::vector<Run> runs;
             const int distinct = sweep (q, runs);
-            if (distinct == 0) { std::printf ("refused not a named control (over 513 samples)\n"); std::fflush (stdout); std::_Exit (3); }
+            if (distinct == 0) { std::printf ("refused not a named control (over 513 samples)\n"); return endRun (3, serving); }
             printRuns (runs, distinct);
-            std::fflush (stdout);
-            std::_Exit (0);
+            return endRun (0, serving);
         }
         if (sampleAll)
         {
@@ -381,16 +397,15 @@ int main (int argc, char** argv)
                 ++sampled;
             }
             std::printf ("sampled\t%d\tof\t%d\n", sampled, ps.size());
-            std::fflush (stdout);
-            std::_Exit (0);
+            return endRun (0, serving);
         }
         if (listSteps)
         {
             const int idx = atoi (argv[5]);
             auto* q = idx >= 0 && idx < ps.size() ? ps[idx] : nullptr;
-            if (q == nullptr) { std::printf ("refused no parameter at index %d (%d parameters)\n", idx, ps.size()); std::fflush (stdout); std::_Exit (3); }
+            if (q == nullptr) { std::printf ("refused no parameter at index %d (%d parameters)\n", idx, ps.size()); return endRun (3, serving); }
             const int n = q->getNumSteps();
-            if (! q->isDiscrete() || n < 2 || n > 64) { std::printf ("refused not a stepped control (numSteps %d, discrete %d)\n", n, q->isDiscrete() ? 1 : 0); std::fflush (stdout); std::_Exit (3); }
+            if (! q->isDiscrete() || n < 2 || n > 64) { std::printf ("refused not a stepped control (numSteps %d, discrete %d)\n", n, q->isDiscrete() ? 1 : 0); return endRun (3, serving); }
             for (int i = 0; i < n; ++i)
             {
                 const float norm = (float) i / (float) (n - 1);
@@ -398,8 +413,7 @@ int main (int argc, char** argv)
                 for (int k = 0; k < 8; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }   // the AU's text settles on the run loop
                 std::printf ("step\t%d\t%.6f\t%s\n", i + 1, norm, clean (q->getCurrentValueAsText().trim()).toRawUTF8());
             }
-            std::fflush (stdout);
-            std::_Exit (0);
+            return endRun (0, serving);
         }
         for (int i = 0; i < ps.size(); ++i)
         {
@@ -411,11 +425,10 @@ int main (int argc, char** argv)
             std::printf ("%d\t%s\t%s\t%d\t%d\t%d\t%d\n", i, clean (q->getName (128)).toRawUTF8(), clean (q->getLabel()).toRawUTF8(), q->getNumSteps(), q->isDiscrete() ? 1 : 0,
                          q->isAutomatable() ? 1 : 0, q->isMetaParameter() ? 1 : 0);
         }
-        std::fflush (stdout);
-        std::_Exit (0);   // a third-party AU's teardown is not this mode's subject
+        return endRun (0, serving);   // a third-party AU's teardown is not this mode's subject
     }
-    if (! done)          { std::printf ("RESULT: TIMED OUT creating instance\n"); return 2; }
-    if (inst == nullptr) { std::printf ("INSTANTIATE: FAIL (%s)\nRESULT: FAIL\n", err.toRawUTF8()); return 1; }
+    if (! done)          { std::printf ("RESULT: TIMED OUT creating instance\n"); return serving ? endRun (2, true) : 2; }
+    if (inst == nullptr) { std::printf ("INSTANTIATE: FAIL (%s)\nRESULT: FAIL\n", err.toRawUTF8()); return serving ? endRun (1, true) : 1; }
     std::printf ("INSTANTIATE: OK  name=\"%s\" latency=%d\n",
                  inst->getName().toRawUTF8(), inst->getLatencySamples());
     std::fflush (stdout);
@@ -427,5 +440,48 @@ int main (int argc, char** argv)
     // reason to render: the verdict is the instance. Stop here.
     inst.reset();
     std::printf ("RESULT: OK\n");
-    return 0;
+    return serving ? endRun (0, true) : 0;
+}
+
+static int serveLoop (int argc, char** argv)
+{
+    if (argc < 5) { std::printf ("refused --serve needs <name> <identifier> <uidHex>\n"); std::fflush (stdout); return 3; }
+    std::signal (SIGPIPE, SIG_IGN);
+    juce::AudioPluginFormatManager fm; juce::addDefaultFormatsToManager (fm);
+    std::unique_ptr<juce::AudioPluginInstance> keeper;   // THE KEEPER: holds the plugin's library / bridge host open; never prepared or touched
+    {
+        juce::PluginDescription d; d.pluginFormatName = "AudioUnit"; d.name = juce::String::fromUTF8 (argv[2]); d.fileOrIdentifier = juce::String::fromUTF8 (argv[3]);
+        d.uniqueId = d.deprecatedUid = (int) (juce::int64) juce::String (argv[4]).getHexValue64();
+        if (d.fileOrIdentifier.startsWith ("AudioUnit:"))
+        {
+            bool done = false; juce::String err;
+            fm.createPluginInstanceAsync (d, 48000.0, 512, [&] (std::unique_ptr<juce::AudioPluginInstance> p, const juce::String& e) { keeper = std::move (p); err = e; done = true; });
+            const double t0 = juce::Time::getMillisecondCounterHiRes();
+            while (! done && juce::Time::getMillisecondCounterHiRes() - t0 < 30000.0) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.05, false); }
+        }
+        std::printf ("\nejprobe-ready\tkeeper\t%s\n", keeper != nullptr ? "held" : "none"); std::fflush (stdout);
+    }
+    std::string line;
+    while (std::getline (std::cin, line))
+    {
+        const auto req = juce::JSON::parse (juce::String::fromUTF8 (line.c_str()));
+        const auto* av = req.getProperty ("argv", {}).getArray();
+        if (av == nullptr || av->isEmpty()) { std::printf ("refused a request without argv\n"); endRun (3, true); continue; }
+        static const char* kEnv[] { "EJ_PROBE_PRESET", "EJ_PROBE_LIST_BOUND_MS" };   // the environment a one-shot probe would have inherited at this call
+        const auto env = req.getProperty ("env", {});
+        for (const char* k : kEnv) { const auto v = env.getProperty (juce::Identifier (k), {}); if (v.isString()) setenv (k, v.toString().toRawUTF8(), 1); else unsetenv (k); }
+        std::vector<std::string> store; for (const auto& a : *av) store.push_back (a.toString().toStdString());
+        std::vector<char*> args; for (auto& a : store) args.push_back (a.data()); args.push_back (nullptr);
+        runRequest ((int) store.size(), args.data(), true);
+    }
+    std::fflush (stdout);
+    std::_Exit (0);   // stdin closed: the caller is done (or gone); the keeper's teardown is not this mode's subject
+}
+
+int main (int argc, char** argv)
+{
+    juce::ScopedJuceInitialiser_GUI juceInit;
+    if (argc >= 2 && juce::String (argv[1]) == "--pitch-selftest") { const int rc = ejprobe::runPitchSelfTest(); std::fflush (stdout); std::_Exit (rc); }
+    if (argc >= 2 && juce::String (argv[1]) == "--serve") return serveLoop (argc, argv);
+    return runRequest (argc, argv, false);
 }

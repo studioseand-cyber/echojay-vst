@@ -96,6 +96,9 @@
 #include <unistd.h>
 #include <map>
 #include <set>
+#include <mutex>
+#include <optional>
+#include <csignal>
 #include <fstream>
 #include <vector>
 #include <iostream>
@@ -243,7 +246,7 @@ struct SleepGuard
 // THE TIMEOUT ARITHMETIC, alone so it can be pinned: elapsed is AWAKE time.
 inline bool timeoutPassed (double startAwakeMs, double nowAwakeMs, int timeoutMs) { return nowAwakeMs - startAwakeMs > timeoutMs; }
 
-inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, WatchOptions watch = {}, const Clock& clock = {})
+inline ChildResult runChildDirect (const juce::StringArray& args, int timeoutMs, WatchOptions watch = {}, const Clock& clock = {})
 {
     ChildResult r;
     int fds[2];
@@ -332,6 +335,170 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
     else if (WIFEXITED (status))   { r.kind = ChildResult::Kind::exited;   r.code = WEXITSTATUS (status); }
     else if (WIFSIGNALED (status)) { r.kind = ChildResult::Kind::signaled; r.signal = WTERMSIG (status); }
     return r;
+}
+
+// THE WARM PROBE (Kathy, 14 Oct; the probe's --serve, au_instantiate_probe.cpp). A measuring child (a Phase B row: one plugin, one pass)
+// started with EJ_PROBE_SERVE=1 sends its probe calls to ONE probe process per plugin instead of one process per call: each call is
+// a request that gets a NEW plugin instance (the 29 Sep fresh-state rule), so what changes is the load, not the measurement. Measured
+// on this Mac (14 Oct): a bridged Waves v12 instance costs ~3.8 s every time in a fresh process and 0.035-0.09 s while the warm
+// process holds its keeper instance; that load was ~65% of the measuring time. Everything runChild does per call is kept per request:
+// the hang guard (and a mode's declared guard), the window watch (a window kills the warm process; the next call starts a new one),
+// the awake / slept clocks, the licence stamp; a request whose process died is reported as that death (signal / exit) with its output,
+// exactly as a one-shot probe's would be, and the next call starts a fresh process. The answer is the text up to "\n" + the sentinel.
+namespace probeserve
+{
+inline constexpr const char* kSentinel = "ejprobe-served";
+inline bool enabledByEnv() { const char* v = std::getenv ("EJ_PROBE_SERVE"); return v != nullptr && juce::String (v) == "1"; }
+// a probe call that can be served: the probe itself (not /usr/bin/env, not a self-test), a plugin identity, a mode flag at argv[4]
+inline bool servable (const juce::StringArray& args)
+{
+    return args.size() >= 5 && juce::File (args[0]).getFileName() == "EchoJayProbe" && ! args[1].startsWith ("--") && args[4].startsWith ("--");
+}
+// the request line: the call's argv and the environment a one-shot probe would have inherited for the variables the probe reads
+inline juce::String requestLine (const juce::StringArray& args)
+{
+    auto* o = new juce::DynamicObject(); const juce::var v (o);
+    juce::Array<juce::var> av; for (const auto& a : args) av.add (a); o->setProperty ("argv", av);
+    auto* e = new juce::DynamicObject();
+    for (const char* k : { "EJ_PROBE_PRESET", "EJ_PROBE_LIST_BOUND_MS" }) if (const char* x = std::getenv (k)) e->setProperty (k, juce::String::fromUTF8 (x));
+    o->setProperty ("env", juce::var (e));
+    return juce::JSON::toString (v, true) + "\n";
+}
+// "...answer...\nejprobe-served\t<code>\n" -> (answer, code); none -> nullopt. The one "\n" the server put before the sentinel is not the answer's.
+struct Parsed { juce::String answer; int code = 0; };
+inline std::optional<Parsed> parseServed (const juce::String& collected)
+{
+    const auto marker = juce::String ("\n") + kSentinel + "\t";
+    const int at = collected.indexOf (marker); if (at < 0) return std::nullopt;
+    const auto rest = collected.substring (at + marker.length()); if (! rest.containsChar ('\n')) return std::nullopt;
+    return Parsed { collected.substring (0, at), rest.upToFirstOccurrenceOf ("\n", false, false).getIntValue() };
+}
+// the process's load output (keeper and all) before "ejprobe-ready": not any request's answer
+inline juce::String afterReady (const juce::String& s)
+{
+    const int at = s.indexOf ("ejprobe-ready\t"); if (at < 0) return s;
+    const int nl = s.indexOf (at, "\n"); return nl < 0 ? juce::String() : s.substring (nl + 1);
+}
+inline void killTree (pid_t pid)
+{
+    for (int k = 0; k < 16; ++k)
+    {
+        bool any = false; int n = proc_listchildpids (pid, nullptr, 0);
+        std::vector<pid_t> kids ((size_t) juce::jmax (0, n) + 8); n = proc_listchildpids (pid, kids.data(), (int) (kids.size() * sizeof (pid_t)));
+        for (int c = 0; c < n; ++c) if (kids[(size_t) c] > 1) { kill (kids[(size_t) c], SIGKILL); any = true; }
+        if (! any) break;
+    }
+    kill (pid, SIGKILL);
+}
+struct Server
+{
+    pid_t pid = 0; int toServer = -1, fromServer = -1; juce::StringArray key; bool readySeen = false; int requests = 0, restarts = 0;
+    juce::String pending;   // bytes read past the last answer (a plugin thread's late print) - kept for the next answer, never dropped
+    ~Server() { stop (false); }
+    bool alive() { int st = 0; return pid > 0 && waitpid (pid, &st, WNOHANG) == 0; }
+    void stop (bool hard)
+    {
+        if (toServer >= 0) { close (toServer); toServer = -1; }
+        if (pid > 0) { if (hard) killTree (pid); else { const double t0 = juce::Time::getMillisecondCounterHiRes(); int st = 0;
+                            while (waitpid (pid, &st, WNOHANG) == 0) { if (juce::Time::getMillisecondCounterHiRes() - t0 > 3000.0) { killTree (pid); waitpid (pid, &st, 0); break; } usleep (10000); } pid = 0; } }
+        if (hard && pid > 0) { int st = 0; waitpid (pid, &st, 0); }
+        pid = 0; if (fromServer >= 0) { close (fromServer); fromServer = -1; } readySeen = false; pending.clear();
+    }
+    bool start (const juce::StringArray& args)
+    {
+        int in[2], out[2];
+        if (pipe (in) != 0) return false; if (pipe (out) != 0) { close (in[0]); close (in[1]); return false; }
+        for (int f : { in[0], in[1], out[0], out[1] }) fcntl (f, F_SETFD, FD_CLOEXEC);
+        posix_spawn_file_actions_t fa; posix_spawn_file_actions_init (&fa);
+        posix_spawn_file_actions_adddup2 (&fa, in[0], STDIN_FILENO); posix_spawn_file_actions_adddup2 (&fa, out[1], STDOUT_FILENO); posix_spawn_file_actions_adddup2 (&fa, out[1], STDERR_FILENO);
+        std::vector<std::string> store { args[0].toStdString(), "--serve", args[1].toStdString(), args[2].toStdString(), args[3].toStdString() };
+        std::vector<char*> argv; for (auto& s : store) argv.push_back (s.data()); argv.push_back (nullptr);
+        pid_t p = 0; const int rc = posix_spawn (&p, argv[0], &fa, nullptr, argv.data(), environ);
+        posix_spawn_file_actions_destroy (&fa); close (in[0]); close (out[1]);
+        if (rc != 0) { close (in[1]); close (out[0]); return false; }
+        pid = p; toServer = in[1]; fromServer = out[0]; fcntl (fromServer, F_SETFL, O_NONBLOCK);
+        key = juce::StringArray { args[0], args[1], args[2], args[3] }; readySeen = false; pending.clear();
+        return true;
+    }
+};
+inline std::mutex& serverMutex() { static std::mutex m; return m; }
+inline Server& server() { static Server s; return s; }
+inline int& restartsTotal() { static int n = 0; return n; }
+}
+
+// one served call; the same ChildResult a one-shot probe gives. A process that dies before it is ready (the keeper's load) is not
+// kept warm: this call and every later one for that plugin run one-shot (runChildDirect), so a load crash reads exactly as before.
+inline ChildResult runServed (const juce::StringArray& args, int timeoutMs, WatchOptions watch, const Clock& clock)
+{
+    using namespace probeserve;
+    static std::set<juce::String> oneShotOnly;
+    std::lock_guard<std::mutex> g (serverMutex());
+    const juce::StringArray key { args[0], args[1], args[2], args[3] };
+    if (oneShotOnly.count (key.joinIntoString ("\t"))) return runChildDirect (args, timeoutMs, watch, clock);
+    std::signal (SIGPIPE, SIG_IGN);
+    auto& s = server();
+    const double t0 = clock.awakeMs(), w0 = clock.withSleepMs();
+    ChildResult r;
+    for (int attempt = 1; attempt <= 2; ++attempt)
+    {
+        if (s.pid > 0 && (s.key != key || ! s.alive())) { if (s.key == key) { ++restartsTotal(); } s.stop (false); }
+        if (s.pid == 0 && ! s.start (args)) return runChildDirect (args, timeoutMs, watch, clock);
+        r = ChildResult(); r.pid = (int) s.pid;
+        const auto line = requestLine (args).toStdString();
+        if (write (s.toServer, line.data(), line.size()) != (ssize_t) line.size()) { s.stop (true); ++restartsTotal(); continue; }   // died between calls: nothing of this call ran
+        juce::String collected = s.pending; s.pending.clear();
+        double lastWindowPoll = 0.0, lastGuardScan = 0.0; int effTimeoutMs = timeoutMs; char buf[8192]; int status = 0; bool died = false;
+        auto drain = [&] { for (;;) { const ssize_t n = read (s.fromServer, buf, sizeof buf); if (n > 0) collected += juce::String::fromUTF8 (buf, (int) n); else break; } };
+        std::optional<Parsed> got;
+        for (;;)
+        {
+            pollfd p { s.fromServer, POLLIN, 0 }; poll (&p, 1, 20); drain();
+            if (! s.readySeen && collected.contains ("ejprobe-ready\t") && collected.fromFirstOccurrenceOf ("ejprobe-ready\t", false, false).containsChar ('\n'))
+            { s.readySeen = true; collected = afterReady (collected); }
+            if (s.readySeen && (got = parseServed (collected))) break;
+            if (waitpid (s.pid, &status, WNOHANG) == s.pid) { drain(); died = true; if (s.readySeen || collected.contains ("ejprobe-ready\t")) { s.readySeen = true; collected = afterReady (collected); got = parseServed (collected); } break; }
+            const double now = clock.awakeMs();
+            if (watch.watchWindows && now - lastWindowPoll >= watch.pollMs)
+            {
+                lastWindowPoll = now;
+                const auto shown = windowsOwnedByTree (s.pid, watch.onScreenOnly);
+                if (! shown.isEmpty())
+                {
+                    r.windowsInTree = shown; r.windowDetails = windowsOwnedByTreeDetails (s.pid, watch.onScreenOnly);
+                    { juce::Array<juce::var> arr; for (const auto& w : r.windowDetails) arr.add (w); std::cout << "windows\t" << juce::JSON::toString (juce::var (arr), true) << std::endl; }
+                    s.stop (true); r.kind = ChildResult::Kind::uiShown; r.out = afterReady (collected); break;
+                }
+            }
+            if (now - lastGuardScan >= 1000.0) { lastGuardScan = now; if (const auto gd = phaseb::declaredGuardS (collected)) effTimeoutMs = (int) std::lround (1000.0 * phaseb::effectiveGuardS (timeoutMs / 1000.0, *gd)); }
+            if (timeoutPassed (t0, now, effTimeoutMs)) { s.stop (true); r.kind = ChildResult::Kind::timedOut; r.out = afterReady (collected); break; }
+        }
+        if (r.kind == ChildResult::Kind::uiShown || r.kind == ChildResult::Kind::timedOut) break;
+        if (got)
+        {   // answered (a death in the teardown that followed is the next call's restart, not this answer's)
+            r.kind = ChildResult::Kind::exited; r.code = got->code; r.out = got->answer;
+            const auto marker = juce::String ("\n") + kSentinel + "\t"; const auto after = collected.substring (collected.indexOf (marker) + marker.length());
+            s.pending = after.fromFirstOccurrenceOf ("\n", false, false);
+            if (died) s.stop (false);
+            ++s.requests; break;
+        }
+        // the process died without answering
+        const bool neverReady = ! s.readySeen; s.stop (false);
+        if (neverReady) { oneShotOnly.insert (key.joinIntoString ("\t")); return runChildDirect (args, timeoutMs, watch, clock); }
+        if (collected.isEmpty() && attempt == 1) { ++restartsTotal(); continue; }   // died between calls (a teardown after the last answer): nothing of this call ran
+        r.out = collected;
+        if (WIFEXITED (status)) { r.kind = ChildResult::Kind::exited; r.code = WEXITSTATUS (status); }
+        else if (WIFSIGNALED (status)) { r.kind = ChildResult::Kind::signaled; r.signal = WTERMSIG (status); }
+        break;
+    }
+    r.ms = clock.awakeMs() - t0;
+    r.sleptMs = juce::jmax (0.0, (clock.withSleepMs() - w0) - r.ms);
+    if (licenceStampLine().isNotEmpty()) r.out << (r.out.endsWithChar ('\n') || r.out.isEmpty() ? "" : "\n") << licenceStampLine() << "\n";
+    return r;
+}
+inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, WatchOptions watch = {}, const Clock& clock = {})
+{
+    if (probeserve::enabledByEnv() && probeserve::servable (args)) return runServed (args, timeoutMs, watch, clock);
+    return runChildDirect (args, timeoutMs, watch, clock);
 }
 
 //==============================================================================
@@ -1575,6 +1742,7 @@ struct SweepOptions
     std::set<int> onlyControls;                      // --only-controls i,j,k (item E, 7 Oct): the mode's fixture holds these controls alone (a strip's section)
     juce::String purpose;                            // --cert-limiter-comp --purpose contribution (the wizard): marks the records a contribution
     int jobs = 1;                                    // --jobs N (10 Oct): Phase B rows N at a time (EjmapJobs.h); 1 = the serial run
+    bool probeServe = false;                         // 14 Oct (the warm probe): Phase B rows run their probe calls in ONE probe process each, a new instance per call (runServed); the wizard's default, --no-probe-serve turns it off
     std::shared_ptr<Subject> sectionSubject;         // item E (7 Oct): a subject the CALLER supplies (a strip's compressor section) - the sweep takes it instead of the worklist's
     juce::String stripWritesJson;                    // --strip-writes <json> (7 Oct ruling): the section's engage + the other dynamics sections' off writes, for the record and profile
     bool gainAll = false;                            // --cert-gain-cal --kind all (the gain-all rows, 6 Oct item 6): the product is not a compressor, so the plan's amount is a gain target too
@@ -6738,6 +6906,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                     }
                     args.add ("--resume-traces");
                 }
+                if (opt.probeServe) { args.insert (0, "EJ_PROBE_SERVE=1"); args.insert (0, "/usr/bin/env"); }   // THE WARM PROBE (14 Oct): the row's probe calls go to one process (runServed)
                 if (phaseb::rowHooks().started) phaseb::rowHooks().started (cat.name, pp.product);
                 PWork w; w.cat = &cat; w.pp = pp; w.catDir = catDir; w.tmp = tmp; w.row = row; w.gate = gate; w.args = args; w.reused = reused; return w;
                 }
