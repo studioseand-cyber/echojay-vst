@@ -240,6 +240,8 @@ inline juce::String missingWrittenControl (const std::vector<wizard::Write>& wri
     for (const auto& w : writes) if (! names.count (w.control)) return w.control;
     return {};
 }
+// the one-load read is used when the probe ran clean, did not refuse, and opened its multi block (an older probe answers "unknown mode")
+inline bool oneLoadReadUsable (bool cleanExit, const juce::String& out) { return cleanExit && out.contains ("textmulti\tproto") && ! out.contains ("\nrefused") && ! out.startsWith ("refused"); }
 // the Tracker's kind for a Phase B category (its per-plugin seconds)
 inline juce::String kindOf (const juce::String& phaseBCategory) { return phaseBCategory == "wizard" ? juce::String ("compressor") : phaseBCategory == "wizard_eq" ? juce::String ("eq") : phaseBCategory; }
 inline Decision route (const Answer& a, const juce::String& nameCategory, const juce::String& outOfScope, bool knownMultiband = false)

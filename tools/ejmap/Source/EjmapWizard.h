@@ -107,9 +107,30 @@ inline std::vector<Write> writesOf (const juce::var& profile)
     return w;
 }
 // observed: control index -> norm (rounded to 1e-4) -> the display read back; names: control name -> index (the live plugin's list)
-struct Readback { bool pass = false; int checked = 0; juce::String why; };
+struct Readback { bool pass = false; int checked = 0; juce::String why; juce::String mode; int loads = 0; };   // mode / loads (14 Oct): one_load or per_control, and how many loads
+// THE ONE-LOAD READ-BACK (Kathy, 14 Oct): every control the check reads, in one probe call - "<i>:<n0>,<n1>;<j>:<n0>"
+inline juce::String multiNormsSpec (const std::map<int, juce::StringArray>& norms)
+{
+    juce::StringArray parts; for (const auto& [idx, ns] : norms) if (! ns.isEmpty()) parts.add (juce::String (idx) + ":" + ns.joinIntoString (","));
+    return parts.joinIntoString (";");
+}
+// the probe's text-at lines, one control's (--text-at-norms) or many (--text-at-norms-multi: each block opens with a "textat ... index <i>"
+// line); singleIndex >= 0: lines before any header belong to it
+inline std::map<int, std::map<juce::String, juce::String>> parseTextAt (const juce::String& out, int singleIndex = -1);
 inline juce::String normKey (double n) { return juce::String (std::round (n * 10000.0) / 10000.0, 4); }
 inline juce::String textNorm (const juce::String& s) { return s.trim().removeCharacters (" ").toLowerCase(); }
+inline std::map<int, std::map<juce::String, juce::String>> parseTextAt (const juce::String& out, int singleIndex)
+{
+    std::map<int, std::map<juce::String, juce::String>> observed; int cur = singleIndex;
+    for (const auto& line : juce::StringArray::fromLines (out))
+    {
+        const auto f = juce::StringArray::fromTokens (line, "\t", "");
+        if (f.size() >= 5 && f[0] == "textat") { const int k = f.indexOf ("index"); if (k >= 0 && k + 1 < f.size()) cur = f[k + 1].getIntValue(); continue; }
+        if (f.size() < 4 || f[0] != "at" || cur < 0) continue;
+        const int t = f.indexOf ("text"); observed[cur][normKey (f[1].getDoubleValue())] = t >= 0 && t + 1 < f.size() ? f[t + 1] : juce::String();
+    }
+    return observed;
+}
 inline Readback readback (const std::vector<Write>& writes, const std::map<juce::String, int>& names, const std::map<int, std::map<juce::String, juce::String>>& observed)
 {
     Readback r;

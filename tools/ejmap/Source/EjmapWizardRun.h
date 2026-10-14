@@ -60,28 +60,34 @@ inline wizard::Readback quickCheck (const SweepOptions& opt, const juce::PluginD
     auto listArgs = base; listArgs.add ("--list-params");
     const auto lp = runChild (listArgs, opt.timeoutMs);
     if (listKind != nullptr) *listKind = lp.kind;
-    if (lp.kind == ChildResult::Kind::uiShown) { window = true; return { false, 0, "a window appeared while reading its controls" }; }
-    if (! lp.cleanExit()) return { false, 0, "its controls could not be read (" + lp.describe() + ")" };
+    if (lp.kind == ChildResult::Kind::uiShown) { window = true; return { false, 0, "a window appeared while reading its controls", "list", 1 }; }
+    if (! lp.cleanExit()) return { false, 0, "its controls could not be read (" + lp.describe() + ")", "list", 1 };
     std::map<juce::String, int> names; for (const auto& [i, n] : paramsOfList (lp.out)) if (! names.count (n)) names[n] = i;
     const auto writes = wizard::writesOf (profile);
     if (const auto miss = wizroute::missingWrittenControl (writes, names); miss.isNotEmpty())   // 14 Oct: one load, not one per control
-        return { false, 0, "the plugin has no control named '" + miss + "'" };
+        return { false, 0, "the plugin has no control named '" + miss + "'", "list", 1 };
     std::map<int, juce::StringArray> norms;
     for (const auto& w : writes) { int idx = w.index; if (const auto it = names.find (w.control); it != names.end()) idx = it->second; if (idx >= 0) norms[idx].addIfNotAlreadyThere (wizard::normKey (w.norm)); }
-    std::map<int, std::map<juce::String, juce::String>> observed;
-    for (const auto& [idx, ns] : norms)
-    {
-        auto a = base; a.add ("--text-at-norms"); a.add (juce::String (idx)); a.add (ns.joinIntoString (","));
-        const auto r = runChild (a, opt.timeoutMs);
-        if (r.kind == ChildResult::Kind::uiShown) { window = true; return { false, 0, "a window appeared while reading its controls" }; }
-        for (const auto& line : juce::StringArray::fromLines (r.out))
-        {
-            const auto f = juce::StringArray::fromTokens (line, "\t", "");
-            if (f.size() < 4 || f[0] != "at") continue;
-            const int t = f.indexOf ("text"); observed[idx][wizard::normKey (f[1].getDoubleValue())] = t >= 0 && t + 1 < f.size() ? f[t + 1] : juce::String();
-        }
+    std::map<int, std::map<juce::String, juce::String>> observed; juce::String mode = "per_control"; int loads = 1;
+    if (! norms.empty())
+    {   // 14 Oct (Kathy): ONE load for every control the check reads (each restored after its reads); the per-control way only if that
+        // read is refused or fails. Its limit grows with the reads, and it never counts toward a WaveShell's hang (the list load does)
+        int points = 0; for (const auto& [idx, ns] : norms) points += ns.size();
+        auto a = base; a.add ("--text-at-norms-multi"); a.add (wizard::multiNormsSpec (norms));
+        const auto r = runChild (a, opt.timeoutMs + 500 * points); ++loads;
+        if (r.kind == ChildResult::Kind::uiShown) { window = true; return { false, 0, "a window appeared while reading its controls", "one_load", loads }; }
+        if (wizroute::oneLoadReadUsable (r.cleanExit(), r.out)) { observed = wizard::parseTextAt (r.out); mode = "one_load"; }
     }
-    return wizard::readback (writes, names, observed);
+    if (mode != "one_load")
+        for (const auto& [idx, ns] : norms)
+        {
+            auto a = base; a.add ("--text-at-norms"); a.add (juce::String (idx)); a.add (ns.joinIntoString (","));
+            const auto r = runChild (a, opt.timeoutMs); ++loads;
+            if (r.kind == ChildResult::Kind::uiShown) { window = true; return { false, 0, "a window appeared while reading its controls", "per_control", loads }; }
+            for (const auto& [k, m] : wizard::parseTextAt (r.out, idx)) for (const auto& [n, t] : m) observed[k][n] = t;
+        }
+    auto rb = wizard::readback (writes, names, observed); rb.mode = mode; rb.loads = loads;
+    return rb;
 }
 
 // THE STOP DURING THE SCAN (Kathy, 13 Oct, beta item 1): closing the window or Ctrl-C while Scanning / Checking stops as cleanly as a stop
@@ -373,7 +379,7 @@ inline int runWizard (const WizardOptions& wo)
             bool window = false; const auto rb = quickCheck (qopt, ir.desc, q.entry->profile, window, &qk);
             if (wizardStop() != 0) return stoppedInScan ("checking");   // a check cut short by the stop is never filed or cached
             if (shells.report (qshell, qk == ChildResult::Kind::timedOut, qk == ChildResult::Kind::signaled)) say ("WIZARD: " + qshell + " " + shells.why (qshell) + " - its other Waves plugins are skipped this scan (check Waves Central)");
-            row->setProperty ("readback", rb.why);
+            row->setProperty ("readback", rb.why); row->setProperty ("readback_mode", rb.mode); row->setProperty ("readback_loads", rb.loads);
             if (qshell.isNotEmpty() && (qk == ChildResult::Kind::timedOut || shells.isBad (qshell)) && qk != ChildResult::Kind::exited)
             { st = "waves_skipped"; why = wizroute::wavesSkippedWhy (qshell, shells.why (qshell).isNotEmpty() ? shells.why (qshell) : juce::String ("did not load")); }
             else if (window) { st = "needs_licence"; why = rb.why; wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, ver)); }

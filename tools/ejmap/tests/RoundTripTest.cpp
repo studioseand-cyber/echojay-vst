@@ -10020,6 +10020,30 @@ void testWizardCategories()
                && app.contains ("~WizardComponent() override { stopTimer(); awake.hold (false); if (engine.running()) engine.pause(); }"),
                "wizard WZ-SCAN-2: the DB step loads nothing; one count without the out-of-scope-by-type (69 of 1285 draws 5.4%); read-back checks stoppable + cached; orphan engines stop (read: " + juce::String ((int) read) + ")");
     }
+    // WZ-QC-1 THE ONE-LOAD READ-BACK CHECK (Kathy, 14 Oct): every control the check reads in ONE probe load (--text-at-norms-multi, each
+    // control restored after its reads), the per-control way only if that read is refused or fails. Measured: EMO-D5 (m) 184.5 -> 19.1 s,
+    // Q4 (m) 115.1 -> 25.1 s, API-550A (m) 59.8 -> 13.1 s, the same verdicts. Pure + text pins (with a control; the probe source is shared)
+    {
+        using namespace ejmap::wizard;
+        const std::map<int, juce::StringArray> norms { { 3, { "0.0000", "0.5000" } }, { 7, { "1.0000" } } };
+        const juce::String multi = "probe: x\ntextmulti\tproto\t1\tcontrols\t2\ntextat\tproto\t1\tindex\t3\tname\tRatio\tpoints\t2\tinstantiated\t0.2\t2:1\n"
+                                   "at\t0.000000\tlanded\tgetValue\t0.000000\tconfirm_ms\t1.0\tlanded_by\tread\ttext\t1:1\nat\t0.500000\tlanded\tgetValue\t0.500000\tconfirm_ms\t1.0\tlanded_by\tread\ttext\t4:1\n"
+                                   "restored\t3\t0.200000\tlanded\ntextat\tproto\t1\tindex\t7\tname\tMix\tpoints\t1\tinstantiated\t1\t100\nat\t1.000000\tlanded\tgetValue\t1.000000\tconfirm_ms\t1.0\tlanded_by\tread\ttext\t100 %\nrestored\t7\t1.000000\tlanded\nstage done\n";
+        const auto ob = parseTextAt (multi);
+        const auto single = parseTextAt ("at\t0.500000\tlanded\tgetValue\t0.5\tconfirm_ms\t1\tlanded_by\tread\ttext\t4:1\n", 3);
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto probe = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/probe_sweep.h").loadFileAsString();
+        const bool read = run.contains ("inline int runWizard") && probe.contains ("runTextAtNorms");   // the control
+        const auto qc = run.fromFirstOccurrenceOf ("inline wizard::Readback quickCheck", false, false).upToFirstOccurrenceOf ("auto rb = wizard::readback (writes, names, observed);", false, false);
+        check (read && multiNormsSpec (norms) == "3:0.0000,0.5000;7:1.0000"
+               && ob.size() == 2 && ob.at (3).at ("0.5000") == "4:1" && ob.at (3).at ("0.0000") == "1:1" && ob.at (7).at ("1.0000") == "100 %" && single.at (3).at ("0.5000") == "4:1"
+               && ejmap::wizroute::oneLoadReadUsable (true, multi) && ! ejmap::wizroute::oneLoadReadUsable (false, multi)
+               && ! ejmap::wizroute::oneLoadReadUsable (true, "probe: x\nrefused malformed spec part 'x'\n") && ! ejmap::wizroute::oneLoadReadUsable (true, "probe: x\nunknown mode\n")
+               && ! ejmap::wizroute::oneLoadReadUsable (true, "probe: x\ntextmulti\tproto\t1\tcontrols\t2\nrefused no parameter at index 99 (9 parameters)\nstage done\n")   // a refusal INSIDE the block
+               && qc.indexOf ("--text-at-norms-multi") >= 0 && qc.indexOf ("--text-at-norms-multi") < qc.indexOf ("a.add (\"--text-at-norms\")") && qc.contains ("if (mode != \"one_load\")")
+               && probe.contains ("if (restore) { q.setValueNotifyingHost (instantiated);") && probe.contains ("for (const auto& [idx, ns] : work) runTextAtNorms (p, idx, ns, true, false);"),
+               "wizard WZ-QC-1: one load for every control (spec, multi-block parse, restore after each control), the per-control way only on a refusal (read: " + juce::String ((int) read) + ")");
+    }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files
     {
