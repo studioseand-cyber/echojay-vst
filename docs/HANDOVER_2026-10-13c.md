@@ -119,4 +119,21 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
   - Beta: sha 691c6442bbd62315.
   - Both are signed and verify VALID.
 
+## 14 Oct addendum 5: Kathy's stuck Test run (wizard 4fad4d2a)
+- **What happened** (her logs, read-only):
+  - **CLA-76 (m)** sat 45 s in the 12-load read-back check of Sean's 15.0.70 profile against this Mac's 12.0.0 (no 'Mix').
+  - **The empty bar:** the read-back checks ran inside Scanning (stage 0, where the bar's value is 0), and that loop never checked for a stop.
+  - **Orphan engines:** both of her closes left the engine running. One engine was still loading at 12:00 (Q6 (m)); it was stopped with her OK and needed SIGKILL, because the old build ignores SIGINT and SIGTERM there.
+  - **A wrong never-retry entry:** the next launch put API-550A (m) on the never-retry list as a "crash".
+  - **The check times:** read-back checks averaged 70 s each here (max 180 s, EMO-D5).
+- **Fixed** (WIZARD_SPEC 3i, pin WZ-SCAN-2, mutants N1-N5 red):
+  - The database step loads nothing.
+  - Read-back checks run in Checking: stoppable, and cached in `quick_checks.json`.
+  - One n-of-N count: N excludes the out-of-scope-by-type plugins that load nothing (1285 here). The bar starts at the settled share (about 30% here).
+  - Orphaned engines stop themselves (measured about 2 s), and the app stops its engine when it goes.
+  - Screenshots: `cert-traces/2026-10-14-scan-count/`.
+- **Her folder:** RESET TEST is recommended. It holds the wrong never-retry entry, and it was scanned by the old build. Eject the old mounted Test image first, install the new DMG to Applications and open it from there.
+- **DMGs at 4fad4d2a:** Test sha 3de41460527111f5, Beta sha 58228c00530ba023; both signed and verify VALID.
+- **Still slow, not changed:** a read-back check loads the plugin once per written control (EMO-D5: about 48 loads). Batching the reads into one probe call would make each about 2 loads. It needs a probe change, which is for Kathy to approve.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
