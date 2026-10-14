@@ -7,6 +7,60 @@ editors opening and closing on a script. Every row asserts on **real state** —
 plugin or from the Link's own sidecar, the rack OUT, the Link's published gain, the transcript the processor
 holds. Never on what the agent said it did.
 
+## The vacuous-pass gate (14 Oct, Sean's instruction) - proven both ways
+
+**Every capability row now requires its turn to have actually run.** `AgentOutcome::ran()` is true when the
+card **adopted this row's goal** and produced a step, an answered question, or visible text. A refusal
+counts - F2 and L5 are *meant* to be refused, and a refusal is a turn that ran and said no. Silence does not.
+`row()` takes the outcome and cannot pass without one; it prints
+`FORCED FAIL: the assertion held but NO TURN RAN (<why>)`.
+
+| direction | run | result |
+|---|---|---|
+| RED (`EJ_RIG_BREAK_AGENT=1`, every agent POST refused) | 15:01 | **no capability row passes.** C10, L5, H3, F2 - the four that passed vacuously at 14:34 - all FORCED FAIL |
+| GREEN (a real token, the installed ship) | 15:05 | **41 passed, 0 failed, 0 skipped.** The gate costs no legitimate row |
+
+### It took three red runs, and each one found a different hole
+
+1. the four vacuous passes, caught by `ran()`.
+2. **C5 and C7 vanished** - guarded on the rack having slots, so with every turn failing they printed
+   nothing at all: fifteen rows where seventeen were expected, and no line saying which two were missing.
+   Both now SKIP loudly. Same defect as this morning's `ok (skipped)`, in its other form.
+3. **A6 passed twice more.** It runs no agent turn by design (the chip is off), so its evidence had to be a
+   chat reply - and a transcript row count counted the **401 error bubble** as one. Then the blacklist missed
+   the actual copy (*"Session expired. Please log in again."* - the list had "sign in", not "log in").
+   Matching failure strings is the wrong polarity: the copy changes and the row goes quietly vacuous again.
+   It now requires **positive** evidence - the reply must name the **limiter** it asked for, which no
+   session-expired notice ever will.
+
+**`EJ_RIG_BREAK_AGENT=1` stays in the rig.** A gate against vacuous passes that cannot itself be driven red
+is unfalsifiable, which is the thing it exists to prevent.
+
+### L2 is flaky, and now measurable: `EJ_RIG_L2_REPEAT=N`
+
+Four observations on the same binary: 12:34 **pass**, 14:01 fail (`check(level_landed)`), 14:42 fail (a
+round that produced nothing), 15:05 **pass**. Rows are named `L2#1..L2#N`, and **every attempt after the
+first must show a build reaching that Link in its own steps** - on a repeat the rack is already built, so
+"it holds two slots" would be the vacuous pass in its other form.
+## Loop 6 (14 Oct, 14:42) - S6 live against the INSTALLED ship_2026-10-14a: **16 passed / 1 failed**
+
+The shipped binary, hosted from `~/Library` (arm64 `07FD2B0D...` / `402E05C9...`), against B's tree after
+their run 14. **No plugin change since the gate.**
+
+Every row passes except **L2** (build a chain on a Link). C10 passes again. L2's cause is in the model's
+second round: having read the Link's rack it sent no tool call, no text and an empty `done.summary`, so
+nothing was built - owner B, with a sim row asked for in `docs/FOR_B_2026-10-14.md`, because L2 has now
+passed once and failed twice for two different reasons on the same binary.
+
+### A harness weakness this run exposed, not yet fixed
+
+In the 14:34 run - the one spoiled by a server-side `500 route_load_failed` - **several rows passed
+vacuously**: C10 "undo that" passed because the rack had not changed, the removal it was undoing having
+itself failed, so before == after. A6, L5 and F2 can pass the same way: their assertions are variants of
+"nothing was touched". **A row whose assertion is satisfied by the turn never running is not a test.**
+`askAgent` already records whether the card adopted the goal and what the steps said, so the facts are
+there; the rows must require them. Queued with the next round's rig work - the same family as the skip that
+printed `ok` and padded a pass count for a whole round.
 ## Loop 5 (14 Oct, 14:01, as gate11's S6): **live 40/1, mock 25/0** - C10 GREEN, L2 red and it is B's
 
 | row | verdict | note |

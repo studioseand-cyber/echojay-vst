@@ -71,6 +71,17 @@ if [ -n "$LIVE_PORT" ]; then
     exit 2
   fi
   echo "  account: $(echo "$LOGIN" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("email"), d.get("tier"))' 2>/dev/null)"
+  # ---- THE RED-DIRECTION INSTRUMENT (EJ_RIG_BREAK_AGENT=1, 14 Oct 2026) ----------------------------------
+  # Every agent POST gets a 401 and no turn can run, which is the 14:34 condition (a server-side 500 on the
+  # agent route) reproduced on demand. It exists because that run reported SEVERAL ROWS AS PASSES while the
+  # binary was never exercised: C10 passed on a rack that had not changed, because the removal it was undoing
+  # had failed too. A gate against vacuous passes that cannot be driven RED is itself unfalsifiable, so this
+  # switch is how the gate is proven, and it stays.
+  if [ "${EJ_RIG_BREAK_AGENT:-0}" = "1" ]; then
+    echo "  EJ_RIG_BREAK_AGENT=1: writing a DELIBERATELY INVALID token - every agent turn will be refused."
+    echo "  Expect the capability rows to FAIL. Any row that PASSES here is a row that proves nothing."
+    TOKEN="red-direction-proof.not-a-real-token"
+  fi
   export EJ_RIG_TOKEN="$TOKEN"
 else
   # ---- a free port, so two rigs can run side by side ------------------------

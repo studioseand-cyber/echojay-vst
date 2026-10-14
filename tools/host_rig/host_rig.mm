@@ -281,6 +281,29 @@ struct AgentOutcome
     bool  adopted = false;      // the card's own goal became THIS request (so the reply belongs to this row)
     int   applies = 0;          // how many plans the rig approved (a build can present more than one)
     bool  leftRunning = false;  // the turn was still live when the bound ran out
+
+    /** DID A TURN ACTUALLY HAPPEN FOR THIS REQUEST? (14 Oct 2026, Sean's instruction.)
+        The 14:34 run was spoiled by a server-side 500 on every agent POST, and SEVERAL ROWS PASSED ANYWAY:
+        C10 "undo that" passed because the rack had not changed - the removal it was undoing had itself
+        failed, so before == after. A6, L5 and F2 can pass the same way, their assertions all being variants
+        of "nothing was touched". A row whose assertion is satisfied by the turn never running is not a test.
+
+        Three facts, any one of which proves a turn happened: the card took up THIS row's goal (adopted), and
+        it produced either a step, an answered question, or visible text. A refusal counts - F2 and L5 are
+        SUPPOSED to be refused - because a refusal is a turn that ran and said no. What does not count is
+        silence. */
+    bool ran() const
+    {
+        return adopted && (stepWords.isNotEmpty() || asksAnswered > 0 || text.isNotEmpty());
+    }
+    juce::String whyNotRan() const
+    {
+        juce::StringArray why;
+        if (! adopted) why.add ("the card never took up this goal");
+        if (stepWords.isEmpty() && asksAnswered == 0 && text.isEmpty())
+            why.add ("no step, no question and no text - the turn produced nothing");
+        return why.joinIntoString ("; ");
+    }
 };
 
 /** LIVE means a token with something in it. ctest's ENVIRONMENT property cannot UNSET a variable - it sets
@@ -443,11 +466,23 @@ static juce::var linkRowOf (const juce::var& st, const juce::String& uid)
 
 // A row's verdict, in the scorecard's words. Printed in a form the scorecard is written from, so the file
 // and the run cannot disagree.
-static void row (const char* id, bool pass, const juce::String& request, const juce::String& detail)
+/** One capability row. `r` is the turn behind it, and a row CANNOT PASS without one: see
+    AgentOutcome::ran(). Pass nullptr only where there is deliberately no agent turn (A6, which sends a chat
+    with the chip off) - and then the row must carry its own evidence that something happened, because the
+    whole point of this gate is that "nothing changed" is not a result. */
+static void row (const char* id, bool pass, const juce::String& request, const juce::String& detail,
+                 const AgentOutcome* r = nullptr)
 {
+    juce::String note;
+    if (r != nullptr && ! r->ran())
+    {
+        if (pass) note = "  <- FORCED FAIL: the assertion held but NO TURN RAN (" + r->whyNotRan() + ")";
+        else      note = "  (and no turn ran: " + r->whyNotRan() + ")";
+        pass = false;
+    }
     if (pass) ++passes; else ++failures;
-    std::printf ("  ROW %-4s %-4s  \"%s\"\n        %s\n", id, pass ? "PASS" : "FAIL",
-                 request.toRawUTF8(), detail.toRawUTF8());
+    std::printf ("  ROW %-4s %-4s  \"%s\"\n        %s%s\n", id, pass ? "PASS" : "FAIL",
+                 request.toRawUTF8(), detail.toRawUTF8(), note.toRawUTF8());
     std::fflush (stdout);
 }
 
@@ -899,7 +934,7 @@ int main (int argc, char* argv[])
                  "slots " + juce::String (before) + " -> " + juce::String (after)
                  + ", state " + r.state + (r.applied ? ", applied from a plan" : ", no plan")
                  + (grew ? ", now [" + ownSlotNames (st).joinIntoString (", ") + "]"
-                         : ", card said: " + r.text.substring (0, 120) + r.failDetail));
+                         : ", card said: " + r.text.substring (0, 120) + r.failDetail), &r);
 
             // RULING 3, OWED FROM THE LIFECYCLE LEGS: there is a slot on the rack now, so the double-click
             // can actually be pressed. If C1 did not land there is still nothing to press, and that is a
@@ -931,10 +966,16 @@ int main (int argc, char* argv[])
             for (const auto* probe : { "EchoJay Compressor", "EchoJay EQ", "EchoJay Limiter", "EchoJay Gate" })
                 if (text.contains (juce::String (probe) + " is now") || text.contains (juce::String ("added ") + probe))
                     if (! names.contains (probe)) { claimedAbsent = true; which = probe; }
-            row ("H2", ! claimedAbsent, "(honesty) never names a plugin that is not on the rack",
+            // ITS OWN EVIDENCE (14 Oct): this row judges what the card SAID, so an empty card passes it
+            // trivially - nothing was claimed, so nothing false was claimed. That is the vacuous pass in its
+            // purest form: with the server down this row would have reported the product honest.
+            const bool cardSpoke = text.trim().isNotEmpty();
+            row ("H2", cardSpoke && ! claimedAbsent, "(honesty) never names a plugin that is not on the rack",
                  claimedAbsent ? "the card claimed " + which + " but the rack holds ["
                                  + names.joinIntoString (", ") + "]"
-                               : "nothing claimed that the rack does not hold");
+                               : cardSpoke ? juce::String ("nothing claimed that the rack does not hold")
+                                           : juce::String ("THE CARD SAID NOTHING - there is no claim to "
+                                                           "judge, so this row proves nothing and fails"));
         }
 
         // ---- C8: the rack's OUT, which is not a plugin's output -------------
@@ -946,11 +987,15 @@ int main (int argc, char* argv[])
             row ("C8", moved, "turn the rack output down 2 dB",
                  "rack OUT " + juce::String (before, 2) + " -> " + juce::String (after, 2)
                  + " dB, state " + r.state
-                 + (moved ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail));
+                 + (moved ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail), &r);
         }
 
         // ---- C5: bypass a slot ----------------------------------------------
-        if (ownSlotCount (Rig::state()) > 0)
+        // A ROW THAT CANNOT RUN SAYS SO (14 Oct). With the rack empty this block used to vanish: 15 rows
+        // printed where 17 were expected, and nothing in the output said which two were missing.
+        if (ownSlotCount (Rig::state()) == 0)
+            skip ("C5: bypass slot 1", "the rack is empty - nothing to bypass (did C1 land?)");
+        else
         {
             const auto r = askAgent (rig, "bypass slot 1");
             const auto st = rig.freshState();
@@ -967,7 +1012,7 @@ int main (int argc, char* argv[])
                  juce::String (bypassed ? "slot 1 reads bypassed" : "slot 1 is NOT bypassed")
                  + "; the rack holds [" + shape + "]; the agent's target was \""
                  + st.getProperty ("agentTarget", juce::var()).toString() + "\", state " + r.state
-                 + (bypassed ? "" : ", card said: " + r.text.substring (0, 160) + r.failDetail));
+                 + (bypassed ? "" : ", card said: " + r.text.substring (0, 160) + r.failDetail), &r);
         }
 
         // ---- L1: the same, on ANOTHER track's Link --------------------------
@@ -986,7 +1031,7 @@ int main (int argc, char* argv[])
             row ("L1", landed, ask,
                  "that Link's own sidecar: " + juce::String (before) + " -> " + juce::String (after)
                  + " slot(s), state " + r.state + (r.applied ? ", applied from a plan" : "")
-                 + (landed ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail));
+                 + (landed ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail), &r);
         }
 
         // ---- R3: the inventory, paged and filtered --------------------------
@@ -996,7 +1041,7 @@ int main (int argc, char* argv[])
             row ("R3", answered, "what compressors do I have?",
                  answered ? "answered in " + juce::String (r.text.length()) + " chars: "
                             + r.text.substring (0, 140)
-                          : "no answer, state " + r.state + " " + r.failDetail);
+                          : "no answer, state " + r.state + " " + r.failDetail, &r);
         }
 
         // ---- C2: position matters -------------------------------------------
@@ -1008,11 +1053,14 @@ int main (int argc, char* argv[])
                             && after[1].containsIgnoreCase ("EQ");
             row ("C2", atTwo, "add an EchoJay EQ after slot 1",
                  "[" + before.joinIntoString (", ") + "] -> [" + after.joinIntoString (", ") + "], state "
-                 + r.state + (atTwo ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail));
+                 + r.state + (atTwo ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail), &r);
         }
 
         // ---- C7: a slot's wet ------------------------------------------------
-        if (ownSlotCount (rig.freshState()) > 1)      // a fresh snapshot for the GATE, not whatever was in scope
+        // Same rule as C5: it needs two slots, and when it has not got them it SAYS so rather than vanishing.
+        if (ownSlotCount (rig.freshState()) <= 1)     // a fresh snapshot for the GATE, not whatever was in scope
+            skip ("C7: make the compressor 30% wet", "fewer than two slots on the rack - nothing to set wet");
+        else
         {
             // NOT THE EQ. Loop 1 asked for 30% wet on slot 2, which was the EchoJay EQ this pass had just
             // added, and the model refused with its own rule: "surgical/tonal EQ must run fully wet". The
@@ -1047,7 +1095,7 @@ int main (int argc, char* argv[])
                  + juce::String (ownSlotCount (st)) + ", view=\""
                  + st.getProperty ("viewUid", juce::var()).toString() + "\", target=\""
                  + st.getProperty ("agentTarget", juce::var()).toString() + "\"), state " + r.state
-                 + (set ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail));
+                 + (set ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail), &r);
         }
 
         // ---- C9: the rack's pre gain -----------------------------------------
@@ -1057,7 +1105,7 @@ int main (int argc, char* argv[])
             const bool set = std::abs (pg - 3.0) < 0.6;
             row ("C9", set, "add 3 dB of pre gain",
                  "pre gain reads " + juce::String (pg, 2) + " dB, state " + r.state
-                 + (set ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail));
+                 + (set ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail), &r);
         }
 
         // ---- C3 then C10: remove, then undo ----------------------------------
@@ -1067,7 +1115,7 @@ int main (int argc, char* argv[])
             const auto after = ownSlotCount (rig.freshState());
             row ("C3", after == before - 1, "remove slot 1",
                  "slots " + juce::String (before) + " -> " + juce::String (after) + ", state " + r.state
-                 + (after == before - 1 ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail));
+                 + (after == before - 1 ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail), &r);
 
             const auto u = askAgent (rig, "undo that");
             rig.until ([&] (const juce::var& st) { return ownSlotCount (st) == before; }, 12000);
@@ -1075,12 +1123,20 @@ int main (int argc, char* argv[])
             row ("C10", back == before, "undo that",
                  "slots " + juce::String (after) + " -> " + juce::String (back)
                  + " (was " + juce::String (before) + " before the remove), state " + u.state
-                 + (back == before ? "" : ", card said: " + u.text.substring (0, 140) + u.failDetail));
+                 + (back == before ? "" : ", card said: " + u.text.substring (0, 140) + u.failDetail), &u);
         }
 
         // ---- L2: a BUILD on another track's Link -----------------------------
+        // REPEATABLE (EJ_RIG_L2_REPEAT=N, 14 Oct 2026). Sean asked for five, because this row has passed and
+        // failed on the SAME binary for two different server-side reasons - 12:34 pass, 14:01 fail on
+        // check(level_landed), 14:42 fail on a round that produced nothing, 15:05 pass. One run of a flaky
+        // row tells you about that run. The rows are named L2#1..L2#N so a log says which attempt did what.
         if (linkUid.isNotEmpty())
         {
+            const char* rep = ::getenv ("EJ_RIG_L2_REPEAT");
+            const int reps = juce::jlimit (1, 10, rep != nullptr ? juce::String (rep).getIntValue() : 1);
+            for (int attempt = 1; attempt <= reps; ++attempt)
+            {
             const int before = (int) linkRowOf (Rig::state(), linkUid).getProperty ("slotCount", -1);
             const auto name = linkRowOf (Rig::state(), linkUid).getProperty ("name", juce::var()).toString();
             const auto ask = "build a chain on " + (name.isNotEmpty() ? name : linkUid)
@@ -1093,10 +1149,25 @@ int main (int argc, char* argv[])
             rig.until ([&] (const juce::var& st)
             { after = (int) linkRowOf (st, linkUid).getProperty ("slotCount", -1); return after >= 2; }, 30000);
             const auto slots = linkRowOf (Rig::state(), linkUid).getProperty ("slots", juce::var()).toString();
-            row ("L2", after >= 2, ask,
+            // ON A REPEAT THE RACK IS ALREADY BUILT, so "it holds two slots" proves nothing about THIS
+            // attempt - the vacuous pass in its other form. Every attempt after the first must therefore show
+            // the build REACHING that Link in its own steps; the first attempt may rely on the count rising.
+            const bool sentABuild = r.stepWords.containsIgnoreCase ("build")
+                                 || r.stepWords.containsIgnoreCase ("the rack took it")
+                                 || r.stepWords.containsIgnoreCase ("slot(s) on the rack");
+            const bool ok = after >= 2 && (attempt == 1 || sentABuild);
+            // A NAMED local, not a temporary: row() takes a const char* and toRawUTF8() on a temporary
+            // juce::String would dangle before the call returned.
+            const juce::String id = reps == 1 ? juce::String ("L2")
+                                              : "L2#" + juce::String (attempt);
+            row (id.toRawUTF8(), ok, ask,
                  "that Link's own sidecar holds " + juce::String (after) + " slot(s) [" + slots + "], was "
                  + juce::String (before) + ", state " + r.state
-                 + (after >= 2 ? "" : ", card said: " + r.text.substring (0, 160) + r.failDetail));
+                 + (attempt > 1 ? juce::String (sentABuild ? ", a build reached the Link this attempt"
+                                                           : ", NO BUILD REACHED THE LINK THIS ATTEMPT")
+                                : juce::String())
+                 + (ok ? "" : ", card said: " + r.text.substring (0, 160) + r.failDetail), &r);
+            }
         }
 
         // ---- L3: a Link's OUT ------------------------------------------------
@@ -1114,7 +1185,7 @@ int main (int argc, char* argv[])
             row ("L3", moved, ask,
                  "that Link's published OUT " + juce::String (before, 2) + " -> " + juce::String (after, 2)
                  + " dB, state " + r.state
-                 + (moved ? "" : ", card said: " + r.text.substring (0, 160) + r.failDetail));
+                 + (moved ? "" : ", card said: " + r.text.substring (0, 160) + r.failDetail), &r);
         }
 
         // ---- L5: a track that does not exist ---------------------------------
@@ -1125,20 +1196,62 @@ int main (int argc, char* argv[])
             const bool safe = after == before;        // nothing was done to the rack we DO have
             row ("L5", safe, "add a compressor on the Trombone bus (no such track)",
                  juce::String (safe ? "nothing was changed on any rack we have" : "IT CHANGED A RACK ANYWAY")
-                 + ", state " + r.state + ", said: " + r.text.substring (0, 140) + r.failDetail);
+                 + ", state " + r.state + ", said: " + r.text.substring (0, 140) + r.failDetail, &r);
         }
 
         // ---- A6: agent mode OFF proposes and changes nothing -----------------
         {
             rig.send (echojay::rig::cmd::agentChip, args1 ("on", false));
-            const auto before = ownSlotCount (rig.freshState());
+            const auto stBefore = rig.freshState();
+            const auto before = ownSlotCount (stBefore);
+            // ITS OWN EVIDENCE (14 Oct, Sean's instruction). This row runs NO agent turn on purpose - the
+            // chip is off, so the words go to chat - which means AgentOutcome::ran() has nothing to say about
+            // it and the generic gate cannot apply. Its claim is "the agent changed nothing", and with the
+            // server down that is true for the dullest possible reason. So it requires a REPLY: the
+            // transcript must grow, which is the proof that the words were sent, answered, and still changed
+            // no rack.
+            const int rowsBefore = (int) stBefore.getProperty ("transcriptRows", 0);
             rig.send (echojay::rig::cmd::sendChat, args1 ("text", "add a limiter"), 15000);
             Rig::pump (20000);
-            const auto after = ownSlotCount (rig.freshState());
-            row ("A6", after == before, "(agent OFF) add a limiter",
-                 juce::String (after == before ? "the rack is untouched - it proposed instead"
-                                               : "THE RACK CHANGED WITH THE AGENT OFF")
-                 + ", slots " + juce::String (before) + " -> " + juce::String (after));
+            const auto stAfter = rig.freshState();
+            const auto after = ownSlotCount (stAfter);
+            const int rowsAfter = (int) stAfter.getProperty ("transcriptRows", 0);
+            // AN ERROR BUBBLE IS NOT A REPLY (14 Oct, found by the red proof). Counting rows alone, this row
+            // PASSED under a deliberately broken token: the chat 401'd, the editor pushed its failure notice
+            // into the transcript, the count grew by two, and "the rack is untouched" was reported as the
+            // agent behaving correctly. So the LAST assistant row must carry something a user would read as
+            // an answer - and the failure copy is matched on, rather than guessed at by length.
+            juce::String lastAssistant;
+            if (auto* rows = stAfter.getProperty ("transcript", juce::var()).getArray())
+                for (const auto& m : *rows)
+                    if (m.getProperty ("role", juce::var()).toString() == "assistant")
+                        lastAssistant = m.getProperty ("text", juce::var()).toString();
+            // POSITIVE EVIDENCE, NOT A BLACKLIST. The first cut matched failure copy and A6 passed anyway:
+            // the notice was "Session expired. Please log in again." and the list had "sign in", not "log in".
+            // Guessing at error strings is a losing game - the copy changes and the row quietly goes vacuous
+            // again. So the test is what a REAL answer must contain: this row asks for a limiter, and no
+            // "session expired" notice will ever mention one. The blacklist stays as belt and braces only.
+            const bool namesTheAsk   = lastAssistant.containsIgnoreCase ("limiter");
+            const bool looksLikeFailure = lastAssistant.containsIgnoreCase ("couldn't reach")
+                                       || lastAssistant.containsIgnoreCase ("could not reach")
+                                       || lastAssistant.containsIgnoreCase ("not authenticated")
+                                       || lastAssistant.containsIgnoreCase ("sign in")
+                                       || lastAssistant.containsIgnoreCase ("log in")
+                                       || lastAssistant.containsIgnoreCase ("session expired")
+                                       || lastAssistant.containsIgnoreCase ("try again")
+                                       || lastAssistant.containsIgnoreCase ("offline");
+            const bool replied = rowsAfter > rowsBefore + 1
+                              && lastAssistant.trim().length() > 20
+                              && namesTheAsk
+                              && ! looksLikeFailure;
+            row ("A6", replied && after == before, "(agent OFF) add a limiter",
+                 juce::String (after != before ? "THE RACK CHANGED WITH THE AGENT OFF"
+                               : replied            ? "the rack is untouched - it proposed instead"
+                                                    : "NO REPLY ARRIVED, so \"the rack is untouched\" proves "
+                                                      "nothing and this row fails")
+                 + ", slots " + juce::String (before) + " -> " + juce::String (after)
+                 + ", transcript " + juce::String (rowsBefore) + " -> " + juce::String (rowsAfter)
+                 + (replied ? "" : ", the last assistant row was: \"" + lastAssistant.substring (0, 90) + "\""));
             rig.send (echojay::rig::cmd::agentChip, args1 ("on", true));
         }
 
@@ -1154,7 +1267,7 @@ int main (int argc, char* argv[])
             row ("H3", r.settled && plain, ask,
                  juce::String (plain ? "it said plainly that it cannot measure a Link yet"
                                      : "it answered with \"slot not on rack\", which is the wrong refusal")
-                 + ", state " + r.state + ", said: " + r.text.substring (0, 160) + r.failDetail);
+                 + ", state " + r.state + ", said: " + r.text.substring (0, 160) + r.failDetail, &r);
         }
 
         // ---- F2: an op this build does not have -----------------------------
@@ -1162,7 +1275,7 @@ int main (int argc, char* argv[])
             const auto r = askAgent (rig, "set the rack's tilt to 3");
             row ("F2", r.settled, "set the rack's tilt to 3 (an op that does not exist)",
                  "state " + r.state + ", it stopped rather than looping"
-                 + (r.failDetail.isNotEmpty() ? ", user line: " + r.failDetail.substring (0, 120) : ""));
+                 + (r.failDetail.isNotEmpty() ? ", user line: " + r.failDetail.substring (0, 120) : ""), &r);
         }
     }
 
