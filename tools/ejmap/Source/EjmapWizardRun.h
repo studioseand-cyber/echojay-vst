@@ -52,15 +52,19 @@ inline std::vector<std::pair<int, juce::String>> paramsOfList (const juce::Strin
 }
 
 // THE QUICK LIVE CHECK: the plugin's control list, then each written control read back at the profile's norms (one probe call each)
-inline wizard::Readback quickCheck (const SweepOptions& opt, const juce::PluginDescription& desc, const juce::var& profile, bool& window)
+inline wizard::Readback quickCheck (const SweepOptions& opt, const juce::PluginDescription& desc, const juce::var& profile, bool& window, ChildResult::Kind* listKind = nullptr)
 {
     window = false;
     const juce::StringArray base { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) };
     auto listArgs = base; listArgs.add ("--list-params");
     const auto lp = runChild (listArgs, opt.timeoutMs);
+    if (listKind != nullptr) *listKind = lp.kind;
     if (lp.kind == ChildResult::Kind::uiShown) { window = true; return { false, 0, "a window appeared while reading its controls" }; }
+    if (! lp.cleanExit()) return { false, 0, "its controls could not be read (" + lp.describe() + ")" };
     std::map<juce::String, int> names; for (const auto& [i, n] : paramsOfList (lp.out)) if (! names.count (n)) names[n] = i;
     const auto writes = wizard::writesOf (profile);
+    if (const auto miss = wizroute::missingWrittenControl (writes, names); miss.isNotEmpty())   // 14 Oct: one load, not one per control
+        return { false, 0, "the plugin has no control named '" + miss + "'" };
     std::map<int, juce::StringArray> norms;
     for (const auto& w : writes) { int idx = w.index; if (const auto it = names.find (w.control); it != names.end()) idx = it->second; if (idx >= 0) norms[idx].addIfNotAlreadyThere (wizard::normKey (w.norm)); }
     std::map<int, std::map<juce::String, juce::String>> observed;
@@ -230,6 +234,13 @@ inline int runWizard (const WizardOptions& wo)
     const bool paceSupport = juce::File ("/Library/Application Support/PACEAntiPiracy/LicenseSupport").exists() || juce::File ("/Applications/iLok License Manager.app").exists();
     int ilokUsbState = -1;   // read once, only if a PACE-wrapped plugin needs it (system_profiler takes a second or two)
     auto ilokUsb = [&] { if (ilokUsbState < 0) ilokUsbState = iLokPresence().startsWith ("present") ? 1 : 0; return ilokUsbState == 1; };
+    // THE WAVESHELL GUARD (14 Oct): a plugin's shell from its bundle (no load); WaveShell loads give up sooner; a bad shell's plugins skipped
+    wizroute::ShellGuard shells;
+    auto shellOfId = [&] (const juce::String& fileOrIdentifier) { const auto it = bundlesAll.find (fileOrIdentifier.fromLastOccurrenceOf ("/", false, false));
+                                                                 return it == bundlesAll.end() ? juce::String() : wizroute::waveShellOf (it->second.getFileName()); };
+    const int waveShellLimitMs = [] { const char* e = std::getenv ("EJ_WIZARD_WAVESHELL_TIMEOUT_MS"); return e != nullptr && *e ? juce::jmax (100, juce::String (e).getIntValue()) : wizroute::kWaveShellLoadTimeoutMs; }();   // rehearsals: force a hang
+    auto loadTimeoutFor = [&] (const juce::String& fileOrIdentifier) { return shellOfId (fileOrIdentifier).isNotEmpty() ? juce::jmin (opt.timeoutMs, waveShellLimitMs) : opt.timeoutMs; };
+    std::map<juce::String, juce::String> earlyWhy;   // product -> the words for a state settled while loading (a bad shell)
     auto paceWrapped = [&] (const juce::PluginDescription& dd, juce::String& why) { return ! wizroute::paceOptionalVendor (dd.manufacturerName) && paceHeld (dd, bundlesAll, why) && why.startsWith ("PACE-wrapped"); };
     // 1. THE DATABASE CHECK (Scanning): one answer per plugin; only rule B's quick read-back check loads anything here
     { std::vector<wizprog::Item> its; for (const auto& ir : plugins) { wizprog::Item it; it.product = ir.desc.name; it.kind = "check"; its.push_back (it); } prog.stage (wizprog::Stage::scanning, its); }
@@ -241,6 +252,7 @@ inline int runWizard (const WizardOptions& wo)
         const auto d = wizroute::route (ans, wizard::wizardCategory (ir.desc.name, juce::var()), categorise::outOfScope (typeOf (ir.desc), ir.desc.name, {}), wizroute::isMultiband (dbMultiband, uid));
         auto* row = new juce::DynamicObject(); row->setProperty ("product", ir.desc.name); row->setProperty ("plugin_id", wizroute::pluginId (uid, ver)); row->setProperty ("map_fp", se.fp);
         row->setProperty ("category", d.category); row->setProperty ("route", wizroute::routeName (d.route)); row->setProperty ("vendor", ir.desc.manufacturerName);
+        if (wo.plan) row->setProperty ("identifier", ir.desc.fileOrIdentifier);   // 14 Oct (WaveShell census): the AU type,subtype,manufacturer - plan only
         juce::String st, why = d.why;
         // LICENCE WINDOWS (14 Oct): looked up before any load - a plugin that showed one here before, or iLok-protected on a Mac with no
         // iLok, is skipped unloaded. Nothing the database settles is ever loaded (A / pending / out of scope stay as they are)
@@ -259,8 +271,15 @@ inline int runWizard (const WizardOptions& wo)
                 if (wo.plan) { st = "quick_check"; why = "(plan: not run) " + why; break; }
                 const auto gate = licenceGate (opt, ir.desc.name, ir.desc.manufacturerName, out, false);
                 if (gate.stop.isNotEmpty()) { st = gate.stop.contains (uad::kNotConnected) ? "needs_hardware" : "needs_licence"; why = gate.stop; break; }
+                const auto qshell = shellOfId (ir.desc.fileOrIdentifier);
+                if (shells.isBad (qshell)) { st = "waves_skipped"; why = wizroute::wavesSkippedWhy (qshell, shells.why (qshell)); break; }
                 prog.started (ir.desc.name);
-                bool window = false; const auto rb = quickCheck (opt, ir.desc, ans.entry->profile, window);
+                auto qopt = opt; qopt.timeoutMs = loadTimeoutFor (ir.desc.fileOrIdentifier);
+                ChildResult::Kind qk = ChildResult::Kind::exited;
+                bool window = false; const auto rb = quickCheck (qopt, ir.desc, ans.entry->profile, window, &qk);
+                if (shells.report (qshell, qk == ChildResult::Kind::timedOut, qk == ChildResult::Kind::signaled)) say ("WIZARD: " + qshell + " " + shells.why (qshell) + " - its other Waves plugins are skipped this scan (check Waves Central)");
+                if (qshell.isNotEmpty() && (qk == ChildResult::Kind::timedOut || shells.isBad (qshell)) && qk != ChildResult::Kind::exited)
+                { st = "waves_skipped"; why = wizroute::wavesSkippedWhy (qshell, shells.why (qshell).isNotEmpty() ? shells.why (qshell) : juce::String ("did not load")); break; }
                 row->setProperty ("from_version", ans.entry->version()); row->setProperty ("readback", rb.why);
                 if (window) { st = "needs_licence"; why = rb.why; wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, ver)); }
                 else if (! wizapp::needsMeasuring (wizard::Match::sameControls, rb.pass)) { st = "ready_from_version"; why = "the version " + ans.entry->version() + " profile: " + rb.why; }
@@ -325,10 +344,19 @@ inline int runWizard (const WizardOptions& wo)
         opt.ledger.getChildFile ("maps").createDirectory();
         std::vector<juce::PluginDescription> mapDs; for (auto i : mapIdx) mapDs.push_back (plugins[i].desc);
         auto laneOfD = [&] (const juce::PluginDescription& d) { jobs::LaneInputs in; in.uad = uad::isUadProduct (d.name, d.manufacturerName); in.pace = paceHeld (d, bundlesAll, in.paceWhy); return jobs::laneFor (in); };
-        mapForWizard (mapDs, opt.jobs, [&] (const juce::StringArray& a) { return runChild (a, opt.timeoutMs); }, laneOfD, prog, opt.probe,
+        mapForWizard (mapDs, opt.jobs, [&] (const juce::StringArray& a)
+                      {   // 14 Oct: a bad shell's plugin is not loaded; a WaveShell load gives up sooner
+                          if (shells.isBad (shellOfId (a[2]))) { ChildResult skipped; skipped.kind = ChildResult::Kind::spawnFailed; skipped.out = "WAVESHELL_SKIPPED"; return skipped; }
+                          return runChild (a, loadTimeoutFor (a[2])); }, laneOfD, prog, opt.probe,
                       [&] (const juce::PluginDescription& d, ChildResult& r)
         {
             const auto uid = juce::String::toHexString (d.uniqueId).toLowerCase();
+            const auto shell = shellOfId (d.fileOrIdentifier);
+            if (r.out == "WAVESHELL_SKIPPED") { early[d.name] = "waves_skipped"; earlyWhy[d.name] = wizroute::wavesSkippedWhy (shell, shells.why (shell)); say ("  " + d.name + ": " + earlyWhy[d.name]); prog.finished (d.name, true); return; }
+            if (shells.report (shell, r.kind == ChildResult::Kind::timedOut, r.kind == ChildResult::Kind::signaled))
+                say ("WIZARD: " + shell + " " + shells.why (shell) + " - its other Waves plugins are skipped this scan (check Waves Central)");
+            if (shell.isNotEmpty() && (r.kind == ChildResult::Kind::timedOut || shells.isBad (shell)) && ! r.cleanExit())
+            { early[d.name] = "waves_skipped"; earlyWhy[d.name] = wizroute::wavesSkippedWhy (shell, shells.why (shell).isNotEmpty() ? shells.why (shell) : juce::String ("did not load")); say ("  " + d.name + ": " + earlyWhy[d.name]); prog.finished (d.name, true); return; }
             if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, d.version)); early[d.name] = "needs_licence"; say ("  " + d.name + ": a window appeared (licence?) - closed, not clicked; not mapped"); prog.finished (d.name, true); return; }
             const auto ps = paramsOfList (r.out);
             if (! r.cleanExit() || ps.empty()) { early[d.name] = r.cleanExit() ? "wont_load" : "crashed"; say ("  " + d.name + ": not mapped (" + (ps.empty() && r.cleanExit() ? juce::String ("no parameters") : r.describe()) + ")"); prog.finished (d.name, true); return; }
@@ -352,7 +380,7 @@ inline int runWizard (const WizardOptions& wo)
     for (const auto& p : toMap)
     {
         const auto& d = plugins[p.i].desc; p.row->setProperty ("map_fp", fpOf (d));
-        if (early.count (d.name)) { p.row->setProperty ("state", early[d.name]); p.row->setProperty ("why", "it could not be mapped (" + early[d.name] + ")"); continue; }
+        if (early.count (d.name)) { p.row->setProperty ("state", early[d.name]); p.row->setProperty ("why", earlyWhy.count (d.name) ? earlyWhy[d.name] : "it could not be mapped (" + early[d.name] + ")"); continue; }
         if (p.d.route == wizroute::Route::measure || p.row->getProperty ("state").toString() == "queued") enqueue (d.name, p.d.category, p.d.passes, p.d.limiterKnown);
     }
     // the signature reads (EJ Map's categorise step, one plugin at a time), cached by plugin_id
@@ -363,13 +391,16 @@ inline int runWizard (const WizardOptions& wo)
     {
         if (wizardStop() != 0) return stoppedInScan ("reading signatures");
         const auto& ir = plugins[p.i]; const auto pid = p.row->getProperty ("plugin_id").toString(); p.row->setProperty ("map_fp", fpOf (ir.desc));
-        if (early.count (ir.desc.name)) { p.row->setProperty ("state", early[ir.desc.name]); p.row->setProperty ("why", "it could not be mapped (" + early[ir.desc.name] + ")"); continue; }
+        if (early.count (ir.desc.name)) { p.row->setProperty ("state", early[ir.desc.name]); p.row->setProperty ("why", earlyWhy.count (ir.desc.name) ? earlyWhy[ir.desc.name] : "it could not be mapped (" + early[ir.desc.name] + ")"); continue; }
         juce::var sig;
         if (cache.hasProperty (pid)) { sig = cache[juce::Identifier (pid)]; say ("  " + ir.desc.name + ": signature reads from categorised.json (not loaded again)"); }
         else
         {
+            if (const auto cshell = shellOfId (ir.desc.fileOrIdentifier); shells.isBad (cshell))
+            {   p.row->setProperty ("state", "waves_skipped"); p.row->setProperty ("why", wizroute::wavesSkippedWhy (cshell, shells.why (cshell))); continue; }
             prog.started (ir.desc.name);
-            const auto r = categoriseOne (catOpt, ir, {}, bundlesAll, catRaw);
+            auto cOpt = catOpt; cOpt.timeoutMs = loadTimeoutFor (ir.desc.fileOrIdentifier);
+            const auto r = categoriseOne (cOpt, ir, {}, bundlesAll, catRaw);
             if (wizardStop() != 0) return stoppedInScan ("reading signatures");   // a read cut short by the stop is never cached
             sig = categorise::rowVar (r); sig.getDynamicObject()->setProperty ("reads_ran", r.measured);
             cache.getDynamicObject()->setProperty (pid, sig); cacheF.replaceWithText (juce::JSON::toString (cache));

@@ -85,6 +85,17 @@ What it says is true of the bundle as built:
 - **The probe** is a background-only agent (`LSBackgroundOnly` + `LSUIElement` in its embedded Info.plist). Measured 14 Oct: the frontmost app stays put while it loads plugins. The windows that do appear are drawn by the plugin or by PACE.
 - Pin WZ-LIC-1.
 
+**3h. WaveShells (Kathy, 14 Oct).**
+- **The shells:** Waves plugins sit inside shared WaveShell bundles. This Mac has only v12 shells: WaveShell2-AU 12.0 holds 589 of the 616 Waves plugins; 12.1 holds 6; WaveShell1-AU 12.6 / 12.4 / 12.5 hold 14 / 3 / 2. Quantum and Spectre (WsFy) are in no shell.
+- **Loads measured:** CLA-76 (m) loads in 3.7 s every time (three in a row), the same as DeEsser. There is no first-load penalty and no v12 / v15 mismatch (no v15 shell is installed).
+  - Waves' licence state can't be read without loading (no `.wlc` files anywhere), but the v12 plugins load licensed.
+- **The guard:**
+  - A WaveShell load gives up after 30 s (the scan's limit is 120 s).
+  - One hang, or two crashes, marks that SHELL bad for the scan. Its other plugins are then skipped without loading and filed `waves_skipped`: "Waves plugins skipped - check Waves Central".
+  - A licence window is not a shell failure; the licence memory (3g) handles it.
+- **The read-back check** now fails on a written control the plugin lacks from the control list alone. CLA-76 (m) v12 has no 'Mix', so its scan went from 12 loads / 49 s to 2 loads / 10 s.
+- Pin WZ-WAVES-1.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

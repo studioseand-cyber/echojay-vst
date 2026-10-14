@@ -147,6 +147,8 @@ inline Seeded seedMockReferences (const juce::File& bundled, const juce::File& d
 // config (server-configurable): reward_minimum (default 5) and once_only (default true: one completed contribution per account AND per
 // Mac; false would allow repeat contributions, and a repeat never earns a second reward). Stub: <work>/server_stub/config.json.
 inline constexpr int kQualifyMinimumDefault = 25;
+// THE TEST BUILD's overrides (Kathy, 14 Oct): only EchoJay Wizard Test switches them on; the beta and the release never read them
+inline bool& testOverrides() { static bool on = false; return on; }
 inline juce::var serverConfig (const juce::File& work)
 {
     auto c = juce::JSON::parse (work.getChildFile ("server_stub/config.json").loadFileAsString());
@@ -155,7 +157,9 @@ inline juce::var serverConfig (const juce::File& work)
     // results must still reach it (the safety floor). An older config's reward_minimum is read as the same number
     const int q = c.isObject() && c.hasProperty ("qualify_minimum") ? (int) c.getProperty ("qualify_minimum", kQualifyMinimumDefault)
                 : c.isObject() && c.hasProperty ("reward_minimum") ? (int) c.getProperty ("reward_minimum", kQualifyMinimumDefault) : kQualifyMinimumDefault;
-    o->setProperty ("qualify_minimum", q); o->setProperty ("reward_minimum", q);
+    // the small-run option (Test build only): test_qualify_minimum replaces the qualify minimum for a short test
+    const int qq = testOverrides() && c.isObject() && c.hasProperty ("test_qualify_minimum") ? (int) c.getProperty ("test_qualify_minimum", q) : q;
+    o->setProperty ("qualify_minimum", qq); o->setProperty ("reward_minimum", qq);
     o->setProperty ("once_only", c.isObject() && c.hasProperty ("once_only") ? (bool) c.getProperty ("once_only", true) : true);
     return v;
 }
@@ -219,7 +223,7 @@ inline int acceptedNew (const juce::File& work, const juce::File& storedZip, con
 // Pausing across days is the same run (the same run id). Only a FINISHED upload is judged for the code, on the merged run.
 inline bool isFinalState (const juce::String& st)
 {   // a final outcome: measured, or skipped for licence / hardware / crash / demo / silent / timeout / won't load / not measurable / custom default
-    static const juce::StringArray k { "measured", "not_measurable", "needs_licence", "needs_hardware", "crashed", "demo", "silent", "wont_load", "custom_default", "timed_out" };
+    static const juce::StringArray k { "measured", "not_measurable", "needs_licence", "needs_hardware", "crashed", "demo", "silent", "wont_load", "custom_default", "timed_out", "waves_skipped" };
     return k.contains (st);
 }
 inline juce::var newRun (const juce::String& runId)

@@ -9946,6 +9946,55 @@ void testWizardCategories()
                && run.contains ("return ! wizroute::paceOptionalVendor (dd.manufacturerName) && paceHeld (dd, bundlesAll, why) && why.startsWith (\"PACE-wrapped\");"),
                "wizard WZ-LIC-1: remembered windows / PACE on a Mac with no iLok skipped unloaded, Melda's optional PACE never, the warning; every window-raising load remembers it (read: " + juce::String ((int) read) + ")");
     }
+    // WZ-TEST-2 THE SMALL RUN (Kathy, 14 Oct, Test build only): test_only_plugins / test_qualify_minimum in the config; the server honours
+    // test_qualify_minimum only with the Test build's overrides on (the beta and release ignore it); README_TEST's ready-made example parses
+    // to the five hostable plugins and a minimum of 3; the default config carries an empty list
+    {
+        using namespace ejmap::wizapp;
+        auto w = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_small_" + juce::String (juce::Random::getSystemRandom().nextInt64())); w.getChildFile ("server_stub").createDirectory();
+        const auto readme = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/README_TEST.md").loadFileAsString();
+        const auto example = readme.fromFirstOccurrenceOf ("```json", false, false).upToFirstOccurrenceOf ("```", false, false);
+        w.getChildFile ("server_stub/config.json").replaceWithText (example);
+        const bool before = ejmap::wizserver::stub::testOverrides();
+        ejmap::wizserver::stub::testOverrides() = false; const int off = (int) ejmap::wizserver::stub::serverConfig (w).getProperty ("qualify_minimum", 0);
+        ejmap::wizserver::stub::testOverrides() = true;  const int on  = (int) ejmap::wizserver::stub::serverConfig (w).getProperty ("qualify_minimum", 0);
+        ejmap::wizserver::stub::testOverrides() = before;
+        const auto names = testOnlyPlugins (w);
+        w.getChildFile ("server_stub/config.json").replaceWithText (defaultTestConfig()); const auto none = testOnlyPlugins (w);
+        const bool defaultParses = juce::JSON::parse (defaultTestConfig()).getProperty ("test_only_plugins", {}).isArray();
+        w.deleteRecursively();
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const bool read = example.contains ("test_only_plugins") && app.contains ("class WizardApplication");   // the control
+        check (read && off == 25 && on == 3 && names == juce::StringArray { "DeEsser (m)", "RDeEsser (m)", "Sibilance (m)", "C1 gate (m)", "TransX Wide (m)" } && none.isEmpty() && defaultParses
+               && app.contains ("if (kTest && c.only.isEmpty()) c.only = wizapp::testOnlyPlugins (c.work);") && app.contains ("wizserver::stub::testOverrides() = true;")
+               && app.indexOf ("wizserver::stub::testOverrides() = true;") > app.indexOf ("inline void seedTestBuild"),
+               "wizard WZ-TEST-2: test_qualify_minimum honoured only with the Test build's overrides (25 off, 3 on); the README example = 5 plugins + minimum 3 (read: " + juce::String ((int) read) + ")");
+    }
+    // WZ-WAVES-1 THE WAVESHELL GUARD (Kathy, 14 Oct): a plugin's shell read from its bundle; one hang (or two crashes) marks the SHELL bad for
+    // the scan and its other plugins are skipped unloaded ("Waves plugins skipped - check Waves Central"); a WaveShell load gives up after
+    // 30 s (measured: 3.7 s a load, the first no slower); the read-back check fails on a missing written control from the list alone
+    // (CLA-76 (m): 12 loads / 49 s -> 2 loads / 10 s). Text pins (with a control): the map runner skips a bad shell before any load
+    {
+        using namespace ejmap::wizroute;
+        ShellGuard g; const juce::String w2 = "WaveShell2-AU 12.0", w1 = "WaveShell1-AU 12.6";
+        const bool cleanOk = ! g.report (w2, false, false) && ! g.isBad (w2);
+        const bool crash1 = ! g.report (w2, false, true) && ! g.isBad (w2), crash2 = g.report (w2, false, true) && g.isBad (w2) && g.why (w2) == "crashed twice while loading";
+        const bool hang = g.report (w1, true, false) && g.isBad (w1) && g.why (w1) == "did not finish loading" && ! g.report (w1, true, false);
+        std::vector<ejmap::wizard::Write> writes { { "Ratio", -1, 0.5, {} }, { "Mix", -1, 1.0, {} } };
+        const std::map<juce::String, int> v12 { { "Ratio", 0 }, { "Input", 1 } }, v15 { { "Ratio", 0 }, { "Mix", 3 } };
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const bool read = run.contains ("inline int runWizard");   // the control
+        const auto qc = run.fromFirstOccurrenceOf ("inline wizard::Readback quickCheck", false, false).upToFirstOccurrenceOf ("return wizard::readback (writes, names, observed);", false, false);
+        check (read && waveShellOf ("WaveShell2-AU 12.0.component") == w2 && waveShellOf ("FabFilter Pro-Q 3.component").isEmpty() && ! ShellGuard().isBad ({})
+               && cleanOk && crash1 && crash2 && hang && kWaveShellLoadTimeoutMs == 30000
+               && missingWrittenControl (writes, v12) == "Mix" && missingWrittenControl (writes, v15).isEmpty()
+               && ejmap::wizard::summaryLine ({ { "waves_skipped", 4 } }).contains ("4 Waves plugins skipped - check Waves Central")
+               && ejmap::wizserver::stub::isFinalState ("waves_skipped")
+               && qc.indexOf ("wizroute::missingWrittenControl (writes, names)") >= 0 && qc.indexOf ("wizroute::missingWrittenControl (writes, names)") < qc.indexOf ("--text-at-norms")
+               && run.contains ("if (shells.isBad (shellOfId (a[2]))) { ChildResult skipped;") && run.contains ("return runChild (a, loadTimeoutFor (a[2])); }")
+               && run.contains ("if (const auto cshell = shellOfId (ir.desc.fileOrIdentifier); shells.isBad (cshell))"),
+               "wizard WZ-WAVES-1: shell from the bundle, one hang / two crashes mark it bad and its plugins are skipped unloaded, 30 s WaveShell limit, the read-back's missing-control short cut (read: " + juce::String ((int) read) + ")");
+    }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files
     {

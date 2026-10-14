@@ -158,7 +158,17 @@ inline int seedTestServer (const juce::File& bundledDb, const juce::File& stubDb
 inline juce::String defaultTestConfig()
 {
     return "{\n  \"qualify_minimum\": 25,\n  \"once_only\": true,\n"
-           "  \"_help\": \"qualify_minimum: new plugins needed at scan time, and accepted results needed for the free month. once_only: one completed contribution per account and per Mac. Edit, save, reopen the wizard.\"\n}\n";
+           "  \"test_only_plugins\": [],\n"
+           "  \"_help\": \"qualify_minimum: new plugins needed at scan time, and accepted results needed for the free month. once_only: one completed contribution per account and per Mac. "
+           "test_only_plugins (test build only): plugin names - the wizard scans and measures only these (empty = the whole Mac). test_qualify_minimum (test build only, optional): replaces qualify_minimum for a small run. Edit, save, reopen the wizard.\"\n}\n";
+}
+// THE SMALL RUN (Kathy, 14 Oct, Test build only): "test_only_plugins" in the config - the scan and the measuring see only those (the
+// engine's --only); an empty or missing list means the whole Mac
+inline juce::StringArray testOnlyPlugins (const juce::File& work)
+{
+    juce::StringArray n; const auto c = juce::JSON::parse (work.getChildFile ("server_stub/config.json").loadFileAsString());
+    if (const auto* a = c.getProperty ("test_only_plugins", {}).getArray()) for (const auto& x : *a) if (x.toString().trim().isNotEmpty()) n.addIfNotAlreadyThere (x.toString().trim());
+    return n;
 }
 inline bool ensureTestConfig (const juce::File& work)
 {

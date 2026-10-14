@@ -73,6 +73,7 @@ inline void seedTestBuild (const Config& c)
 {
     const auto snap = juce::File::getSpecialLocation (juce::File::currentApplicationFile).getChildFile ("Contents/Resources/beta_db");
     wizapp::seedTestServer (snap, c.db); wizapp::ensureTestConfig (c.work);
+    wizserver::stub::testOverrides() = true;   // test_qualify_minimum is honoured (only here)
 }
 // THE MAC (13 Oct, jobs by Mac): performance cores (Apple silicon's perflevel0; an Intel Mac's physical cores) and the memory free now
 inline int performanceCores()
@@ -121,6 +122,7 @@ Config parseArgs (const juce::StringArray& a)
         wizserver::stub::seedMockReferences (res, c.db);
     }
     if (kTest) seedTestBuild (c);
+    if (kTest && c.only.isEmpty()) c.only = wizapp::testOnlyPlugins (c.work);   // 14 Oct: the small run (test_only_plugins)
     return c;
 }
 
@@ -222,6 +224,7 @@ public:
             logLine ("launch: " + juce::String (n) + " kept upload(s) sent");
             w.uploaded = (bool) appState().getProperty ("uploaded", false); w.rewarded = cfg.work.getChildFile ("reward.json").existsAsFile();
         }
+        if (kTest && ! cfg.only.isEmpty()) logLine ("small run (test_only_plugins): " + cfg.only.joinIntoString (", ") + " | qualify minimum " + juce::String ((int) wizserver::stub::serverConfig (cfg.work).getProperty ("qualify_minimum", 0)));
         logLine ("jobs: " + juce::String (cfg.jobs) + " (" + juce::String (performanceCores()) + " performance cores, " + juce::String (availableMemoryBytes() / 1073741824.0, 1) + " GB free)");
         show (wizapp::openOn (w, kMode));
         startTimer (250);
@@ -484,7 +487,7 @@ private:
     {   // RESET TEST (Kathy, 14 Oct): the stub server's account / device / reward records and the whole work folder, keeping config.json;
         // the snapshot seeded again - so once-only and the reward can be tried again
         if (! kTest || engine.running()) return;
-        const int n = wizapp::resetTest (cfg.work); cfg.work.createDirectory(); seedTestBuild (cfg);
+        const int n = wizapp::resetTest (cfg.work); cfg.work.createDirectory(); seedTestBuild (cfg); cfg.only = wizapp::testOnlyPlugins (cfg.work);
         account = juce::var(); receipt = juce::var(); crashed.clear(); lastSendKept = false; lastCheckpointSeq = 0; email.clear(); password.clear();
         logLine ("reset test: " + juce::String (n) + " item(s) cleared, config.json kept, the snapshot seeded again");
         show (Screen::welcome);

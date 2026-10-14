@@ -289,6 +289,7 @@ inline juce::String summaryLine (const std::map<juce::String, int>& n, bool sent
     if (get ("demo")) parts.add (plural (get ("demo"), "plugin is a demo version and was skipped", "plugins are demo versions and were skipped"));
     if (get ("custom_default")) parts.add (plural (get ("custom_default"), "plugin opens with a custom default and was not measured", "plugins open with a custom default and were not measured"));
     if (get ("pending_review")) parts.add (plural (get ("pending_review"), "was already sent for review by someone else", "were already sent for review by someone else"));
+    if (get ("waves_skipped")) parts.add (plural (get ("waves_skipped"), "Waves plugin skipped - check Waves Central", "Waves plugins skipped - check Waves Central"));
     if (get ("not_reached")) parts.add (plural (get ("not_reached"), "plugin was not reached before you finished", "plugins were not reached before you finished"));
     if (get ("identifying")) parts.add (juce::String (get ("identifying")) + " being identified");
     return parts.isEmpty() ? juce::String ("nothing to do") : parts.joinIntoString (", ");

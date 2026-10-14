@@ -41,6 +41,7 @@ If step 2 says **"Operation not permitted"**, macOS has already tried to open th
 - **The order:** read the short consent paragraph, tick **I agree**, and press Continue. The wizard then checks your plugins and measures the ones EchoJay doesn't know yet.
 - **Leave it running, or pause.** It runs by itself in the background - best left running overnight - and the Mac stays awake. **Pause - carry on later** stops it; opening the wizard again carries on. Every pause (and regular saves while it runs) rewrites the results file on your Desktop, so **even if you stop early, email the file on your Desktop**. **Finish and save what's done** ends the run early.
 - **Licence windows:** some plugins may briefly show a licence or sign-in window. That's normal - please don't click it; the wizard closes it, moves on, and won't load that plugin again.
+- **"Waves plugins skipped - check Waves Central"** means one of Waves' shared plugin files didn't load, so the wizard skipped its other Waves plugins rather than wait on each. Open Waves Central, check the plugins and licences there, then open the wizard again.
 - **Free space:** it needs at least 3 GB free.
 
 **4. Send the results.** At the end it says "Your results are ready" and saves **EchoJay-Wizard-results-<date>.zip** on your Desktop.

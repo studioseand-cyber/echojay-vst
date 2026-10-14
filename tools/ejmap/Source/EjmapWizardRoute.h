@@ -21,6 +21,7 @@
 #include "EjmapWizardServer.h"
 #include <juce_core/juce_core.h>
 #include <set>
+#include <mutex>
 
 namespace ejmap::wizroute
 {
@@ -207,6 +208,37 @@ inline void rememberLicenceWindow (const juce::File& f, const juce::String& plug
 {
     auto s = loadLicenceMemory (f); if (! s.insert (pluginId.toLowerCase()).second) return;
     juce::Array<juce::var> a; for (const auto& x : s) a.add (x); f.replaceWithText (juce::JSON::toString (juce::var (a)));
+}
+// THE WAVESHELL GUARD (Kathy, 14 Oct). Waves plugins live inside shared WaveShell bundles (this Mac: WaveShell2-AU 12.0 holds 589 of 616).
+// Measured here: a load takes 3.7 s, the first as quick as the rest - so no longer first-load limit is needed. But if a SHELL hangs or
+// fails (a broken install, a licence check that never answers), every one of its plugins would wait the full limit. So: a WaveShell load
+// gives up after kWaveShellLoadTimeoutMs; one hang, or two crashes, marks the SHELL bad for this scan and its other plugins are skipped
+// unloaded - "Waves plugins skipped - check Waves Central". A licence WINDOW is not a shell failure (the licence memory handles it).
+inline constexpr int kWaveShellLoadTimeoutMs = 30000;
+inline juce::String waveShellOf (const juce::String& bundleFileName)
+{ return bundleFileName.startsWithIgnoreCase ("WaveShell") ? bundleFileName.upToLastOccurrenceOf (".component", false, false) : juce::String(); }
+inline juce::String wavesSkippedWhy (const juce::String& shell, const juce::String& what) { return "Waves plugins skipped - check Waves Central (" + shell + " " + what + ")"; }
+struct ShellGuard
+{
+    bool isBad (const juce::String& shell) { std::lock_guard<std::mutex> g (m); return shell.isNotEmpty() && bad.count (shell) > 0; }
+    juce::String why (const juce::String& shell) { std::lock_guard<std::mutex> g (m); const auto it = bad.find (shell); return it == bad.end() ? juce::String() : it->second; }
+    // a load in the shell ended: returns true when this marks the shell bad (one hang, or the second crash)
+    bool report (const juce::String& shell, bool timedOut, bool crashed)
+    {
+        if (shell.isEmpty() || (! timedOut && ! crashed)) return false;
+        std::lock_guard<std::mutex> g (m); if (bad.count (shell)) return false;
+        if (timedOut) { bad[shell] = "did not finish loading"; return true; }
+        if (++crashes[shell] >= 2) { bad[shell] = "crashed twice while loading"; return true; }
+        return false;
+    }
+    std::mutex m; std::map<juce::String, int> crashes; std::map<juce::String, juce::String> bad;
+};
+// THE READ-BACK CHECK's short cut (14 Oct, CLA-76 (m): 12 loads, 49 s): a written control the plugin does not have fails the check from the
+// control list alone - no read loads
+inline juce::String missingWrittenControl (const std::vector<wizard::Write>& writes, const std::map<juce::String, int>& names)
+{
+    for (const auto& w : writes) if (! names.count (w.control)) return w.control;
+    return {};
 }
 // the Tracker's kind for a Phase B category (its per-plugin seconds)
 inline juce::String kindOf (const juce::String& phaseBCategory) { return phaseBCategory == "wizard" ? juce::String ("compressor") : phaseBCategory == "wizard_eq" ? juce::String ("eq") : phaseBCategory; }
