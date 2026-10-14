@@ -613,3 +613,79 @@ level-matched value" means the same thing on both.
   the Link - read back from the registry, not from the V2's own copy.
 - **O6** the agent's `set_rack_out` and the knob write the **same** value: set by agent, read by knob, and
   the reverse.
+
+---
+
+# 7. A PLAIN CHAT TURN THAT FAILS AFTER THE WINDOW CLOSES IS SILENCE BY CONSTRUCTION
+
+**Not in the logs.** Sean's turn is in no log file: the last chat send is 17:56 and the logs run to 18:02
+with nothing after 18:00. So this was found in the code instead - which turned out to be enough, because the
+cause is structural.
+
+## First, a correction: the rig's close-mid-reply row is NOT agent-only
+
+`R4` runs `workOn(linkUid)` and then `agentChip(false)` before it sends: it is a **plain chat turn on a
+Link's chat**, closed mid-reply, and it passes against the real server. So Sean's configuration is covered
+and the handover mechanism works. What R4 does not cover is the turn **failing** - and that is the whole bug.
+
+## The cause: the finalise hook is a SUCCESS-ONLY notification
+
+The 13 Oct fix was right as far as it went - the stream is **parked on the processor, not cancelled**
+(`PluginEditor.cpp:3301`), and `onChatTurnFinalised` keeps the reply for the next window. But:
+
+```
+EchoJayAPI.cpp:1772      notifyChatTurnFinalised(reply, true);
+EchoJayAPI.cpp:2330      notifyChatTurnFinalised(obj->getProperty("reply").toString(), true);
+```
+
+**Those are the only two call sites, and both pass `true`.** Every failure path - a stream ending without a
+done frame, a non-2xx, the 60 s timeout, a dropped socket - returns to the **editor's** own callbacks, which
+are `SafePointer`-guarded and no-op once the window is gone. So a parked turn that fails notifies **nobody**:
+
+- no reply, because there is none;
+- no error, because the only listener left was never told;
+- no "interrupted" note, because nothing records one.
+
+Silence, for ever, exactly as Sean describes. And the processor's own guard -
+
+```cpp
+if (! success || reply.trim().isEmpty()) return;    // nothing worth keeping
+```
+
+\- is **unreachable dead code for the failure case**: it can never be called with `success == false`. It
+reads like a decision ("nothing worth keeping") and is in fact a branch nothing can enter.
+
+## The fix
+
+1. **`notifyChatTurnFinalised(text, false)` from EVERY terminal failure path** of both transports - the
+   streaming one and `/api/chat` - carrying the reason. One notifier, all outcomes, which is what the
+   comment above it already claims ("the one place a finished turn can be caught no matter what happened to
+   the window").
+2. **The `! success` branch records an INTERRUPTED row** for that chatId instead of returning - the user's
+   own message is already in history, so the row is "this answer didn't arrive" plus **Retry**. A partial
+   reply (deltas arrived, then the socket died) keeps what came and marks it unfinished: half an answer is
+   worth more than none, and must not be mistaken for a whole one.
+3. **Retry re-sends the user's message** on that chat - the agent client already has `retry()` for the same
+   situation, so the shape exists.
+4. **Distinguish a user-cancelled turn** (they pressed Stop) from a failed one: cancelled needs no row.
+
+**Sean's rule, in one line: never silence.** Every turn ends in a reply, an error, or an interrupted row.
+
+## Rig rows
+
+- **C11** the mock **fails** a held turn after the window closes → on reopen the row reads interrupted and
+  offers Retry. (Today's R4 only proves the SUCCESS handover; this is the row that was missing, and it is
+  the same lesson as the vacuous passes: the failure path had nowhere to go and nothing asked.)
+- **C12** Retry on that row re-sends and the reply lands in the same chat.
+- **C13** a **partial** reply (deltas, then a cut) keeps the partial text and marks it unfinished.
+- **C14** a turn the user **stopped** leaves no interrupted row.
+
+## Item 4 corroborated by Sean
+
+> *"after Sean closed and reopened the main window, selecting the Kick's Link now shows both slots, so the
+> stale view only clears on reopen."*
+
+That is exactly the diagnosis: the cache feeder is gated on the Chain tab, and the forced pass at
+`PluginEditor.cpp:12024` runs on entering chain mode / a new editor. A reopen is the only thing that was
+clearing it. It also means the K1 row must select the Link **without** reopening the window, or it would
+pass on today's build.
