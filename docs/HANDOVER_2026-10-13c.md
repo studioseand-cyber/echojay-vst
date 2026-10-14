@@ -103,4 +103,20 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
 - **The beta DMG** was rebuilt at 8332b253: sha 51cb06442e9aba1b, verify VALID; README_BETA carries the licence line.
 - **Housekeeping, 14 Oct:** this Mac hit its process limit. Pioneer's FwUpdateManagerd had 2273 zombie children; it was stopped with Kathy's OK.
 
+## 14 Oct addendum 4: the small run, and WaveShells (wizard 46255daa)
+- **Small run (Test build only):** `test_only_plugins` and `test_qualify_minimum` in `server_stub/config.json`. README_TEST has the example (DeEsser, RDeEsser, Sibilance, C1 gate, TransX Wide + minimum 3).
+  - Rehearsed with exactly that config: a finish and the code in 7.5 min, 5/5 accepted.
+  - The beta and release ignore both keys: the server override is switched on only by the Test build, and the beta binary doesn't contain the code.
+  - Pin WZ-TEST-2.
+- **WaveShells** (WIZARD_SPEC 3h, pin WZ-WAVES-1):
+  - **The shells:** only v12 shells here; WaveShell2-AU 12.0 holds 589 of 616 Waves plugins.
+  - **CLA-76 (m)** loads in 3.7 s every time. There is no hang, no first-load penalty, no shell mismatch and no licence window on this Mac.
+  - **The 49 s scan** was the read-back check loading it per control; it is now 10 s via the missing-control short cut.
+  - **The guard:** a 30 s WaveShell limit; one hang or two crashes skips the whole shell's plugins for the scan with "Waves plugins skipped - check Waves Central". Rehearsed with a forced limit.
+  - **Kathy's message arrived as item "5." alone; items 1-4 never reached this session.**
+- **DMGs at 46255daa:**
+  - Test: `~/Desktop/EchoJay-Wizard-Test-2026-10-14/` (sha 6f575a5e1d4fb542).
+  - Beta: sha 691c6442bbd62315.
+  - Both are signed and verify VALID.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
