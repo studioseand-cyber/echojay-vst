@@ -171,19 +171,53 @@ inline Screen afterScan (const Eligibility& e) { return e.already ? Screen::alre
 // already taken part loads nothing at all (13 Oct, rehearsal)
 inline Screen afterConsent (const Eligibility& e) { return e.already ? Screen::alreadyDone : Screen::scan; }
 inline Copy alreadyDoneCopy() { return { "You've already taken part - thank you", "This account or this Mac has already contributed its results, so there's nothing to run.", "Done", {} }; }
-// 13 Oct (Kathy, the reward rule): the count and the real time, and what earns the month - the whole run; pausing is always fine.
-// etaPhrase: wizapp::etaPhrase of the scan's per-category estimate ("about 27 hours")
-inline Copy scanDoneCopy (Mode m, const Eligibility& e, const juce::String& etaPhrase)
+// NO TIMES ON SCREEN (Kathy, 14 Oct): hours scare people off and an estimate can be wrong - the scan-done words say what happens, never how
+// long. The estimate stays internal (wizard_state.json to_measure_eta_s, progress.json eta_s, the logs)
+inline juce::String scanDoneBody (Mode m, int count)
+{
+    const auto n = juce::String (count) + (count == 1 ? " plugin" : " plugins");
+    const juce::String body = "We found " + n + " we haven't mapped yet. Measuring them runs by itself in the background - it's best left running overnight, and you can pause any time and carry on later.";
+    return m == Mode::normal ? body + " Finish them all to get your free month." : body;
+}
+inline Copy scanDoneCopy (Mode m, const Eligibility& e)
 {
     const auto n = juce::String (e.count) + (e.count == 1 ? " plugin" : " plugins");
-    const auto line = n + " to measure - " + etaPhrase + ".";
     if (m == Mode::beta)
-        return e.count > 0 ? Copy { "You have " + n + " we don't have yet", line + " You can pause and carry on any time - and even if you stop early, email the file on your Desktop.", "Start", {} }
+        return e.count > 0 ? Copy { "Ready to measure", scanDoneBody (m, e.count), "Start", {} }
                            : Copy { "Thanks - your plugins are already mapped", "There's nothing to measure right now.", "Done", {} };
-    if (e.eligible) return { "You have " + n + " we don't have yet", line + " Finish them all to get your free month; you can pause and carry on any time.", "Start", {} };
+    if (e.eligible) return { "Ready to measure", scanDoneBody (m, e.count), "Start", {} };
     // below the qualify minimum (Kathy, 13 Oct): no reward; when there is something new, say how much and that they may still contribute
     if (e.count > 0) return { "Thanks - your plugins are already mapped", "You have " + n + " we don't have yet - the free month needs " + juce::String (e.minimum) + " or more. You can still contribute them.", "Done", "Contribute anyway (no reward)" };
     return { "Thanks - your plugins are already mapped", "So there's nothing to do right now.", "Done", {} };
+}
+// the Measuring screen's words and its bar's right side: n of N measurements (a demo check is not one) - never time left
+inline juce::String measuringText() { return "Leave it running - the Mac stays awake. You can pause and carry on any time."; }
+inline juce::String measuringCount (const juce::var& progress)
+{
+    const auto mc = progress.getProperty ("measurements", {});
+    if (! mc.isObject() || (int) mc.getProperty ("total", 0) <= 0) return {};
+    return juce::String ((int) mc.getProperty ("done", 0)) + " of " + juce::String ((int) mc.getProperty ("total", 0));
+}
+inline juce::String pausedText (Mode m, bool keptOffline)
+{
+    if (m == Mode::beta) return "It carries on where it stopped - open the wizard any time. Your results so far are in the file on your Desktop: even if you stop early, email it.";
+    return keptOffline ? "It carries on where it stopped - open the wizard any time. You're offline: what's measured so far is saved and will be sent when you're back online. The free month comes when the full run is done."
+                       : "It carries on where it stopped - open the wizard any time. What's measured so far has been sent; the free month comes when the full run is done.";
+}
+// a user-facing string that tells a time (the 14 Oct rule's check): a time unit (hour, minute, min, sec, second, day), or "about" / "left"
+// next to a number. "best left running overnight" tells none
+inline bool tellsATime (const juce::String& s)
+{
+    auto w = juce::StringArray::fromTokens (s.toLowerCase(), " -.,;:()/", ""); w.removeEmptyStrings();
+    static const juce::StringArray units { "hour", "hours", "h", "minute", "minutes", "min", "mins", "sec", "secs", "second", "seconds", "day", "days" };
+    auto isNum = [] (const juce::String& x) { return x.isNotEmpty() && x.containsOnly ("0123456789"); };
+    for (int i = 0; i < w.size(); ++i)
+    {
+        if (units.contains (w[i])) return true;
+        if (w[i] == "about" && i + 1 < w.size() && isNum (w[i + 1])) return true;
+        if (w[i] == "left" && i > 0 && (isNum (w[i - 1]) || units.contains (w[i - 1]))) return true;
+    }
+    return false;
 }
 // after measuring: the upload (normal) or the saved file (beta: no upload, no promo)
 inline Screen afterMeasure (Mode m) { return m == Mode::beta ? Screen::betaSaved : Screen::upload; }
@@ -236,14 +270,6 @@ inline int measuredSoFar (const juce::var& progress)
 inline juce::String measuredSoFarWords (int n) { return n == 1 ? juce::String ("1 measured so far") : juce::String (n) + " measured so far"; }
 // the Send-what's-done button is live only once the engine is measuring (a finish while it still lists / reads signatures would pack nothing)
 inline bool finishAvailable (const juce::var& progress) { return progress.getProperty ("stage", "").toString() == "Measuring"; }
-// the estimate in words a person reads: minutes, hours, then days past 36 h
-inline juce::String etaPhrase (double s)
-{
-    if (s < 0.0) return "time unknown";
-    if (s < 3600.0) return "about " + juce::String (juce::jmax (1, (int) std::ceil (s / 60.0))) + " min";
-    if (s < 36.0 * 3600.0) { const int h = juce::roundToInt (s / 3600.0); return "about " + juce::String (h) + (h == 1 ? " hour" : " hours"); }
-    return "about " + juce::String (juce::roundToInt (s / 86400.0)) + " days";
-}
 // THE QUIET CHECKPOINT (Kathy, 13 Oct): every ~60 min while measuring, what is done is packed (release: uploaded; beta: the Desktop file)
 // a checkpoint the app has not handled yet: its time stamp differs from the last one handled (kept in app_state across launches)
 inline bool isNewCheckpoint (const juce::String& at, const juce::String& lastHandledAt) { return at.isNotEmpty() && at != lastHandledAt; }

@@ -2,7 +2,7 @@
   EchoJay Wizard - the window app (docs/WIZARD_SPEC.md, Kathy 11 Oct; feat/ejmap-wizard). A separate Mac app, nothing to do with the
   plugin: plain window, the EchoJay logo, one step at a time.
 
-    Welcome + sign in -> Scan (a Logic-style bar, each plugin's name as it is checked) -> "N plugins we don't have yet - about X"
+    Welcome + sign in -> Scan (a Logic-style bar, each plugin's name as it is checked) -> "We found N plugins we haven't mapped yet" (14 Oct: no times on screen)
     -> Measuring (the plugin's name, time left; the Mac kept awake; closing pauses, reopening carries on) -> Upload -> Reward.
     A wizard that went down with a plugin loaded says so on the next launch, skips that plugin for good and carries on.
 
@@ -341,7 +341,7 @@ private:
                 const auto ws = juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString());
                 const double eta = (double) ws.getProperty ("to_measure_eta_s", 0.0);   // the per-category estimate (measured seconds once any exist, --jobs aware)
                 const auto el = wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString()));
-                copy (wizapp::scanDoneCopy (kMode, el, wizapp::etaPhrase (eta)));
+                copy (wizapp::scanDoneCopy (kMode, el));   // 14 Oct: no time on screen - the estimate is only logged
                 logLine ("scan done: " + juce::String (el.count) + " to measure, estimate " + juce::String (eta, 0) + " s at --jobs " + juce::String (cfg.jobs));
                 break;
             }
@@ -355,16 +355,14 @@ private:
             case Screen::measuring:
             {
                 const auto ch = wizapp::measuringChoices (kMode);
-                title = "Measuring"; text = "Each plugin takes a few minutes. Leave it running - the Mac stays awake. You can pause and carry on any time.";
+                title = "Measuring"; text = wizapp::measuringText();
                 showBar = true; barValue = 0.0; barLeft = "Getting ready"; barRight = {}; setState ("measure_started", true); finishing = false; pausing = false;
                 primary.setButtonText (ch.pause); primary.setVisible (true); secondary.setButtonText (ch.send); secondary.setVisible (true); secondary.setEnabled (false);
                 choiceLine = ch.line; soFar = wizapp::measuredSoFarWords (0);
                 startEngine (true); break;
             }
             case Screen::paused:
-                title = "Paused"; text = kMode == wizapp::Mode::beta ? "It carries on where it stopped - open the wizard any time. Your results so far are in the file on your Desktop: even if you stop early, email it."
-                                                                     : lastSendKept ? "It carries on where it stopped - open the wizard any time. You're offline: what's measured so far is saved and will be sent when you're back online. The free month comes when the full run is done."
-                                                                                    : "It carries on where it stopped - open the wizard any time. What's measured so far has been sent; the free month comes when the full run is done.";
+                title = "Paused"; text = wizapp::pausedText (kMode, lastSendKept);
                 primary.setButtonText ("Carry on"); primary.setVisible (true); secondary.setButtonText ("Quit"); secondary.setVisible (true); break;
             case Screen::upload:
                 title = "Sending your results"; text = "Just the measurements - no audio, no plugin files, nothing personal.";
@@ -556,7 +554,7 @@ private:
             handleCheckpoint();   // 13 Oct: the hourly checkpoint, as soon as the engine has packed it
             if (pausing) { barLeft = "Pausing - saving what's done"; barRight = {}; }
             else if (finishing && stage != "Packing" && stage != "Done") { barLeft = kMode == wizapp::Mode::beta ? "Saving what's measured" : "Sending what's measured"; barRight = {}; }
-            else if (stage == "Measuring") { barValue = juce::jlimit (0.0, 1.0, (pct - 15.0) / 82.0); barLeft = cur.isNotEmpty() ? cur : "Measuring"; barRight = p.getProperty ("eta_words", "").toString(); }
+            else if (stage == "Measuring") { barValue = juce::jlimit (0.0, 1.0, (pct - 15.0) / 82.0); barLeft = cur.isNotEmpty() ? cur : "Measuring"; barRight = wizapp::measuringCount (p); }   // 14 Oct: n of N, never time left
             else if (stage == "Packing" || stage == "Done") { barValue = 1.0; barLeft = "Packing your results"; barRight = {}; }
             else { barValue = 0.0; barLeft = "Getting ready"; barRight = {}; }
         }

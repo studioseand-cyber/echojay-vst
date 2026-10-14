@@ -9689,16 +9689,33 @@ void testWizardCategories()
         check (read && loop.contains ("if (wizardStop() != 0) { pbCode = 130; break; }") && run.contains ("return diskStopped || wizardStop() != 0; };"),
                "wizard WZ-FIN-3: the stop is read before each measuring pass and by Phase B's own stop test (read: " + juce::String ((int) read) + ")");
     }
-    // WZ-TIME-1 THE SCAN-DONE WORDS (Kathy, 13 Oct): the count, the real time, and what earns the month; the beta says the Desktop file
+    // WZ-NOTIME-1 NO TIMES ON SCREEN (Kathy, 14 Oct): every user-facing string, both builds, tells no time (no hours / minutes / "about" /
+    // "left"); the scan-done words are Kathy's; the Measuring bar's right side is n of N. Text pins (with a control): the app never draws
+    // an estimate, the README says none
     {
         using namespace ejmap::wizapp;
-        Eligibility el; el.eligible = true; el.count = 625;
-        const double t = 98513.0;
-        check (scanDoneCopy (Mode::normal, el, etaPhrase (t)).text == "625 plugins to measure - about 27 hours. Finish them all to get your free month; you can pause and carry on any time."
-               && scanDoneCopy (Mode::beta, el, etaPhrase (t)).text == "625 plugins to measure - about 27 hours. You can pause and carry on any time - and even if you stop early, email the file on your Desktop."
-               && etaPhrase (1200.0) == "about 20 min" && etaPhrase (5.0 * 3600.0) == "about 5 hours" && etaPhrase (36.0 * 3600.0) == "about 2 days"
-               && ! scanDoneCopy (Mode::beta, el, "x").text.contains ("pauses it") && ! scanDoneCopy (Mode::normal, el, "x").text.contains ("pauses it"),
-               "wizard WZ-TIME-1: '625 plugins to measure - about 27 hours. Finish them all to get your free month; you can pause and carry on any time.'");
+        Eligibility el; el.eligible = true; el.count = 625; Eligibility low; low.count = 4; low.minimum = 25; Eligibility none;
+        juce::StringArray shown;
+        for (auto m : { Mode::normal, Mode::beta })
+        {
+            for (const auto& e : { el, low, none }) { const auto c = scanDoneCopy (m, e); shown.add (c.title); shown.add (c.text); shown.add (c.primary); shown.add (c.secondary); }
+            const auto ch = measuringChoices (m); shown.add (ch.pause); shown.add (ch.send); shown.add (ch.line);
+            shown.add (pausedText (m, false)); shown.add (pausedText (m, true)); shown.add (consentText (m));
+        }
+        shown.add (measuringText()); shown.add (stoppedNote()); shown.add (alreadyDoneCopy().text); shown.add (measuredSoFarWords (12));
+        shown.add (measuringCount (juce::JSON::parse ("{\"measurements\": {\"done\": 3, \"total\": 649}}")));
+        juce::StringArray timed; for (const auto& x : shown) if (tellsATime (x)) timed.add (x);
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto readme = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/README_BETA.md").loadFileAsString();
+        const bool read = app.contains ("class WizardApplication") && readme.contains ("EchoJay Wizard Beta");   // the control
+        juce::String readmeTimed; for (const auto& l : juce::StringArray::fromLines (readme)) if (l.startsWith ("- **") && tellsATime (l)) readmeTimed << l.substring (0, 60) << " | ";
+        check (read && timed.isEmpty() && tellsATime ("about 27 hours") && tellsATime ("about 2 min left") && tellsATime ("3 days") && tellsATime ("about 20") && tellsATime ("under a minute left")
+               && ! tellsATime ("it's best left running overnight") && ! tellsATime ("you can pause any time")
+               && scanDoneCopy (Mode::normal, el).text == "We found 625 plugins we haven't mapped yet. Measuring them runs by itself in the background - it's best left running overnight, and you can pause any time and carry on later. Finish them all to get your free month."
+               && scanDoneCopy (Mode::beta, el).text == "We found 625 plugins we haven't mapped yet. Measuring them runs by itself in the background - it's best left running overnight, and you can pause any time and carry on later."
+               && measuringCount (juce::JSON::parse ("{\"measurements\": {\"done\": 3, \"total\": 649}}")) == "3 of 649"
+               && ! app.contains ("eta_words") && ! app.contains ("etaWords") && ! app.contains ("a few minutes") && readmeTimed.isEmpty(),
+               "wizard WZ-NOTIME-1: no user-facing time in either build (" + juce::String (shown.size()) + " strings; timed: " + timed.joinIntoString (" / ") + "; README: " + readmeTimed + "), Kathy's scan-done words, Measuring 'n of N' (read: " + juce::String ((int) read) + ")");
     }
     // WZ-REWARD (Kathy, 13 Oct): THE SERVER DECIDES, on the MERGED RUN. Each case is a fresh server (its own stub folder); the uploads are real
     // zips whose drafts are the evidence (acceptedNew), merged by run id + plugin; the qualify minimum is the default 25
@@ -9909,10 +9926,10 @@ void testWizardCategories()
     {
         using namespace ejmap::wizapp;
         Eligibility el; el.eligible = true; el.count = 7; Eligibility ne; ne.count = 2; ne.minimum = 25; Eligibility none; Eligibility al; al.already = true;
-        const auto ce = scanDoneCopy (Mode::normal, el, "about 30 min"), cn = scanDoneCopy (Mode::normal, ne, "about 5 min"), c0 = scanDoneCopy (Mode::normal, none, ""), cb = scanDoneCopy (Mode::beta, el, "about 30 min");
+        const auto ce = scanDoneCopy (Mode::normal, el), cn = scanDoneCopy (Mode::normal, ne), c0 = scanDoneCopy (Mode::normal, none), cb = scanDoneCopy (Mode::beta, el);
         auto rc = [] (bool ok) { auto* o = new juce::DynamicObject(); o->setProperty ("reward_eligible", ok); return juce::var (o); };
         const juce::var code (new juce::DynamicObject());
-        check (ce.title == "You have 7 plugins we don't have yet" && ce.text == "7 plugins to measure - about 30 min. Finish them all to get your free month; you can pause and carry on any time." && ce.primary == "Start" && ce.secondary.isEmpty()
+        check (ce.title == "Ready to measure" && ce.text.startsWith ("We found 7 plugins we haven't mapped yet.") && ce.text.endsWith ("Finish them all to get your free month.") && ce.primary == "Start" && ce.secondary.isEmpty()
                && cn.title == "Thanks - your plugins are already mapped" && cn.text == "You have 2 plugins we don't have yet - the free month needs 25 or more. You can still contribute them." && cn.primary == "Done" && cn.secondary == "Contribute anyway (no reward)"
                && c0.text == "So there's nothing to do right now."
                && c0.secondary.isEmpty() && ! cb.text.contains ("free month") && cb.primary == "Start"

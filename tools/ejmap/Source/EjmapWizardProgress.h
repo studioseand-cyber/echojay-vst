@@ -301,7 +301,10 @@ private:
         auto* st = new juce::DynamicObject(); st->setProperty ("done", done); st->setProperty ("to_do", todo); st->setProperty ("total", (int) items_.size()); o->setProperty ("stage_counts", juce::var (st));
         o->setProperty ("problems", problems_);
         {   // 14 Oct: "N measured so far" - finished measurements without a problem, never a demo check
-            int md = 0; for (const auto& i : items_) if (i.done && ! i.problem && i.kind != "demo") ++md; o->setProperty ("measured_done", md); }
+            int md = 0; for (const auto& i : items_) if (i.done && ! i.problem && i.kind != "demo") ++md; o->setProperty ("measured_done", md);
+            // 14 Oct: the Measuring bar's "n of N" (measurements, not demo checks; done counts every landed one)
+            int mt = 0, mdn = 0; for (const auto& i : items_) if (i.kind != "demo") { ++mt; if (i.done) ++mdn; }
+            auto* mm = new juce::DynamicObject(); mm->setProperty ("done", mdn); mm->setProperty ("total", mt); o->setProperty ("measurements", juce::var (mm)); }
         o->setProperty ("elapsed_s", std::round (elapsed)); o->setProperty ("eta_s", eta < 0.0 ? juce::var() : juce::var (std::round (eta)));
         o->setProperty ("eta_words", stage_ == Stage::done ? juce::String ("finished") : stopped_ ? juce::String ("stopped") : etaWords (eta)); o->setProperty ("jobs", jobs_);
         auto* tm = new juce::DynamicObject();
