@@ -35,8 +35,7 @@ WZ-SNAP-1, WZ-WORK-1, WZ-PLAN-1, WZ-LIM-1, WZ-FIN-1..3, WZ-TIME-1, WZ-REWARD-1..
 - about 27.4 h at 2 jobs, 19.7 h at 4;
 - this Mac had 3.6-3.9 GB free during the session, so it would get **2 jobs**.
 
-**Scan stage** before that: about 0.9 h at 2 jobs (904 maps at 4 s, 272 signature reads at Sean's 4.8 s mean), **plus the demo check**: 60 s per queued plugin, 479 or more, about 4+ h at 2 jobs.
-- **The scan-done estimate does not include the demo check:** it runs during the scan, before that screen. See Open.
+**Scan stage** before that: about 0.9 h at 2 jobs (904 maps at 4 s, 272 signature reads at Sean's 4.8 s mean). ~~plus a 60 s demo check per plugin~~ - WRONG, corrected 14 Oct below.
 
 ## Rehearsals (13 Oct night; hostable Waves v12 de-essers + C1 gate; work, server stub and results in scratch)
 - **A (release, server default 25):** the 4 plugins counted 4 < 25 -> "Thanks - your plugins are already mapped / You have 4 plugins we don't have yet - the free month needs 25 or more. You can still contribute them." with "Contribute anyway (no reward)".
@@ -56,10 +55,26 @@ WZ-SNAP-1, WZ-WORK-1, WZ-PLAN-1, WZ-LIM-1, WZ-FIN-1..3, WZ-TIME-1, WZ-REWARD-1..
 Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + receipts).
 
 ## Open (for Kathy / Sean)
-- **The demo check's time:** 60 s per queued plugin, inside the scan, so on this Mac the scan screen would run 4+ hours before the time line appears, and that line leaves it out. Options: move the demo check to the start of each plugin's measuring (it would join the estimate and the Pause / Send choices), or count it in the scan screen's own estimate. Not changed without a decision.
+- ~~The demo check's time~~ - settled 14 Oct (below).
 - **SERVER (Sean):** /contributions partial uploads + the run merge (WIZARD_SPEC 6.6), the earn rule, qualify_minimum 25.
 - **The close question** has been snapped (`--auto-ask-close`), never clicked by a person.
 - **The hourly checkpoint** was rehearsed at 0.5 min, not at 60.
 - **Notarisation** (Apple's agreement).
+
+## 14 Oct addendum: the demo check (wizard f20b46e1)
+- **Measured:** the 13 Oct "60 s per plugin, ~4 h in the scan" was wrong. The 60 s tone renders offline.
+  - The wizard's own probe call, timed in the engine: 4.0-7.3 s per plugin, mean 4.5, on 8 Waves v12 plugins (the same at 1 and 2 jobs). The load is most of it. Melda demos took 0.31 s.
+  - For ~625 plugins that is about 30 min at 2 jobs, not 4+ h.
+- **Moved** into each plugin's measuring (WIZARD_SPEC 3, "Where and what it costs"): the scan no longer runs it, the estimate carries it, Pause / Send what's done stop it, and "measured so far" ignores it. Pin WZ-DEMO-2; mutants D1-D5 red.
+- **Rehearsed** (beta; DeEsser + C1 gate + the Melda demos MTurboComp and MLimiterX): the scan took 5 s. A pause 2 s into measuring came after MTurboComp was filed demo, and the checkpoint was packed. The resume filed MLimiterX demo just before its compressor pass, measured the other two, and rewrote the Desktop file.
+- **This Mac, corrected totals:**
+
+| | 2 jobs (what it gets now: ~3.7 GB free) | 4 jobs (8 P-cores + 4 GB free) |
+|---|---|---|
+| scan (maps + 272 signature reads; no demo check) | ~0.9 h | ~0.6 h |
+| measuring (649 measurements + 625 demo checks; the scan-done estimate) | 27.9 h | 20.1 h |
+| **total** | **~28.8 h** | **~20.7 h** |
+
+- **DMG:** `~/Desktop/EchoJay-Wizard-Beta-2026-10-13/EchoJay Wizard Beta.dmg` rebuilt at f20b46e1, sha256 95093958a28c3ce8..., signed 8BT5F9B887 (not notarised), hdiutil verify VALID; icon, beta_db (52 limitercomp) and hash checked.
 
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).

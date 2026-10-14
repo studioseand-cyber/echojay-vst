@@ -18,7 +18,7 @@ It measures the user's plugins that EchoJay's database does not have yet. It sen
 |---|---|---|---|
 | 1 | **Welcome + sign in** | "Help EchoJay learn your plugins", email + password, **Sign in** | Sign-in (6.1) links the results and the reward to the account |
 | 2 | **Consent** | "Before we start", the paragraph in 2b, an **I agree** tick, **Continue** | Continue stays disabled until the tick is set. The consent and its time go in the app's log. Nothing is scanned before it |
-| 3 | **Scan** | "Checking your plugins", a Logic start-up style bar, each plugin's name as it is checked, "n of N" | Every installed plugin is mapped and checked against the database (6.2). A demo version is found here (3b) and skipped |
+| 3 | **Scan** | "Checking your plugins", a Logic start-up style bar, each plugin's name as it is checked, "n of N" | Every installed plugin is mapped and checked against the database (6.2). (14 Oct: the demo check is no longer here - it is the first thing in each plugin's measuring) |
 | - | **Already taken part** | "You've already taken part - thank you", **Done** | When `/lookup` returns `already_contributed: true` (6.5). Nothing runs |
 | 3b | **Scan done: eligible** | "You have N plugins we don't have yet", "Help map them and get a free month. About X.", **Start** | When `/lookup` returns `eligible: true` (6.5) |
 | 3b | **Scan done: not eligible** | "Thanks - your plugins are already mapped", "So there's nothing to do right now.", **Done**, and **Contribute anyway (no reward)** when there is anything to measure | Done quits; nothing runs. Contribute anyway measures and uploads with no reward and no promo screen |
@@ -83,6 +83,7 @@ What it says is true of the bundle as built:
 **3b. A stranger's Mac (13 Oct).**
 - **No licence file:** a demo is found by what it does. Before measuring, each plugin gets a steady 997 Hz tone at -18 dBFS for 60 s, rendered offline in about 1 s.
   - Output that drops 20 dB below its own median and comes back is a demo's mute. That plugin is filed `demo`: not measured, not sent ("N plugins are demo versions and were skipped").
+  - **Where and what it costs (14 Oct):** it runs in MEASURING, before each pass for that pass's plugins not yet checked (once per plugin, cached in `engine/demo_checks.json` with its seconds), so it is the first thing in each plugin's measuring. A demo leaves every queue (a limiter's later compressor pass too). It is an item of the estimate (4.5 s, measured on 8 Waves v12 plugins: 4.0-7.3 s - the 60 s tone renders offline; Melda demos 0.3 s), and Pause / Send what's done stop it like any measurement. "N measured so far" never counts it. Pin WZ-DEMO-2.
   - Measured here: three Melda demos drop out from 19-25 s in; 11 licensed plugins of every measured category never do.
 - **Licence and iLok windows** are closed by the window watch, never clicked, and the plugin is filed needs_licence, quietly.
 - **Disk:**
