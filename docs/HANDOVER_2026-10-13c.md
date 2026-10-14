@@ -144,4 +144,18 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
 - **DMGs at 6bdbcd5d:** Test sha 0f34bd8e28c2ab3c, Beta sha feead47077ce94ee; both signed and verify VALID; the probe re-signed.
 - **Noticed, not changed:** EMO-D5 and Q4 fail the read-back on display rounding ('14996' vs '15000', '1925' vs '1924'), so they go on to be measured in full. A numeric tolerance in `wizard::readback` would let such plugins pass as ready from another version. That changes what counts as a match, so it is Kathy's call.
 
+## 14 Oct addendum 7: the near-match tolerance, and a PACE-check regression fixed (wizard 07a6a8e2)
+- **The tolerance** (WIZARD_SPEC 3k, pin WZ-NEAR-1, mutants M1-M5 red):
+  - **The rule:** numbers in the same unit within max(0.5%, one step of the coarser last shown digit); text and units exactly. Wizard only.
+  - **The record:** a plugin passing this way is recorded `matched_with_tolerance`, with each near-match in the upload / results file for the audit.
+  - **Here:** EMO-D5 (m) and Q4 (m) are now ready (3 and 36 near-matches); API-550A (m) matched exactly.
+  - **All 123 hostable read-backs:** 66 exact, 37 within tolerance, 20 measured. 956 near-matches, 4 over 0.5% (HF Freq 42/41 on H-EQ / H-EQ-Light: the one-step rule on a whole-number display). 4 one-load reads were refused and fell back per control.
+- **REGRESSION FIXED (since 8332b253; the DMGs from then on had it):**
+  - **The cause:** the PACE check reads a bundle's whole binary, and WaveShell2-AU 12.0 (589 plugins) was re-read for each. A plan of this Mac took over 20 min, and on testers' Macs the scan would have sat at "Looking for plugins".
+  - **Now:** each bundle is read once, and only where it can matter. A scan of the 471 settled plugins takes 13 s; a plan takes 50 s.
+- **This Mac, whole first run:** about 26.6 h at 2 jobs / 19.9 h at 4.
+  - The tolerance's share: 37 fewer plugins to measure, about 0.4 h (mostly fast EQs).
+  - The earlier 29.3 h counted every read-back plugin as a measurement.
+- **DMGs at 07a6a8e2:** Test sha b9e85d140efc68cc, Beta sha fc7323065a446e47; both signed and verify VALID.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
