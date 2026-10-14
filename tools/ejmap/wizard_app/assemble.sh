@@ -32,6 +32,7 @@ if [ "$TEST" = 1 ]; then ICNS="$HERE/icon/WizardTest.icns"; elif [ "$BETA" = 1 ]
 [ -f "$ICNS" ] || { echo "assemble: no icon at $ICNS (run wizard_app/icon/make_icon.swift)"; exit 2; }
 cp "$ICNS" "$R/Icon.icns"
 cp -R "$HERE/mock_db/references" "$R/mock_db/"   # 13 Oct: the mock DB's 290 agreed references (stub only)
+cp "$HERE/beta_db/expected_work.json" "$R/mock_db/"   # 14 Oct: the progress bar's weights (Sean's seconds per plugin; scripts/expected_work.py), every build
 if [ "$BETA" = 1 ] || [ "$TEST" = 1 ]; then   # 13 Oct (Kathy): the beta's read-only database (14 Oct: the test build seeds its stub server from it) - the snapshot of Sean's cert 5 (scripts/beta_db_snapshot.py)
     [ -f "$HERE/beta_db/snapshot.json" ] || { echo "assemble: no beta database at $HERE/beta_db (run scripts/beta_db_snapshot.py)"; exit 2; }
     rm -rf "$R/beta_db"; ditto "$HERE/beta_db" "$R/beta_db"

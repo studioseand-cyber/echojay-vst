@@ -1,0 +1,4614 @@
+{
+ "_median": {
+  "compressor": {
+   "n": 132,
+   "procs": 70,
+   "seconds": 119.2
+  },
+  "deesser": {
+   "n": 20,
+   "procs": 23,
+   "seconds": 18.5
+  },
+  "delay": {
+   "n": 32,
+   "procs": 153,
+   "seconds": 102.0
+  },
+  "eq": {
+   "n": 147,
+   "procs": 45,
+   "seconds": 63.0
+  },
+  "gate": {
+   "n": 8,
+   "procs": 100,
+   "seconds": 61.0
+  },
+  "limiter": {
+   "n": 43,
+   "procs": 33,
+   "seconds": 28.0
+  },
+  "limitercomp": {
+   "n": 34,
+   "procs": 38,
+   "seconds": 279.0
+  },
+  "reverb": {
+   "n": 90,
+   "procs": 155,
+   "seconds": 102.0
+  },
+  "saturation": {
+   "n": 150,
+   "procs": 28,
+   "seconds": 36.0
+  },
+  "strips": {
+   "n": 92,
+   "procs": 19,
+   "seconds": 29.0
+  },
+  "transient": {
+   "n": 17,
+   "procs": 104,
+   "seconds": 48.0
+  },
+  "tuners": {
+   "n": 6,
+   "procs": 14,
+   "seconds": 111.0
+  }
+ },
+ "plugins": {
+  "10196669": {
+   "eq": {
+    "procs": 9,
+    "seconds": 7.0
+   }
+  },
+  "10616669": {
+   "eq": {
+    "procs": 26,
+    "seconds": 42.0
+   }
+  },
+  "12196669": {
+   "saturation": {
+    "procs": 41,
+    "seconds": 130.0
+   }
+  },
+  "12616669": {
+   "eq": {
+    "procs": 13,
+    "seconds": 18.0
+   }
+  },
+  "15616509": {
+   "saturation": {
+    "procs": 14,
+    "seconds": 46.0
+   }
+  },
+  "1561650f": {
+   "saturation": {
+    "procs": 16,
+    "seconds": 49.0
+   }
+  },
+  "18246535": {
+   "reverb": {
+    "procs": 302,
+    "seconds": 64.0
+   }
+  },
+  "2116669": {
+   "eq": {
+    "procs": 71,
+    "seconds": 54.0
+   }
+  },
+  "2136669": {
+   "eq": {
+    "procs": 22,
+    "seconds": 19.0
+   }
+  },
+  "2520b04": {
+   "reverb": {
+    "procs": 84,
+    "seconds": 91.0
+   }
+  },
+  "2520b60": {
+   "transient": {
+    "procs": 51,
+    "seconds": 34.0
+   }
+  },
+  "2520b62": {
+   "compressor": {
+    "procs": 36,
+    "seconds": 53.0
+   }
+  },
+  "2520b63": {
+   "compressor": {
+    "procs": 39,
+    "seconds": 82.1
+   }
+  },
+  "2520b6d": {
+   "eq": {
+    "procs": 46,
+    "seconds": 120.0
+   }
+  },
+  "26a5d6d": {
+   "compressor": {
+    "procs": 202,
+    "seconds": 1108.6
+   }
+  },
+  "28414649": {
+   "saturation": {
+    "procs": 28,
+    "seconds": 77.0
+   }
+  },
+  "28424649": {
+   "deesser": {
+    "procs": 34,
+    "seconds": 53.0
+   }
+  },
+  "2a6d417f": {
+   "compressor": {
+    "procs": 54,
+    "seconds": 60.1
+   }
+  },
+  "2a6d427f": {
+   "limiter": {
+    "procs": 6,
+    "seconds": 14.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 243.0
+   }
+  },
+  "2a6d497f": {
+   "gate": {
+    "procs": 113,
+    "seconds": 83.0
+   }
+  },
+  "2a6d4a67": {
+   "delay": {
+    "procs": 124,
+    "seconds": 101.0
+   }
+  },
+  "2a6d4a7f": {
+   "saturation": {
+    "procs": 16,
+    "seconds": 19.0
+   }
+  },
+  "2a6d4c68": {
+   "saturation": {
+    "procs": 10,
+    "seconds": 9.0
+   }
+  },
+  "2a6d4d7b": {
+   "compressor": {
+    "procs": 53,
+    "seconds": 63.7
+   }
+  },
+  "2a6d5a79": {
+   "transient": {
+    "procs": 69,
+    "seconds": 48.0
+   }
+  },
+  "2a6d5c7d": {
+   "reverb": {
+    "procs": 104,
+    "seconds": 86.0
+   }
+  },
+  "2a6d5e6f": {
+   "saturation": {
+    "procs": 16,
+    "seconds": 16.0
+   }
+  },
+  "2a6d5f6e": {
+   "eq": {
+    "procs": 21,
+    "seconds": 27.0
+   }
+  },
+  "2a784f7f": {
+   "saturation": {
+    "procs": 15,
+    "seconds": 19.0
+   }
+  },
+  "3116669": {
+   "reverb": {
+    "procs": 260,
+    "seconds": 161.0
+   }
+  },
+  "38284a4d": {
+   "limiter": {
+    "procs": 99,
+    "seconds": 117.0
+   }
+  },
+  "3d307263": {
+   "compressor": {
+    "procs": 53,
+    "seconds": 55.6
+   }
+  },
+  "3d30727d": {
+   "compressor": {
+    "procs": 53,
+    "seconds": 64.5
+   }
+  },
+  "40271a44": {
+   "limiter": {
+    "procs": 12,
+    "seconds": 30.0
+   }
+  },
+  "40566176": {
+   "strips": {
+    "procs": 2,
+    "seconds": 6.0
+   }
+  },
+  "4056617d": {
+   "strips": {
+    "procs": 2,
+    "seconds": 5.0
+   }
+  },
+  "40566276": {
+   "strips": {
+    "procs": 2,
+    "seconds": 6.0
+   }
+  },
+  "4056627d": {
+   "strips": {
+    "procs": 2,
+    "seconds": 6.0
+   }
+  },
+  "40566776": {
+   "strips": {
+    "procs": 2,
+    "seconds": 27.0
+   }
+  },
+  "4056677d": {
+   "strips": {
+    "procs": 2,
+    "seconds": 16.0
+   }
+  },
+  "40567363": {
+   "strips": {
+    "procs": 2,
+    "seconds": 17.0
+   }
+  },
+  "40567376": {
+   "strips": {
+    "procs": 2,
+    "seconds": 18.0
+   }
+  },
+  "4056737d": {
+   "strips": {
+    "procs": 2,
+    "seconds": 27.0
+   }
+  },
+  "40567563": {
+   "strips": {
+    "procs": 21,
+    "seconds": 37.0
+   }
+  },
+  "40567576": {
+   "strips": {
+    "procs": 21,
+    "seconds": 28.0
+   }
+  },
+  "4056757d": {
+   "strips": {
+    "procs": 21,
+    "seconds": 27.0
+   }
+  },
+  "40567676": {
+   "strips": {
+    "procs": 2,
+    "seconds": 20.0
+   }
+  },
+  "4056767d": {
+   "strips": {
+    "procs": 2,
+    "seconds": 28.0
+   }
+  },
+  "41557669": {
+   "saturation": {
+    "procs": 20,
+    "seconds": 41.0
+   }
+  },
+  "41566563": {
+   "eq": {
+    "procs": 8,
+    "seconds": 8.0
+   }
+  },
+  "4156657d": {
+   "eq": {
+    "procs": 8,
+    "seconds": 8.0
+   }
+  },
+  "415a6b62": {
+   "saturation": {
+    "procs": 41,
+    "seconds": 53.0
+   }
+  },
+  "415a7872": {
+   "reverb": {
+    "procs": 175,
+    "seconds": 88.0
+   }
+  },
+  "415e6d62": {
+   "deesser": {
+    "procs": 18,
+    "seconds": 7.0
+   }
+  },
+  "4163226d": {
+   "eq": {
+    "procs": 73,
+    "seconds": 74.0
+   }
+  },
+  "41636032": {
+   "eq": {
+    "procs": 39,
+    "seconds": 43.0
+   }
+  },
+  "41647c6d": {
+   "strips": {
+    "procs": 98,
+    "seconds": 637.0
+   }
+  },
+  "4166669": {
+   "deesser": {
+    "procs": 23,
+    "seconds": 17.0
+   }
+  },
+  "41667775": {
+   "strips": {
+    "procs": 110,
+    "seconds": 526.0
+   }
+  },
+  "4166777d": {
+   "strips": {
+    "procs": 79,
+    "seconds": 1145.0
+   }
+  },
+  "41724674": {
+   "saturation": {
+    "procs": 5,
+    "seconds": 9.0
+   }
+  },
+  "41747674": {
+   "strips": {
+    "procs": 85,
+    "seconds": 414.0
+   }
+  },
+  "41747d65": {
+   "strips": {
+    "procs": 91,
+    "seconds": 613.0
+   }
+  },
+  "41747d67": {
+   "strips": {
+    "procs": 90,
+    "seconds": 606.0
+   }
+  },
+  "41756658": {
+   "eq": {
+    "procs": 15,
+    "seconds": 18.0
+   }
+  },
+  "4179564a": {
+   "saturation": {
+    "procs": 6,
+    "seconds": 15.0
+   }
+  },
+  "417a6521": {
+   "saturation": {
+    "procs": 36,
+    "seconds": 29.0
+   }
+  },
+  "417a6557": {
+   "delay": {
+    "procs": 195,
+    "seconds": 85.0
+   }
+  },
+  "417a6821": {
+   "saturation": {
+    "procs": 47,
+    "seconds": 53.0
+   }
+  },
+  "417a7643": {
+   "compressor": {
+    "procs": 58,
+    "seconds": 103.7
+   }
+  },
+  "417a7f21": {
+   "delay": {
+    "procs": 285,
+    "seconds": 198.0
+   }
+  },
+  "417f2274": {
+   "limiter": {
+    "procs": 43,
+    "seconds": 31.0
+   },
+   "limitercomp": {
+    "procs": 71,
+    "seconds": 1292.0
+   }
+  },
+  "417f282e": {
+   "eq": {
+    "procs": 99,
+    "seconds": 105.0
+   }
+  },
+  "417f6333": {
+   "saturation": {
+    "procs": 47,
+    "seconds": 34.0
+   }
+  },
+  "417f636d": {
+   "reverb": {
+    "procs": 295,
+    "seconds": 165.0
+   }
+  },
+  "417f6370": {
+   "saturation": {
+    "procs": 3,
+    "seconds": 2.0
+   }
+  },
+  "417f6864": {
+   "saturation": {
+    "procs": 8,
+    "seconds": 7.0
+   }
+  },
+  "417f6879": {
+   "saturation": {
+    "procs": 42,
+    "seconds": 40.0
+   }
+  },
+  "417f6e6e": {
+   "limiter": {
+    "procs": 32,
+    "seconds": 23.0
+   },
+   "limitercomp": {
+    "procs": 78,
+    "seconds": 724.0
+   }
+  },
+  "417f6e76": {
+   "compressor": {
+    "procs": 73,
+    "seconds": 80.8
+   }
+  },
+  "417f7032": {
+   "saturation": {
+    "procs": 43,
+    "seconds": 154.0
+   }
+  },
+  "417f7364": {
+   "saturation": {
+    "procs": 39,
+    "seconds": 33.0
+   }
+  },
+  "417f7533": {
+   "eq": {
+    "procs": 139,
+    "seconds": 159.0
+   }
+  },
+  "417f756c": {
+   "delay": {
+    "procs": 233,
+    "seconds": 123.0
+   }
+  },
+  "417f756f": {
+   "saturation": {
+    "procs": 5,
+    "seconds": 3.0
+   }
+  },
+  "417f7673": {
+   "saturation": {
+    "procs": 5,
+    "seconds": 3.0
+   }
+  },
+  "417f7950": {
+   "strips": {
+    "procs": 100,
+    "seconds": 671.0
+   }
+  },
+  "417f796d": {
+   "eq": {
+    "procs": 92,
+    "seconds": 83.0
+   }
+  },
+  "417f7973": {
+   "eq": {
+    "procs": 187,
+    "seconds": 178.0
+   }
+  },
+  "417f7c64": {
+   "saturation": {
+    "procs": 60,
+    "seconds": 91.0
+   }
+  },
+  "417f7d6d": {
+   "limiter": {
+    "procs": 11,
+    "seconds": 8.0
+   },
+   "limitercomp": {
+    "procs": 43,
+    "seconds": 416.0
+   }
+  },
+  "417f7e70": {
+   "compressor": {
+    "procs": 69,
+    "seconds": 30.8
+   }
+  },
+  "417f7e74": {
+   "compressor": {
+    "procs": 59,
+    "seconds": 53.3
+   }
+  },
+  "42436063": {
+   "eq": {
+    "procs": 84,
+    "seconds": 105.0
+   }
+  },
+  "4243607d": {
+   "eq": {
+    "procs": 86,
+    "seconds": 109.0
+   }
+  },
+  "42437d63": {
+   "eq": {
+    "procs": 20,
+    "seconds": 23.0
+   }
+  },
+  "42437d7d": {
+   "eq": {
+    "procs": 20,
+    "seconds": 23.0
+   }
+  },
+  "42447e63": {
+   "delay": {
+    "procs": 134,
+    "seconds": 95.0
+   }
+  },
+  "42447e68": {
+   "delay": {
+    "procs": 134,
+    "seconds": 89.0
+   }
+  },
+  "42447e7d": {
+   "delay": {
+    "procs": 134,
+    "seconds": 88.0
+   }
+  },
+  "42546218": {
+   "reverb": {
+    "procs": 363,
+    "seconds": 335.0
+   }
+  },
+  "4254621b": {
+   "reverb": {
+    "procs": 371,
+    "seconds": 335.0
+   }
+  },
+  "42546263": {
+   "reverb": {
+    "procs": 350,
+    "seconds": 302.0
+   }
+  },
+  "42546274": {
+   "reverb": {
+    "procs": 363,
+    "seconds": 325.0
+   }
+  },
+  "42546276": {
+   "reverb": {
+    "procs": 353,
+    "seconds": 288.0
+   }
+  },
+  "42546277": {
+   "reverb": {
+    "procs": 371,
+    "seconds": 308.0
+   }
+  },
+  "4254627a": {
+   "reverb": {
+    "procs": 371,
+    "seconds": 329.0
+   }
+  },
+  "4254627b": {
+   "reverb": {
+    "procs": 363,
+    "seconds": 322.0
+   }
+  },
+  "4254627d": {
+   "reverb": {
+    "procs": 353,
+    "seconds": 288.0
+   }
+  },
+  "42546718": {
+   "reverb": {
+    "procs": 365,
+    "seconds": 335.0
+   }
+  },
+  "4254671b": {
+   "reverb": {
+    "procs": 371,
+    "seconds": 323.0
+   }
+  },
+  "42546763": {
+   "reverb": {
+    "procs": 356,
+    "seconds": 293.0
+   }
+  },
+  "42546774": {
+   "reverb": {
+    "procs": 365,
+    "seconds": 347.0
+   }
+  },
+  "42546776": {
+   "reverb": {
+    "procs": 353,
+    "seconds": 326.0
+   }
+  },
+  "42546777": {
+   "reverb": {
+    "procs": 371,
+    "seconds": 342.0
+   }
+  },
+  "4254677a": {
+   "reverb": {
+    "procs": 371,
+    "seconds": 351.0
+   }
+  },
+  "4254677b": {
+   "reverb": {
+    "procs": 365,
+    "seconds": 327.0
+   }
+  },
+  "4254677d": {
+   "reverb": {
+    "procs": 353,
+    "seconds": 312.0
+   }
+  },
+  "426a7f6f": {
+   "eq": {
+    "procs": 131,
+    "seconds": 153.0
+   }
+  },
+  "43507d63": {
+   "compressor": {
+    "procs": 386,
+    "seconds": 356.1
+   }
+  },
+  "43507d7d": {
+   "compressor": {
+    "procs": 386,
+    "seconds": 318.5
+   }
+  },
+  "44310263": {
+   "eq": {
+    "procs": 22,
+    "seconds": 25.0
+   }
+  },
+  "4431027d": {
+   "eq": {
+    "procs": 41,
+    "seconds": 49.0
+   }
+  },
+  "44436063": {
+   "eq": {
+    "procs": 19,
+    "seconds": 27.0
+   }
+  },
+  "4443607d": {
+   "eq": {
+    "procs": 19,
+    "seconds": 25.0
+   }
+  },
+  "44507263": {
+   "compressor": {
+    "procs": 115,
+    "seconds": 114.1
+   }
+  },
+  "4450727d": {
+   "compressor": {
+    "procs": 115,
+    "seconds": 115.2
+   }
+  },
+  "454d6663": {
+   "reverb": {
+    "procs": 20,
+    "seconds": 16.0
+   }
+  },
+  "454d6676": {
+   "reverb": {
+    "procs": 21,
+    "seconds": 18.0
+   }
+  },
+  "454d667d": {
+   "reverb": {
+    "procs": 21,
+    "seconds": 14.0
+   }
+  },
+  "454d7263": {
+   "compressor": {
+    "procs": 36,
+    "seconds": 37.1
+   }
+  },
+  "454d727d": {
+   "compressor": {
+    "procs": 36,
+    "seconds": 45.5
+   }
+  },
+  "454d7363": {
+   "eq": {
+    "procs": 8,
+    "seconds": 8.0
+   }
+  },
+  "454d737d": {
+   "eq": {
+    "procs": 8,
+    "seconds": 8.0
+   }
+  },
+  "454d7563": {
+   "saturation": {
+    "procs": 6,
+    "seconds": 7.0
+   }
+  },
+  "454d757d": {
+   "saturation": {
+    "procs": 6,
+    "seconds": 7.0
+   }
+  },
+  "454d7d63": {
+   "limiter": {
+    "procs": 2,
+    "seconds": 2.0
+   },
+   "limitercomp": {
+    "procs": 3,
+    "seconds": 16.0
+   }
+  },
+  "454d7d7d": {
+   "limiter": {
+    "procs": 2,
+    "seconds": 2.0
+   },
+   "limitercomp": {
+    "procs": 3,
+    "seconds": 16.0
+   }
+  },
+  "455c3e57": {
+   "limiter": {
+    "procs": 35,
+    "seconds": 32.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 225.0
+   }
+  },
+  "45756f39": {
+   "compressor": {
+    "procs": 75,
+    "seconds": 169.6
+   }
+  },
+  "45756f3a": {
+   "compressor": {
+    "procs": 37,
+    "seconds": 72.8
+   }
+  },
+  "4626669": {
+   "saturation": {
+    "procs": 11,
+    "seconds": 14.0
+   }
+  },
+  "46347c63": {
+   "limiter": {
+    "procs": 18,
+    "seconds": 14.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 159.0
+   }
+  },
+  "46347c7d": {
+   "limiter": {
+    "procs": 18,
+    "seconds": 15.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 251.0
+   }
+  },
+  "46356063": {
+   "limiter": {
+    "procs": 68,
+    "seconds": 57.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 282.0
+   }
+  },
+  "4635607d": {
+   "limiter": {
+    "procs": 68,
+    "seconds": 60.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 460.0
+   }
+  },
+  "46356163": {
+   "limiter": {
+    "procs": 58,
+    "seconds": 46.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 189.0
+   }
+  },
+  "4635617d": {
+   "limiter": {
+    "procs": 58,
+    "seconds": 48.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 301.0
+   }
+  },
+  "46357663": {
+   "limiter": {
+    "procs": 18,
+    "seconds": 14.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 184.0
+   }
+  },
+  "4635767d": {
+   "limiter": {
+    "procs": 18,
+    "seconds": 15.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 281.0
+   }
+  },
+  "46357c18": {
+   "limiter": {
+    "procs": 33,
+    "seconds": 31.0
+   }
+  },
+  "46357c1b": {
+   "limiter": {
+    "procs": 32,
+    "seconds": 28.0
+   }
+  },
+  "46377263": {
+   "limiter": {
+    "procs": 14,
+    "seconds": 24.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 135.0
+   }
+  },
+  "4637727d": {
+   "limiter": {
+    "procs": 14,
+    "seconds": 11.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 248.0
+   }
+  },
+  "46406963": {
+   "reverb": {
+    "procs": 100,
+    "seconds": 102.0
+   }
+  },
+  "46406968": {
+   "reverb": {
+    "procs": 100,
+    "seconds": 110.0
+   }
+  },
+  "4640697d": {
+   "reverb": {
+    "procs": 94,
+    "seconds": 102.0
+   }
+  },
+  "46407663": {
+   "saturation": {
+    "procs": 44,
+    "seconds": 111.0
+   }
+  },
+  "46407668": {
+   "saturation": {
+    "procs": 44,
+    "seconds": 113.0
+   }
+  },
+  "4640767d": {
+   "saturation": {
+    "procs": 43,
+    "seconds": 109.0
+   }
+  },
+  "46450463": {
+   "compressor": {
+    "procs": 265,
+    "seconds": 317.6
+   }
+  },
+  "4645047d": {
+   "compressor": {
+    "procs": 265,
+    "seconds": 351.9
+   }
+  },
+  "46457f6d": {
+   "limiter": {
+    "procs": 101,
+    "seconds": 123.0
+   }
+  },
+  "46457f6f": {
+   "limiter": {
+    "procs": 101,
+    "seconds": 112.0
+   }
+  },
+  "46470263": {
+   "compressor": {
+    "procs": 49,
+    "seconds": 65.4
+   }
+  },
+  "4647027d": {
+   "compressor": {
+    "procs": 49,
+    "seconds": 84.6
+   }
+  },
+  "46470363": {
+   "compressor": {
+    "procs": 57,
+    "seconds": 77.7
+   }
+  },
+  "4647037d": {
+   "compressor": {
+    "procs": 57,
+    "seconds": 104.2
+   }
+  },
+  "464f7c1f": {
+   "limiter": {
+    "procs": 22,
+    "seconds": 18.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 256.0
+   }
+  },
+  "46576263": {
+   "eq": {
+    "procs": 41,
+    "seconds": 54.0
+   }
+  },
+  "4657627d": {
+   "eq": {
+    "procs": 42,
+    "seconds": 54.0
+   }
+  },
+  "46577063": {
+   "eq": {
+    "procs": 87,
+    "seconds": 105.0
+   }
+  },
+  "4657707d": {
+   "eq": {
+    "procs": 87,
+    "seconds": 108.0
+   }
+  },
+  "47456263": {
+   "strips": {
+    "procs": 26,
+    "seconds": 32.0
+   }
+  },
+  "4745627d": {
+   "strips": {
+    "procs": 26,
+    "seconds": 45.0
+   }
+  },
+  "474b6263": {
+   "deesser": {
+    "procs": 26,
+    "seconds": 22.0
+   }
+  },
+  "474b627d": {
+   "deesser": {
+    "procs": 26,
+    "seconds": 25.0
+   }
+  },
+  "474b6363": {
+   "reverb": {
+    "procs": 121,
+    "seconds": 132.0
+   }
+  },
+  "474b6376": {
+   "reverb": {
+    "procs": 125,
+    "seconds": 138.0
+   }
+  },
+  "474b637d": {
+   "reverb": {
+    "procs": 125,
+    "seconds": 148.0
+   }
+  },
+  "474b6563": {
+   "saturation": {
+    "procs": 19,
+    "seconds": 23.0
+   }
+  },
+  "474b657d": {
+   "saturation": {
+    "procs": 19,
+    "seconds": 23.0
+   }
+  },
+  "474b7463": {
+   "eq": {
+    "procs": 35,
+    "seconds": 40.0
+   }
+  },
+  "474b747d": {
+   "eq": {
+    "procs": 35,
+    "seconds": 41.0
+   }
+  },
+  "474b7576": {
+   "delay": {
+    "procs": 160,
+    "seconds": 163.0
+   }
+  },
+  "474b757d": {
+   "delay": {
+    "procs": 160,
+    "seconds": 162.0
+   }
+  },
+  "47500363": {
+   "compressor": {
+    "procs": 70,
+    "seconds": 71.0
+   }
+  },
+  "4750037d": {
+   "compressor": {
+    "procs": 70,
+    "seconds": 60.5
+   }
+  },
+  "47520363": {
+   "delay": {
+    "procs": 146,
+    "seconds": 103.0
+   }
+  },
+  "47520376": {
+   "delay": {
+    "procs": 170,
+    "seconds": 114.0
+   }
+  },
+  "4752037d": {
+   "delay": {
+    "procs": 170,
+    "seconds": 106.0
+   }
+  },
+  "47520763": {
+   "delay": {
+    "procs": 266,
+    "seconds": 173.0
+   }
+  },
+  "47520776": {
+   "delay": {
+    "procs": 270,
+    "seconds": 174.0
+   }
+  },
+  "4752077d": {
+   "delay": {
+    "procs": 270,
+    "seconds": 162.0
+   }
+  },
+  "47556376": {
+   "reverb": {
+    "procs": 99,
+    "seconds": 83.0
+   }
+  },
+  "47556863": {
+   "reverb": {
+    "procs": 99,
+    "seconds": 107.0
+   }
+  },
+  "4755687d": {
+   "reverb": {
+    "procs": 112,
+    "seconds": 95.0
+   }
+  },
+  "47570563": {
+   "eq": {
+    "procs": 56,
+    "seconds": 65.0
+   }
+  },
+  "4757057d": {
+   "eq": {
+    "procs": 109,
+    "seconds": 131.0
+   }
+  },
+  "475e6763": {
+   "compressor": {
+    "procs": 50,
+    "seconds": 39.0
+   }
+  },
+  "475e677d": {
+   "compressor": {
+    "procs": 50,
+    "seconds": 40.3
+   }
+  },
+  "47756340": {
+   "delay": {
+    "procs": 145,
+    "seconds": 70.0
+   }
+  },
+  "4776236d": {
+   "eq": {
+    "procs": 21,
+    "seconds": 20.0
+   }
+  },
+  "48426363": {
+   "compressor": {
+    "procs": 57,
+    "seconds": 169.2
+   }
+  },
+  "4842637d": {
+   "compressor": {
+    "procs": 111,
+    "seconds": 497.7
+   }
+  },
+  "48506763": {
+   "strips": {
+    "procs": 19,
+    "seconds": 42.0
+   }
+  },
+  "4850677d": {
+   "strips": {
+    "procs": 19,
+    "seconds": 34.0
+   }
+  },
+  "48527763": {
+   "saturation": {
+    "procs": 10,
+    "seconds": 17.0
+   }
+  },
+  "4852777d": {
+   "saturation": {
+    "procs": 10,
+    "seconds": 9.0
+   }
+  },
+  "49306063": {
+   "compressor": {
+    "procs": 283,
+    "seconds": 545.6
+   }
+  },
+  "4930607d": {
+   "compressor": {
+    "procs": 283,
+    "seconds": 594.5
+   }
+  },
+  "49306263": {
+   "compressor": {
+    "procs": 467,
+    "seconds": 714.4
+   }
+  },
+  "4930627d": {
+   "compressor": {
+    "procs": 467,
+    "seconds": 789.2
+   }
+  },
+  "49367463": {
+   "reverb": {
+    "procs": 41,
+    "seconds": 45.0
+   }
+  },
+  "49367476": {
+   "reverb": {
+    "procs": 41,
+    "seconds": 33.0
+   }
+  },
+  "4936747d": {
+   "reverb": {
+    "procs": 47,
+    "seconds": 53.0
+   }
+  },
+  "4936777d": {
+   "reverb": {
+    "procs": 39,
+    "seconds": 46.0
+   }
+  },
+  "49377263": {
+   "compressor": {
+    "procs": 70,
+    "seconds": 61.1
+   }
+  },
+  "4937727d": {
+   "compressor": {
+    "procs": 70,
+    "seconds": 65.5
+   }
+  },
+  "49416576": {
+   "strips": {
+    "procs": 4,
+    "seconds": 9.0
+   }
+  },
+  "4941657d": {
+   "strips": {
+    "procs": 4,
+    "seconds": 21.0
+   }
+  },
+  "49426376": {
+   "strips": {
+    "procs": 18,
+    "seconds": 19.0
+   }
+  },
+  "4942637d": {
+   "strips": {
+    "procs": 18,
+    "seconds": 20.0
+   }
+  },
+  "49426863": {
+   "compressor": {
+    "procs": 90,
+    "seconds": 137.9
+   }
+  },
+  "4942687d": {
+   "compressor": {
+    "procs": 90,
+    "seconds": 142.3
+   }
+  },
+  "49447076": {
+   "strips": {
+    "procs": 4,
+    "seconds": 8.0
+   }
+  },
+  "4944707d": {
+   "strips": {
+    "procs": 4,
+    "seconds": 8.0
+   }
+  },
+  "49497c63": {
+   "compressor": {
+    "procs": 70,
+    "seconds": 67.8
+   }
+  },
+  "49497c7d": {
+   "compressor": {
+    "procs": 70,
+    "seconds": 73.5
+   }
+  },
+  "494a6963": {
+   "strips": {
+    "procs": 122,
+    "seconds": 247.0
+   }
+  },
+  "494a697d": {
+   "strips": {
+    "procs": 90,
+    "seconds": 430.0
+   }
+  },
+  "494a7063": {
+   "compressor": {
+    "procs": 99,
+    "seconds": 96.2
+   }
+  },
+  "494a707d": {
+   "compressor": {
+    "procs": 99,
+    "seconds": 103.6
+   }
+  },
+  "494b6163": {
+   "compressor": {
+    "procs": 129,
+    "seconds": 108.2
+   }
+  },
+  "494b617d": {
+   "compressor": {
+    "procs": 129,
+    "seconds": 112.3
+   }
+  },
+  "494b7663": {
+   "strips": {
+    "procs": 122,
+    "seconds": 284.0
+   }
+  },
+  "494b767d": {
+   "strips": {
+    "procs": 90,
+    "seconds": 432.0
+   }
+  },
+  "494f7463": {
+   "reverb": {
+    "procs": 35,
+    "seconds": 25.0
+   }
+  },
+  "494f7476": {
+   "reverb": {
+    "procs": 41,
+    "seconds": 43.0
+   }
+  },
+  "494f747d": {
+   "reverb": {
+    "procs": 41,
+    "seconds": 28.0
+   }
+  },
+  "49506018": {
+   "reverb": {
+    "procs": 52,
+    "seconds": 53.0
+   }
+  },
+  "4950601b": {
+   "reverb": {
+    "procs": 65,
+    "seconds": 66.0
+   }
+  },
+  "49506077": {
+   "reverb": {
+    "procs": 59,
+    "seconds": 63.0
+   }
+  },
+  "4950607a": {
+   "reverb": {
+    "procs": 65,
+    "seconds": 68.0
+   }
+  },
+  "49507418": {
+   "reverb": {
+    "procs": 60,
+    "seconds": 74.0
+   }
+  },
+  "4950741b": {
+   "reverb": {
+    "procs": 71,
+    "seconds": 90.0
+   }
+  },
+  "49507463": {
+   "reverb": {
+    "procs": 47,
+    "seconds": 35.0
+   }
+  },
+  "49507476": {
+   "reverb": {
+    "procs": 47,
+    "seconds": 51.0
+   }
+  },
+  "49507477": {
+   "reverb": {
+    "procs": 77,
+    "seconds": 77.0
+   }
+  },
+  "4950747a": {
+   "reverb": {
+    "procs": 83,
+    "seconds": 80.0
+   }
+  },
+  "4950747d": {
+   "reverb": {
+    "procs": 53,
+    "seconds": 58.0
+   }
+  },
+  "4950777a": {
+   "reverb": {
+    "procs": 71,
+    "seconds": 90.0
+   }
+  },
+  "4950777d": {
+   "reverb": {
+    "procs": 45,
+    "seconds": 39.0
+   }
+  },
+  "49507e76": {
+   "strips": {
+    "procs": 4,
+    "seconds": 8.0
+   }
+  },
+  "49507e7d": {
+   "strips": {
+    "procs": 4,
+    "seconds": 8.0
+   }
+  },
+  "49537f76": {
+   "strips": {
+    "procs": 4,
+    "seconds": 9.0
+   }
+  },
+  "49537f7d": {
+   "strips": {
+    "procs": 4,
+    "seconds": 9.0
+   }
+  },
+  "49696d78": {
+   "compressor": {
+    "procs": 44,
+    "seconds": 99.0
+   }
+  },
+  "496c6c39": {
+   "eq": {
+    "procs": 115,
+    "seconds": 117.0
+   }
+  },
+  "496c6c3a": {
+   "eq": {
+    "procs": 59,
+    "seconds": 58.0
+   }
+  },
+  "4a616726": {
+   "eq": {
+    "procs": 174,
+    "seconds": 236.0
+   }
+  },
+  "4a6f737b": {
+   "transient": {
+    "procs": 60,
+    "seconds": 40.0
+   }
+  },
+  "4a6f797f": {
+   "eq": {
+    "procs": 9,
+    "seconds": 8.0
+   }
+  },
+  "4a7c6726": {
+   "limiter": {
+    "procs": 103,
+    "seconds": 113.0
+   },
+   "limitercomp": {
+    "procs": 55,
+    "seconds": 1017.0
+   }
+  },
+  "4b337063": {
+   "eq": {
+    "procs": 23,
+    "seconds": 41.0
+   }
+  },
+  "4b33707d": {
+   "eq": {
+    "procs": 23,
+    "seconds": 28.0
+   }
+  },
+  "4b337363": {
+   "eq": {
+    "procs": 32,
+    "seconds": 39.0
+   }
+  },
+  "4b33737d": {
+   "eq": {
+    "procs": 32,
+    "seconds": 39.0
+   }
+  },
+  "4b430463": {
+   "eq": {
+    "procs": 4,
+    "seconds": 6.0
+   }
+  },
+  "4b43047d": {
+   "eq": {
+    "procs": 4,
+    "seconds": 6.0
+   }
+  },
+  "4b456963": {
+   "strips": {
+    "procs": 147,
+    "seconds": 467.0
+   }
+  },
+  "4b45697d": {
+   "strips": {
+    "procs": 86,
+    "seconds": 370.0
+   }
+  },
+  "4b457f6d": {
+   "compressor": {
+    "procs": 2428,
+    "seconds": 3442.2
+   }
+  },
+  "4b457f6f": {
+   "compressor": {
+    "procs": 1864,
+    "seconds": 2563.7
+   }
+  },
+  "4b547e63": {
+   "saturation": {
+    "procs": 55,
+    "seconds": 72.0
+   }
+  },
+  "4b547e7d": {
+   "saturation": {
+    "procs": 54,
+    "seconds": 64.0
+   }
+  },
+  "4b567263": {
+   "compressor": {
+    "procs": 86,
+    "seconds": 86.7
+   }
+  },
+  "4b56727d": {
+   "compressor": {
+    "procs": 86,
+    "seconds": 107.3
+   }
+  },
+  "4b567963": {
+   "saturation": {
+    "procs": 20,
+    "seconds": 20.0
+   }
+  },
+  "4b56797d": {
+   "saturation": {
+    "procs": 20,
+    "seconds": 21.0
+   }
+  },
+  "4b683637": {
+   "delay": {
+    "procs": 279,
+    "seconds": 76.0
+   }
+  },
+  "4c457963": {
+   "compressor": {
+    "procs": 42,
+    "seconds": 55.8
+   }
+  },
+  "4c45797d": {
+   "compressor": {
+    "procs": 82,
+    "seconds": 154.5
+   }
+  },
+  "4c527776": {
+   "reverb": {
+    "procs": 218,
+    "seconds": 172.0
+   }
+  },
+  "4c52777d": {
+   "reverb": {
+    "procs": 218,
+    "seconds": 157.0
+   }
+  },
+  "4d47087d": {
+   "saturation": {
+    "procs": 23,
+    "seconds": 23.0
+   }
+  },
+  "4d476563": {
+   "gate": {
+    "procs": 87,
+    "seconds": 61.0
+   }
+  },
+  "4d47657d": {
+   "gate": {
+    "procs": 87,
+    "seconds": 61.0
+   }
+  },
+  "4d477763": {
+   "saturation": {
+    "procs": 25,
+    "seconds": 26.0
+   }
+  },
+  "4d477768": {
+   "saturation": {
+    "procs": 25,
+    "seconds": 36.0
+   }
+  },
+  "4d47777d": {
+   "saturation": {
+    "procs": 17,
+    "seconds": 27.0
+   }
+  },
+  "4d506963": {
+   "saturation": {
+    "procs": 49,
+    "seconds": 75.0
+   }
+  },
+  "4d506968": {
+   "saturation": {
+    "procs": 49,
+    "seconds": 73.0
+   }
+  },
+  "4d546163": {
+   "strips": {
+    "procs": 2,
+    "seconds": 4.0
+   }
+  },
+  "4d54617d": {
+   "strips": {
+    "procs": 2,
+    "seconds": 3.0
+   }
+  },
+  "4d547c63": {
+   "saturation": {
+    "procs": 12,
+    "seconds": 17.0
+   }
+  },
+  "4d547c7d": {
+   "saturation": {
+    "procs": 12,
+    "seconds": 16.0
+   }
+  },
+  "4d577c63": {
+   "eq": {
+    "procs": 46,
+    "seconds": 50.0
+   }
+  },
+  "4d577c7d": {
+   "eq": {
+    "procs": 59,
+    "seconds": 72.0
+   }
+  },
+  "4e436063": {
+   "compressor": {
+    "procs": 189,
+    "seconds": 212.8
+   }
+  },
+  "4e43607d": {
+   "compressor": {
+    "procs": 189,
+    "seconds": 224.7
+   }
+  },
+  "4e557063": {
+   "deesser": {
+    "procs": 22,
+    "seconds": 16.0
+   }
+  },
+  "4e55707d": {
+   "deesser": {
+    "procs": 22,
+    "seconds": 18.0
+   }
+  },
+  "4e5e0863": {
+   "saturation": {
+    "procs": 34,
+    "seconds": 63.0
+   }
+  },
+  "4e5e087d": {
+   "saturation": {
+    "procs": 33,
+    "seconds": 61.0
+   }
+  },
+  "4e5e0963": {
+   "saturation": {
+    "procs": 30,
+    "seconds": 57.0
+   }
+  },
+  "4e5e097d": {
+   "saturation": {
+    "procs": 29,
+    "seconds": 56.0
+   }
+  },
+  "4e5e0b63": {
+   "saturation": {
+    "procs": 37,
+    "seconds": 34.0
+   }
+  },
+  "4e5e0b7d": {
+   "saturation": {
+    "procs": 36,
+    "seconds": 44.0
+   }
+  },
+  "4e5e0e63": {
+   "saturation": {
+    "procs": 24,
+    "seconds": 33.0
+   }
+  },
+  "4e5e0e7d": {
+   "saturation": {
+    "procs": 23,
+    "seconds": 31.0
+   }
+  },
+  "4f4d6776": {
+   "strips": {
+    "procs": 2,
+    "seconds": 4.0
+   }
+  },
+  "4f4d677d": {
+   "strips": {
+    "procs": 2,
+    "seconds": 4.0
+   }
+  },
+  "4f4d7363": {
+   "strips": {
+    "procs": 2,
+    "seconds": 4.0
+   }
+  },
+  "4f4d737d": {
+   "strips": {
+    "procs": 2,
+    "seconds": 4.0
+   }
+  },
+  "4f4d7563": {
+   "strips": {
+    "procs": 13,
+    "seconds": 13.0
+   }
+  },
+  "4f4d757d": {
+   "strips": {
+    "procs": 13,
+    "seconds": 26.0
+   }
+  },
+  "4f4d7676": {
+   "strips": {
+    "procs": 11,
+    "seconds": 30.0
+   }
+  },
+  "4f4d767d": {
+   "strips": {
+    "procs": 11,
+    "seconds": 18.0
+   }
+  },
+  "4f556176": {
+   "delay": {
+    "procs": 180,
+    "seconds": 195.0
+   }
+  },
+  "4f55617d": {
+   "delay": {
+    "procs": 180,
+    "seconds": 173.0
+   }
+  },
+  "4f570063": {
+   "eq": {
+    "procs": 21,
+    "seconds": 24.0
+   }
+  },
+  "4f57007d": {
+   "eq": {
+    "procs": 23,
+    "seconds": 26.0
+   }
+  },
+  "4f570263": {
+   "eq": {
+    "procs": 53,
+    "seconds": 60.0
+   }
+  },
+  "4f57027d": {
+   "eq": {
+    "procs": 55,
+    "seconds": 63.0
+   }
+  },
+  "4f570363": {
+   "eq": {
+    "procs": 37,
+    "seconds": 42.0
+   }
+  },
+  "4f57037d": {
+   "eq": {
+    "procs": 39,
+    "seconds": 45.0
+   }
+  },
+  "4f570563": {
+   "eq": {
+    "procs": 69,
+    "seconds": 80.0
+   }
+  },
+  "4f57057d": {
+   "eq": {
+    "procs": 71,
+    "seconds": 83.0
+   }
+  },
+  "4f570763": {
+   "eq": {
+    "procs": 101,
+    "seconds": 118.0
+   }
+  },
+  "4f57077d": {
+   "eq": {
+    "procs": 103,
+    "seconds": 121.0
+   }
+  },
+  "4f570963": {
+   "eq": {
+    "procs": 133,
+    "seconds": 156.0
+   }
+  },
+  "4f57097d": {
+   "eq": {
+    "procs": 135,
+    "seconds": 160.0
+   }
+  },
+  "4f577063": {
+   "eq": {
+    "procs": 165,
+    "seconds": 196.0
+   }
+  },
+  "4f57707d": {
+   "eq": {
+    "procs": 167,
+    "seconds": 198.0
+   }
+  },
+  "4f577d63": {
+   "eq": {
+    "procs": 81,
+    "seconds": 112.0
+   }
+  },
+  "4f577d7d": {
+   "eq": {
+    "procs": 83,
+    "seconds": 103.0
+   }
+  },
+  "4f6b7724": {
+   "saturation": {
+    "procs": 13,
+    "seconds": 10.0
+   }
+  },
+  "4f6b7727": {
+   "saturation": {
+    "procs": 21,
+    "seconds": 30.0
+   }
+  },
+  "517f614e": {
+   "compressor": {
+    "procs": 60,
+    "seconds": 194.1
+   }
+  },
+  "5241463a": {
+   "saturation": {
+    "procs": 72,
+    "seconds": 164.0
+   }
+  },
+  "526d4159": {
+   "eq": {
+    "procs": 424,
+    "seconds": 558.0
+   }
+  },
+  "526d4840": {
+   "eq": {
+    "procs": 21,
+    "seconds": 11.0
+   }
+  },
+  "526d4845": {
+   "limiter": {
+    "procs": 65,
+    "seconds": 35.0
+   },
+   "limitercomp": {
+    "procs": 142,
+    "seconds": 616.0
+   }
+  },
+  "526d484b": {
+   "compressor": {
+    "procs": 107,
+    "seconds": 154.1
+   }
+  },
+  "526d4850": {
+   "saturation": {
+    "procs": 55,
+    "seconds": 26.0
+   }
+  },
+  "526d4859": {
+   "eq": {
+    "procs": 79,
+    "seconds": 48.0
+   }
+  },
+  "526d485c": {
+   "saturation": {
+    "procs": 22,
+    "seconds": 9.0
+   }
+  },
+  "526d485d": {
+   "eq": {
+    "procs": 186,
+    "seconds": 161.0
+   }
+  },
+  "526d485e": {
+   "limiter": {
+    "procs": 30,
+    "seconds": 12.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 349.0
+   }
+  },
+  "526d4b52": {
+   "eq": {
+    "procs": 171,
+    "seconds": 168.0
+   }
+  },
+  "526d5652": {
+   "compressor": {
+    "procs": 587,
+    "seconds": 568.9
+   }
+  },
+  "526d5d41": {
+   "transient": {
+    "procs": 87,
+    "seconds": 36.0
+   }
+  },
+  "526d5d5b": {
+   "eq": {
+    "procs": 55,
+    "seconds": 49.0
+   }
+  },
+  "54675c76": {
+   "compressor": {
+    "procs": 45,
+    "seconds": 548.5
+   }
+  },
+  "57146c39": {
+   "delay": {
+    "procs": 187,
+    "seconds": 143.0
+   }
+  },
+  "5762472": {
+   "compressor": {
+    "procs": 67,
+    "seconds": 185.5
+   }
+  },
+  "58330763": {
+   "eq": {
+    "procs": 22,
+    "seconds": 25.0
+   }
+  },
+  "5833077d": {
+   "eq": {
+    "procs": 41,
+    "seconds": 63.0
+   }
+  },
+  "58350663": {
+   "saturation": {
+    "procs": 14,
+    "seconds": 12.0
+   }
+  },
+  "5835067d": {
+   "saturation": {
+    "procs": 19,
+    "seconds": 18.0
+   }
+  },
+  "58356163": {
+   "limiter": {
+    "procs": 58,
+    "seconds": 46.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 191.0
+   }
+  },
+  "5835617d": {
+   "limiter": {
+    "procs": 58,
+    "seconds": 47.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 291.0
+   }
+  },
+  "58356218": {
+   "reverb": {
+    "procs": 183,
+    "seconds": 107.0
+   }
+  },
+  "5835621b": {
+   "reverb": {
+    "procs": 165,
+    "seconds": 116.0
+   }
+  },
+  "58356274": {
+   "reverb": {
+    "procs": 183,
+    "seconds": 140.0
+   }
+  },
+  "58356277": {
+   "reverb": {
+    "procs": 165,
+    "seconds": 118.0
+   }
+  },
+  "5835627a": {
+   "reverb": {
+    "procs": 165,
+    "seconds": 126.0
+   }
+  },
+  "5835627b": {
+   "reverb": {
+    "procs": 183,
+    "seconds": 140.0
+   }
+  },
+  "58357663": {
+   "limiter": {
+    "procs": 18,
+    "seconds": 14.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 172.0
+   }
+  },
+  "5835767d": {
+   "limiter": {
+    "procs": 18,
+    "seconds": 15.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 277.0
+   }
+  },
+  "58426263": {
+   "deesser": {
+    "procs": 23,
+    "seconds": 18.0
+   }
+  },
+  "5842627d": {
+   "deesser": {
+    "procs": 23,
+    "seconds": 20.0
+   }
+  },
+  "58437563": {
+   "saturation": {
+    "procs": 13,
+    "seconds": 11.0
+   }
+  },
+  "5843757d": {
+   "saturation": {
+    "procs": 18,
+    "seconds": 16.0
+   }
+  },
+  "58476963": {
+   "compressor": {
+    "procs": 64,
+    "seconds": 47.3
+   }
+  },
+  "5847697d": {
+   "compressor": {
+    "procs": 64,
+    "seconds": 48.5
+   }
+  },
+  "58486563": {
+   "strips": {
+    "procs": 67,
+    "seconds": 524.0
+   }
+  },
+  "58486576": {
+   "strips": {
+    "procs": 67,
+    "seconds": 829.0
+   }
+  },
+  "5848657d": {
+   "strips": {
+    "procs": 67,
+    "seconds": 883.0
+   }
+  },
+  "58547776": {
+   "reverb": {
+    "procs": 155,
+    "seconds": 84.0
+   }
+  },
+  "5854777d": {
+   "reverb": {
+    "procs": 155,
+    "seconds": 102.0
+   }
+  },
+  "58550063": {
+   "compressor": {
+    "procs": 61,
+    "seconds": 193.2
+   }
+  },
+  "5855007d": {
+   "compressor": {
+    "procs": 119,
+    "seconds": 616.6
+   }
+  },
+  "58570363": {
+   "eq": {
+    "procs": 29,
+    "seconds": 36.0
+   }
+  },
+  "5857037d": {
+   "eq": {
+    "procs": 30,
+    "seconds": 37.0
+   }
+  },
+  "58570563": {
+   "eq": {
+    "procs": 57,
+    "seconds": 71.0
+   }
+  },
+  "5857057d": {
+   "eq": {
+    "procs": 58,
+    "seconds": 73.0
+   }
+  },
+  "58570763": {
+   "eq": {
+    "procs": 85,
+    "seconds": 108.0
+   }
+  },
+  "5857077d": {
+   "eq": {
+    "procs": 86,
+    "seconds": 109.0
+   }
+  },
+  "59457663": {
+   "strips": {
+    "procs": 45,
+    "seconds": 76.0
+   }
+  },
+  "5945767d": {
+   "strips": {
+    "procs": 45,
+    "seconds": 76.0
+   }
+  },
+  "59457963": {
+   "strips": {
+    "procs": 46,
+    "seconds": 76.0
+   }
+  },
+  "5945797d": {
+   "strips": {
+    "procs": 46,
+    "seconds": 75.0
+   }
+  },
+  "594a6063": {
+   "eq": {
+    "procs": 45,
+    "seconds": 50.0
+   }
+  },
+  "594a607d": {
+   "eq": {
+    "procs": 45,
+    "seconds": 51.0
+   }
+  },
+  "594a7263": {
+   "compressor": {
+    "procs": 75,
+    "seconds": 76.2
+   }
+  },
+  "594a727d": {
+   "compressor": {
+    "procs": 75,
+    "seconds": 79.0
+   }
+  },
+  "594b6263": {
+   "saturation": {
+    "procs": 42,
+    "seconds": 68.0
+   }
+  },
+  "594b627d": {
+   "saturation": {
+    "procs": 42,
+    "seconds": 68.0
+   }
+  },
+  "594e6063": {
+   "eq": {
+    "procs": 45,
+    "seconds": 52.0
+   }
+  },
+  "594e607d": {
+   "eq": {
+    "procs": 59,
+    "seconds": 83.0
+   }
+  },
+  "594f7363": {
+   "deesser": {
+    "procs": 17,
+    "seconds": 13.0
+   }
+  },
+  "594f737d": {
+   "deesser": {
+    "procs": 17,
+    "seconds": 15.0
+   }
+  },
+  "59527063": {
+   "strips": {
+    "procs": 117,
+    "seconds": 382.0
+   }
+  },
+  "5952707d": {
+   "strips": {
+    "procs": 117,
+    "seconds": 534.0
+   }
+  },
+  "59527463": {
+   "reverb": {
+    "procs": 155,
+    "seconds": 164.0
+   }
+  },
+  "59527476": {
+   "reverb": {
+    "procs": 183,
+    "seconds": 240.0
+   }
+  },
+  "5952747d": {
+   "reverb": {
+    "procs": 183,
+    "seconds": 233.0
+   }
+  },
+  "59550863": {
+   "strips": {
+    "procs": 82,
+    "seconds": 563.0
+   }
+  },
+  "5955087d": {
+   "strips": {
+    "procs": 82,
+    "seconds": 418.0
+   }
+  },
+  "59557263": {
+   "saturation": {
+    "procs": 41,
+    "seconds": 66.0
+   }
+  },
+  "5955727d": {
+   "saturation": {
+    "procs": 41,
+    "seconds": 67.0
+   }
+  },
+  "59560063": {
+   "compressor": {
+    "procs": 3,
+    "seconds": 2.8
+   }
+  },
+  "5956007d": {
+   "compressor": {
+    "procs": 3,
+    "seconds": 2.6
+   }
+  },
+  "59570063": {
+   "eq": {
+    "procs": 4,
+    "seconds": 8.0
+   }
+  },
+  "5957007d": {
+   "eq": {
+    "procs": 4,
+    "seconds": 8.0
+   }
+  },
+  "5a377063": {
+   "eq": {
+    "procs": 29,
+    "seconds": 46.0
+   }
+  },
+  "5a37707d": {
+   "eq": {
+    "procs": 29,
+    "seconds": 32.0
+   }
+  },
+  "5a4a6563": {
+   "reverb": {
+    "procs": 111,
+    "seconds": 100.0
+   }
+  },
+  "5a4a6576": {
+   "reverb": {
+    "procs": 117,
+    "seconds": 140.0
+   }
+  },
+  "5a4a657d": {
+   "reverb": {
+    "procs": 129,
+    "seconds": 146.0
+   }
+  },
+  "5a4b0463": {
+   "eq": {
+    "procs": 23,
+    "seconds": 25.0
+   }
+  },
+  "5a4b047d": {
+   "eq": {
+    "procs": 23,
+    "seconds": 26.0
+   }
+  },
+  "5a527763": {
+   "saturation": {
+    "procs": 28,
+    "seconds": 38.0
+   }
+  },
+  "5a52777d": {
+   "saturation": {
+    "procs": 28,
+    "seconds": 49.0
+   }
+  },
+  "5a546263": {
+   "saturation": {
+    "procs": 56,
+    "seconds": 83.0
+   }
+  },
+  "5a54627d": {
+   "saturation": {
+    "procs": 56,
+    "seconds": 74.0
+   }
+  },
+  "5a556c68": {
+   "saturation": {
+    "procs": 58,
+    "seconds": 148.0
+   }
+  },
+  "5a556c7d": {
+   "saturation": {
+    "procs": 56,
+    "seconds": 142.0
+   }
+  },
+  "5a557b68": {
+   "saturation": {
+    "procs": 49,
+    "seconds": 131.0
+   }
+  },
+  "5a557b7d": {
+   "saturation": {
+    "procs": 47,
+    "seconds": 131.0
+   }
+  },
+  "5a557e68": {
+   "saturation": {
+    "procs": 46,
+    "seconds": 109.0
+   }
+  },
+  "5a557e7d": {
+   "saturation": {
+    "procs": 44,
+    "seconds": 90.0
+   }
+  },
+  "5a5f7463": {
+   "compressor": {
+    "procs": 46,
+    "seconds": 52.7
+   }
+  },
+  "5a5f747d": {
+   "compressor": {
+    "procs": 46,
+    "seconds": 62.8
+   }
+  },
+  "5b420463": {
+   "eq": {
+    "procs": 123,
+    "seconds": 146.0
+   }
+  },
+  "5b42047d": {
+   "eq": {
+    "procs": 123,
+    "seconds": 148.0
+   }
+  },
+  "5b426b63": {
+   "eq": {
+    "procs": 123,
+    "seconds": 161.0
+   }
+  },
+  "5b426b7d": {
+   "eq": {
+    "procs": 123,
+    "seconds": 149.0
+   }
+  },
+  "5c436063": {
+   "eq": {
+    "procs": 22,
+    "seconds": 28.0
+   }
+  },
+  "5c43607d": {
+   "eq": {
+    "procs": 22,
+    "seconds": 29.0
+   }
+  },
+  "5c480463": {
+   "compressor": {
+    "procs": 81,
+    "seconds": 239.5
+   }
+  },
+  "5c48047d": {
+   "compressor": {
+    "procs": 167,
+    "seconds": 701.6
+   }
+  },
+  "5c527c63": {
+   "saturation": {
+    "procs": 15,
+    "seconds": 23.0
+   }
+  },
+  "5c527c7d": {
+   "saturation": {
+    "procs": 20,
+    "seconds": 27.0
+   }
+  },
+  "5c5e6163": {
+   "gate": {
+    "procs": 85,
+    "seconds": 43.0
+   }
+  },
+  "5c5e617d": {
+   "gate": {
+    "procs": 85,
+    "seconds": 56.0
+   }
+  },
+  "5c646326": {
+   "saturation": {
+    "procs": 21,
+    "seconds": 22.0
+   }
+  },
+  "5e350663": {
+   "saturation": {
+    "procs": 28,
+    "seconds": 53.0
+   }
+  },
+  "5e35067d": {
+   "saturation": {
+    "procs": 33,
+    "seconds": 66.0
+   }
+  },
+  "5e410463": {
+   "strips": {
+    "procs": 7,
+    "seconds": 15.0
+   }
+  },
+  "5e41047d": {
+   "strips": {
+    "procs": 10,
+    "seconds": 27.0
+   }
+  },
+  "5e416e63": {
+   "strips": {
+    "procs": 89,
+    "seconds": 205.0
+   }
+  },
+  "5e416e7d": {
+   "strips": {
+    "procs": 59,
+    "seconds": 133.0
+   }
+  },
+  "5e417663": {
+   "strips": {
+    "procs": 73,
+    "seconds": 173.0
+   }
+  },
+  "5e41767d": {
+   "strips": {
+    "procs": 51,
+    "seconds": 109.0
+   }
+  },
+  "5e476163": {
+   "saturation": {
+    "procs": 24,
+    "seconds": 36.0
+   }
+  },
+  "5e47617d": {
+   "saturation": {
+    "procs": 24,
+    "seconds": 28.0
+   }
+  },
+  "5e486263": {
+   "strips": {
+    "procs": 2,
+    "seconds": 13.0
+   }
+  },
+  "5e48627d": {
+   "strips": {
+    "procs": 2,
+    "seconds": 3.0
+   }
+  },
+  "5e486376": {
+   "strips": {
+    "procs": 2,
+    "seconds": 6.0
+   }
+  },
+  "5e48637d": {
+   "strips": {
+    "procs": 2,
+    "seconds": 5.0
+   }
+  },
+  "5e486776": {
+   "strips": {
+    "procs": 2,
+    "seconds": 5.0
+   }
+  },
+  "5e48677d": {
+   "strips": {
+    "procs": 2,
+    "seconds": 4.0
+   }
+  },
+  "5e487076": {
+   "strips": {
+    "procs": 10,
+    "seconds": 12.0
+   }
+  },
+  "5e48707d": {
+   "strips": {
+    "procs": 10,
+    "seconds": 12.0
+   }
+  },
+  "5e487363": {
+   "strips": {
+    "procs": 2,
+    "seconds": 4.0
+   }
+  },
+  "5e487376": {
+   "strips": {
+    "procs": 2,
+    "seconds": 4.0
+   }
+  },
+  "5e48737d": {
+   "strips": {
+    "procs": 2,
+    "seconds": 4.0
+   }
+  },
+  "5e487976": {
+   "saturation": {
+    "procs": 25,
+    "seconds": 36.0
+   }
+  },
+  "5e48797d": {
+   "saturation": {
+    "procs": 24,
+    "seconds": 30.0
+   }
+  },
+  "5e50057d": {
+   "reverb": {
+    "procs": 163,
+    "seconds": 85.0
+   }
+  },
+  "5e506263": {
+   "reverb": {
+    "procs": 159,
+    "seconds": 99.0
+   }
+  },
+  "5e507c76": {
+   "reverb": {
+    "procs": 163,
+    "seconds": 102.0
+   }
+  },
+  "5e556a63": {
+   "transient": {
+    "procs": 87,
+    "seconds": 48.0
+   }
+  },
+  "5e556a7d": {
+   "transient": {
+    "procs": 87,
+    "seconds": 34.0
+   }
+  },
+  "5e5e0563": {
+   "transient": {
+    "procs": 104,
+    "seconds": 57.0
+   }
+  },
+  "5e5e057d": {
+   "transient": {
+    "procs": 104,
+    "seconds": 66.0
+   }
+  },
+  "5e5e6663": {
+   "transient": {
+    "procs": 51,
+    "seconds": 37.0
+   }
+  },
+  "5e5e667d": {
+   "transient": {
+    "procs": 51,
+    "seconds": 20.0
+   }
+  },
+  "5e6f5359": {
+   "eq": {
+    "procs": 61,
+    "seconds": 183.0
+   }
+  },
+  "5f456c63": {
+   "saturation": {
+    "procs": 22,
+    "seconds": 30.0
+   }
+  },
+  "5f456c68": {
+   "saturation": {
+    "procs": 22,
+    "seconds": 31.0
+   }
+  },
+  "5f456c7d": {
+   "saturation": {
+    "procs": 22,
+    "seconds": 44.0
+   }
+  },
+  "5f457863": {
+   "saturation": {
+    "procs": 22,
+    "seconds": 43.0
+   }
+  },
+  "5f457868": {
+   "saturation": {
+    "procs": 22,
+    "seconds": 30.0
+   }
+  },
+  "5f45787d": {
+   "saturation": {
+    "procs": 22,
+    "seconds": 30.0
+   }
+  },
+  "5f547263": {
+   "compressor": {
+    "procs": 97,
+    "seconds": 85.8
+   }
+  },
+  "5f54727d": {
+   "compressor": {
+    "procs": 97,
+    "seconds": 86.4
+   }
+  },
+  "5f7e7226": {
+   "transient": {
+    "procs": 256,
+    "seconds": 173.0
+   }
+  },
+  "604f2039": {
+   "saturation": {
+    "procs": 47,
+    "seconds": 56.0
+   }
+  },
+  "60604d21": {
+   "saturation": {
+    "procs": 18,
+    "seconds": 26.0
+   }
+  },
+  "610e7b78": {
+   "deesser": {
+    "procs": 24,
+    "seconds": 18.0
+   }
+  },
+  "612e4d58": {
+   "deesser": {
+    "procs": 64,
+    "seconds": 100.0
+   }
+  },
+  "61362a2e": {
+   "saturation": {
+    "procs": 57,
+    "seconds": 62.0
+   }
+  },
+  "6136669": {
+   "reverb": {
+    "procs": 140,
+    "seconds": 90.0
+   }
+  },
+  "61406e51": {
+   "saturation": {
+    "procs": 42,
+    "seconds": 18.0
+   }
+  },
+  "6143572d": {
+   "compressor": {
+    "procs": 158,
+    "seconds": 271.7
+   }
+  },
+  "61444242": {
+   "compressor": {
+    "procs": 802,
+    "seconds": 209.3
+   }
+  },
+  "6144426f": {
+   "compressor": {
+    "procs": 247,
+    "seconds": 733.1
+   }
+  },
+  "61444852": {
+   "gate": {
+    "procs": 283,
+    "seconds": 56.0
+   }
+  },
+  "61445c52": {
+   "deesser": {
+    "procs": 31,
+    "seconds": 18.0
+   }
+  },
+  "61447363": {
+   "transient": {
+    "procs": 259,
+    "seconds": 40.0
+   }
+  },
+  "61447441": {
+   "compressor": {
+    "procs": 38,
+    "seconds": 55.5
+   }
+  },
+  "61447447": {
+   "eq": {
+    "procs": 76,
+    "seconds": 66.0
+   }
+  },
+  "61453823": {
+   "compressor": {
+    "procs": 25,
+    "seconds": 67.9
+   }
+  },
+  "61453b50": {
+   "eq": {
+    "procs": 259,
+    "seconds": 273.0
+   }
+  },
+  "61453c50": {
+   "eq": {
+    "procs": 259,
+    "seconds": 234.0
+   }
+  },
+  "61454045": {
+   "strips": {
+    "procs": 20,
+    "seconds": 443.0
+   }
+  },
+  "61465145": {
+   "deesser": {
+    "procs": 23,
+    "seconds": 26.0
+   }
+  },
+  "61465150": {
+   "strips": {
+    "procs": 119,
+    "seconds": 636.0
+   }
+  },
+  "61465750": {
+   "strips": {
+    "procs": 94,
+    "seconds": 1066.0
+   }
+  },
+  "61465932": {
+   "saturation": {
+    "procs": 12,
+    "seconds": 10.0
+   }
+  },
+  "61473d41": {
+   "saturation": {
+    "procs": 104,
+    "seconds": 98.0
+   }
+  },
+  "61476044": {
+   "saturation": {
+    "procs": 19,
+    "seconds": 10.0
+   }
+  },
+  "614f7369": {
+   "compressor": {
+    "procs": 14,
+    "seconds": 166.1
+   },
+   "tuners": {
+    "procs": 12,
+    "seconds": 148.0
+   }
+  },
+  "6151253b": {
+   "compressor": {
+    "procs": 104,
+    "seconds": 375.4
+   }
+  },
+  "61512573": {
+   "compressor": {
+    "procs": 104,
+    "seconds": 373.9
+   }
+  },
+  "61516426": {
+   "compressor": {
+    "procs": 137,
+    "seconds": 124.0
+   }
+  },
+  "6151642a": {
+   "compressor": {
+    "procs": 737,
+    "seconds": 1606.6
+   }
+  },
+  "6151642b": {
+   "limiter": {
+    "procs": 95,
+    "seconds": 46.0
+   }
+  },
+  "61516431": {
+   "eq": {
+    "procs": 97,
+    "seconds": 70.0
+   }
+  },
+  "61516433": {
+   "compressor": {
+    "procs": 54,
+    "seconds": 24.9
+   }
+  },
+  "61516436": {
+   "saturation": {
+    "procs": 37,
+    "seconds": 17.0
+   }
+  },
+  "6151643b": {
+   "saturation": {
+    "procs": 41,
+    "seconds": 50.0
+   }
+  },
+  "61516453": {
+   "eq": {
+    "procs": 9,
+    "seconds": 5.0
+   }
+  },
+  "61516462": {
+   "compressor": {
+    "procs": 737,
+    "seconds": 1618.2
+   }
+  },
+  "61516468": {
+   "eq": {
+    "procs": 129,
+    "seconds": 90.0
+   }
+  },
+  "61516470": {
+   "reverb": {
+    "procs": 302,
+    "seconds": 51.0
+   }
+  },
+  "6151647c": {
+   "eq": {
+    "procs": 146,
+    "seconds": 110.0
+   }
+  },
+  "6151657b": {
+   "limiter": {
+    "procs": 92,
+    "seconds": 36.0
+   }
+  },
+  "61516c72": {
+   "saturation": {
+    "procs": 54,
+    "seconds": 28.0
+   }
+  },
+  "61516c7a": {
+   "limiter": {
+    "procs": 54,
+    "seconds": 21.0
+   },
+   "limitercomp": {
+    "procs": 40,
+    "seconds": 308.0
+   }
+  },
+  "61517f30": {
+   "eq": {
+    "procs": 161,
+    "seconds": 112.0
+   }
+  },
+  "61526844": {
+   "saturation": {
+    "procs": 28,
+    "seconds": 31.0
+   }
+  },
+  "6154734e": {
+   "compressor": {
+    "procs": 69,
+    "seconds": 58.7
+   }
+  },
+  "6155777e": {
+   "compressor": {
+    "procs": 102,
+    "seconds": 106.6
+   }
+  },
+  "61564067": {
+   "eq": {
+    "procs": 8,
+    "seconds": 4.0
+   }
+  },
+  "61573c50": {
+   "compressor": {
+    "procs": 50,
+    "seconds": 63.3
+   }
+  },
+  "61583d50": {
+   "limiter": {
+    "procs": 54,
+    "seconds": 22.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 283.0
+   }
+  },
+  "615d424d": {
+   "reverb": {
+    "procs": 280,
+    "seconds": 65.0
+   }
+  },
+  "615d434e": {
+   "saturation": {
+    "procs": 154,
+    "seconds": 88.0
+   }
+  },
+  "615d6e41": {
+   "compressor": {
+    "procs": 37,
+    "seconds": 42.3
+   }
+  },
+  "615d7570": {
+   "transient": {
+    "procs": 267,
+    "seconds": 50.0
+   }
+  },
+  "615f584a": {
+   "saturation": {
+    "procs": 47,
+    "seconds": 43.0
+   }
+  },
+  "615f5d32": {
+   "limiter": {
+    "procs": 2,
+    "seconds": 13.0
+   },
+   "limitercomp": {
+    "procs": 3,
+    "seconds": 47.0
+   }
+  },
+  "61645367": {
+   "reverb": {
+    "procs": 281,
+    "seconds": 52.0
+   }
+  },
+  "6164536f": {
+   "reverb": {
+    "procs": 264,
+    "seconds": 63.0
+   }
+  },
+  "61645821": {
+   "eq": {
+    "procs": 13,
+    "seconds": 110.0
+   }
+  },
+  "61686c60": {
+   "reverb": {
+    "procs": 256,
+    "seconds": 188.0
+   }
+  },
+  "61686e65": {
+   "strips": {
+    "procs": 23,
+    "seconds": 55.0
+   }
+  },
+  "61686f67": {
+   "eq": {
+    "procs": 367,
+    "seconds": 544.0
+   }
+  },
+  "61687260": {
+   "compressor": {
+    "procs": 38,
+    "seconds": 61.9
+   }
+  },
+  "61687265": {
+   "saturation": {
+    "procs": 17,
+    "seconds": 18.0
+   }
+  },
+  "61687275": {
+   "compressor": {
+    "procs": 59,
+    "seconds": 112.1
+   }
+  },
+  "61687c04": {
+   "strips": {
+    "procs": 20,
+    "seconds": 403.0
+   }
+  },
+  "61724344": {
+   "saturation": {
+    "procs": 42,
+    "seconds": 119.0
+   }
+  },
+  "61746871": {
+   "saturation": {
+    "procs": 86,
+    "seconds": 48.0
+   }
+  },
+  "61747843": {
+   "eq": {
+    "procs": 122,
+    "seconds": 89.0
+   }
+  },
+  "61747853": {
+   "eq": {
+    "procs": 95,
+    "seconds": 69.0
+   }
+  },
+  "61752275": {
+   "eq": {
+    "procs": 123,
+    "seconds": 86.0
+   }
+  },
+  "61754355": {
+   "saturation": {
+    "procs": 35,
+    "seconds": 33.0
+   }
+  },
+  "61754b75": {
+   "saturation": {
+    "procs": 12,
+    "seconds": 9.0
+   }
+  },
+  "61754f48": {
+   "saturation": {
+    "procs": 11,
+    "seconds": 7.0
+   }
+  },
+  "61755c26": {
+   "compressor": {
+    "procs": 45,
+    "seconds": 159.3
+   }
+  },
+  "61755e70": {
+   "saturation": {
+    "procs": 20,
+    "seconds": 12.0
+   }
+  },
+  "61755f23": {
+   "compressor": {
+    "procs": 62,
+    "seconds": 250.1
+   }
+  },
+  "6175631b": {
+   "compressor": {
+    "procs": 170,
+    "seconds": 280.2
+   }
+  },
+  "61756975": {
+   "limiter": {
+    "procs": 5,
+    "seconds": 10.0
+   }
+  },
+  "61756c0c": {
+   "eq": {
+    "procs": 24,
+    "seconds": 20.0
+   }
+  },
+  "61756e78": {
+   "deesser": {
+    "procs": 21,
+    "seconds": 19.0
+   }
+  },
+  "61756e7b": {
+   "deesser": {
+    "procs": 20,
+    "seconds": 3.0
+   }
+  },
+  "61757106": {
+   "eq": {
+    "procs": 115,
+    "seconds": 436.0
+   }
+  },
+  "6175727f": {
+   "compressor": {
+    "procs": 224,
+    "seconds": 1389.8
+   }
+  },
+  "61757819": {
+   "eq": {
+    "procs": 44,
+    "seconds": 38.0
+   }
+  },
+  "61757a78": {
+   "eq": {
+    "procs": 41,
+    "seconds": 40.0
+   }
+  },
+  "61757a7b": {
+   "eq": {
+    "procs": 93,
+    "seconds": 86.0
+   }
+  },
+  "61757e1d": {
+   "saturation": {
+    "procs": 15,
+    "seconds": 49.0
+   }
+  },
+  "6176669": {
+   "delay": {
+    "procs": 75,
+    "seconds": 71.0
+   }
+  },
+  "61776527": {
+   "reverb": {
+    "procs": 189,
+    "seconds": 174.0
+   }
+  },
+  "617d5664": {
+   "saturation": {
+    "procs": 66,
+    "seconds": 36.0
+   }
+  },
+  "617d5671": {
+   "saturation": {
+    "procs": 47,
+    "seconds": 26.0
+   }
+  },
+  "617d776d": {
+   "compressor": {
+    "procs": 110,
+    "seconds": 659.6
+   }
+  },
+  "617f6710": {
+   "saturation": {
+    "procs": 15,
+    "seconds": 13.0
+   }
+  },
+  "62434544": {
+   "delay": {
+    "procs": 130,
+    "seconds": 55.0
+   }
+  },
+  "62485258": {
+   "compressor": {
+    "procs": 53,
+    "seconds": 279.3
+   }
+  },
+  "624a2035": {
+   "saturation": {
+    "procs": 38,
+    "seconds": 46.0
+   }
+  },
+  "624a282b": {
+   "eq": {
+    "procs": 137,
+    "seconds": 170.0
+   }
+  },
+  "624a4233": {
+   "saturation": {
+    "procs": 54,
+    "seconds": 70.0
+   }
+  },
+  "624a4734": {
+   "saturation": {
+    "procs": 41,
+    "seconds": 55.0
+   }
+  },
+  "624a4752": {
+   "saturation": {
+    "procs": 46,
+    "seconds": 67.0
+   }
+  },
+  "624a4c5d": {
+   "saturation": {
+    "procs": 17,
+    "seconds": 17.0
+   }
+  },
+  "624a5973": {
+   "compressor": {
+    "procs": 75,
+    "seconds": 372.2
+   }
+  },
+  "6275223f": {
+   "delay": {
+    "procs": 138,
+    "seconds": 177.0
+   }
+  },
+  "644c222e": {
+   "saturation": {
+    "procs": 54,
+    "seconds": 60.0
+   }
+  },
+  "644d6f6c": {
+   "saturation": {
+    "procs": 11,
+    "seconds": 17.0
+   }
+  },
+  "64547a4d": {
+   "strips": {
+    "procs": 2,
+    "seconds": 14.0
+   }
+  },
+  "645b616d": {
+   "compressor": {
+    "procs": 68,
+    "seconds": 134.7
+   }
+  },
+  "645b6172": {
+   "compressor": {
+    "procs": 104,
+    "seconds": 244.0
+   }
+  },
+  "645b6174": {
+   "compressor": {
+    "procs": 171,
+    "seconds": 788.8
+   }
+  },
+  "645b6178": {
+   "compressor": {
+    "procs": 69,
+    "seconds": 201.0
+   }
+  },
+  "64627860": {
+   "saturation": {
+    "procs": 12,
+    "seconds": 14.0
+   }
+  },
+  "646a414f": {
+   "reverb": {
+    "procs": 121,
+    "seconds": 115.0
+   }
+  },
+  "646a6f67": {
+   "eq": {
+    "procs": 22,
+    "seconds": 32.0
+   }
+  },
+  "65482f2e": {
+   "saturation": {
+    "procs": 55,
+    "seconds": 48.0
+   }
+  },
+  "65535357": {
+   "saturation": {
+    "procs": 52,
+    "seconds": 43.0
+   }
+  },
+  "6559783e": {
+   "eq": {
+    "procs": 30,
+    "seconds": 95.0
+   }
+  },
+  "6559785b": {
+   "eq": {
+    "procs": 19,
+    "seconds": 57.0
+   }
+  },
+  "65767473": {
+   "saturation": {
+    "procs": 31,
+    "seconds": 20.0
+   }
+  },
+  "66302735": {
+   "saturation": {
+    "procs": 52,
+    "seconds": 69.0
+   }
+  },
+  "66312536": {
+   "saturation": {
+    "procs": 53,
+    "seconds": 52.0
+   }
+  },
+  "66312b2e": {
+   "saturation": {
+    "procs": 54,
+    "seconds": 63.0
+   }
+  },
+  "66747970": {
+   "saturation": {
+    "procs": 10,
+    "seconds": 11.0
+   }
+  },
+  "67542e2e": {
+   "saturation": {
+    "procs": 47,
+    "seconds": 38.0
+   }
+  },
+  "675d4768": {
+   "saturation": {
+    "procs": 59,
+    "seconds": 96.0
+   }
+  },
+  "675d5952": {
+   "saturation": {
+    "procs": 63,
+    "seconds": 58.0
+   }
+  },
+  "67665331": {
+   "eq": {
+    "procs": 20,
+    "seconds": 22.0
+   }
+  },
+  "67665332": {
+   "eq": {
+    "procs": 37,
+    "seconds": 43.0
+   }
+  },
+  "6768746c": {
+   "transient": {
+    "procs": 277,
+    "seconds": 110.0
+   }
+  },
+  "685a6739": {
+   "compressor": {
+    "procs": 88,
+    "seconds": 261.9
+   }
+  },
+  "685a673b": {
+   "eq": {
+    "procs": 30,
+    "seconds": 41.0
+   }
+  },
+  "6868463f": {
+   "saturation": {
+    "procs": 64,
+    "seconds": 55.0
+   }
+  },
+  "6951474b": {
+   "limiter": {
+    "procs": 92,
+    "seconds": 38.0
+   },
+   "limitercomp": {
+    "procs": 39,
+    "seconds": 370.0
+   }
+  },
+  "69747d15": {
+   "limiter": {
+    "procs": 63,
+    "seconds": 32.0
+   },
+   "limitercomp": {
+    "procs": 37,
+    "seconds": 415.0
+   }
+  },
+  "69747d4b": {
+   "limiter": {
+    "procs": 35,
+    "seconds": 32.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 227.0
+   }
+  },
+  "697c7f2c": {
+   "compressor": {
+    "procs": 318,
+    "seconds": 2516.3
+   }
+  },
+  "6a616b62": {
+   "gate": {
+    "procs": 173,
+    "seconds": 114.0
+   }
+  },
+  "6a626f7a": {
+   "delay": {
+    "procs": 211,
+    "seconds": 227.0
+   }
+  },
+  "6a636979": {
+   "delay": {
+    "procs": 125,
+    "seconds": 129.0
+   }
+  },
+  "6a6a6762": {
+   "limiter": {
+    "procs": 28,
+    "seconds": 27.0
+   },
+   "limitercomp": {
+    "procs": 39,
+    "seconds": 302.0
+   }
+  },
+  "6a7d6e6f": {
+   "delay": {
+    "procs": 317,
+    "seconds": 73.0
+   }
+  },
+  "6b35574d": {
+   "saturation": {
+    "procs": 33,
+    "seconds": 43.0
+   }
+  },
+  "6b43547f": {
+   "eq": {
+    "procs": 76,
+    "seconds": 101.0
+   }
+  },
+  "6c515f50": {
+   "saturation": {
+    "procs": 31,
+    "seconds": 57.0
+   }
+  },
+  "6e424032": {
+   "eq": {
+    "procs": 21,
+    "seconds": 23.0
+   }
+  },
+  "6e424034": {
+   "eq": {
+    "procs": 15,
+    "seconds": 17.0
+   }
+  },
+  "6e665755": {
+   "compressor": {
+    "procs": 777,
+    "seconds": 2307.3
+   }
+  },
+  "6e6e5232": {
+   "compressor": {
+    "procs": 91,
+    "seconds": 114.1
+   }
+  },
+  "6e6e5432": {
+   "eq": {
+    "procs": 84,
+    "seconds": 124.0
+   }
+  },
+  "6f273d77": {
+   "transient": {
+    "procs": 119,
+    "seconds": 39.0
+   }
+  },
+  "6f3f2163": {
+   "strips": {
+    "procs": 71,
+    "seconds": 430.0
+   }
+  },
+  "6f444231": {
+   "strips": {
+    "procs": 39,
+    "seconds": 100.0
+   }
+  },
+  "6f456132": {
+   "eq": {
+    "procs": 29,
+    "seconds": 35.0
+   }
+  },
+  "6f457232": {
+   "compressor": {
+    "procs": 49,
+    "seconds": 116.1
+   }
+  },
+  "6f457233": {
+   "compressor": {
+    "procs": 37,
+    "seconds": 50.9
+   }
+  },
+  "6f457234": {
+   "compressor": {
+    "procs": 103,
+    "seconds": 262.4
+   }
+  },
+  "6f457431": {
+   "eq": {
+    "procs": 50,
+    "seconds": 73.0
+   }
+  },
+  "6f466163": {
+   "strips": {
+    "procs": 90,
+    "seconds": 447.0
+   }
+  },
+  "6f4e495f": {
+   "eq": {
+    "procs": 156,
+    "seconds": 408.0
+   }
+  },
+  "6f4f5463": {
+   "strips": {
+    "procs": 66,
+    "seconds": 417.0
+   }
+  },
+  "6f53492c": {
+   "saturation": {
+    "procs": 32,
+    "seconds": 37.0
+   }
+  },
+  "6f603a72": {
+   "compressor": {
+    "procs": 38,
+    "seconds": 45.1
+   }
+  },
+  "6f636231": {
+   "deesser": {
+    "procs": 26,
+    "seconds": 19.0
+   }
+  },
+  "6f6a7363": {
+   "compressor": {
+    "procs": 103,
+    "seconds": 503.8
+   }
+  },
+  "6f747363": {
+   "compressor": {
+    "procs": 37,
+    "seconds": 119.6
+   }
+  },
+  "6f7a414b": {
+   "compressor": {
+    "procs": 69,
+    "seconds": 76.3
+   }
+  },
+  "70404b5f": {
+   "compressor": {
+    "procs": 38,
+    "seconds": 51.0
+   }
+  },
+  "704f4855": {
+   "compressor": {
+    "procs": 304,
+    "seconds": 741.9
+   }
+  },
+  "704f495b": {
+   "saturation": {
+    "procs": 37,
+    "seconds": 35.0
+   }
+  },
+  "704f4a4a": {
+   "saturation": {
+    "procs": 51,
+    "seconds": 61.0
+   }
+  },
+  "704f5c43": {
+   "compressor": {
+    "procs": 288,
+    "seconds": 322.7
+   }
+  },
+  "7068777f": {
+   "eq": {
+    "procs": 89,
+    "seconds": 156.0
+   }
+  },
+  "706a7e6c": {
+   "compressor": {
+    "procs": 64,
+    "seconds": 102.1
+   }
+  },
+  "71146669": {
+   "limiter": {
+    "procs": 25,
+    "seconds": 25.0
+   },
+   "limitercomp": {
+    "procs": 38,
+    "seconds": 266.0
+   }
+  },
+  "71196669": {
+   "eq": {
+    "procs": 41,
+    "seconds": 173.0
+   }
+  },
+  "72106669": {
+   "delay": {
+    "procs": 84,
+    "seconds": 72.0
+   }
+  },
+  "72636669": {
+   "reverb": {
+    "procs": 93,
+    "seconds": 67.0
+   }
+  },
+  "73106669": {
+   "reverb": {
+    "procs": 57,
+    "seconds": 39.0
+   }
+  },
+  "73166669": {
+   "eq": {
+    "procs": 14,
+    "seconds": 13.0
+   }
+  },
+  "73196669": {
+   "eq": {
+    "procs": 41,
+    "seconds": 185.0
+   }
+  },
+  "73462d29": {
+   "compressor": {
+    "procs": 59,
+    "seconds": 243.6
+   }
+  },
+  "737a5876": {
+   "gate": {
+    "procs": 273,
+    "seconds": 101.0
+   }
+  },
+  "74104649": {
+   "eq": {
+    "procs": 105,
+    "seconds": 97.0
+   }
+  },
+  "74116669": {
+   "eq": {
+    "procs": 16,
+    "seconds": 14.0
+   }
+  },
+  "745e7a2d": {
+   "limiter": {
+    "procs": 52,
+    "seconds": 73.0
+   },
+   "limitercomp": {
+    "procs": 62,
+    "seconds": 782.0
+   }
+  },
+  "75104649": {
+   "eq": {
+    "procs": 80,
+    "seconds": 66.0
+   }
+  },
+  "75106669": {
+   "reverb": {
+    "procs": 231,
+    "seconds": 122.0
+   }
+  },
+  "75114649": {
+   "reverb": {
+    "procs": 105,
+    "seconds": 255.0
+   }
+  },
+  "75116669": {
+   "delay": {
+    "procs": 84,
+    "seconds": 72.0
+   }
+  },
+  "75154755": {
+   "compressor": {
+    "procs": 351,
+    "seconds": 578.7
+   }
+  },
+  "75156669": {
+   "eq": {
+    "procs": 16,
+    "seconds": 17.0
+   }
+  },
+  "75184649": {
+   "eq": {
+    "procs": 78,
+    "seconds": 122.0
+   }
+  },
+  "7526137e": {
+   "compressor": {
+    "procs": 36,
+    "seconds": 196.6
+   }
+  },
+  "75535942": {
+   "strips": {
+    "procs": 29,
+    "seconds": 336.0
+   }
+  },
+  "75545232": {
+   "compressor": {
+    "procs": 83,
+    "seconds": 81.4
+   }
+  },
+  "75545c33": {
+   "saturation": {
+    "procs": 31,
+    "seconds": 30.0
+   }
+  },
+  "76184649": {
+   "eq": {
+    "procs": 64,
+    "seconds": 83.0
+   }
+  },
+  "7648660d": {
+   "saturation": {
+    "procs": 12,
+    "seconds": 18.0
+   }
+  },
+  "76636669": {
+   "eq": {
+    "procs": 15,
+    "seconds": 64.0
+   }
+  },
+  "7663717a": {
+   "compressor": {
+    "procs": 244,
+    "seconds": 747.5
+   }
+  },
+  "7663777b": {
+   "eq": {
+    "procs": 123,
+    "seconds": 2685.0
+   }
+  },
+  "76637965": {
+   "deesser": {
+    "procs": 29,
+    "seconds": 32.0
+   }
+  },
+  "76644a21": {
+   "saturation": {
+    "procs": 13,
+    "seconds": 17.0
+   }
+  },
+  "76696468": {
+   "reverb": {
+    "procs": 327,
+    "seconds": 362.0
+   }
+  },
+  "76720177": {
+   "compressor": {
+    "procs": 19,
+    "seconds": 118.7
+   },
+   "tuners": {
+    "procs": 18,
+    "seconds": 111.0
+   }
+  },
+  "7672410a": {
+   "compressor": {
+    "procs": 19,
+    "seconds": 120.2
+   },
+   "tuners": {
+    "procs": 17,
+    "seconds": 111.0
+   }
+  },
+  "76765336": {
+   "compressor": {
+    "procs": 13,
+    "seconds": 120.2
+   },
+   "tuners": {
+    "procs": 11,
+    "seconds": 106.0
+   }
+  },
+  "767e7472": {
+   "compressor": {
+    "procs": 13,
+    "seconds": 131.3
+   },
+   "tuners": {
+    "procs": 11,
+    "seconds": 111.0
+   }
+  },
+  "767f6178": {
+   "deesser": {
+    "procs": 18,
+    "seconds": 28.0
+   }
+  },
+  "77106669": {
+   "strips": {
+    "procs": 51,
+    "seconds": 651.0
+   }
+  },
+  "77124649": {
+   "saturation": {
+    "procs": 45,
+    "seconds": 124.0
+   }
+  },
+  "77426031": {
+   "eq": {
+    "procs": 29,
+    "seconds": 44.0
+   }
+  },
+  "77624b21": {
+   "delay": {
+    "procs": 46,
+    "seconds": 51.0
+   }
+  },
+  "77632921": {
+   "delay": {
+    "procs": 82,
+    "seconds": 92.0
+   }
+  },
+  "77727f61": {
+   "compressor": {
+    "procs": 22,
+    "seconds": 138.1
+   },
+   "tuners": {
+    "procs": 19,
+    "seconds": 130.0
+   }
+  },
+  "78184649": {
+   "transient": {
+    "procs": 171,
+    "seconds": 252.0
+   }
+  },
+  "78546a25": {
+   "reverb": {
+    "procs": 153,
+    "seconds": 22.0
+   }
+  },
+  "78636669": {
+   "saturation": {
+    "procs": 14,
+    "seconds": 37.0
+   }
+  },
+  "79104649": {
+   "saturation": {
+    "procs": 11,
+    "seconds": 10.0
+   }
+  },
+  "79124649": {
+   "saturation": {
+    "procs": 24,
+    "seconds": 63.0
+   }
+  },
+  "79146669": {
+   "eq": {
+    "procs": 32,
+    "seconds": 31.0
+   }
+  },
+  "79776d7c": {
+   "saturation": {
+    "procs": 14,
+    "seconds": 38.0
+   }
+  },
+  "7a4b5451": {
+   "saturation": {
+    "procs": 64,
+    "seconds": 68.0
+   }
+  },
+  "7a606966": {
+   "compressor": {
+    "procs": 37,
+    "seconds": 112.5
+   }
+  },
+  "7a707c": {
+   "eq": {
+    "procs": 90,
+    "seconds": 219.0
+   }
+  },
+  "7a7d7b6f": {
+   "saturation": {
+    "procs": 28,
+    "seconds": 147.0
+   }
+  },
+  "7b0f1549": {
+   "eq": {
+    "procs": 79,
+    "seconds": 148.0
+   }
+  },
+  "7b77445a": {
+   "eq": {
+    "procs": 17,
+    "seconds": 63.0
+   }
+  },
+  "7c646904": {
+   "compressor": {
+    "procs": 43,
+    "seconds": 63.5
+   }
+  },
+  "7c657904": {
+   "strips": {
+    "procs": 87,
+    "seconds": 389.0
+   }
+  },
+  "7c7d7378": {
+   "compressor": {
+    "procs": 71,
+    "seconds": 184.6
+   }
+  },
+  "7d606b6a": {
+   "transient": {
+    "procs": 115,
+    "seconds": 315.0
+   }
+  },
+  "7e714539": {
+   "reverb": {
+    "procs": 30,
+    "seconds": 35.0
+   }
+  },
+  "7e715d21": {
+   "delay": {
+    "procs": 64,
+    "seconds": 79.0
+   }
+  },
+  "7e734d21": {
+   "saturation": {
+    "procs": 6,
+    "seconds": 9.0
+   }
+  },
+  "7e7f7c62": {
+   "compressor": {
+    "procs": 11,
+    "seconds": 54.7
+   }
+  },
+  "7f56566b": {
+   "compressor": {
+    "procs": 201,
+    "seconds": 725.4
+   }
+  },
+  "7f72640c": {
+   "eq": {
+    "procs": 73,
+    "seconds": 126.0
+   }
+  },
+  "b626669": {
+   "delay": {
+    "procs": 75,
+    "seconds": 71.0
+   }
+  },
+  "e616669": {
+   "eq": {
+    "procs": 17,
+    "seconds": 29.0
+   }
+  }
+ },
+ "schema": "ej_wizard_expected_work/1",
+ "source": "Sean's cert 5 (compressor run.jsonl + Phase B rows)"
+}

@@ -210,6 +210,7 @@ inline int runWizard (const WizardOptions& wo)
     // NO PLUGIN LEFT BEHIND (12 Oct, EjmapWizardRoute.h): (a) the database first - nothing it settles is loaded; (b) the server's category;
     // (c) the name rules; (d) out of scope by type / words, not loaded; (e) only what is left gets EJ Map's signature reads
     const auto pending = wizroute::loadPending (wo.db);
+    const auto expectedWork = wizprog::ExpectedWork::load (wo.db);   // 14 Oct: the bar's weights (Sean's seconds per plugin and kind)
     {   // THE REFERENCE STATES (custom defaults, 12 Oct): the server returns each plugin's agreed opening block with /lookup - STUB: the
         // database folder's references/ - and Phase B checks every plugin against it before measuring (EjmapCustomDefault.h)
         const auto refs = wo.db.getChildFile ("references"); const auto dst = out.getChildFile ("references");
@@ -233,7 +234,7 @@ inline int runWizard (const WizardOptions& wo)
         for (const auto& ir : plugins) if (ir.desc.name == n)
         {
             if (demoQueued.insert (n).second) { wizprog::Item d; d.product = n; d.kind = "demo"; d.serial = serialOf (ir.desc); d.group = gi; q.push_back (d); }
-            wizprog::Item it; it.product = n; it.kind = wizroute::kindOf (pb); it.serial = serialOf (ir.desc); it.group = gi; q.push_back (it); break;
+            wizprog::Item it; it.product = n; it.kind = wizroute::kindOf (pb); it.serial = serialOf (ir.desc); it.group = gi; it.weight = expectedWork.secondsFor (juce::String::toHexString (ir.desc.uniqueId), it.kind); q.push_back (it); break;
         }
         ++gi; } return q; };
     auto landedRow = [&] (const juce::String& pb, const juce::String& product) -> juce::var {
@@ -327,7 +328,7 @@ inline int runWizard (const WizardOptions& wo)
             { wizprog::Item it; it.product = ir.desc.name; it.kind = wizroute::kindOf (pb); it.serial = serialOf (ir.desc);
               if (! demoAdded) { demoAdded = true; wizprog::Item dm = it; dm.kind = "demo"; for (int g = 0; g < (int) wizroute::measureOrder().size(); ++g) if (wizroute::measureOrder()[(size_t) g].contains (pb)) dm.group = g; planItems.push_back (dm); }
               for (int g = 0; g < (int) wizroute::measureOrder().size(); ++g) if (wizroute::measureOrder()[(size_t) g].contains (pb)) it.group = g;
-              planItems.push_back (it); }
+              it.weight = expectedWork.secondsFor (juce::String::toHexString (ir.desc.uniqueId), it.kind); planItems.push_back (it); }
         }
         prog.finished (ir.desc.name, problemState (st));
         say ("  " + ir.desc.name.paddedRight (' ', 30) + " " + ver.paddedRight (' ', 9) + " -> " + wizroute::routeName (d.route) + " / " + st + ": " + why);

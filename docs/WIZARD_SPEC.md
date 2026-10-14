@@ -128,6 +128,17 @@ What it says is true of the bundle as built:
   - This Mac's plan: 522 -> 526 to measure; the estimate moves by about 1 minute (25.28 -> 25.30 h at 2 jobs).
 - Pin WZ-NEAR-1 (with the ceiling: 10/11 and 42/41 fail, 100/101 passes, 50/51 fails; mutant: no ceiling goes red).
 
+**3l. Faster measuring (Kathy, 14 Oct).**
+- **The cost was the bridge, not the library.** On this Mac every x86_64-only plugin (all 250 Waves v12 to measure) loads through the macOS AU bridge, which starts a new host process for every new instance: 3.7-3.9 s each time, in a fresh process or not. While one instance holds the bridge open, a new one costs 0.035-0.09 s. (Run as an x86_64 process instead, the library load is the 3.5 s and an instance 0.025-0.07 s; a native plugin such as townhouse is 0.37 s then 0.27 s.)
+- **The warm probe:** a Phase B row runs its probe calls in ONE probe process (`--serve`). That process holds an idle keeper instance and creates a NEW instance for every call, so every position still starts from a fresh plugin (the 29 Sep rule). The guards, window watch, clocks and crash handling are per call. A process that dies before it is ready sends that plugin back to one process per call. The wizard does this by default; EJ Map's own Phase B only with `--probe-serve`. Pin WZ-SERVE-1.
+- **The A/B (old = one process per call, this Mac, one job):**
+  - H-Reverb (5->5) 1218 -> 141 s, H-EQ (m) 408 -> 86 s, CLA-2A (m) 497 -> 226 s, bx_townhouse 256 -> 252 s.
+  - Readings: H-Reverb and H-EQ identical; CLA-2A's records and level readings identical; townhouse varies run to run by the same amount both ways (RMS 0.0032 dB old/old and warm/warm, 0.0032-0.0039 old/warm). Everything else is clocks, timestamps and paths. 0 unexplained.
+- **Jobs from a measurement:** a job (measuring child + probe + bridge host) peaked at 29-89 MB one process per call and 39-146 MB warm. A job is reserved at 300 MB; 4 jobs need 8+ performance cores and 1.5 GB (the pool's own low-memory floor) + 4 x 300 MB = 2.7 GB free at launch (was 4 GB). This Mac (8 P-cores, ~3.1 GB free) now gets 4. Pin WZ-JOBS-1.
+- **The bar:** each plugin weighs Sean's real seconds for it and its pass (`expected_work.json` in the database, from cert 5: 731 plugins), or its kind's median; this Mac's ratio is learned as plugins finish. A 20-minute reverb now moves the bar like one. Pin WZ-BAR-1.
+- **No time on screen:** the engine's own line ("under a minute left") is in its log and progress.json only; the app never reads it (WZ-NOTIME-1 now also pins that, and the one engine text the app shows, the low-disk stop, tells no time).
+- **This Mac's measuring:** about 27.5 h at 2 jobs before; about 16.3 h at 2 jobs / 12.1 h at 4 with the warm probe (calibrated on the A/B; compressors are now the largest part). UAD's serial lane is unchanged (7.3 h of it).
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

@@ -83,9 +83,37 @@ struct Times
         double t = 0.0; for (auto s : it->second) t += s; return t / (double) it->second.size();
     }
     bool isMeasured (const juce::String& kind) const { const auto it = measured.find (kind); return it != measured.end() && ! it->second.empty(); }
+    // THE BAR'S WEIGHTS (Kathy, 14 Oct): a plugin with a weight (Sean's seconds for it, or its kind's median: ExpectedWork) is expected
+    // to take weight x this Mac's ratio - learned from the weighted plugins finished so far (their seconds over their weights), 1 until
+    // one finishes. A 20-minute reverb weighs like one, so the bar moves through a reverb pass at its real pace (the 14 Oct H-Reverb run sat
+    // at "under a minute left" for 20 minutes on the reverb figure of 41 s). An item without a weight (a demo check, a map) keeps its kind's figure.
+    double weightSum = 0.0, weightedActual = 0.0;
+    void addWeighted (double weight, double s) { if (weight > 0.0 && s > 0.0) { weightSum += weight; weightedActual += s; } }
+    double ratio() const { return weightSum > 0.0 ? weightedActual / weightSum : 1.0; }
+    template <typename I> double expected (const I& i) const { return i.weight > 0.0 ? i.weight * ratio() : perItem (i.kind); }
 };
 
-struct Item { juce::String product, kind; bool done = false, running = false, problem = false, serial = false; double ranS = 0.0; int group = -1; };   // ranS: seconds a running item has run; group: its Phase B pass (-1: one pass)
+struct Item { juce::String product, kind; bool done = false, running = false, problem = false, serial = false; double ranS = 0.0; int group = -1; double weight = 0.0; };   // ranS: seconds a running item has run; group: its Phase B pass (-1: one pass); weight: Sean's seconds for this plugin and kind (0: the kind's figure)
+
+// the weights' source: <database>/expected_work.json (tools/ejmap/scripts/expected_work.py, from Sean's real runs): per plugin uid and kind
+// Sean's seconds, else the kind's median over his rows; 0 when the file or the kind is missing (the item keeps its kind's figure)
+struct ExpectedWork
+{
+    juce::var data;
+    static ExpectedWork load (const juce::File& db)
+    {   // the database's own copy first; else the one the app carries (Contents/Resources/mock_db, assemble.sh) - a release stub has none of its own
+        auto f = db.getChildFile ("expected_work.json");
+        if (! f.existsAsFile()) f = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getParentDirectory().getSiblingFile ("Resources").getChildFile ("mock_db/expected_work.json");
+        ExpectedWork w; w.data = juce::JSON::parse (f.loadFileAsString()); return w;
+    }
+    double secondsFor (const juce::String& uidHex, const juce::String& kind) const
+    {
+        if (! data.isObject()) return 0.0;
+        const auto own = data.getProperty ("plugins", {}).getProperty (juce::Identifier (uidHex.toLowerCase()), {}).getProperty (juce::Identifier (kind), {});
+        if (own.isObject() && (double) own.getProperty ("seconds", 0.0) > 0.0) return (double) own.getProperty ("seconds", 0.0);
+        return (double) data.getProperty ("_median", {}).getProperty (juce::Identifier (kind), {}).getProperty ("seconds", 0.0);
+    }
+};
 
 // RESUME: a queue item whose row already landed (product -> its outcome) starts done; a landed row that is not "ok" is a problem
 inline std::vector<Item> resumeItems (std::vector<Item> queue, const std::map<juce::String, juce::String>& landed)
@@ -98,7 +126,7 @@ inline std::vector<Item> resumeItems (std::vector<Item> queue, const std::map<ju
 inline double stageShare (const std::vector<Item>& items, const Times& t)
 {
     double all = 0.0, done = 0.0;
-    for (const auto& i : items) { const auto w = t.perItem (i.kind); all += w; if (i.done) done += w; else if (i.running) done += juce::jmin (0.9 * w, juce::jmax (0.0, i.ranS)); }
+    for (const auto& i : items) { const auto w = t.expected (i); all += w; if (i.done) done += w; else if (i.running) done += juce::jmin (0.9 * w, juce::jmax (0.0, i.ranS)); }
     return all <= 0.0 ? 1.0 : done / all;
 }
 // the bar: the stage's fixed band, the share inside it, never below what was shown (lastPct is updated)
@@ -127,13 +155,13 @@ inline double stageSecondsLeft (const std::vector<Item>& items, const Times& t, 
     for (const auto& i : items)
     {
         if (i.done) continue;
-        const double e = t.perItem (i.kind); const double s = i.running ? juce::jmax (0.1 * e, e - i.ranS) : e;
+        const double e = t.expected (i); const double s = i.running ? juce::jmax (0.1 * e, e - i.ranS) : e;
         auto& g = byGroup[i.group]; (i.serial ? g.second : g.first) += s;
     }
     double left = 0.0;
     for (const auto& [grp, ps] : byGroup)
     {   // a pass's parallel work spreads over at most as many jobs as it has plugins: its time is at least its longest plugin
-        double longest = 0.0; for (const auto& i : items) if (! i.done && i.group == grp && ! i.serial) longest = juce::jmax (longest, i.running ? juce::jmax (0.1 * t.perItem (i.kind), t.perItem (i.kind) - i.ranS) : t.perItem (i.kind));
+        double longest = 0.0; for (const auto& i : items) if (! i.done && i.group == grp && ! i.serial) longest = juce::jmax (longest, i.running ? juce::jmax (0.1 * t.expected (i), t.expected (i) - i.ranS) : t.expected (i));
         left += (grp < 0 ? ps.first / (double) juce::jmax (1, jobs) : juce::jmax (longest, ps.first / (double) juce::jmax (1, jobs))) + ps.second;
     }
     return left;
@@ -218,7 +246,7 @@ public:
             i.done = true; i.running = false; i.problem = problem;
             const auto key = product + "|" + i.kind;
             double s = seconds; if (s < 0.0 && startedAt_.count (key)) s = (juce::Time::getMillisecondCounterHiRes() - startedAt_[key]) / 1000.0;
-            if (! problem && s > 0.0) times_.add (i.kind, s);
+            if (! problem && s > 0.0) { times_.add (i.kind, s); times_.addWeighted (i.weight, s); }
             if (problem) ++problems_;
             break;
         }
@@ -257,6 +285,7 @@ public:
     }
     void stopTicker() { run_ = false; if (ticker_.joinable()) ticker_.join(); }
     double lastPercent() const { return lastPct_; }
+    double weightRatio() { std::lock_guard<std::mutex> g (m_); return times_.ratio(); }   // this Mac's seconds per weighted second so far (WZ-BAR-1)
     std::pair<int, int> stageDone() { std::lock_guard<std::mutex> g (m_); int d = 0; for (const auto& i : items_) if (i.done) ++d; return { d, (int) items_.size() }; }
     int running() { std::lock_guard<std::mutex> g (m_); int r = 0; for (const auto& i : items_) if (i.running && ! i.done) ++r; return r; }
     double stoppedAt() { std::lock_guard<std::mutex> g (m_); return stoppedPercent (stage_, items_, times_); }

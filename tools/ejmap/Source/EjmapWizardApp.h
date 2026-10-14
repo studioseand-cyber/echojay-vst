@@ -338,7 +338,14 @@ inline Choices measuringChoices (Mode m)
 }
 // JOBS BY MAC (Kathy, 13 Oct): 2 by default; 4 on a Mac with 8+ performance cores AND enough free memory at launch (the serial lane is
 // unchanged: UAD / licence / PACE / history rows still run one at a time). The estimates use the chosen number
-inline constexpr double kJobs4MinFreeBytes = 4.0 * 1024.0 * 1024.0 * 1024.0;
+// THE MEMORY, MEASURED (Kathy, 14 Oct; the 4 GB guess replaced): one job = the measuring child + its probe + the macOS AU bridge host
+// for an x86_64-only plugin. Peak footprint on this Mac (top, every ~9 s, four plugins both ways): one-shot 29-89 MB, the warm probe
+// 39-146 MB (H-Reverb: the keeper and the measured instance both live in the bridge host; townhouse native 36-39 MB). A job is reserved
+// at twice the largest, 300 MB; 4 jobs need the Phase B pool's own low-memory floor (1.5 GB, EjmapJobs.h kMinFreeBytes - it still holds
+// new jobs back whenever free memory falls under it) plus 4 x 300 MB: 2.7 GB free at launch
+inline constexpr double kJobPeakBytes = 300.0 * 1024.0 * 1024.0;
+inline constexpr double kPoolFloorBytes = 1.5 * 1024.0 * 1024.0 * 1024.0;   // = jobs::kMinFreeBytes
+inline constexpr double kJobs4MinFreeBytes = kPoolFloorBytes + 4.0 * kJobPeakBytes;
 inline int jobsFor (int performanceCores, double freeBytes) { return performanceCores >= 8 && freeBytes >= kJobs4MinFreeBytes ? 4 : 2; }
 // THE OUTBOX (Kathy, 13 Oct: offline) - an upload that could not be sent is kept in <work>/outbox (zip + manifest, numbered) and sent on the
 // next launch or the next try, oldest first; a send that fails stops the drain (the order is kept)

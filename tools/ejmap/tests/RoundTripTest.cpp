@@ -9714,7 +9714,8 @@ void testWizardCategories()
                && scanDoneCopy (Mode::normal, el).text == "We found 625 plugins we haven't mapped yet. Measuring them runs by itself in the background - it's best left running overnight, and you can pause any time and carry on later. Finish them all to get your free month."
                && scanDoneCopy (Mode::beta, el).text == "We found 625 plugins we haven't mapped yet. Measuring them runs by itself in the background - it's best left running overnight, and you can pause any time and carry on later."
                && measuringCount (juce::JSON::parse ("{\"measurements\": {\"done\": 3, \"total\": 649}}")) == "3 of 649"
-               && ! app.contains ("eta_words") && ! app.contains ("etaWords") && ! app.contains ("a few minutes") && readmeTimed.isEmpty(),
+               && ! app.contains ("eta_words") && ! app.contains ("etaWords") && ! app.contains ("\"line\"")   // 14 Oct: the engine's line (it says "under a minute left") is never read by the app
+               && app.contains ("text = sum.containsIgnoreCase (\"disk space\") ? sum :") && ! tellsATime (diskVerdict (1073741824, false).words) && ! tellsATime (diskVerdict (1073741824, true).words) && ! app.contains ("a few minutes") && readmeTimed.isEmpty(),
                "wizard WZ-NOTIME-1: no user-facing time in either build (" + juce::String (shown.size()) + " strings; timed: " + timed.joinIntoString (" / ") + "; README: " + readmeTimed + "), Kathy's scan-done words, Measuring 'n of N' (read: " + juce::String ((int) read) + ")");
     }
     // WZ-REWARD (Kathy, 13 Oct): THE SERVER DECIDES, on the MERGED RUN. Each case is a fresh server (its own stub folder); the uploads are real
@@ -9832,8 +9833,9 @@ void testWizardCategories()
         // WZ-JOBS-1 jobs by Mac: 4 only with 8+ performance cores AND 4 GB free; else 2
         {
             using ejmap::wizapp::jobsFor; const double GB = 1073741824.0;
-            check (jobsFor (8, 6.0 * GB) == 4 && jobsFor (10, 4.0 * GB) == 4 && jobsFor (8, 3.9 * GB) == 2 && jobsFor (6, 12.0 * GB) == 2 && jobsFor (8, -1.0) == 2,
-                   "wizard WZ-JOBS-1: 8 P-cores + 6 GB free -> 4; 3.9 GB free -> 2; 6 P-cores -> 2; unreadable memory -> 2");
+            check (jobsFor (8, 6.0 * GB) == 4 && jobsFor (10, 4.0 * GB) == 4 && jobsFor (8, 3.1 * GB) == 4 && jobsFor (8, 2.7 * GB) == 4 && jobsFor (8, 2.6 * GB) == 2
+                   && jobsFor (6, 12.0 * GB) == 2 && jobsFor (8, -1.0) == 2 && std::abs (ejmap::wizapp::kPoolFloorBytes - ejmap::jobs::kMinFreeBytes) < 1.0,
+                   "wizard WZ-JOBS-1: from the measured job (14 Oct: peak 146 MB, reserved 300 MB): 8 P-cores + 2.7 GB free -> 4 (this Mac's 3.1 GB -> 4); 2.6 GB -> 2; 6 P-cores -> 2; unreadable memory -> 2; the floor is the pool's");
         }
         // WZ-CKPT-1 the engine packs a checkpoint on a pause and every ~60 min, each upload carries the run, its queue and outcomes; the app
         // uploads a checkpoint quietly (release) / rewrites the Desktop file (beta). Text pins with a control
@@ -10135,6 +10137,36 @@ void testWizardCategories()
                && probeSrc.contains ("ejprobe::sidechainPolicy() = ejprobe::kSidechainDefault;")   // per request: no policy left from the last
                && drv.contains ("if (opt.probeServe) { args.insert (0, \"EJ_PROBE_SERVE=1\"); args.insert (0, \"/usr/bin/env\"); }"),
                "wizard WZ-SERVE-1: the warm probe - exact answers, the sentinel's code, one process per plugin, the preset per call, a teardown death replaced, a load death one-shot, off without EJ_PROBE_SERVE (pids " + juce::String (r1.pid) + "/" + juce::String (r5.pid) + "/" + juce::String (r7.pid) + "; read: " + juce::String ((int) read) + ")");
+    }
+    // WZ-BAR-1 THE BAR'S WEIGHTS (Kathy, 14 Oct): each plugin weighs Sean's real seconds for it (expected_work.json, from cert 5), else its kind's
+    // median; this Mac's ratio (actual / weight) is learned as weighted plugins finish. A finished CLA-2A (77.7 s) beside a waiting H-Reverb
+    // (335 s) is 19% of the work, not the 89% the old per-kind figures (340 / 41) said
+    {
+        using namespace ejmap::wizprog;
+        const auto ew = ExpectedWork::load (juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/beta_db"));
+        const bool read = ew.data.isObject() && ew.data.getProperty ("plugins", {}).getDynamicObject() != nullptr;   // the control
+        const double rev = ew.secondsFor ("4254621B", "reverb"), comp = ew.secondsFor ("46470363", "compressor"), med = ew.secondsFor ("ffffffff", "reverb"), none = ew.secondsFor ("ffffffff", "multiband");
+        Item ia; ia.product = "CLA-2A (m)"; ia.kind = "compressor"; ia.weight = comp; ia.done = true;
+        Item ib; ib.product = "H-Reverb (5->5)"; ib.kind = "reverb"; ib.weight = rev;
+        Times t; const double share = stageShare ({ ia, ib }, t);
+        Item ia0 = ia, ib0 = ib; ia0.weight = ib0.weight = 0.0; const double oldShare = stageShare ({ ia0, ib0 }, t);
+        Times t2; t2.addWeighted (comp, 2.0 * comp);
+        double trackerRatio = 0.0;
+        {   // the Tracker feeds the ratio from what finishes: a plugin weighted 100 that took 200 s -> 2
+            std::ostringstream term; const auto pj = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejbar_progress_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)) + ".json");
+            Tracker tr (pj, term, false, 2); Item w1; w1.product = "W1"; w1.kind = "reverb"; w1.weight = 100.0; Item w2 = w1; w2.product = "W2";
+            tr.stage (Stage::measuring, { w1, w2 }); tr.started ("W1", "reverb"); tr.finished ("W1", false, 200.0, "reverb"); trackerRatio = tr.weightRatio(); pj.deleteFile();
+        }
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto asm_ = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/assemble.sh").loadFileAsString();
+        check (read && std::abs (rev - 335.0) < 0.01 && std::abs (comp - 77.7) < 0.01 && std::abs (med - 102.0) < 0.01 && none == 0.0
+               && std::abs (share - 77.7 / (77.7 + 335.0)) < 1e-9 && oldShare > 0.85 && t.ratio() == 1.0 && std::abs (t2.ratio() - 2.0) < 1e-9 && std::abs (t2.expected (ib) - 670.0) < 1e-6
+               && std::abs (t2.expected (ia0) - defaultSeconds ("compressor")) < 1e-9
+               && std::abs (trackerRatio - 2.0) < 1e-9
+               && run.indexOf ("it.weight = expectedWork.secondsFor (juce::String::toHexString (ir.desc.uniqueId), it.kind);") >= 0
+               && run.lastIndexOf ("it.weight = expectedWork.secondsFor") != run.indexOf ("it.weight = expectedWork.secondsFor")   // the plan's items and the measuring items
+               && asm_.contains ("cp \"$HERE/beta_db/expected_work.json\" \"$R/mock_db/\""),
+               "wizard WZ-BAR-1: per-plugin weights from Sean's seconds (H-Reverb 335, CLA-2A 77.7, reverb median 102), share " + juce::String (share, 3) + " (old " + juce::String (oldShare, 3) + "), the ratio learned (read: " + juce::String ((int) read) + ")");
     }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files
