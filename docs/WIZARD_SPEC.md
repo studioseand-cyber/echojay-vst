@@ -103,6 +103,20 @@ What it says is true of the bundle as built:
 - **No orphan engines:** an engine whose app is gone (adopted by launchd) stops itself with SIGINT to its own group within about 2 s, measured. The app also stops its engine when it goes.
 - Pin WZ-SCAN-2.
 
+**3j. The one-load read-back check (Kathy, 14 Oct).**
+- **One load:** the read-back check reads every control it needs in ONE probe load (`--text-at-norms-multi "<i>:<n0>,<n1>;..."`). Each control is put back to its opening value after its reads, so the readings match the per-control way. One load per control is used only if that read is refused or fails.
+- **Measured here, same verdicts:**
+
+| Plugin | Before | After |
+|---|---|---|
+| EMO-D5 (m) | 184.5 s | 19.1 s |
+| Q4 (m) | 115.1 s | 25.1 s |
+| API-550A (m) | 59.8 s | 13.1 s |
+| CLA-76 (m) | 13.6 s | 9.0 s (it stops at the control list) |
+
+- **The probe change** is shared with feat/ejmap-cert (da531bf0).
+- Pin WZ-QC-1.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

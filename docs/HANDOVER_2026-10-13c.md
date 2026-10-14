@@ -136,4 +136,12 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
 - **DMGs at 4fad4d2a:** Test sha 3de41460527111f5, Beta sha 58228c00530ba023; both signed and verify VALID.
 - **Still slow, not changed:** a read-back check loads the plugin once per written control (EMO-D5: about 48 loads). Batching the reads into one probe call would make each about 2 loads. It needs a probe change, which is for Kathy to approve.
 
+## 14 Oct addendum 6: the one-load read-back check (wizard 6bdbcd5d; probe 7f9a5971, carried to cert as da531bf0, pushed)
+- **What it does:** every control a read-back check needs is read in one probe load, each restored after its reads. One load per control is used only on a refusal.
+- **Before / after (the same verdicts):** EMO-D5 (m) 184.5 -> 19.1 s, Q4 (m) 115.1 -> 25.1 s, API-550A (m) 59.8 -> 13.1 s, CLA-76 (m) 13.6 -> 9.0 s.
+- **This Mac's first scan:** about 3.7 h -> about 1.4 h at 2 jobs (read-back checks 2.8 h -> about 31 min). The first run in total is about 29.3 h at 2 jobs, 21.2 h at 4.
+- **Pin WZ-QC-1:** mutants Q1-Q4 red. Q1 needed the pin to gain a refusal INSIDE the multi block.
+- **DMGs at 6bdbcd5d:** Test sha 0f34bd8e28c2ab3c, Beta sha feead47077ce94ee; both signed and verify VALID; the probe re-signed.
+- **Noticed, not changed:** EMO-D5 and Q4 fail the read-back on display rounding ('14996' vs '15000', '1925' vs '1924'), so they go on to be measured in full. A numeric tolerance in `wizard::readback` would let such plugins pass as ready from another version. That changes what counts as a match, so it is Kathy's call.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
