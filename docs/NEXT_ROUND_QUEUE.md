@@ -294,3 +294,18 @@ stated recommendations rather than waited on.
 
 `docs/DESIGN_LINK_METERS.md`. One shm object per Link, GR + calibration + the analyser in **one push before
 beta**.
+
+## 0. FIRST, with the login text fix (found 14 Oct, 16:30, by the rig)
+
+**The agent client's 60 s timeout kills a slow round and blames the user's internet.**
+`EJAgentClient::connectTimeoutMs = 60'000` (EJAgentClient.h:160) is handed to `withConnectionTimeout`, and
+on the agent stream it bounds the WHOLE request: a step that had already delivered its round-10 frames died
+at exactly 60.000 s with *"Connection failed. Please check your internet connection."* The server's own log
+has steps at 39.5 s, and a round with a thinking budget can exceed a minute.
+
+- raise the bound (and say what it is in the log line, so the next one of these is diagnosable in one read)
+- and **separate the two failures**: "we could not reach the server" and "the round took longer than N
+  seconds" are different facts, and only one of them is about the user's wifi. The second should offer
+  Retry, which the client already supports (`retryable=1` was set).
+- a rig leg: a scripted round held open past the bound must surface as a timeout with its own words, not as
+  a connection failure.

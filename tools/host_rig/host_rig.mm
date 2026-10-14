@@ -277,6 +277,7 @@ struct AgentOutcome
     int   asksAnswered = 0;     // how many questions the rig answered on the user's behalf
     juce::String lastAsk;       // the last question it answered
     // 14 OCT: two facts the rig was missing, both of which let one row answer with another row's reply.
+    bool  sawAsk = false;       // the card asked something (and this row chose not to answer it)
     juce::String stepWords;     // what the steps said, captured WHILE they existed (see below)
     bool  adopted = false;      // the card's own goal became THIS request (so the reply belongs to this row)
     int   applies = 0;          // how many plans the rig approved (a build can present more than one)
@@ -294,7 +295,7 @@ struct AgentOutcome
         silence. */
     bool ran() const
     {
-        return adopted && (stepWords.isNotEmpty() || asksAnswered > 0 || text.isNotEmpty());
+        return adopted && (stepWords.isNotEmpty() || asksAnswered > 0 || sawAsk || text.isNotEmpty());
     }
     juce::String whyNotRan() const
     {
@@ -323,7 +324,15 @@ static bool isRestingState (const juce::String& st)
 
 static juce::var agentVarOf (const juce::var& st) { return st.getProperty ("agent", juce::var()); }
 
-static AgentOutcome askAgent (Rig& rig, const juce::String& request, int timeoutMs = 120000)
+/** `answerAsks = false` leaves the card's question UNANSWERED (14 Oct 2026).
+    Row L5 needed it. It asks for a track that does not exist and its claim is "the agent asks rather than
+    guessing, and touches nothing". The agent did exactly that - *"I don't see a track named 'Trombone bus' -
+    only 'Untitled' and 'Untitled 2' are linked here"* - and then the rig, which answers every question with
+    the first chip, replied "Untitled". So the agent was INSTRUCTED to act on a real track, did, and the row
+    then reported that nothing had happened. Answering the question is right for a row that needs the run to
+    continue; it is the wrong instrument for a row whose whole subject is the question itself. */
+static AgentOutcome askAgent (Rig& rig, const juce::String& request, int timeoutMs = 120000,
+                              bool answerAsks = true)
 {
     AgentOutcome out;
     rig.send (echojay::rig::cmd::agentChip, args1 ("on", true));
@@ -377,6 +386,14 @@ static AgentOutcome askAgent (Rig& rig, const juce::String& request, int timeout
         // rig could not do the one thing a user does with a question. It answers with the first choice the
         // card offers - which is the card's own preferred answer - and at most three times, so a pair of
         // questions cannot become a loop.
+        if ((bool) a.getProperty ("askPending", false) && ! answerAsks)
+        {
+            // The question IS the result for this row. Record it and stop - leaving the card waiting is what
+            // a user who has been asked something they did not expect would do.
+            out.lastAsk = a.getProperty ("askText", juce::var()).toString();
+            out.sawAsk  = true;
+            break;
+        }
         if ((bool) a.getProperty ("askPending", false) && out.asksAnswered < 3)
         {
             const auto labels = a.getProperty ("askLabels", juce::var()).toString();
@@ -1189,18 +1206,68 @@ int main (int argc, char* argv[])
         }
 
         // ---- L5: a track that does not exist ---------------------------------
+        // TWO FAULTS FIXED HERE (14 Oct). The row passed while a compressor WAS added - to a real Link -
+        // because (a) the rig answered the card's "which track did you mean?" with the first chip, which is
+        // an instruction, and (b) it measured the OWN rack only while claiming in its own words that
+        // "nothing was changed on any rack we have". It now declines to answer, and counts every rack.
         {
-            const auto before = ownSlotCount (rig.freshState());
-            const auto r = askAgent (rig, "add a compressor on the Trombone bus");
-            const auto after = ownSlotCount (rig.freshState());
-            const bool safe = after == before;        // nothing was done to the rack we DO have
-            row ("L5", safe, "add a compressor on the Trombone bus (no such track)",
-                 juce::String (safe ? "nothing was changed on any rack we have" : "IT CHANGED A RACK ANYWAY")
-                 + ", state " + r.state + ", said: " + r.text.substring (0, 140) + r.failDetail, &r);
+            auto rackCensus = [&] (const juce::var& st)
+            {
+                juce::String c = "own=" + juce::String (ownSlotCount (st));
+                if (auto* arr = st.getProperty ("links", juce::var()).getArray())
+                    for (const auto& l : *arr)
+                        c << " " << l.getProperty ("name", juce::var()).toString() << "="
+                          << (int) l.getProperty ("slotCount", -1);
+                return c;
+            };
+            const auto censusBefore = rackCensus (rig.freshState());
+            const auto r = askAgent (rig, "add a compressor on the Trombone bus", 120000, /*answerAsks*/ false);
+            const auto censusAfter = rackCensus (rig.freshState());
+            const bool safe    = censusAfter == censusBefore;   // EVERY rack, not just the open one
+            const bool itAsked = r.sawAsk;
+            // IT MUST SAY SOMETHING ABOUT THE TRACK, by either road. Requiring a STRUCTURED ask was too
+            // narrow: the model answers this two ways, both honest - sometimes a talk(ask) with the real
+            // track names as choices, sometimes prose saying it cannot see the track. What is NOT acceptable
+            // is silence: "nothing changed" with no explanation is indistinguishable from a turn that died.
+            const juce::String said = r.text + " " + r.lastAsk;
+            const bool explained = itAsked
+                                || said.containsIgnoreCase ("trombone")
+                                || said.containsIgnoreCase ("don't see") || said.containsIgnoreCase ("dont see")
+                                || said.containsIgnoreCase ("can't see")  || said.containsIgnoreCase ("cannot see")
+                                || said.containsIgnoreCase ("no track")   || said.containsIgnoreCase ("not linked")
+                                || said.containsIgnoreCase ("which track");
+            row ("L5", safe && explained, "add a compressor on the Trombone bus (no such track)",
+                 juce::String (! safe ? "A RACK CHANGED: " + censusBefore + " -> " + censusAfter
+                               : explained ? (itAsked ? "it asked which track and touched nothing"
+                                                      : "it said plainly it cannot see that track, and touched nothing")
+                                           : "nothing changed, but it NEVER SAID WHY - silence is not a refusal")
+                 + ", state " + r.state + ", said: \"" + said.trim().substring (0, 130) + "\""
+                 + (safe ? "" : r.failDetail), &r);
+            // AND CLEAN UP AFTER ITSELF. Leaving the question unanswered is this row's whole point, but a
+            // card left in awaiting_ask is a LIVE SESSION, and the next row's typed message answers it: A6's
+            // "add a limiter" was consumed as the answer to L5's question (EJAgent: ask answered (typed)),
+            // and H3 fell over in the same cascade. The rule askAgent already follows - never hand the next
+            // row a live session - applies to a row that deliberately leaves one open.
+            if (r.sawAsk)
+            {
+                rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+                rig.until ([] (const juce::var& st)
+                           { const auto a = agentVarOf (st);
+                             return ! (bool) a.getProperty ("active", false)
+                                    && isRestingState (a.getProperty ("state", juce::var()).toString()); }, 20000);
+            }
         }
 
         // ---- A6: agent mode OFF proposes and changes nothing -----------------
         {
+            // THE SAME QUIET WAIT askAgent DOES. This row does not go through askAgent - it sends a chat
+            // with the chip off - so it had no protection against inheriting a live session, which is
+            // exactly how it came to answer L5's pending question with "add a limiter".
+            if (! rig.until ([] (const juce::var& st)
+                             { const auto a = agentVarOf (st);
+                               return ! (bool) a.getProperty ("active", false)
+                                      && isRestingState (a.getProperty ("state", juce::var()).toString()); }, 60000))
+                std::printf ("        (WARNING: a turn was still live before A6 sent its chat)\n");
             rig.send (echojay::rig::cmd::agentChip, args1 ("on", false));
             const auto stBefore = rig.freshState();
             const auto before = ownSlotCount (stBefore);
@@ -1212,7 +1279,11 @@ int main (int argc, char* argv[])
             // no rack.
             const int rowsBefore = (int) stBefore.getProperty ("transcriptRows", 0);
             rig.send (echojay::rig::cmd::sendChat, args1 ("text", "add a limiter"), 15000);
-            Rig::pump (20000);
+            // WAIT FOR THE REPLY, BOUNDED - do not pump a guessed 20 s. The real model takes 8-22 s on a
+            // chat turn (the server's own log), so 20 s failed this row on a turn that was simply still in
+            // flight: the same "a bound tighter than the work it measures" fault as L2's 180 s.
+            rig.until ([&] (const juce::var& st)
+                       { return (int) st.getProperty ("transcriptRows", 0) > rowsBefore + 1; }, 60000);
             const auto stAfter = rig.freshState();
             const auto after = ownSlotCount (stAfter);
             const int rowsAfter = (int) stAfter.getProperty ("transcriptRows", 0);
