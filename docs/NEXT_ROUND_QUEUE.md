@@ -547,3 +547,69 @@ ride on it. That is the same fault as the nine sinks, one layer in.
   naming the wanted shape), and the rack is unchanged.
 - **S3** a `set` whose payload is flat but whose names are all known **applies and reads back**.
 - **S4** the plan card for an undescribable payload says so rather than showing an empty description.
+
+---
+
+# 6. RULED (Sean, 14 Oct): A REAL OUT KNOB AT THE END OF EVERY RACK
+
+> *"replace the 'OUT -0.7 dB' caption with a real OUT knob at the end of every rack, main and Link.
+> Double-click resets it to the level-matched value. A hand move marks it user-set so level match won't
+> override it (like preGainUserSet). It is undoable."*
+
+## The question answered: on a Link they are ALREADY one value
+
+Sean asked whether the Link's LINK-tab GAIN fader and the rack OUT are the same value. **They are** -
+`LinkProcessor::gainDb_`, with `setGainDb()` as the single authority ("clamps, mirrors to the slot,
+dirty-marks, and syncs an open editor's slider"). **There is nothing to merge.** Four writers, one value,
+one mirror:
+
+| who | how |
+|---|---|
+| the LINK-tab fader (and its `linkGain` undo entry) | `writeLinkCtrlCommand(uid, "gainDb", …)` → `setGainDb` |
+| a group level move | the same, per member |
+| the agent's `set_rack_out` on a Link | the same (`PluginEditor.cpp:3136`) |
+| **the level match itself** | the loop's actuator on a Link is literally named **`rack_out`**: `readDb` → `gainDb_`, `writeDb` → `setGainDb` (`LinkProcessor.cpp:82`) |
+| the main window's view of that Link | reads the mirror, `RegistrySlot::gainDb` |
+
+The Link has **no** separate bus gain - `setBusGainDb` exists only on the V2, for the V2's own rack. So each
+rack has exactly one OUT, which is what the ruling wants; the knob is a view onto a value that is already
+single.
+
+**The consequence that matters:** because the level match's actuator IS this value, the user-set flag is not
+a nicety. Without it the loop will move the user's own knob under their hand - which is exactly the
+complaint the pre-gain's `preGainUserSet` was introduced to answer.
+
+**One thing to confirm when building:** the V2's own actuator chooser (its `rack_out` branch) must be read
+the same way - the Link's is confirmed above, the V2's needs the same check so "double-click resets to the
+level-matched value" means the same thing on both.
+
+## What to build
+
+1. **The knob** at the end of the strip on both, replacing the caption. Same component family as the
+   pre-gain knob, so the gesture rules come free (`ChainWetKnob`'s `doubleClickAction` already prefers
+   `onResetAuto`, which is the hook for (2)).
+2. **Double-click → the level-matched value**, which means *remembering* it: the loop must publish its last
+   landed figure per rack, and the knob resets to that rather than to 0.0 dB. If the loop has never landed,
+   the double-click goes to 0.0 dB and says so - never a silent no-op.
+3. **A hand move sets user-set**, exactly as `preGainUserSet` does, and the loop must honour it: `armFromChain`
+   should decline the `rack_out` actuator when the user has set it by hand, and **say why** in its aim line
+   (the loop already explains itself there; an unexplained refusal to level is worse than levelling).
+4. **Undoable**, with its own entry kind (`rackOut`) and a coalesce key so one drag is one entry - the same
+   pattern as `linkGain` and the one this round's item 2 found missing for the pre-gain. On a Link the entry
+   must re-send the ctrl command on undo, as `linkGain` already does.
+5. **The three views move together**, which they will by construction once the knob writes through
+   `setGainDb` / `setBusGainDb`: the Link's own rack knob, the LINK-tab fader, and the main window's view.
+   Item 4's stale-cache fix is what makes the third one prompt rather than up-to-a-second late.
+
+## Rig rows
+
+- **O1** the knob on the **own** rack: set it, read it back from the processor, and the caption/value agree.
+- **O2** the knob on a **Link**: set it from the Link's rack and assert the **registry mirror** and the
+  **LINK-tab fader value** both move - the "one value" claim, asserted rather than assumed.
+- **O3** a **hand move marks user-set**, and a subsequent level match leaves it alone **and says why**.
+- **O4** **double-click** returns it to the level-matched value after a match has landed; with no match ever
+  landed it goes to 0.0 dB and the line says that is what happened.
+- **O5** **undo** returns it, one entry per drag (not one per mouse-move), and on a Link the undo reaches
+  the Link - read back from the registry, not from the V2's own copy.
+- **O6** the agent's `set_rack_out` and the knob write the **same** value: set by agent, read by knob, and
+  the reverse.
