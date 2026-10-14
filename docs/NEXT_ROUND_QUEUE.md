@@ -309,3 +309,137 @@ has steps at 39.5 s, and a round with a thinking budget can exceed a minute.
   Retry, which the client already supports (`retryable=1` was set).
 - a rig leg: a scripted round held open past the bound must surface as a timeout with its own words, not as
   a connection failure.
+
+---
+
+# SEAN'S LOGIC CHECK ON ship_2026-10-14a (14 Oct, ~17:40) — THREE CAUSES, FROM THE LOGS
+
+Investigated from `~/Library/EchoJay/logs/echojay-1.log` and `-2.log` only. Nothing built or installed.
+
+## 1. `check(gr)` CAN NEVER SUCCEED — the slot picture has no writer at all
+
+**Not an audio problem.** Two seconds before the first failure the plugin's own playback wait had succeeded:
+
+```
+17:41:27  EJAgent: playback wait ends (min reached) heard=8.0s played=1 line="Got it, you can stop."
+17:41:29  EJAgent: step ... RUN check "check gr on slot 1"
+17:41:29  EJAgent: step ... FAILED code=not_playing "No audio has been heard for gain reduction on slot 1 yet."
+```
+
+`check(gr)` gates on `s.pictureValid && s.grKnown`, which come from `ChainHost::slotPicture(i)` →
+`slots_[i].picture`. **That member is read in three places and written in NONE:**
+
+| read | at |
+|---|---|
+| `slotPicture()` (the agent's gr check) | `ChainHost.cpp:3129` |
+| `slotPictureText()` (the caption under each slot in the strip) | `ChainHost.cpp:3130` |
+| `listenCardLines()` (the Listen reply card) | `ChainHost.cpp:3155` |
+
+Its declaration says *"filled at Listen"* (`ChainHost.h:2499`) and **nothing fills it**. So every slot's
+picture is a default-constructed `SlotPicture` with `valid=false, grKnown=false`, for ever. Consequences:
+
+- `check(gr)` fails on every slot, on every rack, however long audio plays. Sean's nine rounds were the
+  agent retrying something structurally impossible.
+- the per-slot caption in the chain strip has never shown a reading, and the Listen card says "no reading"
+  for every slot.
+- `check(level)` is **not** affected: it reads the channel meters (`out.known`), which is why levels work.
+
+**Fix:** write the picture. The data exists - the dynamics devices already report GR (`EedDynamicsCore`
+drives the compressor's own GR), and the per-slot in/out levels are measured for the Level slot and the
+loop. One writer, on the audio-to-message hop that already publishes per-slot meters, stamped with the
+structural revision the header describes (so a rebuild invalidates it rather than showing a stale reading).
+**A guard must assert a non-empty picture after N blocks of audio**, and the rig must drive `check(gr)` to a
+NUMBER, not to a refusal - today's H3/GR rows only ever assert the honest refusal on a Link, which is why
+this survived.
+
+**And the second half, Sean's product rule:** when nothing is playing, the agent should ASK the user to
+press play, not fail. Today `notPlaying()` returns a failure and the model treats it as a dead end. It
+should carry a `needs_playback` outcome whose alternative is "ask the user to start playback", and
+`wait_for_playback` should be the model's instructed next move. (With the picture written, the common case
+disappears - but the rule stands for a genuinely stopped transport.)
+
+## 2. A HAND MOVE ON THE PRE-GAIN IS NOT RECORDED, AND UNDO STOPS DEAD ON A STALE ENTRY
+
+```
+17:46:31  EJPreGain: set 5.83 dB (by the user)      <- the drag. No undo entry is pushed.
+17:46:33  EJUndo: Undo skipped: remove NLS Buss (s) - its target is no longer present
+17:46:37  EJUndo: Undo skipped: remove UAD UA 1176LN Rev E - its target is no longer present
+```
+
+**(a) No, a hand move on the pre-gain is not an undo step.** `UndoEntry`'s kinds are chain / wet / trim /
+keep / dial / gesture / linkActive / linkGain / alias / loop / group - there is no pre-gain kind, and
+`setPreGainDb` pushes nothing. (Today's snapshot fix made a *chain edit* restore the pre-gain, which covers
+the agent's `set_pre_gain`; a user's own drag still records nothing.) So Undo correctly reached past it - to
+a dead entry.
+
+**Fix:** a `preGain` entry kind, pushed by the knob's gesture with a coalesce key so one drag is one entry
+(the pattern `linkGain` already uses, `PluginProcessor.cpp:6524`). Same for the master wet knob, which has
+the same hole.
+
+**(b) Undo consumes a dead entry and stops.** `UndoHistory::step()` pops one entry, applies it, and when
+the apply fails it writes "Undo skipped: ..." and pushes the entry to redo - then **returns true**. One
+press, one dead entry, nothing undone. Sean pressed twice and burned two.
+
+**Fix:** on a skip, walk on to the next entry (bounded - say 10, and never silently past something that
+WOULD have applied), and report what was actually undone: *"Undone: &lt;label&gt; (2 stale steps skipped)"*.
+A skipped entry is not a user action; it should not cost the user a press.
+
+## 3. THE RELEASE BANNER CAME FROM MOVING THE VIEW TO THE BUS
+
+```
+17:39:57  EJRackSel: row=bus resolved=(main) current=4814a16004 -> viewing the local rack
+                     (R1: the view moves, the chat does not)
+17:39:57  EJBorrow: session ACTIVE <- false (release, uid=4814a16004, keepEdits=N)
+17:39:57  EJBorrow: session ACTIVE <- true  (engage begin, uid=4814a16004)
+17:39:57  EJBorrow: cleared the sticky banner on engage (it said "Released - Aitch_4_01 owns its rack
+                    again. Nothing was changed on either side.", and this engage supersedes it)
+```
+
+`4814a16004` is **Aitch_4_01**. Selecting the **bus** row moved the view to the local rack - which is the
+25 Sep rule working correctly - and that released Aitch_4_01's borrow, **then re-engaged it in the same
+second** because the chat's working target is still that Link. The release writes a *sticky* banner; the
+re-engage clears it. Sean saw it in the gap.
+
+**Fix:** do not write a user-facing release banner for a release that is part of a view change. The banner
+exists to explain a deliberate hand-back; a lease churn caused by looking at another rack is not one. Either
+suppress it when a re-engage for the same uid follows (it already detects exactly that - the "supersedes"
+line), or better, do not write it on the view-driven path at all. This is item 6 of the 13 Oct round in a
+second costume: the centre of the window reporting an internal event as if the user had done something.
+
+---
+
+# RULED (Sean, 14 Oct): CHOOSING A PLUGIN WHEN THE USER DIDN'T NAME ONE
+
+> *"when the user doesn't name a plugin, in Ask mode offer up to 3 options from their own plugins that suit
+> the source, each with a short note on whether EchoJay can measure it; in Auto pick the best fit, say why,
+> and offer a swap; remember the pick per job type; a named plugin is always used as named."*
+
+**A named plugin is always used as named** - this changes nothing about "add FabFilter Pro-C 2".
+
+## My half
+
+1. **The three options are a card in the agent message**, with the same shape as the multi-select ask from
+   multi-track jobs (`docs/DESIGN_MULTI_TRACK_JOBS.md` §2): three rows, one tap each, no leaving the chat.
+2. **"whether EchoJay can measure it" is a fact I own and must not guess.** Per plugin it is: is it a
+   built-in (GR and levels readable); is it mapped (`dialCapable` on the Link, the maps registry server-side
+   for a third party); or is it neither, in which case the note says *"I can set it up but can't measure
+   what it's doing"*. That note must come from the same source the dial path uses, or it will drift from
+   what actually happens on Apply - the `dialCapable` rule's own words: **the fallback is INCAPABLE, not
+   unknown**.
+3. **"remember the pick per job type"** is a new piece of persisted state: `{jobType -> plugin name}`, in
+   the V2's own state beside `linkGroups`. Downgrade-safe by the sidecar rule (a new key at v:1 is never
+   read by an old build). It must be a *preference*, not a lock: the card still shows the alternatives with
+   the remembered one marked, because a remembered pick that cannot be changed is a trap.
+4. **Auto says why in one clause** ("your 1176 - it's mapped, so I can dial it and read its GR") and offers
+   a swap on the same row. The swap must be one tap and must not re-run the whole job.
+
+## Rig rows
+
+- **P1** no plugin named, Ask: exactly three options, each from the user's own inventory, each carrying a
+  measurability note that matches what the dial path would actually do.
+- **P2** the same in Auto: one pick, a stated reason, a swap offered; the swap changes the slot and nothing
+  else.
+- **P3** the remembered pick is offered first on the next job of that type, and is still swappable.
+- **P4** a named plugin is used as named, with no options card at all.
+- **P5** a user whose inventory holds nothing suitable gets the honest line, not a third-party name they do
+  not own (this is the `echojay_only` / inventory path, already proven by R3).
