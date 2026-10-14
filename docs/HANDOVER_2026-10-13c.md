@@ -77,4 +77,11 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
 
 - **DMG:** `~/Desktop/EchoJay-Wizard-Beta-2026-10-13/EchoJay Wizard Beta.dmg` rebuilt at f20b46e1, sha256 95093958a28c3ce8..., signed 8BT5F9B887 (not notarised), hdiutil verify VALID; icon, beta_db (52 limitercomp) and hash checked.
 
+## 14 Oct addendum 2: no times on screen (wizard 842dc876)
+- **Kathy's rule:** no user-facing time in either build. That covers scan-done, the Measuring bar (now "n of N" measurements), the Measuring text, the close question, the Paused screen and README_BETA.
+  - Scan-done ("Ready to measure"): "We found N plugins we haven't mapped yet. Measuring them runs by itself in the background - it's best left running overnight, and you can pause any time and carry on later." The release adds "Finish them all to get your free month."
+  - The estimate stays internal: `to_measure_eta_s` (logged at scan done), `progress.json`, `--plan`. The hours above are for us, never for a tester.
+- **Pin WZ-NOTIME-1** checks 41 strings, the README bullets and the app source. Mutants T1-T5 are red. Screenshots: `tools/ejmap/cert-traces/2026-10-14-no-times/`.
+- **DMG** rebuilt at 842dc876: sha256 cf1b5162c69e870d..., signed 8BT5F9B887, hdiutil verify VALID; the icon and the hash are checked, and the Desktop README has no "every hour".
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
