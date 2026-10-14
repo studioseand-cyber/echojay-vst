@@ -136,6 +136,25 @@ DoSinks sinks (SinkLog& lg)
         if (cb) cb (true, "the rack's OUT is now " + juce::String (db, 1) + " dB");
     };
     s.undoOne = [] (const juce::String&, std::function<void (bool, juce::String)> cb) { if (cb) cb (true, "undone"); };
+    // ---- 14 OCT 2026: THIS FIXTURE GAINED A BUILD SINK, BECAUSE THE PRODUCT DID ----------------------
+    //
+    // L3 below drives a `build` to prove the read-back refusal. When these legs were written a build went
+    // out as an EDIT OP, so the apply sink was the only sink it needed. Sean's 13 Oct round showed why that
+    // was wrong (`op 1 invalid: unknown operation "build"`), and a build now takes buildChain - so a fixture
+    // without one gets the new, correct `not_in_phase` refusal and five legs go red for a reason that has
+    // nothing to do with what they test.
+    //
+    // The fixture follows the product. The SLOT-COUNT rule L3 exists for is unchanged and still proved here;
+    // the poll that was added with the new route has its own legs in agent_round14_guard (N3).
+    s.buildChain = [&lg] (const juce::String& uid, const juce::var&, std::function<void (bool, juce::String)> cb)
+    {
+        ++lg.chainOps; lg.lastUid = uid;
+        if (cb) cb (lg.applyOk, lg.applyOk ? juce::String ("the build was sent to the rack")
+                                           : juce::String ("the rack refused it"));
+    };
+    // ...and an immediate clock, so a leg that expects an answer gets one in the same call rather than
+    // waiting on a timer this harness does not run.
+    s.afterMs = [] (int, std::function<void()> fn) { if (fn) fn(); };
     return s;
 }
 

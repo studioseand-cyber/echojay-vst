@@ -54,6 +54,11 @@ public:
         if (onChanged) onChanged();
     }
     bool undo() { return step (undo_, redo_, true); }
+    /** Whether the LAST undo()/redo() actually reached its target. step() returns true whenever the stack was
+        not empty - including when apply() skipped because the target had gone - so "the stack moved" and "the
+        change was reversed" are two different facts and a caller that reports the first as the second is
+        lying. The agent's undo op reads this (Sean's ruling 4, 14 Oct 2026); the UI reads the status line. */
+    bool lastApplyOk() const noexcept { return lastApplyOk_; }
     bool redo() { return step (redo_, undo_, false); }
     bool canUndo() const { return ! undo_.empty(); }
     bool canRedo() const { return ! redo_.empty(); }
@@ -72,6 +77,7 @@ private:
         UndoEntry e = std::move (from.back()); from.pop_back();
         bool ok = false;
         { ScopedSuppress s (*this); ok = apply ? apply (e, toBefore) : false; }
+        lastApplyOk_ = ok;
         if (! ok && status) status (juce::String (toBefore ? "Undo skipped: " : "Redo skipped: ") + e.label + " - its target is no longer present");
         to.push_back (std::move (e));
         while ((int) to.size() > kDepth) to.pop_front();
@@ -80,5 +86,6 @@ private:
     }
     std::deque<UndoEntry> undo_, redo_;
     int suppressed_ = 0;
+    bool lastApplyOk_ = false;
 };
 } // namespace echojay

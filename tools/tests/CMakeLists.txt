@@ -305,6 +305,9 @@ ej_add_guard(agent_executor_read_guard SOURCE tools/agent_executor_read_guard/ha
 # leg red on the code as it stood. Item 1's target resolution was the root cause of every agent failure on
 # another track, so its legs lead.
 ej_add_guard(agent_round13_guard      SOURCE tools/agent_round13_guard/harness.cpp            LABEL fast)
+# 14 Oct 2026: Sean's round on ship_2026-10-13a (the build/add routing, the read-back poll) plus the
+# dead-path sweep's contract findings (wet_pct, bypassed, add's wet) and item 8's make-up cap.
+ej_add_guard(agent_round14_guard      SOURCE tools/agent_round14_guard/harness.cpp            LABEL fast)
 ej_add_guard(history_guard            SOURCE tools/ui_round_guard/history_guard.cpp           LABEL fast)
 ej_add_guard(classify_body_guard      SOURCE tools/classify_body_guard/harness.cpp            LABEL fast)
 ej_add_guard(shm_layout_guard         SOURCE tools/shm_layout_guard/harness.cpp               LABEL fast)
@@ -488,6 +491,35 @@ set_tests_properties(calib_link_guard PROPERTIES LABELS "fast" TIMEOUT 900 RUN_S
 # caller in the product - the V2's own-rack build - so a chain built onto a Link armed nothing, and Sean's
 # vocal rack came out louder than its input. Same single-process shape as calib_link_guard, and RUN_SERIAL for
 # the same reason: a real LinkProcessor takes a registry slot.
+# =============================================================================
+#  S6: THE HOST RIG (Sean's ask A, 13 Oct 2026)
+# =============================================================================
+#  Its own LABEL ("rig"), deliberately NOT "fast" or "plugins":
+#    - S4 runs `ctest -L "fast|plugins"` and must stay what it is;
+#    - the rig needs a logged-in GUI SESSION and real built bundles, so it is not
+#      a unit test and must never be mixed into a suite that is expected to pass
+#      anywhere. The gate runs it as its own stage: `ctest -L rig`.
+#  EXIT 77 = SKIPPED LOUDLY (no display). The gate reports that as a SKIP and not
+#  a pass, which is Sean's instruction; SKIP_RETURN_CODE makes ctest agree.
+add_test(NAME host_rig COMMAND bash ${CMAKE_SOURCE_DIR}/tools/host_rig/build_and_run.sh)
+set_tests_properties(host_rig PROPERTIES LABELS "rig" TIMEOUT 900 RUN_SERIAL TRUE
+                     SKIP_RETURN_CODE 77 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+# TWO PASSES, BECAUSE THE TWO MODES TEST DIFFERENT THINGS (14 Oct 2026).
+#   host_rig       - LIVE when a local server answers: the capability rows, where the real model decides what
+#                    to do. Those rows cannot be faked; a mock answering recorded frames checks the recording.
+#   host_rig_mock  - the MOCK, always: the lifecycle legs plus the rows that need the rig to CONTROL the
+#                    server - a reply held open for exactly six seconds so "closed mid-reply" is a real
+#                    mid-reply, and U1, which drives {op:"undo"} as scripted SSE frames through the real
+#                    client and plugin with the model taken out of it.
+# U1 is why this second entry exists. It found a bug the live row could not even reach (the undo snapshot
+# never carried the rack's pre-gain), and it was running only when a human remembered to run the rig without
+# EJ_RIG_LIVE - which is to say, not in the gate. A leg that is not in the gate is a leg that will rot.
+add_test(NAME host_rig_mock COMMAND bash ${CMAKE_SOURCE_DIR}/tools/host_rig/build_and_run.sh)
+set_tests_properties(host_rig_mock PROPERTIES LABELS "rig" TIMEOUT 900 RUN_SERIAL TRUE
+                     SKIP_RETURN_CODE 77 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                     ENVIRONMENT "EJ_RIG_LIVE=;EJ_RIG_TOKEN=")
+
 add_test(NAME link_build_level_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/link_build_level_guard/build_and_run.sh)
 set_tests_properties(link_build_level_guard PROPERTIES LABELS "fast" TIMEOUT 900 RUN_SERIAL TRUE WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # 21t-j (28 Sep 2026): the Apply path in two processes - three real Links and a real V2. Ruled to be the guard for

@@ -50,6 +50,25 @@ struct DoSinks
     std::function<void (const juce::String& targetUid, const juce::var& editOps,
                         std::function<void (bool, juce::String)>)> applyChainOps;
 
+    /** ---- ITEM 1 (Sean, 14 Oct 2026): A BUILD IS NOT AN EDIT OP ------------------------------------
+        A build replaces the whole rack and has its own road on each side: the V2's own build path for the
+        open rack, and the chain-build command for a Link. It was being emitted as an `edit` op called
+        "build", which the edit-op vocabulary has never had - so the Link answered `op 1 invalid: unknown
+        operation "build"` and the own rack answered "that change carried no operation this rack
+        understands". Two different sentences for one missing road.
+
+        The var is the chain ARRAY (the block's own schema, passed through whole). The callback says only
+        whether the build was DISPATCHED; whether it LANDED is decided by a read-back of the rack, because
+        a build takes seconds and a dispatch is not a landing. */
+    std::function<void (const juce::String& targetUid, const juce::var& chainArray,
+                        std::function<void (bool, juce::String)>)> buildChain;
+
+    /** Run something after a delay, on the message thread. The executor uses it to re-read a rack after a
+        structural change rather than reading once and calling an empty rack a refusal - a build's slots
+        arrive over seconds. A hook rather than a juce::Timer so a guard can drive the clock itself and
+        prove the poll, which a real timer inside the executor would make untestable. */
+    std::function<void (int delayMs, std::function<void()>)> afterMs;
+
     /** Is agent mode ON? Checked on every mutating call and not cached: a user who
         turns it off mid-round means it, and a cached answer would let the rest of a
         round through. */
@@ -62,6 +81,12 @@ struct DoSinks
     /** Undo one step / back to a checkpoint, on whichever rack the step belongs to.
         Returns (ok, sentence). */
     std::function<void (const juce::String& token, std::function<void (bool, juce::String)>)> undoOne;
+    // RULING 4 (Sean, 14 Oct 2026): {"op":"undo"} walks the PLUGIN'S undo history one step - not an agent
+    // step keyed by a token, which is what undoOne above is. The callback carries what was undone and the
+    // history's depth BEFORE and AFTER, because the depth moving is the only read-back an undo has: the
+    // rig watched the agent answer "I've undone the pre-gain change" having removed a slot (row C10), and a
+    // sink that reported its own return value would have called that a success too.
+    std::function<void (std::function<void (bool ok, juce::String label, int depthBefore, int depthAfter)>)> undoHistoryStep;
 
     /** ---- ITEM 10 (Sean, 13 Oct 2026): THE RACK'S OUT GAIN, AS ITS OWN OP ----------------------------
         Sean asked to turn the vocal rack output down 2 dB and the server dialled the EchoJay EQ's
@@ -104,7 +129,23 @@ private:
     // standing up a rack.
 public:
     int structuralWantSlots (const ToolCall& call, const juce::String& opName) const;
+
+    // ITEM 1 (14 Oct 2026): how long a structural change is given to appear on the target rack, and how
+    // often the read-back asks. A build instantiates plugins, so the first read can honestly show nothing;
+    // reading once and calling that a refusal would be the same mistake as calling a file write a landing,
+    // pointed the other way. Public so a guard can compute the number of polls it must drive.
+    static constexpr int kLandPollMs    = 250;
+    static constexpr int kLandWaitMaxMs = 20000;
 private:
+    /** Resolve the call's `channel` into the uid to act on, applying the cross-channel confirmation gate.
+        Returns false when it has already answered `done` (unknown channel, or confirmation needed), so
+        every caller shares one gate instead of re-implementing it per op. */
+    bool resolveTargetWithConfirm (const ToolCall& call, Done& done, juce::String& applyTo);
+
+    /** Re-read the target rack until it holds `wantSlots` or the wait runs out, then answer. The one place
+        that decides a structural change LANDED. */
+    void confirmLanded (const juce::String& applyTo, int wantSlots, const juce::String& opName,
+                        juce::String sentence, Done done, int waitedMs);
 
     DoSinks sinks_;
 };

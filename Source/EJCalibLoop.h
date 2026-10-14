@@ -290,9 +290,12 @@ struct CalibLoop
     // a running commentary. `kSenseLogWindows` is the budget; senseLogsOwed is what is left of it.
     static constexpr int kSenseLogWindows = 5;   // ruled: five windows, then quiet
     int    senseLogsOwed = 0;
-    juce::StringArray outParams;
-    float  outValue = std::numeric_limits<float>::quiet_NaN();
-    float  outMin = -24.0f, outMax = 0.0f;
+    // ITEM 8 (14 Oct 2026): the armed block's make-up cap and the unit its output figures are in. NaN / empty
+    // mean "the block said nothing", which is how every block before these fields behaved.
+    float  makeupCapDb_ = std::numeric_limits<float>::quiet_NaN();
+    // ITEM 8: set when the hold stopped at the cap rather than at the control's range, so the card can say
+    // which of the two it was. Empty whenever the cap was not the reason.
+    juce::String levelHoldCapNote;
     float  levelChangeDb = 0.0f;       // what the slot last measured itself adding (out - in)
     float  slotGainDb = 0.0f;          // EchoJay's own per-slot output gain, where the hold goes with no control
     float  levelTrimmedDb = 0.0f;      // what the hold ACTUALLY wrote (21t-k: not what it wanted to write)
@@ -525,9 +528,27 @@ struct CalibLoop
         // is a LEVEL CHANGE and is kept for the level hold, which is what it is right for.
         juce::StringArray senseParams;
         bool   grReadable = false;
-        juce::StringArray outputParams;
-        float  outputStartDb = std::numeric_limits<float>::quiet_NaN();
-        float  outputMinDb = -24.0f, outputMaxDb = 0.0f;
+        // ---- SEAN'S RULING OF 13 OCT 2026: THE OUTPUT FIELDS ARE GONE ------------------------------
+        //
+        // "Keep the 29 Sep ruling: plugin output controls are not written; I'm telling B to stop sending
+        // output_param / output_min_db / output_max_db / output_unit; keep makeup_cap_db."
+        //
+        // They were parsed, carried onto the loop's state, SERIALISED, restored - and nothing ever wrote a
+        // plugin's output control, because the 29 Sep ruling forbids it. Four fields whose only effect was
+        // to make it look as though something would use them. Deleted rather than left as decoration; the
+        // make-up that IS ours to apply goes on EchoJay's own slot OUT, bounded by makeupCapDb below.
+        //
+        // An incoming block that still carries them is IGNORED, said out loud in whyOut, and never acted
+        // on - see configFromBlock. level_loop_guard leg (21) holds that, so a block that starts carrying
+        // them again cannot quietly acquire an actuator.
+
+        // ---- ITEM 8 (Sean, 13 Oct 2026): THE ONE FIELD THAT STAYS ----------------------------------
+        // makeup_cap_db - the most MAKE-UP the hold may add, in dB, on EchoJay's own slot OUT. B sends it
+        // on every compressor block (defaulting to the upper gr_target_db) and this plugin had never read
+        // it. NaN = no cap, which is what every block before the field meant. It bounds the POSITIVE
+        // direction only: see holdStep for why a CUT must stay uncapped (the 29 Sep ruling removed a cap
+        // that was stopping a cut from finishing, and this is not that cap coming back).
+        float  makeupCapDb = std::numeric_limits<float>::quiet_NaN();
     };
 
     /** THE WIRE SHAPE, PARSED ONCE (21t-g item 6b, 26 Sep 2026). Both binaries compile this file, so the block is
@@ -894,28 +915,29 @@ struct CalibLoop
                           "reported, because the plugin has not published one in dB. ";
         }
 
-        // ---- output_param: the control that holds the level (21t-j, 28 Sep 2026 ruling) --------------------
+        // ---- output_param & friends: READ, NAMED, AND IGNORED (Sean's ruling of 13 Oct 2026) -------------
+        // The 29 Sep ruling stands - a plugin's own output control is never written, and the hold uses
+        // EchoJay's own slot OUT. B is dropping these fields; until that lands, a block that still carries
+        // one says so in the why-line so a reader can see the field arrive and be declined, rather than
+        // wondering whether it did something.
         {
             const auto ov = o->getProperty ("output_param");
-            if (auto* oa = ov.getArray())
-                for (const auto& e : *oa) { const auto n = e.toString().trim(); if (n.isNotEmpty()) out.outputParams.add (n); }
-            else if (ov.toString().trim().isNotEmpty()) out.outputParams.add (ov.toString().trim());
-            const auto osv = o->getProperty ("output_start_db");
-            if (! osv.isVoid() && (osv.isDouble() || osv.isInt() || osv.isInt64()))
-                out.outputStartDb = (float) (double) osv;
-            if (o->hasProperty ("output_min_db"))
+            if (! ov.isVoid() && ov.toString().trim().isNotEmpty())
+                whyOut << "the block names output_param \"" << ov.toString().trim()
+                       << "\" - IGNORED: a plugin's own output control is not written (29 Sep ruling), and the "
+                          "hold uses EchoJay's own slot OUT. ";
+        }
+
+        // ---- ITEM 8: makeup_cap_db ------------------------------------------------------------------------
+        {
+            const auto mv = o->getProperty ("makeup_cap_db");
+            if (! mv.isVoid() && (mv.isDouble() || mv.isInt() || mv.isInt64()))
             {
-                const auto omn = o->getProperty ("output_min_db");
-                out.outputMinDb = omn.isVoid() ? kPracticalFloorDb : (float) (double) omn;
+                const float cap = std::abs ((float) (double) mv);
+                out.makeupCapDb = cap;
             }
-            if (o->hasProperty ("output_max_db"))
-            {
-                const auto omx = o->getProperty ("output_max_db");
-                out.outputMaxDb = omx.isVoid() ? 0.0f : (float) (double) omx;
-            }
-            // NO NOTE when the block names no output control: since 21t-j the hold falls back to EchoJay's own
-            // per-slot output gain, so this is a choice of actuator, not a deficiency. Which one was used is
-            // logged at the moment the hold is written, where it can be checked against the audio.
+            else if (! mv.isVoid())
+                whyOut << "makeup_cap_db \"" << mv.toString() << "\" is not a number - no make-up cap. ";
         }
 
         // ---- step: how far ONE comparative moves the knob (21t-i, 27 Sep 2026 ruling) ----------------------
@@ -989,8 +1011,7 @@ struct CalibLoop
         freshWanted = 0; lastHeardS = -1.0f;
         senseParams = c.senseParams; grReadable = c.grReadable;
         sensedGrDb = std::numeric_limits<float>::quiet_NaN();
-        outParams = c.outputParams; outValue = c.outputStartDb;
-        outMin = juce::jmin (c.outputMinDb, c.outputMaxDb); outMax = juce::jmax (c.outputMinDb, c.outputMaxDb);
+        makeupCapDb_ = c.makeupCapDb;       // ITEM 8: the cap travels with the armed config
         levelChangeDb = 0.0f; levelTrimmedDb = 0.0f; levelHeld = false; slotGainDb = 0.0f;
         resetHoldBudget();
         levelHoldClamped = false; levelHoldLimitDb = 0.0f;
@@ -1879,7 +1900,24 @@ struct CalibLoop
         if (std::abs (excess) > threshold && holdWrites < kHoldMaxWrites)
         {
             const float wasGain  = slotGainDb;
-            const float wantGain = juce::jlimit (kSlotGainMinDb, kSlotGainMaxDb, slotGainDb - excess);
+            float wantGain = juce::jlimit (kSlotGainMinDb, kSlotGainMaxDb, slotGainDb - excess);
+            // ---- ITEM 8 (Sean, 14 Oct 2026): B'S MAKE-UP CAP, ON THE MAKE-UP DIRECTION ONLY ------------
+            //
+            // B sends makeup_cap_db on every compressor block (defaulting to the upper gr_target_db), and
+            // this plugin had never read it. It bounds how much GAIN the hold may ADD - "do not hand back
+            // more than the compression took away".
+            //
+            // It is NOT the cap the 29 Sep ruling removed. That one limited the total in BOTH directions and
+            // its damage was to a CUT: Sean's 21:54:16 compressor needed -3.00 dB, got -1.00, and was told
+            // "its limit - the slot is still 2.0 dB out". A cut is not make-up, so a cut stays uncapped and
+            // that case cannot come back through this door.
+            bool makeupCapped = false;
+            const float wantedMakeup = wantGain - holdBaseGainDb;      // positive = we are ADDING gain
+            if (makeupCapDb_ == makeupCapDb_ && wantedMakeup > makeupCapDb_)   // not NaN, and over the cap
+            {
+                wantGain = holdBaseGainDb + makeupCapDb_;
+                makeupCapped = true;
+            }
             if (std::abs (wantGain - wasGain) > 0.05f)
             {
                 slotGainDb = wantGain;
@@ -1888,7 +1926,18 @@ struct CalibLoop
                 levelHeld = true;
                 // CLAMPED means the CONTROL ran out - it is at an end of its range and the residual is not
                 // closed. Nothing else clamps any more, so this cannot be reported for any other reason.
-                levelHoldClamped = std::abs ((wasGain - excess) - wantGain) > 0.05f;
+                // ITEM 8: a cap reached is a CLAMP with a reason - the same word the control's own range
+                // uses, because to the user it is the same fact: the hold could not close the gap.
+                levelHoldClamped = makeupCapped || std::abs ((wasGain - excess) - wantGain) > 0.05f;
+                if (makeupCapped)
+                    // Recorded, not logged from here. This header is included by guard TUs that do not declare
+                    // EchoJay_NSLog (the one direct NSLog in the file sits in a TU that does), and a header
+                    // that only compiles inside its usual neighbours is a trap for the next harness. The note
+                    // rides the Step's own logLine below, which is this file's one reporting path.
+                    levelHoldCapNote = "stopped at the server's make-up cap of +" + juce::String (makeupCapDb_, 1)
+                                     + " dB (it wanted " + juce::String (wantedMakeup, 1)
+                                     + " dB) - the rack is left quieter rather than handing back more gain than "
+                                       "the compression took away";
                 levelHoldLimitDb = slotGainDb;
                 s.writeSlotGain = true; s.slotGainValue = slotGainDb;
                 // 30 Sep 2026 ruling: a BUILD does not come back to refine. It sets OUT once so the level
@@ -1899,6 +1948,7 @@ struct CalibLoop
                     judged = 0;
                     s.card = card();
                     s.logLine = log (holdWrites == 1 ? "level-hold-slot" : "level-hold-slot-refine");
+                    if (levelHoldCapNote.isNotEmpty()) s.logLine << " - " << levelHoldCapNote;
                     return s;
                 }
                 s.logLine = log ("level-hold-slot");
@@ -2457,9 +2507,9 @@ struct CalibLoop
         o->setProperty ("stepsTaken", stepsTaken);
         o->setProperty ("askOwed", askOwed);
         o->setProperty ("freshWanted", freshWanted);
-        o->setProperty ("outParams", outParams.joinIntoString ("\n"));
-        o->setProperty ("outValue", (outValue == outValue) ? juce::var ((double) outValue) : juce::var());
-        o->setProperty ("outMin", (double) outMin); o->setProperty ("outMax", (double) outMax);
+        // outParams / outValue / outMin / outMax are NOT written any more (Sean, 13 Oct 2026): nothing
+        // consumed them, and an older build reading this blob handles their absence already - it only ever
+        // read them behind isNotEmpty()/hasProperty() checks. Downgrade-safe by inspection of that reader.
         o->setProperty ("levelTrimmedDb", (double) levelTrimmedDb);
         o->setProperty ("levelChangeDb", (double) levelChangeDb);
         o->setProperty ("slotGainDb", (double) slotGainDb);
@@ -2598,12 +2648,8 @@ struct CalibLoop
         c.stepsTaken = (int) o->getProperty ("stepsTaken");
         c.askOwed = o->getProperty ("askOwed").toString();
         c.freshWanted = (int) o->getProperty ("freshWanted");
-        { const auto joined = o->getProperty ("outParams").toString();
-          if (joined.isNotEmpty()) c.outParams.addLines (joined);
-          const auto ov = o->getProperty ("outValue");
-          c.outValue = ov.isVoid() ? std::numeric_limits<float>::quiet_NaN() : (float) (double) ov;
-          if (o->hasProperty ("outMin")) c.outMin = (float) (double) o->getProperty ("outMin");
-          if (o->hasProperty ("outMax")) c.outMax = (float) (double) o->getProperty ("outMax");
+        {
+          // outParams / outValue / outMin / outMax: an older blob may carry them; they are skipped.
           c.levelTrimmedDb = (float) (double) o->getProperty ("levelTrimmedDb");
           c.levelChangeDb = (float) (double) o->getProperty ("levelChangeDb");
           c.slotGainDb = (float) (double) o->getProperty ("slotGainDb");

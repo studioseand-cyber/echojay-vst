@@ -105,6 +105,12 @@ private:
     // ITEM 3 (13 Oct 2026): which failed rows have had their "Details" opened, by step id. By id and not by
     // index, because the row list is rebuilt on every change and an index would move under the user.
     juce::StringArray expandedRows_;
+public:
+    /** THE HOST RIG (ask A): press "Details" on the first failed row that has one, exactly as the mouse
+        does - same toggle, same relayout. Returns false when there is no such row, so the rig can tell
+        "the button did nothing" from "there was no button", which is the distinction item 3 turned on. */
+    bool rigPressDetails();
+private:
     juce::Viewport viewport_;
     Content content_ { *this };
     juce::TextButton stopBtn_ { "Stop" }, approveAllBtn_ { "Apply all" }, applyBtn_ { "Apply" }, declineBtn_ { "Skip all" },

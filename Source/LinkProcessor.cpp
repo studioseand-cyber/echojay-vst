@@ -3488,12 +3488,15 @@ void LinkProcessor::pollChainCommand()
 
         if (onChainAboutToChange) onChainAboutToChange();   // editors close first
         auto self = this;   // processor outlives message-thread callbacks in-session
-        juce::Timer::callAfterDelay(80, [self, ops, baseSlots, seq, cmdId]() mutable
+        // ITEM 4 (14 Oct 2026): a push that IS a build says so (additive `intent`; absent on an older sender,
+        // and then this behaves exactly as it did - no arming, which is today's behaviour).
+        const bool pushIsBuild = obj->getProperty("intent").toString().trim().equalsIgnoreCase("build");
+        juce::Timer::callAfterDelay(80, [self, ops, baseSlots, seq, cmdId, pushIsBuild]() mutable
         {
             const int countBefore = self->chainHost.getNumSlots();
             const juce::String opNames = [&ops] { juce::StringArray o; for (const auto& op : ops) o.add(op.op + (op.slot >= 0 ? "@" + juce::String(op.slot + 1) : juce::String())); return o.joinIntoString(","); }();
             self->chainHost.applyChainEdits(std::move(ops), -1, baseSlots,
-                [self, seq, countBefore, opNames, cmdId](const juce::StringArray& results, int applied, bool aborted)
+                [self, seq, countBefore, opNames, cmdId, pushIsBuild](const juce::StringArray& results, int applied, bool aborted)
             {
                 if (! aborted && cmdId.isNotEmpty()) { self->appliedChainIds_.add(cmdId); while (self->appliedChainIds_.size() > 64) self->appliedChainIds_.remove(0); }
                 // O2 (21t-b): an ABORTED edit releases its seq stamp. It was never applied, so a retry must be
@@ -3528,6 +3531,10 @@ void LinkProcessor::pollChainCommand()
                 // editor's note at the push site always meant to make a divergence readable "instead of
                 // inferred" - but the sender could only see its own count until now.
                 self->writeChainAck(seq, status, results, juce::var(), why, self->chainHost.getNumSlots());
+                // ITEM 4: AFTER the ack, and only for a clean BUILD push - the rack the loop is about to
+                // measure has to be the built one, and a partial or aborted batch is not it.
+                if (pushIsBuild && status == "ok")
+                    self->armLoudnessAfterBuild ("a borrowed-rack build push (v2 editOps, intent=build)");
             });
         });
         return;
@@ -3642,16 +3649,29 @@ void LinkProcessor::pollChainCommand()
         //
         // Arming it here and not on the Restore path above is the whole of the care needed: reopening a
         // project must not re-level a rack the user has since set by hand, and Restore is how that arrives.
-        if (failures == 0)
-        {
-            if (loudnessLoop_.armFromChain())
-                EchoJay_NSLog(("EJLoudness: Link armed after a build - " + loudnessLoop_.aimWords()
-                               + ", stage " + loudnessLoop_.stageName() + " at "
-                               + juce::String(loudnessLoop_.currentGainDb(), 1) + " dB").toRawUTF8());
-            else
-                EchoJay_NSLog("EJLoudness: Link NOT armed after a build - see the aim/arm line above for why");
-        }
+        if (failures == 0) armLoudnessAfterBuild ("the Link's own chain build (v1)");
     });
+}
+
+// ---- ITEM 11 (12b) / ITEM 4 (13a): ONE ARMING, TWO ROADS IN -------------------------------------------
+//
+// 13a armed the loop on the Link's OWN v1 chain build and shipped. Sean's vocal build then came out 5-6 dB
+// quieter with no OUT caption, and his log says why in one word: "renew lease for 4814a16004". He was
+// BORROWING that Link's rack in the V2 window, so the build landed in the V2's mirror and reached the Link
+// as an editOps PUSH - a road that passes through neither the V2's own-rack arming nor the v1 build arming
+// this round added. Two roads existed and the fix was on one of them.
+//
+// So the arming lives here, called from both, and from nowhere else: a RESTORE must not re-level a rack the
+// user has since set by hand, which is the one case that has to stay unarmed.
+void LinkProcessor::armLoudnessAfterBuild (const juce::String& via)
+{
+    if (loudnessLoop_.armFromChain())
+        EchoJay_NSLog(("EJLoudness: Link armed after a build via " + via + " - " + loudnessLoop_.aimWords()
+                       + ", stage " + loudnessLoop_.stageName() + " at "
+                       + juce::String(loudnessLoop_.currentGainDb(), 1) + " dB").toRawUTF8());
+    else
+        EchoJay_NSLog(("EJLoudness: Link NOT armed after a build via " + via
+                       + " - see the aim/arm line above for why").toRawUTF8());
 }
 
 // The block is the contract's, read exactly as V2 reads it (CONTRACT_GROUPS, "The calibration block"): mode

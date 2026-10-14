@@ -2,6 +2,7 @@
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
+#include "EJRigHook.h"   // ask A: the rig may never trigger a plugin scan
 #include "EJCalibLoop.h"   // 4 Oct: tickLowGainWatch reuses CalibLoop::lowGainLine, so the format has ONE author
 #include "EJPaceCheck.h"   // 2 Oct 2026: licence is CLAIMED only when the bundle really is wrapped
 #include "EJReadbackSearch.h"   // 21t-j: landing a dB target by readback
@@ -1445,6 +1446,13 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
 // ---------------------------------------------------------------------------
 void ChainHost::startScan()
 {
+    // THE HOST RIG NEVER SCANS - the second door, guarded for the same reason as PluginScanner::startScan
+    // (Sean's iLok/PACE rule). Both doors, because a guard on one of two entrances is not a guard.
+    if (echojay::rig::enabled())
+    {
+        EchoJay_NSLog ("EJScan: REFUSED - the host rig is driving this plugin and may never run a plugin scan.");
+        return;
+    }
     // EJScan instrumentation (13 Aug 2026): a July chain_entries.xml served
     // five weeks of sessions and a Scan press produced no rewrite, and this
     // path had NO logging, so which mechanism ate the press is unknowable
@@ -3171,6 +3179,10 @@ ChainHost::UndoSnapshot ChainHost::captureUndoSnapshot(const juce::String& label
     u.slots  = buildChainSlotsVar();
     u.state  = getCachedSlotStatesVar(kApiStateMaxSlotBytes, kApiStateMaxTotalBytes, "undo");
     u.params = getCachedSlotParamsVar();
+    // The rack's own values, which are not slot state and were therefore not captured at all until 14 Oct.
+    u.preGainDb      = getPreGainDb();
+    u.preGainUserSet = isPreGainUserSet();
+    u.masterWet      = getMasterWet();
     return u;
 }
 void ChainHost::pushUndo(const juce::String& label, const juce::String& coalesceKey)
@@ -3196,6 +3208,16 @@ void ChainHost::applyUndoSnapshot(const UndoSnapshot& u, std::function<void()> o
     auto* arr = u.slots.getArray();
     if (arr != nullptr && ! arr->isEmpty()) restoreSavedChain(u.slots, u.state, std::move(onSlotSettled), {}, u.params);
     else if (onSlotSettled) onSlotSettled();
+    // THE RACK'S OWN VALUES, restored with the slots (14 Oct 2026, the rig's U1 leg). Done AFTER the chain
+    // restore on purpose: restoreSavedChain can recompute the pre-gain for the rack it is building
+    // (computePreGainAtBuild), and the snapshot's value is the one the user is asking for back.
+    //
+    // `userSet` is passed through rather than hardcoded: setPreGainDb(db, true) would pin a rack that had
+    // been on AUTO when the snapshot was taken, and Sean's ruling 1 of 13 Oct is that AUTO is a state a user
+    // can get back to - an undo must not be the thing that takes it away.
+    setPreGainDb (u.preGainDb, u.preGainUserSet);
+    if (! u.preGainUserSet) preGainUserSet_ = false;   // setPreGainDb only ever SETS the flag
+    setMasterWet (u.masterWet);
 }
 // 21n item 3: slot identity for the plugin-wide history, the parameter snapshot pair, the hosted-event queue
 juce::String ChainHost::slotUndoTarget(int i) const
@@ -10020,7 +10042,16 @@ std::vector<ChainHost::Substitution> ChainHost::substituteNoMapSlots(const std::
         { juce::StringArray keys; juce::String shape; sub.requested = countRequestedSettings(fs.structuredSettings, keys, shape); }
         EchoJay_NSLog(("EJDial: SUBSTITUTED slot " + juce::String(i) + " \"" + fromName + "\" -> \"" + builtinName + "\" (" + sub.reason
                        + ") applied " + juce::String(sub.applied) + "/" + juce::String(sub.requested)).toRawUTF8());
-        if (onSlotSubstituted) onSlotSubstituted(i, fromName, builtinName);
+        // ---- SEAN'S RULING 3 (13 Oct 2026): THE SUBSTITUTION NOTICE SHOWS -------------------------
+        //
+        // The sweep found onSlotSubstituted fired here and listened to by nobody, so a substitution was
+        // visible only in the slot's own settings text and in the log. It is now a STATE NOTE, which the
+        // note band at the top of the rack already draws (the editor pumps setStateNotes(getStateNotes())
+        // on its timer) - so it shows in the V2's window AND in the Link's own, with no listener for a
+        // future editor to forget to attach. The hook itself is deleted: a notice that depends on someone
+        // remembering to subscribe is the fault, not the fix.
+        addStateNote ("\"" + fromName + "\" was not available, so EchoJay used \"" + builtinName
+                      + "\" in slot " + juce::String (i + 1) + " instead.");
         out.push_back(sub);
     }
     if (! out.empty() && onSlotSettingsChanged) onSlotSettingsChanged();

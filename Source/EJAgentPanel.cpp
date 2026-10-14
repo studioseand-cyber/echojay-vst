@@ -33,7 +33,18 @@ EJAgentPanel::EJAgentPanel (EJAgentClient& client) : client_ (client)
     }
     stopBtn_.onClick       = [this] { client_.stop(); };
     approveAllBtn_.onClick = [this] { client_.approveAll(); };
-    applyBtn_.onClick      = [this] { client_.submitPlan(); };
+    // ITEM 2 (14 Oct 2026): on a ONE-LINE plan this is the only apply on the card, so it means "apply this".
+    // It used to submit whatever the per-line toggle happened to say, which is how a press labelled Apply
+    // recorded a skip. With several lines it keeps its meaning - apply the ticked ones - and "Apply all" is
+    // the one that overrides the ticks.
+    applyBtn_.onClick      = [this]
+    {
+        // approveAll() submits as well, so this is either/or - not both. (A second submitPlan() would be a
+        // no-op, since it returns unless the state is still AwaitingApproval, but "harmless" is not a reason
+        // to write a second call that reads as if it does something.)
+        if (client_.planLines().size() <= 1) client_.approveAll();
+        else                                 client_.submitPlan();
+    };
     declineBtn_.onClick    = [this] { client_.declineAll(); };
     gotItBtn_.onClick      = [this] { client_.playbackGotIt(); };
     undoAllBtn_.onClick    = [this] { client_.undoAll(); };
@@ -90,7 +101,14 @@ EJAgentPanel::Layout EJAgentPanel::computeLayout (int width, int maxHeight) cons
     L.footerLabels.clear();
     switch (st)
     {
-        case State::AwaitingApproval: L.footerLabels = { "Apply all", "Apply", "Skip all" }; break;
+        case State::AwaitingApproval:
+            // ITEM 2 (14 Oct 2026): a ONE-LINE plan gets ONE apply. "Apply all" and "Apply" are the same
+            // action when there is one line, and two buttons that do the same thing under different names
+            // are what made Sean's press ambiguous in the first place. The per-line toggle stays - it is how
+            // a single line is skipped without the footer.
+            if (client_.planLines().size() <= 1) L.footerLabels = { "Apply", "Skip all" };
+            else                                 L.footerLabels = { "Apply all", "Apply", "Skip all" };
+            break;
         case State::Listening:        L.footerLabels = { "Got it, you can stop" }; break;
         case State::Done: case State::Stopped: case State::Failed:
             if (client_.canUndoAll()) L.footerLabels.add ("Undo all");
@@ -351,8 +369,20 @@ void EJAgentPanel::placeButtons()
             {
                 if (expandedRows_.contains (id)) expandedRows_.removeString (id);
                 else                             expandedRows_.add (id);
+                // ---- ITEM 3 (Sean, 14 Oct 2026): THE HANDLER HAS TO REBUILD THE LAYOUT ----------------
+                //
+                // It called onLayoutNeeded() and repaint(), and Sean pressed Details and nothing happened.
+                // Both were the wrong tools: layout_ - which holds the row text AND the row rectangles -
+                // is only ever rebuilt by relayout(), and the only thing that calls relayout() is
+                // resized(). onLayoutNeeded asks the EDITOR to re-dock this card, and when the card's
+                // height does not change the editor sets the same bounds, JUCE sees no change and never
+                // calls resized(). So paint ran again over the layout computed before the click.
+                //
+                // relayout() first, so the row text and heights are recomputed from expandedRows_; then
+                // onLayoutNeeded, because an expanded row can make the card taller and the editor owns
+                // where the card sits. It repaints itself.
+                relayout();
                 if (onLayoutNeeded) onLayoutNeeded();
-                repaint();
             };
         }
         else
@@ -360,9 +390,19 @@ void EJAgentPanel::placeButtons()
             bool approved = true;
             for (const auto& s : client_.steps()) if (s.id == id) { approved = s.approved; break; }
             styleSecondary (b);
-            b.setColour (juce::TextButton::textColourOffId, approved ? EJC::green : EJC::text3);
-            b.setButtonText (approved ? "Apply" : "Skip");           // the line's decision, as the contract names it
-            b.setTooltip (approved ? "This line will be applied - tap to skip it" : "This line is skipped - tap to apply it");
+            // ---- ITEM 2 (Sean, 14 Oct 2026): A BUTTON SAYS WHAT PRESSING IT DOES ----------------------
+            //
+            // This button is a TOGGLE and it was labelled with the line's current STATE. So a line that was
+            // going to be applied showed a button reading "Apply", and pressing it skipped the line. Sean
+            // pressed Apply on a one-line plan and the line was recorded "skipped" - the button did the
+            // opposite of its own label, and the only clue was a tooltip nobody sees on a first press.
+            //
+            // The state is already visible: the row's glyph and the footer say what will happen. The button
+            // carries the ACTION, which is the one thing a label must never lie about.
+            b.setColour (juce::TextButton::textColourOffId, approved ? EJC::text3 : EJC::green);
+            b.setButtonText (approved ? "Skip" : "Apply");
+            b.setTooltip (approved ? "This line will be applied - tap to skip it"
+                                   : "This line is skipped - tap to apply it");
             b.onClick = [this, id, approved] { client_.setLineApproved (id, ! approved); };
         }
         b.setVisible (true);
@@ -539,6 +579,24 @@ void EJAgentPanel::timerCallback()
     if (phase_ > juce::MathConstants<float>::twoPi * 100.0f) phase_ -= juce::MathConstants<float>::twoPi * 100.0f;
     repaint (layout_.header);
     content_.repaint();
+}
+
+// THE HOST RIG (ask A, 13 Oct 2026): the same two lines the Details button's onClick runs. Deliberately
+// NOT a copy of the toggle logic - it finds the row the user would be pressing and then does what the
+// handler does, so a rig pass that goes green is evidence about the handler and not about itself.
+bool EJAgentPanel::rigPressDetails()
+{
+    for (const auto& s : client_.steps())
+    {
+        if (s.status != EJAgentClient::Step::Status::Failed) continue;
+        if (s.modelDetail.isEmpty() || s.modelDetail == s.detail) continue;
+        if (expandedRows_.contains (s.id)) expandedRows_.removeString (s.id);
+        else                               expandedRows_.add (s.id);
+        relayout();
+        if (onLayoutNeeded) onLayoutNeeded();
+        return true;
+    }
+    return false;
 }
 
 void EJAgentPanel::agentChanged()

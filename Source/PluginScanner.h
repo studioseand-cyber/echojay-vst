@@ -64,6 +64,8 @@ public:
     
     // Scan all plugin directories (runs on background thread)
     void startScan();
+    // ask A (13 Oct 2026): the body startScan() guards. Private so nothing can route around the rig
+    // refusal by calling the implementation directly.
 
     // Signal any in-flight scan/load work to abort as soon as possible. Flips
     // the shared `alive` flag that loadCache/scan loops check between steps.
@@ -283,6 +285,7 @@ public:
     static juce::File getCustomFoldersFile();
 
 private:
+    void startScanImpl();
     void scanPluginDirectories();
 
     // ---- WaveShell expansion -------------------------------------------

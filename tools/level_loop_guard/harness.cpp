@@ -553,10 +553,30 @@ void guardMain()
         // output control, and the block names it - so the old code would have written level_db and left OUT at
         // zero, and the plugin's own setting would have moved under the user.
         Rig r (ChannelType::LeadVocal, 6.0f);
+        // ---- 13 OCT 2026: DRIVEN THROUGH THE BLOCK, NOT THE CONFIG -------------------------------------
+        //
+        // This leg used to set cfg.outputParams / outputStartDb / outputMinDb / outputMaxDb by hand. Those
+        // fields are GONE (Sean's ruling: the 29 Sep ruling stands, B stops sending the output fields, and
+        // the carriers were parsed, stored, serialised and consumed by nothing).
+        //
+        // The leg is better for it: the block now goes through configFromBlock exactly as the server's does,
+        // so what is proved is the WHOLE path - a block naming an output control is parsed, the field is
+        // declined in words, and the plugin's own control is still where the build put it (6.0 dB, set by the
+        // fixture above) while OUT carries the correction.
         auto cfg = passiveDriveCfg ("Fake Comp, output named");
-        cfg.outputParams.add ("level_db");
-        cfg.outputStartDb = 6.0f;          // where the BUILD put it, and where it must still be at the end
-        cfg.outputMinDb = -24.0f; cfg.outputMaxDb = 24.0f;
+        {
+            auto* blk = new juce::DynamicObject();
+            blk->setProperty ("slot", 1);
+            blk->setProperty ("actuator", "drive");
+            blk->setProperty ("mode", "passive");
+            blk->setProperty ("output_param", "level_db");      // what B used to send
+            echojay::CalibLoop::Config parsed; juce::String why;
+            const bool okParse = echojay::CalibLoop::configFromBlock (juce::var (blk), 1, false,
+                                                                      "Fake Comp, output named", parsed, why);
+            check (okParse, "(2c) the block naming an output control parses");
+            check (why.containsIgnoreCase ("output_param") && why.containsIgnoreCase ("IGNORED"),
+                   "(2c) ...and the loop says it is IGNORING that field (Sean's ruling, 13 Oct 2026)", why);
+        }
         feed (r.proc, r.prog, 6.0);
         r.proc.calibStart ({}, cfg);
         const auto rr = runLoop (r, 28);
@@ -2459,6 +2479,15 @@ void guardMain()
             return echojay::CalibLoop::configFromBlock (blk.getProperty ("calibration", juce::var()),
                                                         4, false, "Tube-Tech CL 1B", out, why);
         };
+        // The same parse, keeping the WHY line - what the loop says about a block it has read. The ruling
+        // of 13 Oct is about what the plugin SAYS as much as what it does, so the words are asserted.
+        auto whyOf = [] (const juce::var& blk) -> juce::String
+        {
+            echojay::CalibLoop::Config out; juce::String why;
+            echojay::CalibLoop::configFromBlock (blk.getProperty ("calibration", juce::var()),
+                                                 4, false, "Tube-Tech CL 1B", out, why);
+            return why;
+        };
         {   // the PROFILED shape: amount + from_profile + set_directly + expected_gr_db
             echojay::CalibLoop::Config c;
             check (parse (blockWith ("amount", true, true), c), "(21) the profiled \"amount\" block parses");
@@ -2472,9 +2501,21 @@ void guardMain()
             check (c.expectedGrDb == c.expectedGrDb && std::abs (c.expectedGrDb - 2.0f) < 0.01f,
                    "(21) ...and expected_gr_db survives, so the section 7 check still has its figure",
                    juce::String (c.expectedGrDb, 2));
-            check (c.outputParams.contains ("Makeup"),
-                   "(21) ...and output_param is carried for the make-up work that is owed",
-                   c.outputParams.joinIntoString ("|"));
+            // ---- SEAN'S RULING OF 13 OCT 2026 REVERSES WHAT THIS LEG USED TO ASSERT -------------------
+            //
+            // It read: "...and output_param is carried for the make-up work that is owed", checking
+            // c.outputParams.contains("Makeup"). The make-up work is no longer owed: the 29 Sep ruling
+            // stands (a plugin's own output control is never written), B is dropping the field, and the
+            // carrier was deleted - it was parsed, stored, serialised and consumed by nothing.
+            //
+            // So the leg now holds the RULING instead of the plan: a block that still names output_param
+            // is declined IN WORDS and acquires no actuator. That way the field cannot come back quietly -
+            // if someone re-adds a write, this goes red.
+            check (whyOf (blockWith ("amount", true, true)).containsIgnoreCase ("output_param")
+                   && whyOf (blockWith ("amount", true, true)).containsIgnoreCase ("IGNORED"),
+                   "(21) ...and an output_param in the block is NAMED AND IGNORED, not acted on "
+                   "(Sean's ruling of 13 Oct 2026; the 29 Sep ruling stands)",
+                   whyOf (blockWith ("amount", true, true)));
         }
         {   // "amount" WITHOUT set_directly: still held, never driven
             echojay::CalibLoop::Config c;

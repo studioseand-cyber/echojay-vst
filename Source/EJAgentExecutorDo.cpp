@@ -53,6 +53,21 @@ juce::var ExecutorDo::startContext()
         //                  that does not know this proposes third-party plugins and every one is refused.
         o->setProperty ("can_act", sinks_.agentModeOn && sinks_.agentModeOn());
         o->setProperty ("echojay_only", sinks_.echoJayOnly && sinks_.echoJayOnly());
+
+        // THE UNDO CAPABILITY, DECLARED (14 Oct 2026). B gates the op on this and nothing else:
+        // "the server sends it only when the start body's capabilities includes \"undo\"; otherwise it is
+        // refused in process (undo_unavailable)". The op was built this morning and the guard proved it, and
+        // the rig's row C10 still failed - the model never called it, because it was never told it existed.
+        // Writing the op without declaring it is half a feature that looks like the model misbehaving.
+        //
+        // CONDITIONAL ON THE SINK, not hardcoded like "proposal" and "leveling" in the chat body. A
+        // capability says what THIS BINARY CAN DO; a build whose undo route is not wired must not claim one,
+        // or the server sends an op that comes straight back as not_in_phase and the model is made to look
+        // like it invented the call.
+        if (sinks_.undoHistoryStep)
+            if (auto* caps = o->getProperty ("capabilities").getArray())
+                if (! caps->contains (juce::var ("undo")))
+                    caps->add ("undo");
     }
     return base;
 }
@@ -97,8 +112,19 @@ juce::var ExecutorDo::translate (const ToolCall& call, juce::String& refusal) co
     {
         auto* o = addOp ("set_wet");
         if (! needSlot (o)) return {};
-        bool p = false; const double pct = argNum (call, "pct", p);
-        if (! p) { refusal = "a set_wet needs a pct from 0 to 100"; return {}; }
+        // ---- THE SWEEP CAUGHT THIS (14 Oct 2026): B SENDS wet_pct, THIS READ pct --------------------
+        //
+        // docs/CONTRACT_AGENT_TOOLS.md line 103: `set_wet` | `{slot: n, wet_pct: 0-100}`. This read "pct"
+        // and refused everything else, so EVERY agent set_wet has failed with "a set_wet needs a pct from
+        // 0 to 100" while the call in front of it carried exactly that figure under the contract's own
+        // name. Nobody had tried it in a host yet, so nothing said so.
+        //
+        // The contract's name is read FIRST and "pct" is still accepted, because a refusal over a synonym
+        // is the failure this is fixing and an extra accepted spelling cannot cause one.
+        bool p = false;
+        double pct = argNum (call, "wet_pct", p);
+        if (! p) pct = argNum (call, "pct", p);
+        if (! p) { refusal = "a set_wet needs wet_pct from 0 to 100"; return {}; }
         o->setProperty ("wet_pct", pct);
     }
     else if (op == "set_io")
@@ -128,8 +154,14 @@ juce::var ExecutorDo::translate (const ToolCall& call, juce::String& refusal) co
     {
         auto* o = addOp ("bypass");
         if (! needSlot (o)) return {};
-        bool p = false; const bool on = argBool (call, "on", p);
-        if (! p) { refusal = "a bypass needs on: true or false"; return {}; }
+        // THE SWEEP, again: the contract's name is `bypassed` (line 104: `{slot: n, bypassed: bool}`) and
+        // this read `on`, so every agent bypass refused a call that carried the flag. The chain channel's
+        // own op field IS `on`, which is why the mismatch was invisible from inside this function - the
+        // name on the WIRE below and the name in the TOOL CALL above are different names.
+        bool p = false;
+        bool on = argBool (call, "bypassed", p);
+        if (! p) on = argBool (call, "on", p);
+        if (! p) { refusal = "a bypass needs bypassed: true or false"; return {}; }
         o->setProperty ("on", on);
     }
     else if (op == "remove" || op == "move")
@@ -153,16 +185,27 @@ juce::var ExecutorDo::translate (const ToolCall& call, juce::String& refusal) co
         else { bool p = false; const int after = argInt (call, "after", p); if (p) o->setProperty ("after", after); }
         if (const auto ss = argVar (call, "settings_structured"); ss.getDynamicObject() != nullptr)
             o->setProperty ("settings_structured", ss);
+        // THE SWEEP: the contract's `add` carries `wet_pct?` (line 98) and this dropped it, so a plugin the
+        // server asked for at 40% wet arrived at 100% and the agent had no way to know. parseChainEditOps
+        // already reads wet_pct on any op, so passing it through is all that was ever needed.
+        { bool pw = false; const double wet = argNum (call, "wet_pct", pw);
+          if (pw) o->setProperty ("wet_pct", wet); }
     }
+    // ---- ITEM 1 (Sean, 14 Oct 2026): "build" IS NOT HERE ANY MORE --------------------------------------
+    //
+    // It used to add an edit op named "build" carrying the chain array. No rack has ever had such an op:
+    // ChainHost's validator ends `else return bad("unknown operation \"" + op.op + "\"")` and the Link said
+    // exactly that to Sean ("op 1 invalid: unknown operation \"build\""), while the own rack's parser
+    // returned zero ops and the editor said "that change carried no operation this rack understands".
+    //
+    // A build goes through buildChain, routed in doOp BEFORE translate runs, exactly as set_rack_out is. It
+    // reaches this function only if that routing is missing, and then it must be a plain refusal rather than
+    // an op that will be refused one layer lower in worse words.
     else if (op == "build")
     {
-        // The chain block, as the build path already takes it: one ack, one undo step. Passed through whole
-        // rather than re-shaped here, because the block's schema is the server's and this executor is not the
-        // place to learn it a second time.
-        const auto chain = argVar (call, "chain");
-        if (chain.getArray() == nullptr) { refusal = "a build needs a chain array"; return {}; }
-        auto* o = addOp ("build");
-        o->setProperty ("chain", chain);
+        refusal = "a build cannot be sent as an edit op - this build routes it through the rack's own build "
+                  "path, and that route is not wired in this build";
+        return {};
     }
     else if (op == "set_level")
     {
@@ -195,7 +238,7 @@ juce::var ExecutorDo::translate (const ToolCall& call, juce::String& refusal) co
         // list will try the next word it can think of (which is how output_db on the EQ got dialled).
         refusal = "\"" + op + "\" is not an operation this build can do. It knows: build, add, remove, replace, "
                   "move, set, set_wet, set_io, set_master_wet, set_pre_gain, set_rack_out, bypass, set_level, "
-                  "open_editor.";
+                  "open_editor, undo.";
         return {};
     }
 
@@ -215,12 +258,6 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
                                     "will show it for Apply."));
         return;
     }
-    if (! sinks_.applyChainOps)
-    {
-        done (ToolOutcome::failure ("not_in_phase", "this build has no way to send that change to a rack"));
-        return;
-    }
-
     // ---- ITEM 10 (Sean, 13 Oct 2026): THE RACK OUT IS NOT AN EDIT OP ------------------------------------
     // Taken before translate, because translate's whole output is a chain-channel `edit` array and the rack
     // OUT does not live on that channel. The cross-channel gate below applies to it just the same, so the
@@ -240,24 +277,12 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
         const bool absolute = argFlagPresent (call, "absolute") ? argFlag (call, "absolute") : haveDb;
         const double value  = haveDb ? db : delta;
 
-        const auto askedOut = resolveChannelArg (call);
-        juce::String outTo = this->target();
-        if (askedOut.isNotEmpty() && askedOut != outTo)
-        {
-            juce::String nm;
-            const auto tracks = src_.tracks ? src_.tracks() : std::vector<TrackRead>();
-            for (const auto& t : tracks) if (t.uid == askedOut) nm = t.name;
-            if (nm.isEmpty())
-            { done (ToolOutcome::failureFor ("unknown_channel", "\"" + askedOut + "\" is not a channel I can reach." + knownChannelsSentence(),
-                                             "I could not find a channel called \"" + askedOut + "\".")); return; }
-            if (! argFlag (call, "confirm"))
-            { done (ToolOutcome::failureFor ("needs_confirmation",
-                                          "This is on " + nm + "'s channel, not the one you have open. Ask the user: "
-                                          "\"This is on " + nm + "'s channel, go ahead?\" - and if they say yes, repeat "
-                                          "this same call with \"confirm\": true. Nothing has been changed yet.",
-                                          "This is on " + nm + "'s channel, not the one you have open.")); return; }
-            outTo = askedOut;
-        }
+        // ONE GATE, SHARED (14 Oct 2026). This branch had its own copy of the resolve-and-confirm block, and
+        // a second copy is a second thing to forget: the build branch below needs the same gate, and three
+        // hand-written copies of "ask before touching someone else's channel" is how one of them ends up
+        // without the question.
+        juce::String outTo;
+        if (! resolveTargetWithConfirm (call, done, outTo)) return;
         sinks_.setRackOutDb (outTo, value, absolute, [done] (bool ok, juce::String sentence)
         {
             if (! ok) { done (ToolOutcome::failure ("not_applied", sentence.isNotEmpty() ? sentence
@@ -268,6 +293,105 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
             done (ToolOutcome::success (juce::var (r),
                                         "set_rack_out:" + juce::String (juce::Time::currentTimeMillis()), sentence));
         });
+        return;
+    }
+
+    // ---- RULING 4 (Sean, 14 Oct 2026): AN UNDO WALKS THE PLUGIN'S HISTORY ONE STEP -------------------
+    //
+    // The rig's row C10: having added a compressor, set 3 dB of pre gain and removed slot 1, the agent was
+    // asked "undo that" and answered "I've undone the pre-gain change" - it re-dialled an earlier parameter.
+    // It had no undo op, so it had to CHOOSE what "that" meant and chose a change it knew how to reverse.
+    //
+    // Sean's ruling takes the choice away: there is an undo, it steps the one plugin-wide history (which
+    // already carries local and remote edits in one order), and whatever that step was is what is reversed.
+    //
+    // Routed here with set_rack_out and build, before translate, because an undo is not an entry in the chain
+    // channel's `edit` vocabulary either. No target resolution and no cross-channel question: the history is
+    // the plugin's, one stack for every rack, and its own entries carry the target they belong to - asking
+    // "which channel?" would invite an undo aimed at a rack whose step is not the one on top.
+    if (opEarly == "undo")
+    {
+        if (! sinks_.undoHistoryStep)
+        { done (ToolOutcome::failure ("not_in_phase", "this build has no undo history to walk")); return; }
+        sinks_.undoHistoryStep ([done] (bool ok, juce::String label, int depthBefore, int depthAfter)
+        {
+            // THE READ-BACK. `ok` is what the history reported; the depth is what actually happened. Both have
+            // to agree before this is a success - the rule the other nine sinks were brought under this round.
+            if (depthAfter >= depthBefore)
+            {
+                done (ToolOutcome::failure ("not_applied",
+                                            depthBefore <= 0
+                                              ? juce::String ("there was nothing to undo")
+                                              : "the undo history did not move (still " + juce::String (depthAfter)
+                                                + " step" + (depthAfter == 1 ? "" : "s") + " deep)"
+                                                + (label.isNotEmpty() ? ", and it reported: " + label : juce::String())));
+                return;
+            }
+            if (! ok)
+            {
+                // The step came off the stack but its target had gone - the history's own rule, never applied
+                // to a different target. That is a true answer and it names the step.
+                done (ToolOutcome::failure ("not_applied",
+                                            label.isNotEmpty() ? label
+                                                               : juce::String ("that step could not be undone")));
+                return;
+            }
+            auto* r = new juce::DynamicObject();
+            r->setProperty ("undone",      true);
+            r->setProperty ("op",          "undo");
+            r->setProperty ("label",       label);
+            r->setProperty ("depthBefore", depthBefore);
+            r->setProperty ("depthAfter",  depthAfter);
+            const juce::String sentence = label.isNotEmpty() ? "Undone: " + label + "."
+                                                             : juce::String ("Undone the last change.");
+            // No undo token: undoing an undo is a redo, and this op does not offer one.
+            done (ToolOutcome::success (juce::var (r), {}, sentence));
+        });
+        return;
+    }
+
+    // ---- ITEM 1 (Sean, 14 Oct 2026): A BUILD TAKES THE RACK'S OWN BUILD ROAD ---------------------------
+    //
+    // Sean, on the open rack: "add EchoJay Compressor" -> "that change carried no operation this rack
+    // understands". On the Kick's Link: "build 2 slots" -> "op 1 invalid: unknown operation \"build\"". The
+    // same missing road, reported in two different voices by the two layers that each found an op they did
+    // not have.
+    //
+    // Routed here, before translate, for the same reason set_rack_out is: a build is not an entry in the
+    // chain channel's `edit` vocabulary and never was. The sink picks the road by target - the V2's own build
+    // path for the open rack, sendChainToLink for a Link - and the LANDING is settled by confirmLanded's
+    // read-back, not by this dispatch returning true.
+    if (opEarly == "build")
+    {
+        if (! sinks_.buildChain)
+        { done (ToolOutcome::failure ("not_in_phase", "this build cannot build a chain onto a rack")); return; }
+        const auto chain = argVar (call, "chain");
+        if (chain.getArray() == nullptr || chain.getArray()->isEmpty())
+        { done (ToolOutcome::failure ("bad_request", "a build needs a chain array with at least one entry")); return; }
+
+        juce::String buildTo;
+        if (! resolveTargetWithConfirm (call, done, buildTo)) return;
+
+        const int wantSlots = structuralWantSlots (call, "build");
+        const auto aliveB   = this->alive();
+        sinks_.buildChain (buildTo, chain, [this, aliveB, done, buildTo, wantSlots] (bool ok, juce::String sentence)
+        {
+            if (! ok)
+            {
+                done (ToolOutcome::failure ("not_applied", sentence.isNotEmpty() ? sentence
+                                                        : juce::String ("the build was not sent to the rack")));
+                return;
+            }
+            if (aliveB.expired())
+            { done (ToolOutcome::success (juce::var (new juce::DynamicObject()), {}, sentence)); return; }
+            confirmLanded (buildTo, wantSlots, "build", sentence, done, 0);
+        });
+        return;
+    }
+
+    if (! sinks_.applyChainOps)
+    {
+        done (ToolOutcome::failure ("not_in_phase", "this build has no way to send that change to a rack"));
         return;
     }
 
@@ -293,36 +417,9 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
     //
     // The gate fails CLOSED: argFlag returns false for an absent, misspelled or unparseable confirm, so the
     // worst case is one extra question, never an unasked edit on someone else's channel.
-    const auto asked   = resolveChannelArg (call);
-    const auto current = this->target();
-    juce::String applyTo = current;
-    if (asked.isNotEmpty() && asked != current)
-    {
-        // Resolution already tried uid, exact name and a unique containment match. Still not a known channel
-        // means the model named something that does not exist - say so WITH the list, so the loop stops.
-        juce::String askedName;
-        const auto tracks = src_.tracks ? src_.tracks() : std::vector<TrackRead>();
-        for (const auto& t : tracks) if (t.uid == asked) askedName = t.name;
-        if (askedName.isEmpty())
-        {
-            done (ToolOutcome::failureFor ("unknown_channel",
-                                        "\"" + asked + "\" is not a channel I can reach." + knownChannelsSentence(),
-                                        "I could not find a channel called \"" + asked + "\"."));
-            return;
-        }
-        if (! argFlag (call, "confirm"))
-        {
-            // ITEM 3: the model is told how to proceed; the user is asked a question. Same gate, two audiences.
-            done (ToolOutcome::failureFor ("needs_confirmation",
-                                        "This is on " + askedName + "'s channel, not the one you have open. "
-                                        "Ask the user: \"This is on " + askedName + "'s channel, go ahead?\" - and if "
-                                        "they say yes, repeat this same call with \"confirm\": true. Nothing has been "
-                                        "changed yet.",
-                                        "This is on " + askedName + "'s channel, not the one you have open."));
-            return;
-        }
-        applyTo = asked;
-    }
+    // The same gate as the two branches above, from the one implementation (see resolveTargetWithConfirm).
+    juce::String applyTo;
+    if (! resolveTargetWithConfirm (call, done, applyTo)) return;
 
     // ---- ITEM 1 (Sean, 13 Oct 2026): A LANDING IS WHAT A READBACK SHOWS, NOT WHAT A SEND RETURNED -------
     //
@@ -352,38 +449,109 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
             done (ToolOutcome::success (juce::var (new juce::DynamicObject()), {}, sentence));
             return;
         }
-        if (wantSlots >= 0)
-        {
-            const auto back = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
-                                                   : (src_.ownRack  ? src_.ownRack()          : RackRead());
-            const int have = back.valid ? (int) back.slots.size() : -1;
-            if (! back.valid || have < wantSlots)
-            {
-                // LOUD, AND IT SAYS WHAT IT SAW. The point is that the next round must not plan against a rack
-                // that is not there, so the sentence carries the figure the readback actually returned.
-                done (ToolOutcome::failureFor ("not_applied",
-                                            "the rack acknowledged the change (" + sentence + ") but a read-back of "
-                                            + (applyTo.isNotEmpty() ? "that Link" : juce::String ("this rack"))
-                                            + " shows " + (have < 0 ? juce::String ("a rack that cannot be read")
-                                                                    : juce::String (have) + " slot(s)")
-                                            + " where " + juce::String (wantSlots) + " were expected, so the change did "
-                                            "NOT land. Do not plan against this rack until a look confirms what is on it.",
-                                            "That change did not land - the rack still shows "
-                                            + (have < 0 ? juce::String ("nothing I can read")
-                                                        : juce::String (have) + " slot(s)") + "."));
-                return;
-            }
-            sentence = sentence.isNotEmpty() ? sentence + "; read back " + juce::String (have) + " slot(s) on the rack"
-                                             : "read back " + juce::String (have) + " slot(s) on the rack";
-        }
+        confirmLanded (applyTo, wantSlots, opName, sentence, done, 0);
+    });
+}
+
+// ---- ITEM 1 (14 Oct 2026): ONE CROSS-CHANNEL GATE ----------------------------------------------------
+// Three ops needed it (set_rack_out, build, every edit op) and two had their own copy. The copies agreed
+// today, which is exactly why a third would have been written from memory rather than from this one.
+bool ExecutorDo::resolveTargetWithConfirm (const ToolCall& call, Done& done, juce::String& applyTo)
+{
+    const auto asked = resolveChannelArg (call);
+    applyTo = this->target();
+    if (asked.isEmpty() || asked == applyTo) return true;
+
+    juce::String askedName;
+    const auto tracks = src_.tracks ? src_.tracks() : std::vector<TrackRead>();
+    for (const auto& t : tracks) if (t.uid == asked) askedName = t.name;
+    if (askedName.isEmpty())
+    {
+        done (ToolOutcome::failureFor ("unknown_channel",
+                                    "\"" + asked + "\" is not a channel I can reach." + knownChannelsSentence(),
+                                    "I could not find a channel called \"" + asked + "\"."));
+        return false;
+    }
+    if (! argFlag (call, "confirm"))
+    {
+        // ITEM 3: the model is told how to proceed; the user is asked a question. Same gate, two audiences.
+        done (ToolOutcome::failureFor ("needs_confirmation",
+                                    "This is on " + askedName + "'s channel, not the one you have open. "
+                                    "Ask the user: \"This is on " + askedName + "'s channel, go ahead?\" - and if "
+                                    "they say yes, repeat this same call with \"confirm\": true. Nothing has been "
+                                    "changed yet.",
+                                    "This is on " + askedName + "'s channel, not the one you have open."));
+        return false;
+    }
+    applyTo = asked;
+    return true;
+}
+
+// ---- ITEM 1: THE LANDING IS A READ-BACK, AND IT IS GIVEN TIME -----------------------------------------
+//
+// Sean approved a build for the Kick, was told it applied, and the Kick's Link had nothing on it; the agent
+// then read that empty rack for 18 rounds. The first half of the fix is that a dispatch is not a landing.
+// The second half is that a landing is not INSTANT either: a build instantiates plugins, so the first read
+// after the ack can honestly show nothing, and failing on that first read would be the same false sentence
+// with the sign flipped. So it polls, bounded, and whichever way it ends it says what it SAW.
+//
+// The clock comes from sinks_.afterMs rather than a juce::Timer inside this object, so a guard drives it and
+// the poll is provable. With no clock supplied it reads once - correct for a synchronous fake, and the only
+// behaviour an older caller could have expected.
+void ExecutorDo::confirmLanded (const juce::String& applyTo, int wantSlots, const juce::String& opName,
+                                juce::String sentence, Done done, int waitedMs)
+{
+    const auto finishOk = [this, opName, done] (juce::String withSentence)
+    {
         auto* r = new juce::DynamicObject();
         r->setProperty ("applied", true);
         r->setProperty ("op", opName);
         // ONE UNDO TOKEN PER `do`, because one do is one undo step. The token is the op's own call id, which
         // the server already has, so an agent can undo exactly the thing it asked for and nothing else.
-        done (ToolOutcome::success (juce::var (r), /*undoToken*/ opName + ":" + juce::String (juce::Time::currentTimeMillis()),
-                                    sentence));
-    });
+        done (ToolOutcome::success (juce::var (r),
+                                    /*undoToken*/ opName + ":" + juce::String (juce::Time::currentTimeMillis()),
+                                    withSentence));
+    };
+
+    if (wantSlots < 0) { finishOk (sentence); return; }      // nothing structural to count
+
+    const auto back = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
+                                           : (src_.ownRack  ? src_.ownRack()          : RackRead());
+    const int have = back.valid ? (int) back.slots.size() : -1;
+    if (back.valid && have >= wantSlots)
+    {
+        finishOk (sentence.isNotEmpty() ? sentence + "; read back " + juce::String (have) + " slot(s) on the rack"
+                                        : "read back " + juce::String (have) + " slot(s) on the rack");
+        return;
+    }
+
+    const bool canWait = sinks_.afterMs != nullptr && waitedMs + kLandPollMs <= kLandWaitMaxMs;
+    if (canWait)
+    {
+        const auto aliveW = this->alive();
+        sinks_.afterMs (kLandPollMs, [this, aliveW, applyTo, wantSlots, opName, sentence, done, waitedMs]
+        {
+            // The window can close while a build is still landing. Nothing is claimed in that case: the turn
+            // is over and there is no rack read to be had from a dead editor.
+            if (aliveW.expired()) { done (ToolOutcome::success (juce::var (new juce::DynamicObject()), {}, sentence)); return; }
+            confirmLanded (applyTo, wantSlots, opName, sentence, done, waitedMs + kLandPollMs);
+        });
+        return;
+    }
+
+    // LOUD, AND IT SAYS WHAT IT SAW, including how long it waited - so the next round does not plan against
+    // a rack that is not there, and so "it needs longer" can be told apart from "it never arrived".
+    done (ToolOutcome::failureFor ("not_applied",
+                                "the rack acknowledged the change (" + sentence + ") but a read-back of "
+                                + (applyTo.isNotEmpty() ? "that Link" : juce::String ("this rack"))
+                                + (waitedMs > 0 ? ", after " + juce::String (waitedMs) + " ms, " : " ")
+                                + "shows " + (have < 0 ? juce::String ("a rack that cannot be read")
+                                                       : juce::String (have) + " slot(s)")
+                                + " where " + juce::String (wantSlots) + " were expected, so the change did NOT "
+                                "land. Do not plan against this rack until a look confirms what is on it.",
+                                "That change did not land - the rack still shows "
+                                + (have < 0 ? juce::String ("nothing I can read")
+                                            : juce::String (have) + " slot(s)") + "."));
 }
 
 // How many slots the target must hold after this op for it to have landed, or -1 when the op does not change

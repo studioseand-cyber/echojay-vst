@@ -8,6 +8,7 @@
 #include "EJAgentPanel.h"
 #include "EJAgentExecutorDo.h"   // agent mode: A2's read half plus the mutating half
 #include "EJChatMarkdown.h"      // item 3b (13 Oct 2026): the chat's inline markdown, shared by paint + measure
+#include "EJRigHook.h"           // ask A (13 Oct 2026): the host rig's automation channel, inert by default
 #include "PluginProcessor.h"
 #include "EJReferenceRows.h"   // the browser's pane rule: header-inline, pinned
 #include "EJReferenceBar.h"    // the reference bar's geometry and stepping: pinned
@@ -1858,7 +1859,8 @@ private:
     /** item 2: "OUT -2.4 dB . level match" for the rack in view, or "" when nothing can be said. */
     juce::String rackOutGainCaption() const;
     void drainOrphanedChatTurns();
-    bool orphansDrained_ = false;
+    // ITEM 5 (14 Oct 2026): the drain no longer latches - see drainOrphanedChatTurns for why a once-only
+    // drain excluded the only case it exists for. Member removed rather than left unread.
 
     int settingsPluginsHeadingY_ = -1;
     std::array<juce::ToggleButton*, 4> chainSuggestionToggles()
@@ -2398,8 +2400,8 @@ private:
     struct ChainPluginListModel : juce::ListBoxModel
     {
         juce::Array<juce::PluginDescription> items;
-        std::function<void(int)> onRowSelected;
-        std::function<void(int)> onRowDoubleClicked;
+        // onRowSelected / onRowDoubleClicked DELETED with the dispatch below them: this model has no view,
+        // so neither could ever fire. See the note at the deleted overrides.
         int getNumRows() override { return items.size(); }
         void paintListBoxItem(int row, juce::Graphics& g, int w, int h, bool sel) override
         {
@@ -2423,9 +2425,15 @@ private:
             g.setFont(juce::Font(juce::FontOptions(12.0f)));
             g.drawText(items[row].name, 4, 0, w - tagW - 12, h, juce::Justification::centredLeft);
         }
-        void selectedRowsChanged(int r) override { if (onRowSelected) onRowSelected(r); }
-        void listBoxItemDoubleClicked(int r, const juce::MouseEvent&) override
-        { if (onRowDoubleClicked) onRowDoubleClicked(r); }
+        // selectedRowsChanged / listBoxItemDoubleClicked DELETED (13 Oct 2026, the dead-path sweep).
+        //
+        // This MODEL HAS NO VIEW: nothing calls setModel with it. The inline picker it belonged to was
+        // deleted on 13 Aug 2026 and replaced by ChainPluginPicker, which has its own list and already
+        // opens a plugin on double-click (listBoxItemDoubleClicked -> pickRow). The model survives only
+        // because `items` is still the filtered name list other code reads.
+        //
+        // So "the row double-click works" is already true where the rows actually are, and wiring these
+        // two would have been wiring a view that does not exist. Sean told on 13 Oct 2026.
     };
     std::unique_ptr<ChainPluginListModel> chainListModel;
     // chainPluginList and chainSearchBox DELETED (13 Aug 2026, dead-layer
@@ -2499,6 +2507,21 @@ private:
     std::unique_ptr<echojay::agent::ToolExecutor> agentExecutor_;   // ExecutorDo (10 Oct): A2's read half + A's mutating half
     // The same object, typed, for setTarget - which only the read half declares. Never owned here.
     echojay::agent::ExecutorRead* agentReadExecutor_ = nullptr;
+    // ITEM 7 (14 Oct 2026): the last target handed to the executor, so syncAgentTarget() logs a CHANGE
+    // rather than restating the same uid on every send. "(unset)" is distinguishable from "" (the own rack),
+    // which is the distinction that hid the bug: an executor that was never told anything looked exactly
+    // like one that had been told "the own rack".
+    juce::String agentTargetLast_ { "(unset)" };
+    void syncAgentTarget();
+    // ---- THE HOST RIG (Sean's ask A): see EJRigHook.h. Inert unless an isolated state root AND
+    // EJ_RIG_HOOK=1; in a normal session serviceRigHook() returns on its first line.
+    // 14 Oct 2026: set when the scan hold has already recorded the held message in the transcript, so the
+    // eventual real send does not append it a second time. Cleared when the hold ends.
+    bool scanHeldRecorded_ = false;
+    void serviceRigHook();
+    void publishRigState();
+    // rigLastSeq_ moved to the PROCESSOR (14 Oct 2026): an editor member started at 0 on every reopen, so
+    // the last command on disk was re-executed by the next window.
     std::unique_ptr<EJAgentClient>                agentClient_;
     std::unique_ptr<EJAgentPanel>                 agentPanel_;
     /** HOOK E5's switch. Off = byte-identical to today: nothing is constructed, nothing is sent, no path runs.
@@ -2768,6 +2791,8 @@ private:
             ChainWetKnob     wetKnob;   // per-slot wet/dry (hidden while bypassed)
 
             std::function<void()>      onSelect;
+
+            std::function<void()> onOpen;   // ruling 3 (13 Oct 2026): double-click opens this slot's plugin
             std::function<void()>      onBypass;
             std::function<void()>      onRemove;
             std::function<void(int)>   onMove;
@@ -2813,6 +2838,23 @@ private:
                     return;
                 }
                 if (onSelect) onSelect();
+            }
+            // ---- SEAN'S RULING OF 13 OCT 2026: "remote-slot tap opens that plugin" --------------------
+            //
+            // A DOUBLE-click, not a single one, and the difference is a ruling of its own: selectSlot()
+            // records that a single remote click used to auto-begin an edit session, "which coupled
+            // selection to a lease and gave the flow no visible starting point". That stands. A
+            // double-click is the gesture that means "open this" everywhere else in the product (the
+            // plugin picker adds on double-click, a knob resets on double-click), and it cannot be
+            // arrived at by browsing.
+            //
+            // It goes through onOpen -> the panel's onEditRequest -> beginRemoteEditSession: the SAME door
+            // the Edit button uses. The sweep found a second hook for this (onRemoteEditorRequest, assigned
+            // and never invoked); a second door is what left one of them dead, so this one reuses the first.
+            void mouseDoubleClick(const juce::MouseEvent& e) override
+            {
+                if (e.mods.isPopupMenu()) return;
+                if (onOpen) onOpen();
             }
 
             void paint(juce::Graphics& g) override
@@ -3161,9 +3203,10 @@ private:
         // failure invisible. Now rebuild only replaces text IT wrote: a flow
         // message survives until the flow itself replaces it.
         juce::String restingHint_;
-        /** Remote slot tapped: the editor asks that Link to raise its own.
-            Slot index is the panel's (rack) index. */
-        std::function<void(int)> onRemoteEditorRequest;
+        // onRemoteEditorRequest DELETED (13 Oct 2026, the dead-path sweep). It was assigned in
+        // PluginEditor.cpp and invoked by nothing, and its handler was identical to onEditRequest's -
+        // beginRemoteEditSession(uid, slotIdx) - which the Edit button and now a slot double-click both
+        // use. Two names for one door is how one of them stayed dead; there is one now.
         juce::String remoteName;     // the Link's display name, for the note
         bool         remoteOffline = false;
         // Rack lock: TRUE while viewing a remote rack this main does not
@@ -3606,6 +3649,24 @@ private:
         static constexpr int kNoteLineH  = 17;
         static constexpr int kNoteMaxRow = 3;
         juce::StringArray stateNotes;
+        // ---- THE HOST RIG (ask A) + SEAN'S RULINGS 1 and 3 (13 Oct 2026) -----------------------------
+        // Two presses the rig makes, each going through the SAME hook the mouse goes through, so a green
+        // leg is evidence about the wiring and not about the rig. Both return false when the control is not
+        // there, so "the button did nothing" is distinguishable from "there was no button" - the very
+        // distinction item 3 turned on.
+        bool rigDoubleClickSlot (int slot0)
+        {
+            for (auto& bl : blocks)
+                if (bl->slotIdx == slot0)
+                { if (! bl->onOpen) return false; bl->onOpen(); return true; }
+            return false;
+        }
+        bool rigDoubleClickPreGain()
+        {
+            if (! preGainKnob.isVisible()) return false;
+            preGainKnob.doubleClickAction();   // the same body mouseDoubleClick runs
+            return true;
+        }
         std::function<void()> onDismissNotes;
 
         int noteBandH() const
@@ -3848,6 +3909,14 @@ private:
                                  == ChainHost::EditorPlacement::Float;
                 int ci = i;
                 bl->onSelect = [this, ci] { selectSlot(ci); };
+                // ruling 3: a double-click OPENS. On a remote slot that is the Edit button's own door
+                // (onEditRequest -> beginRemoteEditSession); on a local slot it is the inline editor, which
+                // selectSlot already opens - so selecting first keeps one code path for both.
+                bl->onOpen = [this, ci]
+                {
+                    selectSlot(ci);
+                    if (remote) { if (onEditRequest) onEditRequest(ci); }
+                };
                 bl->onBypass = [this, ci] { if (onBypassSlot) onBypassSlot(ci); };
                 bl->onRemove = [this, ci] { if (onRemoveSlot) onRemoveSlot(ci); };
                 bl->onMove   = [this, ci](int dir) { if (onMoveSlot) onMoveSlot(ci, dir); };

@@ -361,6 +361,10 @@ private:
     // ---- Chain hosting internals (message thread unless noted) ----
     ChainHost chainHost;                    // audio-thread process() via processBlock
     LoudnessLoop loudnessLoop_ { chainHost };   // levelling v2: THIS rack's loop (declared after chainHost)
+    // ITEM 4 (14 Oct 2026): arm that loop after a build, from EITHER road a build can arrive by - this
+    // Link's own v1 chain build, or a borrowed-rack build pushed as v2 editOps with intent=build. One
+    // implementation on purpose: 13a fixed one road and Sean's build came down the other.
+    void armLoudnessAfterBuild (const juce::String& via);
     std::vector<ChainSlotSpec> chainModel;
     bool chainBuilding = false;
     // Set in prepareToPlay (host/audio thread), read on the audio thread and by

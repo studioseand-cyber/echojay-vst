@@ -634,8 +634,32 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             const juce::String restoreId = processorRef.activeChatId;
             if (restoreId.isNotEmpty() && !chatLoading
                 && (currentChatId.isEmpty() || currentChatId == restoreId))
+            {
+                bool inStore = false;
                 for (const auto& ch : workspace.getChats())
-                    if (ch.id == restoreId) { loadChatFromWorkspace(restoreId); scrollChatSidebarToActive(); break; }
+                    if (ch.id == restoreId) { inStore = true; loadChatFromWorkspace(restoreId); scrollChatSidebarToActive(); break; }
+
+                // ---- 14 OCT 2026 (the rig's third real find): ADOPT THE CHAT EVEN IF THE STORE HAS NOT -
+                //
+                // A chat STARTED in this session and not yet synced is not in a freshly fetched workspace,
+                // so this loop found nothing and currentChatId stayed empty. The editor timer then takes
+                // `if (currentChatId.isEmpty())` and CREATES A NEW CHAT, which clears chatMessages AND
+                // processorRef.chatHistory - so reopening the window wiped the transcript the processor was
+                // holding, and a reply that landed afterwards appeared with no question above it. The rig
+                // read exactly that: roles=assistant,assistant, the user's words gone.
+                //
+                // Adopting the id is enough: the transcript itself was already restored from
+                // processorRef.chatHistory at construction, and the timer's new-chat branch is skipped
+                // because there IS a current chat. Nothing is fetched, nothing is cleared.
+                if (! inStore)
+                {
+                    currentChatId = restoreId;
+                    EchoJay_NSLog (("EJChat: adopted the processor's active chat " + restoreId
+                                    + " - the workspace store has not caught up with it yet, and creating a new "
+                                      "chat here would have wiped the transcript this window just restored "
+                                      "(14 Oct 2026)").toRawUTF8());
+                }
+            }
         }
 
         // A dashboard chat deep link tapped before the workspace had loaded.
@@ -1957,7 +1981,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         default: break; // Standalone / unknown: show all
     }
     chainListModel = std::make_unique<ChainPluginListModel>();
-    chainListModel->onRowSelected = [this](int) { /* selection handled at load time */ };
+    // chainListModel->onRowSelected: DELETED (13 Oct 2026). The assignment survived the 13 Aug deletion of
+    // the inline picker and could never fire - the model has no view. `items` is what this model is for now.
     // The inline chain-picker layer (ListBox, search box, load button,
     // recommend label, debug box) was DELETED 13 Aug 2026: superseded by
     // the picker popup and never made visible, while the timer kept feeding
@@ -2375,22 +2400,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         return (en.info.active ? juce::String("Active (click to turn off)")
                                : juce::String("Inactive (click to turn on)")) + audio;
     };
-    chainListPanel.onRemoteEditorRequest = [this](int slotIdx)
+    chainListPanel.onApplyRelease = [this] { commitAndReleaseEditSession(); };
+    // ONE DOOR to a remote edit session (13 Oct 2026). onRemoteEditorRequest was deleted: it was assigned
+    // here, invoked nowhere, and its body was a copy of this one. The Edit button and a slot double-click
+    // (ruling 3) both arrive here.
+    chainListPanel.onEditRequest = [this](int slotIdx)
     {
         if (chainEditGateRefuses()) return;   // COMMIT 2: no plugin window until held
         const juce::String uid = chainViewUid();
-        if (uid.isEmpty()) return;      // local racks open inline, unchanged
-        // Stage 1: a remote slot click opens a SOLO edit session here (the
-        // editing copy, the lease, the ring). sendOpenSlotEditor remains the
-        // fallback surface for older Links, reached through the pull ack's
-        // version signal rather than tried first.
-        beginRemoteEditSession(uid, slotIdx);
-    };
-    chainListPanel.onApplyRelease = [this] { commitAndReleaseEditSession(); };
-    chainListPanel.onEditRequest = [this](int slotIdx)
-    {
-        const juce::String uid = chainViewUid();
-        if (uid.isEmpty()) return;
+        if (uid.isEmpty()) return;            // local racks open inline, unchanged
         beginRemoteEditSession(uid, slotIdx);
     };
 
@@ -2996,8 +3014,24 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 // ---- THE V2'S OWN RACK: applied in-process, through the same applier a user's Apply uses --
                 if (uid.isEmpty())
                 {
-                    auto parsed = ChainHost::parseChainEditOps (juce::JSON::toString (ops, true));
-                    if (parsed.empty()) { if (cb) cb (false, "that change carried no operation this rack understands"); return; }
+                    // ---- ITEM 1 (Sean, 14 Oct 2026): THE ENVELOPE, NOT A BARE ARRAY ----------------------
+                    //
+                    // parseChainEditOps takes the chain channel's whole COMMAND object and reads its "edit"
+                    // member: `auto* o = v.getDynamicObject(); if (o == nullptr) return out;`. Handed a bare
+                    // array it gets a null object and returns zero ops - which is precisely what Sean saw
+                    // ("add EchoJay Compressor" -> "that change carried no operation this rack understands",
+                    // twice, then the agent stopped). The Link arm below was never wrong about this because
+                    // writeChainEditCommand builds the envelope itself; this arm called the parser directly
+                    // and skipped it. The parse now gets what it documents.
+                    auto* envelope = new juce::DynamicObject();
+                    envelope->setProperty ("edit", ops);
+                    auto parsed = ChainHost::parseChainEditOps (juce::JSON::toString (juce::var (envelope), true));
+                    if (parsed.empty())
+                    {
+                        EchoJay_NSLog (("EJAgent: the own rack parsed NO ops from " + juce::JSON::toString (ops, true)
+                                        + " - the op names are the chain channel's, and this one is not among them").toRawUTF8());
+                        if (cb) cb (false, "that change carried no operation this rack understands"); return;
+                    }
                     processorRef.getChainHost().applyChainEdits (
                         std::move (parsed), /*expectedRevision*/ -1, /*baseSlots*/ {},
                         [cb] (const juce::StringArray& results, int appliedCount, bool abortedBeforeStart)
@@ -3019,6 +3053,45 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                     if (cb) cb (ok, sentence);
                 });
             };
+            // ---- ITEM 1 (Sean, 14 Oct 2026): A BUILD TAKES THE SAME ROAD THE BUILD BUTTON TAKES --------
+            //
+            // Two roads, one per target, and they are the SAME two the user's own Build press uses (the
+            // router at the chainBuildBtns onClick): loadChainFromJson for the open rack, sendChainToLink
+            // for a Link. Not re-implemented here - an agent build that took a private road would be a
+            // second build path, and this codebase already recorded what that costs: "two build paths that
+            // looked identical in the log is what let a whole class of failure sit undiagnosed".
+            //
+            // replaceConfirmed = TRUE, deliberately. A build replaces the rack, and loadChainFromJson would
+            // otherwise raise its own replace ask - a second question about a build the user has already
+            // approved on the plan card, which is item 2's complaint arriving by another door.
+            //
+            // The callback reports DISPATCH only. Whether the build landed is settled by the executor's
+            // read-back of the target rack, because that is the only thing that knows.
+            sinks.buildChain = [this] (const juce::String& uid, const juce::var& chainArray,
+                                       std::function<void (bool, juce::String)> cb)
+            {
+                if (chainArray.getArray() == nullptr || chainArray.getArray()->isEmpty())
+                { if (cb) cb (false, "that build carried no chain"); return; }
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("chain", chainArray);
+                const auto chainJson = juce::JSON::toString (juce::var (o), true);
+                const int n = chainArray.getArray()->size();
+                EchoJay_NSLog (("EJAgent: build target uid=" + (uid.isEmpty() ? juce::String ("(local rack)") : uid)
+                                + " slots=" + juce::String (n) + "  path="
+                                + (uid.isEmpty() ? "loadChainFromJson" : "sendChainToLink")
+                                + " - the agent uses the same two roads the Build button uses").toRawUTF8());
+                if (uid.isEmpty()) loadChainFromJson (chainJson, /*replaceConfirmed*/ true);
+                else               sendChainToLink (uid, chainJson);
+                if (cb) cb (true, "the build was sent to " + (uid.isEmpty() ? juce::String ("this rack")
+                                                                            : juce::String ("that Link"))
+                                  + " (" + juce::String (n) + " slot(s))");
+            };
+            // ITEM 1: the executor's clock. A structural change is re-read until it appears or the wait runs
+            // out; the executor holds no timer of its own so a guard can drive the same code with a fake one.
+            sinks.afterMs = [] (int ms, std::function<void()> fn)
+            {
+                if (fn) juce::Timer::callAfterDelay (ms, std::move (fn));
+            };
             // READ LIVE, both of them. A user who turns agent mode off mid-round means it, and a cached
             // answer would let the rest of the round through.
             sinks.agentModeOn = [] { return agentModeOn(); };
@@ -3038,7 +3111,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                     const double now = (double) processorRef.getBusGainDb();
                     const double next = juce::jlimit (-24.0, 24.0, absolute ? db : now + db);
                     processorRef.setBusGainDb ((float) next);
-                    if (cb) cb (true, "the rack's OUT is now " + say (next)
+                    // READ IT BACK, even here. This is an in-process setter and the write cannot plausibly
+                    // fail - but "cannot plausibly fail" is the sentence that shipped every bug in this
+                    // family, and the gain is clamped internally, so the figure the user is told should be
+                    // the figure the rack HAS rather than the one we asked for.
+                    const double got = (double) processorRef.getBusGainDb();
+                    if (std::abs (got - next) > 0.05)
+                        EchoJay_NSLog (("EJAgent: the rack OUT was asked for " + say (next) + " and reads "
+                                        + say (got) + " - the clamp or another writer moved it").toRawUTF8());
+                    if (cb) cb (true, "the rack's OUT is now " + say (got)
                                       + (absolute ? juce::String() : " (was " + say (now) + ")"));
                     return;
                 }
@@ -3053,18 +3134,79 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 if (! found) { if (cb) cb (false, "that Link is not in the registry, so its OUT cannot be set"); return; }
                 const double next = juce::jlimit (-24.0, 24.0, absolute ? db : now + db);
                 processorRef.writeLinkCtrlCommand (uid, "gainDb", juce::var (next));
-                if (cb) cb (true, "that Link's OUT is now " + say (next)
-                                  + (absolute ? juce::String() : " (was " + say (now) + ")"));
+                // ---- THE DEAD-PATH SWEEP CAUGHT THIS ONE IN MY OWN CODE (14 Oct 2026) -------------------
+                //
+                // It said "that Link's OUT is now +2.0 dB" the instant writeLinkCtrlCommand returned. That
+                // function writes a control file; it is not an acknowledgement, and the Link may be gone,
+                // refusing, or slow. This is the same sentence-shaped fault as item 1's "sent" reported as
+                // "applied", written one day later in the fix for item 10.
+                //
+                // So it polls the registry - which is where the Link PUBLISHES its own gain - until the
+                // figure appears, and reports what it reads. Bounded, and if it never appears the user is
+                // told that instead of a number nothing confirmed.
+                {
+                    auto safe = juce::Component::SafePointer<EchoJayEditor> (this);
+                    auto attempt = std::make_shared<int> (0);
+                    auto step = std::make_shared<std::function<void()>>();
+                    *step = [safe, uid, next, now, absolute, say, cb, attempt, step]
+                    {
+                        if (safe == nullptr) return;                     // the window went: nothing to claim
+                        double seen = 0.0; bool found = false;
+                        for (const auto& li : safe->processorRef.getLinkSlotInfos())
+                            if (li.uid == uid) { seen = (double) li.gainDb; found = true; break; }
+                        if (found && std::abs (seen - next) <= 0.1)
+                        {
+                            if (cb) cb (true, "that Link's OUT is now " + say (seen)
+                                              + (absolute ? juce::String() : " (was " + say (now) + ")"));
+                            return;
+                        }
+                        if (++*attempt >= 12)                            // 12 x 250 ms = 3 s
+                        {
+                            if (cb) cb (false, "that Link did not confirm the new OUT within 3 s - it still reads "
+                                               + (found ? say (seen) : juce::String ("nothing I can read"))
+                                               + ", so nothing is confirmed");
+                            return;
+                        }
+                        juce::Timer::callAfterDelay (250, *step);
+                    };
+                    juce::Timer::callAfterDelay (250, *step);
+                }
             };
             sinks.undoOne = [this] (const juce::String&, std::function<void (bool, juce::String)> cb)
             {
                 // ONE UNDO BUTTON FOR EVERYTHING. The plugin-wide history already walks local and remote
                 // edits in one order (stage 5), so an agent's undo is that same step and not a second stack.
-                const bool ok = processorRef.undoHistory().undo();
-                if (cb) cb (ok, ok ? processorRef.lastUndoStatus() : juce::String ("there was nothing to undo"));
+                // WHAT undo() RETURNS IS "THE STACK WAS NOT EMPTY", NOT "THE CHANGE WAS REVERSED" (14 Oct
+                // 2026). An entry whose target has gone is popped, skipped with a status line and still
+                // returns true, so this reported a skipped undo as a success. lastApplyOk() is the fact.
+                auto& hist = processorRef.undoHistory();
+                const juce::String label = hist.undoLabel();
+                const bool stepped = hist.undo();
+                const bool applied = stepped && hist.lastApplyOk();
+                if (cb) cb (applied, applied ? ("undone: " + (label.isNotEmpty() ? label : juce::String ("the last change")))
+                                   : stepped ? processorRef.lastUndoStatus()
+                                             : juce::String ("there was nothing to undo"));
+            };
+            // RULING 4 (Sean, 14 Oct 2026): the agent's {"op":"undo"}. The DEPTH is handed back either side of
+            // the step because that is the executor's read-back - it refuses to call an undo a success over a
+            // history that did not move, however confidently this sink answers.
+            sinks.undoHistoryStep = [this] (std::function<void (bool, juce::String, int, int)> cb)
+            {
+                auto& hist = processorRef.undoHistory();
+                const int depthBefore    = hist.undoDepth();
+                const juce::String label = hist.undoLabel();
+                if (depthBefore <= 0) { if (cb) cb (false, "there was nothing to undo", 0, 0); return; }
+                const bool stepped = hist.undo();
+                const bool applied = stepped && hist.lastApplyOk();
+                const int depthAfter = hist.undoDepth();
+                if (cb) cb (applied,
+                            applied ? label
+                                    : (processorRef.lastUndoStatus().isNotEmpty() ? processorRef.lastUndoStatus()
+                                                                                  : "that step could not be undone"),
+                            depthBefore, depthAfter);
             };
             auto exec = std::make_unique<echojay::agent::ExecutorDo> (std::move (sources), std::move (sinks));
-            agentReadExecutor_ = exec.get();   // the typed pointer setTarget needs
+            agentReadExecutor_ = exec.get();   // the typed pointer syncAgentTarget() writes through
             agentExecutor_ = std::move (exec);
         }
         agentClient_   = std::make_unique<EJAgentClient> (
@@ -3110,12 +3252,11 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                                 + " is not live, staying on the local rack").toRawUTF8());
                 return;
             }
-            safe->viewRackPinned_ = true;
-            safe->viewRackUid_    = want;
-            // userInitiated = true, DELIBERATELY: this is the user's own last selection being resumed, and
-            // the programmatic path is view-only (decideSelection returns ViewOnly), which would restore the
-            // picture without re-addressing the Link - the half-fix that looks right until you turn a dial.
-            safe->handleBorrowSelectionChange (want, true);
+            // THE SAME DOOR THE USER'S SELECTION TAKES (14 Oct 2026). This used to set viewRackPinned_ and
+            // viewRackUid_ by hand and then call handleBorrowSelectionChange - a copy of selectRackForView's
+            // body with the panel refresh left out, which is how a restored view could be pinned to a rack
+            // the panel had not been told about. One door, so a restore and a selection cannot differ.
+            safe->selectRackForView (want);
             safe->chatTargetBtn.setButtonText (safe->chatTargetLabel());
             safe->refreshChannelBannerCache();
             safe->resized();
@@ -3162,6 +3303,9 @@ EchoJayEditor::~EchoJayEditor() {
         processorRef.parkChatStream (activeChatStream_);
         activeChatStream_ = nullptr;
     }
+    // This window no longer owns any turn in flight. Cleared with an IF so a window closing after a newer
+    // one has already claimed the turn cannot steal the claim back.
+    processorRef.clearChatTurnOwnerIf (this);
 
     // HOOK E6 (agent mode): an agent RUN still stops here, and this is a limit worth stating rather than
     // hiding. An agent turn is not one request: it is rounds of tool calls executed against THIS editor's
@@ -13036,7 +13180,9 @@ void EchoJayEditor::handleBorrowSelectionChange(const juce::String& newUid,
             break;
     }
     p.pendingAutoEngage_ = newUid;
-    p.setLastWorkingUid(newUid);   // item 5: remembered for the next time this window opens
+    // item 5's record moved to selectRackForView (14 Oct 2026): this line sits after a switch that returns
+    // for ViewOnly and Nothing, so it never ran on a first selection. One author, at the door.
+    syncAgentTarget();             // item 7: and the agent is told, at the moment it changes
     p.setRackLockWant(newUid);   // the lock belongs to the session being started, not to the view
     borrowSelectionTick();
 }
@@ -18812,6 +18958,22 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         refreshChannelBannerCache();
         refreshCaptureButtonLabel();   // item 4a: fit on activation, not just on capture
         resized();
+        // ---- 14 OCT 2026 (the rig, loop 2): WHAT THE STORE HAS NOT CAUGHT UP WITH IS NOT DISCARDED ------
+        //
+        // The rig closed the window 400 ms after a send and reopened it: the reply came back, and the user's
+        // own message did not (roles=assistant,assistant). The reason is here. A reopen reloads the chat from
+        // the workspace store and REPLACES the transcript with it - and the user's row is appended to the
+        // store locally, then SYNCED, and a sync does not finish in 400 ms. The reply, appended seconds later
+        // with the window open, synced fine. So the store's copy had the answers and not the questions, and
+        // this replace made that the truth.
+        //
+        // The rows the processor holds and the store does not are kept, in order, after the store's. Matched
+        // on role+content, which is what a duplicate would be; a row the store already has is not added
+        // twice. It cannot lose words: the worst case is a row kept that the store would have had anyway.
+        std::vector<std::pair<juce::String, juce::String>> held;
+        for (const auto& m : processorRef.chatHistory)
+            if (m.content.isNotEmpty()) held.emplace_back (m.role, m.content);
+
         chatMessages.clear();
         processorRef.chatHistory.clear();
         // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
@@ -18967,6 +19129,31 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                     ce.waveform.push_back(std::max(std::abs(pt.maxVal), std::abs(pt.minVal)));
             }
             processorRef.chatHistory.push_back(ce);
+        }
+
+        // ---- 14 OCT 2026: PUT BACK WHAT THE STORE DID NOT HAVE (see `held` above) ----------------------
+        {
+            int kept = 0;
+            for (const auto& h : held)
+            {
+                bool inStore = false;
+                for (const auto& m : processorRef.chatHistory)
+                    if (m.role == h.first && m.content == h.second) { inStore = true; break; }
+                if (inStore) continue;
+                ChatMsg cm;
+                cm.role = h.first; cm.content = h.second;
+                chatMessages.push_back (cm);
+                processorRef.chatRoles.add (h.first);
+                processorRef.chatContents.add (h.second);
+                EchoJayProcessor::ChatEntry ce;
+                ce.role = h.first; ce.content = h.second;
+                processorRef.chatHistory.push_back (ce);
+                ++kept;
+            }
+            if (kept > 0)
+                EchoJay_NSLog (("EJStores: kept " + juce::String (kept) + " row(s) the workspace store has not "
+                                "caught up with - a reload must not throw away what the processor is holding "
+                                "(14 Oct 2026)").toRawUTF8());
         }
 
         juce::String title = ch.title.isEmpty() ? "Untitled" : ch.title;
@@ -26130,6 +26317,7 @@ void EchoJayEditor::timerCallback()
     pumpPendingLinkApplies();            // item 4 (12 Oct 2026): dials queued while the rack was connecting
     drainOrphanedChatTurns();            // item 3 (12 Oct 2026): a turn that landed while the window was shut
     syncAgentChip();                     // item 11: the chip follows the flag file, however it changed
+    serviceRigHook();                    // ask A: inert unless ECHOJAY_STATE_HOME and EJ_RIG_HOOK=1
     {   // item 2: the strip's OUT caption, change-detected so the strip only repaints when the words move
         const auto cap = rackOutGainCaption();
         if (cap != chainListPanel.rackOutCaption) { chainListPanel.rackOutCaption = cap; chainListPanel.repaint(); }
@@ -26771,6 +26959,23 @@ void EchoJayEditor::timerCallback()
                 processorRef.pendingChannelUid.clear();
             }
             // Use whatever is already open; only create one if there is none.
+            // ---- 14 OCT 2026: ADOPT BEFORE CREATING (the rig's third find, second half) ----------------
+            //
+            // The adoption added in the workspace-loaded callback loses a race with THIS timer: the callback
+            // waits on a fetch, the timer runs at 20 Hz, so on a reopen the timer got here first, created a
+            // new chat, and cleared chatMessages AND processorRef.chatHistory - the transcript the window had
+            // just restored. The rig read it as roles=assistant,assistant: the replies had landed and the
+            // questions were gone.
+            //
+            // So the adoption also happens HERE, where the clear is. An active chat id on the processor means
+            // a conversation is in progress; a new one must not be invented over it.
+            if (currentChatId.isEmpty() && processorRef.activeChatId.isNotEmpty())
+            {
+                currentChatId = processorRef.activeChatId;
+                EchoJay_NSLog (("EJChat: adopted the processor's active chat " + currentChatId
+                                + " rather than creating a new one - creating one here clears the transcript "
+                                  "(14 Oct 2026)").toRawUTF8());
+            }
             if (currentChatId.isEmpty())
             {
                 juce::String proj = processorRef.getProjectName().trim();
@@ -31669,12 +31874,23 @@ juce::String EchoJayEditor::rackOutGainCaption() const
 // appended twice however many times this runs.
 void EchoJayEditor::drainOrphanedChatTurns()
 {
-    if (orphansDrained_) return;
-    if (processorRef.orphanedChatTurns_.isEmpty()) { orphansDrained_ = true; return; }
+    // ---- ITEM 5 (Sean, 14 Oct 2026): NO LATCH, AND IT REACHES THE SCREEN -------------------------------
+    //
+    // Two faults, both the same shape: this ran once and wrote somewhere the user was not looking.
+    //
+    // (a) It LATCHED. `orphansDrained_` was set true on the first call - including the usual call that finds
+    //     an empty list - so a turn that was parked when the window closed and finishes five seconds AFTER
+    //     it reopens could never be drained. The parked case is the only case this function exists for, and
+    //     it was the one case the latch excluded. The list being empty is already the cheap early return.
+    //
+    // (b) It wrote the reply to the WORKSPACE only. The transcript on screen is chatMessages, restored from
+    //     chatHistory when the window opens; a reply appended to the store after that moment appears on no
+    //     screen until something reloads the chat. Sean reopened and saw nothing.
+    if (processorRef.orphanedChatTurns_.isEmpty()) return;
     if (currentChatId.isEmpty()) return;                       // not yet - try again on the next tick
 
     const auto turns = processorRef.takeOrphanedChatTurns();
-    orphansDrained_ = true;
+    bool shown = false;
     for (const auto& t : turns)
     {
         if (auto* o = t.getDynamicObject())
@@ -31682,13 +31898,25 @@ void EchoJayEditor::drainOrphanedChatTurns()
             const auto chatId = o->getProperty ("chatId").toString();
             const auto reply  = o->getProperty ("reply").toString();
             if (reply.trim().isEmpty()) continue;
-            workspace.appendMessageToChat (chatId.isNotEmpty() ? chatId : currentChatId,
-                                           "assistant", reply, {}, {}, {}, {}, {}, {}, {});
+            const auto intoChat = chatId.isNotEmpty() ? chatId : currentChatId;
+            workspace.appendMessageToChat (intoChat, "assistant", reply, {}, {}, {}, {}, {}, {}, {});
+            workspace.requestMutationSync();
+            // ...and onto the screen, but ONLY into this chat's own transcript. chatHistory is not touched
+            // here: the processor's onChatTurnFinalised hook has already appended the row to chatHistory,
+            // chatRoles and chatContents, and a second append would double the turn in the model's history.
+            // This adds the DISPLAY row the hook cannot add, because the hook runs where there is no editor.
+            if (intoChat == currentChatId)
+            {
+                chatMessages.push_back ({ "assistant", reply });
+                shown = true;
+            }
             EchoJay_NSLog (("EJChat: persisted a turn that finished while the window was shut ("
-                            + juce::String (reply.length()) + "b, chat "
-                            + (chatId.isNotEmpty() ? chatId : currentChatId) + ")").toRawUTF8());
+                            + juce::String (reply.length()) + "b, chat " + intoChat + ")"
+                            + (intoChat == currentChatId ? " - and shown in the open chat"
+                                                         : " - it belongs to another chat, so it is stored only")).toRawUTF8());
         }
     }
+    if (shown) { resized(); repaint(); }
 }
 
 // ITEM 4: the queue's one pump. Runs on the editor's existing timer - no new timer, and no work at all when the
@@ -32276,6 +32504,17 @@ void EchoJayEditor::selectRackForView(const juce::String& uid)
 {
     viewRackPinned_ = true;
     viewRackUid_    = uid;
+    // ---- ITEM 5, CORRECTED (14 Oct 2026, caught by the host rig) ------------------------------------
+    //
+    // This was recorded inside handleBorrowSelectionChange, which RETURNS EARLY when the decision is
+    // ViewOnly or Nothing - and that is exactly what it is for a FIRST selection, when no borrow is yet
+    // active. So the rack you were on was remembered only if you had already been on another one. It
+    // worked in Sean's session because he had been switching racks; the rig, starting cold, showed the
+    // hole on its second run (view= working= after a reopen).
+    //
+    // Recorded HERE instead: this is the one door that moves the view (both entry points call it), so the
+    // thing remembered is the thing that happened, with no decision in between.
+    processorRef.setLastWorkingUid (uid);
     handleBorrowSelectionChange(uid, true);
     pendingSelectionIsUser_ = false;
     refreshChainPanelForView(true);
@@ -35168,6 +35407,300 @@ void EchoJayEditor::handleDevEqTest(const juce::String& jsonArg)
     repaint();
 }
 
+// =============================================================================
+//  THE HOST RIG'S HOOK (Sean's ask A, 13 Oct 2026)
+// =============================================================================
+//
+//  Two locks, both checked inside echojay::rig::enabled(): an isolated state root
+//  AND EJ_RIG_HOOK=1. In a normal Logic session this function returns on its first
+//  line and touches nothing - see EJRigHook.h for why that is not negotiable.
+//
+//  It drives only what a user can drive. Every branch below is the same call the
+//  mouse makes, so a rig pass cannot prove a capability the product does not have.
+void EchoJayEditor::serviceRigHook()
+{
+    if (! echojay::rig::enabled()) return;
+
+    const auto c = echojay::rig::poll (processorRef.rigLastSeq());
+    if (c.seq == 0) return;
+    processorRef.setRigLastSeq (c.seq);
+
+    bool ok = true;
+    juce::String note;
+
+    if (c.name == echojay::rig::cmd::sendChat)
+    {
+        const auto text = c.str ("text");
+        if (text.trim().isEmpty()) { ok = false; note = "no text"; }
+        else { chatInput.setText (text, false); sendChatMessage (text); note = "sent"; }
+    }
+    else if (c.name == echojay::rig::cmd::agentChip)
+    {
+        // The chip's own path, so the flag file, the chip and Settings move exactly
+        // as they do for a press (round 12b item 6).
+        setAgentModeOn (c.flag ("on"));
+        syncAgentChip();
+        note = agentModeOn() ? "agent mode ON" : "agent mode OFF";
+    }
+    else if (c.name == echojay::rig::cmd::press)
+    {
+        const auto b = c.str ("button").trim().toLowerCase();
+        if (agentClient_ == nullptr) { ok = false; note = "no agent client"; }
+        else if (b == "apply_all")  { agentClient_->approveAll(); note = "apply all"; }
+        else if (b == "skip_all")   { agentClient_->declineAll(); note = "skip all"; }
+        else if (b == "apply")
+        {
+            // The one-line rule the card itself uses (item 2), so the rig presses
+            // what the user presses rather than a private shortcut.
+            if (agentClient_->planLines().size() <= 1) agentClient_->approveAll();
+            else                                       agentClient_->submitPlan();
+            note = "apply";
+        }
+        else if (b == "skip_line")
+        {
+            const auto lines = agentClient_->planLines();
+            if (lines.empty()) { ok = false; note = "no plan line to skip"; }
+            else { agentClient_->setLineApproved (lines.front()->id, false); note = "line skipped"; }
+        }
+        else if (b == "details")
+        {
+            if (agentPanel_ == nullptr) { ok = false; note = "no agent panel"; }
+            else { ok = agentPanel_->rigPressDetails(); note = ok ? "details toggled" : "no failed row with detail"; }
+        }
+        else if (b == "stop") { agentClient_->stop(); note = "stopped"; }
+        else { ok = false; note = "unknown button \"" + b + "\""; }
+    }
+    else if (c.name == echojay::rig::cmd::selectLink)
+    {
+        // selectRack is the USER's door (the rack menu and a strip click both call it); it ends in
+        // selectRackForView, which is what actually moves viewRackUid_ and refreshes the panel.
+        // handleBorrowSelectionChange - which this used to call - returns early for a ViewOnly decision, so
+        // the rig pressed it and the view did not move. The rig presses what the mouse presses.
+        const auto uid = c.str ("uid").trim();
+        if (uid.isNotEmpty() && ! linkUidLive (uid)) { ok = false; note = "that uid is not live"; }
+        else { selectRack (uid); note = uid.isEmpty() ? "the own rack" : uid; }
+    }
+    else if (c.name == echojay::rig::cmd::setRackOut)
+    {
+        processorRef.setBusGainDb ((float) c.num ("db"));
+        note = "rack OUT " + juce::String (processorRef.getBusGainDb(), 1) + " dB";
+    }
+    else if (c.name == echojay::rig::cmd::workOn)
+    {
+        // The user's own door for "work on this channel" - the one that moves the Working-on banner and so
+        // the agent's target. select_link above moves the RACK VIEW and deliberately leaves this alone.
+        const auto uid = c.str ("uid").trim();
+        if (uid.isEmpty()) { resetToMainContext(); note = "the main context"; }
+        else if (! linkUidLive (uid)) { ok = false; note = "that uid is not live"; }
+        else { openChannelByUid (uid); note = "working on " + uid; }
+        syncAgentTarget();
+    }
+    else if (c.name == echojay::rig::cmd::answerAsk)
+    {
+        if (agentClient_ == nullptr || ! agentClient_->askPending()) { ok = false; note = "no ask is pending"; }
+        else
+        {
+            const auto ask = agentClient_->pendingAsk();
+            auto label = c.str ("label").trim();
+            if (label.isEmpty() && ! ask.labels.isEmpty()) label = ask.labels[0];
+            if (label.isEmpty()) { ok = false; note = "the ask offered no choices"; }
+            else { agentClient_->answerAsk (label); note = "answered \"" + label + "\""; }
+        }
+    }
+    else if (c.name == echojay::rig::cmd::openSlot)
+    {
+        // RULING 3: the slot double-click. The rig presses what the mouse presses - Block::onOpen - rather
+        // than calling beginRemoteEditSession itself, so a green leg is evidence about the wiring.
+        const int n1 = (int) c.num ("n", 0);
+        ok = chainListPanel.rigDoubleClickSlot (n1 - 1);
+        note = ok ? ("double-clicked slot " + juce::String (n1))
+                  : ("there is no slot " + juce::String (n1) + " to double-click");
+    }
+    else if (c.name == echojay::rig::cmd::preGainReset)
+    {
+        // RULING 1: the pre-gain knob's double-click, which must now restore AUTO rather than write 0.0 dB.
+        ok = chainListPanel.rigDoubleClickPreGain();
+        note = ok ? "pre-gain double-clicked" : "the pre-gain knob is not available on this view";
+    }
+    else if (c.name == echojay::rig::cmd::reportState)
+    {
+        note = "state written";
+    }
+    else { ok = false; note = "unknown command \"" + c.name + "\""; }
+
+    // EVERY command publishes state, not only report_state: the rig's assertion is
+    // almost always "and then what did the plugin hold?", and a separate round trip
+    // to ask would be a second chance for the timing to move underneath it.
+    publishRigState();
+    echojay::rig::ack (c.seq, c.name, ok, note);
+    EchoJay_NSLog (("EJRig: " + c.name + " seq=" + juce::String (c.seq) + " -> "
+                    + (ok ? juce::String ("ok") : juce::String ("FAILED")) + " (" + note + ")").toRawUTF8());
+}
+
+// What the rig asserts on. REAL state, read where it lives - the transcript from the
+// processor's own store (which is what survives a window), the rack from ChainHost,
+// a Link's rack from the registry the Link itself publishes.
+void EchoJayEditor::publishRigState()
+{
+    if (! echojay::rig::enabled()) return;
+
+    auto* o = new juce::DynamicObject();
+    // THE SNAPSHOT SAYS WHICH COMMAND PRODUCED IT (14 Oct 2026). Three rig rows argued with the plugin over
+    // a state that turned out to be from a different moment - count=2 with an empty slot list, a transcript
+    // missing its user rows, a rack that read empty seconds after an edit landed on it. With the command
+    // sequence on the snapshot, the rig can refuse anything older than the command it just sent, and a row's
+    // evidence is about the rack rather than about the clock.
+    o->setProperty ("forSeq", processorRef.rigLastSeq());
+    o->setProperty ("atMs", (double) juce::Time::currentTimeMillis());
+    o->setProperty ("editorId", (double) (juce::int64) (juce::pointer_sized_int) this);
+
+    // ---- the transcript, as the PROCESSOR holds it (the thing a reopen restores)
+    {
+        juce::Array<juce::var> rows;
+        for (const auto& m : processorRef.chatHistory)
+        {
+            auto* r = new juce::DynamicObject();
+            r->setProperty ("role", m.role);
+            r->setProperty ("text", m.content);
+            rows.add (juce::var (r));
+        }
+        o->setProperty ("transcript", juce::var (rows));
+        o->setProperty ("transcriptRows", (int) processorRef.chatHistory.size());
+        juce::Array<juce::var> shown;
+        for (const auto& m : chatMessages)
+        {
+            auto* r = new juce::DynamicObject();
+            r->setProperty ("role", m.role);
+            r->setProperty ("text", m.content);
+            shown.add (juce::var (r));
+        }
+        o->setProperty ("onScreen", juce::var (shown));
+    }
+
+    // ---- which rack this window is working on, and what the agent was told it is
+    o->setProperty ("workingUid", workingOnUid());
+    o->setProperty ("viewUid",    chainViewUid());
+    o->setProperty ("agentTarget", agentTargetLast_);
+    o->setProperty ("agentModeOn", agentModeOn());
+    o->setProperty ("chatInput",   chatInput.getText());
+    // MAY THIS ACCOUNT SEND A PLAIN CHAT TURN? sendChatMessage refuses before any network when this is
+    // false, by pushing the limit message as an ASSISTANT row - which a leg reading the transcript cannot
+    // tell from a reply. Matching the prose was my next mistake; the flag is the fact.
+    o->setProperty ("canSendChat", api.canSendMessage());
+    o->setProperty ("chatsUsed",   api.getUserInfo().messagesUsedToday);
+    o->setProperty ("chatsLimit",  api.getUserInfo().messageLimit);
+    o->setProperty ("centreBanner", processorRef.borrowStickyBannerForRig());
+    o->setProperty ("rackOutCaption", rackOutGainCaption());
+    // RULING 3: the note band - where a substitution notice now shows (addStateNote at the fire site).
+    o->setProperty ("stateNotes", chainListPanel.stateNotes.joinIntoString ("|"));
+    // RULING 1: the pre-gain, and whether it is AUTO or a hand-set value.
+    o->setProperty ("preGainDb", (double) processorRef.getChainHost().getPreGainDb());
+    // AUTO is the ABSENCE of the hand-set flag, which is what resetPreGainToAuto clears - so the leg asserts
+    // on the same fact the build reads when it decides whether it may set the pre-gain itself.
+    o->setProperty ("preGainUserSet", processorRef.getChainHost().isPreGainUserSet());
+
+    // ---- the OPEN rack, from ChainHost
+    {
+        auto& ch = processorRef.getChainHost();
+        juce::Array<juce::var> slots;
+        for (int i = 0; i < ch.getNumSlots(); ++i)
+        {
+            auto* sl = new juce::DynamicObject();
+            const auto info = ch.getSlotInfo (i);
+            sl->setProperty ("n", i + 1);
+            sl->setProperty ("name", info.name);
+            sl->setProperty ("outGainDb", (double) ch.getSlotOutGainDb (i));
+            // the capability rows assert on these two: "bypass slot 2" and "make it 30% wet" are only
+            // provable from what the slot actually holds afterwards
+            sl->setProperty ("bypassed", info.bypassed);
+            sl->setProperty ("wet", (double) ch.getSlotWet (i));
+            slots.add (juce::var (sl));
+        }
+        auto* rack = new juce::DynamicObject();
+        rack->setProperty ("slots", juce::var (slots));
+        rack->setProperty ("count", ch.getNumSlots());
+        rack->setProperty ("busGainDb", (double) processorRef.getBusGainDb());
+        o->setProperty ("ownRack", juce::var (rack));
+    }
+
+    // ---- every LINK this instance can see, with the rack the Link itself publishes
+    {
+        juce::Array<juce::var> links;
+        for (const auto& li : processorRef.getLinkSlotInfos())
+        {
+            auto* l = new juce::DynamicObject();
+            l->setProperty ("uid", li.uid);
+            l->setProperty ("name", li.name);
+            l->setProperty ("gainDb", (double) li.gainDb);
+            l->setProperty ("connected", li.connected);
+            juce::StringArray names;
+            const auto sc = processorRef.linkRackSlotNamesForRig (li.uid, names);
+            l->setProperty ("slotCount", sc);
+            l->setProperty ("slots", names.joinIntoString ("|"));
+            links.add (juce::var (l));
+        }
+        o->setProperty ("links", juce::var (links));
+    }
+
+    // ---- the agent card, as the user sees it
+    if (agentClient_ != nullptr)
+    {
+        auto* a = new juce::DynamicObject();
+        a->setProperty ("active", agentClient_->isActive());
+        a->setProperty ("state",  juce::String (EJAgentClient::stateName (agentClient_->state())));
+        a->setProperty ("planLines", (int) agentClient_->planLines().size());
+        // What the card is SAYING - the capability rows check honesty against this (never naming a plugin
+        // that is not on the rack, never claiming a change that did not land).
+        a->setProperty ("liveText", agentClient_->liveText());
+        a->setProperty ("notice", agentClient_->notice());
+        a->setProperty ("goal", agentClient_->goal());
+        a->setProperty ("askPending", agentClient_->askPending());
+        if (agentClient_->askPending())
+        {
+            const auto ask = agentClient_->pendingAsk();
+            a->setProperty ("askText", ask.question);
+            a->setProperty ("askLabels", ask.labels.joinIntoString ("|"));
+        }
+        juce::Array<juce::var> steps;
+        for (const auto& st : agentClient_->steps())
+        {
+            auto* sv = new juce::DynamicObject();
+            sv->setProperty ("id", st.id);
+            sv->setProperty ("label", st.label);
+            sv->setProperty ("status", (int) st.status);
+            sv->setProperty ("detail", st.detail);
+            sv->setProperty ("modelDetail", st.modelDetail);
+            steps.add (juce::var (sv));
+        }
+        a->setProperty ("steps", juce::var (steps));
+        o->setProperty ("agent", juce::var (a));
+    }
+
+    echojay::rig::publishState (juce::var (o));
+}
+
+// ---- ITEM 7 (Sean, 14 Oct 2026): THE AGENT IS TOLD WHICH RACK IS OPEN --------------------------------
+//
+// Sean, working on Link Aitch_4_01: "turn the vocal rack output down 2 dB" -> the agent asked him for "the
+// exact vocal track name or uid". It had no way to know: ExecutorRead::setTarget had NO CALLER anywhere in
+// the product. The editor even kept a typed pointer for it, with a comment saying what the pointer was for,
+// and never wrote through it - so target_ was always empty and every agent turn began believing it was
+// sitting on the V2's own rack, whatever the window was actually showing.
+//
+// That is why the start context named the V2's own track, why a Link action always needed an explicit
+// `channel`, and why the one thing the user could see - the rack in front of them - was the one thing the
+// agent could not. Called before every run and at both moments the working target can change.
+void EchoJayEditor::syncAgentTarget()
+{
+    if (agentReadExecutor_ == nullptr) return;
+    const auto want = workingOnUid();
+    if (want == agentTargetLast_) return;
+    agentReadExecutor_->setTarget (want);
+    agentTargetLast_ = want;
+    EchoJay_NSLog (("EJAgent: working target -> " + (want.isEmpty() ? juce::String ("(this instance's own rack)")
+                                                                   : want + " (a Link)")).toRawUTF8());
+}
+
 void EchoJayEditor::sendChatMessage(const juce::String& msg,
                                     const juce::String& displayLabel,
                                     const juce::String& turnTypeOverride)
@@ -35203,6 +35736,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     if (agentClient_ != nullptr && agentClient_->interceptTyped (msg)) return;
     if (agentModeOn() && agentClient_ != nullptr && ! agentClient_->isActive())
     {
+        syncAgentTarget();   // ITEM 7: before the start context is built, not after
         agentClient_->start (msg, currentChatId);   // the card appears through onLayoutNeeded
         return;
     }
@@ -35255,6 +35789,29 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
             scanHoldStartMs_ = juce::Time::currentTimeMillis();
         if (juce::Time::currentTimeMillis() - scanHoldStartMs_ < kScanHoldMaxMs)
         {
+            // ---- 14 OCT 2026 (the rig, loop 2): A HELD MESSAGE IS STILL THE USER'S -------------------
+            //
+            // This hold re-enters sendChatMessage on a 400 ms timer through a SafePointer, so if the window
+            // closes while a message is held, the re-entry finds a dead editor and the message is gone -
+            // never sent, never recorded, nothing said. The rig closed the window 400 ms after a send and
+            // the transcript came back with the answers to earlier questions and no question of its own:
+            // two sends, no EJStores line for either, both swallowed here.
+            //
+            // The words are recorded on the PROCESSOR now, once per held message, before this returns. The
+            // send still waits for the scan; the transcript does not. The flag stops the eventual real send
+            // appending the same row twice, and is cleared when the hold ends.
+            if (! scanHeldRecorded_)
+            {
+                scanHeldRecorded_ = true;
+                processorRef.chatHistory.push_back ({ "user", msg });
+                processorRef.chatRoles.add ("user");
+                processorRef.chatContents.add (msg);
+                chatMessages.push_back ({ "user", displayLabel.isNotEmpty() ? displayLabel : msg });
+                resized(); repaint();
+                EchoJay_NSLog (("EJChat: the message is held for the plugin scan and has been recorded in the "
+                                "transcript first - a window that closes during the hold must not take the "
+                                "user's words with it (14 Oct 2026): \"" + msg.substring (0, 60) + "\"").toRawUTF8());
+            }
             setStageStatus(juce::String::fromUTF8("Waiting for the plugin scan\xe2\x80\xa6"));
             juce::Component::SafePointer<EchoJayEditor> safe(this);
             const juce::String heldMsg = msg, heldLabel = displayLabel, heldTto = turnTypeOverride;
@@ -35267,6 +35824,10 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         EchoJay_NSLog("EJChat: scan hold expired -- sending without the resolved feed");
     }
     scanHoldStartMs_ = 0;
+    // Taken (not just read): the rows below append only when the hold did not already do it, and the next
+    // message starts clean whatever this one does.
+    const bool alreadyRecorded = scanHeldRecorded_;
+    scanHeldRecorded_ = false;
 
     // Single choke point for TYPED sends from every surface: the timer's
     // upgrade-button gate normally replaces the input row first, but a
@@ -35409,19 +35970,44 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         refreshChannelBannerCache();
     }
 
-    // Push user turn to display list
+    // Push user turn to display list - unless the scan hold already recorded this very message.
+    if (! alreadyRecorded)
     {
         ChatMsg um;
         um.role = "user";
         um.content = msg;                 // SENT/history text, unchanged
         um.displayText = displayLabel;    // rendered text for tap turns
         chatMessages.push_back(std::move(um));
+        processorRef.chatHistory.push_back({"user", msg});
     }
-    processorRef.chatHistory.push_back({"user", msg});
 
     // Push to workspace (single source of truth)
     bool isFirstMessage = workspace.appendMessageToChat(currentChatId, "user", msg,
                               {}, {}, {}, {}, {}, {}, {}, displayLabel);
+    // ---- ITEM 5 (Sean, 14 Oct 2026): THE USER'S OWN WORDS ARE SAVED AT SEND -----------------------------
+    //
+    // Sean closed the window while a reply was streaming and reopened it: the reply was gone AND so was his
+    // own message. The instrumentation in his log settles the mechanism exactly -
+    //
+    //   15:36:47  send  chatMessages=11 chatRoles=11 chatContents=11 chatHistory=11
+    //   15:36:49  (window closed)
+    //   15:36:53  chatRoles.clear() in loadChatFromWorkspace, had 11 entries
+    //   15:36:59  send  chatMessages=11               <- the reload returned 10, plus the new message
+    //
+    // The reload came back exactly ONE row short. `EchoJayWorkspace workspace { api };` is a member of THIS
+    // editor, so the store dies with the window; the append above had only ever been in memory, and the sync
+    // that would have written it out rides the ASSISTANT reply at the end of the turn. A turn that never
+    // finished therefore took the user's message down with it.
+    //
+    // Synced here instead, the moment the message is taken: the user's words are theirs as soon as they
+    // press send, and nothing that happens to the answer afterwards can unsay them. It is also what makes a
+    // parked turn's reply land against a message that is still there to attach to.
+    workspace.requestMutationSync();
+    // ...and THIS window owns the turn now in flight (14 Oct 2026, the rig's first catch). The processor's
+    // keep-rule compares this against the editor attached when the reply lands: if this window has gone, or
+    // a different one is up, the reply is kept for the transcript instead of being handed to a window that
+    // never asked for it.
+    processorRef.setChatTurnOwner (this);
     if (isFirstMessage)
     {
         // Chats still on the "New chat" placeholder take their title from the
@@ -35516,8 +36102,11 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // recording provenance. buildLinkLevelsContext() is retained but no longer
     // injected.
 
-    processorRef.chatRoles.add("user");
-    processorRef.chatContents.add(userContent);
+    if (! alreadyRecorded)
+    {
+        processorRef.chatRoles.add("user");
+        processorRef.chatContents.add(userContent);
+    }
     bumpMonthlyStat("chats");   // THIS MONTH card (local counter)
 
     // Channel and genre, once: the SAME two values that go into the system

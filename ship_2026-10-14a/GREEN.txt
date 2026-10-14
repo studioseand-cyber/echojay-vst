@@ -1,0 +1,38 @@
+ship_2026-10-14a - GATED GREEN, 14 Oct 2026
+
+WHAT THIS BUILD IS
+  Sean's four rulings of 13/14 Oct, the undo op (ruling 4), and the round of eight in-host failures from
+  ship_2026-10-13a. Built from build-guards by tools/place_ship.sh.
+
+THE GATE
+  S1   forced delete of SIX archives across THREE trees, then relink      OK
+       (EchoJayUndoHistory.h and EJAgentExecutorDo.h both changed)
+  S2   87 guard targets, LTO                                              OK
+  S3   the four bundles                                                   OK
+  S3b  archive provenance: the link line newer than every header          OK
+  S4   ctest -L "fast|plugins", stall watchdog armed        77/77 passed   OK
+  S5   link_state_guard, standalone two-sided                             OK
+  S6   the host rig, TWO passes:                                          OK
+         host_rig       live against the local agent server, the real
+                        model, the real built bundles, audio playing:
+                        41 passed, 0 failed, 0 skipped
+         host_rig_mock  the mock, for the legs that need the rig to
+                        control the server (a reply held open; U1, the
+                        undo op as scripted frames):
+                        25 passed, 0 failed, 0 skipped
+
+  S1-S5 ran as gate11 (started 12:40). S6 was re-run at 14:11 after a red whose cause was in the server's
+  tool schema, not this binary: the model was offered check(level_landed), which arrives with item 0a, and
+  spent the turn on the plugin's refusal. B gated it in process at 14:06. No source changed between the two
+  - verified by mtime against the gate's own archive, and the rerun refuses to run if any has.
+
+VERIFIED AFTER INSTALL (arm64, read back from ~/Library, matching this folder byte for byte)
+  EchoJay V2.component   07FD2B0D-7CC4-391B-AD1E-4C44DEB12DD7
+  EchoJay V2.vst3        94DF6CAF-AB7A-33A6-B0B4-8CD16EA5277B
+  EchoJay Link.component 402E05C9-9C26-30D8-99A9-1DEC7846E72F
+  EchoJay Link.vst3      7DEE6D73-EE0C-3741-B541-33DCCABCF8D8
+
+DOWNGRADE SAFETY
+  downgrade_keys_guard passes. This round's new fields are in memory (the undo snapshot's pre-gain and
+  master wet) or on the wire (the "undo" capability); nothing was added to, removed from or renamed in the
+  saved state, so a project or chain written here still opens sensibly in ship_2026-10-09a.

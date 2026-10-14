@@ -17,9 +17,17 @@
 // compiler; arbitrary chunk boundaries; comments (": ping") skipped; data
 // lines joined with '\n'; dispatch on the blank line.
 //
-// It knows NOTHING about the JSON. EJAgentProtocol.h reads the pair and also
-// accepts a "type" field inside the JSON, so the client is correct whichever
-// of the two shapes B ships (that is open question 1 in the handoff).
+// It knows NOTHING about the JSON. EJAgentProtocol.h reads the pair.
+//
+// CORRECTED 14 Oct 2026: this comment used to say the protocol "also accepts a
+// `type` field inside the JSON, so the client is correct whichever of the two
+// shapes B ships". It does not. parseFrame takes the kind from the EVENT NAME
+// only - "An event with no name, or JSON that does not parse to an object, is
+// Unknown and the client skips it" - and nothing reads a `type` field on this
+// endpoint. The stale sentence cost real time: the host rig's mock wrote
+// `data:` lines with a `type` inside and every agent frame it sent was silently
+// discarded, which is why its scripted agent rounds sat empty and unexercised.
+// A comment that contradicts the code is a defect in the code's own terms.
 // ===========================================================================
 
 #include <string>

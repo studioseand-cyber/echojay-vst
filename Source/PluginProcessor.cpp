@@ -282,7 +282,28 @@ EchoJayProcessor::EchoJayProcessor()
     // 06d item 1: the census counts PROCESSORS as well as workers, because the
     // network shutdown belongs to the LAST one. Taking EchoJay off one track
     // while another instance is mid-chat must not cancel that chat.
-    echojay::net::liveProcessors().fetch_add (1);
+    // ---- 14 OCT 2026 (the host rig's second real find): THE SHUTDOWN LATCH IS CLEARED HERE -------------
+    //
+    // beginShutdown() sets a PROCESS-WIDE stopping flag when the last processor goes, and nothing ever
+    // cleared it: `stoppingFlag()` is a function-local static and only resetForTest() puts it back. So once
+    // the last EchoJay in a process had been destroyed, every later request in that process was refused
+    // before it was made - a new instance added afterwards had no network at all.
+    //
+    // The rig found it because juce::AudioPluginFormatManager instantiates a throwaway instance to read the
+    // plugin's description, and releasing it took the count 1 -> 0. In a host the same shape is an AU
+    // validation pass, or simply removing the last EchoJay from a project and adding one back: chat, the
+    // config fetch and the agent were all dead until the host was restarted, with nothing said.
+    //
+    // A new processor means the plugin is alive again, so the flag that says "the last one went" is no longer
+    // true. Cleared on the 0 -> 1 edge only, so an instance arriving while others are live cannot disturb a
+    // shutdown that is genuinely under way.
+    if (echojay::net::liveProcessors().fetch_add (1) == 0 && echojay::net::stopping())
+    {
+        echojay::net::resetForTest();      // the only clearer there is; named for tests, correct here
+        EchoJay_NSLog ("EJNet: the process-wide network shutdown flag was SET and this is the first processor "
+                       "again - cleared it, or every request from this instance would have been refused "
+                       "before it was made (14 Oct 2026)");
+    }
     chainHost.setKeyFeedOwnerId ((uint64_t) (uintptr_t) this);
     // ---- ITEM 3 (12 Oct 2026): CATCH A TURN THAT FINISHES AFTER THE WINDOW CLOSED -------------------------
     //
@@ -300,8 +321,24 @@ EchoJayProcessor::EchoJayProcessor()
         // mid-answer and reopens it BEFORE the answer lands has an editor attached again, and this line
         // would then drop the reply a second time - by the rule written to save it. A turn whose window
         // closed is the processor's to keep, whether or not a new window has since opened.
-        const bool wasParked = parkedChatIds_.contains (chatId);
-        if (getActiveEditor() != nullptr && ! wasParked) return;   // a live window persists its own, as it always has
+        // ---- 14 OCT 2026: THE TEST IS NOT "IS AN EDITOR ATTACHED" BUT "IS THE SENDER STILL HERE" --------
+        //
+        // The host rig caught this on its first run: Sean's own message survived the close, and the REPLY
+        // did not appear at all (roles=user,user). The reason is in the rule above. `parkedChatIds_` only
+        // ever holds a chat whose STREAMING handle was parked - and the turn the rig sent went down the
+        // non-streaming /api/chat path, so nothing was parked. By the time the reply landed the window had
+        // reopened, so `getActiveEditor() != nullptr` was true, `wasParked` was false, and this returned -
+        // handing the reply to a live editor that had never sent it and had no callback waiting for it.
+        // Both sides deferred to the other and the reply fell between them.
+        //
+        // So the question is not whether SOME editor is attached; it is whether the editor that SENT this
+        // turn is the one attached now. chatTurnOwner_ is that pointer, set when a turn goes out and cleared
+        // by the editor's own destructor. If the owner is gone, or a different window is up, the turn is the
+        // processor's to keep - whatever transport it used.
+        const bool wasParked   = parkedChatIds_.contains (chatId);
+        auto* live             = getActiveEditor();
+        const bool ownerIsLive = live != nullptr && chatTurnOwner_ == live;
+        if (ownerIsLive && ! wasParked) return;      // the window that asked is still here; it persists its own
         if (wasParked) parkedChatIds_.removeString (chatId);
         if (! success || reply.trim().isEmpty()) return;    // nothing worth keeping
         chatHistory.push_back ({ "assistant", reply });
@@ -2404,6 +2441,23 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     // engage line to say what. A flag that guards a teardown has to say who set it.
     EchoJay_NSLog(("EJBorrow: session ACTIVE <- true (engage begin, uid=" + borrowSession_.uid + ")").toRawUTF8());
 
+    // ---- ITEM 6 (Sean, 14 Oct 2026): A RELEASE NOTICE MUST NOT OUTLIVE THE RELEASE ---------------------
+    //
+    // Sean reopened the window and read "Released - Aitch_4_01 owns its rack again" in the centre of the
+    // page while the chat header said "Working on Link: Aitch_4_01" and the strip showed that Link's rack.
+    // All three were describing the same moment and one of them was out of date: the banner is STICKY by
+    // design (it has to survive the window that was closing when it was written), and nothing cleared it
+    // when the very rack it names was taken up again.
+    //
+    // Cleared here, at the engage, because this is the moment the sentence stops being true - not in the
+    // editor, which would leave the processor holding a false line for any other reader of it.
+    if (borrowStickyBanner_.isNotEmpty())
+    {
+        EchoJay_NSLog(("EJBorrow: cleared the sticky banner on engage (it said \"" + borrowStickyBanner_
+                       + "\", and this rack is being borrowed again)").toRawUTF8());
+        borrowStickyBanner_.clear();
+    }
+
     // R2 (21t-b, 25 Sep 2026): edits parked when this rack last failed to answer are re-armed HERE, at the only
     // moment the Link can take them - it answers chain commands while it is leased, and it is leased now.
     borrowRearmParkedFor(uid);
@@ -3044,6 +3098,16 @@ void EchoJayProcessor::borrowWriteHeadPush()
     cmd->setProperty("v", 2); cmd->setProperty("seq", head.seq); cmd->setProperty("id", head.id);
     cmd->setProperty("editOps", head.editOps); cmd->setProperty("baseSlots", head.baseSlots);
     cmd->setProperty("sourceNote", "EchoJay V2 borrowed rack edit"); cmd->setProperty("leaseId", borrowSession_.leaseId);
+    // ---- ITEM 4 (Sean, 14 Oct 2026): THE PUSH SAYS WHAT IT IS ------------------------------------------
+    //
+    // This queue has always known: BorrowPendingPush::op is "build" for a build and nothing else sets it.
+    // The WIRE did not carry it, so every push arrived at the Link as "EchoJay V2 borrowed rack edit" -
+    // a build and a nudge of one knob, indistinguishable. The Link therefore armed its level match for
+    // neither, and Sean's vocal build came out 5-6 dB quieter with the rack OUT still reading 0.0 dB.
+    //
+    // ADDITIVE and ignorable: an older Link reads no `intent` and behaves exactly as it does today, which
+    // is what the downgrade rule requires. The Link arms its loop only when this says "build".
+    if (head.op.isNotEmpty()) cmd->setProperty("intent", head.op);
     juce::File(dir + "chain-ack-" + borrowSession_.uid + ".json").deleteFile();
     if (! juce::File(dir + "chain-cmd-" + borrowSession_.uid + ".json").replaceWithText(juce::JSON::toString(juce::var(cmd), true)))
     { EchoJay_NSLog(("EJLink: push id=" + head.id + " write FAILED - stays pending").toRawUTF8()); return; }

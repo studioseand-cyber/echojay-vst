@@ -934,6 +934,50 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
 
     juce::String lastWorkingUid_;      // item 5: the rack the editor was working on when it last closed
     juce::String borrowStickyBanner_;
+public:
+    // ---- 14 OCT 2026 (the rig's first catch): WHO ASKED FOR THE TURN IN FLIGHT --------------------------
+    // Set by the editor when a chat turn goes out, cleared by its destructor. onChatTurnFinalised keeps a
+    // reply unless THIS pointer is the editor attached now - "an editor is attached" was the wrong test and
+    // dropped a reply that landed after a reopen. A bare pointer and never dereferenced: it is only ever
+    // compared with getActiveEditor(), so a stale value cannot be followed.
+    // THE RIG'S COMMAND MEMORY LIVES HERE, NOT ON THE EDITOR (14 Oct 2026). EJRigHook.h promises that "a
+    // command file left on disk is not re-executed on the next editor" - and it was, because the sequence
+    // was an editor member that started at 0 again. Every reopen therefore re-ran the last command, which is
+    // how a capability row ended up reading a rack that a replayed command had changed under it. The
+    // processor outlives the window, so the memory belongs to the processor.
+    int  rigLastSeq() const noexcept { return rigLastSeq_; }
+    void setRigLastSeq (int s) noexcept { rigLastSeq_ = s; }
+
+    void setChatTurnOwner (void* ed) { chatTurnOwner_ = ed; }
+    void clearChatTurnOwnerIf (void* ed) { if (chatTurnOwner_ == ed) chatTurnOwner_ = nullptr; }
+private:
+    void* chatTurnOwner_ = nullptr;
+    int   rigLastSeq_ = 0;
+public:
+    // ---- THE HOST RIG (Sean's ask A, 13 Oct 2026) ----------------------------------------------------
+    // Two read-only windows the rig asserts through. They expose nothing a user cannot see on screen, and
+    // they are plain accessors rather than a second source of truth: the banner is the member above, and
+    // the slot names come from the sidecar the Link itself publishes - the same read the agent's linkRack
+    // source makes, so the rig and the agent cannot disagree about what is on a rack.
+    juce::String borrowStickyBannerForRig() const { return borrowStickyBanner_; }
+    /** Slot names on a Link's rack, straight from that Link's sidecar. Returns the count, or -1 when the
+        rack cannot be read at all (no shared dir, no sidecar) - which is NOT the same as 0 slots, and the
+        rig asserts on the difference. */
+    int linkRackSlotNamesForRig (const juce::String& uid, juce::StringArray& namesOut) const
+    {
+        namesOut.clear();
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty() || uid.isEmpty()) return -1;
+        const auto rc = LinkShm::readRackSidecar (dir, uid);
+        if (! rc.valid) return -1;
+        for (const auto& sl : rc.slots) namesOut.add (sl.name);
+        return namesOut.size();
+    }
+    // NO ACCESS TOGGLE HERE. The nearest specifier above this point is the `public:` at line 204, so these
+    // accessors are already public and adding `public:`/`private:` around them would make every member
+    // BELOW private - which is exactly what it did on the first attempt, and what it did once before on
+    // 13 Oct. Check the nearest preceding specifier before inserting one, every time.
     bool borrowBannerIsStatus_ = false;
     int  borrowInjDiagDivider_ = 0;
     int   borrowConsumeDiagDivider_ = 0;   // 1 Hz diagnostic of the ring consume (audio thread counter)

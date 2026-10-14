@@ -300,8 +300,34 @@ struct PreGainKnob : ChainWetKnob
     // a definite value the user can see, not "auto", which reads as "something will decide later". Every other
     // knob already follows this rule (the wet knob resets to 100%, a device rotary to its parameter default), so
     // this is the odd one being brought into line rather than a new rule.
-    void mouseDoubleClick(const juce::MouseEvent&) override
+    //
+    // ---- SEAN'S RULING OF 13 OCT 2026, WHICH REVERSES THAT FOR THE PRE-GAIN KNOB ---------------------
+    //
+    // The dead-path sweep found `onResetAuto` assigned in BOTH editors (PluginEditor.h:3284 and
+    // LinkEditor.h:305, each wired to resetPreGainToAuto()) and invoked NOWHERE - so the handlers were
+    // complete and nothing ever called them. Sean: "Double-click on pre-gain restores AUTO, fix it."
+    //
+    // Scoped by the hook itself rather than by a flag: only the pre-gain knob assigns onResetAuto, so a
+    // knob that has one restores AUTO and every other bipolar trim keeps the 24 Sep behaviour of going to
+    // 0.0 dB. One behaviour per knob, decided by what that knob was given.
+    void mouseDoubleClick(const juce::MouseEvent&) override { doubleClickAction(); }
+
+    /** The body of the double-click, named so the HOST RIG can press it without synthesising a MouseEvent.
+        One body, two callers (the mouse and the rig), so a green rig leg is evidence about this code and
+        not about the rig's imitation of a click. */
+    void doubleClickAction()
     {
+        if (onResetAuto)
+        {
+            // The owner's handler owns the value: resetPreGainToAuto re-arms automatic staging and the
+            // knob is re-read from the host afterwards (syncPreGain on the Link side, the panel refresh on
+            // the main side). Writing 0.0 dB here first would land a manual value for one frame and, worse,
+            // mark the state dirty with it.
+            onResetAuto();
+            echojay::knobGestureEnded();
+            if (onGestureEnd) onGestureEnd();
+            return;
+        }
         setValue (vFromDb (0.0f), true);
         echojay::knobGestureEnded();
         if (onGestureEnd) onGestureEnd();

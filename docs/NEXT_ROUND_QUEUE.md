@@ -1,5 +1,20 @@
 # Next round — the queue, in order
 
+> ## 13 OCT 2026, SEAN'S RULING: THE CAPABILITY LOOP COMES FIRST, AND IT REPLACES ITEM 0 FOR NOW
+>
+> *"This sits after this round's 8 fixes and the dead path sweep, and replaces item 0 for now: the agent
+> moving into the chat comes once it can actually do the work."*
+>
+> So the order is: the host rig (ask A, built 13/14 Oct — `tools/host_rig/`), then
+> `docs/AGENT_CAPABILITIES.md` run end to end on it with B's local server, then
+> `docs/AGENT_SCORECARD.md` after each pass, fixing mine and sending B its list, until every row passes or
+> is blocked on a decision for Sean. Loops use the rig, not the full gate. The full gate (with S6) runs
+> once the scorecard is green.
+>
+> **Items 0 and 0b below are therefore NOT next.** They are what happens after the agent can do the work —
+> moving it into the chat is a change of surface, and a surface is not what is failing.
+
+
 Rewritten 12 Oct 2026, after the round that took Sean's items 1-11.
 Amended 13 Oct 2026, after Sean's in-host results on ship_2026-10-12b (eleven failures, all mine, all fixed
 this round except the two already deferred — item 0 below and item 0a — plus ONE NEW deferral recorded as
@@ -208,3 +223,74 @@ The question for Sean: does solo stay as an injection, or does it become the fab
 5. **Three legs, Sean's.** `borrow_migration_guard` (never lost, never doubled, proven both directions),
    the interleaved-undo leg in `global_undo_guard`, and `downgrade_keys_guard` — the standing downgrade rule
    mechanised, so a dropped state key must carry a recorded reason instead of a sentence in a commit message.
+
+---
+
+# NEXT ROUND, as ruled 14 Oct 2026 (build order)
+
+Sean's order, once `ship_2026-10-14a` is installed and he has tested it:
+
+## 1. The login screen's "Loading your dashboard" (small, first)
+
+**Diagnosed 14 Oct, not yet fixed** (the gate was testing the tree):
+
+- `EchoJayEditor::showLoginScreen()` (`PluginEditor.cpp:3471`) hides ~30 components by name and **never
+  hides `dashWebPanel_`, `dashView_` or `dashViewport_`**.
+- `DashboardView::statusLine()` (`DashboardTab.cpp:571`) returns `{}` when `signedOut_` — but
+  **`setSignedOut(true)` has exactly one caller**, `openDashboardTab()` (`PluginEditor.cpp:17719`). A logout
+  or an expired token while the Dashboard tab is current therefore leaves `signedOut_ == false` and
+  `loading_ == true`, and the view keeps painting *"Loading your dashboard…"* behind the login screen.
+- `dashWebPanel_`'s visibility is gated on `signedIn` (`PluginEditor.cpp:24852`) but only re-evaluated on a
+  re-layout, so it can outlive the switch to the login screen as well.
+
+**Fix (both halves, because either alone leaves a way back in):** `showLoginScreen()` hides the three
+dashboard surfaces, and signing out calls `dashView_.setSignedOut(true)` so the view's own text is empty
+whatever is visible.
+
+**Rig check:** start the rig with an auth file that is **not logged in**, open the editor, and assert the
+published state reports the login screen with **no dashboard status line** — the hook needs a `screen` field
+and the dash status line in `publishRigState` for that to be assertable on real state rather than on a
+screenshot.
+
+## 2. Item 0 + 0b, with Auto mode
+
+`docs/MOCKUP_AGENT_IN_CHAT_APPROVED.md` (Sean clicked through it and approved it — **it wins where it and
+the design doc differ**) with `docs/DESIGN_AGENT_IN_CHAT.md` for the mechanism. Includes:
+
+- the agent run as one transcript message, steps ticking in place, per-line Apply plus Apply all,
+  Details as a chevron disclosure, Stop on the running message, the finished message collapsing to its
+  closing sentence with "N changes" and Undo all.
+- **0b**: `EJAgentClient` + the executors move to the processor, the transcript attaches as a listener, and
+  **the two build roads (`loadChainFromJson`, `sendChainToLink`) move to the processor** — the one sink of
+  eight that an editor currently owns.
+- **Auto mode**: the chip cycles Off → Ask → Auto, with the composer's one-line explainer per mode.
+- the eight 0b rig legs plus the five Auto legs.
+
+### Two things the mockup settles that the design doc did not
+
+- **the glyph set grows**: the panel paints spinner/tick/cross/skipped/undone/stopped today; the mockup adds
+  a **dim dot** (pending), an **amber ring** (awaiting approval) and an **amber question mark** (question),
+  and asks for skipped/undone/stopped rows dimmed with undone **struck through**.
+- **per-row right-hand status words** are specified: applied, auto-applied, skipped, not applied, undone,
+  stopped, "your answer?", working. A question is a step row with answer chips under it, and tapping one
+  records *"You said: …"* on the row.
+
+### One thing to agree with B before building the explainer line
+
+The composer's Ask line reads *"small moves just happen; adding, removing or touching another track waits
+for your Apply."* That is a **statement of the approval policy, which is the server's to decide** — today B
+marks each tool call `free` or `ask_first`. If B marks a small move `ask_first`, that line is wrong on
+screen. Either B commits to that policy in writing, or the line is softened to describe what the plugin
+knows ("some steps wait for your Apply"). **Asked in `docs/FOR_B_2026-10-14.md`.**
+
+## 3. Multi-track jobs (MOVED INTO THIS ROUND, 14 Oct)
+
+`docs/DESIGN_MULTI_TRACK_JOBS.md`. Sean moved it from "after" to **this round, before 0a** — B starts their
+half immediately, mine follows item 0 because every visible part of it lives in the new agent message.
+Rows M1-M7. The two open questions (the missing-Link wording, replace-vs-append) are being built to my
+stated recommendations rather than waited on.
+
+## 4. Item 0a, the Link deep-meter region
+
+`docs/DESIGN_LINK_METERS.md`. One shm object per Link, GR + calibration + the analyser in **one push before
+beta**.

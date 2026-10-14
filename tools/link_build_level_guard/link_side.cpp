@@ -28,7 +28,14 @@
 #include <cstdio>
 #include <memory>
 
-struct EchoJayLinkSyncTestAccess { static juce::String uid (LinkProcessor& p) { return p.instanceUid_; } };
+struct EchoJayLinkSyncTestAccess
+{
+    static juce::String uid (LinkProcessor& p) { return p.instanceUid_; }
+    // leg (d): the Link's OWN output gain, read from the member the mixer strip uses - so the leg can say the
+    // loop moved THAT control and not a number of its own. getGainDb() is public, but reading it through the
+    // same access struct keeps every private read in this file in one place.
+    static float gainDbOf (LinkProcessor& p) { return p.gainDb_.load (std::memory_order_relaxed); }
+};
 using TA = EchoJayLinkSyncTestAccess;
 
 namespace {
@@ -64,6 +71,79 @@ int writeBuild (const juce::String& dir, const juce::String& uid, const juce::St
     juce::File (dir + "chain-ack-" + uid + ".json").deleteFile();
     juce::File (dir + "chain-cmd-" + uid + ".json").replaceWithText (juce::JSON::toString (juce::var (cmd), true));
     return seq;
+}
+
+// ---- THE HOST, MODELLED (14 Oct 2026) ---------------------------------------------------------------
+//
+// Sean: "Your guard proves the loop ARMS; prove it LANDS." A landing needs three things the old legs did
+// not supply: a transport that says it is PLAYING (the Link reads that from the host's playhead inside
+// processBlock, and the loop will not act without it), audio actually going THROUGH the rack, and enough
+// of it for a measurement window to close.
+//
+// So the guard models the host rather than reaching past it: a real AudioPlayHead that reports playing and
+// advances time, exactly as Logic's does. The memory rule is "legs model the host" - a leg's fidelity is a
+// claim until the host's own behaviour backs it, and bypassing the playhead to poke transportPlaying_ would
+// have proved the loop works when told to work, which is not the question.
+struct PlayingHead : juce::AudioPlayHead
+{
+    double timeS = 0.0;
+    // getCurrentPosition is GONE in this JUCE (it was the pre-7 API); getPosition is the one virtual to
+    // implement, and the Link reads the transport through it - `pos->getIsPlaying()` in processBlock.
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo p;
+        p.setIsPlaying (true);
+        p.setTimeInSeconds (timeS);
+        p.setTimeInSamples ((juce::int64) (timeS * 48000.0));
+        p.setBpm (120.0);
+        return p;
+    }
+    bool canControlTransport() override { return false; }
+};
+
+/** RMS of one channel, in dBFS. */
+float rmsDb (const juce::AudioBuffer<float>& b, int ch)
+{
+    double sum = 0.0;
+    const int n = b.getNumSamples();
+    for (int i = 0; i < n; ++i) { const double v = b.getSample (ch, i); sum += v * v; }
+    const double r = std::sqrt (sum / juce::jmax (1, n));
+    return r > 1.0e-9 ? (float) (20.0 * std::log10 (r)) : -200.0f;
+}
+
+/** Feed `seconds` of a steady -12 dBFS tone through the Link, in 512-sample blocks, ticking the loop and
+    pumping the message thread as a host would. Returns the mean output RMS over the LAST quarter of the
+    run, which is the part that reflects whatever the loop has landed by then. */
+float feedTone (LinkProcessor& l, PlayingHead& ph, double seconds, double& phaseIo, float& inDbOut)
+{
+    const double sr = 48000.0;
+    const int    block = 512;
+    const int    blocks = (int) (seconds * sr / block);
+    juce::AudioBuffer<float> buf (2, block);
+    juce::MidiBuffer midi;
+    double outSum = 0.0; int outN = 0;
+    double inSum = 0.0;  int inN = 0;
+    const int tailFrom = (blocks * 3) / 4;
+    for (int b = 0; b < blocks; ++b)
+    {
+        for (int i = 0; i < block; ++i)
+        {
+            const float v = 0.25f * (float) std::sin (phaseIo);       // -12 dBFS
+            phaseIo += 2.0 * juce::MathConstants<double>::pi * 220.0 / sr;
+            if (phaseIo > 2.0 * juce::MathConstants<double>::pi) phaseIo -= 2.0 * juce::MathConstants<double>::pi;
+            buf.setSample (0, i, v); buf.setSample (1, i, v);
+        }
+        if (b >= tailFrom) { const double r = std::pow (10.0, rmsDb (buf, 0) / 20.0); inSum += r; ++inN; }
+        midi.clear();
+        l.processBlock (buf, midi);
+        ph.timeS += (double) block / sr;
+        if (b >= tailFrom) { const double r = std::pow (10.0, rmsDb (buf, 0) / 20.0); outSum += r; ++outN; }
+        // The loop's own timer runs on the message thread; pump it every few blocks rather than once at the
+        // end, so its windows close while audio is still arriving - which is how it happens in a host.
+        if ((b % 8) == 0) { l.loudnessLoop().tickNow(); pumpMs (2); }
+    }
+    inDbOut  = inN  > 0 ? (float) (20.0 * std::log10 (inSum  / inN))  : -200.0f;
+    return    outN > 0 ? (float) (20.0 * std::log10 (outSum / outN)) : -200.0f;
 }
 
 // Wait for the LINK's own ack, bounded, so no leg reads a loop state from before the build applied.
@@ -143,6 +223,54 @@ int main (int argc, char** argv)
         check (std::abs (loop.currentGainDb()) < 0.001f,
                "(b) nothing has been landed yet - the loop is listening, not guessing",
                juce::String (loop.currentGainDb(), 3) + " dB");
+
+        // ---- (d) IT LANDS: Sean's own case, measured (14 Oct 2026) ---------------------------------------
+        //
+        // "Your guard proves the loop ARMS; prove it LANDS." His vocal build came out 5-6 dB out with the
+        // rack OUT still reading 0.0 dB, so the question is not whether a flag flipped - it is whether the
+        // OUTPUT comes back to the INPUT with audio running.
+        //
+        // The rack is made deliberately LOUD, the way Sean's was: +6 dB on the built slot's own OUT gain,
+        // which is what a plugin arriving with its output up does to the rack (his Kramer PIE came back
+        // from its stored state that way). Then real audio runs through it and the measurement is of the
+        // buffers, not of a field.
+        {
+            PlayingHead ph;
+            l->setPlayHead (&ph);
+            l->getChainHost().setSlotOutGainDb (0, 6.0f);     // the rack is now +6 dB on its input
+            pumpMs (100);
+
+            double phase = 0.0;
+            float inDb = 0.0f;
+            const float before = loop.currentGainDb();
+
+            // Bounded: up to 40 s of audio in 4 s passes, stopping as soon as the loop has written. A fixed
+            // run would either be too short to let a window close or spend the time whatever happened.
+            float outDb = 0.0f;
+            int passes = 0;
+            for (; passes < 10; ++passes)
+            {
+                outDb = feedTone (*l, ph, 4.0, phase, inDb);
+                if (std::abs (loop.currentGainDb() - before) > 0.05f && std::abs (outDb - inDb) < 1.5f) break;
+            }
+
+            const float moved = loop.currentGainDb() - before;
+            check (moved < -0.5f,
+                   "(d) THE LOOP LANDED A CUT on the rack's OUT  (RED as it stood: the loop was never armed on "
+                   "a Link at all, so nothing was ever written)",
+                   "moved " + juce::String (moved, 2) + " dB after " + juce::String (passes + 1) + " pass(es)");
+            check (std::abs (outDb - inDb) < 1.5f,
+                   "(d) ...and the rack's OUTPUT now matches its INPUT, measured from the audio  (Sean's test: "
+                   "the vocal came out 5-6 dB out)",
+                   "in " + juce::String (inDb, 2) + " dBFS vs out " + juce::String (outDb, 2) + " dBFS");
+            check (std::abs (moved + 6.0f) < 2.0f,
+                   "(d) ...by about the 6 dB the rack was adding, not an arbitrary amount",
+                   juce::String (moved, 2) + " dB against -6.0 expected");
+            check (std::abs (TA::gainDbOf (*l) - loop.currentGainDb()) < 0.01f,
+                   "(d) ...and what the loop reports IS the Link's own OUT gain, not a private number",
+                   juce::String (TA::gainDbOf (*l), 2) + " vs " + juce::String (loop.currentGainDb(), 2));
+            l->setPlayHead (nullptr);
+        }
     }
 
     // ---- (c) A RESTORE DOES NOT ARM ---------------------------------------------------------------------

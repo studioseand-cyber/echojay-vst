@@ -856,7 +856,9 @@ public:
     // normal text (never coral under dial-only - the amendment).
     struct Substitution { int slot = -1; juce::String from, to, reason; int requested = 0, applied = 0; };
     std::vector<Substitution> substituteNoMapSlots (const std::map<juce::String, juce::String>& roleByName);
-    std::function<void(int slot, const juce::String& from, const juce::String& to)> onSlotSubstituted;
+    // onSlotSubstituted DELETED (13 Oct 2026, the dead-path sweep + Sean's ruling 3). It was fired on every
+    // built-in substitution and assigned by nothing, so the notice reached no surface. The substitution now
+    // adds a STATE NOTE at the fire site, which the rack's note band already draws in both windows.
 
     // ---- OUT-OF-PROCESS PRE-FLIGHT (17 Sep 2026 ruling, the AVOX SYBIL hang) --------
     // A product is KNOWN-GOOD once it has instantiated successfully in-host
@@ -1462,7 +1464,22 @@ public:
     // unchanged. Over the transport a single {"op":"undo"|"redo"} edit is answered by
     // the receiving rack's own stack (applyChainEdits, before the base-slot guards).
     static constexpr int kUndoDepth = 20;
-    struct UndoSnapshot { juce::var slots, state, params; juce::String label; };
+    // THE RACK-LEVEL VALUES, ADDED 14 Oct 2026. The snapshot held slots, their states and their parameters
+    // and NOTHING ELSE - so an undo of a chain edit restored every slot faithfully and left the rack's own
+    // pre-gain and master wet exactly where the edit had put them. The host rig's U1 leg caught it: a
+    // scripted set_pre_gain(3 dB) followed by {op:"undo"} reported *"Undone: 1 edit"* with the pre-gain
+    // still at 3.0 dB. The apply was not lying - it restored everything it knew about - but the user's
+    // change was not in the snapshot, so the undo reported a success the user could not see.
+    // `preGainUserSet` travels with the value because the two are one fact: restoring 0 dB while leaving
+    // the hand-set flag on would make an AUTO rack look user-pinned ever after.
+    struct UndoSnapshot
+    {
+        juce::var slots, state, params;
+        juce::String label;
+        float preGainDb      = 0.0f;
+        bool  preGainUserSet = false;
+        float masterWet      = 1.0f;
+    };
     // ===== 21n item 3 (22 Sep 2026): the plugin-wide history takes over on V2 =====
     // When onUndoPush is set (V2's own ChainHost and the borrowed copy), a rack mutation is recorded as a CHAIN entry in
     // EchoJayProcessor's UndoHistory instead of this stack; the per-rack stack stays for a Link (the transport's

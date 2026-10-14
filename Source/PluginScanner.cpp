@@ -10,6 +10,7 @@
 #endif
 
 #include "PluginScanner.h"
+#include "EJRigHook.h"   // ask A: the rig may never trigger a plugin scan
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginCatalog.h"
 
@@ -140,6 +141,27 @@ static juce::String bundleIdentifierFor(const juce::File& bundle)
 // load-bearing (stale-lib layout vs inline methods).
 
 void PluginScanner::startScan()
+{
+    // ---- THE HOST RIG NEVER SCANS (Sean's ask A, 13 Oct 2026) --------------------------------------
+    //
+    // Sean's standing rule: a full AU scan triggers iLok/PACE prompts and has crashed this Mac. The rig
+    // opens real editors in a fresh isolated state root - which is exactly the condition under which
+    // something might decide a scan is needed - so the rig is refused a scan outright, at the one door
+    // every scan comes through. It reads whatever cache the root already has and no more.
+    //
+    // This cannot affect a shipped plugin: echojay::rig::enabled() needs BOTH an isolated state root and
+    // EJ_RIG_HOOK=1, and Logic sets neither.
+    if (echojay::rig::enabled())
+    {
+        EchoJay_NSLog ("EJScan: REFUSED - the host rig is driving this plugin and may never run a plugin "
+                       "scan (iLok/PACE prompts, and Sean's rule of 22 Sep). The rig works from the cache "
+                       "its isolated state root already holds.");
+        return;
+    }
+    startScanImpl();
+}
+
+void PluginScanner::startScanImpl()
 {
     if (scanning.load()) return;
     
