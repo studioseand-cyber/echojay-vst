@@ -443,3 +443,107 @@ second costume: the centre of the window reporting an internal event as if the u
 - **P4** a named plugin is used as named, with no options card at all.
 - **P5** a user whose inventory holds nothing suitable gets the honest line, not a third-party name they do
   not own (this is the `echojay_only` / inventory path, already proven by R3).
+
+---
+
+# 4. THE MAIN WINDOW'S VIEW OF A LINK IS A 1 Hz CACHE THAT DOES NOT REFRESH ON THE AI TAB
+
+```
+17:48:41  EJAgent: build target uid=bb411b8240 slots=2  path=sendChainToLink
+17:48:41  EJChain: sending to Link -- 509 ch, 2 slot(s), 2 with settings_structured  uid=bb411b8240
+17:48:42  EJAgent: step ... DONE "the build was sent to that Link (2 slot(s)); read back 2 slot(s)"
+17:49:11  EJRackSel: row=3 resolved=bb411b8240 -> viewing it
+17:49:11  EJBorrow: read START uid=bb411b8240 slots=0 channel=per-seq      <- "Reading 0 plugin(s)..."
+17:49:59  EJBorrow: read START uid=bb411b8240 slots=2 channel=per-seq      <- 78 s later, correct
+```
+
+**Two readers of the same file disagreed for 30 seconds.**
+
+- the agent's read-back (`Sources::linkRack`) calls **`LinkShm::readRackSidecar` directly** - a fresh read.
+  It saw 2 slots one second after the send, so the Link had built and written its sidecar promptly. **The
+  build was fine and the read-back was honest.**
+- the rack view's borrow read takes `st->slots = it->second.rack.slots` from **`linkRackCache`**, and that
+  cache's feeder (`refreshLinkRackCache`) is gated at `PluginEditor.cpp:27509` on
+  **`currentTab == Tab::Chain && chainListPanel.isVisible()`**, plus a pass when `editActive()`.
+
+Sean was on the **AI tab** talking to the agent, so the Chain-tab feeder never ran: the cache still held the
+pre-build 0 from whenever he last had the Chain tab open. Selecting the Kick then read that 0, said *"Reading
+0 plugin(s) from 88_7even Kick_2_01…"*, and - because the lease was taken - the Link correctly said
+*"Selected in the rack on EchoJay on Stereo Out"*. It came good at 17:49:59 when a refresh finally ran.
+
+**Fix, two parts, both small:**
+
+1. **The selection path must read the sidecar fresh**, not trust a 1 Hz cache: `readLinkRackSidecar(uid)`
+   already writes through the cache (the "single source of truth" comment at `PluginEditor.cpp:33132`), so
+   one call at the top of the borrow read makes the two readers agree *by construction* rather than by
+   timing. The 1 Hz feeder stays for the strip.
+2. **A build sent to a Link forces a refresh for that uid.** `sendChainToLink` is the one choke point both
+   the agent and the Build button go through (this round made it so), so the forced refresh belongs there -
+   not in the agent path, or the Build button keeps the bug.
+
+**Rig row (Sean's ask):** **K1** - after an agent build on a Link, select that Link in the main rack and
+assert the view shows the new slots. It must select **immediately** after the build returns, because a row
+that waits a second would pass today; and it must assert the SLOT NAMES, not a count, so "2 slots of
+something" cannot pass. A second row **K2** holds the cause directly: with the AI tab in front for the whole
+build, the cache must still be right when the Link is selected.
+
+---
+
+# 5. TOP PRIORITY, HONESTY: A `set` REPORTED SUCCESS HAVING CHANGED NOTHING
+
+Sean, from the Mix Bus: *"make the kick punchier"*. The plan card showed `set slot 2:  -` with an **empty**
+settings description beside a fully described EQ line. He pressed Apply all. The EQ changed; the compressor
+did not; the closing message said *"I opened the compressor's attack to 18 ms and tightened release to
+85 ms… with a touch of makeup gain"*.
+
+## What the set carried, and why nothing moved
+
+```
+17:52:14  EJDial: slot 2 ("EchoJay Compressor") BUILT-IN PAYLOAD NOT UNDERSTOOD -- device present,
+          resolved neither accepted shape.
+          got keys: [threshold_db, ratio, attack_ms, release_ms, knee_db, makeup_db, mix, mode]
+          wanted: "params":{...} (or the device's own array form, e.g. "eq_bands")
+17:52:14  EJParamApply: slot 1 ("EchoJay Compressor") EXACT built-in apply, 0 band(s), 0 skipped
+17:52:14  EJParamApply: slot 1 readback -> threshold_db -18 dB, ratio 4, attack_ms 10 ms,
+          release_ms 120 ms, knee_db 6 dB, makeup_db 0 dB, mix 100 %, mode clean
+```
+
+**The parameter NAMES were right** - they are the built-in compressor's own names, the same ones the readback
+prints. **The SHAPE was wrong**: the values arrived as a flat object with no `"params"` wrapper, so the dial
+path recognised neither accepted shape, applied **0 of them** (`0 band(s), 0 skipped`), and the readback shows
+the untouched defaults. The empty settings description on the plan card is the same fault surfacing in the
+UI: the card could not describe a payload it could not parse, and printed nothing rather than saying so.
+
+## And my executor called it a success
+
+```
+17:52:14  EJAgent: step ... DONE undo=set:1791996734350 "the rack took it and now holds 2 slot(s)"
+```
+
+**"now holds 2 slot(s)"** - the read-back I built this round counts **slots**. For `add`, `build` and
+`remove` that is the right question. For a `set` it is meaningless: a set never changes the slot count, so
+the check is true before and after and cannot fail. I built a structural read-back and let the value ops
+ride on it. That is the same fault as the nine sinks, one layer in.
+
+## The fix, my half
+
+1. **A `set` reads back the VALUES.** After applying, re-read the slot's parameters and compare each asked
+   name against what it now holds (with a tolerance per unit). Report `not_applied` naming the parameters
+   that did not move - *"attack_ms is still 10 ms (asked 18)"* - and `applied` only for what matches.
+2. **"payload not understood" must FAIL the op**, not log a line and continue. Today it is a log line and
+   the op proceeds to report success; it should be `bad_request` naming the shape it wanted, so the model
+   can resend correctly in the same round.
+3. **Accept the flat shape too**, since the names were right: when every key of the payload is a known
+   parameter of that device, treat it as `params`. Liberal in what we accept, strict in what we confirm -
+   but the read-back in (1) is what makes that safe, not the leniency.
+4. **The plan card must never print an empty settings description.** If the payload cannot be described, the
+   line says *"settings I can't read"* - which would have warned Sean before he pressed Apply all.
+
+## Rig rows
+
+- **S1** a `set` on a Link compressor's attack / release / makeup shows the **new values read back** from
+  that Link's own sidecar, not a slot count.
+- **S2** a `set` whose payload is in a shape the dial path cannot read **fails honestly** (`bad_request`,
+  naming the wanted shape), and the rack is unchanged.
+- **S3** a `set` whose payload is flat but whose names are all known **applies and reads back**.
+- **S4** the plan card for an undescribable payload says so rather than showing an empty description.
