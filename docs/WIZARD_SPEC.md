@@ -96,6 +96,13 @@ What it says is true of the bundle as built:
 - **The read-back check** now fails on a written control the plugin lacks from the control list alone. CLA-76 (m) v12 has no 'Mix', so its scan went from 12 loads / 49 s to 2 loads / 10 s.
 - Pin WZ-WAVES-1.
 
+**3i. The scan screen's count (Kathy's stuck Test run, 14 Oct).**
+- **The database step loads nothing.** The read-back checks (rule B) moved into Checking. They are stoppable, and cached by plugin id in `engine/quick_checks.json`, so the measuring run never repeats them. Before, they ran inside Scanning, ignored a stop, and showed an empty bar.
+- **One count, n of N:** N is every plugin except those out of scope by type / name that load nothing (`wizapp::scanCounts`; 1285 here, not 1376).
+  - What the database settles is done from the first frame. The rest finish as their loads finish (read-back check, map, signature reads), so the bar starts at the settled share (about 30% here) and never goes back.
+- **No orphan engines:** an engine whose app is gone (adopted by launchd) stops itself with SIGINT to its own group within about 2 s, measured. The app also stops its engine when it goes.
+- Pin WZ-SCAN-2.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

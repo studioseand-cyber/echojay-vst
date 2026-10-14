@@ -65,7 +65,7 @@ constexpr bool kTest = false;
 struct Config
 {
     juce::File work, db, store, engine, snapshots, reports;
-    int jobs = 0; juce::StringArray only; bool autoMode = false; double autoCloseAfterS = 0.0, checkpointMinutes = 60.0; int autoSendAt = 0, autoPauseAt = 0; bool autoAskClose = false, autoResetTest = false;   // jobs 0: chosen by the Mac (13 Oct)
+    int jobs = 0; juce::StringArray only; bool autoMode = false; double autoCloseAfterS = 0.0, checkpointMinutes = 60.0; int autoSendAt = 0, autoPauseAt = 0; bool autoAskClose = false, autoResetTest = false; double snapScanAtPct = -1.0;   // jobs 0: chosen by the Mac (13 Oct)
 };
 
 // THE TEST BUILD's server: the stub db seeded from the bundled snapshot (Contents/Resources/beta_db), the editable config written once
@@ -108,7 +108,8 @@ Config parseArgs (const juce::StringArray& a)
         else if (k == "--auto-send-at") { c.autoSendAt = v.getIntValue(); ++i; }     // rehearsals: Send what's done once N are measured so far
         else if (k == "--auto-pause-at") { c.autoPauseAt = v.getIntValue(); ++i; }   // rehearsals: Pause once N are measured so far (then quits)
         else if (k == "--auto-ask-close") c.autoAskClose = true;
-        else if (k == "--auto-reset-test") c.autoResetTest = true;   // rehearsals (test build): press Reset test once, snap the welcome screen, quit   // rehearsals: open the close question once while measuring, snap it, keep measuring
+        else if (k == "--auto-reset-test") c.autoResetTest = true;
+        else if (k == "--snap-scan-at") { c.snapScanAtPct = v.getDoubleValue(); ++i; }   // rehearsals: snap the scan screen when its bar first reaches N %   // rehearsals (test build): press Reset test once, snap the welcome screen, quit   // rehearsals: open the close question once while measuring, snap it, keep measuring
         else if (k == "--checkpoint-minutes") { c.checkpointMinutes = v.getDoubleValue(); ++i; }   // rehearsals: the quiet checkpoint's interval
         else if (k == "--auto-close-after") { c.autoCloseAfterS = v.getDoubleValue(); ++i; }   // rehearsals: the close button, pressed after N s of measuring
     }
@@ -229,7 +230,7 @@ public:
         show (wizapp::openOn (w, kMode));
         startTimer (250);
     }
-    ~WizardComponent() override { stopTimer(); awake.hold (false); }
+    ~WizardComponent() override { stopTimer(); awake.hold (false); if (engine.running()) engine.pause(); }   // 14 Oct: never leave an engine running
 
     // closing the window PAUSES: the engine stops cleanly (Phase B's SIGINT), the app quits when it has
     bool requestQuit (bool askFirst = true)
@@ -588,6 +589,7 @@ private:
         {   // the Logic-style bar: the scan is the engine's Scanning + Checking (0..15 of its bar)
             barValue = wizapp::scanBarValue (p); barLeft = cur.isNotEmpty() ? cur : stage == "Checking" ? "Checking" : "Looking for plugins";
             const auto sc = p.getProperty ("stage_counts", {}); barRight = sc.isObject() ? juce::String ((int) sc.getProperty ("done", 0)) + " of " + juce::String ((int) sc.getProperty ("total", 0)) : juce::String();
+            if (cfg.snapScanAtPct >= 0.0 && barValue * 100.0 >= cfg.snapScanAtPct) { cfg.snapScanAtPct = -1.0; repaint(); juce::Timer::callAfterDelay (300, [safe = juce::Component::SafePointer<WizardComponent> (this)] { if (safe != nullptr) safe->snap ("scan_at_pct"); }); }
         }
         else
         {   // measuring: the engine's Measuring band (15..97) is the bar; its rescan is "getting ready"

@@ -239,6 +239,11 @@ inline Copy scanDoneCopy (Mode m, const Eligibility& e)
 }
 // the Measuring screen's words and its bar's right side: n of N measurements (a demo check is not one) - never time left
 // the scan screen's warning (Kathy, 14 Oct)
+// THE SCAN SCREEN'S COUNT (Kathy, 14 Oct: "75 of 1376"): every plugin counts except one out of scope by type / name that loads nothing (the
+// 91 here) - so this Mac shows n of 1285
+inline bool scanCounts (const juce::String& outOfScopeByType, bool loadsDuringScan) { return outOfScopeByType.isEmpty() || loadsDuringScan; }
+// an engine whose parent is gone (launchd, pid 1, adopted it): the app quit without stopping it
+inline bool orphaned (int parentPid) { return parentPid == 1; }
 inline juce::String scanWarning() { return "Some plugins may briefly show a licence or sign-in window. That's normal - please don't click it; the wizard closes it and moves on."; }
 inline juce::String measuringText() { return "Leave it running - the Mac stays awake. You can pause and carry on any time."; }
 inline juce::String measuringCount (const juce::var& progress)

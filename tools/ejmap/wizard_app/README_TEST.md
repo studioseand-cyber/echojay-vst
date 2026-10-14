@@ -6,6 +6,8 @@ The stand-in server starts with what Sean's cert 5 knows, so "already mapped" wo
 
 **1. Install.** Open **EchoJay Wizard Test.dmg**, drag **EchoJay Wizard Test** onto **Applications**, and close the window.
 
+**Open it from Applications**, not from the disk image's window: a copy run from the disk image stops working when the image is ejected.
+
 **2. Allow it to open (once).** In Terminal, paste this and press Return. Nothing appearing means it worked:
 
 ```

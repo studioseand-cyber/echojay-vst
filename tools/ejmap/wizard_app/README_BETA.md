@@ -17,6 +17,8 @@ This gives `EchoJay Wizard Beta.app` and `EchoJay Wizard Beta.dmg`. Inside the a
 
 **1. Install.** Double-click **EchoJay Wizard Beta.dmg**. In the window that opens, drag **EchoJay Wizard Beta** onto the **Applications** folder. Then close that window.
 
+**Open it from Applications**, not from the disk image's window: a copy run from the disk image stops working when the image is ejected.
+
 **2. Allow it to open (once).** macOS blocks apps it hasn't checked yet, so this one-off step tells it the wizard is fine.
 1. Open **Terminal**. Press ⌘ and Space together, type **Terminal**, and press Return.
 2. Copy this whole line, paste it into the Terminal window, and press Return:

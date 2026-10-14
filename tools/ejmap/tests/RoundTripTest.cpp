@@ -9868,11 +9868,11 @@ void testWizardCategories()
         auto prog = juce::JSON::parse ("{\"stage\": \"Measuring\", \"stage_counts\": {\"done\": 4, \"total\": 6}, \"problems\": 0, \"measured_done\": 2}");
         const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
         const bool read = run.contains ("inline int runWizard");   // the control
-        const auto scan = run.fromFirstOccurrenceOf ("// 2. IDENTIFYING (Checking)", false, false).upToFirstOccurrenceOf ("// 2. MEASURE THE QUEUES", false, false);
+        const auto scan = run.fromFirstOccurrenceOf ("// 2. CHECKING - ONE COUNT", false, false).upToFirstOccurrenceOf ("// 2. MEASURE THE QUEUES", false, false);
         const auto loop = run.fromFirstOccurrenceOf ("for (const auto& grp : wizroute::measureOrder())\n        {", false, false).upToFirstOccurrenceOf ("pbCode = runPhaseBAll", false, false);
         check (read && defaultSeconds ("demo") == 4.5 && std::abs (withDemo - stageSecondsLeft (noDemo, Times(), 1) - 9.0) < 1e-9
                && ejmap::wizapp::measuredSoFar (prog) == 2
-               && ! scan.contains ("demoCheckForWizard (") && loop.contains ("demoCheckForWizard (")
+               && scan.contains ("prog.stage (wizprog::Stage::checking, its);") && ! scan.contains ("demoCheckForWizard (") && loop.contains ("demoCheckForWizard (")
                && loop.indexOf ("if (wizardStop() != 0) { pbCode = 130; break; }") < loop.indexOf ("demoCheckForWizard (")
                && run.contains ("if (demoQueued.insert (n).second) { wizprog::Item d; d.product = n; d.kind = \"demo\";")
                && [] { using namespace ejmap::wizroute; std::map<juce::String, juce::StringArray> q { { "deesser", { "A", "B" } }, { "limiter", { "L" } }, { "limitercomp", { "L" } } };
@@ -9928,7 +9928,7 @@ void testWizardCategories()
         const auto mem = loadLicenceMemory (f); f.deleteFile();
         const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
         const bool read = run.contains ("inline int runWizard");   // the control
-        const auto step1 = run.fromFirstOccurrenceOf ("// 1. THE DATABASE CHECK (Scanning)", false, false).upToFirstOccurrenceOf ("// 2. IDENTIFYING", false, false);
+        const auto step1 = run.fromFirstOccurrenceOf ("// 1. THE DATABASE CHECK (Scanning)", false, false).upToFirstOccurrenceOf ("// 2. CHECKING - ONE COUNT", false, false);
         check (read
                && licenceSkip (true, false, true, true) == LicenceSkip::remembered && licenceSkip (false, true, false, false) == LicenceSkip::paceNoIlok
                && licenceSkip (false, true, true, false) == LicenceSkip::none && licenceSkip (false, true, false, true) == LicenceSkip::none && licenceSkip (false, false, false, false) == LicenceSkip::none
@@ -9938,7 +9938,7 @@ void testWizardCategories()
                && licenceSkipWhy (LicenceSkip::paceNoIlok).startsWith ("needs a licence - skipped") && licenceSkipWhy (LicenceSkip::remembered).startsWith ("needs a licence - skipped")
                && ejmap::wizapp::scanWarning() == "Some plugins may briefly show a licence or sign-in window. That's normal - please don't click it; the wizard closes it and moves on."
                && ! ejmap::wizapp::tellsATime (ejmap::wizapp::scanWarning())
-               && step1.indexOf ("if (ls != wizroute::LicenceSkip::none) { st = \"needs_licence\";") >= 0 && step1.indexOf ("if (ls != wizroute::LicenceSkip::none)") < step1.indexOf ("const auto rb = quickCheck (")
+               && step1.indexOf ("if (ls != wizroute::LicenceSkip::none) { st = \"needs_licence\";") >= 0 && ! step1.contains ("quickCheck (") && step1.length() > 1000
                && run.contains ("if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, d.version));")
                && run.contains ("if (window) { st = \"needs_licence\"; why = rb.why; wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, ver)); }")
                && run.contains ("if (sig.getProperty (\"why\", \"\").toString().startsWith (\"a window\")) wizroute::rememberLicenceWindow (licenceMemF, pid);")
@@ -9994,6 +9994,31 @@ void testWizardCategories()
                && run.contains ("if (shells.isBad (shellOfId (a[2]))) { ChildResult skipped;") && run.contains ("return runChild (a, loadTimeoutFor (a[2])); }")
                && run.contains ("if (const auto cshell = shellOfId (ir.desc.fileOrIdentifier); shells.isBad (cshell))"),
                "wizard WZ-WAVES-1: shell from the bundle, one hang / two crashes mark it bad and its plugins are skipped unloaded, 30 s WaveShell limit, the read-back's missing-control short cut (read: " + juce::String ((int) read) + ")");
+    }
+    // WZ-SCAN-2 THE SCAN SCREEN (Kathy's stuck run, 14 Oct: "75 of 1376", the bar EMPTY, an engine left running): the database step loads
+    // nothing (the read-back checks moved into Checking, stoppable, cached); ONE count for the scan screen, N without the plugins out of scope
+    // by type / name that load nothing; what the database settled is done from the first frame; an orphaned engine stops itself and the app
+    // stops its engine when it goes. Pure + text pins (with a control)
+    {
+        using namespace ejmap::wizapp;
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const bool read = run.contains ("inline int runWizard") && app.contains ("class WizardApplication");   // the control
+        const auto step1 = run.fromFirstOccurrenceOf ("// 1. THE DATABASE CHECK (Scanning)", false, false).upToFirstOccurrenceOf ("// 2. CHECKING - ONE COUNT", false, false);
+        const auto check2 = run.fromFirstOccurrenceOf ("// 2. CHECKING - ONE COUNT", false, false).upToFirstOccurrenceOf ("std::vector<size_t> mapIdx;", false, false);
+        const auto quickLoop = check2.fromFirstOccurrenceOf ("for (const auto& q : toQuick)", false, false);
+        juce::var stage1 (new juce::DynamicObject()); stage1.getDynamicObject()->setProperty ("stage_index", 1);
+        auto* sc = new juce::DynamicObject(); sc->setProperty ("done", 69); sc->setProperty ("total", 1285); stage1.getDynamicObject()->setProperty ("stage_counts", juce::var (sc));
+        check (read && scanCounts ({}, false) && scanCounts ({}, true) && ! scanCounts ("instrument", false) && scanCounts ("instrument", true)
+               && orphaned (1) && ! orphaned (4242) && std::abs (scanBarValue (stage1) - 69.0 / 1285.0) < 1e-9
+               && step1.length() > 1000 && ! step1.contains ("quickCheck (") && ! step1.contains ("runChild (") && step1.contains ("prog.stage (wizprog::Stage::scanning, {});")
+               && check2.contains ("if (! wizapp::scanCounts (categorise::outOfScope (typeOf (ir.desc), name, {}), pendingLoad.count (name) > 0)) continue;")
+               && check2.contains ("for (const auto& n : settled) prog.alreadyDone (n);")
+               && quickLoop.indexOf ("if (wizardStop() != 0) return stoppedInScan (\"checking\");") >= 0 && quickLoop.indexOf ("if (wizardStop() != 0) return stoppedInScan (\"checking\");") < quickLoop.indexOf ("quickCheck (qopt")
+               && quickLoop.contains ("quickCacheF.replaceWithText") && step1.contains ("quickCache.getProperty (juce::Identifier (wizroute::pluginId (uid, ver)), {})")
+               && run.contains ("if (wizapp::orphaned (getppid())) { ::kill (0, SIGINT); return; }")
+               && app.contains ("~WizardComponent() override { stopTimer(); awake.hold (false); if (engine.running()) engine.pause(); }"),
+               "wizard WZ-SCAN-2: the DB step loads nothing; one count without the out-of-scope-by-type (69 of 1285 draws 5.4%); read-back checks stoppable + cached; orphan engines stop (read: " + juce::String ((int) read) + ")");
     }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files
