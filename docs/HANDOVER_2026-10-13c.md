@@ -84,4 +84,23 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
 - **Pin WZ-NOTIME-1** checks 41 strings, the README bullets and the app source. Mutants T1-T5 are red. Screenshots: `tools/ejmap/cert-traces/2026-10-14-no-times/`.
 - **DMG** rebuilt at 842dc876: sha256 cf1b5162c69e870d..., signed 8BT5F9B887, hdiutil verify VALID; the icon and the hash are checked, and the Desktop README has no "every hour".
 
+## 14 Oct addendum 3: EchoJay Wizard Test, and licence windows (wizard 8332b253)
+- **The Test build** (654a7402): target `ejmap-wizard-test`.
+  - It runs the release flow against the stub server inside the app, seeded with the beta snapshot. Any sign-in works.
+  - The "TEST VERSION - nothing leaves this Mac" banner is on every screen. It has its own folder (`EchoJay Wizard Test`) and an orange TEST icon.
+  - The server's settings are in `server_stub/config.json` (qualify 25 by default; edit and reopen). **Reset test** keeps that config. It shows wherever nothing runs: the app reopens on the reward screen after a finish.
+  - Rehearsed: sign in, Pause, reopen, finish -> code, Reset. Pin WZ-TEST-1.
+  - DMG + README: `~/Desktop/EchoJay-Wizard-Test-2026-10-14/` (sha 9458cf0f29a73bf7, signed, verify VALID).
+- **Licence windows** (8332b253, WIZARD_SPEC 3g, pin WZ-LIC-1, mutants L1-L6 red):
+  - **Remembered:** a window at any load (`engine/licence_windows.json`) means that plugin is never loaded again.
+  - **PACE:** skipped unloaded ONLY on a Mac with no iLok at all (no USB key AND no PACE licence software). A missing USB key alone never skips, so computer-licensed plugins load (Kathy's check, 14 Oct). Melda's optional Eden wrapper is exempt.
+  - The scan-screen warning. The probe was already background-only; measured that the frontmost app doesn't change while it loads.
+- **This Mac now:**
+  - The scan loads 905 plugins (+272 signature reads). 39 of them are PACE-wrapped (Melda excluded), and each could show one window, once ever.
+  - The PACE rule skips 0 here, because PACE software is installed.
+  - The 13 Oct run's 9 window products (all PACE-wrapped): 8 are now already mapped and never loaded; 1 loads (SSL Fusion HF Compressor).
+  - Before (empty db, 13 Oct): 1285 loads + 1210 reads, 108 PACE, on every scan.
+- **The beta DMG** was rebuilt at 8332b253: sha 51cb06442e9aba1b, verify VALID; README_BETA carries the licence line.
+- **Housekeeping, 14 Oct:** this Mac hit its process limit. Pioneer's FwUpdateManagerd had 2273 zombie children; it was stopped with Kathy's OK.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
