@@ -158,4 +158,34 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
   - The earlier 29.3 h counted every read-back plugin as a measurement.
 - **DMGs at 07a6a8e2:** Test sha b9e85d140efc68cc, Beta sha fc7323065a446e47; both signed and verify VALID.
 
+## 14 Oct addendum 8: the 1% ceiling (wizard 224a9016), and where the measuring time goes (report only)
+- **The ceiling** (WIZARD_SPEC 3k, pin WZ-NEAR-1; the no-ceiling mutant is red):
+  - **The rule:** two numbers never match past 1% of the larger, whatever the last-digit step says. 10/11 and 42/41 fail; EMO-D5 and Q4 still pass.
+  - **The 123 read-backs:** 66 exact / 33 tolerance / 24 measure (was 66/37/20). The four that moved are H-EQ and H-EQ-Light (m/s).
+  - **The plan:** 522 -> 526 to measure; the estimate moves about 1 minute (25.28 -> 25.30 h at 2 jobs; the whole first run is still about 26.6 h).
+  - **Checked in the shipped engine:** H-EQ (m) queued on 'HF Freq' 42 vs 41; EMO-D5 (m) ready (3 within tolerance).
+- **Where the measuring time goes on this Mac** (report; nothing changed):
+  - **Two real runs here:**
+    - CLA-2A (m) v12: 496 s, 58 processes, 8.6 s each. Sean's v15: 78 s, 57 processes. The wizard's figure is 340 s.
+    - H-Reverb (5->5) v12: 1220 s, 281 processes, 4.3 s each. Sean: 335 s, 371 processes. The wizard's figure is 41 s.
+  - **Why:** all 250 Waves plugins to measure here sit in WaveShell2-AU 12.0, which is x86_64-only, so every process is bridged. A bridged load takes 3.6-4.1 s (native: 0.08-0.15 s).
+  - **The model:** Sean's seconds and process count per plugin (cert 5; the category median where he has none), plus 3.5 s per bridged Waves process. It is calibrated on the two runs and is good to roughly +-40% per plugin.
+  - **Result:** about 35 h of work and **about 19.7 h at 2 jobs** (12.1 h at 4), against the wizard's 25.3 h.
+  - **By step:**
+    - loads 65% (22.8 h; 20,233 of 37,702 processes are bridged Waves);
+    - sound-test renders 21%;
+    - the compressor path's hold-doubled repeat 6%;
+    - tone passes 6%;
+    - demo checks 2%;
+    - waits and retries 0 (slept_ms 0 and attempt 1 on all 20,664 of Sean's compressor processes; 0 retried here).
+  - **The starting figures are off in both directions:**
+    - Reverb is 41 s against 20-28 min for each Waves H-Reverb, so the bar sat at "under a minute left" for 20 min.
+    - Strips are 1200 s against a 29 s median on Sean's Mac.
+  - **Three savings that keep accuracy (none made):**
+    - **(1) One process per plugin pass, with a fresh instance per position.** This keeps the 29 Sep fresh-state rule. About 19.7 -> 10 h. It needs an A/B identity test first (townhouse).
+    - **(2) 4 jobs on this Mac.** It has 8 performance cores but 3.1 GB free, under the 4 GB rule. About 19.7 -> 12.1 h. It needs a per-job memory measurement first.
+    - **(3) Native UAD out of the serial lane.** About 2 h. It needs proof of which UAD plugins use no DSP. Licence-bound, so it cannot be tested here.
+    - **Not counted as a saving:** skipping the hold-doubled repeat (about 2 h). It is the trust gate (ruled 2 Oct).
+- **DMGs at 224a9016:** Test sha f097e7c24d2aad68, Beta sha cef12a16209edfaa. Both signed and verify VALID; the probe is unchanged and already Developer ID signed.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
