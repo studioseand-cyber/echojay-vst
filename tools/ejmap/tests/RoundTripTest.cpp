@@ -9840,6 +9840,31 @@ void testWizardCategories()
                    "wizard WZ-CHOICE-1: 'Pause - carry on later' (default) / 'Send what's done (no free month)' + 'The free month needs the full run - you can carry on later instead.'; the beta's own words");
         }
     }
+    // WZ-DEMO-2 THE DEMO CHECK MOVED INTO MEASURING (Kathy, 14 Oct): its real cost is ~4.5 s (measured: the 60 s tone renders offline), it is
+    // an item of the measuring estimate (one per plugin, in its first pass's group), "measured so far" never counts it, the scan no longer
+    // runs it, and in the measuring loop it comes after the stop check and before the pass. Pure parts + text pins with a control
+    {
+        using namespace ejmap::wizprog;
+        std::vector<Item> its; for (const char* n : { "A", "B" }) { Item d; d.product = n; d.kind = "demo"; d.group = 0; its.push_back (d); Item c; c.product = n; c.kind = "deesser"; c.group = 0; its.push_back (c); }
+        const double withDemo = stageSecondsLeft (its, Times(), 1);
+        std::vector<Item> noDemo; for (const auto& i : its) if (i.kind != "demo") noDemo.push_back (i);
+        auto prog = juce::JSON::parse ("{\"stage\": \"Measuring\", \"stage_counts\": {\"done\": 4, \"total\": 6}, \"problems\": 0, \"measured_done\": 2}");
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const bool read = run.contains ("inline int runWizard");   // the control
+        const auto scan = run.fromFirstOccurrenceOf ("// 2. IDENTIFYING (Checking)", false, false).upToFirstOccurrenceOf ("// 2. MEASURE THE QUEUES", false, false);
+        const auto loop = run.fromFirstOccurrenceOf ("for (const auto& grp : wizroute::measureOrder())\n        {", false, false).upToFirstOccurrenceOf ("pbCode = runPhaseBAll", false, false);
+        check (read && defaultSeconds ("demo") == 4.5 && std::abs (withDemo - stageSecondsLeft (noDemo, Times(), 1) - 9.0) < 1e-9
+               && ejmap::wizapp::measuredSoFar (prog) == 2
+               && ! scan.contains ("demoCheckForWizard (") && loop.contains ("demoCheckForWizard (")
+               && loop.indexOf ("if (wizardStop() != 0) { pbCode = 130; break; }") < loop.indexOf ("demoCheckForWizard (")
+               && run.contains ("if (demoQueued.insert (n).second) { wizprog::Item d; d.product = n; d.kind = \"demo\";")
+               && [] { using namespace ejmap::wizroute; std::map<juce::String, juce::StringArray> q { { "deesser", { "A", "B" } }, { "limiter", { "L" } }, { "limitercomp", { "L" } } };
+                       const auto g1 = demoNamesForGroup ({ "deesser" }, q), g2 = demoNamesForGroup ({ "limiter" }, q);
+                       const auto gone = dropDemos (q, { "B", "L" });
+                       return g1 == juce::StringArray { "A", "B" } && g2 == juce::StringArray { "L" } && gone.size() == 3 && q["deesser"] == juce::StringArray { "A" } && q["limiter"].isEmpty() && q["limitercomp"].isEmpty(); }()
+               && run.contains ("const auto names = wizroute::demoNamesForGroup (grp, queues);") && run.contains ("const auto gone = wizroute::dropDemos (queues, demos);"),
+               "wizard WZ-DEMO-2: the demo check costs 4.5 s in the estimate (2 plugins: +9 s), 'measured so far' skips it, the scan never runs it, the measuring loop runs it before each pass (read: " + juce::String ((int) read) + ")");
+    }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files
     {

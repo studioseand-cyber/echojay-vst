@@ -111,7 +111,8 @@ inline void mapForWizard (const std::vector<juce::PluginDescription>& ds, int jo
 // THE DEMO CHECK (beta item 2): every plugin about to be measured gets one steady tone (wizard::demoDropouts); cached by plugin_id in
 // <out>/demo_checks.json so the measuring run does not render it again. `runner` is the probe (the suite's fake).
 inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std::vector<juce::PluginDescription>& ds, int jobs, const std::function<ChildResult (const juce::StringArray&)>& runner,
-                                                                        const juce::File& probe, const juce::File& cacheFile)
+                                                                        const juce::File& probe, const juce::File& cacheFile,
+                                                                        const std::function<void (const juce::String&, const wizard::DemoVerdict&, double)>& onChecked = {})
 {
     std::map<juce::String, wizard::DemoVerdict> out; auto cache = juce::JSON::parse (cacheFile.loadFileAsString()); if (! cache.isObject()) cache = juce::var (new juce::DynamicObject());
     auto pidOf = [] (const juce::PluginDescription& d) { return "AudioUnit|" + juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version; };
@@ -127,13 +128,16 @@ inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std
     pool.laneOf = [] (const size_t&) { return jobs::Lane::parallel; };
     pool.stopped = [] { return wizardStop() != 0; };
     pool.prepare = [&] (const size_t& i) -> std::optional<juce::StringArray> { juce::StringArray a { probe.getFullPathName(), ds[i].name, ds[i].fileOrIdentifier, juce::String::toHexString (ds[i].uniqueId) }; a.addArray (wizard::demoProbeArgs()); return a; };
-    pool.run = [&] (const juce::StringArray& a) { return runner (a); };
+    std::map<juce::String, double> started;   // 14 Oct: each check's wall time (load + the offline render + the read), into the cache
+    pool.run = [&] (const juce::StringArray& a) { { std::lock_guard<std::mutex> g (m); started[a[1]] = juce::Time::getMillisecondCounterHiRes(); } return runner (a); };
     pool.discard = [] (const size_t&, juce::StringArray&) {};
     pool.finish = [&] (const size_t& i, juce::StringArray&, ChildResult& r)
     {
         const auto v = r.cleanExit() ? wizard::demoDropouts (r.out) : wizard::DemoVerdict();   // a probe that failed here is the measurement's business, not a demo
         std::lock_guard<std::mutex> g (m); out[ds[i].name] = v;
-        if (r.cleanExit()) { auto* o = new juce::DynamicObject(); o->setProperty ("judged", v.judged); o->setProperty ("demo", v.demo); o->setProperty ("why", v.why); cache.getDynamicObject()->setProperty (pidOf (ds[i]), juce::var (o)); }
+        const double secs = (juce::Time::getMillisecondCounterHiRes() - started[ds[i].name]) / 1000.0;
+        if (onChecked) onChecked (ds[i].name, v, secs);
+        if (r.cleanExit()) { auto* o = new juce::DynamicObject(); o->setProperty ("judged", v.judged); o->setProperty ("demo", v.demo); o->setProperty ("why", v.why); o->setProperty ("seconds", std::round (secs * 100.0) / 100.0); cache.getDynamicObject()->setProperty (pidOf (ds[i]), juce::var (o)); }
     };
     pool (todo, juce::jmax (1, jobs));
     cacheFile.replaceWithText (juce::JSON::toString (cache));
@@ -206,8 +210,14 @@ inline int runWizard (const WizardOptions& wo)
     auto queueFile = [&] (const juce::String& pb) { return out.getChildFile (pb == "wizard" ? juce::String ("wizard_queue.txt") : pb == "wizard_eq" ? juce::String ("wizard_queue_eq.txt") : "wizard_queue_" + pb + ".txt"); };
     auto queuedAnywhere = [&] { for (const auto& [pb, l] : queues) if (! l.isEmpty()) return true; return false; };
     // the measuring items, in the measuring order (Kathy, 12 Oct): one per product and Phase B category (a limiter has two)
-    auto measureItems = [&] { std::vector<wizprog::Item> q; int gi = 0; for (const auto& grp : wizroute::measureOrder()) { for (const auto& pb : grp) if (queues.count (pb)) for (const auto& n : queues[pb])
-        for (const auto& ir : plugins) if (ir.desc.name == n) { wizprog::Item it; it.product = n; it.kind = wizroute::kindOf (pb); it.serial = serialOf (ir.desc); it.group = gi; q.push_back (it); break; }
+    // 14 Oct: each product's DEMO CHECK is an item too (kind "demo"), in the group of its first pass - the estimate and the bar carry it
+    auto measureItems = [&] { std::vector<wizprog::Item> q; int gi = 0; std::set<juce::String> demoQueued;
+        for (const auto& grp : wizroute::measureOrder()) { for (const auto& pb : grp) if (queues.count (pb)) for (const auto& n : queues[pb])
+        for (const auto& ir : plugins) if (ir.desc.name == n)
+        {
+            if (demoQueued.insert (n).second) { wizprog::Item d; d.product = n; d.kind = "demo"; d.serial = serialOf (ir.desc); d.group = gi; q.push_back (d); }
+            wizprog::Item it; it.product = n; it.kind = wizroute::kindOf (pb); it.serial = serialOf (ir.desc); it.group = gi; q.push_back (it); break;
+        }
         ++gi; } return q; };
     auto landedRow = [&] (const juce::String& pb, const juce::String& product) -> juce::var {
         for (const auto& f : out.getChildFile ("phaseb").getChildFile (pb).findChildFiles (juce::File::findFiles, false, "*.phaseb.json"))
@@ -252,8 +262,10 @@ inline int runWizard (const WizardOptions& wo)
         row->setProperty ("state", st); row->setProperty ("why", why); rows.add (juce::var (row));
         if (wo.plan && (d.route == wizroute::Route::measure || d.route == wizroute::Route::quickCheck))
         {   // THE PLAN's estimate (13 Oct): the same items and per-category seconds the scan-done screen uses (a quick check counted as a measure)
+            bool demoAdded = false;   // 14 Oct: its demo check, in the group of its first pass
             for (const auto& pb : d.passes.isEmpty() ? wizroute::phaseBFor (d.category) : d.passes)
             { wizprog::Item it; it.product = ir.desc.name; it.kind = wizroute::kindOf (pb); it.serial = serialOf (ir.desc);
+              if (! demoAdded) { demoAdded = true; wizprog::Item dm = it; dm.kind = "demo"; for (int g = 0; g < (int) wizroute::measureOrder().size(); ++g) if (wizroute::measureOrder()[(size_t) g].contains (pb)) dm.group = g; planItems.push_back (dm); }
               for (int g = 0; g < (int) wizroute::measureOrder().size(); ++g) if (wizroute::measureOrder()[(size_t) g].contains (pb)) it.group = g;
               planItems.push_back (it); }
         }
@@ -268,7 +280,8 @@ inline int runWizard (const WizardOptions& wo)
         auto* p = new juce::DynamicObject(); const juce::var pv (p); auto* w = new juce::DynamicObject(); auto* ro = new juce::DynamicObject();
         for (const auto& [k, n] : byWord) w->setProperty (k, n); for (const auto& [k, n] : byRoute) ro->setProperty (k, n);
         { std::set<juce::String> distinct; for (const auto& it : planItems) distinct.insert (it.product);
-          p->setProperty ("to_measure", (int) distinct.size()); p->setProperty ("measurements", (int) planItems.size()); p->setProperty ("jobs", opt.jobs);
+          p->setProperty ("to_measure", (int) distinct.size()); p->setProperty ("measurements", (int) std::count_if (planItems.begin(), planItems.end(), [] (const wizprog::Item& i) { return i.kind != "demo"; }));
+          p->setProperty ("demo_checks", (int) std::count_if (planItems.begin(), planItems.end(), [] (const wizprog::Item& i) { return i.kind == "demo"; })); p->setProperty ("jobs", opt.jobs);
           p->setProperty ("to_measure_eta_s", std::round (wizprog::stageSecondsLeft (planItems, wizprog::Times(), opt.jobs))); }
         p->setProperty ("schema", "ej_wizard_plan/1"); p->setProperty ("plugins", rows.size()); p->setProperty ("by_word", juce::var (w)); p->setProperty ("by_route", juce::var (ro)); p->setProperty ("rows", rows);
         out.getChildFile ("plan.json").replaceWithText (juce::JSON::toString (pv));
@@ -357,22 +370,7 @@ inline int runWizard (const WizardOptions& wo)
         if (d.route == wizroute::Route::measure) enqueue (ir.desc.name, d.category);
         say ("  " + ir.desc.name.paddedRight (' ', 30) + " -> " + wizroute::routeName (d.route) + (d.category.isNotEmpty() ? " (" + d.category + ")" : juce::String()) + ": " + d.why);
     }
-    {   // THE DEMO CHECK (beta item 2): a plugin about to be measured whose output drops out on a steady tone is a demo - not measured, not sent
-        juce::StringArray queued; for (const auto& [pb, l] : queues) for (const auto& n : l) queued.addIfNotAlreadyThere (n);
-        std::vector<juce::PluginDescription> qd; for (const auto& ir : plugins) if (queued.contains (ir.desc.name)) qd.push_back (ir.desc);
-        if (! qd.empty())
-        {
-            const auto verdicts = demoCheckForWizard (qd, opt.jobs, [&] (const juce::StringArray& a) { return runChild (a, opt.timeoutMs); }, opt.probe, out.getChildFile ("demo_checks.json"));
-            if (wizardStop() != 0) return stoppedInScan ("checking for demo versions");
-            for (const auto& [name, v] : verdicts)
-            {
-                if (! v.demo) continue;
-                for (auto& [pb, l] : queues) l.removeString (name);
-                for (auto& rv : rows) if (rv.getProperty ("product", "").toString() == name) { rv.getDynamicObject()->setProperty ("state", "demo"); rv.getDynamicObject()->setProperty ("why", v.why); }
-                say ("  " + name.paddedRight (' ', 30) + " -> skipped: " + v.why);
-            }
-        }
-    }
+    // THE DEMO CHECK (14 Oct): no longer here - it is the first thing in each plugin's measuring (below), so the scan finishes fast
     counts.clear(); for (const auto& r : rows) ++counts[r.getProperty ("state", "").toString()];
     for (const auto& grp : wizroute::measureOrder()) for (const auto& pb : grp) queueFile (pb).replaceWithText ((queues.count (pb) ? queues[pb].joinIntoString ("\n") : juce::String()) + "\n");
     for (auto& rv : rows) { juce::StringArray pbs; for (const auto& [pb, l] : queues) if (l.contains (rv.getProperty ("product", "").toString())) pbs.add (pb); if (! pbs.isEmpty()) rv.getDynamicObject()->setProperty ("phaseb", pbs.joinIntoString (",")); }
@@ -625,6 +623,10 @@ inline int runWizard (const WizardOptions& wo)
         double lastCheckpointMs = juce::Time::getMillisecondCounterHiRes();   // 13 Oct: the quiet checkpoints count from the start of measuring
         {   // MEASURING: the two queues; a plugin whose Phase B row is already on disk is done (resume) and its seconds are a measured time
             auto its = measureItems();   // RESUME: an item whose Phase B row already landed is done; its seconds are a measured time
+            {   const auto dc = juce::JSON::parse (out.getChildFile ("demo_checks.json").loadFileAsString());   // 14 Oct: a demo check already in the cache is done
+                for (auto& it : its) if (it.kind == "demo") for (const auto& ir : plugins) if (ir.desc.name == it.product)
+                { const auto c = dc.getProperty (juce::Identifier (wizroute::pluginId (juce::String::toHexString (ir.desc.uniqueId), ir.desc.version)), {});
+                  if (c.isObject()) { it.done = true; if ((double) c.getProperty ("seconds", 0.0) > 0.0) prog.seedTime ("demo", (double) c.getProperty ("seconds", 0.0)); } break; } }
             for (auto& it : its) for (const auto& grp : wizroute::measureOrder()) for (const auto& pb : grp) if (wizroute::kindOf (pb) == it.kind)
                 if (const auto r = landedRow (pb, it.product); r.isObject()) { it.done = true; it.problem = r.getProperty ("outcome", "").toString() != "ok";
                     if (it.problem) prog.addProblems (1); else prog.seedTime (it.kind, (double) r.getProperty ("seconds", 0.0)); }
@@ -663,6 +665,28 @@ inline int runWizard (const WizardOptions& wo)
             // 13 Oct (the finish rehearsal): a stop between two passes was seen only after the NEXT whole pass ran (the gate ran 4.5 min
             // after Finish now) - it is checked before each pass starts
             if (wizardStop() != 0) { pbCode = 130; break; }
+            {   // THE DEMO CHECK (14 Oct, moved from the scan): the first thing in each plugin's measuring - before its first category pass (the
+                // cache makes it once per plugin). A demo is filed demo and leaves every queue; a pause / Send what's done stops it like any
+                // measurement (in flight: discarded, not cached, checked again next time)
+                const auto names = wizroute::demoNamesForGroup (grp, queues);
+                std::vector<juce::PluginDescription> qd; for (const auto& ir : plugins) if (names.contains (ir.desc.name)) qd.push_back (ir.desc);
+                if (! qd.empty())
+                {
+                    const auto verdicts = demoCheckForWizard (qd, opt.jobs, [&] (const juce::StringArray& a) { prog.started (a[1], "demo"); return runChild (a, opt.timeoutMs); }, opt.probe, out.getChildFile ("demo_checks.json"),
+                                                              [&] (const juce::String& n, const wizard::DemoVerdict&, double secs) { prog.finished (n, false, secs, "demo"); });
+                    if (wizardStop() != 0) { pbCode = 130; break; }
+                    juce::StringArray demos; for (const auto& [name, v] : verdicts) if (v.demo) demos.add (name);
+                    const auto gone = wizroute::dropDemos (queues, demos);
+                    for (const auto& [pb, name] : gone) prog.finished (name, true, -1.0, wizroute::kindOf (pb));
+                    for (const auto& [name, v] : verdicts)
+                    {
+                        if (! v.demo) continue;
+                        for (auto& rv : rows) if (rv.getProperty ("product", "").toString() == name) { rv.getDynamicObject()->setProperty ("state", "demo"); rv.getDynamicObject()->setProperty ("why", v.why); }
+                        say ("  " + name.paddedRight (' ', 30) + " -> skipped: " + v.why);
+                    }
+                    if (! gone.empty()) for (const auto& g2 : wizroute::measureOrder()) for (const auto& pb : g2) queueFile (pb).replaceWithText ((queues.count (pb) ? queues[pb].joinIntoString ("\n") : juce::String()) + "\n");
+                }
+            }
             juce::StringArray run; for (const auto& pb : grp) if (queues.count (pb) && ! queues[pb].isEmpty()) run.add (pb);
             if (run.isEmpty()) continue;
             say ("WIZARD: measuring " + run.joinIntoString (" + ") + " (" + juce::String ((int) [&] { int n = 0; for (const auto& pb : run) n += queues[pb].size(); return n; }()) + ")");

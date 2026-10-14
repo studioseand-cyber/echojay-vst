@@ -62,6 +62,8 @@ inline juce::String stageWord (Stage s)
 // the starting figures, seconds per plugin, until this run measures its own (this Mac, the 10 Oct rehearsals)
 inline double defaultSeconds (const juce::String& kind)
 {
+    // the demo check (14 Oct, measured on 8 Waves v12: 4.0-7.3 s, mean 4.5 - the 60 s tone renders offline; the load is most of it)
+    if (kind == "demo") return 4.5;
     if (kind == "map") return 4.0; if (kind == "check") return 6.0; if (kind == "eq") return 36.0; if (kind == "pack") return 2.0;
     // 12 Oct, all categories: the median seconds of Sean's "ok" Phase B rows per category (his 4-11 Oct nights); limitercomp is the
     // compressor path; strips: no row yet - the category's stated estimate
@@ -298,10 +300,12 @@ private:
         o->setProperty ("plugins", plugins_);
         auto* st = new juce::DynamicObject(); st->setProperty ("done", done); st->setProperty ("to_do", todo); st->setProperty ("total", (int) items_.size()); o->setProperty ("stage_counts", juce::var (st));
         o->setProperty ("problems", problems_);
+        {   // 14 Oct: "N measured so far" - finished measurements without a problem, never a demo check
+            int md = 0; for (const auto& i : items_) if (i.done && ! i.problem && i.kind != "demo") ++md; o->setProperty ("measured_done", md); }
         o->setProperty ("elapsed_s", std::round (elapsed)); o->setProperty ("eta_s", eta < 0.0 ? juce::var() : juce::var (std::round (eta)));
         o->setProperty ("eta_words", stage_ == Stage::done ? juce::String ("finished") : stopped_ ? juce::String ("stopped") : etaWords (eta)); o->setProperty ("jobs", jobs_);
         auto* tm = new juce::DynamicObject();
-        for (const auto* k : { "map", "check", "compressor", "eq", "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "multiband", "tuners", "reverb", "delay", "strips" }) { auto* e = new juce::DynamicObject(); e->setProperty ("seconds", std::round (times_.perItem (k) * 10.0) / 10.0); e->setProperty ("source", times_.isMeasured (k) ? "measured" : "starting figure"); tm->setProperty (k, juce::var (e)); }
+        for (const auto* k : { "map", "check", "demo", "compressor", "eq", "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "multiband", "tuners", "reverb", "delay", "strips" }) { auto* e = new juce::DynamicObject(); e->setProperty ("seconds", std::round (times_.perItem (k) * 10.0) / 10.0); e->setProperty ("source", times_.isMeasured (k) ? "measured" : "starting figure"); tm->setProperty (k, juce::var (e)); }
         o->setProperty ("seconds_per_plugin", juce::var (tm));
         o->setProperty ("line", line); if (summary_.isNotEmpty()) o->setProperty ("summary", summary_);
         o->setProperty ("updated", juce::Time::getCurrentTime().toISO8601 (true));

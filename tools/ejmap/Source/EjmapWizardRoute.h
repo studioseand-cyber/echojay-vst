@@ -160,6 +160,19 @@ inline bool landedMeasured (const juce::String& pb, const juce::String& outcome,
     if (pb == "wizard_eq") return eqAccepted;
     return true;
 }
+// THE DEMO CHECK IN MEASURING (Kathy, 14 Oct): the plugins a pass checks first (every product queued in the group's categories, once each)
+inline juce::StringArray demoNamesForGroup (const juce::StringArray& group, const std::map<juce::String, juce::StringArray>& queues)
+{
+    juce::StringArray n; for (const auto& pb : group) if (const auto it = queues.find (pb); it != queues.end()) for (const auto& x : it->second) n.addIfNotAlreadyThere (x);
+    return n;
+}
+// a demo leaves EVERY queue (a limiter's compressor pass in a later group too); returns the (queue, product) pairs it left
+inline std::vector<std::pair<juce::String, juce::String>> dropDemos (std::map<juce::String, juce::StringArray>& queues, const juce::StringArray& demos)
+{
+    std::vector<std::pair<juce::String, juce::String>> gone;
+    for (auto& [pb, l] : queues) for (const auto& d : demos) if (l.contains (d)) { l.removeString (d); gone.push_back ({ pb, d }); }
+    return gone;
+}
 // the Tracker's kind for a Phase B category (its per-plugin seconds)
 inline juce::String kindOf (const juce::String& phaseBCategory) { return phaseBCategory == "wizard" ? juce::String ("compressor") : phaseBCategory == "wizard_eq" ? juce::String ("eq") : phaseBCategory; }
 inline Decision route (const Answer& a, const juce::String& nameCategory, const juce::String& outOfScope, bool knownMultiband = false)

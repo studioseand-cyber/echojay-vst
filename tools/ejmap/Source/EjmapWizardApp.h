@@ -229,6 +229,7 @@ inline bool finishAfterStop (int phasebCode, bool finishRequested, bool diskStop
 inline int measuredSoFar (const juce::var& progress)
 {
     if (progress.getProperty ("stage", "").toString() != "Measuring") return 0;
+    if (progress.hasProperty ("measured_done")) return (int) progress.getProperty ("measured_done", 0);   // 14 Oct: never a demo check
     const auto sc = progress.getProperty ("stage_counts", {});
     return juce::jmax (0, (int) sc.getProperty ("done", 0) - (int) progress.getProperty ("problems", 0));
 }
