@@ -1,3 +1,70 @@
+# NEXT ROUND — THE ORDER (Sean, 14 Oct, after his full Logic check of ship_2026-10-14a)
+
+**This section is authoritative and replaces every earlier partial list in this file.** The detailed
+findings below it are the investigations behind each item - every one of the seven fixes already has its
+cause named from the plugin's own logs or its code, so next round is execution rather than diagnosis.
+
+**Process:** investigate from the logs first (done for all seven), **every fix gets a rig row that FAILS
+before the fix and PASSES after**, one full gate from S1, and nothing installed until it is green.
+
+| # | fix | cause, already found | where |
+|---|---|---|---|
+| 1 | **HONESTY (top).** A `set` reported success having applied nothing, and the closing text claimed values | the payload arrived flat with no `"params"` wrapper, so the dial path applied **0 of 8**; and my read-back counted **slots**, which a `set` never changes | §5 |
+| 2 | the 60 s client timeout kills a slow round and blames the user's internet | `EJAgentClient::connectTimeoutMs = 60'000` bounds the whole request. **Sean's number: 300 s or more, matching the server** | §0 |
+| 3 | `check(gr)` fails with "no audio heard" while audio plays; 9 rounds | the per-slot picture it reads **has no writer anywhere**: read in 3 places, written in 0 | §1 |
+| 4 | a hand pre-gain move is not undoable, and undo stops on a stale entry. Plus the release banner | no `preGain` undo kind; `UndoHistory::step()` consumes one dead entry and returns true. The banner came from **moving the view to the bus** | §2, §3 |
+| 5 | after an agent build on a Link the main window reads 0 plugins until a reopen | the view takes `linkRackCache`, whose feeder is gated on `currentTab == Tab::Chain`; Sean was on the AI tab | §4 |
+| 6 | a chat reply lost silently when the window closes mid-reply | `notifyChatTurnFinalised` is called **only with `true`** - a failed parked turn notifies nobody. **Folds into 0b** | §7 |
+| 7 | the login screen's "Loading your dashboard" | `showLoginScreen()` never hides the dashboard surfaces, and `setSignedOut(true)` has one caller | §1 (first section) |
+
+**Then, as queued:** item 0 + 0b + Auto mode to the approved mockup → multi-track jobs → 0a.
+
+**Rulings to build in:** plugin choice (§"CHOOSING A PLUGIN"), the OUT knob (§6 - **and the answer to
+Sean's question is yes, on a Link it is already one value**), the unknown-track tap choices (below),
+Ask-mode approval locking (B's, in FOR_B), and **undo in Auto without a second approval** (below).
+
+## RULED: an unknown track offers the linked tracks as TAP CHOICES
+
+> *"Unknown track: offer the linked tracks as tap choices, not 'type the exact name'."*
+
+**There is an inconsistency between the two sides to fix on mine.** My unknown-channel refusal tells the
+model (`EJAgentExecutorRead.cpp:151`):
+
+> *"Name one of those, by uid or by its exact name, or stop - this list is complete and will not change by
+> retrying."*
+
+while B's own guard says *"Never ask the user for a uid or an id… If two tracks could genuinely be meant,
+ask with their names as the choices."* **The two instructions pull in opposite directions**, and the model
+echoes the shape of whatever it was last told - which is how Sean got "the exact vocal track name or uid" on
+13 Oct. The list of names is already in that sentence (`knownChannelsSentence()`), so the fix is to tell the
+model what to DO with it: *ask with these names as tap choices*. Never the uid, which the user never sees.
+
+Row **U1**: a goal naming a track that does not exist produces an ask whose **choices are the real linked
+track names**, with no uid and no "exact name" anywhere in what the user sees. (Today's L5 passes because
+the model happened to do the right thing; U1 must assert the choices, so it cannot pass on luck.)
+
+## RULED: in Auto, a user-typed "undo that" runs without a second approval
+
+> *"Undo in Auto: 'undo that' typed by the user runs without a second approval. Redo can wait until after
+> beta."*
+
+This settles the open question in `docs/DESIGN_AGENT_IN_CHAT.md` §7 Q9 - and **not** by adding a redo. The
+rule there was "a step that cannot be undone still asks in Auto", and an undo returns no undo token, so
+Auto would have stopped to ask before an undo the user had just asked for out loud.
+
+**The resolution: the user's own request IS the approval.** When the goal is an undo request - which B
+already detects (`undoGoal`, and it refuses any other op on such a goal) - the undo op is pre-approved in
+Auto. It still asks in **Ask** mode, like everything else.
+
+`undoabilityOf` therefore grows one exception, stated where it is read: *an `undo` on an undo goal is
+pre-approved in Auto because the user asked for it in words; everything else that cannot be undone still
+asks.* **No redo op before beta.**
+
+Row **A7**: in Auto, "undo that" runs with **no** approval wait and the rack returns. Row **A8**: in Ask,
+the same request still waits for Apply.
+
+---
+
 # Next round — the queue, in order
 
 > ## 13 OCT 2026, SEAN'S RULING: THE CAPABILITY LOOP COMES FIRST, AND IT REPLACES ITEM 0 FOR NOW
@@ -303,7 +370,9 @@ on the agent stream it bounds the WHOLE request: a step that had already deliver
 at exactly 60.000 s with *"Connection failed. Please check your internet connection."* The server's own log
 has steps at 39.5 s, and a round with a thinking budget can exceed a minute.
 
-- raise the bound (and say what it is in the log line, so the next one of these is diagnosable in one read)
+- **300 s or more** (Sean, 14 Oct: "the server is now 300 s"), and say the bound in the log line so the
+  next one of these is diagnosable in one read. The two sides must not disagree: a client that gives up
+  before the server does turns a slow answer into a lost one, which is what happened here.
 - and **separate the two failures**: "we could not reach the server" and "the round took longer than N
   seconds" are different facts, and only one of them is about the user's wifi. The second should offer
   Retry, which the client already supports (`retryable=1` was set).

@@ -243,7 +243,11 @@ later change to one of the sinks.
 
 **`undo` is itself the awkward case**, and I would rather name it than let it surprise us: the undo op
 returns **no** token (undoing an undo is a redo, which the agent does not have). Taken literally, Auto would
-stop and ask before an undo the user has just asked for out loud. See question 9.
+stop and ask before an undo the user has just asked for out loud.
+
+**RULED, 14 Oct:** it does not. *"'undo that' typed by the user runs without a second approval."* The user's
+own words are the approval, so an `undo` on an undo goal is **pre-approved in Auto** - one stated exception
+in `undoabilityOf`, and no redo op before beta. It still asks in Ask mode. Rows A7 and A8.
 
 ### The rig legs Sean named, plus the two that make them trustworthy
 
@@ -300,7 +304,17 @@ The server owns the approval policy, so the flag has to be in the request and ho
 8. **Where does the undo-all button live once the panel is a row?**
    *Recommendation: on the run's message, for as long as the history still holds its steps* — and it should
    grey out honestly when the plugin-wide history has moved past them (`undoAllowedNow`).
-9. **(new, from Auto) Does an `undo` need its own approval in Auto?**
+9. **(new, from Auto) Does an `undo` need its own approval in Auto?** — **RULED, 14 Oct: no.**
+   > *"'undo that' typed by the user runs without a second approval. Redo can wait until after beta."*
+
+   So **the user's own request is the approval**, and there is **no redo op before beta** - my
+   recommendation below is superseded, and the better answer was the one that added nothing. `undoabilityOf`
+   grows a single stated exception: an `undo` on an undo goal (which B already detects, and on which it
+   refuses every other op) is pre-approved in Auto. It still asks in Ask mode, like everything else.
+   Rows A7 and A8. The original question and my recommendation are kept below, because the reasoning for
+   *why* an irreversible step asks is what makes the exception safe to carve.
+
+   ORIGINAL QUESTION:
    Taken literally the rule says yes, because the op returns no undo token — so Auto would stop and ask
    before an undo the user just asked for out loud.
    *Recommendation: add a `redo` op in the same push and treat `undo` as undoable.* The history already
