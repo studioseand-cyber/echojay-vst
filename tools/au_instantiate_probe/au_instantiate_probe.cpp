@@ -92,6 +92,7 @@ int main (int argc, char** argv)
     const bool writeTest  = argc >= 9 && juce::String (argv[4]) == "--write-test";   // <index> <from> <to> <arm>
     const bool sweep      = argc >= 5 && juce::String (argv[4]) == "--sweep";        // key=value arguments, probe_sweep.h
     const bool textAtNorms = argc >= 7 && juce::String (argv[4]) == "--text-at-norms"; // <index> <n0,n1,...>, probe_sweep.h
+    const bool textAtNormsMulti = argc >= 6 && juce::String (argv[4]) == "--text-at-norms-multi"; // "<i>:<n,..>;<j>:<n,..>" (14 Oct), probe_sweep.h
     const bool sweepPitch = argc >= 5 && juce::String (argv[4]) == "--sweep-pitch";   // key=value arguments, probe_pitch.h
     const bool burst      = argc >= 5 && juce::String (argv[4]) == "--burst";        // key=value arguments, probe_burst.h (PROTOTYPE)
     const bool response   = argc >= 5 && juce::String (argv[4]) == "--response";     // key=value arguments, probe_response.h (PROTOTYPE)
@@ -103,7 +104,7 @@ int main (int argc, char** argv)
     // (param lines), the unit's factory presets (programs / program lines), then loads preset N (default: the first, 0) and prints
     // its block as "fparam" lines; "factory none" when the unit publishes no factory preset
     const bool factoryPreset = argc >= 5 && juce::String (argv[4]) == "--factory-preset";
-    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep || textAtNorms || sweepPitch || burst || response || tail || hits || ramp || materialM || factoryPreset;
+    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep || textAtNorms || textAtNormsMulti || sweepPitch || burst || response || tail || hits || ramp || materialM || factoryPreset;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
@@ -201,6 +202,12 @@ int main (int argc, char** argv)
             while (juce::Time::getMillisecondCounterHiRes() - t1 < 400.0) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
             std::printf ("factory\t%d\t%s\n", k, clean (inst->getProgramName (k)).toRawUTF8());
             block ("fparam");
+            std::fflush (stdout); std::_Exit (0);
+        }
+        if (textAtNormsMulti)
+        {
+            ejprobe::configureAndPrepare (*inst, {});
+            ejprobe::runTextAtNormsMulti (*inst, juce::String::fromUTF8 (argv[5]));
             std::fflush (stdout); std::_Exit (0);
         }
         if (textAtNorms)

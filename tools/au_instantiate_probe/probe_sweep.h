@@ -427,12 +427,15 @@ inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const Re
 // --text-at-norms <index> <n0,n1,...>: the control's OWN TEXT at each normalised value, each write confirmed (the verify's
 // step 1) and read stable (step 2). It measures; EJ Map chooses (spec 4.2's ratio raise reads its grid from here, so the
 // position is picked from what the plugin prints, and the sweep then reads the ratio back again after its own write).
-inline void runTextAtNorms (juce::AudioPluginInstance& p, int index, const std::vector<float>& norms)
+// restore (14 Oct, --text-at-norms-multi): the control goes back to its instantiated value after its reads, so the next control is read
+// with this one where the per-control way (a fresh load each) has it; finalDone: print "done" (the single-control mode)
+inline void runTextAtNorms (juce::AudioPluginInstance& p, int index, const std::vector<float>& norms, bool restore = false, bool finalDone = true)
 {
     auto ps = p.getParameters();
     if (! juce::isPositiveAndBelow (index, ps.size()) || ps[index] == nullptr)
     { std::printf ("refused no parameter at index %d (%d parameters)\n", index, ps.size()); return; }
     auto& q = *ps[index];
+    const float instantiated = q.getValue();
     std::printf ("textat\tproto\t1\tindex\t%d\tname\t%s\tpoints\t%d\tinstantiated\t%.6f\t%s\n", index,
                  clean (q.getName (128)).toRawUTF8(), (int) norms.size(), q.getValue(), clean (q.getCurrentValueAsText()).toRawUTF8());
     SweepRenderer r (p, 48000.0, 512, 997.0);
@@ -445,6 +448,25 @@ inline void runTextAtNorms (juce::AudioPluginInstance& p, int index, const std::
         std::printf ("at\t%.6f\t%s\tgetValue\t%.6f\tconfirm_ms\t%.1f\tlanded_by\t%s\ttext\t%s\n", n, l.ms < 0 ? "unlanded" : "landed",
                      l.read, l.ms, l.by, clean (text).toRawUTF8());
     }
+    if (restore) { q.setValueNotifyingHost (instantiated); const auto lr = landWrite (q, instantiated, &r); std::printf ("restored\t%d\t%.6f\t%s\n", index, instantiated, lr.ms < 0 ? "unlanded" : "landed"); }
+    if (finalDone) stage ("done");
+}
+// --text-at-norms-multi "<i>:<n0>,<n1>;<j>:<n0>;..." (14 Oct, the one-load quick check): every control's own text at its norms in ONE load,
+// each control restored after its reads; a malformed spec is refused (the caller falls back to one load per control)
+inline void runTextAtNormsMulti (juce::AudioPluginInstance& p, const juce::String& spec)
+{
+    std::vector<std::pair<int, std::vector<float>>> work;
+    for (const auto& part : juce::StringArray::fromTokens (spec, ";", ""))
+    {
+        if (part.trim().isEmpty()) continue;
+        const auto idxS = part.upToFirstOccurrenceOf (":", false, false).trim(), normsS = part.fromFirstOccurrenceOf (":", false, false);
+        if (! idxS.containsOnly ("0123456789") || idxS.isEmpty() || normsS.isEmpty()) { std::printf ("refused malformed spec part '%s'\n", part.toRawUTF8()); return; }
+        std::vector<float> ns; for (const auto& t : juce::StringArray::fromTokens (normsS, ",", "")) ns.push_back ((float) t.getDoubleValue());
+        work.push_back ({ idxS.getIntValue(), ns });
+    }
+    if (work.empty()) { std::printf ("refused empty spec\n"); return; }
+    std::printf ("textmulti\tproto\t1\tcontrols\t%d\n", (int) work.size());
+    for (const auto& [idx, ns] : work) runTextAtNorms (p, idx, ns, true, false);
     stage ("done");
 }
 
