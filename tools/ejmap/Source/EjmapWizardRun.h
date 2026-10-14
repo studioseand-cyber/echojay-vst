@@ -120,7 +120,7 @@ inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std
     for (size_t i = 0; i < ds.size(); ++i)
     {
         const auto c = cache.getProperty (pidOf (ds[i]), {});
-        if (c.isObject()) { wizard::DemoVerdict v; v.judged = (bool) c.getProperty ("judged", false); v.demo = (bool) c.getProperty ("demo", false); v.why = c.getProperty ("why", "").toString(); out[ds[i].name] = v; }
+        if (c.isObject()) { wizard::DemoVerdict v; v.judged = (bool) c.getProperty ("judged", false); v.demo = (bool) c.getProperty ("demo", false); v.window = (bool) c.getProperty ("window", false); v.why = c.getProperty ("why", "").toString(); out[ds[i].name] = v; }
         else todo.push_back (i);
     }
     std::mutex m;
@@ -133,11 +133,12 @@ inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std
     pool.discard = [] (const size_t&, juce::StringArray&) {};
     pool.finish = [&] (const size_t& i, juce::StringArray&, ChildResult& r)
     {
-        const auto v = r.cleanExit() ? wizard::demoDropouts (r.out) : wizard::DemoVerdict();   // a probe that failed here is the measurement's business, not a demo
+        auto v = r.cleanExit() ? wizard::demoDropouts (r.out) : wizard::DemoVerdict();   // a probe that failed here is the measurement's business, not a demo
+        if (r.kind == ChildResult::Kind::uiShown) { v.window = true; v.why = "a licence window appeared at the load"; }   // 14 Oct: not loaded again
         std::lock_guard<std::mutex> g (m); out[ds[i].name] = v;
         const double secs = (juce::Time::getMillisecondCounterHiRes() - started[ds[i].name]) / 1000.0;
         if (onChecked) onChecked (ds[i].name, v, secs);
-        if (r.cleanExit()) { auto* o = new juce::DynamicObject(); o->setProperty ("judged", v.judged); o->setProperty ("demo", v.demo); o->setProperty ("why", v.why); o->setProperty ("seconds", std::round (secs * 100.0) / 100.0); cache.getDynamicObject()->setProperty (pidOf (ds[i]), juce::var (o)); }
+        if (r.cleanExit() || v.window) { auto* o = new juce::DynamicObject(); o->setProperty ("judged", v.judged); o->setProperty ("demo", v.demo); o->setProperty ("window", v.window); o->setProperty ("why", v.why); o->setProperty ("seconds", std::round (secs * 100.0) / 100.0); cache.getDynamicObject()->setProperty (pidOf (ds[i]), juce::var (o)); }
     };
     pool (todo, juce::jmax (1, jobs));
     cacheFile.replaceWithText (juce::JSON::toString (cache));
@@ -224,6 +225,12 @@ inline int runWizard (const WizardOptions& wo)
         { auto r = juce::JSON::parse (f.loadFileAsString()); if (r.getProperty ("product", "").toString() == product) { r.getDynamicObject()->setProperty ("_stem", f.getFileName().replace (".phaseb.json", "")); return r; } }
         return {}; };
     std::vector<wizprog::Item> planItems;
+    // LICENCE WINDOWS (14 Oct): what raised one here before, and whether this Mac has any iLok (USB key, or PACE's licence software)
+    const auto licenceMemF = out.getChildFile ("licence_windows.json"); const auto licenceMem = wizroute::loadLicenceMemory (licenceMemF);
+    const bool paceSupport = juce::File ("/Library/Application Support/PACEAntiPiracy/LicenseSupport").exists() || juce::File ("/Applications/iLok License Manager.app").exists();
+    int ilokUsbState = -1;   // read once, only if a PACE-wrapped plugin needs it (system_profiler takes a second or two)
+    auto ilokUsb = [&] { if (ilokUsbState < 0) ilokUsbState = iLokPresence().startsWith ("present") ? 1 : 0; return ilokUsbState == 1; };
+    auto paceWrapped = [&] (const juce::PluginDescription& dd, juce::String& why) { return ! wizroute::paceOptionalVendor (dd.manufacturerName) && paceHeld (dd, bundlesAll, why) && why.startsWith ("PACE-wrapped"); };
     // 1. THE DATABASE CHECK (Scanning): one answer per plugin; only rule B's quick read-back check loads anything here
     { std::vector<wizprog::Item> its; for (const auto& ir : plugins) { wizprog::Item it; it.product = ir.desc.name; it.kind = "check"; its.push_back (it); } prog.stage (wizprog::Stage::scanning, its); }
     for (size_t i = 0; i < plugins.size(); ++i)
@@ -235,7 +242,14 @@ inline int runWizard (const WizardOptions& wo)
         auto* row = new juce::DynamicObject(); row->setProperty ("product", ir.desc.name); row->setProperty ("plugin_id", wizroute::pluginId (uid, ver)); row->setProperty ("map_fp", se.fp);
         row->setProperty ("category", d.category); row->setProperty ("route", wizroute::routeName (d.route)); row->setProperty ("vendor", ir.desc.manufacturerName);
         juce::String st, why = d.why;
-        switch (d.route)
+        // LICENCE WINDOWS (14 Oct): looked up before any load - a plugin that showed one here before, or iLok-protected on a Mac with no
+        // iLok, is skipped unloaded. Nothing the database settles is ever loaded (A / pending / out of scope stay as they are)
+        juce::String paceWhy; const bool pw = ! wizroute::loadsNothing (d) && paceWrapped (ir.desc, paceWhy);
+        row->setProperty ("pace", pw ? paceWhy : juce::String());
+        const auto ls = wizroute::loadsNothing (d) ? wizroute::LicenceSkip::none
+                      : wizroute::licenceSkip (licenceMem.count (wizroute::pluginId (uid, ver).toLowerCase()) > 0, pw, pw && ! paceSupport && ilokUsb(), paceSupport);
+        if (ls != wizroute::LicenceSkip::none) { st = "needs_licence"; why = wizroute::licenceSkipWhy (ls); row->setProperty ("licence_skip", ls == wizroute::LicenceSkip::remembered ? "remembered" : "pace_no_ilok"); }
+        else switch (d.route)
         {
             case wizroute::Route::skipHave: st = "ready"; break;
             case wizroute::Route::skipPending: st = "pending_review"; break;
@@ -248,7 +262,7 @@ inline int runWizard (const WizardOptions& wo)
                 prog.started (ir.desc.name);
                 bool window = false; const auto rb = quickCheck (opt, ir.desc, ans.entry->profile, window);
                 row->setProperty ("from_version", ans.entry->version()); row->setProperty ("readback", rb.why);
-                if (window) { st = "needs_licence"; why = rb.why; }
+                if (window) { st = "needs_licence"; why = rb.why; wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, ver)); }
                 else if (! wizapp::needsMeasuring (wizard::Match::sameControls, rb.pass)) { st = "ready_from_version"; why = "the version " + ans.entry->version() + " profile: " + rb.why; }
                 else { st = "queued"; why = "the version " + ans.entry->version() + " profile does not fit (" + rb.why + "): measure this version"; toMap.push_back ({ i, d, row }); }
                 break;
@@ -315,7 +329,7 @@ inline int runWizard (const WizardOptions& wo)
                       [&] (const juce::PluginDescription& d, ChildResult& r)
         {
             const auto uid = juce::String::toHexString (d.uniqueId).toLowerCase();
-            if (r.kind == ChildResult::Kind::uiShown) { early[d.name] = "needs_licence"; say ("  " + d.name + ": a window appeared (licence?) - closed, not clicked; not mapped"); prog.finished (d.name, true); return; }
+            if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, d.version)); early[d.name] = "needs_licence"; say ("  " + d.name + ": a window appeared (licence?) - closed, not clicked; not mapped"); prog.finished (d.name, true); return; }
             const auto ps = paramsOfList (r.out);
             if (! r.cleanExit() || ps.empty()) { early[d.name] = r.cleanExit() ? "wont_load" : "crashed"; say ("  " + d.name + ": not mapped (" + (ps.empty() && r.cleanExit() ? juce::String ("no parameters") : r.describe()) + ")"); prog.finished (d.name, true); return; }
             const auto fp = echojay::fingerprintForDescription (d, (int) ps.size());
@@ -361,6 +375,7 @@ inline int runWizard (const WizardOptions& wo)
             cache.getDynamicObject()->setProperty (pid, sig); cacheF.replaceWithText (juce::JSON::toString (cache));
             prog.finished (ir.desc.name, false);
         }
+        if (sig.getProperty ("why", "").toString().startsWith ("a window")) wizroute::rememberLicenceWindow (licenceMemF, pid);   // 14 Oct
         const auto d = wizroute::afterSignature ((bool) sig.getProperty ("reads_ran", false), (bool) sig.getProperty ("settled", false), sig.getProperty ("category", "").toString(),
                                                  sig.getProperty ("out_of_scope", "").toString(), sig.getProperty ("why", "").toString());
         p.row->setProperty ("route", wizroute::routeName (d.route)); p.row->setProperty ("category", d.category); p.row->setProperty ("why", d.why); p.row->setProperty ("signature", sig);
@@ -675,13 +690,15 @@ inline int runWizard (const WizardOptions& wo)
                     const auto verdicts = demoCheckForWizard (qd, opt.jobs, [&] (const juce::StringArray& a) { prog.started (a[1], "demo"); return runChild (a, opt.timeoutMs); }, opt.probe, out.getChildFile ("demo_checks.json"),
                                                               [&] (const juce::String& n, const wizard::DemoVerdict&, double secs) { prog.finished (n, false, secs, "demo"); });
                     if (wizardStop() != 0) { pbCode = 130; break; }
-                    juce::StringArray demos; for (const auto& [name, v] : verdicts) if (v.demo) demos.add (name);
+                    juce::StringArray demos; for (const auto& [name, v] : verdicts) if (v.demo || v.window) demos.add (name);   // 14 Oct: a licence window leaves the queues too
                     const auto gone = wizroute::dropDemos (queues, demos);
                     for (const auto& [pb, name] : gone) prog.finished (name, true, -1.0, wizroute::kindOf (pb));
                     for (const auto& [name, v] : verdicts)
                     {
-                        if (! v.demo) continue;
-                        for (auto& rv : rows) if (rv.getProperty ("product", "").toString() == name) { rv.getDynamicObject()->setProperty ("state", "demo"); rv.getDynamicObject()->setProperty ("why", v.why); }
+                        if (! v.demo && ! v.window) continue;
+                        for (auto& rv : rows) if (rv.getProperty ("product", "").toString() == name)
+                        {   rv.getDynamicObject()->setProperty ("state", v.window ? "needs_licence" : "demo"); rv.getDynamicObject()->setProperty ("why", v.window ? wizroute::licenceSkipWhy (wizroute::LicenceSkip::remembered) : v.why);
+                            if (v.window) wizroute::rememberLicenceWindow (licenceMemF, rv.getProperty ("plugin_id", "").toString()); }
                         say ("  " + name.paddedRight (' ', 30) + " -> skipped: " + v.why);
                     }
                     if (! gone.empty()) for (const auto& g2 : wizroute::measureOrder()) for (const auto& pb : g2) queueFile (pb).replaceWithText ((queues.count (pb) ? queues[pb].joinIntoString ("\n") : juce::String()) + "\n");

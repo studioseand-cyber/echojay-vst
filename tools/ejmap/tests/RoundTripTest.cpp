@@ -9917,6 +9917,35 @@ void testWizardCategories()
                && juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/icon/WizardTest.icns").existsAsFile(),
                "wizard WZ-TEST-1: 'EchoJay Wizard Test' folder, the banner, the snapshot seeded once (2 files, the stub's own kept), config qualify 25 written once, Reset test keeps only Kathy's config (read: " + juce::String ((int) read) + ")");
     }
+    // WZ-LIC-1 LICENCE WINDOWS DURING THE SCAN (Kathy, 14 Oct): looked up before any load; a plugin that raised a window here before is never
+    // loaded again; PACE-wrapped is skipped unloaded only on a Mac with no iLok at all (no USB key, no PACE licence software); Melda's
+    // optional PACE never counts; the scan screen's warning. Text pins (with a control): the skip comes before the route's loads, and every
+    // load that can show a window (map, quick check, signature reads, demo check) remembers it
+    {
+        using namespace ejmap::wizroute;
+        const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_lic_" + juce::String (juce::Random::getSystemRandom().nextInt64()) + ".json");
+        rememberLicenceWindow (f, "AudioUnit|5353fb43|1.3.4"); rememberLicenceWindow (f, "AudioUnit|5353FB43|1.3.4"); rememberLicenceWindow (f, "AudioUnit|aa|1");
+        const auto mem = loadLicenceMemory (f); f.deleteFile();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const bool read = run.contains ("inline int runWizard");   // the control
+        const auto step1 = run.fromFirstOccurrenceOf ("// 1. THE DATABASE CHECK (Scanning)", false, false).upToFirstOccurrenceOf ("// 2. IDENTIFYING", false, false);
+        check (read
+               && licenceSkip (true, false, true, true) == LicenceSkip::remembered && licenceSkip (false, true, false, false) == LicenceSkip::paceNoIlok
+               && licenceSkip (false, true, true, false) == LicenceSkip::none && licenceSkip (false, true, false, true) == LicenceSkip::none && licenceSkip (false, false, false, false) == LicenceSkip::none
+               && paceOptionalVendor ("MeldaProduction") && ! paceOptionalVendor ("SSL") && ! paceOptionalVendor ("Slate Digital")
+               && mem.size() == 2 && mem.count ("audiounit|5353fb43|1.3.4") == 1
+               && rowShowedWindow ("needs_licence", {}) && rowShowedWindow ("needs_category", "a window at the load (ui shown): not loaded again") && ! rowShowedWindow ("needs_category", "no signature")
+               && licenceSkipWhy (LicenceSkip::paceNoIlok).startsWith ("needs a licence - skipped") && licenceSkipWhy (LicenceSkip::remembered).startsWith ("needs a licence - skipped")
+               && ejmap::wizapp::scanWarning() == "Some plugins may briefly show a licence or sign-in window. That's normal - please don't click it; the wizard closes it and moves on."
+               && ! ejmap::wizapp::tellsATime (ejmap::wizapp::scanWarning())
+               && step1.indexOf ("if (ls != wizroute::LicenceSkip::none) { st = \"needs_licence\";") >= 0 && step1.indexOf ("if (ls != wizroute::LicenceSkip::none)") < step1.indexOf ("const auto rb = quickCheck (")
+               && run.contains ("if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, d.version));")
+               && run.contains ("if (window) { st = \"needs_licence\"; why = rb.why; wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, ver)); }")
+               && run.contains ("if (sig.getProperty (\"why\", \"\").toString().startsWith (\"a window\")) wizroute::rememberLicenceWindow (licenceMemF, pid);")
+               && run.contains ("if (v.window) wizroute::rememberLicenceWindow (licenceMemF, rv.getProperty (\"plugin_id\", \"\").toString());")
+               && run.contains ("return ! wizroute::paceOptionalVendor (dd.manufacturerName) && paceHeld (dd, bundlesAll, why) && why.startsWith (\"PACE-wrapped\");"),
+               "wizard WZ-LIC-1: remembered windows / PACE on a Mac with no iLok skipped unloaded, Melda's optional PACE never, the warning; every window-raising load remembers it (read: " + juce::String ((int) read) + ")");
+    }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files
     {

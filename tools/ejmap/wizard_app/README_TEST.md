@@ -23,7 +23,8 @@ If it says "Operation not permitted": move the app to the Bin, install it again,
 - **Send what's done.** Press **Send what's done (no free month)** part-way. The results go to the stand-in server with no code, and the account and this Mac have used their go.
 - **Finish.** Let a small set run to the end. If the whole run finished and enough results passed, the stand-in server issues an **EJ-FREE-...** code.
 - **Once only.** Opening it again after a send or a finish shows the reward or "You've already taken part".
-- **Reset test** (bottom-left of the first screen) clears the pretend accounts, the Mac's record, codes, runs, uploads and the app's state, so you can test once-only and the reward again. It **keeps your settings file**.
+- **Licence windows.** A plugin that isn't licensed here may flash a licence window once. Don't click it: the wizard closes it and never loads that plugin again (`engine/licence_windows.json`; Reset test forgets them).
+- **Reset test** (bottom-left, on any screen while nothing is running - after a finish the wizard reopens on the reward screen) clears the pretend accounts, the Mac's record, codes, runs, uploads and the app's state, so you can test once-only and the reward again. It **keeps your settings file**.
 
 **4. Where to look**
 

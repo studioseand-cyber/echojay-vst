@@ -228,6 +228,8 @@ inline Copy scanDoneCopy (Mode m, const Eligibility& e)
     return { "Thanks - your plugins are already mapped", "So there's nothing to do right now.", "Done", {} };
 }
 // the Measuring screen's words and its bar's right side: n of N measurements (a demo check is not one) - never time left
+// the scan screen's warning (Kathy, 14 Oct)
+inline juce::String scanWarning() { return "Some plugins may briefly show a licence or sign-in window. That's normal - please don't click it; the wizard closes it and moves on."; }
 inline juce::String measuringText() { return "Leave it running - the Mac stays awake. You can pause and carry on any time."; }
 inline juce::String measuringCount (const juce::var& progress)
 {

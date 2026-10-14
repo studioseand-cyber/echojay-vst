@@ -173,6 +173,41 @@ inline std::vector<std::pair<juce::String, juce::String>> dropDemos (std::map<ju
     for (auto& [pb, l] : queues) for (const auto& d : demos) if (l.contains (d)) { l.removeString (d); gone.push_back ({ pb, d }); }
     return gone;
 }
+// LICENCE WINDOWS DURING THE SCAN (Kathy, 14 Oct). What can be known WITHOUT a load:
+//   * PACE / iLok wrapping, from the bundle (paceHeld's isPaceWrapped) - but not whether that plugin is licensed: iLok Cloud and machine
+//     licences live encrypted in PACE's LicenseSupport. So a PACE-wrapped plugin is skipped unloaded only when the Mac has NO iLok at
+//     all: no USB iLok and PACE's licence software not installed (then no PACE licence can exist on it)
+//   * a plugin that already raised a licence window on this Mac (remembered in <out>/licence_windows.json): never loaded again
+// Anything else may still show one window, once.
+// PACE wrapping that is OPTIONAL (14 Oct, measured here): MeldaProduction bundles carry __Pace_Eden.bundle as an optional iLok route, but
+// unlicensed Melda plugins run as demos and never raise a window (13 Oct: MTurboComp, MLimiterX, MFreeformEqualizer) - never skipped for it
+inline bool paceOptionalVendor (const juce::String& vendor) { return vendor.trim().equalsIgnoreCase ("MeldaProduction"); }
+enum class LicenceSkip { none, remembered, paceNoIlok };
+inline LicenceSkip licenceSkip (bool rememberedWindow, bool paceWrapped, bool ilokUsb, bool paceSupportInstalled)
+{
+    if (rememberedWindow) return LicenceSkip::remembered;
+    if (paceWrapped && ! ilokUsb && ! paceSupportInstalled) return LicenceSkip::paceNoIlok;
+    return LicenceSkip::none;
+}
+inline juce::String licenceSkipWhy (LicenceSkip s)
+{
+    if (s == LicenceSkip::remembered) return "needs a licence - skipped (it showed a licence window here before; not loaded again)";
+    if (s == LicenceSkip::paceNoIlok) return "needs a licence - skipped (iLok-protected, and this Mac has no iLok: not loaded)";
+    return {};
+}
+// a load that showed a window: the probe's uiShown at the map / quick check, or the signature reads' "a window at the load"
+inline bool rowShowedWindow (const juce::String& state, const juce::String& why) { return state == "needs_licence" || why.startsWith ("a window"); }
+inline std::set<juce::String> loadLicenceMemory (const juce::File& f)
+{
+    std::set<juce::String> s; const auto v = juce::JSON::parse (f.loadFileAsString());
+    if (const auto* a = v.getArray()) for (const auto& x : *a) s.insert (x.toString().toLowerCase());
+    return s;
+}
+inline void rememberLicenceWindow (const juce::File& f, const juce::String& pluginId)
+{
+    auto s = loadLicenceMemory (f); if (! s.insert (pluginId.toLowerCase()).second) return;
+    juce::Array<juce::var> a; for (const auto& x : s) a.add (x); f.replaceWithText (juce::JSON::toString (juce::var (a)));
+}
 // the Tracker's kind for a Phase B category (its per-plugin seconds)
 inline juce::String kindOf (const juce::String& phaseBCategory) { return phaseBCategory == "wizard" ? juce::String ("compressor") : phaseBCategory == "wizard_eq" ? juce::String ("eq") : phaseBCategory; }
 inline Decision route (const Answer& a, const juce::String& nameCategory, const juce::String& outOfScope, bool knownMultiband = false)

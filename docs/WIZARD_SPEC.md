@@ -75,6 +75,16 @@ What it says is true of the bundle as built:
 
 **3d. Limiters (Kathy, 13 Oct).** The database holds a limiter's two passes separately (the limiter draft in mapped.json, the compressor pass in `limitercomp/`); a limiter with only one gets the other pass, and the database's limiter pass lets the compressor pass run without a limiter row of the Mac's own (`SweepOptions::limiterPassKnown`). Pin WZ-LIM-1.
 
+**3g. Licence windows during the scan (Kathy, 14 Oct).**
+- **Looked up before any load:** a plugin the database settles (already mapped, pending review, out of scope) is never loaded.
+- **Remembered:** a plugin that raised a licence window at any load (its map, a quick check, the signature reads, the demo check) is recorded in `engine/licence_windows.json` and never loaded again. It is filed "needs a licence - skipped". Before this, every new scan raised the same windows again.
+- **PACE / iLok without loading:** the bundle shows the wrapping (`paceHeld`), but not whether that plugin is licensed (iLok Cloud and machine licences are encrypted in PACE's LicenseSupport). So a PACE-wrapped plugin is skipped unloaded only when the Mac has no iLok at all: no USB iLok and no PACE licence software (`/Library/Application Support/PACEAntiPiracy/LicenseSupport` or `iLok License Manager.app`).
+  - MeldaProduction is exempt: its Eden bundle is an optional iLok route, and unlicensed Melda plugins run as demos without a window.
+- **Other vendors:** none on this Mac has licence state that can be read without loading. Plugin Alliance has one encrypted `pa.license`; Waves' Licenses folder holds no licence files; UAD uses the device check it already had.
+- **The scan screen** says: "Some plugins may briefly show a licence or sign-in window. That's normal - please don't click it; the wizard closes it and moves on."
+- **The probe** is a background-only agent (`LSBackgroundOnly` + `LSUIElement` in its embedded Info.plist). Measured 14 Oct: the frontmost app stays put while it loads plugins. The windows that do appear are drawn by the plugin or by PACE.
+- Pin WZ-LIC-1.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

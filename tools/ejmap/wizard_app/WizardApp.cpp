@@ -284,6 +284,8 @@ public:
             g.setColour (ink); g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 24.0f, juce::Font::bold)); g.drawText (bigCode, box, juce::Justification::centred);
         }
         if (screen == Screen::measuring && soFar.isNotEmpty()) { g.setColour (ink); g.setFont (juce::FontOptions (15.0f, juce::Font::bold)); g.drawText (soFar, juce::Rectangle<int> (70, 216, getWidth() - 140, 24), juce::Justification::centred); }
+        if (screen == Screen::scan)   // 14 Oct: the licence-window warning
+        { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.5f)); g.drawFittedText (wizapp::scanWarning(), juce::Rectangle<int> (70, 330, getWidth() - 140, 40), juce::Justification::centred, 2); }
         if (screen == Screen::measuring && choiceLine.isNotEmpty() && ! finishing && ! pausing)
         { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.0f)); g.drawFittedText (choiceLine, juce::Rectangle<int> (40, getHeight() - 150, getWidth() - 80, 20), juce::Justification::centred, 1); }
         if (pauseNote.isNotEmpty()) { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.0f)); g.drawFittedText (pauseNote, juce::Rectangle<int> (40, getHeight() - 92, getWidth() - 80, 20), juce::Justification::centred, 1); }
