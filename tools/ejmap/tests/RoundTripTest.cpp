@@ -9943,7 +9943,11 @@ void testWizardCategories()
                && run.contains ("if (window) { st = \"needs_licence\"; why = rb.why; wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, ver)); }")
                && run.contains ("if (sig.getProperty (\"why\", \"\").toString().startsWith (\"a window\")) wizroute::rememberLicenceWindow (licenceMemF, pid);")
                && run.contains ("if (v.window) wizroute::rememberLicenceWindow (licenceMemF, rv.getProperty (\"plugin_id\", \"\").toString());")
-               && run.contains ("return ! wizroute::paceOptionalVendor (dd.manufacturerName) && paceHeld (dd, bundlesAll, why) && why.startsWith (\"PACE-wrapped\");"),
+               && run.contains ("if (wizroute::paceOptionalVendor (dd.manufacturerName)) return false;")
+               && run.contains ("const bool held = paceHeld (dd, bundlesAll, why) && why.startsWith (\"PACE-wrapped\");")
+               // 14 Oct: each bundle's binary read once (WaveShell2 hosts 589 plugins: a plan took 20+ min), and only where it can matter
+               && run.contains ("if (const auto c = paceByBundle.find (key); c != paceByBundle.end()) { why = c->second.second; return c->second.first; }")
+               && run.contains ("const bool pw = ! wizroute::loadsNothing (d) && (wo.plan || ! paceSupport) && paceWrapped (ir.desc, paceWhy);"),
                "wizard WZ-LIC-1: remembered windows / PACE on a Mac with no iLok skipped unloaded, Melda's optional PACE never, the warning; every window-raising load remembers it (read: " + juce::String ((int) read) + ")");
     }
     // WZ-TEST-2 THE SMALL RUN (Kathy, 14 Oct, Test build only): test_only_plugins / test_qualify_minimum in the config; the server honours
@@ -10043,6 +10047,32 @@ void testWizardCategories()
                && qc.indexOf ("--text-at-norms-multi") >= 0 && qc.indexOf ("--text-at-norms-multi") < qc.indexOf ("a.add (\"--text-at-norms\")") && qc.contains ("if (mode != \"one_load\")")
                && probe.contains ("if (restore) { q.setValueNotifyingHost (instantiated);") && probe.contains ("for (const auto& [idx, ns] : work) runTextAtNorms (p, idx, ns, true, false);"),
                "wizard WZ-QC-1: one load for every control (spec, multi-block parse, restore after each control), the per-control way only on a refusal (read: " + juce::String ((int) read) + ")");
+    }
+    // WZ-NEAR-1 THE NEAR-MATCH TOLERANCE (Kathy, 14 Oct; the wizard's read-back only): numbers in the same unit within max(0.5%, one step of
+    // the coarser last shown digit) match; text, enums, ratios and units must match exactly; an all-match with near-matches routes as already
+    // mapped and is recorded (matched_with_tolerance + each control / ours / theirs) for the audit
+    {
+        using namespace ejmap::wizard;
+        auto rbFor = [] (const juce::String& expect, const juce::String& shown) {
+            std::vector<Write> w { { "Gate LPF Freq", -1, 0.9741, expect }, { "Mode", -1, 0.0, "Opto" } };
+            std::map<juce::String, int> names { { "Gate LPF Freq", 4 }, { "Mode", 1 } };
+            std::map<int, std::map<juce::String, juce::String>> ob { { 4, { { normKey (0.9741), shown } } }, { 1, { { normKey (0.0), "Opto" } } } };
+            return readback (w, names, ob); };
+        const auto emo = rbFor ("15000", "14996"), q4 = rbFor ("1924", "1925"), far = rbFor ("100", "102"), unitMis = rbFor ("15 kHz", "15000 Hz"), exact = rbFor ("15000", "15000");
+        std::vector<Write> wt { { "Mode", -1, 0.0, "Opto" } }; std::map<juce::String, int> nt { { "Mode", 1 } }; std::map<int, std::map<juce::String, juce::String>> ot { { 1, { { normKey (0.0), "VCA" } } } };
+        const auto textMis = readback (wt, nt, ot);
+        const auto v = nearMatchesVar (emo.near);
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const bool read = run.contains ("inline int runWizard");   // the control
+        check (read && nearMatch ("14996", "15000") && nearMatch ("1925", "1924") && ! nearMatch ("100", "102") && ! nearMatch ("15 kHz", "15000 Hz") && ! nearMatch ("15 kHz", "15 Hz")
+               && nearMatch ("-3.0 dB", "-3.01 dB") && ! nearMatch ("-3.0 dB", "-3.0 %") && ! nearMatch ("4:1", "4.1:1") && ! nearMatch ("Opto", "VCA")
+               && nearMatch ("10", "11") && ! nearMatch ("10.0", "11.0") && nearMatch ("1.25", "1.26")
+               && emo.pass && emo.near.size() == 1 && emo.why.contains ("1 within tolerance") && q4.pass && q4.near.size() == 1
+               && ! far.pass && ! unitMis.pass && ! textMis.pass && exact.pass && exact.near.empty()
+               && v.size() == 1 && v[0].getProperty ("ours", "").toString() == "14996" && v[0].getProperty ("theirs", "").toString() == "15000" && v[0].getProperty ("control", "").toString() == "Gate LPF Freq"
+               && run.contains ("if (rb.pass && ! rb.near.empty()) { row->setProperty (\"matched_with_tolerance\", true); row->setProperty (\"near_matches\", nearV); }")
+               && run.contains ("if ((bool) rv.getProperty (\"matched_with_tolerance\", false)) { c->setProperty (\"matched_with_tolerance\", true); c->setProperty (\"near_matches\", rv.getProperty (\"near_matches\", {})); }"),
+               "wizard WZ-NEAR-1: 14996/15000 and 1925/1924 pass (recorded), 2% fails, a unit mismatch fails, text must match; the audit list travels (read: " + juce::String ((int) read) + ")");
     }
     // WZ-NAME (found in the 13 Oct rehearsal): each build its own application name - JUCE's one-instance guard is keyed on it, and both
     // builds returned the literal "EchoJay Wizard", so the second app to start quit at once. A text pin, with a control that it read the files

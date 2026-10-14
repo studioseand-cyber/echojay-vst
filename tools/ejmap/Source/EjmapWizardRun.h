@@ -253,7 +253,18 @@ inline int runWizard (const WizardOptions& wo)
     const int waveShellLimitMs = [] { const char* e = std::getenv ("EJ_WIZARD_WAVESHELL_TIMEOUT_MS"); return e != nullptr && *e ? juce::jmax (100, juce::String (e).getIntValue()) : wizroute::kWaveShellLoadTimeoutMs; }();   // rehearsals: force a hang
     auto loadTimeoutFor = [&] (const juce::String& fileOrIdentifier) { return shellOfId (fileOrIdentifier).isNotEmpty() ? juce::jmin (opt.timeoutMs, waveShellLimitMs) : opt.timeoutMs; };
     std::map<juce::String, juce::String> earlyWhy;   // product -> the words for a state settled while loading (a bad shell)
-    auto paceWrapped = [&] (const juce::PluginDescription& dd, juce::String& why) { return ! wizroute::paceOptionalVendor (dd.manufacturerName) && paceHeld (dd, bundlesAll, why) && why.startsWith ("PACE-wrapped"); };
+    // 14 Oct: paceHeld reads a bundle's whole binary - WaveShell2-AU 12.0 hosts 589 plugins, so it was read 589 times (a plan of this Mac
+    // took over 20 min); the answer is kept per bundle, each binary read once
+    std::map<juce::String, std::pair<bool, juce::String>> paceByBundle;
+    auto paceWrapped = [&] (const juce::PluginDescription& dd, juce::String& why)
+    {
+        if (wizroute::paceOptionalVendor (dd.manufacturerName)) return false;
+        const auto it = bundlesAll.find (dd.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false));
+        const auto key = it != bundlesAll.end() ? it->second.getFullPathName() : dd.fileOrIdentifier;
+        if (const auto c = paceByBundle.find (key); c != paceByBundle.end()) { why = c->second.second; return c->second.first; }
+        const bool held = paceHeld (dd, bundlesAll, why) && why.startsWith ("PACE-wrapped");
+        paceByBundle[key] = { held, why }; return held;
+    };
     // 1. THE DATABASE CHECK (Scanning): one answer per plugin; only rule B's quick read-back check loads anything here
     // 14 Oct (Kathy's stuck run): the database step loads NOTHING now - the read-back checks moved into Checking (below) - so Scanning has no
     // items; the scan screen's one count lives in the Checking stage
@@ -273,7 +284,8 @@ inline int runWizard (const WizardOptions& wo)
         juce::String st, why = d.why;
         // LICENCE WINDOWS (14 Oct): looked up before any load - a plugin that showed one here before, or iLok-protected on a Mac with no
         // iLok, is skipped unloaded. Nothing the database settles is ever loaded (A / pending / out of scope stay as they are)
-        juce::String paceWhy; const bool pw = ! wizroute::loadsNothing (d) && paceWrapped (ir.desc, paceWhy);
+        // the PACE read only where it can matter: the skip rule needs it only on a Mac with no PACE software; a plan reports it
+        juce::String paceWhy; const bool pw = ! wizroute::loadsNothing (d) && (wo.plan || ! paceSupport) && paceWrapped (ir.desc, paceWhy);
         row->setProperty ("pace", pw ? paceWhy : juce::String());
         const auto ls = wizroute::loadsNothing (d) ? wizroute::LicenceSkip::none
                       : wizroute::licenceSkip (licenceMem.count (wizroute::pluginId (uid, ver).toLowerCase()) > 0, pw, pw && ! paceSupport && ilokUsb(), paceSupport);
@@ -285,7 +297,6 @@ inline int runWizard (const WizardOptions& wo)
             case wizroute::Route::outOfScope: st = "out_of_scope"; break;
             case wizroute::Route::quickCheck:
             {
-                if (wo.plan) { st = "quick_check"; why = "(plan: not run) " + why; break; }
                 const auto gate = licenceGate (opt, ir.desc.name, ir.desc.manufacturerName, out, false);
                 if (gate.stop.isNotEmpty()) { st = gate.stop.contains (uad::kNotConnected) ? "needs_hardware" : "needs_licence"; why = gate.stop; break; }
                 // 14 Oct: no load here - a read-back already done (quick_checks.json, by plugin id) is reused; the rest wait for Checking
@@ -294,9 +305,11 @@ inline int runWizard (const WizardOptions& wo)
                 if (qc.isObject() && qc.getProperty ("from_version", "").toString() == ans.entry->version())
                 {
                     const bool pass = (bool) qc.getProperty ("pass", false); const auto rbWhy = qc.getProperty ("why", "").toString(); row->setProperty ("readback", rbWhy);
+                    if (pass && qc.getProperty ("near_matches", {}).size() > 0) { row->setProperty ("matched_with_tolerance", true); row->setProperty ("near_matches", qc.getProperty ("near_matches", {})); }
                     if (! wizapp::needsMeasuring (wizard::Match::sameControls, pass)) { st = "ready_from_version"; why = "the version " + ans.entry->version() + " profile: " + rbWhy; }
                     else { st = "queued"; why = "the version " + ans.entry->version() + " profile does not fit (" + rbWhy + "): measure this version"; toMap.push_back ({ i, d, row }); }
                 }
+                else if (wo.plan) { st = "quick_check"; why = "(plan: not run) " + why; }   // a plan reads the cache, never loads
                 else { st = "checking"; toQuick.push_back ({ i, d, row, ans.entry }); }
                 break;
             }
@@ -307,7 +320,7 @@ inline int runWizard (const WizardOptions& wo)
             case wizroute::Route::needsCategory: st = "needs_category"; break;
         }
         row->setProperty ("state", st); row->setProperty ("why", why); rows.add (juce::var (row));
-        if (wo.plan && (d.route == wizroute::Route::measure || d.route == wizroute::Route::quickCheck))
+        if (wo.plan && (d.route == wizroute::Route::measure || d.route == wizroute::Route::quickCheck) && st != "ready_from_version")   // a cached passing read-back measures nothing
         {   // THE PLAN's estimate (13 Oct): the same items and per-category seconds the scan-done screen uses (a quick check counted as a measure)
             bool demoAdded = false;   // 14 Oct: its demo check, in the group of its first pass
             for (const auto& pb : d.passes.isEmpty() ? wizroute::phaseBFor (d.category) : d.passes)
@@ -380,12 +393,15 @@ inline int runWizard (const WizardOptions& wo)
             if (wizardStop() != 0) return stoppedInScan ("checking");   // a check cut short by the stop is never filed or cached
             if (shells.report (qshell, qk == ChildResult::Kind::timedOut, qk == ChildResult::Kind::signaled)) say ("WIZARD: " + qshell + " " + shells.why (qshell) + " - its other Waves plugins are skipped this scan (check Waves Central)");
             row->setProperty ("readback", rb.why); row->setProperty ("readback_mode", rb.mode); row->setProperty ("readback_loads", rb.loads);
+            const auto nearV = wizard::nearMatchesVar (rb.near);
+            if (rb.pass && ! rb.near.empty()) { row->setProperty ("matched_with_tolerance", true); row->setProperty ("near_matches", nearV); }
             if (qshell.isNotEmpty() && (qk == ChildResult::Kind::timedOut || shells.isBad (qshell)) && qk != ChildResult::Kind::exited)
             { st = "waves_skipped"; why = wizroute::wavesSkippedWhy (qshell, shells.why (qshell).isNotEmpty() ? shells.why (qshell) : juce::String ("did not load")); }
             else if (window) { st = "needs_licence"; why = rb.why; wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, ver)); }
             else
             {
                 {   auto* c = new juce::DynamicObject(); c->setProperty ("from_version", q.entry->version()); c->setProperty ("pass", rb.pass); c->setProperty ("why", rb.why);
+                    if (rb.pass && ! rb.near.empty()) c->setProperty ("near_matches", nearV);
                     quickCache.getDynamicObject()->setProperty (wizroute::pluginId (uid, ver), juce::var (c)); quickCacheF.replaceWithText (juce::JSON::toString (quickCache)); }
                 if (! wizapp::needsMeasuring (wizard::Match::sameControls, rb.pass)) { st = "ready_from_version"; why = "the version " + q.entry->version() + " profile: " + rb.why; }
                 else { st = "queued"; why = "the version " + q.entry->version() + " profile does not fit (" + rb.why + "): measure this version"; toMap.push_back ({ q.i, q.d, row }); }
@@ -629,7 +645,9 @@ inline int runWizard (const WizardOptions& wo)
                     it->setProperty ("profile", "profiles/" + f.getFileName()); it->setProperty ("tone_check", "profiles/" + tc.getFileName()); it->setProperty ("tone_check_g2_pass", true); items.add (juce::var (it));
                 }
             else if (st == "ready_from_version")
-            { auto* c = new juce::DynamicObject(); c->setProperty ("product", product); c->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); c->setProperty ("profile_from_version", rv.getProperty ("from_version", {})); c->setProperty ("readback", rv.getProperty ("readback", {})); confirmations.add (juce::var (c)); }
+            { auto* c = new juce::DynamicObject(); c->setProperty ("product", product); c->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); c->setProperty ("profile_from_version", rv.getProperty ("from_version", {})); c->setProperty ("readback", rv.getProperty ("readback", {}));
+              if ((bool) rv.getProperty ("matched_with_tolerance", false)) { c->setProperty ("matched_with_tolerance", true); c->setProperty ("near_matches", rv.getProperty ("near_matches", {})); }   // 14 Oct: for the audit
+              confirmations.add (juce::var (c)); }
             else if (st == "held")
             {   // multiband (12 Oct): no server category - listed with its map, NO category field
                 const auto fp = rv.getProperty ("map_fp", "").toString(); const auto mapF = opt.ledger.getChildFile ("maps").getChildFile (fp + ".json");

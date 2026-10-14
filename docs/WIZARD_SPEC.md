@@ -117,6 +117,15 @@ What it says is true of the bundle as built:
 - **The probe change** is shared with feat/ejmap-cert (da531bf0).
 - Pin WZ-QC-1.
 
+**3k. The near-match tolerance (Kathy, 14 Oct; the wizard's read-back only - the certification's accuracy rules are unchanged).**
+- **Numbers:** two readings match if both parse as a number in the SAME unit and differ by at most 0.5% of the larger, or one step of the coarser last shown digit, whichever is larger.
+- **Text:** text, enums and ratios like 4:1 must match exactly, and units must match.
+- **The result:** if every control matches, the plugin routes as already mapped and is recorded `matched_with_tolerance`. Every near-match (control, norm, ours, theirs) travels in the upload / results file (`confirmations[].near_matches`) and in `quick_checks.json`, for the audit.
+- **This Mac, 123 hostable read-back checks:**
+  - 66 exact, **37 within tolerance**, 20 still measured (mostly a control the profile writes is missing).
+  - 956 near-matches in all. Four go past 0.5%, all "HF Freq 42 vs 41" on H-EQ / H-EQ-Light (2.38%), which the one-step rule allows because the display is whole numbers.
+- Pin WZ-NEAR-1.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

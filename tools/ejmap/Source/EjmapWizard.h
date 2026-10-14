@@ -20,6 +20,7 @@
 #include <optional>
 #include <vector>
 #include <algorithm>
+#include <cmath>
 
 namespace ejmap::wizard
 {
@@ -107,7 +108,39 @@ inline std::vector<Write> writesOf (const juce::var& profile)
     return w;
 }
 // observed: control index -> norm (rounded to 1e-4) -> the display read back; names: control name -> index (the live plugin's list)
-struct Readback { bool pass = false; int checked = 0; juce::String why; juce::String mode; int loads = 0; };   // mode / loads (14 Oct): one_load or per_control, and how many loads
+// NEAR-MATCH TOLERANCE (Kathy, 14 Oct; the WIZARD's read-back only - the certification's accuracy rules are untouched): two readings
+// match when both parse as a number in the SAME unit and differ by no more than 0.5% (of the larger) or one step of the last shown digit
+// (the coarser of the two), whichever is larger. Text / enum values (and ratios like 4:1) still match exactly; units must match.
+struct NumReading { bool ok = false; double value = 0.0; juce::String unit; int decimals = 0; };
+inline NumReading parseNumeric (const juce::String& raw)
+{
+    NumReading n; const auto s = raw.trim(); int i = 0, len = s.length();
+    if (i < len && (s[i] == '-' || s[i] == '+')) ++i;
+    const int numStart = i; bool dot = false; int dec = 0, digits = 0;
+    for (; i < len; ++i)
+    {
+        const auto c = s[i];
+        if (c >= '0' && c <= '9') { ++digits; if (dot) ++dec; }
+        else if (c == '.' && ! dot) dot = true;
+        else break;
+    }
+    if (digits == 0) return n;
+    const auto unit = s.substring (i).trim();
+    if (unit.containsAnyOf ("0123456789:,/")) return n;   // "1:1", "1,000", "2/3": not a plain number - compared as text
+    n.ok = true; n.value = s.substring (0, i).getDoubleValue(); n.unit = unit.removeCharacters (" ").toLowerCase(); n.decimals = dec;
+    juce::ignoreUnused (numStart);
+    return n;
+}
+inline bool nearMatch (const juce::String& ours, const juce::String& theirs)
+{
+    const auto a = parseNumeric (ours), b = parseNumeric (theirs);
+    if (! a.ok || ! b.ok || a.unit != b.unit) return false;
+    const double step = std::pow (10.0, -(double) juce::jmin (a.decimals, b.decimals));
+    const double allowed = juce::jmax (0.005 * juce::jmax (std::abs (a.value), std::abs (b.value)), step);
+    return std::abs (a.value - b.value) <= allowed + 1e-12;
+}
+struct NearMatchRec { juce::String control, norm, ours, theirs; };
+struct Readback { bool pass = false; int checked = 0; juce::String why; juce::String mode; int loads = 0; std::vector<NearMatchRec> near; };   // mode / loads (14 Oct): one_load or per_control, and how many loads
 // THE ONE-LOAD READ-BACK (Kathy, 14 Oct): every control the check reads, in one probe call - "<i>:<n0>,<n1>;<j>:<n0>"
 inline juce::String multiNormsSpec (const std::map<int, juce::StringArray>& norms)
 {
@@ -131,6 +164,13 @@ inline std::map<int, std::map<juce::String, juce::String>> parseTextAt (const ju
     }
     return observed;
 }
+// the audit's list: control, norm, ours (this Mac's display), theirs (the profile's)
+inline juce::var nearMatchesVar (const std::vector<NearMatchRec>& near)
+{
+    juce::Array<juce::var> a;
+    for (const auto& n : near) { auto* o = new juce::DynamicObject(); o->setProperty ("control", n.control); o->setProperty ("norm", n.norm); o->setProperty ("ours", n.ours); o->setProperty ("theirs", n.theirs); a.add (juce::var (o)); }
+    return a;
+}
 inline Readback readback (const std::vector<Write>& writes, const std::map<juce::String, int>& names, const std::map<int, std::map<juce::String, juce::String>>& observed)
 {
     Readback r;
@@ -141,10 +181,15 @@ inline Readback readback (const std::vector<Write>& writes, const std::map<juce:
         else { r.why = "the plugin has no control named '" + w.control + "'"; return r; }
         const auto o = observed.find (idx); if (o == observed.end()) { r.why = "'" + w.control + "' was not read back"; return r; }
         const auto t = o->second.find (normKey (w.norm)); if (t == o->second.end()) { r.why = "'" + w.control + "' not read at " + normKey (w.norm); return r; }
-        if (w.expect.isNotEmpty() && textNorm (t->second) != textNorm (w.expect)) { r.why = "'" + w.control + "' at " + normKey (w.norm) + " shows '" + t->second + "', the profile says '" + w.expect + "'"; return r; }
+        if (w.expect.isNotEmpty() && textNorm (t->second) != textNorm (w.expect))
+        {
+            if (! nearMatch (t->second, w.expect)) { r.why = "'" + w.control + "' at " + normKey (w.norm) + " shows '" + t->second + "', the profile says '" + w.expect + "'"; r.near.clear(); return r; }
+            r.near.push_back ({ w.control, normKey (w.norm), t->second, w.expect });   // within tolerance: recorded for the audit
+        }
         ++r.checked;
     }
-    r.pass = r.checked > 0; if (! r.pass) r.why = "the profile writes nothing to check"; else r.why = juce::String (r.checked) + " write(s) read back as the profile says";
+    r.pass = r.checked > 0; if (! r.pass) r.why = "the profile writes nothing to check";
+    else r.why = juce::String (r.checked) + " write(s) read back as the profile says" + (r.near.empty() ? juce::String() : " (" + juce::String ((int) r.near.size()) + " within tolerance)");
     return r;
 }
 
