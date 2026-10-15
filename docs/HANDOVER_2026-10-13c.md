@@ -230,4 +230,8 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
 - This Mac (a plan, nothing loaded): 220 needs_hardware (212 UAD, 8 APB) and 341 plugins to measure (was ~504).
 - APB detection has never been seen with a unit. A network-only unit may need `--assume-apb-device`.
 
+## 15 Oct addendum 12: surround variants out of scope (wizard 6e2841b6; DMGs Test 2754e61b, Beta de414add)
+- Surround-only variants are out of scope at the scan: not loaded, not measured, not counted (WIZARD_SPEC 3o, pin WZ-SURROUND-1, 4 mutants red). They are read from the name.
+- This Mac: 86 variants (29 had been queued). New plan: 312 to measure. Today's L360 (5->5) / (6->6) compressor passes ran about 50 min each.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
