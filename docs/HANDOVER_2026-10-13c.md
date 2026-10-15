@@ -270,4 +270,9 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
 - **The silent 6** (APB MooTube, bx_yellowdrive, bx_distorange, bx_greenscreamer, bx_megasingle, The God Particle): every output reading -600 dB (digital zero) with the input present - truly silent, none near-transparent.
 - **The reason text:** wizard commit "a plugin that was not measured says what happened" (WIZARD_SPEC 3s, pin WZ-WHY-1, 3 mutants red).
 
+## 15 Oct addendum 17: getting ready (wizard 5edc75a9; DMGs Test "(next)" f001a130, Beta 05648ebb)
+- **The change** (WIZARD_SPEC 3t, pins WZ-READY-1 / WZ-SKIP-1, 7 mutants red): the PACE check is cached per bundle; getting ready has its own bar; demo checks run at twice the jobs (max 6); every skip moves the bar at once; "Measuring N plugins".
+- **The night run (11c62972)** is running from the MOUNTED Test DMG (/Volumes/EchoJay Wizard Test) - so the new Test DMG is saved beside it as "EchoJay Wizard Test (next).dmg".
+- Its Checking took 1 h 05 min (vs 2 h 15 min the night before).
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
