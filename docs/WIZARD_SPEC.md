@@ -145,6 +145,12 @@ What it says is true of the bundle as built:
 - **The name under the bar** is the most recently started plugin. A plugin whose load ended leaves the list even while its item waits (a failed read-back check waits for its map); on 14 Oct "CLA-76 (m)" stayed for two hours. Long names shrink a little rather than being cut. Pins WZ-LABEL-1, WZ-SCREEN-1.
 - **A UAD row Phase B leaves unrun** (no UAD-2 device) now reaches the bar as finished, so the % can reach the end.
 
+**3n. The hardware check at the scan (Kathy, 15 Oct).** A UAD plugin without a UAD-2 device, and a McDSP APB plugin (manufacturer McDSP, name "APB ...") without its APB unit, pass no sound.
+- **The rule:** the scan files them **needs_hardware** before anything loads, on every route that measures or reads sound: measuring, the read-back check and the signature reads. Maps, listings, held and other-category rows are unaffected. The UAD device is detected as before (EjmapUadPreflight.h). An APB unit is found by its names (APB-8 / APB-16) in the I/O registry and the hardware listing; McDSP's software is not a unit. `--assume-apb-device` covers a unit the registry cannot see.
+- **Why:** on 14 Oct only the read-back route asked (18 UAD). Another 158 UAD and 6 APB were counted "to measure"; Phase B then left the UAD unrun and measured the APB into silence for 3-8 min each.
+- **The plan's count** now holds only what will load.
+- **This Mac:** 220 needs_hardware (212 UAD, 8 APB); 341 plugins to measure (346 measurements). Pin WZ-HW-1.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

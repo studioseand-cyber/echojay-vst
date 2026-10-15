@@ -79,6 +79,7 @@
 #include "EjmapSampleRate.h"
 #include "EjmapLicence.h"
 #include "EjmapUadPreflight.h"
+#include "EjmapApbPreflight.h"
 #include "EjmapStrip.h"
 #include "EjmapCategorise.h"
 #include "EjmapLimiter.h"
@@ -10262,6 +10263,27 @@ void testWizardCategories()
                && app.contains ("getProperty (\"to_measure\", 0);") && app.contains ("g.drawFittedText (barLeft, juce::Rectangle<int> (70, 286, getWidth() - 140 - rightW, 20), juce::Justification::centredLeft, 1, 0.7f);")
                && ! app.contains ("g.drawText (barLeft,") && unrun.contains ("phaseb::rowHooks().finished (cat.name, pp.product, \"needs_device\", 0.0);"),
                "wizard WZ-SCREEN-1: the measuring % (15 -> 0%, 56 -> 50%, 97 -> 100%, never back), the shimmer only while measuring, no 'measured so far' line, the ready line from the engine, an unrun UAD row reaches the bar (read: " + juce::String ((int) read) + ")");
+    }
+    // WZ-HW-1 THE HARDWARE CHECK AT THE SCAN (Kathy, 15 Oct): UAD without a UAD-2 device and APB without its unit pass no sound - needs_hardware
+    // at the scan, not loaded, on every route that measures or reads sound (measure, read-back, signature reads); on 14 Oct only the
+    // read-back route asked (18 UAD), and 158 UAD + 6 APB were counted "to measure". McDSP's software is not a unit
+    {
+        using namespace ejmap;
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const bool read = run.contains ("inline int runWizard");   // the control
+        const auto present = apb::deviceFromLines ("  | +-o APB-16@0  <class IOUSBHostDevice, id 0x100000a1f>\n", {});
+        const auto software = apb::deviceFromLines ("/Applications/McDSP/APB Control.app\n/Library/Audio/Plug-Ins/Components/Royal_Mu_APB.component\n", "McDSP APB Control helper .app\n");
+        const auto none = apb::deviceFromLines ("IOUSBHostDevice Apple Internal Keyboard\n", "Thunderbolt Bus: none\n");
+        check (read && apb::isApbProduct ("APB Royal Mu", "McDSP") && apb::isApbProduct ("APB C-18 Compressor", "McDSP") && ! apb::isApbProduct ("6030 Ultimate Compressor", "McDSP")
+               && ! apb::isApbProduct ("APB Royal Mu", "Waves") && ! apb::isApbProduct ("Royal Q", "McDSP")
+               && present.present && ! software.present && ! none.present && none.how.contains ("no McDSP APB unit")
+               && wizroute::needsSoundHardware (wizroute::Route::measure) && wizroute::needsSoundHardware (wizroute::Route::quickCheck) && wizroute::needsSoundHardware (wizroute::Route::categorise)
+               && ! wizroute::needsSoundHardware (wizroute::Route::skipHave) && ! wizroute::needsSoundHardware (wizroute::Route::held) && ! wizroute::needsSoundHardware (wizroute::Route::sendOther) && ! wizroute::needsSoundHardware (wizroute::Route::outOfScope)
+               && run.contains ("const auto hw = wizroute::needsSoundHardware (d.route) ? hardwareStop (ir.desc) : juce::String();")
+               && run.contains ("else if (hw.isNotEmpty()) { st = \"needs_hardware\"; why = hw; }")
+               && run.contains ("&& (st == \"queued\" || st == \"quick_check\" || st == \"checking\"))   // 15 Oct: only what will load")
+               && run.contains ("if (uad::isUadProduct (dd.name, dd.manufacturerName))") && run.contains ("if (apb::isApbProduct (dd.name, dd.manufacturerName))"),
+               "wizard WZ-HW-1: UAD / APB without their hardware -> needs_hardware at the scan on the measure / read-back / signature routes; an APB unit by its registry names, McDSP's software is not one (read: " + juce::String ((int) read) + ")");
     }
     // WZ-LABEL-1 THE NAME UNDER THE BAR (Kathy, 15 Oct: "CLA-76 (m)" for two hours while the count climbed): a plugin whose load ended leaves
     // the current list even when its item waits (a failed check waits for its map); the name shown is the most recently started

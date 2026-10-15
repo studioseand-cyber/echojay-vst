@@ -14,6 +14,7 @@
 #include "EjmapCertDriver.h"
 #include "EjmapWizardProgress.h"
 #include "EjmapWizardRoute.h"
+#include "EjmapApbPreflight.h"
 #include <fstream>
 #include <atomic>
 #include <csignal>
@@ -206,6 +207,16 @@ inline int runWizard (const WizardOptions& wo)
     auto store = mapStore (opt.ledger);
     prog.setPlugins ((int) plugins.size());
     const auto bundlesAll = componentBundles();
+    // THE HARDWARE CHECK AT THE SCAN (Kathy, 15 Oct): a UAD plugin without a UAD-2 device and an APB plugin without its unit pass no sound,
+    // so they are filed needs_hardware before anything loads - on every route that measures or reads sound (measure, the read-back check,
+    // the signature reads). On 14 Oct only the read-back route asked (18 UAD); 158 more UAD and 6 APB were counted "to measure", then
+    // Phase B left the UAD unrun and measured the APB into silence for 3-8 min each
+    auto hardwareStop = [&] (const juce::PluginDescription& dd) -> juce::String
+    {
+        if (uad::isUadProduct (dd.name, dd.manufacturerName)) { const auto& u = uad::device (opt.assumeUadDevice || assumeUadDeviceFlag()); if (! u.present) return juce::String (uad::kNotConnected) + " (" + u.how + "); not loaded"; }
+        if (apb::isApbProduct (dd.name, dd.manufacturerName)) { const auto& a = apb::device (apb::assumeFlag()); if (! a.present) return juce::String (apb::kNotConnected) + " (" + a.how + "); not loaded"; }
+        return {};
+    };
     auto serialOf = [&] (const juce::PluginDescription& d) { jobs::LaneInputs in; in.uad = uad::isUadProduct (d.name, d.manufacturerName); in.pace = paceHeld (d, bundlesAll, in.paceWhy); return jobs::laneFor (in) == jobs::Lane::serial; };
     // NO PLUGIN LEFT BEHIND (12 Oct, EjmapWizardRoute.h): (a) the database first - nothing it settles is loaded; (b) the server's category;
     // (c) the name rules; (d) out of scope by type / words, not loaded; (e) only what is left gets EJ Map's signature reads
@@ -290,7 +301,9 @@ inline int runWizard (const WizardOptions& wo)
         row->setProperty ("pace", pw ? paceWhy : juce::String());
         const auto ls = wizroute::loadsNothing (d) ? wizroute::LicenceSkip::none
                       : wizroute::licenceSkip (licenceMem.count (wizroute::pluginId (uid, ver).toLowerCase()) > 0, pw, pw && ! paceSupport && ilokUsb(), paceSupport);
+        const auto hw = wizroute::needsSoundHardware (d.route) ? hardwareStop (ir.desc) : juce::String();
         if (ls != wizroute::LicenceSkip::none) { st = "needs_licence"; why = wizroute::licenceSkipWhy (ls); row->setProperty ("licence_skip", ls == wizroute::LicenceSkip::remembered ? "remembered" : "pace_no_ilok"); }
+        else if (hw.isNotEmpty()) { st = "needs_hardware"; why = hw; }   // 15 Oct: UAD without a UAD-2 device, APB without its unit - on every route that measures or reads sound, not loaded
         else switch (d.route)
         {
             case wizroute::Route::skipHave: st = "ready"; break;
@@ -321,7 +334,7 @@ inline int runWizard (const WizardOptions& wo)
             case wizroute::Route::needsCategory: st = "needs_category"; break;
         }
         row->setProperty ("state", st); row->setProperty ("why", why); rows.add (juce::var (row));
-        if (wo.plan && (d.route == wizroute::Route::measure || d.route == wizroute::Route::quickCheck) && st != "ready_from_version")   // a cached passing read-back measures nothing
+        if (wo.plan && (d.route == wizroute::Route::measure || d.route == wizroute::Route::quickCheck) && (st == "queued" || st == "quick_check" || st == "checking"))   // 15 Oct: only what will load - not needs_hardware / needs_licence   // a cached passing read-back measures nothing
         {   // THE PLAN's estimate (13 Oct): the same items and per-category seconds the scan-done screen uses (a quick check counted as a measure)
             bool demoAdded = false;   // 14 Oct: its demo check, in the group of its first pass
             for (const auto& pb : d.passes.isEmpty() ? wizroute::phaseBFor (d.category) : d.passes)

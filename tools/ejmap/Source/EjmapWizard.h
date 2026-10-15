@@ -344,7 +344,7 @@ inline juce::String summaryLine (const std::map<juce::String, int>& n, bool sent
     if (get ("queued")) parts.add (juce::String (get ("queued")) + " to measure");
     if (get ("measuring")) parts.add (juce::String (get ("measuring")) + " measuring");
     if (get ("needs_licence")) parts.add (plural (get ("needs_licence"), "needs a licence", "need a licence"));
-    if (get ("needs_hardware")) parts.add (plural (get ("needs_hardware"), "needs its hardware (UAD) connected", "need their hardware (UAD) connected"));
+    if (get ("needs_hardware")) parts.add (plural (get ("needs_hardware"), "needs its hardware (UAD / APB) connected", "need their hardware (UAD / APB) connected"));
     if (get ("silent")) parts.add (plural (get ("silent"), "passes no sound", "pass no sound"));
     if (get ("crashed")) parts.add (plural (get ("crashed"), "crashed (we moved on)", "crashed (we moved on)"));
     if (get ("wont_load")) parts.add (plural (get ("wont_load"), "won't load on this Mac", "won't load on this Mac"));
