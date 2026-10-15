@@ -94,6 +94,8 @@
 #include "EjmapWizardRun.h"   // 13 Oct: the scan's stop (mapForWizard, wizardStop)
 #include <sstream>
 #include <thread>
+#include <atomic>
+#include <sys/wait.h>
 #include "EjmapCertReview.h"
 #include "EjmapSaturation.h"
 #include "EjmapReverbDelay.h"
@@ -10361,7 +10363,7 @@ void testWizardCategories()
         using namespace ejmap::wizapp;
         const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
         check (pausedTitle (43) == "Paused at 43%" && percentDoneWords (43) == "43% done" && ! tellsATime (pausedTitle (43))
-               && app.contains ("wizapp::percentDoneWords (shownPct) + \". \" + ch.line") && app.contains ("title = wizapp::pausedTitle (pct);") && ! app.contains ("(\"Stop measuring for now?\", soFar"),
+               && app.contains ("wizapp::percentDoneWords (shownPct) + \". \" + ch.line") && app.contains ("title = resumeTo == Screen::scan ? juce::String (\"Paused\") : wizapp::pausedTitle (pct);") && ! app.contains ("(\"Stop measuring for now?\", soFar"),
                "wizard WZ-PAUSE-1: 'Paused at 43%' and '43% done.' - the bar's number, not 'N measured so far'");
     }
     // WZ-SERVE-3 THE WARM PROBE IN CHECKING (Kathy, 15 Oct): the read-back checks and the signature reads ask for it on their own thread
@@ -10387,6 +10389,94 @@ void testWizardCategories()
         check (r1.out.startsWith ("served ") && r2.pid == r1.pid && other.out == "oneshot\n" && pidAfter == 0 && off.out == "oneshot\n"
                && run.contains ("{ probeserve::ScopedServe warmReadBacks (opt.probeServe);") && run.contains ("{ probeserve::ScopedServe warmSignatures (opt.probeServe);"),
                "wizard WZ-SERVE-3: the warm probe on the Checking thread only (served twice, another thread one-shot), closed when the section ends");
+    }
+    // WZ-GUEST-1 A BACKGROUND GUEST (Kathy, 15 Oct: people use the Mac while it runs): every wizard process lowers itself - nice 10 and the utility
+    // disk policy; the engine sets EJ_WIZARD_BACKGROUND for its tree, each ejmap child and each probe applies it at start
+    {
+        const pid_t pid = fork();
+        if (pid == 0) { ejmap::jobs::beBackgroundGuest(); errno = 0; const int nice = getpriority (PRIO_PROCESS, 0); const int io = getiopolicy_np (IOPOL_TYPE_DISK, IOPOL_SCOPE_PROCESS); _exit (nice == ejmap::jobs::kGuestNice && io == IOPOL_UTILITY ? 0 : 1); }
+        int st = 0; waitpid (pid, &st, 0);
+        unsetenv ("EJ_WIZARD_BACKGROUND"); const bool off = ! ejmap::jobs::guestWanted(); setenv ("EJ_WIZARD_BACKGROUND", "1", 1); const bool on = ejmap::jobs::guestWanted(); unsetenv ("EJ_WIZARD_BACKGROUND");
+        const auto mainCpp = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString();
+        const auto probe = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/au_instantiate_probe.cpp").loadFileAsString();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (pid > 0 && WIFEXITED (st) && WEXITSTATUS (st) == 0 && off && on
+               && mainCpp.contains ("if (ejmap::jobs::guestWanted()) ejmap::jobs::beBackgroundGuest();")
+               && probe.contains ("setpriority (PRIO_PROCESS, 0, 10); setiopolicy_np (IOPOL_TYPE_DISK, IOPOL_SCOPE_PROCESS, IOPOL_UTILITY);")
+               && run.contains ("setenv (\"EJ_WIZARD_BACKGROUND\", \"1\", 1); jobs::beBackgroundGuest();"),
+               "wizard WZ-GUEST-1: nice 10 + utility disk I/O in a process that asks; the engine sets it for its tree; ejmap children and the probe apply it");
+    }
+    // WZ-ACTIVE-1 THE USER IS ACTIVE (Kathy, 15 Oct): input within 3 min -> at most 2 jobs; idle -> the full count; the HID idle time read from
+    // ioreg; every pool of the wizard (maps, demo checks, Phase B) reads the cap before each start
+    {
+        using namespace ejmap::jobs;
+        const auto idle = hidIdleSecondsFrom ("  |   \"HIDIdleTime\" = 3492712833\n"), none = hidIdleSecondsFrom ("nothing here");
+        auto peak = [] (std::function<int()> cap) {
+            Pool<int, int, int> pool; std::atomic<int> now { 0 }, top { 0 };
+            pool.laneOf = [] (const int&) { return Lane::parallel; };
+            pool.prepare = [] (const int& i) -> std::optional<int> { return i; };
+            pool.run = [&] (const int&) { const int n = ++now; int t = top.load(); while (n > t && ! top.compare_exchange_weak (t, n)) {} std::this_thread::sleep_for (std::chrono::milliseconds (80)); --now; return 0; };
+            pool.finish = [] (const int&, int&, int&) {}; pool.discard = [] (const int&, int&) {};
+            if (cap) pool.jobsNow = cap;
+            pool (std::vector<int> { 1, 2, 3, 4, 5, 6, 7, 8 }, 4); return top.load(); };
+        const int capped = peak ([] { return 2; }), free4 = peak ({});
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (std::abs (idle - 3.492712833) < 1e-6 && none < 0.0 && jobsWhileActive (4, 30.0) == 2 && jobsWhileActive (4, 600.0) == 4 && jobsWhileActive (1, 30.0) == 1 && jobsWhileActive (4, -1.0) == 4
+               && capped == 2 && free4 == 4
+               && run.contains ("phaseb::jobsCap() = [] (int base) { return jobs::jobsNowForUser (base); };") && run.contains ("pool.jobsNow = [jobs] { return jobs::jobsNowForUser (juce::jmax (1, jobs)); };")
+               && run.contains ("[&] { return jobs::jobsNowForUser (juce::jmax (1, opt.jobs)); });") && drv.contains ("if (phaseb::jobsCap()) pool.jobsNow = [&] { return phaseb::jobsCap() (juce::jmax (1, opt.jobs)); };"),
+               "wizard WZ-ACTIVE-1: HID idle parsed; active -> 2 jobs, idle -> the full count; the pool honours the cap (peak " + juce::String (capped) + " vs " + juce::String (free4) + ")");
+    }
+    // WZ-RETRY-1 A TIMEOUT UNDER LOAD IS NEVER A CRASH ON THE FIRST TRY (Kathy, 15 Oct; 14 Oct's 6 map "crashes" were timeouts at 4 at a time,
+    // 9 of 11 mapped fine alone the next morning): a map that timed out runs again ALONE after the pool (twice the bound) and only that is
+    // filed; a Phase B row that timed out runs again alone at the end of the pass (retryTimeoutsAlone, the wizard's default)
+    {
+        using namespace ejmap::cert;
+        std::ostringstream term; const auto pj = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejretry_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)) + ".json");
+        ejmap::wizprog::Tracker tr (pj, term, false, 2);
+        std::vector<juce::PluginDescription> ds; for (auto n : { "A", "B", "C" }) { juce::PluginDescription d; d.name = n; d.fileOrIdentifier = juce::String ("AudioUnit:Effects/aufx,") + n + ",Test"; d.uniqueId = 1; ds.push_back (d); }
+        std::vector<std::pair<juce::String, ChildResult::Kind>> filed; std::vector<juce::String> order; bool poolOver = false; int poolCalls = 0;
+        auto res = [] (ChildResult::Kind k) { ChildResult r; r.kind = k; r.code = 0; r.out = "0\tGain\t\t2147483647\t0\t1\t0\n"; return r; };
+        wizardStop() = 0;
+        mapForWizard (ds, 2, [&] (const juce::StringArray& a) { ++poolCalls; order.push_back ("pool " + a[1]); return res (a[1] == "C" ? ChildResult::Kind::exited : ChildResult::Kind::timedOut); },
+                      {}, tr, juce::File ("/nonexistent/probe"), [&] (const juce::PluginDescription& d, ChildResult& r) { filed.push_back ({ d.name, r.kind }); if (d.name != "C") poolOver = true; },
+                      [&] (const juce::StringArray& a) { order.push_back ("alone " + a[1]); return res (a[1] == "A" ? ChildResult::Kind::exited : ChildResult::Kind::timedOut); });
+        pj.deleteFile();
+        auto kindOf = [&] (const char* n) { for (auto& [p, k] : filed) if (p == n) return (int) k; return -1; };
+        const int lastPool = [&] { int k = -1; for (int i = 0; i < (int) order.size(); ++i) if (order[(size_t) i].startsWith ("pool")) k = i; return k; }();
+        const int firstAlone = [&] { for (int i = 0; i < (int) order.size(); ++i) if (order[(size_t) i].startsWith ("alone")) return i; return -1; }();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const auto mainCpp = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString();
+        check (filed.size() == 3 && kindOf ("A") == (int) ChildResult::Kind::exited && kindOf ("B") == (int) ChildResult::Kind::timedOut && kindOf ("C") == (int) ChildResult::Kind::exited
+               && poolCalls == 3 && firstAlone > lastPool && poolOver
+               && run.contains ("return runChild (a, 2 * loadTimeoutFor (a[2])); }")
+               && drv.contains ("if (opt.retryTimeoutsAlone && ! secondPass && res.r.kind == ChildResult::Kind::timedOut)") && drv.contains ("pool (retryAlone, 1);")
+               && mainCpp.contains ("w.opt.retryTimeoutsAlone = true;"),
+               "wizard WZ-RETRY-1: a map timing out in the pool is retried alone after it (A: ok the second time; B: filed only after timing out alone); Phase B rows likewise");
+    }
+    // WZ-DAW-1 A DAW OPEN -> PAUSE BY ITSELF (Kathy, 15 Oct): the DAW from a running process's .app, never touched; "Paused while Logic is open - it
+    // carries on by itself when you close it."; only a pause the DAW caused carries on by itself, after 10 s with no DAW; never started while one is open
+    {
+        using namespace ejmap::wizapp;
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        check (dawFromAppPath ("/Applications/Logic Pro.app/Contents/MacOS/Logic Pro") == "Logic" && dawFromAppPath ("/Applications/Logic Pro X.app/Contents/MacOS/Logic Pro X") == "Logic"
+               && dawFromAppPath ("/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live") == "Ableton Live" && dawFromAppPath ("/Applications/Pro Tools.app/Contents/MacOS/Pro Tools") == "Pro Tools"
+               && dawFromAppPath ("/Applications/Cubase 13.app/Contents/MacOS/Cubase 13") == "Cubase" && dawFromAppPath ("/Applications/Studio One 6.app/Contents/MacOS/Studio One 6") == "Studio One"
+               && dawFromAppPath ("/Applications/REAPER.app/Contents/MacOS/REAPER") == "Reaper" && dawFromAppPath ("/Applications/FL Studio 2024.app/Contents/MacOS/OsxFL") == "FL Studio"
+               && dawFromAppPath ("/Applications/Bitwig Studio.app/Contents/MacOS/BitwigStudio") == "Bitwig" && dawFromAppPath ("/Applications/Digital Performer 11.app/Contents/MacOS/Digital Performer") == "Digital Performer"
+               && dawFromAppPath ("/Applications/LUNA.app/Contents/MacOS/LUNA") == "LUNA"
+               && dawFromAppPath ("/Applications/Logic Pro.app/Contents/XPCServices/Helper.xpc/Contents/MacOS/Helper") == "Logic"
+               && dawFromAppPath ("/Applications/Safari.app/Contents/MacOS/Safari").isEmpty() && dawFromAppPath ("/Applications/Livestream.app/Contents/MacOS/Livestream").isEmpty()
+               && dawFromAppPath ("/usr/local/bin/reaper").isEmpty() && dawFromAppPath ("/Applications/Logical.app/Contents/MacOS/Logical").isEmpty()
+               && dawPausedText ("Logic") == "Paused while Logic is open - it carries on by itself when you close it." && ! tellsATime (dawPausedText ("Logic"))
+               && app.contains ("if (dawPaused.isEmpty() && (screen == Screen::scan || screen == Screen::measuring) && engine.running() && ! pausing && ! finishing && daw.isNotEmpty())")
+               && app.contains ("if (screen != Screen::paused || dawPaused.isEmpty()) return;") && app.contains ("if (now - dawQuietSince >= wizapp::kDawQuietS * 1000.0)")
+               && app.contains ("text = dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused) : wizapp::pausedText (kMode, lastSendKept);")
+               && app.contains ("if (const auto daw = openDaw(); daw.isNotEmpty())   // 15 Oct: a DAW is open - wait, do not start")
+               && app.contains ("proc_pidpath (pids[(size_t) i], path, sizeof (path))") && ! app.contains ("kill (pids"),
+               "wizard WZ-DAW-1: the ten DAWs by their .app (helpers too; Safari / Livestream / Logical not); the calm line; pause by itself, carry on by itself only after its own pause and 10 s quiet; never started with a DAW open; read only");
     }
     // WZ-LABEL-1 THE NAME UNDER THE BAR (Kathy, 15 Oct: "CLA-76 (m)" for two hours while the count climbed): a plugin whose load ended leaves
     // the current list even when its item waits (a failed check waits for its map); the name shown is the most recently started

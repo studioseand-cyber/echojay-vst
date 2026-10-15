@@ -19,6 +19,7 @@
   --checkpoint-minutes M: the quiet checkpoint's interval (default 60).
   --snapshots: every screen (and the bars at each quarter) saved as a PNG of the window's content.
 */
+#include <libproc.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_cryptography/juce_cryptography.h>
 #include "EchoJayLogo.h"
@@ -88,6 +89,16 @@ inline double availableMemoryBytes()
     vm_statistics64_data_t st {}; mach_msg_type_number_t cnt = HOST_VM_INFO64_COUNT; vm_size_t page = 0;
     if (host_page_size (mach_host_self(), &page) != KERN_SUCCESS || host_statistics64 (mach_host_self(), HOST_VM_INFO64, (host_info64_t) &st, &cnt) != KERN_SUCCESS) return -1.0;
     return (double) (st.free_count + st.inactive_count + st.purgeable_count) * (double) page;
+}
+// 15 Oct (sharing the Mac): the first open DAW, from every running process's executable path (read only - the DAW is never touched)
+juce::String openDaw()
+{
+    int n = proc_listallpids (nullptr, 0); if (n <= 0) return {};
+    std::vector<pid_t> pids ((size_t) n + 32); n = proc_listallpids (pids.data(), (int) (pids.size() * sizeof (pid_t)));
+    char path[PROC_PIDPATHINFO_MAXSIZE];
+    for (int i = 0; i < n; ++i) if (pids[(size_t) i] > 0 && proc_pidpath (pids[(size_t) i], path, sizeof (path)) > 0)
+        if (const auto d = ejmap::wizapp::dawFromAppPath (juce::String::fromUTF8 (path)); d.isNotEmpty()) return d;
+    return {};
 }
 juce::File homeChild (const juce::String& p) { return juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile (p); }
 
@@ -325,6 +336,7 @@ private:
     juce::Image logo; juce::TextButton primary, secondary, resetTestButton { "Reset test" }; juce::TextEditor email, password; juce::ToggleButton agree; bool diskRefused = false; juce::String device; juce::File savedFile; juce::var eligibility;
     const juce::Colour accent { 0xff3d5afe }, ink { 0xff141824 };
     Screen screen = Screen::welcome; juce::String title, text, barLeft, barRight, bigCode, pauseNote; bool showBar = false; double barValue = 0.0;
+    juce::String dawPaused; Screen resumeTo = Screen::measuring; double dawQuietSince = -1.0, lastDawCheck = 0.0;   // 15 Oct: a pause the DAW caused, and where it carries on
     int shownPct = 0; juce::int64 readyStamp = 0;   // 15 Oct: the % shown (never backwards); wizard_state.json's time, for the ready line
     struct Shimmer : juce::Timer { std::function<void()> tick; void timerCallback() override { if (tick) tick(); } } shimmer;
     void refreshReadyLine()
@@ -364,6 +376,9 @@ private:
         if (const auto dv = wizapp::diskVerdict (wizapp::freeBytes (cfg.work), true); ! dv.ok)   // 13 Oct: never start below the floor
         { const auto c = wizapp::diskRefusedCopy (dv.words); title = c.title; text = c.text; showBar = false; primary.setButtonText (c.primary); primary.setVisible (true); diskRefused = true;
           logLine ("refused to start: " + dv.words); resized(); repaint(); return; }
+        if (const auto daw = openDaw(); daw.isNotEmpty())   // 15 Oct: a DAW is open - wait, do not start (it carries on by itself when it closes)
+        { dawPaused = daw; resumeTo = measure ? Screen::measuring : Screen::scan; logLine ("not started: " + daw + " is open");
+          juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<WizardComponent> (this)] { if (safe != nullptr) safe->show (Screen::paused); }); return; }
         engineDir().createDirectory(); engineDir().getChildFile ("progress.json").deleteFile();
         engineDir().getChildFile ("checkpoint.json").deleteFile();   // 13 Oct: the last launch's checkpoint was handled then (or is in the outbox)   // the last run's "Done 100%" must not flash on the new screen
         if (! engine.start (cfg.engine, engineArgs (measure), cfg.work.getChildFile ("engine_output.txt"), measure ? "measure" : "scan"))
@@ -420,7 +435,8 @@ private:
             case Screen::paused:
                 {   // 15 Oct: the bar's % (this session's, else the stopped engine's own), never a count
                     const int pct = shownPct > 0 ? shownPct : wizapp::measuringPercent (juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString()), 0);
-                    title = wizapp::pausedTitle (pct); text = wizapp::pausedText (kMode, lastSendKept);
+                    title = resumeTo == Screen::scan ? juce::String ("Paused") : wizapp::pausedTitle (pct);
+                    text = dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused) : wizapp::pausedText (kMode, lastSendKept);   // 15 Oct: the DAW's own line
                 }
                 primary.setButtonText ("Carry on"); primary.setVisible (true); secondary.setButtonText ("Quit"); secondary.setVisible (true); break;
             case Screen::upload:
@@ -492,7 +508,7 @@ private:
             }
             case Screen::alreadyDone: case Screen::reward: case Screen::noCode: case Screen::betaSaved: juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
             case Screen::measuring: pauseNow ("the Pause button", false); break;
-            case Screen::paused: logLine ("carry on"); show (Screen::measuring); break;
+            case Screen::paused: logLine ("carry on"); dawPaused.clear(); dawQuietSince = -1.0; show (resumeTo); break;   // 15 Oct: a paused scan carries on scanning
             default: break;
         }
     }
@@ -525,6 +541,7 @@ private:
     void pauseNow (const juce::String& from, bool quitAfter)
     {   // PAUSE (13 Oct): the engine's clean stop - in-flight plugins discarded, a checkpoint packed - then the Paused screen (or quit)
         if (pausing || finishing || ! engine.running()) { if (quitAfter && ! engine.running()) juce::JUCEApplication::getInstance()->quit(); return; }
+        if (dawPaused.isEmpty()) resumeTo = screen == Screen::scan ? Screen::scan : Screen::measuring;
         pausing = true; quitAfterPause = quitAfter; engine.pause(); primary.setEnabled (false); secondary.setEnabled (false);
         barLeft = "Pausing - saving what's done"; barRight = {}; pauseNote = wizapp::stoppedNote();
         logLine ("pause (" + from + "): " + soFar + "; engine stopped (SIGINT), a checkpoint follows"); repaint();
@@ -602,12 +619,26 @@ private:
     void timerCallback() override
     {
         if (appInterrupted() != 0 && ! quitting) { appInterrupted() = 0; logLine ("Ctrl-C: a pause (no question asked)"); if (requestQuit (false)) juce::JUCEApplication::getInstance()->quit(); }
+        if (const double now = juce::Time::getMillisecondCounterHiRes(); now - lastDawCheck >= 2000.0) { lastDawCheck = now; dawWatch (openDaw()); }
         if (screen == Screen::scan || screen == Screen::measuring) pollEngine();
         if (screen == Screen::upload) tickUpload();
         if (cfg.autoMode && ! quitting) autoAdvance();
         if (cfg.autoResetTest && resetTestButton.isVisible() && ++resetTicks == 6)
         {   cfg.autoResetTest = false; snap ("before_reset"); resetTestNow(); snap ("after_reset");
             juce::Timer::callAfterDelay (1500, [] { juce::JUCEApplication::getInstance()->quit(); }); }
+    }
+    // SHARING THE MAC (Kathy, 15 Oct): a DAW opens while the wizard scans or measures -> the same clean pause as the button, with the DAW's
+    // name; only a pause the DAW caused carries on by itself, once no DAW has been open for kDawQuietS. The user's own pause never does
+    void dawWatch (const juce::String& daw)
+    {
+        if (dawPaused.isEmpty() && (screen == Screen::scan || screen == Screen::measuring) && engine.running() && ! pausing && ! finishing && daw.isNotEmpty())
+        { dawPaused = daw; resumeTo = screen; logLine ("paused by itself: " + daw + " is open"); pauseNow (daw + " is open", false); return; }
+        if (screen != Screen::paused || dawPaused.isEmpty()) return;
+        if (daw.isNotEmpty()) { dawQuietSince = -1.0; if (daw != dawPaused) { dawPaused = daw; text = wizapp::dawPausedText (daw); repaint(); } return; }
+        const double now = juce::Time::getMillisecondCounterHiRes();
+        if (dawQuietSince < 0.0) { dawQuietSince = now; return; }
+        if (now - dawQuietSince >= wizapp::kDawQuietS * 1000.0)
+        { logLine ("carrying on by itself: " + dawPaused + " is closed"); dawPaused.clear(); dawQuietSince = -1.0; show (resumeTo); }
     }
     void pollEngine()
     {

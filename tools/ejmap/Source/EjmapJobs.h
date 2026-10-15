@@ -14,6 +14,7 @@
     (its child was stopped with it) - the row runs again on the resume, as a half-done product always has.
 */
 #pragma once
+#include <sys/resource.h>
 
 #include <juce_core/juce_core.h>
 #include <mach/mach.h>
@@ -83,6 +84,7 @@ struct Pool
     std::function<void (const Item&, Work&)> discard;
     std::function<bool()> stopped = [] { return false; };
     std::function<bool()> lowMemory = [] { return false; };
+    std::function<int()> jobsNow;   // 15 Oct (sharing the Mac): a cap read before each start - never above the run's own count; unset = the count
 
     void operator() (const std::vector<Item>& items, int jobs)
     {
@@ -100,7 +102,7 @@ struct Pool
                 if (stopped()) discard (items[(*it)->item], (*it)->work); else finish (items[(*it)->item], (*it)->work, *(*it)->result);
                 it = live.erase (it);
             }
-            Sched s; s.jobs = jobs; s.running = (int) live.size(); s.stop = stopped(); s.memLow = lowMemory();
+            Sched s; s.jobs = jobsNow ? juce::jlimit (1, juce::jmax (1, jobs), jobsNow()) : jobs; s.running = (int) live.size(); s.stop = stopped(); s.memLow = lowMemory();
             for (const auto& r : live) if (r->lane == Lane::serial) s.serialRunning = true;
             const auto act = next (s, head < items.size() ? std::optional<Lane> (laneOf (items[head])) : std::nullopt);
             if (act == Act::done) break;
@@ -116,4 +118,41 @@ struct Pool
     }
 };
 
+// SHARING THE MAC (Kathy, 15 Oct): people use the Mac while the wizard runs.
+// (1) A BACKGROUND GUEST: every wizard process lowers itself at start (EJ_WIZARD_BACKGROUND=1, set by the engine for its process tree):
+//     nice 10 and the "utility" disk policy, so the user's apps always come first. Not macOS's full background band (PRIO_DARWIN_BG):
+//     that confines a process to the efficiency cores (2 on an M1 Pro) even when the Mac is idle. The bridged plugins' host
+//     (AUHostingService, started by launchd) keeps its own priority - nothing here can lower it.
+inline constexpr int kGuestNice = 10;
+inline bool guestWanted() { const char* v = std::getenv ("EJ_WIZARD_BACKGROUND"); return v != nullptr && juce::String (v) == "1"; }
+inline void beBackgroundGuest()
+{
+    setpriority (PRIO_PROCESS, 0, kGuestNice);
+    setiopolicy_np (IOPOL_TYPE_DISK, IOPOL_SCOPE_PROCESS, IOPOL_UTILITY);
+}
+// (3) THE USER IS ACTIVE: a key or the mouse within kActiveS -> at most kActiveJobs at a time; idle -> the run's full count. The idle time
+//     is the HID system's own (ioreg IOHIDSystem HIDIdleTime, nanoseconds), read at most every 15 s; unreadable = idle (the full count)
+inline constexpr double kActiveS = 180.0;
+inline constexpr int kActiveJobs = 2;
+inline double hidIdleSecondsFrom (const juce::String& ioregOut)
+{
+    for (const auto& line : juce::StringArray::fromLines (ioregOut))
+        if (line.contains ("\"HIDIdleTime\"")) { const auto v = line.fromLastOccurrenceOf ("=", false, false).trim(); if (v.containsOnly ("0123456789") && v.isNotEmpty()) return v.getLargeIntValue() / 1.0e9; }
+    return -1.0;
+}
+inline int jobsWhileActive (int base, double idleS) { return idleS >= 0.0 && idleS < kActiveS ? juce::jmin (base, kActiveJobs) : base; }
+inline double userIdleSeconds()
+{
+    static std::mutex m; static double cached = -1.0, at = -1.0e9;
+    std::lock_guard<std::mutex> g (m);
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    if (now - at >= 15000.0)
+    {
+        at = now; juce::ChildProcess p;
+        if (p.start (juce::StringArray { "/usr/sbin/ioreg", "-c", "IOHIDSystem", "-d", "4", "-r" })) { const auto out = p.readAllProcessOutput(); p.waitForProcessToFinish (5000); cached = hidIdleSecondsFrom (out); }
+        else cached = -1.0;
+    }
+    return cached;
+}
+inline int jobsNowForUser (int base) { return jobsWhileActive (base, userIdleSeconds()); }
 } // namespace ejmap::jobs

@@ -273,6 +273,25 @@ inline int measuringPercent (const juce::var& progress, int lastShown)
 inline juce::String percentWords (int pct) { return juce::String (pct) + "%"; }
 // THE PAUSE SAYS THE BAR'S % (Kathy, 15 Oct: the pause said "25 measured so far" while the checkpoint said 107 of 509 with a result - two
 // different counts): "Paused at 43%" on the screen, "43% done." in the close question - the same number as the bar, never a count
+// SHARING THE MAC (Kathy, 15 Oct): a DAW open -> the wizard pauses by itself and carries on by itself when it closes. The DAW is read from a
+// running process's executable path - the .app it belongs to - and never touched. Names as the user knows them
+inline juce::String dawFromAppPath (const juce::String& execPath)
+{
+    const auto app = execPath.upToFirstOccurrenceOf (".app/", false, true).fromLastOccurrenceOf ("/", false, false).trim();   // the outermost .app
+    if (app.isEmpty() || ! execPath.containsIgnoreCase (".app/")) return {};
+    struct D { const char* prefix; const char* name; };
+    static const D k[] { { "Logic Pro", "Logic" }, { "Pro Tools", "Pro Tools" }, { "Ableton Live", "Ableton Live" }, { "Live", "Ableton Live" }, { "Cubase", "Cubase" },
+                         { "Studio One", "Studio One" }, { "REAPER", "Reaper" }, { "FL Studio", "FL Studio" }, { "Bitwig Studio", "Bitwig" },
+                         { "Digital Performer", "Digital Performer" }, { "LUNA", "LUNA" } };
+    for (const auto& d : k)
+    {
+        const juce::String p (d.prefix);
+        if (p == "Live" ? app == "Live" : (app.startsWithIgnoreCase (p) && (app.length() == p.length() || ! juce::CharacterFunctions::isLetter (app[p.length()])))) return d.name;
+    }
+    return {};
+}
+inline juce::String dawPausedText (const juce::String& daw) { return "Paused while " + daw + " is open - it carries on by itself when you close it."; }
+inline constexpr double kDawQuietS = 10.0;   // closed for this long before carrying on (a DAW restarting is not a close)
 inline juce::String pausedTitle (int pct) { return "Paused at " + percentWords (pct); }
 inline juce::String percentDoneWords (int pct) { return percentWords (pct) + " done"; }
 // the "it's working" shimmer (Kathy, 15 Oct): only while measuring runs - never paused, never while pausing or finishing

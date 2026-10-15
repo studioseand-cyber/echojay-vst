@@ -1752,6 +1752,7 @@ struct SweepOptions
     std::set<int> onlyControls;                      // --only-controls i,j,k (item E, 7 Oct): the mode's fixture holds these controls alone (a strip's section)
     juce::String purpose;                            // --cert-limiter-comp --purpose contribution (the wizard): marks the records a contribution
     int jobs = 1;                                    // --jobs N (10 Oct): Phase B rows N at a time (EjmapJobs.h); 1 = the serial run
+    bool retryTimeoutsAlone = false;                 // 15 Oct (sharing the Mac): a row that timed out is run again ALONE at the end of the pass before it is filed timed_out (the wizard's default)
     bool probeServe = false;                         // 14 Oct (the warm probe): Phase B rows run their probe calls in ONE probe process each, a new instance per call (runServed); the wizard's default, --no-probe-serve turns it off
     std::shared_ptr<Subject> sectionSubject;         // item E (7 Oct): a subject the CALLER supplies (a strip's compressor section) - the sweep takes it instead of the worklist's
     juce::String stripWritesJson;                    // --strip-writes <json> (7 Oct ruling): the section's engage + the other dynamics sections' off writes, for the record and profile
@@ -6938,8 +6939,18 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     };
     pool.run = [] (const PWork& w) { PResult res; res.startedAt = juce::Time::getCurrentTime(); const auto t1 = juce::Time::getMillisecondCounterHiRes(); res.r = runChild (w.args, (int) (w.cat->guardS * 1000.0)); res.seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0; return res; };
     pool.discard = [&] (const PItem& item, PWork& w) { w.tmp.deleteRecursively(); say ("  " + item.cat->name + ": " + item.pp.product + " - stopped with the run: no row, it runs again on the resume"); };
+    // 15 Oct (sharing the Mac, Kathy: "a timeout under load must never file a plugin as crashed on the first try"): with retryTimeoutsAlone a
+    // row whose child timed out is not filed - its folder goes as for a stop - and it runs again ALONE once the pass is over; only a
+    // second timeout is filed timed_out
+    std::vector<PItem> retryAlone; bool secondPass = false;
     pool.finish = [&] (const PItem& item, PWork& w, PResult& res)
     {
+        if (opt.retryTimeoutsAlone && ! secondPass && res.r.kind == ChildResult::Kind::timedOut)
+        {
+            w.tmp.deleteRecursively(); retryAlone.push_back (item);
+            say ("  " + item.cat->name + ": " + item.pp.product + " - timed out (" + juce::String (res.seconds, 0) + " s) with other work running: not filed, it runs again alone at the end of the pass");
+            return;
+        }
         const auto& cat = *item.cat; const auto& pp = item.pp; const auto& catDir = w.catDir; const auto& tmp = w.tmp; const auto& gate = w.gate; auto row = w.row;
         auto& c = prog.cats[cat.name]; const auto& r = res.r; const double seconds = res.seconds; const int reused = w.reused; juce::String outcome;
         {
@@ -7035,7 +7046,14 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             say (progressLine (prog, cat.name, pp.product, outcome, seconds));
             if (phaseb::rowHooks().finished) phaseb::rowHooks().finished (cat.name, pp.product, outcome, seconds);
     };
+    if (phaseb::jobsCap()) pool.jobsNow = [&] { return phaseb::jobsCap() (juce::jmax (1, opt.jobs)); };   // 15 Oct: fewer jobs while the user is active
     pool (items, juce::jmax (1, opt.jobs));
+    if (! retryAlone.empty() && phasebStop() == 0 && ! (phaseb::extraStop() && phaseb::extraStop()()))
+    {   // the retry: each timed-out row alone (one job), with nothing else running
+        say ("PHASEB: " + juce::String ((int) retryAlone.size()) + " row(s) that timed out with other work running - run again alone");
+        secondPass = true; pool.jobsNow = {};
+        pool (retryAlone, 1);
+    }
     std::signal (SIGINT, SIG_DFL); std::signal (SIGTERM, SIG_DFL);
     if (phasebStop() != 0 || (phaseb::extraStop() && phaseb::extraStop()())) { saveProgress ({}); say ("PHASEB: stopped (07:00 / Ctrl-C / the caller's stop): no new child started; the rows that were running run again on the resume"); return 130; }
     saveProgress ({});

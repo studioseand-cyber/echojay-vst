@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <csignal>
+#include <sys/resource.h>
 #include <iostream>
 #include <string>
 
@@ -480,6 +481,8 @@ static int serveLoop (int argc, char** argv)
 
 int main (int argc, char** argv)
 {
+    // 15 Oct (sharing the Mac): a wizard's probe is a background guest - nice 10 and the utility disk policy (EjmapJobs.h beBackgroundGuest)
+    if (const char* g = std::getenv ("EJ_WIZARD_BACKGROUND"); g != nullptr && std::strcmp (g, "1") == 0) { setpriority (PRIO_PROCESS, 0, 10); setiopolicy_np (IOPOL_TYPE_DISK, IOPOL_SCOPE_PROCESS, IOPOL_UTILITY); }
     juce::ScopedJuceInitialiser_GUI juceInit;
     if (argc >= 2 && juce::String (argv[1]) == "--pitch-selftest") { const int rc = ejprobe::runPitchSelfTest(); std::fflush (stdout); std::_Exit (rc); }
     if (argc >= 2 && juce::String (argv[1]) == "--serve") return serveLoop (argc, argv);

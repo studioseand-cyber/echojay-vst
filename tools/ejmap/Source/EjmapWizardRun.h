@@ -104,9 +104,13 @@ inline juce::String scanStoppedWords (int checked, int total)
 }
 // the mapping step (Checking): every plugin's parameter list, --jobs at a time; `runner` is the probe (the suite's fake); `finished` is called
 // for each one that ran to its end - never for one in flight when the stop came (that one is discarded and runs again next time)
+// 15 Oct (sharing the Mac): a map that TIMED OUT is not finished on that try - after the pool, each runs again ALONE (`retryAlone`, the
+// caller's longer bound) and only that result is filed; last night's 6 "crashes" were timeouts at 4 at a time, and 9 mapped fine
+// alone the next morning. The pool's job count follows `jobsNow` (2 while the user is active)
 inline void mapForWizard (const std::vector<juce::PluginDescription>& ds, int jobs, const std::function<ChildResult (const juce::StringArray&)>& runner,
                           const std::function<jobs::Lane (const juce::PluginDescription&)>& laneOf, wizprog::Tracker& prog, const juce::File& probe,
-                          const std::function<void (const juce::PluginDescription&, ChildResult&)>& finished)
+                          const std::function<void (const juce::PluginDescription&, ChildResult&)>& finished,
+                          const std::function<ChildResult (const juce::StringArray&)>& retryAlone = {}, const std::function<int()>& jobsNow = {})
 {
     std::vector<size_t> idx; for (size_t i = 0; i < ds.size(); ++i) idx.push_back (i);
     jobs::Pool<size_t, juce::StringArray, ChildResult> pool;
@@ -116,8 +120,18 @@ inline void mapForWizard (const std::vector<juce::PluginDescription>& ds, int jo
     { const auto& d = ds[i]; prog.started (d.name); return juce::StringArray { probe.getFullPathName(), d.name, d.fileOrIdentifier, juce::String::toHexString (d.uniqueId), "--list-params" }; };   // after a stop the pool starts nothing more (its own stopped())
     pool.run = [&] (const juce::StringArray& a) { return runner (a); };
     pool.discard = [] (const size_t&, juce::StringArray&) {};   // stopped: no state, no map; the marker goes with the stopped finish
-    pool.finish = [&] (const size_t& i, juce::StringArray&, ChildResult& r) { finished (ds[i], r); };
+    std::vector<std::pair<size_t, juce::StringArray>> later;   // timed out on the first try
+    pool.finish = [&] (const size_t& i, juce::StringArray& a, ChildResult& r) { if (retryAlone && r.kind == ChildResult::Kind::timedOut) { later.push_back ({ i, a }); return; } finished (ds[i], r); };
+    if (jobsNow) pool.jobsNow = jobsNow;
     pool (idx, juce::jmax (1, jobs));
+    for (auto& [i, a] : later)
+    {   // alone: nothing else of ours is running now
+        if (wizardStop() != 0) return;
+        auto r = retryAlone (a);
+        if (wizardStop() != 0) return;   // stopped mid-retry: discarded, it runs again next time
+        if (! r.cleanExit()) r.out << "\nretried_alone\tfirst try timed out with other work running\n";
+        finished (ds[i], r);
+    }
 }
 
 // THE SOUND CHECK (Kathy, 15 Oct: bx_opto Pedal and three APB passed digital silence, NEOLD U17 / U2A / V76U73 never processed - each was
@@ -240,6 +254,7 @@ inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std
         if (onChecked) onChecked (ds[i].name, v, secs);
         if (r.cleanExit() || v.window) { auto* o = new juce::DynamicObject(); o->setProperty ("judged", v.judged); o->setProperty ("demo", v.demo); o->setProperty ("window", v.window); o->setProperty ("silent", v.silent); o->setProperty ("inert", v.inert); o->setProperty ("why", v.why); o->setProperty ("seconds", std::round (secs * 100.0) / 100.0); cache.getDynamicObject()->setProperty (pidOf (ds[i]), juce::var (o)); }
     };
+    pool.jobsNow = [jobs] { return jobs::jobsNowForUser (juce::jmax (1, jobs)); };   // 15 Oct: 2 at a time while the user is active
     pool (todo, juce::jmax (1, jobs));
     cacheFile.replaceWithText (juce::JSON::toString (cache));
     return out;
@@ -264,7 +279,8 @@ inline int runWizard (const WizardOptions& wo)
     // THE PROGRESS (11 Oct): the terminal shows one live line + a final summary; every detail line goes to wizard.log (--verbose: as before,
     // details on the terminal and the bar as a line per change); progress.json is what a window app reads
     std::ostream term (std::cout.rdbuf()); std::ofstream logFile; std::streambuf* const coutWas = std::cout.rdbuf();
-    struct Restore { std::streambuf* b; ~Restore() { std::cout.rdbuf (b); phaseb::rowHooks() = {}; } } restore { coutWas };
+    struct Restore { std::streambuf* b; ~Restore() { std::cout.rdbuf (b); phaseb::rowHooks() = {}; phaseb::jobsCap() = {}; } } restore { coutWas };
+    phaseb::jobsCap() = [] (int base) { return jobs::jobsNowForUser (base); };   // 15 Oct (sharing the Mac): at most 2 at a time while the user is active
     if (! wo.verbose)
     {
         logFile.open (out.getChildFile ("wizard.log").getFullPathName().toStdString(), std::ios::app);
@@ -295,6 +311,7 @@ inline int runWizard (const WizardOptions& wo)
     auto store = mapStore (opt.ledger);
     prog.setPlugins ((int) plugins.size());
     const auto bundlesAll = componentBundles();
+    setenv ("EJ_WIZARD_BACKGROUND", "1", 1); jobs::beBackgroundGuest();   // 15 Oct (sharing the Mac): this engine and every child it starts run as background guests
     setenv ("EJ_UAD_NATIVE", "1", 1);   // 15 Oct: UAD by sound, not by device - this process and every child it starts (EjmapUadPreflight.h)
     // THE HARDWARE CHECK AT THE SCAN (Kathy, 15 Oct): an APB plugin without its unit passes no sound (UAD: see EJ_UAD_NATIVE above),
     // so they are filed needs_hardware before anything loads - on every route that measures or reads sound (measure, the read-back check,
@@ -551,7 +568,9 @@ inline int runWizard (const WizardOptions& wo)
             store[uid + "|" + d.version] = { fp, cat };
             if (! catNames.count (d.name)) prog.finished (d.name, false);   // 14 Oct: a plugin whose signature reads follow is done after them
             say ("  " + d.name.paddedRight (' ', 30) + " mapped: " + juce::String ((int) ps.size()) + " parameter(s), map " + fp.substring (0, 12));
-        });
+        },
+        [&] (const juce::StringArray& a) { say ("  " + a[1] + ": timed out with other work running - mapping it again alone"); return runChild (a, 2 * loadTimeoutFor (a[2])); },   // 15 Oct: alone, twice the bound
+        [&] { return jobs::jobsNowForUser (juce::jmax (1, opt.jobs)); });   // 15 Oct: 2 at a time while the user is active
     }
     if (wizardStop() != 0) return stoppedInScan ("mapping");
     auto fpOf = [&] (const juce::PluginDescription& d) { const auto k = juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version; return store.count (k) ? store.at (k).fp : juce::String(); };

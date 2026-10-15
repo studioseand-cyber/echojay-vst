@@ -713,6 +713,7 @@ namespace
             // --cert-combined <product> [--cert-root <cert dir>] [--out <dir>] [--probe <path>] [--ejmap-ledger <dir>]: accuracy pass A1 (6 Oct), data only
             // --cert-material <product> [--cert-root <cert dir>] [--out <dir>] [--probe <path>] [--ejmap-ledger <dir>]: accuracy pass A2 (6 Oct), data only
             // --uad-preflight [--assume-uad-device]; --licence-check <cert dir> [--licences <csv>] [--date YYYY-MM-DD]; --licence-stamp <cert dir> [...] (6 Oct, Sean's UAD rulings)
+            if (ejmap::jobs::guestWanted()) ejmap::jobs::beBackgroundGuest();   // 15 Oct: a wizard process (the engine set EJ_WIZARD_BACKGROUND): the user's apps come first
             for (int j = 1; j < argc; ++j) if (argAt (argc, argv, j) == "--assume-uad-device") ejmap::cert::assumeUadDeviceFlag() = true;
             for (int j = 1; j < argc; ++j) if (argAt (argc, argv, j) == "--assume-apb-device") ejmap::apb::assumeFlag() = true;   // 15 Oct: an APB unit the registry cannot see (a network unit)   // every command: the hold and the gate read it
             // a strip section's child (item E, 7 Oct): --only-controls i,j,k narrows every mode's fixture; --preset i:n,... is the probe's preset (EJ_PROBE_PRESET) under every probe process
@@ -771,7 +772,7 @@ namespace
             }
             if (a == "--wizard")   // the user-side wizard (feat/ejmap-wizard): scan, look up (A/B/C), quick check, measure, bundle; upload stubbed
             {
-                ejmap::cert::WizardOptions w; w.opt.hostVersion = EJMAP_VERSION; w.opt.probeServe = true;   // the warm probe: the wizard's default (14 Oct)
+                ejmap::cert::WizardOptions w; w.opt.hostVersion = EJMAP_VERSION; w.opt.probeServe = true; w.opt.retryTimeoutsAlone = true;   // 15 Oct: a timeout is retried alone before it is filed   // the warm probe: the wizard's default (14 Oct)
                 for (int j = 1; j < argc; ++j) { const auto k = argAt (argc, argv, j); const auto v = j + 1 < argc ? argAt (argc, argv, j + 1) : juce::String();
                     if (k == "--db") w.db = cwdFile (v); else if (k == "--out") w.opt.out = cwdFile (v); else if (k == "--probe") w.opt.probe = cwdFile (v); else if (k == "--ejmap-ledger") w.opt.ledger = cwdFile (v);
                     else if (k == "--only") w.only.add (v); else if (k == "--jobs") w.opt.jobs = juce::jlimit (1, 8, v.getIntValue()); else if (k == "--measure") w.measure = true; else if (k == "--no-probe-serve") w.opt.probeServe = false; else if (k == "--bundle") w.bundle = true; else if (k == "--verbose") w.verbose = true; else if (k == "--plan") w.plan = true; else if (k == "--run-id") w.runId = v; else if (k == "--checkpoint-minutes") w.checkpointMinutes = v.getDoubleValue(); else if (k == "--skip") w.skip = cwdFile (v); }

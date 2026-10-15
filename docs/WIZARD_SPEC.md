@@ -173,6 +173,20 @@ What it says is true of the bundle as built:
   - A/B on 9 plugins: read-back verdicts, signature results, all 35 raw traces (clocks masked) and every routing line identical; 199 s -> 103 s.
   - Pin WZ-SERVE-3.
 
+**3q. Sharing the Mac (Kathy, 15 Oct).** People use their Mac while the wizard runs.
+- **A background guest:** the engine sets EJ_WIZARD_BACKGROUND for its process tree; it, every ejmap child and every probe lower themselves at start (nice 10, the utility disk policy).
+  - Not macOS's full background band: that confines a process to the efficiency cores (2 on an M1 Pro) even when the Mac is idle.
+  - The bridged plugins' host (AUHostingService, started by launchd) keeps its own priority. Pin WZ-GUEST-1.
+- **A DAW open** (Logic, Pro Tools, Ableton Live, Cubase, Studio One, Reaper, FL Studio, Bitwig, Digital Performer, LUNA - read from a running process's .app, never touched):
+  - The scan or the measuring pauses by itself (the same clean pause as the button): "Paused while Logic is open - it carries on by itself when you close it."
+  - It carries on by itself 10 s after the last DAW closes. A pause the user made never carries on by itself, and nothing starts while a DAW is open. Pin WZ-DAW-1.
+- **The user is active** (a key or the mouse within 3 min, the HID idle time): every pool (maps, demo checks, measuring) starts at most 2 jobs; idle: the full count again. Pin WZ-ACTIVE-1.
+- **A timeout under load is never a crash on the first try:**
+  - A map that timed out in the pool runs again alone after it (twice the bound), and only that result is filed.
+  - A measuring row that timed out runs again alone at the end of its pass (retryTimeoutsAlone). Pin WZ-RETRY-1.
+- **How much slower (estimate, not measured):** 2 jobs instead of 4 costs this Mac ~35% while the user is active (the model: 16.3 h vs 12.1 h), the lower priority ~5-10% more under real use, and a DAW session its own length.
+  - E.g. a 12 h idle run with 8 active hours inside it: ~15 h; with a 2 h Logic session as well: ~17 h.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.
