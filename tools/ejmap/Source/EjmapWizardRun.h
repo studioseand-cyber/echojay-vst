@@ -363,7 +363,10 @@ inline int runWizard (const WizardOptions& wo)
         for (const auto& ir : plugins) if (ir.desc.name == n)
         {
             if (demoQueued.insert (n).second) { wizprog::Item d; d.product = n; d.kind = "demo"; d.serial = serialOf (ir.desc); d.group = gi; q.push_back (d); }
-            wizprog::Item it; it.product = n; it.kind = wizroute::kindOf (pb); it.serial = serialOf (ir.desc); it.group = gi; it.weight = expectedWork.secondsFor (juce::String::toHexString (ir.desc.uniqueId), it.kind); q.push_back (it); break;
+            wizprog::Item it; it.product = n; it.kind = wizroute::kindOf (pb); it.serial = serialOf (ir.desc); it.group = gi; it.weight = expectedWork.secondsFor (juce::String::toHexString (ir.desc.uniqueId), it.kind);
+            it.expectedSteps = expectedWork.procsFor (juce::String::toHexString (ir.desc.uniqueId), it.kind);   // 15 Oct: steps within a plugin (its probe calls)
+            it.stepDir = out.getChildFile ("phaseb").getChildFile (pb).getChildFile (".tmp-AudioUnit_" + juce::String::toHexString (ir.desc.uniqueId).toLowerCase() + "_" + ir.desc.version).getFullPathName();
+            q.push_back (it); break;
         }
         ++gi; } return q; };
     auto landedRow = [&] (const juce::String& pb, const juce::String& product) -> juce::var {

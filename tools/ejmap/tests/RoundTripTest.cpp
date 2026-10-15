@@ -10262,9 +10262,9 @@ void testWizardCategories()
                && measuringPercent (pv (50.0), 60) == 60 && measuringPercent (pv (5.0), 0) == 0 && percentWords (23) == "23%" && ! tellsATime (percentWords (23))
                && shimmerOn (Screen::measuring, false, false) && ! shimmerOn (Screen::measuring, true, false) && ! shimmerOn (Screen::measuring, false, true) && ! shimmerOn (Screen::paused, false, false) && ! shimmerOn (Screen::scan, false, false)
                && shimmerPhase (0.0) == 0.0 && std::abs (shimmerPhase (1200.0) - 0.5) < 1e-9 && shimmerPhase (2600.0) < 0.0 && std::abs (shimmerPhase (4400.0) - 0.5) < 1e-9
-               && app.contains ("barRight = wizapp::percentWords (shownPct);") && ! app.contains ("barRight = wizapp::measuringCount (p)") && ! app.contains ("g.drawText (soFar")
-               && app.contains ("if (wizapp::shimmerOn (screen, pausing, finishing)) repaint (") && app.contains ("shimmer.startTimerHz (30);")
-               && app.contains ("getProperty (\"to_measure\", 0);") && app.contains ("g.drawFittedText (barLeft, juce::Rectangle<int> (70, 286, getWidth() - 140 - rightW, 20), juce::Justification::centredLeft, 1, 0.7f);")
+               && app.contains ("barRight = wizapp::percentWordsTenths (shownPctT);") && ! app.contains ("barRight = wizapp::measuringCount (p)") && ! app.contains ("g.drawText (soFar")
+               && app.contains ("if (wizapp::shimmerOn (screen, pausing, finishing)) repaint();") && app.contains ("shimmer.startTimerHz (30);")
+               && app.contains ("getProperty (\"to_measure\", 0);") && app.contains ("g.drawFittedText (barLeft, juce::Rectangle<int> (70, labelY, getWidth() - 140 - rightW, 20), juce::Justification::centredLeft, 1, 0.7f);")
                && ! app.contains ("g.drawText (barLeft,") && unrun.contains ("phaseb::rowHooks().finished (cat.name, pp.product, \"needs_device\", 0.0);"),
                "wizard WZ-SCREEN-1: the measuring % (15 -> 0%, 56 -> 50%, 97 -> 100%, never back), the shimmer only while measuring, no 'measured so far' line, the ready line from the engine, an unrun UAD row reaches the bar (read: " + juce::String ((int) read) + ")");
     }
@@ -10551,7 +10551,7 @@ void testWizardCategories()
                && jobs::demoJobsFor (1) == 2 && jobs::demoJobsFor (2) == 4 && jobs::demoJobsFor (4) == 6 && jobs::demoJobsFor (8) == 6
                && run.contains ("const int demoJobs = jobs::demoJobsFor (jobs);") && run.contains ("pool (todo, demoJobs);")
                && app.contains ("else if (const auto rb = wizapp::readyBar (p, cur); rb.on) { barValue = rb.value; barLeft = rb.left; barRight = rb.right; }")
-               && app.contains ("barValue = shownPct / 100.0;")
+               && app.contains ("barValue = shownPctT / 100.0;")
                && wizapp::measuringText (474).startsWith ("Measuring 474 plugins we haven't mapped yet.") && ! wizapp::measuringText (474).contains ("Ready to measure"),
                "wizard WZ-READY-1: the PACE check read once per bundle (again when it changes); the re-check and the demo checks have their own moving bar; demo checks at twice the jobs (max 6); 'Measuring N plugins'");
     }
@@ -10572,6 +10572,46 @@ void testWizardCategories()
         check (before == 0.0 && std::abs (afterSkip - 300.0 / 700.0) < 1e-9 && pctAfter > pctBefore + 10.0 && ratioAfterSkip == 1.0
                && run.contains ("if (v.demo || v.window || v.silent || v.inert) for (const auto& [pb, l] : queues) if (l.contains (n)) prog.finished (n, true, -1.0, wizroute::kindOf (pb));"),
                "wizard WZ-SKIP-1: a skipped plugin is done with its whole expected work (" + juce::String (before, 2) + " -> " + juce::String (afterSkip, 2) + ", the % " + juce::String (pctBefore, 1) + " -> " + juce::String (pctAfter, 1) + "), at once from the demo check, never in the ratio");
+    }
+    // WZ-LIVE-1 FEELS FROZEN (Kathy, 15 Oct: a plugin can take 10-20 min and nothing on screen changes): (1) a running plugin earns its steps (probe
+    // calls, one trace file each) against Sean's count for it, at most 95% before it finishes; the % shows one decimal and never goes back;
+    // (2) each running job (up to 4) is a line with its own small bar; (3) the wave by the title moves while the engine's heartbeat is live
+    // (a step, a start, a finish) - 2 min without: "Still working on a slow plugin...", 15 min: "Something may be stuck - ..."; (4) "N plugins done"
+    {
+        using namespace ejmap;
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejsteps_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
+        dir.getChildFile ("raw").createDirectory();
+        for (auto n : { "AudioUnit_1_1.sweep.pos00.1.txt", "AudioUnit_1_1.sweep.pos01.1.txt", "AudioUnit_1_1.sweep.r2.pos00.2.txt" }) dir.getChildFile ("raw").getChildFile (n).replaceWithText ("x");
+        dir.getChildFile ("log.txt").replaceWithText ("x"); dir.getChildFile ("raw/notes.txt").replaceWithText ("x");
+        const int steps = wizprog::countSteps (dir);
+        wizprog::Item it; it.weight = 100.0; it.kind = "compressor"; it.running = true; it.expectedSteps = 10; it.steps = 3; const double credit = wizprog::runningCredit (it, 100.0);
+        auto many = it; many.steps = 40; const double capped = wizprog::runningCredit (many, 100.0); auto noSteps = it; noSteps.expectedSteps = 0; noSteps.ranS = 30.0;
+        std::ostringstream term; const auto pj = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejlive_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)) + ".json");
+        juce::var pv;
+        { wizprog::Tracker tr (pj, term, false, 2); wizprog::Item a; a.product = "CLA-2A (m)"; a.kind = "compressor"; a.weight = 100.0; a.expectedSteps = 4; a.stepDir = dir.getFullPathName();
+          wizprog::Item b2 = a; b2.product = "B"; b2.stepDir = {}; wizprog::Item d = a; d.product = "C"; d.kind = "demo"; d.stepDir = {};
+          tr.stage (wizprog::Stage::measuring, { a, b2, d }); tr.started ("CLA-2A (m)", "compressor"); tr.started ("C", "demo"); tr.finished ("B", true, -1.0, "compressor");
+          tr.ranFor ("CLA-2A (m)", 1.0); std::this_thread::sleep_for (std::chrono::milliseconds (1100)); tr.ranFor ("CLA-2A (m)", 2.0);
+          pv = juce::JSON::parse (pj.loadFileAsString()); }
+        pj.deleteFile(); dir.deleteRecursively();
+        auto prog = [] (double pct) { auto* o = new juce::DynamicObject(); o->setProperty ("percent", pct); return juce::var (o); };
+        const auto jl = wizapp::jobLines (pv);
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const juce::int64 now = 10000000;
+        check (steps == 3 && std::abs (credit - 30.0) < 1e-9 && std::abs (capped - 95.0) < 1e-9 && std::abs (wizprog::runningCredit (noSteps, 100.0) - 30.0) < 1e-9
+               && std::abs (wizapp::measuringPercentTenths (prog (24.35), 0.0) - 11.4) < 1e-9 && std::abs (wizapp::measuringPercentTenths (prog (20.0), 11.4) - 11.4) < 1e-9 && wizapp::percentWordsTenths (11.4) == "11.4%"
+               && jl.size() == 2 && jl[0].name == "CLA-2A (m)" && std::abs (jl[0].fraction - 0.75) < 1e-9 && jl[1].name == "C" && jl[1].fraction < 0.0
+               && (int) pv.getProperty ("plugins_done", -1) == 1 && (int) pv.getProperty ("plugins_total", -1) == 2 && (juce::int64) pv.getProperty ("heartbeat_ms", (juce::int64) 0) > 0
+               && wizapp::liveState (now, now - 60000) == wizapp::Live::live && wizapp::liveState (now, now - 121000) == wizapp::Live::slow && wizapp::liveState (now, now - 901000) == wizapp::Live::stuck
+               && wizapp::liveWords (wizapp::Live::slow) == "Still working on a slow plugin..." && wizapp::liveWords (wizapp::Live::stuck) == "Something may be stuck - Pause and carry on to restart it"
+               && app.contains ("if (jobsNow.empty() && ! doneLine.isEmpty())") && wizapp::betweenPluginsWords() == "Starting the next plugin..."
+               && wizapp::liveWords (wizapp::Live::live).isEmpty() && wizapp::pluginsDoneWords (43) == "43 plugins done" && wizapp::pluginsDoneWords (1) == "1 plugin done"
+               && wizapp::waveHeight (0, 0.0, false) == 2.0f && wizapp::waveHeight (0, 250.0, true) != wizapp::waveHeight (0, 600.0, true)
+               && run.contains ("it.expectedSteps = expectedWork.procsFor (juce::String::toHexString (ir.desc.uniqueId), it.kind);") && run.contains ("getChildFile (\".tmp-AudioUnit_\"")
+               && app.contains ("jobsNow = wizapp::jobLines (p); heartbeatMs = (juce::int64) p.getProperty (\"heartbeat_ms\", (juce::int64) 0);")
+               && app.contains ("const bool live = ! pausing && ! finishing && wizapp::liveState (juce::Time::currentTimeMillis(), heartbeatMs) == wizapp::Live::live;"),
+               "wizard WZ-LIVE-1: steps within a plugin move the bar (3 of 10 -> 30%, capped 95%), one decimal never back, a line per job, 'N plugins done', the wave on the heartbeat (2 min slow, 15 min stuck)");
     }
     // WZ-LABEL-1 THE NAME UNDER THE BAR (Kathy, 15 Oct: "CLA-76 (m)" for two hours while the count climbed): a plugin whose load ended leaves
     // the current list even when its item waits (a failed check waits for its map); the name shown is the most recently started

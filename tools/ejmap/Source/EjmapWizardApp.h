@@ -271,6 +271,40 @@ inline int measuringPercent (const juce::var& progress, int lastShown)
     return juce::jmax (lastShown, now);
 }
 inline juce::String percentWords (int pct) { return juce::String (pct) + "%"; }
+// FEELS FROZEN (Kathy, 15 Oct: a plugin can take 10-20 min and nothing on screen changes) - the measuring screen moves every few seconds:
+// (1) the % with one decimal, from the engine's step-weighted bar (a running plugin earns its probe calls), never backwards
+inline double measuringPercentTenths (const juce::var& progress, double lastShown)
+{
+    const double pct = (double) progress.getProperty ("percent", 0.0);
+    const double now = juce::jlimit (0.0, 100.0, std::floor ((pct - 15.0) / 82.0 * 1000.0 + 1.0e-9) / 10.0);
+    return juce::jmax (lastShown, now);
+}
+inline juce::String percentWordsTenths (double pct) { return juce::String (pct, 1) + "%"; }
+// (2) each running job (up to 4): its name and its steps as a share (-1: a demo / sound check - no steps, "checking")
+struct JobLine { juce::String name; double fraction = -1.0; };
+inline std::vector<JobLine> jobLines (const juce::var& progress)
+{
+    std::vector<JobLine> out;
+    if (const auto* a = progress.getProperty ("jobs_now", {}).getArray())
+        for (const auto& j : *a) if (out.size() < 4) out.push_back ({ j.getProperty ("product", "").toString(), (double) j.getProperty ("fraction", -1.0) });
+    return out;
+}
+// (3) the live wave by the title follows the engine's heartbeat (a step, a start or a finish): no heartbeat for 2 min -> "Still working on a
+// slow plugin...", for 15 min -> "Something may be stuck - Pause and carry on to restart it"
+enum class Live { live, slow, stuck };
+inline constexpr double kSlowS = 120.0, kStuckS = 900.0;
+inline Live liveState (juce::int64 nowMs, juce::int64 heartbeatMs)
+{
+    if (heartbeatMs <= 0) return Live::live;   // no heartbeat read yet (an older engine, the first second)
+    const double s = (double) (nowMs - heartbeatMs) / 1000.0;
+    return s >= kStuckS ? Live::stuck : s >= kSlowS ? Live::slow : Live::live;
+}
+inline juce::String liveWords (Live l) { return l == Live::stuck ? juce::String ("Something may be stuck - Pause and carry on to restart it") : l == Live::slow ? juce::String ("Still working on a slow plugin...") : juce::String(); }
+// (4) the plugins done, ticking up
+inline juce::String betweenPluginsWords() { return "Starting the next plugin..."; }
+inline juce::String pluginsDoneWords (int n) { return juce::String (n) + (n == 1 ? " plugin done" : " plugins done"); }
+// the live wave: 5 soft bars, heights from a slow sine (t in ms) - flat when not live
+inline float waveHeight (int bar, double ms, bool live) { return live ? (float) (5.0 + 4.0 * std::sin (ms / 1000.0 * 2.0 * juce::MathConstants<double>::pi * 0.7 + bar * 0.9)) : 2.0f; }
 // GETTING READY HAS ITS OWN MOVING BAR (Kathy, 15 Oct: "Getting ready" with an empty bar for a while): before a pass measures, the
 // measuring run re-checks the Mac (the engine's Scanning / Checking - its stage counts) and then demo / sound-checks that pass's plugins
 // (progress.json demo_checks) - each shows its own n of N; the % returns when measuring does

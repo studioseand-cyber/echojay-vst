@@ -208,6 +208,17 @@ What it says is true of the bundle as built:
 - **The line** says "Measuring N plugins we haven't mapped yet." (not "Ready to measure").
 - Pins WZ-READY-1, WZ-SKIP-1.
 
+**3u. Never looks frozen (Kathy, 15 Oct).** A plugin can take 10-20 min.
+- **Steps within a plugin:** the engine counts each running row's probe calls (one trace file each, in its temp folder) against Sean's count for that plugin (expected_work.json procs, or the kind's median). The row earns that share of its weight, at most 95% before it finishes. The % shows one decimal (e.g. 11.4%) and never goes back.
+- **Each running job** (up to 4) is a line with its own small bar; between passes the line says "Starting the next plugin...".
+- **"N plugins done"** ticks up.
+- **A soft sound wave beside the title** moves while the engine's heartbeat (a step, a start, a finish) is live.
+  - 2 min without one: "Still working on a slow plugin..."
+  - 15 min without one: "Something may be stuck - Pause and carry on to restart it".
+- The window is 640 x 560 for the lines.
+- Pin WZ-LIVE-1.
+- EJ_WIZARD_SECOND_INSTANCE (test only) lets a rehearsal run beside a running wizard.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

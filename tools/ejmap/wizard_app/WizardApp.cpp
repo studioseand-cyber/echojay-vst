@@ -221,7 +221,7 @@ public:
         addChildComponent (agree); agree.setButtonText (wizapp::consentTick()); agree.setColour (juce::ToggleButton::textColourId, ink); agree.setColour (juce::ToggleButton::tickColourId, accent);
         agree.setColour (juce::ToggleButton::tickDisabledColourId, juce::Colour (0xff8a90a0)); agree.onClick = [this] { primary.setEnabled (agree.getToggleState()); };
         device = wizserver::deviceHashOf (platformUuid());
-        setSize (640, 460);
+        setSize (640, 560);   // 15 Oct (FEELS FROZEN): room for the job lines under the measuring bar
         // WHERE TO OPEN: from the files alone (a crash first)
         crashed = wizapp::recover (cfg.work, engineDir().getChildFile ("inflight"), cfg.reports, juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(),
                                    juce::SystemStats::getLogonName(), hostName());
@@ -240,7 +240,7 @@ public:
         logLine ("jobs: " + juce::String (cfg.jobs) + " (" + juce::String (performanceCores()) + " performance cores, " + juce::String (availableMemoryBytes() / 1073741824.0, 1) + " GB free)");
         show (wizapp::openOn (w, kMode, wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString()))));   // 15 Oct: a finished scan carries on into measuring
         startTimer (250);
-        shimmer.tick = [this] { if (wizapp::shimmerOn (screen, pausing, finishing)) repaint (60, 260, getWidth() - 120, 26); };
+        shimmer.tick = [this] { if (wizapp::shimmerOn (screen, pausing, finishing)) repaint(); };   // 15 Oct: the wave by the title and the job lines too
         shimmer.startTimerHz (30);   // 15 Oct: the shimmer moves even while one plugin takes 20 minutes
     }
     ~WizardComponent() override { stopTimer(); awake.hold (false); if (engine.running()) engine.pause(); }   // 14 Oct: never leave an engine running
@@ -287,7 +287,8 @@ public:
         g.drawFittedText (text, body.removeFromTop (screen == Screen::consent ? 150 : 64).reduced (10, 0), juce::Justification::centredTop, screen == Screen::consent ? 9 : 3);
         if (showBar)
         {
-            const auto bar = juce::Rectangle<float> (70.0f, 268.0f, (float) getWidth() - 140.0f, 10.0f);
+            const float barY = screen == Screen::measuring ? 236.0f : 268.0f; const int labelY = (int) barY + 18;   // 15 Oct: room for the job lines
+            const auto bar = juce::Rectangle<float> (70.0f, barY, (float) getWidth() - 140.0f, 10.0f);
             g.setColour (juce::Colour (0xffe6e9ef)); g.fillRoundedRectangle (bar, 5.0f);
             g.setColour (accent); g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * (float) juce::jlimit (0.0, 1.0, barValue)), 5.0f);
             if (wizapp::shimmerOn (screen, pausing, finishing))
@@ -306,9 +307,38 @@ public:
             {   // 15 Oct (Kathy: "APB Royal Mu" cut off): the % keeps only the room it needs on the right; the name gets the rest of the width
                 // and shrinks a little rather than being cut ("..."), one line, never under 70% size
                 const juce::Font f (juce::FontOptions (13.5f)); const int rightW = barRight.isEmpty() ? 0 : (int) std::ceil (juce::GlyphArrangement::getStringWidth (f, barRight)) + 14;
-                g.drawText (barRight, juce::Rectangle<int> (70, 286, getWidth() - 140, 20), juce::Justification::centredRight);
-                g.drawFittedText (barLeft, juce::Rectangle<int> (70, 286, getWidth() - 140 - rightW, 20), juce::Justification::centredLeft, 1, 0.7f);
+                g.drawText (barRight, juce::Rectangle<int> (70, labelY, getWidth() - 140, 20), juce::Justification::centredRight);
+                g.drawFittedText (barLeft, juce::Rectangle<int> (70, labelY, getWidth() - 140 - rightW, 20), juce::Justification::centredLeft, 1, 0.7f);
             }
+        }
+        if (screen == Screen::measuring && showBar && ! pausing && ! finishing)
+        {   // 15 Oct (FEELS FROZEN): each running job on its own line - its name and a small bar of its steps; the plugins done; the live words
+            int y = 282;
+            if (jobsNow.empty() && ! doneLine.isEmpty())   // between passes: say so, never a blank gap
+            { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.0f)); g.drawText (wizapp::betweenPluginsWords(), juce::Rectangle<int> (70, y, getWidth() - 140, 17), juce::Justification::centred); }
+            for (const auto& j : jobsNow)
+            {
+                g.setColour (juce::Colour (0xff4a5163)); g.setFont (juce::FontOptions (13.0f));
+                g.drawFittedText (j.name, juce::Rectangle<int> (70, y, 250, 17), juce::Justification::centredLeft, 1, 0.7f);
+                const auto mini = juce::Rectangle<float> (330.0f, (float) y + 6.0f, (float) getWidth() - 400.0f, 5.0f);
+                if (j.fraction >= 0.0)
+                {   g.setColour (juce::Colour (0xffe6e9ef)); g.fillRoundedRectangle (mini, 2.5f);
+                    g.setColour (accent.withAlpha (0.75f)); g.fillRoundedRectangle (mini.withWidth (mini.getWidth() * (float) juce::jlimit (0.0, 1.0, j.fraction)), 2.5f); }
+                else { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (12.0f)); g.drawText ("checking", mini.toNearestInt().withHeight (17).translated (0, -6), juce::Justification::centredLeft); }
+                y += 19;
+            }
+            g.setColour (ink); g.setFont (juce::FontOptions (13.5f, juce::Font::bold));
+            if (doneLine.isNotEmpty()) g.drawText (doneLine, juce::Rectangle<int> (70, 362, getWidth() - 140, 18), juce::Justification::centred);
+            const auto lw = wizapp::liveWords (wizapp::liveState (juce::Time::currentTimeMillis(), heartbeatMs));
+            if (lw.isNotEmpty()) { g.setColour (juce::Colour (0xffb26a00)); g.setFont (juce::FontOptions (13.0f)); g.drawText (lw, juce::Rectangle<int> (40, 382, getWidth() - 80, 18), juce::Justification::centred); }
+        }
+        if (screen == Screen::measuring)
+        {   // 15 Oct (FEELS FROZEN): a soft sound wave beside the title, moving only while the engine's heartbeat is live
+            const bool live = ! pausing && ! finishing && wizapp::liveState (juce::Time::currentTimeMillis(), heartbeatMs) == wizapp::Live::live;
+            const juce::Font tf (juce::FontOptions (24.0f, juce::Font::bold)); const float tw = juce::GlyphArrangement::getStringWidth (tf, title);
+            const float x0 = (float) getWidth() / 2.0f + tw / 2.0f + 14.0f, yc = 120.0f + 20.0f; const double ms = juce::Time::getMillisecondCounterHiRes();
+            g.setColour (accent.withAlpha (live ? 0.8f : 0.35f));
+            for (int k = 0; k < 5; ++k) { const float h = wizapp::waveHeight (k, ms, live); g.fillRoundedRectangle (x0 + (float) k * 5.0f, yc - h, 3.0f, 2.0f * h, 1.5f); }
         }
         if (bigCode.isNotEmpty())
         {
@@ -337,6 +367,7 @@ private:
     const juce::Colour accent { 0xff3d5afe }, ink { 0xff141824 };
     Screen screen = Screen::welcome; juce::String title, text, barLeft, barRight, bigCode, pauseNote; bool showBar = false; double barValue = 0.0;
     juce::String dawPaused; Screen resumeTo = Screen::measuring; double dawQuietSince = -1.0, lastDawCheck = 0.0;   // 15 Oct: a pause the DAW caused, and where it carries on
+    double shownPctT = 0.0; std::vector<wizapp::JobLine> jobsNow; juce::String doneLine; juce::int64 heartbeatMs = 0;   // 15 Oct (FEELS FROZEN)
     int shownPct = 0; juce::int64 readyStamp = 0;   // 15 Oct: the % shown (never backwards); wizard_state.json's time, for the ready line
     struct Shimmer : juce::Timer { std::function<void()> tick; void timerCallback() override { if (tick) tick(); } } shimmer;
     void refreshReadyLine()
@@ -656,10 +687,12 @@ private:
         {   // measuring: the engine's Measuring band (15..97) is the bar; its rescan is "getting ready"
             if (! finishing && ! pausing) { soFar = wizapp::measuredSoFarWords (wizapp::measuredSoFar (p)); secondary.setEnabled (wizapp::finishAvailable (p)); }
             handleCheckpoint();   // 13 Oct: the hourly checkpoint, as soon as the engine has packed it
+            jobsNow = wizapp::jobLines (p); heartbeatMs = (juce::int64) p.getProperty ("heartbeat_ms", (juce::int64) 0);   // 15 Oct (FEELS FROZEN)
+            doneLine = p.hasProperty ("plugins_done") && (stage == "Measuring" || stage == "Packing") ? wizapp::pluginsDoneWords ((int) p.getProperty ("plugins_done", 0)) : juce::String();
             if (pausing) { barLeft = "Pausing - saving what's done"; barRight = {}; }
             else if (finishing && stage != "Packing" && stage != "Done") { barLeft = kMode == wizapp::Mode::beta ? "Saving what's measured" : "Sending what's measured"; barRight = {}; }
             else if (const auto rb = wizapp::readyBar (p, cur); rb.on) { barValue = rb.value; barLeft = rb.left; barRight = rb.right; }   // 15 Oct: getting ready moves too
-            else if (stage == "Measuring") { shownPct = wizapp::measuringPercent (p, shownPct); barValue = shownPct / 100.0;   /* the % never goes back; after a getting-ready bar the % bar starts from the % */ barLeft = cur.isNotEmpty() ? cur : "Measuring"; barRight = wizapp::percentWords (shownPct);   // 15 Oct: a percentage of the weighted bar, whole, never backwards
+            else if (stage == "Measuring") { shownPct = wizapp::measuringPercent (p, shownPct); shownPctT = wizapp::measuringPercentTenths (p, shownPctT); barValue = shownPctT / 100.0;   /* the % never goes back; after a getting-ready bar the % bar starts from the % */ barLeft = cur.isNotEmpty() ? cur : "Measuring"; barRight = wizapp::percentWordsTenths (shownPctT);   // 15 Oct: the step-weighted %, one decimal, never backwards
                                              refreshReadyLine(); }   // 14 Oct: n of N, never time left
             else if (stage == "Packing" || stage == "Done") { barValue = 1.0; barLeft = "Packing your results"; barRight = {}; }
             else { barValue = 0.0; barLeft = "Getting ready"; barRight = {}; }   // the first second, before the engine's first progress
@@ -778,7 +811,7 @@ class WizardApplication : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override { return JUCE_APPLICATION_NAME_STRING; }   // 13 Oct: each build its own name - the one-instance guard is keyed on it
     const juce::String getApplicationVersion() override { return "0.1.0"; }
-    bool moreThanOneInstanceAllowed() override { return false; }
+    bool moreThanOneInstanceAllowed() override { return std::getenv ("EJ_WIZARD_SECOND_INSTANCE") != nullptr; }   // 15 Oct: a rehearsal beside a running wizard (its own --work); never set by a user
     void initialise (const juce::String&) override
     {
         std::signal (SIGINT, [] (int) { appInterrupted() = 1; }); std::signal (SIGTERM, [] (int) { appInterrupted() = 1; });

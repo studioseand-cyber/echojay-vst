@@ -93,7 +93,8 @@ struct Times
     template <typename I> double expected (const I& i) const { return i.weight > 0.0 ? i.weight * ratio() : perItem (i.kind); }
 };
 
-struct Item { juce::String product, kind; bool done = false, running = false, problem = false, serial = false; double ranS = 0.0; int group = -1; double weight = 0.0; };   // ranS: seconds a running item has run; group: its Phase B pass (-1: one pass); weight: Sean's seconds for this plugin and kind (0: the kind's figure)
+struct Item { juce::String product, kind; bool done = false, running = false, problem = false, serial = false; double ranS = 0.0; int group = -1; double weight = 0.0;
+              juce::String stepDir; int expectedSteps = 0, steps = 0; };   // 15 Oct (FEELS FROZEN): the row's temp folder, Sean's probe calls for it (or the kind's median), the calls done so far   // ranS: seconds a running item has run; group: its Phase B pass (-1: one pass); weight: Sean's seconds for this plugin and kind (0: the kind's figure)
 
 // the weights' source: <database>/expected_work.json (tools/ejmap/scripts/expected_work.py, from Sean's real runs): per plugin uid and kind
 // Sean's seconds, else the kind's median over his rows; 0 when the file or the kind is missing (the item keeps its kind's figure)
@@ -105,6 +106,13 @@ struct ExpectedWork
         auto f = db.getChildFile ("expected_work.json");
         if (! f.existsAsFile()) f = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getParentDirectory().getSiblingFile ("Resources").getChildFile ("mock_db/expected_work.json");
         ExpectedWork w; w.data = juce::JSON::parse (f.loadFileAsString()); return w;
+    }
+    int procsFor (const juce::String& uidHex, const juce::String& kind) const   // 15 Oct: Sean's probe calls for it (the steps), else the kind's median
+    {
+        if (! data.isObject()) return 0;
+        const auto own = data.getProperty ("plugins", {}).getProperty (juce::Identifier (uidHex.toLowerCase()), {}).getProperty (juce::Identifier (kind), {});
+        if (own.isObject() && (int) own.getProperty ("procs", 0) > 0) return (int) own.getProperty ("procs", 0);
+        return (int) data.getProperty ("_median", {}).getProperty (juce::Identifier (kind), {}).getProperty ("procs", 0);
     }
     double secondsFor (const juce::String& uidHex, const juce::String& kind) const
     {
@@ -121,12 +129,26 @@ inline std::vector<Item> resumeItems (std::vector<Item> queue, const std::map<ju
     for (auto& i : queue) if (const auto it = landed.find (i.product); it != landed.end()) { i.done = true; i.problem = it->second != "ok"; }
     return queue;
 }
+// 15 Oct (FEELS FROZEN, Kathy: a plugin can take 10-20 min and nothing moves): a running plugin with an expected step count earns its
+// weight x steps done / steps expected (probe calls - one trace file each), never more than 95% before it finishes; one without keeps
+// the time credit (90% at most)
+inline constexpr double kStepCap = 0.95;
+inline double stepFraction (const Item& i) { return i.expectedSteps > 0 ? juce::jmin (kStepCap, (double) i.steps / (double) i.expectedSteps) : -1.0; }
+inline double runningCredit (const Item& i, double w) { const double f = stepFraction (i); return f >= 0.0 ? f * w : juce::jmin (0.9 * w, juce::jmax (0.0, i.ranS)); }
+// the steps a row has taken: its probe traces so far (".<attempt>.txt" files anywhere under the row's temp folder)
+inline int countSteps (const juce::File& dir)
+{
+    if (! dir.isDirectory()) return 0;
+    int n = 0; for (const auto& f : dir.findChildFiles (juce::File::findFiles, true, "*.txt"))
+    { const auto nm = f.getFileName(); const auto pre = nm.dropLastCharacters (4); if (pre.length() > 2 && pre[pre.length() - 2] == '.' && juce::CharacterFunctions::isDigit (pre[pre.length() - 1])) ++n; }
+    return n;
+}
 // the share of a stage done, weighted by expected seconds; an empty stage is complete. A RUNNING plugin earns its time run so far, up
 // to 90% of its expected seconds (the 11 Oct rehearsal: with two 6-minute compressors running the bar sat still for 6 minutes)
 inline double stageShare (const std::vector<Item>& items, const Times& t)
 {
     double all = 0.0, done = 0.0;
-    for (const auto& i : items) { const auto w = t.expected (i); all += w; if (i.done) done += w; else if (i.running) done += juce::jmin (0.9 * w, juce::jmax (0.0, i.ranS)); }
+    for (const auto& i : items) { const auto w = t.expected (i); all += w; if (i.done) done += w; else if (i.running) done += runningCredit (i, w); }
     return all <= 0.0 ? 1.0 : done / all;
 }
 // the bar: the stage's fixed band, the share inside it, never below what was shown (lastPct is updated)
@@ -232,6 +254,7 @@ public:
     void started (const juce::String& product, const juce::String& kind = {})   // kind: which of a product's items (a limiter has two)
     {
         std::lock_guard<std::mutex> g (m_);
+        heartbeatMs_ = juce::Time::currentTimeMillis();
         for (auto& i : items_) if (i.product == product && ! i.done && ! i.running && (kind.isEmpty() || i.kind == kind)) { i.running = true; startedAt_[product + "|" + i.kind] = juce::Time::getMillisecondCounterHiRes(); break; }
         current_.removeString (product); current_.add (product);   // 15 Oct: the newest start is last (the name under the bar)
         if (markers_ != juce::File()) wizapp::markerBegin (markers_, product, stageWord (stage_));
@@ -241,6 +264,7 @@ public:
     void finished (const juce::String& product, bool problem, double seconds = -1.0, const juce::String& kind = {})
     {
         std::lock_guard<std::mutex> g (m_);
+        heartbeatMs_ = juce::Time::currentTimeMillis();
         for (auto& i : items_) if (i.product == product && ! i.done && (kind.isEmpty() || i.kind == kind))
         {
             i.done = true; i.running = false; i.problem = problem;
@@ -317,6 +341,12 @@ private:
     {
         const double nowMs = juce::Time::getMillisecondCounterHiRes();
         for (auto& i : items_) if (i.running && startedAt_.count (i.product + "|" + i.kind)) i.ranS = (nowMs - startedAt_[i.product + "|" + i.kind]) / 1000.0;
+        if (nowMs - lastStepScan_ >= 1000.0)
+        {   // 15 Oct: each running row's steps so far - a new step is a heartbeat
+            lastStepScan_ = nowMs;
+            for (auto& i : items_) if (i.running && ! i.done && i.stepDir.isNotEmpty())
+            { const int n = countSteps (juce::File (i.stepDir)); if (n > i.steps) { i.steps = n; heartbeatMs_ = juce::Time::currentTimeMillis(); } }
+        }
         const double pct = percent (stage_, items_, times_, lastPct_);
         const double eta = etaSeconds (stage_, items_, times_, jobs_, queueKnown_, queue_);
         const auto line = lineLocked (pct, eta);
@@ -350,6 +380,16 @@ private:
             int grp = -2; for (const auto& i : items_) if (i.kind == "demo" && i.running && ! i.done) { grp = i.group; break; }
             int dd = 0, dt = 0; if (grp != -2) for (const auto& i : items_) if (i.kind == "demo" && i.group == grp) { ++dt; if (i.done) ++dd; }
             auto* dm = new juce::DynamicObject(); dm->setProperty ("done", dd); dm->setProperty ("total", dt); dm->setProperty ("running", grp != -2); o->setProperty ("demo_checks", juce::var (dm)); }
+        {   // 15 Oct (FEELS FROZEN): each running job (up to 4) with its steps; the plugins done (every measurement of it has an outcome); the heartbeat
+            juce::Array<juce::var> jobs;
+            for (const auto& i : items_) if (i.running && ! i.done && jobs.size() < 4)
+            { auto* j = new juce::DynamicObject(); j->setProperty ("product", i.product); j->setProperty ("kind", i.kind); j->setProperty ("steps", i.steps); j->setProperty ("expected_steps", i.expectedSteps);
+              j->setProperty ("fraction", i.kind == "demo" ? -1.0 : std::round (juce::jmax (0.0, stepFraction (i)) * 1000.0) / 1000.0); jobs.add (juce::var (j)); }
+            o->setProperty ("jobs_now", jobs);
+            std::map<juce::String, std::pair<int, int>> per; for (const auto& i : items_) if (i.kind != "demo") { auto& pr = per[i.product]; ++pr.second; if (i.done) ++pr.first; }
+            int pd = 0; for (const auto& [p, dt] : per) if (dt.first == dt.second) ++pd;
+            o->setProperty ("plugins_done", pd); o->setProperty ("plugins_total", (int) per.size()); o->setProperty ("heartbeat_ms", (juce::int64) heartbeatMs_);
+        }
         o->setProperty ("elapsed_s", std::round (elapsed)); o->setProperty ("eta_s", eta < 0.0 ? juce::var() : juce::var (std::round (eta)));
         o->setProperty ("eta_words", stage_ == Stage::done ? juce::String ("finished") : stopped_ ? juce::String ("stopped") : etaWords (eta)); o->setProperty ("jobs", jobs_);
         auto* tm = new juce::DynamicObject();
@@ -365,6 +405,7 @@ private:
     std::mutex m_; std::thread ticker_; std::atomic<bool> run_ { false };
     Stage stage_ = Stage::scanning; std::vector<Item> items_, queue_; bool queueKnown_ = false;
     Times times_; juce::StringArray current_; std::map<juce::String, double> startedAt_;
+    juce::int64 heartbeatMs_ = juce::Time::currentTimeMillis(); double lastStepScan_ = 0.0;
     bool stopped_ = false; int plugins_ = 0, problems_ = 0; double lastPct_ = 0.0, t0_ = 0.0, lastPrinted_ = -1e9;
     juce::String lastKey_, lastLine_, summary_;
 };
