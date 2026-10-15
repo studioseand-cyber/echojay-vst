@@ -243,4 +243,15 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
 - WIZARD_SPEC 3p; 10 mutants red.
 - Not carried to cert: the shared-code changes (the UAD gate's env switch, ScopedServe) change nothing in EJ Map's own runs.
 
+## 15 Oct addendum 14: sharing the Mac (wizard 81ec5a2d; DMGs Test 5a7d5c3d, Beta 5d1c14e3)
+- **What changed** (WIZARD_SPEC 3q, pins WZ-GUEST-1 / DAW-1 / ACTIVE-1 / RETRY-1, 7 mutants red):
+  - The engine, its children and the probes run as background guests (nice 10, utility disk I/O; the engine was seen at nice 10).
+  - A DAW pauses the scan or the measuring by itself and it carries on by itself.
+  - 2 jobs while the user is active.
+  - A timeout is retried alone before it is filed.
+- **Not carried to cert:** the probe and the Phase B pool changes are switched by EJ_WIZARD_BACKGROUND / retryTimeoutsAlone / jobsCap, all unset in EJ Map's own runs.
+- **Today's (15 Oct) Test run finished at 15:24** (3 h 49 min of measuring after the 07:15 Start, with Kathy's 10:02-11:35 pause) and went to the "no code" screen: "351 of 509 plugins have a result so far".
+  - The 158 missing are the UAD rows the 774fe72e build left unrun without a UAD-2 device. The d8568f87 build decides them by sound (needs_licence or measured), and 92f34301 reports an unrun row to the bar.
+  - The watcher's "warm-probe restarts" on the strips (CLA MixHub ~50) are each strip section's own child starting its own warm probe, not deaths: every row finished ok.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
