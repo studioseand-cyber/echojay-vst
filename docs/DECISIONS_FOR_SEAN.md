@@ -4,14 +4,23 @@
 
 ## WHAT IS INSTALLED
 
-**`ship_2026-10-14a`** — still the installed build (the four arm64 UUIDs are in its GREEN.txt). **Nothing
-was installed overnight**: Logic was open with your session when ship 1 was ready, and swapping bundles
-under a live Logic session risks the project you are testing. Ship 1 is **placed and gated** (see below);
-installing it is one command and takes seconds:
+**`ship_2026-10-15a`** — placed, gated green, **installed at 02:46** with Logic closed (checked, not
+assumed), and the four arm64 UUIDs read back from `~/Library` match the ship folder byte for byte:
 
 ```
-bash tools/install_local.sh build-guards && killall -9 AUHostingService
+EchoJay V2.component   0EB9D09C-206E-3434-8620-6B01EC67B324
+EchoJay V2.vst3        A926CB56-1323-33FF-B7A8-40158454BEC6
+EchoJay Link.component 483F8ED8-5D57-39A2-9635-B9E70DB056EF
+EchoJay Link.vst3      972F32A6-E7F0-3103-BD4B-AA07B5AC9AE7
 ```
+
+It carries **your seven fixes**, the unknown-track tap choices, and three more the rig found while proving
+them. `ship_2026-10-15a/GREEN.txt` is the full record, including every skip and why S6 was re-run.
+
+The gate: S1–S3b OK, **S4 78/78**, S5 OK, **S6 green both ways** (live against B's local server: 47 passed,
+0 failed, 1 named skip; the mock: 32 passed, 0 failed, 2 named skips). Commit `947903ff`.
+
+**Nothing else is installed.** Ship 2 did not finish — see WHAT IS LEFT.
 
 ## THE PUSH COMMAND
 

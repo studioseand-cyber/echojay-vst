@@ -19,6 +19,15 @@ before the fix and PASSES after**, one full gate from S1, and nothing installed 
 
 **Then, as queued:** item 0 + 0b + Auto mode to the approved mockup → multi-track jobs → 0a.
 
+> ### WHERE THAT STANDS AFTER THE NIGHT OF 14/15 OCT
+> - **the seven fixes: DONE**, gated and installed as `ship_2026-10-15a` (commit 947903ff).
+> - **Auto mode: DONE** (commit 3a2e2fe1), with one deviation Sean may want to rule on - the mode line
+>   floats just ABOVE the composer box, because there is no room under it (DESIGN_AGENT_IN_CHAT.md §6).
+> - **item 0's surface (the panel becoming a transcript row) and 0b: NOT STARTED, and blocked** - their
+>   rig legs cannot run until the rig can really close a window (see "OWED FROM SHIP 1" above).
+> - **the plugin-choice card, the OUT knob, multi-track jobs, 0a: NOT STARTED.** The OUT knob's groundwork
+>   is written up in §6 below: both racks clamp to -24..+12 dB, a Link's OUT is already one value.
+
 **Rulings to build in:** plugin choice (§"CHOOSING A PLUGIN"), the OUT knob (§6 - **and the answer to
 Sean's question is yes, on a Link it is already one value**), the unknown-track tap choices (below),
 Ask-mode approval locking (B's, in FOR_B), and **undo in Auto without a second approval** (below).

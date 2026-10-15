@@ -1,0 +1,67 @@
+ship_2026-10-15b - GATED GREEN, 15 Oct 2026 (overnight, unattended)
+
+WHAT THIS BUILD ADDS TO ship_2026-10-15a
+
+  AUTO MODE - the Agent chip's third state, Sean's ruling of 14 Oct, built to
+  docs/DESIGN_AGENT_IN_CHAT.md §6 and docs/MOCKUP_AGENT_IN_CHAT_APPROVED.md.
+
+    Off -> Ask -> Auto, on the one chip. Off is unchanged and still the default for a new user. Ask is
+    today's approvals. Auto applies every step without waiting, and stops ONLY for a question or for a
+    step that cannot be undone - which still asks, with the reason on the line. Server limits do not move.
+
+    - the mode persists in the EXISTING flag file's TEXT ("ask" / "auto"); the file's existence is still
+      the on/off truth, so an older build - ship_2026-10-09a included - reads "agent on" for both, which
+      is true. Downgrade-safe by the sidecar rule.
+    - ExecutorDo::undoabilityOf(call, goal) is the ONE decider of both "may Auto run this unasked" and
+      "does this op hand back an undo token". It sits on the ToolExecutor interface with the SAFE default
+      (not undoable, so Auto asks). Sean's carve-out: an `undo` on an undo GOAL is pre-approved in Auto,
+      because the user's own words are the approval. No redo op before beta.
+    - approvalMode: "ask" | "auto" now rides /api/agent/start, sent only when set.
+    - one function still owns the chip's text, colour, tooltip, the Settings tick and the mockup's one
+      plain line about the mode; the timer's change test is the MODE now, not a boolean.
+
+  ONE DEVIATION FROM THE MOCKUP, FOR SEAN TO RULE: the mode line floats immediately ABOVE the composer
+  box (anchored to chatBoxRect_, the same idiom as the Reaper key hint) because there is no vertical space
+  under it. The words are the mockup's, unchanged.
+
+THE GATE (gate16, started 03:10, finished 04:30)
+  S1   forced delete of SIX archives across THREE trees, then relink      OK
+       (PluginEditor.h, EJAgentTools.h, EJAgentClient.h, EJAgentProtocol.h, EJAgentExecutorDo.h and
+        EJRigHook.h all changed)
+  S2   the guard targets, LTO                                             OK
+  S3   the four bundles                                                   OK
+  S3b  archive provenance: the link line newer than every header          OK
+  S4   ctest -L "fast|plugins", stall watchdog armed      78/78 passed     OK
+  S5   link_state_guard, standalone two-sided                             OK
+  S6   the host rig, TWO passes:                                          OK
+         host_rig       live against B's local server on 127.0.0.1:3211:
+                        47 passed, 0 failed, 1 skipped
+         host_rig_mock  the mock, which is where Auto mode is proven -
+                        the approval class has to be the RIG'S to choose:
+                        43 passed, 0 failed, 2 skipped
+
+  THE AUTO ROWS (mock): A9 an Auto run of two ask_first steps completes with ZERO approval presses and
+  the change reads back; A7 "undo that" in Auto runs with no wait and the pre-gain returns; A11 a step
+  this build cannot put back STILL waits in Auto with its reason; A8 the same request in Ask still waits;
+  plus the chip's three states, the line's words, Off changing nothing after Auto has been used, and the
+  mode surviving the window being rebuilt.
+
+  THE SKIPS, NAMED: the three "the plugin's editor was destroyed by that close" rows. It was not -
+  releasing the AU's wrapper view does not destroy EchoJayEditor in this host - so they say so rather
+  than pass. Item 0b is owed a host that can really close a window.
+
+VERIFIED AFTER INSTALL (arm64, read back from ~/Library, matching this folder byte for byte)
+  EchoJay V2.component   1E932514-059C-3F9D-8590-4B7B2D1A0DEE
+  EchoJay V2.vst3        980C0736-D434-3F8B-9B21-6475FD026434
+  EchoJay Link.component 483F8ED8-5D57-39A2-9635-B9E70DB056EF
+  EchoJay Link.vst3      972F32A6-E7F0-3103-BD4B-AA07B5AC9AE7
+  The LINK's two are the same UUIDs as ship_2026-10-15a, because no Link source changed in this ship -
+  Auto mode is the V2's chip. The V2's two are new.
+  Installed 15 Oct 04:31, with Logic closed (checked, not assumed). Every Source file is older than every
+  binary here (checked, printed as FRESH).
+
+WHAT THIS BUILD IS NOT
+  Ship 2 as Sean listed it was Auto mode, the plugin-choice card, the OUT knob, multi-track jobs and 0a.
+  Only AUTO MODE is here. The rest is not started, and item 0's surface move and 0b were deliberately not
+  attempted: their rig legs cannot run until the rig can close a window. docs/DECISIONS_FOR_SEAN.md has
+  the whole account.

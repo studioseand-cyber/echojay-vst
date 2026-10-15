@@ -212,7 +212,32 @@ New legs, each on real state, in `tools/host_rig/`:
 
 ---
 
-## 6. AUTO MODE (Sean's ruling, 14 Oct 2026)
+## 6. AUTO MODE (Sean's ruling, 14 Oct 2026) - **BUILT, 15 Oct, and gated**
+
+**What landed, and where it differs from this section.**
+
+- the chip cycles **Off -> Ask -> Auto -> Off** with the mockup's words, colours (grey / amber / accent)
+  and tooltip, and the plugin publishes `agentApprovalMode` so a rig row can assert which state it is in.
+- the mode is **persisted in the existing flag file's TEXT** ("ask" / "auto"), with the file's EXISTENCE
+  still the on/off truth. So `agentModeOn()`, every guard and `ship_2026-10-09a` are untouched, and an old
+  build reads "agent on" for both - which is true. Anything else in the file (today's "on") reads as Ask.
+- `ExecutorDo::undoabilityOf(call, goal)` is on the **ToolExecutor interface**, with the safe default (not
+  undoable, so Auto asks) for any executor that has not been taught the question. The real one answers op
+  by op, and `agent_round15_guard` holds it against the tokens the ops actually return.
+- `approvalMode` rides the start body, sent only when set.
+- **ONE DEVIATION FROM THE MOCKUP, AND IT IS SEAN'S TO RULE.** The mockup puts the mode line *under* the
+  composer. There is no vertical space under the composer box in the real window, so the line floats
+  **immediately above** it, anchored to `chatBoxRect_` exactly as the Reaper key hint does - the idiom this
+  file already uses for "a strip by the composer" - and it yields to that hint. The words are the mockup's,
+  unchanged. If you want it under the box instead, that is a layout change to the chat surface's height
+  math rather than a floating strip, and it should be its own commit.
+
+The rows: **A9** (an Auto run of two ask_first steps, zero approval presses, the change read back), **A7**
+("undo that" in Auto with no wait), **A11** (a step that cannot be undone still waits, with its reason),
+**A8** (the same request in Ask still waits), plus the chip's three states, the line's words, Off changing
+nothing after Auto has been used, and the mode persisting across a window rebuild.
+
+### The ruling, as it was written
 
 > *"The Agent chip cycles Off -> Ask -> Auto. Ask = today's approvals. Auto = every step applies without
 > waiting; the run stops only for a question (talk/ask), or for any step that cannot be undone (still
