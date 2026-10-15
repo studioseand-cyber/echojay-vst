@@ -10241,7 +10241,7 @@ void testWizardCategories()
         check (read && afterScan (el, Mode::normal) == Screen::measuring && afterScan (el, Mode::beta) == Screen::measuring && afterScan (ne, Mode::beta) == Screen::measuring
                && afterScan (ne, Mode::normal) == Screen::scanDone && afterScan (none, Mode::normal) == Screen::scanDone && afterScan (none, Mode::beta) == Screen::scanDone && afterScan (al, Mode::normal) == Screen::alreadyDone
                && openOn (scanned, Mode::normal, el) == Screen::measuring && openOn (scanned, Mode::normal, ne) == Screen::scanDone && openOn (scanned, Mode::normal) == Screen::scanDone
-               && measuringText (504) == "Ready to measure: 504 plugins we haven't mapped yet - it's best left running overnight. Leave it running - the Mac stays awake. You can pause and carry on any time."
+               && measuringText (504) == "Measuring 504 plugins we haven't mapped yet. Leave it running - the Mac stays awake. You can pause and carry on any time."
                && ! tellsATime (measuringText (504)) && measuringText() == "Leave it running - the Mac stays awake. You can pause and carry on any time."
                && app.contains ("const auto el = wizapp::eligibilityOf (eligibility); const auto next = wizapp::afterScan (el, kMode);") && app.contains ("show (next);")
                && app.contains ("text = wizapp::measuringText (wizapp::eligibilityOf (") && app.contains ("show (wizapp::openOn (w, kMode, wizapp::eligibilityOf ("),
@@ -10425,7 +10425,7 @@ void testWizardCategories()
         const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
         check (std::abs (idle - 3.492712833) < 1e-6 && none < 0.0 && jobsWhileActive (4, 30.0) == 2 && jobsWhileActive (4, 600.0) == 4 && jobsWhileActive (1, 30.0) == 1 && jobsWhileActive (4, -1.0) == 4
                && capped == 2 && free4 == 4
-               && run.contains ("phaseb::jobsCap() = [] (int base) { return jobs::jobsNowForUser (base); };") && run.contains ("pool.jobsNow = [jobs] { return jobs::jobsNowForUser (juce::jmax (1, jobs)); };")
+               && run.contains ("phaseb::jobsCap() = [] (int base) { return jobs::jobsNowForUser (base); };") && run.contains ("pool.jobsNow = [demoJobs] { return jobs::jobsNowForUser (demoJobs); };")
                && run.contains ("[&] { return jobs::jobsNowForUser (juce::jmax (1, opt.jobs)); });") && drv.contains ("if (phaseb::jobsCap()) pool.jobsNow = [&] { return phaseb::jobsCap() (juce::jmax (1, opt.jobs)); };"),
                "wizard WZ-ACTIVE-1: HID idle parsed; active -> 2 jobs, idle -> the full count; the pool honours the cap (peak " + juce::String (capped) + " vs " + juce::String (free4) + ")");
     }
@@ -10518,6 +10518,60 @@ void testWizardCategories()
                && run.indexOf ("if (why.isEmpty() && ! wizard::keepsRoutingWhy (st)) why = wizard::reasonFor (r.getProperty (\"outcome\", \"\").toString());") >= 0
                && run.lastIndexOf ("if (why.isEmpty() && ! wizard::keepsRoutingWhy (st)) why = wizard::reasonFor") != run.indexOf ("if (why.isEmpty() && ! wizard::keepsRoutingWhy (st)) why = wizard::reasonFor"),
                "wizard WZ-WHY-1: a window -> 'a licence or sign-in window appeared when it loaded - closed, never clicked; not measured'; never the routing reason, on all three settle paths");
+    }
+    // WZ-READY-1 GETTING READY (Kathy, 15 Oct night: "Getting ready" sat with an empty bar): (a) the PACE check is read once per bundle (it was
+    // read ~954 times per measuring list, 3 lists a run - WaveShell2-AU's one binary read whole each time); (b) the re-check and the demo /
+    // sound checks have their own moving bar; (c) the demo checks run at twice the jobs (at most 6) - measured 38 s -> 20 s for 12 Waves;
+    // (d) the line says "Measuring N plugins", not "Ready to measure"
+    {
+        using namespace ejmap;
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejpace_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)) + ".component");
+        const auto bin = dir.getChildFile ("Contents/MacOS/Plug"); bin.getParentDirectory().createDirectory(); bin.replaceWithText ("nothing to see");
+        const int r0 = cert::paceReads(); const bool a1 = cert::isPaceWrapped (dir), a2 = cert::isPaceWrapped (dir); const int r1 = cert::paceReads();
+        bin.replaceWithText ("header PACEAntiPiracy trailer, now longer"); const bool a3 = cert::isPaceWrapped (dir); const int r2 = cert::paceReads();
+        dir.deleteRecursively();
+        auto prog = [] (const char* stage, int d, int t, bool demoRunning, int dd, int dt) { auto* o = new juce::DynamicObject(); o->setProperty ("stage", stage);
+            auto* sc = new juce::DynamicObject(); sc->setProperty ("done", d); sc->setProperty ("total", t); o->setProperty ("stage_counts", juce::var (sc));
+            auto* dc = new juce::DynamicObject(); dc->setProperty ("done", dd); dc->setProperty ("total", dt); dc->setProperty ("running", demoRunning); o->setProperty ("demo_checks", juce::var (dc)); return juce::var (o); };
+        const auto chk = wizapp::readyBar (prog ("Checking", 600, 1200, false, 0, 0), "CLA-76 (m)"), demo = wizapp::readyBar (prog ("Measuring", 0, 0, true, 30, 120), "CLA-76 (s)"),
+                   meas = wizapp::readyBar (prog ("Measuring", 0, 0, false, 120, 120), "CLA-76 (s)");
+        std::ostringstream term; const auto pj = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejready_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)) + ".json");
+        juce::var written;
+        { wizprog::Tracker tr (pj, term, false, 2); wizprog::Item d1; d1.product = "A"; d1.kind = "demo"; d1.group = 0; auto d2 = d1; d2.product = "B"; auto m1 = d1; m1.kind = "compressor"; m1.product = "A";
+          auto d3 = d1; d3.product = "C"; d3.group = 1;
+          tr.stage (wizprog::Stage::measuring, { d1, d2, m1, d3 }); tr.started ("A", "demo"); tr.finished ("A", false, 4.0, "demo"); tr.started ("B", "demo"); written = juce::JSON::parse (pj.loadFileAsString()); }
+        pj.deleteFile();
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (! a1 && ! a2 && r1 - r0 == 1 && a3 && r2 - r1 == 1
+               && chk.on && std::abs (chk.value - 0.5) < 1e-9 && chk.right == "600 of 1200" && chk.left == "Getting ready - re-checking your plugins"
+               && demo.on && std::abs (demo.value - 0.25) < 1e-9 && demo.left == "Getting ready - checking CLA-76 (s)" && demo.right == "30 of 120 checked" && ! meas.on
+               && (int) written.getProperty ("demo_checks", {}).getProperty ("done", -1) == 1 && (int) written.getProperty ("demo_checks", {}).getProperty ("total", -1) == 2
+               && (bool) written.getProperty ("demo_checks", {}).getProperty ("running", false)
+               && jobs::demoJobsFor (1) == 2 && jobs::demoJobsFor (2) == 4 && jobs::demoJobsFor (4) == 6 && jobs::demoJobsFor (8) == 6
+               && run.contains ("const int demoJobs = jobs::demoJobsFor (jobs);") && run.contains ("pool (todo, demoJobs);")
+               && app.contains ("else if (const auto rb = wizapp::readyBar (p, cur); rb.on) { barValue = rb.value; barLeft = rb.left; barRight = rb.right; }")
+               && app.contains ("barValue = shownPct / 100.0;")
+               && wizapp::measuringText (474).startsWith ("Measuring 474 plugins we haven't mapped yet.") && ! wizapp::measuringText (474).contains ("Ready to measure"),
+               "wizard WZ-READY-1: the PACE check read once per bundle (again when it changes); the re-check and the demo checks have their own moving bar; demo checks at twice the jobs (max 6); 'Measuring N plugins'");
+    }
+    // WZ-SKIP-1 EVERY OUTCOME MOVES THE BAR (Kathy, 15 Oct night: the name went through plugin after plugin with the bar at 0%): a plugin given an outcome
+    // without being measured (needs_licence, demo, silent, never processes) is done with its WHOLE expected work - the % jumps forward - and a skip
+    // found by the demo / sound check moves it the moment that check finishes, not after the whole pass's checks; a skip never teaches the ratio
+    {
+        using namespace ejmap::wizprog;
+        Times t; Item a; a.product = "A"; a.kind = "compressor"; a.weight = 300.0; Item b = a; b.product = "B"; Item c = a; c.product = "C"; c.weight = 100.0;
+        const double before = stageShare ({ a, b, c }, t);
+        Item bs = b; bs.done = true; bs.problem = true; const double afterSkip = stageShare ({ a, bs, c }, t);
+        std::ostringstream term; const auto pj = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejskip_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)) + ".json");
+        double ratioAfterSkip = -1.0, pctBefore = 0.0, pctAfter = 0.0;
+        { Tracker tr (pj, term, false, 2); tr.stage (Stage::measuring, { a, b, c }); pctBefore = juce::JSON::parse (pj.loadFileAsString()).getProperty ("percent", 0.0);
+          tr.finished ("B", true, 4.0, "compressor"); pctAfter = juce::JSON::parse (pj.loadFileAsString()).getProperty ("percent", 0.0); ratioAfterSkip = tr.weightRatio(); }
+        pj.deleteFile();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (before == 0.0 && std::abs (afterSkip - 300.0 / 700.0) < 1e-9 && pctAfter > pctBefore + 10.0 && ratioAfterSkip == 1.0
+               && run.contains ("if (v.demo || v.window || v.silent || v.inert) for (const auto& [pb, l] : queues) if (l.contains (n)) prog.finished (n, true, -1.0, wizroute::kindOf (pb));"),
+               "wizard WZ-SKIP-1: a skipped plugin is done with its whole expected work (" + juce::String (before, 2) + " -> " + juce::String (afterSkip, 2) + ", the % " + juce::String (pctBefore, 1) + " -> " + juce::String (pctAfter, 1) + "), at once from the demo check, never in the ratio");
     }
     // WZ-LABEL-1 THE NAME UNDER THE BAR (Kathy, 15 Oct: "CLA-76 (m)" for two hours while the count climbed): a plugin whose load ended leaves
     // the current list even when its item waits (a failed check waits for its map); the name shown is the most recently started

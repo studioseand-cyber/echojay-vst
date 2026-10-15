@@ -155,4 +155,8 @@ inline double userIdleSeconds()
     return cached;
 }
 inline int jobsNowForUser (int base) { return jobsWhileActive (base, userIdleSeconds()); }
+// 15 Oct (Kathy's night run: the demo / sound checks felt slow): a demo check is mostly a plugin LOADING (measured here: 12 Waves checks
+// took 38 s 2 at a time, 20 s 4 at a time, 17 s 6 at a time, each ~6 s) - so they run at twice the run's job count, at most 6; still 2
+// while the user is active
+inline int demoJobsFor (int jobs) { return juce::jlimit (1, 6, 2 * juce::jmax (1, jobs)); }
 } // namespace ejmap::jobs

@@ -265,8 +265,9 @@ inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std
         if (onChecked) onChecked (ds[i].name, v, secs);
         if (r.cleanExit() || v.window) { auto* o = new juce::DynamicObject(); o->setProperty ("judged", v.judged); o->setProperty ("demo", v.demo); o->setProperty ("window", v.window); o->setProperty ("silent", v.silent); o->setProperty ("inert", v.inert); o->setProperty ("why", v.why); o->setProperty ("seconds", std::round (secs * 100.0) / 100.0); cache.getDynamicObject()->setProperty (pidOf (ds[i]), juce::var (o)); }
     };
-    pool.jobsNow = [jobs] { return jobs::jobsNowForUser (juce::jmax (1, jobs)); };   // 15 Oct: 2 at a time while the user is active
-    pool (todo, juce::jmax (1, jobs));
+    const int demoJobs = jobs::demoJobsFor (jobs);   // 15 Oct: load-bound - twice the run's jobs (at most 6), 2 while the user is active
+    pool.jobsNow = [demoJobs] { return jobs::jobsNowForUser (demoJobs); };
+    pool (todo, demoJobs);
     cacheFile.replaceWithText (juce::JSON::toString (cache));
     return out;
 }
@@ -934,7 +935,11 @@ inline int runWizard (const WizardOptions& wo)
                 if (! qd.empty())
                 {
                     const auto verdicts = demoCheckForWizard (qd, opt.jobs, [&] (const juce::StringArray& a) { prog.started (a[1], "demo"); return runChild (a, opt.timeoutMs); }, opt.probe, out.getChildFile ("demo_checks.json"),
-                                                              [&] (const juce::String& n, const wizard::DemoVerdict&, double secs) { prog.finished (n, false, secs, "demo"); });
+                                                              [&] (const juce::String& n, const wizard::DemoVerdict& v, double secs)
+                                                              {   prog.finished (n, false, secs, "demo");
+                                                                  // 15 Oct (Kathy: the bar sat at 0% while the checks went by): a plugin this check skips moves the bar NOW -
+                                                                  // its measurements are done (a problem) with their whole expected work; the queues follow after the pool
+                                                                  if (v.demo || v.window || v.silent || v.inert) for (const auto& [pb, l] : queues) if (l.contains (n)) prog.finished (n, true, -1.0, wizroute::kindOf (pb)); });
                     if (wizardStop() != 0) { pbCode = 130; break; }
                     juce::StringArray demos; for (const auto& [name, v] : verdicts) if (v.demo || v.window || v.silent || v.inert) demos.add (name);   // 14 Oct: a licence window leaves the queues too; 15 Oct: no sound / never processes too
                     const auto gone = wizroute::dropDemos (queues, demos);

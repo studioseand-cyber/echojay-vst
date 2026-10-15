@@ -254,7 +254,7 @@ inline juce::String measuringText (int toMeasure = 0)
 {   // 15 Oct: the scan-done screen's "Ready to measure" words, as the Measuring screen's line (never a time)
     const juce::String keep = "Leave it running - the Mac stays awake. You can pause and carry on any time.";
     if (toMeasure <= 0) return keep;
-    return "Ready to measure: " + juce::String (toMeasure) + (toMeasure == 1 ? " plugin" : " plugins") + " we haven't mapped yet - it's best left running overnight. " + keep;
+    return "Measuring " + juce::String (toMeasure) + (toMeasure == 1 ? " plugin" : " plugins") + " we haven't mapped yet. " + keep;   // 15 Oct (Kathy): it is already measuring
 }
 inline juce::String measuringCount (const juce::var& progress)
 {
@@ -271,6 +271,27 @@ inline int measuringPercent (const juce::var& progress, int lastShown)
     return juce::jmax (lastShown, now);
 }
 inline juce::String percentWords (int pct) { return juce::String (pct) + "%"; }
+// GETTING READY HAS ITS OWN MOVING BAR (Kathy, 15 Oct: "Getting ready" with an empty bar for a while): before a pass measures, the
+// measuring run re-checks the Mac (the engine's Scanning / Checking - its stage counts) and then demo / sound-checks that pass's plugins
+// (progress.json demo_checks) - each shows its own n of N; the % returns when measuring does
+struct ReadyBar { bool on = false; double value = 0.0; juce::String left, right; };
+inline ReadyBar readyBar (const juce::var& p, const juce::String& current)
+{
+    ReadyBar b; const auto stage = p.getProperty ("stage", "").toString();
+    if (stage == "Scanning" || stage == "Checking")
+    {
+        const auto sc = p.getProperty ("stage_counts", {}); const int d = (int) sc.getProperty ("done", 0), t = (int) sc.getProperty ("total", 0);
+        b.on = true; b.value = t > 0 ? (double) d / t : 0.0; b.left = "Getting ready - re-checking your plugins"; b.right = t > 0 ? juce::String (d) + " of " + juce::String (t) : juce::String(); return b;
+    }
+    const auto dc = p.getProperty ("demo_checks", {});
+    if (stage == "Measuring" && (bool) dc.getProperty ("running", false))
+    {
+        const int d = (int) dc.getProperty ("done", 0), t = (int) dc.getProperty ("total", 0);
+        b.on = true; b.value = t > 0 ? (double) d / t : 0.0; b.left = current.isNotEmpty() ? "Getting ready - checking " + current : juce::String ("Getting ready - checking plugins");
+        b.right = juce::String (d) + " of " + juce::String (t) + " checked"; return b;
+    }
+    return b;
+}
 // THE PAUSE SAYS THE BAR'S % (Kathy, 15 Oct: the pause said "25 measured so far" while the checkpoint said 107 of 509 with a result - two
 // different counts): "Paused at 43%" on the screen, "43% done." in the close question - the same number as the bar, never a count
 // SHARING THE MAC (Kathy, 15 Oct): a DAW open -> the wizard pauses by itself and carries on by itself when it closes. The DAW is read from a

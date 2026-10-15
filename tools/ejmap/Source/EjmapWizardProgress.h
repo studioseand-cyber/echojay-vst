@@ -346,6 +346,10 @@ private:
             // 14 Oct: the Measuring bar's "n of N" (measurements, not demo checks; done counts every landed one)
             int mt = 0, mdn = 0; for (const auto& i : items_) if (i.kind != "demo") { ++mt; if (i.done) ++mdn; }
             auto* mm = new juce::DynamicObject(); mm->setProperty ("done", mdn); mm->setProperty ("total", mt); o->setProperty ("measurements", juce::var (mm)); }
+        {   // 15 Oct (Kathy: "Getting ready" sat with an empty bar): the demo / sound checks of the pass now being checked - their own count
+            int grp = -2; for (const auto& i : items_) if (i.kind == "demo" && i.running && ! i.done) { grp = i.group; break; }
+            int dd = 0, dt = 0; if (grp != -2) for (const auto& i : items_) if (i.kind == "demo" && i.group == grp) { ++dt; if (i.done) ++dd; }
+            auto* dm = new juce::DynamicObject(); dm->setProperty ("done", dd); dm->setProperty ("total", dt); dm->setProperty ("running", grp != -2); o->setProperty ("demo_checks", juce::var (dm)); }
         o->setProperty ("elapsed_s", std::round (elapsed)); o->setProperty ("eta_s", eta < 0.0 ? juce::var() : juce::var (std::round (eta)));
         o->setProperty ("eta_words", stage_ == Stage::done ? juce::String ("finished") : stopped_ ? juce::String ("stopped") : etaWords (eta)); o->setProperty ("jobs", jobs_);
         auto* tm = new juce::DynamicObject();

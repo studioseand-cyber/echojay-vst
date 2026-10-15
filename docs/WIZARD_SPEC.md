@@ -200,6 +200,14 @@ What it says is true of the bundle as built:
 
 **3s. A not-measured plugin says what happened (Kathy, 15 Oct).** A final state other than measured, with no reason from its row or its certification, gets one from its outcome (e.g. a licence window: "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"). It never keeps the scan's routing reason ("the server's category: compressor"). All three settle paths. Pin WZ-WHY-1.
 
+**3t. Getting ready, and every outcome moves the bar (Kathy, 15 Oct night).**
+- **The PACE check is read once per bundle** (cached by path, size and modification time). The measuring list asked ~954 times, 3 lists a run, and Phase B again per product; WaveShell2-AU 12.0's 19 MB binary was read and scanned each time (~60 ms), about 1.5 min of an empty "Getting ready" here.
+- **Getting ready has its own moving bar:** the measuring run's re-check ("Getting ready - re-checking your plugins", n of N), then each pass's demo / sound checks ("Getting ready - checking <plugin>", n of N checked). The % returns when measuring does.
+- **Demo / sound checks run at twice the jobs (at most 6),** still 2 while the user is active. They are load-bound - measured: 12 Waves checks 38 s at 2, 20 s at 4, 17 s at 6.
+- **Every outcome moves the bar:** a plugin skipped without being measured (needs_licence, demo, silent, never processes) is done with its whole expected work - the % jumps forward - the moment its check finishes, and a skip never teaches the speed ratio.
+- **The line** says "Measuring N plugins we haven't mapped yet." (not "Ready to measure").
+- Pins WZ-READY-1, WZ-SKIP-1.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

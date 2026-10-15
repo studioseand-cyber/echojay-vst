@@ -660,7 +660,7 @@ inline ProbeIdentity checkProbe (const juce::File& probe, const juce::String& si
 // PACE, by the probe line's own rule (merge/kathy-2026-09-06 Source/EJPaceCheck.h
 // isPaceWrapped, at 971e4c1). Ported, not included: that header is not on this
 // branch. If the rule changes there, it must change here.
-inline bool isPaceWrapped (const juce::File& bundle)
+inline bool isPaceWrappedUncached (const juce::File& bundle)
 {
     const auto contents = bundle.getChildFile ("Contents");
     if (contents.getChildFile ("__Pace_Eden.bundle").exists()
@@ -683,6 +683,25 @@ inline bool isPaceWrapped (const juce::File& bundle)
         }
     }
     return false;
+}
+// 15 Oct (Kathy's night run sat on "Getting ready"): the answer is kept per bundle for the life of the process - keyed by its path and its
+// executables' sizes and modification times, so a reinstalled plugin is read again. The wizard asked ~954 times per measuring list (3 lists
+// a run) and Phase B again per product, and WaveShell2-AU 12.0 (589 plugins, one binary) was read whole every time
+inline juce::String paceCacheKey (const juce::File& bundle)
+{
+    juce::String k = bundle.getFullPathName();
+    for (const auto& bin : bundle.getChildFile ("Contents").getChildFile ("MacOS").findChildFiles (juce::File::findFiles, false))
+        k << "|" << bin.getFileName() << ":" << juce::String (bin.getSize()) << ":" << juce::String (bin.getLastModificationTime().toMilliseconds());
+    return k;
+}
+inline int& paceReads() { static int n = 0; return n; }   // binaries actually read (the pin counts them)
+inline bool isPaceWrapped (const juce::File& bundle)
+{
+    static std::mutex m; static std::map<juce::String, bool> cache;
+    const auto key = paceCacheKey (bundle);
+    { std::lock_guard<std::mutex> g (m); if (const auto it = cache.find (key); it != cache.end()) return it->second; }
+    const bool held = isPaceWrappedUncached (bundle);
+    std::lock_guard<std::mutex> g (m); ++paceReads(); cache[key] = held; return held;
 }
 
 // "type,subtype,manufacturer" -> the .component bundle that registers it, from each

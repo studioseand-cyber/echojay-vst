@@ -658,10 +658,11 @@ private:
             handleCheckpoint();   // 13 Oct: the hourly checkpoint, as soon as the engine has packed it
             if (pausing) { barLeft = "Pausing - saving what's done"; barRight = {}; }
             else if (finishing && stage != "Packing" && stage != "Done") { barLeft = kMode == wizapp::Mode::beta ? "Saving what's measured" : "Sending what's measured"; barRight = {}; }
-            else if (stage == "Measuring") { shownPct = wizapp::measuringPercent (p, shownPct); barValue = juce::jmax (barValue, shownPct / 100.0); barLeft = cur.isNotEmpty() ? cur : "Measuring"; barRight = wizapp::percentWords (shownPct);   // 15 Oct: a percentage of the weighted bar, whole, never backwards
+            else if (const auto rb = wizapp::readyBar (p, cur); rb.on) { barValue = rb.value; barLeft = rb.left; barRight = rb.right; }   // 15 Oct: getting ready moves too
+            else if (stage == "Measuring") { shownPct = wizapp::measuringPercent (p, shownPct); barValue = shownPct / 100.0;   /* the % never goes back; after a getting-ready bar the % bar starts from the % */ barLeft = cur.isNotEmpty() ? cur : "Measuring"; barRight = wizapp::percentWords (shownPct);   // 15 Oct: a percentage of the weighted bar, whole, never backwards
                                              refreshReadyLine(); }   // 14 Oct: n of N, never time left
             else if (stage == "Packing" || stage == "Done") { barValue = 1.0; barLeft = "Packing your results"; barRight = {}; }
-            else { barValue = 0.0; barLeft = "Getting ready"; barRight = {}; }
+            else { barValue = 0.0; barLeft = "Getting ready"; barRight = {}; }   // the first second, before the engine's first progress
         }
         repaint(); snapAtQuarters();
         if (const auto code = engine.poll())
