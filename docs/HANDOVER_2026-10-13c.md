@@ -224,4 +224,10 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
 - **Timing CSV:** ~/Desktop/WIZARD_TIMING_15oct.csv, refreshed every 10 min (scratchpad timing_csv.py, read-only on the wizard's files).
 - **DMGs at 92f34301:** Test sha 8cedf599bc2c2970, Beta sha 11f1b4c1ba4928e3. Both signed and verify VALID. Not installed: today's Test run is the 774fe72e build.
 
+## 15 Oct addendum 11: the hardware check at the scan (wizard 70801a29; DMGs Test 673d9d7b, Beta 77b74b9e)
+- UAD without a UAD-2 device and APB without its unit are needs_hardware at the scan, on every route that measures or reads sound (WIZARD_SPEC 3n, pin WZ-HW-1, 4 mutants red).
+- The plan's count now holds only what will load.
+- This Mac (a plan, nothing loaded): 220 needs_hardware (212 UAD, 8 APB) and 341 plugins to measure (was ~504).
+- APB detection has never been seen with a unit. A network-only unit may need `--assume-apb-device`.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
