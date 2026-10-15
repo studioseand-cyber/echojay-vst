@@ -667,6 +667,7 @@ inline int runWizard (const WizardOptions& wo)
                     row->setProperty ("compressor_pass", cs + (pass ? ", tone check passed" : ", tone check did not pass"));
                 }
                 if (st == "measuring" && finishing) { st = "not_reached"; why = wizard::kNotReachedWhy; }
+                if (why.isEmpty() && ! wizard::keepsRoutingWhy (st)) why = wizard::reasonFor (r.getProperty ("outcome", "").toString());   // 15 Oct: never the routing reason
                 row->setProperty ("state", st); row->setProperty ("drafts", draftsL.joinIntoString (",")); if (why.isNotEmpty()) row->setProperty ("why", why); ++counts[st];
                 continue;
             }
@@ -704,6 +705,7 @@ inline int runWizard (const WizardOptions& wo)
                     }
                     row->setProperty ("drafts", draftsL.joinIntoString (","));
                 }
+                if (why.isEmpty() && ! wizard::keepsRoutingWhy (st)) why = wizard::reasonFor (r.getProperty ("outcome", "").toString());   // 15 Oct: never the routing reason
                 row->setProperty ("state", st); row->setProperty ("outcome", r.getProperty ("outcome", {})); row->setProperty ("drafts", draftsL.joinIntoString (",")); if (why.isNotEmpty()) row->setProperty ("why", why); ++counts[st];
                 if (r.hasProperty ("reference_vote")) { row->setProperty ("reference_vote", r.getProperty ("reference_vote", {})); row->setProperty ("reference_stem", r.getProperty ("_stem", {})); }   // 12 Oct: this Mac's vote travels
                 continue;
@@ -723,6 +725,7 @@ inline int runWizard (const WizardOptions& wo)
                 juce::String why; const auto draft = juce::JSON::parse (catDir.getChildFile ("drafts").getChildFile (stem + ".eq_profile.draft.json").loadFileAsString());
                 if (! wizard::eqAccepted (draft, why)) { st = "not_measurable"; rowWhy = "measured, but " + why; } else { rowWhy = why; row->setProperty ("eq_draft", "drafts/" + stem + ".eq_profile.draft.json"); }
             }
+            if (rowWhy.isEmpty() && ! wizard::keepsRoutingWhy (st)) rowWhy = wizard::reasonFor (outcome);   // 15 Oct: a needs_licence UAD row kept "the server's category: compressor"
             row->setProperty ("state", st); row->setProperty ("outcome", outcome); row->setProperty ("cert_state", certState); if (rowWhy.isNotEmpty()) row->setProperty ("why", rowWhy); ++counts[st];
         }
     };

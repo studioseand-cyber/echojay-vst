@@ -306,6 +306,22 @@ inline juce::String plainOutcome (const juce::String& outcome, const juce::Strin
     if (outcome == "ok" && certState == "exported") return "measured";
     return "not_measurable";
 }
+// THE REASON A PLUGIN WAS NOT MEASURED, when its row and its certification gave none (Kathy, 15 Oct: a UAD row filed needs_licence after a
+// licence window kept "the server's category: compressor" - the routing reason of the scan). A final state other than measured never
+// keeps the routing reason: it says what happened
+inline juce::String reasonFor (const juce::String& outcome)
+{
+    if (outcome == "window") return "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured";
+    if (outcome == "needs_licence") return "licence suspected - not measured";
+    if (outcome == "needs_device") return "its hardware is not connected - not measured";
+    if (outcome == "silent_output") return "it passes no sound on this Mac (activation / licence) - not measured";
+    if (outcome == "probe_crashed") return "it crashed while being measured (twice) - skipped";
+    if (outcome == "unhostable" || outcome == "empty_param_list") return "it will not load on this Mac";
+    if (outcome == "timed_out") return "it did not finish in time, even alone - skipped";
+    if (outcome == "demo") return "a demo version - not measured";
+    return outcome.isEmpty() ? juce::String ("not measured") : "not measured (" + outcome + ")";
+}
+inline bool keepsRoutingWhy (const juce::String& state) { return state == "measured" || state == "measuring" || state == "not_reached" || state == "queued"; }
 // THE REFERENCE VOTE (Kathy, 12 Oct): every plugin checked against a reference casts one (EjmapCustomDefault.h voteOf); the upload carries
 // it so the server can count the Macs that agree. The entry names the reference by its file (<stem>.reference.json), the plugin, the
 // vote, and - when it disagrees - this Mac's opening block, so a third source can settle it. A row with no vote -> void.

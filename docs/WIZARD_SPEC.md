@@ -198,6 +198,8 @@ What it says is true of the bundle as built:
   - UAD LA-2A Gray, bx_opto Pedal and three Waves plugins: one Start; LA-2A needs_licence, bx_opto needs_licence (no sound), 3 measured.
   - All 5 final on the server's merged run; the promo code issued (3 of 3 at the test minimum); 96 s.
 
+**3s. A not-measured plugin says what happened (Kathy, 15 Oct).** A final state other than measured, with no reason from its row or its certification, gets one from its outcome (e.g. a licence window: "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"). It never keeps the scan's routing reason ("the server's category: compressor"). All three settle paths. Pin WZ-WHY-1.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

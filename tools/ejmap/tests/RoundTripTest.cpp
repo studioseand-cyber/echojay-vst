@@ -10505,6 +10505,20 @@ void testWizardCategories()
                && ! srv.contains ("needs the full run: "),
                "wizard WZ-END-1: left plugins are never sent as finished - 'Almost done', what is left and why, Carry on; the server never says 'needs the full run' to a finished upload");
     }
+    // WZ-WHY-1 A NOT-MEASURED PLUGIN SAYS WHAT HAPPENED (Kathy, 15 Oct: a UAD row filed needs_licence after a licence window kept the scan's routing
+    // reason "the server's category: compressor"): a final state other than measured, with no reason from its row or its certification,
+    // gets one from its outcome - on every settle path (one pass, all categories, the limiter's compressor pass alone)
+    {
+        using namespace ejmap::wizard;
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (reasonFor ("window") == "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured" && plainOutcome ("window", {}) == "needs_licence"
+               && reasonFor ("silent_output").contains ("passes no sound") && reasonFor ("timed_out").contains ("even alone") && reasonFor ("odd") == "not measured (odd)"
+               && keepsRoutingWhy ("measured") && keepsRoutingWhy ("measuring") && ! keepsRoutingWhy ("needs_licence") && ! keepsRoutingWhy ("silent") && ! keepsRoutingWhy ("not_measurable")
+               && run.contains ("if (rowWhy.isEmpty() && ! wizard::keepsRoutingWhy (st)) rowWhy = wizard::reasonFor (outcome);")
+               && run.indexOf ("if (why.isEmpty() && ! wizard::keepsRoutingWhy (st)) why = wizard::reasonFor (r.getProperty (\"outcome\", \"\").toString());") >= 0
+               && run.lastIndexOf ("if (why.isEmpty() && ! wizard::keepsRoutingWhy (st)) why = wizard::reasonFor") != run.indexOf ("if (why.isEmpty() && ! wizard::keepsRoutingWhy (st)) why = wizard::reasonFor"),
+               "wizard WZ-WHY-1: a window -> 'a licence or sign-in window appeared when it loaded - closed, never clicked; not measured'; never the routing reason, on all three settle paths");
+    }
     // WZ-LABEL-1 THE NAME UNDER THE BAR (Kathy, 15 Oct: "CLA-76 (m)" for two hours while the count climbed): a plugin whose load ended leaves
     // the current list even when its item waits (a failed check waits for its map); the name shown is the most recently started
     {
