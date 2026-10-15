@@ -44,12 +44,17 @@ installed, and the tree is clean. See WHAT IS LEFT.
 git push origin HEAD:release/v2-agent
 ```
 
-Three commits are waiting on it, none pushed (your standing rule):
+**Everything since `bcd5b73b` is unpushed** — that is what `release/v2-agent` holds now, and your standing
+rule is that I do not push. Eleven commits: the five from yesterday evening's investigation (`30322d8c` …
+`d969fd04`), then tonight's six:
 
 ```
-947903ff  the seven fixes + the three the rig found       -> ship_2026-10-15a
-3a2e2fe1  Auto mode                                        -> the feature
-14afd2c6  ship_2026-10-15b (the folder, GREEN.txt, docs)
+947903ff  the seven fixes, + the three the rig found        -> ship_2026-10-15a
+3a2e2fe1  Auto mode
+14afd2c6  ship_2026-10-15b (the folder, its GREEN.txt)      -> installed
+3d5f7b2f  this report
+38f10639  the rig can close a window (the VST3 road, W1)
+9a89104b  this report again, with W1 in it
 ```
 
 ## AND ONE PIECE OF GROUNDWORK THAT WAS NOT ON YOUR LIST, BECAUSE IT BLOCKS WHAT IS
