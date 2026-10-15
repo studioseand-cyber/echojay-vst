@@ -151,6 +151,11 @@ What it says is true of the bundle as built:
 - **The plan's count** now holds only what will load.
 - **This Mac:** 220 needs_hardware (212 UAD, 8 APB); 341 plugins to measure (346 measurements). Pin WZ-HW-1.
 
+**3o. Surround variants are out of scope (Kathy, 15 Oct).** EchoJay works on mono / stereo tracks.
+- **The rule:** a variant made only for surround is out of scope at the scan - not loaded, not measured, not counted (not in the %, not in the 25 to qualify, not in the totals) - before any category is looked at. Its (m), (s), (m->s) siblings are measured.
+- **How it is read:** from the NAME (the scan loads nothing to learn a layout): "(a->b)" with a or b above 2 (Waves' (5->5), (2->6), (6->2), the B360 (4->4)), or a layout word (4.0 ... 9.1.6).
+- **This Mac:** 86 variants: H-Reverb x12, IR360 x9, R360 x6, L360 x2 were queued. On 15 Oct L360 (5->5) / (6->6) took ~50 min each in their compressor pass. New plan: 312 plugins to measure (315 measurements; was 341), 85 surround out of scope. Pin WZ-SURROUND-1.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

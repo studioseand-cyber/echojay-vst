@@ -10019,7 +10019,7 @@ void testWizardCategories()
         check (read && scanCounts ({}, false) && scanCounts ({}, true) && ! scanCounts ("instrument", false) && scanCounts ("instrument", true)
                && orphaned (1) && ! orphaned (4242) && std::abs (scanBarValue (stage1) - 69.0 / 1285.0) < 1e-9
                && step1.length() > 1000 && ! step1.contains ("quickCheck (") && ! step1.contains ("runChild (") && step1.contains ("prog.stage (wizprog::Stage::scanning, {});")
-               && check2.contains ("if (! wizapp::scanCounts (categorise::outOfScope (typeOf (ir.desc), name, {}), pendingLoad.count (name) > 0)) continue;")
+               && check2.contains ("if (! wizapp::scanCounts (categorise::outOfScope (typeOf (ir.desc), name, {}) + wizroute::surroundLayout (name), pendingLoad.count (name) > 0)) continue;")   // 15 Oct: surround variants are not counted either
                && check2.contains ("for (const auto& n : settled) prog.alreadyDone (n);")
                && quickLoop.indexOf ("if (wizardStop() != 0) return stoppedInScan (\"checking\");") >= 0 && quickLoop.indexOf ("if (wizardStop() != 0) return stoppedInScan (\"checking\");") < quickLoop.indexOf ("quickCheck (qopt")
                && quickLoop.contains ("quickCacheF.replaceWithText") && step1.contains ("quickCache.getProperty (juce::Identifier (wizroute::pluginId (uid, ver)), {})")
@@ -10284,6 +10284,25 @@ void testWizardCategories()
                && run.contains ("&& (st == \"queued\" || st == \"quick_check\" || st == \"checking\"))   // 15 Oct: only what will load")
                && run.contains ("if (uad::isUadProduct (dd.name, dd.manufacturerName))") && run.contains ("if (apb::isApbProduct (dd.name, dd.manufacturerName))"),
                "wizard WZ-HW-1: UAD / APB without their hardware -> needs_hardware at the scan on the measure / read-back / signature routes; an APB unit by its registry names, McDSP's software is not one (read: " + juce::String ((int) read) + ")");
+    }
+    // WZ-SURROUND-1 SURROUND VARIANTS ARE OUT OF SCOPE (Kathy, 15 Oct): EchoJay works on mono / stereo tracks - a "(a->b)" name with a or b above 2,
+    // or a layout word (5.0, 5.1, 7.1 ...), is out of scope at the scan: not loaded, not measured, not counted, whatever its category; the (m),
+    // (s), (m->s), (s->m) siblings are measured. On 15 Oct L360 (5->5) / (6->6) took ~50 min each in their compressor pass
+    {
+        using namespace ejmap::wizroute;
+        Answer srv; srv.rule = Rule::C; srv.category = "reverb";
+        Answer have; have.rule = Rule::A; have.category = "reverb";
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const bool read = run.contains ("inline int runWizard");   // the control
+        check (read && surroundLayout ("H-Reverb (5->5)") == "5->5" && surroundLayout ("L360 (6->6)") == "6->6" && surroundLayout ("IR360 sound field (1->5)") == "1->5"
+               && surroundLayout ("S360 Panner (6->2)") == "6->2" && surroundLayout ("B360 AmbiX-FuMa (4->4)") == "4->4" && surroundLayout ("Spherix Reverb 5.1") == "5.1" && surroundLayout ("Imager (7.1)") == "7.1"
+               && surroundLayout ("H-Reverb (m->s)").isEmpty() && surroundLayout ("H-Reverb (s)").isEmpty() && surroundLayout ("CLA-2A (m)").isEmpty() && surroundLayout ("Waves Tune (s->m)").isEmpty()
+               && surroundLayout ("H-Reverb (2->2)").isEmpty() && surroundLayout ("Pro-Q 4").isEmpty() && surroundLayout ("Vinyl 2.0").isEmpty() && surroundLayout ("Plugin v5.1.2 build").isEmpty()
+               && route (srv, {}, {}, false, "5->5").route == Route::outOfScope && route (srv, {}, {}, false, "5->5").category == "surround"
+               && route (srv, {}, {}, false, {}).route == Route::measure && route (have, {}, {}, false, "5->5").route == Route::skipHave
+               && run.contains ("wizroute::isMultiband (dbMultiband, uid), wizroute::surroundLayout (ir.desc.name))")
+               && run.contains ("scanCounts (categorise::outOfScope (typeOf (ir.desc), name, {}) + wizroute::surroundLayout (name),"),
+               "wizard WZ-SURROUND-1: (5->5) / (6->6) / (1->5) / (6->2) / (4->4) / 5.1 / 7.1 out of scope at the scan, before the server's category; (m) / (s) / (m->s) / (s->m) / (2->2) measured; not counted (read: " + juce::String ((int) read) + ")");
     }
     // WZ-LABEL-1 THE NAME UNDER THE BAR (Kathy, 15 Oct: "CLA-76 (m)" for two hours while the count climbed): a plugin whose load ended leaves
     // the current list even when its item waits (a failed check waits for its map); the name shown is the most recently started

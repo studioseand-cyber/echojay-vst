@@ -247,7 +247,26 @@ inline bool oneLoadReadUsable (bool cleanExit, const juce::String& out) { return
 // reads; a map, a listing, a held or other-category row only reads controls and is unaffected
 inline bool needsSoundHardware (Route r) { return r == Route::measure || r == Route::quickCheck || r == Route::categorise; }
 inline juce::String kindOf (const juce::String& phaseBCategory) { return phaseBCategory == "wizard" ? juce::String ("compressor") : phaseBCategory == "wizard_eq" ? juce::String ("eq") : phaseBCategory; }
-inline Decision route (const Answer& a, const juce::String& nameCategory, const juce::String& outOfScope, bool knownMultiband = false)
+// SURROUND VARIANTS ARE OUT OF SCOPE (Kathy, 15 Oct): EchoJay works on mono / stereo tracks, so a variant made only for surround is not
+// measured and not counted (not in the %, not in the 25 to qualify, not in the totals); its mono / stereo siblings ((m), (s), (m->s))
+// are. Read from the NAME - the scan loads nothing to learn a channel layout: "(a->b)" with a or b a number above 2 (Waves' "(5->5)",
+// "(2->6)", the B360 "(4->4)"), or a surround layout word (4.0, 5.0, 5.1, 6.0, 6.1, 7.0, 7.1, 7.1.2, 7.1.4, 9.1.6). Returns the layout
+// ("5->5", "5.1"), empty for anything else
+inline juce::String surroundLayout (const juce::String& name)
+{
+    static const juce::StringArray kLayouts { "4.0", "5.0", "5.1", "6.0", "6.1", "7.0", "7.1", "7.1.2", "7.1.4", "9.1.6" };
+    for (const auto& t : juce::StringArray::fromTokens (name, " ()[],/", ""))
+        if (kLayouts.contains (t.trim())) return t.trim();
+    for (int at = name.indexOfChar ('('); at >= 0; at = name.indexOfChar (at + 1, '('))
+    {
+        const auto g = name.substring (at + 1).upToFirstOccurrenceOf (")", false, false).trim();
+        if (! g.contains ("->")) continue;
+        auto big = [] (const juce::String& x) { const auto v = x.trim(); return v.isNotEmpty() && v.containsOnly ("0123456789") && v.getIntValue() > 2; };
+        if (big (g.upToFirstOccurrenceOf ("->", false, false)) || big (g.fromFirstOccurrenceOf ("->", false, false))) return g;
+    }
+    return {};
+}
+inline Decision route (const Answer& a, const juce::String& nameCategory, const juce::String& outOfScope, bool knownMultiband = false, const juce::String& surround = {})
 {
     switch (a.rule)
     {
@@ -255,6 +274,8 @@ inline Decision route (const Answer& a, const juce::String& nameCategory, const 
         case Rule::pendingReview: return { Route::skipPending, {}, a.why };
         case Rule::B: case Rule::C: break;
     }
+    // 15 Oct: a surround-only variant - out of scope before any category is looked at (the server's "reverb" would otherwise measure it)
+    if (surround.isNotEmpty()) return { Route::outOfScope, "surround", "out of scope (surround " + surround + ": EchoJay works on mono / stereo tracks): not loaded, not counted" };
     // a known multiband: held at once - never quick-checked, signature-read or queued for the compressor certification
     if (knownMultiband) return { Route::held, "multiband", "held: no server category (a known multiband: EJ Map's list)" };
     if (a.rule == Rule::B) return { Route::quickCheck, a.category, a.why };

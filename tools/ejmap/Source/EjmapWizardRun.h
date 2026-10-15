@@ -289,7 +289,7 @@ inline int runWizard (const WizardOptions& wo)
         const auto& ir = plugins[i]; const auto uid = juce::String::toHexString (ir.desc.uniqueId).toLowerCase(); const auto ver = ir.desc.version;
         const auto se = store.count (uid + "|" + ver) ? store.at (uid + "|" + ver) : StoreEntry();
         const auto ans = wizroute::ask (db, pending, catalogue, uid, ver, se.fp, ir.desc.name);
-        const auto d = wizroute::route (ans, wizard::wizardCategory (ir.desc.name, juce::var()), categorise::outOfScope (typeOf (ir.desc), ir.desc.name, {}), wizroute::isMultiband (dbMultiband, uid));
+        const auto d = wizroute::route (ans, wizard::wizardCategory (ir.desc.name, juce::var()), categorise::outOfScope (typeOf (ir.desc), ir.desc.name, {}), wizroute::isMultiband (dbMultiband, uid), wizroute::surroundLayout (ir.desc.name));
         auto* row = new juce::DynamicObject(); row->setProperty ("product", ir.desc.name); row->setProperty ("plugin_id", wizroute::pluginId (uid, ver)); row->setProperty ("map_fp", se.fp);
         row->setProperty ("category", d.category); row->setProperty ("route", wizroute::routeName (d.route)); row->setProperty ("vendor", ir.desc.manufacturerName);
         if (wo.plan) row->setProperty ("identifier", ir.desc.fileOrIdentifier);   // 14 Oct (WaveShell census): the AU type,subtype,manufacturer - plan only
@@ -384,7 +384,7 @@ inline int runWizard (const WizardOptions& wo)
         for (const auto& ir : plugins)
         {
             const auto name = ir.desc.name;
-            if (! wizapp::scanCounts (categorise::outOfScope (typeOf (ir.desc), name, {}), pendingLoad.count (name) > 0)) continue;
+            if (! wizapp::scanCounts (categorise::outOfScope (typeOf (ir.desc), name, {}) + wizroute::surroundLayout (name), pendingLoad.count (name) > 0)) continue;   // 15 Oct: a surround variant loads nothing and is not counted
             wizprog::Item it; it.product = name; it.kind = "check"; its.push_back (it); if (! pendingLoad.count (name)) settled.push_back (name);
         }
         prog.stage (wizprog::Stage::checking, its);
