@@ -20,13 +20,45 @@ them. `ship_2026-10-15a/GREEN.txt` is the full record, including every skip and 
 The gate: S1–S3b OK, **S4 78/78**, S5 OK, **S6 green both ways** (live against B's local server: 47 passed,
 0 failed, 1 named skip; the mock: 32 passed, 0 failed, 2 named skips). Commit `947903ff`.
 
-**Nothing else is installed.** Ship 2 did not finish — see WHAT IS LEFT.
+**And then `ship_2026-10-15b`, which is what is installed NOW** — placed, gated green and **installed at
+04:31**, again with Logic closed:
+
+```
+EchoJay V2.component   1E932514-059C-3F9D-8590-4B7B2D1A0DEE
+EchoJay V2.vst3        980C0736-D434-3F8B-9B21-6475FD026434
+EchoJay Link.component 483F8ED8-5D57-39A2-9635-B9E70DB056EF   (unchanged — no Link source changed)
+EchoJay Link.vst3      972F32A6-E7F0-3103-BD4B-AA07B5AC9AE7   (unchanged)
+```
+
+It adds **AUTO MODE** — the Agent chip's third state — and nothing else. Its gate: S1–S3b OK, **S4 78/78**,
+S5 OK, **S6 green both ways** (live 47/0/1; the mock 43/0/2, which is where Auto is proven because the
+approval class has to be the rig's to choose). Commits `3a2e2fe1` (the feature) and `14afd2c6` (the ship).
+`ship_2026-10-15b/GREEN.txt` is the record.
+
+**Ship 2 as you listed it is NOT finished** — only Auto mode of the five items is in. Nothing half-done was
+installed, and the tree is clean. See WHAT IS LEFT.
 
 ## THE PUSH COMMAND
 
 ```
 git push origin HEAD:release/v2-agent
 ```
+
+Three commits are waiting on it, none pushed (your standing rule):
+
+```
+947903ff  the seven fixes + the three the rig found       -> ship_2026-10-15a
+3a2e2fe1  Auto mode                                        -> the feature
+14afd2c6  ship_2026-10-15b (the folder, GREEN.txt, docs)
+```
+
+## ONE THING FOR YOU TO RULE ON (it is small, and I built the thing that needed a decision)
+
+The approved mockup puts the Agent mode's one plain line **under** the composer. There is no vertical space
+under the composer box in the real window, so it floats **immediately above** it, anchored to the same
+geometry the Reaper key hint uses, and yields to that hint. The words are the mockup's, unchanged. If you
+want it genuinely under the box, that is a change to the chat surface's height math rather than a floating
+strip, and it should be its own commit. **Nothing waits on your answer** — Auto mode is shipped either way.
 
 ## WHAT IS LEFT
 
@@ -35,7 +67,7 @@ part stands:
 
 | ship 2 item | state |
 |---|---|
-| **Auto mode** (the Agent chip's third state, the approvals it skips and the ones it keeps) | built against the design and the mockup; see below for how far it got |
+| **Auto mode** (the Agent chip's third state, the approvals it skips and the ones it keeps) | **DONE, gated and installed** as part of `ship_2026-10-15b`. One deviation for you to rule on: the mode line floats just **above** the composer box, not under it — there is no vertical space under it, and the words are the mockup's, unchanged |
 | **the plugin-choice card** (P1-P5) | not started |
 | **the OUT knob** (O1-O6) | not started - the groundwork is read and written down (§6 of the queue): both racks clamp to -24..+12 dB, a Link's OUT is already ONE value (`gainDb_`), and the V2's own is `busGainDb_` |
 | **multi-track jobs** | not started (my half; B's half is in their note) |

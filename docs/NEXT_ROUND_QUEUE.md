@@ -74,6 +74,58 @@ the same request still waits for Apply.
 
 ---
 
+## THE TWO PLANS THE NEXT SESSION SHOULD START FROM (written 15 Oct, 04:40)
+
+### A. A HOST THAT CAN REALLY CLOSE A WINDOW (blocks item 0b, and converts three skips into coverage)
+
+**Load the V2 as a VST3 for the lifecycle rows.** JUCE's VST3 host releases `IPlugView` by COM refcount,
+which deletes the plugin-side editor deterministically; the AU hands back an autoreleased NSView whose
+lifetime the host does not own, which is why one `EchoJayEditor` survives the whole AU run today.
+
+Shape, in order:
+
+1. `juce::VST3PluginFormat` + `findAllTypesForFile(results, "build-guards/.../EchoJay V2.vst3")` ->
+   `createInstanceFromDescription`. The rig already registers the AU in-process; this is a second road
+   beside it, not a replacement - the capability rows should keep running on the AU, because that is what
+   Sean runs in Logic.
+2. **One thing must change in the PLUGIN first, and it is small:** `publishRigProcessorState` writes a
+   single `rig/rig-processor.json`, so TWO V2 instances in one process (an AU and a VST3) would both write
+   it every second and the rig would read whichever wrote last. The file must be per-wrapper -
+   `rig-processor-AU.json` / `rig-processor-VST3.json`, from
+   `juce::AudioProcessor::getWrapperTypeDescription (wrapperType)` - and the rig reads the one belonging to
+   the track it is asking about. **Today's single-V2 rig cannot hit this**, which is why it shipped as it
+   is, but the second instance is exactly what this plan adds, so the rename comes first.
+3. Then `Track::closeEditor()`'s bounded wait on `editorAlive:false` starts SUCCEEDING for that track, and
+   the three skips (C11's and R4's "the plugin's editor was destroyed by that close") become real rows.
+4. Only then are item 0b's legs writable: close mid-run / reopen mid-run / approvals and asks surviving a
+   close / Stop after a reopen / no editor at all for the whole run / two windows.
+
+### B. THE OUT KNOB (§6 below has the ruling; this is the order to build it in)
+
+Groundwork already established, so nothing here needs rediscovering:
+
+- **both racks clamp to the same range**: `LinkProcessor::kGainMinDb/kGainMaxDb` = -24..+12 dB, and the
+  V2's `setBusGainDb` clamps to `kBusGainMinDb/kBusGainMaxDb`. One range for one knob.
+- **a Link's OUT is already ONE value** (`gainDb_`, with `setGainDb` the single authority); the V2's own is
+  `busGainDb_`. There is nothing to merge - §6's question is answered.
+- **the write road to a Link already exists**: the monitor steppers send `{"gainDb": x}` down the ctrl
+  command channel, and `LinkProcessor` applies it through `setGainDb` (LinkProcessor.cpp:1333).
+- **the component to copy is `PreGainKnob`** (ChainWetKnob.h:200): bipolar, centre-detented, `userSet`
+  amber, and `onResetAuto` is already the double-click hook. An `OutGainKnob` is its sibling with its own
+  hue and caption, NOT a new control family.
+- **the caption it replaces** is `EchoJayEditor::rackOutGainCaption()`, which already knows how to say
+  nothing rather than claim unity - keep that rule for the knob's own label.
+- **what the double-click needs that does not exist yet**: the loop must publish its last LANDED figure per
+  rack, because "reset to the level-matched value" is otherwise a reset to 0.0 dB wearing a better name. If
+  no match has ever landed, the double-click goes to 0.0 and says so.
+- **the undo kind** is `rackOut` with a coalesce key, exactly as `linkGain` has, and on a Link the undo must
+  re-send the ctrl command rather than write the V2's copy.
+
+Rows O1-O6 are in §6. O2 ("the one value" claim) and O5 (undo reaching the Link) are the two that must be
+asserted on the REGISTRY mirror rather than on the V2's own copy, or they prove nothing.
+
+---
+
 ## OWED FROM SHIP 1 (15 Oct 2026): THE RIG CANNOT CLOSE A WINDOW YET
 
 The C11 row took six runs, and three of them were my instrument rather than the plugin. The last one is the
