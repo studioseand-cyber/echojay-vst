@@ -52,6 +52,24 @@ Three commits are waiting on it, none pushed (your standing rule):
 14afd2c6  ship_2026-10-15b (the folder, GREEN.txt, docs)
 ```
 
+## AND ONE PIECE OF GROUNDWORK THAT WAS NOT ON YOUR LIST, BECAUSE IT BLOCKS WHAT IS
+
+**The rig can now close a window.** It could not before, and that is why item 0 + 0b were not attempted:
+releasing the AU's wrapper view does not destroy the plugin's editor, so *"the run survives the window"*
+had nothing to be tested against, and two older rows were passing because nothing had died.
+
+The V2 now loads **as a VST3 as well**, on its own track, and row **W1** asserts — on the plugin's own word,
+not the host's — that opening that window, closing it and reopening it really destroys and rebuilds the
+editor. Everything else stays on the AU, because the AU is what you run in Logic.
+
+It ran: the three trees relinked (and the Link's archives force-deleted, because S3b refused the first
+attempt and was right to), S2, S3, S3b, **S4 78/78**, S5, and **S6 both ways — live 52/0/1 and mock
+48/0/2**. Commit `38f10639`. **It is not in either installed ship and does not need to be**: the plugin half
+is ten lines that are inert unless both rig locks are open. The next round's full gate covers it.
+
+**So item 0b is unblocked**, and `docs/NEXT_ROUND_QUEUE.md` has the two plans — the 0b legs now writable on
+that track, and the OUT knob's groundwork — ready to start from.
+
 ## ONE THING FOR YOU TO RULE ON (it is small, and I built the thing that needed a decision)
 
 The approved mockup puts the Agent mode's one plain line **under** the composer. There is no vertical space
