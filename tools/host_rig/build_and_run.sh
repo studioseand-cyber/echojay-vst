@@ -34,6 +34,12 @@ ROOT=$(pwd)
 LIVE_PORT="${EJ_RIG_LIVE:-}"
 
 V2_COMP="${1:-$ROOT/build-guards/EchoJay_artefacts/Release/AU/EchoJay V2.component}"
+# THE SAME V2, AS A VST3 (15 Oct 2026). The lifecycle rows need a host that can really CLOSE a window, and
+# the AU cannot be made to: releasing its wrapper view does not deallocate the NSView the plugin's editor
+# lives in, so one EchoJayEditor survives a whole AU run. JUCE's VST3 host releases IPlugView by refcount,
+# which deletes the plugin-side editor deterministically. Passed as a fourth argument; the rig treats it as
+# optional, so a tree without the VST3 built still runs every other row.
+V2_VST3="${4:-$ROOT/build-guards/EchoJay_artefacts/Release/VST3/EchoJay V2.vst3}"
 LINK_COMP="${2:-$ROOT/build-guards/EchoJayLink_artefacts/Release/AU/EchoJay Link.component}"
 
 if [ ! -d "$V2_COMP" ] || [ ! -d "$LINK_COMP" ]; then
@@ -197,7 +203,7 @@ if r.returncode:
 PYEOF
 if [ $? -ne 0 ]; then echo "REFUSED: the rig did not compile"; exit 2; fi
 
-"$SCRATCH/host_rig" "$V2_COMP" "$LINK_COMP" "$PORT"
+"$SCRATCH/host_rig" "$V2_COMP" "$LINK_COMP" "$PORT" "$V2_VST3"
 RC=$?
 # WHAT THE SERVER ACTUALLY RECEIVED. Printed every run, because "the plugin never sent" and "the plugin sent
 # and the reply was dropped" are different faults and the first run could not tell them apart.

@@ -145,6 +145,8 @@ struct Track
         editor lives in. Every row that closes a window has to know which of the two happened. */
     bool lastCloseDestroyedEditor = false;
     juce::String lastCloseNote;
+    /** Which wrapper this track's plugin is - "AudioUnit" or "VST3" - so it reads its OWN processor line. */
+    juce::String wrapper = "AU";
 
     /** Defined BELOW Rig, because it has to ask the plugin whether the editor really went away and Rig is
         what reads the plugin's line. Declared here so Track stays one object. */
@@ -226,9 +228,13 @@ struct Rig
         not even tell whether the close had destroyed the plugin's editor. It had not: in this host the AU
         keeps one EchoJayEditor alive for the whole run, so "the window was closed" was true of the host's
         wrapper and false of the plugin. This file is written on the processor's 1 Hz timer, open or shut. */
-    static juce::var processorState()
+    /** `wrapper` is JUCE's own word for it - "AU" or "VST3", from getWrapperTypeDescription, which says
+        "AU" and not "AudioUnit" (the first cut guessed, and C11's processor-record row read a file that did
+        not exist). The plugin writes one line per wrapper type, because the
+        lifecycle rows load the V2 TWICE and one file would be two processors fighting over it. */
+    static juce::var processorState (const juce::String& wrapper = "AU")
     {
-        const auto f = echojay::rig::dir().getChildFile ("rig-processor.json");
+        const auto f = echojay::rig::dir().getChildFile ("rig-processor-" + wrapper + ".json");
         for (int attempt = 0; attempt < 5; ++attempt)
         {
             if (f.existsAsFile())
@@ -243,12 +249,13 @@ struct Rig
 
     /** Wait, bounded, for the processor to say something. Returns false on timeout, and the caller says so
         out loud rather than carrying on as if the wait had succeeded. */
-    static bool untilProcessor (std::function<bool (const juce::var&)> pred, int timeoutMs)
+    static bool untilProcessor (std::function<bool (const juce::var&)> pred, int timeoutMs,
+                                const juce::String& wrapper = "AU")
     {
         const auto end = juce::Time::getMillisecondCounter() + (juce::uint32) timeoutMs;
         while (juce::Time::getMillisecondCounter() < end)
         {
-            const auto v = processorState();
+            const auto v = processorState (wrapper);
             if (v.isObject() && pred (v)) return true;
             pump (100);
         }
@@ -302,8 +309,8 @@ void Track::closeEditor()
     // Ask the PLUGIN, with a bound. 3 s is generous: the line is written on a 1 Hz timer and the
     // deallocation, if it happens at all, happens on this thread as the wrapper is released.
     const bool gone = Rig::untilProcessor ([] (const juce::var& v)
-                      { return ! (bool) v.getProperty ("editorAlive", true); }, 3000);
-    const auto ps = Rig::processorState();
+                      { return ! (bool) v.getProperty ("editorAlive", true); }, 3000, wrapper);
+    const auto ps = Rig::processorState (wrapper);
     lastCloseDestroyedEditor = gone;
     if (! gone)
         lastCloseNote = "the plugin still reports an editor (id "
@@ -660,6 +667,7 @@ int main (int argc, char* argv[])
     const juce::File v2Comp   { juce::String (argv[1]) };
     const juce::File linkComp { juce::String (argv[2]) };
     const int mockPort = juce::String (argv[3]).getIntValue();
+    const juce::File v2vst3  { argc > 4 ? juce::String (argv[4]) : juce::String() };
 
     juce::ScopedJuceInitialiser_GUI juceInit;
 
@@ -728,6 +736,22 @@ int main (int argc, char* argv[])
         return inst;
     };
 
+    // ---- THE SAME V2, AS A VST3 (15 Oct 2026) -------------------------------------------------------
+    // Only for the lifecycle rows. Everything else stays on the AU, because the AU is what Sean runs in
+    // Logic and a rig that proved things only in a format he does not use would be proving the wrong thing.
+    auto loadVST3 = [&fm] (const juce::File& bundle, const juce::String& label) -> std::unique_ptr<juce::AudioPluginInstance>
+    {
+        if (! bundle.exists()) { std::printf ("  %s: no VST3 at %s\n", label.toRawUTF8(), bundle.getFullPathName().toRawUTF8()); return {}; }
+        juce::OwnedArray<juce::PluginDescription> found;
+        for (auto* f : fm.getFormats())
+            if (f->getName() == "VST3") f->findAllTypesForFile (found, bundle.getFullPathName());
+        if (found.isEmpty()) { std::printf ("  %s: no VST3 types for %s\n", label.toRawUTF8(), bundle.getFullPathName().toRawUTF8()); return {}; }
+        juce::String err;
+        auto inst = fm.createPluginInstance (*found[0], 48000.0, 512, err);
+        if (inst == nullptr) std::printf ("  %s: %s\n", label.toRawUTF8(), err.toRawUTF8());
+        return inst;
+    };
+
     leg ("R0: the built bundles load in one host process");
     Track v2; v2.name = "Mix Bus (V2)";
     Track lk1; lk1.name = "Kick (Link)";
@@ -740,8 +764,18 @@ int main (int argc, char* argv[])
     if (v2.plugin == nullptr || lk1.plugin == nullptr || lk2.plugin == nullptr)
     { std::printf ("==== host_rig: RED (nothing could be hosted) ====\n"); return 1; }
 
+    // The VST3 copy of the V2, for the window-lifecycle rows only. Optional: if it will not load, every
+    // other row runs and the lifecycle rows say so rather than silently proving less.
+    Track v2v; v2v.name = "Mix Bus (V2, VST3)"; v2v.wrapper = "VST3";
+    v2v.plugin = v2vst3.exists() ? loadVST3 (v2vst3, "V2 (VST3)") : nullptr;
+    check (v2v.plugin != nullptr,
+           "...and the V2 also loads as a VST3, which is the only host road that can really close a window",
+           v2v.plugin != nullptr ? juce::String ("loaded") : juce::String ("NOT loaded - the lifecycle rows "
+                                   "will say what they could not prove"));
+
     const double sr = 48000.0; const int block = 512;
     for (Track* t : { &v2, &lk1, &lk2 }) t->prepare (sr, block);
+    if (v2v.plugin != nullptr) v2v.prepare (sr, block);
 
     // Audio first, and kept running: every leg below needs the Links to be
     // registered and passing audio, which only happens once they have processed.
@@ -751,6 +785,48 @@ int main (int argc, char* argv[])
         if ((i % 20) == 0) Rig::pump (10);
     }
     Rig::pump (1500);       // the 1 Hz registry pass runs on the processor's timer
+
+    // ---- W1: A WINDOW THAT REALLY CLOSES ------------------------------------------------------------
+    //
+    // THE GROUND EVERY 0b LEG STANDS ON. Until now the rig could not close a window at all: it released the
+    // AU's wrapper view, its own unique_ptr went null, and the plugin reported the SAME EchoJayEditor alive
+    // for the whole run - one built, one destroyed, at the end of the process. So "the run survives the
+    // window" had nothing to be tested against, and two rows (R4 and C11's first cut) were passing because
+    // nothing had died.
+    //
+    // This leg asks the plugin, not the host, and it runs FIRST and on its own track, closing the window
+    // again before anything else starts - two V2 editors open at once would fight over the rack lock, which
+    // is a different test for a different day.
+    leg ("W1: closing a window really destroys the plugin's editor (the VST3 road)");
+    if (v2v.plugin != nullptr)
+    {
+        v2v.openEditor();
+        check (v2v.editor != nullptr, "the VST3 V2's editor opened");
+        for (int i = 0; i < 40; ++i) { v2v.processOneBlock (sr); if ((i % 10) == 0) Rig::pump (20); }
+        Rig::pump (1600);     // its processor's 1 Hz line has to exist before it can be read
+        const auto built0 = (int) Rig::processorState ("VST3").getProperty ("editorsBuilt", 0);
+        check (built0 >= 1, "...and that instance publishes its own processor line, separately from the AU's",
+               "editorsBuilt " + juce::String (built0) + ", editorAlive "
+               + Rig::processorState ("VST3").getProperty ("editorAlive", juce::var()).toString());
+        v2v.closeEditor();
+        check (v2v.lastCloseDestroyedEditor,
+               "...and CLOSING it destroys the plugin's editor - which the AU road cannot do, and which "
+               "every item 0b leg needs",
+               v2v.lastCloseDestroyedEditor ? juce::String ("the plugin reports no editor")
+                                            : v2v.lastCloseNote);
+        v2v.openEditor();
+        for (int i = 0; i < 40; ++i) { v2v.processOneBlock (sr); if ((i % 10) == 0) Rig::pump (20); }
+        Rig::pump (1600);
+        const auto built1 = (int) Rig::processorState ("VST3").getProperty ("editorsBuilt", 0);
+        check (built1 == built0 + 1,
+               "...and reopening builds a NEW editor with a new id, so the keep-rule's identity counter is "
+               "testable at last", "editorsBuilt " + juce::String (built0) + " -> " + juce::String (built1));
+        v2v.closeEditor();
+    }
+    else
+        skip ("W1: closing a window really destroys the plugin's editor",
+              "the V2's VST3 did not load in this process, so there is still no host road here that can "
+              "close a window - item 0b's legs stay blocked and this says so");
 
     Rig rig;
     leg ("R0b: can anything in THIS process reach the server?");

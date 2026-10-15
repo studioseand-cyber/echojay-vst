@@ -6491,14 +6491,28 @@ void EchoJayProcessor::publishRigProcessorState()
     juce::String lastAssistant;
     for (const auto& m : chatHistory) if (m.role == "assistant") lastAssistant = m.content;
     o->setProperty ("lastAssistant", lastAssistant);
+    // ONE FILE PER WRAPPER (15 Oct 2026, before the second instance exists rather than after).
+    //
+    // A single rig-processor.json is correct for exactly as long as there is exactly one V2 in the process.
+    // The next piece of rig work loads the V2 as a VST3 *beside* the AU - because releasing the AU's wrapper
+    // view does not destroy the plugin's editor, and item 0b's legs need a host that can really close a
+    // window - and at that moment two V2 processors would be writing this file every second, with the rig
+    // reading whichever wrote last. That is the "two readers of the same file disagreed" fault Sean's item 5
+    // was, in the instrument built to catch it. The wrapper type is the discriminator the rig actually
+    // needs, and JUCE hands it to us.
+    o->setProperty ("wrapper", juce::String (juce::AudioProcessor::getWrapperTypeDescription (wrapperType)));
     const auto text = juce::JSON::toString (juce::var (o), true);
     auto dir = echojay::rig::dir();
-    auto tmp = dir.getChildFile ("rig-processor.json.tmp");
+    const auto name = juce::String ("rig-processor-")
+                    + juce::String (juce::AudioProcessor::getWrapperTypeDescription (wrapperType))
+                          .retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+                    + ".json";
+    auto tmp = dir.getChildFile (name + ".tmp");
     tmp.deleteFile();
     if (! tmp.replaceWithText (text)) return;
-    if (! tmp.replaceFileIn (dir.getChildFile ("rig-processor.json")))
+    if (! tmp.replaceFileIn (dir.getChildFile (name)))
     {
-        dir.getChildFile ("rig-processor.json").replaceWithText (text);
+        dir.getChildFile (name).replaceWithText (text);
         tmp.deleteFile();
     }
 }

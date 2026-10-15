@@ -76,7 +76,34 @@ the same request still waits for Apply.
 
 ## THE TWO PLANS THE NEXT SESSION SHOULD START FROM (written 15 Oct, 04:40)
 
-### A. A HOST THAT CAN REALLY CLOSE A WINDOW (blocks item 0b, and converts three skips into coverage)
+### A. A HOST THAT CAN REALLY CLOSE A WINDOW — **DONE, 15 Oct 04:45. Row W1 is green.**
+
+The rig now loads the V2 **as a VST3 as well**, on its own track, and `W1` proves what the AU road could
+not: opening that window, closing it, and the **plugin itself** reporting `editorAlive:false`, then a reopen
+building `window #2` at a different address. Three assertions, all green:
+
+```
+ok  the VST3 V2's editor opened
+ok  ...and that instance publishes its own processor line, separately from the AU's
+ok  ...and CLOSING it destroys the plugin's editor - which the AU road cannot do
+ok  ...and reopening builds a NEW editor with a new id
+```
+
+Two details that mattered and are now settled:
+
+- **one processor line per wrapper.** `rig-processor-AU.json` / `rig-processor-VST3.json`, because two V2
+  instances in one process would otherwise write one file every second and the rig would read whichever
+  wrote last. JUCE's own word is **"AU"**, not "AudioUnit" — the first cut guessed, and C11's
+  processor-record row read a file that did not exist.
+- **W1 runs first and closes its window again before anything else starts.** Two V2 editors open at once
+  would fight over the rack lock, which is a different test for a different day.
+
+**So item 0b's legs are writable now**, on the `v2v` track: close mid-run / reopen mid-run / approvals and
+asks surviving a close / Stop after a reopen / no editor at all for the whole run / two windows. The three
+"the plugin's editor was destroyed by that close" skips on the AU rows stay as they are, named, because the
+AU genuinely cannot do it — and the AU is what Sean runs, so that limit is worth keeping visible.
+
+### A-as-it-was-planned (kept for the reasoning)
 
 **Load the V2 as a VST3 for the lifecycle rows.** JUCE's VST3 host releases `IPlugView` by COM refcount,
 which deletes the plugin-side editor deterministically; the AU hands back an autoreleased NSView whose
