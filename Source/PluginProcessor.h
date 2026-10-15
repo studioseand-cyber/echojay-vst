@@ -407,6 +407,8 @@ public:
     echojay::UndoHistory& undoHistory() { return undoHistory_; }
     bool applyUndoEntry(echojay::UndoEntry& e, bool toBefore);          // the dispatcher (public for the guard)
     // the editor records the Link commands it sends; the dispatcher re-sends them as a ctrl-cmd
+    /** FIX 4(a), 14 Oct: a HAND move on the pre-gain, as one undo step per drag. */
+    void recordPreGainUndo(float beforeDb, bool beforeUserSet, float afterDb, bool afterUserSet);
     void recordLinkActiveUndo(const juce::String& uid, bool before, bool after);
     void recordLinkGainUndo(const juce::String& uid, float before, float after);
     /** 21t-l item 1: ONE undo entry for a whole op. A headroom op moves every Link the scope selects; the
@@ -931,9 +933,37 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     /** Was this chat's turn parked by a closing window? (item 4) */
     bool chatTurnWasParked (const juce::String& chatId) const { return parkedChatIds_.contains (chatId); }
     void clearParkedChatId (const juce::String& chatId) { parkedChatIds_.removeString (chatId); }
+    /** FIX 6, SECOND HALF (15 Oct, found by the rig's C11 row): PARK A NON-STREAMED TURN TOO.
+        parkedChatIds_ was only ever filled by a parked STREAMING handle, so a turn that went down
+        /api/chat - which is what a chain-shaped question does - was never marked as orphaned. And
+        chatTurnOwner_ is a SINGLE pointer: the reopened window sent its own turn, overwrote it, and the
+        finalise hook then read "the owner is live" about a DIFFERENT turn and dropped the first one.
+        That is this morning's fault exactly ("the test is not whether an editor is attached but whether the
+        SENDER is still here") with the sender's record overwritten instead of missing. Parking the chat id
+        at teardown is what makes the answer survive either transport. */
+    void parkChatTurnId (const juce::String& chatId)
+    {
+        const auto id = chatId.trim();
+        if (id.isNotEmpty() && ! parkedChatIds_.contains (id)) parkedChatIds_.add (id);
+    }
 
     juce::String lastWorkingUid_;      // item 5: the rack the editor was working on when it last closed
     juce::String borrowStickyBanner_;
+    // FIX 4(c), 14 Oct: when this banner became visible, and how long it must survive before it is SHOWN.
+    // Only the release path sets a grace (see borrowApplyAndRelease); every other banner is immediate, so
+    // the default of 0 keeps them all exactly as they were.
+    juce::int64 borrowStickyBannerAtMs_ = 0;
+    int         borrowStickyBannerGraceMs_ = 0;
+public:
+    /** The banner as the UI should SHOW it: empty while a graced one is still inside its grace, so a
+        release that is immediately superseded by a re-engage is never seen. */
+    juce::String borrowStickyBannerVisible() const
+    {
+        if (borrowStickyBanner_.isEmpty() || borrowStickyBannerGraceMs_ <= 0) return borrowStickyBanner_;
+        return (juce::Time::currentTimeMillis() - borrowStickyBannerAtMs_ >= borrowStickyBannerGraceMs_)
+             ? borrowStickyBanner_ : juce::String();
+    }
+private:
 public:
     // ---- 14 OCT 2026 (the rig's first catch): WHO ASKED FOR THE TURN IN FLIGHT --------------------------
     // Set by the editor when a chat turn goes out, cleared by its destructor. onChatTurnFinalised keeps a
@@ -948,10 +978,31 @@ public:
     int  rigLastSeq() const noexcept { return rigLastSeq_; }
     void setRigLastSeq (int s) noexcept { rigLastSeq_ = s; }
 
-    void setChatTurnOwner (void* ed) { chatTurnOwner_ = ed; }
-    void clearChatTurnOwnerIf (void* ed) { if (chatTurnOwner_ == ed) chatTurnOwner_ = nullptr; }
+    // ---- 15 OCT 2026: AN ADDRESS IS NOT AN IDENTITY ----------------------------------------------------
+    //
+    // This was a raw pointer compared with getActiveEditor(), and the rig caught it being WRONG in the
+    // safest-looking way there is: the editor closed, a new one was built, and the allocator handed the new
+    // one THE SAME ADDRESS (0x160008000 in the run that found it). So "the window that asked is still here"
+    // was true about a different window, and a failed turn was handed to a window that had never sent it.
+    // A recycled address impersonating the sender is the third costume this one bug has worn ("is an editor
+    // attached" -> "is the SENDER still here" -> "is this the same OBJECT or just the same place").
+    //
+    // So identity is a COUNTER, not a place: every editor takes the next id as it is built, and no id is
+    // ever issued twice in the life of this processor. The pointer is kept beside it only for the log line.
+    juce::uint64 nextEditorId() noexcept { return ++editorIdCounter_; }
+    juce::uint64 editorIdCounter() const noexcept { return editorIdCounter_; }
+    void setChatTurnOwner (juce::uint64 editorId) noexcept { chatTurnOwnerId_ = editorId; }
+    void clearChatTurnOwnerIf (juce::uint64 editorId) noexcept { if (chatTurnOwnerId_ == editorId) chatTurnOwnerId_ = 0; }
+    bool chatTurnOwnerIs (juce::uint64 editorId) const noexcept { return chatTurnOwnerId_ != 0 && chatTurnOwnerId_ == editorId; }
+    juce::uint64 chatTurnOwnerId() const noexcept { return chatTurnOwnerId_; }
+    /** The id of the editor attached right now, or 0 when there is none. Defined in the .cpp because it
+        has to see EchoJayEditor; the keep-rule above is the only caller that matters. */
+    juce::uint64 liveEditorId() const;
+    /** The processor's own rig line, written on its 1 Hz timer so a row can assert on a SHUT window. */
+    void publishRigProcessorState();
 private:
-    void* chatTurnOwner_ = nullptr;
+    juce::uint64 editorIdCounter_ = 0;
+    juce::uint64 chatTurnOwnerId_ = 0;
     int   rigLastSeq_ = 0;
 public:
     // ---- THE HOST RIG (Sean's ask A, 13 Oct 2026) ----------------------------------------------------
@@ -959,7 +1010,7 @@ public:
     // they are plain accessors rather than a second source of truth: the banner is the member above, and
     // the slot names come from the sidecar the Link itself publishes - the same read the agent's linkRack
     // source makes, so the rig and the agent cannot disagree about what is on a rack.
-    juce::String borrowStickyBannerForRig() const { return borrowStickyBanner_; }
+    juce::String borrowStickyBannerForRig() const { return borrowStickyBannerVisible(); }   // fix 4(c): the rig sees what the USER sees
     /** Slot names on a Link's rack, straight from that Link's sidecar. Returns the count, or -1 when the
         rack cannot be read at all (no shared dir, no sidecar) - which is NOT the same as 0 slots, and the
         rig asserts on the difference. */

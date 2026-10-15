@@ -1436,6 +1436,14 @@ public:
     };
     SlotPicture slotPicture(int i) const;
     juce::String slotPictureText(int i) const;            // the line under the slot in the chain strip
+    /** FIX 1(b), 14 Oct: ONE SLOT PARAMETER, BY NAME, AS A NUMBER. The agent's `set` must read back what it
+        asked for and refuse to call an unapplied change a success - Sean's compressor kept attack 10 ms,
+        release 120 ms and makeup 0 dB while the closing text named 18, 85 and "a touch of makeup".
+        Numeric, not parsed out of the readback prose: every built-in implements getParamValue(id), so the
+        comparison is against the device's own value. False when the slot is not a built-in (a third-party
+        plugin's values are not readable here) - which the caller must report as "could not confirm",
+        never as success. */
+    bool slotParamValue (int slotIndex, const juce::String& paramId, double& out) const;
     juce::StringArray listenCardLines() const;            // the per-slot picture for the Listen reply card, flags by name
     float getSlotPreTrimDb(int i) const;
     // 21t-m (29 Sep 2026 ruling): setSlotTrimDb / getSlotTrimDb / slotTrimText / hasActiveTrims /
@@ -1707,6 +1715,11 @@ public:
     struct PreGainReadout { float db = 0.0f; PreGainState state = PreGainState::Off; bool userSet = false; juce::String text; };
     float getPreGainDb() const noexcept { return preGainDb_.load(std::memory_order_relaxed); }
     bool  isPreGainUserSet() const noexcept { return preGainUserSet_; }
+    /** FIX 4(a), 14 Oct: setPreGainDb only ever SETS the hand-set flag (by design - an auto pass must not
+        clear a user's pin). Restoring an undo entry whose `before` was AUTO therefore needs this, or the
+        rack would come back at the right dB and pinned, and Sean's ruling 1 of 13 Oct is that AUTO is a
+        state a user can get back to. */
+    void  clearPreGainUserSet() noexcept { preGainUserSet_ = false; }
     // User (knob/menu): userSet true stamps the hand-set flag so a build
     // leaves it. resetPreGainToAuto clears the flag so the next build sets it.
     void  setPreGainDb(float db, bool userSet);

@@ -34,6 +34,8 @@ reply is still "thinking" when the rig closes the window.
 Isolation: this binds 127.0.0.1 only and writes nothing outside its own stdout.
 """
 import argparse, json, sys, threading, time
+import socket
+import struct
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SCRIPT = {"chat": [], "agent": []}
@@ -104,6 +106,36 @@ class Handler(BaseHTTPRequestHandler):
         self._record(self.path, {})                        # GETs are requests too (/api/vst-config, feeds)
         return self._json({})
 
+    # ---- A CUT THAT THE CLIENT ACTUALLY FEELS (15 Oct 2026) ---------------------------------------------
+    # `self.connection.close()` DOES NOT DROP THE CONNECTION. Python's socket object is reference-counted by
+    # the makefile() wrappers rfile/wfile, so close() only marks it: the fd stays open, no FIN is sent, and
+    # the client sits there until ITS OWN timeout. Measured, with curl against a server doing exactly that:
+    # 20.01 s (curl's -m 20), not 1 s. That is why the C11 row saw silence for its whole 30 s bound - the
+    # plugin was not failing to record a dropped turn, it was still waiting on a socket the mock had only
+    # pretended to close. With fix 2's 330 s client bound it would have waited five and a half minutes.
+    #
+    # A real drop needs the file wrappers released first, then SO_LINGER{on,0} so close() sends an RST
+    # rather than a graceful FIN - a server crash, not a goodbye. Measured the same way: 1.01 s.
+    def _hard_cut(self):
+        self.close_connection = True
+        for f in ("wfile", "rfile"):
+            try:
+                getattr(self, f).close()
+            except Exception:
+                pass
+        try:
+            self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        except Exception:
+            pass
+        try:
+            self.connection.shutdown(socket.SHUT_RDWR)
+        except Exception:
+            pass
+        try:
+            self.connection.close()
+        except Exception:
+            pass
+
     def do_POST(self):
         body = self._body()
         self._record(self.path, body)
@@ -120,6 +152,15 @@ class Handler(BaseHTTPRequestHandler):
             if hold:
                 log(f"chat (non-streaming): holding {hold}ms before answering")
                 time.sleep(hold / 1000.0)
+            # AND IT CUTS ON THIS PATH TOO (ship 1, fix 6). The streaming path learned to cut first and the
+            # row still passed, because the plugin had classified the turn as a chain edit and used THIS
+            # endpoint - so the whole reply arrived in one JSON and nothing failed. Exactly the lesson the
+            # `holdMs` note above records: whichever path the plugin picks, the rig's instrument has to work
+            # on it, or the row proves nothing. A dropped socket here is a close with no body at all.
+            if int(entry.get("cutAfterDeltas", 0)):
+                log("chat (non-streaming): CUTTING the connection with no body (fix 6 row)")
+                self._hard_cut()
+                return
             try:
                 return self._json({"reply": entry["text"], "modelName": "mock-1"})
             except (BrokenPipeError, ConnectionResetError):
@@ -169,8 +210,22 @@ class Handler(BaseHTTPRequestHandler):
         if hold_ms:
             time.sleep(hold_ms / 1000.0)
         words = text.split(" ")
+        # CUT THE STREAM DELIBERATELY (ship 1, fix 6). The mock could hold a reply or finish it, and had no
+        # way to FAIL one - which is why the close-mid-reply row only ever proved the success handover. Sean's
+        # turn failed after his window closed and notified nobody: no reply, no error, no note, for ever.
+        # `cutAfterDeltas` sends that many words and then closes with no done frame, which is what a dropped
+        # socket looks like to the client.
+        cut_after = int(entry.get("cutAfterDeltas", 0))
         try:
             for i, w in enumerate(words):
+                if cut_after and i >= cut_after:
+                    log(f"chat-stream: CUTTING the stream after {i} delta(s), no done frame (fix 6 row)")
+                    try:
+                        self.wfile.flush()
+                    except Exception:
+                        pass
+                    self._hard_cut()
+                    return
                 self._sse({"type": "delta", "block": "text",
                            "text": (w if i == 0 else " " + w)})
                 time.sleep(delta_ms / 1000.0)

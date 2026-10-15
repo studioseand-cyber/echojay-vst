@@ -316,12 +316,30 @@ void EJAgentClient::post (const juce::String& path, const juce::String& body)
         netw.setStream (&ws);
         const struct ClearSlot { echojay::net::Worker& w; ~ClearSlot() { w.setStream (nullptr); } } clearSlot { netw };
 
+        // FIX 2 (Sean, 14 Oct), THE SECOND HALF: A SLOW ROUND IS NOT A BROKEN CONNECTION.
+        // Both outcomes arrive here as "connect returned false, status 0", and both used to say "check your
+        // internet connection" - which sent Sean to look at his wifi while the server was still thinking.
+        // The one fact that separates them is HOW LONG we waited: a refused or unreachable socket fails in
+        // milliseconds, and a round that ran out the bound took the bound. 70% of it is far outside the
+        // range a real connection failure occupies and well inside a timeout, so the two cannot be confused.
+        const juce::uint32 tStart = juce::Time::getMillisecondCounter();
         const bool connected = ws.connect (nullptr);
         const int status = connected ? ws.getStatusCode() : 0;
         if (! connected || status == 0)
         {
+            const juce::uint32 waitedMs = juce::Time::getMillisecondCounter() - tStart;
+            const bool timedOut = waitedMs > (juce::uint32) ((connectTimeout * 7) / 10);
+            const int secs = (int) ((waitedMs + 500) / 1000);
             cancel->detach();
-            dispatch ([this, gen] { onStreamEnded (gen, false, 0, "Connection failed. Please check your internet connection."); });
+            // The words differ AND so does the code: the panel offers Retry on a timeout (the round may
+            // simply have been long), and says what to check on a connection failure.
+            juce::String why = timedOut
+                ? ("That round took longer than " + juce::String (secs) + " seconds and I stopped waiting. "
+                   "Nothing is wrong with your connection - try again, or ask for something smaller.")
+                : juce::String ("Connection failed. Please check your internet connection.");
+            log (juce::String ("POST ") + path + (timedOut ? " TIMED OUT" : " could not connect")
+                 + " after " + juce::String (waitedMs) + " ms (bound " + juce::String (connectTimeout) + " ms)");
+            dispatch ([this, gen, why] { onStreamEnded (gen, false, 0, why); });
             return;
         }
         if (status != 200)
@@ -457,6 +475,26 @@ void EJAgentClient::onFrame (int generation, Frame f)
                     s = &steps_.back();
                 }
                 if (item.summary.isNotEmpty()) s->label = item.summary;
+                // ---- FIX 1(d) (Sean, 14 Oct): A PLAN LINE MUST NEVER SHOW AN EMPTY DESCRIPTION ----------
+                //
+                // Sean's card read "set slot 2:  - on 88_7even Kick_2_01" - a `set` with NOTHING between the
+                // colon and the dash - beside a fully described EQ line, and he pressed Apply all. The words
+                // are the server's (this is item.summary), and the gap was where its settings description
+                // should have been; B is fixing the summary. But the user should never have to notice a
+                // missing description to be warned, so the card says so itself: a summary that describes no
+                // values on a line that CARRIES values is marked, before the press, not after.
+                if (s->label.trim().endsWith (":") || s->label.contains (":  ") || s->label.contains (": -"))
+                {
+                    const auto nm = s->call.name;
+                    if (nm == "do")
+                    {
+                        s->label = s->label.replace (":  ", ": (settings I can't read) ")
+                                           .replace (": -", ": (settings I can't read) -");
+                        if (s->label.trim().endsWith (":")) s->label += " (settings I can't read)";
+                        log ("plan line had an EMPTY settings description - marked it for the user (fix 1(d)): \""
+                             + s->label + "\"");
+                    }
+                }
                 // ITEM 2 again, for the card's own wording: the server's summary wins on the WORDS, but the
                 // track is not the server's to omit - a line the user approves must say what it acts on.
                 if (const auto other = executor_.describeOtherChannel (s->call);

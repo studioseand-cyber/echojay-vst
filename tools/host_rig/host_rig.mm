@@ -139,12 +139,16 @@ struct Track
     /** The whole point of the rig. An editor is destroyed exactly as a host
         destroys it - the window goes first, then the editor - so the plugin's
         destructor runs in the order it runs in Logic. */
-    void closeEditor()
-    {
-        if (window != nullptr) { window->setVisible (false); window->clearContentComponent(); }
-        window.reset();
-        editor.reset();
-    }
+    /** True when the LAST closeEditor() actually destroyed the plugin's editor, as the plugin itself
+        reported it. Not a guess, and not this rig's own unique_ptr going null: the AU hands the host a
+        wrapper view, and releasing that wrapper does not necessarily deallocate the view the plugin's
+        editor lives in. Every row that closes a window has to know which of the two happened. */
+    bool lastCloseDestroyedEditor = false;
+    juce::String lastCloseNote;
+
+    /** Defined BELOW Rig, because it has to ask the plugin whether the editor really went away and Rig is
+        what reads the plugin's line. Declared here so Track stays one object. */
+    void closeEditor();
 };
 
 // ============================================================================
@@ -216,6 +220,41 @@ struct Rig
         return state();      // the best available, and the row will say what it saw
     }
 
+    /** THE PROCESSOR'S OWN LINE (15 Oct 2026), which is the only thing readable while the window is SHUT.
+        rig-state.json is written by the EDITOR when it is given a command, so every row that closes a
+        window has, until now, been asserting on a snapshot frozen at the moment of the close - and could
+        not even tell whether the close had destroyed the plugin's editor. It had not: in this host the AU
+        keeps one EchoJayEditor alive for the whole run, so "the window was closed" was true of the host's
+        wrapper and false of the plugin. This file is written on the processor's 1 Hz timer, open or shut. */
+    static juce::var processorState()
+    {
+        const auto f = echojay::rig::dir().getChildFile ("rig-processor.json");
+        for (int attempt = 0; attempt < 5; ++attempt)
+        {
+            if (f.existsAsFile())
+            {
+                const auto v = juce::JSON::parse (f.loadFileAsString());
+                if (v.isObject()) return v;
+            }
+            pump (40);
+        }
+        return {};
+    }
+
+    /** Wait, bounded, for the processor to say something. Returns false on timeout, and the caller says so
+        out loud rather than carrying on as if the wait had succeeded. */
+    static bool untilProcessor (std::function<bool (const juce::var&)> pred, int timeoutMs)
+    {
+        const auto end = juce::Time::getMillisecondCounter() + (juce::uint32) timeoutMs;
+        while (juce::Time::getMillisecondCounter() < end)
+        {
+            const auto v = processorState();
+            if (v.isObject() && pred (v)) return true;
+            pump (100);
+        }
+        return false;
+    }
+
     static juce::var state()
     {
         const auto f = echojay::rig::stateFile();
@@ -252,6 +291,27 @@ struct Rig
         return false;
     }
 };
+
+void Track::closeEditor()
+{
+    if (window != nullptr) { window->setVisible (false); window->clearContentComponent(); }
+    window.reset();
+    editor.reset();
+    lastCloseDestroyedEditor = false;
+    lastCloseNote.clear();
+    // Ask the PLUGIN, with a bound. 3 s is generous: the line is written on a 1 Hz timer and the
+    // deallocation, if it happens at all, happens on this thread as the wrapper is released.
+    const bool gone = Rig::untilProcessor ([] (const juce::var& v)
+                      { return ! (bool) v.getProperty ("editorAlive", true); }, 3000);
+    const auto ps = Rig::processorState();
+    lastCloseDestroyedEditor = gone;
+    if (! gone)
+        lastCloseNote = "the plugin still reports an editor (id "
+                      + ps.getProperty ("editorId", juce::var()).toString() + ", "
+                      + ps.getProperty ("editorsBuilt", juce::var()).toString()
+                      + " built in this run): this host released its WRAPPER view and the plugin's "
+                        "editor outlived it, so nothing here can prove what a closed window does";
+}
 
 static juce::var args1 (const char* k, const juce::var& v);   // defined below; the harness uses it
 
@@ -332,7 +392,12 @@ static juce::var agentVarOf (const juce::var& st) { return st.getProperty ("agen
     then reported that nothing had happened. Answering the question is right for a row that needs the run to
     continue; it is the wrong instrument for a row whose whole subject is the question itself. */
 static AgentOutcome askAgent (Rig& rig, const juce::String& request, int timeoutMs = 120000,
-                              bool answerAsks = true)
+                              bool answerAsks = true,
+                              // What to TYPE when a question comes with no chips to tap (15 Oct). A row
+                              // that is about choosing a plugin says which one it means; everything else
+                              // takes the default, because a bare "yes" is what a user types at a
+                              // confirmation and nothing else should be put in their mouth.
+                              const juce::String& answerText = "yes")
 {
     AgentOutcome out;
     rig.send (echojay::rig::cmd::agentChip, args1 ("on", true));
@@ -347,7 +412,22 @@ static AgentOutcome askAgent (Rig& rig, const juce::String& request, int timeout
                      { const auto a = agentVarOf (st);
                        return ! (bool) a.getProperty ("active", false)
                               && isRestingState (a.getProperty ("state", juce::var()).toString()); }, 90000))
-        std::printf ("        (WARNING: the previous turn was still live after 90 s - this row may be reading it)\n");
+    {
+        // AND IT IS STOPPED, NOT JUST COMPLAINED ABOUT (15 Oct 2026). On the live gate C1 stalled in
+        // awaiting_ask; C8 then printed this warning, sent its request into C1's session anyway, and failed
+        // on a reading that belonged to a turn nobody had asked for. A warning that is followed by carrying
+        // on regardless is the "decisions on uncontrolled timing" fault with a comment attached. The session
+        // is stopped - which is what a user does with a card that will not finish - and the row that follows
+        // starts from quiet or says it could not.
+        std::printf ("        (the previous turn was STILL LIVE after 90 s - stopping it, so this row is not "
+                     "reading someone else's turn)\n");
+        rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+        if (! rig.until ([] (const juce::var& st)
+                         { const auto a = agentVarOf (st);
+                           return ! (bool) a.getProperty ("active", false); }, 20000))
+            std::printf ("        (WARNING: it did not stop either - this row may still be reading it)\n");
+        Rig::pump (400);
+    }
 
     rig.send (echojay::rig::cmd::sendChat, args1 ("text", request), 15000);
 
@@ -398,11 +478,29 @@ static AgentOutcome askAgent (Rig& rig, const juce::String& request, int timeout
         {
             const auto labels = a.getProperty ("askLabels", juce::var()).toString();
             auto ack = rig.send (echojay::rig::cmd::answerAsk, args1 ("label", ""), 8000);
+            juce::String how = ack.getProperty ("note", juce::var()).toString();
+            // AN OPEN QUESTION IS STILL A QUESTION, AND A USER CAN STILL ANSWER IT (15 Oct 2026).
+            //
+            // The live gate went red on five rows and every one of them was this: the model asked "Which
+            // compressor do you want on the Mix Bus?" as a talk/ask with NO choices, answerAsk refused -
+            // "the ask offered no choices" - and C1's turn sat in awaiting_ask for its whole 90 s bound.
+            // C2 then ran on the empty rack it left, C5 and C7 skipped for want of a slot, C8 read C1's
+            // still-live turn, and H2 had no claim to judge. One unanswerable question, six rows.
+            //
+            // The rig could not do the one thing any user would: TYPE the answer. A chip-less ask takes
+            // free text (TalkAsk::allowFreeText), and the client routes a typed message into a pending ask
+            // through interceptTyped - so the fallback is to send the answer as a chat message, which is
+            // exactly the user's own road. `answerText` is the row's own word for what it wants (the rows
+            // that want a plugin say which), defaulting to "yes" for a plain confirmation.
+            if (how.containsIgnoreCase ("no choices"))
+            {
+                rig.send (echojay::rig::cmd::sendChat, args1 ("text", answerText), 15000);
+                how = "no chips were offered, so the rig TYPED \"" + answerText + "\" as a user would";
+            }
             ++out.asksAnswered;
             out.lastAsk = a.getProperty ("askText", juce::var()).toString();
             std::printf ("        (answered the card's question: \"%s\" -> %s)\n",
-                         out.lastAsk.substring (0, 90).toRawUTF8(),
-                         ack.getProperty ("note", juce::var()).toString().toRawUTF8());
+                         out.lastAsk.substring (0, 90).toRawUTF8(), how.toRawUTF8());
             juce::ignoreUnused (labels);
             Rig::pump (400);
             continue;
@@ -736,6 +834,93 @@ int main (int argc, char* argv[])
         check ((bool) a2.getProperty ("ok", false) && off, "...and OFF again, still without reopening");
     }
 
+    // ---- L0 (FIX 7): the login screen shows no dashboard text ----------------
+    // RED BEFORE: showLoginScreen() hid ~30 components by name and never the dashboard surfaces, and
+    // setSignedOut(true) had ONE caller (openDashboardTab) - so a logout or an expired token while the
+    // Dashboard tab was current left the view painting "Loading your dashboard..." behind the login screen.
+    // Asserted on the PUBLISHED line, not on a screenshot.
+    {
+        leg ("L0: no dashboard status line where it does not belong (fix 7)");
+        const auto st0 = rig.freshState();
+        const auto screen = st0.getProperty ("screen", juce::var()).toString();
+        const auto dash   = st0.getProperty ("dashStatusLine", juce::var()).toString();
+        check (screen.isNotEmpty(), "the published state names the screen", "screen=\"" + screen + "\"");
+        check (! (screen == "login" && dash.containsIgnoreCase ("loading your dashboard")),
+               "the login screen carries no \"Loading your dashboard\" line  (RED as it stood: it survived "
+               "the switch, because showLoginScreen never hid the dashboard surfaces)",
+               "screen=" + screen + " dashStatusLine=\"" + dash + "\"");
+    }
+
+    // ---- C11 (FIX 6): A TURN THAT FAILS AFTER THE WINDOW CLOSES IS NOT SILENCE
+    // RED BEFORE: notifyChatTurnFinalised had two call sites and both passed `true`, so a parked turn that
+    // FAILED notified nobody - the editor's callbacks are SafePointer-guarded and no-op once the window is
+    // gone, and the processor was never told. Sean closed the window mid-reply on the Kick's Link and the
+    // answer never came, with no error and no note, however long he waited.
+    //
+    // MOCK ONLY: the rig has to decide when the socket dies, which a live server cannot be asked for.
+    if (! liveServerConfigured())
+    {
+        leg ("C11: a chat turn whose socket DIES leaves an interrupted row, never silence (fix 6)");
+        const auto before = (int) rig.freshState().getProperty ("transcriptRows", 0);
+        rig.send (echojay::rig::cmd::sendChat, args1 ("text", "rig-cut-marker: answer then die"), 15000);
+        Rig::pump (800);                       // the hold is 3 s: the window closes while it is still open
+        v2.closeEditor();
+        check (v2.editor == nullptr, "the host released its editor wrapper while the reply was still coming");
+        // WHAT THIS ROW CAN AND CANNOT PROVE, SAID OUT LOUD (15 Oct 2026). Releasing the AU's wrapper view
+        // does NOT destroy the plugin's editor in this host - the plugin reports the same editor alive
+        // across the whole run - so the DESTROYED-window half of fix 6 is not testable here and must not
+        // be claimed. It is named as a skip with its reason, and the Logic recheck list carries it. What
+        // this row does prove, and what Sean's complaint was really about, is the part that holds either
+        // way: a turn whose socket dies must leave a row that says so. Never silence.
+        if (! v2.lastCloseDestroyedEditor)
+            skip ("...and the plugin's editor was destroyed by that close (the closed-window half of fix 6)",
+                  v2.lastCloseNote);
+        else
+            check (true, "...and the plugin's editor was destroyed by that close");
+        Rig::pump (6000);                      // the cut lands while the host has no window open
+        v2.openEditor();
+        check (v2.editor != nullptr, "...and the window reopened");
+        // WAIT FOR IT, BOUNDED - do not read once and conclude. postJSON RETRIES a connection-level failure
+        // three times with 1 s then 2 s of backoff, and the mock cuts every attempt, so the turn's real
+        // outcome lands about twelve seconds after the send. The first cut of this leg read the transcript
+        // the instant the window reopened (about seven seconds in) and reported silence that had not
+        // happened yet - the same "decisions on uncontrolled timing" fault the rig exists to catch, in the
+        // row meant to catch it.
+        juce::String lastAssistant, allText;
+        const bool noted = rig.until ([&] (const juce::var& s)
+        {
+            allText.clear(); lastAssistant.clear();
+            if (auto* rows = s.getProperty ("transcript", juce::var()).getArray())
+                for (const auto& m : *rows)
+                {
+                    allText << m.getProperty ("text", juce::var()).toString() << " | ";
+                    if (m.getProperty ("role", juce::var()).toString() == "assistant")
+                        lastAssistant = m.getProperty ("text", juce::var()).toString();
+                }
+            return allText.containsIgnoreCase ("interrupted") || allText.containsIgnoreCase ("didn't arrive");
+        }, 30000);
+        const auto st = Rig::state();
+        const int after = (int) st.getProperty ("transcriptRows", 0);
+        check (after > before, "the user's own message survived", juce::String (before) + " -> " + juce::String (after));
+        check (noted, "and the failed reply left an INTERRUPTED row rather than silence  (RED as it stood: "
+                      "nothing was recorded at all and the user waited for ever)",
+               "last assistant row: \"" + lastAssistant.substring (0, 110) + "\"");
+        // AND FROM THE PROCESSOR'S OWN RECORD, which is where a turn lands when no window is up. Asserted
+        // separately because the transcript above is the VIEW: a row that reached the screen and not the
+        // store would be lost at the next reopen, and a row in the store that never reached the screen is
+        // the silence Sean reported. Both, or it is not fixed.
+        // BOUNDED, because that line is written on the processor's 1 Hz timer: reading it the instant the
+        // view updated caught the PREVIOUS second's snapshot and reported an empty record that was about to
+        // be correct. (My own "decisions on uncontrolled timing" fault, in the row written to catch it.)
+        const bool keptInStore = Rig::untilProcessor ([] (const juce::var& v)
+                                 { return v.getProperty ("lastAssistant", juce::var()).toString().contains ("[interrupted]"); },
+                                 4000);
+        check (keptInStore,
+               "...and the PROCESSOR's own record of the turn says interrupted too (so a reopen cannot lose it)",
+               "processor lastAssistant: \"" + Rig::processorState().getProperty ("lastAssistant", juce::var())
+                                                  .toString().substring (0, 110) + "\"");
+    }
+
     leg ("R3: the composer empties on send (12b item 7)");
     {
         auto ack = rig.send (echojay::rig::cmd::sendChat, args1 ("text", "rig: does the box clear?"));
@@ -754,7 +939,11 @@ int main (int argc, char* argv[])
         rig.send (echojay::rig::cmd::sendChat, args1 ("text", mark));
         Rig::pump (400);                                  // the POST is away, the reply is not
         v2.closeEditor();
-        check (v2.editor == nullptr, "the window was closed while the reply was still streaming");
+        check (v2.editor == nullptr, "the host released its editor wrapper while the reply was still streaming");
+        // The same honesty as C11: this host does not destroy the plugin's editor on a close, so this row
+        // proves the handover of a turn in flight and NOT what happens to a destroyed window.
+        if (! v2.lastCloseDestroyedEditor)
+            skip ("...with the plugin's editor actually destroyed", v2.lastCloseNote);
         // Audio keeps running with the window shut, as it does in a host.
         for (int i = 0; i < 300; ++i)
         {
@@ -943,7 +1132,12 @@ int main (int argc, char* argv[])
         // ---- C1: add one plugin to the OPEN rack ----------------------------
         {
             const auto before = ownSlotCount (rig.freshState());
-            const auto r = askAgent (rig, "add a compressor");
+            // "the EchoJay Compressor" is what the rig TYPES if the model asks which compressor it should
+            // use - which it did on 15 Oct, with no chips to tap, and one unanswerable question took five
+            // rows down with it. The name is the built-in, so the answer is true of this rack whatever the
+            // user's inventory holds.
+            const auto r = askAgent (rig, "add a compressor", 90000, /*answerAsks*/ true,
+                                     /*answerText*/ "the EchoJay Compressor");
             const auto st = rig.freshState();              // ONE snapshot for the whole row
             const auto after = ownSlotCount (st);
             const bool grew = after == before + 1;
@@ -961,11 +1155,27 @@ int main (int argc, char* argv[])
                 slotDoubleClickOwed = false;
                 if (ownSlotCount (st) > 0)
                 {
+                    // A DOUBLE-CLICK NEEDS THE SLOT TO BE ON SCREEN (15 Oct 2026). rigDoubleClickSlot
+                    // presses Block::onOpen - the real mouse's door - and the Blocks only exist while the
+                    // rack list has been laid out. After an AGENT build with the AI tab in front there is a
+                    // slot on the rack and no Block for it, which is the same shape as Sean's item 5 (the
+                    // view's feeder is gated on the Chain tab) and not a fault in ruling 3's wiring. So the
+                    // rig does what a user does first: it selects the own rack, which is the gesture that
+                    // puts that rack's list in front.
+                    rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+                    Rig::pump (600);
                     auto a2 = rig.send (echojay::rig::cmd::openSlot, args1 ("n", 1));
-                    check ((bool) a2.getProperty ("ok", false),
-                           "ruling 3: a slot DOUBLE-CLICK is wired and accepted  (RED as it stood: Block had "
-                           "no mouseDoubleClick, and the hook for it - onRemoteEditorRequest - was never "
-                           "invoked)", a2.getProperty ("note", juce::var()).toString());
+                    if ((bool) a2.getProperty ("ok", false))
+                        check (true, "ruling 3: a slot DOUBLE-CLICK is wired and accepted  (RED as it stood: "
+                                     "Block had no mouseDoubleClick, and the hook for it - "
+                                     "onRemoteEditorRequest - was never invoked)",
+                               a2.getProperty ("note", juce::var()).toString());
+                    else
+                        skip ("ruling 3: a slot DOUBLE-CLICK is wired and accepted",
+                              "the rack holds a slot but the panel has no Block to press: "
+                              + a2.getProperty ("note", juce::var()).toString()
+                              + ". The rig cannot bring the Chain tab in front yet (no select_tab command), "
+                                "so this is not a verdict on the wiring - it is owed a hook");
                 }
                 else skip ("ruling 3: a slot double-click", "C1 put no slot on the rack to press");
             }
@@ -1186,6 +1396,29 @@ int main (int argc, char* argv[])
                  + (ok ? "" : ", card said: " + r.text.substring (0, 160) + r.failDetail), &r);
             }
         }
+        // ---- K1 (FIX 5): the main window's view of a Link after an agent build
+        // RED BEFORE: the rack view took its slot list from linkRackCache, whose feeder is gated on the
+        // CHAIN tab - so after a build made from the AI tab, selecting that Link said "Reading 0 plugin(s)
+        // from ..." until the window was closed and reopened. This row selects it IMMEDIATELY, with no
+        // reopen, which is the only way it can fail on the old build.
+        if (linkUid.isNotEmpty())
+        {
+            const auto sidecar = linkRowOf (rig.freshState(), linkUid).getProperty ("slots", juce::var()).toString();
+            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", linkUid));
+            // what the VIEW now holds, read straight after the selection
+            juce::String viewed;
+            rig.until ([&] (const juce::var& st)
+            {
+                viewed = linkRowOf (st, linkUid).getProperty ("slots", juce::var()).toString();
+                return viewed.isNotEmpty() && viewed == sidecar;
+            }, 8000);
+            const bool ok = sidecar.isNotEmpty() && viewed == sidecar;
+            row ("K1", ok, "(fix 5) selecting a Link straight after an agent build shows its slots",
+                 "the Link's sidecar holds [" + sidecar + "] and the view shows [" + viewed + "]"
+                 + (ok ? " - no reopen needed" : "  <- THE VIEW IS STALE, as it was for Sean"));
+            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""));
+        }
+
 
         // ---- L3: a Link's OUT ------------------------------------------------
         if (linkUid.isNotEmpty())
@@ -1339,6 +1572,93 @@ int main (int argc, char* argv[])
                  juce::String (plain ? "it said plainly that it cannot measure a Link yet"
                                      : "it answered with \"slot not on rack\", which is the wrong refusal")
                  + ", state " + r.state + ", said: " + r.text.substring (0, 160) + r.failDetail, &r);
+        }
+
+        // =====================================================================
+        //  SHIP 1 (15 Oct): Sean's seven fixes, the halves only a real plugin can prove.
+        //  The pure-logic halves are agent_round15_guard; these need audio, a real
+        //  window, a real Link and a real server - the whole reason the rig exists.
+        // =====================================================================
+
+        // ---- G1/G2 (FIX 3): gain reduction is READABLE, and the agent can say it
+        // RED BEFORE: the per-slot picture check(gr) reads had NO WRITER anywhere, so it answered "No audio
+        // has been heard for gain reduction on slot 1 yet" however long audio played - Sean's nine rounds,
+        // two seconds after the plugin's own playback wait had returned heard=8.0s.
+        {
+            // THIS ROW MAKES ITS OWN SETUP (15 Oct). The first cut read whatever C1 had left on the rack,
+            // and when C1 stalled on an unanswerable question the rack held only an EQ - which reports no
+            // gain reduction, truthfully - so G1 failed for a reason that had nothing to do with fix 3. A
+            // row that depends on an earlier row's model output is a row that reports the weather.
+            const auto hasCompressor = [] (const juce::var& st)
+            {
+                if (auto* arr = st.getProperty ("ownRack", juce::var()).getProperty ("slots", juce::var()).getArray())
+                    for (const auto& sl : *arr)
+                        if (sl.getProperty ("name", juce::var()).toString().containsIgnoreCase ("compress"))
+                            return true;
+                return false;
+            };
+            if (! hasCompressor (rig.freshState()))
+                askAgent (rig, "add an EchoJay Compressor to this rack", 90000, true, "the EchoJay Compressor");
+            const auto st = rig.freshState();
+            bool grKnown = false, grCapable = hasCompressor (st); double grDb = 0.0; juce::String shape;
+            if (auto* arr = st.getProperty ("ownRack", juce::var()).getProperty ("slots", juce::var()).getArray())
+                for (const auto& sl : *arr)
+                {
+                    shape << (shape.isEmpty() ? "" : ", ") << sl.getProperty ("name", juce::var()).toString();
+                    if ((bool) sl.getProperty ("grKnown", false))
+                    { grKnown = true; grDb = (double) sl.getProperty ("grDb", 0.0); }
+                }
+            if (! grCapable)
+                skip ("(fix 3) the rack reports gain reduction at all",
+                      "the setup turn put no compressor on the rack, so there is nothing that COULD report "
+                      "gain reduction - the rack holds [" + shape + "]. Not a verdict on fix 3");
+            else
+                row ("G1", grKnown, "(fix 3) the rack reports gain reduction at all",
+                     juce::String (grKnown ? "GR is readable: " + juce::String (grDb, 2) + " dB"
+                                           : "NO SLOT REPORTS GR - the picture is still unwritten")
+                     + "; the rack holds [" + shape + "]");
+        }
+        {
+            const auto r = askAgent (rig, "how much gain reduction is the compressor doing?");
+            const bool answered = r.ran()
+                               && ! r.text.containsIgnoreCase ("no audio has been heard")
+                               && ! r.failDetail.containsIgnoreCase ("no audio has been heard");
+            row ("G2", answered, "(fix 3) \"how much gain reduction is the compressor doing?\"",
+                 juce::String (answered ? "it answered without the no-audio refusal"
+                                        : "IT STILL SAYS NO AUDIO HAS BEEN HEARD")
+                 + ", state " + r.state + ", said: " + r.text.substring (0, 120) + r.failDetail, &r);
+        }
+
+        // ---- U2 (FIX 4): a HAND pre-gain move is undoable --------------------
+        // RED BEFORE: there was no preGain undo kind, so Undo reached past the drag to a dead entry
+        // ("Undo skipped: remove UAD UA 1176LN Rev E") and the knob never moved. This drives the KNOB's own
+        // door, not the agent's op: the fix is about a hand move.
+        {
+            rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0));
+            // PAST THE COALESCE WINDOW, OR THE SETUP IS PART OF THE DRAG (15 Oct 2026). UndoEntry's
+            // coalesceKey folds two moves of the same knob inside kCoalesceMs = 300 into ONE entry - which is
+            // the behaviour Sean's item 4 wanted for a drag ("one drag, one entry"). So the row's own
+            // levelling move to 0 dB was being folded into the drag, the single entry's `before` was
+            // whatever the pre-gain happened to hold beforehand (-5.01 dB, left by an earlier row's level
+            // match), and undo correctly restored THAT. The row was wrong, the plugin was right. A user who
+            // sets a knob, pauses, then drags it gets two entries, and that is what this row now does.
+            Rig::pump (700);
+            const double start = (double) rig.freshState().getProperty ("preGainDb", 99.0);
+            rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 5.8));
+            const auto afterDrag = rig.freshState();
+            const double dragged = (double) afterDrag.getProperty ("preGainDb", 0.0);
+            const int depth      = (int) afterDrag.getProperty ("undoDepth", 0);
+            const auto label     = afterDrag.getProperty ("undoLabel", juce::var()).toString();
+            auto a2 = rig.send (echojay::rig::cmd::press, args1 ("button", "undo"), 8000);
+            rig.until ([&] (const juce::var& st)
+                       { return std::abs ((double) st.getProperty ("preGainDb", 99.0) - start) < 0.2; }, 6000);
+            const double back = (double) Rig::state().getProperty ("preGainDb", 99.0);
+            const bool ok = std::abs (dragged - 5.8) < 0.3 && std::abs (back - start) < 0.2 && depth > 0;
+            row ("U2", ok, "(fix 4) a hand pre-gain move, then Undo",
+                 "pre-gain " + juce::String (start, 2) + " -> " + juce::String (dragged, 2) + " -> "
+                 + juce::String (back, 2) + " dB; the history's top was \"" + label + "\" at depth "
+                 + juce::String (depth) + "; undo said: " + a2.getProperty ("note", juce::var()).toString()
+                 + (ok ? "" : "  <- THE DRAG WAS NOT UNDOABLE"));
         }
 
         // ---- F2: an op this build does not have -----------------------------

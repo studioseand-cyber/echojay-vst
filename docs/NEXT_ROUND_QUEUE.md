@@ -65,6 +65,41 @@ the same request still waits for Apply.
 
 ---
 
+## OWED FROM SHIP 1 (15 Oct 2026): THE RIG CANNOT CLOSE A WINDOW YET
+
+The C11 row took six runs, and three of them were my instrument rather than the plugin. The last one is the
+one that matters for the queue:
+
+**Releasing the AU's wrapper view does not destroy the plugin's editor in this host.** The rig's own
+`unique_ptr` goes null, `v2.editor == nullptr` passes, and `EchoJayEditor` lives on - one built, one
+destroyed, at the end of the process. So every row that "closes the window" has been testing the host's
+wrapper, not the plugin, and two rows (R4 and C11's first cut) were passing because nothing had died.
+
+Done in ship 1:
+
+- `rig/rig-processor.json`, written by the **processor** on its 1 Hz timer, so a row can read `editorAlive`,
+  `editorId`, `editorsBuilt`, `chatOwnerId`, `parkedChats`, `orphanedTurns`, `historyRows` and
+  `lastAssistant` **with the window shut**. The editor-published `rig-state.json` freezes at the close.
+- `Track::closeEditor()` waits, bounded, for the plugin to report `editorAlive:false`, and every row that
+  closes a window now names the destroyed-editor half as a **skip with its reason** when it did not happen.
+- C11 asserts the half that holds either way (a dead socket leaves an interrupted row, in the view AND in
+  the processor's own record) and claims nothing about a destroyed window.
+
+**Owed, and it blocks item 0b's legs:** a host that can really close a window. Cheapest first: load the
+**VST3** for the lifecycle rows (JUCE's VST3 host releases `IPlugView` by refcount, which deletes the
+plugin-side editor deterministically; the AU hands back an autoreleased NSView the host does not own).
+Until then an 0b leg can only honestly be a skip.
+
+### And one real defect it found on the way
+
+The chat keep-rule compared **addresses**: `chatTurnOwner_ == getActiveEditor()`. A rebuilt editor landed on
+the dead one's address (0x160008000, in the run that caught it) and inherited its claim, so a failed turn was
+handed to a window that had never sent it. Identity is now a **counter** - every editor takes the next
+`editorId` as it is built, and no id is ever reissued. That is the third costume this one bug has worn: "is
+an editor attached" -> "is the SENDER still here" -> "is this the same OBJECT or just the same PLACE".
+
+---
+
 # Next round — the queue, in order
 
 > ## 13 OCT 2026, SEAN'S RULING: THE CAPABILITY LOOP COMES FIRST, AND IT REPLACES ITEM 0 FOR NOW

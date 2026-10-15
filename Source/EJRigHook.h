@@ -92,6 +92,11 @@ namespace cmd
     // (the undo row sat in awaiting_ask until its bound ran out), which is the rig failing to be a user
     // rather than the agent failing to work.
     inline constexpr const char* answerAsk    = "answer_ask";      // { label } - "" = the first chip offered
+    // ---- SHIP 1 (15 Oct): the doors Sean's seven fixes need proving through -----------------------------
+    // setPreGain is the KNOB'S OWN gesture, not the agent's op: fix 4 is about a HAND move being undoable,
+    // so a row that used the agent op would prove the wrong thing. `press: undo` is the chain bar's Undo.
+    inline constexpr const char* setPreGain   = "set_pre_gain";    // { db }  - as if dragged by hand
+    // press gains "undo" (fix 4) alongside apply / apply_all / skip_all / skip_line / details / stop.
 }
 
 /** One parsed command. `seq` 0 means "nothing to do". */

@@ -89,6 +89,9 @@ public:
 
     // For the editor's GR meter. Negative dB, 0 when not reducing.
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
+    // FIX 3, 14 Oct: the rack's route to this figure (the editors have painted it for months).
+    bool  reportsGainReduction() const override { return true; }
+    float gainReductionDbForHost() const override { return gainReductionDb(); }
 
     // The level the detector is seeing this instant, dBFS. Same one-float
     // contract as the line above. Only a whisper of extra brightness on the

@@ -255,6 +255,12 @@ private:
     void addHandoffZone (juce::Rectangle<int> r, const juce::String& path);
     void drawTile (juce::Graphics& g, const DashProject& p, juce::Rectangle<int> square);
     juce::String statusLine() const;
+public:
+    /** SHIP 1, FIX 7 (15 Oct): the status line, for the host rig. The fault was dashboard text ("Loading
+        your dashboard...") surviving onto the LOGIN view, so the row has to assert on the line itself -
+        a screenshot would prove nothing and a repaint check would prove less. */
+    juce::String statusLineForRig() const { return statusLine(); }
+private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DashboardView)
 };

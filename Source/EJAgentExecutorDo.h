@@ -144,6 +144,8 @@ private:
 
     /** Re-read the target rack until it holds `wantSlots` or the wait runs out, then answer. The one place
         that decides a structural change LANDED. */
+    /** FIX 1(b), 14 Oct: a `set` is confirmed against the VALUES, not the slot count. */
+    void confirmValues (const ToolCall& call, const juce::String& applyTo, juce::String sentence, Done done);
     void confirmLanded (const juce::String& applyTo, int wantSlots, const juce::String& opName,
                         juce::String sentence, Done done, int waitedMs);
 

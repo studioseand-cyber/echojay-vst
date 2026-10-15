@@ -433,7 +433,10 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
     // build - it is what a rack that threw the batch away looks like from here, whatever put it there.
     const int wantSlots = structuralWantSlots (call, opName);
     const auto aliveW   = this->alive();
-    sinks_.applyChainOps (applyTo, edits, [this, aliveW, done, opName, applyTo, wantSlots] (bool ok, juce::String sentence)
+    // `call` BY VALUE (fix 1(b)): this callback is asynchronous - the ack can arrive after doOp has
+    // returned - and `call` is a reference parameter, so capturing it by reference would read a dead
+    // ToolCall. A copy is cheap (ids, a name and a var) and cannot dangle.
+    sinks_.applyChainOps (applyTo, edits, [this, aliveW, done, opName, applyTo, wantSlots, call] (bool ok, juce::String sentence)
     {
         if (! ok)
         {
@@ -449,8 +452,95 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
             done (ToolOutcome::success (juce::var (new juce::DynamicObject()), {}, sentence));
             return;
         }
+        // ---- FIX 1(b) (Sean, 14 Oct): A `set` READS ITS VALUES BACK -----------------------------------
+        //
+        // "make the kick punchier" sent eight parameters in a shape the dial path could not read, applied
+        // NONE of them, and this path reported success - because confirmLanded counts SLOTS, which a `set`
+        // never changes, so the check was true before and after and could not fail. The closing text then
+        // told Sean attack 18 ms, release 85 ms and makeup, while the compressor sat at 10 / 120 / 0.
+        //
+        // A structural read-back cannot answer a value question. So a `set` is confirmed against the VALUES.
+        if (opName == "set")
+        { confirmValues (call, applyTo, sentence, done); return; }
         confirmLanded (applyTo, wantSlots, opName, sentence, done, 0);
     });
+}
+
+// ---- FIX 1(b): THE VALUE READ-BACK ---------------------------------------------------------------------
+// Read every parameter the call asked for and compare it with what the slot now holds. Three outcomes, and
+// the middle one is the one that was missing:
+//   every value matches                    -> applied, naming them
+//   some do not                            -> NOT APPLIED, naming each with asked vs actual
+//   none of them can be read at all        -> applied-but-unconfirmed, said plainly rather than claimed
+// The tolerance is per magnitude rather than absolute: a device stores 18 ms as 18.0 and a ratio as 4.0,
+// but a dB value may round, and comparing 0.1 dB with == would make an honest apply look like a failure.
+void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyTo,
+                                juce::String sentence, Done done)
+{
+    const auto ss = argVar (call, "settings_structured");
+    auto* root = ss.getDynamicObject();
+    // The asked values live either under "params" or (since fix 1(a)) flat at the top level.
+    juce::DynamicObject* asked = root;
+    if (root != nullptr)
+        if (auto* p = root->getProperty ("params").getDynamicObject()) asked = p;
+    bool haveSlot = false;
+    const int slot1 = argInt (call, "slot", haveSlot);
+
+    if (asked == nullptr || ! haveSlot || ! src_.slotParam)
+    {
+        // Nothing to compare, or no way to compare it. Say which, rather than reporting a bare success.
+        auto* r = new juce::DynamicObject();
+        r->setProperty ("applied", true); r->setProperty ("confirmed", false);
+        r->setProperty ("why", "this build could not read the slot's values back");
+        done (ToolOutcome::success (juce::var (r), "set:" + juce::String (juce::Time::currentTimeMillis()),
+                                    sentence + " I could not read the values back to confirm them."));
+        return;
+    }
+
+    juce::StringArray matched, missed, unreadable;
+    for (auto& kv : asked->getProperties())
+    {
+        const auto id = kv.name.toString();
+        const auto want = kv.value;
+        if (! (want.isDouble() || want.isInt() || want.isInt64())) continue;   // a mode name, not a number
+        const double wanted = (double) want;
+        double got = 0.0;
+        if (! src_.slotParam (applyTo, slot1, id, got)) { unreadable.add (id); continue; }
+        const double tol = juce::jmax (0.05, std::abs (wanted) * 0.02);
+        if (std::abs (got - wanted) <= tol) matched.add (id + " " + juce::String (got, 2));
+        else missed.add (id + " is " + juce::String (got, 2) + " (asked " + juce::String (wanted, 2) + ")");
+    }
+
+    auto* r = new juce::DynamicObject();
+    r->setProperty ("slot", slot1);
+    r->setProperty ("applied_params",    matched.joinIntoString (", "));
+    r->setProperty ("unapplied_params",  missed.joinIntoString (", "));
+    r->setProperty ("unreadable_params", unreadable.joinIntoString (", "));
+
+    if (! missed.isEmpty())
+    {
+        // THE WHOLE POINT. The model must not be able to report this as done - and the sentence names the
+        // figures, so the closing text can only be built from what actually landed.
+        const juce::String why = "the values did not take: " + missed.joinIntoString ("; ")
+                               + (matched.isEmpty() ? juce::String()
+                                                    : ". What did land: " + matched.joinIntoString (", "));
+        auto o = ToolOutcome::failure ("not_applied", why);
+        o.result = juce::var (r);
+        done (o);
+        return;
+    }
+    if (matched.isEmpty())
+    {
+        r->setProperty ("confirmed", false);
+        done (ToolOutcome::success (juce::var (r), "set:" + juce::String (juce::Time::currentTimeMillis()),
+                                    sentence + " I could not read these values back to confirm them"
+                                    + (unreadable.isEmpty() ? juce::String() : " (" + unreadable.joinIntoString (", ") + ")")
+                                    + "."));
+        return;
+    }
+    r->setProperty ("confirmed", true);
+    done (ToolOutcome::success (juce::var (r), "set:" + juce::String (juce::Time::currentTimeMillis()),
+                                "read back: " + matched.joinIntoString (", ")));
 }
 
 // ---- ITEM 1 (14 Oct 2026): ONE CROSS-CHANNEL GATE ----------------------------------------------------

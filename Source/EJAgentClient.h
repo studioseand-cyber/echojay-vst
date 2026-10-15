@@ -157,7 +157,21 @@ public:
 
     // Tunables (the guard shortens them)
     int stallTimeoutMs   = 90'000;   // no bytes on an open stream for this long -> stream_stalled
-    int connectTimeoutMs = 60'000;
+    // FIX 2 (Sean, 14 Oct): 60 s BOUNDED THE WHOLE REQUEST AND WE GAVE UP BEFORE THE SERVER DID.
+    // A step that had already delivered round 10's frames died at exactly 60.000 s with "Connection failed.
+    // Please check your internet connection." - nothing was wrong with the connection; the round was slow.
+    // The server's budget is 300 s, so we were cutting the socket at a fifth of it and turning a slow answer
+    // into a lost one. 330 s: longer than the server's own bound, so the SERVER's answer (or its timeout)
+    // always arrives first and we report what it said rather than guessing.
+    int connectTimeoutMs = 330'000;
+    /** The shipped bound, for a guard: a client that gives up before the server does turns a slow answer
+        into a lost one, so this is asserted to be at least the server's 300 s rather than left to a
+        comment. (agent_round15_guard, fix 2.)
+        NO ACCESS MARKERS AROUND THIS. The first cut wrapped it in public:/private:, which was a no-op on
+        the way in (this section is already public) and made playbackTimeoutS and playbackTickMs PRIVATE on
+        the way out - and those are the tunables the comment above promises "the guard shortens". S2 of the
+        gate found it: nine errors in agent_client_guard, all of them "is a private member". */
+    static constexpr int defaultConnectTimeoutMs() { return 330'000; }
     int playbackTimeoutS = echojay::agent::kPlaybackTimeoutSeconds;   // the contract's 60 s
     int playbackTickMs   = 100;
 

@@ -604,14 +604,29 @@ int main()
         // status line, which is this codebase's existing convention (the linkActive arm does the same). My
         // first draft expected false and was simply wrong about the contract, not about the behaviour.
         const int redoBefore = H.redoDepth();
+        const int undoBeforeSkip = H.undoDepth();
         H.undo();
         check (proc.lastUndoStatus().containsIgnoreCase ("no longer present"),
                "STAGE 5: an undo for a Link that is NOT PRESENT is a SKIP THAT SAYS SO - never a silent "
                "success that leaves the stack and the rack disagreeing, because the next undo would then "
                "compound the disagreement", proc.lastUndoStatus());
-        check (H.redoDepth() == redoBefore + 1,
-               "...and the step still moves to REDO, so a skip loses nothing and the user can try again once "
-               "the Link is back", juce::String (H.redoDepth() - redoBefore));
+        // THE CONTRACT CHANGED HERE ON 15 OCT, DELIBERATELY, AND THIS IS THE REASON.
+        //
+        // It used to be "the dead step moves to REDO (+1), so a skip loses nothing". That was written when
+        // one press popped exactly one entry. Sean's item 4 on ship_2026-10-14a was the other half of that
+        // behaviour: he pressed Undo twice after a hand pre-gain move, each press spent a DEAD entry and
+        // reported success, and his gain move never came back. So a press now walks PAST dead entries to the
+        // first one that applies - and when NOTHING applies, the history is restored exactly as it was
+        // rather than emptied, which is the same promise this row was making ("a skip loses nothing and the
+        // user can try again once the Link is back") kept in a stronger way: the steps stay UNDOABLE instead
+        // of moving to redo. Asserted both ways round, so neither direction can rot.
+        check (H.redoDepth() == redoBefore,
+               "...and a press that can apply nothing LOSES NOTHING: the steps stay on the undo stack, "
+               "undoable again the moment that Link is back (15 Oct: they used to move to redo one per "
+               "press, which is how Sean's pre-gain move was spent without being undone)",
+               juce::String (H.redoDepth() - redoBefore));
+        check (H.undoDepth() == undoBeforeSkip,
+               "...and the undo stack still holds them", juce::String (H.undoDepth() - undoBeforeSkip));
     }
 
     std::printf ("\n==== remote_ops_guard: %s (%d assertion(s) failed) ====\n",

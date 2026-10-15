@@ -160,6 +160,34 @@ methods. Two honest ways:
   run survives the window" that silently excludes builds is the kind of half-truth this round has been
   removing from the sinks.
 
+### FIRST, A CORRECTION TO EVERY LEG BELOW (15 Oct 2026)
+
+**This host does not destroy the plugin's editor when the rig closes a window, so none of the legs below
+can be written the way they are written here.** Found while chasing the C11 row: the rig releases the AU's
+wrapper view, its own `unique_ptr<AudioProcessorEditor>` goes null, `v2.editor == nullptr` passes - and the
+plugin reports the **same `EchoJayEditor` alive for the whole run**. One editor is built; one destructor
+runs, at the end of the process. The proof is in the plugin's own log: `EJEditor: window #1 built`, and a
+single `EJCmp: streams stopped on the editor closing` at the last second of the run.
+
+Three consequences, all of which this round has acted on:
+
+1. **Two rows were passing vacuously.** R4 ("closing mid-reply keeps the user's message") and the first cut
+   of C11 asserted on a window that had never gone away. The user's message survived because nothing had
+   died. Both rows now say what they actually prove, and the destroyed-window half is a **named skip with
+   its reason** rather than a silent pass - the same rule as the vacuous-pass gate.
+2. **The rig gained a second channel it can read with the window shut:** `rig/rig-processor.json`, written
+   by the **processor** on its 1 Hz timer (`editorAlive`, `editorId`, `editorsBuilt`, `chatOwnerId`,
+   `parkedChats`, `orphanedTurns`, `historyRows`, `lastAssistant`). `rig-state.json` is published by the
+   *editor* when it is given a command, so with no window there is nothing to ask and nothing to read -
+   which is precisely the state every one of the legs below is about. `Track::closeEditor()` now waits,
+   bounded, for the plugin to report `editorAlive:false` and records whether it ever did.
+3. **Before item 0b is built, the rig needs a host that can really close a window.** Two candidates, and
+   the first is cheap: load the **VST3** for these rows (JUCE's VST3 host releases `IPlugView` by COM
+   refcount, which deletes the plugin-side editor deterministically, where the AU hands back an autoreleased
+   NSView whose lifetime the host does not own); or drive the AU's view factory directly in the rig rather
+   than through `createEditorIfNeeded`. **Until one of them is in place, an 0b leg can only be written as a
+   skip, and writing it as a pass would be worse than not writing it.**
+
 ### What the rig will assert
 
 New legs, each on real state, in `tools/host_rig/`:

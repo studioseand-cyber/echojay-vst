@@ -85,6 +85,9 @@ public:
     }
 
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
+    // FIX 3, 14 Oct: the rack's route to this figure (the editors have painted it for months).
+    bool  reportsGainReduction() const override { return true; }
+    float gainReductionDbForHost() const override { return gainReductionDb(); }
 
     // The detector's current level, for the instantaneous lift in the transfer
     // curve's glow. Same benign racy single-float contract as the meter above.

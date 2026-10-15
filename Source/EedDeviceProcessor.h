@@ -157,6 +157,20 @@ public:
         settings text). Public because the caller is not the device and not a subclass: it is the rack. */
     juce::String readbackSummaryForHost() const { return readbackSummary(); }
 
+    // ---- FIX 3 (Sean, 14 Oct): GAIN REDUCTION, FOR THE HOST --------------------------------------------
+    // check(gr) gated on ChainHost's per-slot SlotPicture, which was READ IN THREE PLACES AND WRITTEN IN
+    // NONE - so it could never succeed, and the refusal blamed the audio: "No audio has been heard for gain
+    // reduction on slot 1 yet", two seconds after the plugin's own playback wait had returned heard=8.0s.
+    // Sean spent nine rounds on it.
+    //
+    // The figure existed all along - EedCompressorProcessor::gainReductionDb() and its siblings, which the
+    // device EDITORS have been painting for months - it simply had no route to the rack, because it is not
+    // on this shared base. These two are that route. The default is "does not report", not "reports 0 dB":
+    // a device with no dynamics stage must read as ABSENT, since 0.0 dB of reduction is a real measurement
+    // and an EQ claiming it would be a lie in the same family as the one being fixed.
+    virtual bool  reportsGainReduction() const { return false; }
+    virtual float gainReductionDbForHost() const { return 0.0f; }
+
 private:
     bool applyingState_ = false;
 

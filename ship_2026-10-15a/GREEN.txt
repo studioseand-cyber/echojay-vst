@@ -1,0 +1,87 @@
+ship_2026-10-15a - GATED GREEN, 15 Oct 2026 (overnight, unattended)
+
+WHAT THIS BUILD IS
+  Sean's SEVEN fixes from his full Logic check of ship_2026-10-14a, plus the unknown-track tap choices,
+  plus three faults the rig found while proving them. Every fix has a rig row or a guard leg that was RED
+  before the change and GREEN after it. Built from build-guards by tools/place_ship.sh.
+
+  1  HONESTY: a `set` that applied nothing reported success. The payload arrived FLAT (no "params"
+     wrapper) so the dial path applied 0 of 8, and the read-back counted SLOTS, which a set never changes.
+     Flat is now accepted, and a set READS THE VALUES BACK and reports not_applied by name.
+  2  the 60 s client bound became 330 s (the server's own is 300 s), and a timeout gets its own message.
+  3  check(gr) with audio playing: the per-slot picture had NO WRITER. The built-ins report their own GR
+     and the picture is computed on read; the no-audio refusal is only given when the transport is stopped.
+  4  a HAND pre-gain move is undoable, and one press no longer spends a dead entry. The history walks past
+     dead entries to the first that applies - and when nothing can be applied it is RESTORED, not emptied.
+     The release banner got a 1500 ms grace.
+  5  after an agent build on a Link the main window read 0 plugins: the selection path now reads the
+     sidecar fresh and a build forces a refresh for that uid.
+  6  a chat reply lost silently: every failure path notifies, the processor records an interrupted row, and
+     a non-streamed turn is parked at teardown too.
+  7  the login screen no longer shows "Loading your dashboard".
+  +  the unknown-track refusal now says "ask with those NAMES as the tap choices" - never a uid.
+
+  AND THREE THE RIG FOUND ON THE WAY
+  (a) AN ADDRESS IS NOT AN IDENTITY. The chat keep-rule compared pointers and a REBUILT editor landed on
+      the dead one's address, inheriting its claim. Identity is a counter now; no id is ever reissued.
+  (b) ONE SENTENCE for a turn that never arrived (EchoJayAPI::interruptedTurnLine), used by both renderers,
+      so the user always sees "[interrupted]" and the UI has one thing to hang Retry on.
+  (c) THE RIG COULD NOT SEE - OR CLOSE - A SHUT WINDOW. The processor now writes its own rig line
+      (rig/rig-processor.json) on its 1 Hz timer, and every close row names the destroyed-editor half as a
+      SKIP with its reason, because releasing the AU's wrapper view does not destroy the plugin's editor in
+      this host. Item 0b's legs are owed a host that can really close a window.
+
+THE GATE (gate15, started 00:53, S1-S5 complete 02:04)
+  S1   forced delete of SIX archives across THREE trees, then relink      OK
+       (eleven headers changed: EchoJayUndoHistory.h, EJAgentExecutorDo.h, EJAgentExecutorRead.h,
+        ChainHost.h, PluginProcessor.h, EchoJayAPI.h, PluginEditor.h, EJRigHook.h, EedDeviceProcessor.h
+        + the four device headers, DashboardTab.h, EJAgentClient.h)
+  S2   the guard targets, LTO                                             OK
+  S3   the four bundles                                                   OK
+  S3b  archive provenance: the link line newer than every header          OK
+  S4   ctest -L "fast|plugins", stall watchdog armed      78/78 passed     OK
+  S5   link_state_guard, standalone two-sided                             OK
+  S6   the host rig, TWO passes, re-run at 02:39 (see below):             OK
+         host_rig       live against B's local server on 127.0.0.1:3211,
+                        the real model, the real built bundles, audio
+                        playing:  47 passed, 0 failed, 1 skipped
+         host_rig_mock  the mock, for the legs that need the rig to
+                        control the server (a held reply, a CUT socket,
+                        the scripted undo op):
+                        32 passed, 0 failed, 2 skipped
+
+  THE SKIPS, NAMED (a skip is not a pass - that rule is now in the rig itself):
+    - "the plugin's editor was destroyed by that close" x3. It was not: releasing the AU's wrapper view
+      does not destroy EchoJayEditor in this host. Said out loud on every close row rather than passed.
+
+  S6 WAS RE-RUN TWICE, and nothing in Source/ changed between the gate and the green run - the re-run
+  REFUSES to start if any Source file is newer than the gated archive, and printed "freshness OK". What
+  changed was tools/host_rig only, and all three reds were the rig's own:
+    1. the model asked "Which compressor do you want?" as a talk/ask with NO chips; answerAsk refused,
+       C1 sat in awaiting_ask for its whole bound, and five rows fell with it (C2 built on the empty rack
+       C1 left, C5/C7 skipped, C8 read C1's still-live turn, H2 had no claim to judge). The rig now TYPES
+       the answer, which is what a user does with an open question, and stops a previous turn that will
+       not finish instead of merely warning about it.
+    2. U2 set the pre-gain to 0 and then dragged it inside the 300 ms coalesce window, so the two moves
+       were ONE entry whose `before` was what an earlier row's level match had left (-5.01 dB). The plugin
+       was right and the row was wrong; it now pauses past the window, as a hand does.
+    3. ruling 3's slot double-click presses Block::onOpen, and the Blocks only exist while that rack's list
+       has been laid out - after an agent build with the AI tab in front there is a slot and no Block. The
+       rig now selects the own rack first (a user's own gesture) and, if there is still no Block, SKIPS with
+       the reason. It passed on the re-run.
+  L2 (a Link build) failed once at 02:31 and passed at 02:44 with no change to either side: the model had
+  built on the mix bus instead of the named Link. Recorded as model nondeterminism to watch, not fixed.
+
+VERIFIED AFTER INSTALL (arm64, read back from ~/Library, matching this folder byte for byte)
+  EchoJay V2.component   0EB9D09C-206E-3434-8620-6B01EC67B324
+  EchoJay V2.vst3        A926CB56-1323-33FF-B7A8-40158454BEC6
+  EchoJay Link.component 483F8ED8-5D57-39A2-9635-B9E70DB056EF
+  EchoJay Link.vst3      972F32A6-E7F0-3103-BD4B-AA07B5AC9AE7
+  Installed 15 Oct 02:46, with Logic closed (checked, not assumed). AUHostingService was not running.
+  Every Source file is older than every binary here (checked, printed as FRESH).
+
+DOWNGRADE SAFETY
+  Nothing was removed or renamed in the persisted state. The new fields are additive: the interrupted chat
+  row is an ordinary assistant row, the preGain undo kind is a new kind an older history simply never sees,
+  and rig/rig-processor.json only exists when the rig's two locks are open. A project or saved chain written
+  by this build opens in ship_2026-10-09a as it did before.

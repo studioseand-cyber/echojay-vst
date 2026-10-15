@@ -14,6 +14,7 @@
 #include "EchoJayParamMaps.h"   // echojay::IdentityRef for fetchDialableIdentities
 #include "EJLevelRecord.h"      // 21t-i: the stored level record, the source of every block's figures
 #include "EchoJayHistoryTrim.h" // echojay::HistoryTrimResult, in ChatTurns below
+#include "NativeClip.h"        // EchoJay_NSLog - the transport's own log lines (15 Oct 2026)
 
 class ChainHost;   // buildCurrentChainInjection reads the live rack
 namespace LinkShm { struct RackSidecar; }   // Phase R: targeted-injection overload
@@ -434,8 +435,35 @@ public:
     std::function<void (const juce::String& chatId, const juce::String& reply, bool success)> onChatTurnFinalised;
     // Fired from both completion paths. Never throws into the transport: a persistence fault must not turn a
     // delivered reply into a failed one.
+    /** THE ONE SENTENCE FOR A TURN THAT NEVER ARRIVED (15 Oct 2026, Sean's item 7).
+        Two different places render a failed chat turn - a live window's own failure branch and the
+        processor's keep-rule, for a turn whose window had closed - and the rig caught them printing
+        different things: one said "Could not reach EchoJay. Check your connection and try again." with no
+        mark that the answer was lost, the other said "That answer didn't arrive ... [interrupted]". Sean's
+        ruling is that the user must see "interrupted" with a Retry, so the sentence is written ONCE, here,
+        and both renderers use it. The `[interrupted]` marker is what the UI keys its Retry on, so it is
+        part of the text rather than a second flag that can disagree with it. */
+    static juce::String interruptedTurnLine (const juce::String& why = {})
+    {
+        juce::String line = juce::String::fromUTF8 ("\xe2\x9a\xa0 That answer didn't arrive");
+        const auto w = why.trim();
+        if (w.isNotEmpty()) line << " - " << w;
+        else                line << " (nothing came back)";
+        line << "  [interrupted]";
+        return line;
+    }
+    /** True when a row already carries the marker above, so no renderer doubles it. */
+    static bool looksInterrupted (const juce::String& text) { return text.contains ("[interrupted]"); }
+
     void notifyChatTurnFinalised (const juce::String& reply, bool success)
     {
+        // LOGGED UNCONDITIONALLY, including the case where nobody is listening. Fix 6 turned on four new
+        // call sites and the rig still saw silence; without this line there was no way to tell "the turn
+        // never finalised" from "it finalised and the handler dropped it", which are different bugs.
+        EchoJay_NSLog (("EJChat: turn FINALISED chat=" + (turnChatId_.isNotEmpty() ? turnChatId_ : juce::String ("(none)"))
+                        + " success=" + juce::String (success ? "yes" : "no")
+                        + " reply=" + juce::String (reply.length()) + "b"
+                        + (onChatTurnFinalised ? juce::String() : juce::String (" (NO HANDLER ATTACHED)"))).toRawUTF8());
         if (! onChatTurnFinalised) return;
         try { onChatTurnFinalised (turnChatId_, reply, success); } catch (...) {}
     }

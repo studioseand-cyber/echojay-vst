@@ -3126,7 +3126,46 @@ void ChainHost::setSlotPreTrimDb(int i, float db)
     bumpChainValue();   // ruling 2 (21s-b): a VALUE write, not a structural edit
 }
 float ChainHost::getSlotPreTrimDb(int i) const { return (i >= 0 && i < (int) slots_.size()) ? slots_[(size_t) i].preTrimDb : 0.0f; }
-ChainHost::SlotPicture ChainHost::slotPicture(int i) const { return (i >= 0 && i < (int) slots_.size()) ? slots_[(size_t) i].picture : SlotPicture{}; }
+ChainHost::SlotPicture ChainHost::slotPicture(int i) const
+{
+    if (i < 0 || i >= (int) slots_.size()) return SlotPicture{};
+    auto p = slots_[(size_t) i].picture;
+    if (p.valid) return p;        // a stored reading (a Listen pass, if one ever writes one) wins
+    // ---- FIX 3 (Sean, 14 Oct): COMPUTED ON READ, BECAUSE NOTHING EVER WROTE IT -------------------------
+    //
+    // `picture` is declared "filled at Listen" and NOTHING FILLS IT: read in three places, written in none.
+    // So check(gr) could never succeed on any slot of any rack, however long audio played - nine rounds of
+    // Sean's evening - and the per-slot caption in the strip has never shown a reading either.
+    //
+    // Computing it HERE rather than adding a writer is the smaller and safer change: there is no cache to go
+    // stale, no new invalidation rule to remember on every mutation (the hazard the loopsStamp comment
+    // describes), and the value is the device's own at the moment it is asked for. If a Listen pass is ever
+    // written it takes precedence, by the line above.
+    if (auto* dev = dynamic_cast<EedDeviceProcessor*> (const_cast<ChainHost*> (this)->getSlotProcessor (i)))
+    {
+        if (dev->reportsGainReduction())
+        {
+            p.grDb     = std::abs (dev->gainReductionDbForHost());   // reported as a positive amount of reduction
+            p.grKnown  = true;
+            p.dynamics = true;
+            p.valid    = true;
+            p.preTrimDb  = getSlotPreTrimDb (i);
+            p.postTrimDb = getSlotOutGainDb (i);
+        }
+    }
+    return p;
+}
+bool ChainHost::slotParamValue (int slotIndex, const juce::String& paramId, double& out) const
+{
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;
+    // const_cast: getSlotProcessor is non-const on this class but the device's getParamValue is const, and
+    // this function promises not to change anything. The alternative is a const overload of the getter for
+    // one caller.
+    auto* dev = dynamic_cast<EedDeviceProcessor*> (const_cast<ChainHost*> (this)->getSlotProcessor (slotIndex));
+    if (dev == nullptr) return false;          // not a built-in: its values are not readable from here
+    out = dev->getParamValue (paramId);
+    return true;
+}
 juce::String ChainHost::slotPictureText(int i) const
 {
     const auto p = slotPicture(i);
@@ -5183,6 +5222,47 @@ juce::String ChainHost::applyStructuredToBuiltinSlot(int slotIndex, const juce::
     // said otherwise. Nothing is clamped when the block already agrees, and nothing is clamped on a limiter that
     // is NOT last - a limiter mid-chain is a sound, not a ceiling.
     juce::var toApply = structured;
+    // ---- FIX 1(a) (Sean, 14 Oct): ACCEPT THE FLAT FORM, SINCE THE NAMES WERE RIGHT ---------------------
+    //
+    // "make the kick punchier" sent the compressor's own parameter names at the TOP LEVEL:
+    //    got keys: [threshold_db, ratio, attack_ms, release_ms, knee_db, makeup_db, mix, mode]
+    //    wanted: "params":{...} (or the device's own array form, e.g. "eq_bands")
+    // The device resolves its array form and a flat `params` MAP, so a bare bag of the right names resolved
+    // neither and ZERO of the eight were applied - while the closing text told Sean all three values it had
+    // asked for. The names were correct; only the wrapper was missing.
+    //
+    // So: when the payload is an object with no `params`, no array-shaped value, and every entry a plain
+    // scalar, it is wrapped and handed on. Liberal in what we accept - and safe only because the caller now
+    // READS THE VALUES BACK (fix 1(b)); leniency without a read-back is how this fault got here. The wrap is
+    // LOGGED with the keys, so the emitter can be corrected rather than looking right for ever (the same
+    // rule the limiter-ceiling clamp below follows).
+    if (auto* flat = toApply.getDynamicObject())
+    {
+        if (! flat->hasProperty ("params"))
+        {
+            bool anyArray = false, anyObject = false, allScalar = ! flat->getProperties().isEmpty();
+            for (auto& kv : flat->getProperties())
+            {
+                const auto& v = kv.value;
+                if (v.isArray()) { anyArray = true; break; }
+                if (v.getDynamicObject() != nullptr) { anyObject = true; break; }
+                if (! (v.isDouble() || v.isInt() || v.isInt64() || v.isBool() || v.isString())) allScalar = false;
+            }
+            if (! anyArray && ! anyObject && allScalar)
+            {
+                juce::StringArray keys;
+                for (auto& kv : flat->getProperties()) keys.add (kv.name.toString());
+                auto* wrapped = new juce::DynamicObject();
+                wrapped->setProperty ("params", juce::var (new juce::DynamicObject (*flat)));
+                toApply = juce::var (wrapped);
+                EchoJay_NSLog (("EJDial: slot " + juce::String (slotIndex + 1) + " (\"" + slots_[(size_t) slotIndex].desc.name
+                                + "\") FLAT PAYLOAD ACCEPTED - wrapped as \"params\" [" + keys.joinIntoString (", ")
+                                + "]. The contract's shape is settings_structured.params; this is accepted because the "
+                                  "NAMES were right and zero of them used to land (fix 1, 14 Oct). The values are read "
+                                  "back by the caller either way.").toRawUTF8());
+            }
+        }
+    }
     if (slotIndex == (int) slots_.size() - 1 && isLimiterLikeName (slots_[(size_t) slotIndex].desc.name))
     {
         if (auto* root = toApply.getDynamicObject())

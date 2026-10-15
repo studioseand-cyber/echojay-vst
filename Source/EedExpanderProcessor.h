@@ -65,6 +65,9 @@ public:
     static constexpr double kMaxLookaheadMs = 10.0;
 
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
+    // FIX 3, 14 Oct: the rack's route to this figure (the editors have painted it for months).
+    bool  reportsGainReduction() const override { return true; }
+    float gainReductionDbForHost() const override { return gainReductionDb(); }
     float detectorLevelDb()  const noexcept { return core_.detectorLevelDb(); }
 
     // Where the signal LIVES on that curve — the dwell histogram behind the

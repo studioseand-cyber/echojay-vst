@@ -77,6 +77,9 @@ public:
     static constexpr const char* kAutoThresh  = "auto_threshold";
 
     float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
+    // FIX 3, 14 Oct: the rack's route to this figure (the editors have painted it for months).
+    bool  reportsGainReduction() const override { return true; }
+    float gainReductionDbForHost() const override { return gainReductionDb(); }
 
     // The level of the SIDECHAIN BAND, not of the input: this device's detector
     // hears through a bandpass, so this is "how much sibilance is there right

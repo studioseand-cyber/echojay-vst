@@ -308,6 +308,11 @@ ej_add_guard(agent_round13_guard      SOURCE tools/agent_round13_guard/harness.c
 # 14 Oct 2026: Sean's round on ship_2026-10-13a (the build/add routing, the read-back poll) plus the
 # dead-path sweep's contract findings (wet_pct, bypassed, add's wet) and item 8's make-up cap.
 ej_add_guard(agent_round14_guard      SOURCE tools/agent_round14_guard/harness.cpp            LABEL fast)
+# SHIP 1 (15 Oct round): Sean's seven fixes from his Logic check of ship_2026-10-14a. The pure-logic halves -
+# a set confirmed by its VALUES, a stopped transport answering needs_playback, undo walking past dead
+# entries, the client's bound outliving the server's, and the unknown-track wording - are here; the halves
+# that need a real plugin, real audio or a real window are rig rows.
+ej_add_guard(agent_round15_guard      SOURCE tools/agent_round15_guard/harness.cpp            LABEL fast)
 ej_add_guard(history_guard            SOURCE tools/ui_round_guard/history_guard.cpp           LABEL fast)
 ej_add_guard(classify_body_guard      SOURCE tools/classify_body_guard/harness.cpp            LABEL fast)
 ej_add_guard(shm_layout_guard         SOURCE tools/shm_layout_guard/harness.cpp               LABEL fast)

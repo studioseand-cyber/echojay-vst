@@ -48,6 +48,14 @@ class EchoJayEditor : public juce::AudioProcessorEditor,
                        public juce::TooltipClient
 {
 public:
+    /** THIS WINDOW'S IDENTITY (15 Oct 2026). Taken from the processor's counter when the window is built
+        and never reused, because the chat keep-rule compared ADDRESSES and a rebuilt editor inherited the
+        dead one's claim when the allocator handed it the same address. */
+    juce::uint64 editorId() const noexcept { return editorId_; }
+
+private:
+    juce::uint64 editorId_ = 0;
+public:
     EchoJayEditor(EchoJayProcessor&);
     ~EchoJayEditor() override;
 

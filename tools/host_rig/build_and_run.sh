@@ -96,6 +96,8 @@ cat > "$SCRATCH/script.json" <<'JSON'
   "chat": [
     { "holdIfContains": "rig-midreply-marker", "holdMs": 6000, "deltaMs": 40,
       "text": "mock reply held back so the window could be closed mid-reply, then finished." },
+    { "holdIfContains": "rig-cut-marker", "holdMs": 3000, "deltaMs": 60, "cutAfterDeltas": 3,
+      "text": "this reply starts and then the socket dies before any done frame arrives" },
     { "text": "mock reply, sent quickly.", "deltaMs": 15, "holdMs": 0 }
   ],
   "agent": [

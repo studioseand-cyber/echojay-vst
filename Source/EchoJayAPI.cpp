@@ -337,12 +337,27 @@ void EchoJayAPI::postJSON(const juce::String& path, const juce::String& body,
                 stream->readIntoMemoryBlock(mb);
                 auto responseText = juce::String::fromUTF8((const char*)mb.getData(), (int)mb.getSize());
                 logNon2xx(path, statusCode, responseText);
+                // WHY THIS LOGS (15 Oct 2026). The rig's C11 row said a cut chat socket left no row at all,
+                // and the plugin's log held NOTHING between the send and the next turn - no failure, no
+                // completion, no retry. A transport whose terminal outcome is invisible cannot be diagnosed
+                // from a user's log, which is the only evidence we ever get from Logic. One line per
+                // request end, at the one place every postJSON passes through.
+                EchoJay_NSLog (("EJNet: postJSON " + path + " -> status " + juce::String (statusCode)
+                                + ", " + juce::String ((int) mb.getSize()) + "b"
+                                + (responseText.isEmpty() ? juce::String (" (EMPTY BODY - a closed socket reads"
+                                                                          " as a response with nothing in it)")
+                                                          : juce::String())).toRawUTF8());
                 json = juce::JSON::parse(responseText);
                 break; // got a response (any status) — stop retrying
             }
 
             DBG("[EchoJay] postJSON connection failed (attempt " << attempt
                 << "/" << maxAttempts << ") path=" << path << " statusCode=" << statusCode);
+            EchoJay_NSLog (("EJNet: postJSON " + path + " attempt " + juce::String (attempt) + "/"
+                            + juce::String (maxAttempts) + " never reached the server (status "
+                            + juce::String (statusCode) + ")"
+                            + (attempt < maxAttempts ? juce::String (" - retrying")
+                                                     : juce::String (" - GIVING UP, the caller is told"))).toRawUTF8());
 
             // Bail out of the backoff sleep too if torn down mid-retry.
             if (!aliveFlag->load() || netw.stopping()) return;
@@ -1780,6 +1795,7 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
             authToken = "";
             userInfo = UserInfo();
             saveSettings();
+            notifyChatTurnFinalised ("Session expired. Please log in again.", false);   // fix 6
             onComplete("Session expired. Please log in again.", false);
             return;
         }
@@ -1810,19 +1826,26 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
             }
             if (serverMsg.isEmpty())
                 serverMsg = getLimitReachedMessage();
+            notifyChatTurnFinalised (serverMsg, false);   // fix 6
             onComplete(serverMsg, false);
             return;
         }
         
+        // A STATUS OF 0 IS A TURN THAT NEVER ARRIVED, and it is now said in the words every renderer
+        // shares (interruptedTurnLine). The old sentence - "Could not reach EchoJay. Check your
+        // connection and try again." - was true and still left the user with no sign that their question
+        // had been lost rather than answered badly, which is Sean's item 7 exactly. A real HTTP answer
+        // (4xx/5xx with no error body) is NOT this case and keeps its own wording.
         juce::String error = (statusCode == 0)
-            ? "Could not reach EchoJay. Check your connection and try again."
-            : "Failed to get AI response";
+            ? interruptedTurnLine ("EchoJay could not be reached - check your connection and try again")
+            : juce::String ("Failed to get AI response");
         if (json.isObject())
         {
             auto* obj = json.getDynamicObject();
             if (obj && obj->hasProperty("error"))
                 error = obj->getProperty("error").toString();
         }
+        notifyChatTurnFinalised (error, false);   // fix 6
         onComplete(error, false);
     });
 }
@@ -2101,7 +2124,21 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                     if (! aliveFlag->load() || handle->isCancelled()) return;
                     continue;
                 }
-                dispatch ([ev] { if (ev->onError) ev->onError ("Connection failed. Please check your internet connection.", 0); });
+                // FIX 6 (Sean, 14 Oct): NOTIFY ON FAILURE TOO. notifyChatTurnFinalised had exactly two call
+                // sites and both passed `true`, so a turn that FAILED after its window closed notified
+                // nobody: the editor callbacks below are SafePointer-guarded and no-op once the window is
+                // gone, and the processor was never told. No reply, no error, no note, for ever - which is
+                // what Sean saw. The notify goes FIRST, for the same reason it does on success: the
+                // caller's callback may be a dead editor's lambda.
+                // THE SAME SENTENCE AS THE OTHER ROAD (15 Oct): a stream that never connected and a POST
+                // that never connected are one thing from where the user sits - their question got no
+                // answer - so they say so in the same words, and both carry the [interrupted] marker the
+                // UI keys Retry on.
+                {
+                    const auto line = interruptedTurnLine ("EchoJay could not be reached - check your connection and try again");
+                    notifyChatTurnFinalised (line, false);
+                    dispatch ([ev, line] { if (ev->onError) ev->onError (line, 0); });
+                }
                 return;
             }
 
@@ -2137,6 +2174,7 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                     return;
                 }
                 const auto msg = rj.message;
+                notifyChatTurnFinalised (msg, false);   // fix 6: a non-2xx is a finished turn too
                 dispatch ([ev, msg, statusCode] { if (ev->onError) ev->onError (msg, statusCode); });
                 return;   // a real HTTP answer is not retried
             }
@@ -2290,6 +2328,8 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
             {
                 // In-band server-side interruption (spec 3.1): no done frame
                 // means nothing happened; the caller drops every delta.
+                notifyChatTurnFinalised (errorFrameMsg.isNotEmpty() ? errorFrameMsg
+                                                                    : juce::String ("AI service error"), false);  // fix 6
                 dispatch ([ev, errorFrameMsg] {
                     if (ev->onError) ev->onError (errorFrameMsg.isNotEmpty() ? errorFrameMsg
                                                                              : juce::String ("AI service error"), 200);
@@ -2302,7 +2342,11 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                 // The connection died mid-stream with no error frame — same
                 // contract shape: no done, deliver nothing, caller drops all.
                 DBG ("[EchoJay] streamChat ended without done frame");
-                dispatch ([ev] { if (ev->onError) ev->onError ("Connection lost. Please try again.", 0); });
+                {
+                    const auto line = interruptedTurnLine ("the connection dropped part way through");
+                    notifyChatTurnFinalised (line, false);   // fix 6
+                    dispatch ([ev, line] { if (ev->onError) ev->onError (line, 0); });
+                }
                 return;
             }
 

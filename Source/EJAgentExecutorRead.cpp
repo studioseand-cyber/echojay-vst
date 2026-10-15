@@ -147,9 +147,16 @@ juce::String ExecutorRead::knownChannelsSentence() const
                                "work on this channel or stop.";
     juce::StringArray rows;
     for (const auto& t : tracks) rows.add ("\"" + t.name + "\" (uid " + t.uid + ")");
+    // RULED (Sean, 14 Oct): AN UNKNOWN TRACK OFFERS TAP CHOICES, NOT "TYPE THE EXACT NAME".
+    // This sentence used to end "Name one of those, by uid or by its exact name, or stop" - which pulls
+    // against B's own rule ("never ask the user for a uid or an id; if two tracks could genuinely be meant,
+    // ask with their names as the choices") and the model echoes the shape of whatever it was last told.
+    // That is how Sean was asked for "the exact vocal track name or uid" on 13 Oct. The names are right
+    // here; what was missing was telling the model what to DO with them.
     return " The channels that exist are: " + rows.joinIntoString ("; ")
-         + ". Name one of those, by uid or by its exact name, or stop - this list is complete and will not change "
-           "by retrying.";
+         + ". Ask the user which one, with those NAMES as the tap choices - never a uid, which the user never "
+           "sees and cannot read off their screen. Or stop: this list is complete and will not change by "
+           "retrying.";
 }
 
 // ---- ITEM 2 (Sean, 13 Oct 2026) ---------------------------------------------------------------------------
@@ -201,9 +208,39 @@ juce::var ExecutorRead::levellingVar (const LevellingRead& lv)
     return juce::var (o);
 }
 
-ToolOutcome ExecutorRead::notPlaying (const juce::String& what)
+ToolOutcome ExecutorRead::notPlaying (const juce::String& what) const
 {
-    auto o = ToolOutcome::failure ("not_playing", "No audio has been heard for " + what + " yet.");
+    // ---- FIX 3, SECOND HALF (Sean's rule, 14 Oct): IF NOTHING IS PLAYING, ASK - DO NOT FAIL -------------
+    //
+    // "No audio has been heard for X yet" read as a dead end, so the model treated it as one: Sean's kick
+    // turn spent nine rounds on it. The remedy is not softer words, it is a DIFFERENT OUTCOME when the
+    // transport is simply stopped - there is nothing wrong, the user has not pressed play - and the one
+    // thing to do about it is ask them.
+    //
+    // The two cases are told apart by the transport, which the plugin knows for certain:
+    //   stopped          -> needs_playback: ask the user to press play (an ASK, not a failure)
+    //   playing but mute -> not_playing: the old sentence, which is now true rather than misleading
+    const bool known   = src_.transportKnown && src_.transportKnown();
+    const bool playing = src_.transportPlaying && src_.transportPlaying();
+    if (known && ! playing)
+    {
+        auto o = ToolOutcome::failureFor ("needs_playback",
+                     "Nothing is playing, so " + what + " cannot be measured yet. ASK THE USER to press play "
+                     "(and to let the loudest part through), then wait_for_playback and read it again. This is "
+                     "not an error and nothing is wrong - do not report it as a failure and do not retry the "
+                     "read until they have.",
+                     "Press play and I'll measure that.");
+        auto* e = new juce::DynamicObject();
+        e->setProperty ("retryable", true);
+        e->setProperty ("transport", "stopped");
+        e->setProperty ("ask_user", "press play");
+        e->setProperty ("hint", "ask the user to press play, then wait_for_playback");
+        o.result = juce::var (e);
+        return o;
+    }
+    auto o = ToolOutcome::failure ("not_playing", "No audio has been heard for " + what + " yet"
+                                   + (known ? juce::String (" - the transport is running, so the channel may be "
+                                                            "silent or muted") : juce::String()) + ".");
     auto* e = new juce::DynamicObject();
     e->setProperty ("hint", "ask the user to play the loudest section, then wait_for_playback");
     o.result = juce::var (e);
@@ -960,6 +997,38 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         for (const auto& l : p->getLinkSlotInfos()) if (l.uid == uid) known = true;
         if (! known) { RackRead r; r.why = "no Link with uid \"" + uid + "\" is in the registry"; return r; }
         return rackFromSidecar (LinkShm::readRackSidecar (dir, uid), p->resolveLinkDisplayName (uid));
+    };
+    // FIX 1(b), 14 Oct: the read-back a `set` needs. Two roads, because a Link is another process.
+    s.slotParam = [p] (const juce::String& uid, int slot1Based, const juce::String& paramId, double& out) -> bool
+    {
+        if (slot1Based < 1 || paramId.isEmpty()) return false;
+        if (uid.isEmpty())
+            return p->getChainHost().slotParamValue (slot1Based - 1, paramId, out);   // the device's own value
+        // A LINK: its sidecar carries each slot's landed readback as text ("attack_ms 18 ms, release_ms
+        // 85 ms, ..."), which is what crosses the process boundary. Parsed for the asked name only, and a
+        // name that is not in the text is NOT READABLE rather than zero - a missing value reported as 0.0
+        // would read as a real measurement and fail a comparison for the wrong reason.
+        int err = 0; const auto dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty()) return false;
+        const auto rc = LinkShm::readRackSidecar (dir, uid);
+        if (! rc.valid || slot1Based > (int) rc.slots.size()) return false;
+        const auto text = rc.slots[(size_t) (slot1Based - 1)].settings;
+        if (text.isEmpty()) return false;
+        const int at = text.indexOf (paramId);
+        if (at < 0) return false;
+        // the number that follows the name, sign and decimals included
+        juce::String num;
+        for (int i = at + paramId.length(); i < text.length(); ++i)
+        {
+            const auto c = text[i];
+            if (num.isEmpty() && (c == ' ' || c == ':' || c == '=')) continue;
+            if (juce::CharacterFunctions::isDigit (c) || c == '-' || c == '+' || c == '.') num += c;
+            else if (num.isNotEmpty()) break;
+            else if (! juce::CharacterFunctions::isWhitespace (c)) break;   // a word, not a value
+        }
+        if (num.isEmpty()) return false;
+        out = num.getDoubleValue();
+        return true;
     };
     s.ownAnalysis = [p]
     {

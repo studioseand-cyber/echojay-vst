@@ -1,3 +1,84 @@
+# MORNING REPORT — 15 Oct, overnight run
+
+**Read this first. Updated as the night goes; the state below is what was true at the last write.**
+
+## WHAT IS INSTALLED
+
+**`ship_2026-10-14a`** — still the installed build (the four arm64 UUIDs are in its GREEN.txt). **Nothing
+was installed overnight**: Logic was open with your session when ship 1 was ready, and swapping bundles
+under a live Logic session risks the project you are testing. Ship 1 is **placed and gated** (see below);
+installing it is one command and takes seconds:
+
+```
+bash tools/install_local.sh build-guards && killall -9 AUHostingService
+```
+
+## THE PUSH COMMAND
+
+```
+git push origin HEAD:release/v2-agent
+```
+
+## WHAT IS LEFT
+
+**Ship 2 was not finished, and nothing half-done is installed.** What ship 2 was to contain, and where each
+part stands:
+
+| ship 2 item | state |
+|---|---|
+| **Auto mode** (the Agent chip's third state, the approvals it skips and the ones it keeps) | built against the design and the mockup; see below for how far it got |
+| **the plugin-choice card** (P1-P5) | not started |
+| **the OUT knob** (O1-O6) | not started - the groundwork is read and written down (§6 of the queue): both racks clamp to -24..+12 dB, a Link's OUT is already ONE value (`gainDb_`), and the V2's own is `busGainDb_` |
+| **multi-track jobs** | not started (my half; B's half is in their note) |
+| **item 0's surface** (the panel becoming a transcript row) and **0b** (the client, the executor and the two build roads onto the processor) | NOT attempted, deliberately - see the next line |
+| **0a** (the deep-meter region + analyser) | not started |
+
+**Why item 0's surface and 0b were not attempted overnight, and it is not the clock.** Their rig legs cannot
+pass in this host: the rig **cannot close a window**. Releasing the AU's wrapper view does not destroy the
+plugin's editor - one `EchoJayEditor` is built and one destructor runs, at the end of the process - so
+"the run survives the window" has nothing to be tested against here, and two older rows (R4 and C11's first
+cut) were passing because nothing had died. Ship 1 fixes the instrument as far as it can go (the processor
+now writes its own rig line, and every close row names the destroyed-editor half as a skip with its reason),
+but **a host that can really close a window is owed before 0b**, and the cheap candidate is loading the VST3
+for those rows. Moving a 1,100-line painter and two 1,000-line build methods, unattended, with the legs that
+would catch a mistake unable to run, is the one change I was not willing to make while you were asleep.
+
+## LOGIC RECHECK LIST — only what the rig cannot see
+
+**1. Close the V2 window mid-reply, plain chat, on a Link (your check 9).** This is the one the rig cannot
+do at all: releasing the AU's wrapper view does **not** destroy the plugin's editor in the rig's host - one
+editor is built and one destructor runs, at the end of the process - so the destroyed-window half of fix 6
+is unproven here and is named as a skip rather than claimed. Expect, on reopen: either the answer, or a row
+reading **"⚠ That answer didn't arrive — … [interrupted]"**. Never silence, and never a spinner that has
+stopped with nothing behind it.
+
+**2. "Make the kick punchier" from the Mix Bus (your check 6, the honesty one).** The rig proves the flat
+payload now applies and that a `set` reads its values back; what it cannot provide is the real model's
+wording. What to watch: the closing sentence must only claim what the read-back confirmed, and a parameter
+that did not move must be named as **not applied**.
+
+**3. `check(gr)` with audio playing, on another track's Link.** Fixed and rig-proven on the rack this window
+has open (rows G1/G2). On a **Link** it is still refused honestly - that needs item 0a's deep-meter region,
+which is not in this ship.
+
+**4. The release banner (your item 4c).** A 1500 ms grace now covers the release-then-re-engage inside one
+second that you saw. It needs a human eye on the bus row: select it and watch for a banner that should not
+appear.
+
+**5. The 330 s client bound (your item 2).** Only a genuinely slow round shows it, and a slow round cannot be
+staged. If one takes a long time now, it should finish rather than die at 60 s, and if it *does* time out the
+message says the round was slow - not "check your internet connection".
+
+**6. The Link's view in the main rack straight after an agent build (your item 5).** Rig row K1 asserts the
+slot NAMES with no reopen, against the real model. Worth one human pass on the **AI tab**, since that is the
+tab whose feeder was the cause.
+
+**7. Undo after a hand pre-gain move (your item 4).** Row U2 covers the move and the press. In Logic, the
+case to repeat is the one that bit you: **two presses in a row** must not remove two plugins - the second
+should say "nothing left to undo" if the history is spent.
+
+---
+
 # Decisions for Sean — raised overnight, 14 Oct 2026 — ALL FOUR RULED, 14 Oct morning
 
 Sean's rulings came back on all four. Each is recorded here with what it changed, so the file is the record

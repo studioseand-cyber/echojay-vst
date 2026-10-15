@@ -110,6 +110,12 @@ struct LevellingRead
 
 struct Sources
 {
+    /** FIX 1(b), 14 Oct: ONE SLOT PARAMETER, BY NAME, FOR A READ-BACK. `uid` empty = the open rack, where
+        the value comes from the device itself (numeric, exact). A Link's values come from its own sidecar,
+        which is the only thing readable across the process boundary. False = not readable, which the caller
+        reports as "could not confirm" and never as success. */
+    std::function<bool (const juce::String& uid, int slot1Based, const juce::String& paramId, double& out)> slotParam;
+
     // identity
     std::function<juce::String()> ownName;       // the channel's display name
     std::function<juce::String()> ownKind;       // channel | bus | mix_bus | master
@@ -203,7 +209,9 @@ protected:   // ExecutorDo is a subclass and item 6(b) needs the channel resolve
     juce::String resolveChannelArg (const ToolCall& call) const;
     // item 6(d): the channels that DO exist, appended to every unknown_channel failure
     juce::String knownChannelsSentence() const;   // "" own | uid
-    static ToolOutcome notPlaying (const juce::String& what);
+    /** FIX 3, 14 Oct: no longer static - it reads the TRANSPORT, to tell "nothing is playing, ask the
+        user to press play" from "the transport is running and this channel is silent". */
+    ToolOutcome notPlaying (const juce::String& what) const;
     // ---- ITEM 8 (Sean, 13 Oct 2026): ONE SENTENCE FOR "NOT FROM A LINK YET" --------------------------
     // Every measurement read used targetRack() and a slot number, so a GR read aimed at another track came
     // back as "slot 2 is not on the rack (1..0)" - a true statement about the wrong rack, and the sentence

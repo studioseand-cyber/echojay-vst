@@ -440,6 +440,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // PluginProcessor.h for the lifetime argument.
     : AudioProcessorEditor(&p), processorRef(p), api(p.getApi())
 {
+    // IDENTITY FIRST (15 Oct 2026), before anything can send a turn: the keep-rule for a chat reply asks
+    // which WINDOW asked, and it asks by this id rather than by this address, because an address gets
+    // recycled and the rig caught a rebuilt editor inheriting a dead one's claim.
+    editorId_ = processorRef.nextEditorId();
+    EchoJay_NSLog (("EJEditor: window #" + juce::String (editorId_) + " built at "
+                    + juce::String::toHexString ((juce::pointer_sized_int) this)).toRawUTF8());
     // F1 (21s-a): the reply layer is added FIRST, so every reply control created below is parented into it rather
     // than into the editor. One parent, one visibility switch, no per-tab filtering.
     addAndMakeVisible (replyLayer);
@@ -2317,7 +2323,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainListPanel.onPreGain = [this](float db) {
         const juce::String uid = chainViewUid();
         if (uid.isNotEmpty()) sendLinkPreGainCommand(uid, db);
-        else { processorRef.getChainHost().setPreGainDb(db, true); processorRef.markStateDirty(); }
+        else {
+            // FIX 4(a): record the hand move BEFORE it is applied, so `before` is the value being replaced.
+            auto& ch0 = processorRef.getChainHost();
+            const float wasDb = ch0.getPreGainDb(); const bool wasUser = ch0.isPreGainUserSet();
+            ch0.setPreGainDb(db, true);
+            processorRef.recordPreGainUndo(wasDb, wasUser, ch0.getPreGainDb(), true);
+            processorRef.markStateDirty();
+        }
     };
     chainListPanel.onPreGainReset = [this]() {
         const juce::String uid = chainViewUid();
@@ -3303,9 +3316,20 @@ EchoJayEditor::~EchoJayEditor() {
         processorRef.parkChatStream (activeChatStream_);
         activeChatStream_ = nullptr;
     }
+    // FIX 6 (15 Oct): and if THIS window had a turn in flight, its chat id is parked - whatever transport
+    // the turn used. The streaming handle above parks itself; a NON-streaming turn had nothing marking it as
+    // orphaned, so when its completion finally arrived (after postJSON's three retries) the reopened window
+    // had already sent a turn of its own and overwritten chatTurnOwner_, and the finalise hook read "the
+    // owner is live" about the wrong turn. The rig's C11 row is what found it.
+    const bool ownedTurn = processorRef.chatTurnOwnerIs (editorId_);
+    if (ownedTurn)
+        processorRef.parkChatTurnId (api.turnChatId());
+    EchoJay_NSLog (("EJChat: window #" + juce::String (editorId_) + " closing; it "
+                    + juce::String (ownedTurn ? "OWNED" : "did not own")
+                    + " the turn in flight (chat " + api.turnChatId() + ")").toRawUTF8());
     // This window no longer owns any turn in flight. Cleared with an IF so a window closing after a newer
     // one has already claimed the turn cannot steal the claim back.
-    processorRef.clearChatTurnOwnerIf (this);
+    processorRef.clearChatTurnOwnerIf (editorId_);
 
     // HOOK E6 (agent mode): an agent RUN still stops here, and this is a limit worth stating rather than
     // hiding. An agent turn is not one request: it is rounds of tool calls executed against THIS editor's
@@ -3486,9 +3510,18 @@ void EchoJayEditor::showLoginScreen()
     pairCodeLabel.setVisible(false); pairInfoLabel.setVisible(false); pairCancelBtn.setVisible(false);
 
     setHeaderRowVisible(false);   // the whole header row is off on the login view
+    // FIX 7 (Sean, 14 Oct): "Loading your dashboard" WHILE LOGGED OUT. This list hid ~30 components by name
+    // and never the dashboard surfaces, so they survived the switch to the login view; and
+    // DashboardView::statusLine() returns {} only when signedOut_ is set, whose ONE caller was
+    // openDashboardTab(). A logout or an expired token while the Dashboard tab was current therefore left
+    // signedOut_ false and loading_ true, and the view kept painting "Loading your dashboard..." behind the
+    // login screen. Both halves are closed here, because either alone leaves a way back in: the surfaces are
+    // hidden, AND the view is told it is signed out so its own text is empty whatever is visible.
+    dashView_.setSignedOut(true);
     juce::Component* mainComps[] = { &statusLabel, &durationLabel,
         &passLabel, &userLabel, &chatInput, &chatSendBtn, &chatScroll,
-        &compareBtn, &settingsBtn, &playbackBtn, &wavSavedLabel, &upgradeBtn };
+        &compareBtn, &settingsBtn, &playbackBtn, &wavSavedLabel, &upgradeBtn,
+        &dashWebPanel_, &dashViewport_, &dashView_ };
     for (auto* c : mainComps) c->setVisible(false);
     logoutBtn.setVisible(false);
     linkMixerViewport_.setVisible(false);
@@ -12997,9 +13030,9 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         // the VIEWED rack (ruling 4: the next window on that rack states
         // plainly that the last edit was not written). Both are cleared
         // only by a NEW session superseding them, never by navigation.
-        if (processorRef.borrowStickyBanner_.isNotEmpty()
+        if (processorRef.borrowStickyBannerVisible().isNotEmpty()
             && pendingNote.isEmpty())
-            chainListPanel.statusText = processorRef.borrowStickyBanner_;
+            chainListPanel.statusText = processorRef.borrowStickyBannerVisible();
         if (auto nit = processorRef.unwrittenEditNote_.find(chainViewUid());
             nit != processorRef.unwrittenEditNote_.end()
             && ! processorRef.borrowActive())
@@ -13480,6 +13513,20 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
     };
     auto st = std::make_shared<PullState>();
     st->uid       = uid;
+    // FIX 5 (Sean, 14 Oct): A FRESH READ, NOT THE 1 Hz CACHE. The agent built two slots onto the Kick at
+    // 17:48:41 and its own read-back saw them a second later (Sources::linkRack calls readRackSidecar
+    // directly). Selecting that Link 30 s later said "Reading 0 plugin(s)..." because THIS line took the
+    // slot list from linkRackCache, whose feeder is gated on currentTab == Tab::Chain - and Sean was on the
+    // AI tab for the whole build, so it had never run. It cleared only when he closed and reopened the
+    // window, which is the forced pass on entering chain mode.
+    //
+    // readLinkRackSidecar writes THROUGH the cache (the "single source of truth" rule), so reading here
+    // makes the two readers agree by construction rather than by timing, and leaves the 1 Hz feeder to the
+    // strip. One file read on a user's click is not a cost worth a stale view.
+    {
+        const auto fresh = readLinkRackSidecar (uid);
+        if (fresh.valid) it->second.rack = fresh;     // and the cache now holds it too
+    }
     st->slots     = it->second.rack.slots;
     st->masterWet = it->second.rack.masterWet;
     st->structCapable = structCapable;
@@ -15927,7 +15974,13 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
                     break;
                 }
                 const float v = gainFromYRanged(local.y, sg.faderImg, faderLo(), faderHi());
-                if (pre) { processorRef.getChainHost().setPreGainDb(v, true); processorRef.markStateDirty(); }
+                if (pre) {
+                    auto& ch1 = processorRef.getChainHost();
+                    const float wasDb = ch1.getPreGainDb(); const bool wasUser = ch1.isPreGainUserSet();
+                    ch1.setPreGainDb(v, true);
+                    processorRef.recordPreGainUndo(wasDb, wasUser, ch1.getPreGainDb(), true);   // fix 4(a)
+                    processorRef.markStateDirty();
+                }
                 else     processorRef.setBusGainDb(v);
                 busFaderDragging_ = true;
                 busFaderLastY_    = local.y;
@@ -35446,6 +35499,18 @@ void EchoJayEditor::serviceRigHook()
     {
         const auto b = c.str ("button").trim().toLowerCase();
         if (agentClient_ == nullptr) { ok = false; note = "no agent client"; }
+        else if (b == "undo")
+        {
+            // SHIP 1, FIX 4: the chain bar's Undo, which is what Sean pressed twice.
+            auto& hist = processorRef.undoHistory();
+            const auto label = hist.undoLabel();
+            const int  depth = hist.undoDepth();
+            const bool stepped = hist.undo();
+            note = "undo: " + juce::String (stepped ? "stepped" : "nothing to undo")
+                 + " (was \"" + label + "\", depth " + juce::String (depth) + " -> "
+                 + juce::String (hist.undoDepth()) + ", applied="
+                 + juce::String (hist.lastApplyOk() ? "yes" : "no") + ")";
+        }
         else if (b == "apply_all")  { agentClient_->approveAll(); note = "apply all"; }
         else if (b == "skip_all")   { agentClient_->declineAll(); note = "skip all"; }
         else if (b == "apply")
@@ -35484,6 +35549,18 @@ void EchoJayEditor::serviceRigHook()
     {
         processorRef.setBusGainDb ((float) c.num ("db"));
         note = "rack OUT " + juce::String (processorRef.getBusGainDb(), 1) + " dB";
+    }
+    else if (c.name == echojay::rig::cmd::setPreGain)
+    {
+        // SHIP 1, FIX 4: the knob's own path, including the undo record - a row that called the agent's
+        // set_pre_gain would prove the agent, and the fix is about a HAND move.
+        auto& ch = processorRef.getChainHost();
+        const float wasDb = ch.getPreGainDb(); const bool wasUser = ch.isPreGainUserSet();
+        ch.setPreGainDb ((float) c.num ("db"), true);
+        processorRef.recordPreGainUndo (wasDb, wasUser, ch.getPreGainDb(), true);
+        processorRef.markStateDirty();
+        note = "pre-gain " + juce::String (ch.getPreGainDb(), 2) + " dB by hand (undo depth "
+             + juce::String (processorRef.undoHistory().undoDepth()) + ")";
     }
     else if (c.name == echojay::rig::cmd::workOn)
     {
@@ -35595,6 +35672,15 @@ void EchoJayEditor::publishRigState()
     o->setProperty ("stateNotes", chainListPanel.stateNotes.joinIntoString ("|"));
     // RULING 1: the pre-gain, and whether it is AUTO or a hand-set value.
     o->setProperty ("preGainDb", (double) processorRef.getChainHost().getPreGainDb());
+    // ---- SHIP 1 (15 Oct): what the new rows assert on ---------------------------------------------------
+    // The SCREEN, for fix 7: a row that asserted on a screenshot would prove nothing, and the whole fault
+    // was dashboard text surviving onto the login view.
+    o->setProperty ("screen", currentScreen == Screen::Login ? "login" : "main");
+    o->setProperty ("dashStatusLine", dashView_.statusLineForRig());
+    // The undo history's top, for fix 4: the label is what the bar shows and what a skip walks past.
+    o->setProperty ("undoDepth", processorRef.undoHistory().undoDepth());
+    o->setProperty ("undoLabel", processorRef.undoHistory().undoLabel());
+    o->setProperty ("undoStatus", processorRef.lastUndoStatus());
     // AUTO is the ABSENCE of the hand-set flag, which is what resetPreGainToAuto clears - so the leg asserts
     // on the same fact the build reads when it decides whether it may set the pre-gain itself.
     o->setProperty ("preGainUserSet", processorRef.getChainHost().isPreGainUserSet());
@@ -35614,6 +35700,10 @@ void EchoJayEditor::publishRigState()
             // provable from what the slot actually holds afterwards
             sl->setProperty ("bypassed", info.bypassed);
             sl->setProperty ("wet", (double) ch.getSlotWet (i));
+            // fix 3: the figure check(gr) reads. grKnown false = no reading, never a floor number.
+            { const auto pic = ch.slotPicture (i);
+              sl->setProperty ("grKnown", pic.grKnown);
+              sl->setProperty ("grDb", (double) pic.grDb); }
             slots.add (juce::var (sl));
         }
         auto* rack = new juce::DynamicObject();
@@ -36007,7 +36097,9 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // keep-rule compares this against the editor attached when the reply lands: if this window has gone, or
     // a different one is up, the reply is kept for the transcript instead of being handed to a window that
     // never asked for it.
-    processorRef.setChatTurnOwner (this);
+    processorRef.setChatTurnOwner (editorId_);
+    EchoJay_NSLog (("EJChat: window #" + juce::String (editorId_) + " owns the turn in flight (chat "
+                    + currentChatId + ")").toRawUTF8());
     if (isFirstMessage)
     {
         // Chats still on the "New chat" placeholder take their title from the
@@ -36914,6 +37006,11 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
             dropProvisional(provisionalId);
             chatMessages.push_back({"assistant", reply});
             processorRef.chatHistory.push_back({"assistant", reply});
+            // WHICH WINDOW WROTE THIS. The processor's keep-rule and this branch are the two places a failed
+            // turn can land, and the rig has caught them disagreeing twice. One line each, so the pair can
+            // be read in order.
+            EchoJay_NSLog (("EJChat: handleChatReply FAILURE branch wrote the error row (window #"
+                            + juce::String (editorId_) + ", " + juce::String (reply.length()) + "b)").toRawUTF8());
         }
     }
 
@@ -38152,6 +38249,39 @@ bool EchoJayEditor::chainEditGateRefuses() { return chainEditGateRefusesFor(chai
 void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                                     const juce::String& chainJsonRaw)
 {
+    // FIX 5(b) (Sean, 14 Oct): A BUILD SENT TO A LINK REFRESHES THIS WINDOW'S VIEW OF IT.
+    // The fresh read at the selection path closes the user-visible symptom; this closes the cause, and it
+    // belongs HERE rather than in the agent's path because this is the choke point the agent and the Build
+    // button share - put it in the agent's branch and the Build button keeps the bug.
+    //
+    // Deferred, not immediate: the Link has not built yet at this line. The poll is cheap, bounded, and
+    // stops as soon as the slot count changes; if the Link never builds, the view is no more wrong than it
+    // was. 15 x 400 ms = 6 s, which comfortably covers the second the Kick actually took.
+    {
+        auto safeRefresh = juce::Component::SafePointer<EchoJayEditor> (this);
+        const auto uidCopy = linkUid;
+        auto before = std::make_shared<int> (-1);
+        if (auto it = processorRef.linkRackCache.find (uidCopy); it != processorRef.linkRackCache.end())
+            *before = (int) it->second.rack.slots.size();
+        auto tries = std::make_shared<int> (0);
+        auto poll  = std::make_shared<std::function<void()>>();
+        *poll = [safeRefresh, uidCopy, before, tries, poll]
+        {
+            if (safeRefresh == nullptr) return;                      // the window went: nothing to refresh
+            const auto fresh = safeRefresh->readLinkRackSidecar (uidCopy);   // writes through the cache
+            if (fresh.valid && (int) fresh.slots.size() != *before)
+            {
+                EchoJay_NSLog (("EJBorrow: the view of " + uidCopy + " refreshed after a build ("
+                                + juce::String (*before) + " -> " + juce::String ((int) fresh.slots.size())
+                                + " slot(s)) - fix 5, 14 Oct").toRawUTF8());
+                safeRefresh->repaint();
+                return;
+            }
+            if (++(*tries) < 15) juce::Timer::callAfterDelay (400, *poll);
+        };
+        juce::Timer::callAfterDelay (400, *poll);
+    }
+
     // 21t-k item 2(a) (28 Sep 2026): THE ATTRIBUTION IS STAMPED AT THIS CHOKE POINT. It was stamped in
     // loadChainFromJson (the own-rack build) and in applyChainEditFromMsg (Apply), and a LINK build goes
     // through neither: the borrowed-host arm below parses chainJson straight into add-ops, and the wire arm

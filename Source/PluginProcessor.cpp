@@ -332,15 +332,76 @@ EchoJayProcessor::EchoJayProcessor()
         // Both sides deferred to the other and the reply fell between them.
         //
         // So the question is not whether SOME editor is attached; it is whether the editor that SENT this
-        // turn is the one attached now. chatTurnOwner_ is that pointer, set when a turn goes out and cleared
-        // by the editor's own destructor. If the owner is gone, or a different window is up, the turn is the
-        // processor's to keep - whatever transport it used.
+        // turn is the one attached now - and, since 15 Oct, that is asked by ID rather than by address,
+        // because the rig caught a REBUILT editor landing on the dead one's address and inheriting its
+        // claim. Every editor takes the next id as it is built; an id is never reissued.
         const bool wasParked   = parkedChatIds_.contains (chatId);
         auto* live             = getActiveEditor();
-        const bool ownerIsLive = live != nullptr && chatTurnOwner_ == live;
+        const auto liveId      = liveEditorId();
+        const bool ownerIsLive = live != nullptr && liveId != 0 && chatTurnOwnerId_ == liveId;
+        // THE DECISION, IN THE LOG. This keep-rule has now been wrong twice ("is an editor attached" and
+        // then "is the sender still here"), and both times the only evidence was a transcript with a row
+        // missing. The rule is three facts and a branch; all three go in the log, so the next time it is
+        // wrong it can be read rather than reasoned about.
+        EchoJay_NSLog (("EJChat: keep-rule chat=" + chatId + " parked=" + juce::String (wasParked ? "yes" : "no")
+                        + " liveEditor=#" + juce::String (liveId)
+                        + " at " + juce::String::toHexString ((juce::pointer_sized_int) live)
+                        + " owner=#" + juce::String (chatTurnOwnerId_)
+                        + " -> " + juce::String (ownerIsLive && ! wasParked ? "the window that asked keeps it"
+                                                                            : "the processor keeps it")).toRawUTF8());
         if (ownerIsLive && ! wasParked) return;      // the window that asked is still here; it persists its own
         if (wasParked) parkedChatIds_.removeString (chatId);
-        if (! success || reply.trim().isEmpty()) return;    // nothing worth keeping
+        // FIX 6 (Sean, 14 Oct): NEVER SILENCE. This line used to read
+        //     if (! success || reply.trim().isEmpty()) return;    // nothing worth keeping
+        // and it was unreachable for the failure case, because notifyChatTurnFinalised was only ever called
+        // with `true`. Both halves are fixed: every terminal failure in both transports now notifies, and a
+        // failure is RECORDED rather than dropped. Sean closed the window mid-reply on the Kick's Link and
+        // the answer never arrived, with no error and no note, however long he waited.
+        //
+        // The row is an assistant turn carrying the reason, marked so the UI can offer Retry. The user's own
+        // message is already in the history, so Retry has something to re-send. A PARTIAL reply is kept with
+        // its text: half an answer is worth more than none, and must not be mistaken for a whole one.
+        // ONE RULE, BOTH SHAPES (15 Oct, found by the rig's C11 row). The first cut of this fix handled
+        // `success == false` and left the empty-reply case returning silently - and the empty case is the one
+        // Sean's failure actually took. A cut socket on the NON-streaming path produces no body, which the
+        // parser reads as a successful turn with an empty reply ("EJChat: resolvedTurnType=(absent)"), so the
+        // turn arrived here as a SUCCESS with nothing in it and was dropped by the line below as "nothing
+        // worth keeping". It is not nothing: the user asked something and got no answer.
+        //
+        // So the rule is about what the USER has, not about which flag the transport set: a turn that reaches
+        // this point with nothing to show leaves a row saying so.
+        if (! success || reply.trim().isEmpty())
+        {
+            const auto why = reply.trim();
+            // ONE SENTENCE, BOTH RENDERERS (15 Oct): EchoJayAPI::interruptedTurnLine owns the words, and a
+            // reply that ALREADY carries the marker (the transport's own failure text now does) is kept
+            // verbatim rather than wrapped a second time.
+            const juce::String line = EchoJayAPI::looksInterrupted (why)
+                                    ? why
+                                    : EchoJayAPI::interruptedTurnLine (
+                                          why.startsWithIgnoreCase ("Connection failed") ? juce::String() : why);
+            // NEVER TWICE. In a host that destroys the editor (every real one) this is the only writer; in
+            // one that does not, the orphaned window's own failure branch may have written the same
+            // sentence a moment earlier, and two identical rows read as two failed turns. Compared against
+            // the last assistant row only, so a genuine second failure still gets its own line.
+            const bool already = ! chatHistory.empty()
+                              && chatHistory.back().role == "assistant"
+                              && chatHistory.back().content == line;
+            if (already)
+            {
+                EchoJay_NSLog ("EJChat: the interrupted row was already there - not writing it twice");
+                return;
+            }
+            chatHistory.push_back ({ "assistant", line });
+            chatRoles.add ("assistant");
+            chatContents.add (line);
+            markStateDirty();
+            EchoJay_NSLog (("EJChat: a turn FAILED with no live owner - recorded an interrupted row for chat "
+                            + chatId + " (" + why.substring (0, 80) + ") - fix 6, 14 Oct").toRawUTF8());
+            return;
+        }
+        // (the empty-reply case is handled above, with the failures, because a question answered with
+        //  nothing is a turn that failed from where the user is sitting)
         chatHistory.push_back ({ "assistant", reply });
         chatRoles.add ("assistant");
         chatContents.add (reply);
@@ -1820,6 +1881,7 @@ void EchoJayProcessor::applyPendingBorrowRestores()
 
 void EchoJayProcessor::timerCallback()
 {
+    publishRigProcessorState();   // 15 Oct: the one fact the rig cannot get from a window that is shut
     applyHostTrackNameIfDirty();
     serviceCaptureStop();   // 1 Hz backstop; the editor timer services it at 30 Hz when open
     scheduleSelfKeyPass();
@@ -3373,6 +3435,23 @@ void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
         borrowRelease(false);
         borrowStickyBanner_ = "Released - " + name + " owns its rack again. "
             "Nothing was changed on either side.";
+        // FIX 4(c) (Sean, 14 Oct): A RELEASE CAUSED BY MOVING THE VIEW MUST NOT ANNOUNCE ITSELF.
+        // Sean was on the Mix Bus and read "Released - Aitch_4_01 owns its rack again" in the centre. The
+        // log shows why, inside one second:
+        //    EJRackSel: row=bus ... -> viewing the local rack (R1: the view moves, the chat does not)
+        //    EJBorrow: session ACTIVE <- false (release, uid=4814a16004)
+        //    EJBorrow: session ACTIVE <- true  (engage begin, uid=4814a16004)
+        //    EJBorrow: cleared the sticky banner on engage (... this engage supersedes it)
+        // Selecting the bus moved the view, which released that Link's borrow and RE-ENGAGED it immediately,
+        // because the chat's working target is still the Link. The engage already supersedes the banner - it
+        // says so - and Sean saw it in the gap between the two.
+        //
+        // A GRACE RATHER THAN A CONDITION. At this line we cannot know whether a re-engage is coming, and
+        // guessing from the caller would put the knowledge in the wrong place (every future caller would
+        // have to remember). So the banner is written as always and simply not SHOWN for a moment: a churn
+        // clears it inside that moment, and a release that really is final still says so, a beat later.
+        borrowStickyBannerAtMs_ = juce::Time::currentTimeMillis();
+        borrowStickyBannerGraceMs_ = 1500;
         return;
     }
     int err = 0;
@@ -6384,6 +6463,55 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
     } catch (...) {}
 }
 
+/** WHAT THE RIG CAN ONLY LEARN FROM HERE (15 Oct 2026).
+ *
+ *  The rig hook is polled and published by the EDITOR, so with the window shut the rig can ask nothing and
+ *  see nothing - which is exactly the state every "close the window mid-reply" row claims to test. The
+ *  C11 row spent five runs on that blind spot: it closed its window, asserted on a state file that no
+ *  longer updated, and could not tell "the plugin kept the turn" from "the plugin never noticed". Worse,
+ *  it could not tell whether the close had destroyed the plugin's editor AT ALL - and in this host it had
+ *  not: the AU kept one EchoJayEditor alive across the whole run, so the row proved nothing about a closed
+ *  window and passed on a technicality twice.
+ *
+ *  This is the processor's own line, written on its 1 Hz timer whether a window exists or not. It carries
+ *  only facts the processor owns, and it is the ONLY way a rig row can assert on a shut window.
+ */
+void EchoJayProcessor::publishRigProcessorState()
+{
+    if (! echojay::rig::enabled()) return;
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("atMs",          (double) juce::Time::currentTimeMillis());
+    o->setProperty ("editorAlive",   getActiveEditor() != nullptr);
+    o->setProperty ("editorId",      (double) (double) liveEditorId());      // 0 = no window attached
+    o->setProperty ("editorsBuilt",  (double) editorIdCounter());            // how many have ever existed
+    o->setProperty ("chatOwnerId",   (double) chatTurnOwnerId());
+    o->setProperty ("parkedChats",   parkedChatIds_.joinIntoString (","));
+    o->setProperty ("orphanedTurns", (double) orphanedChatTurns_.size());
+    o->setProperty ("historyRows",   (double) (int) chatHistory.size());
+    juce::String lastAssistant;
+    for (const auto& m : chatHistory) if (m.role == "assistant") lastAssistant = m.content;
+    o->setProperty ("lastAssistant", lastAssistant);
+    const auto text = juce::JSON::toString (juce::var (o), true);
+    auto dir = echojay::rig::dir();
+    auto tmp = dir.getChildFile ("rig-processor.json.tmp");
+    tmp.deleteFile();
+    if (! tmp.replaceWithText (text)) return;
+    if (! tmp.replaceFileIn (dir.getChildFile ("rig-processor.json")))
+    {
+        dir.getChildFile ("rig-processor.json").replaceWithText (text);
+        tmp.deleteFile();
+    }
+}
+
+/** THE ATTACHED EDITOR'S ID (15 Oct 2026). Asked by the chat keep-rule, which used to compare addresses
+    and was wrong when one was recycled. A cast rather than a stored pointer: the processor must never hold
+    a raw EchoJayEditor* of its own, because that is the thing that goes stale. */
+juce::uint64 EchoJayProcessor::liveEditorId() const
+{
+    if (auto* ed = dynamic_cast<const EchoJayEditor*> (getActiveEditor())) return ed->editorId();
+    return 0;
+}
+
 juce::AudioProcessorEditor* EchoJayProcessor::createEditor()
 {
     // THE OTHER ARRIVAL. A freshly inserted plugin never gets
@@ -6517,6 +6645,20 @@ void EchoJayProcessor::drainHostedGestures()
     if (borrowHost_ != nullptr && borrowActive()) drain(*borrowHost_, borrowSession_.uid);
 }
 
+void EchoJayProcessor::recordPreGainUndo(float beforeDb, bool beforeUserSet, float afterDb, bool afterUserSet)
+{
+    if (std::abs(beforeDb - afterDb) < 0.01f && beforeUserSet == afterUserSet) return;
+    echojay::UndoEntry e; e.kind = "preGain"; e.target = {};   // "" = this instance's own rack
+    e.label = "pre-gain " + juce::String(afterDb, 1) + " dB";
+    auto pack = [](float db, bool us) { auto* o = new juce::DynamicObject();
+                                        o->setProperty("db", (double) db); o->setProperty("userSet", us);
+                                        return juce::var(o); };
+    e.before = pack(beforeDb, beforeUserSet); e.after = pack(afterDb, afterUserSet);
+    // ONE DRAG, ONE ENTRY: the knob emits a value per mouse-move (Sean's drag logged twelve in one second),
+    // and an undo that walked them one at a time would be useless. The same coalesce key linkGain uses.
+    e.coalesceKey = "preGain";
+    undoHistory_.push(std::move(e));
+}
 void EchoJayProcessor::recordLinkActiveUndo(const juce::String& uid, bool before, bool after)
 { if (before == after) return; echojay::UndoEntry e; e.kind = "linkActive"; e.target = uid; e.label = juce::String(after ? "Link on: " : "Link off: ") + resolveLinkDisplayName(uid); e.before = before; e.after = after; undoHistory_.push(std::move(e)); }
 void EchoJayProcessor::recordLinkGainUndo(const juce::String& uid, float before, float after)
@@ -6552,6 +6694,25 @@ bool EchoJayProcessor::applyUndoEntry(echojay::UndoEntry& e, bool toBefore)
     auto rackFor = [this](const juce::String& uid) -> ChainHost* { if (uid.isEmpty()) return &chainHost; return borrowHostIfActiveFor(uid); };
     auto splitSlot = [](const juce::String& t, juce::String& rack, juce::String& slotId, int& hint)
     { rack = t.upToFirstOccurrenceOf("#", false, false); const auto rest = t.fromFirstOccurrenceOf("#", false, false); slotId = rest.upToLastOccurrenceOf("#", false, false); hint = rest.fromLastOccurrenceOf("#", false, false).getIntValue(); };
+    // FIX 4(a) (Sean, 14 Oct): THE PRE-GAIN, BY HAND, IS AN UNDO STEP.
+    // Sean dragged it to 5.83 dB and pressed Undo; the history had no entry for it, so Undo reached past to
+    // a dead one ("Undo skipped: remove UAD UA 1176LN Rev E - its target is no longer present") and the
+    // pre-gain never moved. UndoEntry's kinds were chain / wet / trim / keep / dial / gesture / linkActive /
+    // linkGain / alias / loop / group - there was no pre-gain among them and setPreGainDb pushed nothing.
+    // `before`/`after` carry the dB and the hand-set flag together, because restoring the value while
+    // leaving the flag set would pin a rack that had been on AUTO - Sean's ruling 1 of 13 Oct is that AUTO
+    // is a state a user can get back to.
+    if (e.kind == "preGain")
+    {
+        ChainHost* h = rackFor (e.target); if (h == nullptr) return false;
+        const auto v = toBefore ? e.before : e.after;
+        const double db = v.getProperty ("db", 0.0);
+        const bool userSet = (bool) v.getProperty ("userSet", true);
+        h->setPreGainDb ((float) db, userSet);
+        if (! userSet) h->clearPreGainUserSet();
+        markStateDirty();
+        return true;
+    }
     if (e.kind == "chain")
     {
         ChainHost* h = rackFor(e.target); if (h == nullptr) return false;
