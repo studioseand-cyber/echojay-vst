@@ -187,6 +187,17 @@ What it says is true of the bundle as built:
 - **How much slower (estimate, not measured):** 2 jobs instead of 4 costs this Mac ~35% while the user is active (the model: 16.3 h vs 12.1 h), the lower priority ~5-10% more under real use, and a DAW session its own length.
   - E.g. a 12 h idle run with 8 active hours inside it: ~15 h; with a 2 h Logic session as well: ~17 h.
 
+**3r. The end screen (Kathy, 15 Oct).**
+- **What happened:** the 774fe72e run reached the end and was told "The free month needs the full run: 351 of 509". The 158 without an outcome were exactly its UAD rows, which Phase B left unrun (no UAD-2 device).
+- **The rule now:**
+  - A run that reaches the end with any queued plugin lacking a final outcome is not uploaded as finished. What is done goes as a checkpoint, engine/left.json names each plugin left and why, and the engine ends with kLeftExit.
+  - The app shows "Almost done - N plugins still need measuring: ... (why). Carry on to finish the run.", with Carry on.
+  - The server never says "needs the full run" to a finished upload ("N of M plugins have no result yet - open the wizard and carry on").
+- **Pins:** WZ-END-1, WZ-REWARD-8.
+- **Proved end to end (81ec5a2d, scratch work folder):**
+  - UAD LA-2A Gray, bx_opto Pedal and three Waves plugins: one Start; LA-2A needs_licence, bx_opto needs_licence (no sound), 3 measured.
+  - All 5 final on the server's merged run; the promo code issued (3 of 3 at the test minimum); 96 s.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

@@ -9800,8 +9800,9 @@ void testWizardCategories()
                  "wizard WZ-REWARD-7: checkpoints alone (all 25) -> no code, the account and the Mac have not used their go"); w.deleteRecursively(); }
         // WZ-REWARD-8 finished but the merged run is incomplete (5 still measuring) = no code
         { const auto w = fresh(); const auto r = upload1 (w, "run_G", "finished", ids (0, 20), {}, "a", "d");
-          check (! (bool) r.getProperty ("reward_eligible", true) && r.getProperty ("reward_message", "").toString().contains ("20 of 25"),
-                 "wizard WZ-REWARD-8: 'finished' with 5 never reached -> no code ('20 of 25 plugins have a result') - the client's word is not trusted"); w.deleteRecursively(); }
+          const auto msg = r.getProperty ("reward_message", "").toString();
+          check (! (bool) r.getProperty ("reward_eligible", true) && msg.contains ("5 of 25 plugins have no result yet") && ! msg.contains ("needs the full run"),   // 15 Oct: never "needs the full run" on a finished upload
+                 "wizard WZ-REWARD-8: 'finished' with 5 never reached -> no code ('" + msg + "') - the client's word is not trusted"); w.deleteRecursively(); }
         // WZ-OUTBOX-1 offline: a partial kept in the outbox, sent on the next launch (the drain), merged into its run
         {
             const auto w = fresh(); const auto off = w.getChildFile ("offline.flag"); off.replaceWithText ("1"); ::setenv ("EJ_WIZARD_OFFLINE_FILE", off.getFullPathName().toRawUTF8(), 1);
@@ -10477,6 +10478,32 @@ void testWizardCategories()
                && app.contains ("if (const auto daw = openDaw(); daw.isNotEmpty())   // 15 Oct: a DAW is open - wait, do not start")
                && app.contains ("proc_pidpath (pids[(size_t) i], path, sizeof (path))") && ! app.contains ("kill (pids"),
                "wizard WZ-DAW-1: the ten DAWs by their .app (helpers too; Safari / Livestream / Logical not); the calm line; pause by itself, carry on by itself only after its own pause and 10 s quiet; never started with a DAW open; read only");
+    }
+    // WZ-END-1 THE END SCREEN (Kathy, 15 Oct: 774fe72e's run reached the end and said "The free month needs the full run: 351 of 509" - 158 UAD rows
+    // it had left unrun): a run that reaches the end with any queued plugin lacking an outcome is NOT uploaded as finished - left.json names
+    // each plugin and why, a checkpoint carries what is done, kLeftExit -> "Almost done" with Carry on; never "needs the full run"
+    {
+        using namespace ejmap::wizapp;
+        auto e = [] (const char* p, const char* why) { auto* o = new juce::DynamicObject(); o->setProperty ("product", p); o->setProperty ("why", why); return juce::var (o); };
+        const juce::var one (juce::Array<juce::var> { e ("UAD LA-2A Gray", "UAD-2 device not connected") });
+        const juce::var five (juce::Array<juce::var> { e ("UAD A", "UAD-2 device not connected"), e ("UAD B", "UAD-2 device not connected"), e ("UAD C", ""), e ("UAD D", ""), e ("UAD E", "") });
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto srv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardServer.h").loadFileAsString();
+        const auto guard = run.fromFirstOccurrenceOf ("THE RUN REACHED THE END - but is every queued plugin settled?", false, false).upToFirstOccurrenceOf ("// 3. THE BUNDLE", false, false);
+        check (afterEngine (Screen::measuring, kLeftExit) == AfterEngine::left && afterEngine (Screen::measuring, 0) == AfterEngine::upload && afterEngine (Screen::measuring, 130) == AfterEngine::stopped
+               && afterEngine (Screen::scan, kLeftExit) == AfterEngine::stopped
+               && leftWords (one) == "1 plugin still needs measuring: UAD LA-2A Gray (UAD-2 device not connected). Carry on to finish the run."
+               && leftWords (five) == "5 plugins still need measuring: UAD A, UAD B, UAD C and 2 more (UAD-2 device not connected). Carry on to finish the run."
+               && leftWords (juce::var (juce::Array<juce::var>())).isEmpty() && ! tellsATime (leftWords (five))
+               && guard.contains ("const auto left = leftAtEnd (rows);") && guard.contains ("if (! left.isEmpty())") && guard.contains ("return wizapp::kLeftExit;") && guard.contains ("checkpoint (")
+               && [] { auto row = [] (const char* p, const char* st, bool queued) { auto* o = new juce::DynamicObject(); o->setProperty ("product", p); o->setProperty ("state", st); if (queued) o->setProperty ("phaseb", "wizard"); return juce::var (o); };
+                       const auto l = ejmap::cert::leftAtEnd ({ row ("A", "measured", true), row ("B", "measuring", true), row ("C", "needs_licence", true), row ("D", "queued", true), row ("E", "ready", false), row ("F", "out_of_scope", false) });
+                       return l.size() == 2 && l[0].getProperty ("product", "") == "B" && l[1].getProperty ("product", "") == "D"; }()
+               && guard.indexOf ("return wizapp::kLeftExit;") < run.indexOf ("// 3. THE BUNDLE") - run.indexOf ("THE RUN REACHED THE END")
+               && app.contains ("case wizapp::AfterEngine::left:") && app.contains ("title = \"Almost done\"; text = words;")
+               && ! srv.contains ("needs the full run: "),
+               "wizard WZ-END-1: left plugins are never sent as finished - 'Almost done', what is left and why, Carry on; the server never says 'needs the full run' to a finished upload");
     }
     // WZ-LABEL-1 THE NAME UNDER THE BAR (Kathy, 15 Oct: "CLA-76 (m)" for two hours while the count climbed): a plugin whose load ended leaves
     // the current list even when its item waits (a failed check waits for its map); the name shown is the most recently started

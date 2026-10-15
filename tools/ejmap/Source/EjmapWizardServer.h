@@ -267,7 +267,9 @@ inline RewardDecision rewardFor (const juce::String& kind, const RunTally& t, in
     if (kind == "checkpoint") return { false, {} };   // a partial upload never earns on its own (and says nothing)
     if (kind == "sent_early") return { false, "Thank you - your results arrived. The free month needs the full run, so there's no code this time." };
     if (kind != "finished") return { false, "Thank you - your results arrived." };
-    if (t.final_ < t.queued) return { false, "Thank you - your results arrived. The free month needs the full run: " + juce::String (t.final_) + " of " + juce::String (t.queued) + " plugins have a result so far." };
+    // 15 Oct: a FINISHED upload never hears "needs the full run" - it reached the end; what has no outcome is named as left (the app does not
+    // send that as finished any more: it offers Carry on first)
+    if (t.final_ < t.queued) return { false, "Thank you - your results arrived. " + juce::String (t.queued - t.final_) + " of " + juce::String (t.queued) + " plugins have no result yet - open the wizard and carry on to finish them." };
     if (t.accepted < minimum) return { false, "Thank you - your results arrived. The free month needs at least " + juce::String (minimum) + " new plugins that pass our checks; this time there " + (t.accepted == 1 ? juce::String ("was 1.") : "were " + juce::String (t.accepted) + ".") };
     return { true, {} };
 }

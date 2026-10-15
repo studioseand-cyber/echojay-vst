@@ -436,11 +436,25 @@ inline bool rewriteResultsFile (const juce::File& src, const juce::File& target)
 inline juce::String stoppedNote() { return "Stopped - it carries on next time"; }
 // what the window does when the engine ends: a scan that ran to its end -> its results; a measuring run that did -> the upload; a
 // STOPPED one (130, or any other end) never counts as finished - the scan is not marked done, and the next launch carries on
-enum class AfterEngine { scanDone, upload, stopped };
+// A RUN THAT REACHED THE END WITH PLUGINS LEFT (Kathy, 15 Oct: 774fe72e's run ended "The free month needs the full run: 351 of 509" - the 158
+// UAD rows it had left unrun): the engine never uploads that as finished. It sends what is done as a checkpoint, writes engine/left.json
+// (each plugin left and why) and ends with kLeftExit; the app says what is left and offers Carry on
+inline constexpr int kLeftExit = 9;
+enum class AfterEngine { scanDone, upload, stopped, left };
 inline AfterEngine afterEngine (Screen s, int code)
 {
     if (code == 0) return s == Screen::scan ? AfterEngine::scanDone : AfterEngine::upload;
+    if (code == kLeftExit && s == Screen::measuring) return AfterEngine::left;
     return AfterEngine::stopped;
+}
+inline juce::String leftWords (const juce::var& left)
+{
+    const auto* a = left.getArray(); const int n = a != nullptr ? a->size() : 0;
+    if (n == 0) return {};
+    juce::StringArray names, whys; for (const auto& e : *a) { if (names.size() < 3) names.add (e.getProperty ("product", "").toString()); whys.addIfNotAlreadyThere (e.getProperty ("why", "").toString()); }
+    whys.removeEmptyStrings();
+    const auto who = names.joinIntoString (", ") + (n > 3 ? " and " + juce::String (n - 3) + " more" : juce::String());
+    return juce::String (n) + (n == 1 ? " plugin still needs" : " plugins still need") + " measuring: " + who + (whys.isEmpty() ? juce::String() : " (" + whys[0] + ")") + ". Carry on to finish the run.";
 }
 inline Screen openOn (const Where& w, Mode m = Mode::normal)
 {

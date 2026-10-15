@@ -696,6 +696,12 @@ private:
                     setState ("measure_done", true);
                     if (wizapp::afterMeasure (kMode) == Screen::betaSaved) { saveBetaResults(); setState ("saved", true); }
                     show (wizapp::afterMeasure (kMode)); break;
+                case wizapp::AfterEngine::left:
+                {   // 15 Oct: the run reached the end with plugins left - say what, offer Carry on (never "needs the full run")
+                    const auto words = wizapp::leftWords (juce::JSON::parse (engineDir().getChildFile ("left.json").loadFileAsString()));
+                    logLine ("reached the end with plugins left: " + words);
+                    dawPaused.clear(); resumeTo = Screen::measuring; show (Screen::paused); title = "Almost done"; text = words; repaint(); break;
+                }
                 case wizapp::AfterEngine::stopped:
                 {   // the engine's own words when it said why (a low disk); else the stop note
                     const auto sum = juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString()).getProperty ("summary", "").toString();

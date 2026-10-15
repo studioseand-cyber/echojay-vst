@@ -134,6 +134,17 @@ inline void mapForWizard (const std::vector<juce::PluginDescription>& ds, int jo
     }
 }
 
+// 15 Oct: what a run that reached the end has LEFT - every queued (phaseb) plugin whose state is not a final outcome (the server's own list)
+inline juce::Array<juce::var> leftAtEnd (const juce::Array<juce::var>& rows)
+{
+    juce::Array<juce::var> left;
+    for (const auto& rv : rows)
+        if (rv.getProperty ("phaseb", "").toString().isNotEmpty() && ! wizserver::stub::isFinalState (rv.getProperty ("state", "").toString()))
+        { auto* o = new juce::DynamicObject(); o->setProperty ("product", rv.getProperty ("product", {})); o->setProperty ("plugin_id", rv.getProperty ("plugin_id", {}));
+          o->setProperty ("state", rv.getProperty ("state", {})); o->setProperty ("why", rv.getProperty ("why", {})); left.add (juce::var (o)); }
+    return left;
+}
+
 // THE SOUND CHECK (Kathy, 15 Oct: bx_opto Pedal and three APB passed digital silence, NEOLD U17 / U2A / V76U73 never processed - each was
 // still fully measured, 2-8 min, before the certification filed it). Part of the demo check, on its own steady tone:
 //   - SILENT: the input present and the output digital silence in every window -> needs_licence at once (no sound at all);
@@ -970,6 +981,20 @@ inline int runWizard (const WizardOptions& wo)
     }
     state->setProperty ("schema", "ej_wizard_state/0"); state->setProperty ("plugins", rows); state->setProperty ("summary", wizard::summaryLine (counts, wo.bundle));
     out.getChildFile ("wizard_state.json").replaceWithText (juce::JSON::toString (juce::var (state)) + "\n");
+    // 15 Oct: THE RUN REACHED THE END - but is every queued plugin settled? One with no final outcome (774fe72e left 158 UAD rows unrun) is
+    // LEFT: not uploaded as finished - what is done goes as a checkpoint, engine/left.json says what is left and why, kLeftExit
+    if (wo.bundle && wo.measure && ! sentEarly)
+    {
+        const auto left = leftAtEnd (rows);
+        out.getChildFile ("left.json").replaceWithText (juce::JSON::toString (juce::var (left)) + "\n");
+        if (! left.isEmpty())
+        {
+            checkpoint ("the end, with plugins left");
+            say ("WIZARD: the run reached the end with " + juce::String (left.size()) + " plugin(s) left without an outcome: not sent as finished (left.json)");
+            prog.finish (wizapp::leftWords (juce::var (left)), true);
+            return wizapp::kLeftExit;
+        }
+    }
     // 3. THE BUNDLE (profiles + tone-check sidecars / EQ profiles + a manifest; nothing personal) and the STUBBED upload
     if (wo.bundle)
     {
