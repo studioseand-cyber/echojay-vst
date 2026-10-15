@@ -254,4 +254,13 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
   - The 158 missing are the UAD rows the 774fe72e build left unrun without a UAD-2 device. The d8568f87 build decides them by sound (needs_licence or measured), and 92f34301 reports an unrun row to the bar.
   - The watcher's "warm-probe restarts" on the strips (CLA MixHub ~50) are each strip section's own child starting its own warm probe, not deaths: every row finished ok.
 
+## 15 Oct addendum 15: the end screen (wizard 9f5e4860; DMGs Test c1ef6e8b, Beta 3f106558)
+- **The 15 Oct run's no_code:** the 158 without an outcome were exactly its UAD rows, nothing else.
+- **Now** (WIZARD_SPEC 3r, pin WZ-END-1, 4 mutants red): a run that reaches the end with anything left is never sent as finished - "Almost done", what is left and why, Carry on.
+- **Proved on 81ec5a2d:** a small Test run with a UAD plugin and a licence-blocked one ended with every plugin final and the promo issued.
+- **The 15 Oct run:**
+  - Times: scan 20:52-23:07; it waited on the old second Start until 07:15; measuring 07:15-10:02 and 11:35-15:24 (6 h 35 min of wall time, 13.6 h of job time).
+  - Results: 242 measured, 70 not measurable, 24 demo, 10 silent, 8 needs_licence, 158 UAD left.
+- **Timing CSV:** ~/Desktop/WIZARD_TIMING_15oct.csv is kept.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
