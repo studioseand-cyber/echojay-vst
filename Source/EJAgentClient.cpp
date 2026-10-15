@@ -187,7 +187,8 @@ void EJAgentClient::start (const juce::String& goalIn, const juce::String& chatI
         finishSession (State::Failed, errorMessage_);
         return;
     }
-    const auto body = buildStartBody (goal, executor_.startContext(), t.appVersion, chatId);
+    const auto body = buildStartBody (goal, executor_.startContext(), t.appVersion, chatId,
+                                      approvalModeWord());
     post ("/api/agent/start", body);
     startTimer (1000);
 }
@@ -451,8 +452,26 @@ void EJAgentClient::onFrame (int generation, Frame f)
                 s.label += " - on " + other;
             s.round = round_;
             s.approved = true;
-            s.status = f.call.askFirst() ? Step::Status::AwaitingApproval : Step::Status::Pending;
-            log ("frame tool_call id=" + s.id + " name=" + f.call.name + " approval=" + f.call.approval + " \"" + s.label + "\"");
+            // ---- AUTO MODE'S ONE DECISION (Sean's ruling, 14 Oct 2026) -------------------------------
+            // In Auto an ask_first step runs without waiting, UNLESS it cannot be undone - and that
+            // question is answered by the executor's undoabilityOf, the same function that decides whether
+            // the op hands back an undo token. The reason it gives is what the line shows; the plugin never
+            // invents one. A question (talk/ask) is unaffected: it waits in both modes, because the run
+            // genuinely needs an answer rather than permission.
+            bool autoRan = false;
+            if (f.call.askFirst() && approvalMode_ == ApprovalMode::Auto)
+            {
+                const auto u = executor_.undoabilityOf (f.call, goal_);
+                autoRan = u.mayRunInAuto();
+                s.askReason = u.whyNot;
+            }
+            s.autoApplied = autoRan;
+            s.status = (f.call.askFirst() && ! autoRan) ? Step::Status::AwaitingApproval : Step::Status::Pending;
+            log ("frame tool_call id=" + s.id + " name=" + f.call.name + " approval=" + f.call.approval
+                 + " mode=" + juce::String (approvalModeWord())
+                 + (autoRan ? juce::String (" AUTO-APPLIED")
+                            : (f.call.askFirst() ? " waits (" + s.askReason + ")" : juce::String()))
+                 + " \"" + s.label + "\"");
             steps_.push_back (std::move (s));
             if (state_ == State::Connecting) setState (State::Streaming);
             changed();
@@ -502,7 +521,23 @@ void EJAgentClient::onFrame (int generation, Frame f)
                     s->label += " - on " + other;
                 if (item.why.isNotEmpty())     s->call.why = item.why;
                 s->call.approval = "ask_first";
-                if (s->status == Step::Status::Pending) s->status = Step::Status::AwaitingApproval;
+                // AUTO MODE, THE SAME DECISION AS THE TOOL_CALL FRAME. The plan frame marks every item
+                // ask_first by contract, so without this a plan card in Auto would wait for a press on
+                // steps Auto had already been told to run - the mode would appear to do nothing on exactly
+                // the turns that show a plan. One decider, asked in both places.
+                if (approvalMode_ == ApprovalMode::Auto)
+                {
+                    const auto u = executor_.undoabilityOf (s->call, goal_);
+                    s->askReason = u.whyNot;
+                    if (u.mayRunInAuto())
+                    {
+                        s->autoApplied = true;
+                        if (s->status == Step::Status::AwaitingApproval) s->status = Step::Status::Pending;
+                    }
+                    else if (s->status == Step::Status::Pending)
+                        s->status = Step::Status::AwaitingApproval;
+                }
+                else if (s->status == Step::Status::Pending) s->status = Step::Status::AwaitingApproval;
                 s->approved = true;
             }
             log ("frame plan round=" + juce::String (f.planRound) + " items=" + juce::String ((int) f.planItems.size()) + " heading=\"" + planHeading_ + "\"");

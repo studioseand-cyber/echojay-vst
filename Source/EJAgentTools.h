@@ -91,11 +91,39 @@ struct PlaybackReading
     float truePeakDbtp      = std::numeric_limits<float>::quiet_NaN();
 };
 
+/** WHETHER A STEP CAN BE PUT BACK, AND WHETHER AUTO MAY RUN IT WITHOUT ASKING (Sean's Auto ruling).
+ *
+ *  ONE FUNCTION, TWO READERS. Auto has to know BEFORE a step runs whether it can be undone; the outcome has
+ *  to know AFTER it ran whether to carry an undo token. A second, hand-written list for the pre-flight
+ *  question would drift from the tokens inside a round - the argument SHORT90's codec makes for itself,
+ *  "one writer, one reader, both here". So ExecutorDo::undoabilityOf is the only thing that decides either,
+ *  and a guard leg holds it against the token each op actually returns.
+ */
+struct Undoability
+{
+    bool undoable = false;            // the plugin-wide history can put this back
+    bool preApprovedInAuto = false;   // not undoable, but Auto may still run it - for a STATED reason
+    juce::String whyNot;              // shown on the line when it waits in Auto
+    bool mayRunInAuto() const noexcept { return undoable || preApprovedInAuto; }
+};
+
 class ToolExecutor
 {
 public:
     virtual ~ToolExecutor() = default;
     using Done = std::function<void (ToolOutcome)>;
+
+    /** AUTO MODE'S PRE-FLIGHT (Sean's ruling, 14 Oct 2026). See Undoability above: the client asks this
+        BEFORE it decides whether an ask_first step waits for a press. The default is the SAFE answer - not
+        undoable, so Auto asks - because an executor that has not been taught the question must not be read
+        as saying "go ahead". `goal` is the user's own words, which is what makes the undo carve-out safe. */
+    virtual Undoability undoabilityOf (const ToolCall& call, const juce::String& goal)
+    {
+        juce::ignoreUnused (call, goal);
+        Undoability u;
+        u.whyNot = "this build cannot tell whether that can be put back";
+        return u;
+    }
 
     // ---- ITEM 2 (Sean, 13 Oct 2026): A PLAN LINE HAS TO SAY WHOSE CHANNEL IT IS ON --------------------
     // Sean pressed Apply on the plan and the executor then refused with the cross-channel ask - two presses

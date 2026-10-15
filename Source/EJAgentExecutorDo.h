@@ -144,6 +144,15 @@ private:
 
     /** Re-read the target rack until it holds `wantSlots` or the wait runs out, then answer. The one place
         that decides a structural change LANDED. */
+public:
+    /** See Undoability above: the ONE decider, read by the client before a step runs and by this executor
+        when it issues (or withholds) an undo token. `goal` is the USER'S OWN WORDS, which is what makes the
+        one carve-out safe: Sean's ruling is that "undo that" typed by the user needs no second approval in
+        Auto, so an `undo` op on an undo GOAL is pre-approved - and B refuses every other op on such a goal. */
+    Undoability undoabilityOf (const ToolCall& call, const juce::String& goal) override;
+    /** Narrow on purpose: the words a user types when they mean "put that back". */
+    static bool looksLikeUndoGoal (const juce::String& goal);
+private:
     /** FIX 1(b), 14 Oct: a `set` is confirmed against the VALUES, not the slot count. */
     void confirmValues (const ToolCall& call, const juce::String& applyTo, juce::String sentence, Done done);
     void confirmLanded (const juce::String& applyTo, int wantSlots, const juce::String& opName,

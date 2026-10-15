@@ -115,6 +115,41 @@ cat > "$SCRATCH/script.json" <<'JSON'
         [ { "event": "done", "reason": "complete", "rounds": 2,
             "summary": "Set the pre-gain to 3 dB, then undid it." } ]
       ]
+    },
+    {
+      "goalContains": "rig-auto-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_a1", "name": "do", "approval": "ask_first",
+            "summary": "pre-gain 4 dB", "args": { "op": "set_pre_gain", "db": 4 } },
+          { "event": "tool_call", "id": "tc_a2", "name": "do", "approval": "ask_first",
+            "summary": "pre-gain 6 dB", "args": { "op": "set_pre_gain", "db": 6 } },
+          { "event": "await", "ids": ["tc_a1", "tc_a2"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Set the pre-gain to 4 dB, then to 6 dB." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-autoundo-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_au1", "name": "do", "approval": "ask_first",
+            "summary": "undo that", "args": { "op": "undo" } },
+          { "event": "await", "ids": ["tc_au1"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Undone." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-autostrange-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_as1", "name": "do", "approval": "ask_first",
+            "summary": "do something this build has never heard of",
+            "args": { "op": "teleport_the_rack" } },
+          { "event": "await", "ids": ["tc_as1"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1, "summary": "Done." } ]
+      ]
     }
   ]
 }

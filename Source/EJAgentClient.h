@@ -67,6 +67,10 @@ public:
         juce::var    result;       // the compact result that went (or will go) to the server
         Status status = Status::Pending;
         bool approved = true;      // the plan card's per-line decision (ask_first only)
+        // AUTO MODE: this step was ask_first and Auto ran it anyway (the line reads "auto-applied"), or it
+        // stayed ask_first in Auto and askReason says WHY - never the plugin inventing a reason.
+        bool autoApplied = false;
+        juce::String askReason;
         int  round = 0;
         bool isDo() const noexcept       { return call.name == "do"; }
         bool askFirst() const noexcept   { return call.askFirst(); }
@@ -155,6 +159,14 @@ public:
     juce::String notice() const { return refusedTypedLine_; }
     void clearNotice() { if (refusedTypedLine_.isNotEmpty()) { refusedTypedLine_.clear(); changed(); } }
 
+    /** AUTO MODE (Sean's ruling, 14 Oct 2026): what the client WAITS for. Auto never changes whether the
+        executor may act - that gate is agentModeOn(), re-read on every op - only whether an ask_first step
+        stops for a press. Set from the chip before each run. */
+    enum class ApprovalMode { Ask, Auto };
+    void setApprovalMode (ApprovalMode m) noexcept { approvalMode_ = m; }
+    ApprovalMode approvalMode() const noexcept { return approvalMode_; }
+    const char* approvalModeWord() const noexcept { return approvalMode_ == ApprovalMode::Auto ? "auto" : "ask"; }
+
     // Tunables (the guard shortens them)
     int stallTimeoutMs   = 90'000;   // no bytes on an open stream for this long -> stream_stalled
     // FIX 2 (Sean, 14 Oct): 60 s BOUNDED THE WHOLE REQUEST AND WE GAVE UP BEFORE THE SERVER DID.
@@ -186,6 +198,7 @@ private:
     // named hook, never "#define private public" (the EchoJayAPIRequestPin idiom).
     friend struct EJAgentClientTestAccess;
     std::function<void (const juce::String& path, const juce::String& body)> postOverride_;
+    ApprovalMode approvalMode_ = ApprovalMode::Ask;   // Sean's default for a new user
 
     // ---- transport ------------------------------------------------------------
     struct Cancel

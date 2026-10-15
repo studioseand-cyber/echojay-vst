@@ -1850,8 +1850,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     agentChipBtn.setColour (juce::TextButton::textColourOffId, C::text2);
     agentChipBtn.onClick = [this]
     {
-        const bool turningOff = agentModeOn();
-        setAgentModeOn (! turningOff);
+        // THREE STATES SINCE SEAN'S RULING OF 14 OCT: Off -> Ask -> Auto -> Off, on this one control.
+        const auto was = agentApprovalMode();
+        const auto next = was == AgentApproval::Off  ? AgentApproval::Ask
+                        : was == AgentApproval::Ask  ? AgentApproval::Auto
+                                                     : AgentApproval::Off;
+        const bool turningOff = (next == AgentApproval::Off);
+        setAgentApprovalMode (next);
         // SWITCHING IT OFF STOPS WHAT IS RUNNING, as Sean asked. ExecutorDo already re-checks agentModeOn() on
         // every op, so nothing FURTHER would be applied either way - but leaving the turn spinning after the
         // user has withdrawn permission is not a clean stop, so the run ends the same way Stop ends it.
@@ -1863,6 +1868,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         syncAgentChip (true);
     };
     addChildComponent (agentChipBtn);
+    // The mode line, styled like the quiet captions in this window (not a banner: it is a label about a
+    // setting, and a boxed amber strip would read as a warning).
+    agentModeLine_.setFont (juce::Font (juce::FontOptions (11.0f)));
+    agentModeLine_.setJustificationType (juce::Justification::centredLeft);
+    agentModeLine_.setColour (juce::Label::textColourId, C::text3);
+    agentModeLine_.setInterceptsMouseClicks (false, false);
+    agentModeLine_.setMinimumHorizontalScale (1.0f);
+    addChildComponent (agentModeLine_);
     syncAgentChip (true);
     // No restore from processor state: the router selection is transient
     // by design (RESET, not sticky) — every main chat opens untargeted.
@@ -3792,6 +3805,7 @@ void EchoJayEditor::updateOnboardingPrompts()
     // [key-hint] rides the same per-tick authority as the composer it sits
     // over, so every tab/overlay rule above applies to it for free.
     syncReaperKeyHint();
+    syncAgentModeLine();   // same per-tick authority as the composer it sits over
     compareBtn.setEnabled(!anyPrompt);
     captureBtn.setEnabled(!anyPrompt);
     settingsBtn.setEnabled(!anyPrompt);
@@ -31855,15 +31869,25 @@ void EchoJayEditor::retireLinkEditCard(const juce::String& editDataKey,
 // which is what makes "no need to close and reopen the window" true for a change made anywhere else.
 void EchoJayEditor::syncAgentChip (bool force)
 {
-    const bool on = agentModeOn();
-    if (! force && on == lastAgentChip_) return;
+    const auto mode = agentApprovalMode();
+    const bool on = (mode != AgentApproval::Off);
+    // THE TIMER'S CHANGE TEST IS NOW THE MODE, not the boolean: Ask -> Auto is a change the chip has to
+    // show, and a bool could not see it (which is how item 11's "no need to reopen the window" would have
+    // quietly stopped being true for two of the three states).
+    if (! force && mode == lastAgentMode_) return;
+    lastAgentMode_ = mode;
     lastAgentChip_ = on;
-    agentChipBtn.setButtonText (on ? "Agent: On" : "Agent: Off");
+    agentChipBtn.setButtonText (mode == AgentApproval::Auto ? "Agent: Auto"
+                              : mode == AgentApproval::Ask  ? "Agent: Ask"
+                                                            : "Agent: Off");
     agentChipBtn.setToggleState (on, juce::dontSendNotification);
-    // The hover sentence is the SAME sentence as the Settings label, by construction: one wording for one
-    // setting. Item 7's correction therefore reaches both at once.
-    agentChipBtn.setTooltip (on ? "On: EchoJay makes changes itself."
-                                : "Off: EchoJay dials settings you ask for, and asks before adding or removing plugins.");
+    // The mockup's colours: grey off, amber for Ask, the accent cyan for Auto.
+    agentChipBtn.setColour (juce::TextButton::textColourOnId,
+                            mode == AgentApproval::Auto ? juce::Colour (0xff7FE3F2) : C::amber);
+    // The hover sentence and the line under the composer are THE SAME SENTENCE as the mockup's, from one
+    // function, so the chip, the hint and the Settings label cannot disagree.
+    agentChipBtn.setTooltip (agentApprovalLine (mode));
+    agentModeLine_.setText (agentApprovalLine (mode), juce::dontSendNotification);
     agentModeToggle.setToggleState (on, juce::dontSendNotification);
     agentChipBtn.repaint();
 }
@@ -32963,6 +32987,22 @@ void EchoJayEditor::syncReaperKeyHint()
     }
     keyHintLabel_.setVisible(show);
     keyHintDismissBtn_.setVisible(show);
+}
+
+/** The mode line's own geometry and visibility. Anchored to chatBoxRect_ (the ONE geometry truth for the
+    composer box) and hidden whenever the key hint has the same space. */
+void EchoJayEditor::syncAgentModeLine()
+{
+    const bool show = chatInput.isVisible() && ! keyHintLabel_.isVisible()
+                   && chatBoxRect_.getWidth() > 120 && agentChipBtn.isVisible();
+    if (show)
+    {
+        constexpr int kH = 15;
+        agentModeLine_.setBounds (chatBoxRect_.getX() + 2, chatBoxRect_.getY() - kH - 1,
+                                  chatBoxRect_.getWidth() - 4, kH);
+        if (! agentModeLine_.isVisible()) agentModeLine_.toFront (false);
+    }
+    agentModeLine_.setVisible (show);
 }
 
 void EchoJayEditor::dismissReaperKeyHint()
@@ -35491,9 +35531,17 @@ void EchoJayEditor::serviceRigHook()
     {
         // The chip's own path, so the flag file, the chip and Settings move exactly
         // as they do for a press (round 12b item 6).
-        setAgentModeOn (c.flag ("on"));
+        // THREE STATES SINCE SEAN'S AUTO RULING: { mode: "off" | "ask" | "auto" } sets the mode directly,
+        // and { on: bool } still means Ask/Off so every row written before Auto existed keeps working.
+        const auto wanted = c.str ("mode").trim().toLowerCase();
+        if (wanted.isNotEmpty())
+            setAgentApprovalMode (wanted == "auto" ? AgentApproval::Auto
+                                : wanted == "ask"  ? AgentApproval::Ask
+                                                   : AgentApproval::Off);
+        else
+            setAgentApprovalMode (c.flag ("on") ? AgentApproval::Ask : AgentApproval::Off);
         syncAgentChip();
-        note = agentModeOn() ? "agent mode ON" : "agent mode OFF";
+        note = juce::String ("agent mode ") + agentApprovalWord (agentApprovalMode());
     }
     else if (c.name == echojay::rig::cmd::press)
     {
@@ -35659,6 +35707,10 @@ void EchoJayEditor::publishRigState()
     o->setProperty ("viewUid",    chainViewUid());
     o->setProperty ("agentTarget", agentTargetLast_);
     o->setProperty ("agentModeOn", agentModeOn());
+    // The MODE, not just the boolean (Sean's Auto ruling): a row that sets Auto has to be able to assert
+    // that Auto is what the plugin is in, and "on" cannot tell Ask from Auto.
+    o->setProperty ("agentApprovalMode", juce::String (agentApprovalWord (agentApprovalMode())));
+    o->setProperty ("agentModeLine", agentApprovalLine (agentApprovalMode()));
     o->setProperty ("chatInput",   chatInput.getText());
     // MAY THIS ACCOUNT SEND A PLAIN CHAT TURN? sendChatMessage refuses before any network when this is
     // false, by pushing the limit message as an ASSISTANT row - which a leg reading the transcript cannot
@@ -35827,6 +35879,11 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     if (agentModeOn() && agentClient_ != nullptr && ! agentClient_->isActive())
     {
         syncAgentTarget();   // ITEM 7: before the start context is built, not after
+        // AUTO MODE: read LIVE from the chip's own store, never cached - the same discipline as
+        // agentModeOn(). The client sends it in the start body and uses it to decide what it waits for.
+        agentClient_->setApprovalMode (agentApprovalMode() == AgentApproval::Auto
+                                           ? EJAgentClient::ApprovalMode::Auto
+                                           : EJAgentClient::ApprovalMode::Ask);
         agentClient_->start (msg, currentChatId);   // the card appears through onLayoutNeeded
         return;
     }

@@ -677,6 +677,76 @@ void ExecutorDo::undoStep (const juce::String& token, Done done)
     });
 }
 
+// ---- AUTO MODE'S PRE-FLIGHT, AND THE UNDO TOKEN'S RULE, IN ONE PLACE -----------------------------------
+//
+// Sean's Auto ruling: "every step applies without waiting; the run stops only for a question, or for any
+// step that cannot be undone (still ask-first, with the reason on the line)". That needs undoability known
+// BEFORE a step runs, where today it is only known after (Step::canUndo() is "it finished and it handed back
+// a token"). Two lists would drift, so this is the only one, and agent_round16_guard holds it against the
+// tokens the ops really return.
+//
+// The op names are this executor's own dispatch (translate(), above): set, set_wet, set_io, set_master_wet,
+// set_pre_gain, bypass, remove, move, add, replace, build, set_level, open_editor - plus `undo`, which is
+// routed before translate.
+bool ExecutorDo::looksLikeUndoGoal (const juce::String& goal)
+{
+    const auto g = " " + goal.trim().toLowerCase() + " ";
+    return g.contains (" undo ") || g.contains ("undo that") || g.contains ("put that back")
+        || g.contains ("put it back") || g.contains (" revert ") || g.contains ("revert that");
+}
+
+Undoability ExecutorDo::undoabilityOf (const ToolCall& call, const juce::String& goal)
+{
+    Undoability u;
+    // A CALL THAT CHANGES NOTHING NEEDS NO UNDO. read / look / check / talk only answer questions, and a
+    // question that waited for an approval would be an approval for nothing.
+    if (call.name != "do")
+    {
+        u.undoable = true;
+        return u;
+    }
+    const auto op = argString (call, "op").trim().toLowerCase();
+
+    // Every one of these pushes an entry on the plugin-wide history and returns a token from confirmLanded /
+    // confirmValues, so the history can put it back.
+    static const char* kUndoable[] = { "set", "set_wet", "set_io", "set_master_wet", "set_pre_gain",
+                                       "bypass", "remove", "move", "add", "replace", "build", "set_level" };
+    for (auto* o : kUndoable)
+        if (op == o) { u.undoable = true; return u; }
+
+    if (op == "undo")
+    {
+        // THE ONE CARVE-OUT, AND THE WHOLE REASON IT IS SAFE. An undo returns no token (undoStep answers
+        // success with {}), because undoing an undo is a redo and there is no redo op before beta. Taken
+        // literally, Auto would stop and ask before an undo the user had just asked for out loud - so
+        // Sean ruled: "'undo that' typed by the user runs without a second approval". The USER'S WORDS are
+        // the approval, which is why this reads the goal and not the op alone; and B refuses every other op
+        // on an undo goal, so the carve-out cannot be widened by a model.
+        u.undoable = false;
+        if (looksLikeUndoGoal (goal))
+        {
+            u.preApprovedInAuto = true;
+            u.whyNot = "you asked for this to be undone, so it runs without a second approval";
+        }
+        else
+            u.whyNot = "an undo cannot itself be undone (there is no redo yet)";
+        return u;
+    }
+
+    if (op == "open_editor")
+    {
+        // It opens a window and changes no audio. Nothing to put back, nothing to ask about.
+        u.preApprovedInAuto = true;
+        u.whyNot = "it only opens a window";
+        return u;
+    }
+
+    // THE FALLBACK IS THE SAFE ANSWER, NOT THE CONVENIENT ONE - the dialCapable convention, and the reason
+    // it exists: an op this executor does not know might be anything, so Auto asks.
+    u.whyNot = "I do not have a way to put \"" + (op.isNotEmpty() ? op : juce::String ("that")) + "\" back";
+    return u;
+}
+
 void ExecutorDo::undoToCheckpoint (const juce::String& token, Done done)
 {
     // SAME PATH, DIFFERENT TOKEN. A checkpoint token names a point rather than a step, and the sink is the

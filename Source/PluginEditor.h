@@ -48,6 +48,13 @@ class EchoJayEditor : public juce::AudioProcessorEditor,
                        public juce::TooltipClient
 {
 public:
+    /** THE AGENT CHIP'S THREE STATES (Sean's ruling, 14 Oct 2026). Declared HERE, at the head of the
+        class, because a MEMBER of this type (lastAgentMode_) is declared further down and a class member
+        can only name a type the class has already declared - the compiler's rule, and the reason the first
+        cut of this would not build. The functions that read and write it live with the other agent-mode
+        statics below. */
+    enum class AgentApproval { Off, Ask, Auto };
+
     /** THIS WINDOW'S IDENTITY (15 Oct 2026). Taken from the processor's counter when the window is built
         and never reused, because the chat keep-rule compared ADDRESSES and a rebuilt editor inherited the
         dead one's claim when the allocator handed it the same address. */
@@ -2316,6 +2323,14 @@ private:
     // being closed and reopened.
     juce::TextButton agentChipBtn { "Agent: Off" };
     bool lastAgentChip_ = false;
+    // The timer's change test is the MODE now, not the boolean: Ask -> Auto is a change the chip must show.
+    AgentApproval lastAgentMode_ = AgentApproval::Off;
+    /** THE MOCKUP'S ONE PLAIN LINE about what the current mode does. It FLOATS over the chat, anchored to
+        chatBoxRect_ exactly as the Reaper key hint does, because that is the idiom in this file for "a strip
+        by the composer" and it touches no surface's height math. It yields to the key hint, which is rarer
+        and more urgent, so the two can never overlap. */
+    juce::Label      agentModeLine_;
+    void             syncAgentModeLine();
     void syncAgentChip (bool force = false);
     bool rehydratedFromStore_ = false;  // one-shot onLoaded re-hydrate
     // Chat composer container (single rounded box: text area on top, a
@@ -2548,6 +2563,52 @@ private:
         return echojay::userAppData().getChildFile ("EchoJay").getChildFile ("agent_mode");
     }
     static bool agentModeOn() { return agentModeFlagFile().existsAsFile(); }
+
+    /** AGENT MODE HAS THREE STATES SINCE SEAN'S RULING OF 14 OCT: Off -> Ask -> Auto.
+     *
+     *      Off   unchanged, and still the default: today's chat plus Apply, nothing changed without a press.
+     *      Ask   today's agent behaviour - the approvals.
+     *      Auto  every step applies without waiting. The run stops only for a QUESTION, or for a step that
+     *            cannot be undone (which still asks, with the reason on the line).
+     *
+     *  PERSISTED IN THE FILE THAT ALREADY EXISTS, BY ITS TEXT. The file's EXISTENCE stays the on/off truth,
+     *  so agentModeOn(), every guard and ship_2026-10-09a are untouched - an old build reads "agent on" for
+     *  both Ask and Auto, which is true. The MODE is the file's contents, and a file that says anything else
+     *  (today's "on") reads as Ask - which is also the default Sean ruled for a new user. Downgrade-safe by
+     *  the same rule as a new sidecar key: a reader that does not know the field never looks at it. */
+    static AgentApproval agentApprovalMode()
+    {
+        auto f = agentModeFlagFile();
+        if (! f.existsAsFile()) return AgentApproval::Off;
+        return f.loadFileAsString().trim().equalsIgnoreCase ("auto") ? AgentApproval::Auto
+                                                                     : AgentApproval::Ask;
+    }
+    static const char* agentApprovalWord (AgentApproval m)
+    { return m == AgentApproval::Auto ? "auto" : m == AgentApproval::Ask ? "ask" : "off"; }
+    /** The one writer. Off deletes the file, so Off is still exactly "the file does not exist". */
+    static void setAgentApprovalMode (AgentApproval m)
+    {
+        auto f = agentModeFlagFile();
+        if (m == AgentApproval::Off) { if (f.existsAsFile()) f.deleteFile(); }
+        else
+        {
+            f.getParentDirectory().createDirectory();
+            f.replaceWithText (m == AgentApproval::Auto ? "auto" : "ask");
+        }
+        EchoJay_NSLog (("EJAgent: approval mode " + juce::String (agentApprovalWord (m))
+                        + " (the user's switch; off = chat and Apply, ask = approvals, auto = no waiting "
+                          "except for a question or a step that cannot be undone)").toRawUTF8());
+    }
+    /** The sentence under the composer, from the approved mockup, word for word. */
+    static juce::String agentApprovalLine (AgentApproval m)
+    {
+        switch (m)
+        {
+            case AgentApproval::Auto: return "Auto: does everything without waiting, and only stops to ask you a question. Undo all is on the message.";
+            case AgentApproval::Ask:  return "Ask: small moves just happen; adding, removing or touching another track waits for your Apply.";
+            default:                  return "Off: normal chat. EchoJay suggests, you make the changes.";
+        }
+    }
     /** The toggle's write. Creating the file turns it on; deleting it turns it off. A file rather than a
         preference because every harness already runs in an isolated ECHOJAY_STATE_HOME, so a guard can turn
         agent mode on for itself without touching Sean's own setting. */

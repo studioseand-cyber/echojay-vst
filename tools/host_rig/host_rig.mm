@@ -342,6 +342,10 @@ struct AgentOutcome
     bool  adopted = false;      // the card's own goal became THIS request (so the reply belongs to this row)
     int   applies = 0;          // how many plans the rig approved (a build can present more than one)
     bool  leftRunning = false;  // the turn was still live when the bound ran out
+    // AUTO MODE (15 Oct): a row has to be able to say "it DID wait for a press", and `applies` only counts
+    // presses the rig made - a row that declines to answer presses nothing and would look the same as a run
+    // that never waited at all. This is the card having reached AwaitingApproval at any point.
+    bool  sawApproval = false;
 
     /** DID A TURN ACTUALLY HAPPEN FOR THIS REQUEST? (14 Oct 2026, Sean's instruction.)
         The 14:34 run was spoiled by a server-side 500 on every agent POST, and SEVERAL ROWS PASSED ANYWAY:
@@ -400,7 +404,12 @@ static AgentOutcome askAgent (Rig& rig, const juce::String& request, int timeout
                               const juce::String& answerText = "yes")
 {
     AgentOutcome out;
-    rig.send (echojay::rig::cmd::agentChip, args1 ("on", true));
+    // TURN THE AGENT ON WITHOUT CHOOSING THE MODE FOR THE ROW (15 Oct 2026). This used to send
+    // { on: true }, which the plugin reads as ASK - so every Auto row was quietly put back into Ask by the
+    // very helper that ran it, and A9/A7 reported one approval press each in a mode whose whole point is
+    // that there are none. Off is the only state this helper changes.
+    if (rig.freshState().getProperty ("agentApprovalMode", juce::var()).toString() == "off")
+        rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "ask"), 8000);
 
     // ---- 1. NEVER SEND INTO A LIVE SESSION (14 Oct 2026) --------------------------------------------------
     // Row L3 asked for a Link's output and was answered with row L2's build summary. L2's turn had run past
@@ -446,6 +455,7 @@ static AgentOutcome askAgent (Rig& rig, const juce::String& request, int timeout
         rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 4000);
         const auto a = agentVarOf (Rig::state());
         out.state = a.getProperty ("state", juce::var()).toString();
+        if (out.state == "awaiting_approval") out.sawApproval = true;
         out.text  = a.getProperty ("liveText", juce::var()).toString();
         out.planLines = (int) a.getProperty ("planLines", 0);
 
@@ -1113,6 +1123,119 @@ int main (int argc, char* argv[])
         check (stepWords.containsIgnoreCase ("undone") || stepWords.containsIgnoreCase ("undo"),
                "...and the step's own detail says what was undone, from the history's label",
                stepWords.substring (0, 200));
+    }
+
+    // =====================================================================
+    //  AUTO MODE (Sean's ruling, 14 Oct 2026) - mock frames, so the approval
+    //  class is the RIG'S to choose. Every step below is marked ask_first by
+    //  the script: in Ask they wait, in Auto they run unless they cannot be
+    //  undone. That is the whole ruling, and the model cannot be asked to
+    //  produce it on demand.
+    // =====================================================================
+    if (! live)
+    {
+        leg ("AUTO MODE: what it skips, what it still asks, and that Off still changes nothing");
+        const auto modeNow = [&rig] { return rig.freshState().getProperty ("agentApprovalMode", juce::var()).toString(); };
+        const auto setMode = [&rig] (const char* m)
+        { rig.send (echojay::rig::cmd::agentChip, args1 ("mode", m), 8000); };
+
+        rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""));
+        rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""));
+
+        // ---- the chip cycles, and the plugin says which state it is in -------------------------------
+        setMode ("off");  check (modeNow() == "off",  "the chip reads OFF when it is off",  modeNow());
+        setMode ("ask");  check (modeNow() == "ask",  "...ASK after one press",             modeNow());
+        setMode ("auto"); check (modeNow() == "auto", "...and AUTO after the next",         modeNow());
+        check (rig.freshState().getProperty ("agentModeLine", juce::var()).toString()
+                   .containsIgnoreCase ("without waiting"),
+               "...and the line under the composer says what Auto does, in the mockup's own words",
+               rig.freshState().getProperty ("agentModeLine", juce::var()).toString().substring (0, 90));
+
+        // ---- A9: an Auto run completes with NO approvals, and the change reads back -------------------
+        {
+            rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0));
+            Rig::pump (700);
+            const auto r = askAgent (rig, "rig-auto-marker: set the pre gain, twice", 60000);
+            const double pg = (double) rig.freshState().getProperty ("preGainDb", 99.0);
+            row ("A9", r.ran() && r.applies == 0 && std::abs (pg - 6.0) < 0.2,
+                 "(Auto) a run of ask_first steps completes with NO approval presses, and the change reads back",
+                 "approval presses " + juce::String (r.applies) + ", pre-gain now " + juce::String (pg, 2)
+                 + " dB, state " + r.state + ", steps: " + r.stepWords.substring (0, 160), &r);
+            check (r.stepWords.containsIgnoreCase ("auto") || r.applies == 0,
+                   "...and nothing waited for a press on the way",
+                   "presses " + juce::String (r.applies));
+        }
+
+        // ---- A7: in Auto, "undo that" runs with no second approval (Sean's ruling) -------------------
+        {
+            rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0));
+            Rig::pump (700);
+            rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 3.0));
+            Rig::pump (400);
+            const double before = (double) rig.freshState().getProperty ("preGainDb", 99.0);
+            const auto r = askAgent (rig, "rig-autoundo-marker: undo that", 60000);
+            const double after = (double) rig.freshState().getProperty ("preGainDb", 99.0);
+            row ("A7", r.ran() && r.applies == 0 && std::abs (after) < 0.3,
+                 "(Auto) \"undo that\" runs with NO approval wait - the user's own words are the approval",
+                 "pre-gain " + juce::String (before, 2) + " -> " + juce::String (after, 2)
+                 + " dB with " + juce::String (r.applies) + " press(es), state " + r.state, &r);
+        }
+
+        // ---- A11: a step this build cannot put back STILL ASKS in Auto, with the reason ---------------
+        {
+            const auto r = askAgent (rig, "rig-autostrange-marker: do the unknown thing", 40000,
+                                     /*answerAsks*/ false);
+            const bool waited = r.state == "awaiting_approval" || r.applies > 0 || r.sawApproval;
+            row ("A11", waited,
+                 "(Auto) a step that cannot be undone STILL waits for a press, with its reason on the line",
+                 "state " + r.state + ", presses " + juce::String (r.applies)
+                 + ", steps: " + r.stepWords.substring (0, 160), &r);
+            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+        }
+
+        // ---- A8: the same undo request in ASK still waits ---------------------------------------------
+        {
+            setMode ("ask");
+            rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0));
+            Rig::pump (700);
+            rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 3.0));
+            Rig::pump (400);
+            const auto r = askAgent (rig, "rig-autoundo-marker: undo that", 40000, /*answerAsks*/ false);
+            row ("A8", r.state == "awaiting_approval" || r.applies > 0 || r.sawApproval,
+                 "(Ask) the same \"undo that\" still waits for Apply - Auto removed the waiting, not the rule",
+                 "state " + r.state + ", presses " + juce::String (r.applies), &r);
+            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+        }
+
+        // ---- A12: OFF still changes nothing, even after Auto has been used ---------------------------
+        {
+            setMode ("off");
+            rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 1.5));
+            Rig::pump (700);
+            const double before = (double) rig.freshState().getProperty ("preGainDb", 99.0);
+            rig.send (echojay::rig::cmd::sendChat, args1 ("text", "rig-auto-marker: set the pre gain, twice"), 15000);
+            Rig::pump (4000);
+            const double after = (double) rig.freshState().getProperty ("preGainDb", 99.0);
+            check (std::abs (after - before) < 0.2 && modeNow() == "off",
+                   "(Off) a run started with the chip OFF changes nothing - a three-way control is a new way "
+                   "to get that wrong",
+                   "pre-gain " + juce::String (before, 2) + " -> " + juce::String (after, 2)
+                   + " dB, mode " + modeNow());
+        }
+
+        // ---- A13: the mode PERSISTS across the window being rebuilt ----------------------------------
+        {
+            setMode ("auto");
+            v2.closeEditor();
+            v2.openEditor();
+            Rig::pump (1200);
+            rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
+            check (modeNow() == "auto",
+                   "the mode persists: the chip still reads AUTO after the window was rebuilt  (Sean's "
+                   "ruling: the choice persists per user, and a silent reset to Ask would look like Auto "
+                   "failing)", modeNow());
+            setMode ("ask");   // leave the tree as the other rows expect it
+        }
     }
 
     leg (live ? "CAPABILITIES: the real server, the real model, asserted on real state"

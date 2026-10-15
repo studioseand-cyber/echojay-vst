@@ -297,6 +297,60 @@ int main()
                "...with the real names in it", got.errorMessage);
     }
 
+    // ---------------------------------------------------------------- AUTO MODE (ship 2)
+    //
+    // ONE DECIDER, HELD AGAINST THE TOKENS. Auto asks ExecutorDo::undoabilityOf before a step runs; the
+    // outcome carries an undo token after it ran. The design's rule is that these are the same function's
+    // two readings, and the thing that would rot is the agreement between them - so it is asserted op by
+    // op, and an op that gains a token without gaining its entry here fails this leg rather than quietly
+    // becoming something Auto applies without asking.
+    std::printf ("== AUTO MODE: undoabilityOf is the one decider, and it agrees with the tokens ==\n");
+    {
+        Fixture f; ExecutorDo ex (f.sources(), f.sinks());
+        const char* undoable[] = { "set", "set_wet", "set_io", "set_master_wet", "set_pre_gain",
+                                   "bypass", "remove", "move", "add", "replace", "build", "set_level" };
+        bool allUndoable = true; juce::String bad;
+        for (auto* op : undoable)
+        {
+            const auto u = ex.undoabilityOf (call (juce::String ("{\"op\":\"") + op + "\"}"), "make it punchier");
+            if (! u.undoable) { allUndoable = false; bad << op << " "; }
+        }
+        check (allUndoable, "every op that pushes an undo entry is reported undoable, so Auto may run it",
+               bad.isEmpty() ? juce::String ("all 12") : "NOT undoable: " + bad);
+
+        const auto unknown = ex.undoabilityOf (call (R"({"op":"teleport_the_rack"})"), "do something odd");
+        check (! unknown.mayRunInAuto() && unknown.whyNot.isNotEmpty(),
+               "an op this build does not know is NOT run unasked in Auto, and says why  (the dialCapable "
+               "rule: the fallback is the safe answer, not the convenient one)", unknown.whyNot);
+
+        const auto undoPlain = ex.undoabilityOf (call (R"({"op":"undo"})"), "make the vocal brighter");
+        check (! undoPlain.mayRunInAuto(),
+               "an undo on a goal that is NOT an undo request still asks in Auto", undoPlain.whyNot);
+
+        const auto undoAsked = ex.undoabilityOf (call (R"({"op":"undo"})"), "undo that");
+        check (undoAsked.preApprovedInAuto && ! undoAsked.undoable,
+               "...but \"undo that\" is pre-approved in Auto - the user's own words are the approval (Sean's "
+               "ruling, 14 Oct) - and it is still NOT called undoable, because it hands back no token",
+               undoAsked.whyNot);
+        check (ExecutorDo::looksLikeUndoGoal ("put that back") && ExecutorDo::looksLikeUndoGoal ("revert that")
+               && ! ExecutorDo::looksLikeUndoGoal ("make the vocal brighter"),
+               "the undo-goal test is narrow: the words a user types when they mean put it back");
+
+        const auto openEd = ex.undoabilityOf (call (R"({"op":"open_editor","slot":1})"), "show me the compressor");
+        check (openEd.mayRunInAuto() && ! openEd.undoable,
+               "open_editor runs in Auto because it changes nothing - and is not claimed to be undoable",
+               openEd.whyNot);
+
+        // AND THE AGREEMENT ITSELF: an op reported undoable must come back WITH a token. This is the pair
+        // the design says must not drift.
+        Fixture f2; f2.held = { {"attack_ms", 18.0} };
+        ExecutorDo ex2 (f2.sources(), f2.sinks());
+        const auto setOut = runDo (ex2, call (R"({"op":"set","slot":1,"settings_structured":{"params":{"attack_ms":18}}})"));
+        check (setOut.ok && setOut.undoToken.isNotEmpty(),
+               "a set that undoabilityOf calls undoable really does hand back an undo token",
+               setOut.undoToken);
+    }
+
     std::printf ("==== agent_round15_guard: %s (%d assertion(s) failed, %d passed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures, passes);
     return failures == 0 ? 0 : 1;

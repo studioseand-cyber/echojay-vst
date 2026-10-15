@@ -231,12 +231,20 @@ inline juce::String buildStepBody (const juce::String& sessionId, int round, con
 // channel {uid, name, kind, links}, capabilities) and is sent as given; `agentMode: true` is the dev switch both
 // sides gate on and goes before beta.
 inline juce::String buildStartBody (const juce::String& goal, const juce::var& context,
-                                    const juce::String& appVersion, const juce::String& chatId)
+                                    const juce::String& appVersion, const juce::String& chatId,
+                                    const juce::String& approvalMode = {})
 {
     auto* o = new juce::DynamicObject();
     o->setProperty ("goal", goal);
     o->setProperty ("context", context.isVoid() ? juce::var (new juce::DynamicObject()) : context);
     o->setProperty ("agentMode", true);
+    // AUTO MODE (Sean, 14 Oct). The SERVER owns the approval policy, so the mode has to be in the request
+    // and honoured there: in "auto" B may mark free what it would otherwise mark ask_first, EXCEPT anything
+    // irreversible or outside the rack, which stays ask_first whatever the mode says. The plugin enforces
+    // its own undoability rule on top (ExecutorDo::undoabilityOf), so a disagreement between us is safe in
+    // the direction that ASKS. Server limits - the -0.1 ceiling and the rest - do not move in Auto.
+    // Defaulted and only sent when set, so an older caller's body is byte-for-byte what it was.
+    if (approvalMode.isNotEmpty()) o->setProperty ("approvalMode", approvalMode);
     if (appVersion.isNotEmpty()) o->setProperty ("appVersion", appVersion);
     if (chatId.isNotEmpty())     o->setProperty ("chatId", chatId);
     return juce::JSON::toString (juce::var (o), true);

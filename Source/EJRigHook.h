@@ -75,7 +75,10 @@ inline juce::File stateFile() { return dir().getChildFile ("rig-state.json"); }
 namespace cmd
 {
     inline constexpr const char* sendChat     = "send_chat";       // { text }
-    inline constexpr const char* agentChip    = "agent_chip";      // { on: bool }
+    // { on: bool } still works and means Off/Ask; { mode: "off"|"ask"|"auto" } is the three-way chip
+    // (Sean's Auto ruling, 14 Oct). Both spellings, because every existing row sends `on` and a rig that
+    // had to be migrated in lockstep with the plugin is a rig that stops being run.
+    inline constexpr const char* agentChip    = "agent_chip";      // { on: bool } | { mode: "off|ask|auto" }
     inline constexpr const char* press        = "press";           // { button: apply|apply_all|skip_all|skip_line|details|stop }
     inline constexpr const char* selectLink   = "select_link";     // { uid }  ("" = the own rack)
     inline constexpr const char* reportState  = "report_state";    // {}
