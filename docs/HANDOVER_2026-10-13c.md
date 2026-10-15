@@ -234,4 +234,13 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
 - Surround-only variants are out of scope at the scan: not loaded, not measured, not counted (WIZARD_SPEC 3o, pin WZ-SURROUND-1, 4 mutants red). They are read from the name.
 - This Mac: 86 variants (29 had been queued). New plan: 312 to measure. Today's L360 (5->5) / (6->6) compressor passes ran about 50 min each.
 
+## 15 Oct addendum 13: before tonight's fresh run (wizard d8568f87; DMGs Test f71a2cff, Beta 3b1e4a9f)
+- UAD is measured by sound, not by device (EJ_UAD_NATIVE). UAD loads here show UA's authorisation window: closed, needs_licence in ~4 s, remembered.
+- A sound check in the demo check files silent or never-processing plugins at once.
+- The reward totals exclude needs_hardware and surround.
+- The pause says "Paused at N%".
+- The warm probe now runs in Checking too (A/B identical, 199 -> 103 s on 9 plugins).
+- WIZARD_SPEC 3p; 10 mutants red.
+- Not carried to cert: the shared-code changes (the UAD gate's env switch, ScopedServe) change nothing in EJ Map's own runs.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
