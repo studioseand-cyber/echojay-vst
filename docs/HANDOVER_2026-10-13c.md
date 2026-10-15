@@ -263,4 +263,11 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
   - Results: 242 measured, 70 not measurable, 24 demo, 10 silent, 8 needs_licence, 158 UAD left.
 - **Timing CSV:** ~/Desktop/WIZARD_TIMING_15oct.csv is kept.
 
+## 15 Oct addendum 16: the held / silent review and the reason text
+- **The 13 held for review:**
+  - 11 match Sean's cert 5 exactly: AMEK / Maag / SPL IRON (tone check fails on both Macs; Maag even with Kathy's pick), MC 77 nonmonotonic, Rubber Band V2 / SSL Fusion HF / bx_limiter TP flat, bx_clipper with 2 candidates, kHs Dynamics passthrough.
+  - W43 (m/s) and PlaylistRider (m/s) are categorised "compressor" in the server's catalogue: a data fix, not wizard code.
+- **The silent 6** (APB MooTube, bx_yellowdrive, bx_distorange, bx_greenscreamer, bx_megasingle, The God Particle): every output reading -600 dB (digital zero) with the input present - truly silent, none near-transparent.
+- **The reason text:** wizard commit "a plugin that was not measured says what happened" (WIZARD_SPEC 3s, pin WZ-WHY-1, 3 mutants red).
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
