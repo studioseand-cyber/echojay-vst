@@ -9702,7 +9702,7 @@ void testWizardCategories()
             const auto ch = measuringChoices (m); shown.add (ch.pause); shown.add (ch.send); shown.add (ch.line);
             shown.add (pausedText (m, false)); shown.add (pausedText (m, true)); shown.add (consentText (m));
         }
-        shown.add (measuringText()); shown.add (stoppedNote()); shown.add (alreadyDoneCopy().text); shown.add (measuredSoFarWords (12));
+        shown.add (measuringText()); shown.add (measuringText (504)); shown.add (measuringText (1)); shown.add (stoppedNote()); shown.add (alreadyDoneCopy().text); shown.add (measuredSoFarWords (12));
         shown.add (measuringCount (juce::JSON::parse ("{\"measurements\": {\"done\": 3, \"total\": 649}}")));
         juce::StringArray timed; for (const auto& x : shown) if (tellsATime (x)) timed.add (x);
         const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
@@ -10219,10 +10219,69 @@ void testWizardCategories()
                && cn.title == "Thanks - your plugins are already mapped" && cn.text == "You have 2 plugins we don't have yet - the free month needs 25 or more. You can still contribute them." && cn.primary == "Done" && cn.secondary == "Contribute anyway (no reward)"
                && c0.text == "So there's nothing to do right now."
                && c0.secondary.isEmpty() && ! cb.text.contains ("free month") && cb.primary == "Start"
-               && afterScan (al) == Screen::alreadyDone && afterScan (el) == Screen::scanDone && alreadyDoneCopy().title == "You've already taken part - thank you"
+               && afterScan (al) == Screen::alreadyDone && afterScan (ne) == Screen::scanDone && afterScan (el) == Screen::measuring && alreadyDoneCopy().title == "You've already taken part - thank you"
                && afterConsent (al) == Screen::alreadyDone && afterConsent (none) == Screen::scan
                && afterUpload (rc (true), code) == Screen::reward && afterUpload (rc (false), code) == Screen::noCode && afterUpload (rc (true), juce::var()) == Screen::noCode,
                "wizard WZ-ELIG-1: the eligible / not-eligible / already-taken-part words; contribute anyway only when there is something to measure; the code only on the server's grant");
+    }
+    // WZ-START-1 ONE START CARRIES THE WHOLE RUN (Kathy, 15 Oct: the overnight run sat on "Ready to measure - 504 plugins - Start" all
+    // night): something to measure -> straight into measuring after the scan, and on reopening after a finished scan; "Ready to measure"
+    // is the Measuring screen's line. Not eligible / nothing new still stops on its screen (a choice, not a second start)
+    {
+        using namespace ejmap::wizapp;
+        Eligibility el; el.eligible = true; el.count = 504; Eligibility ne; ne.count = 2; ne.minimum = 25; Eligibility none; Eligibility al; al.already = true; al.count = 9; al.eligible = true;
+        Where scanned; scanned.signedIn = scanned.consented = scanned.scanned = true;
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const bool read = app.contains ("class WizardApplication");   // the control
+        check (read && afterScan (el, Mode::normal) == Screen::measuring && afterScan (el, Mode::beta) == Screen::measuring && afterScan (ne, Mode::beta) == Screen::measuring
+               && afterScan (ne, Mode::normal) == Screen::scanDone && afterScan (none, Mode::normal) == Screen::scanDone && afterScan (none, Mode::beta) == Screen::scanDone && afterScan (al, Mode::normal) == Screen::alreadyDone
+               && openOn (scanned, Mode::normal, el) == Screen::measuring && openOn (scanned, Mode::normal, ne) == Screen::scanDone && openOn (scanned, Mode::normal) == Screen::scanDone
+               && measuringText (504) == "Ready to measure: 504 plugins we haven't mapped yet - it's best left running overnight. Leave it running - the Mac stays awake. You can pause and carry on any time."
+               && ! tellsATime (measuringText (504)) && measuringText() == "Leave it running - the Mac stays awake. You can pause and carry on any time."
+               && app.contains ("const auto el = wizapp::eligibilityOf (eligibility); const auto next = wizapp::afterScan (el, kMode);") && app.contains ("show (next);")
+               && app.contains ("text = wizapp::measuringText (wizapp::eligibilityOf (") && app.contains ("show (wizapp::openOn (w, kMode, wizapp::eligibilityOf ("),
+               "wizard WZ-START-1: one Start carries the whole run (504 to measure -> Measuring, no second button; reopened after the scan -> Measuring); not eligible / nothing new stop on their screen; the ready line on the Measuring screen (read: " + juce::String ((int) read) + ")");
+    }
+    // WZ-SCREEN-1 THE MEASURING SCREEN (Kathy, 15 Oct): a percentage of the weighted bar ("23%", not "12 of 517"), whole numbers, never
+    // backwards; a calm shimmer only while measuring runs (never paused / pausing / finishing); the "N measured so far" line is gone (the %
+    // replaces it - it disagreed with the count while demo skips landed); the ready line follows the engine's count; a UAD row left unrun
+    // reaches the bar as finished (it never ran for this run, so the % can reach the end)
+    {
+        using namespace ejmap::wizapp;
+        auto pv = [] (double pct) { auto* o = new juce::DynamicObject(); o->setProperty ("percent", pct); return juce::var (o); };
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const bool read = app.contains ("class WizardApplication") && drv.contains ("namespace probeserve");   // the control
+        const auto unrun = drv.fromFirstOccurrenceOf ("if (uad::leaveUnrunForDevice (gate.stop))", false, false).upToFirstOccurrenceOf ("return std::nullopt;", false, false);
+        check (read && measuringPercent (pv (15.0), 0) == 0 && measuringPercent (pv (56.0), 0) == 50 && measuringPercent (pv (97.0), 0) == 100 && measuringPercent (pv (57.3), 0) == 51
+               && measuringPercent (pv (50.0), 60) == 60 && measuringPercent (pv (5.0), 0) == 0 && percentWords (23) == "23%" && ! tellsATime (percentWords (23))
+               && shimmerOn (Screen::measuring, false, false) && ! shimmerOn (Screen::measuring, true, false) && ! shimmerOn (Screen::measuring, false, true) && ! shimmerOn (Screen::paused, false, false) && ! shimmerOn (Screen::scan, false, false)
+               && shimmerPhase (0.0) == 0.0 && std::abs (shimmerPhase (1200.0) - 0.5) < 1e-9 && shimmerPhase (2600.0) < 0.0 && std::abs (shimmerPhase (4400.0) - 0.5) < 1e-9
+               && app.contains ("barRight = wizapp::percentWords (shownPct);") && ! app.contains ("barRight = wizapp::measuringCount (p)") && ! app.contains ("g.drawText (soFar")
+               && app.contains ("if (wizapp::shimmerOn (screen, pausing, finishing)) repaint (") && app.contains ("shimmer.startTimerHz (30);")
+               && app.contains ("getProperty (\"to_measure\", 0);") && app.contains ("g.drawFittedText (barLeft, juce::Rectangle<int> (70, 286, getWidth() - 140 - rightW, 20), juce::Justification::centredLeft, 1, 0.7f);")
+               && ! app.contains ("g.drawText (barLeft,") && unrun.contains ("phaseb::rowHooks().finished (cat.name, pp.product, \"needs_device\", 0.0);"),
+               "wizard WZ-SCREEN-1: the measuring % (15 -> 0%, 56 -> 50%, 97 -> 100%, never back), the shimmer only while measuring, no 'measured so far' line, the ready line from the engine, an unrun UAD row reaches the bar (read: " + juce::String ((int) read) + ")");
+    }
+    // WZ-LABEL-1 THE NAME UNDER THE BAR (Kathy, 15 Oct: "CLA-76 (m)" for two hours while the count climbed): a plugin whose load ended leaves
+    // the current list even when its item waits (a failed check waits for its map); the name shown is the most recently started
+    {
+        using namespace ejmap::wizprog;
+        std::ostringstream term; const auto pj = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejlabel_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)) + ".json");
+        Tracker tr (pj, term, false, 4); Item a; a.kind = "check"; Item b = a, c = a, d = a; a.product = "CLA-76 (m)"; b.product = "EMO-D5 (s)"; c.product = "API-560 (m)"; d.product = "H-EQ (m)";
+        tr.stage (Stage::checking, { a, b, c, d });
+        tr.started ("CLA-76 (m)"); tr.loadEnded ("CLA-76 (m)");            // its check failed: it waits for its map
+        tr.started ("EMO-D5 (s)"); const auto l1 = tr.latest();
+        tr.started ("API-560 (m)"); const auto l2 = tr.latest();           // two loaded at once (maps run in parallel): the newer is shown
+        tr.finished ("API-560 (m)", false); const auto l3 = tr.latest();
+        const auto pv = juce::JSON::parse (pj.loadFileAsString()); const auto line = tr.lastLine(); const auto dn = tr.stageDone();
+        tr.started ("CLA-76 (m)"); const auto l4 = tr.latest();            // its map starts: it is current again, and newest
+        pj.deleteFile();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (l1 == "EMO-D5 (s)" && l2 == "API-560 (m)" && l3 == "EMO-D5 (s)" && l4 == "CLA-76 (m)" && line.contains ("EMO-D5 (s)") && ! line.contains ("CLA-76")
+               && pv.getProperty ("current_latest", "").toString() == "EMO-D5 (s)" && pv.getProperty ("current", {}).size() == 1 && dn.first == 1
+               && run.contains ("else prog.loadEnded (ir.desc.name);"),
+               "wizard WZ-LABEL-1: a waiting plugin leaves the current list, the name is the most recently started (" + l1 + " / " + l2 + " / " + l3 + " / " + l4 + "), the count unchanged");
     }
     // WZ-ELIG-2 (item 7, the server's /lookup): NEW CONTRIBUTABLE = rule C to measure ("queued"), never pending_review / held / out of scope
     // / licence-blocked / a demo; eligible at the minimum (server-configurable, default 5)
@@ -10626,9 +10685,9 @@ void testWizardProgress()
         bool up = true; for (size_t i = 1; i < seen.size(); ++i) if (seen[i] + 1e-9 < seen[i - 1]) up = false;
         check (up && seen.front() == 0.0 && seen.back() == 100.0 && std::abs ((double) j.getProperty ("percent", -1.0) - 100.0) < 1e-9 && j.getProperty ("stage", "") == "Packing"
                && jf.getProperty ("stage", "") == "Done" && jf.getProperty ("eta_words", "") == "finished" && (int) jf.getProperty ("problems", -1) == 1 && jf.getProperty ("summary", "") == "Done in 1 s: 3 plugin(s)"
-               && midLine.startsWith ("[") && midLine.contains ("%  Measuring 2 of 3 - B (2 at a time) - ") && term.str().find ("Done in 1 s: 3 plugin(s)") != std::string::npos
+               && midLine.startsWith ("[") && midLine.contains ("%  Measuring 2 of 3 - C (2 at a time) - ")   // 15 Oct: the most recently started (C), not the oldest still running (B) && term.str().find ("Done in 1 s: 3 plugin(s)") != std::string::npos
                && barText (45.0) == "[#########-----------]",
-               "wizard WZ-PROG-4: the tracker's percents never decrease (" + juce::String ((int) seen.size()) + " events, 0 -> 100); progress.json = the shown number; the line reads 'Measuring 2 of 3 - B (2 at a time)'; got '" + midLine + "'");
+               "wizard WZ-PROG-4: the tracker's percents never decrease (" + juce::String ((int) seen.size()) + " events, 0 -> 100); progress.json = the shown number; the line reads 'Measuring 2 of 3 - C (2 at a time)'; got '" + midLine + "'");
         dir.deleteRecursively();
     }
 }

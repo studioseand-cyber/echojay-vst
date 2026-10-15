@@ -139,6 +139,12 @@ What it says is true of the bundle as built:
 - **No time on screen:** the engine's own line ("under a minute left") is in its log and progress.json only; the app never reads it (WZ-NOTIME-1 now also pins that, and the one engine text the app shows, the low-disk stop, tells no time).
 - **This Mac's measuring:** about 27.5 h at 2 jobs before; about 16.3 h at 2 jobs / 12.1 h at 4 with the warm probe (calibrated on the A/B; compressors are now the largest part). UAD's serial lane is unchanged (7.3 h of it).
 
+**3m. One Start, and the measuring screen (Kathy, 15 Oct).**
+- **One Start carries the whole run:** after the scan, a Mac with something to measure (the beta: anything new; the release: eligible) goes straight into measuring - no second button. The overnight run of 14 Oct sat on "Ready to measure - 504 plugins - Start" all night. Reopening the app after a finished scan carries on the same way. Not eligible / nothing new still stops on its screen (a choice: Done, or Contribute anyway). Pin WZ-START-1.
+- **The Measuring screen:** "Ready to measure: N plugins we haven't mapped yet - it's best left running overnight." is its line, N being the engine's own count (the measuring run re-checks the Mac first, so it can differ from the night's: 504 -> 509 on 15 Oct). The bar's right side is a **percentage** of the weighted bar (whole numbers, never backwards), not "n of N" (that counted measurements: a limiter is two, so 517 for 509 plugins). The "N measured so far" line is gone from the screen; it disagreed with the count while demo checks skipped plugins. A soft shimmer drifts along the bar every 3.2 s while measuring runs (never paused, pausing or finishing), so a 20-minute plugin still looks alive. Pin WZ-SCREEN-1.
+- **The name under the bar** is the most recently started plugin. A plugin whose load ended leaves the list even while its item waits (a failed read-back check waits for its map); on 14 Oct "CLA-76 (m)" stayed for two hours. Long names shrink a little rather than being cut. Pins WZ-LABEL-1, WZ-SCREEN-1.
+- **A UAD row Phase B leaves unrun** (no UAD-2 device) now reaches the bar as finished, so the % can reach the end.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

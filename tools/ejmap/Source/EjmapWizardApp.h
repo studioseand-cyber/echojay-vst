@@ -213,7 +213,12 @@ inline juce::String resultsFileName (const juce::Time& t) { return "EchoJay-Wiza
 struct Eligibility { bool already = false, eligible = false; int count = 0, minimum = 5; };
 inline Eligibility eligibilityOf (const juce::var& v)
 { Eligibility e; e.already = (bool) v.getProperty ("already_contributed", false); e.eligible = (bool) v.getProperty ("eligible", false); e.count = (int) v.getProperty ("count", 0); e.minimum = (int) v.getProperty ("minimum", 5); return e; }
-inline Screen afterScan (const Eligibility& e) { return e.already ? Screen::alreadyDone : Screen::scanDone; }
+// ONE START CARRIES THE WHOLE RUN (Kathy, 15 Oct: the overnight run sat on "Ready to measure - 504 plugins - Start" all night): when
+// there is something to measure (the beta: anything new; the release: eligible) the scan goes straight into measuring - no second
+// button. "Ready to measure" is now the Measuring screen's line (measuringText). Not eligible / nothing new still stops on its screen:
+// that is a choice (Done, or Contribute anyway), not a second start.
+inline bool measureStraightAfterScan (Mode m, const Eligibility& e) { return ! e.already && e.count > 0 && (m == Mode::beta || e.eligible); }
+inline Screen afterScan (const Eligibility& e, Mode m = Mode::normal) { return e.already ? Screen::alreadyDone : measureStraightAfterScan (m, e) ? Screen::measuring : Screen::scanDone; }
 // once only needs no scan: the account and the Mac decide it, so /lookup is asked right after consent and an account or Mac that has
 // already taken part loads nothing at all (13 Oct, rehearsal)
 inline Screen afterConsent (const Eligibility& e) { return e.already ? Screen::alreadyDone : Screen::scan; }
@@ -245,13 +250,31 @@ inline bool scanCounts (const juce::String& outOfScopeByType, bool loadsDuringSc
 // an engine whose parent is gone (launchd, pid 1, adopted it): the app quit without stopping it
 inline bool orphaned (int parentPid) { return parentPid == 1; }
 inline juce::String scanWarning() { return "Some plugins may briefly show a licence or sign-in window. That's normal - please don't click it; the wizard closes it and moves on."; }
-inline juce::String measuringText() { return "Leave it running - the Mac stays awake. You can pause and carry on any time."; }
+inline juce::String measuringText (int toMeasure = 0)
+{   // 15 Oct: the scan-done screen's "Ready to measure" words, as the Measuring screen's line (never a time)
+    const juce::String keep = "Leave it running - the Mac stays awake. You can pause and carry on any time.";
+    if (toMeasure <= 0) return keep;
+    return "Ready to measure: " + juce::String (toMeasure) + (toMeasure == 1 ? " plugin" : " plugins") + " we haven't mapped yet - it's best left running overnight. " + keep;
+}
 inline juce::String measuringCount (const juce::var& progress)
 {
     const auto mc = progress.getProperty ("measurements", {});
     if (! mc.isObject() || (int) mc.getProperty ("total", 0) <= 0) return {};
     return juce::String ((int) mc.getProperty ("done", 0)) + " of " + juce::String ((int) mc.getProperty ("total", 0));
 }
+// THE MEASURING BAR AS A PERCENTAGE (Kathy, 15 Oct: "23%", not "12 of 517"): the engine's weighted bar (each plugin weighs Sean's real
+// seconds; a running plugin earns its time so far) over its Measuring band 15..97, in whole numbers, never below what was shown
+inline int measuringPercent (const juce::var& progress, int lastShown)
+{
+    const double pct = (double) progress.getProperty ("percent", 0.0);
+    const int now = juce::jlimit (0, 100, (int) std::floor ((pct - 15.0) / 82.0 * 100.0 + 1.0e-9));
+    return juce::jmax (lastShown, now);
+}
+inline juce::String percentWords (int pct) { return juce::String (pct) + "%"; }
+// the "it's working" shimmer (Kathy, 15 Oct): only while measuring runs - never paused, never while pausing or finishing
+inline bool shimmerOn (Screen s, bool pausing, bool finishing) { return s == Screen::measuring && ! pausing && ! finishing; }
+// where the soft band is at time t (ms): 0..1 across the bar, one sweep every 2.4 s, then a 0.8 s rest
+inline double shimmerPhase (double ms) { const double period = 3200.0, sweep = 2400.0; const double k = std::fmod (ms, period); return k < sweep ? k / sweep : -1.0; }
 inline juce::String pausedText (Mode m, bool keptOffline)
 {
     if (m == Mode::beta) return "It carries on where it stopped - open the wizard any time. Your results so far are in the file on your Desktop: even if you stop early, email it.";
@@ -410,4 +433,6 @@ inline Screen openOn (const Where& w, Mode m = Mode::normal)
     if (w.scanned) return Screen::scanDone;
     return Screen::scan;
 }
+// 15 Oct: an app reopened after a finished scan carries on the same way - straight into measuring when there is something to measure
+inline Screen openOn (const Where& w, Mode m, const Eligibility& e) { const auto s = openOn (w, m); return s == Screen::scanDone ? afterScan (e, m) : s; }
 } // namespace ejmap::wizapp

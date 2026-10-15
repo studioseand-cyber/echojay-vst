@@ -411,6 +411,7 @@ inline int runWizard (const WizardOptions& wo)
         row->setProperty ("state", st); row->setProperty ("why", why);
         const bool mapsNext = st == "queued" && ! store.count (uid + "|" + ver);
         if (! mapsNext) { pendingLoad.erase (ir.desc.name); prog.finished (ir.desc.name, problemState (st)); }   // a failed check is done when its map is
+        else prog.loadEnded (ir.desc.name);   // 15 Oct: its load is over - off the "current" list (the name under the bar) while it waits for its map
         say ("  " + ir.desc.name.paddedRight (' ', 30) + " " + ver.paddedRight (' ', 9) + " -> quick_check / " + st + ": " + why);
     }
     std::set<juce::String> catNames; for (const auto& p : toCategorise) catNames.insert (plugins[p.i].desc.name);

@@ -233,7 +233,7 @@ public:
     {
         std::lock_guard<std::mutex> g (m_);
         for (auto& i : items_) if (i.product == product && ! i.done && ! i.running && (kind.isEmpty() || i.kind == kind)) { i.running = true; startedAt_[product + "|" + i.kind] = juce::Time::getMillisecondCounterHiRes(); break; }
-        if (! current_.contains (product)) current_.add (product);
+        current_.removeString (product); current_.add (product);   // 15 Oct: the newest start is last (the name under the bar)
         if (markers_ != juce::File()) wizapp::markerBegin (markers_, product, stageWord (stage_));
         if (markers_ != juce::File() && stage_ != Stage::packing) markers_.getSiblingFile ("loads.log").appendText (juce::Time::getCurrentTime().toISO8601 (true) + "\t" + stageWord (stage_) + "\t" + product + "\n");   // every load, for the record
         emitLocked (false);
@@ -254,6 +254,17 @@ public:
         if (markers_ != juce::File()) wizapp::markerEnd (markers_, product);
         emitLocked (true);
     }
+    // THE NAME UNDER THE BAR (Kathy, 15 Oct: it sat on "CLA-76 (m)" for two hours while the count climbed): a plugin whose LOAD ended but
+    // whose item is not done yet (a failed read-back check waits for its map) leaves the "current" list now - it is no longer loaded.
+    // The list stays in start order and the name shown is the most recently started (latestLocked)
+    void loadEnded (const juce::String& product)
+    {
+        std::lock_guard<std::mutex> g (m_);
+        for (auto& i : items_) if (i.product == product && i.running && ! i.done) i.running = false;
+        current_.removeString (product);
+        emitLocked (true);
+    }
+    juce::String latest() { std::lock_guard<std::mutex> g (m_); return latestLocked(); }
     // 13 Oct (the scan bar): an item with nothing left to do when its stage begins (a resumed scan: the map is already in the store) counts
     // as done from the first frame - no time recorded, no problem - so the stage's "n of N" starts at its true share
     void alreadyDone (const juce::String& product)
@@ -292,12 +303,13 @@ public:
     juce::String lastLine() const { return lastLine_; }
 
 private:
+    juce::String latestLocked() const { return current_.isEmpty() ? juce::String() : current_[current_.size() - 1]; }   // the most recently started
     juce::String lineLocked (double pct, double eta) const
     {
         int done = 0; for (const auto& i : items_) if (i.done) ++done;
         juce::String what = stageWord (stage_);
         if (stage_ != Stage::done && ! items_.empty()) what << " " << juce::String (juce::jmin ((int) items_.size(), done + 1)) << " of " << juce::String ((int) items_.size());
-        if (current_.size() > 0) what << " - " << current_[0] << (jobs_ > 1 && (stage_ == Stage::scanning || stage_ == Stage::measuring) ? " (" + juce::String (jobs_) + " at a time)" : juce::String());
+        if (current_.size() > 0) what << " - " << latestLocked() << (jobs_ > 1 && (stage_ == Stage::scanning || stage_ == Stage::measuring) ? " (" + juce::String (jobs_) + " at a time)" : juce::String());
         if (stopped_) return barText (pct) + " " + juce::String ((int) std::floor (pct)).paddedLeft (' ', 3) + "%  Stopped";
         return barText (pct) + " " + juce::String ((int) std::floor (pct)).paddedLeft (' ', 3) + "%  " + what + (stage_ == Stage::done ? juce::String() : " - " + etaWords (eta));
     }
@@ -325,7 +337,7 @@ private:
         o->setProperty ("schema", "ej_wizard_progress/0");
         o->setProperty ("percent", std::round (pct * 10.0) / 10.0);
         o->setProperty ("stage", stopped_ ? juce::String ("Stopped") : stageWord (stage_)); o->setProperty ("stage_index", (int) stage_); o->setProperty ("stopped", stopped_);
-        juce::Array<juce::var> cur; for (const auto& c : current_) cur.add (c); o->setProperty ("current", cur);
+        juce::Array<juce::var> cur; for (const auto& c : current_) cur.add (c); o->setProperty ("current", cur); o->setProperty ("current_latest", latestLocked());
         o->setProperty ("plugins", plugins_);
         auto* st = new juce::DynamicObject(); st->setProperty ("done", done); st->setProperty ("to_do", todo); st->setProperty ("total", (int) items_.size()); o->setProperty ("stage_counts", juce::var (st));
         o->setProperty ("problems", problems_);

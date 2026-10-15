@@ -6858,7 +6858,12 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             // THE LICENCE GATE (6 Oct): the scan's stop or a needs_licence row (skipped), the UAD-2 device (needs_device), the licence
             // file (needs_licence: expired / unowned / unmatched); a running demo measures and stamps the row and its records
             const auto gate = licenceGate (opt, pp.product, pp.desc.manufacturerName, opt.out, false);
-            if (uad::leaveUnrunForDevice (gate.stop)) { tmp.deleteRecursively(); ++deviceLeft; say ("  " + cat.name + ": " + pp.product + " - left unrun: " + gate.stop + " (resumes when the device is present)"); return std::nullopt; }
+            if (uad::leaveUnrunForDevice (gate.stop))
+            {   // 15 Oct (the wizard's bar): a row left unrun is over for THIS run - the caller's hook hears it (no row is written: it still runs when the device is present)
+                tmp.deleteRecursively(); ++deviceLeft; say ("  " + cat.name + ": " + pp.product + " - left unrun: " + gate.stop + " (resumes when the device is present)");
+                if (phaseb::rowHooks().finished) phaseb::rowHooks().finished (cat.name, pp.product, "needs_device", 0.0);
+                return std::nullopt;
+            }
             if (gate.stop.isNotEmpty())
             {
                 outcome = gate.stop.contains (uad::kNotConnected) ? "needs_device" : gate.stop.startsWith ("licence file") ? "needs_licence" : "skipped";

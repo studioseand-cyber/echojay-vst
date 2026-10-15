@@ -227,8 +227,10 @@ public:
         }
         if (kTest && ! cfg.only.isEmpty()) logLine ("small run (test_only_plugins): " + cfg.only.joinIntoString (", ") + " | qualify minimum " + juce::String ((int) wizserver::stub::serverConfig (cfg.work).getProperty ("qualify_minimum", 0)));
         logLine ("jobs: " + juce::String (cfg.jobs) + " (" + juce::String (performanceCores()) + " performance cores, " + juce::String (availableMemoryBytes() / 1073741824.0, 1) + " GB free)");
-        show (wizapp::openOn (w, kMode));
+        show (wizapp::openOn (w, kMode, wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString()))));   // 15 Oct: a finished scan carries on into measuring
         startTimer (250);
+        shimmer.tick = [this] { if (wizapp::shimmerOn (screen, pausing, finishing)) repaint (60, 260, getWidth() - 120, 26); };
+        shimmer.startTimerHz (30);   // 15 Oct: the shimmer moves even while one plugin takes 20 minutes
     }
     ~WizardComponent() override { stopTimer(); awake.hold (false); if (engine.running()) engine.pause(); }   // 14 Oct: never leave an engine running
 
@@ -277,9 +279,25 @@ public:
             const auto bar = juce::Rectangle<float> (70.0f, 268.0f, (float) getWidth() - 140.0f, 10.0f);
             g.setColour (juce::Colour (0xffe6e9ef)); g.fillRoundedRectangle (bar, 5.0f);
             g.setColour (accent); g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * (float) juce::jlimit (0.0, 1.0, barValue)), 5.0f);
+            if (wizapp::shimmerOn (screen, pausing, finishing))
+            {   // 15 Oct: the "it's working" shimmer - a soft light band drifting along the bar, calm, every 3.2 s
+                const double ph = wizapp::shimmerPhase (juce::Time::getMillisecondCounterHiRes());
+                if (ph >= 0.0)
+                {
+                    const float cx = bar.getX() + (float) ph * bar.getWidth(), half = 60.0f;
+                    juce::ColourGradient grad (juce::Colours::white.withAlpha (0.0f), cx - half, bar.getY(), juce::Colours::white.withAlpha (0.0f), cx + half, bar.getY(), false);
+                    grad.addColour (0.5, juce::Colours::white.withAlpha (0.55f));
+                    juce::Graphics::ScopedSaveState ss (g); juce::Path clip; clip.addRoundedRectangle (bar, 5.0f); g.reduceClipRegion (clip);
+                    g.setGradientFill (grad); g.fillRect (juce::Rectangle<float> (cx - half, bar.getY(), 2.0f * half, bar.getHeight()));
+                }
+            }
             g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.5f));
-            g.drawText (barLeft, juce::Rectangle<int> (70, 286, getWidth() - 140, 20), juce::Justification::centredLeft);
-            g.drawText (barRight, juce::Rectangle<int> (70, 286, getWidth() - 140, 20), juce::Justification::centredRight);
+            {   // 15 Oct (Kathy: "APB Royal Mu" cut off): the % keeps only the room it needs on the right; the name gets the rest of the width
+                // and shrinks a little rather than being cut ("..."), one line, never under 70% size
+                const juce::Font f (juce::FontOptions (13.5f)); const int rightW = barRight.isEmpty() ? 0 : (int) std::ceil (juce::GlyphArrangement::getStringWidth (f, barRight)) + 14;
+                g.drawText (barRight, juce::Rectangle<int> (70, 286, getWidth() - 140, 20), juce::Justification::centredRight);
+                g.drawFittedText (barLeft, juce::Rectangle<int> (70, 286, getWidth() - 140 - rightW, 20), juce::Justification::centredLeft, 1, 0.7f);
+            }
         }
         if (bigCode.isNotEmpty())
         {
@@ -287,7 +305,6 @@ public:
             g.setColour (juce::Colour (0xfff2f5fb)); g.fillRoundedRectangle (box, 10.0f); g.setColour (accent); g.drawRoundedRectangle (box, 10.0f, 1.5f);
             g.setColour (ink); g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 24.0f, juce::Font::bold)); g.drawText (bigCode, box, juce::Justification::centred);
         }
-        if (screen == Screen::measuring && soFar.isNotEmpty()) { g.setColour (ink); g.setFont (juce::FontOptions (15.0f, juce::Font::bold)); g.drawText (soFar, juce::Rectangle<int> (70, 216, getWidth() - 140, 24), juce::Justification::centred); }
         if (screen == Screen::scan)   // 14 Oct: the licence-window warning
         { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.5f)); g.drawFittedText (wizapp::scanWarning(), juce::Rectangle<int> (70, 330, getWidth() - 140, 40), juce::Justification::centred, 2); }
         if (screen == Screen::measuring && choiceLine.isNotEmpty() && ! finishing && ! pausing)
@@ -308,6 +325,15 @@ private:
     juce::Image logo; juce::TextButton primary, secondary, resetTestButton { "Reset test" }; juce::TextEditor email, password; juce::ToggleButton agree; bool diskRefused = false; juce::String device; juce::File savedFile; juce::var eligibility;
     const juce::Colour accent { 0xff3d5afe }, ink { 0xff141824 };
     Screen screen = Screen::welcome; juce::String title, text, barLeft, barRight, bigCode, pauseNote; bool showBar = false; double barValue = 0.0;
+    int shownPct = 0; juce::int64 readyStamp = 0;   // 15 Oct: the % shown (never backwards); wizard_state.json's time, for the ready line
+    struct Shimmer : juce::Timer { std::function<void()> tick; void timerCallback() override { if (tick) tick(); } } shimmer;
+    void refreshReadyLine()
+    {   // 15 Oct: the ready line follows the engine's own count (the measuring run re-checks the Mac first: 504 at night, 509 this morning)
+        const auto f = engineDir().getChildFile ("wizard_state.json"); const auto t = f.getLastModificationTime().toMilliseconds();
+        if (t == readyStamp || ! f.existsAsFile()) return; readyStamp = t;
+        const int n = (int) juce::JSON::parse (f.loadFileAsString()).getProperty ("to_measure", 0);
+        if (n > 0 && ! pausing && ! finishing) text = wizapp::measuringText (n);
+    }
     std::vector<wizapp::Crashed> crashed; bool quitting = false, finishing = false, pausing = false, quitAfterPause = false, forceAsk = false, lastSendKept = false; juce::String soFar, choiceLine; int lastCheckpointSeq = 0; std::unique_ptr<juce::AlertWindow> closeAsk; int autoTicks = 0, snapN = 0, resetTicks = 0; double lastSnapQuarter = -1.0;
     double uploadT0 = 0.0; juce::var account, receipt; const juce::String launchTag = juce::Time::getCurrentTime().formatted ("%H%M%S");
 
@@ -385,7 +411,7 @@ private:
             case Screen::measuring:
             {
                 const auto ch = wizapp::measuringChoices (kMode);
-                title = "Measuring"; text = wizapp::measuringText();
+                title = "Measuring"; text = wizapp::measuringText (wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString())).count);
                 showBar = true; barValue = 0.0; barLeft = "Getting ready"; barRight = {}; setState ("measure_started", true); finishing = false; pausing = false;
                 primary.setButtonText (ch.pause); primary.setVisible (true); secondary.setButtonText (ch.send); secondary.setVisible (true); secondary.setEnabled (false);
                 choiceLine = ch.line; soFar = wizapp::measuredSoFarWords (0);
@@ -584,7 +610,8 @@ private:
     {
         const auto p = juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString());
         const auto stage = p.getProperty ("stage", "").toString(); const double pct = (double) p.getProperty ("percent", 0.0);
-        juce::String cur; if (const auto* a = p.getProperty ("current", {}).getArray()) if (! a->isEmpty()) cur = (*a)[0].toString();
+        juce::String cur = p.getProperty ("current_latest", "").toString();   // 15 Oct: the most recently started plugin (was the oldest still listed)
+        if (cur.isEmpty()) if (const auto* a = p.getProperty ("current", {}).getArray()) if (! a->isEmpty()) cur = (*a)[a->size() - 1].toString();
         if (screen == Screen::scan)
         {   // the Logic-style bar: the scan is the engine's Scanning + Checking (0..15 of its bar)
             barValue = wizapp::scanBarValue (p); barLeft = cur.isNotEmpty() ? cur : stage == "Checking" ? "Checking" : "Looking for plugins";
@@ -597,7 +624,8 @@ private:
             handleCheckpoint();   // 13 Oct: the hourly checkpoint, as soon as the engine has packed it
             if (pausing) { barLeft = "Pausing - saving what's done"; barRight = {}; }
             else if (finishing && stage != "Packing" && stage != "Done") { barLeft = kMode == wizapp::Mode::beta ? "Saving what's measured" : "Sending what's measured"; barRight = {}; }
-            else if (stage == "Measuring") { barValue = juce::jlimit (0.0, 1.0, (pct - 15.0) / 82.0); barLeft = cur.isNotEmpty() ? cur : "Measuring"; barRight = wizapp::measuringCount (p); }   // 14 Oct: n of N, never time left
+            else if (stage == "Measuring") { shownPct = wizapp::measuringPercent (p, shownPct); barValue = juce::jmax (barValue, shownPct / 100.0); barLeft = cur.isNotEmpty() ? cur : "Measuring"; barRight = wizapp::percentWords (shownPct);   // 15 Oct: a percentage of the weighted bar, whole, never backwards
+                                             refreshReadyLine(); }   // 14 Oct: n of N, never time left
             else if (stage == "Packing" || stage == "Done") { barValue = 1.0; barLeft = "Packing your results"; barRight = {}; }
             else { barValue = 0.0; barLeft = "Getting ready"; barRight = {}; }
         }
@@ -621,7 +649,14 @@ private:
                     if (account.isVoid()) account = juce::JSON::parse (cfg.work.getChildFile ("account.json").loadFileAsString());
                     eligibility = stub::lookup (cfg.work, account, device, juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString()));
                     cfg.work.getChildFile ("eligibility.json").replaceWithText (juce::JSON::toString (eligibility)); logLine ("lookup (STUB): " + juce::JSON::toString (eligibility, true));
-                    show (wizapp::afterScan (wizapp::eligibilityOf (eligibility))); break;
+                    {   // 15 Oct: one Start carries the whole run - straight into measuring when there is something to measure
+                        const auto el = wizapp::eligibilityOf (eligibility); const auto next = wizapp::afterScan (el, kMode);
+                        const auto ws = juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString());
+                        logLine ("scan done: " + juce::String (el.count) + " to measure, estimate " + juce::String ((double) ws.getProperty ("to_measure_eta_s", 0.0), 0) + " s at --jobs " + juce::String (cfg.jobs)
+                                 + (next == wizapp::Screen::measuring ? " - measuring starts now (no second button)" : juce::String()));
+                        show (next);
+                    }
+                    break;
                 }
                 case wizapp::AfterEngine::upload:
                     setState ("measure_done", true);
