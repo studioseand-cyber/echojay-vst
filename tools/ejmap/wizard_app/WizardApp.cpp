@@ -241,7 +241,7 @@ public:
         if (askFirst && ! quitting && ! finishing && ! pausing && screen == Screen::measuring && closeAsk == nullptr && (! cfg.autoMode || forceAsk))
         {   // 13 Oct (Kathy): closing while measuring asks - pause (the default) or send what's done; Escape keeps measuring
             const auto ch = wizapp::measuringChoices (kMode);
-            closeAsk = std::make_unique<juce::AlertWindow> ("Stop measuring for now?", soFar + ". " + ch.line, juce::MessageBoxIconType::NoIcon, this);
+            closeAsk = std::make_unique<juce::AlertWindow> ("Stop measuring for now?", wizapp::percentDoneWords (shownPct) + ". " + ch.line, juce::MessageBoxIconType::NoIcon, this);
             closeAsk->addButton (ch.pause, 1, juce::KeyPress (juce::KeyPress::returnKey)); closeAsk->addButton (ch.send, 2); closeAsk->addButton ("Keep measuring", 0, juce::KeyPress (juce::KeyPress::escapeKey));
             closeAsk->enterModalState (true, juce::ModalCallbackFunction::create ([safe = juce::Component::SafePointer<WizardComponent> (this)] (int r)
             { if (safe == nullptr) return; safe->closeAsk.reset();
@@ -418,7 +418,10 @@ private:
                 startEngine (true); break;
             }
             case Screen::paused:
-                title = "Paused"; text = wizapp::pausedText (kMode, lastSendKept);
+                {   // 15 Oct: the bar's % (this session's, else the stopped engine's own), never a count
+                    const int pct = shownPct > 0 ? shownPct : wizapp::measuringPercent (juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString()), 0);
+                    title = wizapp::pausedTitle (pct); text = wizapp::pausedText (kMode, lastSendKept);
+                }
                 primary.setButtonText ("Carry on"); primary.setVisible (true); secondary.setButtonText ("Quit"); secondary.setVisible (true); break;
             case Screen::upload:
                 title = "Sending your results"; text = "Just the measurements - no audio, no plugin files, nothing personal.";

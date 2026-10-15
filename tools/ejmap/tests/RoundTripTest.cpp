@@ -93,6 +93,7 @@
 #include "EjmapWizardServer.h"
 #include "EjmapWizardRun.h"   // 13 Oct: the scan's stop (mapForWizard, wizardStop)
 #include <sstream>
+#include <thread>
 #include "EjmapCertReview.h"
 #include "EjmapSaturation.h"
 #include "EjmapReverbDelay.h"
@@ -10282,8 +10283,8 @@ void testWizardCategories()
                && run.contains ("const auto hw = wizroute::needsSoundHardware (d.route) ? hardwareStop (ir.desc) : juce::String();")
                && run.contains ("else if (hw.isNotEmpty()) { st = \"needs_hardware\"; why = hw; }")
                && run.contains ("&& (st == \"queued\" || st == \"quick_check\" || st == \"checking\"))   // 15 Oct: only what will load")
-               && run.contains ("if (uad::isUadProduct (dd.name, dd.manufacturerName))") && run.contains ("if (apb::isApbProduct (dd.name, dd.manufacturerName))"),
-               "wizard WZ-HW-1: UAD / APB without their hardware -> needs_hardware at the scan on the measure / read-back / signature routes; an APB unit by its registry names, McDSP's software is not one (read: " + juce::String ((int) read) + ")");
+               && ! run.contains ("if (uad::isUadProduct (dd.name, dd.manufacturerName))") && run.contains ("if (apb::isApbProduct (dd.name, dd.manufacturerName))"),   // 15 Oct: UAD is measured by sound (WZ-UAD-1)
+               "wizard WZ-HW-1: APB without its unit -> needs_hardware at the scan on the measure / read-back / signature routes (UAD by sound since 15 Oct); an APB unit by its registry names, McDSP's software is not one (read: " + juce::String ((int) read) + ")");
     }
     // WZ-SURROUND-1 SURROUND VARIANTS ARE OUT OF SCOPE (Kathy, 15 Oct): EchoJay works on mono / stereo tracks - a "(a->b)" name with a or b above 2,
     // or a layout word (5.0, 5.1, 7.1 ...), is out of scope at the scan: not loaded, not measured, not counted, whatever its category; the (m),
@@ -10303,6 +10304,89 @@ void testWizardCategories()
                && run.contains ("wizroute::isMultiband (dbMultiband, uid), wizroute::surroundLayout (ir.desc.name))")
                && run.contains ("scanCounts (categorise::outOfScope (typeOf (ir.desc), name, {}) + wizroute::surroundLayout (name),"),
                "wizard WZ-SURROUND-1: (5->5) / (6->6) / (1->5) / (6->2) / (4->4) / 5.1 / 7.1 out of scope at the scan, before the server's category; (m) / (s) / (m->s) / (s->m) / (2->2) measured; not counted (read: " + juce::String ((int) read) + ")");
+    }
+    // WZ-UAD-1 UAD BY SOUND, NOT BY DEVICE (Kathy, 15 Oct: UADx / Spark need no hardware; all 216 UAD bundles here are one UA wrapper build and
+    // no file tells native from DSP-only): under EJ_UAD_NATIVE=1 (the wizard sets it for its process tree) the UAD-2 device gate is off; EJ
+    // Map's own runs (unset) still gate. Measured 15 Oct: UAD Teletronix LA-2A Gray processed a tone with no UAD-2 device present
+    {
+        using namespace ejmap::cert;
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejuad_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30))); dir.createDirectory();
+        SweepOptions o; const bool devicePresent = ejmap::uad::device().present;
+        unsetenv ("EJ_UAD_NATIVE"); const auto gated = licenceGate (o, "UAD Teletronix LA-2A Gray", "Universal Audio", dir, false);
+        setenv ("EJ_UAD_NATIVE", "1", 1); const auto open = licenceGate (o, "UAD Teletronix LA-2A Gray", "Universal Audio", dir, false); unsetenv ("EJ_UAD_NATIVE");
+        dir.deleteRecursively();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check ((devicePresent || gated.stop.contains (ejmap::uad::kNotConnected)) && open.stop.isEmpty() && run.contains ("setenv (\"EJ_UAD_NATIVE\", \"1\", 1);"),
+               "wizard WZ-UAD-1: with no UAD-2 device the gate stops UAD for EJ Map ('" + gated.stop.substring (0, 40) + "') and lets it through under EJ_UAD_NATIVE (the wizard sets it)");
+    }
+    // WZ-SOUND-1 THE SOUND CHECK (Kathy, 15 Oct): in the demo check, a tone in and digital silence out -> needs_licence at once; the output IS the
+    // input and no control tried (switches, then gain / output / drive, each to both ends) moves it -> needs_licence at once; anything that
+    // changes the signal, or offers nothing to try, is measured. Measured 15 Oct: bx_opto Pedal 0.4 s (was 182 s), NEOLD U17 18 s (was 128 s)
+    {
+        using namespace ejmap::cert;
+        auto trace = [] (double in, double out) { juce::String t; for (int k = 0; k < 40; ++k) t << "bwin\tt_ms\t" << (4000 + 50 * k) << "\tseg\tloud\tin_db\t" << juce::String (in, 3) << "\tout_db\t" << juce::String (out, 3) << "\n"; return t; };
+        const auto silentT = trace (-21.0, -160.0), dryT = trace (-21.0, -21.0), wetT = trace (-21.0, -24.0), noInput = trace (-90.0, -160.0), almostDry = trace (-21.0, -20.9);
+        const juce::String list = "0\tPower\t\t2\t1\t1\t0\n1\tAttack\tms\t2147483647\t0\t1\t0\n2\tOutput\tdB\t2147483647\t0\t1\t0\n3\tGain Reduction\tdB\t2147483647\t0\t0\t0\n4\tGain\t\t2147483647\t0\t1\t0\n5\tDrive\t\t2147483647\t0\t1\t0\n";
+        const auto c = soundcheck::candidates (list);
+        juce::String w1, w2, w3;
+        const bool inertAll = soundcheck::inert (-21.0, { { "Power -> 0.0", -21.0 }, { "Output -> 1.0", -21.02 } }, w1);
+        const bool moved = soundcheck::inert (-21.0, { { "Power -> 0.0", -21.0 }, { "Output -> 1.0", -20.5 } }, w2);
+        const bool nothing = soundcheck::inert (-21.0, {}, w3);
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (soundcheck::silent (silentT) && ! soundcheck::dry (silentT) && soundcheck::dry (dryT) && ! soundcheck::silent (dryT) && ! soundcheck::dry (wetT) && ! soundcheck::silent (wetT)
+               && ! soundcheck::silent (noInput) && ! soundcheck::dry (almostDry)
+               && c.size() == 3 && c[0].first == 0 && c[1].first == 2 && c[2].first == 4   // the switch first, then Output and Gain; Attack and the read-only Gain Reduction meter never
+               && inertAll && w1.startsWith ("licence suspected: never processes") && ! moved && w2.startsWith ("it processes") && ! nothing
+               && run.contains ("if (r.cleanExit() && soundcheck::dry (r.out))") && run.contains ("if (v.demo || v.window || v.silent || v.inert) demos.add (name);")
+               && run.contains ("\"state\", v.window || v.silent || v.inert ? \"needs_licence\" : \"demo\"") && run.contains ("v.silent = (bool) c.getProperty (\"silent\", false); v.inert = (bool) c.getProperty (\"inert\", false);"),
+               "wizard WZ-SOUND-1: silence and never-processing caught in the demo check (needs_licence at once); anything that changes the signal measured; the switch, then Output / Gain tried");
+    }
+    // WZ-REWARD-2 (Kathy, 15 Oct): needs_hardware and surround are out of BOTH totals - the qualify count counts "queued" only, and neither is ever
+    // enqueued (the hardware check and the surround rule act before a row can be queued), so neither is in the run's queue (the finish total)
+    {
+        using namespace ejmap::wizserver;
+        auto row = [] (const char* st) { auto* o = new juce::DynamicObject(); o->setProperty ("state", st); o->setProperty ("plugin_id", juce::String ("AudioUnit|") + st); return juce::var (o); };
+        auto* w = new juce::DynamicObject(); const juce::var ws (w);
+        w->setProperty ("plugins", juce::Array<juce::var> { row ("queued"), row ("queued"), row ("needs_hardware"), row ("out_of_scope"), row ("needs_licence"), row ("ready") });
+        const auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejrw_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30))); work.createDirectory();
+        const auto e = stub::lookupEligibility (work, "acct_x", "dev_x", ws); work.deleteRecursively();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto routing = run.fromFirstOccurrenceOf ("const auto hw = wizroute::needsSoundHardware", false, false).upToFirstOccurrenceOf ("row->setProperty (\"state\", st);", false, false);
+        check ((int) e.getProperty ("count", -1) == 2 && routing.indexOf ("else if (hw.isNotEmpty()) { st = \"needs_hardware\"; why = hw; }") >= 0
+               && routing.indexOf ("needs_hardware") < routing.indexOf ("toMap.push_back") && run.contains ("if (rv.getProperty (\"phaseb\", \"\").toString().isEmpty()) continue;"),
+               "wizard WZ-REWARD-2: the qualify count is the queued rows only (2 of 6); needs_hardware is filed before anything is queued; the finish total is the queued (phaseb) rows");
+    }
+    // WZ-PAUSE-1 (Kathy, 15 Oct): the pause says the bar's % - "Paused at 43%", "43% done." - never a count
+    {
+        using namespace ejmap::wizapp;
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        check (pausedTitle (43) == "Paused at 43%" && percentDoneWords (43) == "43% done" && ! tellsATime (pausedTitle (43))
+               && app.contains ("wizapp::percentDoneWords (shownPct) + \". \" + ch.line") && app.contains ("title = wizapp::pausedTitle (pct);") && ! app.contains ("(\"Stop measuring for now?\", soFar"),
+               "wizard WZ-PAUSE-1: 'Paused at 43%' and '43% done.' - the bar's number, not 'N measured so far'");
+    }
+    // WZ-SERVE-3 THE WARM PROBE IN CHECKING (Kathy, 15 Oct): the read-back checks and the signature reads ask for it on their own thread
+    // (ScopedServe); another thread (the maps, the demo checks) stays one process per call; leaving the section closes the warm process
+    {
+        using namespace ejmap::cert;
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejserve3_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30))); dir.createDirectory();
+        const auto fake = dir.getChildFile ("EchoJayProbe");
+        fake.replaceWithText ("#!/bin/sh\nif [ \"$1\" = \"--serve\" ]; then printf '\\nejprobe-ready\\tkeeper\\theld\\n'; while IFS= read -r line; do printf 'served %s\\n\\nejprobe-served\\t0\\n' \"$$\"; done; exit 0; fi\nprintf 'oneshot\\n'\nexit 0\n", false, false, "\n");
+        fake.setExecutePermission (true);
+        const juce::StringArray a { fake.getFullPathName(), "Fake", "AudioUnit:Effects/aufx,FAKE,Test", "1", "--list-params" };
+        unsetenv ("EJ_PROBE_SERVE");
+        ChildResult r1, r2, other; int pidAfter = -1;
+        {
+            probeserve::ScopedServe warm (true);
+            r1 = runChild (a, 10000, WatchOptions { false }); r2 = runChild (a, 10000, WatchOptions { false });
+            std::thread t ([&] { other = runChild (a, 10000, WatchOptions { false }); }); t.join();
+        }
+        pidAfter = (int) probeserve::server().pid;
+        const auto off = runChild (a, 10000, WatchOptions { false });
+        dir.deleteRecursively();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (r1.out.startsWith ("served ") && r2.pid == r1.pid && other.out == "oneshot\n" && pidAfter == 0 && off.out == "oneshot\n"
+               && run.contains ("{ probeserve::ScopedServe warmReadBacks (opt.probeServe);") && run.contains ("{ probeserve::ScopedServe warmSignatures (opt.probeServe);"),
+               "wizard WZ-SERVE-3: the warm probe on the Checking thread only (served twice, another thread one-shot), closed when the section ends");
     }
     // WZ-LABEL-1 THE NAME UNDER THE BAR (Kathy, 15 Oct: "CLA-76 (m)" for two hours while the count climbed): a plugin whose load ended leaves
     // the current list even when its item waits (a failed check waits for its map); the name shown is the most recently started
@@ -10421,13 +10505,18 @@ void testWizardCategories()
         std::vector<juce::PluginDescription> ds; for (auto [n, u] : { std::pair<const char*, int> { "MTurboComp", 1 }, { "elysia mpressor", 2 } }) { juce::PluginDescription d; d.name = n; d.uniqueId = u; d.version = "1.0"; ds.push_back (d); }
         int calls = 0;
         auto fake = [&] (const juce::StringArray& a) { ++calls; ejmap::cert::ChildResult r; r.kind = ejmap::cert::ChildResult::Kind::exited; r.code = 0;
-            r.out = dd.getChildFile (a[1] == "MTurboComp" ? "MTurboComp.burst.txt" : "elysia_mpressor.burst.txt").loadFileAsString(); return r; };
+            // 15 Oct (the sound check): a dry output is asked whether any control moves it - the fake lists an Output, and moving it changes the tone
+            if (a.contains ("--list-params")) { r.out = "0\tOutput\tdB\t2147483647\t0\t1\t0\n"; return r; }
+            bool moved = false; for (const auto& x : a) if (x.startsWith ("set=")) moved = true;
+            r.out = dd.getChildFile (moved || a[1] == "MTurboComp" ? "MTurboComp.burst.txt" : "elysia_mpressor.burst.txt").loadFileAsString(); return r; };
         ejmap::cert::wizardStop() = 0;
         const auto v1 = ejmap::cert::demoCheckForWizard (ds, 2, fake, juce::File ("/nonexistent/probe"), work.getChildFile ("demo_checks.json"));
         const int after1 = calls;
         const auto v2 = ejmap::cert::demoCheckForWizard (ds, 2, fake, juce::File ("/nonexistent/probe"), work.getChildFile ("demo_checks.json"));
         work.deleteRecursively();
-        check (v1.at ("MTurboComp").demo && ! v1.at ("elysia mpressor").demo && after1 == 2 && calls == 2 && v2.at ("MTurboComp").demo && ! v2.at ("elysia mpressor").demo,
+        const bool mpDry = ejmap::cert::soundcheck::dry (dd.getChildFile ("elysia_mpressor.burst.txt").loadFileAsString());
+        check (v1.at ("MTurboComp").demo && ! v1.at ("elysia mpressor").demo && ! v1.at ("elysia mpressor").inert && ! v1.at ("elysia mpressor").silent
+               && after1 == (mpDry ? 5 : 2) && calls == after1 && v2.at ("MTurboComp").demo && ! v2.at ("elysia mpressor").demo && ! v2.at ("elysia mpressor").inert,
                "wizard WZ-DEMO-2: the wizard's demo step files MTurboComp a demo, mpressor not; the measuring run reads demo_checks.json (no second render)");
     }
     // WZ-DISK (beta item 2): the free-disk floor - 3 GB to start, 1 GB to keep going; the words say what it needs; the rehearsal override

@@ -423,6 +423,16 @@ struct Server
 };
 inline std::mutex& serverMutex() { static std::mutex m; return m; }
 inline Server& server() { static Server s; return s; }
+// 15 Oct (the wizard's Checking): a caller's own sequential section - the read-back checks, the signature reads - can ask for the warm
+// probe on ITS thread only; the engine's parallel work (the maps, the demo checks) stays one process per call. Leaving the section closes
+// the warm process, so no plugin stays loaded behind it
+inline bool& threadServe() { thread_local bool on = false; return on; }
+struct ScopedServe
+{
+    bool was;
+    explicit ScopedServe (bool on) : was (threadServe()) { threadServe() = on; }
+    ~ScopedServe() { threadServe() = was; std::lock_guard<std::mutex> g (serverMutex()); server().stop (false); }
+};
 inline int& restartsTotal() { static int n = 0; return n; }
 }
 
@@ -497,7 +507,7 @@ inline ChildResult runServed (const juce::StringArray& args, int timeoutMs, Watc
 }
 inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, WatchOptions watch = {}, const Clock& clock = {})
 {
-    if (probeserve::enabledByEnv() && probeserve::servable (args)) return runServed (args, timeoutMs, watch, clock);
+    if ((probeserve::enabledByEnv() || probeserve::threadServe()) && probeserve::servable (args)) return runServed (args, timeoutMs, watch, clock);
     return runChildDirect (args, timeoutMs, watch, clock);
 }
 
@@ -3273,7 +3283,7 @@ inline LicenceGate licenceGate (const SweepOptions& opt, const juce::String& pro
 {
     LicenceGate g; licenceStampLine().clear(); licenceStampVar() = juce::var();
     if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (certRoot.getChildFile ("outcomes.json").loadFileAsString()), product, retryLicence); known.isNotEmpty()) { g.stop = known; return g; }
-    if (uad::isUadProduct (product, manufacturer))
+    if (uad::isUadProduct (product, manufacturer) && ! uad::nativeNoGate())   // 15 Oct: the wizard measures UAD by sound (EjmapUadPreflight.h)
     {
         const auto& d = uad::device (opt.assumeUadDevice || assumeUadDeviceFlag());
         if (! d.present) { g.stop = juce::String (uad::kNotConnected) + " (" + d.how + "); not loaded"; return g; }
@@ -6783,7 +6793,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
         bool anyUad = false; for (const auto& [c, l] : work) for (const auto& pp : l) if (uad::isUadProduct (pp.product, pp.desc.manufacturerName)) anyUad = true;
         if (anyUad)
         {
-            const bool present = uad::device (opt.assumeUadDevice).present; int refiled = 0;
+            const bool present = uad::device (opt.assumeUadDevice).present || uad::nativeNoGate(); int refiled = 0;   // 15 Oct: under the wizard an old "device not connected" row runs again
             for (const auto& cat : categories()) if (work.count (cat.name)) for (const auto& pp : work[cat.name])
                 if (isDone (phasebDir, cat.name, pp.stem) && uad::refileForDevice (juce::JSON::parse (rowFile (phasebDir, cat.name, pp.stem).loadFileAsString()), present)) { rowFile (phasebDir, cat.name, pp.stem).deleteFile(); ++refiled; }
             if (refiled > 0) say ("PHASEB: UAD-2 device present: " + juce::String (refiled) + " row(s) filed 'device not connected' run again");
@@ -6809,7 +6819,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     };
     {   // THE UAD-2 PREFLIGHT, once, said at the start (Sean, 6 Oct): absent -> every UAD product below is filed "UAD-2 device not connected", none loaded
         int uadN = 0; for (const auto& [c, l] : work) for (const auto& pp : l) if (uad::isUadProduct (pp.product, pp.desc.manufacturerName)) ++uadN;
-        if (uadN > 0) { const auto& d = uad::device (opt.assumeUadDevice); say ("PHASEB: UAD-2 device " + juce::String (d.present ? "present" : "ABSENT") + ": " + d.how + (d.present ? juce::String() : " -> " + juce::String (uadN) + " UAD row(s) will be left unrun (no row written: they run when the device is present; the step stays resumable), none loaded")); }
+        if (uadN > 0 && ! uad::nativeNoGate()) { const auto& d = uad::device (opt.assumeUadDevice); say ("PHASEB: UAD-2 device " + juce::String (d.present ? "present" : "ABSENT") + ": " + d.how + (d.present ? juce::String() : " -> " + juce::String (uadN) + " UAD row(s) will be left unrun (no row written: they run when the device is present; the step stays resumable), none loaded")); }
         const auto lines = licenceLinesOf (opt.out); if (! lines.empty()) say ("PHASEB: licence file licences.csv: " + juce::String ((int) lines.size()) + " line(s); governed products are gated (owned / demo load, the rest never)");
     }
     say ("PHASEB: " + juce::String (totalAll) + " product(s) over " + juce::String ((int) work.size()) + " categor" + (work.size() == 1 ? "y" : "ies") + " -> " + phasebDir.getFullPathName() + "  (resumable; Ctrl-C any time; a product's result lands only when it is complete)");

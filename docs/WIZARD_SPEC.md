@@ -156,6 +156,23 @@ What it says is true of the bundle as built:
 - **How it is read:** from the NAME (the scan loads nothing to learn a layout): "(a->b)" with a or b above 2 (Waves' (5->5), (2->6), (6->2), the B360 (4->4)), or a layout word (4.0 ... 9.1.6).
 - **This Mac:** 86 variants: H-Reverb x12, IR360 x9, R360 x6, L360 x2 were queued. On 15 Oct L360 (5->5) / (6->6) took ~50 min each in their compressor pass. New plan: 312 plugins to measure (315 measurements; was 341), 85 surround out of scope. Pin WZ-SURROUND-1.
 
+**3p. Before the fresh run (Kathy, 15 Oct).**
+- **UAD by sound, not by device:**
+  - All 216 UAD bundles on this Mac are one UA plugin-wrapper build (manifest.json with uad2_manifest, pac_branch release/uapw_*); no file tells a native UADx / Spark plugin from a DSP-only one.
+  - Measured: UAD Teletronix LA-2A Gray processed a tone with no UAD-2 device present.
+  - So the wizard turns the device gate off for its whole process tree (EJ_UAD_NATIVE=1; EJ Map's own runs are unchanged) and the sound check decides. On this Mac a UAD plugin then shows UA's authorisation window at its load: the window watch closes it (never clicked), the plugin is filed needs_licence in ~4 s and is remembered.
+  - APB stays needs_hardware at the scan. Pin WZ-UAD-1 (WZ-HW-1 now APB only).
+- **The sound check** (in the demo check at the start of measuring):
+  - Tone in, digital silence out: needs_licence at once.
+  - Output identical to the input, and none of up to 3 controls the certification would try (switches first, then gain / output / drive, each to both ends) moves it: needs_licence at once ("never processes").
+  - Anything that changes the signal, or offers no control to try, is measured.
+  - Measured: bx_opto Pedal 0.4 s (was 182 s), NEOLD U17 18 s (was 128 s); CLA-2A (m) measured as before. Pins WZ-SOUND-1, WZ-DEMO-2.
+- **The reward totals:** the qualify count is the "queued" rows only, and the finish total is the queued (phaseb) rows. needs_hardware and surround rows are filed before anything is queued, so they are in neither. Pin WZ-REWARD-2.
+- **The pause:** "Paused at 43%" and "43% done." - the bar's number, never a count. Pin WZ-PAUSE-1.
+- **The warm probe in Checking:** the read-back checks and the signature reads use it on their own thread (the maps and demo checks stay one process per call), and it closes when the section ends.
+  - A/B on 9 plugins: read-back verdicts, signature results, all 35 raw traces (clocks masked) and every routing line identical; 199 s -> 103 s.
+  - Pin WZ-SERVE-3.
+
 **3a. The stop (13 Oct).** Closing the window or a Ctrl-C stops the same way while scanning, checking or measuring: "Stopped - it carries on next time".
 - What finished stays: maps, signature reads, demo checks, measured rows.
 - What was in flight is discarded, never filed as crashed. No crash marker is left, so the next launch puts nobody on the never-retry list.

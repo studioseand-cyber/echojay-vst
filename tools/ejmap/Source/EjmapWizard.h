@@ -258,7 +258,7 @@ inline juce::StringArray personalProblems (const juce::String& text, const juce:
 // A demo is not measured and not sent. Output silent throughout is not judged here (silent_output's business); the first 3 s settle.
 inline constexpr double kDemoHoldS = 60.0, kDemoDipDb = 20.0, kDemoSettleMs = 3000.0;
 inline juce::StringArray demoProbeArgs() { return { "--burst", "quiet=-60", "loud=-18", "pre=1.0", "hold=" + juce::String (juce::roundToInt (kDemoHoldS)), "post=0.5", "hz=997", "win_ms=50" }; }
-struct DemoVerdict { bool judged = false, demo = false, window = false; int dropouts = 0; double firstS = 0.0, depthDb = 0.0; juce::String why; };   // window (14 Oct): a licence window at the load
+struct DemoVerdict { bool judged = false, demo = false, window = false, silent = false, inert = false; int dropouts = 0; double firstS = 0.0, depthDb = 0.0; juce::String why; };   // window (14 Oct): a licence window at the load
 inline DemoVerdict demoDropouts (const juce::String& trace)
 {
     DemoVerdict v; std::vector<std::pair<double, std::pair<double, double>>> w;   // t_ms -> (in, out), the loud segment after the settle

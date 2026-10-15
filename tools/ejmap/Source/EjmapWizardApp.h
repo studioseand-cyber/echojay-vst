@@ -271,6 +271,10 @@ inline int measuringPercent (const juce::var& progress, int lastShown)
     return juce::jmax (lastShown, now);
 }
 inline juce::String percentWords (int pct) { return juce::String (pct) + "%"; }
+// THE PAUSE SAYS THE BAR'S % (Kathy, 15 Oct: the pause said "25 measured so far" while the checkpoint said 107 of 509 with a result - two
+// different counts): "Paused at 43%" on the screen, "43% done." in the close question - the same number as the bar, never a count
+inline juce::String pausedTitle (int pct) { return "Paused at " + percentWords (pct); }
+inline juce::String percentDoneWords (int pct) { return percentWords (pct) + " done"; }
 // the "it's working" shimmer (Kathy, 15 Oct): only while measuring runs - never paused, never while pausing or finishing
 inline bool shimmerOn (Screen s, bool pausing, bool finishing) { return s == Screen::measuring && ! pausing && ! finishing; }
 // where the soft band is at time t (ms): 0..1 across the bar, one sweep every 2.4 s, then a 0.8 s rest

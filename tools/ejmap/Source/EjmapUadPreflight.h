@@ -72,6 +72,12 @@ inline const Device& device (bool assumePresent = false)
 inline juce::var deviceVar (const Device& d) { auto* o = new juce::DynamicObject(); o->setProperty ("present", d.present); o->setProperty ("how", d.how); o->setProperty ("panel_running", d.panelRunning); juce::Array<juce::var> ls; for (const auto& l : d.lines) ls.add (l); o->setProperty ("lines", ls); return juce::var (o); }
 
 inline constexpr const char* kNotConnected = "UAD-2 device not connected";
+// THE WIZARD MEASURES UAD BY SOUND, NOT BY DEVICE (Kathy, 15 Oct): UA's v11 plugins (all 216 on her Mac: one "UA plugin wrapper" build,
+// manifest.json with uad2_manifest, pac_branch release/uapw_*) load and run with no UAD-2 device - UADx / Spark run natively - and no
+// file tells a native-capable plugin from a DSP-only one. So under EJ_UAD_NATIVE=1 (set by the wizard for its whole process tree) the
+// device gate is off and the sound check at the start of measuring decides: a plugin that passes no sound or never processes is filed
+// needs_licence at once, one that processes is measured. EJ Map's own runs are unchanged (the variable is unset)
+inline bool nativeNoGate() { const char* v = std::getenv ("EJ_UAD_NATIVE"); return v != nullptr && juce::String (v) == "1"; }
 // THE DEVICE IS A CONDITION, NOT AN ANSWER (Kathy, 10 Oct: Sean's Satellite read ABSENT at 04:51 and 44 UAD EQ rows were filed
 // "device not connected"): with the device absent a UAD row is LEFT UNRUN (no row written, the step ends resumable); with it present
 // an old needs_device row is re-filed (deleted) so it runs. A licence stop is still an answer.

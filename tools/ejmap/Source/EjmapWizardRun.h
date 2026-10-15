@@ -120,6 +120,71 @@ inline void mapForWizard (const std::vector<juce::PluginDescription>& ds, int jo
     pool (idx, juce::jmax (1, jobs));
 }
 
+// THE SOUND CHECK (Kathy, 15 Oct: bx_opto Pedal and three APB passed digital silence, NEOLD U17 / U2A / V76U73 never processed - each was
+// still fully measured, 2-8 min, before the certification filed it). Part of the demo check, on its own steady tone:
+//   - SILENT: the input present and the output digital silence in every window -> needs_licence at once (no sound at all);
+//   - INERT: the output IS the input (every window within kDrySameDb) - then up to 3 controls the certification's inert check would try
+//     (power-type switches first, then gain / output / drive by name: sweep::inertPowerName / inertGainName) are each written to BOTH
+//     ends on the same tone; if none moves the output by more than sweep::kInertSameDb, "processing never runs" -> needs_licence at once.
+// A plugin that changes the signal at all, or offers no control to try, is never skipped: it is measured (the certification still judges).
+namespace soundcheck
+{
+inline constexpr double kDrySameDb = 0.05, kSilentDb = -120.0, kInputPresentDb = -60.0;
+struct Loud { std::vector<double> in, out; };
+inline Loud loudOf (const juce::String& trace)
+{
+    Loud l;
+    for (const auto& line : juce::StringArray::fromLines (trace))
+    {
+        if (! line.startsWith ("bwin\t")) continue;
+        const auto f = juce::StringArray::fromTokens (line, "\t", "");
+        auto val = [&] (const char* k) { const int i = f.indexOf (k); return i >= 0 && i + 1 < f.size() ? f[i + 1] : juce::String(); };
+        if (val ("seg") != "loud" || val ("t_ms").getDoubleValue() < wizard::kDemoSettleMs) continue;
+        l.in.push_back (val ("in_db").getDoubleValue()); l.out.push_back (val ("out_db").getDoubleValue());
+    }
+    return l;
+}
+inline double median (std::vector<double> x) { if (x.empty()) return -999.0; std::sort (x.begin(), x.end()); return x[x.size() / 2]; }
+inline double medianOut (const juce::String& trace) { return median (loudOf (trace).out); }
+inline bool silent (const juce::String& trace)
+{
+    const auto l = loudOf (trace); if (l.out.size() < 20 || median (l.in) < kInputPresentDb) return false;
+    for (double o : l.out) if (o > kSilentDb) return false;
+    return true;
+}
+inline bool dry (const juce::String& trace)
+{
+    const auto l = loudOf (trace); if (l.out.size() < 20 || median (l.out) < -100.0) return false;
+    for (size_t i = 0; i < l.out.size(); ++i) if (std::abs (l.out[i] - l.in[i]) > kDrySameDb) return false;
+    return true;
+}
+// the controls to try, from --list-params ("index name label numSteps isDiscrete automatable meta"): switches first, then gain words
+inline std::vector<std::pair<int, juce::String>> candidates (const juce::String& listOut)
+{
+    std::vector<std::pair<int, juce::String>> power, gain;
+    for (const auto& line : juce::StringArray::fromLines (listOut))
+    {
+        const auto f = juce::StringArray::fromTokens (line, "\t", "");
+        if (f.size() < 6 || ! f[0].containsOnly ("0123456789") || f[0].isEmpty() || f[5] != "1") continue;   // automatable only
+        const int idx = f[0].getIntValue(); const auto name = f[1]; const int steps = f[3].getIntValue();
+        if (steps == 2 && sweep::inertPowerName (name)) power.push_back ({ idx, name });
+        else if (steps != 2 && sweep::inertGainName (name)) gain.push_back ({ idx, name });
+    }
+    std::vector<std::pair<int, juce::String>> out = power; for (const auto& g : gain) out.push_back (g);
+    if (out.size() > 3) out.resize (3);
+    return out;
+}
+// inert: something was tried and nothing moved the output
+inline bool inert (double defaultDb, const std::vector<std::pair<juce::String, double>>& tries, juce::String& why)
+{
+    if (tries.empty()) { why = "no control to try"; return false; }
+    juce::StringArray said; bool moved = false;
+    for (const auto& [what, db] : tries) { said.add (what + ": " + juce::String (db - defaultDb, 2) + " dB"); if (std::abs (db - defaultDb) > sweep::kInertSameDb) moved = true; }
+    why = (moved ? "it processes (" : "licence suspected: never processes - the output is the input, unchanged by every control tried (") + said.joinIntoString ("; ") + ")";
+    return ! moved;
+}
+}
+
 // THE DEMO CHECK (beta item 2): every plugin about to be measured gets one steady tone (wizard::demoDropouts); cached by plugin_id in
 // <out>/demo_checks.json so the measuring run does not render it again. `runner` is the probe (the suite's fake).
 inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std::vector<juce::PluginDescription>& ds, int jobs, const std::function<ChildResult (const juce::StringArray&)>& runner,
@@ -132,7 +197,7 @@ inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std
     for (size_t i = 0; i < ds.size(); ++i)
     {
         const auto c = cache.getProperty (pidOf (ds[i]), {});
-        if (c.isObject()) { wizard::DemoVerdict v; v.judged = (bool) c.getProperty ("judged", false); v.demo = (bool) c.getProperty ("demo", false); v.window = (bool) c.getProperty ("window", false); v.why = c.getProperty ("why", "").toString(); out[ds[i].name] = v; }
+        if (c.isObject()) { wizard::DemoVerdict v; v.judged = (bool) c.getProperty ("judged", false); v.demo = (bool) c.getProperty ("demo", false); v.window = (bool) c.getProperty ("window", false); v.silent = (bool) c.getProperty ("silent", false); v.inert = (bool) c.getProperty ("inert", false); v.why = c.getProperty ("why", "").toString(); out[ds[i].name] = v; }
         else todo.push_back (i);
     }
     std::mutex m;
@@ -141,16 +206,39 @@ inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std
     pool.stopped = [] { return wizardStop() != 0; };
     pool.prepare = [&] (const size_t& i) -> std::optional<juce::StringArray> { juce::StringArray a { probe.getFullPathName(), ds[i].name, ds[i].fileOrIdentifier, juce::String::toHexString (ds[i].uniqueId) }; a.addArray (wizard::demoProbeArgs()); return a; };
     std::map<juce::String, double> started;   // 14 Oct: each check's wall time (load + the offline render + the read), into the cache
-    pool.run = [&] (const juce::StringArray& a) { { std::lock_guard<std::mutex> g (m); started[a[1]] = juce::Time::getMillisecondCounterHiRes(); } return runner (a); };
+    std::map<juce::String, std::vector<std::pair<juce::String, double>>> tries;   // 15 Oct: the sound check's control tries, by plugin
+    pool.run = [&] (const juce::StringArray& a)
+    {
+        { std::lock_guard<std::mutex> g (m); started[a[1]] = juce::Time::getMillisecondCounterHiRes(); }
+        auto r = runner (a);
+        if (r.cleanExit() && soundcheck::dry (r.out))
+        {   // the output IS the input: does any control change it? (only here - a plugin that colours the tone is never asked)
+            juce::StringArray base { a[0], a[1], a[2], a[3] }; auto la = base; la.add ("--list-params");
+            const auto lr = runner (la); std::vector<std::pair<juce::String, double>> t;
+            if (lr.cleanExit()) for (const auto& [idx, name] : soundcheck::candidates (lr.out))
+                for (float end : { 0.0f, 1.0f })
+                {
+                    auto ba = base; ba.addArray (wizard::demoProbeArgs()); ba.add ("set=" + juce::String (idx) + ":" + juce::String (end, 1));
+                    const auto br = runner (ba);
+                    if (br.cleanExit()) t.push_back ({ name + " -> " + juce::String (end, 1), soundcheck::medianOut (br.out) });
+                }
+            std::lock_guard<std::mutex> g (m); tries[a[1]] = t;
+        }
+        return r;
+    };
     pool.discard = [] (const size_t&, juce::StringArray&) {};
     pool.finish = [&] (const size_t& i, juce::StringArray&, ChildResult& r)
     {
         auto v = r.cleanExit() ? wizard::demoDropouts (r.out) : wizard::DemoVerdict();   // a probe that failed here is the measurement's business, not a demo
+        if (r.cleanExit() && soundcheck::silent (r.out)) { v.silent = true; v.judged = true; v.why = "no sound at all: a steady tone in, digital silence out (activation / licence) - not measured"; }
+        else if (r.cleanExit() && soundcheck::dry (r.out))
+        {   juce::String why; std::vector<std::pair<juce::String, double>> t; { std::lock_guard<std::mutex> g (m); t = tries[ds[i].name]; }
+            if (soundcheck::inert (soundcheck::medianOut (r.out), t, why)) { v.inert = true; v.judged = true; v.why = why + " - not measured"; } }
         if (r.kind == ChildResult::Kind::uiShown) { v.window = true; v.why = "a licence window appeared at the load"; }   // 14 Oct: not loaded again
         std::lock_guard<std::mutex> g (m); out[ds[i].name] = v;
         const double secs = (juce::Time::getMillisecondCounterHiRes() - started[ds[i].name]) / 1000.0;
         if (onChecked) onChecked (ds[i].name, v, secs);
-        if (r.cleanExit() || v.window) { auto* o = new juce::DynamicObject(); o->setProperty ("judged", v.judged); o->setProperty ("demo", v.demo); o->setProperty ("window", v.window); o->setProperty ("why", v.why); o->setProperty ("seconds", std::round (secs * 100.0) / 100.0); cache.getDynamicObject()->setProperty (pidOf (ds[i]), juce::var (o)); }
+        if (r.cleanExit() || v.window) { auto* o = new juce::DynamicObject(); o->setProperty ("judged", v.judged); o->setProperty ("demo", v.demo); o->setProperty ("window", v.window); o->setProperty ("silent", v.silent); o->setProperty ("inert", v.inert); o->setProperty ("why", v.why); o->setProperty ("seconds", std::round (secs * 100.0) / 100.0); cache.getDynamicObject()->setProperty (pidOf (ds[i]), juce::var (o)); }
     };
     pool (todo, juce::jmax (1, jobs));
     cacheFile.replaceWithText (juce::JSON::toString (cache));
@@ -207,13 +295,14 @@ inline int runWizard (const WizardOptions& wo)
     auto store = mapStore (opt.ledger);
     prog.setPlugins ((int) plugins.size());
     const auto bundlesAll = componentBundles();
-    // THE HARDWARE CHECK AT THE SCAN (Kathy, 15 Oct): a UAD plugin without a UAD-2 device and an APB plugin without its unit pass no sound,
+    setenv ("EJ_UAD_NATIVE", "1", 1);   // 15 Oct: UAD by sound, not by device - this process and every child it starts (EjmapUadPreflight.h)
+    // THE HARDWARE CHECK AT THE SCAN (Kathy, 15 Oct): an APB plugin without its unit passes no sound (UAD: see EJ_UAD_NATIVE above),
     // so they are filed needs_hardware before anything loads - on every route that measures or reads sound (measure, the read-back check,
     // the signature reads). On 14 Oct only the read-back route asked (18 UAD); 158 more UAD and 6 APB were counted "to measure", then
     // Phase B left the UAD unrun and measured the APB into silence for 3-8 min each
     auto hardwareStop = [&] (const juce::PluginDescription& dd) -> juce::String
     {
-        if (uad::isUadProduct (dd.name, dd.manufacturerName)) { const auto& u = uad::device (opt.assumeUadDevice || assumeUadDeviceFlag()); if (! u.present) return juce::String (uad::kNotConnected) + " (" + u.how + "); not loaded"; }
+        // UAD is NOT here (15 Oct, Kathy: native UADx / Spark need no hardware; no file tells them apart) - the sound check decides
         if (apb::isApbProduct (dd.name, dd.manufacturerName)) { const auto& a = apb::device (apb::assumeFlag()); if (! a.present) return juce::String (apb::kNotConnected) + " (" + a.how + "); not loaded"; }
         return {};
     };
@@ -391,6 +480,8 @@ inline int runWizard (const WizardOptions& wo)
         for (const auto& n : settled) prog.alreadyDone (n);   // the database answered, or a resumed scan already has it
     }
     // the read-back checks (rule B): a load each, stoppable, cached by plugin id - the measuring run never repeats them
+    // 15 Oct: the warm probe here too (one process per plugin, a new instance per call; A/B in the commit) - this thread only
+    { probeserve::ScopedServe warmReadBacks (opt.probeServe);
     for (const auto& q : toQuick)
     {
         if (wizardStop() != 0) return stoppedInScan ("checking");
@@ -427,6 +518,7 @@ inline int runWizard (const WizardOptions& wo)
         else prog.loadEnded (ir.desc.name);   // 15 Oct: its load is over - off the "current" list (the name under the bar) while it waits for its map
         say ("  " + ir.desc.name.paddedRight (' ', 30) + " " + ver.paddedRight (' ', 9) + " -> quick_check / " + st + ": " + why);
     }
+    }   // the read-backs' warm probe closes here
     std::set<juce::String> catNames; for (const auto& p : toCategorise) catNames.insert (plugins[p.i].desc.name);
     std::vector<size_t> mapIdx; for (const auto* l : { &toMap, &toCategorise }) for (const auto& p : *l) { const auto& d = plugins[p.i].desc; if (! store.count (juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version)) mapIdx.push_back (p.i); }
     std::map<juce::String, juce::String> early;   // product -> a state settled while mapping (needs_licence / crashed / wont_load)
@@ -473,6 +565,7 @@ inline int runWizard (const WizardOptions& wo)
     const auto cacheF = out.getChildFile ("categorised.json"); auto cache = juce::JSON::parse (cacheF.loadFileAsString()); if (! cache.isObject()) cache = juce::var (new juce::DynamicObject());
     auto catOpt = opt; catOpt.includePace = true;   // the user's own Mac: PACE units load (a licence window is still filed, quietly)
     const auto catRaw = out.getChildFile ("categorise_raw"); catRaw.createDirectory();
+    { probeserve::ScopedServe warmSignatures (opt.probeServe);   // 15 Oct: the warm probe for the signature reads too (this thread only)
     for (const auto& p : toCategorise)
     {
         if (wizardStop() != 0) return stoppedInScan ("reading signatures");
@@ -502,6 +595,7 @@ inline int runWizard (const WizardOptions& wo)
         if (d.route == wizroute::Route::measure) enqueue (ir.desc.name, d.category);
         say ("  " + ir.desc.name.paddedRight (' ', 30) + " -> " + wizroute::routeName (d.route) + (d.category.isNotEmpty() ? " (" + d.category + ")" : juce::String()) + ": " + d.why);
     }
+    }   // the signature reads' warm probe closes here
     // THE DEMO CHECK (14 Oct): no longer here - it is the first thing in each plugin's measuring (below), so the scan finishes fast
     counts.clear(); for (const auto& r : rows) ++counts[r.getProperty ("state", "").toString()];
     for (const auto& grp : wizroute::measureOrder()) for (const auto& pb : grp) queueFile (pb).replaceWithText ((queues.count (pb) ? queues[pb].joinIntoString ("\n") : juce::String()) + "\n");
@@ -809,14 +903,14 @@ inline int runWizard (const WizardOptions& wo)
                     const auto verdicts = demoCheckForWizard (qd, opt.jobs, [&] (const juce::StringArray& a) { prog.started (a[1], "demo"); return runChild (a, opt.timeoutMs); }, opt.probe, out.getChildFile ("demo_checks.json"),
                                                               [&] (const juce::String& n, const wizard::DemoVerdict&, double secs) { prog.finished (n, false, secs, "demo"); });
                     if (wizardStop() != 0) { pbCode = 130; break; }
-                    juce::StringArray demos; for (const auto& [name, v] : verdicts) if (v.demo || v.window) demos.add (name);   // 14 Oct: a licence window leaves the queues too
+                    juce::StringArray demos; for (const auto& [name, v] : verdicts) if (v.demo || v.window || v.silent || v.inert) demos.add (name);   // 14 Oct: a licence window leaves the queues too; 15 Oct: no sound / never processes too
                     const auto gone = wizroute::dropDemos (queues, demos);
                     for (const auto& [pb, name] : gone) prog.finished (name, true, -1.0, wizroute::kindOf (pb));
                     for (const auto& [name, v] : verdicts)
                     {
-                        if (! v.demo && ! v.window) continue;
+                        if (! v.demo && ! v.window && ! v.silent && ! v.inert) continue;
                         for (auto& rv : rows) if (rv.getProperty ("product", "").toString() == name)
-                        {   rv.getDynamicObject()->setProperty ("state", v.window ? "needs_licence" : "demo"); rv.getDynamicObject()->setProperty ("why", v.window ? wizroute::licenceSkipWhy (wizroute::LicenceSkip::remembered) : v.why);
+                        {   rv.getDynamicObject()->setProperty ("state", v.window || v.silent || v.inert ? "needs_licence" : "demo"); rv.getDynamicObject()->setProperty ("why", v.window ? wizroute::licenceSkipWhy (wizroute::LicenceSkip::remembered) : v.why);
                             if (v.window) wizroute::rememberLicenceWindow (licenceMemF, rv.getProperty ("plugin_id", "").toString()); }
                         say ("  " + name.paddedRight (' ', 30) + " -> skipped: " + v.why);
                     }
