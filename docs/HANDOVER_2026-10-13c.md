@@ -209,4 +209,19 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
 - **This Mac's measuring:** about 27.5 h at 2 jobs before -> **about 16.3 h at 2 jobs / 12.1 h at 4** (calibrated on the A/B). Compressors are now the largest part (about 14 h of work: rendering under the bridge). The UAD serial lane is unchanged (7.3 h).
 - **DMGs at 774fe72e:** Test sha 99dd8ced44e9ab95, Beta sha 16921f7b8de7528f. Both signed and verify VALID; the probe is re-signed after its rebuild.
 
+## 15 Oct addendum 10: one Start, the measuring screen, the label (wizard 92f34301)
+- **What it fixes:** the 14 Oct overnight Test run finished Checking at 23:07 (2 h 15 min) and then sat on "Ready to measure - 504 plugins - Start" until 07:15.
+- **Now (WIZARD_SPEC 3m):**
+  - One Start carries the whole run (WZ-START-1).
+  - The measuring bar shows a % with a shimmer, and the "measured so far" line is gone (WZ-SCREEN-1).
+  - The name under the bar is the newest plugin and is never cut (WZ-LABEL-1).
+  - An unrun UAD row reaches the bar.
+  - 12 mutants red.
+- **Found on 15 Oct (not changed; proposals in the report):**
+  - Phase B leaves every UAD row unrun without a UAD-2 device (158 in this run's queue), while the scan counted only 18 as needs_hardware. The scan should use the same device check.
+  - APB (McDSP) plugins measure silence without APB hardware: 4 rows took 3-8 min each in the serial lane. Proposal: a device preflight like UAD's, giving needs_hardware at the scan.
+  - Checking does not use the warm probe; it would save about 1 h of the 2 h 15 min.
+- **Timing CSV:** ~/Desktop/WIZARD_TIMING_15oct.csv, refreshed every 10 min (scratchpad timing_csv.py, read-only on the wizard's files).
+- **DMGs at 92f34301:** Test sha 8cedf599bc2c2970, Beta sha 11f1b4c1ba4928e3. Both signed and verify VALID. Not installed: today's Test run is the 774fe72e build.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
