@@ -1,6 +1,7 @@
 # MORNING REPORT — 15 Oct, overnight run
 
-**Read this first. Updated as the night goes; the state below is what was true at the last write.**
+**Read this first. The run is finished — this is final, not a snapshot.** Two builds went in, both gated
+green and both installed with Logic closed; the tree is clean, nothing is half-done, and nothing is pushed.
 
 ## WHAT IS INSTALLED
 
