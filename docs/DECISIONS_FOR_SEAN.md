@@ -101,7 +101,8 @@ morning unsupervised would still be running into your 08:00 recheck, competing f
 one test this whole round exists to enable — the contention hazard the gate spent the night avoiding. To
 start it: `mv ship_2026-10-16a/GATE_24_GREEN.txt ship_2026-10-16a/GREEN.txt`.
 
-**Nothing is pushed.** Everything is committed locally and waiting for your word, as always.
+**Nothing is pushed.** The round is one commit, `800949b5`, on `feat/08c`, and the working tree is clean.
+Nothing goes to the remote until you say so.
 
 Every call I made is recorded under DECISIONS TAKEN WITHOUT YOU; the ones that matter are D3, D4, D5
 (new tonight), D1 and D2, plus the one about S6's live pass further down.
