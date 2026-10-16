@@ -32800,6 +32800,14 @@ juce::var EchoJayEditor::rigAgentRowState() const
         so->setProperty ("chips", s.chips.joinIntoString (", "));
         so->setProperty ("answered", s.answered);
         so->setProperty ("askReason", s.askReason);
+        // ---- THE TWO FACTS A ROW ABOUT AUTO MODE NEEDS (16 Oct 2026) -----------------------
+        // A11 asserts that Auto RAN an undoable step without waiting, and read `autoApplied`
+        // off THIS object - the rig's own view of the row - which did not carry it. The run
+        // view's JSON has had it all along; this serialisation is a second one, and the row was
+        // reading the one that did not. `canUndo` for the same reason (D4 reads the zones, but
+        // a row that wants to know WHY should not have to parse a zone list).
+        so->setProperty ("autoApplied", s.autoApplied);
+        so->setProperty ("canUndo",     s.canUndo);
         steps.add (juce::var (so));
     }
     o->setProperty ("steps", steps);

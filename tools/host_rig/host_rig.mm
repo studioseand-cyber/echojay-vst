@@ -4498,44 +4498,60 @@ int main (int argc, char* argv[])
                 zonesBefore = rig.freshState().getProperty ("agentRow", juce::var())
                                   .getProperty ("zones", juce::var()).toString();
             }
-            const bool haveStepUndo = hasStepUndoZone (zonesBefore);
-            if (! haveStepUndo)
-                scenSkip ("D4", "undoing ONE step reverts that step and leaves the other alone",
-                          "even with the step list open the row drew no per-step Undo ["
-                          + zonesBefore.substring (0, 90) + "], so there is nothing on the line to "
-                            "press and no press could be reported honestly.", "A");
-            else
+            // ---- WHAT THE BUILD PROMISES, AFTER TWO FINDINGS (16 Oct 2026) ---------------------
+            //
+            // This row started as "undoing ONE step reverts that step and leaves the other alone".
+            // It cannot: the plugin-wide history COALESCES consecutive edits, so a run that set the
+            // pre-gain and then the master wet has ONE entry covering both, and one pop reverts both
+            // (which is what the first two cuts of this row measured). So the button is offered only
+            // on a run with ONE undoable step, and this row holds THAT contract in both directions:
+            //
+            //   two changes  -> NO per-step Undo is drawn; "Undo all" is the road (zone 8).
+            //   one change   -> the step's own Undo is drawn and reverts exactly it.
+            const bool twoChangeHasNoStepUndo = ! hasStepUndoZone (zonesBefore)
+                                             && zonesBefore.contains ("8:");
+            const auto st2 = rig.freshState();
+            juce::ignoreUnused (st2);
+            // ...and now the one-change run, which is where the button lives.
+            rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0), 8000);
+            const auto r1 = askAgent (rig, "rig-undo-marker: set the pre gain", 90000);
+            juce::String zones1 = rig.freshState().getProperty ("agentRow", juce::var())
+                                      .getProperty ("zones", juce::var()).toString();
+            if (! hasStepUndoZone (zones1))
             {
-                rig.send (echojay::rig::cmd::press, args1 ("button", "undo_step"), 12000);
+                rig.send (echojay::rig::cmd::press, args1 ("button", "toggle_steps"), 8000);
                 rig.until ([&] (const juce::var& stv)
                 {
-                    return std::abs ((double) stv.getProperty ("preGainDb", juce::var()) - pgMid) > 0.5
-                        || std::abs ((double) stv.getProperty ("masterWetPct", juce::var()) - wetMid) > 5.0;
+                    return hasStepUndoZone (stv.getProperty ("agentRow", juce::var())
+                                               .getProperty ("zones", juce::var()).toString());
+                }, 6000);
+                zones1 = rig.freshState().getProperty ("agentRow", juce::var())
+                             .getProperty ("zones", juce::var()).toString();
+            }
+            const double pgOne = (double) rig.freshState().getProperty ("preGainDb", juce::var());
+            bool oneUndone = false;
+            if (hasStepUndoZone (zones1))
+            {
+                rig.send (echojay::rig::cmd::press, args1 ("button", "undo_step"), 12000);
+                oneUndone = rig.until ([&] (const juce::var& stv)
+                {
+                    return std::abs ((double) stv.getProperty ("preGainDb", juce::var()) - pgOne) > 0.5;
                 }, 10000);
             }
+            juce::ignoreUnused (r1);
             const auto st = rig.freshState();
-            const double pgAfter  = (double) st.getProperty ("preGainDb", juce::var());
-            const double wetAfter = (double) st.getProperty ("masterWetPct", juce::var());
-            // ---- WHAT THE BUTTON NOW PROMISES, EXACTLY (16 Oct 2026) ---------------------------
-            // The first cut of this row pressed a step's Undo and found BOTH values changed, and the
-            // sink said why: a per-step undo pops the plugin-wide history once - the LAST change -
-            // whatever token it is given. So the button is now drawn only on the last undoable step,
-            // where that is the truth, and this row holds that contract: the LAST step's change
-            // reverts and the first step's stays. "Undo all" is the road back past it, and D3 is the
-            // row for that.
-            const bool lastReverted  = std::abs (wetAfter - wetMid) > 5.0;
-            const bool firstKept     = std::abs (pgAfter - pgMid) < 0.5;
-            const bool oneReverted = lastReverted;
-            const bool otherKept   = firstKept;
-            if (haveStepUndo)
-            scen ("D4", "undoing ONE step reverts that step and leaves the other alone",
+            juce::ignoreUnused (pgMid, wetMid);
+            const bool oneReverted = oneUndone;
+            const bool otherKept   = twoChangeHasNoStepUndo;
+            scen ("D4", "a step's Undo is offered only where it is true, and there it reverts that step",
                   r.ran() && oneReverted && otherKept,
-                  "the LAST step's master wet " + juce::String (wetMid, 0) + " -> "
-                  + juce::String (wetAfter, 0) + " (reverted) and the first step's pre-gain "
-                  + juce::String (pgMid, 2) + " -> " + juce::String (pgAfter, 2) + " (kept); the row drew ["
-                  + zonesBefore.substring (0, 90) + "]  (RED before this evening: the button was drawn on "
-                  "EVERY undoable step while the sink pops the history's top entry, so pressing the first "
-                  "step's Undo reverted the second's change and said \"undone\" on the wrong line)",
+                  juce::String ("the TWO-change run drew [") + zonesBefore.substring (0, 70)
+                  + "] - no per-step Undo, Undo all present=" + (twoChangeHasNoStepUndo ? "y" : "n")
+                  + "; the ONE-change run drew [" + zones1.substring (0, 70) + "] and its own Undo took the "
+                  "pre-gain off " + juce::String (pgOne, 2) + " dB=" + (oneUndone ? "y" : "n")
+                  + "  (RED before this evening: the button was drawn on EVERY undoable step while the "
+                  "history coalesces consecutive edits, so one press reverted two changes and said "
+                  "\"undone\" against one line)",
                   "A", v2.editor.get(), st, &r);
         }
 

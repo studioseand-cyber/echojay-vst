@@ -282,10 +282,24 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
     // before beta. So the button is offered where its promise is true - the last step that handed
     // back a token - and everything earlier is covered by the run's own "Undo all", which walks back
     // to the checkpoint. A button that can only tell the truth, rather than a button everywhere.
-    int lastUndoable = -1;
+    // ---- AND ONLY WHEN THERE IS EXACTLY ONE OF THEM (16 Oct 2026, the second finding) ----------
+    //
+    // "The last undoable step" was still not honest enough. The plugin-wide history COALESCES
+    // consecutive edits (EchoJayUndoHistory: an entry whose `before` equals the last entry's `after`
+    // is merged into it), so a run that set the pre-gain and then the master wet in one round has ONE
+    // entry covering both. D4 pressed the last step's Undo and watched the pre-gain go back to 0.00
+    // as well - correctly, because that is what the entry held, while the row said "undone" against
+    // one line and nothing against the other.
+    //
+    // So the button is offered where its promise is exactly true: a run with ONE undoable step, whose
+    // entry can only be that step's. Anything with two or more is undone as a whole, by "Undo all",
+    // which is what it is for. A control that is right nine times in ten is the thing this product
+    // keeps being burned by.
+    int lastUndoable = -1, undoableCount = 0;
     {
         int k = -1;
-        for (const auto& s : c.steps()) { ++k; if (s.canUndo()) lastUndoable = k; }
+        for (const auto& s : c.steps()) { ++k; if (s.canUndo()) { lastUndoable = k; ++undoableCount; } }
+        if (undoableCount != 1) lastUndoable = -1;
     }
     const bool askNow  = c.askPending();
     // The pending ask hangs off the LAST step, which is the tool call that asked it. With no steps at all

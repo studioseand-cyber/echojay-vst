@@ -1187,13 +1187,13 @@ void EJAgentClient::undoStep (const juce::String& id)
     // the last undoable step; this is the same rule at the door, so a stale snapshot or a rig press
     // cannot get round it. "Undo all" is the road for anything earlier.
     {
-        const Step* last = nullptr;
-        for (const auto& st : steps_) if (st.canUndo()) last = &st;
-        if (last != nullptr && last->id != id)
+        int undoable = 0;
+        for (const auto& st : steps_) if (st.canUndo()) ++undoable;
+        if (undoable != 1)
         {
-            log ("undo step " + id + " REFUSED: it is not the last undoable step (that is \"" + last->id
-                 + "\"), and this build's history can only undo its top entry - \"Undo all\" is the road "
-                   "back past it");
+            log ("undo step " + id + " REFUSED: this run has " + juce::String (undoable)
+                 + " undoable steps and the plugin's history COALESCES consecutive edits, so one pop "
+                   "would revert more than this line - \"Undo all\" is the road back");
             return;
         }
     }

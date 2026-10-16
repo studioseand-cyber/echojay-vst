@@ -1,5 +1,5 @@
 scenario G1
-captured 2026-10-16T18:27:13.554+01:00
+captured 2026-10-16T18:51:30.309+01:00
   [user] rig: does the box clear?
   [assistant] mock reply, sent quickly.
   [user] rig-midreply-marker

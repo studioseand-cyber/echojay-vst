@@ -202,11 +202,17 @@ undo pops the plugin-wide history ONCE - the last change - whatever token it is 
 step that is exactly right. For any earlier one the button says "undone" beside a line whose value is
 still on the rack, and reverts something else.
 
-A history of this shape cannot undo a middle entry without a redo model, and there is no redo before
-beta. So the button is drawn where its promise holds - the last step that handed back an undo token -
-and the same rule stands at the door (`undoStep` refuses anything else and logs why), so a stale
-snapshot cannot get round it. Everything earlier is covered by the run's own **Undo all**, which
-walks back to the checkpoint and is tested by D3.
+"The last undoable step" was my first answer and it was still not honest enough. The plugin-wide
+history **coalesces** consecutive edits (an entry whose `before` equals the previous entry's `after`
+is merged into it), so a run that sets the pre-gain and then the master wet has ONE entry covering
+both: pressing the last step's Undo took the pre-gain back to 0.00 as well - correctly, because that
+is what the entry held, while the row said "undone" against one line and nothing against the other.
+
+So the button is offered where its promise is exactly true: **a run with one undoable step**, whose
+entry can only be that step's. Two or more are undone as a whole, by **Undo all**, which is what it
+is for and which D3 tests. The same rule stands at the door (`undoStep` refuses otherwise and logs
+why), so a stale snapshot cannot get round it, and D4 now holds both directions - a two-change run
+draws no per-step Undo but does draw Undo all; a one-change run's own Undo reverts exactly it.
 
 If you would rather every step kept a button, that needs a redo-aware history - a bigger piece than
 tonight - and it is yours to call.
