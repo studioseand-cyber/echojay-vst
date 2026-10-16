@@ -1,0 +1,357 @@
+{
+ "Abbey Road RS124 (m)": [
+  "HELD",
+  [
+   "g 6 fails",
+   "a level at 2-6 dB nulled",
+   "output level: output miss net of GR -22.26 dB"
+  ],
+  []
+ ],
+ "Abbey Road RS124 (s)": [
+  "HELD",
+  [
+   "g 6 fails",
+   "a level at 2-6 dB nulled",
+   "output level: output miss net of GR -22.26 dB"
+  ],
+  []
+ ],
+ "Acme Opticom XLA-3": [
+  "HELD",
+  [
+   "frequency_dependent (max move 1.18 dB)",
+   "output level: output miss net of GR -16.62 dB"
+  ],
+  []
+ ],
+ "bx_opto": [
+  "CLEAR",
+  [],
+  []
+ ],
+ "CLA-2A (m)": [
+  "HELD",
+  [
+   "frequency_dependent (max move 4.93 dB)"
+  ],
+  []
+ ],
+ "CLA-2A (s)": [
+  "HELD",
+  [
+   "frequency_dependent (max move 4.93 dB)"
+  ],
+  []
+ ],
+ "CLA-3A (m)": [
+  "HELD",
+  [
+   "frequency_dependent (max move 1.19 dB)"
+  ],
+  []
+ ],
+ "CLA-3A (s)": [
+  "HELD",
+  [
+   "frequency_dependent (max move 1.19 dB)"
+  ],
+  []
+ ],
+ "CLA-76 (m)": [
+  "HELD",
+  [
+   "output level: output miss net of GR -12.53 dB"
+  ],
+  []
+ ],
+ "CLA-76 (s)": [
+  "HELD",
+  [
+   "output level: output miss net of GR -12.53 dB"
+  ],
+  []
+ ],
+ "elysia alpha master": [
+  "COMBINED",
+  [],
+  [
+   "combined GR miss +1.25 dB"
+  ]
+ ],
+ "elysia alpha mix": [
+  "CLEAR",
+  [],
+  []
+ ],
+ "EMO-D5 (m)": [
+  "HELD",
+  [
+   "g 4 missing",
+   "g 5 missing",
+   "g 6 missing",
+   "no combined record"
+  ],
+  []
+ ],
+ "EMO-D5 (s)": [
+  "HELD",
+  [
+   "g 4 missing",
+   "g 5 missing",
+   "g 6 missing",
+   "no combined record"
+  ],
+  []
+ ],
+ "Kiive XTComp": [
+  "HELD",
+  [
+   "output level: output miss net of GR -8.78 dB"
+  ],
+  [
+   "combined GR miss +1.62 dB"
+  ]
+ ],
+ "Kramer PIE (m)": [
+  "HELD",
+  [
+   "g 5 fails",
+   "a level at 2-6 dB nulled",
+   "output level: output miss net of GR -0.60 dB"
+  ],
+  []
+ ],
+ "Kramer PIE (s)": [
+  "HELD",
+  [
+   "g 5 fails",
+   "a level at 2-6 dB nulled",
+   "output level: output miss net of GR -0.60 dB"
+  ],
+  []
+ ],
+ "Lindell 7X-500": [
+  "HELD",
+  [
+   "frequency_dependent (max move 1.16 dB)",
+   "output level: output miss net of GR -4.25 dB"
+  ],
+  [
+   "combined GR miss -2.78 dB"
+  ]
+ ],
+ "MaxxVolume (m)": [
+  "CLEAR",
+  [],
+  []
+ ],
+ "MaxxVolume (s)": [
+  "CLEAR",
+  [],
+  []
+ ],
+ "Millennia TCL-2": [
+  "COMBINED",
+  [],
+  [
+   "combined GR miss +1.02 dB"
+  ]
+ ],
+ "MixWave DW Fearn VT-7": [
+  "COMBINED",
+  [],
+  [
+   "combined GR miss -0.71 dB"
+  ]
+ ],
+ "MV2 (m)": [
+  "HELD",
+  [
+   "output level: target 4.0 gives 0.0",
+   "output level: output miss net of GR -10.19 dB"
+  ],
+  []
+ ],
+ "MV2 (s)": [
+  "HELD",
+  [
+   "output level: target 4.0 gives 0.0",
+   "output level: output miss net of GR -10.19 dB"
+  ],
+  []
+ ],
+ "OneKnob Pressure (m)": [
+  "CLEAR",
+  [],
+  []
+ ],
+ "OneKnob Pressure (s)": [
+  "CLEAR",
+  [],
+  []
+ ],
+ "Ozone 12 Vintage Compressor": [
+  "HELD",
+  [
+   "output level: output miss net of GR +2.30 dB"
+  ],
+  []
+ ],
+ "PuigChild 660 (m)": [
+  "HELD",
+  [
+   "frequency_dependent (max move 1.89 dB)"
+  ],
+  []
+ ],
+ "PuigChild 670 (s)": [
+  "HELD",
+  [
+   "frequency_dependent (max move 1.89 dB)"
+  ],
+  []
+ ],
+ "Renaissance Axx (m)": [
+  "CLEAR",
+  [],
+  []
+ ],
+ "Renaissance Axx (s)": [
+  "CLEAR",
+  [],
+  []
+ ],
+ "RVox (m)": [
+  "CLEAR",
+  [],
+  []
+ ],
+ "RVox (s)": [
+  "CLEAR",
+  [],
+  []
+ ],
+ "Solid Dynamics": [
+  "HELD",
+  [
+   "g 4 missing",
+   "g 5 missing",
+   "g 6 missing",
+   "no combined record"
+  ],
+  []
+ ],
+ "SSL Blitzer": [
+  "HELD",
+  [
+   "output level: output miss net of GR -11.10 dB"
+  ],
+  [
+   "combined GR miss +1.04 dB"
+  ]
+ ],
+ "SSL Native X-Comp v6": [
+  "COMBINED",
+  [],
+  [
+   "combined GR miss +4.50 dB"
+  ]
+ ],
+ "SSL Native X-ValveComp v6": [
+  "CLEAR",
+  [],
+  []
+ ],
+ "Vertigo VSC-2": [
+  "HELD",
+  [
+   "output level: output miss net of GR -4.98 dB"
+  ],
+  [
+   "combined GR miss -0.95 dB"
+  ]
+ ],
+ "AMEK Mastering Compressor": [
+  "HELD",
+  [
+   "g 2 fails",
+   "g 4 fails",
+   "g 5 fails",
+   "g 6 fails",
+   "a level at 2-6 dB nulled",
+   "no frequency record",
+   "no material record",
+   "no combined record"
+  ],
+  []
+ ],
+ "SPL IRON": [
+  "HELD",
+  [
+   "g 2 fails",
+   "g 4 fails",
+   "g 5 fails",
+   "g 6 fails",
+   "a level at 2-6 dB nulled",
+   "output level: target 5.23 gives 6.1",
+   "output level: output miss net of GR -4.08 dB"
+  ],
+  [
+   "combined GR miss +0.80 dB"
+  ]
+ ],
+ "Maag MAGNUM-K": [
+  "HELD",
+  [
+   "g 2 fails",
+   "g 4 missing",
+   "g 5 missing",
+   "g 6 missing",
+   "no frequency record",
+   "no material record",
+   "no combined record"
+  ],
+  []
+ ],
+ "VBC FG-Grey": [
+  "HELD",
+  [
+   "no frequency record",
+   "no material record",
+   "no combined record"
+  ],
+  []
+ ],
+ "VBC FG-MU": [
+  "HELD",
+  [
+   "g 6 missing",
+   "no frequency record",
+   "no material record",
+   "no combined record"
+  ],
+  []
+ ],
+ "VBC Rack": [
+  "HELD",
+  [
+   "no frequency record",
+   "no material record",
+   "no combined record"
+  ],
+  []
+ ],
+ "Auto-Tune Vocal Compressor": [
+  "HELD",
+  [
+   "no combined record"
+  ],
+  []
+ ],
+ "Pro Audio DSP DSM V3": [
+  "CLEAR",
+  [],
+  []
+ ]
+}

@@ -24,3 +24,14 @@
 - **READY_33:** `~/Desktop/EJMAP_PUBLISH_COMPRESSORS_READY_33.zip` (sha256 47c953a7f82c1826...).
   - v1's 29 (all 8 proposed v1 holds held, Kathy 16 Oct) + v2's 4, files unmodified; one-page list inside and beside it.
 - **Nothing was sent.**
+
+## v1's rule on the 46, from cert 5 (16 Oct, Kathy: "run v1's rule on the 46 from cert 5")
+- **Inputs:** check_v2.py (the v2 judge) over the 46 names, read only, b287aef3 tone checks. Raw output: `v1_rule_46_cert5_raw.txt`; classified: `v1_rule_46_cert5.json`.
+- **The rule:**
+  - HOLD: a miss, missing level or nulled level at g 2/4/5/6; a missing F/M/C record; frequency_dependent; an output-level flag (make-up clamped, or output net of GR > 0.5 dB).
+  - NOT a hold: material alone, or a level above 6 dB nulled.
+  - COMBINED: a combined GR miss only - a hold unless it comes from timing positions v1 already refuses; not judged yet.
+- **Result:** 12 CLEAR, 4 COMBINED, 30 HELD.
+  - CLEAR: bx_opto, elysia alpha mix, MaxxVolume m/s, OneKnob Pressure m/s, Renaissance Axx m/s, RVox m/s, SSL Native X-ValveComp v6, DSM V3.
+  - COMBINED: elysia alpha master, Millennia TCL-2, MixWave DW Fearn VT-7, SSL Native X-Comp v6.
+- **Caveat:** bx_opto, Millennia TCL-2 and DSM V3 are re-exported by b7aa304c / 26b3cbaf without their unnamed neutrals (not_written). The file to publish is the re-check's, not cert 5's.

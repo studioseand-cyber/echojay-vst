@@ -1,0 +1,92 @@
+HELD  Abbey Road RS124 (m) 15.0.70 FMCS | g 6 fails (5.36 vs 6.0); deep levels nulled [6.0]; make-up: output miss net of GR -22.26 dB
+        g2 1.97 True g4 3.89 True g5 5.36 True g6 5.36 False g7 6.89 True g8 7.72 True g9 9.37 True g10 9.89 True g11 10.95 True g12 12.01 True
+HELD  Abbey Road RS124 (s) 15.0.70 FMC | g 6 fails (5.36 vs 6.0); deep levels nulled [6.0]; make-up: output miss net of GR -22.26 dB
+        g2 1.97 True g4 3.89 True g5 5.36 True g6 5.36 False g7 6.89 True g8 7.72 True g9 9.37 True g10 9.89 True g11 10.95 True g12 12.01 True
+HELD  Acme Opticom XLA-3 1.10.1 FMC | frequency_dependent (max move 1.18 dB); material vocal median miss +1.99 dB; material drums median miss +1.11 dB; make-up: output miss net of GR -16.62 dB
+        g2 1.95 True g4 4.02 True g5 5.06 True g6 6.07 True g7 7.04 True g8 7.98 True g9 9.08 True g10 10.03 True g11 11.05 True g12 12.14 True
+HELD  bx_opto 1.10.1 FMC | material vocal median miss +1.04 dB; material drums median miss +2.74 dB; material mix median miss +2.31 dB
+        g2 1.98 True g4 3.99 True g5 5.0 True g6 5.97 True g7 7.02 True g8 8.02 True g9 9.02 True g10 9.98 True g11 11.0 True g12 12.01 True
+HELD  CLA-2A (m) 15.0.70 FMC | frequency_dependent (max move 4.93 dB); material vocal median miss +1.94 dB; material drums median miss +2.12 dB; material mix median miss +3.35 dB
+        g2 1.92 True g4 3.97 True g5 4.97 True g6 5.97 True g7 6.97 True g8 7.97 True g9 9.1 True g10 9.98 True g11 10.96 True g12 11.97 True
+HELD  CLA-2A (s) 15.0.70 FMC | frequency_dependent (max move 4.93 dB); material vocal median miss +1.94 dB; material drums median miss +2.12 dB; material mix median miss +3.35 dB
+        g2 1.92 True g4 3.97 True g5 4.97 True g6 5.97 True g7 6.97 True g8 7.97 True g9 9.1 True g10 9.98 True g11 10.96 True g12 11.97 True
+HELD  CLA-3A (m) 15.0.70 FMC | frequency_dependent (max move 1.19 dB); material mix median miss +1.22 dB
+        g2 1.93 True g4 3.94 True g5 4.94 True g6 5.94 True g7 6.96 True g8 8.03 True g9 8.98 True g10 10.02 True g11 10.98 True g12 12.02 True
+HELD  CLA-3A (s) 15.0.70 FMCS | frequency_dependent (max move 1.19 dB); material mix median miss +1.22 dB
+        g2 1.93 True g4 3.94 True g5 4.94 True g6 5.94 True g7 6.96 True g8 8.03 True g9 8.98 True g10 10.02 True g11 10.98 True g12 12.02 True
+HELD  CLA-76 (m) 15.0.70 FMC | material vocal median miss +2.09 dB; material drums median miss +3.19 dB; material mix median miss +1.98 dB; make-up: output miss net of GR -12.53 dB
+        g2 2.08 True g4 4.01 True g5 5.0 True g6 5.88 True g7 7.01 True g8 7.98 True g9 9.05 True g10 9.98 True g11 11.01 True g12 11.99 True
+HELD  CLA-76 (s) 15.0.70 FMC | material vocal median miss +2.09 dB; material drums median miss +3.19 dB; material mix median miss +1.98 dB; make-up: output miss net of GR -12.53 dB
+        g2 2.08 True g4 4.01 True g5 5.0 True g6 5.88 True g7 7.01 True g8 7.98 True g9 9.05 True g10 9.98 True g11 11.01 True g12 11.99 True
+HELD  elysia alpha master 1.17.1 FMC | combined GR miss +1.25 dB
+        g2 2.0 True g4 4.1 True g5 5.0 True g6 5.99 True g7 7.01 True g8 7.99 True
+CLEAN elysia alpha mix 1.17.1 FMC | -
+        g2 2.01 True g4 4.03 True g5 5.02 True g6 5.98 True g7 6.99 True g8 8.01 True
+HELD  EMO-D5 (m) 15.0.70 FM | g 4 missing; g 5 missing; g 6 missing; no combined record (accuracy pass not run on it); material vocal median miss +1.16 dB
+        g2 1.98 True
+HELD  EMO-D5 (s) 15.0.70 FM | g 4 missing; g 5 missing; g 6 missing; no combined record (accuracy pass not run on it); material vocal median miss +1.16 dB
+        g2 1.98 True
+HELD  Kiive XTComp 1.0.0 FMC | material vocal median miss +1.86 dB; material drums median miss +1.69 dB; material mix median miss +1.74 dB; combined GR miss +1.62 dB; make-up: output miss net of GR -8.78 dB
+        g2 1.99 True g4 4.02 True g5 4.98 True g6 6.03 True g7 7.01 True g8 8.0 True g9 8.99 True g10 9.97 True g11 11.03 True g12 12.02 True
+HELD  Kramer PIE (m) 15.0.70 FMC | g 5 fails (5.62 vs 5.0); g 9 fails (9.54 vs 9.0); g 10 fails (10.83 vs 10.0); deep levels nulled [5.0, 9.0, 10.0]; material vocal median miss +1.52 dB; material drums median miss +1.89 dB; make-up: output miss net of GR -0.60 dB
+        g2 1.51 True g4 4.27 True g5 5.62 False g6 5.62 True g7 6.94 True g8 8.25 True g9 9.54 False g10 10.83 False g11 10.83 True g12 12.11 True
+HELD  Kramer PIE (s) 15.0.70 FMCS | g 5 fails (5.62 vs 5.0); g 9 fails (9.54 vs 9.0); g 10 fails (10.83 vs 10.0); deep levels nulled [5.0, 9.0, 10.0]; material vocal median miss +1.52 dB; material drums median miss +1.89 dB; make-up: output miss net of GR -0.60 dB
+        g2 1.51 True g4 4.27 True g5 5.62 False g6 5.62 True g7 6.94 True g8 8.25 True g9 9.54 False g10 10.83 False g11 10.83 True g12 12.11 True
+HELD  Lindell 7X-500 1.2.2 FMC | frequency_dependent (max move 1.16 dB); material drums median miss +3.89 dB; material mix median miss +3.27 dB; combined GR miss -2.78 dB; make-up: output miss net of GR -4.25 dB
+        g2 2.0 True g4 4.04 True g5 5.03 True g6 6.01 True g7 7.02 True g8 7.98 True g9 9.01 True g10 10.04 True g11 11.04 True g12 12.02 True
+HELD  MaxxVolume (m) 15.0.70 FMC | material drums median miss +2.30 dB; material mix median miss +1.67 dB
+        g2 1.99 True g4 4.0 True g5 5.01 True g6 5.99 True g7 7.02 True g8 8.0 True g9 8.94 True g10 9.98 True g11 11.04 True g12 12.04 True
+HELD  MaxxVolume (s) 15.0.70 FMC | material drums median miss +2.30 dB; material mix median miss +1.67 dB
+        g2 1.99 True g4 4.0 True g5 5.01 True g6 5.99 True g7 7.02 True g8 8.0 True g9 8.94 True g10 9.98 True g11 11.04 True g12 12.04 True
+HELD  Millennia TCL-2 1.11.1 FMC | material vocal median miss +1.30 dB; material mix median miss +1.42 dB; combined GR miss +1.02 dB
+        g2 2.0 True g4 4.01 True g5 5.0 True g6 6.01 True g7 7.03 True g8 7.98 True g9 8.97 True g10 10.08 True
+HELD  MixWave DW Fearn VT-7 1.0.1 FMC | material drums median miss +1.03 dB; combined GR miss -0.71 dB
+        g2 1.99 True g4 3.99 True g5 4.99 True g6 5.99 True g7 7.01 True g8 8.0 True g9 8.99 True g10 10.01 True g11 10.98 True g12 12.0 True
+HELD  MV2 (m) 15.0.70 FMC | material drums median miss +1.06 dB; make-up clamped: target 4.0 gives 0.0; make-up: output miss net of GR -10.19 dB
+        g2 2.01 True g4 3.96 True g5 5.01 True g6 6.04 True g7 6.98 True g8 7.95 True g9 8.96 True g10 9.99 True g11 11.11 True g12 12.04 True
+HELD  MV2 (s) 15.0.70 FMC | material drums median miss +1.06 dB; make-up clamped: target 4.0 gives 0.0; make-up: output miss net of GR -10.19 dB
+        g2 2.01 True g4 3.96 True g5 5.01 True g6 6.04 True g7 6.98 True g8 7.95 True g9 8.96 True g10 9.99 True g11 11.11 True g12 12.04 True
+HELD  OneKnob Pressure (m) 15.0.70 FMC | g 7 fails (7.8 vs 7.0); deep levels nulled [7.0]
+        g2 1.99 True g4 4.0 True g5 5.01 True g6 6.0 True g7 7.8 False g8 8.01 True g9 9.25 True g10 10.08 True g11 11.14 True g12 12.06 True
+HELD  OneKnob Pressure (s) 15.0.70 FMC | g 7 fails (7.8 vs 7.0); deep levels nulled [7.0]
+        g2 1.99 True g4 4.0 True g5 5.01 True g6 6.0 True g7 7.8 False g8 8.01 True g9 9.25 True g10 10.08 True g11 11.14 True g12 12.06 True
+HELD  Ozone 12 Vintage Compressor 12.0.0 FMC | make-up: output miss net of GR +2.30 dB
+        g2 2.0 True g4 4.0 True g5 5.0 True g6 6.0 True g7 7.0 True g8 8.0 True g9 9.0 True g10 10.0 True g11 11.0 True g12 12.01 True
+HELD  PuigChild 660 (m) 15.0.70 FMC | frequency_dependent (max move 1.89 dB); material vocal median miss +1.65 dB; material drums median miss -2.05 dB
+        g2 2.04 True g4 3.95 True g5 5.12 True g6 5.97 True g7 6.92 True g8 7.93 True g9 8.97 True g10 10.02 True g11 10.95 True g12 11.98 True
+HELD  PuigChild 670 (s) 15.0.70 FMCS | frequency_dependent (max move 1.89 dB); material vocal median miss +1.65 dB; material drums median miss -2.05 dB
+        g2 2.04 True g4 3.95 True g5 5.12 True g6 5.97 True g7 6.92 True g8 7.93 True g9 8.97 True g10 10.02 True g11 10.95 True g12 11.98 True
+CLEAN Renaissance Axx (m) 15.0.70 FMC | -
+        g2 1.96 True g4 4.03 True g5 5.01 True g6 5.99 True g7 6.95 True g8 7.96 True g9 9.0 True g10 10.07 True g11 11.04 True g12 12.03 True
+CLEAN Renaissance Axx (s) 15.0.70 FMC | -
+        g2 1.96 True g4 4.03 True g5 5.01 True g6 5.99 True g7 6.95 True g8 7.96 True g9 9.0 True g10 10.07 True g11 11.04 True g12 12.03 True
+CLEAN RVox (m) 15.0.70 FMC | -
+        g2 1.98 True g4 3.97 True g5 4.99 True g6 6.0 True g7 6.99 True g8 8.02 True g9 9.0 True g10 9.94 True g11 10.98 True g12 11.98 True
+CLEAN RVox (s) 15.0.70 FMC | -
+        g2 1.98 True g4 3.97 True g5 4.99 True g6 6.0 True g7 6.99 True g8 8.02 True g9 9.0 True g10 9.94 True g11 10.98 True g12 11.98 True
+HELD  Solid Dynamics 1.4.5 FM | g 4 missing; g 5 missing; g 6 missing; no combined record (accuracy pass not run on it)
+        g2 2.01 True
+HELD  SSL Blitzer 1.0.5 FMC | combined GR miss +1.04 dB; make-up: output miss net of GR -11.10 dB
+        g2 2.0 True g4 4.02 True g5 4.99 True g6 6.01 True g7 7.0 True g8 8.02 True g9 9.0 True g10 10.0 True g11 11.02 True g12 12.05 True
+HELD  SSL Native X-Comp v6 6.6.7 FMC | combined GR miss +4.50 dB
+        g2 2.02 True g4 4.04 True g5 5.02 True g6 6.07 True g7 7.04 True g8 8.02 True g9 9.07 True g10 10.04 True g11 11.02 True g12 12.07 True
+CLEAN SSL Native X-ValveComp v6 6.6.13 FMC | -
+        g2 1.99 True g4 4.01 True g5 5.01 True g6 6.04 True g7 7.0 True g8 8.03 True g9 8.99 True g10 10.03 True g11 10.99 True g12 12.02 True
+HELD  Vertigo VSC-2 1.15.1 FMCS | material mix median miss +1.27 dB; combined GR miss -0.95 dB; make-up: output miss net of GR -4.98 dB
+        g2 1.98 True g4 4.03 True g5 5.0 True g6 6.04 True g7 7.01 True g8 7.97 True g9 8.99 True g10 10.02 True g11 11.0 True g12 11.99 True
+HELD  AMEK Mastering Compressor 1.1.1  | g 2 fails (1.37); g 4 fails (2.95 vs 4.0); g 5 fails (3.79 vs 5.0); g 6 fails (4.63 vs 6.0); g 7 fails (5.56 vs 7.0); g 8 fails (6.44 vs 8.0); g 9 fails (7.4 vs 9.0); g 10 fails (8.36 vs 10.0); g 11 fails (9.29 vs 11.0); g 12 fails (10.25 vs 12.0); deep levels nulled [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0]; no frequency record (accuracy pass not run on it); no material record (accuracy pass not run on it); no combined record (accuracy pass not run on it)
+        g2 1.37 False g4 2.95 False g5 3.79 False g6 4.63 False g7 5.56 False g8 6.44 False g9 7.4 False g10 8.36 False g11 9.29 False g12 10.25 False
+HELD  SPL IRON 1.6.1 FMC | g 2 fails (None); g 4 fails (None vs 4.006751304347827); g 5 fails (None vs 5.055013333333334); g 6 fails (None vs 6.057764000000001); g 7 fails (None vs 6.606901333333335); g 8 fails (None vs 6.722719266055047); g 9 fails (None vs 6.864537142857144); g 10 fails (None vs 7.000612394366198); g 11 fails (None vs 7.135300891719746); g 12 fails (None vs 7.271330526315791); deep levels nulled [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0]; combined GR miss +0.80 dB; make-up clamped: target 5.23 gives 6.1; make-up: output miss net of GR -4.08 dB
+        g2 None False g4 None False g5 None False g6 None False g7 None False g8 None False g9 None False g10 None False g11 None False g12 None False
+HELD  Maag MAGNUM-K 1.6.1  | g 2 fails (0.49); g 4 missing; g 5 missing; g 6 missing; no frequency record (accuracy pass not run on it); no material record (accuracy pass not run on it); no combined record (accuracy pass not run on it)
+        g2 0.49 False
+HELD  VBC FG-Grey 1.3.5  | no frequency record (accuracy pass not run on it); no material record (accuracy pass not run on it); no combined record (accuracy pass not run on it)
+        g2 1.99 True g4 4.01 True g5 5.0 True g6 5.99 True g7 6.97 True g8 8.01 True g9 8.99 True g10 9.97 True g11 11.03 True g12 12.01 True
+HELD  VBC FG-MU 1.3.5  | g 6 missing; no frequency record (accuracy pass not run on it); no material record (accuracy pass not run on it); no combined record (accuracy pass not run on it)
+        g2 1.99 True g4 4.0 True g5 5.0 True
+HELD  VBC Rack 1.3.5  | no frequency record (accuracy pass not run on it); no material record (accuracy pass not run on it); no combined record (accuracy pass not run on it)
+        g2 2.0 True g4 4.0 True g5 5.0 True g6 5.99 True
+HELD  Auto-Tune Vocal Compressor 1.5.0 FM | no combined record (accuracy pass not run on it); material vocal median miss +1.53 dB; material mix median miss +1.19 dB
+        g2 1.99 True g4 4.02 True g5 5.02 True g6 6.01 True g7 7.01 True g8 8.01 True g9 9.01 True g10 10.01 True g11 11.01 True g12 12.01 True
+HELD  Pro Audio DSP DSM V3 3.6.1 FMC | material vocal median miss +1.75 dB; material drums median miss +1.95 dB; material mix median miss +2.98 dB
+        g2 1.99 True g4 4.01 True g5 5.01 True g6 5.98 True g7 7.01 True g8 8.0 True g9 8.99 True g10 9.99 True g11 10.98 True g12 12.02 True
