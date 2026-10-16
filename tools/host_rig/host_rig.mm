@@ -362,7 +362,14 @@ static ThirdPartyPrep prepareThirdParty (juce::AudioPluginFormatManager& fm, con
         // build, so that member does not exist here (Rig itself says so in its own comment). Written out
         // rather than calling Rig::pump because Rig is declared below this function.
         {
-            const double endAt = juce::Time::getMillisecondCounterHiRes() + 12.0;
+            // ---- LONG ENOUGH FOR A WAVESHELL (16 Oct 2026) --------------------------------------
+            // 12 ms was not. The sampled table came back 0, 0, -48, -48, -36, -36, -24, -18, -18,
+            // -6, 0 - a display one or two writes behind, which is the 21 Sep settled-readback
+            // finding arriving in the fixture instead of the product. The product then REFUSED the
+            // map, correctly ("control entry unusable (bad index or anchors)"), and three scenarios
+            // spent three passes red for a reason that was mine. The product's own settle bound is
+            // 250 ms; this gives each anchor 120 ms, which is what it takes on this plugin.
+            const double endAt = juce::Time::getMillisecondCounterHiRes() + 120.0;
             while (juce::Time::getMillisecondCounterHiRes() < endAt)
             {
                 juce::Timer::callPendingTimersSynchronously();
@@ -426,6 +433,20 @@ static ThirdPartyPrep prepareThirdParty (juce::AudioPluginFormatManager& fm, con
         //    (missing), apply refused"
         // The server's maps carry it, so a rig map without it is not a map the product would accept.
         map->setProperty ("fp", p.fp);
+        // ---- THE FIXTURE IS CHECKED WITH THE PRODUCT'S OWN FUNCTION (16 Oct 2026) --------------
+        // usableParamEntry is what the dial calls before it writes anything. Calling it HERE means a
+        // map this rig would serve, and the product would refuse, is a loud SKIP with its reason -
+        // instead of three scenarios going red and reading like product faults.
+        if (! echojay::usableParamEntry (juce::var (entry)))
+        {
+            p.why = p.name + "'s \"" + p.paramName + "\" sampled a table the PRODUCT would refuse "
+                    "(usableParamEntry says no: " + juce::String (anchors.size())
+                  + " anchor(s), range " + juce::String (hi - lo, 2)
+                  + " - most likely a display read before the plugin settled). The map is not served "
+                    "and the third-party scenarios SKIP rather than failing for a fixture reason.";
+            inst->releaseResources();
+            return p;
+        }
         auto* store = new juce::DynamicObject();
         store->setProperty (juce::Identifier (p.fp), juce::var (map));
         // "__any__" IS NOT A SHORTCUT PAST THE FINGERPRINT. The mock serves the exact key when it has
@@ -3265,6 +3286,13 @@ int main (int argc, char* argv[])
             const bool namesFigure = words.contains (juce::String (tp.askValue, 1))
                                   || words.contains (juce::String (tp.askValue, 2))
                                   || words.contains (juce::String ((int) tp.askValue));
+            // ---- AND THE KNOB ACTUALLY MOVED (16 Oct 2026) --------------------------------------
+            // The first cut passed on a run that said "the settings did NOT take: the threshold -
+            // threshold 0 (asked threshold -24)": the read-back was working perfectly and the DIAL
+            // had not landed, and "names the figure" was true of the complaint as well as of the
+            // confirmation. A row about dialling has to assert the dial.
+            const bool landed = ! words.containsIgnoreCase ("did NOT take")
+                             && ! words.containsIgnoreCase ("not applied");
             // ...and the plugin itself, through the same door the agent reads: the slot's own figure.
             juce::String ownLanded;
             if (auto* arr = st.getProperty ("chainSlots", juce::var()).getArray())
@@ -3272,7 +3300,7 @@ int main (int argc, char* argv[])
                     if (sv.getProperty ("name", juce::var()).toString().containsIgnoreCase (tp.name))
                         ownLanded = sv.getProperty ("landed", juce::var()).toString();
             scen ("A3", "own rack, third party with a good map, add with settings: dialled AND confirmed",
-                  r.ran() && ! claimsUnreadable && namesFigure,
+                  r.ran() && ! claimsUnreadable && namesFigure && landed,
                   juce::String ("asked ") + juce::String (tp.askValue, 2) + " for \"" + tp.paramName
                   + "\"; the run said: \"" + words.substring (0, 160) + "\"; the slot's own landed field: \""
                   + ownLanded.substring (0, 80) + "\"  (RED on 16a: an add carries `after`, so it lands "
