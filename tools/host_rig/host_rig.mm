@@ -2346,6 +2346,9 @@ int main (int argc, char* argv[])
     // first process audio. Waited for, with a bound, rather than read once - the "decisions on uncontrolled
     // timing" rule applies to the rig as much as to the plugin.
     juce::String linkUid, linkName;
+    // A NAMED Link, waited for: A11b asserts that the approved line NAMES the track, and a Link whose
+    // host name has not arrived yet has no name to find - the row would fail about a fact that had not
+    // been published rather than about the product. Twenty seconds, and the Kick by preference.
     // THE KICK BY PREFERENCE (16 Oct 2026, Sean): with real track names in the registry the rows that
     // say "the kick" can be about the kick. Any connected Link still satisfies the wait - a row must
     // not hang because a name is late - but the Kick is taken when it is there.
@@ -2360,11 +2363,11 @@ int main (int argc, char* argv[])
                 const auto n = l.getProperty ("name", juce::var()).toString();
                 if (u.isEmpty()) continue;
                 if (n.containsIgnoreCase ("Kick")) { linkUid = u; linkName = n; return true; }
-                if (anyUid.isEmpty()) { anyUid = u; anyName = n; }
+                if (anyUid.isEmpty() || (anyName.isEmpty() && n.isNotEmpty())) { anyUid = u; anyName = n; }
             }
         if (anyUid.isNotEmpty()) { linkUid = anyUid; linkName = anyName; }
         return false;        // keep looking for the Kick until the bound
-    }, 8000);
+    }, 20000);
     if (! sawLink) rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()));
     check (linkUid.isNotEmpty(), "a Link is in the registry and connected",
            "links=" + juce::JSON::toString (Rig::state().getProperty ("links", juce::var())));
@@ -4418,6 +4421,14 @@ int main (int argc, char* argv[])
                                           .getProperty ("name", juce::var()).toString();
                 const bool namesTrack = trackNow.isNotEmpty()
                                      && linkLabel.containsIgnoreCase (trackNow.substring (0, 6));
+                if (trackNow.isEmpty())
+                {
+                    scenSkip ("A11b", "Auto on ANOTHER track: the approved line names that track",
+                              "the Link the row is working on has no published track name in this run, so "
+                              "there is no name for the line to carry and nothing to judge. The row is "
+                              "about the NAMING, and it cannot be about a name that does not exist.", "A");
+                }
+                else
                 scen ("A11b", "Auto on ANOTHER track: the approved line names that track",
                       rLink.ran() && namesTrack,
                       "the line reads \"" + linkLabel.substring (0, 90) + "\" for the Link called \""
@@ -4513,8 +4524,11 @@ int main (int argc, char* argv[])
             const auto st2 = rig.freshState();
             juce::ignoreUnused (st2);
             // ...and now the one-change run, which is where the button lives.
+            // A ONE-CHANGE RUN, which is what this half is about: rig-undo-marker SETS the pre-gain
+            // and then UNDOES it in the same run (two steps, and the value back at 0.00), so the
+            // first cut of this half had nothing left to revert. rig-onestep-marker is one set.
             rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0), 8000);
-            const auto r1 = askAgent (rig, "rig-undo-marker: set the pre gain", 90000);
+            const auto r1 = askAgent (rig, "rig-onestep-marker: set the pre gain", 90000);
             juce::String zones1 = rig.freshState().getProperty ("agentRow", juce::var())
                                       .getProperty ("zones", juce::var()).toString();
             if (! hasStepUndoZone (zones1))

@@ -233,6 +233,17 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-onestep-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_one", "name": "do", "approval": "free",
+            "summary": "pre-gain 5 dB", "args": { "op": "set_pre_gain", "db": 5 } },
+          { "event": "await", "ids": ["tc_one"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Set the pre-gain to 5 dB." } ]
+      ]
+    },
+    {
       "goalContains": "rig-rawids-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },

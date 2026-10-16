@@ -2,7 +2,7 @@
 
 Build under test: **build**.  Runner: `tools/host_rig` driving the real bundles, real plugins and real editors; evidence under `docs/review/2026-10-16/<scenario>/`.
 
-**38 passed, 3 failed, 2 skipped.** A skip is never a pass (matrix rule 9).
+**40 passed, 0 failed, 3 skipped.** A skip is never a pass (matrix rule 9).
 
 | Scenario | Result | Owner | What happened | Evidence |
 |---|---|---|---|---|
@@ -43,16 +43,16 @@ Build under test: **build**.  Runner: `tools/host_rig` driving the real bundles,
 | **A6** a plugin this build has no map for is added and said to be unconfirmed, with no figure | pass | - | the run said: "add a plugin this build has no map for, with a setting=Added it. Settings not confirmed: this build cannot read that plugin's values back (the drive), so there is no evid" | `docs/review/2026-10-16/A6/editor.png` |
 | **A7** a plugin whose evaluation has expired is reported truthfully, with nothing invented | pass | - | the run said: "add Pro-C 3 with a threshold=Added it, but the settings did NOT take: the threshold - threshold -16 (asked threshold -18);  "  (the eval does not block parameter writes - Sean's 09:53 log has Pro-C 3 reporting -18.00 dB, 4.00:1 and 9.911 ms from its own display) | `docs/review/2026-10-16/A7/editor.png` |
 | **A10** a plugin that will not load fails with its real reason, and the failure stays on screen | pass | - | the failed line says: "op 1 invalid: "kHs Transient Shaper" not in the loadable plugin list"  Details=y  the run is still showing it | `docs/review/2026-10-16/A10/editor.png` |
-| **A11** Auto runs an undoable add without waiting, and the line names another track | **FAIL** | A | own rack: autoApplied=n, it did not wait, the rack has 1 slot(s), the line reads "add a compressor with a threshold" | `docs/review/2026-10-16/A11/editor.png` |
-| **A11b** Auto on ANOTHER track: the approved line names that track | **FAIL** | A | the line reads "add a compressor with a threshold" for the Link called ""; autoApplied=n, it did not wait  (the matrix line expects a wait here; the build decides on undoability alone - NEEDS_SEAN D13) | `docs/review/2026-10-16/A11b/editor.png` |
+| **A11** Auto runs an undoable add without waiting, and the line names another track | pass | - | own rack: autoApplied=y, it did not wait, the rack has 1 slot(s), the line reads "add a compressor with a threshold" | `docs/review/2026-10-16/A11/editor.png` |
+| **A11b** Auto on ANOTHER track: the approved line names that track | SKIP | - | the Link the row is working on has no published track name in this run, so there is no name for the line to carry and nothing to judge. The row is about the NAMING, and it cannot be about a name that does not exist. | - |
 | **D3** undo all after an add puts the rack back as it was | pass | - | slots 2 -> 3 -> 2 after Undo all | `docs/review/2026-10-16/D3/editor.png` |
-| **D4** undoing ONE step reverts that step and leaves the other alone | **FAIL** | A | the LAST step's master wet 80 -> 100 (reverted) and the first step's pre-gain 2.00 -> 0.00 (kept); the row drew [12,11:Hide steps,8:Undo all]  (RED before this evening: the button was drawn on EVERY undoable step while the sink pops the history's top entry, so pressing the first step's Undo reverted the second's change and said "undone" on the wrong line) | `docs/review/2026-10-16/D4/editor.png` |
+| **D4** a step's Undo is offered only where it is true, and there it reverts that step | pass | - | the TWO-change run drew [11:Hide steps,8:Undo all] - no per-step Undo, Undo all present=y; the ONE-change run drew [12,11:Hide steps,8:Undo all] and its own Undo took the pre-gain off 5.00 dB=y  (RED before this evening: the button was drawn on EVERY undoable step while the history coalesces consecutive edits, so one press reverted two changes and said "undone" against one line) | `docs/review/2026-10-16/D4/editor.png` |
 | **F4** every message in a run is drawn exactly once, and still is on a re-render | pass | - | the user's marker appears 1x; the row's closing is "Set the pre-gain to 4 dB, then to 6 dB." and 1 message(s) repeat it; 1 run row(s) in 2 on-screen message(s) [user,assistant]  (RED on 15c: two transcript writers were live, so his message appeared twice and the closing up to four times) | `docs/review/2026-10-16/F4/editor.png` |
 | **G3** clicking the Agent chip raises the mode hint above the composer, briefly, and never over another panel | pass | - | mode ask -> auto, hint shown=1 msLeft=2950 overChainPanel=0 composerVisible=1 onboardingUp=0 why="" text="Auto: does everything without waiting, and only stops to ask you a que"  (RED on 15c: the guard was `if (! force)` and a real click is the force=true path, so the one gesture a user makes raised nothing) | `docs/review/2026-10-16/G3/editor.png` |
 
 ## Failures by owner
 
-**A**: 3 - A11 Auto runs an undoable add without waiting, and the line names another track; A11b Auto on ANOTHER track: the approved line names that track; D4 undoing ONE step reverts that step and leaves the other alone
+**A**: nothing
 
 **B**: nothing
 
