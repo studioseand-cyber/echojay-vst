@@ -263,10 +263,55 @@ juce::String EJAgentClient::matchTypedToChoice (const juce::String& typedIn) con
     return hits == 1 ? hit : juce::String();
 }
 
+/** ---- IS THIS TYPED LINE AN ANSWER, OR A NEW INSTRUCTION? (16 Oct 2026) ------------------------
+
+    Sean gave two rules this morning and they meet in one state. The blocker: *"an ask always shows
+    its choices AND accepts a typed answer; a typed reply must never be silently dropped."* His #21:
+    *"A new request typed while a run waits on an ask got merged into that run. A new instruction
+    closes the waiting run (marked stopped) and starts a new run."* When the ask has nothing to tap,
+    those two say opposite things about the same keystrokes.
+
+    The joint live pass made it concrete: the real server asks "Pick a transient shaper for the kick"
+    with `choices: []`, and B4-live typed "Set the pre-gain to 2 dB" into it five times - and all five
+    were swallowed as the answer to the question, which is the exact fault #21 names.
+
+    So the two are told apart the way a person tells them apart: AN ANSWER IS A NAME, AN INSTRUCTION
+    IS A SENTENCE. A line that OPENS with one of this product's own command verbs and runs to three
+    words or more is an instruction ("Set the pre-gain to 2 dB", "Add Pro-C 2" - his own example).
+    "MTransient", "the EchoJay Transient", "elysia museq" are answers: no leading verb, or too short
+    to be a sentence. Deliberately narrow in both directions - a bare plugin name can never be read
+    as an instruction, and a verb-led sentence is never quietly consumed as an answer.                */
+bool EJAgentClient::typedLooksLikeNewInstruction (const juce::String& typedIn)
+{
+    const auto t = typedIn.trim();
+    if (t.isEmpty()) return false;
+    const auto words = juce::StringArray::fromTokens (t, " \t", "");
+    if (words.size() < 3) return false;               // a name, not a sentence
+    static const char* kVerbs[] = {
+        "set", "add", "remove", "delete", "bypass", "unbypass", "build", "make", "change",
+        "raise", "lower", "turn", "undo", "redo", "open", "close", "clear", "swap", "replace",
+        "put", "move", "mute", "unmute", "solo", "reset", "match", "level", "dial", "show"
+    };
+    const auto first = words[0].toLowerCase().retainCharacters ("abcdefghijklmnopqrstuvwxyz");
+    for (const char* v : kVerbs) if (first == v) return true;
+    return false;
+}
+
 bool EJAgentClient::interceptTyped (const juce::String& typed)
 {
     if (askPending())
     {
+        // THE SENTENCE TEST FIRST, and before the chip match, because "Add Pro-C 2" could otherwise
+        // be matched against a choice called "Pro-C 2" and answered as a tap - which is the swallow
+        // #21 is about, in its politest form.
+        if (typedLooksLikeNewInstruction (typed))
+        {
+            log ("typed text \"" + typed.trim() + "\" opens with a command verb and is a sentence, not a "
+                 "name - taking it as a NEW INSTRUCTION: this run is stopped and the text starts its own "
+                 "(Sean's #21, and the live pass's B4)");
+            stop();
+            return false;
+        }
         // ---- SEAN'S BLOCKER, 16 Oct 2026: A TYPED ANSWER IS NEVER DROPPED --------------------------
         //
         // "an ask always shows its choices AND accepts a typed answer; a typed reply must never be

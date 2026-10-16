@@ -4791,9 +4791,17 @@ int main (int argc, char* argv[])
                                  bool clearFirst = false, int howMany = -1)
             {
                 const int n = howMany > 0 ? howMany : repeats;
-                int passed = 0;
+                int passed = 0, discarded = 0;
                 juce::StringArray notes;
                 juce::var lastState;
+                // ---- A TURN THE SERVER NEVER SERVED IS NOT AN ATTEMPT (16 Oct 2026) --------------
+                // Four of C2-live's five attempts failed with "the turn produced nothing", and the
+                // log says why: `stream ended without a terminal frame status=500 "handler_threw"`
+                // and `{"error":"handler_threw","detail":"fetch failed"}` - B's server's own outbound
+                // fetch, sixty model calls into the pass. A row cannot judge the product from a turn
+                // that never happened, and counting it as a failure would report a server blip as a
+                // product fault. Such an attempt is DISCARDED and retried, at most twice per row, and
+                // the count is printed either way so a report can never hide how many were thrown out.
                 for (int i = 0; i < n; ++i)
                 {
                     // A row whose assertion names "the compressor" or "before the EQ" has to know
@@ -4811,6 +4819,16 @@ int main (int argc, char* argv[])
                         if ((b % 20) == 0) Rig::pump (10);
                     }
                     lastState = rig.freshState();
+                    const auto agentState = lastState.getProperty ("agent", juce::var())
+                                                     .getProperty ("state", juce::var()).toString();
+                    if (! r.ran() && agentState.containsIgnoreCase ("failed") && discarded < 2)
+                    {
+                        ++discarded; --i;
+                        notes.add ("attempt " + juce::String (i + 2) + " DISCARDED: the server did not "
+                                   "serve the turn (agent state \"" + agentState + "\") - retried");
+                        Rig::pump (2000);
+                        continue;
+                    }
                     juce::String why;
                     const bool good = r.ran() && ok (r, lastState, why);
                     if (good) ++passed;
@@ -4819,6 +4837,8 @@ int main (int argc, char* argv[])
                 }
                 scen (id, title, passed == n,
                       juce::String (passed) + " of " + juce::String (n) + " live attempt(s) held"
+                      + (discarded > 0 ? " (" + juce::String (discarded) + " attempt(s) discarded and "
+                                         "retried: the server did not serve them)" : juce::String())
                       + (notes.isEmpty() ? juce::String() : ".  " + notes.joinIntoString ("  |  ")),
                       "B", v2.editor.get(), lastState);
             };

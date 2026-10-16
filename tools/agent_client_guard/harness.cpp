@@ -381,6 +381,46 @@ int main()
         check (r.result (0).getProperty ("id", {}).toString() == "tc_keep_going" && r.result (0).getProperty ("result", {}).getProperty ("tapped", {}).toString() == "Yes"
                && r.logHas ("[soft cap]"),
                "A7 the soft cap is an ordinary ask with id tc_keep_going; a tap answers it like any other");
+
+        // ---- A8: AN ANSWER IS A NAME, AN INSTRUCTION IS A SENTENCE (16 Oct 2026) -----------------
+        //
+        // The chip-less ask, which the joint live pass showed the real server sending five times out
+        // of five (`{"question":"Pick a transient shaper...","choices":[],"allowFreeText":false}`).
+        // Sean's blocker says typing must answer it; his #21 says a new instruction must close the
+        // waiting run. Held in BOTH directions here, because a one-sided test of this would ship
+        // either a swallow or a run that cannot be answered:
+        //
+        //   "MTransient"               -> the ANSWER (a name, no leading verb)
+        //   "Set the pre-gain to 2 dB" -> a NEW INSTRUCTION (a verb-led sentence): run stopped,
+        //                                 interceptTyped returns false so the composer takes it.
+        check (! EJAgentClient::typedLooksLikeNewInstruction ("MTransient")
+               && ! EJAgentClient::typedLooksLikeNewInstruction ("the EchoJay Transient")
+               && ! EJAgentClient::typedLooksLikeNewInstruction ("elysia museq")
+               && ! EJAgentClient::typedLooksLikeNewInstruction ("Pro-C 3"),
+               "A8a a NAME is never read as an instruction (no leading verb, or too short to be a sentence)");
+        check (EJAgentClient::typedLooksLikeNewInstruction ("Set the pre-gain to 2 dB")
+               && EJAgentClient::typedLooksLikeNewInstruction ("Add Pro-C 2")
+               && EJAgentClient::typedLooksLikeNewInstruction ("remove the limiter please"),
+               "A8b a VERB-LED SENTENCE is always an instruction (Sean's #21, and the live pass's B4)");
+        r.round (7);
+        r.tool (R"({"id":"tc_nochip","name":"talk","args":{"ask":{"question":"Pick a transient shaper for the kick","choices":[],"allowFreeText":false}},"approval":"free"})");
+        r.await ({ "tc_nochip" });
+        pumpMs (10);
+        check (r.client.askPending() && r.client.pendingAsk().labels.isEmpty() && r.client.pendingAsk().allowFreeText,
+               "A8c a chip-less ask waits with free text FORCED on (the server said false; there is nothing to tap)");
+        const auto pN = r.posts.size();
+        check (! r.client.interceptTyped ("Set the pre-gain to 2 dB")
+               && r.posts.size() == pN && ! r.client.askPending()
+               && r.client.state() == EJAgentClient::State::Stopped,
+               "A8d ...and a verb-led sentence typed into it STOPS the run and goes down the composer's road");
+        r.round (7);
+        r.tool (R"({"id":"tc_nochip2","name":"talk","args":{"ask":{"question":"Pick a transient shaper for the kick","choices":[],"allowFreeText":false}},"approval":"free"})");
+        r.await ({ "tc_nochip2" });
+        pumpMs (10);
+        const auto pN2 = r.posts.size();
+        check (r.client.interceptTyped ("MTransient") && r.posts.size() == pN2 + 1
+               && r.result (0).getProperty ("result", {}).getProperty ("typed", {}).toString() == "MTransient",
+               "A8e ...while a NAME typed into the same question is the answer, as {typed:\"<text>\"}");
     }
     // ---- W: wait_for_playback NEVER hangs ------------------------------------------------------------------------------
     {

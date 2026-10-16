@@ -117,6 +117,10 @@ public:
     // A typed message while a session is live: answers a pending ask (true = consumed) or is refused (true, with a
     // status line) so the send path does not start a second conversation under a running agent.
     bool interceptTyped (const juce::String& typed);
+    /** An answer is a name; an instruction is a sentence. Public and static so a guard can hold it
+        in both directions - "MTransient" must never read as an instruction, "Set the pre-gain to
+        2 dB" must never read as an answer. See the note on the definition. */
+    static bool typedLooksLikeNewInstruction (const juce::String& typed);
 
     // ---- the plan card -------------------------------------------------------
     std::vector<const Step*> planLines() const;             // this round's ask_first steps still awaiting a decision

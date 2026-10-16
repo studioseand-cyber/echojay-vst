@@ -1,0 +1,8 @@
+scenario E1-live
+captured 2026-10-16T17:40:00.978+01:00
+  [user] Add an EchoJay Compressor with a threshold of -20 dB and a ratio of 4:1 to this rack, then tell me how much gain reduction it is doing
+  [assistant] Added an EchoJay Compressor set to a -20 dB threshold and 4:1 ratio. Play the loudest part of the mix for a few seconds so I can read how much gain reduction it's pulling.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]
+  opening: Added an EchoJay Compressor set to a -20 dB threshold and 4:1 ratio. Play the loudest part of the mix for a few seconds so I can read how much gain reduction it's pulling.
+  closing: Added an EchoJay Compressor set to a -20 dB threshold and 4:1 ratio. Play the loudest part of the mix for a few seconds so I can read how much gain reduction it's pulling.
+    step "add EchoJay Compressor" [done] right="applied" detail="added EchoJay Compressor first; read back 1 slot(s) on the rack; read back EchoJay Compressor: threshold -20 dB, ratio 4:1" chips=[]
