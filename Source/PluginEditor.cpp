@@ -36901,6 +36901,22 @@ void EchoJayEditor::publishRigState()
         o->setProperty ("chainView", juce::var (cv));
     }
 
+    // THE RACK LOCK, as a word (16 Oct 2026, the matrix's T3). A Link whose rack is selected in
+    // another instance refuses an edit with a sentence; a row about that refusal has to be able to
+    // wait for the lock to EXIST before it sends the edit, or it tests a race and reports a timeout.
+    {
+        const char* lockWord = "unknown";
+        switch (processorRef.rackLockState())
+        {
+            case EchoJayProcessor::RackLockState::Idle:        lockWord = "idle"; break;
+            case EchoJayProcessor::RackLockState::Held:        lockWord = "held"; break;
+            case EchoJayProcessor::RackLockState::WaitRecency: lockWord = "wait"; break;
+            case EchoJayProcessor::RackLockState::HeldByOther: lockWord = "other"; break;
+        }
+        o->setProperty ("rackLock", juce::String (lockWord));
+        o->setProperty ("rackLockOwner", processorRef.rackLockOtherOwner());
+    }
+
     // ---- which rack this window is working on, and what the agent was told it is
     o->setProperty ("workingUid", workingOnUid());
     o->setProperty ("viewUid",    chainViewUid());

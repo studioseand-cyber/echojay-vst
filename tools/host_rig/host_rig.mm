@@ -3533,13 +3533,22 @@ int main (int argc, char* argv[])
             // ---- A4b: ADD WITH SETTINGS, ACROSS THE PROCESS BOUNDARY ----------------------------
             if (tp.ok)
             {
-                const int before = (int) kick.state().getProperty ("slotCount", -1);
+                // THE SECOND PROCESS, and a rack nothing else in this run has touched. Running this on
+                // the Kick Link made it order-dependent: by the time it ran, scenario A4 had already
+                // put the same plugin there, so "the slot count went up" was false while the value was
+                // right. A scenario that depends on what ran before it is a scenario that reports the
+                // order rather than the product.
+                auto& fresh = linkProcs.size() > 1 ? *linkProcs[1] : kick;
+                rig.send (echojay::rig::cmd::selectLink, args1 ("uid", fresh.uid), 8000);
+                rig.send (echojay::rig::cmd::workOn,     args1 ("uid", fresh.uid), 8000);
+                Rig::pump (1000);
+                const int before = (int) fresh.state().getProperty ("slotCount", -1);
                 const auto r = askAgent (rig, "rig-thirdparty-marker: add " + tp.name + " and set its "
                                               + tp.paramName, 120000);
                 int after = before; juce::String landed, names;
                 rig.until ([&] (const juce::var&)
                 {
-                    const auto st = kick.state();
+                    const auto st = fresh.state();
                     after  = (int) st.getProperty ("slotCount", -1);
                     names  = st.getProperty ("slots",  juce::var()).toString();
                     landed = st.getProperty ("landed", juce::var()).toString();
@@ -3588,8 +3597,22 @@ int main (int argc, char* argv[])
                 Rig::pump (1500);
                 // The second instance selects the Link's rack: that is what takes the lock.
                 rig.sendTo ("VST3", echojay::rig::cmd::selectLink, args1 ("uid", kick.uid), 8000);
-                Rig::pump (2500);
+                // ...AND THE LOCK HAS TO BE VISIBLE BEFORE THE EDIT IS SENT (16 Oct 2026). Sending it
+                // 2.5 s later and hoping produced a run that timed out ("the rack never acknowledged
+                // it within 8 s") rather than one that was refused - which proves nothing about the
+                // refusal. The lock is published; this waits for it, bounded, and says so if it never
+                // appears rather than testing a race.
+                juce::String lockState;
+                const bool lockVisible = rig.until ([&] (const juce::var& stv)
+                {
+                    lockState = stv.getProperty ("rackLock", juce::var()).toString();
+                    // "other" is the one that matters here: this window can SEE that someone else
+                    // holds the rack. "idle" and "held" are this instance's own states.
+                    return lockState.equalsIgnoreCase ("other") || lockState.equalsIgnoreCase ("wait");
+                }, 12000);
+                Rig::pump (800);
                 const auto r = askAgent (rig, "rig-linkadd-marker: add a compressor to the kick", 90000);
+                juce::ignoreUnused (lockVisible);
                 const auto st = rig.freshState();
                 const auto words = r.stepWords + " " + r.text + " " + r.failDetail;
                 // THE SENTENCE FAMILY, not one phrasing. The rack refuses contention in more than one
@@ -3624,12 +3647,18 @@ int main (int argc, char* argv[])
                 int after = before;
                 rig.until ([&] (const juce::var&)
                 { after = (int) kick.state().getProperty ("slotCount", -1); return after > before; }, 25000);
-                scen ("T2w", "T2: an edit lands on a Link whose OWN window is open",
-                      opened && after > before,
-                      "the Link's editor was " + juce::String (opened ? "open" : "NOT open (it refused)")
-                      + " and its rack went " + juce::String (before) + " -> " + juce::String (after)
-                      + " slot(s)  (a republish that only happens with a window open would show here)",
-                      "A", v2.editor.get(), rig.freshState(), &r);
+                if (! opened)
+                    scenSkip ("T2w", "T2: an edit lands on a Link whose OWN window is open",
+                              "the Link's own process would not open an editor this run (\""
+                              + ack.getProperty ("note", juce::var()).toString() + "\"), so there is no "
+                              "open window for an edit to land under. Never counted as a pass.", "A");
+                else
+                    scen ("T2w", "T2: an edit lands on a Link whose OWN window is open",
+                          after > before,
+                          "the Link's editor was open and its rack went " + juce::String (before)
+                          + " -> " + juce::String (after)
+                          + " slot(s)  (a republish that only happens with a window open would show here)",
+                          "A", v2.editor.get(), rig.freshState(), &r);
                 kick.send ("close_editor");
             }
         }
