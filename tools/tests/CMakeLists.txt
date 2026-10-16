@@ -510,8 +510,13 @@ set_tests_properties(calib_link_guard PROPERTIES LABELS "fast" TIMEOUT 900 RUN_S
 #      anywhere. The gate runs it as its own stage: `ctest -L rig`.
 #  EXIT 77 = SKIPPED LOUDLY (no display). The gate reports that as a SKIP and not
 #  a pass, which is Sean's instruction; SKIP_RETURN_CODE makes ctest agree.
+# TIMEOUT 1800, NOT 900 (16 Oct 2026). The rig now compiles itself, builds tools/link_host, launches TWO
+# Link processes holding real third-party plugins, and runs the scenario matrix with real editors - a pass
+# measured at about thirteen minutes on this machine, which left barely a minute of headroom under 900 s.
+# A gate that goes red on a timeout reports a product fault where there is none, and that has cost this
+# tree a day before (gate 17). The bound is still a bound: a hung pass is killed at thirty minutes.
 add_test(NAME host_rig COMMAND bash ${CMAKE_SOURCE_DIR}/tools/host_rig/build_and_run.sh)
-set_tests_properties(host_rig PROPERTIES LABELS "rig" TIMEOUT 900 RUN_SERIAL TRUE
+set_tests_properties(host_rig PROPERTIES LABELS "rig" TIMEOUT 1800 RUN_SERIAL TRUE
                      SKIP_RETURN_CODE 77 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # TWO PASSES, BECAUSE THE TWO MODES TEST DIFFERENT THINGS (14 Oct 2026).
@@ -525,7 +530,7 @@ set_tests_properties(host_rig PROPERTIES LABELS "rig" TIMEOUT 900 RUN_SERIAL TRU
 # never carried the rack's pre-gain), and it was running only when a human remembered to run the rig without
 # EJ_RIG_LIVE - which is to say, not in the gate. A leg that is not in the gate is a leg that will rot.
 add_test(NAME host_rig_mock COMMAND bash ${CMAKE_SOURCE_DIR}/tools/host_rig/build_and_run.sh)
-set_tests_properties(host_rig_mock PROPERTIES LABELS "rig" TIMEOUT 900 RUN_SERIAL TRUE
+set_tests_properties(host_rig_mock PROPERTIES LABELS "rig" TIMEOUT 1800 RUN_SERIAL TRUE
                      SKIP_RETURN_CODE 77 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
                      ENVIRONMENT "EJ_RIG_LIVE=;EJ_RIG_TOKEN=")
 
