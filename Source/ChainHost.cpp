@@ -6750,6 +6750,22 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                        + "  in_flight=" + (inFlight ? "y" : "n")
                        + "  fetch_wired=" + (onNeedParamMaps ? "y" : "n")
                        + "  cached_maps=" + juce::String((int) paramMaps_.size())
+        // ---- WHICH maps are cached, not just how many (16 Oct 2026) ------------------------------
+        // A count cannot tell "the map for this plugin is absent" from "the map for this plugin is
+        // present under another key", and the rig spent a pass on exactly that ambiguity: one map
+        // cached, one fp asked for, the same twelve characters in both logs, and no way to tell from
+        // the log whether the keys matched. The first eight keys, so a long cache cannot flood the
+        // log, and the count above still says how many there are in all.
+                       + " [" + [this]
+                         {
+                             juce::StringArray keys;
+                             for (const auto& kv : paramMaps_)
+                             {
+                                 if (keys.size() >= 8) { keys.add ("..."); break; }
+                                 keys.add (kv.first.substring (0, 12));
+                             }
+                             return keys.joinIntoString (",");
+                         }() + "]"
                        + " -> " + (inFlight ? "pending" : "noMap")).toRawUTF8());
         return;
     }

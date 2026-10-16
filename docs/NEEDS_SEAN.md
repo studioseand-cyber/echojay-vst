@@ -77,6 +77,57 @@ E7 (the GR meter's two labels never overlapping) is an assertion on a pure layou
 INTO the runner, so when the runner runs against ship_2026-10-16a it still tests today's geometry. It is
 marked in the report rather than counted as a reproduction. Everything else starred runs red against 16a.
 
+### D10. The per-step Undo was there all along, behind the "2 changes" toggle
+
+Pass 11 skipped matrix row D4 with a sentence about the product: *"the row drew no per-step Undo
+control at all - every step's canUndo is false on the snapshot."* That was wrong, and it was wrong in
+the direction that matters: it blamed the build for something the ROW had not done. A finished run
+draws itself collapsed, and the per-step buttons are only laid out when the step list is open
+(`if (v.stepsOpen || v.failuresOnly)`). There was no button because nothing had opened the list -
+which is the first thing a person does before pressing a step's Undo.
+
+The row now presses the toggle first, the same control you press, and then the step's own Undo. The
+"queued: the per-step Undo has to be drawn" item is withdrawn from `docs/NEXT_ROUND_QUEUE.md`; there
+was nothing to draw.
+
+### D11. A row that cares which slots exist starts from an empty rack
+
+Three rows failed pass 11 and not one of them was a product fault. The matrix runs in one process on
+one rack, so by the fortieth row the own rack held seven slots left by earlier rows: A3's add had two
+slots of the same plugin name to choose between, E3 asked about "the third-party slot" and got an
+EchoJay Compressor an earlier row had left in slot 1 (so it answered with a figure, correctly, and
+the row failed), and the legacy EQ row matched a second, empty EchoJay EQ by name and read its empty
+settings. A row whose subject depends on what ran before it tests the running order, not the product.
+
+So the rig hook gained `clear_rack` - the own rack emptied through the product's own `removeSlot`,
+the same door your delete uses - and the three rows ask for the rack they were written for. It is
+scaffolding, gated like every other rig command, and it cannot exist in a shipped plugin.
+
+### D12. A gain-reduction check now says its answer on the row, not only to the model
+
+The same pass drew a finished GR step as `[done]` with an EMPTY detail: the whole answer travelled in
+the result for the model to phrase, so the row itself told you nothing. The result already carries a
+ready-made sentence written for a person ("The loudest hits are about 4.4 dB of gain reduction and the
+typical amount is about 2.1 dB."), because handing over the words is the surest way to stop a figure
+being misdescribed. That sentence is now also the step's landed line. The model's instructions stay in
+`note`, off the row.
+
+### D13. Auto mode decides on undoability alone, including on another track — a ruling for you
+
+The matrix row I wrote for A11 says *"no approval asked for a small move; add on another track still
+asks per the mode table."* The build does the first half and not the second, and the reason is your
+own 14 Oct ruling: in Auto an ask-first step runs without waiting **unless it cannot be put back**,
+and that question is answered by `undoabilityOf` - the same function that decides whether the op
+hands back an undo token. An `add` is undoable wherever it lands, so Auto runs it on a Link too.
+
+What the build does guarantee on another track is that the line **names** it ("add a compressor with
+a threshold - on 88_7even Kick"), because a line you approve must say what it acts on.
+
+I have taken the reading that undoability is the whole decider, because that is what you ruled, and
+the row (A11/A11b) asserts exactly that. If you want Auto to stop for anything that touches a track
+other than the one you are working on, say so and it becomes one more clause in `undoabilityOf` -
+about a dozen lines, with its own row.
+
 ---
 
 ## What the new runner found on its FIRST run, before any scenario

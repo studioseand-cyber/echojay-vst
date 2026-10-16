@@ -121,6 +121,18 @@ namespace cmd
     // the line that matters: it reads the component tree and writes a file the rig named. Gated by the
     // same two locks as everything else, so it cannot exist in a shipped plugin.
     inline constexpr const char* screenshot   = "screenshot";      // { path } - the editor, as it looks
+    // ---- A KNOWN RACK TO START FROM (16 Oct 2026, pass 12) ---------------------------------------
+    //
+    // Three matrix rows failed on pass 11 for the SAME reason and none of them was a product fault:
+    // the scenarios run one after another on one rack, so by row 40 the own rack held seven slots
+    // left by earlier rows and "the third-party slot" / "slot 6" / "the slot the add lands in" all
+    // meant something different from what the row was written against. A row whose subject depends
+    // on what ran before it is not a test of the product, it is a test of the running order.
+    //
+    // So a scenario can ask for the rack it was written for. This is SCAFFOLDING, gated like every
+    // other command here (EJ_RIG_HOOK and the build-time lock), and it goes through removeSlot - the
+    // same door the user's delete uses - so a cleared rack is a rack the product itself produced.
+    inline constexpr const char* clearRack   = "clear_rack";       // {} - the own rack, emptied
     // press gains "undo" (fix 4) alongside apply / apply_all / skip_all / skip_line / details / stop.
 }
 

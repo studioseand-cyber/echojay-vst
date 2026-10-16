@@ -36792,6 +36792,26 @@ void EchoJayEditor::serviceRigHook()
         ok = chainListPanel.rigDoubleClickPreGain();
         note = ok ? "pre-gain double-clicked" : "the pre-gain knob is not available on this view";
     }
+    else if (c.name == echojay::rig::cmd::clearRack)
+    {
+        // The own rack, emptied through the product's own removeSlot - back to front, because
+        // removing a slot renumbers everything after it.
+        auto& ch = processorRef.getChainHost();
+        const int had = ch.getNumSlots();
+        for (int i = had - 1; i >= 0; --i) ch.removeSlot (i);
+        // ---- AND THE HISTORY, BECAUSE A RACK AND ITS UNDO STACK ARE ONE STATE --------------------
+        // The first cut of this emptied the rack and left the undo history alone, so the entries in
+        // it described slots that no longer existed - and the next row's "undo all" walked back to a
+        // checkpoint in that history and could put nothing back (the matrix's D3: "slots 5 -> 6 -> 6
+        // after Undo all"). An empty rack with a history of edits to it is not a known starting
+        // state, it is an inconsistent one. Cleared together, as a pair.
+        const int histDepth = processorRef.undoHistory().undoDepth();
+        processorRef.undoHistory().clear();
+        processorRef.markStateDirty();
+        refreshChainPanelForView (true);
+        note = "cleared " + juce::String (had) + " slot(s) and " + juce::String (histDepth)
+             + " undo entr(ies), the rack now has " + juce::String (ch.getNumSlots());
+    }
     else if (c.name == echojay::rig::cmd::reportState)
     {
         note = "state written";

@@ -776,6 +776,8 @@ void ExecutorRead::check (const ToolCall& call, Done done)
         // value kept and labelled as the momentary one so nothing can quote it as "the" figure.
         auto* o = new juce::DynamicObject();
         o->setProperty ("slot", slotArg); o->setProperty ("name", s.name);
+        // The one sentence a person reads, written in both branches below and landed on the row.
+        juce::String grSentence;
         const bool haveWindow = s.grWindowFrames > 0.0;
         if (haveWindow)
         {
@@ -808,9 +810,10 @@ void ExecutorRead::check (const ToolCall& call, Done done)
             o->setProperty ("grTypicalDb", r1 (s.grTypicalDb));   // median - where the needle sits
             o->setProperty ("grWindowFrames", s.grWindowFrames);
             o->setProperty ("measured", "over the whole listen window, only while audio was playing");
-            o->setProperty ("sentence", "The loudest hits are about " + juce::String (r1 (s.grLoudestDb), 1)
-                                        + " dB of gain reduction and the typical amount is about "
-                                        + juce::String (r1 (s.grTypicalDb), 1) + " dB.");
+            grSentence = "The loudest hits are about " + juce::String (r1 (s.grLoudestDb), 1)
+                       + " dB of gain reduction and the typical amount is about "
+                       + juce::String (r1 (s.grTypicalDb), 1) + " dB.";
+            o->setProperty ("sentence", grSentence);
             o->setProperty ("note", "Quote the `sentence` field, or build from grLoudestDb (the loudest "
                                     "hits: the 95th percentile of the blocks with audio, which is what a "
                                     "person sees on the meter) and grTypicalDb (the typical amount). There "
@@ -828,14 +831,20 @@ void ExecutorRead::check (const ToolCall& call, Done done)
             o->setProperty ("measured", "nothing yet - no audio has been through this slot since the "
                                         "listen window began");
             o->setProperty ("listenFirst", true);
-            o->setProperty ("sentence", "I have not heard anything through this compressor yet, so I "
-                                        "cannot say how much it is doing.");
+            grSentence = "I have not heard anything through this compressor yet, so I cannot say how "
+                         "much it is doing.";
+            o->setProperty ("sentence", grSentence);
             o->setProperty ("note", "There is no figure to give. Run wait_for_playback with audio playing "
                                     "and ask again: a gain reduction is measured over a listen window, so "
                                     "the listen comes FIRST and the check after it.");
         }
         setLevel (o, "inLufs", s.inLufs); setLevel (o, "outLufs", s.outLufs);
-        done (ToolOutcome::success (juce::var (o)));
+        // ---- THE ROW SAYS WHAT WAS READ (16 Oct 2026, pass 12) ---------------------------------
+        // The rig drew this step as `[done] detail=""`: a gain-reduction check that worked and told
+        // the person NOTHING, because the whole answer travelled in the result for the model to
+        // phrase. The ready-made sentence is written for a person - that is why it exists - so it
+        // is also the landed line. The model's instructions stay in `note`, off the row.
+        done (ToolOutcome::success (juce::var (o), {}, grSentence));
         return;
     }
     if (what == "true_peak")

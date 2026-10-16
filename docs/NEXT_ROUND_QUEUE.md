@@ -1320,9 +1320,9 @@ pass on today's build.
    saturation, transient. The maps that fail go to B as a list. Not started; this round's install comes
    first.
 
-8. **The per-step Undo control is not drawn on a finished run** (the matrix's D4). The row draws
-   "N changes" and "Undo all", and every step's `canUndo` is false on the snapshot the row is built
-   from, while `canUndoAll()` - which does not consult `undoAllowedNow()` - stays true. So a user can
-   undo everything but not one thing, and D4 cannot mean anything until the control is drawn. Found by
-   the new coverage, 16 Oct; the scenario SKIPS with the zones as evidence rather than reporting "the
-   press did nothing", which would be a true sentence about the wrong fault.
+8. ~~**The per-step Undo control is not drawn on a finished run** (the matrix's D4).~~
+   **WITHDRAWN, 16 Oct (pass 12).** There was nothing to draw. The per-step buttons are laid out only
+   when the step list is OPEN (`if (v.stepsOpen || v.failuresOnly)` in `EJAgentRunView`), and a
+   finished run draws itself collapsed behind its "N changes" toggle - so the row found no button
+   because nothing had opened the list. The scenario presses the toggle first, as a person does, and
+   then the step's own Undo. The skip had blamed the build for something the row had not done.

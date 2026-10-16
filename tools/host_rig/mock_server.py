@@ -184,6 +184,47 @@ class Handler(BaseHTTPRequestHandler):
         body = self._body()
         self._record(self.path, body)
 
+        # ---- THE BY-NAME FALLBACK, WHICH THE MOCK DID NOT HAVE AT ALL (16 Oct 2026) ---------------
+        #
+        # A slot whose fingerprint has no exact map asks POST /api/params/lookup in "lookup" mode -
+        # the real server's same-name search. This file answered {} to it, which the plugin correctly
+        # reads as "the server knows nothing", so in the rig the fallback road could NEVER succeed and
+        # every row that reached it saw "this build cannot read that plugin's values back". A pass was
+        # spent on exactly that: the product was behaving correctly against a server that was not
+        # there.
+        #
+        # It answers the way the real route does, by NAME and not by fingerprint: a stored map is
+        # served for a plugin only if EVERY control the map names exists among that plugin's own
+        # parameter names, which the request carries. A map that does not fit comes back as an
+        # explicit null with a reason, because "no map" and "a map that is not safe for this binary"
+        # are different answers and the plugin logs them differently.
+        if self.path.startswith("/api/params/lookup"):
+            store = {}
+            if MAPS_FILE:
+                try:
+                    with open(MAPS_FILE) as f:
+                        store = json.load(f) or {}
+                except Exception as e:
+                    log("params/lookup: cannot read", MAPS_FILE, repr(e))
+            results = []
+            for pl in (body.get("plugins") or []):
+                ik = pl.get("ik") or ""
+                live = {str(n).strip().lower() for n in (pl.get("param_names") or [])}
+                served, why = None, "no map on this server names controls this plugin has"
+                for key, m in store.items():
+                    if not isinstance(m, dict):
+                        continue
+                    want = [str(k).strip().lower() for k in (m.get("controls") or {}).keys()]
+                    if not want:
+                        continue
+                    if all(w in live for w in want):
+                        served, why = m, ""
+                        break
+                results.append({"ik": ik, "map": served, "reason": why})
+                log("params/lookup: %s -> %s (%d live name(s))"
+                    % (ik[:28], "a map" if served else "null: " + why, len(live)))
+            return self._json({"results": results})
+
         if self.path.startswith("/api/chat-stream"):
             return self.chat_stream(body)
         if self.path.startswith("/api/chat"):

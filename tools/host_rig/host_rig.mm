@@ -1349,6 +1349,30 @@ static juce::StringArray wordingOffences (const juce::var& state)
     return out;
 }
 
+/** THE RACK A ROW WAS WRITTEN FOR (16 Oct 2026, pass 12).
+
+    Three rows failed pass 11 and not one of them was a product fault: the matrix runs in one
+    process on one rack, so by the fortieth row the own rack held seven slots left by earlier rows
+    and "the third-party slot", "slot 6" and "the slot this add lands in" no longer meant what the
+    row was written against. A row whose subject depends on what ran before it tests the running
+    order, not the product.
+
+    So a row that cares which slots exist asks for an empty rack first, through the product's own
+    removeSlot (the rig hook's clear_rack). It returns how many slots the rack has afterwards, so a
+    row can state in its own evidence that it started from nothing.                                */
+template <typename RigT>
+static int clearOwnRack (RigT& rig)
+{
+    rig.send (echojay::rig::cmd::workOn,     args1 ("uid", ""), 8000);
+    rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+    rig.send (echojay::rig::cmd::clearRack,  juce::var(), 12000);
+    const auto st = rig.freshState();
+    // `ownRack.slots` / `ownRack.count` are the published names. "chainSlots" was never a field of
+    // the rig state at all, and three readers of it quietly returned nothing - which is how E3 came
+    // to report `slot 1 holds ""` about a rack that held exactly what it had just put there.
+    return (int) st.getProperty ("ownRack", juce::var()).getProperty ("count", juce::var (-1));
+}
+
 /** A MATRIX SCENARIO. Records it, prints it in the same shape as a row, captures the
     evidence, and applies invariant I4 to whatever was on screen - so a scenario that
     passes its own assertion but drew a raw id still fails, which is what an invariant is. */
@@ -3341,8 +3365,13 @@ int main (int argc, char* argv[])
         // that targets the last slot cannot pass this row by luck.
         if (tp.ok)
         {
-            rig.send (echojay::rig::cmd::workOn,    args1 ("uid", ""), 8000);
-            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+            // ---- FROM AN EMPTY RACK (16 Oct 2026, pass 12) -------------------------------------
+            // Pass 11 failed this row with "Settings not confirmed", and the fault was the rack it
+            // started on: an earlier row had left an EchoJay Compressor in slot 1 and a second
+            // copy of this same third party in the rack, so the add's read-back had two slots of
+            // the same name to choose between and the row could not say which one it was asking
+            // about. The row is about one add on one rack; it starts from one.
+            const int before = clearOwnRack (rig);
             const auto r = askAgent (rig, "rig-tpown-marker: add " + tp.name + " to this rack and set its "
                                           + tp.paramName, 120000);
             const auto st = rig.freshState();
@@ -3366,7 +3395,8 @@ int main (int argc, char* argv[])
                                         .getProperty ("closing", juce::var()).toString();
             // ...and the plugin itself, through the same door the agent reads: the slot's own figure.
             juce::String ownLanded;
-            if (auto* arr = st.getProperty ("chainSlots", juce::var()).getArray())
+            if (auto* arr = st.getProperty ("ownRack", juce::var())
+                                .getProperty ("slots", juce::var()).getArray())
                 for (const auto& sv : *arr)
                     if (sv.getProperty ("name", juce::var()).toString().containsIgnoreCase (tp.name))
                         ownLanded = sv.getProperty ("landed", juce::var()).toString();
@@ -3376,7 +3406,8 @@ int main (int argc, char* argv[])
                   + "\"; the CLOSING says: \"" + closingNow + "\"; the step said: \""
                   + words.substring (0, 140) + "\"; the slot's own landed field: \""
                   + (ownLanded.isEmpty() ? juce::String ("(empty)") : ownLanded.substring (0, 80))
-                  + "\"  (RED on 16a: an add carries `after`, so it lands "
+                  + "\"; the rack held " + juce::String (before) + " slot(s) before the add"
+                  + "  (RED on 16a: an add carries `after`, so it lands "
                   "where the server asked, and the read-back read the LAST slot - another plugin - and "
                   "reported \"settings not confirmed\" about a value the plugin was showing correctly)",
                   "A", v2.editor.get(), st, &r);
@@ -3936,9 +3967,22 @@ int main (int argc, char* argv[])
             // EchoJay Compressor the build had just put there, so the row was asking about a
             // certified device and passing because it did not say "no audio". Its own script asks
             // about the slot the third party is in.
-            // SLOT 1 IS THE THIRD PARTY HERE: scenario A3 added it with `after: 0`, which puts it at
-            // the front. The script asks about slot 1 and does NOT wait for playback first - the
-            // whole point of #19 is that an uncertified plugin is refused BEFORE any listening.
+            // SLOT 1 IS THE THIRD PARTY HERE, AND THIS ROW MAKES IT SO (16 Oct 2026, pass 12).
+            // It used to rely on A3 having put it there with `after: 0`; forty rows later slot 1
+            // was an EchoJay Compressor a build row had left, the check was asked about a
+            // CERTIFIED device, it answered correctly with a figure, and the row failed for a
+            // reason that had nothing to do with #19. So the rack is emptied and the third party
+            // added here: slot 1 is the uncertified plugin because this row put it there.
+            // The script does NOT wait for playback first - the whole point of #19 is that an
+            // uncertified plugin is refused BEFORE any listening.
+            clearOwnRack (rig);
+            const auto added = askAgent (rig, "rig-tpown-marker: add " + tp.name + " to this rack and set its "
+                                              + tp.paramName, 120000);
+            juce::String slot1Name;
+            if (auto* arr = rig.freshState().getProperty ("ownRack", juce::var())
+                                .getProperty ("slots", juce::var()).getArray())
+                if (! arr->isEmpty())
+                    slot1Name = (*arr)[0].getProperty ("name", juce::var()).toString();
             const auto r = askAgent (rig, "rig-grtp-marker: how much is " + tp.name + " doing?", 90000);
             const auto st = rig.freshState();
             // THE ROW'S OWN STEP DETAIL. r.stepWords is captured while the steps exist and can be
@@ -3959,8 +4003,9 @@ int main (int argc, char* argv[])
                                       || words.containsIgnoreCase ("cannot measure")
                                       || words.containsIgnoreCase ("not an EchoJay device");
             scen ("E3", "check(gr) on an UNCERTIFIED third party says so at once, and never blames silence",
-                  r.ran() && ! saysSilence && saysUncertified,
-                  "the run said: \"" + words.substring (0, 200) + "\"  (RED on 16a: with audio playing and "
+                  r.ran() && slot1Name.containsIgnoreCase (tp.name) && ! saysSilence && saysUncertified,
+                  "slot 1 holds \"" + slot1Name + "\" (the add " + (added.ran() ? "ran" : "did NOT run")
+                  + "); the run said: \"" + words.substring (0, 200) + "\"  (RED on 16a: with audio playing and "
                   "Renaissance Axx showing 15.5 dB of attenuation, the answer was \"No audio has been heard "
                   "for gain reduction on slot 1 yet\" - a reason that was not true)",
                   "A", v2.editor.get(), st, &r);
@@ -4204,6 +4249,83 @@ int main (int argc, char* argv[])
                   "A", v2.editor.get(), st, &r);
         }
 
+        // ---- A11: AUTO MODE RUNS AN UNDOABLE ADD WITHOUT WAITING, AND SAYS WHAT IT ACTS ON ---------
+        //
+        // Sean's coverage list named A6-A11. A11 is Auto's one decision (his 14 Oct ruling): an
+        // ask_first step runs without a press UNLESS it cannot be put back, and that question is
+        // answered by the executor's `undoabilityOf` - the same function that decides whether the op
+        // hands back an undo token. An `add` is undoable, so Auto runs it.
+        //
+        // THE MATRIX LINE SAYS MORE THAN THE BUILD DOES, and the row says so rather than inventing a
+        // verdict: *"add on another track still asks per the mode table."* The build asks only about
+        // undoability, so an add on another track runs in Auto too - with the track NAMED on the
+        // line, which is the safety this actually needs ("a line the user approves must say what it
+        // acts on"). Whether Auto should additionally stop for another track is a RULING, and it is
+        // in NEEDS_SEAN as D13. This row asserts what is ruled today: no wait on the own rack, and
+        // on another track the line names that track.
+        {
+            clearOwnRack (rig);
+            rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "auto"), 8000);
+            const auto rOwn = askAgent (rig, "rig-autoadd-marker: add it", 90000);
+            const auto stOwn = rig.freshState();
+            bool autoApplied = false; juce::String ownLabel;
+            if (auto* arr = stOwn.getProperty ("agentRow", juce::var())
+                                 .getProperty ("steps", juce::var()).getArray())
+                for (const auto& sv : *arr)
+                {
+                    if ((bool) sv.getProperty ("autoApplied", false)) autoApplied = true;
+                    ownLabel = sv.getProperty ("label", juce::var()).toString();
+                }
+            const int ownSlots = ownSlotCount (stOwn);
+            // A row that may leave a run WAITING must not hand that run to the next row: if Auto did
+            // ask after all, the question is still on screen and the following rows would be
+            // answering it. Stop is pressed either way, and it is a no-op on a finished run.
+            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+            scen ("A11", "Auto runs an undoable add without waiting, and the line names another track",
+                  rOwn.ran() && autoApplied && ! rOwn.sawApproval && ownSlots >= 1,
+                  "own rack: autoApplied=" + juce::String (autoApplied ? "y" : "n")
+                  + ", it " + (rOwn.sawApproval ? "DID wait for a press" : "did not wait")
+                  + ", the rack has " + juce::String (ownSlots) + " slot(s), the line reads \""
+                  + ownLabel.substring (0, 70) + "\"",
+                  "A", v2.editor.get(), stOwn, &rOwn);
+
+            // ...and the same instruction while the chat is working on a LINK: it runs (an add is
+            // undoable wherever it lands) and the line has to NAME the track it acts on.
+            if (! linkUid.isEmpty())
+            {
+                rig.send (echojay::rig::cmd::workOn, args1 ("uid", linkUid), 10000);
+                const auto rLink = askAgent (rig, "rig-autoadd-marker: add it there", 90000);
+                const auto stLink = rig.freshState();
+                juce::String linkLabel; bool linkAuto = false;
+                if (auto* arr = stLink.getProperty ("agentRow", juce::var())
+                                      .getProperty ("steps", juce::var()).getArray())
+                    for (const auto& sv : *arr)
+                    {
+                        if ((bool) sv.getProperty ("autoApplied", false)) linkAuto = true;
+                        const auto lb = sv.getProperty ("label", juce::var()).toString();
+                        if (lb.isNotEmpty()) linkLabel = lb;
+                    }
+                rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+                const auto linkName = linkRowOf (stLink, linkUid)
+                                          .getProperty ("name", juce::var()).toString();
+                const bool namesTrack = linkName.isNotEmpty()
+                                     && linkLabel.containsIgnoreCase (linkName.substring (0, 6));
+                scen ("A11b", "Auto on ANOTHER track: the approved line names that track",
+                      rLink.ran() && namesTrack,
+                      "the line reads \"" + linkLabel.substring (0, 90) + "\" for the Link called \""
+                      + linkName + "\"; autoApplied=" + juce::String (linkAuto ? "y" : "n")
+                      + ", it " + (rLink.sawApproval ? "DID wait" : "did not wait")
+                      + "  (the matrix line expects a wait here; the build decides on undoability "
+                      "alone - NEEDS_SEAN D13)",
+                      "A", v2.editor.get(), stLink, &rLink);
+                rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
+            }
+            else
+                scenSkip ("A11b", "Auto on ANOTHER track: the approved line names that track",
+                          "no Link in the registry this run", "A");
+            rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "ask"), 8000);
+        }
+
         // ---- D3: UNDO ALL AFTER AN ADD PUTS THE RACK BACK -------------------------------------------
         {
             rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
@@ -4233,37 +4355,62 @@ int main (int argc, char* argv[])
             const auto mid = rig.freshState();
             const double pgMid  = (double) mid.getProperty ("preGainDb", juce::var());
             const double wetMid = (double) mid.getProperty ("masterWetPct", juce::var());
-            // The FIRST step's own Undo, pressed on its line.
-            const auto zonesBefore = rig.freshState().getProperty ("agentRow", juce::var())
-                                         .getProperty ("zones", juce::var()).toString();
-            // ---- NO BUTTON IS NOT A FAILED PRESS (16 Oct 2026) ----------------------------------
-            // The row draws "N changes" and "Undo all" but no per-step Undo: every step's canUndo is
-            // false on the snapshot the row is built from, while canUndoAll - which does not consult
-            // undoAllowedNow() - stays true. So there is nothing on the line to press, and reporting
-            // "the press did nothing" would be a true sentence about the wrong thing. The row says
-            // what it found and is never counted as a pass; the gap is queued.
-            if (! zonesBefore.contains ("12"))
+            // ---- THE STEPS HAVE TO BE OPEN FOR A STEP'S BUTTON TO EXIST (16 Oct 2026, pass 12) ---
+            //
+            // Pass 11 skipped this row saying "the row drew no per-step Undo control at all - every
+            // step's canUndo is false on the snapshot". That reading was wrong, and the skip said so
+            // about the product when it should have said it about the row: the per-step zones are
+            // only laid out when the step list is OPEN (`if (v.stepsOpen || v.failuresOnly)` in
+            // EJAgentRunView), and a finished run draws itself COLLAPSED behind its "2 changes"
+            // toggle. There was no button because nothing had opened the list - which is exactly
+            // what a person does before pressing a step's Undo.
+            //
+            // So the row presses the toggle first, the same control Sean presses, and only then
+            // looks for the step's own Undo.
+            // THE ZONE'S OWN SPELLING (pass 12): a per-step Undo zone is published as a bare "12",
+            // not "12:<label>" - only the labelled zones carry a colon. Pass 12 opened the list,
+            // the row drew [12,12,11:Hide steps,8:Undo all], and the test for "12:" still said
+            // there was no button. The published list is matched as it is written.
+            const auto hasStepUndoZone = [] (const juce::String& z)
             {
-                scenSkip ("D4", "undoing ONE step reverts that step and leaves the other alone",
-                          "the row drew no per-step Undo control at all [" + zonesBefore.substring (0, 90)
-                          + "] - every step's canUndo is false on the snapshot while \"Undo all\" is "
-                            "drawn, so there is nothing on the line to press. QUEUED: the per-step "
-                            "Undo has to be drawn before this scenario can mean anything.", "A");
+                auto t = juce::StringArray::fromTokens (z, ",", "");
+                for (auto& e : t) if (e.trim().upToFirstOccurrenceOf (":", false, false).trim() == "12") return true;
+                return false;
+            };
+            juce::String zonesBefore = rig.freshState().getProperty ("agentRow", juce::var())
+                                           .getProperty ("zones", juce::var()).toString();
+            if (! hasStepUndoZone (zonesBefore))
+            {
+                rig.send (echojay::rig::cmd::press, args1 ("button", "toggle_steps"), 8000);
+                rig.until ([&] (const juce::var& stv)
+                {
+                    return hasStepUndoZone (stv.getProperty ("agentRow", juce::var())
+                                               .getProperty ("zones", juce::var()).toString());
+                }, 6000);
+                zonesBefore = rig.freshState().getProperty ("agentRow", juce::var())
+                                  .getProperty ("zones", juce::var()).toString();
             }
+            const bool haveStepUndo = hasStepUndoZone (zonesBefore);
+            if (! haveStepUndo)
+                scenSkip ("D4", "undoing ONE step reverts that step and leaves the other alone",
+                          "even with the step list open the row drew no per-step Undo ["
+                          + zonesBefore.substring (0, 90) + "], so there is nothing on the line to "
+                            "press and no press could be reported honestly.", "A");
             else
-            rig.send (echojay::rig::cmd::press, args1 ("button", "undo_step"), 12000);
-            if (zonesBefore.contains ("12"))
-            rig.until ([&] (const juce::var& stv)
             {
-                return std::abs ((double) stv.getProperty ("preGainDb", juce::var()) - pgMid) > 0.5
-                    || std::abs ((double) stv.getProperty ("masterWetPct", juce::var()) - wetMid) > 5.0;
-            }, 10000);
+                rig.send (echojay::rig::cmd::press, args1 ("button", "undo_step"), 12000);
+                rig.until ([&] (const juce::var& stv)
+                {
+                    return std::abs ((double) stv.getProperty ("preGainDb", juce::var()) - pgMid) > 0.5
+                        || std::abs ((double) stv.getProperty ("masterWetPct", juce::var()) - wetMid) > 5.0;
+                }, 10000);
+            }
             const auto st = rig.freshState();
             const double pgAfter  = (double) st.getProperty ("preGainDb", juce::var());
             const double wetAfter = (double) st.getProperty ("masterWetPct", juce::var());
             const bool oneReverted = std::abs (pgAfter - pgMid) > 0.5 || std::abs (wetAfter - wetMid) > 5.0;
             const bool otherKept   = std::abs (pgAfter - pgMid) < 0.5 || std::abs (wetAfter - wetMid) < 5.0;
-            if (zonesBefore.contains ("12"))
+            if (haveStepUndo)
             scen ("D4", "undoing ONE step reverts that step and leaves the other alone",
                   r.ran() && oneReverted && otherKept,
                   "pre-gain " + juce::String (pgMid, 2) + " -> " + juce::String (pgAfter, 2)
@@ -4445,8 +4592,12 @@ int main (int argc, char* argv[])
         // device directly through the rack's own per-parameter read - the SAME call the agent's
         // read-back makes - so a pass here is a pass for the agent.
         {
-            rig.send (echojay::rig::cmd::workOn,    args1 ("uid", ""), 8000);
-            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+            // ONE EQ ON THE RACK, BECAUSE THE ROW READS "the EQ" (16 Oct 2026, pass 12). Pass 11
+            // failed here with `slot 6 settings="" landed=""`: by this point the rack held seven
+            // slots and two of them were EchoJay EQs, one put there by an earlier row with no
+            // bands at all. The row matched that one by name and read its empty settings. Cleared
+            // first, so "the EQ" is the EQ this row asked for.
+            clearOwnRack (rig);
             const auto r = askAgent (rig, "rig-eqband-marker: put two bells on an EchoJay EQ here", 120000);
             juce::String caption, names;
             int eqSlot = -1;
@@ -4583,7 +4734,7 @@ int main (int argc, char* argv[])
             // every failure's, so a flaky one shows its own evidence rather than the last one's.
             auto repeated = [&] (const char* id, const char* title, const juce::String& goal,
                                  std::function<bool (const AgentOutcome&, const juce::var&, juce::String&)> ok,
-                                 int howMany = -1)
+                                 bool clearFirst = false, int howMany = -1)
             {
                 const int n = howMany > 0 ? howMany : repeats;
                 int passed = 0;
@@ -4591,6 +4742,11 @@ int main (int argc, char* argv[])
                 juce::var lastState;
                 for (int i = 0; i < n; ++i)
                 {
+                    // A row whose assertion names "the compressor" or "before the EQ" has to know
+                    // which slots exist, and five attempts on one rack leave five of everything
+                    // (D11). Those rows start each attempt from an empty rack and build what they
+                    // need in the instruction itself.
+                    if (clearFirst) clearOwnRack (rig);
                     rig.send (echojay::rig::cmd::workOn,     args1 ("uid", ""), 8000);
                     rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
                     const auto r = askAgent (rig, goal, 150000);
@@ -4632,7 +4788,7 @@ int main (int argc, char* argv[])
                               if (words.containsIgnoreCase ("did NOT take") || words.containsIgnoreCase ("cannot read"))
                               { why = "the run said: \"" + words.substring (0, 110) + "\""; return false; }
                               return true;
-                          });
+                          }, /*clearFirst*/ true);
             else
                 scenSkip ("A3-live", "live: add a third party, dialled and confirmed", tp.why, "A");
 
@@ -4688,16 +4844,250 @@ int main (int argc, char* argv[])
                           return true;
                       });
 
+            // ---- ONE REPEATED SCENARIO THAT NEEDS THE MODEL TO ASK ---------------------------------
+            //
+            // B2-B4 are all about what happens to a WAITING question, and only the model decides
+            // whether to ask one. So this variant does not answer the ask itself (askAgent's last
+            // argument), hands the waiting run to the row, and - if the model never asked across
+            // every attempt - SKIPS with that as the reason. A row that is satisfied by the question
+            // never being asked is not a test, and this is the shape that says so.
+            auto repeatedAsk = [&] (const char* id, const char* title, const juce::String& goal,
+                                    std::function<bool (const AgentOutcome&, const juce::var&, juce::String&)> onAsk)
+            {
+                const int n = repeats;
+                int asked = 0, passed = 0;
+                juce::StringArray notes;
+                juce::var lastState;
+                for (int i = 0; i < n; ++i)
+                {
+                    rig.send (echojay::rig::cmd::workOn,     args1 ("uid", ""), 8000);
+                    rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+                    const auto r = askAgent (rig, goal, 150000, false);
+                    if (! r.sawAsk)
+                    {
+                        notes.add ("attempt " + juce::String (i + 1) + ": it did not ask");
+                        rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+                        continue;
+                    }
+                    ++asked;
+                    juce::String why;
+                    const bool good = onAsk (r, lastState = rig.freshState(), why);
+                    if (good) ++passed;
+                    else notes.add ("attempt " + juce::String (i + 1) + ": " + why);
+                    rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+                }
+                if (asked == 0)
+                {
+                    scenSkip (id, title, "the real model did not ask a question in " + juce::String (n)
+                              + " attempts of \"" + goal + "\", so there was no waiting ask to act on. "
+                              "NEVER counted as a pass.", "B");
+                    return;
+                }
+                scen (id, title, passed == asked && asked > 0,
+                      juce::String (passed) + " of " + juce::String (asked) + " ask(s) held (it asked in "
+                      + juce::String (asked) + " of " + juce::String (n) + " attempts)"
+                      + (notes.isEmpty() ? juce::String() : ".  " + notes.joinIntoString ("  |  ")),
+                      "B", v2.editor.get(), lastState);
+            };
+
+            // ---- B2 live: the chip the model offered, TAPPED ---------------------------------------
+            repeatedAsk ("B2-live", "live: tapping a chip answers the question and the run carries on",
+                         "Add a transient shaper to the kick with attack at +6 dB",
+                         [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
+                         {
+                             const auto arow = st.getProperty ("agentRow", juce::var());
+                             const auto zones = arow.getProperty ("zones", juce::var()).toString();
+                             if (! zones.contains ("4:"))
+                             { why = "the question drew no chip to tap [" + zones.substring (0, 90) + "]"; return false; }
+                             const auto sidBefore = arow.getProperty ("sessionId", juce::var()).toString();
+                             rig.send (echojay::rig::cmd::press, args1 ("button", "chip0"), 12000);
+                             bool wentOn = false;
+                             rig.until ([&] (const juce::var& stv)
+                             {
+                                 const auto a = stv.getProperty ("agentRow", juce::var());
+                                 const auto status = a.getProperty ("status", juce::var()).toString();
+                                 wentOn = ! status.containsIgnoreCase ("answer")
+                                       && a.getProperty ("sessionId", juce::var()).toString() == sidBefore;
+                                 return wentOn;
+                             }, 40000);
+                             if (! wentOn) { why = "the tap did not move the run out of its question"; return false; }
+                             juce::ignoreUnused (r);
+                             return true;
+                         });
+
+            // ---- B3 live: the SAME question, answered by typing -------------------------------------
+            repeatedAsk ("B3-live", "live: a typed answer lands in the waiting ask and the run carries on",
+                         "Add a transient shaper to the kick with attack at +6 dB",
+                         [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
+                         {
+                             const auto arow = st.getProperty ("agentRow", juce::var());
+                             const auto sidBefore = arow.getProperty ("sessionId", juce::var()).toString();
+                             const int  rowsBefore = (int) arow.getProperty ("rows", juce::var());
+                             // Its own first choice when it offered one, else a plugin that is really here.
+                             juce::String answer = "the EchoJay Transient";
+                             if (auto* arr = arow.getProperty ("steps", juce::var()).getArray())
+                                 for (const auto& sv : *arr)
+                                     if (auto* ch = sv.getProperty ("chips", juce::var()).getArray())
+                                         if (! ch->isEmpty()) answer = (*ch)[0].toString();
+                             rig.send (echojay::rig::cmd::sendChat, args1 ("text", answer), 15000);
+                             juce::String answered;
+                             rig.until ([&] (const juce::var& stv)
+                             {
+                                 const auto a = stv.getProperty ("agentRow", juce::var());
+                                 if (auto* arr = a.getProperty ("steps", juce::var()).getArray())
+                                     for (const auto& sv : *arr)
+                                     {
+                                         const auto rec = sv.getProperty ("answered", juce::var()).toString();
+                                         if (rec.isNotEmpty()) answered = rec;
+                                     }
+                                 return answered.isNotEmpty()
+                                     && ! a.getProperty ("status", juce::var()).toString().containsIgnoreCase ("answer");
+                             }, 40000);
+                             const auto after = rig.freshState().getProperty ("agentRow", juce::var());
+                             if (answered.isEmpty())
+                             { why = "the row recorded no answer for what was typed (\"" + answer + "\")"; return false; }
+                             if ((int) after.getProperty ("rows", juce::var()) > rowsBefore
+                                 || after.getProperty ("sessionId", juce::var()).toString() != sidBefore)
+                             { why = "the typed answer started a NEW run instead of landing in the ask"; return false; }
+                             juce::ignoreUnused (r);
+                             return true;
+                         });
+
+            // ---- B4 live: a new instruction typed over a waiting question ---------------------------
+            repeatedAsk ("B4-live", "live: a new instruction closes the waiting run and starts its own",
+                         "Add a transient shaper to the kick with attack at +6 dB",
+                         [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
+                         {
+                             const auto arow = st.getProperty ("agentRow", juce::var());
+                             const auto sidBefore  = arow.getProperty ("sessionId", juce::var()).toString();
+                             const int  rowsBefore = (int) arow.getProperty ("rows", juce::var());
+                             rig.send (echojay::rig::cmd::sendChat, args1 ("text", "Set the pre-gain to 2 dB"), 15000);
+                             bool moved = false;
+                             rig.until ([&] (const juce::var& stv)
+                             {
+                                 const auto a = stv.getProperty ("agentRow", juce::var());
+                                 moved = (int) a.getProperty ("rows", juce::var()) > rowsBefore
+                                      || a.getProperty ("sessionId", juce::var()).toString() != sidBefore;
+                                 return moved;
+                             }, 40000);
+                             if (! moved)
+                             { why = "the new instruction was swallowed by the waiting run (same row, same session)"; return false; }
+                             juce::ignoreUnused (r);
+                             return true;
+                         });
+
+            // ---- A8/A9 live: WHAT THE SERVER OFFERS when the named plugin is not the one here -------
+            //
+            // Both rows are about the offer, not the add: A8 - a plugin that is NOT installed should
+            // come back as the real nearest match that IS ("Add Pro-C 2" -> Pro-C 3); A9 - the
+            // plugin that IS installed should be offered ONCE, not twice (your B-c). Only the real
+            // server can answer either, so they live here and nowhere else. If the model simply does
+            // it without offering anything, the row says so and SKIPS rather than passing.
+            repeatedAsk ("A8-live", "live: a plugin that is not installed is offered as the nearest one that is",
+                         "Add Pro-C 2 to this rack",
+                         [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
+                         {
+                             juce::StringArray chips;
+                             if (auto* arr = st.getProperty ("agentRow", juce::var())
+                                               .getProperty ("steps", juce::var()).getArray())
+                                 for (const auto& sv : *arr)
+                                     if (auto* ch = sv.getProperty ("chips", juce::var()).getArray())
+                                         for (const auto& c : *ch) chips.add (c.toString());
+                             const auto all = chips.joinIntoString (" | ") + " " + r.lastAsk;
+                             if (! all.containsIgnoreCase ("Pro-C"))
+                             { why = "it asked \"" + r.lastAsk.substring (0, 70) + "\" offering ["
+                                   + chips.joinIntoString (", ") + "] - no Pro-C anywhere"; return false; }
+                             if (all.contains ("Pro-C 2") && ! all.contains ("Pro-C 3"))
+                             { why = "it offered Pro-C 2, which is not installed here"; return false; }
+                             return true;
+                         });
+
+            repeatedAsk ("A9-live", "live: the installed plugin is offered once, not twice",
+                         "Add Pro-C 3 to this rack",
+                         [&] (const AgentOutcome&, const juce::var& st, juce::String& why)
+                         {
+                             juce::StringArray chips;
+                             if (auto* arr = st.getProperty ("agentRow", juce::var())
+                                               .getProperty ("steps", juce::var()).getArray())
+                                 for (const auto& sv : *arr)
+                                     if (auto* ch = sv.getProperty ("chips", juce::var()).getArray())
+                                         for (const auto& c : *ch) chips.add (c.toString());
+                             int proC = 0;
+                             for (const auto& c : chips) if (c.containsIgnoreCase ("Pro-C")) ++proC;
+                             if (proC > 1)
+                             { why = "Pro-C was offered " + juce::String (proC) + " times ["
+                                   + chips.joinIntoString (", ") + "]"; return false; }
+                             return true;
+                         });
+
+            // ---- C2 live: the position the closing states is the position the rack has --------------
+            repeated ("C2-live", "live: a placed add states the position the rack actually has",
+                      "Add an EchoJay EQ to this rack, then add an EchoJay Compressor before it",
+                      [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
+                      {
+                          int comp = -1, eq = -1;
+                          if (auto* arr = st.getProperty ("ownRack", juce::var())
+                                              .getProperty ("slots", juce::var()).getArray())
+                              for (const auto& sl : *arr)
+                              {
+                                  const auto nm = sl.getProperty ("name", juce::var()).toString();
+                                  const int  n  = (int) sl.getProperty ("n", juce::var());
+                                  if (nm.containsIgnoreCase ("Compressor") && comp < 0) comp = n;
+                                  if (nm.containsIgnoreCase ("EQ") && eq < 0)           eq   = n;
+                              }
+                          if (comp < 0) { why = "no compressor landed on the rack"; return false; }
+                          if (eq   < 0) { why = "there is no EchoJay EQ on the rack to place it against"; return false; }
+                          if (comp > eq) { why = "the compressor landed at slot " + juce::String (comp)
+                                               + ", AFTER the EQ at " + juce::String (eq); return false; }
+                          const auto closing = st.getProperty ("agentRow", juce::var())
+                                                 .getProperty ("closing", juce::var()).toString();
+                          if (closing.containsIgnoreCase ("after the echojay eq")
+                              || closing.containsIgnoreCase ("after the eq"))
+                          { why = "the rack has it BEFORE the EQ and the closing says after: \""
+                                  + closing.substring (0, 110) + "\""; return false; }
+                          juce::ignoreUnused (r);
+                          return true;
+                      }, /*clearFirst*/ true);
+
+            // ---- C3 live: "confirmed" is never said over something nothing confirmed ----------------
+            if (tp.ok)
+                repeated ("C3-live", "live: the closing says \"confirmed\" only when a value was read back",
+                          "Add " + tp.name + " to this rack and set its " + tp.paramName + " to "
+                          + juce::String (tp.askValue, 0) + " dB",
+                          [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
+                          {
+                              juce::String landed;
+                              if (auto* arr = st.getProperty ("ownRack", juce::var())
+                                                  .getProperty ("slots", juce::var()).getArray())
+                                  for (const auto& sl : *arr)
+                                      if (sl.getProperty ("name", juce::var()).toString()
+                                            .containsIgnoreCase (tp.name.upToFirstOccurrenceOf (" (", false, false)))
+                                          landed = sl.getProperty ("landed", juce::var()).toString();
+                              const auto words = st.getProperty ("agentRow", juce::var())
+                                                   .getProperty ("closing", juce::var()).toString()
+                                               + " " + r.stepWords;
+                              const bool saysConfirmed = words.containsIgnoreCase ("confirmed")
+                                                      && ! words.containsIgnoreCase ("not confirmed");
+                              if (saysConfirmed && landed.isEmpty())
+                              { why = "it said confirmed with nothing read back: \"" + words.substring (0, 110) + "\""; return false; }
+                              return true;
+                          }, /*clearFirst*/ true);
+            else
+                scenSkip ("C3-live", "live: \"confirmed\" only when a value was read back", tp.why, "A");
+
             // ---- E1 live: a GR answer gives the hits and the typical, never an instant --------------
+            // SELF-CONTAINED (16 Oct 2026, D11): it used to ask about "the compressor" and rely on
+            // an earlier row having left one on the rack. The instruction puts it there itself.
             repeated ("E1-live", "live: a gain-reduction answer gives the loudest hits and the typical",
-                      "How much gain reduction is the compressor doing?",
+                      "Add an EchoJay Compressor with a threshold of -20 dB and a ratio of 4:1 to this "
+                      "rack, then tell me how much gain reduction it is doing",
                       [&] (const AgentOutcome& r, const juce::var&, juce::String& why)
                       {
                           const auto words = (r.stepWords + " " + r.text).toLowerCase();
                           if (words.contains ("instant") || words.contains ("grnowdb"))
                           { why = "it quoted an instantaneous figure"; return false; }
                           return true;
-                      });
+                      }, /*clearFirst*/ true);
 
             // ---- E3 live: an uncertified plugin is refused, at once, with no silence excuse ---------
             if (tp.ok)
@@ -5265,7 +5655,12 @@ int main (int argc, char* argv[])
                            ? v2Comp.getParentDirectory().getParentDirectory()
                                    .getParentDirectory().getParentDirectory().getFileName()
                            : v2Comp.getParentDirectory().getFileName(),
-                       liveServerConfigured() ? "live pass" : "mock pass");
+                       liveServerConfigured()
+                           ? ("live pass, " + juce::String (::getenv ("EJ_LIVE_REPEATS") != nullptr
+                                                            && *::getenv ("EJ_LIVE_REPEATS") != 0
+                                                                ? ::getenv ("EJ_LIVE_REPEATS") : "5")
+                              + " attempt(s) per live id")
+                           : juce::String ("mock pass"));
 
     // ---- teardown in the host's own order ---------------------------------
     v2.closeEditor();

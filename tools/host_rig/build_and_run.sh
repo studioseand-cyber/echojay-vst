@@ -206,6 +206,19 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-autoadd-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_aa", "name": "do", "approval": "ask_first",
+            "summary": "add a compressor with a threshold",
+            "args": { "op": "add", "name": "EchoJay Compressor",
+                      "settings_structured": { "params": { "threshold_db": -18, "ratio": 3 } } } },
+          { "event": "await", "ids": ["tc_aa"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added a compressor with a threshold of -18 dB." } ]
+      ]
+    },
+    {
       "goalContains": "rig-linkadd-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },

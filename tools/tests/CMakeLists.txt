@@ -515,9 +515,16 @@ set_tests_properties(calib_link_guard PROPERTIES LABELS "fast" TIMEOUT 900 RUN_S
 # measured at about thirteen minutes on this machine, which left barely a minute of headroom under 900 s.
 # A gate that goes red on a timeout reports a product fault where there is none, and that has cost this
 # tree a day before (gate 17). The bound is still a bound: a hung pass is killed at thirty minutes.
+# ONE REPEAT IN THE GATE, FIVE IN THE DEDICATED PASS (16 Oct 2026). Sean asked for the joint live pass
+# at five attempts per id, which is 13 ids x 5 real-model runs - 30-45 minutes of model time, and the
+# gate is not where that belongs: in here it would either blow the bound or make every gate an hour
+# longer. The GATE proves the seam is wired (every live id runs once, against the real model); the
+# RELIABILITY is proved by the dedicated pass, whose report is kept beside the matrix's. EJ_LIVE_REPEATS
+# is read by the rig and printed in its report, so a report never hides which of the two it was.
 add_test(NAME host_rig COMMAND bash ${CMAKE_SOURCE_DIR}/tools/host_rig/build_and_run.sh)
-set_tests_properties(host_rig PROPERTIES LABELS "rig" TIMEOUT 1800 RUN_SERIAL TRUE
-                     SKIP_RETURN_CODE 77 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+set_tests_properties(host_rig PROPERTIES LABELS "rig" TIMEOUT 2700 RUN_SERIAL TRUE
+                     SKIP_RETURN_CODE 77 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                     ENVIRONMENT "EJ_LIVE_REPEATS=1")
 
 # TWO PASSES, BECAUSE THE TWO MODES TEST DIFFERENT THINGS (14 Oct 2026).
 #   host_rig       - LIVE when a local server answers: the capability rows, where the real model decides what
