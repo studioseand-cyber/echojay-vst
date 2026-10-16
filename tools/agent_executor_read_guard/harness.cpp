@@ -337,8 +337,17 @@ int main()
         // figure was `grDb` - one float, read at whatever moment the tool call ran, which is the
         // release tail just after "Got it, you can stop". It is `grNowDb` now, explicitly labelled as
         // this instant and NOT the figure to quote, beside the window's peak and typical.
-        check (o.ok && (int) o.result.getProperty ("slot", {}) == 2 && o.result.getProperty ("name", {}).toString() == "API-2500 (s)" && std::abs ((double) o.result.getProperty ("grNowDb", {}) - 2.4) < 0.01,
-               "G10a check(gr, slot 2): the slot's momentary GR, named grNowDb");
+        // ---- SEAN'S #17 (16 Oct 2026): THE INSTANT IS NOT IN THE RESULT AT ALL ------------------
+        // *"'loudest hits' never arrives ... then quoted 'the instant hitting up to 6 dB', which was
+        // meant to stay internal."* A figure that must not be quoted has no business being sent, so
+        // grNowDb and grSpikeMaxDb are gone from check(gr) - and this leg, which asserted the
+        // momentary figure WAS there, had to move with the ruling. It asserts the opposite now, which
+        // is the only form of this check that can fail on a build that leaks one.
+        check (o.ok && (int) o.result.getProperty ("slot", {}) == 2
+               && o.result.getProperty ("name", {}).toString() == "API-2500 (s)"
+               && ! o.result.hasProperty ("grNowDb") && ! o.result.hasProperty ("grSpikeMaxDb"),
+               "G10a check(gr, slot 2) names the slot and carries NO instantaneous or single-transient "
+               "figure for anything to quote");
         // ...and the WINDOW is what it leads with: the peak and the typical, by name, with the
         // momentary value kept and labelled. This is the row Sean asked for - "return the peak and a
         // typical value, named as such" - and it fails on any build that reports one moment.
@@ -352,23 +361,30 @@ int main()
             // right way round but only if the leg is corrected rather than the product.
             const double loudest = (double) o.result.getProperty ("grLoudestDb", {});
             const double typ     = (double) o.result.getProperty ("grTypicalDb", {});
-            const double spike   = (double) o.result.getProperty ("grSpikeMaxDb", {});
             const double held    = (double) o.result.getProperty ("grHeldDb", {});
+            // THE OLD NAME NOW MEANS THE RIGHT FIGURE (Sean's #17): a prompt written against the old
+            // contract asked for "the peak" and got the single transient, so grPeakDb and peakDb
+            // alias the loudest hits. Asserted, because an alias nobody checks is an alias that rots.
+            const double aliasPeak = (double) o.result.getProperty ("grPeakDb", {});
+            const double aliasPk2  = (double) o.result.getProperty ("peakDb", {});
+            const auto sentence  = o.result.getProperty ("sentence", {}).toString();
             const auto note      = o.result.getProperty ("note", {}).toString();
             check (std::abs (loudest - 4.2) < 0.01 && std::abs (typ - 2.8) < 0.01
-                   && std::abs (spike - 5.1) < 0.01 && std::abs (held - 3.9) < 0.01
-                   && spike >= loudest && loudest >= typ
+                   && std::abs (held - 3.9) < 0.01
+                   && std::abs (aliasPeak - loudest) < 0.01 && std::abs (aliasPk2 - loudest) < 0.01
+                   && loudest >= typ
                    && o.result.getProperty ("measured", {}).toString().containsIgnoreCase ("listen window")
+                   && sentence.containsIgnoreCase ("loudest hits")
                    && note.containsIgnoreCase ("loudest hits")
-                   && note.containsIgnoreCase ("must not be quoted"),
-                   "G10a2 check(gr) leads with the LOUDEST HITS (95th percentile) and the TYPICAL "
-                   "(median), keeps the spike max back for warnings, carries the meter's held figure, "
-                   "and tells the model which to report  (RED before this round: there was no window at "
-                   "all, then the ABSOLUTE MAX was the headline - 8 dB of transient against a meter "
-                   "reading 2-4)",
+                   && note.containsIgnoreCase ("no instantaneous"),
+                   "G10a2 check(gr) gives the LOUDEST HITS (95th percentile), the TYPICAL (median), "
+                   "the meter's held figure and a ready sentence - with grPeakDb/peakDb aliasing the "
+                   "loudest hits and NO instant anywhere  (RED before: the absolute max was the "
+                   "headline, and then the figure was renamed out from under a prompt that asked for "
+                   "a peak)",
                    "loudest " + juce::String (loudest, 2) + " typical " + juce::String (typ, 2)
-                   + " spike " + juce::String (spike, 2) + " held " + juce::String (held, 2)
-                   + " now " + o.result.getProperty ("grNowDb", {}).toString());
+                   + " held " + juce::String (held, 2) + " peak-alias " + juce::String (aliasPeak, 2)
+                   + " sentence \"" + sentence + "\"");
         }
         // ---- G10a3: AN UNCERTIFIED SLOT GETS NO FIGURE AT ALL (Sean's ruling, 15 Oct) -------------
         // *"NO estimates, ever... check(gr) returns a figure only for those; for anything else it

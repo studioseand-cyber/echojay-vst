@@ -1282,3 +1282,26 @@ That is exactly the diagnosis: the cache feeder is gated on the Chain tab, and t
 `PluginEditor.cpp:12024` runs on entering chain mode / a new editor. A reopen is the only thing that was
 clearing it. It also means the K1 row must select the Link **without** reopening the window, or it would
 pass on today's build.
+
+---
+
+## 16 Oct 2026, after the morning recheck and the matrix
+
+**Queued, with the reason each one is not in this round:**
+
+1. **Item 9, a Link's GR and meters in the main plugin's mirror.** Unchanged from last night: it needs a
+   new field group in the shared registry plus item 0a's deep-meter region. Until it lands, a Link's slot
+   shows NO GR figure at all (scenario E5), which is the honest state rather than a zero.
+2. **MTransient's map.** B's: the map's control names ("Basic - Attack") are not the live AU's
+   ("Attack (Transient)"), its `params` table is empty, and the bundle is PACE-wrapped so the rig may
+   never load it. FOR_B section 9; the Logic smoke test step 3 is how it gets rechecked.
+3. **The live matrix pass.** The matrix wants every scenario run against the real server and model as
+   well as the mock. B's local server answers `/local/health` with `agentOn:true` and `/api/agent/start`
+   with `agent_mode_off`, so the live pass cannot run at all today (FOR_B section 14).
+4. **The in-process Links.** The two-process Links cover the channel, the lock, the windows and the rack
+   view. The audio and meter scenarios still run in process, because two processes are not block-locked
+   the way Logic's single render graph is (docs/RIG_LINK_CAPABILITY.md). A Link whose audio must be
+   compared with the V2's, sample for sample, is still only testable in Logic.
+5. **look(rack)'s per-slot `grNowDb`.** check(gr) no longer carries any instantaneous figure (Sean's #17).
+   The rack READ still does, labelled, because a rack read is a list of states rather than an answer to
+   "how much is it doing". If it is ever quoted as a measurement, it goes the same way.

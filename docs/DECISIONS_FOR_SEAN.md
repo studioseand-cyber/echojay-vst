@@ -876,3 +876,49 @@ events can break a call.
 - Agent mode off refuses it, because an undo is a change.
 
 Guarded by `agent_round14_guard` N7 (16 assertions, red direction proven) and driven on the rig as row C10.
+
+---
+
+# 16 OCTOBER, THE MORNING ROUND: TWENTY-TWO FINDINGS AND A RUNNER
+
+Sean rechecked `ship_2026-10-16a` in Logic and found twenty-two things, then changed the approach: work
+to `docs/AGENT_SCENARIO_MATRIX.md`, with a runner that loads real plugins, asserts on what the window
+draws, and keeps evidence. This is the record of what that produced.
+
+## What the runner is now
+
+- **`tools/link_host`** is one EchoJay Link in its OWN PROCESS, holding real third-party plugins
+  (Renaissance Axx, Vertigo VSM-3), sharing the run's isolated state root the way two Logic instances
+  share a directory. Two of them run beside the V2. What it does not reproduce is written down in
+  `docs/RIG_LINK_CAPABILITY.md`: two processes are not block-locked the way Logic's single render graph
+  is, so audio and meter scenarios stay in process and say so.
+- **The matrix lives in the rig**, not in a second runner: a scenario is a row with an id from the
+  matrix, an owner for its failure, and evidence on disk - a PNG the PLUGIN takes of its own editor
+  (the host's snapshot of an AU is a blank rectangle) and the drawn text beside it.
+- **`MATRIX_REPORT_<date>.md`** is written on every run, green or red, with a row per scenario and the
+  failures grouped by owner.
+
+## What it found before any of my fixes
+
+The baseline on `ship_2026-10-16a`: **20 of 22 scenarios red**, with evidence. Every one of Sean's
+starred findings reproduced. The report is `docs/MATRIX_REPORT_2026-10-16_baseline_16a.md`.
+
+## Two defects the runner found that nobody had reported
+
+1. **A write reverted on an unrelated plugin.** The dial's settled read-back held a slot INDEX, and an
+   add reorders the rack: his 09:40 log shows it verifying "slot 5 (Vertigo VSM-3)" for a write made to
+   slot 5 (Renaissance Axx) and reverting it. It follows the plugin's NodeID now.
+2. **Two instances can end up on two different channels.** `LinkShm::resolveDir` probed writability with
+   a file called `.probe` - the same name in every process - and created the directory without checking
+   whether someone else had just created it. The loser of either race quietly took the TMPDIR fallback
+   and published its rack where nobody was looking. In Logic this is the "my Link does not show up"
+   shape, and nothing would have said so. Per-process probe, a retry, a check for "is it there now",
+   and the resolved directory logged once per process with its pid.
+
+## And one claim of mine that was wrong
+
+I told B twice that their local server was up without agent mode, on the evidence of
+`/api/agent/start` answering `agent_mode_off`. **That was my probe's body, not their server**: the route
+gates on the body's own `agentMode` flag and the plugin has always sent it. With the body the product
+sends, the route answers normally. Corrected in FOR_B 14a, and the gate's own pre-flight now sends the
+body the product sends - a probe that does not is testing something else.
