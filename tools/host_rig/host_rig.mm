@@ -3593,10 +3593,19 @@ int main (int argc, char* argv[])
                           "the VST3 V2 did not load, so there is no second instance to hold the lock", "A");
             else
             {
+                // ---- THIS WINDOW LETS GO FIRST (16 Oct 2026) ------------------------------------
+                // The AU V2 had the Kick rack SELECTED from the scenarios above, so it was holding
+                // the lock itself - and the "contention" was this instance competing with nobody. It
+                // deselects first; the second instance then takes the rack; and the edit goes out on
+                // the CHAT's working channel, which is the road a user takes when the rack they are
+                // asking about is open somewhere else.
+                rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+                Rig::pump (1200);
                 v2v.openEditor();
                 Rig::pump (1500);
                 // The second instance selects the Link's rack: that is what takes the lock.
                 rig.sendTo ("VST3", echojay::rig::cmd::selectLink, args1 ("uid", kick.uid), 8000);
+                rig.send (echojay::rig::cmd::workOn, args1 ("uid", kick.uid), 8000);
                 // ...AND THE LOCK HAS TO BE VISIBLE BEFORE THE EDIT IS SENT (16 Oct 2026). Sending it
                 // 2.5 s later and hoping produced a run that timed out ("the rack never acknowledged
                 // it within 8 s") rather than one that was refused - which proves nothing about the
@@ -3627,11 +3636,21 @@ int main (int argc, char* argv[])
                                          || words.containsIgnoreCase ("being edited from")
                                          || words.containsIgnoreCase ("try again after release")
                                          || words.containsIgnoreCase ("edited in its own window");
-                scen ("T3", "T3: a Link held by another instance refuses the edit in words a person reads",
-                      refusedInWords,
-                      "what the run said: \"" + words.substring (0, 200) + "\"  (the second V2 holds the "
-                      "rack lock on " + kick.uid + "; the refusal must name it, never fail silently)",
-                      "A", v2.editor.get(), st, &r);
+                const auto lockNow = st.getProperty ("rackLock", juce::var()).toString();
+                // IF THE LOCK NEVER BECAME VISIBLE, SAY SO RATHER THAN JUDGE THE REFUSAL. A row that
+                // reports "it was not refused" when nothing was holding the rack is testing nothing.
+                if (! lockVisible && ! lockNow.equalsIgnoreCase ("other"))
+                    scenSkip ("T3", "T3: a Link held by another instance refuses the edit, in words",
+                              "this window never saw another instance holding the rack (rackLock=\""
+                              + lockNow + "\" after 12 s), so there was no contention to refuse. Never "
+                              "counted as a pass.", "A");
+                else
+                    scen ("T3", "T3: a Link held by another instance refuses the edit in words a person reads",
+                          refusedInWords,
+                          "rackLock=\"" + lockNow + "\"; what the run said: \"" + words.substring (0, 180)
+                          + "\"  (the second V2 holds the rack on " + kick.uid + "; the refusal must name "
+                          "it, never fail silently)",
+                          "A", v2.editor.get(), st, &r);
                 rig.sendTo ("VST3", echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
                 v2v.closeEditor();
                 Rig::pump (1200);
@@ -3639,6 +3658,15 @@ int main (int argc, char* argv[])
 
             // ---- LINK WINDOW OPEN vs CLOSED ----------------------------------------------------
             {
+                // THE LOCK FROM T3 HAS TO BE GONE FIRST. The second instance released the rack a
+                // moment ago, and an edit sent into that window is refused for T3's reason rather
+                // than tested for this one.
+                rig.until ([] (const juce::var& stv)
+                { return ! stv.getProperty ("rackLock", juce::var()).toString().equalsIgnoreCase ("other"); },
+                           15000);
+                rig.send (echojay::rig::cmd::selectLink, args1 ("uid", kick.uid), 8000);
+                rig.send (echojay::rig::cmd::workOn,     args1 ("uid", kick.uid), 8000);
+                Rig::pump (1200);
                 const auto ack = kick.send ("open_editor");
                 const bool opened = (bool) ack.getProperty ("state", juce::var())
                                                .getProperty ("editorOpen", false);
