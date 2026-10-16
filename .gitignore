@@ -20,3 +20,6 @@ cmake-build-*/
 DerivedData/
 .DS_Store
 .cache/
+
+# Python caches (16 Oct: one slipped into 1718f96d)
+__pycache__/
