@@ -1,5 +1,5 @@
 scenario G6
-captured 2026-10-16T12:26:07.041+01:00
+captured 2026-10-16T12:39:13.998+01:00
   [user] rig-gr-marker: how much is it doing?
   [assistant] Read the gain reduction.
   [assistant] Cue the loudest section, press play, then tap Listen. (matched to input)

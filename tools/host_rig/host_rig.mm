@@ -4761,9 +4761,11 @@ int main (int argc, char* argv[])
     // Written on a red run too: the report IS the artefact (matrix section 7).
     // The folder the bundle under test came out of - "ship_2026-10-16a", or "AU" when it is a build
     // tree, in which case the two levels above name the build. Said plainly rather than guessed at.
+    // "ship_2026-10-16a", or the BUILD TREE's name ("build", "build-guards") when it came out of one -
+    // which is four levels up from the bundle, not three: <tree>/EchoJay_artefacts/Release/AU/<bundle>.
     writeMatrixReport (v2Comp.getParentDirectory().getFileName() == "AU"
                            ? v2Comp.getParentDirectory().getParentDirectory()
-                                   .getParentDirectory().getFileName()
+                                   .getParentDirectory().getParentDirectory().getFileName()
                            : v2Comp.getParentDirectory().getFileName(),
                        liveServerConfigured() ? "live pass" : "mock pass");
 

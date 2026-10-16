@@ -1305,3 +1305,10 @@ pass on today's build.
 5. **look(rack)'s per-slot `grNowDb`.** check(gr) no longer carries any instantaneous figure (Sean's #17).
    The rack READ still does, labelled, because a rack read is a list of states rather than an answer to
    "how much is it doing". If it is ever quoted as a measurement, it goes the same way.
+
+6. **T3 (the rack-selection lock) and T2w (a Link edited with its own window open)** are SKIPPED in the
+   runner, with their reasons on the row, and are on the Logic smoke test instead. T3's problem is that
+   one rig drives both V2 instances: the AU keeps its own rack lock for a recency window after it
+   deselects, so the second instance never gets to hold it and there is no contention to refuse - the
+   row says exactly that rather than claiming anything. In Logic it takes ten seconds to produce by
+   hand. T2w's is simpler: the Link's own process did not open an editor that run.

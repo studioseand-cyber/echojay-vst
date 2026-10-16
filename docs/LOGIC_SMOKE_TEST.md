@@ -91,3 +91,17 @@ Nothing to pass or fail - tell me what you think.
 **If a step fails:** give me the step number and what you saw. Each one maps to a matrix scenario with its
 own PNG under `docs/review/<date>/`, so I can compare what the runner drew with what Logic drew - which is
 the whole point of having both.
+
+---
+
+### 9. The two the runner cannot produce (1 min)
+
+*Both are in the matrix as SKIPS with their reasons - never as passes.*
+
+1. **The rack-selection lock (T3).** Open the Kick's Link rack in the Mix Bus V2, then open a SECOND
+   EchoJay window and select the same rack there. Ask the agent on the first one to add something to it.
+   - **PASS:** it refuses in words you can read - "this rack is being edited from..." or "deselect there
+     to edit here" - and nothing changes silently.
+2. **An edit while the Link's OWN window is open (T2w).** Open the Kick Link's own window, then ask the
+   agent (from the Mix Bus) to add a compressor to it.
+   - **PASS:** the slot appears in both windows within a few seconds.
