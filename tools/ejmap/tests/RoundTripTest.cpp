@@ -10382,6 +10382,48 @@ void testWizardCategories()
                && meetNeed ("threshold", rolesOf (comp, refuted)).isEmpty() && needsFor ("pitch") == juce::StringArray { "__never__" },
                "wizard WZ-TRUST-1: name + unit identifies Threshold dB, Ratio x:1, Attack / Release ms-s, Makeup / Output / Gain dB, EQ Freq Hz / Gain dB / Q, Mix %, Delay Time ms or note, Decay s, Pre-delay ms, Drive %, Ceiling dB; the wrong unit, two candidates or a refuted control does not");
     }
+    // WZ-TRUST-4 SECTIONS, NOTE VALUES AND THE HUMAN CHECK (Kathy's rulings, 16 Oct): a role word under a section prefix (Comp / Gate /
+    // Exp / EQ / Band N / LF..HF / De-ess) is identified within that section - a compressor dials Comp's threshold beside Gate's, a gate
+    // dials Gate's; two in one section or an unknown prefix stay ambiguous. Note values (1/4, 1/8D, 1/16T) are a delay time, by "Note" /
+    // "Sync" too. A human yes identifies the control for that role; a no refutes it. The review list says when a yes alone maps the map
+    {
+        using namespace ejmap::trust;
+        auto J = [] (const char* x) { return juce::JSON::parse (x); };
+        const auto strip = J (R"({"category":"channel_strip","controls":{"Comp Threshold":{"name":"Comp Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]},"Gate Threshold":{"name":"Gate Threshold","kind":"anchored","unit":"db","anchors":[[-80,0],[0,1]]}}})");
+        auto gateMap = juce::JSON::parse (juce::JSON::toString (strip)); gateMap.getDynamicObject()->setProperty ("category", "gate");   // a copy of its own: a var copy shares the object
+        auto compMap = juce::JSON::parse (juce::JSON::toString (strip)); compMap.getDynamicObject()->setProperty ("category", "compressor");
+        const auto twoInComp = J (R"({"category":"compressor","controls":{"Comp Threshold":{"name":"Comp Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]},"Comp Thresh":{"name":"Comp Thresh","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]}}})");
+        const auto numbered = J (R"({"category":"compressor","controls":{"Threshold 1":{"name":"Threshold 1","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]},"Threshold 2":{"name":"Threshold 2","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]}}})");
+        const auto deess = J (R"({"category":"de-esser","controls":{"De-Ess Threshold":{"name":"De-Ess Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]},"Comp Threshold":{"name":"Comp Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]}}})");
+        const auto unknownPrefix = J (R"({"category":"compressor","controls":{"Threshold":{"name":"Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]},"Sidechain Threshold":{"name":"Sidechain Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]}}})");
+        const auto sameSection = J (R"({"category":"compressor","controls":{"Comp Threshold":{"name":"Comp Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]},"Compressor Threshold":{"name":"Compressor Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]}}})");
+        const auto sync = J (R"({"category":"delay","controls":{"Sync":{"name":"Sync","kind":"mode","labels":{"1/4":0,"1/8D":0.5,"1/16T":1}}}})");
+        const auto need = [] (const juce::var& m) { return meetNeed (needsFor (m.getProperty ("category", "").toString())[0], rolesOf (m), m.getProperty ("category", "").toString()); };
+        const bool sections = need (strip) == juce::StringArray { "Comp Threshold" } && need (compMap) == juce::StringArray { "Comp Threshold" } && need (gateMap) == juce::StringArray { "Gate Threshold" }
+                              && need (twoInComp).isEmpty() && need (numbered).isEmpty() && need (unknownPrefix).isEmpty() && need (sameSection).isEmpty() && need (deess) == juce::StringArray { "De-Ess Threshold" }
+                              && knownSection ("band 2") == "band 2" && knownSection ("band") == "?" && knownSection ("lf") == "lf" && knownSection ("character") == "?" && knownSection ("") == "";
+        const bool notes = roleOf (sync.getProperty ("controls", {}).getProperty ("Sync", {})).role == "delay_time" && roleOf (sync.getProperty ("controls", {}).getProperty ("Sync", {})).unitOk
+                           && need (sync) == juce::StringArray { "Sync" };
+        // the human check: a unitless "Threshold" (not identified) becomes the dial target on a yes, and is refuted on a no
+        const auto noUnit = J (R"({"fp":"F1","category":"compressor","identity":{"name":"P"},"controls":{"Threshold":{"name":"Threshold","kind":"anchored","unit":null,"anchors":[[-60,0],[0,1]]}}})");
+        std::map<juce::String, ControlReadback> rb; rb["Threshold"].judged = 3;
+        const auto items = ejmap::trustrun::reviewItems (noUnit, {}, rb);
+        const auto yes = ejmap::trustrun::withHuman ({}, { { "Threshold", "threshold", true } }), no = ejmap::trustrun::withHuman ({}, { { "Threshold", "threshold", false } });
+        check (sections && notes && items.size() == 1 && (bool) items[0].getProperty ("yes_makes_mapped", false) && items[0].getProperty ("suggested_role", "").toString() == "threshold"
+               && levelFor (noUnit, false, "", rb).level == "unsure" && levelFor (noUnit, false, "", rb, yes).level == "mapped" && levelFor (noUnit, false, "", rb, no).level == "unsure"
+               && ejmap::trustrun::reviewItems (noUnit, no, rb).isEmpty() && ! (bool) ejmap::trustrun::reviewItems (noUnit, {}, {})[0].getProperty ("yes_makes_mapped", true),
+               "wizard WZ-TRUST-4: Comp / Gate / De-ess sections each own their threshold, two in one section or an unknown prefix stay ambiguous; note values are a delay time; a human yes maps, a no refutes and leaves the list");
+    }
+    // WZ-TRUST-5 WHAT IS HELD: a cert outcome or a wizard skip in a held state - licence, hardware, silent, crashed, demo, refused, review,
+    // MULTIBAND (16 Oct: profiling not built, so a band threshold is not a compressor's dial) - and never the old "never processes" filing
+    {
+        auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_held_" + juce::String (juce::Random::getSystemRandom().nextInt64()) + ".json");
+        f.replaceWithText (R"J([{"product":"C4 (m)","state":"multiband"},{"product":"UAD 1176","state":"needs_licence","why":"a window"},{"product":"H-EQ (m)","state":"needs_licence","why":"licence suspected: never processes - x"},{"product":"API-2500 (m)","state":"exported"}])J");
+        const auto held = ejmap::trustrun::loadHeld ({ f.getFullPathName() }, juce::File());
+        f.deleteFile();
+        check (held.count ("c4 (m)") && held.count ("uad 1176") && ! held.count ("h-eq (m)") && ! held.count ("api-2500 (m)"),
+               "wizard WZ-TRUST-5: multiband and licence outcomes are held; the old 'never processes' filing and an exported row are not");
+    }
     // WZ-TRUST-2 THE READ-BACK JUDGE: a reading (norm written, display read) against the map's anchors - within one display step or 0.5% of
     // the span (capped at 1%); a control is read back on 2+ judged readings and no failure; the credit reads fixtures' displayAt and Phase B
     // positions under the control that owns them (an EQ band's gain_map -> gain_control); a stepped control must show its label

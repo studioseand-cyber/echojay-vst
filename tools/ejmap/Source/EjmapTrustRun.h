@@ -118,7 +118,8 @@ inline void loadRecords (const juce::File& root, const juce::String& tag, std::m
 inline std::map<juce::String, juce::String> loadHeld (const juce::StringArray& heldFiles, const juce::File& quarantine)
 {
     std::map<juce::String, juce::String> held;   // product (lower case) -> why
-    static const juce::StringArray kHeld { "needs_licence", "needs_hardware", "refused", "needs_review", "held", "quarantined_at_scan", "surround", "crashed", "wont_load", "demo", "silent", "custom_default" };
+    static const juce::StringArray kHeld { "needs_licence", "needs_hardware", "refused", "needs_review", "held", "quarantined_at_scan", "surround", "crashed", "wont_load", "demo", "silent", "custom_default",
+                                         "multiband" };   // 16 Oct: multiband profiling is not built - a band threshold is not a compressor's dial
     for (const auto& path : heldFiles)
     {
         const auto v = readJson (juce::File (path));
@@ -131,7 +132,8 @@ inline std::map<juce::String, juce::String> loadHeld (const juce::StringArray& h
                 held[x.getProperty ("product", "").toString().toLowerCase()] = st;
             }
     }
-    if (const auto* q = readJson (quarantine).getArray())
+    const auto qroot = readJson (quarantine);
+    if (const auto* q = qroot.getArray())
         for (const auto& x : *q) { const auto id = x.getProperty ("plugin_id", "").toString(); held["@quarantine:" + id.toLowerCase()] = "quarantined (" + x.getProperty ("reason", "").toString() + ")"; }
     return held;
 }
@@ -150,8 +152,64 @@ inline std::set<juce::String> certifiedFromList (const juce::File& publishList)
     return s;
 }
 
+// THE HUMAN CHECK (Kathy, 16 Oct): answers from the review page - {"answers": [{"id": "<fp>|<control>", "fp", "control", "role",
+// "verdict": "yes" | "no", "at", "by"}]}. A yes identifies the control for that role on that map (human-checked); a no refutes it (the
+// name rule never claims it back). The read-back is still required for "mapped"
+struct HumanAnswer { juce::String control, role; bool yes = false; };
+inline std::map<juce::String, std::vector<HumanAnswer>> loadHuman (const juce::File& f)
+{
+    std::map<juce::String, std::vector<HumanAnswer>> out;
+    const auto root = readJson (f);   // held by name: a list read out of a temporary would be gone before it is read
+    if (const auto* a = root.getProperty ("answers", {}).getArray())
+        for (const auto& x : *a)
+        {
+            const auto v = x.getProperty ("verdict", "").toString();
+            if (v != "yes" && v != "no") continue;
+            out[x.getProperty ("fp", "").toString()].push_back ({ x.getProperty ("control", "").toString(), x.getProperty ("role", "").toString(), v == "yes" });
+        }
+    return out;
+}
+inline trust::Measured withHuman (trust::Measured m, const std::vector<HumanAnswer>& answers)
+{
+    for (const auto& h : answers) { if (h.yes) { m.roles[h.role].addIfNotAlreadyThere (h.control); m.dropped.erase (h.control); } else { m.dropped.insert (h.control); for (auto& [r, n] : m.roles) n.removeString (h.control); } }
+    return m;
+}
+// THE REVIEW LIST: for a map left unsure by "role not identified", every control a human could settle - a name that matches a needed
+// role with the wrong or no unit, or one of two candidates for it. Each item says whether a yes alone would make the map mapped
+inline juce::Array<juce::var> reviewItems (const juce::var& m, const trust::Measured& measured, const std::map<juce::String, trust::ControlReadback>& rb)
+{
+    juce::Array<juce::var> items;
+    const auto cat = m.getProperty ("category", "").toString(); const auto fp = m.getProperty ("fp", "").toString();
+    const auto* co = m.getProperty ("controls", {}).getDynamicObject(); if (co == nullptr) return items;
+    juce::StringArray needRoles; for (const auto& need : trust::needsFor (cat)) for (const auto& alt : juce::StringArray::fromTokens (need, "|", "")) for (const auto& r : juce::StringArray::fromTokens (alt, "+", "")) needRoles.addIfNotAlreadyThere (r);
+    const auto R = trust::rolesOf (m, measured);
+    for (const auto& p : co->getProperties())
+    {
+        const auto& c = p.value; const auto name = c.getProperty ("name", p.name.toString()).toString();
+        if (measured.dropped.count (name)) continue;
+        const auto hit = trust::roleOf (c); if (hit.role.isEmpty() || ! needRoles.contains (hit.role)) continue;
+        juce::String why;
+        if (! hit.unitOk) why = "the name says " + hit.role + "; the display shows " + (trust::unitOf (c).isEmpty() ? juce::String ("no unit") : "'" + trust::unitOf (c) + "'");
+        else { bool amb = false; for (const auto& a : R.ambiguous) if (a.startsWith (hit.role + ":") && a.contains (name)) amb = true;
+               const auto it = R.identified.find (hit.role); if (it != R.identified.end() && it->second.size() > 1) amb = true;
+               if (! amb) continue; why = "one of several " + hit.role + " candidates"; }
+        auto yes = measured; yes.roles[hit.role].clear(); yes.roles[hit.role].add (name);
+        const auto L = trust::levelFor (m, false, "", rb, yes);
+        const auto rit = rb.find (name);
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("id", fp + "|" + name); o->setProperty ("fp", fp); o->setProperty ("plugin", m.getProperty ("identity", {}).getProperty ("name", ""));
+        o->setProperty ("vendor", m.getProperty ("identity", {}).getProperty ("vendor", "")); o->setProperty ("version", m.getProperty ("identity", {}).getProperty ("version", ""));
+        o->setProperty ("category", cat); o->setProperty ("control", name); o->setProperty ("unit", trust::unitOf (c).isEmpty() ? juce::String ("-") : trust::unitOf (c));
+        o->setProperty ("suggested_role", hit.role); o->setProperty ("why", why);
+        o->setProperty ("read_back", rit != rb.end() && rit->second.proven());
+        o->setProperty ("yes_makes_mapped", L.level == "mapped");
+        items.add (juce::var (o));
+    }
+    return items;
+}
+
 inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& certDirs, const juce::StringArray& wizardDirs, const juce::File& publishList,
-                           const juce::StringArray& heldFiles, const juce::File& quarantine, const juce::File& out)
+                           const juce::StringArray& heldFiles, const juce::File& quarantine, const juce::File& out, const juce::File& humanFile = {})
 {
     if (! mapsDir.isDirectory() || out == juce::File()) { std::cerr << "usage: ejmap --trust-levels --maps <folder> --cert <folder>... --out <folder>" << std::endl; return 2; }
     std::map<juce::String, ProductData> by;
@@ -162,6 +220,7 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
     std::map<juce::String, std::set<juce::String>> v1Pass;   // category -> products
     for (const auto& c : certDirs) for (const auto& r : judgeFolder (juce::File (c))) if (r.pass) v1Pass[r.category].insert (r.product);
     out.getChildFile ("maps").createDirectory();
+    const auto human = loadHuman (humanFile); juce::Array<juce::var> review;
     std::map<juce::String, std::map<juce::String, int>> counts; juce::Array<juce::var> rows; int creditedControls = 0, failedControls = 0;
     for (const auto& f : mapsDir.findChildFiles (juce::File::findFiles, false, "*.json"))
     {
@@ -170,8 +229,12 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         static const ProductData none;
         const auto it = by.find (name); const auto& pd = it != by.end() ? it->second : none;
         const auto rb = trust::creditMap (m, pd.readings);
+        const auto fpKey = m.getProperty ("fp", "").toString();
+        const auto measured = human.count (fpKey) ? withHuman (pd.measured, human.at (fpKey)) : pd.measured;
         const bool certified = (cat == "compressor" && compCert.count (name)) || (v1Pass.count (cat) && v1Pass[cat].count (name)) || (cat == "amp_sim" && v1Pass["saturation"].count (name));
-        const auto L = trust::levelFor (m, certified, heldWhyFor (held, name), rb, pd.measured);
+        const auto heldWhy = heldWhyFor (held, name);
+        const auto L = trust::levelFor (m, certified, heldWhy, rb, measured);
+        if (L.level == "unsure" && L.why.startsWith ("role not identified")) review.addArray (reviewItems (m, measured, rb));
         ++counts[cat][L.level]; ++counts[cat]["maps"];
         // the credited copy: each judged control carries its read-back, as the sweep writes it
         if (auto* co = m.getProperty ("controls", {}).getDynamicObject())
@@ -191,6 +254,14 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         juce::Array<juce::var> d; for (const auto& x : L.dialable) d.add (x); o->setProperty ("dialable", juce::var (d)); rows.add (juce::var (o));
     }
     out.getChildFile ("trust_levels.json").replaceWithText (juce::JSON::toString (juce::var (rows)));
+    {   // the review list (schema ejmap_role_review/1), the same file the local page and the admin page read
+        auto* rv = new juce::DynamicObject(); rv->setProperty ("schema", "ejmap_role_review/1"); rv->setProperty ("generated_at", juce::Time::getCurrentTime().toISO8601 (true));
+        rv->setProperty ("source", "ejmap --trust-levels"); rv->setProperty ("items", juce::var (review));
+        out.getChildFile ("review_items.json").replaceWithText (juce::JSON::toString (juce::var (rv)));
+        int wouldMap = 0; for (const auto& x : review) if ((bool) x.getProperty ("yes_makes_mapped", false)) ++wouldMap;
+        std::cout << "TRUST-LEVELS: " << review.size() << " control(s) for the human check (" << wouldMap << " where a yes alone makes the map mapped); "
+                  << human.size() << " map(s) with answers applied\n";
+    }
     std::cout << "TRUST-LEVELS: " << rows.size() << " map(s); read-back credited on " << creditedControls << " control(s) from the measuring runs ("
               << failedControls << " of them with a failed reading); nothing loaded, nothing sent\n" << table (counts, { "maps", "certified", "mapped", "unsure" });
     return 0;

@@ -15,7 +15,7 @@
 #include "EjmapWizardProgress.h"
 #include "EjmapWizardRoute.h"
 #include "EjmapApbPreflight.h"
-#include "EjmapSelfGuard.h"   // 16 Oct: the guard on the developer's own loads
+#include "EjmapSelfGuardRun.h"   // 16 Oct: the guard on the developer's own loads (guardedPlugins)
 #include <fstream>
 #include <atomic>
 #include <csignal>
@@ -303,26 +303,6 @@ inline juce::Array<juce::var> withProbeCrashes (juce::Array<juce::var> crashed, 
 
 // THE SOUND CHECK ALONE (16 Oct, Kathy's safety proof for the inert fix): the wizard's own demoCheckForWizard on the named plugins, into
 // <out> only (demo_checks.json + soundcheck.tsv: name, verdict, why). Nothing measured, nothing sent; the names come from a file, one per line
-// THE GUARD (Kathy, 16 Oct, EjmapSelfGuard.h): every developer command that loads plugins resolves its names here - licence-bound ones are
-// dropped and said, unless allowLicenceBound (--allow-licence-bound, only after Kathy says yes). Nothing is loaded to decide
-inline std::vector<juce::PluginDescription> guardedPlugins (const juce::StringArray& names, bool allowLicenceBound, const juce::String& tag, juce::StringArray* dropped = nullptr)
-{
-    const auto mem = selfguard::loadMemory (juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/scripts/self_guard_windows.json"));
-    const auto bundles = componentBundles();
-    std::vector<juce::PluginDescription> ds; juce::StringArray found;
-    for (const auto& r : installedAudioUnits())
-    {
-        if (! names.contains (r.desc.name) || found.contains (r.desc.name)) continue;
-        found.add (r.desc.name);
-        juce::String pw; const bool pace = paceHeld (r.desc, bundles, pw);
-        const auto v = selfguard::judge (r.desc.name, r.desc.manufacturerName, "AudioUnit|" + juce::String::toHexString (r.desc.uniqueId).toLowerCase() + "|" + r.desc.version, pace, pw, mem);
-        if (v.drop && ! allowLicenceBound) { std::cout << tag << ": GUARD dropped " << r.desc.name << " (" << v.why << ")" << std::endl; if (dropped) dropped->add (r.desc.name + "\t" + v.why); continue; }
-        if (v.drop) std::cout << tag << ": GUARD let through on --allow-licence-bound: " << r.desc.name << " (" << v.why << ")" << std::endl;
-        ds.push_back (r.desc);
-    }
-    for (const auto& n : names) if (! found.contains (n)) std::cout << tag << ": not installed: " << n << std::endl;
-    return ds;
-}
 inline int runSoundCheckAlone (const SweepOptions& opt, const juce::File& namesFile, bool allowLicenceBound = false)
 {
     installWizardStop(); opt.out.createDirectory();

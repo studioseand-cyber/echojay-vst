@@ -138,7 +138,7 @@ inline const std::vector<Role>& roleTable()
         { "makeup",     "makeup|make-up|make up",                                    "db" },
         { "output",     "output|out gain|out level|master out|master gain",          "db" },
         { "decay",      "decay|rt60|reverb time| rt|rt ",                            "ms|s" },
-        { "delay_time", "delay time|time|delay",                                     "ms|s|note" },
+        { "delay_time", "delay time|time|delay|note|sync",                           "ms|s|note" },   // note values (1/4, 1/8D, 1/16T) count (Kathy, 16 Oct)
         { "freq",       "freq|frequency|frq",                                        "hz" },
         { "q",          "bandwidth| q |^q$",                                         "q" },
         { "mix",        "mix|dry/wet|dry-wet|dry wet|wet",                           "pct" },
@@ -270,7 +270,39 @@ inline juce::StringArray needsFor (const juce::String& category)
     const auto it = k.find (category.toLowerCase()); return it != k.end() ? it->second : juce::StringArray { "__never__" };   // pitch: the tuner spec decides
 }
 // the controls a need is met by (empty = not met)
-inline juce::StringArray meetNeed (const juce::String& need, const Roles& R)
+// THE SECTION PREFIXES (Kathy's ruling, 16 Oct): a role word under a section prefix - Comp / Gate / Exp / EQ / Band N / LF / LMF / MF /
+// HMF / HF / De-ess (and Limiter) - is identified within that section, so a strip has one threshold per section. The section of a
+// control is what is left of its name without the role words (sectionOf); it is KNOWN when that is exactly one prefix (plus a number);
+// "" is the plugin's own (no prefix); anything else is "?" - not a section we can name, so still ambiguous
+inline juce::String knownSection (const juce::String& section)
+{
+    auto t = " " + section.toLowerCase().trim() + " ";
+    t = t.replace (" de ess ", " deess ").replace (" de esser ", " deess ").replace (" deesser ", " deess ").replace (" de-ess ", " deess ");
+    auto tokens = juce::StringArray::fromTokens (t, " ", ""); tokens.removeEmptyStrings();
+    if (tokens.isEmpty()) return "";
+    static const std::map<juce::String, juce::String> canon {
+        { "comp", "comp" }, { "compressor", "comp" }, { "cmp", "comp" }, { "gate", "gate" }, { "exp", "gate" }, { "expander", "gate" }, { "expand", "gate" },
+        { "eq", "eq" }, { "equalizer", "eq" }, { "equaliser", "eq" }, { "lf", "lf" }, { "lmf", "lmf" }, { "mf", "mf" }, { "hmf", "hmf" }, { "hf", "hf" },
+        { "low", "lf" }, { "lo", "lf" }, { "mid", "mf" }, { "high", "hf" }, { "hi", "hf" }, { "deess", "de-ess" }, { "ds", "de-ess" },
+        { "lim", "limiter" }, { "limiter", "limiter" }, { "band", "band" } };
+    const auto it = canon.find (tokens[0]); if (it == canon.end()) return "?";
+    juce::String out = it->second;
+    for (int i = 1; i < tokens.size(); ++i) { if (! tokens[i].containsOnly ("0123456789")) return "?"; out << " " << tokens[i]; }
+    if (out == "band") return "?";   // "Band" with no number names no section
+    return out;
+}
+// the section a category's dial wants first: a compressor's own (or its Comp section), a gate's Gate / Exp, a de-esser's De-ess
+inline juce::StringArray preferredSections (const juce::String& category)
+{
+    const auto c = category.toLowerCase();
+    if (c == "compressor") return { "", "comp" };
+    if (c == "channel_strip") return { "comp" };
+    if (c == "gate") return { "", "gate" };
+    if (c == "de-esser") return { "", "de-ess" };
+    if (c == "limiter") return { "", "limiter" };
+    return { "" };
+}
+inline juce::StringArray meetNeed (const juce::String& need, const Roles& R, const juce::String& category = {})
 {
     for (const auto& alt : juce::StringArray::fromTokens (need, "|", ""))
     {
@@ -281,8 +313,15 @@ inline juce::StringArray meetNeed (const juce::String& need, const Roles& R)
             for (const auto& f : fi->second) for (const auto& g : gi->second) if (sectionOf (f) == sectionOf (g)) return { f, g };
             continue;
         }
-        // one control for the role, or it is ambiguous (Comp Threshold + Gate Threshold: which one dials the compressor is not a name's call)
-        if (const auto it = R.identified.find (alt); it != R.identified.end() && it->second.size() == 1) return { it->second[0] };
+        // one control for the role; or, with several, each under its own KNOWN section and one of them the section this category dials
+        // (Comp Threshold + Gate Threshold: the compressor dials Comp's); two in one section, or an unnamed section, stay ambiguous
+        if (const auto it = R.identified.find (alt); it != R.identified.end() && ! it->second.isEmpty())
+        {
+            if (it->second.size() == 1) return { it->second[0] };
+            std::map<juce::String, juce::String> bySec; bool clean = true;
+            for (const auto& n : it->second) { const auto k = knownSection (sectionOf (n)); if (k == "?" || bySec.count (k)) { clean = false; break; } bySec[k] = n; }
+            if (clean) for (const auto& want : preferredSections (category)) if (bySec.count (want)) return { bySec[want] };
+        }
     }
     return {};
 }
@@ -382,7 +421,7 @@ inline Level levelFor (const juce::var& map, bool certified, const juce::String&
     juce::StringArray missing, unread;
     for (const auto& need : needsFor (map.getProperty ("category", "").toString()))
     {
-        auto ctl = meetNeed (need, R);
+        auto ctl = meetNeed (need, R, map.getProperty ("category", "").toString());
         if (ctl.isEmpty()) { missing.add (need); continue; }
         for (const auto& c : ctl) { const auto it = rb.find (c); if (it == rb.end() || ! it->second.proven()) unread.add (c + (it != rb.end() && it->second.failed > 0 ? " (read-back failed: " + it->second.worst + ")" : " (no read-back yet)")); else L.dialable.addIfNotAlreadyThere (c); }
     }

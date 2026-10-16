@@ -297,3 +297,23 @@ Why the counts are low:
 4. `COMP_PROFILES` on, for the compressor publish set (v3).
 5. The hold states: the wizard upload's `skipped` and EJ Map's hand-over. Today none reaches the server.
 
+## 7. Round 2, 16 Oct (Kathy: "NEXT ROUND")
+
+- **Section-aware roles (ruling):** a role word under a section prefix (Comp / Gate / Exp / EQ / Band N / LF / LMF / MF / HMF / HF / De-ess, and Limiter) is identified within that section.
+  - The dial takes its category's section: a compressor takes its own threshold or Comp's; a gate takes Gate's; a de-esser takes De-ess's.
+  - Two candidates in one section, or an unknown prefix ("Sidechain", "1"), stay ambiguous.
+  - In code: `EjmapTrust.h knownSection / preferredSections`.
+- **Tempo-synced times (ruling):** note values (1/4, 1/8D, 1/16T) are a delay time, including on "Note" or "Sync" controls.
+- **Multiband is held:** multiband profiling is not built, so a band threshold is not a compressor's dial. This took 20 compressor maps out of the review.
+- **A bug the human-check test found:** `--trust-levels` read the answers file and the quarantine list out of a temporary JSON value, so both were empty. Fixed. Quarantine holds are now applied (+22 held).
+- **Counts on the 1,123 maps:** certified 181, mapped 136, unsure 806.
+  - Of the unsure: 413 held, 314 role not identified, 55 no read-back yet, 24 read-back failed.
+  - Channel strips do not move: their controls (e.g. SSL Guitarstrip "Compressor Threshold") were saved with no unit, so sections cannot help. The human check settles them.
+- **The human check:**
+  - `ejmap --trust-levels ... --human <human_checks.json>` applies the answers. A yes identifies; a no refutes.
+  - `--out` writes `review_items.json` (`ejmap_role_review/1`).
+  - Today: 1,799 controls on 177 maps. 45 of them, on 43 maps, are "counts now": one yes moves the map to mapped.
+  - The local page is `tools/ejmap/review/` (`review_server.py` + `admin-plugin-review.js`, the operator console's module shape). It is on Kathy's Desktop as `EJMAP_REVIEW`.
+  - The admin version (route, store, import, formats) is in `tools/ejmap/review/admin_handover/` and on the Desktop as `ADMIN_REVIEW_HANDOVER`.
+- **Pins:** WZ-TRUST-4 (sections, notes, the human check), WZ-TRUST-5 (held); 10 mutants red. `tools/ejmap/review/test_review.cjs` covers the module and the route.
+

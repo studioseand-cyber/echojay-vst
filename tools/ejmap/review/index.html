@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plugin Role Review</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/review.css">
+</head>
+<body>
+<header class="adm-head"><span class="adm-wordmark">EchoJay <span>plugin role review (local)</span></span>
+  <span class="adm-badge adm-badge-development">this Mac only - answers save to a file</span></header>
+<main class="adm-main"><section id="review"></section></main>
+<script src="/admin-plugin-review.js"></script>
+<script>
+  // THE LOCAL HOST for the same module the operator console mounts: el() (textContent only) and api2() to the local server
+  (function () {
+    function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined && text !== null) n.textContent = String(text); return n; }
+    function api2(path, opts) {
+      var o = Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts || {});
+      return fetch(path, o).then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { if (!r.ok) throw new Error(b.error || String(r.status)); return b; }); });
+    }
+    EchoJayPluginReview.mount({ el: el, api2: api2 }, document.getElementById('review'), { base: '/api/review' });
+  }());
+</script>
+</body>
+</html>

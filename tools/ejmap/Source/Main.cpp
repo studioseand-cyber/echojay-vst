@@ -788,12 +788,12 @@ namespace
             }
             if (a == "--trust-levels")   // 16 Oct (Kathy): read-back credit from the measuring runs, the role rule, the level per map - nothing loaded
             {
-                juce::File maps, outD, list, quarantine; juce::StringArray certs, wizards, helds;
+                juce::File maps, outD, list, quarantine, human; juce::StringArray certs, wizards, helds;
                 for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
                     if (k == "--maps") maps = cwdFile (v); else if (k == "--out") outD = cwdFile (v); else if (k == "--cert") certs.add (cwdFile (v).getFullPathName());
                     else if (k == "--wizard") wizards.add (cwdFile (v).getFullPathName()); else if (k == "--certified") list = cwdFile (v); else if (k == "--held") helds.add (cwdFile (v).getFullPathName());
-                    else if (k == "--quarantine") quarantine = cwdFile (v); }
-                return ejmap::trustrun::runTrustLevels (maps, certs, wizards, list, helds, quarantine, outD);
+                    else if (k == "--quarantine") quarantine = cwdFile (v); else if (k == "--human") human = cwdFile (v); }
+                return ejmap::trustrun::runTrustLevels (maps, certs, wizards, list, helds, quarantine, outD, human);
             }
             if (a == "--self-guard")   // 16 Oct (Kathy): the guard alone, for scripts - prints KEEP / DROP per name, loads nothing; exit 3 if anything dropped
             {
